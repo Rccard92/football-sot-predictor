@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 import time
@@ -123,16 +123,14 @@ class ApiFootballClient:
         )
 
     def get_teams(self, league_id: int, season: int) -> list[dict[str, Any]]:
-        return self.get_all_pages(
-            "teams",
-            {"league": league_id, "season": season},
-        )
+        """GET /teams (singola richiesta; l'API non accetta paginazione `page`)."""
+        body = self.get("teams", {"league": league_id, "season": season})
+        return list(body.get("response") or [])
 
     def get_fixtures(self, league_id: int, season: int, status: str | None = None) -> list[dict[str, Any]]:
-        return self.get_all_pages(
-            "fixtures",
-            {"league": league_id, "season": season, "status": status},
-        )
+        """GET /fixtures (singola richiesta; senza parametro `page`)."""
+        body = self.get("fixtures", {"league": league_id, "season": season, "status": status})
+        return list(body.get("response") or [])
 
     def get_fixture_statistics(self, fixture_id: int) -> list[dict[str, Any]]:
         body = self.get("fixtures/statistics", {"fixture": fixture_id})

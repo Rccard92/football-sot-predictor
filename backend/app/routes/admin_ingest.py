@@ -1,6 +1,7 @@
 ﻿import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models import IngestionRun
-from app.schemas.ingestion import BootstrapResponse, IngestionRunRead
+from app.schemas.ingestion import IngestionRunRead
 from app.services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
@@ -34,11 +35,15 @@ def _any_failed(runs: list[IngestionRun]) -> bool:
     return any(r.status == "failed" for r in runs)
 
 
-@router.post("/serie-a/{season}/bootstrap", response_model=BootstrapResponse)
+def _runs_to_jsonable(runs: list[IngestionRun]) -> list[dict]:
+    return [IngestionRunRead.model_validate(r).model_dump() for r in runs]
+
+
+@router.post("/serie-a/{season}/bootstrap", response_model=None)
 def admin_bootstrap_serie_a(
     season: int,
     db: Session = Depends(get_db),
-) -> BootstrapResponse:
+):
     _require_api_football_key()
     svc = IngestionService()
     try:
@@ -49,15 +54,24 @@ def admin_bootstrap_serie_a(
             status_code=503,
             detail="Database non disponibile o schema non aggiornato. Eseguire le migration Alembic (alembic upgrade head) su PostgreSQL.",
         ) from exc
+
+    runs_payload = _runs_to_jsonable(runs)
+
     if _any_failed(runs):
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "message": "Uno o più step di bootstrap sono falliti",
-                "runs": [IngestionRunRead.model_validate(r).model_dump() for r in runs],
-            },
+        failed = next((r for r in reversed(runs) if r.status == "failed"), None)
+        failed_step = (failed.meta or {}).get("step") if failed and failed.meta else "unknown"
+        message = (failed.error_message if failed and failed.error_message else None) or (
+            "Uno o più step di bootstrap sono falliti"
         )
-    return BootstrapResponse(runs=[IngestionRunRead.model_validate(r) for r in runs])
+        body = {
+            "status": "error",
+            "failed_step": failed_step,
+            "message": message,
+            "partial_result": {"runs": runs_payload},
+        }
+        return JSONResponse(status_code=502, content=jsonable_encoder(body))
+
+    return jsonable_encoder({"runs": runs_payload})
 
 
 @router.get("/runs", response_model=None)
