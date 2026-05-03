@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -17,16 +17,15 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @router.get("/serie-a/{season}", response_model=SerieADashboardResponse)
 def serie_a_dashboard(season: int, db: Session = Depends(get_db)) -> SerieADashboardResponse:
     svc = IngestionService()
-    try:
-        data = svc.dashboard_serie_a(db, season)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    data = svc.dashboard_serie_a(db, season)
 
     last = data.get("last_ingestion_run")
     cov = data["data_coverage"]
+    league = data.get("league")
+    season_row = data.get("season")
     return SerieADashboardResponse(
-        league=LeagueDashboardBlock.model_validate(data["league"]),
-        season=SeasonDashboardBlock.model_validate(data["season"]),
+        league=LeagueDashboardBlock.model_validate(league) if league is not None else None,
+        season=SeasonDashboardBlock.model_validate(season_row) if season_row is not None else None,
         teams_total=data["teams_total"],
         fixtures_total=data["fixtures_total"],
         fixtures_completed=data["fixtures_completed"],

@@ -95,4 +95,5 @@ def list_ingestion_runs(
     rows = db.scalars(
         select(IngestionRun).order_by(IngestionRun.id.desc()).limit(limit),
     ).all()
-    return IngestionRunsResponse(runs=[IngestionRunRead.model_validate(r) for r in rows])
+    validated = [IngestionRunRead.model_validate(r) for r in rows]
+    return IngestionRunsResponse(runs=validated, total=len(validated))

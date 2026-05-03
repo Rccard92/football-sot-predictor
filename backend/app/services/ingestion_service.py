@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select, union_all, update
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -675,19 +676,45 @@ class IngestionService:
     def bootstrap_serie_a(self, db: Session, season: int = 2025) -> list[IngestionRun]:
         return self.bootstrap_serie_a_admin(db, season)
 
+    @staticmethod
+    def dashboard_serie_a_empty() -> dict[str, Any]:
+        return {
+            "league": None,
+            "season": None,
+            "teams_total": 0,
+            "fixtures_total": 0,
+            "fixtures_completed": 0,
+            "fixtures_scheduled": 0,
+            "fixtures_live_or_unknown": 0,
+            "last_ingestion_run": None,
+            "data_coverage": {
+                "teams_imported": False,
+                "fixtures_imported": False,
+            },
+        }
+
     def dashboard_serie_a(self, db: Session, season: int) -> dict[str, Any]:
+        try:
+            return self._dashboard_serie_a_impl(db, season)
+        except (ProgrammingError, OperationalError) as exc:
+            logger.warning(
+                "dashboard_serie_a: errore database (%s)",
+                exc.__class__.__name__,
+                exc_info=True,
+            )
+            return self.dashboard_serie_a_empty()
+
+    def _dashboard_serie_a_impl(self, db: Session, season: int) -> dict[str, Any]:
         settings = get_settings()
         league = db.scalar(select(League).where(League.api_league_id == settings.default_league_id))
         if league is None:
-            raise ValueError(
-                f"Lega api_league_id={settings.default_league_id} non presente in database: eseguire il bootstrap.",
-            )
+            return self.dashboard_serie_a_empty()
 
         season_row = db.scalar(
             select(Season).where(Season.league_id == league.id, Season.year == season),
         )
         if season_row is None:
-            raise ValueError(f"Stagione {season} non presente per la lega configurata")
+            return self.dashboard_serie_a_empty()
 
         fixtures_total = int(
             db.scalar(select(func.count()).select_from(Fixture).where(Fixture.season_id == season_row.id)) or 0,
@@ -726,12 +753,16 @@ class IngestionService:
         )
         fixtures_imported = fixtures_total > 0
 
-        last_run = db.scalar(
-            select(IngestionRun).order_by(
-                IngestionRun.started_at.desc().nulls_last(),
-                IngestionRun.id.desc(),
-            ),
-        )
+        last_run = None
+        try:
+            last_run = db.scalar(
+                select(IngestionRun).order_by(
+                    IngestionRun.started_at.desc().nulls_last(),
+                    IngestionRun.id.desc(),
+                ),
+            )
+        except (ProgrammingError, OperationalError):
+            logger.warning("dashboard_serie_a: lettura ingestion_runs fallita", exc_info=True)
 
         return {
             "league": league,

@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
@@ -14,6 +15,11 @@ from app.services.ingestion_service import IngestionService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/ingest", tags=["admin-ingest"])
+
+SCHEMA_ERROR_BODY: dict = {
+    "status": "error",
+    "message": "Database schema not initialized. Run alembic upgrade head.",
+}
 
 
 def _require_api_football_key() -> None:
@@ -54,15 +60,27 @@ def admin_bootstrap_serie_a(
     return BootstrapResponse(runs=[IngestionRunRead.model_validate(r) for r in runs])
 
 
-@router.get("/runs", response_model=IngestionRunsResponse)
+@router.get("/runs")
 def admin_list_ingestion_runs(
     db: Session = Depends(get_db),
     limit: int = Query(50, ge=1, le=200),
-) -> IngestionRunsResponse:
-    rows = db.scalars(
-        select(IngestionRun).order_by(
-            IngestionRun.started_at.desc().nulls_last(),
-            IngestionRun.id.desc(),
-        ).limit(limit),
-    ).all()
-    return IngestionRunsResponse(runs=[IngestionRunRead.model_validate(r) for r in rows])
+) -> IngestionRunsResponse | JSONResponse:
+    try:
+        rows = db.scalars(
+            select(IngestionRun).order_by(
+                IngestionRun.started_at.desc().nulls_last(),
+                IngestionRun.id.desc(),
+            ).limit(limit),
+        ).all()
+        validated = [IngestionRunRead.model_validate(r) for r in rows]
+        return IngestionRunsResponse(runs=validated, total=len(validated))
+    except (ProgrammingError, OperationalError) as exc:
+        logger.warning(
+            "GET /api/admin/ingest/runs: errore SQLAlchemy (%s)",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        return JSONResponse(status_code=503, content=SCHEMA_ERROR_BODY)
+    except Exception as exc:
+        logger.exception("GET /api/admin/ingest/runs: errore imprevisto")
+        return JSONResponse(status_code=503, content=SCHEMA_ERROR_BODY)

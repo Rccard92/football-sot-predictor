@@ -1,9 +1,17 @@
+import logging
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, ProgrammingError
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.database import get_db
+from app.core.db_tables import EXPECTED_TABLES, get_existing_table_names
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin")
 
@@ -67,3 +75,39 @@ def api_football_test() -> dict[str, Any]:
         "coverage": coverage,
         "raw_response_count": raw_response_count,
     }
+
+
+@router.get("/db/check")
+def admin_db_check(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Diagnostica connessione DB e presenza tabelle (senza dati sensibili)."""
+    bind = db.get_bind()
+    payload: dict[str, Any] = {
+        "database": "disconnected",
+        "schema_initialized": False,
+        "existing_tables": [],
+        "missing_tables": sorted(EXPECTED_TABLES),
+    }
+    try:
+        db.execute(text("SELECT 1"))
+        payload["database"] = "connected"
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning(
+            "GET /api/admin/db/check: SELECT 1 fallita (%s)",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        return payload
+
+    try:
+        existing = get_existing_table_names(bind)
+        payload["existing_tables"] = sorted(existing)
+        missing = sorted(EXPECTED_TABLES - existing)
+        payload["missing_tables"] = missing
+        payload["schema_initialized"] = len(missing) == 0
+    except Exception as exc:
+        logger.warning(
+            "GET /api/admin/db/check: introspezione tabelle fallita (%s)",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+    return payload

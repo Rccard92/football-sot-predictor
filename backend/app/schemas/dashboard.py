@@ -45,8 +45,8 @@ class DataCoverageBlock(BaseModel):
 
 
 class SerieADashboardResponse(BaseModel):
-    league: LeagueDashboardBlock
-    season: SeasonDashboardBlock
+    league: LeagueDashboardBlock | None
+    season: SeasonDashboardBlock | None
     teams_total: int
     fixtures_total: int
     fixtures_completed: int

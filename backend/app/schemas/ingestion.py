@@ -21,6 +21,7 @@ class IngestionRunRead(BaseModel):
 
 class IngestionRunsResponse(BaseModel):
     runs: list[IngestionRunRead]
+    total: int
 
 
 class BootstrapResponse(BaseModel):
