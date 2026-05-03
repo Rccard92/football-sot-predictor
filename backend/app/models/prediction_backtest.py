@@ -1,4 +1,7 @@
+from typing import Any
+
 from sqlalchemy import BigInteger, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -33,6 +36,8 @@ class PredictionBacktest(Base, TimestampMixin):
     predicted_sot: Mapped[float] = mapped_column(Float, nullable=False)
     actual_sot: Mapped[float] = mapped_column(Float, nullable=False)
     error: Mapped[float | None] = mapped_column(Float, nullable=True)
+    squared_error: Mapped[float] = mapped_column(Float, nullable=False)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     ingestion_run_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("ingestion_runs.id", ondelete="SET NULL"),
