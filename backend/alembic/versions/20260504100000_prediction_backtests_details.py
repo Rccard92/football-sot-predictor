@@ -18,20 +18,35 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _table_names(inspector: sa.Inspector, bind) -> set[str]:
+    if bind.dialect.name == "postgresql":
+        return set(inspector.get_table_names(schema="public"))
+    return set(inspector.get_table_names())
+
+
+def table_exists(table_name: str) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return table_name in _table_names(inspector, bind)
+
+
 def column_exists(table_name: str, column_name: str) -> bool:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    columns = [col["name"] for col in inspector.get_columns(table_name)]
+    if table_name not in _table_names(inspector, bind):
+        return False
+    col_kw: dict = {"schema": "public"} if bind.dialect.name == "postgresql" else {}
+    columns = [col["name"] for col in inspector.get_columns(table_name, **col_kw)]
     return column_name in columns
 
 
 def add_column_if_missing(table_name: str, column: sa.Column) -> None:
-    if not column_exists(table_name, column.name):
+    if table_exists(table_name) and not column_exists(table_name, column.name):
         op.add_column(table_name, column)
 
 
 def drop_column_if_exists(table_name: str, column_name: str) -> None:
-    if column_exists(table_name, column_name):
+    if table_exists(table_name) and column_exists(table_name, column_name):
         op.drop_column(table_name, column_name)
 
 
