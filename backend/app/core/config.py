@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     api_football_key: str = ""
     api_football_base_url: str = "https://v3.football.api-sports.io"
     cors_origins: str = "http://localhost:5173"
+    app_env: str = "development"
 
     @property
     def cors_origins_list(self) -> list[str]:

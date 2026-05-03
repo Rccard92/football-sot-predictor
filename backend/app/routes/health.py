@@ -1,20 +1,40 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.config import get_settings
+from app.core.database import SessionLocal
 
 router = APIRouter()
 
 
 @router.get("/health")
-def health_check(db: Session = Depends(get_db)) -> dict:
-    database_status = "ok"
+def health_check() -> dict:
+    settings = get_settings()
+    api_football_configured = bool(settings.api_football_key.strip())
+    api_football_base_url_configured = bool(settings.api_football_base_url.strip())
+
+    database = "error"
+    database_message: str | None = None
     try:
-        db.execute(text("SELECT 1"))
-    except Exception:
-        database_status = "error"
-    return {
-        "status": "ok" if database_status == "ok" else "degraded",
-        "database": database_status,
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            database = "connected"
+        except Exception as exc:
+            database_message = str(exc)
+        finally:
+            db.close()
+    except Exception as exc:
+        database_message = str(exc)
+
+    status = "ok" if database == "connected" else "degraded"
+    body: dict = {
+        "status": status,
+        "database": database,
+        "api_football_configured": api_football_configured,
+        "api_football_base_url_configured": api_football_base_url_configured,
+        "environment": settings.app_env,
     }
+    if database_message is not None:
+        body["database_message"] = database_message
+    return body

@@ -119,7 +119,7 @@ class ApiFootballClient:
     def get_league(self, country: str, search: str, season: int) -> list[dict[str, Any]]:
         return self.get_all_pages(
             "leagues",
-            {"country": country, "name": search, "season": season},
+            {"country": country, "search": search, "season": season},
         )
 
     def get_teams(self, league_id: int, season: int) -> list[dict[str, Any]]:
