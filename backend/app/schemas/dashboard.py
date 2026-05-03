@@ -63,5 +63,12 @@ class SerieADashboardResponse(BaseModel):
     sot_predictions_coverage_pct: float
     avg_expected_sot: float
     avg_prediction_confidence: float
+    sot_backtests_total: int
+    sot_backtests_expected: int
+    sot_backtest_coverage_pct: float
+    sot_backtest_mae: float
+    sot_backtest_rmse: float
+    sot_backtest_avg_expected_sot: float
+    sot_backtest_avg_actual_sot: float
     last_ingestion_run: IngestionRunSummary | None
     data_coverage: DataCoverageBlock

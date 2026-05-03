@@ -917,6 +917,13 @@ class IngestionService:
             "sot_predictions_coverage_pct": 0.0,
             "avg_expected_sot": 0.0,
             "avg_prediction_confidence": 0.0,
+            "sot_backtests_total": 0,
+            "sot_backtests_expected": 0,
+            "sot_backtest_coverage_pct": 0.0,
+            "sot_backtest_mae": 0.0,
+            "sot_backtest_rmse": 0.0,
+            "sot_backtest_avg_expected_sot": 0.0,
+            "sot_backtest_avg_actual_sot": 0.0,
             "last_ingestion_run": None,
             "data_coverage": {
                 "teams_imported": False,
@@ -994,6 +1001,10 @@ class IngestionService:
 
         pred_sum = SotPredictionService().get_season_predictions_summary(db, season)
 
+        from app.services.sot_backtest_service import SotBacktestService
+
+        bt_sum = SotBacktestService().get_dashboard_backtest_block(db, season)
+
         last_run = None
         try:
             last_run = db.scalar(
@@ -1024,6 +1035,13 @@ class IngestionService:
             "sot_predictions_coverage_pct": float(pred_sum["coverage_pct"]),
             "avg_expected_sot": float(pred_sum["avg_expected_sot"]),
             "avg_prediction_confidence": float(pred_sum["avg_confidence_score"]),
+            "sot_backtests_total": bt_sum["sot_backtests_total"],
+            "sot_backtests_expected": bt_sum["sot_backtests_expected"],
+            "sot_backtest_coverage_pct": float(bt_sum["sot_backtest_coverage_pct"]),
+            "sot_backtest_mae": float(bt_sum["sot_backtest_mae"]),
+            "sot_backtest_rmse": float(bt_sum["sot_backtest_rmse"]),
+            "sot_backtest_avg_expected_sot": float(bt_sum["sot_backtest_avg_expected_sot"]),
+            "sot_backtest_avg_actual_sot": float(bt_sum["sot_backtest_avg_actual_sot"]),
             "last_ingestion_run": last_run,
             "data_coverage": {
                 "teams_imported": teams_imported,

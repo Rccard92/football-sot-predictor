@@ -1,119 +1,119 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+import logging
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+from app.core.constants import BASELINE_SOT_MODEL_VERSION
 from app.core.database import get_db
-from app.models import League, Season
 from app.schemas.backtest import (
-    BacktestByLineResponse,
-    BacktestByTeamResponse,
-    BacktestSummaryResponse,
-    RunBacktestBody,
-    RunBacktestResponse,
+    BacktestBySideListResponse,
+    BacktestBySideRow,
+    BacktestByTeamListResponse,
+    BacktestByTeamRow,
+    BacktestFixtureCompareItem,
+    BacktestFixtureCompareResponse,
+    BacktestNumericSummaryResponse,
+    RunNumericBacktestBody,
+    RunNumericBacktestResponse,
 )
-from app.services.backtest_service import BacktestService
-from app.services.ingestion_service import IngestionService
+from app.services.sot_backtest_service import SotBacktestService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backtest/sot", tags=["backtest"])
 
 
-def _season_or_404(db: Session, season_year: int) -> Season:
-    league = db.scalar(select(League).where(League.name == IngestionService.SERIE_A_LEAGUE_NAME))
-    if league is None:
-        raise HTTPException(status_code=404, detail="Lega Serie A non trovata")
-    season = db.scalar(
-        select(Season).where(Season.league_id == league.id, Season.year == season_year),
-    )
-    if season is None:
-        raise HTTPException(status_code=404, detail=f"Stagione {season_year} non trovata")
-    return season
-
-
-@router.post("/serie-a/{season}/run", response_model=RunBacktestResponse)
-def run_backtest(
+@router.post("/serie-a/{season}/run", response_model=None)
+def run_numeric_backtest(
     season: int,
-    body: RunBacktestBody,
     db: Session = Depends(get_db),
-) -> RunBacktestResponse:
-    _season_or_404(db, season)
-    svc = BacktestService()
+    body: RunNumericBacktestBody = Body(default_factory=RunNumericBacktestBody),
+):
+    svc = SotBacktestService()
     try:
-        batch_id, n = svc.run_sot_backtest(
-            db,
-            season,
-            body.model_version,
-            body.default_lines,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    return RunBacktestResponse(
-        batch_id=batch_id,
+        summary = svc.run_numeric_backtest_admin(db, season, body.model_version)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST run_sot_backtest: errore database")
+        raise HTTPException(
+            status_code=503,
+            detail="Database non disponibile o schema non aggiornato. Eseguire alembic upgrade head.",
+        ) from exc
+
+    if summary.get("status") == "error" and summary.get("backtests_created_or_updated", 0) == 0:
+        return JSONResponse(status_code=502, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
+
+
+@router.get("/serie-a/{season}/summary", response_model=BacktestNumericSummaryResponse)
+def numeric_backtest_summary(
+    season: int,
+    db: Session = Depends(get_db),
+    model_version: str = BASELINE_SOT_MODEL_VERSION,
+) -> BacktestNumericSummaryResponse:
+    svc = SotBacktestService()
+    try:
+        data = svc.get_season_summary(db, season, model_version)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET backtest summary: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return BacktestNumericSummaryResponse.model_validate(data)
+
+
+@router.get("/serie-a/{season}/by-team", response_model=BacktestByTeamListResponse)
+def numeric_backtest_by_team(
+    season: int,
+    db: Session = Depends(get_db),
+    model_version: str = BASELINE_SOT_MODEL_VERSION,
+) -> BacktestByTeamListResponse:
+    svc = SotBacktestService()
+    try:
+        rows = svc.get_by_team(db, season, model_version)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET backtest by-team: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return BacktestByTeamListResponse(
         season=season,
-        model_version=body.model_version,
-        rows_written=n,
+        model_version=model_version,
+        teams=[BacktestByTeamRow.model_validate(r) for r in rows],
     )
 
 
-@router.get("/serie-a/{season}/summary", response_model=BacktestSummaryResponse)
-def backtest_summary(
+@router.get("/serie-a/{season}/by-side", response_model=BacktestBySideListResponse)
+def numeric_backtest_by_side(
     season: int,
     db: Session = Depends(get_db),
-    batch_id: str | None = Query(default=None),
-) -> BacktestSummaryResponse:
-    s = _season_or_404(db, season)
-    svc = BacktestService()
-    bid = svc.resolve_batch_id(db, s.id, batch_id)
-    if bid is None:
-        raise HTTPException(status_code=404, detail="Nessun backtest trovato per questa stagione")
-    rows = svc.load_batch_rows(db, s.id, bid)
-    agg = svc.aggregate_summary(rows)
-    by_side = svc.aggregate_by_side(rows)
-    return BacktestSummaryResponse(
-        batch_id=bid,
+    model_version: str = BASELINE_SOT_MODEL_VERSION,
+) -> BacktestBySideListResponse:
+    svc = SotBacktestService()
+    try:
+        rows = svc.get_by_side(db, season, model_version)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET backtest by-side: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return BacktestBySideListResponse(
         season=season,
-        mae=agg["mae"],
-        rmse=agg["rmse"],
-        hit_rate=agg["hit_rate"],
-        no_bet_rate=agg["no_bet_rate"],
-        total_predictions=agg["total_predictions"],
-        total_line_evaluations=agg["total_line_evaluations"],
-        error_by_side=by_side,
+        model_version=model_version,
+        sides=[BacktestBySideRow.model_validate(r) for r in rows],
     )
 
 
-@router.get("/serie-a/{season}/by-team", response_model=BacktestByTeamResponse)
-def backtest_by_team(
-    season: int,
+@router.get("/fixture/{fixture_id}", response_model=BacktestFixtureCompareResponse)
+def numeric_backtest_fixture(
+    fixture_id: int,
     db: Session = Depends(get_db),
-    batch_id: str | None = Query(default=None),
-) -> BacktestByTeamResponse:
-    s = _season_or_404(db, season)
-    svc = BacktestService()
-    bid = svc.resolve_batch_id(db, s.id, batch_id)
-    if bid is None:
-        raise HTTPException(status_code=404, detail="Nessun backtest trovato per questa stagione")
-    rows = svc.load_batch_rows(db, s.id, bid)
-    return BacktestByTeamResponse(
-        batch_id=bid,
-        season=season,
-        error_by_team=svc.aggregate_by_team(rows),
-    )
-
-
-@router.get("/serie-a/{season}/by-line", response_model=BacktestByLineResponse)
-def backtest_by_line(
-    season: int,
-    db: Session = Depends(get_db),
-    batch_id: str | None = Query(default=None),
-) -> BacktestByLineResponse:
-    s = _season_or_404(db, season)
-    svc = BacktestService()
-    bid = svc.resolve_batch_id(db, s.id, batch_id)
-    if bid is None:
-        raise HTTPException(status_code=404, detail="Nessun backtest trovato per questa stagione")
-    rows = svc.load_batch_rows(db, s.id, bid)
-    return BacktestByLineResponse(
-        batch_id=bid,
-        season=season,
-        error_by_line=svc.aggregate_by_line(rows),
+    model_version: str = BASELINE_SOT_MODEL_VERSION,
+) -> BacktestFixtureCompareResponse:
+    svc = SotBacktestService()
+    try:
+        rows = svc.get_fixture_comparison(db, fixture_id, model_version)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET backtest fixture: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return BacktestFixtureCompareResponse(
+        fixture_id=fixture_id,
+        model_version=model_version,
+        rows=[BacktestFixtureCompareItem.model_validate(r) for r in rows],
     )
