@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models import IngestionRun
-from app.schemas.ingestion import BootstrapResponse, IngestionRunRead, IngestionRunsResponse
+from app.schemas.ingestion import BootstrapResponse, IngestionRunRead
 from app.services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
@@ -60,11 +60,11 @@ def admin_bootstrap_serie_a(
     return BootstrapResponse(runs=[IngestionRunRead.model_validate(r) for r in runs])
 
 
-@router.get("/runs")
+@router.get("/runs", response_model=None)
 def admin_list_ingestion_runs(
     db: Session = Depends(get_db),
     limit: int = Query(50, ge=1, le=200),
-) -> IngestionRunsResponse | JSONResponse:
+):
     try:
         rows = db.scalars(
             select(IngestionRun).order_by(
@@ -72,8 +72,8 @@ def admin_list_ingestion_runs(
                 IngestionRun.id.desc(),
             ).limit(limit),
         ).all()
-        validated = [IngestionRunRead.model_validate(r) for r in rows]
-        return IngestionRunsResponse(runs=validated, total=len(validated))
+        runs_out = [IngestionRunRead.model_validate(r).model_dump() for r in rows]
+        return {"runs": runs_out, "total": len(runs_out)}
     except (ProgrammingError, OperationalError) as exc:
         logger.warning(
             "GET /api/admin/ingest/runs: errore SQLAlchemy (%s)",
@@ -81,6 +81,6 @@ def admin_list_ingestion_runs(
             exc_info=True,
         )
         return JSONResponse(status_code=503, content=SCHEMA_ERROR_BODY)
-    except Exception as exc:
+    except Exception:
         logger.exception("GET /api/admin/ingest/runs: errore imprevisto")
         return JSONResponse(status_code=503, content=SCHEMA_ERROR_BODY)
