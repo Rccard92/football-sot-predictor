@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom'
 
 const nav = [
-  { to: '/', label: 'Dashboard' },
+  { to: '/', label: 'Prossima giornata' },
+  { to: '/dashboard', label: 'Dashboard modello' },
   { to: '/data-health', label: 'Data Health' },
-  { to: '/teams', label: 'Teams' },
-  { to: '/match-prediction', label: 'Match Prediction' },
   { to: '/backtest', label: 'Backtest' },
+  { to: '/admin', label: 'Admin' },
 ] as const
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>

@@ -11,13 +11,17 @@ from app.core.constants import BASELINE_SOT_MODEL_VERSION
 from app.core.database import get_db
 from app.models import Fixture, TeamSotPrediction
 from app.schemas.predictions import (
+    EvaluateSotLineBody,
+    EvaluateSotLineResponse,
     FixturePredictionsEnrichedResponse,
     FixtureSotPredictionItem,
     GeneratePredictionsBody,
     SotPredictionsSeasonSummaryResponse,
     TeamPredictionsResponse,
     TeamSotPredictionRead,
+    UpcomingMatchesResponse,
 )
+from app.services.sot_line_evaluate import evaluate_sot_line
 from app.services.sot_prediction_service import SotPredictionService
 
 logger = logging.getLogger(__name__)
@@ -45,6 +49,57 @@ def generate_serie_a_predictions(
     if summary.get("status") == "error" and summary.get("predictions_created_or_updated", 0) == 0:
         return JSONResponse(status_code=502, content=jsonable_encoder(summary))
     return jsonable_encoder(summary)
+
+
+@router.post("/serie-a/{season}/generate-upcoming", response_model=None)
+def generate_serie_a_predictions_upcoming(
+    season: int,
+    db: Session = Depends(get_db),
+    model_version: str = Query(default=BASELINE_SOT_MODEL_VERSION),
+):
+    svc = SotPredictionService()
+    try:
+        summary = svc.generate_upcoming_predictions_for_season(db, season, model_version=model_version)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST generate_sot_predictions_upcoming: errore database")
+        raise HTTPException(
+            status_code=503,
+            detail="Database non disponibile o schema non aggiornato. Eseguire alembic upgrade head.",
+        ) from exc
+
+    if summary.get("status") == "error" and summary.get("predictions_created_or_updated", 0) == 0:
+        return JSONResponse(status_code=502, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
+
+
+@router.get("/serie-a/{season}/upcoming", response_model=UpcomingMatchesResponse)
+def sot_predictions_serie_a_upcoming(
+    season: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+    match_round: str | None = Query(default=None, alias="round"),
+    only_next_round: bool = Query(default=True),
+    model_version: str = Query(default=BASELINE_SOT_MODEL_VERSION),
+) -> UpcomingMatchesResponse:
+    svc = SotPredictionService()
+    try:
+        data = svc.get_serie_a_upcoming_matches(
+            db,
+            season,
+            limit=limit,
+            round_filter=match_round,
+            only_next_round=only_next_round,
+            model_version=model_version,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET upcoming: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return UpcomingMatchesResponse.model_validate(data)
+
+
+@router.post("/evaluate-line", response_model=EvaluateSotLineResponse)
+def evaluate_sot_line_endpoint(body: EvaluateSotLineBody) -> EvaluateSotLineResponse:
+    return EvaluateSotLineResponse.model_validate(evaluate_sot_line(body.expected_sot, body.line_value))
 
 
 @router.get("/serie-a/{season}/summary", response_model=SotPredictionsSeasonSummaryResponse)

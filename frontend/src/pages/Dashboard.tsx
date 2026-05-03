@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import {
   DEFAULT_SEASON,
   getBacktestBySide,
@@ -7,9 +8,6 @@ import {
   getDashboard,
   getIngestionRuns,
   getPredictionSummary,
-  runBuildSotFeatures,
-  runGenerateSotPredictions,
-  runSotBacktest,
   type BacktestBySideListResponse,
   type BacktestByTeamListResponse,
   type BacktestNumericSummaryResponse,
@@ -40,6 +38,12 @@ function formatNum(value: number, decimals = 2): string {
     maximumFractionDigits: decimals,
     minimumFractionDigits: decimals,
   })
+}
+
+function maeQualityLabel(mae: number): string {
+  if (mae < 1.5) return 'Buono'
+  if (mae <= 2.0) return 'Accettabile'
+  return 'Da migliorare'
 }
 
 function SectionCard({
@@ -100,18 +104,6 @@ function ingestionStatusClass(status: string): string {
   return 'bg-slate-100 text-slate-600'
 }
 
-function adminSuccessMessage(payload: unknown, fallback: string): string {
-  if (payload && typeof payload === 'object') {
-    const o = payload as Record<string, unknown>
-    if (typeof o.message === 'string' && o.message.trim()) return o.message
-  }
-  return fallback
-}
-
-type AdminActionState = { loading: boolean; ok: boolean | null; msg: string | null }
-
-const ADMIN_IDLE: AdminActionState = { loading: false, ok: null, msg: null }
-
 export function Dashboard() {
   const [dashboard, setDashboard] = useState<Slice<SerieADashboardResponse>>(emptySlice)
   const [predSummary, setPredSummary] = useState<Slice<SotPredictionsSeasonSummaryResponse>>(
@@ -123,24 +115,14 @@ export function Dashboard() {
   const [ingest, setIngest] = useState<Slice<IngestionRunsResponse>>(emptySlice)
 
   const [pageInit, setPageInit] = useState(true)
-  const [silentBusy, setSilentBusy] = useState(false)
 
-  const [adminFeatures, setAdminFeatures] = useState<AdminActionState>(ADMIN_IDLE)
-  const [adminPred, setAdminPred] = useState<AdminActionState>(ADMIN_IDLE)
-  const [adminBt, setAdminBt] = useState<AdminActionState>(ADMIN_IDLE)
-
-  const loadAll = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent === true
-    if (!silent) {
-      setDashboard({ loading: true, data: null, error: null })
-      setPredSummary({ loading: true, data: null, error: null })
-      setBtSummary({ loading: true, data: null, error: null })
-      setBtTeam({ loading: true, data: null, error: null })
-      setBtSide({ loading: true, data: null, error: null })
-      setIngest({ loading: true, data: null, error: null })
-    } else {
-      setSilentBusy(true)
-    }
+  const loadAll = useCallback(async () => {
+    setDashboard({ loading: true, data: null, error: null })
+    setPredSummary({ loading: true, data: null, error: null })
+    setBtSummary({ loading: true, data: null, error: null })
+    setBtTeam({ loading: true, data: null, error: null })
+    setBtSide({ loading: true, data: null, error: null })
+    setIngest({ loading: true, data: null, error: null })
 
     const results = await Promise.allSettled([
       getDashboard(SEASON),
@@ -186,12 +168,11 @@ export function Dashboard() {
         : { loading: false, data: null, error: err(r5.reason) },
     )
 
-    if (!silent) setPageInit(false)
-    setSilentBusy(false)
+    setPageInit(false)
   }, [])
 
   useEffect(() => {
-    void loadAll({ silent: false })
+    void loadAll()
   }, [loadAll])
 
   const d = dashboard.data
@@ -202,10 +183,13 @@ export function Dashboard() {
         { label: 'Teams importati', value: String(d.teams_total), hint: cov?.teams_imported ? 'Copertura squadre OK' : 'Squadre non ancora importate' },
         { label: 'Fixtures totali', value: String(d.fixtures_total) },
         { label: 'Fixtures concluse', value: String(d.fixtures_completed) },
-        { label: 'Team stats coverage', value: formatPercent(d.team_stats_coverage_pct) },
-        { label: 'SOT feature coverage', value: formatPercent(d.sot_feature_coverage_pct) },
-        { label: 'Prediction coverage', value: formatPercent(d.sot_predictions_coverage_pct) },
-        { label: 'Backtest coverage', value: formatPercent(d.sot_backtest_coverage_pct) },
+        { label: 'Copertura dati (statistiche squadra)', value: formatPercent(d.team_stats_coverage_pct) },
+        { label: 'Dati preparati per il modello (copertura)', value: formatPercent(d.sot_feature_coverage_pct) },
+        { label: 'Previsioni generate (copertura)', value: formatPercent(d.sot_predictions_coverage_pct) },
+        { label: 'Copertura backtest', value: formatPercent(d.sot_backtest_coverage_pct) },
+        { label: 'Partite prossime', value: String(d.upcoming_fixtures_total ?? 0) },
+        { label: 'Feature su partite future', value: String(d.upcoming_sot_feature_rows_total ?? 0) },
+        { label: 'Prediction su partite future', value: String(d.upcoming_sot_predictions_total ?? 0) },
       ]
     : []
 
@@ -215,18 +199,12 @@ export function Dashboard() {
     <div className="min-h-screen bg-[#f4f6f9] pb-12 pt-2">
       <div className="mx-auto max-w-6xl space-y-8 px-4 sm:px-6">
         <header className="pt-4">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Serie A SOT Predictor
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard modello</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Monitoraggio dati, feature, prediction e backtest sui tiri in porta squadra
+            Metriche tecniche: pipeline dati, qualità del modello baseline su partite giocate e backtest
+            numerico.
           </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Stagione {SEASON}
-            {silentBusy ? (
-              <span className="ml-2 text-slate-400">· Aggiornamento in corso…</span>
-            ) : null}
-          </p>
+          <p className="mt-1 text-xs text-slate-500">Stagione {SEASON}</p>
         </header>
 
         {/* Data pipeline */}
@@ -269,7 +247,7 @@ export function Dashboard() {
           ) : null}
           {dashboard.loading && pageInit ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {Array.from({ length: 7 }).map((_, i) => (
+              {Array.from({ length: 10 }).map((_, i) => (
                 <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
                   <SkeletonBlock className="h-3 w-24" />
                   <SkeletonBlock className="mt-3 h-8 w-16" />
@@ -296,7 +274,7 @@ export function Dashboard() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Backtest overview */}
-          <SectionCard title="Backtest · Panoramica">
+          <SectionCard title="Qualità modello (partite giocate)">
             {btSummary.loading && pageInit ? (
               <div className="space-y-3">
                 <SkeletonBlock className="h-20 w-full" />
@@ -307,36 +285,46 @@ export function Dashboard() {
             ) : btSummary.data ? (
               <dl className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-xl bg-slate-50/80 p-3">
-                  <dt className="text-xs font-medium text-slate-500">MAE</dt>
+                  <dt className="text-xs font-medium text-slate-500">Errore medio del modello (MAE)</dt>
                   <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
                     {formatNum(btSummary.data.mae)}
                   </dd>
-                  <p className="mt-1 text-xs text-slate-500">Errore medio assoluto</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    In media, il modello sbaglia di questo numero di tiri in porta per squadra.
+                  </p>
+                  <p className="mt-2 text-xs font-medium text-slate-600">
+                    Interpretazione: {maeQualityLabel(btSummary.data.mae)} (&lt; 1,50 buono · 1,50–2,00
+                    accettabile · &gt; 2,00 da migliorare)
+                  </p>
                 </div>
                 <div className="rounded-xl bg-slate-50/80 p-3">
-                  <dt className="text-xs font-medium text-slate-500">RMSE</dt>
+                  <dt className="text-xs font-medium text-slate-500">
+                    Errore sugli scostamenti grandi (RMSE)
+                  </dt>
                   <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
                     {formatNum(btSummary.data.rmse)}
                   </dd>
-                  <p className="mt-1 text-xs text-slate-500">Penalizza maggiormente gli errori grandi</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Questo valore cresce quando ci sono errori molto grandi su alcune partite.
+                  </p>
                 </div>
                 <div className="rounded-xl bg-slate-50/80 p-3">
-                  <dt className="text-xs font-medium text-slate-500">Avg Expected SOT</dt>
+                  <dt className="text-xs font-medium text-slate-500">Media prevista tiri in porta</dt>
                   <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
                     {formatNum(btSummary.data.avg_expected_sot)}
                   </dd>
                 </div>
                 <div className="rounded-xl bg-slate-50/80 p-3">
-                  <dt className="text-xs font-medium text-slate-500">Avg Actual SOT</dt>
+                  <dt className="text-xs font-medium text-slate-500">Media reale tiri in porta</dt>
                   <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
                     {formatNum(btSummary.data.avg_actual_sot)}
                   </dd>
-                  <p className="mt-1 text-xs text-slate-500 sm:col-span-2">
-                    Confronto tra media prevista e media reale
+                  <p className="mt-1 text-xs text-slate-500">
+                    Confronto tra media prevista e media reale sul campione backtestato.
                   </p>
                 </div>
                 <div className="rounded-xl bg-slate-50/80 p-3 sm:col-span-2">
-                  <dt className="text-xs font-medium text-slate-500">Max Absolute Error</dt>
+                  <dt className="text-xs font-medium text-slate-500">Errore massimo assoluto</dt>
                   <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
                     {formatNum(btSummary.data.max_absolute_error)}
                   </dd>
@@ -370,19 +358,19 @@ export function Dashboard() {
                 </div>
                 <dl className="grid gap-3 sm:grid-cols-3">
                   <div>
-                    <dt className="text-xs text-slate-500">predictions_total</dt>
+                    <dt className="text-xs text-slate-500">Previsioni generate</dt>
                     <dd className="mt-1 text-lg font-semibold tabular-nums">
                       {btSummary.data.predictions_total}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-slate-500">backtests_total</dt>
+                    <dt className="text-xs text-slate-500">Righe backtest</dt>
                     <dd className="mt-1 text-lg font-semibold tabular-nums">
                       {btSummary.data.backtests_total}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-slate-500">coverage_pct</dt>
+                    <dt className="text-xs text-slate-500">Copertura dati (backtest)</dt>
                     <dd className="mt-1 text-lg font-semibold tabular-nums">
                       {formatPercent(btSummary.data.coverage_pct)}
                     </dd>
@@ -390,11 +378,11 @@ export function Dashboard() {
                 </dl>
                 {predSummary.data ? (
                   <p className="text-xs text-slate-500">
-                    Prediction summary: {predSummary.data.predictions_total} predictions · copertura{' '}
+                    Riepilogo prediction: {predSummary.data.predictions_total} previsioni · copertura{' '}
                     {formatPercent(predSummary.data.coverage_pct)}
                   </p>
                 ) : predSummary.error ? (
-                  <p className="text-xs text-amber-800">Prediction summary: {predSummary.error}</p>
+                  <p className="text-xs text-amber-800">Riepilogo prediction: {predSummary.error}</p>
                 ) : null}
               </div>
             ) : null}
@@ -417,9 +405,9 @@ export function Dashboard() {
                     <th className="px-3 py-2 text-right">Expected medio</th>
                     <th className="px-3 py-2 text-right">Actual medio</th>
                     <th className="px-3 py-2 text-right">Diff. media</th>
-                    <th className="px-3 py-2 text-right">MAE</th>
-                    <th className="px-3 py-2 text-right">RMSE</th>
-                    <th className="px-3 py-2 text-right">Max err</th>
+                    <th className="px-3 py-2 text-right">Err. medio</th>
+                    <th className="px-3 py-2 text-right">Err. grandi</th>
+                    <th className="px-3 py-2 text-right">Err. max</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -569,109 +557,13 @@ export function Dashboard() {
           )}
         </SectionCard>
 
-        {/* Admin */}
-        <SectionCard title="Azioni amministrative">
-          <p className="mb-4 text-xs text-slate-500">
-            Le operazioni possono richiedere tempo. Al termine con successo i dati in dashboard vengono
-            ricaricati.
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <button
-              type="button"
-              disabled={adminFeatures.loading}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={async () => {
-                setAdminFeatures({ loading: true, ok: null, msg: null })
-                try {
-                  const out = await runBuildSotFeatures(SEASON)
-                  setAdminFeatures({
-                    loading: false,
-                    ok: true,
-                    msg: adminSuccessMessage(out, 'Feature SOT ricostruite.'),
-                  })
-                  await loadAll({ silent: true })
-                } catch (e) {
-                  setAdminFeatures({
-                    loading: false,
-                    ok: false,
-                    msg: e instanceof Error ? e.message : String(e),
-                  })
-                }
-              }}
-            >
-              {adminFeatures.loading ? 'Caricamento…' : 'Ricostruisci Feature SOT'}
-            </button>
-            <button
-              type="button"
-              disabled={adminPred.loading}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={async () => {
-                setAdminPred({ loading: true, ok: null, msg: null })
-                try {
-                  const out = await runGenerateSotPredictions(SEASON)
-                  setAdminPred({
-                    loading: false,
-                    ok: true,
-                    msg: adminSuccessMessage(out, 'Prediction SOT rigenerate.'),
-                  })
-                  await loadAll({ silent: true })
-                } catch (e) {
-                  setAdminPred({
-                    loading: false,
-                    ok: false,
-                    msg: e instanceof Error ? e.message : String(e),
-                  })
-                }
-              }}
-            >
-              {adminPred.loading ? 'Caricamento…' : 'Rigenera Prediction SOT'}
-            </button>
-            <button
-              type="button"
-              disabled={adminBt.loading}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={async () => {
-                setAdminBt({ loading: true, ok: null, msg: null })
-                try {
-                  const out = await runSotBacktest(SEASON)
-                  setAdminBt({
-                    loading: false,
-                    ok: true,
-                    msg: adminSuccessMessage(out, 'Backtest SOT completato.'),
-                  })
-                  await loadAll({ silent: true })
-                } catch (e) {
-                  setAdminBt({
-                    loading: false,
-                    ok: false,
-                    msg: e instanceof Error ? e.message : String(e),
-                  })
-                }
-              }}
-            >
-              {adminBt.loading ? 'Caricamento…' : 'Rilancia Backtest SOT'}
-            </button>
-          </div>
-          {(adminFeatures.msg || adminPred.msg || adminBt.msg) && (
-            <div className="mt-4 space-y-1 text-sm">
-              {adminFeatures.msg ? (
-                <p className={adminFeatures.ok === false ? 'text-rose-800' : 'text-slate-700'}>
-                  Feature: {adminFeatures.msg}
-                </p>
-              ) : null}
-              {adminPred.msg ? (
-                <p className={adminPred.ok === false ? 'text-rose-800' : 'text-slate-700'}>
-                  Prediction: {adminPred.msg}
-                </p>
-              ) : null}
-              {adminBt.msg ? (
-                <p className={adminBt.ok === false ? 'text-rose-800' : 'text-slate-700'}>
-                  Backtest: {adminBt.msg}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </SectionCard>
+        <p className="text-center text-xs text-slate-500">
+          Azioni di ingestion e rigenerazione: usa la pagina{' '}
+          <Link to="/admin" className="font-medium text-slate-700 underline">
+            Admin
+          </Link>
+          .
+        </p>
       </div>
     </div>
   )

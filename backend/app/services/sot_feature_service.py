@@ -8,12 +8,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.constants import FINISHED_STATUSES, SOT_FEATURE_SET_VERSION
+from app.core.constants import (
+    FINISHED_STATUSES,
+    SOT_FEATURE_SET_VERSION,
+    fixture_eligible_for_upcoming_sot,
+)
 from app.models import Fixture, FixtureTeamStat, League, Season, TeamSotFeature
 from app.services.ingestion_service import IngestionService
 from app.services.sot_feature_math import (
     PriorMatch,
     compute_row_features,
+    fixture_key_before,
     league_avg_sot_from_prior_fixtures,
 )
 
@@ -62,6 +67,232 @@ class SotFeatureService:
             .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
         ).all()
         return season, list(fixtures)
+
+    def _simulate_completed_through_cutoff(
+        self,
+        completed_fixtures: list[Fixture],
+        sot_map: dict[tuple[int, int], int | None],
+        baseline: float,
+        cutoff_kickoff,
+        cutoff_fixture_id: int,
+    ) -> dict[int, list[PriorMatch]]:
+        """Solo partite concluse strettamente precedenti al cutoff (anti-leakage)."""
+        team_history: dict[int, list[PriorMatch]] = {}
+        processed: list[Fixture] = []
+        for f in completed_fixtures:
+            if not fixture_key_before(f.kickoff_at, f.id, cutoff_kickoff, cutoff_fixture_id):
+                continue
+            home_id = f.home_team_id
+            away_id = f.away_team_id
+            kickoff = f.kickoff_at
+            prior_rows: list[tuple[int | None, int | None]] = []
+            for pf in processed:
+                hs = sot_map.get((pf.id, pf.home_team_id))
+                aws = sot_map.get((pf.id, pf.away_team_id))
+                prior_rows.append((hs, aws))
+            _ = league_avg_sot_from_prior_fixtures(prior_rows)
+
+            home_prior = team_history.get(home_id, [])
+            away_prior = team_history.get(away_id, [])
+
+            actual_home = sot_map.get((f.id, home_id))
+            actual_away = sot_map.get((f.id, away_id))
+            home_against = actual_away
+            away_against = actual_home
+            new_home = PriorMatch(
+                kickoff=kickoff,
+                fixture_id=f.id,
+                is_home=True,
+                sot_for=actual_home,
+                sot_against=home_against,
+            )
+            new_away = PriorMatch(
+                kickoff=kickoff,
+                fixture_id=f.id,
+                is_home=False,
+                sot_for=actual_away,
+                sot_against=away_against,
+            )
+            team_history[home_id] = list(home_prior) + [new_home]
+            team_history[away_id] = list(away_prior) + [new_away]
+            processed.append(f)
+        return team_history
+
+    def list_upcoming_fixtures_for_season(self, db: Session, season_id: int) -> list[Fixture]:
+        rows = db.scalars(
+            select(Fixture)
+            .where(Fixture.season_id == season_id)
+            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+        ).all()
+        return [f for f in rows if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)]
+
+    def build_upcoming_features_for_season(self, db: Session, season_year: int) -> dict[str, Any]:
+        """
+        Feature SOT per partite non concluse: solo storico da partite concluse prima della fixture.
+        `actual_sot` null; upsert su (fixture_id, team_id).
+        """
+        settings = get_settings()
+        baseline = settings.sot_feature_fallback_baseline
+
+        summary: dict[str, Any] = {
+            "status": "pending",
+            "season": season_year,
+            "fixtures_upcoming": 0,
+            "feature_rows_created_or_updated": 0,
+            "errors": [],
+        }
+
+        ing = IngestionService()
+        run = ing._begin_run(
+            db,
+            "build_sot_features_upcoming",
+            meta={"season": season_year, "step": "sot_features_upcoming"},
+        )
+
+        try:
+            season, completed = self._season_and_fixtures_with_two_stats(db, season_year)
+        except ValueError as exc:
+            logger.warning("build_upcoming_sot_features: %s", exc)
+            summary["status"] = "error"
+            summary["message"] = str(exc)
+            ing._finish_run(
+                db,
+                run,
+                success=False,
+                records_processed=0,
+                error=str(exc),
+                meta_merge={"summary": summary},
+            )
+            summary["ingestion_run_id"] = run.id
+            return summary
+
+        upcoming = self.list_upcoming_fixtures_for_season(db, season.id)
+        summary["fixtures_upcoming"] = len(upcoming)
+        if not upcoming:
+            summary["status"] = "success"
+            ing._finish_run(db, run, success=True, records_processed=0, meta_merge={"summary": summary})
+            summary["ingestion_run_id"] = run.id
+            return summary
+
+        fixture_ids = [f.id for f in completed]
+        stats = db.scalars(
+            select(FixtureTeamStat).where(FixtureTeamStat.fixture_id.in_(fixture_ids)),
+        ).all()
+        sot_map: dict[tuple[int, int], int | None] = {
+            (s.fixture_id, s.team_id): s.shots_on_target for s in stats
+        }
+
+        rows_written = 0
+        for f in upcoming:
+            home_id = f.home_team_id
+            away_id = f.away_team_id
+            kickoff = f.kickoff_at
+            try:
+                team_history = self._simulate_completed_through_cutoff(
+                    completed,
+                    sot_map,
+                    baseline,
+                    f.kickoff_at,
+                    f.id,
+                )
+                processed: list[Fixture] = [
+                    pf
+                    for pf in completed
+                    if fixture_key_before(pf.kickoff_at, pf.id, f.kickoff_at, f.id)
+                ]
+                prior_rows: list[tuple[int | None, int | None]] = []
+                for pf in processed:
+                    hs = sot_map.get((pf.id, pf.home_team_id))
+                    aws = sot_map.get((pf.id, pf.away_team_id))
+                    prior_rows.append((hs, aws))
+                league_avg = league_avg_sot_from_prior_fixtures(prior_rows)
+
+                home_prior = team_history.get(home_id, [])
+                away_prior = team_history.get(away_id, [])
+
+                feats_home = compute_row_features(
+                    current_kickoff=kickoff,
+                    team_priors=home_prior,
+                    is_home_current=True,
+                    opponent_priors=away_prior,
+                    opponent_is_home_current=False,
+                    league_fallback=league_avg,
+                    baseline=baseline,
+                    actual_sot=None,
+                )
+                feats_away = compute_row_features(
+                    current_kickoff=kickoff,
+                    team_priors=away_prior,
+                    is_home_current=False,
+                    opponent_priors=home_prior,
+                    opponent_is_home_current=True,
+                    league_fallback=league_avg,
+                    baseline=baseline,
+                    actual_sot=None,
+                )
+
+                self._upsert_feature_row(
+                    db,
+                    fixture=f,
+                    team_id=home_id,
+                    opponent_team_id=away_id,
+                    side="home",
+                    feats=feats_home,
+                )
+                self._upsert_feature_row(
+                    db,
+                    fixture=f,
+                    team_id=away_id,
+                    opponent_team_id=home_id,
+                    side="away",
+                    feats=feats_away,
+                )
+                rows_written += 2
+            except Exception as exc:
+                logger.exception(
+                    "build_upcoming_sot_features: fixture_id=%s api_fixture_id=%s",
+                    f.id,
+                    f.api_fixture_id,
+                )
+                summary["errors"].append(
+                    {
+                        "fixture_id": f.id,
+                        "api_fixture_id": int(f.api_fixture_id),
+                        "team_id": None,
+                        "message": str(exc),
+                    },
+                )
+
+        try:
+            db.commit()
+            summary["status"] = "success"
+            summary["feature_rows_created_or_updated"] = rows_written
+            ing._finish_run(
+                db,
+                run,
+                success=True,
+                records_processed=rows_written,
+                meta_merge={"summary": {k: v for k, v in summary.items() if k != "status"}},
+            )
+        except Exception as exc:
+            logger.exception("build_upcoming_sot_features: commit fallito")
+            db.rollback()
+            summary["status"] = "error"
+            summary["message"] = str(exc)
+            try:
+                ing._finish_run(
+                    db,
+                    run,
+                    success=False,
+                    records_processed=rows_written,
+                    error=str(exc),
+                    meta_merge={"summary": {k: v for k, v in summary.items() if k != "status"}},
+                )
+            except Exception:
+                logger.exception("build_upcoming_sot_features: impossibile finalizzare ingestion_run")
+
+        summary["ingestion_run_id"] = run.id
+        return summary
 
     def get_season_summary(self, db: Session, season_year: int) -> dict[str, Any]:
         try:

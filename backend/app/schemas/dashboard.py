@@ -70,5 +70,8 @@ class SerieADashboardResponse(BaseModel):
     sot_backtest_rmse: float
     sot_backtest_avg_expected_sot: float
     sot_backtest_avg_actual_sot: float
+    upcoming_fixtures_total: int = 0
+    upcoming_sot_feature_rows_total: int = 0
+    upcoming_sot_predictions_total: int = 0
     last_ingestion_run: IngestionRunSummary | None
     data_coverage: DataCoverageBlock

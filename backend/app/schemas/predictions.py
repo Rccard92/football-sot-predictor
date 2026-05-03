@@ -95,3 +95,52 @@ class FixturePredictionsResponse(BaseModel):
 class TeamPredictionsResponse(BaseModel):
     team_id: int
     predictions: list[TeamSotPredictionRead]
+
+
+class UpcomingSidePredictionBlock(BaseModel):
+    expected_sot: float
+    confidence_score: int
+    confidence_label: str
+    label: str
+    simple_explanation: str
+    technical_debug: dict[str, Any] = Field(default_factory=dict)
+
+
+class UpcomingMatchTeamBlock(BaseModel):
+    id: int
+    name: str
+    logo_url: str | None = None
+
+
+class UpcomingMatchRow(BaseModel):
+    fixture_id: int
+    api_fixture_id: int
+    round: str | None = None
+    kickoff_at: datetime
+    status_short: str
+    home_team: UpcomingMatchTeamBlock
+    away_team: UpcomingMatchTeamBlock
+    home_prediction: UpcomingSidePredictionBlock | None = None
+    away_prediction: UpcomingSidePredictionBlock | None = None
+
+
+class UpcomingMatchesResponse(BaseModel):
+    season: int
+    round: str | None = None
+    matches_count: int
+    matches: list[UpcomingMatchRow]
+
+
+class EvaluateSotLineBody(BaseModel):
+    expected_sot: float = Field(..., ge=0, le=30)
+    line_value: float = Field(..., ge=0, le=30)
+
+
+class EvaluateSotLineResponse(BaseModel):
+    expected_sot: float
+    line_value: float
+    gap: float
+    suggestion: Literal["over", "under", "no_bet"]
+    strength: Literal["forte", "interessante", "leggero", "neutro"]
+    label: str
+    explanation: str

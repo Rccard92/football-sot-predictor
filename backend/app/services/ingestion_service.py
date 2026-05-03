@@ -19,8 +19,10 @@ from app.models import (
     Player,
     Season,
     Team,
+    TeamSotFeature,
+    TeamSotPrediction,
 )
-from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES
+from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES, fixture_eligible_for_upcoming_sot
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.fixture_team_stats_mapping import apply_parsed_to_row, statistics_list_to_fields
 
@@ -924,6 +926,9 @@ class IngestionService:
             "sot_backtest_rmse": 0.0,
             "sot_backtest_avg_expected_sot": 0.0,
             "sot_backtest_avg_actual_sot": 0.0,
+            "upcoming_fixtures_total": 0,
+            "upcoming_sot_feature_rows_total": 0,
+            "upcoming_sot_predictions_total": 0,
             "last_ingestion_run": None,
             "data_coverage": {
                 "teams_imported": False,
@@ -1016,6 +1021,32 @@ class IngestionService:
         except (ProgrammingError, OperationalError):
             logger.warning("dashboard_serie_a: lettura ingestion_runs fallita", exc_info=True)
 
+        season_fixtures = db.scalars(select(Fixture).where(Fixture.season_id == season_row.id)).all()
+        upcoming_ids = [
+            f.id for f in season_fixtures if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)
+        ]
+        upcoming_fixtures_total = len(upcoming_ids)
+        if not upcoming_ids:
+            upcoming_sot_feature_rows_total = 0
+            upcoming_sot_predictions_total = 0
+        else:
+            upcoming_sot_feature_rows_total = int(
+                db.scalar(
+                    select(func.count()).select_from(TeamSotFeature).where(
+                        TeamSotFeature.fixture_id.in_(upcoming_ids),
+                    ),
+                )
+                or 0,
+            )
+            upcoming_sot_predictions_total = int(
+                db.scalar(
+                    select(func.count()).select_from(TeamSotPrediction).where(
+                        TeamSotPrediction.fixture_id.in_(upcoming_ids),
+                    ),
+                )
+                or 0,
+            )
+
         return {
             "league": league,
             "season": season_row,
@@ -1042,6 +1073,9 @@ class IngestionService:
             "sot_backtest_rmse": float(bt_sum["sot_backtest_rmse"]),
             "sot_backtest_avg_expected_sot": float(bt_sum["sot_backtest_avg_expected_sot"]),
             "sot_backtest_avg_actual_sot": float(bt_sum["sot_backtest_avg_actual_sot"]),
+            "upcoming_fixtures_total": upcoming_fixtures_total,
+            "upcoming_sot_feature_rows_total": upcoming_sot_feature_rows_total,
+            "upcoming_sot_predictions_total": upcoming_sot_predictions_total,
             "last_ingestion_run": last_run,
             "data_coverage": {
                 "teams_imported": teams_imported,

@@ -63,6 +63,9 @@ export type SerieADashboardResponse = {
   sot_backtest_rmse: number
   sot_backtest_avg_expected_sot: number
   sot_backtest_avg_actual_sot: number
+  upcoming_fixtures_total: number
+  upcoming_sot_feature_rows_total: number
+  upcoming_sot_predictions_total: number
   last_ingestion_run: IngestionRunSummary | null
   data_coverage: DataCoverageBlock
 }
@@ -266,4 +269,87 @@ export async function runGenerateSotPredictions(season: number): Promise<unknown
 
 export async function runSotBacktest(season: number): Promise<unknown> {
   return requestPostJson<unknown>(`/api/backtest/sot/serie-a/${season}/run`, {})
+}
+
+export type UpcomingSidePrediction = {
+  expected_sot: number
+  confidence_score: number
+  confidence_label: string
+  label: string
+  simple_explanation: string
+  technical_debug: Record<string, unknown>
+}
+
+export type UpcomingMatchTeam = {
+  id: number
+  name: string
+  logo_url: string | null
+}
+
+export type UpcomingMatchRow = {
+  fixture_id: number
+  api_fixture_id: number
+  round: string | null
+  kickoff_at: string
+  status_short: string
+  home_team: UpcomingMatchTeam
+  away_team: UpcomingMatchTeam
+  home_prediction: UpcomingSidePrediction | null
+  away_prediction: UpcomingSidePrediction | null
+}
+
+export type UpcomingMatchesResponse = {
+  season: number
+  round: string | null
+  matches_count: number
+  matches: UpcomingMatchRow[]
+}
+
+export type EvaluateSotLineResponse = {
+  expected_sot: number
+  line_value: number
+  gap: number
+  suggestion: 'over' | 'under' | 'no_bet'
+  strength: 'forte' | 'interessante' | 'leggero' | 'neutro'
+  label: string
+  explanation: string
+}
+
+export async function getUpcomingPredictions(
+  season: number,
+  opts?: { limit?: number; onlyNextRound?: boolean; round?: string },
+): Promise<UpcomingMatchesResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  if (opts?.round) p.set('round', opts.round)
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/upcoming${q ? `?${q}` : ''}`
+  return requestJson<UpcomingMatchesResponse>(path)
+}
+
+export async function buildUpcomingSotFeatures(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/features/sot/serie-a/${season}/build-upcoming`, {})
+}
+
+export async function generateUpcomingSotPredictions(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {})
+}
+
+export async function evaluateSotLine(
+  expectedSot: number,
+  lineValue: number,
+): Promise<EvaluateSotLineResponse> {
+  return requestPostJson<EvaluateSotLineResponse>('/api/predictions/sot/evaluate-line', {
+    expected_sot: expectedSot,
+    line_value: lineValue,
+  })
+}
+
+export async function adminBootstrapSerieA(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/bootstrap`, {})
+}
+
+export async function adminIngestTeamStats(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/team-stats`, {})
 }

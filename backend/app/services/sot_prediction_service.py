@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.constants import BASELINE_SOT_MODEL_VERSION
+from app.core.constants import BASELINE_SOT_MODEL_VERSION, FINISHED_STATUSES
 from app.models import Fixture, League, Season, Team, TeamSotFeature, TeamSotPrediction
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,62 @@ EXPLANATION_BASELINE_IT = (
     "Previsione basata su media stagionale tiri in porta, rendimento casa/fuori, "
     "forma recente e tiri concessi dall'avversario."
 )
+
+
+def production_label_from_expected(expected_sot: float) -> str:
+    if expected_sot >= 5.0:
+        return "Produzione alta"
+    if expected_sot >= 3.5:
+        return "Produzione media"
+    return "Produzione bassa"
+
+
+def confidence_word_from_score(score: int) -> str:
+    if score >= 80:
+        return "Alta"
+    if score >= 60:
+        return "Media"
+    return "Bassa"
+
+
+def simple_explanation_for_row(fr: TeamSotFeature, expected_sot: float) -> str:
+    """Testo breve comprensibile (non sostituisce il disclaimer scientifico)."""
+    parts: list[str] = []
+    lf = _num_to_float(fr.last5_avg_sot_for)
+    sf = _num_to_float(fr.season_avg_sot_for)
+    if lf is not None and sf is not None and lf > sf + 0.15:
+        parts.append("Negli ultimi match la squadra ha tirato di più in porta rispetto alla media stagionale.")
+    elif lf is not None and sf is not None and lf < sf - 0.15:
+        parts.append("La forma recente in attacco è sotto la media stagionale.")
+
+    oc = _num_to_float(fr.opponent_last5_avg_sot_conceded)
+    ocs = _num_to_float(fr.opponent_season_avg_sot_conceded)
+    if oc is not None and ocs is not None and oc > ocs + 0.15:
+        parts.append("L'avversario ha concesso più tiri in porta nelle ultime uscite.")
+    elif oc is not None and ocs is not None and oc < ocs - 0.15:
+        parts.append("L'avversario ha difeso meglio i tiri in porta di recente.")
+
+    if fr.fallback_used:
+        parts.append("Dati parziali: alcune medie usano valori di lega prudenziali.")
+
+    if not parts:
+        parts.append(
+            "Stima basata su andamento stagionale, rendimento casa/fuori e confronto con le medie concesse dall'avversario.",
+        )
+    parts.append(f"Attesi circa {expected_sot:.1f} tiri in porta squadra.")
+    return " ".join(parts)
+
+
+def technical_debug_from_feature_row(fr: TeamSotFeature) -> dict[str, Any]:
+    return {
+        "season_avg_sot_for": _num_to_float(fr.season_avg_sot_for),
+        "home_away_avg_sot_for": _num_to_float(fr.home_away_avg_sot_for),
+        "last5_avg_sot_for": _num_to_float(fr.last5_avg_sot_for),
+        "opponent_season_avg_sot_conceded": _num_to_float(fr.opponent_season_avg_sot_conceded),
+        "opponent_last5_avg_sot_conceded": _num_to_float(fr.opponent_last5_avg_sot_conceded),
+        "previous_matches_count": fr.previous_matches_count,
+        "fallback_used": bool(fr.fallback_used),
+    }
 
 
 def _num_to_float(v: Any) -> float | None:
@@ -418,6 +474,282 @@ class SotPredictionService:
         out.sort(key=lambda x: (0 if x["side"] == "home" else 1, x["team_id"]))
         return out
 
+    def generate_upcoming_predictions_for_season(
+        self,
+        db: Session,
+        season_year: int,
+        model_version: str | None = None,
+    ) -> dict[str, Any]:
+        from app.services.ingestion_service import IngestionService
+        from app.services.sot_feature_service import SotFeatureService
+
+        mv = model_version or BASELINE_SOT_MODEL_VERSION
+        summary: dict[str, Any] = {
+            "status": "pending",
+            "season": season_year,
+            "model_version": mv,
+            "upcoming_fixtures": 0,
+            "predictions_created_or_updated": 0,
+            "errors": [],
+        }
+
+        ing = IngestionService()
+        run = ing._begin_run(
+            db,
+            "generate_sot_predictions_upcoming",
+            meta={"season": season_year, "model_version": mv},
+        )
+
+        try:
+            _league, season = self._season_row(db, season_year)
+        except ValueError as exc:
+            logger.warning("generate_upcoming_predictions: %s", exc)
+            summary["status"] = "error"
+            summary["message"] = str(exc)
+            ing._finish_run(
+                db,
+                run,
+                success=False,
+                records_processed=0,
+                error=str(exc),
+                meta_merge={"summary": summary},
+            )
+            summary["ingestion_run_id"] = run.id
+            return summary
+
+        feat_svc = SotFeatureService()
+        upcoming_fixtures = feat_svc.list_upcoming_fixtures_for_season(db, season.id)
+        upcoming_ids = {f.id for f in upcoming_fixtures}
+        summary["upcoming_fixtures"] = len(upcoming_ids)
+
+        if not upcoming_ids:
+            summary["status"] = "success"
+            ing._finish_run(db, run, success=True, records_processed=0, meta_merge={"summary": summary})
+            summary["ingestion_run_id"] = run.id
+            return summary
+
+        completed_features = db.scalars(
+            select(TeamSotFeature)
+            .join(Fixture, Fixture.id == TeamSotFeature.fixture_id)
+            .where(Fixture.season_id == season.id, Fixture.status.in_(FINISHED_STATUSES))
+            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc(), TeamSotFeature.team_id.asc()),
+        ).all()
+
+        prior_season_avgs: list[float] = []
+        for fr in completed_features:
+            v = _num_to_float(fr.season_avg_sot_for)
+            if v is not None:
+                prior_season_avgs.append(v)
+
+        upcoming_features = [
+            fr for fr in self._feature_rows_for_season(db, season.id) if fr.fixture_id in upcoming_ids
+        ]
+
+        n_ok = 0
+        for fr in upcoming_features:
+            try:
+                league_pre = (
+                    sum(prior_season_avgs) / len(prior_season_avgs) if prior_season_avgs else None
+                )
+                feats = self.feature_dict_from_orm(fr)
+                resolved = self._resolved_inputs_dict(feats, league_pre)
+                expected = self.expected_sot_resolved(feats, league_pre)
+                conf = confidence_score_from_feature_row(fr)
+                simple = simple_explanation_for_row(fr, expected)
+                raw = self.build_raw_json(
+                    features=feats,
+                    resolved_inputs=resolved,
+                    expected=expected,
+                    confidence=conf,
+                    explanation=simple,
+                    line_value=None,
+                )
+                self._upsert_prediction(
+                    db,
+                    fixture_id=fr.fixture_id,
+                    team_id=fr.team_id,
+                    predicted=expected,
+                    raw_json=raw,
+                    actual_sot=None,
+                    confidence_score=conf,
+                    explanation=simple,
+                    line_value=None,
+                    over_probability=None,
+                    under_probability=None,
+                    recommendation="not_evaluated",
+                    model_version=mv,
+                )
+                n_ok += 1
+                s_avg = _num_to_float(fr.season_avg_sot_for)
+                if s_avg is not None:
+                    prior_season_avgs.append(s_avg)
+            except Exception as exc:
+                logger.exception(
+                    "generate_upcoming_predictions: feature_id=%s fixture_id=%s team_id=%s",
+                    fr.id,
+                    fr.fixture_id,
+                    fr.team_id,
+                )
+                summary["errors"].append(
+                    {
+                        "feature_id": fr.id,
+                        "fixture_id": fr.fixture_id,
+                        "team_id": fr.team_id,
+                        "message": str(exc),
+                    },
+                )
+
+        try:
+            db.commit()
+            summary["status"] = "success"
+            summary["predictions_created_or_updated"] = n_ok
+            ing._finish_run(
+                db,
+                run,
+                success=True,
+                records_processed=n_ok,
+                meta_merge={"summary": {k: v for k, v in summary.items() if k != "status"}},
+            )
+        except Exception as exc:
+            logger.exception("generate_upcoming_predictions: commit fallito")
+            db.rollback()
+            summary["status"] = "error"
+            summary["message"] = str(exc)
+            try:
+                ing._finish_run(
+                    db,
+                    run,
+                    success=False,
+                    records_processed=n_ok,
+                    error=str(exc),
+                    meta_merge={"summary": {k: v for k, v in summary.items() if k != "status"}},
+                )
+            except Exception:
+                logger.exception("generate_upcoming_predictions: impossibile finalizzare ingestion_run")
+
+        summary["ingestion_run_id"] = run.id
+        return summary
+
+    def get_serie_a_upcoming_matches(
+        self,
+        db: Session,
+        season_year: int,
+        *,
+        limit: int = 20,
+        round_filter: str | None = None,
+        only_next_round: bool = True,
+        model_version: str | None = None,
+    ) -> dict[str, Any]:
+        from app.services.sot_feature_service import SotFeatureService
+
+        mv = model_version or self.model_version
+        try:
+            _league, season = self._season_row(db, season_year)
+        except ValueError:
+            return {
+                "season": season_year,
+                "round": None,
+                "matches_count": 0,
+                "matches": [],
+            }
+
+        feat_svc = SotFeatureService()
+        upcoming = feat_svc.list_upcoming_fixtures_for_season(db, season.id)
+        if round_filter is not None and round_filter != "":
+            upcoming = [f for f in upcoming if (f.round or "") == round_filter]
+        if only_next_round and upcoming:
+            r0 = upcoming[0].round
+            if r0:
+                upcoming = [f for f in upcoming if f.round == r0]
+            else:
+                d0 = upcoming[0].kickoff_at.date()
+                upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
+        upcoming = upcoming[: max(1, min(limit, 100))]
+
+        round_label = upcoming[0].round if upcoming else None
+        matches: list[dict[str, Any]] = []
+
+        for fx in upcoming:
+            home = db.get(Team, fx.home_team_id)
+            away = db.get(Team, fx.away_team_id)
+            fh = db.scalar(
+                select(TeamSotFeature).where(
+                    TeamSotFeature.fixture_id == fx.id,
+                    TeamSotFeature.team_id == fx.home_team_id,
+                ),
+            )
+            fa = db.scalar(
+                select(TeamSotFeature).where(
+                    TeamSotFeature.fixture_id == fx.id,
+                    TeamSotFeature.team_id == fx.away_team_id,
+                ),
+            )
+            ph = db.scalar(
+                select(TeamSotPrediction).where(
+                    TeamSotPrediction.fixture_id == fx.id,
+                    TeamSotPrediction.team_id == fx.home_team_id,
+                    TeamSotPrediction.model_version == mv,
+                ),
+            )
+            pa = db.scalar(
+                select(TeamSotPrediction).where(
+                    TeamSotPrediction.fixture_id == fx.id,
+                    TeamSotPrediction.team_id == fx.away_team_id,
+                    TeamSotPrediction.model_version == mv,
+                ),
+            )
+
+            def side_pred(
+                feat: TeamSotFeature | None,
+                pred: TeamSotPrediction | None,
+            ) -> dict[str, Any] | None:
+                if pred is None or pred.predicted_sot is None:
+                    return None
+                exp = float(pred.predicted_sot)
+                conf = int(pred.confidence_score or 0)
+                expl = (
+                    simple_explanation_for_row(feat, exp)
+                    if feat is not None
+                    else (pred.explanation or EXPLANATION_BASELINE_IT)
+                )
+                return {
+                    "expected_sot": exp,
+                    "confidence_score": conf,
+                    "confidence_label": confidence_word_from_score(conf),
+                    "label": production_label_from_expected(exp),
+                    "simple_explanation": expl,
+                    "technical_debug": technical_debug_from_feature_row(feat) if feat is not None else {},
+                }
+
+            matches.append(
+                {
+                    "fixture_id": fx.id,
+                    "api_fixture_id": int(fx.api_fixture_id),
+                    "round": fx.round,
+                    "kickoff_at": fx.kickoff_at,
+                    "status_short": fx.status,
+                    "home_team": {
+                        "id": fx.home_team_id,
+                        "name": home.name if home else "",
+                        "logo_url": home.logo_url if home else None,
+                    },
+                    "away_team": {
+                        "id": fx.away_team_id,
+                        "name": away.name if away else "",
+                        "logo_url": away.logo_url if away else None,
+                    },
+                    "home_prediction": side_pred(fh, ph),
+                    "away_prediction": side_pred(fa, pa),
+                },
+            )
+
+        return {
+            "season": season_year,
+            "round": round_label,
+            "matches_count": len(matches),
+            "matches": matches,
+        }
+
     def _upsert_prediction(
         self,
         db: Session,
@@ -433,19 +765,21 @@ class SotPredictionService:
         over_probability: float | None,
         under_probability: float | None,
         recommendation: str | None,
+        model_version: str | None = None,
     ) -> None:
+        mv = model_version or self.model_version
         row = db.scalar(
             select(TeamSotPrediction).where(
                 TeamSotPrediction.fixture_id == fixture_id,
                 TeamSotPrediction.team_id == team_id,
-                TeamSotPrediction.model_version == self.model_version,
+                TeamSotPrediction.model_version == mv,
             ),
         )
         if row is None:
             row = TeamSotPrediction(
                 fixture_id=fixture_id,
                 team_id=team_id,
-                model_version=self.model_version,
+                model_version=mv,
                 predicted_sot=predicted,
                 actual_sot=actual_sot,
                 confidence_score=confidence_score,

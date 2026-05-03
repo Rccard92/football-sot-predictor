@@ -39,6 +39,26 @@ def build_serie_a_sot_features(season: int, db: Session = Depends(get_db)):
     return jsonable_encoder(summary)
 
 
+@router.post("/serie-a/{season}/build-upcoming", response_model=None)
+def build_serie_a_sot_features_upcoming(season: int, db: Session = Depends(get_db)):
+    svc = SotFeatureService()
+    try:
+        summary = svc.build_upcoming_features_for_season(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST build_sot_features_upcoming: errore database")
+        raise HTTPException(
+            status_code=503,
+            detail="Database non disponibile o schema non aggiornato. Eseguire alembic upgrade head.",
+        ) from exc
+
+    if summary.get("status") == "error" and summary.get("feature_rows_created_or_updated", 0) == 0:
+        return JSONResponse(
+            status_code=502,
+            content=jsonable_encoder(summary),
+        )
+    return jsonable_encoder(summary)
+
+
 @router.get("/serie-a/{season}/summary", response_model=SotFeatureSeasonSummaryResponse)
 def sot_features_season_summary(season: int, db: Session = Depends(get_db)) -> SotFeatureSeasonSummaryResponse:
     svc = SotFeatureService()

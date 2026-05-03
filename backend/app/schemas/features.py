@@ -64,3 +64,20 @@ class SotFeatureSeasonSummaryResponse(BaseModel):
 class SotFixtureFeaturesResponse(BaseModel):
     fixture_id: int
     rows: list[TeamSotFeatureRead]
+
+
+class SotFeatureUpcomingBuildErrorItem(BaseModel):
+    fixture_id: int
+    api_fixture_id: int
+    team_id: int | None = None
+    message: str
+
+
+class SotFeatureUpcomingBuildResponse(BaseModel):
+    status: Literal["pending", "success", "error"]
+    season: int
+    fixtures_upcoming: int = 0
+    feature_rows_created_or_updated: int = 0
+    errors: list[SotFeatureUpcomingBuildErrorItem] = Field(default_factory=list)
+    ingestion_run_id: int | None = None
+    message: str | None = None
