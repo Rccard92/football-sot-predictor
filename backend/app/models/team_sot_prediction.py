@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import BigInteger, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,6 +34,13 @@ class TeamSotPrediction(Base, TimestampMixin):
     )
     model_version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     predicted_sot: Mapped[float | None] = mapped_column(Float, nullable=True)
+    actual_sot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confidence_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    line_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    over_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    under_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recommendation: Mapped[str | None] = mapped_column(String(32), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     fixture = relationship("Fixture", back_populates="team_sot_predictions")

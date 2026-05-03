@@ -912,6 +912,11 @@ class IngestionService:
             "sot_feature_rows_total": 0,
             "sot_feature_expected_rows": 0,
             "sot_feature_coverage_pct": 0.0,
+            "sot_predictions_total": 0,
+            "sot_predictions_expected": 0,
+            "sot_predictions_coverage_pct": 0.0,
+            "avg_expected_sot": 0.0,
+            "avg_prediction_confidence": 0.0,
             "last_ingestion_run": None,
             "data_coverage": {
                 "teams_imported": False,
@@ -985,6 +990,10 @@ class IngestionService:
 
         sot_sum = SotFeatureService().get_season_summary(db, season)
 
+        from app.services.sot_prediction_service import SotPredictionService
+
+        pred_sum = SotPredictionService().get_season_predictions_summary(db, season)
+
         last_run = None
         try:
             last_run = db.scalar(
@@ -1010,6 +1019,11 @@ class IngestionService:
             "sot_feature_rows_total": sot_sum["feature_rows_total"],
             "sot_feature_expected_rows": sot_sum["expected_feature_rows"],
             "sot_feature_coverage_pct": float(sot_sum["coverage_pct"]),
+            "sot_predictions_total": pred_sum["predictions_total"],
+            "sot_predictions_expected": pred_sum["feature_rows_total"],
+            "sot_predictions_coverage_pct": float(pred_sum["coverage_pct"]),
+            "avg_expected_sot": float(pred_sum["avg_expected_sot"]),
+            "avg_prediction_confidence": float(pred_sum["avg_confidence_score"]),
             "last_ingestion_run": last_run,
             "data_coverage": {
                 "teams_imported": teams_imported,
