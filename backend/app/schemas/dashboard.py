@@ -19,15 +19,38 @@ class IngestionRunSummary(BaseModel):
     updated_at: datetime
 
 
+class LeagueDashboardBlock(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    api_league_id: int
+    name: str
+    country: str | None
+    logo_url: str | None
+
+
+class SeasonDashboardBlock(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    league_id: int
+    year: int
+    label: str | None
+    is_current: bool
+
+
+class DataCoverageBlock(BaseModel):
+    teams_imported: bool
+    fixtures_imported: bool
+
+
 class SerieADashboardResponse(BaseModel):
-    season: int
-    league_api_id: int
+    league: LeagueDashboardBlock
+    season: SeasonDashboardBlock
+    teams_total: int
     fixtures_total: int
     fixtures_completed: int
-    fixtures_with_team_stats: int
-    fixtures_with_player_stats: int
-    fixtures_with_lineups: int
-    coverage_team_stats_pct: float
-    coverage_player_stats_pct: float
-    coverage_lineups_pct: float
+    fixtures_scheduled: int
+    fixtures_live_or_unknown: int
     last_ingestion_run: IngestionRunSummary | None
+    data_coverage: DataCoverageBlock

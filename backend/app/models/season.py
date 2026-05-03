@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,8 @@ class Season(Base, TimestampMixin):
         index=True,
     )
     year: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     league = relationship("League", back_populates="seasons")

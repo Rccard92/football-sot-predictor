@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import BigInteger, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,7 +15,13 @@ class Team(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     api_team_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    founded: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    national: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    venue_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    venue_city: Mapped[str | None] = mapped_column(String(128), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     players = relationship("Player", back_populates="team")

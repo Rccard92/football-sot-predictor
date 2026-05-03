@@ -4,9 +4,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union_all, update
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import (
     Fixture,
     FixtureLineup,
@@ -18,7 +19,7 @@ from app.models import (
     Season,
     Team,
 )
-from app.core.constants import FINISHED_STATUSES
+from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ class IngestionService:
         success: bool,
         records_processed: int,
         error: str | None = None,
+        meta_merge: dict[str, Any] | None = None,
     ) -> IngestionRun:
         row = db.get(IngestionRun, run.id)
         if row is None:
@@ -109,32 +111,104 @@ class IngestionService:
         row.records_processed = records_processed
         row.error_message = (error[:10000] if error else None)
         row.completed_at = _utcnow()
+        if meta_merge:
+            base = dict(row.meta or {})
+            base.update(meta_merge)
+            row.meta = base
         db.add(row)
         db.commit()
         db.refresh(row)
         return row
 
+    def _serie_a_league_by_settings(self, db: Session) -> League:
+        settings = get_settings()
+        league = db.scalar(select(League).where(League.api_league_id == settings.default_league_id))
+        if league is None:
+            raise ValueError(
+                f"Lega api_league_id={settings.default_league_id} non presente: eseguire prima il bootstrap.",
+            )
+        return league
+
     def _serie_a_season_row(self, db: Session, season_year: int) -> Season:
+        league = self._serie_a_league_by_settings(db)
         season_row = db.scalar(
-            select(Season)
-            .join(League, League.id == Season.league_id)
-            .where(
-                Season.year == season_year,
-                League.name == self.SERIE_A_LEAGUE_NAME,
-            ),
+            select(Season).where(Season.league_id == league.id, Season.year == season_year),
         )
         if season_row is None:
             raise ValueError(
-                f"Stagione {season_year} non trovata per {self.SERIE_A_LEAGUE_NAME}: eseguire prima il bootstrap.",
+                f"Stagione {season_year} non trovata per la lega configurata: eseguire prima il bootstrap.",
             )
         return season_row
 
     def _serie_a_league_row(self, db: Session, season_year: int) -> League:
-        season_row = self._serie_a_season_row(db, season_year)
-        league = db.get(League, season_row.league_id)
+        _ = self._serie_a_season_row(db, season_year)
+        return self._serie_a_league_by_settings(db)
+
+    def _fetch_leagues_picked(self, season: int) -> dict[str, Any]:
+        settings = get_settings()
+        body = self._client.get("leagues", {"id": settings.default_league_id, "season": season})
+        items = list(body.get("response") or [])
+        if not items:
+            raise ApiFootballError("Nessuna lega nella risposta API")
+        return items[0]
+
+    def _upsert_league_from_picked(self, db: Session, picked: dict[str, Any]) -> League:
+        lg = picked.get("league") or {}
+        country_name = (picked.get("country") or {}).get("name")
+        api_league_id = int(lg["id"])
+        logo = lg.get("logo")
+        logo_url = str(logo) if logo else None
+        league = db.scalar(select(League).where(League.api_league_id == api_league_id))
         if league is None:
-            raise ValueError("League non trovata")
+            league = League(
+                api_league_id=api_league_id,
+                name=str(lg.get("name") or self.SERIE_A_LEAGUE_NAME),
+                country=country_name,
+                logo_url=logo_url,
+                raw_json=picked,
+            )
+            db.add(league)
+            db.flush()
+        else:
+            league.name = str(lg.get("name") or league.name)
+            league.country = country_name or league.country
+            league.logo_url = logo_url or league.logo_url
+            league.raw_json = picked
         return league
+
+    def _upsert_season_from_picked(
+        self,
+        db: Session,
+        league: League,
+        picked: dict[str, Any],
+        season: int,
+    ) -> None:
+        settings = get_settings()
+        seasons = picked.get("seasons") or []
+        season_entry: dict[str, Any] | None = None
+        for s in seasons:
+            if isinstance(s, dict) and s.get("year") == season:
+                season_entry = s
+                break
+        if season_entry is None and seasons and isinstance(seasons[0], dict):
+            season_entry = seasons[0]
+        label = f"{season}/{season + 1}"
+        is_current = season == settings.default_season
+        db.execute(update(Season).where(Season.league_id == league.id).values(is_current=False))
+        season_row = db.scalar(select(Season).where(Season.league_id == league.id, Season.year == season))
+        if season_row is None:
+            season_row = Season(
+                league_id=league.id,
+                year=season,
+                label=label,
+                is_current=is_current,
+                raw_json=season_entry or {},
+            )
+            db.add(season_row)
+        else:
+            season_row.label = label
+            season_row.is_current = is_current
+            season_row.raw_json = season_entry or picked
 
     def sync_serie_a_league(self, db: Session, season: int = 2025) -> IngestionRun:
         run = self._begin_run(
@@ -143,46 +217,9 @@ class IngestionService:
             meta={"season": season, "country": self.SERIE_A_COUNTRY},
         )
         try:
-            items = self._client.get_league(self.SERIE_A_COUNTRY, self.SERIE_A_LEAGUE_NAME, season)
-            picked: dict[str, Any] | None = None
-            for it in items:
-                lg = it.get("league") or {}
-                if (lg.get("name") or "").strip() == self.SERIE_A_LEAGUE_NAME:
-                    picked = it
-                    break
-            if picked is None and items:
-                picked = items[0]
-            if picked is None:
-                raise ApiFootballError("Nessuna lega trovata dalla API")
-
-            lg = picked["league"]
-            country_name = (picked.get("country") or {}).get("name")
-            api_league_id = int(lg["id"])
-
-            league = db.scalar(select(League).where(League.api_league_id == api_league_id))
-            if league is None:
-                league = League(
-                    api_league_id=api_league_id,
-                    name=str(lg.get("name") or self.SERIE_A_LEAGUE_NAME),
-                    country=country_name,
-                    raw_json=picked,
-                )
-                db.add(league)
-                db.flush()
-            else:
-                league.name = str(lg.get("name") or league.name)
-                league.country = country_name or league.country
-                league.raw_json = picked
-
-            season_row = db.scalar(
-                select(Season).where(Season.league_id == league.id, Season.year == season),
-            )
-            if season_row is None:
-                season_row = Season(league_id=league.id, year=season, raw_json={"season": season})
-                db.add(season_row)
-            else:
-                season_row.raw_json = {**(season_row.raw_json or {}), "season": season}
-
+            picked = self._fetch_leagues_picked(season)
+            league = self._upsert_league_from_picked(db, picked)
+            self._upsert_season_from_picked(db, league, picked, season)
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=1)
         except Exception as exc:
@@ -196,6 +233,246 @@ class IngestionService:
                 error=str(exc),
             )
 
+    def bootstrap_sync_league(self, db: Session, season: int) -> IngestionRun:
+        settings = get_settings()
+        run = self._begin_run(
+            db,
+            "serie_a_bootstrap",
+            meta={
+                "step": "sync_league",
+                "season": season,
+                "api_league_id": settings.default_league_id,
+            },
+        )
+        try:
+            picked = self._fetch_leagues_picked(season)
+            self._upsert_league_from_picked(db, picked)
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=1)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_league failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def bootstrap_sync_season(self, db: Session, season: int) -> IngestionRun:
+        settings = get_settings()
+        run = self._begin_run(
+            db,
+            "serie_a_bootstrap",
+            meta={
+                "step": "sync_season",
+                "season": season,
+                "api_league_id": settings.default_league_id,
+            },
+        )
+        try:
+            league = self._serie_a_league_by_settings(db)
+            picked = self._fetch_leagues_picked(season)
+            self._upsert_season_from_picked(db, league, picked, season)
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=1)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_season failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def bootstrap_sync_teams(self, db: Session, season: int) -> IngestionRun:
+        settings = get_settings()
+        run = self._begin_run(
+            db,
+            "serie_a_bootstrap",
+            meta={
+                "step": "sync_teams",
+                "season": season,
+                "api_league_id": settings.default_league_id,
+            },
+        )
+        try:
+            league = self._serie_a_league_by_settings(db)
+            items = self._client.get_teams(league.api_league_id, season)
+            n = 0
+            for item in items:
+                self._upsert_team_from_api_item(db, item)
+                n += 1
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=n)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_teams failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def bootstrap_sync_fixtures(self, db: Session, season: int) -> IngestionRun:
+        settings = get_settings()
+        run = self._begin_run(
+            db,
+            "serie_a_bootstrap",
+            meta={
+                "step": "sync_fixtures",
+                "season": season,
+                "api_league_id": settings.default_league_id,
+            },
+        )
+        try:
+            league = self._serie_a_league_by_settings(db)
+            season_row = self._serie_a_season_row(db, season)
+            items = self._client.get_fixtures(league.api_league_id, season, status=None)
+            n = 0
+            for item in items:
+                if self._upsert_fixture_from_api_item(db, league, season_row, item):
+                    n += 1
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=n)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_fixtures failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def bootstrap_serie_a_admin(self, db: Session, season: int) -> list[IngestionRun]:
+        steps = [
+            self.bootstrap_sync_league,
+            self.bootstrap_sync_season,
+            self.bootstrap_sync_teams,
+            self.bootstrap_sync_fixtures,
+        ]
+        runs: list[IngestionRun] = []
+        for fn in steps:
+            run = fn(db, season)
+            runs.append(run)
+            if run.status == "failed":
+                break
+        return runs
+
+    def _upsert_team_from_api_item(self, db: Session, item: dict[str, Any]) -> None:
+        t = item.get("team") or {}
+        v = item.get("venue") or {}
+        api_team_id = int(t["id"])
+        name = str(t.get("name") or "")
+        logo = t.get("logo")
+        logo_url = str(logo) if logo else None
+        code_raw = t.get("code")
+        code = str(code_raw).strip()[:16] if code_raw else None
+        country_raw = t.get("country")
+        country = str(country_raw) if country_raw else None
+        founded = _parse_int(t.get("founded"))
+        national = bool(t.get("national")) if t.get("national") is not None else False
+        venue_name_raw = v.get("name")
+        venue_name = str(venue_name_raw)[:255] if venue_name_raw else None
+        venue_city_raw = v.get("city")
+        venue_city = str(venue_city_raw)[:128] if venue_city_raw else None
+        team = db.scalar(select(Team).where(Team.api_team_id == api_team_id))
+        if team is None:
+            team = Team(
+                api_team_id=api_team_id,
+                name=name,
+                code=code,
+                country=country,
+                founded=founded,
+                national=national,
+                logo_url=logo_url,
+                venue_name=venue_name,
+                venue_city=venue_city,
+                raw_json=item,
+            )
+            db.add(team)
+        else:
+            team.name = name or team.name
+            team.code = code or team.code
+            team.country = country or team.country
+            team.founded = founded if founded is not None else team.founded
+            team.national = national
+            team.logo_url = logo_url or team.logo_url
+            team.venue_name = venue_name or team.venue_name
+            team.venue_city = venue_city or team.venue_city
+            team.raw_json = item
+
+    def _upsert_fixture_from_api_item(
+        self,
+        db: Session,
+        league: League,
+        season_row: Season,
+        item: dict[str, Any],
+    ) -> bool:
+        fx = item.get("fixture") or {}
+        teams = item.get("teams") or {}
+        goals = item.get("goals") or {}
+        venue_fx = fx.get("venue") or {}
+        api_fixture_id = int(fx["id"])
+        status_obj = fx.get("status") or {}
+        status_short = str(status_obj.get("short") or "NS")
+        status_long_raw = status_obj.get("long")
+        status_long = str(status_long_raw)[:128] if status_long_raw else None
+        elapsed = _parse_int(status_obj.get("elapsed"))
+        kickoff_at = _parse_dt(fx.get("date"))
+        home_api = int((teams.get("home") or {})["id"])
+        away_api = int((teams.get("away") or {})["id"])
+        round_raw = fx.get("round")
+        round_str = str(round_raw)[:64] if round_raw is not None else None
+        referee_raw = fx.get("referee")
+        referee = str(referee_raw)[:255] if referee_raw else None
+        tz_raw = fx.get("timezone")
+        timezone_str = str(tz_raw)[:64] if tz_raw else None
+        vn_raw = venue_fx.get("name")
+        venue_name = str(vn_raw)[:255] if vn_raw else None
+        vc_raw = venue_fx.get("city")
+        venue_city = str(vc_raw)[:128] if vc_raw else None
+
+        home_team = db.scalar(select(Team).where(Team.api_team_id == home_api))
+        away_team = db.scalar(select(Team).where(Team.api_team_id == away_api))
+        if home_team is None or away_team is None:
+            logger.warning(
+                "Fixture %s saltata: team mancante in DB (home=%s away=%s)",
+                api_fixture_id,
+                home_api,
+                away_api,
+            )
+            return False
+
+        gh = goals.get("home")
+        ga = goals.get("away")
+        goals_home = _parse_int(gh)
+        goals_away = _parse_int(ga)
+
+        row = db.scalar(select(Fixture).where(Fixture.api_fixture_id == api_fixture_id))
+        if row is None:
+            row = Fixture(
+                api_fixture_id=api_fixture_id,
+                league_id=league.id,
+                season_id=season_row.id,
+                home_team_id=home_team.id,
+                away_team_id=away_team.id,
+                round=round_str,
+                referee=referee,
+                timezone=timezone_str,
+                kickoff_at=kickoff_at,
+                status=status_short,
+                status_long=status_long,
+                elapsed=elapsed,
+                goals_home=goals_home,
+                goals_away=goals_away,
+                venue_name=venue_name,
+                venue_city=venue_city,
+                raw_json=item,
+            )
+            db.add(row)
+        else:
+            row.league_id = league.id
+            row.season_id = season_row.id
+            row.home_team_id = home_team.id
+            row.away_team_id = away_team.id
+            row.round = round_str
+            row.referee = referee
+            row.timezone = timezone_str
+            row.kickoff_at = kickoff_at
+            row.status = status_short
+            row.status_long = status_long
+            row.elapsed = elapsed
+            row.goals_home = goals_home
+            row.goals_away = goals_away
+            row.venue_name = venue_name
+            row.venue_city = venue_city
+            row.raw_json = item
+        return True
+
     def sync_serie_a_teams(self, db: Session, season: int = 2025) -> IngestionRun:
         run = self._begin_run(db, "sync_serie_a_teams", meta={"season": season})
         try:
@@ -203,24 +480,7 @@ class IngestionService:
             items = self._client.get_teams(league.api_league_id, season)
             n = 0
             for item in items:
-                t = item.get("team") or {}
-                api_team_id = int(t["id"])
-                name = str(t.get("name") or "")
-                logo = t.get("logo")
-                logo_url = str(logo) if logo else None
-                team = db.scalar(select(Team).where(Team.api_team_id == api_team_id))
-                if team is None:
-                    team = Team(
-                        api_team_id=api_team_id,
-                        name=name,
-                        logo_url=logo_url,
-                        raw_json=item,
-                    )
-                    db.add(team)
-                else:
-                    team.name = name or team.name
-                    team.logo_url = logo_url or team.logo_url
-                    team.raw_json = item
+                self._upsert_team_from_api_item(db, item)
                 n += 1
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=n)
@@ -237,58 +497,8 @@ class IngestionService:
             items = self._client.get_fixtures(league.api_league_id, season, status=None)
             n = 0
             for item in items:
-                fx = item.get("fixture") or {}
-                teams = item.get("teams") or {}
-                goals = item.get("goals") or {}
-                api_fixture_id = int(fx["id"])
-                status_obj = fx.get("status") or {}
-                status_short = str(status_obj.get("short") or "NS")
-                kickoff_at = _parse_dt(fx.get("date"))
-                home_api = int((teams.get("home") or {})["id"])
-                away_api = int((teams.get("away") or {})["id"])
-
-                home_team = db.scalar(select(Team).where(Team.api_team_id == home_api))
-                away_team = db.scalar(select(Team).where(Team.api_team_id == away_api))
-                if home_team is None or away_team is None:
-                    logger.warning(
-                        "Fixture %s saltata: team mancante in DB (home=%s away=%s)",
-                        api_fixture_id,
-                        home_api,
-                        away_api,
-                    )
-                    continue
-
-                gh = goals.get("home")
-                ga = goals.get("away")
-                goals_home = _parse_int(gh)
-                goals_away = _parse_int(ga)
-
-                row = db.scalar(select(Fixture).where(Fixture.api_fixture_id == api_fixture_id))
-                if row is None:
-                    row = Fixture(
-                        api_fixture_id=api_fixture_id,
-                        league_id=league.id,
-                        season_id=season_row.id,
-                        home_team_id=home_team.id,
-                        away_team_id=away_team.id,
-                        kickoff_at=kickoff_at,
-                        status=status_short,
-                        goals_home=goals_home,
-                        goals_away=goals_away,
-                        raw_json=item,
-                    )
-                    db.add(row)
-                else:
-                    row.league_id = league.id
-                    row.season_id = season_row.id
-                    row.home_team_id = home_team.id
-                    row.away_team_id = away_team.id
-                    row.kickoff_at = kickoff_at
-                    row.status = status_short
-                    row.goals_home = goals_home
-                    row.goals_away = goals_away
-                    row.raw_json = item
-                n += 1
+                if self._upsert_fixture_from_api_item(db, league, season_row, item):
+                    n += 1
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=n)
         except Exception as exc:
@@ -463,22 +673,21 @@ class IngestionService:
             return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
 
     def bootstrap_serie_a(self, db: Session, season: int = 2025) -> list[IngestionRun]:
-        return [
-            self.sync_serie_a_league(db, season),
-            self.sync_serie_a_teams(db, season),
-            self.sync_serie_a_fixtures(db, season),
-        ]
+        return self.bootstrap_serie_a_admin(db, season)
 
     def dashboard_serie_a(self, db: Session, season: int) -> dict[str, Any]:
-        league = db.scalar(select(League).where(League.name == self.SERIE_A_LEAGUE_NAME))
+        settings = get_settings()
+        league = db.scalar(select(League).where(League.api_league_id == settings.default_league_id))
         if league is None:
-            raise ValueError("Lega Serie A non presente in database")
+            raise ValueError(
+                f"Lega api_league_id={settings.default_league_id} non presente in database: eseguire il bootstrap.",
+            )
 
         season_row = db.scalar(
             select(Season).where(Season.league_id == league.id, Season.year == season),
         )
         if season_row is None:
-            raise ValueError(f"Stagione {season} non presente")
+            raise ValueError(f"Stagione {season} non presente per la lega configurata")
 
         fixtures_total = int(
             db.scalar(select(func.count()).select_from(Fixture).where(Fixture.season_id == season_row.id)) or 0,
@@ -491,75 +700,50 @@ class IngestionService:
             )
             or 0,
         )
-
-        fixtures_with_team_stats = int(
+        fixtures_scheduled = int(
             db.scalar(
                 select(func.count())
                 .select_from(Fixture)
-                .where(
-                    Fixture.season_id == season_row.id,
-                    Fixture.id.in_(
-                        select(FixtureTeamStat.fixture_id)
-                        .group_by(FixtureTeamStat.fixture_id)
-                        .having(func.count() >= 2),
-                    ),
-                ),
+                .where(Fixture.season_id == season_row.id, Fixture.status.in_(SCHEDULED_STATUSES)),
             )
             or 0,
         )
+        fixtures_live_or_unknown = max(0, fixtures_total - fixtures_completed - fixtures_scheduled)
 
-        fixtures_with_player_stats = int(
-            db.scalar(
-                select(func.count(func.distinct(FixturePlayerStat.fixture_id))).where(
-                    FixturePlayerStat.fixture_id.in_(
-                        select(Fixture.id).where(Fixture.season_id == season_row.id),
-                    ),
-                ),
-            )
-            or 0,
+        team_ids_subq = union_all(
+            select(Fixture.home_team_id.label("tid")).where(Fixture.season_id == season_row.id),
+            select(Fixture.away_team_id.label("tid")).where(Fixture.season_id == season_row.id),
+        ).subquery()
+        teams_from_fixtures = int(
+            db.scalar(select(func.count(func.distinct(team_ids_subq.c.tid))).select_from(team_ids_subq)) or 0,
         )
+        teams_total = teams_from_fixtures
+        if teams_total == 0:
+            teams_total = int(db.scalar(select(func.count()).select_from(Team)) or 0)
 
-        fixtures_with_lineups = int(
-            db.scalar(
-                select(func.count())
-                .select_from(Fixture)
-                .where(
-                    Fixture.season_id == season_row.id,
-                    Fixture.id.in_(
-                        select(FixtureLineup.fixture_id)
-                        .group_by(FixtureLineup.fixture_id)
-                        .having(func.count() >= 2),
-                    ),
-                ),
-            )
-            or 0,
+        teams_imported = teams_from_fixtures > 0 or (
+            fixtures_total == 0 and int(db.scalar(select(func.count()).select_from(Team)) or 0) > 0
         )
-
-        def pct(part: int, whole: int) -> float:
-            if whole <= 0:
-                return 0.0
-            return round(100.0 * part / whole, 2)
-
-        coverage_team_stats_pct = pct(fixtures_with_team_stats, fixtures_completed)
-        coverage_player_stats_pct = pct(fixtures_with_player_stats, fixtures_completed)
-        coverage_lineups_pct = pct(fixtures_with_lineups, fixtures_completed)
+        fixtures_imported = fixtures_total > 0
 
         last_run = db.scalar(
-            select(IngestionRun)
-            .order_by(IngestionRun.started_at.desc().nulls_last(), IngestionRun.id.desc())
-            .limit(1),
+            select(IngestionRun).order_by(
+                IngestionRun.started_at.desc().nulls_last(),
+                IngestionRun.id.desc(),
+            ),
         )
 
         return {
-            "season": season,
-            "league_api_id": int(league.api_league_id),
+            "league": league,
+            "season": season_row,
+            "teams_total": teams_total,
             "fixtures_total": fixtures_total,
             "fixtures_completed": fixtures_completed,
-            "fixtures_with_team_stats": fixtures_with_team_stats,
-            "fixtures_with_player_stats": fixtures_with_player_stats,
-            "fixtures_with_lineups": fixtures_with_lineups,
-            "coverage_team_stats_pct": coverage_team_stats_pct,
-            "coverage_player_stats_pct": coverage_player_stats_pct,
-            "coverage_lineups_pct": coverage_lineups_pct,
+            "fixtures_scheduled": fixtures_scheduled,
+            "fixtures_live_or_unknown": fixtures_live_or_unknown,
             "last_ingestion_run": last_run,
+            "data_coverage": {
+                "teams_imported": teams_imported,
+                "fixtures_imported": fixtures_imported,
+            },
         }

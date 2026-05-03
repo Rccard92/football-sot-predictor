@@ -2,7 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.dashboard import IngestionRunSummary, SerieADashboardResponse
+from app.schemas.dashboard import (
+    DataCoverageBlock,
+    IngestionRunSummary,
+    LeagueDashboardBlock,
+    SeasonDashboardBlock,
+    SerieADashboardResponse,
+)
 from app.services.ingestion_service import IngestionService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -17,16 +23,18 @@ def serie_a_dashboard(season: int, db: Session = Depends(get_db)) -> SerieADashb
         raise HTTPException(status_code=404, detail=str(e)) from e
 
     last = data.get("last_ingestion_run")
+    cov = data["data_coverage"]
     return SerieADashboardResponse(
-        season=data["season"],
-        league_api_id=data["league_api_id"],
+        league=LeagueDashboardBlock.model_validate(data["league"]),
+        season=SeasonDashboardBlock.model_validate(data["season"]),
+        teams_total=data["teams_total"],
         fixtures_total=data["fixtures_total"],
         fixtures_completed=data["fixtures_completed"],
-        fixtures_with_team_stats=data["fixtures_with_team_stats"],
-        fixtures_with_player_stats=data["fixtures_with_player_stats"],
-        fixtures_with_lineups=data["fixtures_with_lineups"],
-        coverage_team_stats_pct=data["coverage_team_stats_pct"],
-        coverage_player_stats_pct=data["coverage_player_stats_pct"],
-        coverage_lineups_pct=data["coverage_lineups_pct"],
+        fixtures_scheduled=data["fixtures_scheduled"],
+        fixtures_live_or_unknown=data["fixtures_live_or_unknown"],
         last_ingestion_run=IngestionRunSummary.model_validate(last) if last else None,
+        data_coverage=DataCoverageBlock(
+            teams_imported=bool(cov["teams_imported"]),
+            fixtures_imported=bool(cov["fixtures_imported"]),
+        ),
     )

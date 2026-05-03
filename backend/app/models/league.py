@@ -16,6 +16,7 @@ class League(Base, TimestampMixin):
     api_league_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     country: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     seasons = relationship("Season", back_populates="league")

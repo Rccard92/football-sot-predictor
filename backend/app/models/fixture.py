@@ -39,10 +39,17 @@ class Fixture(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
+    round: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    referee: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     kickoff_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status_long: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    elapsed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goals_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
     goals_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    venue_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    venue_city: Mapped[str | None] = mapped_column(String(128), nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     league = relationship("League", back_populates="fixtures")
