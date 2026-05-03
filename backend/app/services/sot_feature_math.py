@@ -39,30 +39,39 @@ def mean_numeric(values: list[int | float | None]) -> float | None:
     return sum(xs) / len(xs)
 
 
-def avg_with_fallback(
-    values: list[int | None],
-    n_prior_matches: int,
-    league_fallback: float,
-    min_samples: int = MIN_PRIOR_MATCHES_FOR_TEAM_AVG,
-) -> float:
-    if n_prior_matches < min_samples:
-        return league_fallback
-    m = mean_numeric(values)
-    return league_fallback if m is None else float(m)
+def pick_fallback_value(
+    league_fallback: float | None,
+    baseline: float | None,
+) -> tuple[float | None, bool]:
+    """Valore prudenziale quando mancano campioni; True = percorso fallback."""
+    if league_fallback is not None:
+        return float(league_fallback), True
+    if baseline is not None:
+        return float(baseline), True
+    return None, True
+
+
+def coerce_or_fallback(
+    raw: float | None,
+    league_fallback: float | None,
+    baseline: float | None,
+) -> tuple[float | None, bool]:
+    if raw is not None:
+        return float(raw), False
+    return pick_fallback_value(league_fallback, baseline)
 
 
 def avg_with_fallback_flag(
     values: list[int | None],
     n_prior_matches: int,
-    league_fallback: float,
+    league_fallback: float | None,
+    baseline: float | None,
     min_samples: int = MIN_PRIOR_MATCHES_FOR_TEAM_AVG,
-) -> tuple[float, bool]:
+) -> tuple[float | None, bool]:
     if n_prior_matches < min_samples:
-        return league_fallback, True
+        return pick_fallback_value(league_fallback, baseline)
     m = mean_numeric(values)
-    if m is None:
-        return league_fallback, True
-    return float(m), False
+    return coerce_or_fallback(m, league_fallback, baseline)
 
 
 def last_n_matches(priors: list[PriorMatch], n: int) -> list[PriorMatch]:
@@ -75,27 +84,26 @@ def rolling_avg_pair(
     priors: list[PriorMatch],
     n: int,
     n_team_prior_matches: int,
-    league_fallback: float,
-) -> tuple[float, float]:
+    league_fallback: float | None,
+    baseline: float | None,
+) -> tuple[float | None, float | None, bool]:
     window = last_n_matches(priors, n)
     if n_team_prior_matches < MIN_PRIOR_MATCHES_FOR_TEAM_AVG:
-        return league_fallback, league_fallback
-    for_vals = [m.sot_for for m in window]
-    against_vals = [m.sot_against for m in window]
-    for_avg = mean_numeric(for_vals)
-    against_avg = mean_numeric(against_vals)
-    return (
-        league_fallback if for_avg is None else float(for_avg),
-        league_fallback if against_avg is None else float(against_avg),
-    )
+        v, fb = pick_fallback_value(league_fallback, baseline)
+        return v, v, fb
+    for_avg = mean_numeric([m.sot_for for m in window])
+    against_avg = mean_numeric([m.sot_against for m in window])
+    out_f, fb_f = coerce_or_fallback(for_avg, league_fallback, baseline)
+    out_a, fb_a = coerce_or_fallback(against_avg, league_fallback, baseline)
+    return out_f, out_a, fb_f or fb_a
 
 
 def league_avg_sot_from_prior_fixtures(
     prior_fixture_rows: list[tuple[int | None, int | None]],
-) -> float:
+) -> float | None:
     """
-    prior_fixture_rows: per ogni partita precedente, (sot_home, sot_away).
-    Fallback di lega = media di tutti i SOT segnati (due valori per partita).
+    Media SOT su tutte le partite già concluse prima della corrente (solo `processed`).
+    Nessun dato => None (niente media lega).
     """
     flat: list[float] = []
     for h, a in prior_fixture_rows:
@@ -104,7 +112,7 @@ def league_avg_sot_from_prior_fixtures(
         if a is not None:
             flat.append(float(a))
     if not flat:
-        return 0.0
+        return None
     return sum(flat) / len(flat)
 
 
@@ -116,6 +124,12 @@ def rest_days_between(current_kickoff: datetime, team_priors: list[PriorMatch]) 
     return max(0, delta.days)
 
 
+def _r4(x: float | None) -> float | None:
+    if x is None:
+        return None
+    return round(float(x), 4)
+
+
 def compute_row_features(
     *,
     current_kickoff: datetime,
@@ -123,12 +137,13 @@ def compute_row_features(
     is_home_current: bool,
     opponent_priors: list[PriorMatch],
     opponent_is_home_current: bool,
-    league_fallback: float,
+    league_fallback: float | None,
+    baseline: float | None,
     actual_sot: int | None,
 ) -> dict[str, Any]:
     """
-    Calcola il dizionario features per una squadra in una singola fixture.
-    Include `meta` per confidenza del modello di previsione (fallback su media lega).
+    Calcola le feature per una squadra in una fixture. Nessun uso della partita corrente
+    nelle medie (solo `team_priors` / `opponent_priors` già costruiti senza leakage).
     """
     n_team = len(team_priors)
     n_opp = len(opponent_priors)
@@ -137,39 +152,39 @@ def compute_row_features(
     against_vals = [m.sot_against for m in team_priors]
 
     season_avg_sot_for, fb_season_for = avg_with_fallback_flag(
-        for_vals, n_team, league_fallback,
+        for_vals, n_team, league_fallback, baseline,
     )
-    season_avg_sot_against, _fb_season_against = avg_with_fallback_flag(
-        against_vals, n_team, league_fallback,
+    season_avg_sot_against, fb_season_against = avg_with_fallback_flag(
+        against_vals, n_team, league_fallback, baseline,
     )
 
     ha = [m for m in team_priors if m.is_home == is_home_current]
     ha_for = [m.sot_for for m in ha]
     ha_against = [m.sot_against for m in ha]
     home_away_avg_sot_for, fb_ha_for = avg_with_fallback_flag(
-        ha_for, len(ha), league_fallback,
+        ha_for, len(ha), league_fallback, baseline,
     )
-    home_away_avg_sot_against, _fb_ha_against = avg_with_fallback_flag(
-        ha_against, len(ha), league_fallback,
+    home_away_avg_sot_against, fb_ha_against = avg_with_fallback_flag(
+        ha_against, len(ha), league_fallback, baseline,
     )
 
     if n_team < MIN_PRIOR_MATCHES_FOR_TEAM_AVG:
-        last5_for = league_fallback
-        last5_against = league_fallback
-        fb_last5_for = True
+        last5_for, fb_last5_for = pick_fallback_value(league_fallback, baseline)
+        last5_against, fb_last5_against = pick_fallback_value(league_fallback, baseline)
     else:
         w5 = last_n_matches(team_priors, 5)
         m5f = mean_numeric([m.sot_for for m in w5])
         m5a = mean_numeric([m.sot_against for m in w5])
-        fb_last5_for = m5f is None
-        last5_for = league_fallback if m5f is None else float(m5f)
-        last5_against = league_fallback if m5a is None else float(m5a)
+        last5_for, fb_last5_for = coerce_or_fallback(m5f, league_fallback, baseline)
+        last5_against, fb_last5_against = coerce_or_fallback(m5a, league_fallback, baseline)
 
-    last10_for, last10_against = rolling_avg_pair(team_priors, 10, n_team, league_fallback)
+    last10_for, last10_against, fb_last10 = rolling_avg_pair(
+        team_priors, 10, n_team, league_fallback, baseline,
+    )
 
     opp_conceded_vals = [m.sot_against for m in opponent_priors]
     opponent_season_avg_sot_conceded, fb_opp_season = avg_with_fallback_flag(
-        opp_conceded_vals, n_opp, league_fallback,
+        opp_conceded_vals, n_opp, league_fallback, baseline,
     )
 
     opp_ha = [m for m in opponent_priors if m.is_home == opponent_is_home_current]
@@ -178,23 +193,29 @@ def compute_row_features(
         opp_ha_conceded,
         len(opp_ha),
         league_fallback,
+        baseline,
     )
 
     if n_opp < MIN_PRIOR_MATCHES_FOR_TEAM_AVG:
-        opponent_last5_avg_sot_conceded = league_fallback
-        fb_opp_l5 = True
+        opponent_last5_avg_sot_conceded, fb_opp_l5 = pick_fallback_value(league_fallback, baseline)
     else:
         w = last_n_matches(opponent_priors, 5)
         m = mean_numeric([x.sot_against for x in w])
-        fb_opp_l5 = m is None
-        opponent_last5_avg_sot_conceded = league_fallback if m is None else float(m)
+        opponent_last5_avg_sot_conceded, fb_opp_l5 = coerce_or_fallback(
+            m, league_fallback, baseline,
+        )
 
     formula_fallbacks = {
         "season_avg_sot_for": fb_season_for,
-        "opponent_season_avg_sot_conceded": fb_opp_season,
+        "season_avg_sot_against": fb_season_against,
         "home_away_avg_sot_for": fb_ha_for,
-        "opponent_home_away_avg_sot_conceded": fb_opp_ha,
+        "home_away_avg_sot_against": fb_ha_against,
         "last5_avg_sot_for": fb_last5_for,
+        "last5_avg_sot_against": fb_last5_against,
+        "last10_avg_sot_for": fb_last10,
+        "last10_avg_sot_against": fb_last10,
+        "opponent_season_avg_sot_conceded": fb_opp_season,
+        "opponent_home_away_avg_sot_conceded": fb_opp_ha,
         "opponent_last5_avg_sot_conceded": fb_opp_l5,
     }
     fb_count = sum(1 for v in formula_fallbacks.values() if v)
@@ -202,19 +223,22 @@ def compute_row_features(
     rest_days = rest_days_between(current_kickoff, team_priors)
 
     return {
-        "season_avg_sot_for": round(float(season_avg_sot_for), 4),
-        "season_avg_sot_against": round(float(season_avg_sot_against), 4),
-        "home_away_avg_sot_for": round(float(home_away_avg_sot_for), 4),
-        "home_away_avg_sot_against": round(float(home_away_avg_sot_against), 4),
-        "last5_avg_sot_for": round(float(last5_for), 4),
-        "last5_avg_sot_against": round(float(last5_against), 4),
-        "last10_avg_sot_for": round(float(last10_for), 4),
-        "last10_avg_sot_against": round(float(last10_against), 4),
-        "opponent_season_avg_sot_conceded": round(float(opponent_season_avg_sot_conceded), 4),
-        "opponent_home_away_avg_sot_conceded": round(float(opponent_home_away_avg_sot_conceded), 4),
-        "opponent_last5_avg_sot_conceded": round(float(opponent_last5_avg_sot_conceded), 4),
+        "season_avg_sot_for": _r4(season_avg_sot_for),
+        "season_avg_sot_against": _r4(season_avg_sot_against),
+        "home_away_avg_sot_for": _r4(home_away_avg_sot_for),
+        "home_away_avg_sot_against": _r4(home_away_avg_sot_against),
+        "last5_avg_sot_for": _r4(last5_for),
+        "last5_avg_sot_against": _r4(last5_against),
+        "last10_avg_sot_for": _r4(last10_for),
+        "last10_avg_sot_against": _r4(last10_against),
+        "opponent_season_avg_sot_conceded": _r4(opponent_season_avg_sot_conceded),
+        "opponent_home_away_avg_sot_conceded": _r4(opponent_home_away_avg_sot_conceded),
+        "opponent_last5_avg_sot_conceded": _r4(opponent_last5_avg_sot_conceded),
         "rest_days": rest_days,
         "actual_sot": actual_sot,
+        "fallback_used": fb_count > 0,
+        "previous_matches_count": n_team,
+        "opponent_previous_matches_count": n_opp,
         "meta": {
             "n_team_priors": n_team,
             "n_opp_priors": n_opp,

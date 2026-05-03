@@ -62,8 +62,11 @@ class BacktestService:
         ).all()
         feat_actual: dict[tuple[int, int], int | float | None] = {}
         for fr in feat_rows:
-            feats = fr.features or {}
-            feat_actual[(fr.fixture_id, fr.team_id)] = feats.get("actual_sot")
+            if fr.actual_sot is not None:
+                feat_actual[(fr.fixture_id, fr.team_id)] = fr.actual_sot
+            else:
+                feats = fr.features or {}
+                feat_actual[(fr.fixture_id, fr.team_id)] = feats.get("actual_sot")
 
         stat_rows = db.scalars(
             select(FixtureTeamStat).where(FixtureTeamStat.fixture_id.in_(fixture_ids)),

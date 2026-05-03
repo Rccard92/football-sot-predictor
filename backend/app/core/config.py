@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     default_league_id: int = 135
     default_season: int = 2025
+    # Fallback numerico quando non c'è media lega (<3 partite o nessuna partita precedente in lega)
+    sot_feature_fallback_baseline: float | None = 3.0
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
@@ -19,8 +20,45 @@ WEIGHTS_BASELINE_V0_1 = {
 }
 
 
+def _num_to_float(v: Any) -> float | None:
+    if v is None:
+        return None
+    if isinstance(v, Decimal):
+        return float(v)
+    return float(v)
+
+
 class SotPredictionService:
     model_version = BASELINE_SOT_MODEL_VERSION
+
+    @staticmethod
+    def feature_dict_from_orm(fr: TeamSotFeature) -> dict[str, Any]:
+        """Ricostruisce il payload usato dal modello da colonne + meta JSON (sot-v2)."""
+        meta = None
+        if fr.features and isinstance(fr.features, dict):
+            meta = fr.features.get("meta")
+        if not isinstance(meta, dict):
+            meta = {
+                "n_team_priors": fr.previous_matches_count or 0,
+                "n_opp_priors": fr.opponent_previous_matches_count or 0,
+                "formula_fallback_count": 1 if fr.fallback_used else 0,
+            }
+        return {
+            "season_avg_sot_for": _num_to_float(fr.season_avg_sot_for),
+            "season_avg_sot_against": _num_to_float(fr.season_avg_sot_against),
+            "home_away_avg_sot_for": _num_to_float(fr.home_away_avg_sot_for),
+            "home_away_avg_sot_against": _num_to_float(fr.home_away_avg_sot_against),
+            "last5_avg_sot_for": _num_to_float(fr.last5_avg_sot_for),
+            "last5_avg_sot_against": _num_to_float(fr.last5_avg_sot_against),
+            "last10_avg_sot_for": _num_to_float(fr.last10_avg_sot_for),
+            "last10_avg_sot_against": _num_to_float(fr.last10_avg_sot_against),
+            "opponent_season_avg_sot_conceded": _num_to_float(fr.opponent_season_avg_sot_conceded),
+            "opponent_home_away_avg_sot_conceded": _num_to_float(fr.opponent_home_away_avg_sot_conceded),
+            "opponent_last5_avg_sot_conceded": _num_to_float(fr.opponent_last5_avg_sot_conceded),
+            "rest_days": fr.rest_days,
+            "actual_sot": fr.actual_sot,
+            "meta": meta,
+        }
 
     def expected_sot_from_features(self, features: dict[str, Any]) -> float:
         total = 0.0
@@ -121,7 +159,7 @@ class SotPredictionService:
         n = 0
         try:
             for fr in rows:
-                feats = fr.features or {}
+                feats = self.feature_dict_from_orm(fr)
                 expected = self.expected_sot_from_features(feats)
                 conf = self.confidence_score(feats)
                 expl = self.explanation_it(

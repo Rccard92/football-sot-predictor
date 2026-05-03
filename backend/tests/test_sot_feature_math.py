@@ -7,12 +7,17 @@ from app.services.sot_feature_math import (
     compute_row_features,
     fixture_key_before,
     last_n_matches,
+    league_avg_sot_from_prior_fixtures,
     mean_numeric,
 )
 
 
 def dt(day: int) -> datetime:
     return datetime(2025, 8, day, tzinfo=timezone.utc)
+
+
+def test_league_avg_empty_is_none():
+    assert league_avg_sot_from_prior_fixtures([]) is None
 
 
 def test_fixture_key_before_no_future_ordering():
@@ -42,6 +47,7 @@ def test_no_future_match_in_team_priors_averages():
         opponent_priors=[],
         opponent_is_home_current=False,
         league_fallback=fb,
+        baseline=None,
         actual_sot=5,
     )
     bad_out = compute_row_features(
@@ -51,6 +57,7 @@ def test_no_future_match_in_team_priors_averages():
         opponent_priors=[],
         opponent_is_home_current=False,
         league_fallback=fb,
+        baseline=None,
         actual_sot=5,
     )
     assert clean_out["season_avg_sot_for"] == 4.0
@@ -79,6 +86,7 @@ def test_home_away_averages_respect_side():
         opponent_priors=opp_side,
         opponent_is_home_current=False,
         league_fallback=fb,
+        baseline=None,
         actual_sot=7,
     )
     assert out_home["home_away_avg_sot_for"] == 20.0
@@ -93,6 +101,7 @@ def test_home_away_averages_respect_side():
         ],
         opponent_is_home_current=True,
         league_fallback=fb,
+        baseline=None,
         actual_sot=7,
     )
     assert out_away["home_away_avg_sot_for"] == 2.0
@@ -115,9 +124,28 @@ def test_last5_uses_at_most_five_most_recent():
         opponent_priors=opp,
         opponent_is_home_current=False,
         league_fallback=fb,
+        baseline=None,
         actual_sot=9,
     )
     assert out["last5_avg_sot_for"] == 5.0
+
+
+def test_last10_uses_at_most_ten_most_recent():
+    priors = [PriorMatch(dt(i), i, True, i, 0) for i in range(1, 15)]
+    fb = 0.0
+    opp = [PriorMatch(dt(1), 1, True, 1, 1)] * 5
+    out = compute_row_features(
+        current_kickoff=dt(30),
+        team_priors=priors,
+        is_home_current=True,
+        opponent_priors=opp,
+        opponent_is_home_current=False,
+        league_fallback=fb,
+        baseline=None,
+        actual_sot=9,
+    )
+    # ultime 10 partite: sot_for 5..14 -> media 9.5
+    assert out["last10_avg_sot_for"] == 9.5
 
 
 def test_actual_sot_passthrough():
@@ -128,6 +156,7 @@ def test_actual_sot_passthrough():
         opponent_priors=[],
         opponent_is_home_current=False,
         league_fallback=0.0,
+        baseline=None,
         actual_sot=8,
     )
     assert out["actual_sot"] == 8

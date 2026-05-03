@@ -909,6 +909,9 @@ class IngestionService:
             "fixtures_with_team_stats": 0,
             "team_stats_rows_total": 0,
             "team_stats_coverage_pct": 0.0,
+            "sot_feature_rows_total": 0,
+            "sot_feature_expected_rows": 0,
+            "sot_feature_coverage_pct": 0.0,
             "last_ingestion_run": None,
             "data_coverage": {
                 "teams_imported": False,
@@ -978,6 +981,10 @@ class IngestionService:
 
         health = self.serie_a_team_stats_data_health(db, season)
 
+        from app.services.sot_feature_service import SotFeatureService
+
+        sot_sum = SotFeatureService().get_season_summary(db, season)
+
         last_run = None
         try:
             last_run = db.scalar(
@@ -1000,6 +1007,9 @@ class IngestionService:
             "fixtures_with_team_stats": health["fixtures_with_team_stats"],
             "team_stats_rows_total": health["team_stats_rows_total"],
             "team_stats_coverage_pct": health["team_stats_coverage_pct"],
+            "sot_feature_rows_total": sot_sum["feature_rows_total"],
+            "sot_feature_expected_rows": sot_sum["expected_feature_rows"],
+            "sot_feature_coverage_pct": float(sot_sum["coverage_pct"]),
             "last_ingestion_run": last_run,
             "data_coverage": {
                 "teams_imported": teams_imported,

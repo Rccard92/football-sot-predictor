@@ -38,6 +38,10 @@ class Team(Base, TimestampMixin):
     fixture_team_stats = relationship("FixtureTeamStat", back_populates="team")
     fixture_player_stats = relationship("FixturePlayerStat", back_populates="team")
     fixture_lineups = relationship("FixtureLineup", back_populates="team")
-    team_sot_features = relationship("TeamSotFeature", back_populates="team")
+    team_sot_features = relationship(
+        "TeamSotFeature",
+        foreign_keys="TeamSotFeature.team_id",
+        back_populates="team",
+    )
     team_sot_predictions = relationship("TeamSotPrediction", back_populates="team")
     prediction_backtests = relationship("PredictionBacktest", back_populates="team")
