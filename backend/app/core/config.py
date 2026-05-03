@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     api_football_base_url: str = "https://v3.football.api-sports.io"
     cors_origins: str = "http://localhost:5173"
     app_env: str = "development"
+    default_league_id: int = 135
+    default_season: int = 2025
 
     @property
     def cors_origins_list(self) -> list[str]:
