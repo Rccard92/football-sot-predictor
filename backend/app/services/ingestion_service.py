@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.fixture_team_stats_mapping import apply_parsed_to_row, statistics_list_to_fields
 
 logger = logging.getLogger(__name__)
 
@@ -525,8 +526,14 @@ class IngestionService:
                     team = db.scalar(select(Team).where(Team.api_team_id == team_api))
                     if team is None:
                         continue
-                    statistics = block.get("statistics") or []
-                    shots, sot = _extract_shots_from_statistics(statistics)
+                    parsed = statistics_list_to_fields(block.get("statistics"))
+                    side = (
+                        "home"
+                        if team.id == f.home_team_id
+                        else "away"
+                        if team.id == f.away_team_id
+                        else None
+                    )
                     row = db.scalar(
                         select(FixtureTeamStat).where(
                             FixtureTeamStat.fixture_id == f.id,
@@ -537,15 +544,14 @@ class IngestionService:
                         row = FixtureTeamStat(
                             fixture_id=f.id,
                             team_id=team.id,
-                            shots=shots,
-                            shots_on_target=sot,
+                            side=side,
                             raw_json=block,
                         )
                         db.add(row)
                     else:
-                        row.shots = shots
-                        row.shots_on_target = sot
+                        row.side = side
                         row.raw_json = block
+                    apply_parsed_to_row(row, parsed)
                     processed += 1
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=processed)
@@ -553,6 +559,220 @@ class IngestionService:
             logger.exception("sync_completed_fixture_team_stats failed")
             db.rollback()
             return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def sync_serie_a_team_stats_admin(self, db: Session, season: int) -> dict[str, Any]:
+        """Importa statistiche squadra per partite concluse; non interrompe il job su singole fixture."""
+        summary: dict[str, Any] = {
+            "status": "pending",
+            "season": season,
+            "fixtures_completed": 0,
+            "fixtures_processed": 0,
+            "fixtures_with_stats": 0,
+            "team_stats_rows_created_or_updated": 0,
+            "missing_stats": [],
+            "errors": [],
+        }
+        run = self._begin_run(db, "serie_a_team_stats", meta={"season": season, "step": "team_stats"})
+        try:
+            settings = get_settings()
+            league = self._serie_a_league_by_settings(db)
+            if int(league.api_league_id) != int(settings.default_league_id):
+                logger.warning(
+                    "sync team stats: league api_league_id=%s vs settings default_league_id=%s",
+                    league.api_league_id,
+                    settings.default_league_id,
+                )
+            season_row = self._serie_a_season_row(db, season)
+            fixtures_list = db.scalars(
+                select(Fixture)
+                .where(
+                    Fixture.season_id == season_row.id,
+                    Fixture.status.in_(FINISHED_STATUSES),
+                )
+                .order_by(Fixture.id.asc()),
+            ).all()
+            summary["fixtures_completed"] = len(fixtures_list)
+
+            for f in fixtures_list:
+                rows_this = 0
+                try:
+                    stats_payload = self._client.get_fixture_statistics(int(f.api_fixture_id))
+                except ApiFootballError as exc:
+                    logger.warning(
+                        "fixture %s api %s: API error %s",
+                        f.id,
+                        f.api_fixture_id,
+                        exc,
+                    )
+                    summary["errors"].append(
+                        {
+                            "fixture_id": f.id,
+                            "api_fixture_id": int(f.api_fixture_id),
+                            "message": str(exc),
+                        },
+                    )
+                    summary["fixtures_processed"] += 1
+                    continue
+
+                if not stats_payload:
+                    summary["missing_stats"].append(
+                        {
+                            "fixture_id": f.id,
+                            "api_fixture_id": int(f.api_fixture_id),
+                            "reason": "empty_response",
+                        },
+                    )
+                    summary["fixtures_processed"] += 1
+                    continue
+
+                for block in stats_payload:
+                    tid = (block.get("team") or {}).get("id")
+                    if tid is None:
+                        continue
+                    team_api = int(tid)
+                    team = db.scalar(select(Team).where(Team.api_team_id == team_api))
+                    if team is None:
+                        continue
+                    side = (
+                        "home"
+                        if team.id == f.home_team_id
+                        else "away"
+                        if team.id == f.away_team_id
+                        else None
+                    )
+                    parsed = statistics_list_to_fields(block.get("statistics"))
+                    row = db.scalar(
+                        select(FixtureTeamStat).where(
+                            FixtureTeamStat.fixture_id == f.id,
+                            FixtureTeamStat.team_id == team.id,
+                        ),
+                    )
+                    if row is None:
+                        row = FixtureTeamStat(
+                            fixture_id=f.id,
+                            team_id=team.id,
+                            side=side,
+                            raw_json=block,
+                        )
+                        db.add(row)
+                    else:
+                        row.side = side
+                        row.raw_json = block
+                    apply_parsed_to_row(row, parsed)
+                    rows_this += 1
+                    summary["team_stats_rows_created_or_updated"] += 1
+
+                summary["fixtures_processed"] += 1
+                if rows_this >= 2:
+                    summary["fixtures_with_stats"] += 1
+                elif rows_this == 0:
+                    summary["missing_stats"].append(
+                        {
+                            "fixture_id": f.id,
+                            "api_fixture_id": int(f.api_fixture_id),
+                            "reason": "no_team_rows_saved",
+                        },
+                    )
+                else:
+                    summary["missing_stats"].append(
+                        {
+                            "fixture_id": f.id,
+                            "api_fixture_id": int(f.api_fixture_id),
+                            "reason": f"partial_rows_{rows_this}",
+                        },
+                    )
+
+            db.commit()
+            summary["status"] = "success"
+            self._finish_run(
+                db,
+                run,
+                success=True,
+                records_processed=int(summary["team_stats_rows_created_or_updated"]),
+                meta_merge={"summary": {k: v for k, v in summary.items() if k != "status"}},
+            )
+        except Exception as exc:
+            logger.exception("sync_serie_a_team_stats_admin failed")
+            db.rollback()
+            summary["status"] = "error"
+            summary["message"] = str(exc)
+            try:
+                self._finish_run(
+                    db,
+                    run,
+                    success=False,
+                    records_processed=int(summary.get("team_stats_rows_created_or_updated") or 0),
+                    error=str(exc),
+                    meta_merge={"summary": {k: v for k, v in summary.items() if k not in ("status", "message")}},
+                )
+            except Exception:
+                logger.exception("could not finalize ingestion_run after team stats failure")
+
+        summary["ingestion_run_id"] = run.id
+        return summary
+
+    def serie_a_team_stats_data_health(self, db: Session, season: int) -> dict[str, Any]:
+        try:
+            season_row = self._serie_a_season_row(db, season)
+        except ValueError:
+            return {
+                "fixtures_completed": 0,
+                "fixtures_with_team_stats": 0,
+                "fixtures_missing_team_stats": 0,
+                "missing_fixture_ids": [],
+                "team_stats_rows_total": 0,
+                "team_stats_coverage_pct": 0.0,
+            }
+
+        fixtures_completed = db.scalars(
+            select(Fixture).where(
+                Fixture.season_id == season_row.id,
+                Fixture.status.in_(FINISHED_STATUSES),
+            ),
+        ).all()
+        n_completed = len(fixtures_completed)
+        completed_ids = {f.id for f in fixtures_completed}
+
+        if not completed_ids:
+            return {
+                "fixtures_completed": 0,
+                "fixtures_with_team_stats": 0,
+                "fixtures_missing_team_stats": 0,
+                "missing_fixture_ids": [],
+                "team_stats_rows_total": 0,
+                "team_stats_coverage_pct": 0.0,
+            }
+
+        counts_rows = db.execute(
+            select(FixtureTeamStat.fixture_id, func.count())
+            .where(FixtureTeamStat.fixture_id.in_(completed_ids))
+            .group_by(FixtureTeamStat.fixture_id),
+        ).all()
+        counts = {int(fid): int(n) for fid, n in counts_rows}
+
+        fixtures_with_two = sum(1 for fid in completed_ids if counts.get(fid, 0) >= 2)
+        missing_ids = sorted(fid for fid in completed_ids if counts.get(fid, 0) < 2)
+
+        team_stats_rows_total = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureTeamStat)
+                .join(Fixture, Fixture.id == FixtureTeamStat.fixture_id)
+                .where(Fixture.season_id == season_row.id),
+            )
+            or 0,
+        )
+
+        pct = round(100.0 * fixtures_with_two / n_completed, 2) if n_completed else 0.0
+
+        return {
+            "fixtures_completed": n_completed,
+            "fixtures_with_team_stats": fixtures_with_two,
+            "fixtures_missing_team_stats": len(missing_ids),
+            "missing_fixture_ids": missing_ids,
+            "team_stats_rows_total": team_stats_rows_total,
+            "team_stats_coverage_pct": pct,
+        }
 
     def sync_completed_fixture_player_stats(self, db: Session, season: int = 2025) -> IngestionRun:
         run = self._begin_run(db, "sync_completed_fixture_player_stats", meta={"season": season})
@@ -686,6 +906,9 @@ class IngestionService:
             "fixtures_completed": 0,
             "fixtures_scheduled": 0,
             "fixtures_live_or_unknown": 0,
+            "fixtures_with_team_stats": 0,
+            "team_stats_rows_total": 0,
+            "team_stats_coverage_pct": 0.0,
             "last_ingestion_run": None,
             "data_coverage": {
                 "teams_imported": False,
@@ -753,6 +976,8 @@ class IngestionService:
         )
         fixtures_imported = fixtures_total > 0
 
+        health = self.serie_a_team_stats_data_health(db, season)
+
         last_run = None
         try:
             last_run = db.scalar(
@@ -772,6 +997,9 @@ class IngestionService:
             "fixtures_completed": fixtures_completed,
             "fixtures_scheduled": fixtures_scheduled,
             "fixtures_live_or_unknown": fixtures_live_or_unknown,
+            "fixtures_with_team_stats": health["fixtures_with_team_stats"],
+            "team_stats_rows_total": health["team_stats_rows_total"],
+            "team_stats_coverage_pct": health["team_stats_coverage_pct"],
             "last_ingestion_run": last_run,
             "data_coverage": {
                 "teams_imported": teams_imported,

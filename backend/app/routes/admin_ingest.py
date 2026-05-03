@@ -74,6 +74,44 @@ def admin_bootstrap_serie_a(
     return jsonable_encoder({"runs": runs_payload})
 
 
+@router.post("/serie-a/{season}/team-stats", response_model=None)
+def admin_ingest_serie_a_team_stats(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    svc = IngestionService()
+    try:
+        summary = svc.sync_serie_a_team_stats_admin(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("team-stats: errore database")
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Database non disponibile o schema non aggiornato.",
+                    "detail": str(exc),
+                },
+            ),
+        )
+    except Exception as exc:
+        logger.exception("team-stats: errore imprevisto")
+        return JSONResponse(
+            status_code=500,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": str(exc),
+                },
+            ),
+        )
+
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=502, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
+
+
 @router.get("/runs", response_model=None)
 def admin_list_ingestion_runs(
     db: Session = Depends(get_db),

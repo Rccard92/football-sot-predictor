@@ -52,5 +52,8 @@ class SerieADashboardResponse(BaseModel):
     fixtures_completed: int
     fixtures_scheduled: int
     fixtures_live_or_unknown: int
+    fixtures_with_team_stats: int
+    team_stats_rows_total: int
+    team_stats_coverage_pct: float
     last_ingestion_run: IngestionRunSummary | None
     data_coverage: DataCoverageBlock

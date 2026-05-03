@@ -1,11 +1,12 @@
 from fastapi import APIRouter
 
-from app.routes import admin, admin_ingest, backtest, dashboard, features, health, ingestion, predictions
+from app.routes import admin, admin_data_health, admin_ingest, backtest, dashboard, features, health, ingestion, predictions
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(admin_ingest.router)
+api_router.include_router(admin_data_health.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(features.router)
