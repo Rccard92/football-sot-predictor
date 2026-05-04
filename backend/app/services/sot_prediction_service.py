@@ -116,6 +116,57 @@ def confidence_word_from_score(score: int) -> str:
     return "Bassa"
 
 
+def prediction_affidability_from_data_quality(
+    *,
+    data_quality_score: int,
+    model_version: str,
+    backtest_mae: float | None,
+    backtest_rmse: float | None,
+    backtests_total: int,
+    fallback_used: bool,
+) -> tuple[int, str]:
+    """
+    Punteggio prudente mostrato come «affidabilità previsione» (non coincide con completezza dati).
+    """
+    s = max(0, min(100, int(data_quality_score)))
+    if model_version == BASELINE_SOT_MODEL_VERSION:
+        s = min(s, 85)
+    has_bt = backtests_total > 0
+    if has_bt and backtest_mae is not None and 1.5 <= backtest_mae <= 2.0:
+        s = min(s, 80)
+    if has_bt and backtest_rmse is not None and backtest_rmse > 2.0:
+        s = min(s, 78)
+    if fallback_used:
+        s -= 10
+    s = max(0, min(100, s))
+    if s >= 80:
+        return s, "Alta"
+    if s >= 60:
+        return s, "Media"
+    return s, "Bassa"
+
+
+def _fixture_round_display(fx: Fixture) -> str | None:
+    if fx.round and str(fx.round).strip():
+        return str(fx.round).strip()[:64]
+    raw = fx.raw_json if isinstance(fx.raw_json, dict) else None
+    if not raw:
+        return None
+    fr = (raw.get("fixture") or {}).get("round")
+    if fr is not None and str(fr).strip():
+        return str(fr).strip()[:64]
+    lr = (raw.get("league") or {}).get("round")
+    if lr is not None and str(lr).strip():
+        return str(lr).strip()[:64]
+    return None
+
+
+def _breakdown_any_fallback(bd: dict[str, Any] | None) -> bool:
+    if not bd:
+        return False
+    return any(bd.get(f"{k}_fallback_used") is True for k in WEIGHTS_BASELINE_V0_1)
+
+
 def simple_explanation_for_row(fr: TeamSotFeature, expected_sot: float) -> str:
     """Testo breve comprensibile (non sostituisce il disclaimer scientifico)."""
     parts: list[str] = []
@@ -742,12 +793,18 @@ class SotPredictionService:
                 upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
         upcoming = upcoming[: max(1, min(limit, 100))]
 
-        round_label = upcoming[0].round if upcoming else None
+        round_label = _fixture_round_display(upcoming[0]) if upcoming else None
         matches: list[dict[str, Any]] = []
 
         from app.models import FixtureLineup, PlayerAvailabilityEvent, PlayerSotProfile
         from app.services.h2h_service import build_h2h_summary_for_fixture
         from app.services.player_sot_profile_service import PlayerSotProfileService
+        from app.services.sot_backtest_service import SotBacktestService
+
+        bt_block = SotBacktestService().get_dashboard_backtest_block(db, season_year, mv)
+        bt_n = int(bt_block.get("sot_backtests_total") or 0)
+        bt_mae = float(bt_block["sot_backtest_mae"]) if bt_n > 0 else None
+        bt_rmse = float(bt_block["sot_backtest_rmse"]) if bt_n > 0 else None
 
         prof_svc = PlayerSotProfileService()
         profiles_n_season = int(
@@ -811,7 +868,9 @@ class SotPredictionService:
                 if pred is None or pred.predicted_sot is None:
                     return None
                 exp = float(pred.predicted_sot)
-                conf = int(pred.confidence_score or 0)
+                dq = int(pred.confidence_score or 0)
+                dq = max(0, min(100, dq))
+                dq_label = confidence_word_from_score(dq)
                 expl = (
                     simple_explanation_for_row(feat, exp)
                     if feat is not None
@@ -827,10 +886,23 @@ class SotPredictionService:
                         bd = UpcomingSotCalculationBreakdown.model_validate(bd_raw).model_dump()
                     except Exception:
                         bd = None
+                fb = bool(feat and feat.fallback_used) or _breakdown_any_fallback(bd)
+                pconf, plab = prediction_affidability_from_data_quality(
+                    data_quality_score=dq,
+                    model_version=mv,
+                    backtest_mae=bt_mae,
+                    backtest_rmse=bt_rmse,
+                    backtests_total=bt_n,
+                    fallback_used=fb,
+                )
                 return {
                     "expected_sot": exp,
-                    "confidence_score": conf,
-                    "confidence_label": confidence_word_from_score(conf),
+                    "confidence_score": dq,
+                    "confidence_label": dq_label,
+                    "data_quality_score": dq,
+                    "data_quality_label": dq_label,
+                    "prediction_confidence_score": pconf,
+                    "prediction_confidence_label": plab,
                     "label": production_label_from_expected(exp),
                     "simple_explanation": expl,
                     "calculation_breakdown": bd,
@@ -862,7 +934,11 @@ class SotPredictionService:
 
             h2h_summary: dict[str, Any] | None = None
             try:
-                h2h_raw = build_h2h_summary_for_fixture(db, fx.id)
+                h2h_raw = build_h2h_summary_for_fixture(
+                    db,
+                    fx.id,
+                    exclude_api_fixture_id=int(fx.api_fixture_id),
+                )
                 if h2h_raw.get("error"):
                     h2h_summary = {
                         "h2h_fetch_ok": False,
@@ -906,7 +982,7 @@ class SotPredictionService:
                 {
                     "fixture_id": fx.id,
                     "api_fixture_id": int(fx.api_fixture_id),
-                    "round": fx.round,
+                    "round": _fixture_round_display(fx),
                     "kickoff_at": fx.kickoff_at,
                     "status_short": fx.status,
                     "home_team": {

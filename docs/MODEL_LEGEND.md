@@ -39,14 +39,19 @@ Se un input grezzo è assente, la risoluzione usa in ordine: altri campi della s
 
 Tutti i valori provengono da partite già giocate prima del riferimento temporale della previsione (logica implementata nel servizio feature).
 
-## `expected_sot` e `confidence_score`
+## `expected_sot`, qualità dati e affidabilità della previsione
 
 - **`expected_sot`**: risultato arrotondato della combinazione pesata sopra, con pavimento a zero.
-- **`confidence_score`** (0–100): punteggio euristico basato su quantità di storia disponibile (partite proprie e avversario), presenza della forma recente e penalità se sono stati usati fallback. Non è una probabilità calibrata; serve come **indicatore di affidabilità del dato** (bassa / media / alta nel testo mostrato all’utente).
+- **`confidence_score` / `confidence_label`** (API upcoming): restano allineati alla **qualità dei dati** (stesso significato di `data_quality_*`), per compatibilità con client esistenti. Il valore è euristico: quantità di storia disponibile (partite proprie e avversario), presenza della forma recente e penalità se sono stati usati fallback sulla riga feature. **Non** è una probabilità calibrata sull’errore di previsione.
+- **`data_quality_score` / `data_quality_label`**: stesso contenuto di `confidence_*`, esposto esplicitamente nella risposta “Prossima giornata”.
+- **`prediction_confidence_score` / `prediction_confidence_label`**: punteggio **prudenziale** mostrato come “affidabilità previsione”. Parte dalla qualità dati e applica tetti per la baseline v0.1 (es. massimo 85), aggiustamenti se il backtest stagionale riporta MAE/RMSE in certi intervalli, e una penalità se risultano fallback sui fattori. Anche questo **non** è una probabilità calibrata.
 
-## Limiti noti
+Il backtest (MAE, RMSE) **non** ricalcola questi punteggi riga per riga: serve solo al blocco aggregato stagionale esposto dal servizio backtest e riusato nell’euristica di `prediction_confidence_*`.
+
+## Limiti noti (baseline v0.1)
 
 - Nessuna modellazione esplicita del caso testa-coda o degli infortuni nel numeratore baseline.
+- **Impatto giocatori** (profili, formazioni, disponibilità): layer informativi; **non** entrano nella formula `expected_sot` della v0.1.
 - Dipendenza dalla qualità e completezza delle statistiche importate (API-Football → DB).
 - Il backtest confronta previsioni con esiti reali solo dove esistono SOT effettivi a referto.
 
@@ -109,7 +114,9 @@ Le liste **top** in `GET .../player-sot-profiles/.../summary` privilegiano gioca
 
 ### H2H (scontri diretti)
 
-- Dati testa-testa da API-Football; conteggi vittorie / pareggi riferiti alle due squadre della partita corrente.
+- Riepilogo da API-Football filtrato su **partite concluse** con risultato (`goals_home` / `goals_away` presenti). La partita **corrente** (stesso `api_fixture_id`) è esclusa dal campione; niente partite future o non finite nei conteggi W/D/L, nelle medie o in `last_5`.
+- Conteggi vittorie / pareggi riferiti alle due squadre della scheda upcoming.
+- **`h2h_sample_limited`**: `true` se il numero di match conclusi nel campione è inferiore a 5 (campione storico ridotto).
 - **SOT storici**: solo per gli incontri H2H che esistono anche nel DB locale con `fixture_team_stats` completi; flag `h2h_sot_available` se almeno un match ha SOT lato casa e trasferta.
 
 ### Lineup e infortuni

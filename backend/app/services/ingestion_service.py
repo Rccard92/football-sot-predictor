@@ -416,7 +416,10 @@ class IngestionService:
         kickoff_at = _parse_dt(fx.get("date"))
         home_api = int((teams.get("home") or {})["id"])
         away_api = int((teams.get("away") or {})["id"])
+        league_meta = item.get("league") or {}
         round_raw = fx.get("round")
+        if round_raw is None:
+            round_raw = league_meta.get("round")
         round_str = str(round_raw)[:64] if round_raw is not None else None
         referee_raw = fx.get("referee")
         referee = str(referee_raw)[:255] if referee_raw else None

@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.constants import FINISHED_STATUSES
 from app.models import Fixture, FixtureTeamStat, Team
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 
@@ -38,10 +39,33 @@ def _total_goals(item: dict[str, Any]) -> int | None:
         return None
 
 
+def _h2h_item_is_completed_history(
+    item: dict[str, Any],
+    *,
+    exclude_api_fixture_id: int,
+) -> bool:
+    """Match già disputato con punteggio; esclude la fixture corrente (es. prossima giornata)."""
+    fx = item.get("fixture") or {}
+    try:
+        fid = int(fx.get("id"))
+    except (TypeError, ValueError):
+        return False
+    if fid == int(exclude_api_fixture_id):
+        return False
+    st = str((fx.get("status") or {}).get("short") or "").strip().upper()
+    if st not in FINISHED_STATUSES:
+        return False
+    g = item.get("goals") or {}
+    if g.get("home") is None or g.get("away") is None:
+        return False
+    return True
+
+
 def build_h2h_summary_for_fixture(
     db: Session,
     fixture_id: int,
     client: ApiFootballClient | None = None,
+    exclude_api_fixture_id: int | None = None,
 ) -> dict[str, Any]:
     c = client or ApiFootballClient()
     fx = db.get(Fixture, fixture_id)
@@ -55,6 +79,7 @@ def build_h2h_summary_for_fixture(
 
     api_home_cur = int(home.api_team_id)
     api_away_cur = int(away.api_team_id)
+    cur_api_fid = int(exclude_api_fixture_id) if exclude_api_fixture_id is not None else int(fx.api_fixture_id)
 
     try:
         items = c.get_head_to_head(api_home_cur, api_away_cur)
@@ -67,11 +92,14 @@ def build_h2h_summary_for_fixture(
             "last_5": [],
         }
 
-    sorted_items = sorted(
+    raw_sorted = sorted(
         (i for i in items if isinstance(i, dict)),
         key=lambda x: _parse_ko(x) or datetime.min,
         reverse=True,
     )
+    sorted_items = [
+        it for it in raw_sorted if _h2h_item_is_completed_history(it, exclude_api_fixture_id=cur_api_fid)
+    ]
 
     home_wins = away_wins = draws = 0
     goals_list: list[int] = []
@@ -144,6 +172,7 @@ def build_h2h_summary_for_fixture(
                 sot_for_away_team_vals.append(s_h)
 
     n = len(sorted_items)
+    h2h_sample_limited = n < 5
     avg_goals = round(sum(goals_list) / len(goals_list), 3) if goals_list else None
     h2h_sot_available = len(sot_totals) > 0
     avg_total_sot = round(sum(sot_totals) / len(sot_totals), 3) if sot_totals else None
@@ -186,6 +215,7 @@ def build_h2h_summary_for_fixture(
         "avg_away_sot": avg_away_sot,
         "avg_total_sot": avg_total_sot,
         "h2h_sot_available": h2h_sot_available,
+        "h2h_sample_limited": h2h_sample_limited,
         "same_venue_matches": None,
         "last_5": last5_compact,
     }

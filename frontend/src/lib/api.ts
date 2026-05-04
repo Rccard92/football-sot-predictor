@@ -320,6 +320,10 @@ export type UpcomingSidePrediction = {
   expected_sot: number
   confidence_score: number
   confidence_label: string
+  data_quality_score?: number
+  data_quality_label?: string
+  prediction_confidence_score?: number
+  prediction_confidence_label?: string
   label: string
   simple_explanation: string
   calculation_breakdown: UpcomingCalculationBreakdown | null

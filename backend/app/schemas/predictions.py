@@ -143,6 +143,10 @@ class UpcomingSidePredictionBlock(BaseModel):
     expected_sot: float
     confidence_score: int
     confidence_label: str
+    data_quality_score: int
+    data_quality_label: str
+    prediction_confidence_score: int
+    prediction_confidence_label: str
     label: str
     simple_explanation: str
     calculation_breakdown: UpcomingSotCalculationBreakdown | None = None

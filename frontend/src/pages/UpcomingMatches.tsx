@@ -239,7 +239,7 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
                 <>
                   <ul className="grid gap-1 text-xs sm:grid-cols-2">
                     <li>
-                      Partite nel campione API:{' '}
+                      Partite H2H concluse nel campione (storico):{' '}
                       <span className="font-medium tabular-nums">
                         {formatNum(Number((h2h as Record<string, unknown>).matches_total ?? 0), 0)}
                       </span>
@@ -274,6 +274,12 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
                       ) : null}
                     </li>
                   </ul>
+                  {(h2h as Record<string, unknown>).h2h_sample_limited === true ? (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+                      Campione storico limitato: pochi scontri diretti conclusi disponibili; i conteggi
+                      riflettono solo partite giocate e finite.
+                    </p>
+                  ) : null}
                   {Array.isArray((h2h as Record<string, unknown>).last_5) &&
                   ((h2h as Record<string, unknown>).last_5 as unknown[]).length ? (
                     <div className="overflow-x-auto rounded-lg border border-slate-100">
@@ -437,9 +443,17 @@ function TeamBox({
             Attacco: <span className="font-medium text-slate-800">{pred.label}</span>
           </p>
           <p className="mt-1 text-sm text-slate-600">
-            Fiducia nel dato:{' '}
+            Qualità dati (completezza degli input storici):{' '}
             <span className="font-medium text-slate-800">
-              {pred.confidence_label} (punteggio {pred.confidence_score} su 100)
+              {pred.data_quality_label ?? pred.confidence_label} ·{' '}
+              {pred.data_quality_score ?? pred.confidence_score}/100
+            </span>
+          </p>
+          <p className="mt-1 text-sm text-slate-600">
+            Affidabilità previsione (stima prudenziale; non è probabilità calibrata):{' '}
+            <span className="font-medium text-slate-800">
+              {pred.prediction_confidence_label ?? pred.confidence_label} ·{' '}
+              {pred.prediction_confidence_score ?? pred.confidence_score}/100
             </span>
           </p>
           <p className="mt-3 text-sm leading-relaxed text-slate-700">{pred.simple_explanation}</p>
