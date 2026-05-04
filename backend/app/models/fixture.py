@@ -62,3 +62,4 @@ class Fixture(Base, TimestampMixin):
     team_sot_features = relationship("TeamSotFeature", back_populates="fixture")
     team_sot_predictions = relationship("TeamSotPrediction", back_populates="fixture")
     prediction_backtests = relationship("PredictionBacktest", back_populates="fixture")
+    availability_events = relationship("PlayerAvailabilityEvent", back_populates="fixture")

@@ -17,6 +17,8 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "team_sot_features",
         "team_sot_predictions",
         "prediction_backtests",
+        "player_sot_profiles",
+        "player_availability_events",
     },
 )
 

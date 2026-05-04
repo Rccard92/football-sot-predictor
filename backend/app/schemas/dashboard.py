@@ -55,6 +55,14 @@ class SerieADashboardResponse(BaseModel):
     fixtures_with_team_stats: int
     team_stats_rows_total: int
     team_stats_coverage_pct: float
+    fixtures_with_player_stats: int = 0
+    player_stats_rows_total: int = 0
+    player_stats_coverage_pct: float = 0.0
+    fixtures_with_lineups: int = 0
+    lineups_rows_total: int = 0
+    lineups_coverage_pct: float = 0.0
+    players_profiled_total: int = 0
+    availability_events_total: int = 0
     sot_feature_rows_total: int
     sot_feature_expected_rows: int
     sot_feature_coverage_pct: float

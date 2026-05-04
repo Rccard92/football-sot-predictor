@@ -32,6 +32,9 @@ class FixtureLineup(Base, TimestampMixin):
         index=True,
     )
     formation: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    coach_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    start_xi: Mapped[list[Any] | dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    substitutes: Mapped[list[Any] | dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     lineup_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 

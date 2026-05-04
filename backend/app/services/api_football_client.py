@@ -144,6 +144,15 @@ class ApiFootballClient:
         body = self.get("fixtures/lineups", {"fixture": fixture_id})
         return list(body.get("response") or [])
 
+    def get_injuries(self, league: int, season: int) -> list[dict[str, Any]]:
+        body = self.get("injuries", {"league": league, "season": season})
+        return list(body.get("response") or [])
+
+    def get_head_to_head(self, team_a_api_id: int, team_b_api_id: int) -> list[dict[str, Any]]:
+        h2h = f"{team_a_api_id}-{team_b_api_id}"
+        body = self.get("fixtures/headtohead", {"h2h": h2h})
+        return list(body.get("response") or [])
+
     def get_standings(self, league_id: int, season: int) -> list[dict[str, Any]]:
         return self.get_all_pages(
             "standings",

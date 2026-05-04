@@ -272,6 +272,57 @@ export function Dashboard() {
           )}
         </SectionCard>
 
+        {/* Step 9: layer giocatori / formazioni (copertura dati) */}
+        <SectionCard title="Layer giocatori, formazioni e disponibilità">
+          {!dashboard.loading && !dashboard.error && d ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-slate-500">Statistiche giocatori (copertura)</p>
+                <p className="mt-2 text-xl font-semibold tabular-nums text-slate-900">
+                  {formatPercent(d.player_stats_coverage_pct ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Partite concluse con righe importate: {d.fixtures_with_player_stats ?? 0} /{' '}
+                  {d.fixtures_completed}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-slate-500">Formazioni storiche (copertura)</p>
+                <p className="mt-2 text-xl font-semibold tabular-nums text-slate-900">
+                  {formatPercent(d.lineups_coverage_pct ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Partite con almeno una formazione salvata: {d.fixtures_with_lineups ?? 0}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-slate-500">Profili impatto tiri in porta</p>
+                <p className="mt-2 text-xl font-semibold tabular-nums text-slate-900">
+                  {d.players_profiled_total ?? 0}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">Giocatori con profilo calcolato per la stagione</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-slate-500">Eventi assenze / infortuni (import)</p>
+                <p className="mt-2 text-xl font-semibold tabular-nums text-slate-900">
+                  {d.availability_events_total ?? 0}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Record salvati (non usati ancora nel baseline)
+                </p>
+              </div>
+            </div>
+          ) : dashboard.loading && pageInit ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <SkeletonBlock key={i} className="h-24 w-full rounded-2xl" />
+              ))}
+            </div>
+          ) : dashboard.error ? (
+            <SectionError message={dashboard.error} />
+          ) : null}
+        </SectionCard>
+
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Backtest overview */}
           <SectionCard title="Qualità modello (partite giocate)">

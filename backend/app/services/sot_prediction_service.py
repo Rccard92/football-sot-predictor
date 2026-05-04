@@ -745,6 +745,20 @@ class SotPredictionService:
         round_label = upcoming[0].round if upcoming else None
         matches: list[dict[str, Any]] = []
 
+        from app.models import FixtureLineup, PlayerAvailabilityEvent, PlayerSotProfile
+        from app.services.h2h_service import build_h2h_summary_for_fixture
+        from app.services.player_sot_profile_service import PlayerSotProfileService
+
+        prof_svc = PlayerSotProfileService()
+        profiles_n_season = int(
+            db.scalar(
+                select(func.count()).select_from(PlayerSotProfile).where(
+                    PlayerSotProfile.season_id == season.id,
+                ),
+            )
+            or 0,
+        )
+
         for fx in upcoming:
             home = db.get(Team, fx.home_team_id)
             away = db.get(Team, fx.away_team_id)
@@ -813,6 +827,64 @@ class SotPredictionService:
             if hp and ap:
                 total_exp = round(float(hp["expected_sot"]) + float(ap["expected_sot"]), 2)
 
+            lu_n = int(
+                db.scalar(
+                    select(func.count()).select_from(FixtureLineup).where(
+                        FixtureLineup.fixture_id == fx.id,
+                    ),
+                )
+                or 0,
+            )
+            av_n = int(
+                db.scalar(
+                    select(func.count()).select_from(PlayerAvailabilityEvent).where(
+                        PlayerAvailabilityEvent.season_id == season.id,
+                        PlayerAvailabilityEvent.team_id.in_((fx.home_team_id, fx.away_team_id)),
+                    ),
+                )
+                or 0,
+            )
+
+            h2h_summary: dict[str, Any] | None = None
+            try:
+                h2h_raw = build_h2h_summary_for_fixture(db, fx.id)
+                if h2h_raw.get("error"):
+                    h2h_summary = {
+                        "h2h_fetch_ok": False,
+                        "note": str(h2h_raw.get("error")),
+                    }
+                else:
+                    h2h_summary = h2h_raw
+            except Exception as exc:
+                logger.warning("upcoming h2h fixture_id=%s: %s", fx.id, exc)
+                h2h_summary = {
+                    "h2h_fetch_ok": False,
+                    "note": "Impossibile caricare gli scontri diretti in questo momento.",
+                }
+
+            player_impact_status = {
+                "player_profiles_available": profiles_n_season > 0,
+                "lineups_available": lu_n > 0,
+                "availability_available": av_n > 0,
+                "lineup_adjustment_applied": False,
+                "note": (
+                    "Il modello non applica ancora automaticamente l'impatto giocatori "
+                    "alla previsione baseline."
+                ),
+                "home_top_players": prof_svc.top_for_team(
+                    db,
+                    season_id=season.id,
+                    team_id=fx.home_team_id,
+                    limit=3,
+                ),
+                "away_top_players": prof_svc.top_for_team(
+                    db,
+                    season_id=season.id,
+                    team_id=fx.away_team_id,
+                    limit=3,
+                ),
+            }
+
             matches.append(
                 {
                     "fixture_id": fx.id,
@@ -833,6 +905,8 @@ class SotPredictionService:
                     "home_prediction": hp,
                     "away_prediction": ap,
                     "total_expected_sot": total_exp,
+                    "h2h_summary": h2h_summary,
+                    "player_impact_status": player_impact_status,
                 },
             )
 

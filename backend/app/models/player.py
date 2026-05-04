@@ -25,3 +25,5 @@ class Player(Base, TimestampMixin):
 
     team = relationship("Team", back_populates="players")
     fixture_stats = relationship("FixturePlayerStat", back_populates="player")
+    sot_profile_rows = relationship("PlayerSotProfile", back_populates="player")
+    availability_events = relationship("PlayerAvailabilityEvent", back_populates="player")

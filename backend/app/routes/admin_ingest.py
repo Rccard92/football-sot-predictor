@@ -112,6 +112,64 @@ def admin_ingest_serie_a_team_stats(
     return jsonable_encoder(summary)
 
 
+@router.post("/serie-a/{season}/player-stats", response_model=None)
+def admin_ingest_serie_a_player_stats(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    svc = IngestionService()
+    try:
+        run = svc.ingest_serie_a_player_stats(db, season, run_source="serie_a_player_stats")
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("player-stats: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    if run.status == "failed":
+        return JSONResponse(
+            status_code=502,
+            content=jsonable_encoder(IngestionRunRead.model_validate(run).model_dump()),
+        )
+    return jsonable_encoder(IngestionRunRead.model_validate(run).model_dump())
+
+
+@router.post("/serie-a/{season}/lineups", response_model=None)
+def admin_ingest_serie_a_lineups(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    svc = IngestionService()
+    try:
+        run = svc.ingest_serie_a_lineups(db, season, run_source="serie_a_lineups")
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("lineups: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    if run.status == "failed":
+        return JSONResponse(
+            status_code=502,
+            content=jsonable_encoder(IngestionRunRead.model_validate(run).model_dump()),
+        )
+    return jsonable_encoder(IngestionRunRead.model_validate(run).model_dump())
+
+
+@router.post("/serie-a/{season}/availability", response_model=None)
+def admin_ingest_serie_a_availability(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    svc = IngestionService()
+    try:
+        run = svc.ingest_serie_a_availability(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("availability: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    payload = IngestionRunRead.model_validate(run).model_dump()
+    if run.status == "failed":
+        return JSONResponse(status_code=502, content=jsonable_encoder(payload))
+    return jsonable_encoder(payload)
+
+
 @router.get("/runs", response_model=None)
 def admin_list_ingestion_runs(
     db: Session = Depends(get_db),

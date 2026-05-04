@@ -68,6 +68,14 @@ export type SerieADashboardResponse = {
   upcoming_sot_predictions_total: number
   last_ingestion_run: IngestionRunSummary | null
   data_coverage: DataCoverageBlock
+  fixtures_with_player_stats?: number
+  player_stats_rows_total?: number
+  player_stats_coverage_pct?: number
+  fixtures_with_lineups?: number
+  lineups_rows_total?: number
+  lineups_coverage_pct?: number
+  players_profiled_total?: number
+  availability_events_total?: number
 }
 
 export type SerieADataHealthResponse = {
@@ -332,6 +340,8 @@ export type UpcomingMatchRow = {
   home_prediction: UpcomingSidePrediction | null
   away_prediction: UpcomingSidePrediction | null
   total_expected_sot: number | null
+  h2h_summary?: Record<string, unknown> | null
+  player_impact_status?: Record<string, unknown> | null
 }
 
 export type ModelLimitations = {
@@ -434,4 +444,28 @@ export async function adminBootstrapSerieA(season: number): Promise<unknown> {
 
 export async function adminIngestTeamStats(season: number): Promise<unknown> {
   return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/team-stats`, {})
+}
+
+export async function adminIngestPlayerStats(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/player-stats`, {})
+}
+
+export async function adminIngestLineups(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/lineups`, {})
+}
+
+export async function adminTestInjuriesApi(season: number): Promise<unknown> {
+  return requestJson<unknown>(`/api/admin/api-football/injuries/test?season=${season}`)
+}
+
+export async function adminIngestAvailability(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/availability`, {})
+}
+
+export async function buildPlayerSotProfiles(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/build`, {})
+}
+
+export async function getPlayerSotProfilesSummary(season: number): Promise<unknown> {
+  return requestJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/summary`)
 }

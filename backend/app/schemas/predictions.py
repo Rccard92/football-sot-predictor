@@ -165,6 +165,8 @@ class UpcomingMatchRow(BaseModel):
     home_prediction: UpcomingSidePredictionBlock | None = None
     away_prediction: UpcomingSidePredictionBlock | None = None
     total_expected_sot: float | None = None
+    h2h_summary: dict[str, Any] | None = None
+    player_impact_status: dict[str, Any] | None = None
 
 
 class ModelLimitationsBlock(BaseModel):

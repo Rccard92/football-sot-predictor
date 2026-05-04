@@ -28,3 +28,29 @@ def admin_serie_a_data_health(season: int, db: Session = Depends(get_db)):
                 {"status": "error", "message": "Database error", "detail": str(exc)},
             ),
         )
+
+
+@router.get("/serie-a/{season}/player-stats", response_model=None)
+def admin_serie_a_player_stats_health(season: int, db: Session = Depends(get_db)):
+    svc = IngestionService()
+    try:
+        return jsonable_encoder(svc.serie_a_player_stats_data_health(db, season))
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("data-health player-stats: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder({"status": "error", "message": "Database error", "detail": str(exc)}),
+        )
+
+
+@router.get("/serie-a/{season}/lineups", response_model=None)
+def admin_serie_a_lineups_health(season: int, db: Session = Depends(get_db)):
+    svc = IngestionService()
+    try:
+        return jsonable_encoder(svc.serie_a_lineups_data_health(db, season))
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("data-health lineups: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder({"status": "error", "message": "Database error", "detail": str(exc)}),
+        )

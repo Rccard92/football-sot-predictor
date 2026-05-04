@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select, union_all, update
+from sqlalchemy import delete, func, select, union_all, update
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,8 @@ from app.models import (
     IngestionRun,
     League,
     Player,
+    PlayerAvailabilityEvent,
+    PlayerSotProfile,
     Season,
     Team,
     TeamSotFeature,
@@ -25,6 +27,11 @@ from app.models import (
 from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES, fixture_eligible_for_upcoming_sot
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.fixture_team_stats_mapping import apply_parsed_to_row, statistics_list_to_fields
+from app.services.player_stats_parsing import (
+    player_entry_flags,
+    player_position,
+    statistics_list_to_player_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -776,8 +783,169 @@ class IngestionService:
             "team_stats_coverage_pct": pct,
         }
 
-    def sync_completed_fixture_player_stats(self, db: Session, season: int = 2025) -> IngestionRun:
-        run = self._begin_run(db, "sync_completed_fixture_player_stats", meta={"season": season})
+    def serie_a_player_stats_data_health(self, db: Session, season: int) -> dict[str, Any]:
+        try:
+            season_row = self._serie_a_season_row(db, season)
+        except ValueError:
+            return {
+                "fixtures_completed": 0,
+                "fixtures_with_player_stats": 0,
+                "fixtures_missing_player_stats": 0,
+                "player_stats_rows_total": 0,
+                "player_stats_coverage_pct": 0.0,
+                "missing_fixture_ids": [],
+            }
+        fixtures_completed = db.scalars(
+            select(Fixture).where(
+                Fixture.season_id == season_row.id,
+                Fixture.status.in_(FINISHED_STATUSES),
+            ),
+        ).all()
+        completed_ids = {f.id for f in fixtures_completed}
+        n_completed = len(completed_ids)
+        if not completed_ids:
+            return {
+                "fixtures_completed": 0,
+                "fixtures_with_player_stats": 0,
+                "fixtures_missing_player_stats": 0,
+                "player_stats_rows_total": 0,
+                "player_stats_coverage_pct": 0.0,
+                "missing_fixture_ids": [],
+            }
+        with_rows = db.scalars(
+            select(FixturePlayerStat.fixture_id)
+            .where(FixturePlayerStat.fixture_id.in_(completed_ids))
+            .distinct(),
+        ).all()
+        with_set = {int(x) for x in with_rows}
+        fixtures_with_player_stats = len(with_set)
+        missing_fixture_ids = sorted(completed_ids - with_set)
+        player_stats_rows_total = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixturePlayerStat)
+                .join(Fixture, Fixture.id == FixturePlayerStat.fixture_id)
+                .where(Fixture.season_id == season_row.id),
+            )
+            or 0,
+        )
+        pct = round(100.0 * fixtures_with_player_stats / n_completed, 2) if n_completed else 0.0
+        return {
+            "fixtures_completed": n_completed,
+            "fixtures_with_player_stats": fixtures_with_player_stats,
+            "fixtures_missing_player_stats": len(missing_fixture_ids),
+            "player_stats_rows_total": player_stats_rows_total,
+            "player_stats_coverage_pct": pct,
+            "missing_fixture_ids": missing_fixture_ids,
+        }
+
+    def serie_a_lineups_data_health(self, db: Session, season: int) -> dict[str, Any]:
+        try:
+            season_row = self._serie_a_season_row(db, season)
+        except ValueError:
+            return {
+                "fixtures_completed": 0,
+                "fixtures_with_lineups": 0,
+                "fixtures_missing_lineups": 0,
+                "lineups_rows_total": 0,
+                "lineups_coverage_pct": 0.0,
+                "missing_fixture_ids": [],
+            }
+        fixtures_completed = db.scalars(
+            select(Fixture).where(
+                Fixture.season_id == season_row.id,
+                Fixture.status.in_(FINISHED_STATUSES),
+            ),
+        ).all()
+        completed_ids = {f.id for f in fixtures_completed}
+        n_completed = len(completed_ids)
+        if not completed_ids:
+            return {
+                "fixtures_completed": 0,
+                "fixtures_with_lineups": 0,
+                "fixtures_missing_lineups": 0,
+                "lineups_rows_total": 0,
+                "lineups_coverage_pct": 0.0,
+                "missing_fixture_ids": [],
+            }
+        with_lineup = db.scalars(
+            select(FixtureLineup.fixture_id)
+            .where(FixtureLineup.fixture_id.in_(completed_ids))
+            .distinct(),
+        ).all()
+        with_set = {int(x) for x in with_lineup}
+        fixtures_with_lineups = len(with_set)
+        missing_fixture_ids = sorted(completed_ids - with_set)
+        lineups_rows_total = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureLineup)
+                .join(Fixture, Fixture.id == FixtureLineup.fixture_id)
+                .where(Fixture.season_id == season_row.id),
+            )
+            or 0,
+        )
+        pct = round(100.0 * fixtures_with_lineups / n_completed, 2) if n_completed else 0.0
+        return {
+            "fixtures_completed": n_completed,
+            "fixtures_with_lineups": fixtures_with_lineups,
+            "fixtures_missing_lineups": len(missing_fixture_ids),
+            "lineups_rows_total": lineups_rows_total,
+            "lineups_coverage_pct": pct,
+            "missing_fixture_ids": missing_fixture_ids,
+        }
+
+    @staticmethod
+    def _apply_parsed_player_stat(
+        row: FixturePlayerStat,
+        parsed: dict[str, Any],
+        *,
+        position: str | None,
+        captain: bool | None,
+        substitute: bool | None,
+        minutes_fallback: int | None,
+    ) -> None:
+        row.position = position
+        row.captain = captain
+        row.substitute = substitute
+        if "minutes" in parsed and parsed["minutes"] is not None:
+            row.minutes = int(parsed["minutes"])
+        elif minutes_fallback is not None:
+            row.minutes = minutes_fallback
+        for attr in (
+            "rating",
+            "shots_total",
+            "shots_on_target",
+            "goals",
+            "assists",
+            "passes_total",
+            "passes_key",
+            "passes_accuracy_pct",
+            "tackles_total",
+            "tackles_blocks",
+            "interceptions",
+            "duels_total",
+            "duels_won",
+            "dribbles_attempts",
+            "dribbles_success",
+            "fouls_drawn",
+            "fouls_committed",
+            "yellow_cards",
+            "red_cards",
+        ):
+            if attr in parsed and parsed[attr] is not None:
+                setattr(row, attr, parsed[attr])
+
+    def ingest_serie_a_player_stats(
+        self,
+        db: Session,
+        season: int,
+        *,
+        run_source: str = "serie_a_player_stats",
+    ) -> IngestionRun:
+        run = self._begin_run(db, run_source, meta={"season": season})
+        missing_fixture_ids: list[int] = []
+        processed = 0
         try:
             season_row = self._serie_a_season_row(db, season)
             fixtures = db.scalars(
@@ -786,64 +954,131 @@ class IngestionService:
                     Fixture.status.in_(FINISHED_STATUSES),
                 ),
             ).all()
-            processed = 0
             for f in fixtures:
-                groups = self._client.get_fixture_players(int(f.api_fixture_id))
+                try:
+                    groups = self._client.get_fixture_players(int(f.api_fixture_id))
+                except Exception as exc:
+                    logger.warning(
+                        "ingest player_stats: fixture_id=%s api_fixture_id=%s err=%s",
+                        f.id,
+                        f.api_fixture_id,
+                        exc,
+                    )
+                    missing_fixture_ids.append(f.id)
+                    continue
+                if not groups:
+                    missing_fixture_ids.append(f.id)
+                    continue
+                had_stat = False
                 for group in groups:
                     team_block = group.get("team") or {}
-                    team_api = int(team_block["id"])
+                    try:
+                        team_api = int(team_block["id"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
                     team = db.scalar(select(Team).where(Team.api_team_id == team_api))
                     if team is None:
                         continue
                     for entry in group.get("players") or []:
-                        p = entry.get("player") or {}
-                        api_player_id = int(p["id"])
+                        try:
+                            p = entry.get("player") or {}
+                            api_player_id = int(p["id"])
+                        except (KeyError, TypeError, ValueError):
+                            continue
                         name = str(p.get("name") or "")
-                        minutes = _extract_minutes_from_statistics(entry.get("statistics"))
-                        player = db.scalar(select(Player).where(Player.api_player_id == api_player_id))
-                        if player is None:
-                            player = Player(
-                                api_player_id=api_player_id,
-                                name=name,
-                                team_id=team.id,
-                                raw_json=p,
-                            )
-                            db.add(player)
-                            db.flush()
-                        else:
-                            player.name = name or player.name
-                            player.team_id = team.id
-                            player.raw_json = p
+                        stats_list = entry.get("statistics")
+                        if not isinstance(stats_list, list):
+                            stats_list = []
+                        try:
+                            parsed = statistics_list_to_player_fields(stats_list)
+                            cap, sub = player_entry_flags(p, entry)
+                            pos = player_position(p)
+                            minutes_fb = _extract_minutes_from_statistics(stats_list)
+                            player = db.scalar(select(Player).where(Player.api_player_id == api_player_id))
+                            if player is None:
+                                player = Player(
+                                    api_player_id=api_player_id,
+                                    name=name or f"Player {api_player_id}",
+                                    team_id=team.id,
+                                    raw_json=p,
+                                )
+                                db.add(player)
+                                db.flush()
+                            else:
+                                if name:
+                                    player.name = name
+                                player.team_id = team.id
+                                player.raw_json = p
 
-                        row = db.scalar(
-                            select(FixturePlayerStat).where(
-                                FixturePlayerStat.fixture_id == f.id,
-                                FixturePlayerStat.player_id == player.id,
-                            ),
-                        )
-                        if row is None:
-                            row = FixturePlayerStat(
-                                fixture_id=f.id,
-                                player_id=player.id,
-                                team_id=team.id,
-                                minutes=minutes,
-                                raw_json=entry,
+                            row = db.scalar(
+                                select(FixturePlayerStat).where(
+                                    FixturePlayerStat.fixture_id == f.id,
+                                    FixturePlayerStat.player_id == player.id,
+                                ),
                             )
-                            db.add(row)
-                        else:
-                            row.team_id = team.id
-                            row.minutes = minutes
-                            row.raw_json = entry
-                        processed += 1
+                            if row is None:
+                                row = FixturePlayerStat(
+                                    fixture_id=f.id,
+                                    player_id=player.id,
+                                    team_id=team.id,
+                                    raw_json=entry,
+                                )
+                                db.add(row)
+                            else:
+                                row.team_id = team.id
+                                row.raw_json = entry
+                            self._apply_parsed_player_stat(
+                                row,
+                                parsed,
+                                position=pos,
+                                captain=cap,
+                                substitute=sub,
+                                minutes_fallback=minutes_fb,
+                            )
+                            processed += 1
+                            had_stat = True
+                        except Exception as row_exc:
+                            logger.warning(
+                                "ingest player_stats row skip fixture_id=%s player_api=%s: %s",
+                                f.id,
+                                api_player_id,
+                                row_exc,
+                            )
+                            continue
+                if not had_stat:
+                    missing_fixture_ids.append(f.id)
             db.commit()
-            return self._finish_run(db, run, success=True, records_processed=processed)
+            return self._finish_run(
+                db,
+                run,
+                success=True,
+                records_processed=processed,
+                meta_merge={
+                    "missing_fixture_ids": sorted(set(missing_fixture_ids)),
+                    "fixtures_completed": len(fixtures),
+                },
+            )
         except Exception as exc:
-            logger.exception("sync_completed_fixture_player_stats failed")
+            logger.exception("ingest_serie_a_player_stats failed")
             db.rollback()
             return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
 
-    def sync_completed_fixture_lineups(self, db: Session, season: int = 2025) -> IngestionRun:
-        run = self._begin_run(db, "sync_completed_fixture_lineups", meta={"season": season})
+    def sync_completed_fixture_player_stats(self, db: Session, season: int = 2025) -> IngestionRun:
+        return self.ingest_serie_a_player_stats(
+            db,
+            season,
+            run_source="sync_completed_fixture_player_stats",
+        )
+
+    def ingest_serie_a_lineups(
+        self,
+        db: Session,
+        season: int,
+        *,
+        run_source: str = "serie_a_lineups",
+    ) -> IngestionRun:
+        run = self._begin_run(db, run_source, meta={"season": season})
+        processed = 0
         try:
             season_row = self._serie_a_season_row(db, season)
             fixtures = db.scalars(
@@ -852,21 +1087,40 @@ class IngestionService:
                     Fixture.status.in_(FINISHED_STATUSES),
                 ),
             ).all()
-            processed = 0
             for f in fixtures:
-                blocks = self._client.get_fixture_lineups(int(f.api_fixture_id))
+                try:
+                    blocks = self._client.get_fixture_lineups(int(f.api_fixture_id))
+                except Exception as exc:
+                    logger.warning(
+                        "ingest lineups: fixture_id=%s api_fixture_id=%s err=%s",
+                        f.id,
+                        f.api_fixture_id,
+                        exc,
+                    )
+                    continue
                 for block in blocks:
                     team_block = block.get("team") or {}
-                    team_api = int(team_block["id"])
+                    try:
+                        team_api = int(team_block["id"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
                     team = db.scalar(select(Team).where(Team.api_team_id == team_api))
                     if team is None:
                         continue
                     formation = block.get("formation")
                     formation_str = str(formation) if formation else None
+                    coach = block.get("coach")
+                    coach_name = None
+                    if isinstance(coach, dict):
+                        cn = coach.get("name")
+                        if cn:
+                            coach_name = str(cn)[:255]
+                    start_xi = block.get("startXI")
+                    substitutes = block.get("substitutes")
                     lineup_json = {
-                        "startXI": block.get("startXI"),
-                        "substitutes": block.get("substitutes"),
-                        "coach": block.get("coach"),
+                        "startXI": start_xi,
+                        "substitutes": substitutes,
+                        "coach": coach,
                     }
                     row = db.scalar(
                         select(FixtureLineup).where(
@@ -879,19 +1133,137 @@ class IngestionService:
                             fixture_id=f.id,
                             team_id=team.id,
                             formation=formation_str,
+                            coach_name=coach_name,
+                            start_xi=start_xi,
+                            substitutes=substitutes,
                             lineup_json=lineup_json,
                             raw_json=block,
                         )
                         db.add(row)
                     else:
                         row.formation = formation_str
+                        row.coach_name = coach_name
+                        row.start_xi = start_xi  # type: ignore[assignment]
+                        row.substitutes = substitutes  # type: ignore[assignment]
                         row.lineup_json = lineup_json
                         row.raw_json = block
                     processed += 1
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=processed)
         except Exception as exc:
-            logger.exception("sync_completed_fixture_lineups failed")
+            logger.exception("ingest_serie_a_lineups failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def sync_completed_fixture_lineups(self, db: Session, season: int = 2025) -> IngestionRun:
+        return self.ingest_serie_a_lineups(db, season, run_source="sync_completed_fixture_lineups")
+
+    def ingest_serie_a_availability(self, db: Session, season: int) -> IngestionRun:
+        """Importa injuries API-Football come eventi di disponibilità (solo debug; non usato nel baseline)."""
+        run = self._begin_run(db, "serie_a_availability", meta={"season": season})
+        settings = get_settings()
+        try:
+            season_row = self._serie_a_season_row(db, season)
+        except ValueError as exc:
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+        try:
+            if not (settings.api_football_key or "").strip():
+                db.commit()
+                return self._finish_run(
+                    db,
+                    run,
+                    success=True,
+                    records_processed=0,
+                    meta_merge={"status": "skipped", "reason": "API key assente"},
+                )
+            try:
+                items = self._client.get_injuries(int(settings.default_league_id), int(season))
+            except ApiFootballError as exc:
+                db.commit()
+                return self._finish_run(
+                    db,
+                    run,
+                    success=True,
+                    records_processed=0,
+                    meta_merge={"status": "skipped", "reason": str(exc)},
+                )
+            if not items:
+                db.commit()
+                return self._finish_run(
+                    db,
+                    run,
+                    success=True,
+                    records_processed=0,
+                    meta_merge={"status": "skipped", "reason": "Nessun record injuries dalla API"},
+                )
+            first = items[0]
+            if not isinstance(first, dict) or "player" not in first:
+                db.commit()
+                return self._finish_run(
+                    db,
+                    run,
+                    success=True,
+                    records_processed=0,
+                    meta_merge={
+                        "status": "skipped",
+                        "reason": "Formato risposta injuries non gestito in questa versione",
+                    },
+                )
+
+            db.execute(
+                delete(PlayerAvailabilityEvent).where(
+                    PlayerAvailabilityEvent.season_id == season_row.id,
+                    PlayerAvailabilityEvent.source == "api_football_injuries",
+                ),
+            )
+            n_ok = 0
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                pl = it.get("player") or {}
+                tm = it.get("team") or {}
+                api_pid = pl.get("id")
+                name = str(pl.get("name") or "").strip() or "Nome non disponibile"
+                team = None
+                try:
+                    if tm.get("id") is not None:
+                        team = db.scalar(select(Team).where(Team.api_team_id == int(tm["id"])))
+                except (TypeError, ValueError):
+                    pass
+                player = None
+                try:
+                    if api_pid is not None:
+                        player = db.scalar(select(Player).where(Player.api_player_id == int(api_pid)))
+                except (TypeError, ValueError):
+                    pass
+                typ = it.get("type") or "injury"
+                if isinstance(typ, dict):
+                    typ = typ.get("type") or "injury"
+                typ_s = str(typ)[:64]
+                reason = it.get("reason")
+                if reason is not None:
+                    reason = str(reason)[:512]
+                ev = PlayerAvailabilityEvent(
+                    season_id=season_row.id,
+                    team_id=team.id if team else None,
+                    player_id=player.id if player else None,
+                    api_player_id=int(api_pid) if api_pid is not None else None,
+                    player_name=name,
+                    fixture_id=None,
+                    type=typ_s,
+                    reason=reason,
+                    start_date=None,
+                    end_date=None,
+                    source="api_football_injuries",
+                    raw_json=it,
+                )
+                db.add(ev)
+                n_ok += 1
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=n_ok)
+        except Exception as exc:
+            logger.exception("ingest_serie_a_availability failed")
             db.rollback()
             return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
 
@@ -911,6 +1283,14 @@ class IngestionService:
             "fixtures_with_team_stats": 0,
             "team_stats_rows_total": 0,
             "team_stats_coverage_pct": 0.0,
+            "fixtures_with_player_stats": 0,
+            "player_stats_rows_total": 0,
+            "player_stats_coverage_pct": 0.0,
+            "fixtures_with_lineups": 0,
+            "lineups_rows_total": 0,
+            "lineups_coverage_pct": 0.0,
+            "players_profiled_total": 0,
+            "availability_events_total": 0,
             "sot_feature_rows_total": 0,
             "sot_feature_expected_rows": 0,
             "sot_feature_coverage_pct": 0.0,
@@ -997,6 +1377,24 @@ class IngestionService:
         fixtures_imported = fixtures_total > 0
 
         health = self.serie_a_team_stats_data_health(db, season)
+        ph = self.serie_a_player_stats_data_health(db, season)
+        lh = self.serie_a_lineups_data_health(db, season)
+        players_profiled_total = int(
+            db.scalar(
+                select(func.count()).select_from(PlayerSotProfile).where(
+                    PlayerSotProfile.season_id == season_row.id,
+                ),
+            )
+            or 0,
+        )
+        availability_events_total = int(
+            db.scalar(
+                select(func.count()).select_from(PlayerAvailabilityEvent).where(
+                    PlayerAvailabilityEvent.season_id == season_row.id,
+                ),
+            )
+            or 0,
+        )
 
         from app.services.sot_feature_service import SotFeatureService
 
@@ -1058,6 +1456,14 @@ class IngestionService:
             "fixtures_with_team_stats": health["fixtures_with_team_stats"],
             "team_stats_rows_total": health["team_stats_rows_total"],
             "team_stats_coverage_pct": health["team_stats_coverage_pct"],
+            "fixtures_with_player_stats": ph["fixtures_with_player_stats"],
+            "player_stats_rows_total": ph["player_stats_rows_total"],
+            "player_stats_coverage_pct": ph["player_stats_coverage_pct"],
+            "fixtures_with_lineups": lh["fixtures_with_lineups"],
+            "lineups_rows_total": lh["lineups_rows_total"],
+            "lineups_coverage_pct": lh["lineups_coverage_pct"],
+            "players_profiled_total": players_profiled_total,
+            "availability_events_total": availability_events_total,
             "sot_feature_rows_total": sot_sum["feature_rows_total"],
             "sot_feature_expected_rows": sot_sum["expected_feature_rows"],
             "sot_feature_coverage_pct": float(sot_sum["coverage_pct"]),

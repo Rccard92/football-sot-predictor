@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
@@ -74,6 +74,48 @@ def api_football_test() -> dict[str, Any]:
         "season": season,
         "coverage": coverage,
         "raw_response_count": raw_response_count,
+    }
+
+
+@router.get("/api-football/injuries/test")
+def api_football_injuries_test(
+    season: int | None = Query(default=None, description="Anno stagione (es. 2025)"),
+) -> dict[str, Any]:
+    """Prova GET /injuries senza persistenza; non espone la API key."""
+    settings = get_settings()
+    year = season if season is not None else settings.default_season
+    league_id = settings.default_league_id
+    if not (settings.api_football_key or "").strip():
+        return {
+            "status": "error",
+            "response_count": 0,
+            "sample_items": [],
+            "errors": ["API_FOOTBALL_KEY non configurata"],
+            "season": year,
+            "league": league_id,
+        }
+    client = ApiFootballClient()
+    try:
+        body = client.get("injuries", {"league": league_id, "season": year})
+    except ApiFootballError as exc:
+        return {
+            "status": "error",
+            "response_count": 0,
+            "sample_items": [],
+            "errors": [str(exc)],
+            "season": year,
+            "league": league_id,
+        }
+    errs = body.get("errors")
+    items: list[Any] = list(body.get("response") or [])
+    sample = items[:3]
+    return {
+        "status": "ok" if not errs else "partial",
+        "response_count": len(items),
+        "sample_items": sample,
+        "errors": errs if errs else None,
+        "season": year,
+        "league": league_id,
     }
 
 

@@ -6,6 +6,8 @@ from app.models.fixture_team_stat import FixtureTeamStat
 from app.models.ingestion_run import IngestionRun
 from app.models.league import League
 from app.models.player import Player
+from app.models.player_availability_event import PlayerAvailabilityEvent
+from app.models.player_sot_profile import PlayerSotProfile
 from app.models.prediction_backtest import PredictionBacktest
 from app.models.season import Season
 from app.models.team import Team
@@ -21,6 +23,8 @@ __all__ = [
     "IngestionRun",
     "League",
     "Player",
+    "PlayerAvailabilityEvent",
+    "PlayerSotProfile",
     "PredictionBacktest",
     "Season",
     "Team",
