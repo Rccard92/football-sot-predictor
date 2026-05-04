@@ -73,15 +73,21 @@ Dati aggiuntivi presenti nel sistema ma **non mescolati** nella formula baseline
 
 ### Player Impact (profilo SOT)
 
-Per ogni giocatore e stagione, dopo l’import delle statistiche:
+I profili in `player_sot_profiles` sono un **layer di debug / analisi**: arricchiscono API e dashboard ma **non entrano** nel calcolo di `expected_sot` (baseline v0.1). Dopo `POST .../player-sot-profiles/.../build`, ogni `player_id` con almeno una riga in `fixture_player_stats` per la stagione ottiene un profilo.
 
-- **`starts`**: se esiste formazione per `(partita, squadra)`, si considera titolare se l’`api_player_id` è in `start_xi`; altrimenti euristica: almeno 46 minuti e non segnato come entrato dalla panchina (`substitute` non vero).
-- **`team_sot_share_pct`**: somma dei tiri in porta del giocatore sulle sue apparizioni, diviso per la somma dei tiri in porta di squadra (`fixture_team_stats`) sulle stesse partite; se il denominatore è zero → `None`.
-- **`last5_*`**: ultime fino a 5 apparizioni ordinate per data, media per 90 minuti sui tiri in porta.
-- **`reliability_score`**: 50 base, +20 se almeno 900 minuti, +10 se almeno 10 presenze, −20 sotto 300 minuti, clamp 0–100.
-- **`impact_score`**: combinazione normalizzata  
-  `0,50 * norm(sot_per90) + 0,30 * norm(quota_squadra) + 0,20 * norm(affidabilità)`  
-  con `norm(sot_per90) = min(max(sot_per90 / 2, 0), 1)` e quota squadra in [0, 1].
+Per ogni giocatore e stagione:
+
+- **`appearances`**: numero di righe `fixture_player_stats` nella stagione.
+- **`total_minutes` / `avg_minutes`**: somma dei minuti (null → 0), media su presenze.
+- **`total_shots` / `total_shots_on_target`**: somme con null → 0.
+- **`shots_on_target_per90`**: `total_shots_on_target / total_minutes * 90` se `total_minutes > 0`, altrimenti 0.
+- **`starts`**: se esiste `start_xi` non vuoto in formazione per `(partita, squadra)`, titolare se `api_player_id` è tra gli id; altrimenti proxy **minuti ≥ 60** sulla singola partita.
+- **`team_sot_share_pct`** (0–100): percentuale dei tiri in porta del giocatore rispetto alla somma dei tiri in porta di squadra (`fixture_team_stats`) sulle stesse partite in cui ha giocato; se il denominatore è 0 → 0.
+- **`last5_shots_on_target_per90`**: sulle ultime al massimo 5 presenze (ordinate per data), media dei valori per 90′ (se minuti = 0 in una presenza, quel pezzo conta 0).
+- **`reliability_score`**: 50 base; +20 se `total_minutes ≥ 900`; +10 se `appearances ≥ 10`; −20 se `total_minutes < 300`; clamp 0–100.
+- **`impact_score`** (stessa scala 0–100 dei contributi):  
+  `0,50 * normalized_shots_on_target_per90 + 0,30 * team_sot_share_pct + 0,20 * reliability_score`  
+  con `normalized_shots_on_target_per90 = min(shots_on_target_per90 / 2, 1) * 100`.
 
 ### H2H (scontri diretti)
 

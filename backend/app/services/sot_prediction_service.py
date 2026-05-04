@@ -864,12 +864,13 @@ class SotPredictionService:
 
             player_impact_status = {
                 "player_profiles_available": profiles_n_season > 0,
+                "baseline_includes_player_impact": False,
                 "lineups_available": lu_n > 0,
                 "availability_available": av_n > 0,
                 "lineup_adjustment_applied": False,
                 "note": (
-                    "Il modello non applica ancora automaticamente l'impatto giocatori "
-                    "alla previsione baseline."
+                    "Profili impatto giocatore e top giocatori sono solo informativi (layer debug): "
+                    "non modificano expected_sot né la baseline v0.1."
                 ),
                 "home_top_players": prof_svc.top_for_team(
                     db,
