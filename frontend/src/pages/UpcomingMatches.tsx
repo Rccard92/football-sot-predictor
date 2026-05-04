@@ -51,9 +51,12 @@ function yn(v: unknown): string {
 
 type TopPlayer = {
   name?: string
+  team_name?: string
   impact_score?: number | null
   shots_on_target_per90?: number | null
   appearances?: number | null
+  total_minutes?: number | null
+  sample_warning?: boolean
 }
 
 function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
@@ -68,6 +71,7 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
 
   const homeTop = (impact?.home_top_players as TopPlayer[] | undefined) ?? []
   const awayTop = (impact?.away_top_players as TopPlayer[] | undefined) ?? []
+  const sotSuspicious = impact?.player_profiles_sot_data_suspicious === true
 
   return (
     <div className="border-t border-slate-100 px-5 pb-5 sm:px-6">
@@ -106,6 +110,11 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
                   {typeof impact.note === 'string' ? (
                     <p className="text-xs leading-relaxed text-slate-600">{impact.note}</p>
                   ) : null}
+                  {sotSuspicious ? (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+                      Profili giocatore presenti, ma dati tiri in porta giocatore da verificare.
+                    </p>
+                  ) : null}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -114,20 +123,31 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
                       {homeTop.length ? (
                         <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs">
                           {homeTop.map((p, i) => (
-                            <li key={i}>
+                            <li key={i} className="space-y-0.5">
                               <span className="font-medium">{p.name ?? '—'}</span>
-                              {p.impact_score != null ? (
-                                <span className="text-slate-600">
-                                  {' '}
-                                  · impatto {formatNum(Number(p.impact_score), 3)}
-                                </span>
+                              {p.team_name ? (
+                                <span className="text-slate-600"> ({p.team_name})</span>
                               ) : null}
-                              {p.shots_on_target_per90 != null ? (
-                                <span className="text-slate-600">
-                                  {' '}
-                                  · media tiri in porta / 90′ {formatNum(Number(p.shots_on_target_per90), 2)}
-                                </span>
-                              ) : null}
+                              <span className="block text-slate-600">
+                                Tiri in porta / 90′:{' '}
+                                {p.shots_on_target_per90 != null
+                                  ? formatNum(Number(p.shots_on_target_per90), 2)
+                                  : '—'}
+                                {' · '}
+                                Impatto:{' '}
+                                {p.impact_score != null ? formatNum(Number(p.impact_score), 2) : '—'}
+                                {p.total_minutes != null ? (
+                                  <>
+                                    {' · '}
+                                    Minuti: {formatNum(Number(p.total_minutes), 0)}
+                                  </>
+                                ) : null}
+                                {p.sample_warning ? (
+                                  <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                                    Campione basso
+                                  </span>
+                                ) : null}
+                              </span>
                             </li>
                           ))}
                         </ol>
@@ -142,20 +162,31 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
                       {awayTop.length ? (
                         <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs">
                           {awayTop.map((p, i) => (
-                            <li key={i}>
+                            <li key={i} className="space-y-0.5">
                               <span className="font-medium">{p.name ?? '—'}</span>
-                              {p.impact_score != null ? (
-                                <span className="text-slate-600">
-                                  {' '}
-                                  · impatto {formatNum(Number(p.impact_score), 3)}
-                                </span>
+                              {p.team_name ? (
+                                <span className="text-slate-600"> ({p.team_name})</span>
                               ) : null}
-                              {p.shots_on_target_per90 != null ? (
-                                <span className="text-slate-600">
-                                  {' '}
-                                  · media tiri in porta / 90′ {formatNum(Number(p.shots_on_target_per90), 2)}
-                                </span>
-                              ) : null}
+                              <span className="block text-slate-600">
+                                Tiri in porta / 90′:{' '}
+                                {p.shots_on_target_per90 != null
+                                  ? formatNum(Number(p.shots_on_target_per90), 2)
+                                  : '—'}
+                                {' · '}
+                                Impatto:{' '}
+                                {p.impact_score != null ? formatNum(Number(p.impact_score), 2) : '—'}
+                                {p.total_minutes != null ? (
+                                  <>
+                                    {' · '}
+                                    Minuti: {formatNum(Number(p.total_minutes), 0)}
+                                  </>
+                                ) : null}
+                                {p.sample_warning ? (
+                                  <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                                    Campione basso
+                                  </span>
+                                ) : null}
+                              </span>
                             </li>
                           ))}
                         </ol>

@@ -71,23 +71,41 @@ Dati aggiuntivi presenti nel sistema ma **non mescolati** nella formula baseline
 | Eventi disponibilità | `player_availability_events` (import cauto) | No |
 | H2H | Riepilogo API + SOT da DB dove coperto | No |
 
-### Player Impact (profilo SOT)
+### Import statistiche giocatore (`fixture_player_stats`)
 
-I profili in `player_sot_profiles` sono un **layer di debug / analisi**: arricchiscono API e dashboard ma **non entrano** nel calcolo di `expected_sot` (baseline v0.1). Dopo `POST .../player-sot-profiles/.../build`, ogni `player_id` con almeno una riga in `fixture_player_stats` per la stagione ottiene un profilo.
+**Problema riscontrato:** la risposta API-Sports `GET /fixtures/players` espone spesso `statistics` come **array di un oggetto** con blocchi annidati (`games`, `shots`, `goals`, …), non come lista di `{ type, value }`. Un parser solo “flat” lasciava `shots_on_target`, `shots_total` e altri campi vuoti nel DB pur avendo `raw_json` corretto.
 
-Per ogni giocatore e stagione:
+**Mapping corretto (implementato in `parse_fixture_player_statistics` in [`backend/app/services/player_stats_parsing.py`](backend/app/services/player_stats_parsing.py)):** dal primo elemento di `statistics` si leggono, tra gli altri:
 
-- **`appearances`**: numero di righe `fixture_player_stats` nella stagione.
-- **`total_minutes` / `avg_minutes`**: somma dei minuti (null → 0), media su presenze.
-- **`total_shots` / `total_shots_on_target`**: somme con null → 0.
-- **`shots_on_target_per90`**: `total_shots_on_target / total_minutes * 90` se `total_minutes > 0`, altrimenti 0.
-- **`starts`**: se esiste `start_xi` non vuoto in formazione per `(partita, squadra)`, titolare se `api_player_id` è tra gli id; altrimenti proxy **minuti ≥ 60** sulla singola partita.
-- **`team_sot_share_pct`** (0–100): percentuale dei tiri in porta del giocatore rispetto alla somma dei tiri in porta di squadra (`fixture_team_stats`) sulle stesse partite in cui ha giocato; se il denominatore è 0 → 0.
-- **`last5_shots_on_target_per90`**: sulle ultime al massimo 5 presenze (ordinate per data), media dei valori per 90′ (se minuti = 0 in una presenza, quel pezzo conta 0).
+| Campo DB | Path tipico API |
+|----------|-----------------|
+| minutes, position, rating, captain, substitute | `games.*` |
+| shots_total, shots_on_target | `shots.total`, `shots.on` |
+| goals, assists | `goals.total`, `goals.assists` |
+| passes_total, passes_key, passes_accuracy_pct | `passes.*` |
+| tackles_*, interceptions | `tackles.*` |
+| duels_*, dribbles_*, fouls_*, cards_* | rispettivi blocchi |
+
+È mantenuto un **fallback** sul formato legacy `type`/`value`. Dopo correzione, `POST /api/admin/ingest/serie-a/{season}/player-stats` aggiorna le righe in modo idempotente.
+
+**Diagnostica:** `GET /api/admin/debug/player-stats/serie-a/{season}/summary` e `.../sample` (sola lettura) per verificare distribuzione minuti/tiri e campioni di `raw_json`.
+
+### Player Impact (profilo SOT) — layer debug, **non** in baseline
+
+I profili in `player_sot_profiles` arricchiscono API e dashboard ma **non modificano** `expected_sot` (baseline v0.1 squadra). Il campo API/dashboard `player_profiles_sot_data_suspicious` segnala profili presenti ma senza alcun dato positivo sui tiri in porta aggregati (utile dopo import errato).
+
+Per ogni giocatore e stagione (aggregazione da `fixture_player_stats`):
+
+- **`appearances`**, **`total_minutes`**, **`avg_minutes`**, **`total_shots`**, **`total_shots_on_target`**, **`shots_on_target_per90`**, **`starts`**, **`team_sot_share_pct`**, **`last5_shots_on_target_per90`**, **`reliability_score`** come da logica nel servizio profili (vedi codice).
 - **`reliability_score`**: 50 base; +20 se `total_minutes ≥ 900`; +10 se `appearances ≥ 10`; −20 se `total_minutes < 300`; clamp 0–100.
-- **`impact_score`** (stessa scala 0–100 dei contributi):  
-  `0,50 * normalized_shots_on_target_per90 + 0,30 * team_sot_share_pct + 0,20 * reliability_score`  
-  con `normalized_shots_on_target_per90 = min(shots_on_target_per90 / 2, 1) * 100`.
+
+**Player impact v0_1** (valore salvato in `impact_score`, scala ~0–100):
+
+- `normalized_sot_per90 = min(shots_on_target_per90 / 1,5, 1) × 100`
+- `impact_score = 0,60 × normalized_sot_per90 + 0,25 × team_sot_share_pct + 0,15 × reliability_score`
+- Se `total_minutes < 300`: **`impact_score` moltiplicato per 0,7** (penalità campione basso). Nelle API di riepilogo è esposto anche `sample_warning: true` quando i minuti totali sono sotto 300.
+
+Le liste **top** in `GET .../player-sot-profiles/.../summary` privilegiano giocatori con minuti e tiri coerenti (ordinamenti in query; chi ha `shots_on_target_per90 = 0` in coda per la classifica per90).
 
 ### H2H (scontri diretti)
 
@@ -108,8 +126,8 @@ Per chiarezza operativa:
 
 Equivale a documentare che **`player_layer_applied_in_prediction = false`**, **`h2h_applied_in_prediction = false`**, **`availability_applied_in_prediction = false`** per la baseline v0.1.
 
-## Roadmap v0.2 (indicativa)
+## Roadmap: `expected_sot_adjusted_v0_2` (indicativa)
 
-- Opzionale: uso controllato di H2H o quote come **feature** aggiuntiva con pesi espliciti e versione modello nuova.
-- Opzionale: aggiustamenti attacco/difesa per assenze pesate, solo dopo validazione e nuova versione (`model_version`).
-- Mantenere sempre tracciabilità: pesi, fallback e versione nel `raw_json` delle previsioni.
+Step successivo possibile: una versione **v0.2** che introduca un **`expected_sot_adjusted`** (o nuova `model_version`) integrando in modo controllato layer giocatori / H2H / disponibilità, con pesi espliciti e validazione su backtest — **distinta** dalla baseline v0.1 attuale.
+
+Altre idee: H2H o quote come feature aggiuntiva; aggiustamenti attacco/difesa per assenze. Mantenere tracciabilità: pesi, fallback e versione nel `raw_json` delle previsioni.

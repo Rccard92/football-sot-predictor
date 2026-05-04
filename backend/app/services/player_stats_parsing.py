@@ -87,6 +87,116 @@ _TYPE_ALIASES: dict[str, str] = {
 }
 
 
+def _int_summable(val: Any) -> int:
+    """Intero per campi sommabili: None / assente → 0."""
+    n = _parse_int(val)
+    return n if n is not None else 0
+
+
+def _nested_statistics_v3_to_fields(statistics: list[dict[str, Any]]) -> dict[str, Any]:
+    """Path API-Sports tipico: statistics[0] con games, shots, goals, …"""
+    out: dict[str, Any] = {}
+    if not statistics or not isinstance(statistics[0], dict):
+        return out
+    s0 = statistics[0]
+    games = s0.get("games") if isinstance(s0.get("games"), dict) else {}
+
+    m = _parse_int(games.get("minutes"))
+    if m is not None:
+        out["minutes"] = m
+
+    pos = games.get("position")
+    if pos is not None:
+        ps = str(pos).strip()
+        if ps:
+            out["position"] = ps[:32]
+
+    r = _parse_float(games.get("rating"))
+    if r is not None:
+        out["rating"] = r
+
+    cap = _parse_bool(games.get("captain"))
+    if cap is not None:
+        out["captain"] = cap
+    sub = _parse_bool(games.get("substitute"))
+    if sub is not None:
+        out["substitute"] = sub
+
+    shots = s0.get("shots") if isinstance(s0.get("shots"), dict) else {}
+    out["shots_total"] = _int_summable(shots.get("total"))
+    out["shots_on_target"] = _int_summable(shots.get("on"))
+
+    goals = s0.get("goals") if isinstance(s0.get("goals"), dict) else {}
+    out["goals"] = _int_summable(goals.get("total"))
+    out["assists"] = _int_summable(goals.get("assists"))
+
+    passes = s0.get("passes") if isinstance(s0.get("passes"), dict) else {}
+    out["passes_total"] = _int_summable(passes.get("total"))
+    out["passes_key"] = _int_summable(passes.get("key"))
+    acc = passes.get("accuracy")
+    acc_f = _parse_float(acc)
+    if acc_f is not None:
+        out["passes_accuracy_pct"] = acc_f
+
+    tackles = s0.get("tackles") if isinstance(s0.get("tackles"), dict) else {}
+    out["tackles_total"] = _int_summable(tackles.get("total"))
+    out["tackles_blocks"] = _int_summable(tackles.get("blocks"))
+    out["interceptions"] = _int_summable(tackles.get("interceptions"))
+
+    duels = s0.get("duels") if isinstance(s0.get("duels"), dict) else {}
+    out["duels_total"] = _int_summable(duels.get("total"))
+    out["duels_won"] = _int_summable(duels.get("won"))
+
+    dribbles = s0.get("dribbles") if isinstance(s0.get("dribbles"), dict) else {}
+    out["dribbles_attempts"] = _int_summable(dribbles.get("attempts"))
+    out["dribbles_success"] = _int_summable(dribbles.get("success"))
+
+    fouls = s0.get("fouls") if isinstance(s0.get("fouls"), dict) else {}
+    out["fouls_drawn"] = _int_summable(fouls.get("drawn"))
+    out["fouls_committed"] = _int_summable(fouls.get("committed"))
+
+    cards = s0.get("cards") if isinstance(s0.get("cards"), dict) else {}
+    out["yellow_cards"] = _int_summable(cards.get("yellow"))
+    out["red_cards"] = _int_summable(cards.get("red"))
+
+    return out
+
+
+def _is_flat_type_value_statistics(statistics: list[dict[str, Any]]) -> bool:
+    if not statistics:
+        return False
+    first = statistics[0]
+    if not isinstance(first, dict):
+        return False
+    return "type" in first and "value" in first
+
+
+def _looks_like_nested_v3_block(first: dict[str, Any]) -> bool:
+    if "games" in first and isinstance(first.get("games"), dict):
+        return True
+    if isinstance(first.get("shots"), dict):
+        return True
+    if isinstance(first.get("passes"), dict):
+        return True
+    return False
+
+
+def parse_fixture_player_statistics(statistics: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """
+    Unifica parsing risposta /fixtures/players per giocatore.
+    - Formato v3: primo elemento con blocchi annidati (games, shots, …).
+    - Formato legacy: lista di {type, value}.
+    """
+    if not statistics:
+        return {}
+    first = statistics[0]
+    if isinstance(first, dict) and _looks_like_nested_v3_block(first):
+        return _nested_statistics_v3_to_fields(statistics)
+    if _is_flat_type_value_statistics(statistics):
+        return statistics_list_to_player_fields(statistics)
+    return {}
+
+
 def statistics_list_to_player_fields(
     statistics: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:

@@ -4,7 +4,7 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -758,6 +758,21 @@ class SotPredictionService:
             )
             or 0,
         )
+        player_profiles_sot_data_suspicious = False
+        if profiles_n_season > 0:
+            profiles_with_positive_sot = int(
+                db.scalar(
+                    select(func.count()).select_from(PlayerSotProfile).where(
+                        PlayerSotProfile.season_id == season.id,
+                        or_(
+                            PlayerSotProfile.shots_on_target_per90 > 0,
+                            PlayerSotProfile.total_shots_on_target > 0,
+                        ),
+                    ),
+                )
+                or 0,
+            )
+            player_profiles_sot_data_suspicious = profiles_with_positive_sot == 0
 
         for fx in upcoming:
             home = db.get(Team, fx.home_team_id)
@@ -864,6 +879,7 @@ class SotPredictionService:
 
             player_impact_status = {
                 "player_profiles_available": profiles_n_season > 0,
+                "player_profiles_sot_data_suspicious": player_profiles_sot_data_suspicious,
                 "baseline_includes_player_impact": False,
                 "lineups_available": lu_n > 0,
                 "availability_available": av_n > 0,

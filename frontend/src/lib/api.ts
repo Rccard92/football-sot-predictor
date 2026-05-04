@@ -76,6 +76,7 @@ export type SerieADashboardResponse = {
   lineups_coverage_pct?: number
   players_profiled_total?: number
   player_profiles_total?: number
+  player_profiles_sot_data_suspicious?: boolean
   availability_events_total?: number
 }
 

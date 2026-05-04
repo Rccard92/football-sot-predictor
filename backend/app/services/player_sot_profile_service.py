@@ -6,10 +6,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.orm import Session
 
-from app.models import Fixture, FixtureLineup, FixturePlayerStat, FixtureTeamStat, Player, PlayerSotProfile
+from app.models import Fixture, FixtureLineup, FixturePlayerStat, FixtureTeamStat, Player, PlayerSotProfile, Team
 from app.services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
@@ -52,14 +52,30 @@ class _Agg:
 
 
 def _impact_from_components(sot_per90: float, team_share_pct: float, reliability: int) -> float:
-    """Scala 0–100: pesi su contributi in percentuale."""
-    norm_sot = min(max(sot_per90 / 2.0, 0.0), 1.0) * 100.0
+    """Player impact v0_1: contributi su scala percentuale 0–100."""
+    norm_sot = min(max(sot_per90 / 1.5, 0.0), 1.0) * 100.0
     share = min(max(team_share_pct, 0.0), 100.0)
     rel = float(min(max(reliability, 0), 100))
-    return round(0.50 * norm_sot + 0.30 * share + 0.20 * rel, 4)
+    raw = 0.60 * norm_sot + 0.25 * share + 0.15 * rel
+    return round(raw, 4)
 
 
 class PlayerSotProfileService:
+    @staticmethod
+    def _pack_profile_public(pr: PlayerSotProfile, pl: Player, team_name: str | None) -> dict[str, Any]:
+        low = int(pr.total_minutes or 0) < 300
+        return {
+            "player_id": pl.id,
+            "name": pl.name,
+            "team_id": pr.team_id,
+            "team_name": team_name,
+            "total_minutes": pr.total_minutes,
+            "impact_score": pr.impact_score,
+            "shots_on_target_per90": pr.shots_on_target_per90,
+            "appearances": pr.appearances,
+            "sample_warning": low,
+        }
+
     def _top_players_by_impact(
         self,
         db: Session,
@@ -67,25 +83,17 @@ class PlayerSotProfileService:
         limit: int,
     ) -> list[dict[str, Any]]:
         rows = db.execute(
-            select(PlayerSotProfile, Player)
+            select(PlayerSotProfile, Player, Team)
             .join(Player, Player.id == PlayerSotProfile.player_id)
+            .join(Team, Team.id == PlayerSotProfile.team_id)
             .where(PlayerSotProfile.season_id == season_id)
-            .order_by(PlayerSotProfile.impact_score.desc().nulls_last())
+            .order_by(
+                case((PlayerSotProfile.total_minutes >= 300, 0), else_=1),
+                PlayerSotProfile.impact_score.desc().nulls_last(),
+            )
             .limit(limit),
         ).all()
-        out: list[dict[str, Any]] = []
-        for pr, pl in rows:
-            out.append(
-                {
-                    "player_id": pl.id,
-                    "name": pl.name,
-                    "team_id": pr.team_id,
-                    "impact_score": pr.impact_score,
-                    "shots_on_target_per90": pr.shots_on_target_per90,
-                    "appearances": pr.appearances,
-                },
-            )
-        return out
+        return [self._pack_profile_public(pr, pl, tm.name) for pr, pl, tm in rows]
 
     def build_for_season(self, db: Session, season_year: int) -> dict[str, Any]:
         ing = IngestionService()
@@ -231,6 +239,8 @@ class PlayerSotProfileService:
                 rel = max(0, min(100, rel))
 
                 impact = _impact_from_components(sot_per90, team_share_pct, rel)
+                if total_minutes < 300:
+                    impact = round(impact * 0.7, 4)
 
                 row = PlayerSotProfile(
                     season_id=season_row.id,
@@ -333,41 +343,39 @@ class PlayerSotProfileService:
         avg_imp_f = round(float(avg_imp or 0.0), 4)
 
         top_imp = db.execute(
-            select(PlayerSotProfile, Player)
+            select(PlayerSotProfile, Player, Team)
             .join(Player, Player.id == PlayerSotProfile.player_id)
+            .join(Team, Team.id == PlayerSotProfile.team_id)
             .where(PlayerSotProfile.season_id == season_row.id)
-            .order_by(PlayerSotProfile.impact_score.desc().nulls_last())
+            .order_by(
+                case((PlayerSotProfile.total_minutes >= 300, 0), else_=1),
+                PlayerSotProfile.impact_score.desc().nulls_last(),
+            )
             .limit(10),
         ).all()
         top_sot = db.execute(
-            select(PlayerSotProfile, Player)
+            select(PlayerSotProfile, Player, Team)
             .join(Player, Player.id == PlayerSotProfile.player_id)
+            .join(Team, Team.id == PlayerSotProfile.team_id)
             .where(PlayerSotProfile.season_id == season_row.id)
-            .order_by(PlayerSotProfile.shots_on_target_per90.desc().nulls_last())
+            .order_by(
+                case((PlayerSotProfile.shots_on_target_per90 > 0, 0), else_=1),
+                case((PlayerSotProfile.total_minutes >= 90, 0), else_=1),
+                PlayerSotProfile.shots_on_target_per90.desc().nulls_last(),
+            )
             .limit(10),
         ).all()
-
-        def pack(rows: list[Any], n: int = 5) -> list[dict[str, Any]]:
-            out: list[dict[str, Any]] = []
-            for pr, pl in rows[:n]:
-                out.append(
-                    {
-                        "player_id": pl.id,
-                        "name": pl.name,
-                        "team_id": pr.team_id,
-                        "impact_score": pr.impact_score,
-                        "shots_on_target_per90": pr.shots_on_target_per90,
-                        "appearances": pr.appearances,
-                    },
-                )
-            return out
 
         return {
             "season": season_year,
             "players_profiled": total,
             "avg_impact_score": avg_imp_f,
-            "top_players_by_impact": pack(list(top_imp), 5),
-            "top_players_by_sot_per90": pack(list(top_sot), 5),
+            "top_players_by_impact": [
+                self._pack_profile_public(pr, pl, tm.name) for pr, pl, tm in list(top_imp)[:5]
+            ],
+            "top_players_by_sot_per90": [
+                self._pack_profile_public(pr, pl, tm.name) for pr, pl, tm in list(top_sot)[:5]
+            ],
         }
 
     def top_for_team(
@@ -379,24 +387,17 @@ class PlayerSotProfileService:
         limit: int = 3,
     ) -> list[dict[str, Any]]:
         rows = db.execute(
-            select(PlayerSotProfile, Player)
+            select(PlayerSotProfile, Player, Team)
             .join(Player, Player.id == PlayerSotProfile.player_id)
+            .join(Team, Team.id == PlayerSotProfile.team_id)
             .where(
                 PlayerSotProfile.season_id == season_id,
                 PlayerSotProfile.team_id == team_id,
             )
-            .order_by(PlayerSotProfile.impact_score.desc().nulls_last())
+            .order_by(
+                case((PlayerSotProfile.total_minutes >= 300, 0), else_=1),
+                PlayerSotProfile.impact_score.desc().nulls_last(),
+            )
             .limit(limit),
         ).all()
-        out: list[dict[str, Any]] = []
-        for pr, pl in rows:
-            out.append(
-                {
-                    "player_id": pl.id,
-                    "name": pl.name,
-                    "impact_score": pr.impact_score,
-                    "shots_on_target_per90": pr.shots_on_target_per90,
-                    "appearances": pr.appearances,
-                },
-            )
-        return out
+        return [self._pack_profile_public(pr, pl, tm.name) for pr, pl, tm in rows]

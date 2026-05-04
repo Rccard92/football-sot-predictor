@@ -42,6 +42,7 @@ def serie_a_dashboard(season: int, db: Session = Depends(get_db)) -> SerieADashb
         lineups_coverage_pct=float(data.get("lineups_coverage_pct", 0.0)),
         players_profiled_total=int(data.get("players_profiled_total", 0)),
         player_profiles_total=int(data.get("player_profiles_total", data.get("players_profiled_total", 0))),
+        player_profiles_sot_data_suspicious=bool(data.get("player_profiles_sot_data_suspicious", False)),
         availability_events_total=int(data.get("availability_events_total", 0)),
         sot_feature_rows_total=int(data["sot_feature_rows_total"]),
         sot_feature_expected_rows=int(data["sot_feature_expected_rows"]),

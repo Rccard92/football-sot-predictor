@@ -63,6 +63,7 @@ class SerieADashboardResponse(BaseModel):
     lineups_coverage_pct: float = 0.0
     players_profiled_total: int = 0
     player_profiles_total: int = 0
+    player_profiles_sot_data_suspicious: bool = False
     availability_events_total: int = 0
     sot_feature_rows_total: int
     sot_feature_expected_rows: int

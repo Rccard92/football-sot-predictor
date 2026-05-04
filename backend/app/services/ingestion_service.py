@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select, union_all, update
+from sqlalchemy import delete, func, or_, select, union_all, update
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -28,9 +28,9 @@ from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES, fixture_el
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.fixture_team_stats_mapping import apply_parsed_to_row, statistics_list_to_fields
 from app.services.player_stats_parsing import (
+    parse_fixture_player_statistics,
     player_entry_flags,
     player_position,
-    statistics_list_to_player_fields,
 )
 
 logger = logging.getLogger(__name__)
@@ -908,19 +908,21 @@ class IngestionService:
         row.position = position
         row.captain = captain
         row.substitute = substitute
-        if "minutes" in parsed and parsed["minutes"] is not None:
+        if "minutes" in parsed:
             row.minutes = int(parsed["minutes"])
         elif minutes_fallback is not None:
             row.minutes = minutes_fallback
-        for attr in (
-            "rating",
+        if "rating" in parsed and parsed["rating"] is not None:
+            row.rating = float(parsed["rating"])
+        if "passes_accuracy_pct" in parsed and parsed["passes_accuracy_pct"] is not None:
+            row.passes_accuracy_pct = float(parsed["passes_accuracy_pct"])
+        int_attrs = (
             "shots_total",
             "shots_on_target",
             "goals",
             "assists",
             "passes_total",
             "passes_key",
-            "passes_accuracy_pct",
             "tackles_total",
             "tackles_blocks",
             "interceptions",
@@ -932,9 +934,10 @@ class IngestionService:
             "fouls_committed",
             "yellow_cards",
             "red_cards",
-        ):
-            if attr in parsed and parsed[attr] is not None:
-                setattr(row, attr, parsed[attr])
+        )
+        for attr in int_attrs:
+            if attr in parsed:
+                setattr(row, attr, int(parsed[attr]))
 
     def ingest_serie_a_player_stats(
         self,
@@ -990,9 +993,19 @@ class IngestionService:
                         if not isinstance(stats_list, list):
                             stats_list = []
                         try:
-                            parsed = statistics_list_to_player_fields(stats_list)
+                            parsed = dict(parse_fixture_player_statistics(stats_list))
                             cap, sub = player_entry_flags(p, entry)
-                            pos = player_position(p)
+                            pos_games = parsed.pop("position", None)
+                            if isinstance(pos_games, str) and pos_games.strip():
+                                pos = pos_games.strip()[:32]
+                            else:
+                                pos = player_position(p)
+                            c_g = parsed.pop("captain", None)
+                            s_g = parsed.pop("substitute", None)
+                            if c_g is not None:
+                                cap = c_g
+                            if s_g is not None:
+                                sub = s_g
                             minutes_fb = _extract_minutes_from_statistics(stats_list)
                             player = db.scalar(select(Player).where(Player.api_player_id == api_player_id))
                             if player is None:
@@ -1291,6 +1304,7 @@ class IngestionService:
             "lineups_coverage_pct": 0.0,
             "players_profiled_total": 0,
             "player_profiles_total": 0,
+            "player_profiles_sot_data_suspicious": False,
             "availability_events_total": 0,
             "sot_feature_rows_total": 0,
             "sot_feature_expected_rows": 0,
@@ -1388,6 +1402,21 @@ class IngestionService:
             )
             or 0,
         )
+        profiles_with_positive_sot = int(
+            db.scalar(
+                select(func.count()).select_from(PlayerSotProfile).where(
+                    PlayerSotProfile.season_id == season_row.id,
+                    or_(
+                        PlayerSotProfile.shots_on_target_per90 > 0,
+                        PlayerSotProfile.total_shots_on_target > 0,
+                    ),
+                ),
+            )
+            or 0,
+        )
+        player_profiles_sot_data_suspicious = (
+            players_profiled_total > 0 and profiles_with_positive_sot == 0
+        )
         availability_events_total = int(
             db.scalar(
                 select(func.count()).select_from(PlayerAvailabilityEvent).where(
@@ -1465,6 +1494,7 @@ class IngestionService:
             "lineups_coverage_pct": lh["lineups_coverage_pct"],
             "players_profiled_total": players_profiled_total,
             "player_profiles_total": players_profiled_total,
+            "player_profiles_sot_data_suspicious": player_profiles_sot_data_suspicious,
             "availability_events_total": availability_events_total,
             "sot_feature_rows_total": sot_sum["feature_rows_total"],
             "sot_feature_expected_rows": sot_sum["expected_feature_rows"],

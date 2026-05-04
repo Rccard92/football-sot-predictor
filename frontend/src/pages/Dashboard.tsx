@@ -321,11 +321,22 @@ export function Dashboard() {
           ) : dashboard.error ? (
             <SectionError message={dashboard.error} />
           ) : null}
+          {!dashboard.loading && !dashboard.error && d?.player_profiles_sot_data_suspicious ? (
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+              Profili giocatore presenti, ma dati tiri in porta giocatore da verificare.
+            </p>
+          ) : null}
         </SectionCard>
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Backtest overview */}
           <SectionCard title="Qualità modello (partite giocate)">
+            {!dashboard.loading && !dashboard.error && d?.player_profiles_sot_data_suspicious ? (
+              <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+                Profili giocatore presenti, ma dati tiri in porta giocatore da verificare (layer debug, non
+                usati nel MAE/RMSE sopra).
+              </p>
+            ) : null}
             {btSummary.loading && pageInit ? (
               <div className="space-y-3">
                 <SkeletonBlock className="h-20 w-full" />
