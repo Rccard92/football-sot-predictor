@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, FINISHED_STATUSES
+from app.core.model_limitations import default_model_limitations_dict
 from app.models import Fixture, League, Season, Team, TeamSotFeature, TeamSotPrediction
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,75 @@ WEIGHTS_BASELINE_V0_1 = {
 }
 
 PRUDENTIAL_FALLBACK_SOT = 3.5
+
+
+def fallback_note_for_resolved_factor(
+    inputs: dict[str, Any],
+    key: str,
+    league_pre: float | None,
+) -> str | None:
+    """Nota solo se il valore grezzo del fattore era assente (stessa catena di `_resolve_single_input`)."""
+    raw = inputs.get(key)
+    if raw is not None:
+        return None
+    season_for = inputs.get("season_avg_sot_for")
+    if season_for is not None:
+        return (
+            "Dato originale assente: è stata usata la media stagionale dei tiri in porta "
+            "fatti dalla squadra come stima per questo fattore."
+        )
+    if league_pre is not None:
+        return (
+            "Dato originale assente: è stata usata la media dei tiri in porta sulle partite "
+            "già disputate nel campionato (prima di questa partita)."
+        )
+    return "Dato originale assente: è stato usato un valore numerico prudenziale predefinito."
+
+
+def upcoming_calculation_breakdown_from_raw_json(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Ricostruisce il breakdown per l'API upcoming da `TeamSotPrediction.raw_json` (nessun ricalcolo formula)."""
+    if not raw or not isinstance(raw, dict):
+        return None
+    resolved = raw.get("resolved_inputs")
+    weights = raw.get("weights")
+    inputs = raw.get("inputs")
+    if not isinstance(resolved, dict) or not isinstance(weights, dict) or not isinstance(inputs, dict):
+        return None
+    league_pre = raw.get("league_pre_match_avg")
+    if league_pre is not None:
+        try:
+            league_pre = float(league_pre)
+        except (TypeError, ValueError):
+            league_pre = None
+    out: dict[str, Any] = {}
+    try:
+        for key in WEIGHTS_BASELINE_V0_1:
+            if key not in resolved:
+                return None
+            w_default = WEIGHTS_BASELINE_V0_1[key]
+            w = float(weights.get(key, w_default))
+            val = float(resolved[key])
+            contrib = round(val * w, 4)
+            raw_in = inputs.get(key)
+            fb = raw_in is None
+            note = fallback_note_for_resolved_factor(inputs, key, league_pre) if fb else None
+            out[key] = round(val, 4)
+            out[f"{key}_weight"] = w
+            out[f"{key}_contribution"] = contrib
+            out[f"{key}_fallback_used"] = fb
+            out[f"{key}_fallback_note"] = note
+        exp_stored = raw.get("expected_sot")
+        if exp_stored is not None:
+            out["expected_sot_total"] = round(float(exp_stored), 2)
+        else:
+            mix = sum(
+                float(resolved[k]) * float(weights.get(k, WEIGHTS_BASELINE_V0_1[k]))
+                for k in WEIGHTS_BASELINE_V0_1
+            )
+            out["expected_sot_total"] = round(max(0.0, mix), 2)
+    except (TypeError, ValueError, KeyError):
+        return None
+    return out
 
 EXPLANATION_BASELINE_IT = (
     "Previsione basata su media stagionale tiri in porta, rendimento casa/fuori, "
@@ -171,6 +241,7 @@ class SotPredictionService:
         confidence: int,
         explanation: str,
         line_value: float | None,
+        league_pre_match_avg: float | None = None,
     ) -> dict[str, Any]:
         inputs = {k: features.get(k) for k in WEIGHTS_BASELINE_V0_1}
         out: dict[str, Any] = {
@@ -182,6 +253,8 @@ class SotPredictionService:
             "confidence_score": confidence,
             "explanation": explanation,
         }
+        if league_pre_match_avg is not None:
+            out["league_pre_match_avg"] = round(float(league_pre_match_avg), 6)
         if line_value is not None:
             out["line_value"] = line_value
             out["vs_line"] = round(expected - line_value, 4)
@@ -280,6 +353,7 @@ class SotPredictionService:
                     confidence=conf,
                     explanation=EXPLANATION_BASELINE_IT,
                     line_value=None,
+                    league_pre_match_avg=league_pre,
                 )
                 self._upsert_prediction(
                     db,
@@ -563,6 +637,7 @@ class SotPredictionService:
                     confidence=conf,
                     explanation=simple,
                     line_value=None,
+                    league_pre_match_avg=league_pre,
                 )
                 self._upsert_prediction(
                     db,
@@ -651,6 +726,7 @@ class SotPredictionService:
                 "round": None,
                 "matches_count": 0,
                 "matches": [],
+                "model_limitations": default_model_limitations_dict(),
             }
 
         feat_svc = SotFeatureService()
@@ -712,14 +788,30 @@ class SotPredictionService:
                     if feat is not None
                     else (pred.explanation or EXPLANATION_BASELINE_IT)
                 )
+                raw_j = pred.raw_json if isinstance(pred.raw_json, dict) else None
+                bd_raw = upcoming_calculation_breakdown_from_raw_json(raw_j)
+                bd = None
+                if bd_raw is not None:
+                    try:
+                        from app.schemas.predictions import UpcomingSotCalculationBreakdown
+
+                        bd = UpcomingSotCalculationBreakdown.model_validate(bd_raw).model_dump()
+                    except Exception:
+                        bd = None
                 return {
                     "expected_sot": exp,
                     "confidence_score": conf,
                     "confidence_label": confidence_word_from_score(conf),
                     "label": production_label_from_expected(exp),
                     "simple_explanation": expl,
-                    "technical_debug": technical_debug_from_feature_row(feat) if feat is not None else {},
+                    "calculation_breakdown": bd,
                 }
+
+            hp = side_pred(fh, ph)
+            ap = side_pred(fa, pa)
+            total_exp = None
+            if hp and ap:
+                total_exp = round(float(hp["expected_sot"]) + float(ap["expected_sot"]), 2)
 
             matches.append(
                 {
@@ -738,8 +830,9 @@ class SotPredictionService:
                         "name": away.name if away else "",
                         "logo_url": away.logo_url if away else None,
                     },
-                    "home_prediction": side_pred(fh, ph),
-                    "away_prediction": side_pred(fa, pa),
+                    "home_prediction": hp,
+                    "away_prediction": ap,
+                    "total_expected_sot": total_exp,
                 },
             )
 
@@ -748,6 +841,7 @@ class SotPredictionService:
             "round": round_label,
             "matches_count": len(matches),
             "matches": matches,
+            "model_limitations": default_model_limitations_dict(),
         }
 
     def _upsert_prediction(
@@ -837,6 +931,7 @@ class SotPredictionService:
                     confidence=conf,
                     explanation=EXPLANATION_BASELINE_IT,
                     line_value=line_value,
+                    league_pre_match_avg=league_pre,
                 )
                 self._upsert_prediction(
                     db,

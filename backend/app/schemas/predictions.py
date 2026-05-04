@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class GeneratePredictionsBody(BaseModel):
@@ -97,13 +97,55 @@ class TeamPredictionsResponse(BaseModel):
     predictions: list[TeamSotPredictionRead]
 
 
+class UpcomingSotCalculationBreakdown(BaseModel):
+    """Breakdown baseline v0.1: contributi = valore_usato × peso (da raw_json prediction)."""
+
+    season_avg_sot_for: float
+    season_avg_sot_for_weight: float = 0.30
+    season_avg_sot_for_contribution: float
+    season_avg_sot_for_fallback_used: bool = False
+    season_avg_sot_for_fallback_note: str | None = None
+
+    opponent_season_avg_sot_conceded: float
+    opponent_season_avg_sot_conceded_weight: float = 0.25
+    opponent_season_avg_sot_conceded_contribution: float
+    opponent_season_avg_sot_conceded_fallback_used: bool = False
+    opponent_season_avg_sot_conceded_fallback_note: str | None = None
+
+    home_away_avg_sot_for: float
+    home_away_avg_sot_for_weight: float = 0.15
+    home_away_avg_sot_for_contribution: float
+    home_away_avg_sot_for_fallback_used: bool = False
+    home_away_avg_sot_for_fallback_note: str | None = None
+
+    opponent_home_away_avg_sot_conceded: float
+    opponent_home_away_avg_sot_conceded_weight: float = 0.10
+    opponent_home_away_avg_sot_conceded_contribution: float
+    opponent_home_away_avg_sot_conceded_fallback_used: bool = False
+    opponent_home_away_avg_sot_conceded_fallback_note: str | None = None
+
+    last5_avg_sot_for: float
+    last5_avg_sot_for_weight: float = 0.10
+    last5_avg_sot_for_contribution: float
+    last5_avg_sot_for_fallback_used: bool = False
+    last5_avg_sot_for_fallback_note: str | None = None
+
+    opponent_last5_avg_sot_conceded: float
+    opponent_last5_avg_sot_conceded_weight: float = 0.10
+    opponent_last5_avg_sot_conceded_contribution: float
+    opponent_last5_avg_sot_conceded_fallback_used: bool = False
+    opponent_last5_avg_sot_conceded_fallback_note: str | None = None
+
+    expected_sot_total: float
+
+
 class UpcomingSidePredictionBlock(BaseModel):
     expected_sot: float
     confidence_score: int
     confidence_label: str
     label: str
     simple_explanation: str
-    technical_debug: dict[str, Any] = Field(default_factory=dict)
+    calculation_breakdown: UpcomingSotCalculationBreakdown | None = None
 
 
 class UpcomingMatchTeamBlock(BaseModel):
@@ -122,6 +164,14 @@ class UpcomingMatchRow(BaseModel):
     away_team: UpcomingMatchTeamBlock
     home_prediction: UpcomingSidePredictionBlock | None = None
     away_prediction: UpcomingSidePredictionBlock | None = None
+    total_expected_sot: float | None = None
+
+
+class ModelLimitationsBlock(BaseModel):
+    lineups_considered: bool = False
+    injuries_considered: bool = False
+    odds_automatically_imported: bool = False
+    note: str
 
 
 class UpcomingMatchesResponse(BaseModel):
@@ -129,6 +179,7 @@ class UpcomingMatchesResponse(BaseModel):
     round: str | None = None
     matches_count: int
     matches: list[UpcomingMatchRow]
+    model_limitations: ModelLimitationsBlock
 
 
 class EvaluateSotLineBody(BaseModel):
@@ -143,4 +194,38 @@ class EvaluateSotLineResponse(BaseModel):
     suggestion: Literal["over", "under", "no_bet"]
     strength: Literal["forte", "interessante", "leggero", "neutro"]
     label: str
+    explanation: str
+
+
+class EvaluateMatchSotLineBody(BaseModel):
+    home_expected_sot: float = Field(..., ge=0, le=30)
+    away_expected_sot: float = Field(..., ge=0, le=30)
+    market_type: str = Field(default="match_total_sot")
+    line_value: float = Field(..., ge=0, le=40)
+    odds: float | None = Field(default=None)
+    bookmaker: str = Field(..., min_length=1, max_length=120)
+
+    @field_validator("odds")
+    @classmethod
+    def validate_odds(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v <= 1.0 or v > 1000.0:
+            raise ValueError("odds deve essere maggiore di 1.0 e al massimo 1000")
+        return v
+
+
+class EvaluateMatchSotLineResponse(BaseModel):
+    market_type: str
+    bookmaker: str
+    line_value: float
+    odds: float | None = None
+    home_expected_sot: float
+    away_expected_sot: float
+    total_expected_sot: float
+    gap: float
+    suggestion: Literal["over", "under", "no_bet"]
+    strength: Literal["forte", "interessante", "leggero", "neutro"]
+    label: str
+    implied_probability: float | None = None
     explanation: str

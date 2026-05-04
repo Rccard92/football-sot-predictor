@@ -271,13 +271,48 @@ export async function runSotBacktest(season: number): Promise<unknown> {
   return requestPostJson<unknown>(`/api/backtest/sot/serie-a/${season}/run`, {})
 }
 
+/** Allineato a `UpcomingSotCalculationBreakdown` (backend). */
+export type UpcomingCalculationBreakdown = {
+  season_avg_sot_for: number
+  season_avg_sot_for_weight: number
+  season_avg_sot_for_contribution: number
+  season_avg_sot_for_fallback_used?: boolean
+  season_avg_sot_for_fallback_note?: string | null
+  opponent_season_avg_sot_conceded: number
+  opponent_season_avg_sot_conceded_weight: number
+  opponent_season_avg_sot_conceded_contribution: number
+  opponent_season_avg_sot_conceded_fallback_used?: boolean
+  opponent_season_avg_sot_conceded_fallback_note?: string | null
+  home_away_avg_sot_for: number
+  home_away_avg_sot_for_weight: number
+  home_away_avg_sot_for_contribution: number
+  home_away_avg_sot_for_fallback_used?: boolean
+  home_away_avg_sot_for_fallback_note?: string | null
+  opponent_home_away_avg_sot_conceded: number
+  opponent_home_away_avg_sot_conceded_weight: number
+  opponent_home_away_avg_sot_conceded_contribution: number
+  opponent_home_away_avg_sot_conceded_fallback_used?: boolean
+  opponent_home_away_avg_sot_conceded_fallback_note?: string | null
+  last5_avg_sot_for: number
+  last5_avg_sot_for_weight: number
+  last5_avg_sot_for_contribution: number
+  last5_avg_sot_for_fallback_used?: boolean
+  last5_avg_sot_for_fallback_note?: string | null
+  opponent_last5_avg_sot_conceded: number
+  opponent_last5_avg_sot_conceded_weight: number
+  opponent_last5_avg_sot_conceded_contribution: number
+  opponent_last5_avg_sot_conceded_fallback_used?: boolean
+  opponent_last5_avg_sot_conceded_fallback_note?: string | null
+  expected_sot_total: number
+}
+
 export type UpcomingSidePrediction = {
   expected_sot: number
   confidence_score: number
   confidence_label: string
   label: string
   simple_explanation: string
-  technical_debug: Record<string, unknown>
+  calculation_breakdown: UpcomingCalculationBreakdown | null
 }
 
 export type UpcomingMatchTeam = {
@@ -296,6 +331,14 @@ export type UpcomingMatchRow = {
   away_team: UpcomingMatchTeam
   home_prediction: UpcomingSidePrediction | null
   away_prediction: UpcomingSidePrediction | null
+  total_expected_sot: number | null
+}
+
+export type ModelLimitations = {
+  lineups_considered: boolean
+  injuries_considered: boolean
+  odds_automatically_imported: boolean
+  note: string
 }
 
 export type UpcomingMatchesResponse = {
@@ -303,6 +346,7 @@ export type UpcomingMatchesResponse = {
   round: string | null
   matches_count: number
   matches: UpcomingMatchRow[]
+  model_limitations: ModelLimitations
 }
 
 export type EvaluateSotLineResponse = {
@@ -343,6 +387,44 @@ export async function evaluateSotLine(
   return requestPostJson<EvaluateSotLineResponse>('/api/predictions/sot/evaluate-line', {
     expected_sot: expectedSot,
     line_value: lineValue,
+  })
+}
+
+export type EvaluateMatchSotLineBody = {
+  home_expected_sot: number
+  away_expected_sot: number
+  market_type?: string
+  line_value: number
+  odds?: number | null
+  bookmaker: string
+}
+
+export type EvaluateMatchSotLineResponse = {
+  market_type: string
+  bookmaker: string
+  line_value: number
+  odds: number | null
+  home_expected_sot: number
+  away_expected_sot: number
+  total_expected_sot: number
+  gap: number
+  suggestion: 'over' | 'under' | 'no_bet'
+  strength: 'forte' | 'interessante' | 'leggero' | 'neutro'
+  label: string
+  implied_probability: number | null
+  explanation: string
+}
+
+export async function evaluateMatchLine(
+  body: EvaluateMatchSotLineBody,
+): Promise<EvaluateMatchSotLineResponse> {
+  return requestPostJson<EvaluateMatchSotLineResponse>('/api/predictions/sot/evaluate-match-line', {
+    home_expected_sot: body.home_expected_sot,
+    away_expected_sot: body.away_expected_sot,
+    market_type: body.market_type ?? 'match_total_sot',
+    line_value: body.line_value,
+    bookmaker: body.bookmaker,
+    ...(body.odds != null && body.odds > 0 ? { odds: body.odds } : {}),
   })
 }
 

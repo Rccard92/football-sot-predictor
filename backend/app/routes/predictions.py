@@ -11,6 +11,8 @@ from app.core.constants import BASELINE_SOT_MODEL_VERSION
 from app.core.database import get_db
 from app.models import Fixture, TeamSotPrediction
 from app.schemas.predictions import (
+    EvaluateMatchSotLineBody,
+    EvaluateMatchSotLineResponse,
     EvaluateSotLineBody,
     EvaluateSotLineResponse,
     FixturePredictionsEnrichedResponse,
@@ -21,7 +23,7 @@ from app.schemas.predictions import (
     TeamSotPredictionRead,
     UpcomingMatchesResponse,
 )
-from app.services.sot_line_evaluate import evaluate_sot_line
+from app.services.sot_line_evaluate import evaluate_match_sot_line, evaluate_sot_line
 from app.services.sot_prediction_service import SotPredictionService
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,20 @@ def sot_predictions_serie_a_upcoming(
 @router.post("/evaluate-line", response_model=EvaluateSotLineResponse)
 def evaluate_sot_line_endpoint(body: EvaluateSotLineBody) -> EvaluateSotLineResponse:
     return EvaluateSotLineResponse.model_validate(evaluate_sot_line(body.expected_sot, body.line_value))
+
+
+@router.post("/evaluate-match-line", response_model=EvaluateMatchSotLineResponse)
+def evaluate_match_sot_line_endpoint(body: EvaluateMatchSotLineBody) -> EvaluateMatchSotLineResponse:
+    return EvaluateMatchSotLineResponse.model_validate(
+        evaluate_match_sot_line(
+            body.home_expected_sot,
+            body.away_expected_sot,
+            body.line_value,
+            odds=body.odds,
+            bookmaker=body.bookmaker,
+            market_type=body.market_type,
+        ),
+    )
 
 
 @router.get("/serie-a/{season}/summary", response_model=SotPredictionsSeasonSummaryResponse)

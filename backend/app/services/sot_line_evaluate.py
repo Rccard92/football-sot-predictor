@@ -69,3 +69,69 @@ def evaluate_sot_line(expected_sot: float, line_value: float) -> dict[str, Any]:
         "label": label,
         "explanation": explanation,
     }
+
+
+def evaluate_match_sot_line(
+    home_expected_sot: float,
+    away_expected_sot: float,
+    line_value: float,
+    *,
+    odds: float | None,
+    bookmaker: str,
+    market_type: str,
+) -> dict[str, Any]:
+    """Valutazione Over/Under sulla somma dei tiri in porta attesi (stesse soglie di `evaluate_sot_line`)."""
+    total_expected_sot = round(float(home_expected_sot) + float(away_expected_sot), 2)
+    line_f = float(line_value)
+    ev = evaluate_sot_line(total_expected_sot, line_f)
+    suggestion = ev["suggestion"]
+    strength = ev["strength"]
+    gap = float(ev["gap"])
+
+    if suggestion == "over":
+        label = f"Over {line_f:g} tiri in porta totali valutabile"
+        if strength == "interessante":
+            label = f"Over {line_f:g} tiri in porta totali interessante"
+        elif strength == "leggero":
+            label = f"Over {line_f:g} tiri in porta totali a margine contenuto"
+    elif suggestion == "under":
+        label = f"Under {line_f:g} tiri in porta totali valutabile"
+        if strength == "interessante":
+            label = f"Under {line_f:g} tiri in porta totali interessante"
+        elif strength == "leggero":
+            label = f"Under {line_f:g} tiri in porta totali a margine contenuto"
+    else:
+        label = "Nessun margine chiaro sulla linea (tiri in porta totali)"
+
+    implied_probability: float | None = None
+    if odds is not None and float(odds) > 0:
+        implied_probability = round(100.0 / float(odds), 2)
+
+    parts = [
+        f"Il modello stima {total_expected_sot:.2f} tiri in porta totali contro una linea bookmaker di {line_f:g}.",
+        f"Il margine è {gap:+.2f} tiri in porta.",
+    ]
+    if implied_probability is not None:
+        parts.append(
+            f"La quota implica una probabilità indicativa di circa {implied_probability:g}%.",
+        )
+    parts.append(
+        "Questa versione non considera ancora formazioni ufficiali, assenze e una quota equa calcolata dal modello.",
+    )
+    explanation = " ".join(parts)
+
+    return {
+        "market_type": market_type,
+        "bookmaker": bookmaker.strip(),
+        "line_value": line_f,
+        "odds": float(odds) if odds is not None else None,
+        "home_expected_sot": round(float(home_expected_sot), 2),
+        "away_expected_sot": round(float(away_expected_sot), 2),
+        "total_expected_sot": total_expected_sot,
+        "gap": gap,
+        "suggestion": suggestion,
+        "strength": strength,
+        "label": label,
+        "implied_probability": implied_probability,
+        "explanation": explanation,
+    }
