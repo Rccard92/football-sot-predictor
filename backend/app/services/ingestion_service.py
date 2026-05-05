@@ -1567,6 +1567,12 @@ class IngestionService:
             "standings_snapshot_available": False,
             "standings_snapshot_at": None,
             "next_round": None,
+            "v02_predictions_upcoming": 0,
+            "v02_avg_total_adjustment": 0.0,
+            "v02_avg_player_adjustment": 0.0,
+            "v02_avg_h2h_adjustment": 0.0,
+            "v02_avg_motivation_adjustment": 0.0,
+            "v02_matches_with_context_warning": 0,
             "last_ingestion_run": None,
             "data_coverage": {
                 "teams_imported": False,
@@ -1730,6 +1736,8 @@ class IngestionService:
             .where(StandingsSnapshot.season_id == season_row.id)
             .order_by(StandingsSnapshot.snapshot_at.desc(), StandingsSnapshot.id.desc()),
         )
+        from app.services.sot_prediction_v02_service import SotPredictionV02Service
+        v02_block = SotPredictionV02Service().dashboard_block(db, season)
 
         return {
             "league": league,
@@ -1773,6 +1781,12 @@ class IngestionService:
             "standings_snapshot_available": latest_standings_snapshot is not None,
             "standings_snapshot_at": latest_standings_snapshot.snapshot_at if latest_standings_snapshot else None,
             "next_round": next_round,
+            "v02_predictions_upcoming": int(v02_block.get("v02_predictions_upcoming") or 0),
+            "v02_avg_total_adjustment": float(v02_block.get("avg_total_adjustment") or 0.0),
+            "v02_avg_player_adjustment": float(v02_block.get("avg_player_adjustment") or 0.0),
+            "v02_avg_h2h_adjustment": float(v02_block.get("avg_h2h_adjustment") or 0.0),
+            "v02_avg_motivation_adjustment": float(v02_block.get("avg_motivation_adjustment") or 0.0),
+            "v02_matches_with_context_warning": int(v02_block.get("matches_with_context_warning") or 0),
             "last_ingestion_run": last_run,
             "data_coverage": {
                 "teams_imported": teams_imported,

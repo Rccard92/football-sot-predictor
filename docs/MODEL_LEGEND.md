@@ -157,6 +157,49 @@ Ordine step:
 
 Ogni run è tracciata in `ingestion_runs` con source `post_matchday_refresh`.
 
+## Baseline v0.2: `baseline_v0_2_context_player`
+
+La v0.2 **affianca** la baseline v0.1, non la sostituisce.
+
+Formula:
+
+`expected_sot_v0_2 = expected_sot_v0_1 + player_adjustment + h2h_adjustment + motivation_adjustment + availability_adjustment`
+
+Cap adjustment:
+
+- player: `±0.35`
+- H2H: `±0.20` (ridotto a `±0.10` con sample limitato)
+- motivation/context: `±0.25`
+- availability: fino a `-0.45`
+- total adjustment: `±0.90`
+
+Regole prudenziali:
+
+- `adjusted_expected_sot >= 1.0`
+- arrotondamento a 2 decimali
+- se un layer non ha dati affidabili: adjustment `0` con stato `not_available`/`not_reliable`
+
+Confidence v0.2:
+
+- parte dal punteggio v0.1
+- aggiustamenti su disponibilità layer e rischio contesto
+- cap finale `[40, 85]`
+- label: `Alta >= 80`, `Media >= 60`, `Bassa < 60`
+
+Note anti-leakage:
+
+- in questa iterazione la v0.2 è generata principalmente su upcoming
+- nessuna riscrittura predizioni storiche v0.1
+- nessun uso di formazioni ufficiali non disponibili
+
+Stato applicazione layer:
+
+- `player_impact_applied = true` in v0.2
+- `h2h_applied = true` in v0.2
+- `motivation_context_applied = true` in v0.2 upcoming
+- `availability_applied = only_if_reliable`
+- `official_lineups_applied = false`
+
 ## Standings layer
 
 - Ingestion standings: `POST /api/admin/ingest/serie-a/{season}/standings`

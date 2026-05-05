@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.constants import BASELINE_SOT_MODEL_VERSION, FINISHED_STATUSES
+from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, FINISHED_STATUSES
 from app.core.model_limitations import default_model_limitations_dict
 from app.models import Fixture, League, Season, Team, TeamSotFeature, TeamSotPrediction
 
@@ -1026,6 +1026,17 @@ class SotPredictionService:
             "matches_count": len(matches),
             "matches": matches,
             "model_limitations": default_model_limitations_dict(),
+            "v02_available": bool(
+                db.scalar(
+                    select(func.count())
+                    .select_from(TeamSotPrediction)
+                    .where(
+                        TeamSotPrediction.fixture_id.in_([m["fixture_id"] for m in matches]) if matches else False,
+                        TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V02,
+                    ),
+                )
+                or 0,
+            ),
         }
 
     def _upsert_prediction(

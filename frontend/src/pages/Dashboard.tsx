@@ -196,6 +196,12 @@ export function Dashboard() {
         { label: 'Prossima round rilevata', value: d.next_round ?? 'N/D' },
         { label: 'Feature su partite future', value: String(d.upcoming_sot_feature_rows_total ?? 0) },
         { label: 'Prediction su partite future', value: String(d.upcoming_sot_predictions_total ?? 0) },
+        { label: 'v0.2 predictions upcoming', value: String(d.v02_predictions_upcoming ?? 0) },
+        { label: 'v0.2 adjustment medio totale', value: formatNum(d.v02_avg_total_adjustment ?? 0, 2) },
+        { label: 'v0.2 adjustment medio player', value: formatNum(d.v02_avg_player_adjustment ?? 0, 2) },
+        { label: 'v0.2 adjustment medio H2H', value: formatNum(d.v02_avg_h2h_adjustment ?? 0, 2) },
+        { label: 'v0.2 adjustment medio motivation', value: formatNum(d.v02_avg_motivation_adjustment ?? 0, 2) },
+        { label: 'Match con warning contesto', value: String(d.v02_matches_with_context_warning ?? 0) },
       ]
     : []
 

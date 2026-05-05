@@ -13,6 +13,7 @@ from app.models.season import Season
 from app.models.standing import StandingEntry, StandingsSnapshot
 from app.models.team import Team
 from app.models.team_sot_feature import TeamSotFeature
+from app.models.team_sot_prediction_adjustment import TeamSotPredictionAdjustment
 from app.models.team_sot_prediction import TeamSotPrediction
 
 __all__ = [
@@ -32,5 +33,6 @@ __all__ = [
     "StandingsSnapshot",
     "Team",
     "TeamSotFeature",
+    "TeamSotPredictionAdjustment",
     "TeamSotPrediction",
 ]

@@ -4,12 +4,15 @@ import {
   DEFAULT_SEASON,
   buildUpcomingSotFeatures,
   evaluateMatchLine,
+  generateUpcomingSotPredictionsV02,
   generateUpcomingSotPredictions,
   getUpcomingPredictions,
+  getUpcomingPredictionsV02,
   type EvaluateMatchSotLineResponse,
   type ModelLimitations,
   type UpcomingCalculationBreakdown,
   type UpcomingMatchRow,
+  type UpcomingV02MatchRow,
   type UpcomingSidePrediction,
 } from '../lib/api'
 
@@ -471,7 +474,17 @@ function ContextBadge({ value }: { value: unknown }) {
   return <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">{v}</span>
 }
 
-function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitations: ModelLimitations }) {
+function MatchCard({
+  match,
+  limitations,
+  v02Match,
+  useAdjustedView,
+}: {
+  match: UpcomingMatchRow
+  limitations: ModelLimitations
+  v02Match: UpcomingV02MatchRow | null
+  useAdjustedView: boolean
+}) {
   const [bookmaker, setBookmaker] = useState('')
   const [marketType, setMarketType] = useState('match_total_sot')
   const [line, setLine] = useState('6.5')
@@ -487,6 +500,10 @@ function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitation
   const homeCtx = (match.home_team_context ?? {}) as Record<string, unknown>
   const awayCtx = (match.away_team_context ?? {}) as Record<string, unknown>
   const riskFlags = Array.isArray(matchCtx.risk_flags) ? (matchCtx.risk_flags as unknown[]) : []
+  const homeV02 = v02Match?.home_prediction_v02 ?? null
+  const awayV02 = v02Match?.away_prediction_v02 ?? null
+  const totalV02 = v02Match?.total_expected_sot_v02 ?? null
+  const totalBaseline = v02Match?.total_expected_sot_baseline ?? null
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
@@ -507,10 +524,12 @@ function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitation
           </span>{' '}
           {match.away_team.name}
         </h2>
-        {match.total_expected_sot != null ? (
+        {(useAdjustedView ? totalV02 : match.total_expected_sot) != null ? (
           <p className="mt-3 text-base font-medium text-slate-800">
             Totale tiri in porta attesi (match):{' '}
-            <span className="tabular-nums text-slate-900">{formatNum(match.total_expected_sot)}</span>
+            <span className="tabular-nums text-slate-900">
+              {formatNum(Number(useAdjustedView ? totalV02 : match.total_expected_sot))}
+            </span>
           </p>
         ) : (
           <p className="mt-3 text-sm text-slate-500">
@@ -523,6 +542,22 @@ function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitation
         <TeamBox team={match.home_team} pred={hp} />
         <TeamBox team={match.away_team} pred={ap} />
       </div>
+      {homeV02 && awayV02 ? (
+        <div className="border-t border-slate-100 px-5 py-4 text-sm text-slate-700 sm:px-6">
+          <p className="font-semibold text-slate-900">Perché è cambiata?</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <p>
+              {match.home_team.name}: Baseline {formatNum(homeV02.baseline_expected_sot)} · Aggiustata {formatNum(homeV02.adjusted_expected_sot)} · Correzione {formatNum(homeV02.total_adjustment)}
+            </p>
+            <p>
+              {match.away_team.name}: Baseline {formatNum(awayV02.baseline_expected_sot)} · Aggiustata {formatNum(awayV02.adjusted_expected_sot)} · Correzione {formatNum(awayV02.total_adjustment)}
+            </p>
+          </div>
+          <p className="mt-2 text-xs text-slate-600">
+            Totale match Baseline: {totalBaseline != null ? formatNum(totalBaseline) : '—'} · Totale match v0.2: {totalV02 != null ? formatNum(totalV02) : '—'}
+          </p>
+        </div>
+      ) : null}
 
       <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
         <h3 className="text-sm font-semibold text-slate-900">Contesto partita</h3>
@@ -637,6 +672,9 @@ function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitation
                   const out = await evaluateMatchLine({
                     home_expected_sot: hp.expected_sot,
                     away_expected_sot: ap.expected_sot,
+                    home_adjusted_expected_sot: homeV02?.adjusted_expected_sot ?? null,
+                    away_adjusted_expected_sot: awayV02?.adjusted_expected_sot ?? null,
+                    use_adjusted: useAdjustedView,
                     market_type: marketType,
                     line_value: lv,
                     bookmaker: bm,
@@ -702,6 +740,11 @@ function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitation
               ) : null}
             </ul>
             <p className="mt-3 text-xs leading-relaxed text-slate-600">{evalResult.explanation}</p>
+            {evalResult.warning ? (
+              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                {evalResult.warning}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -772,13 +815,18 @@ export function UpcomingMatches() {
   const [buildBusy, setBuildBusy] = useState(false)
   const [predBusy, setPredBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
+  const [dataV02, setDataV02] = useState<Awaited<ReturnType<typeof getUpcomingPredictionsV02>> | null>(null)
+  const [viewMode, setViewMode] = useState<'v02' | 'v01'>('v02')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const res = await getUpcomingPredictions(SEASON, { limit: 20, onlyNextRound: true })
+      const resV02 = await getUpcomingPredictionsV02(SEASON, { limit: 20, onlyNextRound: true })
       setData(res)
+      setDataV02(resV02)
+      setViewMode(res.v02_available ? 'v02' : 'v01')
     } catch (e) {
       setData(null)
       setError(e instanceof Error ? e.message : String(e))
@@ -802,6 +850,7 @@ export function UpcomingMatches() {
       note:
         'Questa versione baseline usa solo statistiche squadra storiche. Formazioni, assenze e quote bookmaker automatiche non sono ancora considerate.',
     }
+  const useAdjustedView = viewMode === 'v02' && Boolean(data?.v02_available)
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
@@ -818,6 +867,22 @@ export function UpcomingMatches() {
               Come funziona il modello?
             </Link>
           </p>
+          <div className="mt-3 inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs">
+            <button
+              type="button"
+              className={`rounded-lg px-2 py-1 ${viewMode === 'v01' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
+              onClick={() => setViewMode('v01')}
+            >
+              Vista baseline v0.1
+            </button>
+            <button
+              type="button"
+              className={`rounded-lg px-2 py-1 ${viewMode === 'v02' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
+              onClick={() => setViewMode('v02')}
+            >
+              Vista v0.2 aggiustata
+            </button>
+          </div>
         </header>
 
         {error ? (
@@ -872,6 +937,7 @@ export function UpcomingMatches() {
                   setActionMsg(null)
                   try {
                     await generateUpcomingSotPredictions(SEASON)
+                    await generateUpcomingSotPredictionsV02(SEASON)
                     setActionMsg('Previsioni future generate.')
                     await load()
                   } catch (e) {
@@ -898,7 +964,13 @@ export function UpcomingMatches() {
               {data.matches_count} partite
             </p>
             {data.matches.map((m) => (
-              <MatchCard key={m.fixture_id} match={m} limitations={limitations} />
+              <MatchCard
+                key={m.fixture_id}
+                match={m}
+                limitations={limitations}
+                v02Match={dataV02?.matches.find((x) => x.fixture_id === m.fixture_id) ?? null}
+                useAdjustedView={useAdjustedView}
+              />
             ))}
           </div>
         )}

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.core.constants import BASELINE_SOT_MODEL_VERSION
+from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02
 from app.schemas.model import ModelLegendResponse
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
 
@@ -106,6 +106,60 @@ def get_model_legend() -> ModelLegendResponse:
                         "interpretation": (
                             "Se l’avversario concede tanto di recente, la previsione aumenta."
                         ),
+                    },
+                ],
+            },
+            {
+                "id": "baseline_v02_context_player",
+                "title": "Baseline v0.2 context + player",
+                "status": "applicata",
+                "description": (
+                    "La v0.2 parte dalla baseline v0.1 e applica adjustment prudenti: "
+                    "player impact, H2H, motivation/context e availability (solo se affidabile)."
+                ),
+                "variables": [
+                    {
+                        "technical_key": "model_version_v01",
+                        "name": "Versione baseline storica",
+                        "description": "Versione di partenza del calcolo.",
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Mantiene compatibilità con la baseline originale.",
+                        "interpretation": f"Valore: {BASELINE_SOT_MODEL_VERSION}",
+                    },
+                    {
+                        "technical_key": "model_version_v02",
+                        "name": "Versione adjustment contestuali",
+                        "description": "Nuova versione con correzioni spiegabili.",
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Aggiunge correzioni prudenti senza sostituire v0.1.",
+                        "interpretation": f"Valore: {BASELINE_SOT_MODEL_VERSION_V02}",
+                    },
+                    {
+                        "technical_key": "expected_sot_v02_formula",
+                        "name": "Formula v0.2",
+                        "description": (
+                            "expected_sot_v0_2 = expected_sot_v0_1 + player_adjustment + "
+                            "h2h_adjustment + motivation_adjustment + availability_adjustment"
+                        ),
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Calcola il valore aggiustato finale per team.",
+                        "interpretation": "Somma baseline + adjustment, con cap totale ±0.90.",
+                    },
+                    {
+                        "technical_key": "adjustment_caps",
+                        "name": "Cap adjustment",
+                        "description": "player ±0.35, h2h ±0.20, motivation ±0.25, availability fino a -0.45, totale ±0.90.",
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Evita correzioni eccessive e migliora robustezza.",
+                        "interpretation": "Le correzioni restano prudenti e tracciabili.",
                     },
                 ],
             },

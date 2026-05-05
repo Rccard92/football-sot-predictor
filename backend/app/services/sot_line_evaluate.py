@@ -76,12 +76,27 @@ def evaluate_match_sot_line(
     away_expected_sot: float,
     line_value: float,
     *,
+    home_adjusted_expected_sot: float | None = None,
+    away_adjusted_expected_sot: float | None = None,
+    use_adjusted: bool = False,
     odds: float | None,
     bookmaker: str,
     market_type: str,
 ) -> dict[str, Any]:
     """Valutazione Over/Under sulla somma dei tiri in porta attesi (stesse soglie di `evaluate_sot_line`)."""
-    total_expected_sot = round(float(home_expected_sot) + float(away_expected_sot), 2)
+    baseline_total_expected_sot = round(float(home_expected_sot) + float(away_expected_sot), 2)
+    adjusted_total_expected_sot = None
+    if home_adjusted_expected_sot is not None and away_adjusted_expected_sot is not None:
+        adjusted_total_expected_sot = round(
+            float(home_adjusted_expected_sot) + float(away_adjusted_expected_sot),
+            2,
+        )
+    total_expected_sot = (
+        float(adjusted_total_expected_sot)
+        if use_adjusted and adjusted_total_expected_sot is not None
+        else float(baseline_total_expected_sot)
+    )
+    model_used = "baseline_v0_2_context_player" if use_adjusted and adjusted_total_expected_sot is not None else "baseline_v0_1"
     line_f = float(line_value)
     ev = evaluate_sot_line(total_expected_sot, line_f)
     suggestion = ev["suggestion"]
@@ -119,6 +134,13 @@ def evaluate_match_sot_line(
         "Questa versione non considera ancora formazioni ufficiali, assenze e una quota equa calcolata dal modello.",
     )
     explanation = " ".join(parts)
+    baseline_gap = round(baseline_total_expected_sot - line_f, 2)
+    adjusted_gap = (
+        round(adjusted_total_expected_sot - line_f, 2) if adjusted_total_expected_sot is not None else None
+    )
+    warning = None
+    if adjusted_gap is not None and abs(adjusted_gap - baseline_gap) >= 0.4:
+        warning = "Differenza significativa tra baseline e v0.2: usare prudenza nell'interpretazione."
 
     return {
         "market_type": market_type,
@@ -134,4 +156,10 @@ def evaluate_match_sot_line(
         "label": label,
         "implied_probability": implied_probability,
         "explanation": explanation,
+        "model_used": model_used,
+        "baseline_total_expected_sot": baseline_total_expected_sot,
+        "adjusted_total_expected_sot": adjusted_total_expected_sot,
+        "baseline_gap": baseline_gap,
+        "adjusted_gap": adjusted_gap,
+        "warning": warning,
     }

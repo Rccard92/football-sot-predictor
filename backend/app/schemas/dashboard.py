@@ -86,5 +86,11 @@ class SerieADashboardResponse(BaseModel):
     standings_snapshot_available: bool = False
     standings_snapshot_at: datetime | None = None
     next_round: str | None = None
+    v02_predictions_upcoming: int = 0
+    v02_avg_total_adjustment: float = 0.0
+    v02_avg_player_adjustment: float = 0.0
+    v02_avg_h2h_adjustment: float = 0.0
+    v02_avg_motivation_adjustment: float = 0.0
+    v02_matches_with_context_warning: int = 0
     last_ingestion_run: IngestionRunSummary | None
     data_coverage: DataCoverageBlock

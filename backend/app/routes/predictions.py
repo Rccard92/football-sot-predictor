@@ -22,9 +22,11 @@ from app.schemas.predictions import (
     TeamPredictionsResponse,
     TeamSotPredictionRead,
     UpcomingMatchesResponse,
+    UpcomingV02Response,
 )
 from app.services.sot_line_evaluate import evaluate_match_sot_line, evaluate_sot_line
 from app.services.sot_prediction_service import SotPredictionService
+from app.services.sot_prediction_v02_service import SotPredictionV02Service
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +113,52 @@ def evaluate_match_sot_line_endpoint(body: EvaluateMatchSotLineBody) -> Evaluate
             body.home_expected_sot,
             body.away_expected_sot,
             body.line_value,
+            home_adjusted_expected_sot=body.home_adjusted_expected_sot,
+            away_adjusted_expected_sot=body.away_adjusted_expected_sot,
+            use_adjusted=body.use_adjusted,
             odds=body.odds,
             bookmaker=body.bookmaker,
             market_type=body.market_type,
         ),
     )
+
+
+@router.post("/serie-a/{season}/generate-v02-upcoming", response_model=None)
+def generate_serie_a_predictions_v02_upcoming(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    svc = SotPredictionV02Service()
+    try:
+        summary = svc.generate_v02_for_upcoming_season(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST generate_v02_upcoming: errore database")
+        raise HTTPException(
+            status_code=503,
+            detail="Database non disponibile o schema non aggiornato. Eseguire alembic upgrade head.",
+        ) from exc
+    return jsonable_encoder(summary)
+
+
+@router.get("/serie-a/{season}/upcoming-v02", response_model=UpcomingV02Response)
+def sot_predictions_serie_a_upcoming_v02(
+    season: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+    only_next_round: bool = Query(default=True),
+) -> UpcomingV02Response:
+    svc = SotPredictionV02Service()
+    try:
+        data = svc.upcoming_v02(
+            db,
+            season,
+            limit=limit,
+            only_next_round=only_next_round,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET upcoming-v02: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return UpcomingV02Response.model_validate(data)
 
 
 @router.get("/serie-a/{season}/summary", response_model=SotPredictionsSeasonSummaryResponse)

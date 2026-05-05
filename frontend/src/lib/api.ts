@@ -69,6 +69,12 @@ export type SerieADashboardResponse = {
   standings_snapshot_available?: boolean
   standings_snapshot_at?: string | null
   next_round?: string | null
+  v02_predictions_upcoming?: number
+  v02_avg_total_adjustment?: number
+  v02_avg_player_adjustment?: number
+  v02_avg_h2h_adjustment?: number
+  v02_avg_motivation_adjustment?: number
+  v02_matches_with_context_warning?: number
   last_ingestion_run: IngestionRunSummary | null
   data_coverage: DataCoverageBlock
   fixtures_with_player_stats?: number
@@ -407,6 +413,43 @@ export type UpcomingMatchesResponse = {
   matches_count: number
   matches: UpcomingMatchRow[]
   model_limitations: ModelLimitations
+  v02_available?: boolean
+}
+
+export type UpcomingV02SidePrediction = {
+  baseline_expected_sot: number
+  adjusted_expected_sot: number
+  total_adjustment: number
+  player_adjustment: number
+  h2h_adjustment: number
+  motivation_adjustment: number
+  availability_adjustment: number
+  prediction_confidence_score_v0_2: number
+  prediction_confidence_label_v0_2: string
+  adjustment_breakdown?: Record<string, unknown> | null
+  adjustments?: Record<string, unknown> | null
+}
+
+export type UpcomingV02MatchRow = {
+  fixture_id: number
+  api_fixture_id: number
+  round: string | null
+  kickoff_at: string
+  status_short: string
+  home_team: UpcomingMatchTeam
+  away_team: UpcomingMatchTeam
+  home_prediction_v02: UpcomingV02SidePrediction | null
+  away_prediction_v02: UpcomingV02SidePrediction | null
+  total_expected_sot_baseline: number | null
+  total_expected_sot_v02: number | null
+}
+
+export type UpcomingV02Response = {
+  status: 'success' | 'error'
+  season: number
+  model_version: string
+  matches_count: number
+  matches: UpcomingV02MatchRow[]
 }
 
 export type EvaluateSotLineResponse = {
@@ -438,6 +481,22 @@ export async function buildUpcomingSotFeatures(season: number): Promise<unknown>
 
 export async function generateUpcomingSotPredictions(season: number): Promise<unknown> {
   return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {})
+}
+
+export async function generateUpcomingSotPredictionsV02(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-v02-upcoming`, {})
+}
+
+export async function getUpcomingPredictionsV02(
+  season: number,
+  opts?: { limit?: number; onlyNextRound?: boolean },
+): Promise<UpcomingV02Response> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/upcoming-v02${q ? `?${q}` : ''}`
+  return requestJson<UpcomingV02Response>(path)
 }
 
 export async function adminRefreshPostMatchday(
@@ -472,6 +531,9 @@ export async function evaluateSotLine(
 export type EvaluateMatchSotLineBody = {
   home_expected_sot: number
   away_expected_sot: number
+  home_adjusted_expected_sot?: number | null
+  away_adjusted_expected_sot?: number | null
+  use_adjusted?: boolean
   market_type?: string
   line_value: number
   odds?: number | null
@@ -492,6 +554,12 @@ export type EvaluateMatchSotLineResponse = {
   label: string
   implied_probability: number | null
   explanation: string
+  model_used?: string | null
+  baseline_total_expected_sot?: number | null
+  adjusted_total_expected_sot?: number | null
+  baseline_gap?: number | null
+  adjusted_gap?: number | null
+  warning?: string | null
 }
 
 export async function evaluateMatchLine(
@@ -500,6 +568,13 @@ export async function evaluateMatchLine(
   return requestPostJson<EvaluateMatchSotLineResponse>('/api/predictions/sot/evaluate-match-line', {
     home_expected_sot: body.home_expected_sot,
     away_expected_sot: body.away_expected_sot,
+    ...(body.home_adjusted_expected_sot != null
+      ? { home_adjusted_expected_sot: body.home_adjusted_expected_sot }
+      : {}),
+    ...(body.away_adjusted_expected_sot != null
+      ? { away_adjusted_expected_sot: body.away_adjusted_expected_sot }
+      : {}),
+    use_adjusted: body.use_adjusted ?? false,
     market_type: body.market_type ?? 'match_total_sot',
     line_value: body.line_value,
     bookmaker: body.bookmaker,

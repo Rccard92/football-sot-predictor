@@ -190,6 +190,43 @@ class UpcomingMatchesResponse(BaseModel):
     matches_count: int
     matches: list[UpcomingMatchRow]
     model_limitations: ModelLimitationsBlock
+    v02_available: bool = False
+
+
+class UpcomingV02SidePrediction(BaseModel):
+    baseline_expected_sot: float
+    adjusted_expected_sot: float
+    total_adjustment: float
+    player_adjustment: float
+    h2h_adjustment: float
+    motivation_adjustment: float
+    availability_adjustment: float
+    prediction_confidence_score_v0_2: int
+    prediction_confidence_label_v0_2: str
+    adjustment_breakdown: dict[str, Any] | None = None
+    adjustments: dict[str, Any] | None = None
+
+
+class UpcomingV02MatchRow(BaseModel):
+    fixture_id: int
+    api_fixture_id: int
+    round: str | None = None
+    kickoff_at: datetime
+    status_short: str
+    home_team: UpcomingMatchTeamBlock
+    away_team: UpcomingMatchTeamBlock
+    home_prediction_v02: UpcomingV02SidePrediction | None = None
+    away_prediction_v02: UpcomingV02SidePrediction | None = None
+    total_expected_sot_baseline: float | None = None
+    total_expected_sot_v02: float | None = None
+
+
+class UpcomingV02Response(BaseModel):
+    status: Literal["success", "error"]
+    season: int
+    model_version: str
+    matches_count: int
+    matches: list[UpcomingV02MatchRow]
 
 
 class EvaluateSotLineBody(BaseModel):
@@ -210,6 +247,9 @@ class EvaluateSotLineResponse(BaseModel):
 class EvaluateMatchSotLineBody(BaseModel):
     home_expected_sot: float = Field(..., ge=0, le=30)
     away_expected_sot: float = Field(..., ge=0, le=30)
+    home_adjusted_expected_sot: float | None = Field(default=None, ge=0, le=30)
+    away_adjusted_expected_sot: float | None = Field(default=None, ge=0, le=30)
+    use_adjusted: bool = Field(default=False)
     market_type: str = Field(default="match_total_sot")
     line_value: float = Field(..., ge=0, le=40)
     odds: float | None = Field(default=None)
@@ -239,3 +279,9 @@ class EvaluateMatchSotLineResponse(BaseModel):
     label: str
     implied_probability: float | None = None
     explanation: str
+    model_used: str | None = None
+    baseline_total_expected_sot: float | None = None
+    adjusted_total_expected_sot: float | None = None
+    baseline_gap: float | None = None
+    adjusted_gap: float | None = None
+    warning: str | None = None
