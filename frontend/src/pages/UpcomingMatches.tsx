@@ -3,17 +3,14 @@ import { Link } from 'react-router-dom'
 import {
   DEFAULT_SEASON,
   buildUpcomingSotFeatures,
-  evaluateMatchLine,
   generateUpcomingSotPredictionsV02,
   generateUpcomingSotPredictions,
   getUpcomingPredictions,
   getUpcomingPredictionsV02,
-  type EvaluateMatchSotLineResponse,
   type ModelLimitations,
   type UpcomingCalculationBreakdown,
   type UpcomingMatchRow,
   type UpcomingV02MatchRow,
-  type UpcomingSidePrediction,
 } from '../lib/api'
 
 const SEASON = DEFAULT_SEASON
@@ -332,22 +329,6 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
   )
 }
 
-function strengthLabel(s: EvaluateMatchSotLineResponse['strength']): string {
-  const map: Record<typeof s, string> = {
-    forte: 'Forte',
-    interessante: 'Interessante',
-    leggero: 'Leggera',
-    neutro: 'Neutra',
-  }
-  return map[s]
-}
-
-function suggestionLabel(s: EvaluateMatchSotLineResponse['suggestion']): string {
-  if (s === 'no_bet') return 'Nessuna scommessa consigliata'
-  if (s === 'over') return 'Over (sopra la linea)'
-  return 'Under (sotto la linea)'
-}
-
 function BreakdownTable({
   teamName,
   breakdown,
@@ -414,11 +395,6 @@ function BreakdownTable({
       </table>
     </div>
   )
-}
-
-function ContextBadge({ value }: { value: unknown }) {
-  const v = typeof value === 'string' ? value : 'incerta'
-  return <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">{v}</span>
 }
 
 function MatchCard({
