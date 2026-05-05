@@ -9,7 +9,7 @@ import {
   getUpcomingPredictionsV02,
   type ModelLimitations,
 } from '../lib/api'
-import { MatchCard } from '../components/upcoming/MatchCard'
+import { MatchCard } from '../components/upcoming'
 
 const SEASON = DEFAULT_SEASON
 
