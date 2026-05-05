@@ -5,6 +5,7 @@ import { Backtest } from './pages/Backtest'
 import { Dashboard } from './pages/Dashboard'
 import { DataHealth } from './pages/DataHealth'
 import { MatchPrediction } from './pages/MatchPrediction'
+import { ModelLegend } from './pages/ModelLegend'
 import { Teams } from './pages/Teams'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/teams" element={<Teams />} />
           <Route path="/match-prediction" element={<MatchPrediction />} />
           <Route path="/backtest" element={<Backtest />} />
+          <Route path="/model-legend" element={<ModelLegend />} />
           <Route path="/admin" element={<Admin />} />
         </Route>
       </Routes>

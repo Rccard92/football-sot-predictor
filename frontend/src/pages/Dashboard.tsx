@@ -626,6 +626,10 @@ export function Dashboard() {
         </SectionCard>
 
         <p className="text-center text-xs text-slate-500">
+          <Link to="/model-legend" className="font-medium text-slate-700 underline">
+            Apri legenda modello
+          </Link>
+          <span className="mx-2 text-slate-300">·</span>
           Azioni di ingestion e rigenerazione: usa la pagina{' '}
           <Link to="/admin" className="font-medium text-slate-700 underline">
             Admin

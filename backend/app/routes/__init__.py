@@ -13,6 +13,7 @@ from app.routes import (
     h2h,
     ingestion,
     match_context,
+    model,
     player_sot_profiles,
     predictions,
     standings,
@@ -34,3 +35,4 @@ api_router.include_router(player_sot_profiles.router)
 api_router.include_router(h2h.router)
 api_router.include_router(standings.router)
 api_router.include_router(match_context.router)
+api_router.include_router(model.router)

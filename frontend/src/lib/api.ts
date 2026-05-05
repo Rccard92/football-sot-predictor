@@ -155,6 +155,39 @@ export type BacktestBySideListResponse = {
   sides: BacktestBySideRow[]
 }
 
+export type ModelLegendStatus =
+  | 'applicata'
+  | 'solo_debug'
+  | 'applicata_alla_lettura'
+  | 'non_applicata'
+
+export type ModelLegendVariable = {
+  technical_key: string
+  name: string
+  description: string
+  weight: number | null
+  weight_label: string | null
+  status: ModelLegendStatus
+  impact: string
+  interpretation: string
+}
+
+export type ModelLegendSection = {
+  id: string
+  title: string
+  status: ModelLegendStatus
+  description: string
+  variables: ModelLegendVariable[]
+}
+
+export type ModelLegendResponse = {
+  model_version: string
+  title: string
+  description: string
+  expected_sot_formula: string
+  sections: ModelLegendSection[]
+}
+
 function getApiBase(): string {
   const raw = import.meta.env.VITE_API_BASE_URL
   if (raw === undefined || raw === null || String(raw).trim() === '') {
@@ -270,6 +303,10 @@ export async function getBacktestBySide(season: number): Promise<BacktestBySideL
   return requestJson<BacktestBySideListResponse>(
     `/api/backtest/sot/serie-a/${season}/by-side`,
   )
+}
+
+export async function getModelLegend(): Promise<ModelLegendResponse> {
+  return requestJson<ModelLegendResponse>('/api/model/legend')
 }
 
 export async function runBuildSotFeatures(season: number): Promise<unknown> {

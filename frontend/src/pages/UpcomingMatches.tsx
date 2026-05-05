@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   DEFAULT_SEASON,
   buildUpcomingSotFeatures,
@@ -811,6 +812,11 @@ export function UpcomingMatches() {
             Stime sui <strong>tiri in porta</strong> (tentativi che colpiscono lo specchio della porta) per le
             prossime partite. Puoi confrontare la somma delle due squadre con una linea del bookmaker inserita a
             mano.
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            <Link to="/model-legend" className="font-medium text-slate-700 underline">
+              Come funziona il modello?
+            </Link>
           </p>
         </header>
 

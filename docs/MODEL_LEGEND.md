@@ -212,3 +212,34 @@ Queste soglie sono configurabili e vanno verificate stagione per stagione.
 ## Prossimo step
 
 `expected_sot_adjusted_v0_2` con integrazione controllata di player impact e motivation context, separata dalla baseline v0.1.
+
+## Legenda visibile in dashboard
+
+La legenda non e piu solo documentale: e disponibile anche via API e frontend.
+
+- Endpoint backend: `GET /api/model/legend`
+- Pagina frontend dedicata: `Legenda Modello`
+- Link rapidi:
+  - Sidebar: voce `Legenda Modello`
+  - Dashboard Modello: link `Apri legenda modello`
+  - Prossima Giornata: link `Come funziona il modello?`
+
+La risposta API include:
+
+- `model_version`, `title`, `description`
+- `expected_sot_formula` (formula esplicita baseline)
+- sezioni ordinate:
+  - `baseline_formula` (`applicata`)
+  - `player_impact` (`solo_debug`)
+  - `h2h` (`solo_debug`)
+  - `match_context` (`solo_debug`)
+  - `confidence` (`applicata_alla_lettura`)
+  - `not_yet_applied` (`non_applicata`)
+
+Ogni variabile espone nome leggibile, chiave tecnica, descrizione, peso (se applicabile), stato, impatto e interpretazione semplice.
+
+Questa implementazione mantiene invariati:
+
+- formula `expected_sot` baseline
+- logica `baseline_v0_1`
+- uso matematico di player impact, H2H e motivation context (restano informativi/debug).

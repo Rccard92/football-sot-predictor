@@ -5,6 +5,7 @@ const nav = [
   { to: '/dashboard', label: 'Dashboard modello' },
   { to: '/data-health', label: 'Data Health' },
   { to: '/backtest', label: 'Backtest' },
+  { to: '/model-legend', label: 'Legenda Modello' },
   { to: '/admin', label: 'Admin' },
 ] as const
 
