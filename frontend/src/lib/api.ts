@@ -66,6 +66,9 @@ export type SerieADashboardResponse = {
   upcoming_fixtures_total: number
   upcoming_sot_feature_rows_total: number
   upcoming_sot_predictions_total: number
+  standings_snapshot_available?: boolean
+  standings_snapshot_at?: string | null
+  next_round?: string | null
   last_ingestion_run: IngestionRunSummary | null
   data_coverage: DataCoverageBlock
   fixtures_with_player_stats?: number
@@ -346,6 +349,10 @@ export type UpcomingMatchRow = {
   home_prediction: UpcomingSidePrediction | null
   away_prediction: UpcomingSidePrediction | null
   total_expected_sot: number | null
+  context_status?: string
+  match_context?: Record<string, unknown> | null
+  home_team_context?: Record<string, unknown> | null
+  away_team_context?: Record<string, unknown> | null
   h2h_summary?: Record<string, unknown> | null
   player_impact_status?: Record<string, unknown> | null
 }
@@ -393,6 +400,25 @@ export async function buildUpcomingSotFeatures(season: number): Promise<unknown>
 }
 
 export async function generateUpcomingSotPredictions(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {})
+}
+
+export async function adminRefreshPostMatchday(
+  season: number,
+  forceUpdate = false,
+): Promise<unknown> {
+  return requestPostJson<unknown>(
+    `/api/admin/refresh/serie-a/${season}/post-matchday?force_update=${String(forceUpdate)}`,
+    {},
+  )
+}
+
+export async function adminIngestStandings(season: number): Promise<unknown> {
+  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/standings`, {})
+}
+
+export async function adminRegenerateUpcomingPredictions(season: number): Promise<unknown> {
+  await requestPostJson<unknown>(`/api/features/sot/serie-a/${season}/build-upcoming`, {})
   return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {})
 }
 

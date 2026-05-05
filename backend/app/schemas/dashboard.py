@@ -83,5 +83,8 @@ class SerieADashboardResponse(BaseModel):
     upcoming_fixtures_total: int = 0
     upcoming_sot_feature_rows_total: int = 0
     upcoming_sot_predictions_total: int = 0
+    standings_snapshot_available: bool = False
+    standings_snapshot_at: datetime | None = None
+    next_round: str | None = None
     last_ingestion_run: IngestionRunSummary | None
     data_coverage: DataCoverageBlock

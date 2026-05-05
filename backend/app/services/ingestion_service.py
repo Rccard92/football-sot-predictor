@@ -20,6 +20,8 @@ from app.models import (
     PlayerAvailabilityEvent,
     PlayerSotProfile,
     Season,
+    StandingEntry,
+    StandingsSnapshot,
     Team,
     TeamSotFeature,
     TeamSotPrediction,
@@ -519,6 +521,241 @@ class IngestionService:
             logger.exception("sync_serie_a_fixtures failed")
             db.rollback()
             return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def ingest_serie_a_standings(self, db: Session, season: int) -> IngestionRun:
+        run = self._begin_run(db, "serie_a_standings", meta={"season": season})
+        try:
+            league = self._serie_a_league_row(db, season)
+            season_row = self._serie_a_season_row(db, season)
+            payload = self._client.get_standings(league.api_league_id, season)
+            snapshot = StandingsSnapshot(
+                season_id=season_row.id,
+                league_id=league.id,
+                snapshot_at=_utcnow(),
+                raw_json={"response": payload},
+            )
+            db.add(snapshot)
+            db.flush()
+            processed = 0
+            for block in payload:
+                league_block = (block or {}).get("league") or {}
+                standings_groups = league_block.get("standings") or []
+                for group in standings_groups:
+                    for entry in group or []:
+                        team_block = entry.get("team") or {}
+                        team_api_id = team_block.get("id")
+                        if team_api_id is None:
+                            continue
+                        team = db.scalar(select(Team).where(Team.api_team_id == int(team_api_id)))
+                        if team is None:
+                            continue
+                        all_block = entry.get("all") or {}
+                        goals_block = all_block.get("goals") or {}
+                        row = StandingEntry(
+                            snapshot_id=snapshot.id,
+                            season_id=season_row.id,
+                            league_id=league.id,
+                            team_id=team.id,
+                            rank=_parse_int(entry.get("rank")),
+                            points=_parse_int(entry.get("points")),
+                            goals_diff=_parse_int(entry.get("goalsDiff")),
+                            played=_parse_int(all_block.get("played")),
+                            win=_parse_int(all_block.get("win")),
+                            draw=_parse_int(all_block.get("draw")),
+                            lose=_parse_int(all_block.get("lose")),
+                            goals_for=_parse_int(goals_block.get("for")),
+                            goals_against=_parse_int(goals_block.get("against")),
+                            form=str(entry.get("form"))[:64] if entry.get("form") is not None else None,
+                            status=str(entry.get("status"))[:64] if entry.get("status") is not None else None,
+                            description=(
+                                str(entry.get("description"))[:255]
+                                if entry.get("description") is not None
+                                else None
+                            ),
+                            raw_json=entry,
+                        )
+                        db.add(row)
+                        processed += 1
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=processed)
+        except Exception as exc:
+            logger.exception("ingest_serie_a_standings failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def latest_standings_for_season(self, db: Session, season: int) -> dict[str, Any]:
+        try:
+            season_row = self._serie_a_season_row(db, season)
+        except ValueError:
+            return {"season": season, "snapshot_at": None, "teams": []}
+        snap = db.scalar(
+            select(StandingsSnapshot)
+            .where(StandingsSnapshot.season_id == season_row.id)
+            .order_by(StandingsSnapshot.snapshot_at.desc(), StandingsSnapshot.id.desc()),
+        )
+        if snap is None:
+            return {"season": season, "snapshot_at": None, "teams": []}
+        rows = db.scalars(
+            select(StandingEntry)
+            .where(StandingEntry.snapshot_id == snap.id)
+            .order_by(StandingEntry.rank.asc().nulls_last(), StandingEntry.team_id.asc()),
+        ).all()
+        team_ids = {r.team_id for r in rows}
+        teams = {
+            t.id: t
+            for t in db.scalars(select(Team).where(Team.id.in_(team_ids))).all()
+        } if team_ids else {}
+        return {
+            "season": season,
+            "snapshot_at": snap.snapshot_at,
+            "teams": [
+                {
+                    "rank": r.rank,
+                    "team_id": r.team_id,
+                    "team_name": teams[r.team_id].name if r.team_id in teams else "",
+                    "points": r.points,
+                    "played": r.played,
+                    "goals_diff": r.goals_diff,
+                    "form": r.form,
+                    "description": r.description,
+                }
+                for r in rows
+            ],
+        }
+
+    def run_post_matchday_refresh(self, db: Session, season: int, *, force_update: bool = False) -> dict[str, Any]:
+        from app.services.player_sot_profile_service import PlayerSotProfileService
+        from app.services.sot_backtest_service import SotBacktestService
+        from app.services.sot_feature_service import SotFeatureService
+        from app.services.sot_prediction_service import SotPredictionService
+
+        run = self._begin_run(
+            db,
+            "post_matchday_refresh",
+            meta={"season": season, "force_update": force_update},
+        )
+        steps: list[dict[str, Any]] = []
+
+        def mark_step(name: str, status: str, records: int = 0, extra: dict[str, Any] | None = None) -> None:
+            row: dict[str, Any] = {"name": name, "status": status, "records_processed": records}
+            if extra:
+                row.update(extra)
+            steps.append(row)
+
+        try:
+            s1 = self.sync_serie_a_fixtures(db, season)
+            mark_step("sync_fixtures", "success" if s1.status == "success" else "failed", s1.records_processed)
+            if s1.status != "success":
+                raise RuntimeError(s1.error_message or "sync fixtures fallito")
+
+            s2 = self.sync_completed_fixture_team_stats(db, season)
+            mark_step("sync_team_stats", "success" if s2.status == "success" else "failed", s2.records_processed)
+            if s2.status != "success":
+                raise RuntimeError(s2.error_message or "sync team stats fallito")
+
+            s3 = self.sync_completed_fixture_player_stats(db, season)
+            mark_step("sync_player_stats", "success" if s3.status == "success" else "failed", s3.records_processed)
+            if s3.status != "success":
+                raise RuntimeError(s3.error_message or "sync player stats fallito")
+
+            s4 = self.sync_completed_fixture_lineups(db, season)
+            mark_step("sync_lineups", "success" if s4.status == "success" else "failed", s4.records_processed)
+            if s4.status != "success":
+                raise RuntimeError(s4.error_message or "sync lineups fallito")
+
+            feat = SotFeatureService().build_features_for_season_admin(db, season)
+            mark_step(
+                "rebuild_sot_features_completed",
+                "success" if feat.get("status") == "success" else "failed",
+                int(feat.get("feature_rows_created_or_updated") or 0),
+            )
+            if feat.get("status") != "success":
+                raise RuntimeError(str(feat.get("message") or "build completed features fallito"))
+
+            pred = SotPredictionService().generate_for_season_admin(db, season)
+            mark_step(
+                "generate_baseline_predictions_completed",
+                "success" if pred.get("status") == "success" else "failed",
+                int(pred.get("predictions_created_or_updated") or 0),
+            )
+            if pred.get("status") != "success":
+                raise RuntimeError(str(pred.get("message") or "generate completed predictions fallito"))
+
+            bt = SotBacktestService().run_numeric_backtest_admin(db, season)
+            mark_step(
+                "run_backtest",
+                "success" if bt.get("status") == "success" else "failed",
+                int(bt.get("rows_created_or_updated") or 0),
+            )
+            if bt.get("status") != "success":
+                raise RuntimeError(str(bt.get("message") or "backtest fallito"))
+
+            up_feat = SotFeatureService().build_upcoming_features_for_season(db, season)
+            mark_step(
+                "build_upcoming_features",
+                "success" if up_feat.get("status") == "success" else "failed",
+                int(up_feat.get("feature_rows_created_or_updated") or 0),
+            )
+            if up_feat.get("status") != "success":
+                raise RuntimeError(str(up_feat.get("message") or "build upcoming features fallito"))
+
+            up_pred = SotPredictionService().generate_upcoming_predictions_for_season(db, season)
+            mark_step(
+                "generate_upcoming_predictions",
+                "success" if up_pred.get("status") == "success" else "failed",
+                int(up_pred.get("predictions_created_or_updated") or 0),
+            )
+            if up_pred.get("status") != "success":
+                raise RuntimeError(str(up_pred.get("message") or "generate upcoming predictions fallito"))
+
+            profiles = PlayerSotProfileService().build_for_season(db, season)
+            mark_step(
+                "build_player_sot_profiles",
+                "success" if profiles.get("status") == "success" else "failed",
+                int(profiles.get("profiles_created_or_updated") or 0),
+            )
+            if profiles.get("status") != "success":
+                raise RuntimeError(str(profiles.get("message") or "build player profiles fallito"))
+
+            dash = self.dashboard_serie_a(db, season)
+            summary = {
+                "fixtures_total": int(dash.get("fixtures_total") or 0),
+                "fixtures_completed": int(dash.get("fixtures_completed") or 0),
+                "upcoming_fixtures_total": int(dash.get("upcoming_fixtures_total") or 0),
+                "next_round": dash.get("next_round"),
+                "team_stats_coverage_pct": float(dash.get("team_stats_coverage_pct") or 0.0),
+                "player_stats_coverage_pct": float(dash.get("player_stats_coverage_pct") or 0.0),
+                "lineups_coverage_pct": float(dash.get("lineups_coverage_pct") or 0.0),
+                "sot_feature_coverage_pct": float(dash.get("sot_feature_coverage_pct") or 0.0),
+                "sot_predictions_coverage_pct": float(dash.get("sot_predictions_coverage_pct") or 0.0),
+            }
+            result = {"status": "success", "season": season, "steps": steps, "summary": summary}
+            self._finish_run(
+                db,
+                run,
+                success=True,
+                records_processed=sum(int(s.get("records_processed") or 0) for s in steps),
+                meta_merge={"result": result},
+            )
+            return result
+        except Exception as exc:
+            failed_step = next((s["name"] for s in steps if s.get("status") == "failed"), None)
+            result = {
+                "status": "error",
+                "season": season,
+                "failed_step": failed_step,
+                "message": str(exc),
+                "steps": steps,
+            }
+            self._finish_run(
+                db,
+                run,
+                success=False,
+                records_processed=sum(int(s.get("records_processed") or 0) for s in steps),
+                error=str(exc),
+                meta_merge={"result": result},
+            )
+            return result
 
     def sync_completed_fixture_team_stats(self, db: Session, season: int = 2025) -> IngestionRun:
         run = self._begin_run(db, "sync_completed_fixture_team_stats", meta={"season": season})
@@ -1327,6 +1564,9 @@ class IngestionService:
             "upcoming_fixtures_total": 0,
             "upcoming_sot_feature_rows_total": 0,
             "upcoming_sot_predictions_total": 0,
+            "standings_snapshot_available": False,
+            "standings_snapshot_at": None,
+            "next_round": None,
             "last_ingestion_run": None,
             "data_coverage": {
                 "teams_imported": False,
@@ -1456,6 +1696,13 @@ class IngestionService:
         upcoming_ids = [
             f.id for f in season_fixtures if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)
         ]
+        next_round = None
+        if upcoming_ids:
+            first_upcoming = min(
+                (f for f in season_fixtures if f.id in upcoming_ids),
+                key=lambda x: (x.kickoff_at, x.id),
+            )
+            next_round = first_upcoming.round
         upcoming_fixtures_total = len(upcoming_ids)
         if not upcoming_ids:
             upcoming_sot_feature_rows_total = 0
@@ -1477,6 +1724,12 @@ class IngestionService:
                 )
                 or 0,
             )
+
+        latest_standings_snapshot = db.scalar(
+            select(StandingsSnapshot)
+            .where(StandingsSnapshot.season_id == season_row.id)
+            .order_by(StandingsSnapshot.snapshot_at.desc(), StandingsSnapshot.id.desc()),
+        )
 
         return {
             "league": league,
@@ -1517,6 +1770,9 @@ class IngestionService:
             "upcoming_fixtures_total": upcoming_fixtures_total,
             "upcoming_sot_feature_rows_total": upcoming_sot_feature_rows_total,
             "upcoming_sot_predictions_total": upcoming_sot_predictions_total,
+            "standings_snapshot_available": latest_standings_snapshot is not None,
+            "standings_snapshot_at": latest_standings_snapshot.snapshot_at if latest_standings_snapshot else None,
+            "next_round": next_round,
             "last_ingestion_run": last_run,
             "data_coverage": {
                 "teams_imported": teams_imported,

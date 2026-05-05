@@ -138,3 +138,77 @@ Equivale a documentare che **`player_layer_applied_in_prediction = false`**, **`
 Step successivo possibile: una versione **v0.2** che introduca un **`expected_sot_adjusted`** (o nuova `model_version`) integrando in modo controllato layer giocatori / H2H / disponibilità, con pesi espliciti e validazione su backtest — **distinta** dalla baseline v0.1 attuale.
 
 Altre idee: H2H o quote come feature aggiuntiva; aggiustamenti attacco/difesa per assenze. Mantenere tracciabilità: pesi, fallback e versione nel `raw_json` delle previsioni.
+
+## Step 10: Post-matchday refresh pipeline
+
+Endpoint admin orchestrato: `POST /api/admin/refresh/serie-a/{season}/post-matchday`.
+
+Ordine step:
+1. Sync fixtures
+2. Sync team stats concluse
+3. Sync player stats concluse
+4. Sync lineups concluse
+5. Rebuild `team_sot_features` (completed, no leakage)
+6. Regenerate `team_sot_predictions` baseline_v0_1 (completed)
+7. Run backtest
+8. Build upcoming features
+9. Generate upcoming predictions
+10. Build player SOT profiles
+
+Ogni run è tracciata in `ingestion_runs` con source `post_matchday_refresh`.
+
+## Standings layer
+
+- Ingestion standings: `POST /api/admin/ingest/serie-a/{season}/standings`
+- Lettura ultimo snapshot: `GET /api/standings/serie-a/{season}/latest`
+- Tabelle:
+  - `standings_snapshots`
+  - `standing_entries`
+
+Il sistema usa sempre l’ultimo snapshot disponibile.
+
+## Match Motivation Layer
+
+Servizio: `backend/app/services/match_context_service.py`.
+Endpoint: `GET /api/match-context/fixture/{fixture_id}`.
+
+Per ogni squadra espone: objective, motivation level, reasons, turnover risk, warning, late-season-risk.
+Il layer è prudente e descrive rischio/contesto, non certezze sulle formazioni.
+
+## Logica `motivation_level` (prudenziale)
+
+- Fine stagione (`round >= late_season_round_threshold`) => rischio più alto.
+- Vicinanza a Champions/Europa/retrocessione entro `points_gap_close` => motivazione alta/media.
+- Squadre senza obiettivo di classifica evidente => motivazione bassa/media e rischio turnover maggiore.
+- Dati insufficienti (es. classifica assente) => `motivation_level=incerta`.
+
+## Significato `turnover_risk`
+
+`turnover_risk` è una stima qualitativa (`alto|medio|basso|incerto`) del rischio rotazioni.
+Non implica che una squadra schiererà riserve: indica solo che il contesto competitivo può aumentare la variabilità.
+
+## Limiti del layer motivation
+
+- Non è una certezza sulle formazioni.
+- Non sostituisce news pre-partita e formazioni ufficiali.
+- È particolarmente utile nelle ultime giornate.
+
+## Stato integrazione
+
+- `motivation_context_applied_to_prediction = false`
+- `motivation_context_visible_in_ui = true`
+
+Il layer è visibile e debuggabile in API/UI, ma non modifica ancora il calcolo numerico baseline.
+
+## Configurazione obiettivi stagionali
+
+Configurazione Serie A 2025 in codice (`competition_context_config`):
+- title/champions/europe/relegation zones
+- soglia late season
+- gap punti close/practically out
+
+Queste soglie sono configurabili e vanno verificate stagione per stagione.
+
+## Prossimo step
+
+`expected_sot_adjusted_v0_2` con integrazione controllata di player impact e motivation context, separata dalla baseline v0.1.

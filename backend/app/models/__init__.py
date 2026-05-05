@@ -10,6 +10,7 @@ from app.models.player_availability_event import PlayerAvailabilityEvent
 from app.models.player_sot_profile import PlayerSotProfile
 from app.models.prediction_backtest import PredictionBacktest
 from app.models.season import Season
+from app.models.standing import StandingEntry, StandingsSnapshot
 from app.models.team import Team
 from app.models.team_sot_feature import TeamSotFeature
 from app.models.team_sot_prediction import TeamSotPrediction
@@ -27,6 +28,8 @@ __all__ = [
     "PlayerSotProfile",
     "PredictionBacktest",
     "Season",
+    "StandingEntry",
+    "StandingsSnapshot",
     "Team",
     "TeamSotFeature",
     "TeamSotPrediction",

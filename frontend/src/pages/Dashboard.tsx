@@ -188,6 +188,12 @@ export function Dashboard() {
         { label: 'Previsioni generate (copertura)', value: formatPercent(d.sot_predictions_coverage_pct) },
         { label: 'Copertura backtest', value: formatPercent(d.sot_backtest_coverage_pct) },
         { label: 'Partite prossime', value: String(d.upcoming_fixtures_total ?? 0) },
+        {
+          label: 'Snapshot classifica',
+          value: d.standings_snapshot_available ? 'Sì' : 'No',
+          hint: d.standings_snapshot_at ? `Ultimo update: ${formatDateTime(d.standings_snapshot_at)}` : undefined,
+        },
+        { label: 'Prossima round rilevata', value: d.next_round ?? 'N/D' },
         { label: 'Feature su partite future', value: String(d.upcoming_sot_feature_rows_total ?? 0) },
         { label: 'Prediction su partite future', value: String(d.upcoming_sot_predictions_total ?? 0) },
       ]

@@ -465,6 +465,11 @@ function TeamBox({
   )
 }
 
+function ContextBadge({ value }: { value: unknown }) {
+  const v = typeof value === 'string' ? value : 'incerta'
+  return <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">{v}</span>
+}
+
 function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitations: ModelLimitations }) {
   const [bookmaker, setBookmaker] = useState('')
   const [marketType, setMarketType] = useState('match_total_sot')
@@ -477,6 +482,10 @@ function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitation
   const hp = match.home_prediction
   const ap = match.away_prediction
   const canEvaluate = Boolean(hp && ap)
+  const matchCtx = (match.match_context ?? {}) as Record<string, unknown>
+  const homeCtx = (match.home_team_context ?? {}) as Record<string, unknown>
+  const awayCtx = (match.away_team_context ?? {}) as Record<string, unknown>
+  const riskFlags = Array.isArray(matchCtx.risk_flags) ? (matchCtx.risk_flags as unknown[]) : []
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
@@ -515,11 +524,48 @@ function MatchCard({ match, limitations }: { match: UpcomingMatchRow; limitation
       </div>
 
       <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
+        <h3 className="text-sm font-semibold text-slate-900">Contesto partita</h3>
+        {match.context_status === 'not_available' ? (
+          <p className="mt-2 text-sm text-amber-900">
+            Classifica non disponibile: contesto motivazionale non calcolabile.
+          </p>
+        ) : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm">
+              <p className="text-xs text-slate-500">Importanza partita</p>
+              <p className="mt-1"><ContextBadge value={matchCtx.overall_match_importance} /></p>
+              <p className="mt-2 text-xs text-slate-600">{String(matchCtx.summary ?? '')}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm">
+              <p className="text-xs text-slate-500">Casa / Trasferta</p>
+              <p className="mt-1 text-xs text-slate-700">
+                Motivazione casa: <ContextBadge value={homeCtx.motivation_level} />
+              </p>
+              <p className="mt-1 text-xs text-slate-700">
+                Motivazione trasferta: <ContextBadge value={awayCtx.motivation_level} />
+              </p>
+              <p className="mt-1 text-xs text-slate-700">
+                Rischio turnover casa: <ContextBadge value={homeCtx.turnover_risk} />
+              </p>
+              <p className="mt-1 text-xs text-slate-700">
+                Rischio turnover trasferta: <ContextBadge value={awayCtx.turnover_risk} />
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
         <h3 className="text-sm font-semibold text-slate-900">Valuta linea bookmaker</h3>
         <p className="mt-1 text-xs text-slate-600">
           Confronta la somma dei tiri in porta attesi con la linea che vedi sul foglio gioco. Le quote servono solo
           per una probabilità indicativa, non per cercare “valore” statistico.
         </p>
+        {riskFlags.length > 0 ? (
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+            Attenzione: contesto partita rischioso. Valutazione da usare con prudenza.
+          </p>
+        ) : null}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-12">
           <label className="text-xs font-medium text-slate-700 lg:col-span-3">
             Bookmaker

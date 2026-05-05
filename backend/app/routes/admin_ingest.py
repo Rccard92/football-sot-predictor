@@ -170,6 +170,24 @@ def admin_ingest_serie_a_availability(
     return jsonable_encoder(payload)
 
 
+@router.post("/serie-a/{season}/standings", response_model=None)
+def admin_ingest_serie_a_standings(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    svc = IngestionService()
+    try:
+        run = svc.ingest_serie_a_standings(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("standings: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    payload = IngestionRunRead.model_validate(run).model_dump()
+    if run.status == "failed":
+        return JSONResponse(status_code=502, content=jsonable_encoder(payload))
+    return jsonable_encoder(payload)
+
+
 @router.get("/runs", response_model=None)
 def admin_list_ingestion_runs(
     db: Session = Depends(get_db),

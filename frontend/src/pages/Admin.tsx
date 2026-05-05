@@ -2,7 +2,10 @@ import { useState } from 'react'
 import {
   DEFAULT_SEASON,
   adminBootstrapSerieA,
+  adminIngestStandings,
   adminIngestAvailability,
+  adminRefreshPostMatchday,
+  adminRegenerateUpcomingPredictions,
   adminIngestLineups,
   adminIngestPlayerStats,
   adminIngestTeamStats,
@@ -85,6 +88,24 @@ export function Admin() {
   ]
 
   const modelActions: Btn[] = [
+    {
+      id: 'post-matchday-refresh',
+      label: 'Aggiorna dopo giornata',
+      description: 'Esegue la pipeline post-matchday completa lato backend.',
+      run: () => adminRefreshPostMatchday(SEASON),
+    },
+    {
+      id: 'standings-ingest',
+      label: 'Importa classifica',
+      description: 'Scarica standings e salva snapshot + entries.',
+      run: () => adminIngestStandings(SEASON),
+    },
+    {
+      id: 'regen-upcoming',
+      label: 'Rigenera upcoming predictions',
+      description: 'Ricostruisce feature upcoming e previsioni upcoming.',
+      run: () => adminRegenerateUpcomingPredictions(SEASON),
+    },
     {
       id: 'feat',
       label: 'Costruisci feature completate',

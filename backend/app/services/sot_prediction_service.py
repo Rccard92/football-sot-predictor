@@ -781,13 +781,23 @@ class SotPredictionService:
             }
 
         feat_svc = SotFeatureService()
-        upcoming = feat_svc.list_upcoming_fixtures_for_season(db, season.id)
+        raw_upcoming = feat_svc.list_upcoming_fixtures_for_season(db, season.id)
+        upcoming = [
+            f
+            for f in raw_upcoming
+            if (f.status or "").upper() not in FINISHED_STATUSES
+            and not (
+                (f.status or "").upper() in FINISHED_STATUSES
+                and (f.goals_home is not None or f.goals_away is not None)
+            )
+        ]
+        upcoming.sort(key=lambda f: (f.kickoff_at, f.id))
         if round_filter is not None and round_filter != "":
             upcoming = [f for f in upcoming if (f.round or "") == round_filter]
         if only_next_round and upcoming:
-            r0 = upcoming[0].round
+            r0 = _fixture_round_display(upcoming[0]) or upcoming[0].round
             if r0:
-                upcoming = [f for f in upcoming if f.round == r0]
+                upcoming = [f for f in upcoming if (_fixture_round_display(f) or f.round) == r0]
             else:
                 d0 = upcoming[0].kickoff_at.date()
                 upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
@@ -798,6 +808,7 @@ class SotPredictionService:
 
         from app.models import FixtureLineup, PlayerAvailabilityEvent, PlayerSotProfile
         from app.services.h2h_service import build_h2h_summary_for_fixture
+        from app.services.match_context_service import MatchContextService
         from app.services.player_sot_profile_service import PlayerSotProfileService
         from app.services.sot_backtest_service import SotBacktestService
 
@@ -807,6 +818,7 @@ class SotPredictionService:
         bt_rmse = float(bt_block["sot_backtest_rmse"]) if bt_n > 0 else None
 
         prof_svc = PlayerSotProfileService()
+        ctx_svc = MatchContextService()
         profiles_n_season = int(
             db.scalar(
                 select(func.count()).select_from(PlayerSotProfile).where(
@@ -977,6 +989,7 @@ class SotPredictionService:
                     limit=3,
                 ),
             }
+            context_payload = ctx_svc.build_match_context(db, fx.id)
 
             matches.append(
                 {
@@ -1000,6 +1013,10 @@ class SotPredictionService:
                     "total_expected_sot": total_exp,
                     "h2h_summary": h2h_summary,
                     "player_impact_status": player_impact_status,
+                    "context_status": context_payload.get("context_status", "not_available"),
+                    "match_context": context_payload.get("match_context"),
+                    "home_team_context": context_payload.get("home_team_context"),
+                    "away_team_context": context_payload.get("away_team_context"),
                 },
             )
 
