@@ -200,6 +200,22 @@ Stato applicazione layer:
 - `availability_applied = only_if_reliable`
 - `official_lineups_applied = false`
 
+Prerequisiti operativi v0.2 (`generate-v02-upcoming`):
+
+- fixture upcoming disponibili
+- prediction `baseline_v0_1` sulle upcoming gia generate
+- `player_sot_profiles` disponibili per il layer player (altrimenti fallback `0`)
+- standings disponibili per motivation context (altrimenti fallback `0`)
+- tabella `team_sot_prediction_adjustments` presente a schema
+
+Troubleshooting Railway:
+
+- errore `Missing baseline_v0_1 prediction for fixture/team. Run generate-upcoming first.`:
+  eseguire prima `POST /api/predictions/sot/serie-a/{season}/generate-upcoming`
+- errore `Missing table team_sot_prediction_adjustments. Run alembic upgrade head.`:
+  eseguire migration con `alembic upgrade head`
+- verificare prerequisiti con `GET /api/predictions/sot/serie-a/{season}/v02-readiness`
+
 ## Standings layer
 
 - Ingestion standings: `POST /api/admin/ingest/serie-a/{season}/standings`

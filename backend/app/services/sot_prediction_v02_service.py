@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import logging
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, FINISHED_STATUSES
@@ -11,6 +12,7 @@ from app.models import (
     Fixture,
     PlayerAvailabilityEvent,
     PlayerSotProfile,
+    StandingsSnapshot,
     Team,
     TeamSotPrediction,
     TeamSotPredictionAdjustment,
@@ -18,6 +20,8 @@ from app.models import (
 from app.services.h2h_service import build_h2h_summary_for_fixture
 from app.services.ingestion_service import IngestionService
 from app.services.match_context_service import MatchContextService
+
+logger = logging.getLogger(__name__)
 
 
 def _round2(v: float) -> float:
@@ -30,6 +34,34 @@ def _cap(v: float, low: float, high: float) -> float:
 
 class SotPredictionV02Service:
     model_version = BASELINE_SOT_MODEL_VERSION_V02
+
+    @staticmethod
+    def _empty_partial_result() -> dict[str, Any]:
+        return {
+            "upcoming_fixtures_found": 0,
+            "predictions_created_or_updated": 0,
+            "errors": [],
+        }
+
+    def _error_result(
+        self,
+        *,
+        failed_step: str,
+        message: str,
+        details: str | None = None,
+        partial_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "error",
+            "failed_step": failed_step,
+            "message": message,
+            "details": details,
+            "partial_result": partial_result or self._empty_partial_result(),
+        }
+
+    def _adjustments_table_exists(self, db: Session) -> bool:
+        bind = db.get_bind()
+        return bool(inspect(bind).has_table("team_sot_prediction_adjustments"))
 
     def _season_row(self, db: Session, season_year: int):
         ing = IngestionService()
@@ -296,71 +328,175 @@ class SotPredictionV02Service:
         db.flush()
 
     def generate_v02_for_upcoming_season(self, db: Session, season_year: int) -> dict[str, Any]:
-        _league, season = self._season_row(db, season_year)
-        fixtures = db.scalars(
-            select(Fixture)
-            .where(Fixture.season_id == season.id, ~Fixture.status.in_(FINISHED_STATUSES))
-            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
-        ).all()
+        partial = self._empty_partial_result()
+        try:
+            _league, season = self._season_row(db, season_year)
+        except Exception as exc:
+            logger.exception("v02 season load failed")
+            return self._error_result(
+                failed_step="load_season",
+                message=f"Season {season_year} not found or invalid.",
+                details=str(exc),
+                partial_result=partial,
+            )
+
+        if not self._adjustments_table_exists(db):
+            return self._error_result(
+                failed_step="check_adjustments_table",
+                message="Missing table team_sot_prediction_adjustments. Run alembic upgrade head.",
+                partial_result=partial,
+            )
+
+        try:
+            fixtures = db.scalars(
+                select(Fixture)
+                .where(Fixture.season_id == season.id, ~Fixture.status.in_(FINISHED_STATUSES))
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+            ).all()
+        except Exception as exc:
+            logger.exception("v02 fixtures load failed")
+            return self._error_result(
+                failed_step="load_upcoming_fixtures",
+                message="Unable to load upcoming fixtures.",
+                details=str(exc),
+                partial_result=partial,
+            )
+
+        partial["upcoming_fixtures_found"] = len(fixtures)
         league_avg_top5_impact = self._league_avg_top5_impact(db, season.id)
         ctx_service = MatchContextService()
         created = 0
         errors: list[dict[str, Any]] = []
+
         for fx in fixtures:
-            home_base = db.scalar(
-                select(TeamSotPrediction).where(
-                    TeamSotPrediction.fixture_id == fx.id,
-                    TeamSotPrediction.team_id == fx.home_team_id,
-                    TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
-                ),
-            )
-            away_base = db.scalar(
-                select(TeamSotPrediction).where(
-                    TeamSotPrediction.fixture_id == fx.id,
-                    TeamSotPrediction.team_id == fx.away_team_id,
-                    TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
-                ),
-            )
-            if home_base is None or away_base is None:
-                errors.append({"fixture_id": fx.id, "message": "baseline_v0_1_missing"})
+            try:
+                home_base = db.scalar(
+                    select(TeamSotPrediction).where(
+                        TeamSotPrediction.fixture_id == fx.id,
+                        TeamSotPrediction.team_id == fx.home_team_id,
+                        TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
+                    ),
+                )
+                away_base = db.scalar(
+                    select(TeamSotPrediction).where(
+                        TeamSotPrediction.fixture_id == fx.id,
+                        TeamSotPrediction.team_id == fx.away_team_id,
+                        TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
+                    ),
+                )
+            except Exception as exc:
+                logger.exception("v02 baseline load failed for fixture %s", fx.id)
+                errors.append(
+                    {
+                        "fixture_id": fx.id,
+                        "failed_step": "load_baseline_v01_predictions",
+                        "message": "Unable to load baseline_v0_1 predictions.",
+                        "details": str(exc),
+                    },
+                )
                 continue
-            h2h = build_h2h_summary_for_fixture(db, fx.id, exclude_api_fixture_id=int(fx.api_fixture_id))
-            ctx = ctx_service.build_match_context(db, fx.id)
-            for base_pred, team_id, is_home, opp_id in (
-                (home_base, fx.home_team_id, True, fx.away_team_id),
-                (away_base, fx.away_team_id, False, fx.home_team_id),
+
+            if home_base is None or away_base is None:
+                errors.append(
+                    {
+                        "fixture_id": fx.id,
+                        "failed_step": "load_baseline_v01_predictions",
+                        "message": "Missing baseline_v0_1 prediction for fixture/team. Run generate-upcoming first.",
+                    },
+                )
+                continue
+
+            try:
+                h2h = build_h2h_summary_for_fixture(db, fx.id, exclude_api_fixture_id=int(fx.api_fixture_id))
+            except Exception:
+                logger.exception("v02 h2h failed for fixture %s", fx.id)
+                h2h = {"status": "not_available", "h2h_fetch_ok": False}
+
+            try:
+                ctx = ctx_service.build_match_context(db, fx.id)
+            except Exception:
+                logger.exception("v02 context failed for fixture %s", fx.id)
+                ctx = {"context_status": "not_available"}
+
+            for base_pred, team_id, is_home in (
+                (home_base, fx.home_team_id, True),
+                (away_base, fx.away_team_id, False),
             ):
                 baseline_expected = float(base_pred.predicted_sot or 0.0)
-                top_profiles = self._top_profiles_for_team(db, season.id, team_id, limit=5)
-                top_impact_vals = [float(p.impact_score or 0.0) for p in top_profiles if p.impact_score is not None]
-                team_top5_avg = sum(top_impact_vals) / len(top_impact_vals) if top_impact_vals else None
-                player_adj, player_bd = self.compute_player_adjustment(
-                    team_top5_avg_impact=team_top5_avg,
-                    league_avg_top5_impact=league_avg_top5_impact,
-                )
-                player_bd["top_players_considered"] = len(top_profiles)
+                try:
+                    top_profiles = self._top_profiles_for_team(db, season.id, team_id, limit=5)
+                    top_impact_vals = [
+                        float(p.impact_score or 0.0) for p in top_profiles if p.impact_score is not None
+                    ]
+                    team_top5_avg = sum(top_impact_vals) / len(top_impact_vals) if top_impact_vals else None
+                    player_adj, player_bd = self.compute_player_adjustment(
+                        team_top5_avg_impact=team_top5_avg,
+                        league_avg_top5_impact=league_avg_top5_impact,
+                    )
+                    player_bd["top_players_considered"] = len(top_profiles)
+                except Exception as exc:
+                    logger.exception("v02 player adjustment failed for fixture %s team %s", fx.id, team_id)
+                    player_adj = 0.0
+                    player_bd = {
+                        "status": "not_available",
+                        "adjustment": 0.0,
+                        "explanation": "Player profiles non disponibili.",
+                        "details": str(exc),
+                    }
 
                 team_ctx = ctx.get("home_team_context") if is_home else ctx.get("away_team_context")
                 opp_ctx = ctx.get("away_team_context") if is_home else ctx.get("home_team_context")
-                motivation_adj, motivation_bd = self.compute_motivation_adjustment(
-                    team_context=team_ctx,
-                    opp_context=opp_ctx,
-                )
-                h2h_adj, h2h_bd = self.compute_h2h_adjustment(
-                    baseline_expected_sot=baseline_expected,
-                    h2h_summary=h2h,
-                    is_home=is_home,
-                )
-                availability_events = db.scalars(
-                    select(PlayerAvailabilityEvent).where(
-                        PlayerAvailabilityEvent.season_id == season.id,
-                        PlayerAvailabilityEvent.team_id == team_id,
-                    ),
-                ).all()
-                availability_adj, availability_bd = self.compute_availability_adjustment(
-                    top_profiles=top_profiles,
-                    availability_events=availability_events,
-                )
+                try:
+                    motivation_adj, motivation_bd = self.compute_motivation_adjustment(
+                        team_context=team_ctx,
+                        opp_context=opp_ctx,
+                    )
+                except Exception as exc:
+                    logger.exception("v02 motivation adjustment failed for fixture %s team %s", fx.id, team_id)
+                    motivation_adj = 0.0
+                    motivation_bd = {
+                        "status": "not_available",
+                        "adjustment": 0.0,
+                        "explanation": "Match context non disponibile.",
+                        "details": str(exc),
+                    }
+
+                try:
+                    h2h_adj, h2h_bd = self.compute_h2h_adjustment(
+                        baseline_expected_sot=baseline_expected,
+                        h2h_summary=h2h,
+                        is_home=is_home,
+                    )
+                except Exception as exc:
+                    logger.exception("v02 h2h adjustment failed for fixture %s team %s", fx.id, team_id)
+                    h2h_adj = 0.0
+                    h2h_bd = {
+                        "status": "not_available",
+                        "h2h_adjustment": 0.0,
+                        "details": str(exc),
+                    }
+
+                try:
+                    availability_events = db.scalars(
+                        select(PlayerAvailabilityEvent).where(
+                            PlayerAvailabilityEvent.season_id == season.id,
+                            PlayerAvailabilityEvent.team_id == team_id,
+                        ),
+                    ).all()
+                    availability_adj, availability_bd = self.compute_availability_adjustment(
+                        top_profiles=top_profiles,
+                        availability_events=availability_events,
+                    )
+                except Exception as exc:
+                    logger.exception("v02 availability adjustment failed for fixture %s team %s", fx.id, team_id)
+                    availability_adj = 0.0
+                    availability_bd = {
+                        "status": "not_available",
+                        "availability_status": "not_available",
+                        "penalty": 0.0,
+                        "details": str(exc),
+                    }
+
                 total_adj, adjusted_expected = self.compute_adjusted_prediction(
                     baseline_expected_sot=baseline_expected,
                     player_adjustment=player_adj,
@@ -390,63 +526,81 @@ class SotPredictionV02Service:
                         "prediction_confidence_label_v0_2": conf_label,
                     },
                 }
-                raw = dict(base_pred.raw_json or {})
-                raw.update(
-                    {
-                        "baseline_model_version": BASELINE_SOT_MODEL_VERSION,
-                        "baseline_expected_sot": _round2(baseline_expected),
-                        "adjusted_expected_sot": adjusted_expected,
-                        "total_adjustment": total_adj,
-                        "player_adjustment": player_adj,
-                        "h2h_adjustment": h2h_adj,
-                        "motivation_adjustment": motivation_adj,
-                        "availability_adjustment": availability_adj,
-                        "prediction_confidence_score_v0_2": conf_score,
-                        "prediction_confidence_label_v0_2": conf_label,
-                        "adjustment_breakdown": breakdown,
-                    },
-                )
-                row = db.scalar(
-                    select(TeamSotPrediction).where(
-                        TeamSotPrediction.fixture_id == fx.id,
-                        TeamSotPrediction.team_id == team_id,
-                        TeamSotPrediction.model_version == self.model_version,
-                    ),
-                )
-                if row is None:
-                    row = TeamSotPrediction(
-                        fixture_id=fx.id,
-                        team_id=team_id,
-                        model_version=self.model_version,
-                        predicted_sot=adjusted_expected,
-                        actual_sot=None,
-                        confidence_score=conf_score,
-                        explanation="Previsione v0.2: baseline + adjustment contestuali prudenti.",
-                        recommendation="not_evaluated",
-                        raw_json=raw,
+
+                try:
+                    with db.begin_nested():
+                        raw = dict(base_pred.raw_json or {})
+                        raw.update(
+                            {
+                                "baseline_model_version": BASELINE_SOT_MODEL_VERSION,
+                                "baseline_expected_sot": _round2(baseline_expected),
+                                "adjusted_expected_sot": adjusted_expected,
+                                "total_adjustment": total_adj,
+                                "player_adjustment": player_adj,
+                                "h2h_adjustment": h2h_adj,
+                                "motivation_adjustment": motivation_adj,
+                                "availability_adjustment": availability_adj,
+                                "prediction_confidence_score_v0_2": conf_score,
+                                "prediction_confidence_label_v0_2": conf_label,
+                                "adjustment_breakdown": breakdown,
+                            },
+                        )
+                        row = db.scalar(
+                            select(TeamSotPrediction).where(
+                                TeamSotPrediction.fixture_id == fx.id,
+                                TeamSotPrediction.team_id == team_id,
+                                TeamSotPrediction.model_version == self.model_version,
+                            ),
+                        )
+                        if row is None:
+                            row = TeamSotPrediction(
+                                fixture_id=fx.id,
+                                team_id=team_id,
+                                model_version=self.model_version,
+                                predicted_sot=adjusted_expected,
+                                actual_sot=None,
+                                confidence_score=conf_score,
+                                explanation="Previsione v0.2: baseline + adjustment contestuali prudenti.",
+                                recommendation="not_evaluated",
+                                raw_json=raw,
+                            )
+                            db.add(row)
+                        else:
+                            row.predicted_sot = adjusted_expected
+                            row.confidence_score = conf_score
+                            row.explanation = "Previsione v0.2: baseline + adjustment contestuali prudenti."
+                            row.raw_json = raw
+                        db.flush()
+                        self._upsert_adjustment_row(
+                            db,
+                            prediction=row,
+                            fixture_id=fx.id,
+                            team_id=team_id,
+                            baseline_expected_sot=_round2(baseline_expected),
+                            player_adjustment=player_adj,
+                            h2h_adjustment=h2h_adj,
+                            motivation_adjustment=motivation_adj,
+                            availability_adjustment=availability_adj,
+                            total_adjustment=total_adj,
+                            adjusted_expected_sot=adjusted_expected,
+                            breakdown=breakdown,
+                        )
+                    created += 1
+                except Exception as exc:
+                    logger.exception("v02 save failed for fixture %s team %s", fx.id, team_id)
+                    errors.append(
+                        {
+                            "fixture_id": fx.id,
+                            "team_id": team_id,
+                            "failed_step": "save_v02_prediction",
+                            "message": "Unable to save v0.2 prediction/breakdown.",
+                            "details": str(exc),
+                        },
                     )
-                    db.add(row)
-                else:
-                    row.predicted_sot = adjusted_expected
-                    row.confidence_score = conf_score
-                    row.explanation = "Previsione v0.2: baseline + adjustment contestuali prudenti."
-                    row.raw_json = raw
-                db.flush()
-                self._upsert_adjustment_row(
-                    db,
-                    prediction=row,
-                    fixture_id=fx.id,
-                    team_id=team_id,
-                    baseline_expected_sot=_round2(baseline_expected),
-                    player_adjustment=player_adj,
-                    h2h_adjustment=h2h_adj,
-                    motivation_adjustment=motivation_adj,
-                    availability_adjustment=availability_adj,
-                    total_adjustment=total_adj,
-                    adjusted_expected_sot=adjusted_expected,
-                    breakdown=breakdown,
-                )
-                created += 1
+                    continue
+
+        partial["predictions_created_or_updated"] = created
+        partial["errors"] = errors
         db.commit()
         return {
             "status": "success",
@@ -455,6 +609,72 @@ class SotPredictionV02Service:
             "upcoming_fixtures": len(fixtures),
             "predictions_created_or_updated": created,
             "errors": errors,
+        }
+
+    def v02_readiness(self, db: Session, season_year: int) -> dict[str, Any]:
+        _league, season = self._season_row(db, season_year)
+        upcoming_fixtures = int(
+            db.scalar(
+                select(func.count())
+                .select_from(Fixture)
+                .where(Fixture.season_id == season.id, ~Fixture.status.in_(FINISHED_STATUSES)),
+            )
+            or 0
+        )
+        baseline_v01_upcoming_predictions = int(
+            db.scalar(
+                select(func.count())
+                .select_from(TeamSotPrediction)
+                .join(Fixture, Fixture.id == TeamSotPrediction.fixture_id)
+                .where(
+                    Fixture.season_id == season.id,
+                    ~Fixture.status.in_(FINISHED_STATUSES),
+                    TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
+                ),
+            )
+            or 0
+        )
+        player_profiles_available = bool(
+            db.scalar(
+                select(func.count())
+                .select_from(PlayerSotProfile)
+                .where(PlayerSotProfile.season_id == season.id),
+            )
+            or 0
+        )
+        standings_available = bool(
+            db.scalar(
+                select(func.count())
+                .select_from(StandingsSnapshot)
+                .where(StandingsSnapshot.season_id == season.id),
+            )
+            or 0
+        )
+        adjustments_table_exists = self._adjustments_table_exists(db)
+        missing_requirements: list[str] = []
+        if upcoming_fixtures <= 0:
+            missing_requirements.append("No upcoming fixtures found.")
+        if baseline_v01_upcoming_predictions <= 0:
+            missing_requirements.append(
+                "Missing baseline_v0_1 prediction for fixture/team. Run generate-upcoming first.",
+            )
+        if not adjustments_table_exists:
+            missing_requirements.append(
+                "Missing table team_sot_prediction_adjustments. Run alembic upgrade head.",
+            )
+        if not player_profiles_available:
+            missing_requirements.append("Player profiles not available (player adjustment fallback to 0).")
+        if not standings_available:
+            missing_requirements.append("Standings not available (motivation adjustment fallback to 0).")
+        return {
+            "season": season_year,
+            "upcoming_fixtures": upcoming_fixtures,
+            "baseline_v01_upcoming_predictions": baseline_v01_upcoming_predictions,
+            "player_profiles_available": player_profiles_available,
+            "standings_available": standings_available,
+            "adjustments_table_exists": adjustments_table_exists,
+            "ready": len([x for x in missing_requirements if "fallback" not in x]) == 0,
+            "missing_requirements": missing_requirements,
         }
 
     def upcoming_v02(self, db: Session, season_year: int, *, limit: int = 20, only_next_round: bool = True) -> dict[str, Any]:

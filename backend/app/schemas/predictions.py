@@ -229,6 +229,17 @@ class UpcomingV02Response(BaseModel):
     matches: list[UpcomingV02MatchRow]
 
 
+class V02ReadinessResponse(BaseModel):
+    season: int
+    upcoming_fixtures: int
+    baseline_v01_upcoming_predictions: int
+    player_profiles_available: bool
+    standings_available: bool
+    adjustments_table_exists: bool
+    ready: bool
+    missing_requirements: list[str] = Field(default_factory=list)
+
+
 class EvaluateSotLineBody(BaseModel):
     expected_sot: float = Field(..., ge=0, le=30)
     line_value: float = Field(..., ge=0, le=30)

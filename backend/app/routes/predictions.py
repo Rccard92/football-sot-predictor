@@ -23,6 +23,7 @@ from app.schemas.predictions import (
     TeamSotPredictionRead,
     UpcomingMatchesResponse,
     UpcomingV02Response,
+    V02ReadinessResponse,
 )
 from app.services.sot_line_evaluate import evaluate_match_sot_line, evaluate_sot_line
 from app.services.sot_prediction_service import SotPredictionService
@@ -129,15 +130,67 @@ def generate_serie_a_predictions_v02_upcoming(
     db: Session = Depends(get_db),
 ):
     svc = SotPredictionV02Service()
+    partial_result = {
+        "upcoming_fixtures_found": 0,
+        "predictions_created_or_updated": 0,
+        "errors": [],
+    }
     try:
         summary = svc.generate_v02_for_upcoming_season(db, season)
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("POST generate_v02_upcoming: errore database")
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "database_operation",
+                    "message": "Database non disponibile o schema non aggiornato.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("POST generate_v02_upcoming: errore inatteso")
+        return JSONResponse(
+            status_code=500,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "generate_v02_upcoming",
+                    "message": "Errore inatteso durante la generazione v0.2.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    if summary.get("status") == "error":
+        return JSONResponse(
+            status_code=502,
+            content=jsonable_encoder(summary),
+        )
+    return jsonable_encoder(summary)
+
+
+@router.get("/serie-a/{season}/v02-readiness", response_model=V02ReadinessResponse)
+def get_serie_a_v02_readiness(
+    season: int,
+    db: Session = Depends(get_db),
+) -> V02ReadinessResponse:
+    svc = SotPredictionV02Service()
+    try:
+        data = svc.v02_readiness(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET v02-readiness: errore database")
         raise HTTPException(
             status_code=503,
             detail="Database non disponibile o schema non aggiornato. Eseguire alembic upgrade head.",
         ) from exc
-    return jsonable_encoder(summary)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET v02-readiness: errore inatteso")
+        raise HTTPException(status_code=500, detail=f"Errore inatteso: {exc}") from exc
+    return V02ReadinessResponse.model_validate(data)
 
 
 @router.get("/serie-a/{season}/upcoming-v02", response_model=UpcomingV02Response)
