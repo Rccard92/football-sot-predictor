@@ -10,15 +10,17 @@ from sqlalchemy.orm import Session
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, FINISHED_STATUSES
 from app.models import (
     Fixture,
+    League,
     PlayerAvailabilityEvent,
     PlayerSotProfile,
+    Season,
+    StandingEntry,
     StandingsSnapshot,
     Team,
     TeamSotPrediction,
     TeamSotPredictionAdjustment,
 )
 from app.services.h2h_service import build_h2h_summary_for_fixture
-from app.services.ingestion_service import IngestionService
 from app.services.match_context_service import MatchContextService
 
 logger = logging.getLogger(__name__)
@@ -64,8 +66,17 @@ class SotPredictionV02Service:
         return bool(inspect(bind).has_table("team_sot_prediction_adjustments"))
 
     def _season_row(self, db: Session, season_year: int):
-        ing = IngestionService()
-        return ing._season_row(db, season_year)
+        league = db.scalar(
+            select(League).where(League.api_league_id == 135).order_by(League.id.asc()),
+        )
+        if league is None:
+            raise ValueError("league_not_found")
+        season = db.scalar(
+            select(Season).where(Season.league_id == league.id, Season.year == season_year),
+        )
+        if season is None:
+            raise ValueError("season_not_found")
+        return league, season
 
     def _top_profiles_for_team(self, db: Session, season_id: int, team_id: int, limit: int = 5) -> list[PlayerSotProfile]:
         return db.scalars(
@@ -612,7 +623,34 @@ class SotPredictionV02Service:
         }
 
     def v02_readiness(self, db: Session, season_year: int) -> dict[str, Any]:
-        _league, season = self._season_row(db, season_year)
+        message: str | None = None
+        try:
+            _league, season = self._season_row(db, season_year)
+        except ValueError:
+            return {
+                "season": season_year,
+                "upcoming_fixtures": 0,
+                "baseline_v01_upcoming_predictions": 0,
+                "player_profiles_available": False,
+                "standings_available": False,
+                "adjustments_table_exists": self._adjustments_table_exists(db),
+                "ready": False,
+                "missing_requirements": ["season_not_found"],
+                "message": f"Season Serie A {season_year} non trovata. Esegui prima il bootstrap.",
+            }
+        except Exception as exc:
+            logger.exception("v02 readiness failed on season lookup")
+            return {
+                "season": season_year,
+                "upcoming_fixtures": 0,
+                "baseline_v01_upcoming_predictions": 0,
+                "player_profiles_available": False,
+                "standings_available": False,
+                "adjustments_table_exists": False,
+                "ready": False,
+                "missing_requirements": ["readiness_lookup_failed"],
+                "message": f"Readiness non disponibile: {exc.__class__.__name__}",
+            }
         upcoming_fixtures = int(
             db.scalar(
                 select(func.count())
@@ -649,23 +687,28 @@ class SotPredictionV02Service:
                 .where(StandingsSnapshot.season_id == season.id),
             )
             or 0
+        ) or bool(
+            db.scalar(
+                select(func.count())
+                .select_from(StandingEntry)
+                .where(StandingEntry.season_id == season.id),
+            )
+            or 0
         )
         adjustments_table_exists = self._adjustments_table_exists(db)
         missing_requirements: list[str] = []
         if upcoming_fixtures <= 0:
-            missing_requirements.append("No upcoming fixtures found.")
-        if baseline_v01_upcoming_predictions <= 0:
-            missing_requirements.append(
-                "Missing baseline_v0_1 prediction for fixture/team. Run generate-upcoming first.",
-            )
+            missing_requirements.append("upcoming_fixtures_missing")
+        if baseline_v01_upcoming_predictions < (upcoming_fixtures * 2):
+            missing_requirements.append("baseline_v01_upcoming_predictions_insufficient")
         if not adjustments_table_exists:
-            missing_requirements.append(
-                "Missing table team_sot_prediction_adjustments. Run alembic upgrade head.",
-            )
+            missing_requirements.append("adjustments_table_missing")
         if not player_profiles_available:
-            missing_requirements.append("Player profiles not available (player adjustment fallback to 0).")
+            missing_requirements.append("player_profiles_not_available")
         if not standings_available:
-            missing_requirements.append("Standings not available (motivation adjustment fallback to 0).")
+            missing_requirements.append("standings_not_available")
+        if "season_not_found" in missing_requirements:
+            message = f"Season Serie A {season_year} non trovata. Esegui prima il bootstrap."
         return {
             "season": season_year,
             "upcoming_fixtures": upcoming_fixtures,
@@ -673,8 +716,13 @@ class SotPredictionV02Service:
             "player_profiles_available": player_profiles_available,
             "standings_available": standings_available,
             "adjustments_table_exists": adjustments_table_exists,
-            "ready": len([x for x in missing_requirements if "fallback" not in x]) == 0,
+            "ready": (
+                upcoming_fixtures > 0
+                and baseline_v01_upcoming_predictions >= (upcoming_fixtures * 2)
+                and adjustments_table_exists
+            ),
             "missing_requirements": missing_requirements,
+            "message": message,
         }
 
     def upcoming_v02(self, db: Session, season_year: int, *, limit: int = 20, only_next_round: bool = True) -> dict[str, Any]:

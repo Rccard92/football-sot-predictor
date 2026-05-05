@@ -183,13 +183,32 @@ def get_serie_a_v02_readiness(
         data = svc.v02_readiness(db, season)
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("GET v02-readiness: errore database")
-        raise HTTPException(
-            status_code=503,
-            detail="Database non disponibile o schema non aggiornato. Eseguire alembic upgrade head.",
-        ) from exc
+        payload = {
+            "season": season,
+            "upcoming_fixtures": 0,
+            "baseline_v01_upcoming_predictions": 0,
+            "player_profiles_available": False,
+            "standings_available": False,
+            "adjustments_table_exists": False,
+            "ready": False,
+            "missing_requirements": ["database_unavailable"],
+            "message": "Database non disponibile o schema non aggiornato. Eseguire alembic upgrade head.",
+        }
+        return JSONResponse(status_code=503, content=jsonable_encoder(payload))
     except Exception as exc:  # noqa: BLE001
         logger.exception("GET v02-readiness: errore inatteso")
-        raise HTTPException(status_code=500, detail=f"Errore inatteso: {exc}") from exc
+        payload = {
+            "season": season,
+            "upcoming_fixtures": 0,
+            "baseline_v01_upcoming_predictions": 0,
+            "player_profiles_available": False,
+            "standings_available": False,
+            "adjustments_table_exists": False,
+            "ready": False,
+            "missing_requirements": ["unexpected_error"],
+            "message": "Errore inatteso durante il readiness check.",
+        }
+        return JSONResponse(status_code=500, content=jsonable_encoder(payload))
     return V02ReadinessResponse.model_validate(data)
 
 

@@ -238,6 +238,7 @@ class V02ReadinessResponse(BaseModel):
     adjustments_table_exists: bool
     ready: bool
     missing_requirements: list[str] = Field(default_factory=list)
+    message: str | None = None
 
 
 class EvaluateSotLineBody(BaseModel):
