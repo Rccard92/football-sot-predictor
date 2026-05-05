@@ -139,6 +139,37 @@ Step successivo possibile: una versione **v0.2** che introduca un **`expected_so
 
 Altre idee: H2H o quote come feature aggiuntiva; aggiustamenti attacco/difesa per assenze. Mantenere tracciabilità: pesi, fallback e versione nel `raw_json` delle previsioni.
 
+## Baseline v0.2 (player-only): `baseline_v0_2_player_adjusted`
+
+Questa versione **affianca** la baseline v0.1 e applica **solo** una correzione prudente basata su `player_sot_profiles`.
+Non applica H2H, motivation/context, availability (tutti a 0).
+
+Formula:
+
+`expected_sot_v0_2_player_adjusted = expected_sot_v0_1 + player_adjustment`
+
+Dettaglio `player_adjustment`:
+
+- si prendono fino a **top 5** giocatori per `impact_score` della squadra (preferendo `total_minutes >= 300`)
+- si calcola `team_top5_avg_impact` e la media di campionato `league_avg_top5_impact`
+- `player_strength_ratio = team_top5_avg_impact / league_avg_top5_impact`
+- correzione prudente con cap `±0.35`:
+  - `ratio >= 1.25` → `+0.35`
+  - `ratio >= 1.10` → `+0.20`
+  - `0.90 < ratio < 1.10` → `0`
+  - `ratio <= 0.90` → `-0.20`
+  - `ratio <= 0.75` → `-0.35`
+
+Regole:
+
+- `adjusted_expected_sot >= 1.0`
+- arrotondamento a 2 decimali
+- breakdown in `team_sot_prediction_adjustments.adjustment_breakdown` con:
+  - `player_adjustment.applied = true|false`
+  - `h2h_adjustment.applied = false`
+  - `motivation_adjustment.applied = false`
+  - `availability_adjustment.applied = false`
+
 ## Step 10: Post-matchday refresh pipeline
 
 Endpoint admin orchestrato: `POST /api/admin/refresh/serie-a/{season}/post-matchday`.

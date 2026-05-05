@@ -34,3 +34,4 @@ SOT_FEATURE_SET_VERSION = "sot-v2"
 
 BASELINE_SOT_MODEL_VERSION = "baseline_v0_1"
 BASELINE_SOT_MODEL_VERSION_V02 = "baseline_v0_2_context_player"
+BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED = "baseline_v0_2_player_adjusted"
