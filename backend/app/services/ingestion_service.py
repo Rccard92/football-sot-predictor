@@ -528,6 +528,8 @@ class IngestionService:
             league = self._serie_a_league_row(db, season)
             season_row = self._serie_a_season_row(db, season)
             payload = self._client.get_standings(league.api_league_id, season)
+            if not payload:
+                raise ValueError("standings_response_empty")
             snapshot = StandingsSnapshot(
                 season_id=season_row.id,
                 league_id=league.id,
@@ -537,45 +539,49 @@ class IngestionService:
             db.add(snapshot)
             db.flush()
             processed = 0
-            for block in payload:
-                league_block = (block or {}).get("league") or {}
-                standings_groups = league_block.get("standings") or []
-                for group in standings_groups:
-                    for entry in group or []:
-                        team_block = entry.get("team") or {}
-                        team_api_id = team_block.get("id")
-                        if team_api_id is None:
-                            continue
-                        team = db.scalar(select(Team).where(Team.api_team_id == int(team_api_id)))
-                        if team is None:
-                            continue
-                        all_block = entry.get("all") or {}
-                        goals_block = all_block.get("goals") or {}
-                        row = StandingEntry(
-                            snapshot_id=snapshot.id,
-                            season_id=season_row.id,
-                            league_id=league.id,
-                            team_id=team.id,
-                            rank=_parse_int(entry.get("rank")),
-                            points=_parse_int(entry.get("points")),
-                            goals_diff=_parse_int(entry.get("goalsDiff")),
-                            played=_parse_int(all_block.get("played")),
-                            win=_parse_int(all_block.get("win")),
-                            draw=_parse_int(all_block.get("draw")),
-                            lose=_parse_int(all_block.get("lose")),
-                            goals_for=_parse_int(goals_block.get("for")),
-                            goals_against=_parse_int(goals_block.get("against")),
-                            form=str(entry.get("form"))[:64] if entry.get("form") is not None else None,
-                            status=str(entry.get("status"))[:64] if entry.get("status") is not None else None,
-                            description=(
-                                str(entry.get("description"))[:255]
-                                if entry.get("description") is not None
-                                else None
-                            ),
-                            raw_json=entry,
-                        )
-                        db.add(row)
-                        processed += 1
+            first = payload[0] if payload else {}
+            league_block = (first or {}).get("league") or {}
+            standings_groups = league_block.get("standings") or []
+            if not standings_groups:
+                raise ValueError("standings_groups_empty")
+            for group in standings_groups:
+                for entry in group or []:
+                    team_block = entry.get("team") or {}
+                    team_api_id = team_block.get("id")
+                    if team_api_id is None:
+                        continue
+                    team = db.scalar(select(Team).where(Team.api_team_id == int(team_api_id)))
+                    if team is None:
+                        continue
+                    all_block = entry.get("all") or {}
+                    goals_block = all_block.get("goals") or {}
+                    row = StandingEntry(
+                        snapshot_id=snapshot.id,
+                        season_id=season_row.id,
+                        league_id=league.id,
+                        team_id=team.id,
+                        rank=_parse_int(entry.get("rank")),
+                        points=_parse_int(entry.get("points")),
+                        goals_diff=_parse_int(entry.get("goalsDiff")),
+                        played=_parse_int(all_block.get("played")),
+                        win=_parse_int(all_block.get("win")),
+                        draw=_parse_int(all_block.get("draw")),
+                        lose=_parse_int(all_block.get("lose")),
+                        goals_for=_parse_int(goals_block.get("for")),
+                        goals_against=_parse_int(goals_block.get("against")),
+                        form=str(entry.get("form"))[:64] if entry.get("form") is not None else None,
+                        status=str(entry.get("status"))[:64] if entry.get("status") is not None else None,
+                        description=(
+                            str(entry.get("description"))[:255]
+                            if entry.get("description") is not None
+                            else None
+                        ),
+                        raw_json=entry,
+                    )
+                    db.add(row)
+                    processed += 1
+            if processed <= 0:
+                raise ValueError("standings_entries_not_found")
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=processed)
         except Exception as exc:

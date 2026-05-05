@@ -220,11 +220,13 @@ Troubleshooting Railway:
 
 - Ingestion standings: `POST /api/admin/ingest/serie-a/{season}/standings`
 - Lettura ultimo snapshot: `GET /api/standings/serie-a/{season}/latest`
+- API-Football standings: chiamata `GET /standings` **senza paginazione** (`page` non supportato)
 - Tabelle:
   - `standings_snapshots`
   - `standing_entries`
 
 Il sistema usa sempre l’ultimo snapshot disponibile.
+Lo standings layer e necessario per il layer motivation/context della v0.2 (in sua assenza il service applica fallback prudente a 0).
 
 ## Match Motivation Layer
 

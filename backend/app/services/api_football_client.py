@@ -154,7 +154,8 @@ class ApiFootballClient:
         return list(body.get("response") or [])
 
     def get_standings(self, league_id: int, season: int) -> list[dict[str, Any]]:
-        return self.get_all_pages(
-            "standings",
-            {"league": league_id, "season": season},
-        )
+        body = self.get("standings", {"league": league_id, "season": season})
+        errors = body.get("errors")
+        if errors:
+            raise ApiFootballError(f"API errors: {errors}")
+        return list(body.get("response") or [])
