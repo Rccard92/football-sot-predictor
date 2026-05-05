@@ -452,6 +452,62 @@ export type UpcomingV02Response = {
   matches: UpcomingV02MatchRow[]
 }
 
+export type PlayerAdjustedTopPlayer = {
+  player_id: number
+  name: string
+  impact_score: number | null
+  shots_on_target_per90: number | null
+  total_minutes: number
+  appearances: number
+  sample_warning?: boolean
+}
+
+export type PlayerAdjustedBreakdown = {
+  applied: boolean
+  team_top5_avg_impact?: number
+  league_avg_top5_impact?: number
+  player_strength_ratio?: number
+  adjustment: number
+  cap: number
+  sample_warning?: boolean
+  top_players_considered: PlayerAdjustedTopPlayer[]
+  explanation: string
+}
+
+export type UpcomingPlayerAdjustedSide = {
+  baseline_expected_sot: number
+  adjusted_expected_sot: number
+  player_adjustment: number
+  adjustment_breakdown: {
+    player_adjustment?: PlayerAdjustedBreakdown | null
+    h2h_adjustment?: { applied: boolean; adjustment: number } | null
+    motivation_adjustment?: { applied: boolean; adjustment: number } | null
+    availability_adjustment?: { applied: boolean; adjustment: number } | null
+  }
+}
+
+export type UpcomingPlayerAdjustedMatchRow = {
+  fixture_id: number
+  api_fixture_id: number
+  round: string | null
+  kickoff_at: string
+  status_short: string
+  home_team: UpcomingMatchTeam
+  away_team: UpcomingMatchTeam
+  home: UpcomingPlayerAdjustedSide | null
+  away: UpcomingPlayerAdjustedSide | null
+  total_expected_sot_baseline: number | null
+  total_expected_sot_adjusted: number | null
+}
+
+export type UpcomingPlayerAdjustedResponse = {
+  status: 'success' | 'error'
+  season: number
+  model_version: string
+  matches_count: number
+  matches: UpcomingPlayerAdjustedMatchRow[]
+}
+
 export type EvaluateSotLineResponse = {
   expected_sot: number
   line_value: number
@@ -497,6 +553,18 @@ export async function getUpcomingPredictionsV02(
   const q = p.toString()
   const path = `/api/predictions/sot/serie-a/${season}/upcoming-v02${q ? `?${q}` : ''}`
   return requestJson<UpcomingV02Response>(path)
+}
+
+export async function getUpcomingV02PlayerAdjusted(
+  season: number,
+  opts?: { limit?: number; onlyNextRound?: boolean },
+): Promise<UpcomingPlayerAdjustedResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/upcoming-v02-player-adjusted${q ? `?${q}` : ''}`
+  return requestJson<UpcomingPlayerAdjustedResponse>(path)
 }
 
 export async function adminRefreshPostMatchday(

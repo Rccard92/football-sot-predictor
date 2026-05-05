@@ -155,7 +155,10 @@ export function ModelLegend() {
                   </div>
                   {section.id === 'player_impact' ? (
                     <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
-                      Disponibile come debug, non ancora applicato alla previsione.
+                      {data.model_version === 'baseline_v0_2_player_adjusted' ||
+                      data.model_version === 'baseline_v0_2_context_player'
+                        ? 'Applicato nella v0.2.'
+                        : 'Non applicato nella baseline v0.1.'}
                     </p>
                   ) : null}
                   {(section.id === 'h2h' || section.id === 'match_context') ? (

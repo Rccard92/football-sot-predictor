@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom'
 import {
   DEFAULT_SEASON,
   buildUpcomingSotFeatures,
-  generateUpcomingSotPredictionsV02,
   generateUpcomingSotPredictions,
   getUpcomingPredictions,
-  getUpcomingPredictionsV02,
+  getUpcomingV02PlayerAdjusted,
   type ModelLimitations,
+  type UpcomingPlayerAdjustedResponse,
 } from '../lib/api'
 import { MatchCard } from '../components/upcoming'
 
@@ -20,20 +20,23 @@ export function UpcomingMatches() {
   const [buildBusy, setBuildBusy] = useState(false)
   const [predBusy, setPredBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
-  const [dataV02, setDataV02] = useState<Awaited<ReturnType<typeof getUpcomingPredictionsV02>> | null>(null)
-  const [viewMode, setViewMode] = useState<'v02' | 'v01'>('v02')
+  const [dataPlayerAdjusted, setDataPlayerAdjusted] = useState<UpcomingPlayerAdjustedResponse | null>(null)
+  const [viewMode, setViewMode] = useState<'player_adjusted' | 'v01'>('player_adjusted')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const res = await getUpcomingPredictions(SEASON, { limit: 20, onlyNextRound: true })
-      const resV02 = await getUpcomingPredictionsV02(SEASON, { limit: 20, onlyNextRound: true })
+      const resPA = await getUpcomingV02PlayerAdjusted(SEASON, { limit: 20, onlyNextRound: true })
       setData(res)
-      setDataV02(resV02)
-      setViewMode(res.v02_available ? 'v02' : 'v01')
+      setDataPlayerAdjusted(resPA)
+      const paAvailable =
+        resPA?.status === 'success' && (resPA.matches?.some((m) => Boolean(m.home && m.away)) ?? false)
+      setViewMode(paAvailable ? 'player_adjusted' : 'v01')
     } catch (e) {
       setData(null)
+      setDataPlayerAdjusted(null)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
@@ -55,7 +58,7 @@ export function UpcomingMatches() {
       note:
         'Questa versione baseline usa solo statistiche squadra storiche. Formazioni, assenze e quote bookmaker automatiche non sono ancora considerate.',
     }
-  const useAdjustedView = viewMode === 'v02' && Boolean(data?.v02_available)
+  const usePlayerAdjustedView = viewMode === 'player_adjusted' && Boolean(dataPlayerAdjusted?.status === 'success')
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
@@ -74,7 +77,7 @@ export function UpcomingMatches() {
               <p className="font-semibold text-slate-900">
                 Modello attivo:{' '}
                 <span className="font-normal text-slate-800">
-                  {useAdjustedView ? 'baseline_v0_2_context_player' : 'baseline_v0_1'}
+                  {usePlayerAdjustedView ? 'baseline_v0_2_player_adjusted' : 'baseline_v0_1'}
                 </span>
               </p>
               <p>
@@ -111,10 +114,10 @@ export function UpcomingMatches() {
             </button>
             <button
               type="button"
-              className={`rounded-lg px-2 py-1 ${viewMode === 'v02' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
-              onClick={() => setViewMode('v02')}
+              className={`rounded-lg px-2 py-1 ${viewMode === 'player_adjusted' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
+              onClick={() => setViewMode('player_adjusted')}
             >
-              Vista v0.2 aggiustata
+              Vista v0.2 Player Adjusted
             </button>
           </div>
         </header>
@@ -171,7 +174,6 @@ export function UpcomingMatches() {
                   setActionMsg(null)
                   try {
                     await generateUpcomingSotPredictions(SEASON)
-                    await generateUpcomingSotPredictionsV02(SEASON)
                     setActionMsg('Previsioni future generate.')
                     await load()
                   } catch (e) {
@@ -202,8 +204,8 @@ export function UpcomingMatches() {
                 key={m.fixture_id}
                 match={m}
                 limitations={limitations}
-                v02Match={dataV02?.matches.find((x) => x.fixture_id === m.fixture_id) ?? null}
-                useAdjustedView={useAdjustedView}
+                playerAdjustedMatch={dataPlayerAdjusted?.matches.find((x) => x.fixture_id === m.fixture_id) ?? null}
+                usePlayerAdjustedView={usePlayerAdjustedView}
               />
             ))}
 

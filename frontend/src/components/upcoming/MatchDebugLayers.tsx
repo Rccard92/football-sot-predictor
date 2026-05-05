@@ -1,8 +1,104 @@
-import type { UpcomingMatchRow } from '../../lib/api'
+import type { UpcomingMatchRow, UpcomingPlayerAdjustedMatchRow } from '../../lib/api'
 import { formatNum, yn } from './format'
 import type { TopPlayer } from './types'
 
-export function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
+function PlayerAdjustmentDetails({
+  sideName,
+  playerAdj,
+}: {
+  sideName: string
+  playerAdj: Record<string, unknown> | null | undefined
+}) {
+  const applied = (playerAdj as Record<string, unknown> | null)?.applied === true
+  const topPlayers = Array.isArray((playerAdj as Record<string, unknown> | null)?.top_players_considered)
+    ? (((playerAdj as Record<string, unknown>).top_players_considered as unknown[]) ?? [])
+    : []
+  const ratio = (playerAdj as Record<string, unknown> | null)?.player_strength_ratio
+  const teamAvg = (playerAdj as Record<string, unknown> | null)?.team_top5_avg_impact
+  const leagueAvg = (playerAdj as Record<string, unknown> | null)?.league_avg_top5_impact
+  const adj = (playerAdj as Record<string, unknown> | null)?.adjustment
+
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white">
+      <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-slate-900">
+        Correzione giocatori — {sideName}
+      </summary>
+      <div className="space-y-3 border-t border-slate-100 px-3 py-3 text-sm text-slate-700">
+        <p className="text-xs text-slate-600">
+          Stato: <span className="font-medium">{applied ? 'Applicata nella v0.2' : 'Non applicata'}</span>
+        </p>
+        <ul className="grid gap-1 text-xs sm:grid-cols-2">
+          <li>
+            Media top 5 squadra: <span className="font-medium tabular-nums">{teamAvg != null ? formatNum(Number(teamAvg), 2) : '—'}</span>
+          </li>
+          <li>
+            Media top 5 campionato: <span className="font-medium tabular-nums">{leagueAvg != null ? formatNum(Number(leagueAvg), 2) : '—'}</span>
+          </li>
+          <li>
+            Ratio forza rosa: <span className="font-medium tabular-nums">{ratio != null ? formatNum(Number(ratio), 4) : '—'}</span>
+          </li>
+          <li>
+            Correzione applicata: <span className="font-medium tabular-nums">{adj != null ? formatNum(Number(adj), 2) : '—'}</span>
+          </li>
+        </ul>
+        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top giocatori considerati</p>
+          {topPlayers.length ? (
+            <div className="mt-2 overflow-x-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-600">
+                    <th className="px-2 py-1.5">Giocatore</th>
+                    <th className="px-2 py-1.5 text-right">Impact</th>
+                    <th className="px-2 py-1.5 text-right">SOT/90</th>
+                    <th className="px-2 py-1.5 text-right">Min</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {topPlayers.map((p, i) => {
+                    const row = p as Record<string, unknown>
+                    return (
+                      <tr key={i}>
+                        <td className="px-2 py-1.5">
+                          <span className="font-medium">{row.name != null ? String(row.name) : '—'}</span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {row.impact_score != null ? formatNum(Number(row.impact_score), 2) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {row.shots_on_target_per90 != null ? formatNum(Number(row.shots_on_target_per90), 2) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {row.total_minutes != null ? formatNum(Number(row.total_minutes), 0) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">Nessun profilo giocatore disponibile.</p>
+          )}
+        </div>
+        <p className="text-xs text-slate-600">
+          Questa correzione misura la pericolosità offensiva della rosa. Non considera ancora formazioni ufficiali,
+          assenze o turnover reale.
+        </p>
+      </div>
+    </details>
+  )
+}
+
+export function MatchDebugLayers({
+  match,
+  playerAdjustedMatch,
+  usePlayerAdjustedView,
+}: {
+  match: UpcomingMatchRow
+  playerAdjustedMatch: UpcomingPlayerAdjustedMatchRow | null
+  usePlayerAdjustedView: boolean
+}) {
   const h2h = match.h2h_summary
   const impact = match.player_impact_status
 
@@ -15,6 +111,14 @@ export function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
   const homeTop = (impact?.home_top_players as TopPlayer[] | undefined) ?? []
   const awayTop = (impact?.away_top_players as TopPlayer[] | undefined) ?? []
   const sotSuspicious = impact?.player_profiles_sot_data_suspicious === true
+  const homeAdj = playerAdjustedMatch?.home?.adjustment_breakdown?.player_adjustment as
+    | Record<string, unknown>
+    | null
+    | undefined
+  const awayAdj = playerAdjustedMatch?.away?.adjustment_breakdown?.player_adjustment as
+    | Record<string, unknown>
+    | null
+    | undefined
 
   return (
     <div className="border-t border-slate-100 px-5 pb-5 sm:px-6">
@@ -46,8 +150,10 @@ export function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
                       <span className="font-medium">{yn(impact.player_profiles_available)}</span>
                     </li>
                     <li>
-                      Correzione automatica alla previsione:{' '}
-                      <span className="font-medium">{yn(impact.lineup_adjustment_applied)}</span>
+                      Player Impact:{' '}
+                      <span className="font-medium">
+                        {usePlayerAdjustedView ? 'Applicato nella v0.2' : 'Solo consultazione'}
+                      </span>
                     </li>
                   </ul>
                   {typeof impact.note === 'string' ? (
@@ -134,6 +240,13 @@ export function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
               )}
             </div>
           </details>
+
+          {usePlayerAdjustedView ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PlayerAdjustmentDetails sideName={match.home_team.name} playerAdj={homeAdj} />
+              <PlayerAdjustmentDetails sideName={match.away_team.name} playerAdj={awayAdj} />
+            </div>
+          ) : null}
 
           <details className="rounded-xl border border-slate-200 bg-white">
             <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-slate-900">

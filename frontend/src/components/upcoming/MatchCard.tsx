@@ -1,4 +1,8 @@
-import type { ModelLimitations, UpcomingMatchRow, UpcomingV02MatchRow } from '../../lib/api'
+import type {
+  ModelLimitations,
+  UpcomingMatchRow,
+  UpcomingPlayerAdjustedMatchRow,
+} from '../../lib/api'
 import { formatKickoff, formatNum } from './format'
 import { BreakdownTable } from './BreakdownTable'
 import { MatchDebugLayers } from './MatchDebugLayers'
@@ -6,13 +10,13 @@ import { MatchDebugLayers } from './MatchDebugLayers'
 export function MatchCard({
   match,
   limitations,
-  v02Match,
-  useAdjustedView,
+  playerAdjustedMatch,
+  usePlayerAdjustedView,
 }: {
   match: UpcomingMatchRow
   limitations: ModelLimitations
-  v02Match: UpcomingV02MatchRow | null
-  useAdjustedView: boolean
+  playerAdjustedMatch: UpcomingPlayerAdjustedMatchRow | null
+  usePlayerAdjustedView: boolean
 }) {
   const hp = match.home_prediction
   const ap = match.away_prediction
@@ -20,17 +24,17 @@ export function MatchCard({
   const homeCtx = (match.home_team_context ?? {}) as Record<string, unknown>
   const awayCtx = (match.away_team_context ?? {}) as Record<string, unknown>
   const riskFlags = Array.isArray(matchCtx.risk_flags) ? (matchCtx.risk_flags as unknown[]) : []
-  const homeV02 = v02Match?.home_prediction_v02 ?? null
-  const awayV02 = v02Match?.away_prediction_v02 ?? null
-  const totalV02 = v02Match?.total_expected_sot_v02 ?? null
-  const totalBaseline = v02Match?.total_expected_sot_baseline ?? null
+  const homePA = playerAdjustedMatch?.home ?? null
+  const awayPA = playerAdjustedMatch?.away ?? null
+  const totalAdjusted = playerAdjustedMatch?.total_expected_sot_adjusted ?? null
+  const totalBaseline = playerAdjustedMatch?.total_expected_sot_baseline ?? null
 
-  const showV02 = useAdjustedView && homeV02 && awayV02
-  const mainHome = showV02 ? homeV02.adjusted_expected_sot : hp?.expected_sot ?? null
-  const mainAway = showV02 ? awayV02.adjusted_expected_sot : ap?.expected_sot ?? null
+  const showPlayerAdjusted = usePlayerAdjustedView && homePA && awayPA
+  const mainHome = showPlayerAdjusted ? homePA.adjusted_expected_sot : hp?.expected_sot ?? null
+  const mainAway = showPlayerAdjusted ? awayPA.adjusted_expected_sot : ap?.expected_sot ?? null
   const mainTotal =
-    showV02 && totalV02 != null
-      ? totalV02
+    showPlayerAdjusted && totalAdjusted != null
+      ? totalAdjusted
       : match.total_expected_sot != null
         ? match.total_expected_sot
         : null
@@ -40,11 +44,6 @@ export function MatchCard({
     insight = 'Classifica non disponibile: contesto motivazionale non calcolabile.'
   } else if (riskFlags.includes('fine_stagione')) {
     insight = 'Partita di fine stagione: previsione da leggere con prudenza.'
-  } else if (
-    (homeV02 && Math.abs(homeV02.total_adjustment) > 0.6) ||
-    (awayV02 && Math.abs(awayV02.total_adjustment) > 0.6)
-  ) {
-    insight = 'La v0.2 applica correzioni rilevanti per contesto/giocatori: usare prudenza.'
   } else if (riskFlags.length > 0) {
     insight = 'Warning contesto presenti: leggere la previsione con prudenza.'
   }
@@ -102,9 +101,10 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainHome != null ? formatNum(mainHome) : '—'}
             </p>
-            {homeV02 ? (
+            {homePA ? (
               <p className="mt-1 text-xs text-slate-600">
-                Baseline {formatNum(homeV02.baseline_expected_sot)} · Correzione {formatNum(homeV02.total_adjustment)}
+                Baseline {formatNum(homePA.baseline_expected_sot)} · Player impact{' '}
+                {formatNum(homePA.player_adjustment)}
               </p>
             ) : hp ? (
               <p className="mt-1 text-xs text-slate-600">Baseline {formatNum(hp.expected_sot)}</p>
@@ -115,9 +115,13 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainTotal != null ? formatNum(mainTotal) : '—'}
             </p>
-            {totalBaseline != null && totalV02 != null ? (
+            {totalBaseline != null && totalAdjusted != null ? (
               <p className="mt-1 text-xs text-slate-600">
-                Baseline {formatNum(totalBaseline)} · v0.2 {formatNum(totalV02)}
+                Baseline {formatNum(totalBaseline)} · v0.2 {formatNum(totalAdjusted)}
+                <span className="text-slate-500">
+                  {' '}
+                  · Δ {formatNum(totalAdjusted - totalBaseline)}
+                </span>
               </p>
             ) : null}
           </div>
@@ -126,9 +130,10 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainAway != null ? formatNum(mainAway) : '—'}
             </p>
-            {awayV02 ? (
+            {awayPA ? (
               <p className="mt-1 text-xs text-slate-600">
-                Baseline {formatNum(awayV02.baseline_expected_sot)} · Correzione {formatNum(awayV02.total_adjustment)}
+                Baseline {formatNum(awayPA.baseline_expected_sot)} · Player impact{' '}
+                {formatNum(awayPA.player_adjustment)}
               </p>
             ) : ap ? (
               <p className="mt-1 text-xs text-slate-600">Baseline {formatNum(ap.expected_sot)}</p>
@@ -147,19 +152,19 @@ export function MatchCard({
               <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Chiudi</span>
             </span>
           </summary>
-          {homeV02 && awayV02 ? (
+          {homePA && awayPA ? (
             <div className="space-y-2 border-t border-slate-200 px-4 py-4 text-sm text-slate-700">
               <p>
-                {match.home_team.name}: Baseline {formatNum(homeV02.baseline_expected_sot)} · Aggiustata{' '}
-                {formatNum(homeV02.adjusted_expected_sot)} · Correzione {formatNum(homeV02.total_adjustment)}
+                {match.home_team.name}: Baseline {formatNum(homePA.baseline_expected_sot)} · Aggiustata{' '}
+                {formatNum(homePA.adjusted_expected_sot)} · Player impact {formatNum(homePA.player_adjustment)}
               </p>
               <p>
-                {match.away_team.name}: Baseline {formatNum(awayV02.baseline_expected_sot)} · Aggiustata{' '}
-                {formatNum(awayV02.adjusted_expected_sot)} · Correzione {formatNum(awayV02.total_adjustment)}
+                {match.away_team.name}: Baseline {formatNum(awayPA.baseline_expected_sot)} · Aggiustata{' '}
+                {formatNum(awayPA.adjusted_expected_sot)} · Player impact {formatNum(awayPA.player_adjustment)}
               </p>
               <p className="text-xs text-slate-600">
                 Totale match Baseline: {totalBaseline != null ? formatNum(totalBaseline) : '—'} · Totale match v0.2:{' '}
-                {totalV02 != null ? formatNum(totalV02) : '—'}
+                {totalAdjusted != null ? formatNum(totalAdjusted) : '—'}
               </p>
             </div>
           ) : (
@@ -191,7 +196,7 @@ export function MatchCard({
           </div>
         </details>
       </div>
-      <MatchDebugLayers match={match} />
+      <MatchDebugLayers match={match} playerAdjustedMatch={playerAdjustedMatch} usePlayerAdjustedView={usePlayerAdjustedView} />
       <p className="border-t border-slate-100 px-5 py-3 text-xs leading-relaxed text-slate-500 sm:px-6">
         {limitations.note}
       </p>
