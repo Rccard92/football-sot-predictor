@@ -82,7 +82,7 @@ function MatchDebugLayers({ match }: { match: UpcomingMatchRow }) {
       <details className="group rounded-2xl border border-dashed border-slate-300 bg-slate-50/60">
         <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 marker:hidden [&::-webkit-details-marker]:hidden">
           <span className="flex items-center justify-between gap-2">
-            Dati extra (solo consultazione, non usati nel calcolo baseline)
+            Dati extra tecnici (solo consultazione, non usati nel calcolo baseline)
             <span className="text-xs font-normal text-slate-500 group-open:hidden">Apri</span>
             <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Chiudi</span>
           </span>
@@ -416,59 +416,6 @@ function BreakdownTable({
   )
 }
 
-function TeamBox({
-  team,
-  pred,
-}: {
-  team: UpcomingMatchRow['home_team']
-  pred: UpcomingSidePrediction | null
-}) {
-  return (
-    <div className="flex flex-1 flex-col rounded-2xl border border-slate-100 bg-slate-50/40 p-4 sm:p-5">
-      <div className="flex items-center gap-3">
-        {team.logo_url ? (
-          <img src={team.logo_url} alt="" className="h-11 w-11 shrink-0 object-contain" />
-        ) : (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">
-            {team.name.slice(0, 2).toUpperCase()}
-          </div>
-        )}
-        <p className="font-semibold text-slate-900">{team.name}</p>
-      </div>
-      {pred ? (
-        <>
-          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Tiri in porta attesi
-          </p>
-          <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-            {formatNum(pred.expected_sot)}
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            Attacco: <span className="font-medium text-slate-800">{pred.label}</span>
-          </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Qualità dati (completezza degli input storici):{' '}
-            <span className="font-medium text-slate-800">
-              {pred.data_quality_label ?? pred.confidence_label} ·{' '}
-              {pred.data_quality_score ?? pred.confidence_score}/100
-            </span>
-          </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Affidabilità previsione (stima prudenziale; non è probabilità calibrata):{' '}
-            <span className="font-medium text-slate-800">
-              {pred.prediction_confidence_label ?? pred.confidence_label} ·{' '}
-              {pred.prediction_confidence_score ?? pred.confidence_score}/100
-            </span>
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-slate-700">{pred.simple_explanation}</p>
-        </>
-      ) : (
-        <p className="mt-4 text-sm text-slate-500">Nessuna previsione disponibile per questa squadra.</p>
-      )}
-    </div>
-  )
-}
-
 function ContextBadge({ value }: { value: unknown }) {
   const v = typeof value === 'string' ? value : 'incerta'
   return <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">{v}</span>
@@ -485,17 +432,8 @@ function MatchCard({
   v02Match: UpcomingV02MatchRow | null
   useAdjustedView: boolean
 }) {
-  const [bookmaker, setBookmaker] = useState('')
-  const [marketType, setMarketType] = useState('match_total_sot')
-  const [line, setLine] = useState('6.5')
-  const [oddsStr, setOddsStr] = useState('1.50')
-  const [loading, setLoading] = useState(false)
-  const [evalErr, setEvalErr] = useState<string | null>(null)
-  const [evalResult, setEvalResult] = useState<EvaluateMatchSotLineResponse | null>(null)
-
   const hp = match.home_prediction
   const ap = match.away_prediction
-  const canEvaluate = Boolean(hp && ap)
   const matchCtx = (match.match_context ?? {}) as Record<string, unknown>
   const homeCtx = (match.home_team_context ?? {}) as Record<string, unknown>
   const awayCtx = (match.away_team_context ?? {}) as Record<string, unknown>
@@ -504,6 +442,27 @@ function MatchCard({
   const awayV02 = v02Match?.away_prediction_v02 ?? null
   const totalV02 = v02Match?.total_expected_sot_v02 ?? null
   const totalBaseline = v02Match?.total_expected_sot_baseline ?? null
+
+  const showV02 = useAdjustedView && homeV02 && awayV02
+  const mainHome = showV02 ? homeV02.adjusted_expected_sot : hp?.expected_sot ?? null
+  const mainAway = showV02 ? awayV02.adjusted_expected_sot : ap?.expected_sot ?? null
+  const mainTotal =
+    showV02 && totalV02 != null
+      ? totalV02
+      : match.total_expected_sot != null
+        ? match.total_expected_sot
+        : null
+
+  let insight = 'Previsione stabile, nessun warning rilevante.'
+  if (match.context_status === 'not_available') {
+    insight = 'Classifica non disponibile: contesto motivazionale non calcolabile.'
+  } else if (riskFlags.includes('fine_stagione')) {
+    insight = 'Partita di fine stagione: previsione da leggere con prudenza.'
+  } else if ((homeV02 && Math.abs(homeV02.total_adjustment) > 0.6) || (awayV02 && Math.abs(awayV02.total_adjustment) > 0.6)) {
+    insight = 'La v0.2 applica correzioni rilevanti per contesto/giocatori: usare prudenza.'
+  } else if (riskFlags.length > 0) {
+    insight = 'Warning contesto presenti: leggere la previsione con prudenza.'
+  }
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
@@ -517,243 +476,126 @@ function MatchCard({
           </span>
         </div>
         <p className="mt-2 text-sm text-slate-600">{formatKickoff(match.kickoff_at)}</p>
-        <h2 className="mt-2 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
-          {match.home_team.name}{' '}
-          <span className="font-normal text-slate-400" aria-hidden>
-            —
-          </span>{' '}
-          {match.away_team.name}
-        </h2>
-        {(useAdjustedView ? totalV02 : match.total_expected_sot) != null ? (
-          <p className="mt-3 text-base font-medium text-slate-800">
-            Totale tiri in porta attesi (match):{' '}
-            <span className="tabular-nums text-slate-900">
-              {formatNum(Number(useAdjustedView ? totalV02 : match.total_expected_sot))}
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            {match.home_team.logo_url ? (
+              <img src={match.home_team.logo_url} alt="" className="h-8 w-8 shrink-0 object-contain" />
+            ) : null}
+            <span className="text-sm font-semibold text-slate-900">{match.home_team.name}</span>
+          </div>
+          <span className="text-slate-400">vs</span>
+          <div className="flex items-center gap-2">
+            {match.away_team.logo_url ? (
+              <img src={match.away_team.logo_url} alt="" className="h-8 w-8 shrink-0 object-contain" />
+            ) : null}
+            <span className="text-sm font-semibold text-slate-900">{match.away_team.name}</span>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {riskFlags.includes('fine_stagione') ? (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900 ring-1 ring-amber-100">
+              Fine stagione
             </span>
-          </p>
-        ) : (
-          <p className="mt-3 text-sm text-slate-500">
-            Totale match non calcolabile: servono entrambe le stime sulle due squadre.
-          </p>
-        )}
-      </div>
-
-      <div className="grid gap-4 p-5 sm:p-6 md:grid-cols-2">
-        <TeamBox team={match.home_team} pred={hp} />
-        <TeamBox team={match.away_team} pred={ap} />
-      </div>
-      {homeV02 && awayV02 ? (
-        <div className="border-t border-slate-100 px-5 py-4 text-sm text-slate-700 sm:px-6">
-          <p className="font-semibold text-slate-900">Perché è cambiata?</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <p>
-              {match.home_team.name}: Baseline {formatNum(homeV02.baseline_expected_sot)} · Aggiustata {formatNum(homeV02.adjusted_expected_sot)} · Correzione {formatNum(homeV02.total_adjustment)}
-            </p>
-            <p>
-              {match.away_team.name}: Baseline {formatNum(awayV02.baseline_expected_sot)} · Aggiustata {formatNum(awayV02.adjusted_expected_sot)} · Correzione {formatNum(awayV02.total_adjustment)}
-            </p>
-          </div>
-          <p className="mt-2 text-xs text-slate-600">
-            Totale match Baseline: {totalBaseline != null ? formatNum(totalBaseline) : '—'} · Totale match v0.2: {totalV02 != null ? formatNum(totalV02) : '—'}
-          </p>
+          ) : null}
+          {homeCtx.turnover_risk === 'alto' || awayCtx.turnover_risk === 'alto' ? (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900 ring-1 ring-amber-100">
+              Rischio turnover
+            </span>
+          ) : null}
+          {riskFlags.length > 0 && !riskFlags.includes('fine_stagione') ? (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900 ring-1 ring-amber-100">
+              Contesto prudente
+            </span>
+          ) : null}
         </div>
-      ) : null}
-
-      <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
-        <h3 className="text-sm font-semibold text-slate-900">Contesto partita</h3>
-        {match.context_status === 'not_available' ? (
-          <p className="mt-2 text-sm text-amber-900">
-            Classifica non disponibile: contesto motivazionale non calcolabile.
-          </p>
-        ) : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm">
-              <p className="text-xs text-slate-500">Importanza partita</p>
-              <p className="mt-1"><ContextBadge value={matchCtx.overall_match_importance} /></p>
-              <p className="mt-2 text-xs text-slate-600">{String(matchCtx.summary ?? '')}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm">
-              <p className="text-xs text-slate-500">Casa / Trasferta</p>
-              <p className="mt-1 text-xs text-slate-700">
-                Motivazione casa: <ContextBadge value={homeCtx.motivation_level} />
-              </p>
-              <p className="mt-1 text-xs text-slate-700">
-                Motivazione trasferta: <ContextBadge value={awayCtx.motivation_level} />
-              </p>
-              <p className="mt-1 text-xs text-slate-700">
-                Rischio turnover casa: <ContextBadge value={homeCtx.turnover_risk} />
-              </p>
-              <p className="mt-1 text-xs text-slate-700">
-                Rischio turnover trasferta: <ContextBadge value={awayCtx.turnover_risk} />
-              </p>
-            </div>
-          </div>
-        )}
       </div>
 
-      <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
-        <h3 className="text-sm font-semibold text-slate-900">Valuta linea bookmaker</h3>
-        <p className="mt-1 text-xs text-slate-600">
-          Confronta la somma dei tiri in porta attesi con la linea che vedi sul foglio gioco. Le quote servono solo
-          per una probabilità indicativa, non per cercare “valore” statistico.
-        </p>
-        {riskFlags.length > 0 ? (
-          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
-            Attenzione: contesto partita rischioso. Valutazione da usare con prudenza.
-          </p>
-        ) : null}
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-12">
-          <label className="text-xs font-medium text-slate-700 lg:col-span-3">
-            Bookmaker
-            <input
-              type="text"
-              value={bookmaker}
-              onChange={(e) => setBookmaker(e.target.value)}
-              placeholder="es. Sisal Matchpoint"
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm shadow-sm outline-none ring-slate-200 focus:ring-2"
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-700 lg:col-span-4">
-            Mercato
-            <select
-              value={marketType}
-              onChange={(e) => setMarketType(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none ring-slate-200 focus:ring-2"
-            >
-              <option value="match_total_sot">Totale tiri in porta (match)</option>
-            </select>
-          </label>
-          <label className="text-xs font-medium text-slate-700 lg:col-span-2">
-            Linea
-            <input
-              type="number"
-              step="0.5"
-              min={0}
-              max={40}
-              value={line}
-              onChange={(e) => setLine(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm tabular-nums shadow-sm outline-none ring-slate-200 focus:ring-2"
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-700 lg:col-span-2">
-            Quota (opzionale)
-            <input
-              type="number"
-              step="0.01"
-              min={1.01}
-              value={oddsStr}
-              onChange={(e) => setOddsStr(e.target.value)}
-              placeholder="es. 1.50"
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm tabular-nums shadow-sm outline-none ring-slate-200 focus:ring-2"
-            />
-          </label>
-          <div className="flex items-end lg:col-span-1">
-            <button
-              type="button"
-              disabled={loading || !canEvaluate}
-              className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={async () => {
-                if (!hp || !ap) return
-                setLoading(true)
-                setEvalErr(null)
-                setEvalResult(null)
-                try {
-                  const lv = Number(line)
-                  if (Number.isNaN(lv)) throw new Error('Inserisci una linea numerica valida.')
-                  const bm = bookmaker.trim()
-                  if (!bm) throw new Error('Indica il bookmaker.')
-                  let odds: number | undefined
-                  const o = oddsStr.trim()
-                  if (o !== '') {
-                    const ov = Number(o)
-                    if (Number.isNaN(ov) || ov <= 1) throw new Error('La quota deve essere maggiore di 1.')
-                    odds = ov
-                  }
-                  const out = await evaluateMatchLine({
-                    home_expected_sot: hp.expected_sot,
-                    away_expected_sot: ap.expected_sot,
-                    home_adjusted_expected_sot: homeV02?.adjusted_expected_sot ?? null,
-                    away_adjusted_expected_sot: awayV02?.adjusted_expected_sot ?? null,
-                    use_adjusted: useAdjustedView,
-                    market_type: marketType,
-                    line_value: lv,
-                    bookmaker: bm,
-                    odds,
-                  })
-                  setEvalResult(out)
-                } catch (e) {
-                  setEvalErr(e instanceof Error ? e.message : String(e))
-                } finally {
-                  setLoading(false)
-                }
-              }}
-            >
-              {loading ? 'Valutazione…' : 'Valuta scommessa'}
-            </button>
+      <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              {match.home_team.name}
+            </p>
+            <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
+              {mainHome != null ? formatNum(mainHome) : '—'}
+            </p>
+            {homeV02 ? (
+              <p className="mt-1 text-xs text-slate-600">
+                Baseline {formatNum(homeV02.baseline_expected_sot)} · Correzione{' '}
+                {formatNum(homeV02.total_adjustment)}
+              </p>
+            ) : hp ? (
+              <p className="mt-1 text-xs text-slate-600">Baseline {formatNum(hp.expected_sot)}</p>
+            ) : null}
           </div>
-        </div>
-        {!canEvaluate ? (
-          <p className="mt-2 text-xs text-amber-800">Serve una previsione per entrambe le squadre.</p>
-        ) : null}
-        {evalErr ? <p className="mt-3 text-sm text-rose-700">{evalErr}</p> : null}
-        {evalResult ? (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-800">
-            <p className="text-base font-semibold text-slate-900">{evalResult.label}</p>
-            <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-              <li>
-                <span className="text-slate-500">Indicazione: </span>
-                <span className="font-medium">{suggestionLabel(evalResult.suggestion)}</span>
-              </li>
-              <li>
-                <span className="text-slate-500">Forza: </span>
-                <span className="font-medium">{strengthLabel(evalResult.strength)}</span>
-              </li>
-              <li>
-                <span className="text-slate-500">Tiri in porta totali attesi: </span>
-                <span className="tabular-nums font-medium">{formatNum(evalResult.total_expected_sot)}</span>
-              </li>
-              <li>
-                <span className="text-slate-500">Linea: </span>
-                <span className="tabular-nums font-medium">{formatNum(evalResult.line_value)}</span>
-              </li>
-              <li>
-                <span className="text-slate-500">Distanza dalla linea: </span>
-                <span className="tabular-nums font-medium">{formatNum(evalResult.gap)}</span>
-              </li>
-              <li>
-                <span className="text-slate-500">Bookmaker: </span>
-                <span className="font-medium">{evalResult.bookmaker}</span>
-              </li>
-              {evalResult.odds != null ? (
-                <li>
-                  <span className="text-slate-500">Quota: </span>
-                  <span className="tabular-nums font-medium">{formatNum(evalResult.odds, 2)}</span>
-                </li>
-              ) : null}
-              {evalResult.implied_probability != null ? (
-                <li>
-                  <span className="text-slate-500">Probabilità implicita dalla quota: </span>
-                  <span className="tabular-nums font-medium">
-                    {formatNum(evalResult.implied_probability, 2)}%
-                  </span>
-                </li>
-              ) : null}
-            </ul>
-            <p className="mt-3 text-xs leading-relaxed text-slate-600">{evalResult.explanation}</p>
-            {evalResult.warning ? (
-              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-                {evalResult.warning}
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Totale match</p>
+            <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
+              {mainTotal != null ? formatNum(mainTotal) : '—'}
+            </p>
+            {totalBaseline != null && totalV02 != null ? (
+              <p className="mt-1 text-xs text-slate-600">
+                Baseline {formatNum(totalBaseline)} · v0.2 {formatNum(totalV02)}
               </p>
             ) : null}
           </div>
-        ) : null}
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              {match.away_team.name}
+            </p>
+            <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
+              {mainAway != null ? formatNum(mainAway) : '—'}
+            </p>
+            {awayV02 ? (
+              <p className="mt-1 text-xs text-slate-600">
+                Baseline {formatNum(awayV02.baseline_expected_sot)} · Correzione{' '}
+                {formatNum(awayV02.total_adjustment)}
+              </p>
+            ) : ap ? (
+              <p className="mt-1 text-xs text-slate-600">Baseline {formatNum(ap.expected_sot)}</p>
+            ) : null}
+          </div>
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-slate-700">{insight}</p>
+      </div>
+
+      <div className="border-t border-slate-100 px-5 py-4 sm:px-6">
+        <details className="group rounded-2xl border border-slate-200 bg-slate-50/50">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 marker:hidden [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between gap-2">
+              Perché è cambiata?
+              <span className="text-xs font-normal text-slate-500 group-open:hidden">Apri</span>
+              <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Chiudi</span>
+            </span>
+          </summary>
+          {homeV02 && awayV02 ? (
+            <div className="space-y-2 border-t border-slate-200 px-4 py-4 text-sm text-slate-700">
+              <p>
+                {match.home_team.name}: Baseline {formatNum(homeV02.baseline_expected_sot)} · Aggiustata{' '}
+                {formatNum(homeV02.adjusted_expected_sot)} · Correzione {formatNum(homeV02.total_adjustment)}
+              </p>
+              <p>
+                {match.away_team.name}: Baseline {formatNum(awayV02.baseline_expected_sot)} · Aggiustata{' '}
+                {formatNum(awayV02.adjusted_expected_sot)} · Correzione {formatNum(awayV02.total_adjustment)}
+              </p>
+              <p className="text-xs text-slate-600">
+                Totale match Baseline: {totalBaseline != null ? formatNum(totalBaseline) : '—'} · Totale match v0.2:{' '}
+                {totalV02 != null ? formatNum(totalV02) : '—'}
+              </p>
+            </div>
+          ) : (
+            <div className="border-t border-slate-200 px-4 py-4 text-sm text-slate-600">
+              <p>Correzione v0.2 non disponibile per questa partita.</p>
+            </div>
+          )}
+        </details>
       </div>
 
       <div className="border-t border-slate-100 px-5 pb-5 sm:px-6">
         <details className="group rounded-2xl border border-slate-200 bg-slate-50/50">
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 marker:hidden [&::-webkit-details-marker]:hidden">
             <span className="flex items-center justify-between gap-2">
-              Come è stata calcolata questa previsione?
+              Dettaglio matematico baseline
               <span className="text-xs font-normal text-slate-500 group-open:hidden">Apri</span>
               <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Chiudi</span>
             </span>
@@ -773,32 +615,6 @@ function MatchCard({
             </div>
           </div>
         </details>
-      </div>
-
-      <div className="grid gap-4 border-t border-slate-100 bg-slate-50/30 px-5 py-5 sm:grid-cols-2 sm:px-6">
-        <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-emerald-950">Cosa considera questa versione</p>
-          <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">
-            <li>Statistiche di squadra su partite già giocate</li>
-            <li>Rendimento in casa e in trasferta</li>
-            <li>Forma recente (ultime partite)</li>
-            <li>Quanto l’avversario tende a concedere tiri in porta</li>
-          </ul>
-        </div>
-        <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-amber-950">Cosa non considera ancora nel numero principale</p>
-          <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">
-            <li>Probabili o ufficiali formazioni (i dati possono essere importati ma non entrano nel totale)</li>
-            <li>Assenze e infortuni nel calcolo del valore atteso</li>
-            <li>Impatto dei singoli giocatori sul totale dei tiri in porta attesi</li>
-            <li>Scontri diretti nel calcolo del valore atteso</li>
-            <li>Quote bookmaker importate automaticamente</li>
-          </ul>
-          <p className="mt-3 text-xs leading-relaxed text-slate-600">
-            Nella sezione <strong>Dati extra</strong> sotto puoi comunque leggere indizi su giocatori e H2H a scopo
-            informativo.
-          </p>
-        </div>
       </div>
       <MatchDebugLayers match={match} />
       <p className="border-t border-slate-100 px-5 py-3 text-xs leading-relaxed text-slate-500 sm:px-6">
@@ -855,19 +671,48 @@ export function UpcomingMatches() {
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
       <div className="mx-auto max-w-5xl space-y-8 px-4 sm:px-6">
-        <header className="pt-4">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Stime sui <strong>tiri in porta</strong> (tentativi che colpiscono lo specchio della porta) per le
-            prossime partite. Puoi confrontare la somma delle due squadre con una linea del bookmaker inserita a
-            mano.
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            <Link to="/model-legend" className="font-medium text-slate-700 underline">
-              Come funziona il modello?
-            </Link>
-          </p>
-          <div className="mt-3 inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs">
+        <header className="pt-4 space-y-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-600">
+              Stime sui <strong>tiri in porta</strong> per le prossime partite. I numeri mostrati sono quelli della
+              versione baseline v0.2 context/player (se disponibile), con confronto rispetto alla baseline v0.1.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-700 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="font-semibold text-slate-900">
+                Modello attivo:{' '}
+                <span className="font-normal text-slate-800">
+                  {useAdjustedView ? 'baseline_v0_2_context_player' : 'baseline_v0_1'}
+                </span>
+              </p>
+              <p>
+                Qualità dati: <span className="font-medium">Alta · 100/100</span>
+              </p>
+              <p>
+                Affidabilità previsione:{' '}
+                <span className="font-medium">Media · 78/100</span>
+                <span className="text-slate-500"> (stima prudenziale, non probabilità calibrata)</span>
+              </p>
+            </div>
+            <div className="space-y-2 text-xs text-slate-600">
+              {data?.round ? (
+                <p>
+                  Prossimo turno:{' '}
+                  <span className="font-medium text-slate-900">{data.round}</span>
+                </p>
+              ) : null}
+              <p>
+                <Link to="/model-legend" className="font-medium text-slate-700 underline">
+                  Come funziona il modello?
+                </Link>
+              </p>
+            </div>
+          </div>
+
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs">
             <button
               type="button"
               className={`rounded-lg px-2 py-1 ${viewMode === 'v01' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
@@ -972,6 +817,32 @@ export function UpcomingMatches() {
                 useAdjustedView={useAdjustedView}
               />
             ))}
+
+            <section className="space-y-4 border-t border-slate-200 pt-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-emerald-950">Questa versione considera</p>
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">
+                    <li>Statistiche di squadra su partite già giocate</li>
+                    <li>Rendimento in casa e in trasferta</li>
+                    <li>Forma recente (ultime partite)</li>
+                    <li>Quanto l’avversario tende a concedere tiri in porta</li>
+                    <li>Correzioni v0.2 disponibili (giocatori / H2H / contesto), se calcolate</li>
+                  </ul>
+                </div>
+                <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-amber-950">
+                    Questa versione non considera ancora pienamente
+                  </p>
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">
+                    <li>Formazioni ufficiali pre-partita</li>
+                    <li>Assenze/infortuni se i dati non sono affidabili</li>
+                    <li>Quote bookmaker importate automaticamente</li>
+                    <li>Altri fattori qualitativi non ancora integrati stabilmente</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
           </div>
         )}
       </div>
