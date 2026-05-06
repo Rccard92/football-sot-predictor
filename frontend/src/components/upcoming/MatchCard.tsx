@@ -4,6 +4,7 @@ import type {
   UpcomingPlayerAdjustedMatchRow,
 } from '../../lib/api'
 import { formatKickoff, formatNum, formatSignedNum } from './format'
+import { Link } from 'react-router-dom'
 import { BreakdownTable } from './BreakdownTable'
 import { MatchDebugLayers } from './MatchDebugLayers'
 
@@ -152,6 +153,14 @@ export function MatchCard({
           </div>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-slate-700">{insight}</p>
+        <p className="mt-3 text-xs text-slate-600">
+          <Link
+            to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
+            className="font-medium text-slate-700 underline"
+          >
+            Apri audit variabili
+          </Link>
+        </p>
       </div>
 
       <div className="border-t border-slate-100 px-5 py-4 sm:px-6">

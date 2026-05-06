@@ -485,3 +485,38 @@ In questa versione i pesi sono **statici e documentali**. In una prossima fase s
 - modificare i pesi dall’interfaccia,
 - salvare una configurazione modello,
 - ricalcolare le previsioni.
+
+---
+
+## Audit variabili partita
+
+Per rendere il modello **verificabile** e ridurre ambiguità, esiste un audit che mostra come il sistema compila le variabili per una singola fixture.
+
+### Obiettivo
+- verificare che le variabili siano calcolate con i **dati corretti**
+- vedere **formula**, **fonte**, **partite considerate** e note anti‑leakage
+- confrontare pre‑match vs post‑match (solo audit)
+
+### Modalità
+- **pre_match**: usa solo fixture concluse con `kickoff_at` **precedente** alla fixture analizzata (no data leakage).
+- **post_match**: può includere dati successivi **solo** per verifica; deve essere chiaramente marcata come audit post‑match.
+
+### Regola no data leakage (pre_match)
+Per ogni variabile pre‑match si includono solo partite:
+- con `status_short` in `FT`, `AET`, `PEN`
+- con `kickoff_at < current_fixture.kickoff_at`
+
+### Esempi di calcolo
+
+**Media stagionale tiri in porta fatti (team)**
+- Fonte: `fixture_team_stats.shots_on_target`
+- Formula: `sum(shots_on_target) / matches_count`
+- Sample rows: ultime 10 fixture considerate + conteggio totale
+
+**Ultime 5 tiri in porta fatti (team)**
+- Fonte: `fixture_team_stats.shots_on_target`
+- Regola: ultime 5 fixture concluse precedenti ordinate per kickoff
+- Formula: `mean(shots_on_target over last5)`
+
+### Endpoint audit
+- `GET /api/match-analysis/fixture/{fixture_id}/variables?market=shots_on_target&mode=pre_match`
