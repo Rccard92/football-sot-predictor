@@ -492,6 +492,28 @@ In questa versione i pesi sono **statici e documentali**. In una prossima fase s
 
 Per rendere il modello **verificabile** e ridurre ambiguità, esiste un audit che mostra come il sistema compila le variabili per una singola fixture.
 
+## Scheda Analisi Partita (UI) / Audit Variabili
+
+La pagina frontend “Audit Variabili” è stata riprogettata come **Scheda Analisi Partita**, con due obiettivi:
+
+- rendere la lettura **intuitiva e compatta** (output, driver, livelli)
+- mantenere la trasparenza completa, spostando i dettagli in un pannello **debug** chiuso di default
+
+### Struttura UI
+- **Header/controlli**: selezione fixture, mercato (Tiri in porta), modalità `pre_match` / `post_match`, link al Framework Analisi.
+- **Hero partita**: match card compatta con squadre, kickoff, round, status, badge “No data leakage” (pre‑match).
+- **Output previsione**: numeri principali v0.1 e v0.2 player adjusted (se disponibili) + differenze.
+- **Driver principali**: sintesi interpretativa generata lato frontend usando variabili core (es. trend last5 vs stagione, player impact).
+- **Framework per livelli**: variabili organizzate per livelli (Core statistico, Player, …). I layer non auditati sono mostrati come **roadmap**.
+- **Audit tecnico completo**: payload raw, meta e dettagli (chiuso di default).
+
+### Regola “calcolo completo” vs “sample rows”
+Per evitare ambiguità:
+
+- **`calculation.meta.matches_count`**: numero reale di partite usate nel calcolo.
+- **`sample_rows`**: solo un **campione** (tipicamente ultime 10) per controllo manuale.
+- La UI deve dichiarare sempre che il campione mostrato **non** coincide necessariamente con il dataset di calcolo.
+
 ### Obiettivo
 - verificare che le variabili siano calcolate con i **dati corretti**
 - vedere **formula**, **fonte**, **partite considerate** e note anti‑leakage
