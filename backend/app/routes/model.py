@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02
+from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT
 from app.schemas.model import MatchAnalysisFrameworkResponse, ModelLegendResponse
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
 
@@ -21,7 +21,8 @@ def get_model_legend() -> ModelLegendResponse:
             "baseline_expected_sot (v0.1) = 0.30 × media stagionale squadra + 0.25 × media concessa avversario "
             "+ 0.15 × media casa/fuori squadra + 0.10 × media concessa casa/fuori avversario "
             "+ 0.10 × ultime 5 squadra + 0.10 × ultime 5 concesse avversario\n"
-            "adjusted_expected_sot (v0.2 player adjusted) = baseline_expected_sot + player_adjustment"
+            "adjusted_expected_sot (v0.2 player adjusted) = baseline_expected_sot + player_adjustment\n"
+            "expected_sot_v0_3 (v0.3 core SOT) = 0.55×core_sot + 0.20×shot_volume + 0.10×shot_accuracy + 0.10×recent_form + 0.05×goals_context"
         ),
         sections=[
             {
@@ -160,6 +161,108 @@ def get_model_legend() -> ModelLegendResponse:
                         "status": "applicata",
                         "impact": "Evita correzioni eccessive e migliora robustezza.",
                         "interpretation": "Le correzioni restano prudenti e tracciabili.",
+                    },
+                ],
+            },
+            {
+                "id": "baseline_v03_core_sot",
+                "title": "Baseline v0.3 Core SOT",
+                "status": "applicata",
+                "description": (
+                    "Nuova baseline che migliora il core statistico SOT usando solo variabili già auditabili "
+                    "(SOT diretto, volume tiri, accuratezza, forma recente, goal context). "
+                    "Non include ancora tactical/motivation/odds/referee/sentiment."
+                ),
+                "variables": [
+                    {
+                        "technical_key": "model_version_v03",
+                        "name": "Versione modello",
+                        "description": "Identificativo della baseline v0.3 core.",
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Consente di salvare e confrontare la nuova baseline.",
+                        "interpretation": f"Valore: {BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT}",
+                    },
+                    {
+                        "technical_key": "expected_sot_v03_formula",
+                        "name": "Formula v0.3",
+                        "description": (
+                            "expected_sot_v0_3 = 0.55×core_sot_component + 0.20×shot_volume_component + "
+                            "0.10×shot_accuracy_component + 0.10×recent_form_component + 0.05×goals_context_component"
+                        ),
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Combina 5 componenti normalizzate in scala SOT attesi.",
+                        "interpretation": "Tutte le componenti sono espresse direttamente in 'tiri in porta attesi'.",
+                    },
+                    {
+                        "technical_key": "component_weights_v03",
+                        "name": "Pesi componenti v0.3",
+                        "description": "Pesi fissi (statici) dei blocchi v0.3.",
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Dà priorità al core SOT diretto, poi volume/accuratezza/forma/goal context.",
+                        "interpretation": "core 55% · volume 20% · accuracy 10% · forma 10% · goal ctx 5%",
+                    },
+                    {
+                        "technical_key": "core_sot_component",
+                        "name": "Core SOT diretto",
+                        "description": (
+                            "Media di SOT stagione + concessi avversario + split casa/fuori (team e avversario)."
+                        ),
+                        "weight": 0.55,
+                        "weight_label": "55%",
+                        "status": "applicata",
+                        "impact": "Componente principale: misura produzione SOT e concessioni in contesto.",
+                        "interpretation": "Aumenta se la squadra produce SOT e/o l’avversario concede molto.",
+                    },
+                    {
+                        "technical_key": "shot_volume_component",
+                        "name": "Volume tiri",
+                        "description": (
+                            "Trasforma i tiri totali in scala SOT usando la accuracy stimata (SOT/tiri)."
+                        ),
+                        "weight": 0.20,
+                        "weight_label": "20%",
+                        "status": "applicata",
+                        "impact": "Aumenta se il contesto volume tiri è alto, corretto dalla precisione.",
+                        "interpretation": "Usa tiri totali fatti e concessi (stagione + split).",
+                    },
+                    {
+                        "technical_key": "shot_accuracy_component",
+                        "name": "Precisione tiro",
+                        "description": (
+                            "Combina accuracy della squadra (SOT/tiri) e ratio concessa avversario, "
+                            "riportando il risultato su scala SOT."
+                        ),
+                        "weight": 0.10,
+                        "weight_label": "10%",
+                        "status": "applicata",
+                        "impact": "Premia squadre più precise e avversari che concedono SOT a parità di tiri.",
+                        "interpretation": "Componente prudente: evita di trasformare la ratio in scala 0–100.",
+                    },
+                    {
+                        "technical_key": "recent_form_component",
+                        "name": "Forma recente",
+                        "description": "Media last5 e last10 (SOT fatti team + SOT concessi avversario).",
+                        "weight": 0.10,
+                        "weight_label": "10%",
+                        "status": "applicata",
+                        "impact": "Cattura trend recenti senza sostituire i segnali di stagione.",
+                        "interpretation": "Usa solo fixture pre-match (no leakage).",
+                    },
+                    {
+                        "technical_key": "goals_context_component",
+                        "name": "Goal context",
+                        "description": "Goal fatti/subiti medi convertiti in scala SOT con fattore prudente.",
+                        "weight": 0.05,
+                        "weight_label": "5%",
+                        "status": "applicata",
+                        "impact": "Piccolo correttivo: goal non sono la stessa cosa dei SOT.",
+                        "interpretation": "Peso basso per evitare overfitting sul segnale goal.",
                     },
                 ],
             },

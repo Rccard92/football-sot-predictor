@@ -2,6 +2,7 @@ import type {
   ModelLimitations,
   UpcomingMatchRow,
   UpcomingPlayerAdjustedMatchRow,
+  UpcomingV03CoreSotMatchRow,
 } from '../../lib/api'
 import { formatKickoff, formatNum, formatSignedNum } from './format'
 import { Link } from 'react-router-dom'
@@ -12,11 +13,13 @@ export function MatchCard({
   match,
   limitations,
   playerAdjustedMatch,
+  v03CoreSotMatch,
   usePlayerAdjustedView,
 }: {
   match: UpcomingMatchRow
   limitations: ModelLimitations
   playerAdjustedMatch: UpcomingPlayerAdjustedMatchRow | null
+  v03CoreSotMatch: UpcomingV03CoreSotMatchRow | null
   usePlayerAdjustedView: boolean
 }) {
   const hp = match.home_prediction
@@ -29,6 +32,9 @@ export function MatchCard({
   const awayPA = playerAdjustedMatch?.away ?? null
   const totalAdjusted = playerAdjustedMatch?.total_expected_sot_adjusted ?? null
   const totalBaseline = playerAdjustedMatch?.total_expected_sot_baseline ?? null
+
+  const homeV03 = v03CoreSotMatch?.home ?? null
+  const awayV03 = v03CoreSotMatch?.away ?? null
 
   const showPlayerAdjusted = usePlayerAdjustedView && homePA && awayPA
   const mainHome = showPlayerAdjusted ? homePA.adjusted_expected_sot : hp?.expected_sot ?? null
@@ -102,6 +108,12 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainHome != null ? formatNum(mainHome) : '—'}
             </p>
+            {homeV03?.expected_sot_v03 != null && homeV03.expected_sot_v01 != null ? (
+              <p className="mt-1 text-xs text-slate-600">
+                v0.3 core: {formatNum(homeV03.expected_sot_v03)}{' '}
+                <span className="text-slate-500">· Δ {formatSignedNum(homeV03.expected_sot_v03 - homeV03.expected_sot_v01)}</span>
+              </p>
+            ) : null}
             {homePA ? (
               homePA.adjusted_expected_sot === homePA.baseline_expected_sot ? (
                 <p className="mt-1 text-xs text-slate-600">
@@ -116,6 +128,15 @@ export function MatchCard({
               )
             ) : hp ? (
               <p className="mt-1 text-xs text-slate-600">Baseline v0.1: {formatNum(hp.expected_sot)}</p>
+            ) : null}
+            {homeV03 ? (
+              <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
+                <p>Core SOT: {homeV03.core_sot_component != null ? formatNum(homeV03.core_sot_component) : '—'}</p>
+                <p>Volume: {homeV03.shot_volume_component != null ? formatNum(homeV03.shot_volume_component) : '—'}</p>
+                <p>Accuracy: {homeV03.shot_accuracy_component != null ? formatNum(homeV03.shot_accuracy_component) : '—'}</p>
+                <p>Forma: {homeV03.recent_form_component != null ? formatNum(homeV03.recent_form_component) : '—'}</p>
+                <p>Goal ctx: {homeV03.goals_context_component != null ? formatNum(homeV03.goals_context_component) : '—'}</p>
+              </div>
             ) : null}
           </div>
           <div>
@@ -135,6 +156,12 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainAway != null ? formatNum(mainAway) : '—'}
             </p>
+            {awayV03?.expected_sot_v03 != null && awayV03.expected_sot_v01 != null ? (
+              <p className="mt-1 text-xs text-slate-600">
+                v0.3 core: {formatNum(awayV03.expected_sot_v03)}{' '}
+                <span className="text-slate-500">· Δ {formatSignedNum(awayV03.expected_sot_v03 - awayV03.expected_sot_v01)}</span>
+              </p>
+            ) : null}
             {awayPA ? (
               awayPA.adjusted_expected_sot === awayPA.baseline_expected_sot ? (
                 <p className="mt-1 text-xs text-slate-600">
@@ -149,6 +176,15 @@ export function MatchCard({
               )
             ) : ap ? (
               <p className="mt-1 text-xs text-slate-600">Baseline v0.1: {formatNum(ap.expected_sot)}</p>
+            ) : null}
+            {awayV03 ? (
+              <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
+                <p>Core SOT: {awayV03.core_sot_component != null ? formatNum(awayV03.core_sot_component) : '—'}</p>
+                <p>Volume: {awayV03.shot_volume_component != null ? formatNum(awayV03.shot_volume_component) : '—'}</p>
+                <p>Accuracy: {awayV03.shot_accuracy_component != null ? formatNum(awayV03.shot_accuracy_component) : '—'}</p>
+                <p>Forma: {awayV03.recent_form_component != null ? formatNum(awayV03.recent_form_component) : '—'}</p>
+                <p>Goal ctx: {awayV03.goals_context_component != null ? formatNum(awayV03.goals_context_component) : '—'}</p>
+              </div>
             ) : null}
           </div>
         </div>

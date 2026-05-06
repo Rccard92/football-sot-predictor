@@ -400,6 +400,36 @@ class MatchVariableAuditService:
         w_last5_for = 0.10
         w_opp_last5_conc = 0.10
 
+        # baseline v0.3 core SOT uses additional audit variables (tiri totali, accuracy, last10, goals context).
+        # NOTE: we do not change v0.1/v0.2 formulas; this flag is for audit UI labeling only.
+        v03_applied_keys = {
+            # core SOT direct
+            "season_avg_sot_for",
+            "opponent_season_avg_sot_conceded",
+            "home_avg_sot_for",
+            "away_avg_sot_for",
+            "home_avg_sot_conceded",
+            "away_avg_sot_conceded",
+            # volume tiri
+            "season_avg_shots_for",
+            "season_avg_shots_conceded",
+            "home_avg_shots_for",
+            "away_avg_shots_for",
+            "home_avg_shots_conceded",
+            "away_avg_shots_conceded",
+            # forma recente
+            "last5_avg_sot_for",
+            "opponent_last5_avg_sot_conceded",
+            "last10_avg_sot_for",
+            "opponent_last10_avg_sot_conceded",
+            # goal context
+            "season_avg_goals_for",
+            "season_avg_goals_conceded",
+            # accuracy ratios (derived below)
+            "shot_accuracy_for",
+            "opponent_sot_allowed_ratio",
+        }
+
         # Base match data section
         base_vars: list[AuditVariable] = [
             self._var(
@@ -438,7 +468,7 @@ class MatchVariableAuditService:
                     formula="sum(shots_on_target) / matches_count",
                     meta={"sum": season["sot_for_sum"], "matches_count": season["sot_for_n"], "total_matches_count": season["matches_count"]},
                     sample=sample_season,
-                    applied_to_model=True,
+                    applied_to_model=True,  # v0.1 baseline + v0.3 core
                     weight=w_season_for,
                     weight_label="30%",
                     notes="Usa solo fixture precedenti (anti-leakage).",
@@ -482,8 +512,10 @@ class MatchVariableAuditService:
                     formula="sum(total_shots) / matches_count",
                     meta={"sum": season["shots_for_sum"], "matches_count": season["shots_for_n"], "total_matches_count": season["matches_count"]},
                     sample=sample_season,
-                    applied_to_model=False,
-                    notes="Auditabile; non entra nella formula SOT v0.1.",
+                    applied_to_model=True,
+                    weight=0.20,
+                    weight_label="v0.3 (volume)",
+                    notes="Applicata al calcolo v0.3 (shot volume/accuracy).",
                 ),
                 mean_var(
                     key="season_total_shots_for",
@@ -510,8 +542,10 @@ class MatchVariableAuditService:
                     formula="sum(goals_for) / matches_count",
                     meta={"sum": season["goals_for_sum"], "matches_count": season["goals_for_n"], "total_matches_count": season["matches_count"]},
                     sample=sample_season,
-                    applied_to_model=False,
-                    notes=None,
+                    applied_to_model=True,
+                    weight=0.05,
+                    weight_label="v0.3 (goal ctx)",
+                    notes="Applicata al calcolo v0.3 (peso basso).",
                 ),
                 mean_var(
                     key="last5_avg_sot_for",
@@ -554,8 +588,10 @@ class MatchVariableAuditService:
                     formula="mean(shots_on_target over last 10)",
                     meta={"sum": last10["sot_for_sum"], "matches_count": last10["sot_for_n"], "fixtures_count": len(sample_last10)},
                     sample=sample_last10,
-                    applied_to_model=False,
-                    notes=None,
+                    applied_to_model=True,
+                    weight=0.10,
+                    weight_label="v0.3 (forma)",
+                    notes="Applicata al calcolo v0.3 (recent form).",
                 ),
                 mean_var(
                     key="last10_avg_shots_for",
@@ -592,7 +628,7 @@ class MatchVariableAuditService:
                     formula="sum(opponent.shots_on_target) / matches_count",
                     meta={"sum": season["sot_against_sum"], "matches_count": season["sot_against_n"], "total_matches_count": season["matches_count"]},
                     sample=sample_season,
-                    applied_to_model=True,
+                    applied_to_model=True,  # v0.1 baseline + v0.3 core
                     weight=w_opp_season_conc,
                     weight_label="25%",
                     notes="Concessi calcolati dalla riga avversaria (stessa fixture).",
@@ -622,8 +658,10 @@ class MatchVariableAuditService:
                     formula="sum(opponent.total_shots) / matches_count",
                     meta={"sum": season["shots_against_sum"], "matches_count": season["shots_against_n"], "total_matches_count": season["matches_count"]},
                     sample=sample_season,
-                    applied_to_model=False,
-                    notes=None,
+                    applied_to_model=True,
+                    weight=0.20,
+                    weight_label="v0.3 (volume)",
+                    notes="Applicata al calcolo v0.3 (shot volume/accuracy).",
                 ),
                 mean_var(
                     key="season_avg_goals_conceded",
@@ -636,8 +674,10 @@ class MatchVariableAuditService:
                     formula="sum(goals_against) / matches_count",
                     meta={"sum": season["goals_against_sum"], "matches_count": season["goals_against_n"], "total_matches_count": season["matches_count"]},
                     sample=sample_season,
-                    applied_to_model=False,
-                    notes=None,
+                    applied_to_model=True,
+                    weight=0.05,
+                    weight_label="v0.3 (goal ctx)",
+                    notes="Applicata al calcolo v0.3 (peso basso).",
                 ),
                 mean_var(
                     key="opponent_last5_avg_sot_conceded",
@@ -650,7 +690,7 @@ class MatchVariableAuditService:
                     formula="mean(opponent.shots_on_target over last 5)",
                     meta={"sum": last5["sot_against_sum"], "matches_count": last5["sot_against_n"], "fixtures_count": len(sample_last5)},
                     sample=sample_last5,
-                    applied_to_model=True,
+                    applied_to_model=True,  # v0.1 baseline + v0.3 forma
                     weight=w_opp_last5_conc,
                     weight_label="10%",
                     notes=None,
@@ -689,7 +729,7 @@ class MatchVariableAuditService:
                     formula="mean(shots_on_target over split)",
                     meta={"sum": split["sot_for_sum"], "matches_count": split["sot_for_n"], "total_matches_count": split["matches_count"]},
                     sample=sample,
-                    applied_to_model=True,
+                    applied_to_model=True,  # v0.1 baseline + v0.3 core
                     weight=applied_for_weight,
                     weight_label=applied_for_label,
                     notes=None,
@@ -705,8 +745,10 @@ class MatchVariableAuditService:
                     formula="mean(total_shots over split)",
                     meta={"sum": split["shots_for_sum"], "matches_count": split["shots_for_n"], "total_matches_count": split["matches_count"]},
                     sample=sample,
-                    applied_to_model=False,
-                    notes=None,
+                    applied_to_model=True,
+                    weight=0.20,
+                    weight_label="v0.3 (volume)",
+                    notes="Applicata al calcolo v0.3 (shot volume).",
                 ),
                 mean_var(
                     key=f"{label_side}_avg_sot_conceded",
@@ -719,7 +761,7 @@ class MatchVariableAuditService:
                     formula="mean(opponent.shots_on_target over split)",
                     meta={"sum": split["sot_against_sum"], "matches_count": split["sot_against_n"], "total_matches_count": split["matches_count"]},
                     sample=sample,
-                    applied_to_model=True,
+                    applied_to_model=True,  # v0.1 baseline + v0.3 core
                     weight=w_opp_homeaway_conc,
                     weight_label="10%",
                     notes=None,
@@ -735,8 +777,10 @@ class MatchVariableAuditService:
                     formula="mean(opponent.total_shots over split)",
                     meta={"sum": split["shots_against_sum"], "matches_count": split["shots_against_n"], "total_matches_count": split["matches_count"]},
                     sample=sample,
-                    applied_to_model=False,
-                    notes=None,
+                    applied_to_model=True,
+                    weight=0.20,
+                    weight_label="v0.3 (volume)",
+                    notes="Applicata al calcolo v0.3 (shot volume).",
                 ),
             ]
 
@@ -814,6 +858,91 @@ class MatchVariableAuditService:
         recent_vars = []
         recent_vars += recent_form_vars(home_ctx, home_season, home_last5_agg, home_last5)
         recent_vars += recent_form_vars(away_ctx, away_season, away_last5_agg, away_last5)
+
+        # last10 conceded (needed for v0.3 recent form component) + derived accuracy ratios
+        def add_v03_derived_vars(team_ctx: TeamContext, season: dict[str, Any], last10: dict[str, Any], team_priors: list[Fixture]) -> list[AuditVariable]:
+            sample_season = self._sample_rows_for_team(db=db, fixtures=team_priors, stats_map=stats_map, team_ctx=team_ctx, limit=10)
+            # opponent_last10_avg_sot_conceded for THIS team_ctx is actually its conceded last10 (used as opponent input by the other side)
+            vars_: list[AuditVariable] = [
+                mean_var(
+                    key="opponent_last10_avg_sot_conceded",
+                    label=f"Media tiri in porta concessi ultime 10 – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=_safe_float(last10["sot_against_mean"]),
+                    unit=self.unit_sot,
+                    source_table="fixture_team_stats",
+                    source_description="Ultime 10 (concessi da riga avversaria).",
+                    formula="mean(opponent.shots_on_target over last 10)",
+                    meta={"sum": last10["sot_against_sum"], "matches_count": last10["sot_against_n"], "total_matches_count": last10["matches_count"]},
+                    sample=sample_season,
+                    applied_to_model=True,
+                    weight=0.10,
+                    weight_label="v0.3 (forma)",
+                    notes="Applicata al calcolo v0.3 (recent form opponent).",
+                ),
+            ]
+
+            # shot_accuracy_for = season_avg_sot_for / season_avg_shots_for
+            sot_mean = _safe_float(season.get("sot_for_mean"))
+            shots_mean = _safe_float(season.get("shots_for_mean"))
+            acc = (sot_mean / shots_mean) if (sot_mean is not None and shots_mean not in (None, 0)) else None
+            vars_.append(
+                self._var(
+                    key="shot_accuracy_for",
+                    label=f"Shot accuracy (SOT/Tiri) – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=_safe_float(acc),
+                    unit="ratio",
+                    status="available" if acc is not None else "missing",
+                    impl_status="implemented",
+                    applied_to_model=True,
+                    weight=0.10,
+                    weight_label="v0.3 (accuracy)",
+                    source_table="derived",
+                    source_description="Derived: season_avg_sot_for / season_avg_shots_for.",
+                    calculation=AuditCalculationBlock(
+                        formula="season_avg_sot_for / season_avg_shots_for",
+                        meta={"season_avg_sot_for": sot_mean, "season_avg_shots_for": shots_mean},
+                        result=_safe_float(acc),
+                    ),
+                    sample_rows=sample_season,
+                    notes="Applicata al calcolo v0.3 (precisione tiro).",
+                )
+            )
+
+            # opponent_sot_allowed_ratio = season_avg_sot_conceded / season_avg_shots_conceded
+            sot_conc = _safe_float(season.get("sot_against_mean"))
+            shots_conc = _safe_float(season.get("shots_against_mean"))
+            ratio = (sot_conc / shots_conc) if (sot_conc is not None and shots_conc not in (None, 0)) else None
+            vars_.append(
+                self._var(
+                    key="opponent_sot_allowed_ratio",
+                    label=f"Ratio concessi (SOT concessi / tiri concessi) – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=_safe_float(ratio),
+                    unit="ratio",
+                    status="available" if ratio is not None else "missing",
+                    impl_status="implemented",
+                    applied_to_model=True,
+                    weight=0.10,
+                    weight_label="v0.3 (accuracy)",
+                    source_table="derived",
+                    source_description="Derived: opponent_season_avg_sot_conceded / season_avg_shots_conceded.",
+                    calculation=AuditCalculationBlock(
+                        formula="opponent_season_avg_sot_conceded / season_avg_shots_conceded",
+                        meta={"opponent_season_avg_sot_conceded": sot_conc, "season_avg_shots_conceded": shots_conc},
+                        result=_safe_float(ratio),
+                    ),
+                    sample_rows=sample_season,
+                    notes="Applicata al calcolo v0.3 (precisione concessa).",
+                )
+            )
+
+            return vars_
+
+        # Add to recent_form section (keeps backward-compatible section structure)
+        recent_vars += add_v03_derived_vars(home_ctx, home_season, home_last10_agg, home_team_priors)
+        recent_vars += add_v03_derived_vars(away_ctx, away_season, away_last10_agg, away_team_priors)
 
         # Player impact section: top 5 profiles (join con Player per nome)
         season_id = int(fixture.season_id)

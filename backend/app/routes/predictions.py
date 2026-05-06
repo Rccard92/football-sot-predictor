@@ -29,6 +29,7 @@ from app.services.sot_line_evaluate import evaluate_match_sot_line, evaluate_sot
 from app.services.sot_prediction_service import SotPredictionService
 from app.services.sot_prediction_v02_service import SotPredictionV02Service
 from app.services.predictions_v02.player_adjusted_service import SotPredictionV02PlayerAdjustedService
+from app.services.predictions_v03.core_sot_service import SotPredictionV03CoreSotService
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +298,73 @@ def sot_predictions_serie_a_upcoming_v02_player_adjusted(
     except Exception as exc:  # noqa: BLE001
         logger.exception("GET upcoming-v02-player-adjusted: errore inatteso")
         raise HTTPException(status_code=500, detail="Errore inatteso") from exc
+    return jsonable_encoder(data)
+
+
+@router.post("/serie-a/{season}/generate-v03-core-sot", response_model=None)
+def generate_serie_a_predictions_v03_core_sot(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    svc = SotPredictionV03CoreSotService()
+    partial_result = {
+        "upcoming_fixtures_found": 0,
+        "predictions_created_or_updated": 0,
+        "errors": [],
+    }
+    try:
+        summary = svc.generate_for_upcoming_season(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST generate_v03_core_sot: errore database")
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "database_operation",
+                    "message": "Database non disponibile o schema non aggiornato.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("POST generate_v03_core_sot: errore inatteso")
+        return JSONResponse(
+            status_code=500,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "generate_v03_core_sot",
+                    "message": "Errore inatteso durante la generazione v0.3 core SOT.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=409, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
+
+
+@router.get("/serie-a/{season}/upcoming-v03-core-sot", response_model=None)
+def sot_predictions_serie_a_upcoming_v03_core_sot(
+    season: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+    only_next_round: bool = Query(default=True),
+):
+    svc = SotPredictionV03CoreSotService()
+    try:
+        data = svc.upcoming_v03(db, season, limit=limit, only_next_round=only_next_round)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET upcoming-v03-core-sot: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET upcoming-v03-core-sot: errore inatteso")
+        raise HTTPException(status_code=500, detail="Errore inatteso") from exc
+    if isinstance(data, dict) and data.get("status") == "error":
+        return JSONResponse(status_code=409, content=jsonable_encoder(data))
     return jsonable_encoder(data)
 
 

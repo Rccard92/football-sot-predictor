@@ -570,6 +570,35 @@ export type UpcomingPlayerAdjustedResponse = {
   matches: UpcomingPlayerAdjustedMatchRow[]
 }
 
+export type UpcomingV03CoreSotSide = {
+  team_id: number
+  expected_sot_v01: number | null
+  expected_sot_v03: number | null
+  difference_from_v01: number | null
+  core_sot_component: number | null
+  shot_volume_component: number | null
+  shot_accuracy_component: number | null
+  recent_form_component: number | null
+  goals_context_component: number | null
+  breakdown: Record<string, unknown> | null
+}
+
+export type UpcomingV03CoreSotMatchRow = {
+  fixture_id: number
+  api_fixture_id: number
+  round: string | null
+  kickoff_at: string
+  status_short: string
+  home: UpcomingV03CoreSotSide | null
+  away: UpcomingV03CoreSotSide | null
+}
+
+export type UpcomingV03CoreSotResponse = {
+  status: 'success' | 'error'
+  model_version: string
+  matches: UpcomingV03CoreSotMatchRow[]
+}
+
 export type EvaluateSotLineResponse = {
   expected_sot: number
   line_value: number
@@ -627,6 +656,18 @@ export async function getUpcomingV02PlayerAdjusted(
   const q = p.toString()
   const path = `/api/predictions/sot/serie-a/${season}/upcoming-v02-player-adjusted${q ? `?${q}` : ''}`
   return requestJson<UpcomingPlayerAdjustedResponse>(path)
+}
+
+export async function getUpcomingV03CoreSot(
+  season: number,
+  opts?: { limit?: number; onlyNextRound?: boolean },
+): Promise<UpcomingV03CoreSotResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/upcoming-v03-core-sot${q ? `?${q}` : ''}`
+  return requestJson<UpcomingV03CoreSotResponse>(path)
 }
 
 export async function adminRefreshPostMatchday(

@@ -6,8 +6,10 @@ import {
   generateUpcomingSotPredictions,
   getUpcomingPredictions,
   getUpcomingV02PlayerAdjusted,
+  getUpcomingV03CoreSot,
   type ModelLimitations,
   type UpcomingPlayerAdjustedResponse,
+  type UpcomingV03CoreSotResponse,
 } from '../lib/api'
 import { MatchCard } from '../components/upcoming'
 
@@ -21,6 +23,7 @@ export function UpcomingMatches() {
   const [predBusy, setPredBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [dataPlayerAdjusted, setDataPlayerAdjusted] = useState<UpcomingPlayerAdjustedResponse | null>(null)
+  const [dataV03, setDataV03] = useState<UpcomingV03CoreSotResponse | null>(null)
   const [viewMode, setViewMode] = useState<'player_adjusted' | 'v01'>('player_adjusted')
   const [paAvailable, setPaAvailable] = useState(false)
 
@@ -30,12 +33,15 @@ export function UpcomingMatches() {
     try {
       const res = await getUpcomingPredictions(SEASON, { limit: 20, onlyNextRound: true })
       const resPA = await getUpcomingV02PlayerAdjusted(SEASON, { limit: 20, onlyNextRound: true })
+      const resV03 = await getUpcomingV03CoreSot(SEASON, { limit: 20, onlyNextRound: true })
       setData(res)
       setDataPlayerAdjusted(resPA)
+      setDataV03(resV03)
       setPaAvailable(resPA?.status === 'success' && (resPA.matches?.some((m) => Boolean(m.home && m.away)) ?? false))
     } catch (e) {
       setData(null)
       setDataPlayerAdjusted(null)
+      setDataV03(null)
       setPaAvailable(false)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -211,6 +217,7 @@ export function UpcomingMatches() {
                 match={m}
                 limitations={limitations}
                 playerAdjustedMatch={dataPlayerAdjusted?.matches.find((x) => x.fixture_id === m.fixture_id) ?? null}
+                v03CoreSotMatch={dataV03?.matches.find((x) => x.fixture_id === m.fixture_id) ?? null}
                 usePlayerAdjustedView={usePlayerAdjustedView}
               />
             ))}
