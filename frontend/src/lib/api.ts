@@ -478,6 +478,7 @@ export type UpcomingPlayerAdjustedSide = {
   baseline_expected_sot: number
   adjusted_expected_sot: number
   player_adjustment: number
+  total_adjustment: number
   adjustment_breakdown: {
     player_adjustment?: PlayerAdjustedBreakdown | null
     h2h_adjustment?: { applied: boolean; adjustment: number } | null

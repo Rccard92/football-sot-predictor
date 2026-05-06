@@ -22,6 +22,7 @@ export function UpcomingMatches() {
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [dataPlayerAdjusted, setDataPlayerAdjusted] = useState<UpcomingPlayerAdjustedResponse | null>(null)
   const [viewMode, setViewMode] = useState<'player_adjusted' | 'v01'>('player_adjusted')
+  const [paAvailable, setPaAvailable] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -31,12 +32,11 @@ export function UpcomingMatches() {
       const resPA = await getUpcomingV02PlayerAdjusted(SEASON, { limit: 20, onlyNextRound: true })
       setData(res)
       setDataPlayerAdjusted(resPA)
-      const paAvailable =
-        resPA?.status === 'success' && (resPA.matches?.some((m) => Boolean(m.home && m.away)) ?? false)
-      setViewMode(paAvailable ? 'player_adjusted' : 'v01')
+      setPaAvailable(resPA?.status === 'success' && (resPA.matches?.some((m) => Boolean(m.home && m.away)) ?? false))
     } catch (e) {
       setData(null)
       setDataPlayerAdjusted(null)
+      setPaAvailable(false)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
@@ -58,7 +58,7 @@ export function UpcomingMatches() {
       note:
         'Questa versione baseline usa solo statistiche squadra storiche. Formazioni, assenze e quote bookmaker automatiche non sono ancora considerate.',
     }
-  const usePlayerAdjustedView = viewMode === 'player_adjusted' && Boolean(dataPlayerAdjusted?.status === 'success')
+  const usePlayerAdjustedView = viewMode === 'player_adjusted' && Boolean(paAvailable)
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
@@ -68,7 +68,7 @@ export function UpcomingMatches() {
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
               Stime sui <strong>tiri in porta</strong> per le prossime partite. I numeri mostrati sono quelli della
-              versione baseline v0.2 context/player (se disponibile), con confronto rispetto alla baseline v0.1.
+              versione <strong>live v0.2 Player Adjusted</strong>, con baseline v0.1 disponibile come confronto/debug.
             </p>
           </div>
 
@@ -77,7 +77,7 @@ export function UpcomingMatches() {
               <p className="font-semibold text-slate-900">
                 Modello attivo:{' '}
                 <span className="font-normal text-slate-800">
-                  {usePlayerAdjustedView ? 'baseline_v0_2_player_adjusted' : 'baseline_v0_1'}
+                  baseline_v0_2_player_adjusted
                 </span>
               </p>
               <p>
@@ -110,7 +110,7 @@ export function UpcomingMatches() {
               className={`rounded-lg px-2 py-1 ${viewMode === 'v01' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
               onClick={() => setViewMode('v01')}
             >
-              Vista baseline v0.1
+              Vista baseline v0.1 (confronto/debug)
             </button>
             <button
               type="button"
@@ -121,6 +121,12 @@ export function UpcomingMatches() {
             </button>
           </div>
         </header>
+
+        {!loading && !error && viewMode === 'player_adjusted' && !paAvailable ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm">
+            La vista v0.2 Player Adjusted non è disponibile per questa giornata: sto mostrando la baseline v0.1 come fallback.
+          </div>
+        ) : null}
 
         {error ? (
           <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">

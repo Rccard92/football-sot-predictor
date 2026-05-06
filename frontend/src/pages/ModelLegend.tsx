@@ -66,6 +66,22 @@ export function ModelLegend() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{data.model_version}</p>
               <h2 className="mt-1 text-xl font-semibold text-slate-900">{data.title}</h2>
               <p className="mt-2 text-sm text-slate-600">{data.description}</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">baseline_v0_1</p>
+                  <p className="mt-1 text-sm text-slate-700">
+                    Modello squadra puro: usa solo statistiche storiche di team (formula invariata).
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                    baseline_v0_2_player_adjusted (LIVE)
+                  </p>
+                  <p className="mt-1 text-sm text-emerald-950">
+                    Modello live: <strong>baseline v0.1 + impatto giocatori</strong>. Non include ancora H2H, motivation o availability.
+                  </p>
+                </div>
+              </div>
               <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Formula expected_sot</p>
                 <p className="mt-2 text-sm font-medium text-indigo-950">{data.expected_sot_formula}</p>
@@ -155,10 +171,9 @@ export function ModelLegend() {
                   </div>
                   {section.id === 'player_impact' ? (
                     <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
-                      {data.model_version === 'baseline_v0_2_player_adjusted' ||
-                      data.model_version === 'baseline_v0_2_context_player'
-                        ? 'Applicato nella v0.2.'
-                        : 'Non applicato nella baseline v0.1.'}
+                      <strong>Applicato nel modello live v0.2 Player Adjusted</strong>
+                      <br />
+                      <strong>Non applicato nella baseline storica v0.1</strong>
                     </p>
                   ) : null}
                   {(section.id === 'h2h' || section.id === 'match_context') ? (

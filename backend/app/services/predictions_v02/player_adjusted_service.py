@@ -444,6 +444,7 @@ class SotPredictionV02PlayerAdjustedService:
                     "baseline_expected_sot": _round2(adj.baseline_expected_sot),
                     "adjusted_expected_sot": _round2(adj.adjusted_expected_sot),
                     "player_adjustment": _round2(adj.player_adjustment),
+                    "total_adjustment": _round2(adj.total_adjustment),
                     "adjustment_breakdown": {
                         "player_adjustment": player_bd,
                         "h2h_adjustment": (bd.get("h2h_adjustment") or {"applied": False, "adjustment": 0}),

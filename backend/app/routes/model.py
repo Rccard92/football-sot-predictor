@@ -11,23 +11,24 @@ router = APIRouter(prefix="/model", tags=["model"])
 def get_model_legend() -> ModelLegendResponse:
     w = WEIGHTS_BASELINE_V0_1
     return ModelLegendResponse(
-        model_version=BASELINE_SOT_MODEL_VERSION,
+        model_version="baseline_v0_2_player_adjusted",
         title="Legenda modello tiri in porta",
         description=(
             "Questa legenda mostra quali fattori vengono usati per stimare "
             "i tiri in porta attesi di una squadra."
         ),
         expected_sot_formula=(
-            "expected_sot = 0.30 × media stagionale squadra + 0.25 × media concessa avversario "
+            "baseline_expected_sot (v0.1) = 0.30 × media stagionale squadra + 0.25 × media concessa avversario "
             "+ 0.15 × media casa/fuori squadra + 0.10 × media concessa casa/fuori avversario "
-            "+ 0.10 × ultime 5 squadra + 0.10 × ultime 5 concesse avversario"
+            "+ 0.10 × ultime 5 squadra + 0.10 × ultime 5 concesse avversario\n"
+            "adjusted_expected_sot (v0.2 player adjusted) = baseline_expected_sot + player_adjustment"
         ),
         sections=[
             {
                 "id": "baseline_formula",
-                "title": "Formula baseline tiri in porta",
+                "title": "Baseline v0.1 (modello squadra puro)",
                 "status": "applicata",
-                "description": "Questa sezione è applicata direttamente alla previsione expected_sot.",
+                "description": "Questa sezione è la formula storica della baseline v0.1 e resta invariata.",
                 "variables": [
                     {
                         "technical_key": "season_avg_sot_for",
@@ -111,11 +112,11 @@ def get_model_legend() -> ModelLegendResponse:
             },
             {
                 "id": "baseline_v02_context_player",
-                "title": "Baseline v0.2 context + player",
+                "title": "Modello live v0.2 Player Adjusted",
                 "status": "applicata",
                 "description": (
-                    "La v0.2 parte dalla baseline v0.1 e applica adjustment prudenti: "
-                    "player impact, H2H, motivation/context e availability (solo se affidabile)."
+                    "Il modello live parte dalla baseline v0.1 e applica una correzione prudente "
+                    "basata sull’impatto giocatori."
                 ),
                 "variables": [
                     {
@@ -142,19 +143,18 @@ def get_model_legend() -> ModelLegendResponse:
                         "technical_key": "expected_sot_v02_formula",
                         "name": "Formula v0.2",
                         "description": (
-                            "expected_sot_v0_2 = expected_sot_v0_1 + player_adjustment + "
-                            "h2h_adjustment + motivation_adjustment + availability_adjustment"
+                            "adjusted_expected_sot = baseline_expected_sot + player_adjustment"
                         ),
                         "weight": None,
                         "weight_label": None,
                         "status": "applicata",
                         "impact": "Calcola il valore aggiustato finale per team.",
-                        "interpretation": "Somma baseline + adjustment, con cap totale ±0.90.",
+                        "interpretation": "Somma baseline v0.1 + correzione giocatori (prudente).",
                     },
                     {
                         "technical_key": "adjustment_caps",
                         "name": "Cap adjustment",
-                        "description": "player ±0.35, h2h ±0.20, motivation ±0.25, availability fino a -0.45, totale ±0.90.",
+                        "description": "Cap player_adjustment: ±0.35 (gli altri layer non sono ancora applicati).",
                         "weight": None,
                         "weight_label": None,
                         "status": "applicata",
@@ -166,10 +166,10 @@ def get_model_legend() -> ModelLegendResponse:
             {
                 "id": "player_impact",
                 "title": "Impatto giocatori",
-                "status": "solo_debug",
+                "status": "applicata",
                 "description": (
-                    "I profili giocatore e i top player sono visibili nel debug, ma non modificano "
-                    "ancora expected_sot. Previsti per una futura baseline_v0_2_player_adjusted."
+                    "La correzione giocatori è applicata nel modello live v0.2 Player Adjusted. "
+                    "Non è applicata nella baseline storica v0.1."
                 ),
                 "variables": [
                     {
@@ -178,7 +178,7 @@ def get_model_legend() -> ModelLegendResponse:
                         "description": "Misura quanti tiri in porta produce il giocatore ogni 90 minuti.",
                         "weight": 0.60,
                         "weight_label": "60%",
-                        "status": "solo_debug",
+                        "status": "applicata",
                         "impact": "Aiuta a stimare il contributo offensivo individuale.",
                         "interpretation": "Valori più alti indicano giocatori più presenti al tiro.",
                     },
@@ -191,7 +191,7 @@ def get_model_legend() -> ModelLegendResponse:
                         ),
                         "weight": 0.25,
                         "weight_label": "25%",
-                        "status": "solo_debug",
+                        "status": "applicata",
                         "impact": "Misura centralità del giocatore nel volume offensivo.",
                         "interpretation": (
                             "Percentuali alte suggeriscono dipendenza della squadra da quel giocatore."
@@ -203,7 +203,7 @@ def get_model_legend() -> ModelLegendResponse:
                         "description": "Tiene conto di minuti giocati e presenze.",
                         "weight": 0.15,
                         "weight_label": "15%",
-                        "status": "solo_debug",
+                        "status": "applicata",
                         "impact": "Riduce il peso di campioni piccoli o poco stabili.",
                         "interpretation": (
                             "Più è alto, più il profilo è statisticamente affidabile."
@@ -218,11 +218,10 @@ def get_model_legend() -> ModelLegendResponse:
                         ),
                         "weight": None,
                         "weight_label": None,
-                        "status": "solo_debug",
-                        "impact": "Disponibile come metrica debug, non applicata alla baseline.",
+                        "status": "applicata",
+                        "impact": "Usata per stimare la correzione giocatori nel modello live v0.2.",
                         "interpretation": (
-                            "Il player impact oggi è visibile come debug, ma non corregge "
-                            "ancora la previsione baseline."
+                            "Nei match futuri la correzione è prudente e tracciabile nel breakdown."
                         ),
                     },
                 ],

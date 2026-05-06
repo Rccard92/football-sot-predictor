@@ -3,7 +3,7 @@ import type {
   UpcomingMatchRow,
   UpcomingPlayerAdjustedMatchRow,
 } from '../../lib/api'
-import { formatKickoff, formatNum } from './format'
+import { formatKickoff, formatNum, formatSignedNum } from './format'
 import { BreakdownTable } from './BreakdownTable'
 import { MatchDebugLayers } from './MatchDebugLayers'
 
@@ -102,12 +102,19 @@ export function MatchCard({
               {mainHome != null ? formatNum(mainHome) : '—'}
             </p>
             {homePA ? (
-              <p className="mt-1 text-xs text-slate-600">
-                Baseline {formatNum(homePA.baseline_expected_sot)} · Player impact{' '}
-                {formatNum(homePA.player_adjustment)}
-              </p>
+              homePA.adjusted_expected_sot === homePA.baseline_expected_sot ? (
+                <p className="mt-1 text-xs text-slate-600">
+                  Nessuna correzione applicata: impatto giocatori in linea con la media del campionato.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-0.5 text-xs text-slate-600">
+                  <p>Baseline v0.1: {formatNum(homePA.baseline_expected_sot)}</p>
+                  <p>Impatto giocatori: {formatSignedNum(homePA.player_adjustment)}</p>
+                  <p>Totale correzione: {formatSignedNum(homePA.total_adjustment)}</p>
+                </div>
+              )
             ) : hp ? (
-              <p className="mt-1 text-xs text-slate-600">Baseline {formatNum(hp.expected_sot)}</p>
+              <p className="mt-1 text-xs text-slate-600">Baseline v0.1: {formatNum(hp.expected_sot)}</p>
             ) : null}
           </div>
           <div>
@@ -117,11 +124,8 @@ export function MatchCard({
             </p>
             {totalBaseline != null && totalAdjusted != null ? (
               <p className="mt-1 text-xs text-slate-600">
-                Baseline {formatNum(totalBaseline)} · v0.2 {formatNum(totalAdjusted)}
-                <span className="text-slate-500">
-                  {' '}
-                  · Δ {formatNum(totalAdjusted - totalBaseline)}
-                </span>
+                Baseline v0.1 {formatNum(totalBaseline)} · v0.2 {formatNum(totalAdjusted)}{' '}
+                <span className="text-slate-500">· Δ {formatSignedNum(totalAdjusted - totalBaseline)}</span>
               </p>
             ) : null}
           </div>
@@ -131,12 +135,19 @@ export function MatchCard({
               {mainAway != null ? formatNum(mainAway) : '—'}
             </p>
             {awayPA ? (
-              <p className="mt-1 text-xs text-slate-600">
-                Baseline {formatNum(awayPA.baseline_expected_sot)} · Player impact{' '}
-                {formatNum(awayPA.player_adjustment)}
-              </p>
+              awayPA.adjusted_expected_sot === awayPA.baseline_expected_sot ? (
+                <p className="mt-1 text-xs text-slate-600">
+                  Nessuna correzione applicata: impatto giocatori in linea con la media del campionato.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-0.5 text-xs text-slate-600">
+                  <p>Baseline v0.1: {formatNum(awayPA.baseline_expected_sot)}</p>
+                  <p>Impatto giocatori: {formatSignedNum(awayPA.player_adjustment)}</p>
+                  <p>Totale correzione: {formatSignedNum(awayPA.total_adjustment)}</p>
+                </div>
+              )
             ) : ap ? (
-              <p className="mt-1 text-xs text-slate-600">Baseline {formatNum(ap.expected_sot)}</p>
+              <p className="mt-1 text-xs text-slate-600">Baseline v0.1: {formatNum(ap.expected_sot)}</p>
             ) : null}
           </div>
         </div>
