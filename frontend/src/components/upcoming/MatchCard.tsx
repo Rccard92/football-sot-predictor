@@ -1,59 +1,26 @@
 import type {
   ModelLimitations,
-  UpcomingMatchRow,
-  UpcomingPlayerAdjustedMatchRow,
-  UpcomingV03CoreSotMatchRow,
+  UpcomingActiveMatchRow,
 } from '../../lib/api'
 import { formatKickoff, formatNum, formatSignedNum } from './format'
 import { Link } from 'react-router-dom'
-import { BreakdownTable } from './BreakdownTable'
-import { MatchDebugLayers } from './MatchDebugLayers'
 
 export function MatchCard({
   match,
   limitations,
-  playerAdjustedMatch,
-  v03CoreSotMatch,
-  usePlayerAdjustedView,
 }: {
-  match: UpcomingMatchRow
+  match: UpcomingActiveMatchRow
   limitations: ModelLimitations
-  playerAdjustedMatch: UpcomingPlayerAdjustedMatchRow | null
-  v03CoreSotMatch: UpcomingV03CoreSotMatchRow | null
-  usePlayerAdjustedView: boolean
 }) {
-  const hp = match.home_prediction
-  const ap = match.away_prediction
-  const matchCtx = (match.match_context ?? {}) as Record<string, unknown>
-  const homeCtx = (match.home_team_context ?? {}) as Record<string, unknown>
-  const awayCtx = (match.away_team_context ?? {}) as Record<string, unknown>
-  const riskFlags = Array.isArray(matchCtx.risk_flags) ? (matchCtx.risk_flags as unknown[]) : []
-  const homePA = playerAdjustedMatch?.home ?? null
-  const awayPA = playerAdjustedMatch?.away ?? null
-  const totalAdjusted = playerAdjustedMatch?.total_expected_sot_adjusted ?? null
-  const totalBaseline = playerAdjustedMatch?.total_expected_sot_baseline ?? null
-
-  const homeV03 = v03CoreSotMatch?.home ?? null
-  const awayV03 = v03CoreSotMatch?.away ?? null
-
-  const showPlayerAdjusted = usePlayerAdjustedView && homePA && awayPA
-  const mainHome = showPlayerAdjusted ? homePA.adjusted_expected_sot : hp?.expected_sot ?? null
-  const mainAway = showPlayerAdjusted ? awayPA.adjusted_expected_sot : ap?.expected_sot ?? null
-  const mainTotal =
-    showPlayerAdjusted && totalAdjusted != null
-      ? totalAdjusted
-      : match.total_expected_sot != null
-        ? match.total_expected_sot
-        : null
-
-  let insight = 'Previsione stabile, nessun warning rilevante.'
-  if (match.context_status === 'not_available') {
-    insight = 'Classifica non disponibile: contesto motivazionale non calcolabile.'
-  } else if (riskFlags.includes('fine_stagione')) {
-    insight = 'Partita di fine stagione: previsione da leggere con prudenza.'
-  } else if (riskFlags.length > 0) {
-    insight = 'Warning contesto presenti: leggere la previsione con prudenza.'
-  }
+  const home = match.home_prediction
+  const away = match.away_prediction
+  const mainHome = home?.expected_sot ?? null
+  const mainAway = away?.expected_sot ?? null
+  const mainTotal = match.total_expected_sot ?? null
+  const homeB01 = home?.baseline_v01_expected_sot ?? null
+  const awayB01 = away?.baseline_v01_expected_sot ?? null
+  const homeDiff = home?.difference_from_v01 ?? null
+  const awayDiff = away?.difference_from_v01 ?? null
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
@@ -82,22 +49,10 @@ export function MatchCard({
             <span className="text-sm font-semibold text-slate-900">{match.away_team.name}</span>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          {riskFlags.includes('fine_stagione') ? (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900 ring-1 ring-amber-100">
-              Fine stagione
-            </span>
-          ) : null}
-          {homeCtx.turnover_risk === 'alto' || awayCtx.turnover_risk === 'alto' ? (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900 ring-1 ring-amber-100">
-              Rischio turnover
-            </span>
-          ) : null}
-          {riskFlags.length > 0 && !riskFlags.includes('fine_stagione') ? (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900 ring-1 ring-amber-100">
-              Contesto prudente
-            </span>
-          ) : null}
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-800 ring-1 ring-slate-200">
+            Modello: {match.model_version_used}
+          </span>
         </div>
       </div>
 
@@ -108,35 +63,14 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainHome != null ? formatNum(mainHome) : '—'}
             </p>
-            {homeV03?.expected_sot_v03 != null && homeV03.expected_sot_v01 != null ? (
-              <p className="mt-1 text-xs text-slate-600">
-                v0.3 core: {formatNum(homeV03.expected_sot_v03)}{' '}
-                <span className="text-slate-500">· Δ {formatSignedNum(homeV03.expected_sot_v03 - homeV03.expected_sot_v01)}</span>
-              </p>
-            ) : null}
-            {homePA ? (
-              homePA.adjusted_expected_sot === homePA.baseline_expected_sot ? (
-                <p className="mt-1 text-xs text-slate-600">
-                  Nessuna correzione applicata: impatto giocatori in linea con la media del campionato.
-                </p>
+            {homeB01 != null && homeDiff != null ? (
+              homeDiff === 0 ? (
+                <p className="mt-1 text-xs text-slate-600">Nessuna differenza rispetto alla baseline v0.1.</p>
               ) : (
-                <div className="mt-2 space-y-0.5 text-xs text-slate-600">
-                  <p>Baseline v0.1: {formatNum(homePA.baseline_expected_sot)}</p>
-                  <p>Impatto giocatori: {formatSignedNum(homePA.player_adjustment)}</p>
-                  <p>Totale correzione: {formatSignedNum(homePA.total_adjustment)}</p>
-                </div>
+                <p className="mt-1 text-xs text-slate-600">
+                  Baseline v0.1: {formatNum(homeB01)} <span className="text-slate-500">· Δ {formatSignedNum(homeDiff)}</span>
+                </p>
               )
-            ) : hp ? (
-              <p className="mt-1 text-xs text-slate-600">Baseline v0.1: {formatNum(hp.expected_sot)}</p>
-            ) : null}
-            {homeV03 ? (
-              <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
-                <p>Core SOT: {homeV03.core_sot_component != null ? formatNum(homeV03.core_sot_component) : '—'}</p>
-                <p>Volume: {homeV03.shot_volume_component != null ? formatNum(homeV03.shot_volume_component) : '—'}</p>
-                <p>Accuracy: {homeV03.shot_accuracy_component != null ? formatNum(homeV03.shot_accuracy_component) : '—'}</p>
-                <p>Forma: {homeV03.recent_form_component != null ? formatNum(homeV03.recent_form_component) : '—'}</p>
-                <p>Goal ctx: {homeV03.goals_context_component != null ? formatNum(homeV03.goals_context_component) : '—'}</p>
-              </div>
             ) : null}
           </div>
           <div>
@@ -144,51 +78,23 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainTotal != null ? formatNum(mainTotal) : '—'}
             </p>
-            {totalBaseline != null && totalAdjusted != null ? (
-              <p className="mt-1 text-xs text-slate-600">
-                Baseline v0.1 {formatNum(totalBaseline)} · v0.2 {formatNum(totalAdjusted)}{' '}
-                <span className="text-slate-500">· Δ {formatSignedNum(totalAdjusted - totalBaseline)}</span>
-              </p>
-            ) : null}
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{match.away_team.name}</p>
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainAway != null ? formatNum(mainAway) : '—'}
             </p>
-            {awayV03?.expected_sot_v03 != null && awayV03.expected_sot_v01 != null ? (
-              <p className="mt-1 text-xs text-slate-600">
-                v0.3 core: {formatNum(awayV03.expected_sot_v03)}{' '}
-                <span className="text-slate-500">· Δ {formatSignedNum(awayV03.expected_sot_v03 - awayV03.expected_sot_v01)}</span>
-              </p>
-            ) : null}
-            {awayPA ? (
-              awayPA.adjusted_expected_sot === awayPA.baseline_expected_sot ? (
-                <p className="mt-1 text-xs text-slate-600">
-                  Nessuna correzione applicata: impatto giocatori in linea con la media del campionato.
-                </p>
+            {awayB01 != null && awayDiff != null ? (
+              awayDiff === 0 ? (
+                <p className="mt-1 text-xs text-slate-600">Nessuna differenza rispetto alla baseline v0.1.</p>
               ) : (
-                <div className="mt-2 space-y-0.5 text-xs text-slate-600">
-                  <p>Baseline v0.1: {formatNum(awayPA.baseline_expected_sot)}</p>
-                  <p>Impatto giocatori: {formatSignedNum(awayPA.player_adjustment)}</p>
-                  <p>Totale correzione: {formatSignedNum(awayPA.total_adjustment)}</p>
-                </div>
+                <p className="mt-1 text-xs text-slate-600">
+                  Baseline v0.1: {formatNum(awayB01)} <span className="text-slate-500">· Δ {formatSignedNum(awayDiff)}</span>
+                </p>
               )
-            ) : ap ? (
-              <p className="mt-1 text-xs text-slate-600">Baseline v0.1: {formatNum(ap.expected_sot)}</p>
-            ) : null}
-            {awayV03 ? (
-              <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
-                <p>Core SOT: {awayV03.core_sot_component != null ? formatNum(awayV03.core_sot_component) : '—'}</p>
-                <p>Volume: {awayV03.shot_volume_component != null ? formatNum(awayV03.shot_volume_component) : '—'}</p>
-                <p>Accuracy: {awayV03.shot_accuracy_component != null ? formatNum(awayV03.shot_accuracy_component) : '—'}</p>
-                <p>Forma: {awayV03.recent_form_component != null ? formatNum(awayV03.recent_form_component) : '—'}</p>
-                <p>Goal ctx: {awayV03.goals_context_component != null ? formatNum(awayV03.goals_context_component) : '—'}</p>
-              </div>
             ) : null}
           </div>
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-slate-700">{insight}</p>
         <p className="mt-3 text-xs text-slate-600">
           <Link
             to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
@@ -203,56 +109,35 @@ export function MatchCard({
         <details className="group rounded-2xl border border-slate-200 bg-slate-50/50">
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 marker:hidden [&::-webkit-details-marker]:hidden">
             <span className="flex items-center justify-between gap-2">
-              Perché è cambiata?
+              Perché cambia rispetto alla v0.1?
               <span className="text-xs font-normal text-slate-500 group-open:hidden">Apri</span>
               <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Chiudi</span>
             </span>
           </summary>
-          {homePA && awayPA ? (
-            <div className="space-y-2 border-t border-slate-200 px-4 py-4 text-sm text-slate-700">
-              <p>
-                {match.home_team.name}: Baseline {formatNum(homePA.baseline_expected_sot)} · Aggiustata{' '}
-                {formatNum(homePA.adjusted_expected_sot)} · Player impact {formatNum(homePA.player_adjustment)}
-              </p>
-              <p>
-                {match.away_team.name}: Baseline {formatNum(awayPA.baseline_expected_sot)} · Aggiustata{' '}
-                {formatNum(awayPA.adjusted_expected_sot)} · Player impact {formatNum(awayPA.player_adjustment)}
-              </p>
-              <p className="text-xs text-slate-600">
-                Totale match Baseline: {totalBaseline != null ? formatNum(totalBaseline) : '—'} · Totale match v0.2:{' '}
-                {totalAdjusted != null ? formatNum(totalAdjusted) : '—'}
-              </p>
-            </div>
-          ) : (
-            <div className="border-t border-slate-200 px-4 py-4 text-sm text-slate-600">
-              <p>Correzione v0.2 non disponibile per questa partita.</p>
-            </div>
-          )}
-        </details>
-      </div>
-
-      <div className="border-t border-slate-100 px-5 pb-5 sm:px-6">
-        <details className="group rounded-2xl border border-slate-200 bg-slate-50/50">
-          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 marker:hidden [&::-webkit-details-marker]:hidden">
-            <span className="flex items-center justify-between gap-2">
-              Dettaglio matematico baseline
-              <span className="text-xs font-normal text-slate-500 group-open:hidden">Apri</span>
-              <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Chiudi</span>
-            </span>
-          </summary>
-          <div className="space-y-6 border-t border-slate-200 px-4 py-4">
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{match.home_team.name}</p>
-              <BreakdownTable teamName={match.home_team.name} breakdown={hp?.calculation_breakdown} />
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{match.away_team.name}</p>
-              <BreakdownTable teamName={match.away_team.name} breakdown={ap?.calculation_breakdown} />
-            </div>
+          <div className="space-y-3 border-t border-slate-200 px-4 py-4 text-sm text-slate-700">
+            <p>
+              {match.home_team.name}: v0.1 {homeB01 != null ? formatNum(homeB01) : '—'} · attivo{' '}
+              {mainHome != null ? formatNum(mainHome) : '—'} · Δ {homeDiff != null ? formatSignedNum(homeDiff) : '—'}
+            </p>
+            <p>
+              {match.away_team.name}: v0.1 {awayB01 != null ? formatNum(awayB01) : '—'} · attivo{' '}
+              {mainAway != null ? formatNum(mainAway) : '—'} · Δ {awayDiff != null ? formatSignedNum(awayDiff) : '—'}
+            </p>
+            {home?.breakdown || away?.breakdown ? (
+              <details className="rounded-2xl border border-slate-200 bg-white p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-800">
+                  Breakdown (raw_json)
+                </summary>
+                <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-slate-50 p-3 text-[11px] text-slate-700">
+{JSON.stringify({ home: home?.breakdown ?? null, away: away?.breakdown ?? null }, null, 2)}
+                </pre>
+              </details>
+            ) : (
+              <p className="text-xs text-slate-600">Breakdown non disponibile per questo modello/fixture.</p>
+            )}
           </div>
         </details>
       </div>
-      <MatchDebugLayers match={match} playerAdjustedMatch={playerAdjustedMatch} usePlayerAdjustedView={usePlayerAdjustedView} />
       <p className="border-t border-slate-100 px-5 py-3 text-xs leading-relaxed text-slate-500 sm:px-6">
         {limitations.note}
       </p>

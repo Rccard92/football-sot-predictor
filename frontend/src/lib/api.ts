@@ -478,6 +478,58 @@ export type UpcomingMatchesResponse = {
   v02_available?: boolean
 }
 
+export type ModelStatusVersionRow = {
+  model_version: string
+  predictions_total: number
+  upcoming_predictions: number
+  avg_expected_sot: number | null
+  min_expected_sot: number | null
+  max_expected_sot: number | null
+  generated_at: string | null
+  is_available_for_upcoming: boolean
+}
+
+export type ModelStatusResponse = {
+  season: number
+  active_model_version: string
+  available_model_versions: ModelStatusVersionRow[]
+  recommended_model_version: string
+  warnings: string[]
+}
+
+export type UpcomingActiveSidePrediction = {
+  expected_sot: number
+  model_version: string
+  baseline_v01_expected_sot: number | null
+  difference_from_v01: number | null
+  breakdown: Record<string, unknown> | null
+}
+
+export type UpcomingActiveMatchRow = {
+  fixture_id: number
+  api_fixture_id: number
+  round: string | null
+  kickoff_at: string
+  status_short: string
+  home_team: UpcomingMatchTeam
+  away_team: UpcomingMatchTeam
+  model_version_used: string
+  home_prediction: UpcomingActiveSidePrediction | null
+  away_prediction: UpcomingActiveSidePrediction | null
+  total_expected_sot: number | null
+}
+
+export type UpcomingActiveResponse = {
+  season: number
+  model_version_used: string
+  recommended_model_version: string
+  round: string | null
+  matches_count: number
+  matches: UpcomingActiveMatchRow[]
+  model_limitations: ModelLimitations
+  warnings: string[]
+}
+
 export type UpcomingV02SidePrediction = {
   baseline_expected_sot: number
   adjusted_expected_sot: number
@@ -621,6 +673,24 @@ export async function getUpcomingPredictions(
   const q = p.toString()
   const path = `/api/predictions/sot/serie-a/${season}/upcoming${q ? `?${q}` : ''}`
   return requestJson<UpcomingMatchesResponse>(path)
+}
+
+export async function getModelStatus(season: number): Promise<ModelStatusResponse> {
+  const path = `/api/predictions/sot/serie-a/${season}/model-status`
+  return requestJson<ModelStatusResponse>(path)
+}
+
+export async function getUpcomingActive(
+  season: number,
+  opts?: { limit?: number; onlyNextRound?: boolean; modelVersion?: string | null },
+): Promise<UpcomingActiveResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/upcoming-active${q ? `?${q}` : ''}`
+  return requestJson<UpcomingActiveResponse>(path)
 }
 
 export async function buildUpcomingSotFeatures(season: number): Promise<unknown> {

@@ -341,3 +341,28 @@ Questa implementazione mantiene invariati:
 Per una vista completa e consultabile di **tutte** le variabili che il modello può valutare pre-partita (divise per aree e per mercato), vedi:
 
 - [`docs/MATCH_ANALYSIS_FRAMEWORK.md`](docs/MATCH_ANALYSIS_FRAMEWORK.md)
+
+## Modello attivo e versioni modello
+
+Per evitare ambiguità tra modelli disponibili e modello realmente usato in UI:
+
+- **v0.1**: `baseline_v0_1` — baseline storica squadra pura.
+- **v0.2**: `baseline_v0_2_player_adjusted` — correzione prudente “player impact” (se predictions presenti).
+- **v0.3**: `baseline_v0_3_core_sot` — core SOT evoluto (componenti salvate in `raw_json`).
+- **v0.4**: `baseline_v0_4_offensive_core_sot` — core offensivo migliorato (componente offensiva salvata in `raw_json`).
+
+### Regola Prossima Giornata (routing)
+
+La pagina **Prossima Giornata** deve usare gli endpoint di routing:
+
+- `GET /api/predictions/sot/serie-a/{season}/model-status`
+  - elenca quali `model_version` esistono davvero nel DB e la coverage sulle fixture upcoming
+  - restituisce `recommended_model_version` per preferenza (v0.4 > v0.3 > v0.2 > v0.1) **solo se** disponibile per upcoming
+- `GET /api/predictions/sot/serie-a/{season}/upcoming-active`
+  - restituisce la Prossima Giornata usando la versione selezionata (o la recommended se non specificata)
+  - include confronto con baseline v0.1 e differenza quando disponibili
+
+### Regola Audit Variabili (coerenza)
+
+La **Scheda Analisi Partita / Audit Variabili** deve mostrare variabili e componenti applicate al **modello attivo**.
+Se Audit e Prossima Giornata risultano su `model_version` diverse, la UI deve mostrare un warning per evitare confusione.

@@ -7,9 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.core.constants import BASELINE_SOT_MODEL_VERSION
+from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION,
+    BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
+    BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    FINISHED_STATUSES,
+)
 from app.core.database import get_db
-from app.models import Fixture, TeamSotPrediction
+from app.models import Fixture, Team, TeamSotPrediction
 from app.schemas.predictions import (
     EvaluateMatchSotLineBody,
     EvaluateMatchSotLineResponse,
@@ -35,6 +41,15 @@ from app.services.predictions_v04.offensive_core_sot_service import SotPredictio
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predictions/sot", tags=["predictions"])
+
+
+def _preferred_model_versions() -> list[str]:
+    return [
+        BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+        BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
+        BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
+        BASELINE_SOT_MODEL_VERSION,
+    ]
 
 
 @router.post("/serie-a/{season}/generate", response_model=None)
@@ -103,6 +118,288 @@ def sot_predictions_serie_a_upcoming(
         logger.warning("GET upcoming: DB error (%s)", exc.__class__.__name__, exc_info=True)
         raise HTTPException(status_code=503, detail="Database error") from exc
     return UpcomingMatchesResponse.model_validate(data)
+
+
+@router.get("/serie-a/{season}/model-status", response_model=None)
+def sot_predictions_serie_a_model_status(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Read-only: mostra quali model_version esistono davvero in `team_sot_predictions` per la stagione
+    e quali hanno coverage sulle fixture upcoming.
+    """
+    preferred = _preferred_model_versions()
+    warnings: list[str] = []
+    try:
+        # fixture upcoming: status non concluso
+        is_upcoming = ~Fixture.status.in_(FINISHED_STATUSES)
+
+        rows = db.execute(
+            select(
+                TeamSotPrediction.model_version,
+                func.count().label("predictions_total"),
+                func.sum(func.case((is_upcoming, 1), else_=0)).label("upcoming_predictions"),
+                func.avg(func.case((is_upcoming, TeamSotPrediction.predicted_sot), else_=None)).label("avg_expected_sot"),
+                func.min(func.case((is_upcoming, TeamSotPrediction.predicted_sot), else_=None)).label("min_expected_sot"),
+                func.max(func.case((is_upcoming, TeamSotPrediction.predicted_sot), else_=None)).label("max_expected_sot"),
+                func.max(TeamSotPrediction.updated_at).label("generated_at"),
+            )
+            .select_from(TeamSotPrediction)
+            .join(Fixture, Fixture.id == TeamSotPrediction.fixture_id)
+            .where(Fixture.season_id == select(Fixture.season_id).where(Fixture.season_id.isnot(None)).limit(1).scalar_subquery())  # no-op safety
+        )
+    except Exception:
+        rows = None
+
+    # We need real season_id; safest is to filter fixtures by league season year via existing Season table,
+    # but routes/predictions.py already uses services for season resolution. For status endpoint, reuse SotPredictionService season row.
+    from app.services.sot_prediction_service import SotPredictionService
+
+    svc = SotPredictionService()
+    try:
+        _league, season_row = svc._season_row(db, season)  # type: ignore[attr-defined]
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET model-status: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET model-status: errore inatteso (season lookup)")
+        raise HTTPException(status_code=500, detail="Errore inatteso") from exc
+
+    try:
+        is_upcoming = ~Fixture.status.in_(FINISHED_STATUSES)
+        agg = db.execute(
+            select(
+                TeamSotPrediction.model_version,
+                func.count().label("predictions_total"),
+                func.sum(func.case((is_upcoming, 1), else_=0)).label("upcoming_predictions"),
+                func.avg(func.case((is_upcoming, TeamSotPrediction.predicted_sot), else_=None)).label("avg_expected_sot"),
+                func.min(func.case((is_upcoming, TeamSotPrediction.predicted_sot), else_=None)).label("min_expected_sot"),
+                func.max(func.case((is_upcoming, TeamSotPrediction.predicted_sot), else_=None)).label("max_expected_sot"),
+                func.max(TeamSotPrediction.updated_at).label("generated_at"),
+            )
+            .select_from(TeamSotPrediction)
+            .join(Fixture, Fixture.id == TeamSotPrediction.fixture_id)
+            .where(Fixture.season_id == season_row.id)
+            .group_by(TeamSotPrediction.model_version)
+        ).all()
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET model-status: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET model-status: errore inatteso")
+        raise HTTPException(status_code=500, detail="Errore inatteso") from exc
+
+    by_version: dict[str, dict[str, Any]] = {}
+    for r in agg:
+        mv = str(r.model_version)
+        up_n = int(r.upcoming_predictions or 0)
+        by_version[mv] = {
+            "model_version": mv,
+            "predictions_total": int(r.predictions_total or 0),
+            "upcoming_predictions": up_n,
+            "avg_expected_sot": round(float(r.avg_expected_sot), 2) if r.avg_expected_sot is not None else None,
+            "min_expected_sot": round(float(r.min_expected_sot), 2) if r.min_expected_sot is not None else None,
+            "max_expected_sot": round(float(r.max_expected_sot), 2) if r.max_expected_sot is not None else None,
+            "generated_at": r.generated_at,
+            "is_available_for_upcoming": bool(up_n > 0),
+        }
+
+    available_list = [by_version[k] for k in preferred if k in by_version] + [v for k, v in by_version.items() if k not in preferred]
+
+    recommended = None
+    for mv in preferred:
+        row = by_version.get(mv)
+        if row and row.get("is_available_for_upcoming"):
+            recommended = mv
+            break
+    if recommended is None:
+        warnings.append("Nessuna prediction upcoming trovata: generare previsioni per almeno una model_version.")
+        recommended = preferred[-1]
+
+    # warnings for missing preferred
+    for mv in preferred:
+        if mv not in by_version:
+            warnings.append(f"Model version non presente in DB: {mv}")
+        elif not by_version[mv]["is_available_for_upcoming"]:
+            warnings.append(f"Model version senza coverage upcoming: {mv}")
+
+    return jsonable_encoder(
+        {
+            "season": int(season),
+            "active_model_version": recommended,
+            "available_model_versions": available_list,
+            "recommended_model_version": recommended,
+            "warnings": warnings,
+        }
+    )
+
+
+@router.get("/serie-a/{season}/upcoming-active", response_model=None)
+def sot_predictions_serie_a_upcoming_active(
+    season: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+    only_next_round: bool = Query(default=True),
+    model_version: str | None = Query(default=None),
+):
+    """
+    Upcoming matches usando il miglior modello disponibile (recommended) o quello richiesto.
+    Nessun ricalcolo: solo lettura `team_sot_predictions` + fallback per fixture.
+    """
+    preferred = _preferred_model_versions()
+
+    from app.services.sot_prediction_service import SotPredictionService, _fixture_round_display, default_model_limitations_dict  # type: ignore
+    from app.services.sot_feature_service import SotFeatureService
+
+    svc = SotPredictionService()
+    try:
+        _league, season_row = svc._season_row(db, season)  # type: ignore[attr-defined]
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET upcoming-active: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET upcoming-active: errore inatteso (season lookup)")
+        raise HTTPException(status_code=500, detail="Errore inatteso") from exc
+
+    feat_svc = SotFeatureService()
+    raw_upcoming = feat_svc.list_upcoming_fixtures_for_season(db, season_row.id)
+    upcoming = [f for f in raw_upcoming if (f.status or "").upper() not in FINISHED_STATUSES]
+    upcoming.sort(key=lambda f: (f.kickoff_at, f.id))
+    if only_next_round and upcoming:
+        r0 = _fixture_round_display(upcoming[0]) or upcoming[0].round
+        if r0:
+            upcoming = [f for f in upcoming if (_fixture_round_display(f) or f.round) == r0]
+        else:
+            d0 = upcoming[0].kickoff_at.date()
+            upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
+    upcoming = upcoming[: max(1, min(limit, 100))]
+
+    # determine recommended among preferred based on coverage upcoming
+    def has_any_upcoming(mv: str) -> bool:
+        if not upcoming:
+            return False
+        fx_ids = [int(f.id) for f in upcoming]
+        n = int(
+            db.scalar(
+                select(func.count())
+                .select_from(TeamSotPrediction)
+                .where(
+                    TeamSotPrediction.fixture_id.in_(fx_ids),
+                    TeamSotPrediction.model_version == mv,
+                    TeamSotPrediction.predicted_sot.isnot(None),
+                )
+            )
+            or 0
+        )
+        return n > 0
+
+    recommended = next((mv for mv in preferred if has_any_upcoming(mv)), BASELINE_SOT_MODEL_VERSION)
+    requested = model_version or recommended
+    warnings: list[str] = []
+    if model_version is None:
+        pass
+    elif requested not in preferred:
+        warnings.append(f"Model version richiesta non riconosciuta: {requested}. Uso fallback per fixture.")
+
+    fx_ids = [int(f.id) for f in upcoming]
+    team_ids = list({int(f.home_team_id) for f in upcoming} | {int(f.away_team_id) for f in upcoming})
+    teams = {t.id: t for t in db.scalars(select(Team).where(Team.id.in_(team_ids))).all()} if team_ids else {}
+
+    # preload predictions for these fixtures for all preferred versions + requested (if custom)
+    versions_to_load = list(dict.fromkeys([requested] + preferred))
+    preds = db.scalars(
+        select(TeamSotPrediction).where(
+            TeamSotPrediction.fixture_id.in_(fx_ids) if fx_ids else False,
+            TeamSotPrediction.model_version.in_(versions_to_load),
+        )
+    ).all()
+    pred_map: dict[tuple[int, int, str], TeamSotPrediction] = {
+        (int(p.fixture_id), int(p.team_id), str(p.model_version)): p for p in preds
+    }
+
+    def pick_match_version(fx: Fixture) -> str | None:
+        # try requested, then preferred: choose a single model version that exists for both teams
+        for mv in [requested] + [x for x in preferred if x != requested]:
+            ph = pred_map.get((int(fx.id), int(fx.home_team_id), mv))
+            pa = pred_map.get((int(fx.id), int(fx.away_team_id), mv))
+            if ph and ph.predicted_sot is not None and pa and pa.predicted_sot is not None:
+                return mv
+        return None
+
+    def baseline_v01(fx: Fixture, team_id: int) -> float | None:
+        row = pred_map.get((int(fx.id), int(team_id), BASELINE_SOT_MODEL_VERSION))
+        return float(row.predicted_sot) if row and row.predicted_sot is not None else None
+
+    matches: list[dict[str, Any]] = []
+    for fx in upcoming:
+        mv_used = pick_match_version(fx)
+        if mv_used is None:
+            warnings.append(f"Fixture {int(fx.id)}: nessuna prediction disponibile per nessuna model_version.")
+            mv_used = requested
+
+        def side(team_id: int) -> dict[str, Any] | None:
+            row = pred_map.get((int(fx.id), int(team_id), mv_used))
+            if row is None or row.predicted_sot is None:
+                return None
+            exp = float(row.predicted_sot)
+            b01 = baseline_v01(fx, team_id)
+            return {
+                "expected_sot": round(exp, 2),
+                "model_version": mv_used,
+                "baseline_v01_expected_sot": round(b01, 2) if b01 is not None else None,
+                "difference_from_v01": round(exp - b01, 2) if b01 is not None else None,
+                "breakdown": row.raw_json if isinstance(row.raw_json, dict) else None,
+            }
+
+        home = side(int(fx.home_team_id))
+        away = side(int(fx.away_team_id))
+        if home is None or away is None:
+            warnings.append(
+                f"Fixture {int(fx.id)}: model_version '{mv_used}' incompleta (home/away missing)."
+            )
+
+        total_exp = None
+        if home and away:
+            total_exp = round(float(home["expected_sot"]) + float(away["expected_sot"]), 2)
+
+        matches.append(
+            {
+                "fixture_id": int(fx.id),
+                "api_fixture_id": int(fx.api_fixture_id),
+                "round": fx.round,
+                "kickoff_at": fx.kickoff_at,
+                "status_short": fx.status,
+                "home_team": {
+                    "id": int(fx.home_team_id),
+                    "name": teams.get(int(fx.home_team_id)).name if int(fx.home_team_id) in teams else "",
+                    "logo_url": teams.get(int(fx.home_team_id)).logo_url if int(fx.home_team_id) in teams else None,
+                },
+                "away_team": {
+                    "id": int(fx.away_team_id),
+                    "name": teams.get(int(fx.away_team_id)).name if int(fx.away_team_id) in teams else "",
+                    "logo_url": teams.get(int(fx.away_team_id)).logo_url if int(fx.away_team_id) in teams else None,
+                },
+                "model_version_used": mv_used,
+                "home_prediction": home,
+                "away_prediction": away,
+                "total_expected_sot": total_exp,
+            }
+        )
+
+    round_label = _fixture_round_display(upcoming[0]) if upcoming else None
+    return jsonable_encoder(
+        {
+            "season": int(season),
+            "model_version_used": requested if model_version else recommended,
+            "recommended_model_version": recommended,
+            "round": round_label,
+            "matches_count": len(matches),
+            "matches": matches,
+            "model_limitations": default_model_limitations_dict(),
+            "warnings": warnings,
+        }
+    )
 
 
 @router.post("/evaluate-line", response_model=EvaluateSotLineResponse)

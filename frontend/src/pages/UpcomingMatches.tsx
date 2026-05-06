@@ -4,12 +4,11 @@ import {
   DEFAULT_SEASON,
   buildUpcomingSotFeatures,
   generateUpcomingSotPredictions,
-  getUpcomingPredictions,
-  getUpcomingV02PlayerAdjusted,
-  getUpcomingV03CoreSot,
+  getModelStatus,
+  getUpcomingActive,
   type ModelLimitations,
-  type UpcomingPlayerAdjustedResponse,
-  type UpcomingV03CoreSotResponse,
+  type ModelStatusResponse,
+  type UpcomingActiveResponse,
 } from '../lib/api'
 import { MatchCard } from '../components/upcoming'
 
@@ -18,43 +17,37 @@ const SEASON = DEFAULT_SEASON
 export function UpcomingMatches() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<Awaited<ReturnType<typeof getUpcomingPredictions>> | null>(null)
+  const [status, setStatus] = useState<ModelStatusResponse | null>(null)
+  const [data, setData] = useState<UpcomingActiveResponse | null>(null)
   const [buildBusy, setBuildBusy] = useState(false)
   const [predBusy, setPredBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
-  const [dataPlayerAdjusted, setDataPlayerAdjusted] = useState<UpcomingPlayerAdjustedResponse | null>(null)
-  const [dataV03, setDataV03] = useState<UpcomingV03CoreSotResponse | null>(null)
-  const [viewMode, setViewMode] = useState<'player_adjusted' | 'v01'>('player_adjusted')
-  const [paAvailable, setPaAvailable] = useState(false)
+  const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await getUpcomingPredictions(SEASON, { limit: 20, onlyNextRound: true })
-      const resPA = await getUpcomingV02PlayerAdjusted(SEASON, { limit: 20, onlyNextRound: true })
-      const resV03 = await getUpcomingV03CoreSot(SEASON, { limit: 20, onlyNextRound: true })
+      const s = await getModelStatus(SEASON)
+      setStatus(s)
+      const mv = selectedModel || s.recommended_model_version
+      if (!selectedModel) setSelectedModel(mv)
+      const res = await getUpcomingActive(SEASON, { limit: 20, onlyNextRound: true, modelVersion: mv })
       setData(res)
-      setDataPlayerAdjusted(resPA)
-      setDataV03(resV03)
-      setPaAvailable(resPA?.status === 'success' && (resPA.matches?.some((m) => Boolean(m.home && m.away)) ?? false))
     } catch (e) {
       setData(null)
-      setDataPlayerAdjusted(null)
-      setDataV03(null)
-      setPaAvailable(false)
+      setStatus(null)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [selectedModel])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const hasPredictions =
-    data?.matches?.some((m) => Boolean(m.home_prediction || m.away_prediction)) ?? false
+  const hasPredictions = data?.matches?.some((m) => Boolean(m.home_prediction && m.away_prediction)) ?? false
 
   const limitations: ModelLimitations =
     data?.model_limitations ?? {
@@ -64,7 +57,6 @@ export function UpcomingMatches() {
       note:
         'Questa versione baseline usa solo statistiche squadra storiche. Formazioni, assenze e quote bookmaker automatiche non sono ancora considerate.',
     }
-  const usePlayerAdjustedView = viewMode === 'player_adjusted' && Boolean(paAvailable)
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
@@ -73,8 +65,8 @@ export function UpcomingMatches() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Stime sui <strong>tiri in porta</strong> per le prossime partite. I numeri mostrati sono quelli della
-              versione <strong>live v0.2 Player Adjusted</strong>, con baseline v0.1 disponibile come confronto/debug.
+              Stime sui <strong>tiri in porta</strong> per le prossime partite. Questa pagina usa sempre il{' '}
+              <strong>modello attivo</strong> migliore disponibile nel DB, con confronto automatico vs baseline v0.1.
             </p>
           </div>
 
@@ -83,17 +75,25 @@ export function UpcomingMatches() {
               <p className="font-semibold text-slate-900">
                 Modello attivo:{' '}
                 <span className="font-normal text-slate-800">
-                  baseline_v0_2_player_adjusted
+                  {status?.active_model_version ?? '—'}
                 </span>
               </p>
-              <p>
-                Qualità dati: <span className="font-medium">Alta · 100/100</span>
-              </p>
-              <p>
-                Affidabilità previsione:{' '}
-                <span className="font-medium">Media · 78/100</span>
-                <span className="text-slate-500"> (stima prudenziale, non probabilità calibrata)</span>
-              </p>
+              <div className="pt-2">
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Seleziona modello</label>
+                <select
+                  value={selectedModel ?? status?.recommended_model_version ?? ''}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm"
+                >
+                  {(status?.available_model_versions ?? []).map((v) => (
+                    <option key={v.model_version} value={v.model_version}>
+                      {v.model_version}
+                      {v.model_version === status?.recommended_model_version ? ' (consigliato)' : ''}
+                      {v.is_available_for_upcoming ? '' : ' (no upcoming)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="space-y-2 text-xs text-slate-600">
               {data?.round ? (
@@ -109,28 +109,16 @@ export function UpcomingMatches() {
               </p>
             </div>
           </div>
-
-          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs">
-            <button
-              type="button"
-              className={`rounded-lg px-2 py-1 ${viewMode === 'v01' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
-              onClick={() => setViewMode('v01')}
-            >
-              Vista baseline v0.1 (confronto/debug)
-            </button>
-            <button
-              type="button"
-              className={`rounded-lg px-2 py-1 ${viewMode === 'player_adjusted' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
-              onClick={() => setViewMode('player_adjusted')}
-            >
-              Vista v0.2 Player Adjusted
-            </button>
-          </div>
         </header>
 
-        {!loading && !error && viewMode === 'player_adjusted' && !paAvailable ? (
+        {!loading && !error && data?.warnings?.length ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm">
-            La vista v0.2 Player Adjusted non è disponibile per questa giornata: sto mostrando la baseline v0.1 come fallback.
+            <p className="font-medium">Warning routing modello</p>
+            <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+              {data.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
           </div>
         ) : null}
 
@@ -216,9 +204,6 @@ export function UpcomingMatches() {
                 key={m.fixture_id}
                 match={m}
                 limitations={limitations}
-                playerAdjustedMatch={dataPlayerAdjusted?.matches.find((x) => x.fixture_id === m.fixture_id) ?? null}
-                v03CoreSotMatch={dataV03?.matches.find((x) => x.fixture_id === m.fixture_id) ?? null}
-                usePlayerAdjustedView={usePlayerAdjustedView}
               />
             ))}
 

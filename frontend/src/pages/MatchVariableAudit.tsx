@@ -7,6 +7,7 @@ import { PredictionAuditSummary } from '../components/audit/PredictionAuditSumma
 import { FrameworkLevelSection } from '../components/audit/FrameworkLevelSection'
 import { TechnicalAuditPanel } from '../components/audit/TechnicalAuditPanel'
 import type { AuditMode, AuditResponse, FixturesListItem, FixturesListResponse } from '../components/audit/types'
+import { DEFAULT_SEASON, getModelStatus, type ModelStatusResponse } from '../lib/api'
 
 function useQuery(): URLSearchParams {
   const { search } = useLocation()
@@ -27,6 +28,7 @@ export function MatchVariableAudit() {
   const [loadingAudit, setLoadingAudit] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<AuditResponse | null>(null)
+  const [modelStatus, setModelStatus] = useState<ModelStatusResponse | null>(null)
 
   useEffect(() => {
     const loadFixtures = async () => {
@@ -45,6 +47,17 @@ export function MatchVariableAudit() {
     }
     void loadFixtures()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const loadStatus = async () => {
+      try {
+        setModelStatus(await getModelStatus(DEFAULT_SEASON))
+      } catch {
+        setModelStatus(null)
+      }
+    }
+    void loadStatus()
   }, [])
 
   useEffect(() => {
@@ -97,6 +110,15 @@ export function MatchVariableAudit() {
           </div>
         ) : data ? (
           <>
+            {modelStatus?.active_model_version &&
+            data.active_model_version &&
+            modelStatus.active_model_version !== data.active_model_version ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm">
+                Attenzione: la pagina <strong>Prossima Giornata</strong> sta usando{' '}
+                <strong>{modelStatus.active_model_version}</strong>, ma questa scheda audit sta mostrando variabili per{' '}
+                <strong>{data.active_model_version}</strong>.
+              </div>
+            ) : null}
             <MatchAuditHero data={data} />
             <PredictionAuditSummary data={data} />
             <MainDriversPanel data={data} />
