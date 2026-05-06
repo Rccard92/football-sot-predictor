@@ -848,8 +848,19 @@ def generate_serie_a_predictions_v04_offensive_core_sot(
             ),
         )
     if summary.get("status") == "error":
+        # niente 500 generico: payload leggibile
         return JSONResponse(status_code=409, content=jsonable_encoder(summary))
-    return jsonable_encoder(summary)
+
+    # Normalizza output ai campi attesi dal caller (senza cambiare logica/calcoli)
+    payload = {
+        "status": "success",
+        "season": int(season),
+        "model_version": str(summary.get("model_version") or svc.model_version),
+        "upcoming_fixtures": int(summary.get("upcoming_fixtures_found") or 0),
+        "predictions_created_or_updated": int(summary.get("predictions_created_or_updated") or 0),
+        "errors": summary.get("errors") or [],
+    }
+    return JSONResponse(status_code=200, content=jsonable_encoder(payload))
 
 
 @router.get("/serie-a/{season}/upcoming-v04-offensive-core-sot", response_model=None)

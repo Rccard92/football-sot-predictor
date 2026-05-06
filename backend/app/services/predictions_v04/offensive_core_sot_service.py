@@ -53,10 +53,22 @@ class SotPredictionV04OffensiveCoreSotService:
     model_version = BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
 
     def _season_row(self, db: Session, season_year: int) -> tuple[League, Season]:
-        league = db.scalar(select(League).where(League.api_league_id == 135).order_by(League.id.asc()))
+        """
+        Lookup robusto (stesso intento degli altri servizi):
+        - prova Serie A per nome (ingestion)
+        - fallback su default_league_id da settings
+        """
+        from app.core.config import get_settings
+        from app.services.ingestion_service import IngestionService
+
+        league = db.scalar(select(League).where(League.name == IngestionService.SERIE_A_LEAGUE_NAME))
+        if league is None:
+            settings = get_settings()
+            league = db.scalar(select(League).where(League.api_league_id == settings.default_league_id))
         if league is None:
             raise ValueError("league_not_found")
-        season = db.scalar(select(Season).where(Season.league_id == league.id, Season.year == season_year))
+
+        season = db.scalar(select(Season).where(Season.league_id == league.id, Season.year == int(season_year)))
         if season is None:
             raise ValueError("season_not_found")
         return league, season
@@ -411,6 +423,50 @@ class SotPredictionV04OffensiveCoreSotService:
         )
         fixtures = db.scalars(q).all()
         upcoming = [f for f in fixtures if (f.status or "").upper() not in FINISHED_STATUSES][:limit]
+
+        if not upcoming:
+            return {
+                "status": "error",
+                "failed_step": "no_upcoming_fixtures",
+                "message": "Nessuna fixture upcoming trovata per la stagione richiesta.",
+                "details": f"season={int(season_year)} league_id={int(league.id)} season_id={int(season.id)}",
+                "partial_result": {"upcoming_fixtures_found": 0, "predictions_created_or_updated": 0, "errors": []},
+            }
+
+        # Dipendenza: baseline v0.1 deve esistere per tutte le fixture/team upcoming.
+        fx_ids = [int(f.id) for f in upcoming]
+        required = len(upcoming) * 2
+        baseline_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(TeamSotPrediction)
+                .where(
+                    TeamSotPrediction.fixture_id.in_(fx_ids),
+                    TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
+                    TeamSotPrediction.predicted_sot.isnot(None),
+                )
+            )
+            or 0
+        )
+        if baseline_count < required:
+            return {
+                "status": "error",
+                "failed_step": "missing_v01_predictions",
+                "message": "Prediction baseline v0.1 mancanti: genera v0.1 prima di v0.4.",
+                "details": f"required={required} found={baseline_count}",
+                "partial_result": {
+                    "upcoming_fixtures_found": len(upcoming),
+                    "predictions_created_or_updated": 0,
+                    "errors": [
+                        {
+                            "error": "missing_v01_prediction",
+                            "message": "Coverage baseline v0.1 insufficiente per upcoming.",
+                            "required": required,
+                            "found": baseline_count,
+                        }
+                    ],
+                },
+            }
 
         created = 0
         errors: list[dict[str, Any]] = []
