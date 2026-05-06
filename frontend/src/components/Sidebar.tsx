@@ -6,6 +6,7 @@ const nav = [
   { to: '/data-health', label: 'Data Health' },
   { to: '/backtest', label: 'Backtest' },
   { to: '/model-legend', label: 'Legenda Modello' },
+  { to: '/model-debug', label: 'Debug Modello' },
   { to: '/match-analysis-framework', label: 'Framework Analisi' },
   { to: '/match-variable-audit', label: 'Audit Variabili' },
   { to: '/admin', label: 'Admin' },

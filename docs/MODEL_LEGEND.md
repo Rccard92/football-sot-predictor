@@ -366,3 +366,45 @@ La pagina **Prossima Giornata** deve usare gli endpoint di routing:
 
 La **Scheda Analisi Partita / Audit Variabili** deve mostrare variabili e componenti applicate al **modello attivo**.
 Se Audit e Prossima Giornata risultano su `model_version` diverse, la UI deve mostrare un warning per evitare confusione.
+
+## Model Debug e confronto versioni
+
+Quando introduciamo una nuova `model_version` (es. v0.4), non è sostenibile verificare tutto “a mano” partita per partita.
+Il **Model Debug** serve a confrontare automaticamente i numeri tra versioni e a segnalare i match che richiedono audit manuale.
+
+### Cosa confrontiamo
+
+Per una singola fixture confrontiamo:
+
+- **casa**: `expected_sot` per ogni `model_version` disponibile
+- **trasferta**: `expected_sot` per ogni `model_version` disponibile
+- **totale match**: somma casa+trasferta (solo se entrambi i lati sono presenti per quel modello)
+
+La diagnosi principale è centrata su **v0.1 / v0.3 / v0.4** (baseline, core SOT, core offensivo).
+Le v0.2 sono mostrate se presenti, ma sono considerate secondarie per la diagnosi (possono introdurre layer specifici).
+
+### Stati (Stabile / Da controllare / Red flag)
+
+Regole iniziali (heuristiche, non probabilistiche):
+
+- **Stabile**: scostamenti piccoli rispetto alla baseline v0.1 e range ridotto tra modelli.
+- **Da controllare**: differenze moderate o segnali tecnici che riducono fiducia (fallback, cap, divergenza).
+- **Red flag**: scostamenti molto grandi (soprattutto sul totale match) o modelli fortemente discordanti.
+
+### Quando un modello è “troppo prudente” o “troppo aggressivo”
+
+- **Troppo prudente**: v0.4 scende rispetto a v0.3 di oltre ~0.50 SOT sul singolo lato, o riduce il totale match in modo anomalo.
+- **Troppo aggressivo**: v0.4 sale rispetto a v0.3 di oltre ~0.50 SOT sul singolo lato, o aumenta il totale match in modo anomalo.
+
+In questi casi il debug evidenzia un motivo umano (“possibile prudente/aggressivo”) e suggerisce audit.
+
+### Perché compare “fallback” o “cap applicato”
+
+Quando il breakdown (`raw_json`) indica:
+
+- **fallback usati**: alcuni input necessari non erano disponibili; il valore è calcolabile ma meno affidabile → stato almeno “Da controllare”.
+- **cap applicato**: il componente è stato limitato (clamp) per prudenza; è atteso, ma va verificato nei match più estremi → stato almeno “Da controllare”.
+
+### Endpoints di debug (read-only)
+
+- `GET /api/debug/sot/fixture/{fixture_id}/model-comparison`:\n  confronto completo su una fixture, con diagnosi automatica.\n  Query param: `include_raw=true` per includere anche `raw_json` (tecnico).\n- `GET /api/debug/sot/serie-a/{season}/model-comparison/upcoming`:\n  panoramica della prossima giornata, ordinata per criticità (red_flag → inspect → stable).

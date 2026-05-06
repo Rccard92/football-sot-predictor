@@ -96,12 +96,20 @@ export function MatchCard({
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-600">
-          <Link
-            to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
-            className="font-medium text-slate-700 underline"
-          >
-            Apri audit variabili
-          </Link>
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Link
+              to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
+              className="font-medium text-slate-700 underline"
+            >
+              Apri audit variabili
+            </Link>
+            <Link
+              to={`/model-debug?fixture_id=${match.fixture_id}`}
+              className="font-medium text-slate-700 underline"
+            >
+              Debug modello
+            </Link>
+          </span>
         </p>
       </div>
 

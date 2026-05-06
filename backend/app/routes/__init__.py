@@ -8,6 +8,7 @@ from app.routes import (
     admin_ingest,
     admin_refresh,
     backtest,
+    debug_sot,
     dashboard,
     features,
     health,
@@ -40,3 +41,4 @@ api_router.include_router(standings.router)
 api_router.include_router(match_context.router)
 api_router.include_router(model.router)
 api_router.include_router(match_analysis.router)
+api_router.include_router(debug_sot.router)
