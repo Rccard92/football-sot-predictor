@@ -87,6 +87,11 @@ class AuditVariable(BaseModel):
     component_weight: float | None = None
     component_breakdown: dict[str, Any] | None = None
 
+    # Layer semantics: variabile applicata a contesto/decisione, non alla formula numerica SOT
+    applied_to_model_layer: str | None = None
+    applied_to_direct_sot_formula: bool | None = None
+    applied_to_decision_context: bool | None = None
+
 
 class AuditSection(BaseModel):
     id: str

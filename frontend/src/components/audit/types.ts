@@ -58,6 +58,11 @@ export type AuditVariable = {
   component_value?: number | null
   component_weight?: number | null
   component_breakdown?: Record<string, unknown> | null
+
+  // layer semantics (opzionali)
+  applied_to_model_layer?: string | null
+  applied_to_direct_sot_formula?: boolean | null
+  applied_to_decision_context?: boolean | null
 }
 
 export type AuditSection = {

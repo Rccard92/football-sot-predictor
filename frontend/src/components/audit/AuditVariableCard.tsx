@@ -14,6 +14,7 @@ function labelForStatus(v: AuditVariable) {
   if (v.implementation_status === 'todo') return 'Da implementare'
   if (v.status === 'missing') return 'Mancante'
   if (v.implementation_status === 'debug_only') return 'Solo debug'
+  if (v.applied_to_model_layer === 'match_context') return 'Applicata al contesto'
   if (v.applied_to_active_model) return 'Applicata al calcolo'
   return 'Disponibile, non usata'
 }
@@ -41,6 +42,18 @@ export function AuditVariableCard({ v }: { v: AuditVariable }) {
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900 ring-1 ring-emerald-200">
                 Applicata al calcolo
               </span>
+            ) : null}
+            {v.applied_to_model_layer === 'match_context' ? (
+              <>
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-900 ring-1 ring-indigo-200">
+                  Applicata al contesto
+                </span>
+                {v.applied_to_direct_sot_formula === false ? (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
+                    Non applicata alla formula SOT
+                  </span>
+                ) : null}
+              </>
             ) : null}
             {v.component_weight != null ? (
               <span className="rounded-full bg-slate-900 px-2 py-0.5 font-medium text-white ring-1 ring-slate-900">

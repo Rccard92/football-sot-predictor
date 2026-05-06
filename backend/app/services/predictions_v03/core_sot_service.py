@@ -14,6 +14,7 @@ from app.core.constants import (
 )
 from app.models import Fixture, FixtureTeamStat, League, Season, TeamSotPrediction
 from app.services.sot_feature_math import fixture_key_before
+from app.services.match_context_service import MatchContextService
 
 logger = logging.getLogger(__name__)
 
@@ -669,6 +670,7 @@ class SotPredictionV03CoreSotService:
         by_fx_team_v01: dict[tuple[int, int], TeamSotPrediction] = {(int(p.fixture_id), int(p.team_id)): p for p in preds_v01}
 
         matches: list[dict[str, Any]] = []
+        ctx_svc = MatchContextService()
         for fx in fixtures:
             h_v03 = by_fx_team.get((int(fx.id), int(fx.home_team_id)))
             a_v03 = by_fx_team.get((int(fx.id), int(fx.away_team_id)))
@@ -693,6 +695,7 @@ class SotPredictionV03CoreSotService:
                     "breakdown": bd,
                 }
 
+            context_payload = ctx_svc.build_match_context(db, int(fx.id))
             matches.append(
                 {
                     "fixture_id": int(fx.id),
@@ -702,6 +705,11 @@ class SotPredictionV03CoreSotService:
                     "status_short": fx.status,
                     "home": side_payload(int(fx.home_team_id), h_v01, h_v03),
                     "away": side_payload(int(fx.away_team_id), a_v01, a_v03),
+                    "context_status": context_payload.get("context_status", "not_available"),
+                    "match_context": context_payload.get("match_context"),
+                    "home_team_context": context_payload.get("home_team_context"),
+                    "away_team_context": context_payload.get("away_team_context"),
+                    "season_phase_context": context_payload.get("season_phase_context"),
                 }
             )
 

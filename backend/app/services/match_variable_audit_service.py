@@ -27,6 +27,7 @@ from app.schemas.match_analysis import (
     MatchVariablesAuditResponse,
 )
 from app.services.sot_feature_math import fixture_key_before
+from app.services.match_context_service import MatchContextService, get_season_phase
 
 logger = logging.getLogger(__name__)
 
@@ -436,6 +437,10 @@ class MatchVariableAuditService:
         }
 
         # Base match data section
+        ctx_svc = MatchContextService()
+        ctx_payload = ctx_svc.build_match_context(db, fixture_id)
+        phase_ctx = get_season_phase(fx_block.round, season_year=0)
+
         base_vars: list[AuditVariable] = [
             self._var(
                 key="fixture_id",
@@ -455,6 +460,77 @@ class MatchVariableAuditService:
                 notes=None,
             ),
         ]
+
+        # Standings/context variable (applied to match_context layer, not direct SOT formula)
+        def standings_var() -> AuditVariable:
+            v = self._var(
+                key="standings_context",
+                label="Classifica attuale delle squadre (contesto)",
+                team_ctx=None,
+                value=None,
+                unit=None,
+                status="available" if ctx_payload.get("context_status") == "available" else "missing",
+                impl_status="implemented" if ctx_payload.get("context_status") == "available" else "partial",
+                applied_to_model=True,
+                weight=None,
+                weight_label=None,
+                source_table="standings_snapshots / standing_entries",
+                source_description="Ultimo snapshot standings disponibile per la stagione (Serie A).",
+                calculation=AuditCalculationBlock(
+                    formula="standings lookup + objective heuristics (no impact on expected_sot)",
+                    meta={
+                        "snapshot_at": ctx_payload.get("snapshot_at"),
+                        "home": ctx_payload.get("home_team_context"),
+                        "away": ctx_payload.get("away_team_context"),
+                        "match_context": ctx_payload.get("match_context"),
+                        "context_status": ctx_payload.get("context_status"),
+                    },
+                    result=None,
+                ),
+                sample_rows=[],
+                notes=(
+                    "Questa variabile non modifica direttamente i tiri in porta attesi, ma incide su rischio/avvisi e prudenza."
+                ),
+            )
+            v.applied_to_model_layer = "match_context"
+            v.applied_to_direct_sot_formula = False
+            v.applied_to_decision_context = True
+            v.display_in_main_audit = True
+            v.display_in_technical_audit = True
+            return v
+
+        def season_phase_var() -> AuditVariable:
+            v = self._var(
+                key="season_phase_context",
+                label="Fase della stagione (rischio contesto)",
+                team_ctx=None,
+                value=float(phase_ctx.get("round_number")) if phase_ctx.get("round_number") is not None else None,
+                unit="giornata",
+                status="available" if phase_ctx.get("phase_context_applied") else "missing",
+                impl_status="implemented" if phase_ctx.get("phase_context_applied") else "partial",
+                applied_to_model=True,
+                weight=None,
+                weight_label=None,
+                source_table="fixtures",
+                source_description="Derivata dal campo round della fixture.",
+                calculation=AuditCalculationBlock(
+                    formula="get_season_phase(round)",
+                    meta=phase_ctx,
+                    result=float(phase_ctx.get("round_number")) if phase_ctx.get("round_number") is not None else None,
+                ),
+                sample_rows=[],
+                notes=(
+                    "Questa variabile non modifica direttamente i tiri in porta attesi, ma aumenta o riduce la prudenza della previsione."
+                ),
+            )
+            v.applied_to_model_layer = "match_context"
+            v.applied_to_direct_sot_formula = False
+            v.applied_to_decision_context = True
+            v.display_in_main_audit = True
+            v.display_in_technical_audit = True
+            return v
+
+        base_vars += [standings_var(), season_phase_var()]
 
         # Offensive production sections (home/away) — season & last5/10
         def build_offense(team_ctx: TeamContext, season: dict[str, Any], last5: dict[str, Any], last10: dict[str, Any], team_priors: list[Fixture]) -> list[AuditVariable]:

@@ -1017,6 +1017,7 @@ class SotPredictionService:
                     "match_context": context_payload.get("match_context"),
                     "home_team_context": context_payload.get("home_team_context"),
                     "away_team_context": context_payload.get("away_team_context"),
+                    "season_phase_context": context_payload.get("season_phase_context"),
                 },
             )
 

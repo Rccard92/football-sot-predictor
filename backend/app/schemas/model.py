@@ -62,6 +62,9 @@ class MatchAnalysisFrameworkVariable(BaseModel):
     implementation_status: FrameworkImplementationStatus
     applied_now: bool
     notes: str | None = None
+    applied_layer: str | None = None
+    direct_formula_impact: bool | None = None
+    decision_context_impact: bool | None = None
 
 
 class MatchAnalysisFrameworkArea(BaseModel):

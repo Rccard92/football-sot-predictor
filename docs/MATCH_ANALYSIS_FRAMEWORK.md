@@ -65,8 +65,8 @@ Variabili strutturali: servono a collegare e contestualizzare tutto il resto (no
 | stadio | Stadio (se disponibile) | tutti | 20 | fixture API | da implementare | no | Non sempre stabile/affidabile |
 | competizione | Lega/competizione | tutti | 40 | league/season API/DB | implementata | sì | Serve per baseline/medie lega |
 | stato_partita | scheduled/live/finished | tutti | 60 | fixture API/DB | implementata | sì | Filtri e validazioni |
-| classifica_attuale | Posizione/punti correnti | tutti | 60 | standings API/DB | parzialmente implementata | parziale | Dipende disponibilità standings |
-| fase_stagione | inizio/metà/fine stagione | tutti | 60 | round + regole contesto | solo debug | no | Utile per volatilità/turnover |
+| classifica_attuale | Posizione/punti correnti | tutti | 60 | standings API/DB | implementata | sì | **Applicata al layer match_context/rischio** (non modifica direttamente expected_sot) |
+| fase_stagione | inizio/metà/fine stagione | tutti | 60 | round + regole contesto | implementata | sì | **Applicata al layer match_context/rischio** (non modifica direttamente expected_sot) |
 | tempo_al_kickoff | Ore/giorni dal kickoff | tutti | 30 | now() + kickoff | implementata | sì | Serve per distinguere pre-lineup vs official |
 
 ### 2) Produzione offensiva squadra
@@ -519,6 +519,12 @@ Per evitare confusione nella lettura:
 
 - **Disponibile**: la variabile è calcolabile/auditabile (può esistere nel payload) ma **non entra** nel modello attivo.
 - **Applicata al calcolo**: la variabile (o una **componente aggregata**) entra **direttamente** nella formula del **modello attivo**.
+
+### Variabile “applicata al contesto” (match_context) vs “applicata al calcolo”
+Alcune variabili non modificano il numero \(expected\_sot\), ma **cambiano la lettura e il rischio**:
+
+- **Applicata al contesto**: incide su `match_context`, `motivation_level`, `turnover_risk`, `late_season_risk`, `risk_flags` e `confidence_adjustment` (warning/prudenza/decisione), **senza** modificare la formula numerica SOT.
+- Esempi attuali: **Classifica attuale** e **Fase della stagione**.
 
 ### Componente applicata vs variabile di supporto
 Nella UI distinguiamo:
