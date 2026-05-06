@@ -7,7 +7,6 @@ import { Link } from 'react-router-dom'
 
 export function MatchCard({
   match,
-  limitations,
 }: {
   match: UpcomingActiveMatchRow
   limitations: ModelLimitations
@@ -103,12 +102,6 @@ export function MatchCard({
             >
               Apri audit variabili
             </Link>
-            <Link
-              to={`/model-debug?fixture_id=${match.fixture_id}`}
-              className="font-medium text-slate-700 underline"
-            >
-              Debug modello
-            </Link>
           </span>
         </p>
       </div>
@@ -131,24 +124,12 @@ export function MatchCard({
               {match.away_team.name}: v0.1 {awayB01 != null ? formatNum(awayB01) : '—'} · attivo{' '}
               {mainAway != null ? formatNum(mainAway) : '—'} · Δ {awayDiff != null ? formatSignedNum(awayDiff) : '—'}
             </p>
-            {home?.breakdown || away?.breakdown ? (
-              <details className="rounded-2xl border border-slate-200 bg-white p-3">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-800">
-                  Breakdown (raw_json)
-                </summary>
-                <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-slate-50 p-3 text-[11px] text-slate-700">
-{JSON.stringify({ home: home?.breakdown ?? null, away: away?.breakdown ?? null }, null, 2)}
-                </pre>
-              </details>
-            ) : (
-              <p className="text-xs text-slate-600">Breakdown non disponibile per questo modello/fixture.</p>
-            )}
+            <p className="text-xs text-slate-600">
+              Dettagli tecnici (variabili, pesi, contributi e formule) sono disponibili nella pagina <strong>Audit Variabili</strong>.
+            </p>
           </div>
         </details>
       </div>
-      <p className="border-t border-slate-100 px-5 py-3 text-xs leading-relaxed text-slate-500 sm:px-6">
-        {limitations.note}
-      </p>
     </article>
   )
 }

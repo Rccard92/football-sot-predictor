@@ -1,14 +1,17 @@
 import { NavLink } from 'react-router-dom'
 
-const nav = [
+const navMain = [
+  { to: '/match-analysis-framework', label: 'Framework Analisi' },
+  { to: '/match-variable-audit', label: 'Audit Variabili' },
   { to: '/', label: 'Prossima giornata' },
+] as const
+
+const navTech = [
+  { to: '/model-debug', label: 'Debug Modello' },
   { to: '/dashboard', label: 'Dashboard modello' },
   { to: '/data-health', label: 'Data Health' },
   { to: '/backtest', label: 'Backtest' },
   { to: '/model-legend', label: 'Legenda Modello' },
-  { to: '/model-debug', label: 'Debug Modello' },
-  { to: '/match-analysis-framework', label: 'Framework Analisi' },
-  { to: '/match-variable-audit', label: 'Audit Variabili' },
   { to: '/admin', label: 'Admin' },
 ] as const
 
@@ -29,13 +32,28 @@ export function Sidebar() {
         <p className="mt-1 text-base font-semibold text-slate-900">SOT Predictor</p>
         <p className="mt-0.5 text-xs text-slate-500">2025/26 · MVP</p>
       </div>
-      <nav className="flex flex-1 flex-col gap-0.5 p-3">
-        {nav.map((item) => (
-          <NavLink key={item.to} to={item.to} end={item.to === '/'} className={linkClass}>
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
+      <div className="flex flex-1 flex-col gap-3 p-3">
+        <nav className="flex flex-col gap-0.5">
+          {navMain.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.to === '/'} className={linkClass}>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="border-t border-slate-200/80 pt-3">
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Strumenti tecnici
+          </p>
+          <nav className="flex flex-col gap-0.5">
+            {navTech.map((item) => (
+              <NavLink key={item.to} to={item.to} className={linkClass}>
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      </div>
     </aside>
   )
 }

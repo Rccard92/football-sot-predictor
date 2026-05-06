@@ -9,20 +9,24 @@ import {
   type MatchAnalysisFrameworkVariable,
 } from '../lib/api'
 
-const statusLabel: Record<FrameworkImplementationStatus, string> = {
-  implementata: 'Implementata',
-  'parzialmente implementata': 'Parzialmente implementata',
-  'solo debug': 'Solo debug',
-  'da implementare': 'Da implementare',
-  'non disponibile': 'Non disponibile nel provider attuale',
+type RoadmapStatus =
+  | 'Applicata al modello'
+  | 'Disponibile, non usata'
+  | 'Da implementare'
+  | 'Non disponibile nel provider attuale'
+
+function roadmapStatusFor(v: MatchAnalysisFrameworkVariable): RoadmapStatus {
+  if (v.applied_now) return 'Applicata al modello'
+  if (v.implementation_status === 'da implementare') return 'Da implementare'
+  if (v.implementation_status === 'non disponibile') return 'Non disponibile nel provider attuale'
+  return 'Disponibile, non usata'
 }
 
-function statusBadgeClass(s: FrameworkImplementationStatus): string {
-  if (s === 'implementata') return 'bg-emerald-100 text-emerald-900 ring-emerald-200'
-  if (s === 'parzialmente implementata') return 'bg-blue-100 text-blue-900 ring-blue-200'
-  if (s === 'solo debug') return 'bg-slate-200 text-slate-800 ring-slate-300'
-  if (s === 'non disponibile') return 'bg-slate-100 text-slate-700 ring-slate-200'
-  return 'bg-amber-100 text-amber-950 ring-amber-200'
+function roadmapBadgeClass(s: RoadmapStatus): string {
+  if (s === 'Applicata al modello') return 'bg-emerald-50 text-emerald-900 ring-emerald-200'
+  if (s === 'Da implementare') return 'bg-amber-100 text-amber-950 ring-amber-200'
+  if (s === 'Non disponibile nel provider attuale') return 'bg-slate-100 text-slate-700 ring-slate-200'
+  return 'bg-slate-100 text-slate-700 ring-slate-200'
 }
 
 function weightBadgeClass(weight: number): string {
@@ -131,7 +135,7 @@ export function MatchAnalysisFramework() {
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Framework Analisi Partita</h1>
               <p className="mt-2 max-w-3xl text-sm text-slate-600">
-                Tutte le variabili che il modello può considerare prima di generare una previsione betting.
+                Roadmap completa delle variabili. Questa pagina <strong>non</strong> serve per decidere la previsione del singolo match.
               </p>
             </div>
             <div className="text-xs text-slate-600">
@@ -292,11 +296,11 @@ export function MatchAnalysisFramework() {
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                               <span
-                                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${statusBadgeClass(
-                                  v.implementation_status,
+                                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${roadmapBadgeClass(
+                                  roadmapStatusFor(v),
                                 )}`}
                               >
-                                {statusLabel[v.implementation_status]}
+                                {roadmapStatusFor(v)}
                               </span>
                               <span
                                 className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${weightBadgeClass(
@@ -305,15 +309,11 @@ export function MatchAnalysisFramework() {
                               >
                                 Peso {v.theoretical_weight}/100
                               </span>
-                              <span
-                                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${
-                                  v.applied_now
-                                    ? 'bg-emerald-50 text-emerald-900 ring-emerald-200'
-                                    : 'bg-slate-100 text-slate-700 ring-slate-200'
-                                }`}
-                              >
-                                {v.applied_now ? 'Applicata ora' : 'Non applicata ora'}
-                              </span>
+                              {v.implementation_status === 'solo debug' ? (
+                                <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-800 ring-1 ring-slate-300">
+                                  Solo debug
+                                </span>
+                              ) : null}
                             </div>
                           </div>
 

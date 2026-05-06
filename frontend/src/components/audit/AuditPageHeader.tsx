@@ -20,18 +20,18 @@ export function AuditPageHeader({
     <header className="pt-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Scheda Analisi Partita</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Audit Variabili</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            Audit leggibile delle variabili: output previsione, driver principali e livelli del framework.
+            Controllo centrale: mostra <strong>solo</strong> ciò che è <strong>applicato al calcolo</strong> del modello attivo.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-          <Link to="/match-analysis-framework" className="font-medium text-slate-700 underline">
-            Apri Framework Analisi completo
-          </Link>
-          <span className="text-slate-300">|</span>
           <Link to="/" className="font-medium text-slate-700 underline">
             Torna a Prossima giornata
+          </Link>
+          <span className="text-slate-300">|</span>
+          <Link to="/match-analysis-framework" className="font-medium text-slate-700 underline">
+            Framework Analisi (roadmap)
           </Link>
         </div>
       </div>

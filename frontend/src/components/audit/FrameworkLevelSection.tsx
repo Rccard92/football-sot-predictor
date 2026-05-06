@@ -15,7 +15,14 @@ function uniqueByKeyTeam(xs: AuditVariable[]): AuditVariable[] {
 
 export function FrameworkLevelSection({ data }: { data: AuditResponse }) {
   const mainVars = uniqueByKeyTeam(
-    data.sections.flatMap((s) => s.variables).filter((v) => Boolean(v.display_in_main_audit)),
+    data.sections
+      .flatMap((s) => s.variables)
+      .filter(
+        (v) =>
+          v.applied_to_active_model === true &&
+          v.is_supporting_variable !== true &&
+          v.display_in_main_audit !== false,
+      ),
   )
 
   return (

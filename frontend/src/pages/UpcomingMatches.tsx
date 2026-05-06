@@ -30,7 +30,7 @@ export function UpcomingMatches() {
     try {
       const s = await getModelStatus(SEASON)
       setStatus(s)
-      const mv = selectedModel || s.recommended_model_version
+      const mv = selectedModel || s.active_model_version || s.recommended_model_version
       if (!selectedModel) setSelectedModel(mv)
       const res = await getUpcomingActive(SEASON, { limit: 20, onlyNextRound: true, modelVersion: mv })
       setData(res)
@@ -58,6 +58,10 @@ export function UpcomingMatches() {
         'Questa versione baseline usa solo statistiche squadra storiche. Formazioni, assenze e quote bookmaker automatiche non sono ancora considerate.',
     }
 
+  const activeModel = status?.active_model_version ?? null
+  const modelInView = selectedModel ?? null
+  const isDifferentFromActive = Boolean(activeModel && modelInView && activeModel !== modelInView)
+
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
       <div className="mx-auto max-w-5xl space-y-8 px-4 sm:px-6">
@@ -65,8 +69,8 @@ export function UpcomingMatches() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Stime sui <strong>tiri in porta</strong> per le prossime partite. Questa pagina usa sempre il{' '}
-              <strong>modello attivo</strong> migliore disponibile nel DB, con confronto automatico vs baseline v0.1.
+              Qual è la previsione del <strong>modello attivo</strong> per le prossime partite (con confronto vs baseline
+              v0.1).
             </p>
           </div>
 
@@ -78,6 +82,14 @@ export function UpcomingMatches() {
                   {status?.active_model_version ?? '—'}
                 </span>
               </p>
+              {isDifferentFromActive ? (
+                <p className="text-xs text-slate-600">
+                  Modello in vista:{' '}
+                  <span className="font-medium text-slate-900">
+                    {modelInView}
+                  </span>
+                </p>
+              ) : null}
               <div className="pt-2">
                 <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Seleziona modello</label>
                 <select
@@ -102,24 +114,24 @@ export function UpcomingMatches() {
                   <span className="font-medium text-slate-900">{data.round}</span>
                 </p>
               ) : null}
-              <p>
-                <Link to="/model-legend" className="font-medium text-slate-700 underline">
-                  Come funziona il modello?
-                </Link>
+              <p className="text-xs text-slate-500">
+                Dettagli tecnici in <Link to="/match-variable-audit" className="font-medium text-slate-700 underline">Audit Variabili</Link> e in <Link to="/match-analysis-framework" className="font-medium text-slate-700 underline">Framework Analisi</Link>.
               </p>
             </div>
           </div>
         </header>
 
         {!loading && !error && data?.warnings?.length ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm">
-            <p className="font-medium">Warning routing modello</p>
+          <details className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm">
+            <summary className="cursor-pointer select-none font-medium">
+              Warning modello (tecnico)
+            </summary>
             <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
               {data.warnings.map((w, i) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
-          </div>
+          </details>
         ) : null}
 
         {error ? (
@@ -144,48 +156,55 @@ export function UpcomingMatches() {
               Non ci sono ancora previsioni sui tiri in porta per le partite programmate. Costruisci prima le
               informazioni statistiche sulle partite future, poi genera le previsioni.
             </p>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                disabled={buildBusy || predBusy}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                onClick={async () => {
-                  setBuildBusy(true)
-                  setActionMsg(null)
-                  try {
-                    await buildUpcomingSotFeatures(SEASON)
-                    setActionMsg('Dati aggiornati per le partite future.')
-                    await load()
-                  } catch (e) {
-                    setActionMsg(e instanceof Error ? e.message : String(e))
-                  } finally {
-                    setBuildBusy(false)
-                  }
-                }}
-              >
-                {buildBusy ? 'Caricamento…' : 'Costruisci dati partite future'}
-              </button>
-              <button
-                type="button"
-                disabled={buildBusy || predBusy}
-                className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
-                onClick={async () => {
-                  setPredBusy(true)
-                  setActionMsg(null)
-                  try {
-                    await generateUpcomingSotPredictions(SEASON)
-                    setActionMsg('Previsioni future generate.')
-                    await load()
-                  } catch (e) {
-                    setActionMsg(e instanceof Error ? e.message : String(e))
-                  } finally {
-                    setPredBusy(false)
-                  }
-                }}
-              >
-                {predBusy ? 'Caricamento…' : 'Genera previsioni future'}
-              </button>
-            </div>
+            <details className="mt-4 rounded-2xl border border-amber-200 bg-white/40">
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-amber-950 marker:hidden [&::-webkit-details-marker]:hidden">
+                Strumenti tecnici (build/generate)
+              </summary>
+              <div className="border-t border-amber-200 px-4 py-4">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    disabled={buildBusy || predBusy}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                    onClick={async () => {
+                      setBuildBusy(true)
+                      setActionMsg(null)
+                      try {
+                        await buildUpcomingSotFeatures(SEASON)
+                        setActionMsg('Dati aggiornati per le partite future.')
+                        await load()
+                      } catch (e) {
+                        setActionMsg(e instanceof Error ? e.message : String(e))
+                      } finally {
+                        setBuildBusy(false)
+                      }
+                    }}
+                  >
+                    {buildBusy ? 'Caricamento…' : 'Costruisci dati partite future'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={buildBusy || predBusy}
+                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
+                    onClick={async () => {
+                      setPredBusy(true)
+                      setActionMsg(null)
+                      try {
+                        await generateUpcomingSotPredictions(SEASON)
+                        setActionMsg('Previsioni future generate.')
+                        await load()
+                      } catch (e) {
+                        setActionMsg(e instanceof Error ? e.message : String(e))
+                      } finally {
+                        setPredBusy(false)
+                      }
+                    }}
+                  >
+                    {predBusy ? 'Caricamento…' : 'Genera previsioni future'}
+                  </button>
+                </div>
+              </div>
+            </details>
             {actionMsg ? <p className="mt-3 text-sm text-slate-800">{actionMsg}</p> : null}
           </div>
         ) : (
@@ -207,30 +226,9 @@ export function UpcomingMatches() {
               />
             ))}
 
-            <section className="space-y-4 border-t border-slate-200 pt-6">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-                  <p className="text-sm font-semibold text-emerald-950">Questa versione considera</p>
-                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">
-                    <li>Statistiche di squadra su partite già giocate</li>
-                    <li>Rendimento in casa e in trasferta</li>
-                    <li>Forma recente (ultime partite)</li>
-                    <li>Quanto l’avversario tende a concedere tiri in porta</li>
-                    <li>Correzioni v0.2 disponibili (giocatori / H2H / contesto), se calcolate</li>
-                  </ul>
-                </div>
-                <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-                  <p className="text-sm font-semibold text-amber-950">
-                    Questa versione non considera ancora pienamente
-                  </p>
-                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">
-                    <li>Formazioni ufficiali pre-partita</li>
-                    <li>Assenze/infortuni se i dati non sono affidabili</li>
-                    <li>Quote bookmaker importate automaticamente</li>
-                    <li>Altri fattori qualitativi non ancora integrati stabilmente</li>
-                  </ul>
-                </div>
-              </div>
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-600 shadow-sm">
+              <p className="font-semibold text-slate-900">Nota modello</p>
+              <p className="mt-1">{limitations.note}</p>
             </section>
           </div>
         )}
