@@ -1,10 +1,16 @@
+import logging
+
 from fastapi import APIRouter
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT
 from app.schemas.model import MatchAnalysisFrameworkResponse, ModelLegendResponse
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
 
 router = APIRouter(prefix="/model", tags=["model"])
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/legend", response_model=ModelLegendResponse)
@@ -642,53 +648,65 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
     Obiettivo: esporre una struttura consultabile delle variabili che il modello può valutare
     pre-partita per diversi mercati betting, senza modificare formule o prediction esistenti.
     """
-    # Nota: per questo step NON usiamo DB e NON salviamo configurazioni.
-    def wlabel(w: int) -> str:
-        if w >= 90:
-            return "Molto alta"
-        if w >= 70:
-            return "Alta"
-        if w >= 40:
-            return "Media"
-        if w >= 10:
-            return "Bassa"
-        return "Non applicata"
+    try:
+        # Nota: per questo step NON usiamo DB e NON salviamo configurazioni.
+        def wlabel(w: int) -> str:
+            if w >= 90:
+                return "Molto alta"
+            if w >= 70:
+                return "Alta"
+            if w >= 40:
+                return "Media"
+            if w >= 10:
+                return "Bassa"
+            return "Non applicata"
 
-    def v(
-        *,
-        area: str,
-        key: str,
-        name: str,
-        description: str,
-        markets: list[str],
-        weight: int,
-        data_source: str,
-        status: str,
-        applied_now: bool,
-        notes: str | None = None,
-    ) -> dict:
-        return {
-            "area": area,
-            "key": key,
-            "name": name,
-            "description": description,
-            "impacted_markets": markets,
-            "theoretical_weight": int(weight),
-            "weight_label": wlabel(int(weight)),
-            "data_source": data_source,
-            "implementation_status": status,
-            "applied_now": bool(applied_now),
-            "notes": notes,
-        }
+        def v(
+            *,
+            area: str,
+            key: str,
+            name: str,
+            description: str,
+            markets: list[str],
+            weight: int,
+            data_source: str,
+            status: str,
+            applied_now: bool,
+            notes: str | None = None,
+            applied_layer: str | None = None,
+            direct_formula_impact: bool = False,
+            decision_context_impact: bool = False,
+            applied_to_model_versions: list[str] | None = None,
+            **extra_fields,
+        ) -> dict:
+            payload: dict = {
+                "area": area,
+                "key": key,
+                "name": name,
+                "description": description,
+                "impacted_markets": markets,
+                "theoretical_weight": int(weight),
+                "weight_label": wlabel(int(weight)),
+                "data_source": data_source,
+                "implementation_status": status,
+                "applied_now": bool(applied_now),
+                "notes": notes,
+                "applied_layer": applied_layer,
+                "direct_formula_impact": bool(direct_formula_impact),
+                "decision_context_impact": bool(decision_context_impact),
+                "applied_to_model_versions": list(applied_to_model_versions or []),
+            }
+            payload.update(extra_fields)
+            return payload
 
-    all_markets = ["tiri_in_porta", "tiri_totali", "corner", "cartellini", "falli", "goal_over_under"]
+        all_markets = ["tiri_in_porta", "tiri_totali", "corner", "cartellini", "falli", "goal_over_under"]
 
-    return MatchAnalysisFrameworkResponse(
-        title="Match Analysis Framework",
-        description=(
-            "Struttura consultabile delle variabili che il modello può considerare per analizzare una partita "
-            "prima di generare una previsione betting. Versione documentale/static."
-        ),
+        return MatchAnalysisFrameworkResponse(
+            title="Match Analysis Framework",
+            description=(
+                "Struttura consultabile delle variabili che il modello può considerare per analizzare una partita "
+                "prima di generare una previsione betting. Versione documentale/static."
+            ),
         version="framework_v0_1",
         areas=[
             {
@@ -1628,3 +1646,12 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
             "description": "In futuro i pesi potranno essere modificati da frontend e salvati come configurazione modello.",
         },
     )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Errore durante build Match Analysis Framework")
+        payload = {
+            "status": "error",
+            "message": "Errore durante il caricamento del Match Analysis Framework.",
+            "failed_step": "build_framework_payload",
+            "details": str(exc),
+        }
+        return JSONResponse(status_code=500, content=jsonable_encoder(payload))
