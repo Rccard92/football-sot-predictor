@@ -33,8 +33,6 @@ class TeamContext:
     team_id: int
     team_name: str
     is_home: bool
-    opponent_id: int
-    opponent_name: str
 
 
 def _safe_float(x: Any) -> float | None:
@@ -116,19 +114,22 @@ class MatchVariableAuditService:
         src = fixtures[-limit:] if limit is not None else fixtures
         out: list[AuditSampleRow] = []
         for f in src:
-            st_team = stats_map.get((int(f.id), team_ctx.team_id))
-            st_opp = stats_map.get((int(f.id), team_ctx.opponent_id))
+            team_id = team_ctx.team_id
+            opp_id = int(f.away_team_id) if int(f.home_team_id) == team_id else int(f.home_team_id)
+            opp_team = db.get(Team, opp_id)
+            opp_name = opp_team.name if opp_team else "Avversario non mappato"
+
+            st_team = stats_map.get((int(f.id), team_id))
+            st_opp = stats_map.get((int(f.id), opp_id))
             # goals for/against from fixture by side
-            if f.home_team_id == team_ctx.team_id:
+            if int(f.home_team_id) == team_id:
                 gf = f.goals_home
                 ga = f.goals_away
                 side: Literal["home", "away"] = "home"
-                opp_name = team_ctx.opponent_name
             else:
                 gf = f.goals_away
                 ga = f.goals_home
                 side = "away"
-                opp_name = team_ctx.opponent_name
 
             out.append(
                 AuditSampleRow(
@@ -139,7 +140,7 @@ class MatchVariableAuditService:
                     team=team_ctx.team_name,
                     team_id=team_ctx.team_id,
                     opponent=opp_name,
-                    opponent_id=team_ctx.opponent_id,
+                    opponent_id=opp_id,
                     side=side,
                     shots_on_target=int(st_team.shots_on_target) if st_team and st_team.shots_on_target is not None else None,
                     total_shots=int(st_team.total_shots) if st_team and st_team.total_shots is not None else None,
@@ -173,8 +174,10 @@ class MatchVariableAuditService:
         goals_against_n = 0
 
         for f in fixtures:
-            st_team = stats_map.get((int(f.id), team_ctx.team_id))
-            st_opp = stats_map.get((int(f.id), team_ctx.opponent_id))
+            team_id = team_ctx.team_id
+            opp_id = int(f.away_team_id) if int(f.home_team_id) == team_id else int(f.home_team_id)
+            st_team = stats_map.get((int(f.id), team_id))
+            st_opp = stats_map.get((int(f.id), opp_id))
 
             if st_team and st_team.shots_on_target is not None:
                 sot_for_sum += int(st_team.shots_on_target)
@@ -192,7 +195,7 @@ class MatchVariableAuditService:
                 shots_against_n += 1
 
             # goals: from fixture score by side
-            if f.home_team_id == team_ctx.team_id:
+            if int(f.home_team_id) == team_id:
                 gf = f.goals_home
                 ga = f.goals_away
             else:
@@ -307,9 +310,9 @@ class MatchVariableAuditService:
         prior_ids = [int(f.id) for f in completed_priors]
         stats_map = self._team_stats_map(db, prior_ids)
 
-        # Build per-team contexts (opponent fixed to the fixture opponent)
-        home_ctx = TeamContext(team_id=int(home.id), team_name=home.name, is_home=True, opponent_id=int(away.id), opponent_name=away.name)
-        away_ctx = TeamContext(team_id=int(away.id), team_name=away.name, is_home=False, opponent_id=int(home.id), opponent_name=home.name)
+        # Context team-level (l’avversario varia per ogni fixture storica)
+        home_ctx = TeamContext(team_id=int(home.id), team_name=home.name, is_home=True)
+        away_ctx = TeamContext(team_id=int(away.id), team_name=away.name, is_home=False)
 
         # Filter priors by team involvement
         home_team_priors = [f for f in completed_priors if int(f.home_team_id) == home_ctx.team_id or int(f.away_team_id) == home_ctx.team_id]
@@ -361,6 +364,14 @@ class MatchVariableAuditService:
             notes: str | None = None,
         ) -> AuditVariable:
             st = "available" if value is not None else "missing"
+            meta = {
+                **(meta or {}),
+                "sample_rows_count": len(sample),
+                "sample_rows_note": (
+                    "Le righe mostrate sono solo un campione per controllo manuale. "
+                    "Il calcolo usa tutte le partite indicate in matches_count."
+                ),
+            }
             calc = AuditCalculationBlock(formula=formula, meta=meta, result=value)
             return self._var(
                 key=key,

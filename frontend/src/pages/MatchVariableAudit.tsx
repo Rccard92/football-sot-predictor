@@ -355,9 +355,12 @@ export function MatchVariableAudit() {
                           {v.sample_rows?.length ? (
                             <details className="mt-3 rounded-xl border border-slate-200 bg-white">
                               <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-slate-800 marker:hidden [&::-webkit-details-marker]:hidden">
-                                Vedi partite considerate ({v.sample_rows.length})
+                                Vedi esempio partite considerate (ultime {v.sample_rows.length})
                               </summary>
                               <div className="border-t border-slate-200 p-3">
+                                <p className="mb-3 text-xs text-slate-600">
+                                  Il calcolo usa tutte le partite valide: <strong>{String((v.calculation?.meta as any)?.matches_count ?? '—')}</strong>. Qui ne vengono mostrate solo {v.sample_rows.length} per comodità.
+                                </p>
                                 <div className="overflow-x-auto">
                                   <table className="min-w-full text-left text-xs">
                                     <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-600">
