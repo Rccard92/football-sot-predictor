@@ -7,12 +7,14 @@ export function AuditPageHeader({
   onFixtureChange,
   mode,
   onModeChange,
+  activeModelVersion,
 }: {
   fixtures: FixturesListItem[]
   fixtureId: number | null
   onFixtureChange: (fixtureId: number) => void
   mode: AuditMode
   onModeChange: (mode: AuditMode) => void
+  activeModelVersion: string | null
 }) {
   return (
     <header className="pt-4 space-y-3">
@@ -68,6 +70,12 @@ export function AuditPageHeader({
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-600">
             Mercato: <span className="font-medium text-slate-800">Tiri in porta</span>
+          </p>
+          <p className="text-xs text-slate-600">
+            Modello attivo:{' '}
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-800 ring-1 ring-slate-200">
+              {activeModelVersion ?? '—'}
+            </span>
           </p>
           <p className="text-xs text-slate-600">
             {mode === 'pre_match' ? (

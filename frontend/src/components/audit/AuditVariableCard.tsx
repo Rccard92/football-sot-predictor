@@ -14,8 +14,8 @@ function labelForStatus(v: AuditVariable) {
   if (v.implementation_status === 'todo') return 'Da implementare'
   if (v.status === 'missing') return 'Mancante'
   if (v.implementation_status === 'debug_only') return 'Solo debug'
-  if (v.applied_to_model) return 'Applicata al modello'
-  return 'Disponibile'
+  if (v.applied_to_active_model) return 'Applicata al calcolo'
+  return 'Disponibile, non usata'
 }
 
 export function AuditVariableCard({ v }: { v: AuditVariable }) {
@@ -37,14 +37,29 @@ export function AuditVariableCard({ v }: { v: AuditVariable }) {
             {fmtNum(v.value)} {v.unit ? <span className="text-base font-medium text-slate-600">{v.unit}</span> : null}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-            {v.applied_to_model ? (
+            {v.applied_to_active_model ? (
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900 ring-1 ring-emerald-200">
-                Applicata
+                Applicata al calcolo
               </span>
             ) : null}
-            {v.weight_label ? (
+            {v.component_weight != null ? (
+              <span className="rounded-full bg-slate-900 px-2 py-0.5 font-medium text-white ring-1 ring-slate-900">
+                Peso {Math.round(v.component_weight * 100)}%
+              </span>
+            ) : v.weight_label ? (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
                 Peso {v.weight_label}
+              </span>
+            ) : null}
+            {v.applied_to_model_versions?.length ? (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
+                {v.applied_to_model_versions.includes('baseline_v0_3_core_sot')
+                  ? 'Modello v0.3'
+                  : v.applied_to_model_versions.includes('baseline_v0_2_player_adjusted')
+                    ? 'Modello v0.2'
+                    : v.applied_to_model_versions.includes('baseline_v0_1')
+                      ? 'Modello v0.1'
+                      : 'Modello'}
               </span>
             ) : null}
             {v.source_table ? (

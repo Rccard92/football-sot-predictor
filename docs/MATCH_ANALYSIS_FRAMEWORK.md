@@ -514,6 +514,22 @@ Per evitare ambiguità:
 - **`sample_rows`**: solo un **campione** (tipicamente ultime 10) per controllo manuale.
 - La UI deve dichiarare sempre che il campione mostrato **non** coincide necessariamente con il dataset di calcolo.
 
+### Variabile “disponibile” vs variabile “applicata”
+Per evitare confusione nella lettura:
+
+- **Disponibile**: la variabile è calcolabile/auditabile (può esistere nel payload) ma **non entra** nel modello attivo.
+- **Applicata al calcolo**: la variabile (o una **componente aggregata**) entra **direttamente** nella formula del **modello attivo**.
+
+### Componente applicata vs variabile di supporto
+Nella UI distinguiamo:
+
+- **Componenti applicate** (vista principale): blocchi aggregati che hanno un **peso** esplicito nella formula del modello attivo (es. v0.3: Core SOT, Volume tiri, Precisione, Forma recente, Goal context).
+- **Variabili di supporto** (solo dettaglio tecnico / audit completo): input e sotto-variabili usate per costruire una componente (es. medie, split, ratio), ma che non devono diventare 20 card “Disponibile” nella vista principale.
+
+### Regola UI: vista principale vs audit completo
+- **Vista principale**: mostra **solo** ciò che impatta il **modello attivo**.
+- **Audit completo (chiuso di default)**: mostra anche dati disponibili **non usati**, variabili debug, roadmap e dettagli tecnici.
+
 ### Obiettivo
 - verificare che le variabili siano calcolate con i **dati corretti**
 - vedere **formula**, **fonte**, **partite considerate** e note anti‑leakage

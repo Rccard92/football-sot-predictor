@@ -56,68 +56,58 @@ export function fmtSigned(n: number | null | undefined, maxFrac = 2): string {
 }
 
 export function buildMainDrivers(data: AuditResponse): MainDriver[] {
+  const drivers: MainDriver[] = []
+  const active = data.active_model_version ?? null
   const fx = data.fixture
   const idx = idxVars(data)
 
-  const drivers: MainDriver[] = []
-
-  const paHome = pickTeamVar(idx, 'player_adjustment', fx.home_team.id)
-  const paAway = pickTeamVar(idx, 'player_adjustment', fx.away_team.id)
-  const paHomeVal = paHome?.value ?? null
-  const paAwayVal = paAway?.value ?? null
-
-  if (paHomeVal != null && paHomeVal !== 0) {
-    drivers.push({
-      id: 'player_adj_home',
-      title: `${fx.home_team.name}: player impact ${fmtSigned(paHomeVal)}`,
-      direction: paHomeVal > 0 ? 'increase' : 'decrease',
-      impact: Math.abs(paHomeVal) >= 0.25 ? 'alto' : Math.abs(paHomeVal) >= 0.1 ? 'medio' : 'basso',
-      explanation:
-        'Correzione v0.2 player adjusted basata sulla forza dei top shooter (rosa), non sulla formazione ufficiale.',
-    })
-  }
-  if (paAwayVal != null && paAwayVal !== 0) {
-    drivers.push({
-      id: 'player_adj_away',
-      title: `${fx.away_team.name}: player impact ${fmtSigned(paAwayVal)}`,
-      direction: paAwayVal > 0 ? 'increase' : 'decrease',
-      impact: Math.abs(paAwayVal) >= 0.25 ? 'alto' : Math.abs(paAwayVal) >= 0.1 ? 'medio' : 'basso',
-      explanation:
-        'Correzione v0.2 player adjusted basata sulla forza dei top shooter (rosa), non sulla formazione ufficiale.',
-    })
+  if (active === 'baseline_v0_3_core_sot') {
+    const keys: Array<{ k: string; title: string; w: DriverImpact }> = [
+      { k: 'v03_component_core_sot', title: 'Core SOT diretto', w: 'alto' },
+      { k: 'v03_component_shot_volume', title: 'Volume tiri', w: 'medio' },
+      { k: 'v03_component_shot_accuracy', title: 'Precisione tiro', w: 'basso' },
+      { k: 'v03_component_recent_form', title: 'Forma recente', w: 'basso' },
+      { k: 'v03_component_goals_context', title: 'Goal context', w: 'basso' },
+    ]
+    for (const def of keys) {
+      const hv = pickTeamVar(idx, def.k, fx.home_team.id)?.value ?? null
+      const av = pickTeamVar(idx, def.k, fx.away_team.id)?.value ?? null
+      drivers.push({
+        id: `v03_${def.k}`,
+        title: `${def.title}: ${fx.home_team.name} ${fmtNum(hv)} · ${fx.away_team.name} ${fmtNum(av)}`,
+        direction: 'info',
+        impact: def.w,
+        explanation: 'Componente applicata al calcolo v0.3 (valori in scala SOT attesi).',
+      })
+    }
+    return drivers
   }
 
-  const trendHome = pickTeamVar(idx, 'trend_last5_vs_season_sot_for', fx.home_team.id)?.notes ?? null
-  if (trendHome && trendHome !== 'missing') {
-    drivers.push({
-      id: 'trend_home',
-      title: `${fx.home_team.name}: forma SOT ultime 5 ${trendHome.replace('_', ' ')}`,
-      direction: trendHome === 'sopra_media' ? 'increase' : trendHome === 'sotto_media' ? 'decrease' : 'neutral',
-      impact: trendHome === 'sopra_media' || trendHome === 'sotto_media' ? 'medio' : 'basso',
-      explanation: 'Confronto last5 vs media stagione (soglia ±5%).',
-    })
+  if (active === 'baseline_v0_2_player_adjusted') {
+    const paHome = pickTeamVar(idx, 'player_adjustment', fx.home_team.id)?.value ?? null
+    const paAway = pickTeamVar(idx, 'player_adjustment', fx.away_team.id)?.value ?? null
+    if (paHome != null && paHome !== 0) {
+      drivers.push({
+        id: 'player_adj_home',
+        title: `${fx.home_team.name}: player impact ${fmtSigned(paHome)}`,
+        direction: paHome > 0 ? 'increase' : 'decrease',
+        impact: Math.abs(paHome) >= 0.25 ? 'alto' : Math.abs(paHome) >= 0.1 ? 'medio' : 'basso',
+        explanation: 'Correzione applicata nel modello v0.2 player adjusted.',
+      })
+    }
+    if (paAway != null && paAway !== 0) {
+      drivers.push({
+        id: 'player_adj_away',
+        title: `${fx.away_team.name}: player impact ${fmtSigned(paAway)}`,
+        direction: paAway > 0 ? 'increase' : 'decrease',
+        impact: Math.abs(paAway) >= 0.25 ? 'alto' : Math.abs(paAway) >= 0.1 ? 'medio' : 'basso',
+        explanation: 'Correzione applicata nel modello v0.2 player adjusted.',
+      })
+    }
+    return drivers
   }
 
-  const trendAway = pickTeamVar(idx, 'trend_last5_vs_season_sot_for', fx.away_team.id)?.notes ?? null
-  if (trendAway && trendAway !== 'missing') {
-    drivers.push({
-      id: 'trend_away',
-      title: `${fx.away_team.name}: forma SOT ultime 5 ${trendAway.replace('_', ' ')}`,
-      direction: trendAway === 'sopra_media' ? 'increase' : trendAway === 'sotto_media' ? 'decrease' : 'neutral',
-      impact: trendAway === 'sopra_media' || trendAway === 'sotto_media' ? 'medio' : 'basso',
-      explanation: 'Confronto last5 vs media stagione (soglia ±5%).',
-    })
-  }
-
-  // Nota trasparente: layer motivation non applicato in questo mercato audit
-  drivers.push({
-    id: 'motivation_info',
-    title: 'Contesto/motivazione: non applicato (audit SOT)',
-    direction: 'info',
-    impact: 'basso',
-    explanation: 'Il layer motivation/context è gestito come warning/roadmap e non entra nel calcolo SOT in questo step.',
-  })
-
+  // baseline_v0_1: driver “tecnici” (solo informativi)
   return drivers
 }
 

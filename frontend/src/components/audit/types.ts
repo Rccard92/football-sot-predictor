@@ -45,6 +45,19 @@ export type AuditVariable = {
   calculation: { formula: string; meta?: Record<string, unknown> | null; result?: number | null } | null
   sample_rows: AuditSampleRow[]
   notes: string | null
+
+  // UI/audit metadata (opzionali e retrocompatibili)
+  active_model_version?: string | null
+  applied_to_active_model?: boolean | null
+  applied_to_model_versions?: string[] | null
+  is_supporting_variable?: boolean | null
+  parent_component_key?: string | null
+  parent_component_label?: string | null
+  display_in_main_audit?: boolean | null
+  display_in_technical_audit?: boolean | null
+  component_value?: number | null
+  component_weight?: number | null
+  component_breakdown?: Record<string, unknown> | null
 }
 
 export type AuditSection = {
@@ -68,6 +81,7 @@ export type AuditResponse = {
     home_team_expected_sot_v02: number | null
     away_team_expected_sot_v02: number | null
   }
+  active_model_version?: string | null
 }
 
 export type FixturesListItem = {

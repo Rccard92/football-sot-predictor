@@ -19,6 +19,7 @@ export function VariableDetailDrawer({ v }: { v: AuditVariable }) {
   const sum = metaNum(meta, 'sum')
   const sampleRowsCount = metaNum(meta, 'sample_rows_count') ?? v.sample_rows.length
   const sampleRowsNote = metaStr(meta, 'sample_rows_note')
+  const includesKeys = (v.component_breakdown as any)?.includes_variable_keys as string[] | undefined
 
   return (
     <details className="mt-3 rounded-2xl border border-slate-200 bg-white">
@@ -54,6 +55,21 @@ export function VariableDetailDrawer({ v }: { v: AuditVariable }) {
               <span className="text-slate-500">Descrizione:</span> {v.source_description ?? '—'}
             </p>
             {v.notes ? <p className="mt-2 text-[11px] text-slate-600">{v.notes}</p> : null}
+            {Array.isArray(includesKeys) && includesKeys.length ? (
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Include (sottovariabili)</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  {includesKeys.map((k) => (
+                    <span
+                      key={k}
+                      className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 ring-1 ring-slate-200"
+                    >
+                      {k}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 

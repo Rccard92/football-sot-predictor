@@ -81,6 +81,7 @@ export function MatchVariableAudit() {
           onFixtureChange={(id) => setFixtureId(id)}
           mode={mode}
           onModeChange={(m) => setMode(m)}
+          activeModelVersion={data?.active_model_version ?? null}
         />
 
         {error ? (

@@ -74,6 +74,19 @@ class AuditVariable(BaseModel):
     sample_rows: list[AuditSampleRow] = []
     notes: str | None = None
 
+    # UI/audit metadata (retrocompatibili: opzionali)
+    active_model_version: str | None = None
+    applied_to_active_model: bool | None = None
+    applied_to_model_versions: list[str] | None = None
+    is_supporting_variable: bool | None = None
+    parent_component_key: str | None = None
+    parent_component_label: str | None = None
+    display_in_main_audit: bool | None = None
+    display_in_technical_audit: bool | None = None
+    component_value: float | None = None
+    component_weight: float | None = None
+    component_breakdown: dict[str, Any] | None = None
+
 
 class AuditSection(BaseModel):
     id: str
@@ -98,6 +111,7 @@ class MatchVariablesAuditResponse(BaseModel):
     data_policy: AuditDataPolicyBlock
     sections: list[AuditSection]
     model_inputs_summary: ModelInputsSummary
+    active_model_version: str | None = None
 
 
 class AuditFixturesListItem(BaseModel):

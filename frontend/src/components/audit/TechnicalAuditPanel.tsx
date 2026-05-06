@@ -10,6 +10,12 @@ function jsonPreview(x: unknown): string {
 
 export function TechnicalAuditPanel({ data }: { data: AuditResponse }) {
   const fx = data.fixture
+  const nonUsateBySection = data.sections
+    .map((s) => ({
+      ...s,
+      variables: s.variables.filter((v) => !v.display_in_main_audit),
+    }))
+    .filter((s) => s.variables.length > 0)
 
   return (
     <section className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm">
@@ -17,7 +23,46 @@ export function TechnicalAuditPanel({ data }: { data: AuditResponse }) {
         <summary className="cursor-pointer select-none px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-sm font-semibold text-slate-900">Audit tecnico completo</p>
+              <p className="text-sm font-semibold text-slate-900">Audit completo / dati disponibili non usati</p>
+              <p className="mt-1 text-xs text-slate-600">
+                Variabili disponibili ma non applicate, debug, roadmap, supporto tecnico (chiuso di default).
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+              Completo
+            </span>
+          </div>
+        </summary>
+
+        <div className="border-t border-slate-200 p-4 space-y-3">
+          {nonUsateBySection.map((s) => (
+            <details key={s.id} className="rounded-2xl border border-slate-200 bg-white">
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-800">
+                {s.title} <span className="text-xs text-slate-500">({s.variables.length})</span>
+              </summary>
+              <div className="border-t border-slate-200 p-3">
+                <div className="grid gap-2 md:grid-cols-2">
+                  {s.variables.map((v) => (
+                    <div key={`${s.id}-${v.key}-${v.team_id ?? 'na'}`} className="rounded-2xl border border-slate-200 bg-slate-50/40 p-3">
+                      <p className="text-xs font-semibold text-slate-900">{v.label}</p>
+                      <p className="mt-1 text-[11px] text-slate-600">
+                        {v.team_name ? `${v.team_name} · ` : ''}
+                        {v.key}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </details>
+
+      <details className="rounded-2xl border border-slate-200 bg-slate-50/30">
+        <summary className="cursor-pointer select-none px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Debug raw (JSON)</p>
               <p className="mt-1 text-xs text-slate-600">
                 Dettagli raw e payload completo (chiuso di default).
               </p>
