@@ -106,6 +106,7 @@ class MatchVariableAuditService:
     def _sample_rows_for_team(
         self,
         *,
+        db: Session,
         fixtures: list[Fixture],
         stats_map: dict[tuple[int, int], FixtureTeamStat],
         team_ctx: TeamContext,
@@ -411,9 +412,9 @@ class MatchVariableAuditService:
 
         # Offensive production sections (home/away) — season & last5/10
         def build_offense(team_ctx: TeamContext, season: dict[str, Any], last5: dict[str, Any], last10: dict[str, Any], team_priors: list[Fixture]) -> list[AuditVariable]:
-            sample_season = self._sample_rows_for_team(fixtures=team_priors, stats_map=stats_map, team_ctx=team_ctx, limit=10)
-            sample_last5 = self._sample_rows_for_team(fixtures=last_n(team_priors, 5), stats_map=stats_map, team_ctx=team_ctx, limit=None)
-            sample_last10 = self._sample_rows_for_team(fixtures=last_n(team_priors, 10), stats_map=stats_map, team_ctx=team_ctx, limit=10)
+            sample_season = self._sample_rows_for_team(db=db, fixtures=team_priors, stats_map=stats_map, team_ctx=team_ctx, limit=10)
+            sample_last5 = self._sample_rows_for_team(db=db, fixtures=last_n(team_priors, 5), stats_map=stats_map, team_ctx=team_ctx, limit=None)
+            sample_last10 = self._sample_rows_for_team(db=db, fixtures=last_n(team_priors, 10), stats_map=stats_map, team_ctx=team_ctx, limit=10)
             return [
                 mean_var(
                     key="season_avg_sot_for",
@@ -566,8 +567,8 @@ class MatchVariableAuditService:
 
         # Defensive concession sections (conceded derived from opponent row)
         def build_concession(team_ctx: TeamContext, season: dict[str, Any], last5: dict[str, Any], team_priors: list[Fixture]) -> list[AuditVariable]:
-            sample_season = self._sample_rows_for_team(fixtures=team_priors, stats_map=stats_map, team_ctx=team_ctx, limit=10)
-            sample_last5 = self._sample_rows_for_team(fixtures=last_n(team_priors, 5), stats_map=stats_map, team_ctx=team_ctx, limit=None)
+            sample_season = self._sample_rows_for_team(db=db, fixtures=team_priors, stats_map=stats_map, team_ctx=team_ctx, limit=10)
+            sample_last5 = self._sample_rows_for_team(db=db, fixtures=last_n(team_priors, 5), stats_map=stats_map, team_ctx=team_ctx, limit=None)
             return [
                 mean_var(
                     key="opponent_season_avg_sot_conceded",
@@ -664,7 +665,7 @@ class MatchVariableAuditService:
 
         # Split home/away section variables
         def build_split(team_ctx: TeamContext, split: dict[str, Any], fixtures: list[Fixture], label_side: str, applied_for_weight: float, applied_for_label: str) -> list[AuditVariable]:
-            sample = self._sample_rows_for_team(fixtures=fixtures, stats_map=stats_map, team_ctx=team_ctx, limit=10)
+            sample = self._sample_rows_for_team(db=db, fixtures=fixtures, stats_map=stats_map, team_ctx=team_ctx, limit=10)
             return [
                 mean_var(
                     key=f"{label_side}_avg_sot_for",
@@ -734,7 +735,7 @@ class MatchVariableAuditService:
 
         # Recent form section: last5 list + trend flags
         def recent_form_vars(team_ctx: TeamContext, season: dict[str, Any], last5: dict[str, Any], last5_fixtures: list[Fixture]) -> list[AuditVariable]:
-            sample_last5 = self._sample_rows_for_team(fixtures=last5_fixtures, stats_map=stats_map, team_ctx=team_ctx, limit=None)
+            sample_last5 = self._sample_rows_for_team(db=db, fixtures=last5_fixtures, stats_map=stats_map, team_ctx=team_ctx, limit=None)
             trend_for = self._trend_vs_season(_safe_float(last5["sot_for_mean"]), _safe_float(season["sot_for_mean"]))
             trend_against = self._trend_vs_season(_safe_float(last5["sot_against_mean"]), _safe_float(season["sot_against_mean"]))
             return [
