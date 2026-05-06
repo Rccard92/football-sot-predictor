@@ -1,0 +1,2 @@
+from .offensive_core_sot_service import SotPredictionV04OffensiveCoreSotService
+

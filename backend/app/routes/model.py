@@ -4,7 +4,12 @@ from fastapi import APIRouter
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT
+from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION,
+    BASELINE_SOT_MODEL_VERSION_V02,
+    BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+)
 from app.schemas.model import MatchAnalysisFrameworkResponse, ModelLegendResponse
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
 
@@ -269,6 +274,54 @@ def get_model_legend() -> ModelLegendResponse:
                         "status": "applicata",
                         "impact": "Piccolo correttivo: goal non sono la stessa cosa dei SOT.",
                         "interpretation": "Peso basso per evitare overfitting sul segnale goal.",
+                    },
+                ],
+            },
+            {
+                "id": "baseline_v04_offensive_core_sot",
+                "title": "Baseline v0.4 Offensive core SOT",
+                "status": "applicata",
+                "description": (
+                    "Baseline che mantiene invariata la struttura/pesi della v0.1, ma migliora il blocco offensivo "
+                    "sostituendo `avg_sot_for` con una componente offensiva più robusta (volume tiri, inside/outside box, "
+                    "precisione, goal e trend), con cap prudente ±0.75."
+                ),
+                "variables": [
+                    {
+                        "technical_key": "model_version_v04",
+                        "name": "Versione modello",
+                        "description": "Identificativo della baseline v0.4 offensive core.",
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Consente di salvare e confrontare la nuova baseline.",
+                        "interpretation": f"Valore: {BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT}",
+                    },
+                    {
+                        "technical_key": "expected_sot_v04_formula",
+                        "name": "Formula v0.4 (concetto)",
+                        "description": (
+                            "expected_sot_v04 = baseline_v0_1_formula, ma con avg_sot_for sostituito da offensive_production_component "
+                            "(cap ±0.75 rispetto ad avg_sot_for)."
+                        ),
+                        "weight": None,
+                        "weight_label": None,
+                        "status": "applicata",
+                        "impact": "Migliora la stima offensiva senza cambiare gli altri blocchi.",
+                        "interpretation": "Componente offensiva in scala SOT attesi (non 0–100), con cap prudente.",
+                    },
+                    {
+                        "technical_key": "offensive_production_component",
+                        "name": "Offensive production component",
+                        "description": (
+                            "Componente in scala SOT attesi che combina: avg_sot_for, avg_total_shots_for, "
+                            "avg_inside_box_shots_for, avg_outside_box_shots_for, shot_accuracy_for, avg_goals_for, offensive_trend."
+                        ),
+                        "weight": 0.30,
+                        "weight_label": "30%",
+                        "status": "applicata",
+                        "impact": "Sostituisce il segnale offensivo base con un aggregato più informativo ma prudente.",
+                        "interpretation": "Cap: component ∈ [avg_sot_for − 0.75, avg_sot_for + 0.75].",
                     },
                 ],
             },
@@ -868,8 +921,12 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         weight=85,
                         data_source="Team stats",
                         status="implementata",
-                        applied_now=False,
-                        notes="Auditabile via Match Variable Audit (pre-match, no leakage).",
+                        applied_now=True,
+                        notes="Applicata nel componente offensivo v0.4 (pre-match, no leakage).",
+                        applied_layer="sot_formula",
+                        direct_formula_impact=True,
+                        decision_context_impact=False,
+                        applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT],
                     ),
                     v(
                         area="Produzione offensiva squadra",
@@ -878,10 +935,14 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         description="Media pre-match dei tiri dentro area.",
                         markets=["tiri_totali", "goal_over_under"],
                         weight=70,
-                        data_source="Team stats (se disponibile)",
-                        status="da implementare",
-                        applied_now=False,
-                        notes=None,
+                        data_source="fixture_team_stats.shots_inside_box",
+                        status="implementata",
+                        applied_now=True,
+                        notes="Applicata nel componente offensivo v0.4 se presente; se missing viene redistribuito il peso internamente.",
+                        applied_layer="sot_formula",
+                        direct_formula_impact=True,
+                        decision_context_impact=False,
+                        applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT],
                     ),
                     v(
                         area="Produzione offensiva squadra",
@@ -890,10 +951,14 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         description="Media pre-match dei tiri fuori area.",
                         markets=["tiri_totali"],
                         weight=55,
-                        data_source="Team stats (se disponibile)",
-                        status="da implementare",
-                        applied_now=False,
-                        notes=None,
+                        data_source="fixture_team_stats.shots_outside_box",
+                        status="implementata",
+                        applied_now=True,
+                        notes="Applicata nel componente offensivo v0.4 se presente (peso basso).",
+                        applied_layer="sot_formula",
+                        direct_formula_impact=True,
+                        decision_context_impact=False,
+                        applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT],
                     ),
                     v(
                         area="Produzione offensiva squadra",
@@ -903,9 +968,13 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         markets=["goal_over_under"],
                         weight=80,
                         data_source="Team stats",
-                        status="da implementare",
-                        applied_now=False,
-                        notes="Da considerare separatamente dalle conversioni.",
+                        status="implementata",
+                        applied_now=True,
+                        notes="Applicata nel componente offensivo v0.4 con peso basso (non è equivalente ai SOT).",
+                        applied_layer="sot_formula",
+                        direct_formula_impact=True,
+                        decision_context_impact=False,
+                        applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT],
                     ),
                     v(
                         area="Produzione offensiva squadra",
@@ -915,9 +984,13 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         markets=["tiri_totali", "tiri_in_porta"],
                         weight=65,
                         data_source="Derived (richiede tiri totali)",
-                        status="da implementare",
-                        applied_now=False,
-                        notes=None,
+                        status="implementata",
+                        applied_now=True,
+                        notes="Applicata nel componente offensivo v0.4 come shot_accuracy_for = SOT/tiri.",
+                        applied_layer="sot_formula",
+                        direct_formula_impact=True,
+                        decision_context_impact=False,
+                        applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT],
                     ),
                     v(
                         area="Produzione offensiva squadra",
@@ -1024,8 +1097,12 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         weight=60,
                         data_source="Rolling windows (derived)",
                         status="parzialmente implementata",
-                        applied_now=False,
-                        notes="In parte coperto da last5; formalizzazione futura.",
+                        applied_now=True,
+                        notes="Applicata nel componente offensivo v0.4 con peso basso (last5/last10 vs stagione, clamp).",
+                        applied_layer="sot_formula",
+                        direct_formula_impact=True,
+                        decision_context_impact=False,
+                        applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT],
                     ),
                     v(
                         area="Produzione offensiva squadra",

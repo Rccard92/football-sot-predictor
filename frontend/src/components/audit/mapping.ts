@@ -61,6 +61,19 @@ export function buildMainDrivers(data: AuditResponse): MainDriver[] {
   const fx = data.fixture
   const idx = idxVars(data)
 
+  if (active === 'baseline_v0_4_offensive_core_sot') {
+    const hv = pickTeamVar(idx, 'v04_component_offensive_production', fx.home_team.id)?.value ?? null
+    const av = pickTeamVar(idx, 'v04_component_offensive_production', fx.away_team.id)?.value ?? null
+    drivers.push({
+      id: 'v04_offensive_component',
+      title: `Produzione offensiva: ${fx.home_team.name} ${fmtNum(hv)} · ${fx.away_team.name} ${fmtNum(av)}`,
+      direction: 'info',
+      impact: 'alto',
+      explanation: 'Componente applicata al calcolo v0.4 (scala SOT attesi, cap prudente).',
+    })
+    return drivers
+  }
+
   if (active === 'baseline_v0_3_core_sot') {
     const keys: Array<{ k: string; title: string; w: DriverImpact }> = [
       { k: 'v03_component_core_sot', title: 'Core SOT diretto', w: 'alto' },

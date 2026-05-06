@@ -12,6 +12,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION,
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, FixtureTeamStat, Player, PlayerSotProfile, Team, TeamSotPrediction, TeamSotPredictionAdjustment
@@ -1134,13 +1135,18 @@ class MatchVariableAuditService:
             away_team_expected_sot_v02=read_predicted(away_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED),
         )
 
-        # Active model selection (prefer v0.3 if present for both teams, else v0.2 if present, else v0.1)
+        # Active model selection (prefer v0.4 > v0.3 > v0.2 > v0.1, if present for both teams)
+        v04_home = read_predicted(home_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT)
+        v04_away = read_predicted(away_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT)
+        has_v04 = v04_home is not None and v04_away is not None
         v03_home = read_predicted(home_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT)
         v03_away = read_predicted(away_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT)
         has_v03 = v03_home is not None and v03_away is not None
         has_v02 = summary.home_team_expected_sot_v02 is not None and summary.away_team_expected_sot_v02 is not None
         active_model_version = (
-            BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT
+            BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
+            if has_v04
+            else BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT
             if has_v03
             else BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED
             if has_v02
@@ -1234,6 +1240,22 @@ class MatchVariableAuditService:
             ),
         ]
 
+        # v0.4: single offensive component (stored in prediction raw_json)
+        v04_component_def = (
+            "v04_component_offensive_production",
+            "Produzione offensiva squadra",
+            "offensive_production_component",
+            [
+                "avg_sot_for",
+                "avg_total_shots_for",
+                "avg_inside_box_shots_for",
+                "avg_outside_box_shots_for",
+                "shot_accuracy_for",
+                "avg_goals_for",
+                "offensive_trend",
+            ],
+        )
+
         def _mark(v: AuditVariable, *, applied_versions: list[str], supporting: bool, parent_key: str | None, parent_label: str | None) -> None:
             v.active_model_version = active_model_version
             v.applied_to_model_versions = applied_versions
@@ -1294,6 +1316,20 @@ class MatchVariableAuditService:
                     applied_versions.append(BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT)
                     supporting = True
 
+                # v0.4 uses offensive component; its inputs should not appear as main cards
+                v04_support_keys = {
+                    "season_avg_sot_for",
+                    "season_avg_shots_for",
+                    "season_avg_goals_for",
+                    "shot_accuracy_for",
+                    "trend_last5_vs_season_sot_for",
+                    "last10_avg_sot_for",
+                    "last5_avg_sot_for",
+                }
+                if v.key in v04_support_keys:
+                    applied_versions.append(BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT)
+                    supporting = True
+
                 # player layer: hide in main unless active is v0.2
                 if v.key in {"top5_players_by_impact"}:
                     supporting = True
@@ -1302,7 +1338,8 @@ class MatchVariableAuditService:
                 _mark(v, applied_versions=applied_versions, supporting=supporting, parent_key=parent_key, parent_label=parent_label)
 
         # Add active model component cards (main view) for v0.3 if predictions exist
-        if has_v03:
+        # (skip if v0.4 exists: v0.4 has its own single component card)
+        if has_v03 and not has_v04:
             def _v03_row(team_id: int) -> TeamSotPrediction | None:
                 return db.scalar(
                     select(TeamSotPrediction).where(
@@ -1354,6 +1391,58 @@ class MatchVariableAuditService:
                 return out
 
             comp_vars = _component_vars(home_ctx) + _component_vars(away_ctx)
+            sections.insert(1, mk_section("active_model_components", "Componenti applicate al calcolo", comp_vars))
+
+        # Add active model component cards (main view) for v0.4 if predictions exist
+        if has_v04:
+            def _v04_row(team_id: int) -> TeamSotPrediction | None:
+                return db.scalar(
+                    select(TeamSotPrediction).where(
+                        TeamSotPrediction.fixture_id == fixture.id,
+                        TeamSotPrediction.team_id == team_id,
+                        TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+                    )
+                )
+
+            def _v04_component_vars(team_ctx: TeamContext) -> list[AuditVariable]:
+                row = _v04_row(team_ctx.team_id)
+                raw = row.raw_json if row and isinstance(row.raw_json, dict) else None
+                comp = raw.get("offensive_production_component") if isinstance(raw, dict) else None
+                comp_val = _safe_float((comp or {}).get("value")) if isinstance(comp, dict) else None
+                key, label, comp_id, includes = v04_component_def
+                v = self._var(
+                    key=key,
+                    label=f"{label} – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=comp_val,
+                    unit=self.unit_sot,
+                    status="available" if comp_val is not None else "missing",
+                    impl_status="implemented",
+                    applied_to_model=False,
+                    weight=None,
+                    weight_label=None,
+                    source_table="team_sot_predictions.raw_json",
+                    source_description="Componente offensiva salvata dal modello v0.4 (nessun ricalcolo).",
+                    calculation=AuditCalculationBlock(
+                        formula=f"v0.4 component '{comp_id}' (stored)",
+                        meta={"component_id": comp_id, "includes": includes},
+                        result=comp_val,
+                    ),
+                    sample_rows=[],
+                    notes="Applicata al calcolo (componente aggregata).",
+                )
+                v.active_model_version = active_model_version
+                v.applied_to_model_versions = [BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT]
+                v.applied_to_active_model = active_model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
+                v.is_supporting_variable = False
+                v.display_in_main_audit = True
+                v.display_in_technical_audit = True
+                v.component_value = comp_val
+                v.component_weight = None
+                v.component_breakdown = {"includes_variable_keys": includes, "stored_component": comp}
+                return [v]
+
+            comp_vars = _v04_component_vars(home_ctx) + _v04_component_vars(away_ctx)
             sections.insert(1, mk_section("active_model_components", "Componenti applicate al calcolo", comp_vars))
 
         # In active v0.2, show only player_adjustment in main view; hide components section if exists
