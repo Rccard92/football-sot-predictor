@@ -11,6 +11,7 @@ FrameworkImplementationStatus = Literal[
     "parzialmente implementata",
     "solo debug",
     "da implementare",
+    "non disponibile",
 ]
 
 FrameworkMarketId = Literal[

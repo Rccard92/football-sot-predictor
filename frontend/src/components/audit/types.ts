@@ -35,7 +35,7 @@ export type AuditVariable = {
   team_name: string | null
   value: number | null
   unit: string | null
-  status: 'available' | 'missing' | 'partial' | 'not_applicable'
+  status: 'available' | 'missing' | 'partial' | 'not_applicable' | 'not_available'
   implementation_status: 'implemented' | 'partial' | 'debug_only' | 'todo'
   applied_to_model: boolean
   weight: number | null

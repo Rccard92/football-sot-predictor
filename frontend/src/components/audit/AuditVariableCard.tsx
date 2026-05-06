@@ -3,6 +3,7 @@ import { fmtNum } from './mapping'
 import { VariableDetailDrawer } from './VariableDetailDrawer'
 
 function badgeForStatus(v: AuditVariable) {
+  if (v.status === 'not_available') return 'bg-slate-50 text-slate-600 ring-slate-200'
   if (v.status === 'missing') return 'bg-slate-100 text-slate-600 ring-slate-200'
   if (v.implementation_status === 'todo') return 'bg-slate-50 text-slate-600 ring-slate-200'
   if (v.implementation_status === 'debug_only') return 'bg-amber-50 text-amber-900 ring-amber-200'
@@ -12,6 +13,7 @@ function badgeForStatus(v: AuditVariable) {
 
 function labelForStatus(v: AuditVariable) {
   if (v.implementation_status === 'todo') return 'Da implementare'
+  if (v.status === 'not_available') return 'Non disponibile nel provider attuale'
   if (v.status === 'missing') return 'Mancante'
   if (v.implementation_status === 'debug_only') return 'Solo debug'
   if (v.applied_to_model_layer === 'match_context') return 'Applicata al contesto'

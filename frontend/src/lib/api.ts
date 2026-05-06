@@ -199,6 +199,7 @@ export type FrameworkImplementationStatus =
   | 'parzialmente implementata'
   | 'solo debug'
   | 'da implementare'
+  | 'non disponibile'
 
 export type FrameworkMarketId =
   | 'tiri_in_porta'

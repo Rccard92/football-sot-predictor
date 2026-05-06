@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 
-AuditVariableStatus = Literal["available", "missing", "partial", "not_applicable"]
+AuditVariableStatus = Literal["available", "missing", "partial", "not_applicable", "not_available"]
 AuditMode = Literal["pre_match", "post_match"]
 AuditMarket = Literal["shots_on_target"]
 AuditImplementationStatus = Literal["implemented", "partial", "debug_only", "todo"]

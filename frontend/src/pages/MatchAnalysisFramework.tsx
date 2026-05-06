@@ -14,12 +14,14 @@ const statusLabel: Record<FrameworkImplementationStatus, string> = {
   'parzialmente implementata': 'Parzialmente implementata',
   'solo debug': 'Solo debug',
   'da implementare': 'Da implementare',
+  'non disponibile': 'Non disponibile nel provider attuale',
 }
 
 function statusBadgeClass(s: FrameworkImplementationStatus): string {
   if (s === 'implementata') return 'bg-emerald-100 text-emerald-900 ring-emerald-200'
   if (s === 'parzialmente implementata') return 'bg-blue-100 text-blue-900 ring-blue-200'
   if (s === 'solo debug') return 'bg-slate-200 text-slate-800 ring-slate-300'
+  if (s === 'non disponibile') return 'bg-slate-100 text-slate-700 ring-slate-200'
   return 'bg-amber-100 text-amber-950 ring-amber-200'
 }
 

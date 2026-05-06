@@ -4,6 +4,7 @@ from app.routes import (
     admin,
     admin_data_health,
     admin_debug_player_stats,
+    admin_debug_offensive_variables,
     admin_ingest,
     admin_refresh,
     backtest,
@@ -24,6 +25,7 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(admin_debug_player_stats.router)
+api_router.include_router(admin_debug_offensive_variables.router)
 api_router.include_router(admin_ingest.router)
 api_router.include_router(admin_refresh.router)
 api_router.include_router(admin_data_health.router)

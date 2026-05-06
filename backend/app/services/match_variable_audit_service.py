@@ -398,6 +398,50 @@ class MatchVariableAuditService:
                 notes=notes,
             )
 
+        def var_with_status(
+            *,
+            key: str,
+            label: str,
+            team_ctx: TeamContext,
+            value: float | None,
+            unit: str | None,
+            status: str,
+            impl_status: str,
+            source_table: str | None,
+            source_description: str | None,
+            formula: str,
+            meta: dict[str, Any] | None,
+            sample: list[AuditSampleRow],
+            applied_to_model: bool,
+            notes: str | None,
+        ) -> AuditVariable:
+            meta = {
+                **(meta or {}),
+                "sample_rows_count": len(sample),
+                "sample_rows_note": (
+                    "Le righe mostrate sono solo un campione per controllo manuale. "
+                    "Il calcolo usa tutte le partite indicate in matches_count."
+                ),
+            }
+            calc = AuditCalculationBlock(formula=formula, meta=meta, result=value)
+            return self._var(
+                key=key,
+                label=label,
+                team_ctx=team_ctx,
+                value=value,
+                unit=unit,
+                status=status,
+                impl_status=impl_status,
+                applied_to_model=applied_to_model,
+                weight=None,
+                weight_label=None,
+                source_table=source_table,
+                source_description=source_description,
+                calculation=calc,
+                sample_rows=sample,
+                notes=notes,
+            )
+
         # Weights for baseline v0.1 SOT (only for SOT variables currently in formula)
         # Keep aligned with docs: 0.30 season_avg_sot_for, 0.25 opponent_season_avg_sot_conceded, 0.15 home_away_avg_sot_for, 0.10 opponent_home_away_avg_sot_conceded, 0.10 last5_avg_sot_for, 0.10 opponent_last5_avg_sot_conceded
         w_season_for = 0.30
@@ -538,6 +582,69 @@ class MatchVariableAuditService:
             sample_season = self._sample_rows_for_team(db=db, fixtures=team_priors, stats_map=stats_map, team_ctx=team_ctx, limit=10)
             sample_last5 = self._sample_rows_for_team(db=db, fixtures=last_n(team_priors, 5), stats_map=stats_map, team_ctx=team_ctx, limit=None)
             sample_last10 = self._sample_rows_for_team(db=db, fixtures=last_n(team_priors, 10), stats_map=stats_map, team_ctx=team_ctx, limit=10)
+            # Extra metriche offensive (solo se dati realmente presenti)
+            poss_vals: list[float] = []
+            corners_vals: list[float] = []
+            sot_vals: list[float] = []
+            goals_vals: list[float] = []
+            for f in team_priors:
+                st = stats_map.get((int(f.id), int(team_ctx.team_id)))
+                if st and st.ball_possession_pct is not None:
+                    poss_vals.append(float(st.ball_possession_pct))
+                if st and st.corner_kicks is not None:
+                    corners_vals.append(float(st.corner_kicks))
+                if st and st.shots_on_target is not None:
+                    sot_vals.append(float(st.shots_on_target))
+                gf = f.goals_home if int(f.home_team_id) == int(team_ctx.team_id) else f.goals_away
+                if gf is not None:
+                    goals_vals.append(float(gf))
+
+            avg_possession = (sum(poss_vals) / len(poss_vals)) if poss_vals else None
+            avg_corners_for = (sum(corners_vals) / len(corners_vals)) if corners_vals else None
+
+            sum_sot = sum(sot_vals)
+            sum_goals = sum(goals_vals)
+            sot_to_goal = None
+            sot_to_goal_status = "missing"
+            sot_to_goal_notes = None
+            if sot_vals and goals_vals:
+                if sum_sot > 0:
+                    sot_to_goal = float(sum_goals) / float(sum_sot)
+                    sot_to_goal_status = "available"
+                else:
+                    sot_to_goal_status = "partial"
+                    sot_to_goal_notes = "shots_on_target_for = 0 sul campione: conversione non calcolabile."
+
+            # Key passes: aggregazione per fixture/team da fixture_player_stats.passes_key (se popolato)
+            key_passes_mean = None
+            key_passes_meta: dict[str, Any] | None = None
+            try:
+                prior_ids = [int(f.id) for f in team_priors]
+                if prior_ids:
+                    rows = db.execute(
+                        select(FixturePlayerStat.fixture_id, func.coalesce(func.sum(FixturePlayerStat.passes_key), 0))
+                        .where(
+                            FixturePlayerStat.fixture_id.in_(prior_ids),
+                            FixturePlayerStat.team_id == int(team_ctx.team_id),
+                            FixturePlayerStat.passes_key.isnot(None),
+                        )
+                        .group_by(FixturePlayerStat.fixture_id)
+                    ).all()
+                    per_fx = [float(r[1] or 0) for r in rows]
+                    if per_fx:
+                        key_passes_mean = sum(per_fx) / len(per_fx)
+                        key_passes_meta = {
+                            "matches_count": len(per_fx),
+                            "sum": int(sum(per_fx)),
+                            "sample_team_key_passes_per_fixture": [
+                                {"fixture_id": int(rows[i][0]), "team_key_passes": int(rows[i][1] or 0)}
+                                for i in range(min(10, len(rows)))
+                            ],
+                        }
+            except Exception:
+                key_passes_mean = None
+                key_passes_meta = {"error": "key_passes_aggregation_failed"}
+
             return [
                 mean_var(
                     key="season_avg_sot_for",
@@ -688,6 +795,75 @@ class MatchVariableAuditService:
                     sample=sample_last10,
                     applied_to_model=False,
                     notes=None,
+                ),
+                var_with_status(
+                    key="conv_sot_to_goals",
+                    label=f"Conversione tiri in porta → goal – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=_safe_float(sot_to_goal),
+                    unit="ratio",
+                    status=sot_to_goal_status,
+                    impl_status="implemented" if sot_to_goal_status in ("available", "partial") else "todo",
+                    source_table="fixtures + fixture_team_stats",
+                    source_description="Goals da fixtures (home/away); SOT da fixture_team_stats.shots_on_target.",
+                    formula="sum(goals_for) / sum(shots_on_target_for)",
+                    meta={
+                        "sum_goals_for": sum_goals,
+                        "sum_shots_on_target_for": sum_sot,
+                        "matches_count": len(team_priors),
+                    },
+                    sample=sample_season,
+                    applied_to_model=False,
+                    notes=sot_to_goal_notes
+                    or "Finalizzazione: utile come contesto, non come driver principale volume SOT.",
+                ),
+                var_with_status(
+                    key="avg_possession",
+                    label=f"Possesso medio – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=_safe_float(avg_possession),
+                    unit="%",
+                    status="available" if avg_possession is not None else "missing",
+                    impl_status="implemented" if avg_possession is not None else "todo",
+                    source_table="fixture_team_stats",
+                    source_description="FixtureTeamStat.ball_possession_pct pre-match (float).",
+                    formula="mean(ball_possession_pct)",
+                    meta={"matches_count": len(poss_vals), "sum": _safe_float(sum(poss_vals)) if poss_vals else None},
+                    sample=sample_season,
+                    applied_to_model=False,
+                    notes="Impatto indiretto sui SOT; per ora non applicata alla formula.",
+                ),
+                var_with_status(
+                    key="avg_corners_for",
+                    label=f"Corner offensivi prodotti – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=_safe_float(avg_corners_for),
+                    unit="corner",
+                    status="available" if avg_corners_for is not None else "missing",
+                    impl_status="implemented" if avg_corners_for is not None else "todo",
+                    source_table="fixture_team_stats",
+                    source_description="FixtureTeamStat.corner_kicks pre-match.",
+                    formula="mean(corner_kicks)",
+                    meta={"matches_count": len(corners_vals), "sum": _safe_float(sum(corners_vals)) if corners_vals else None},
+                    sample=sample_season,
+                    applied_to_model=False,
+                    notes="Più rilevante per mercato corner; qui resta disponibile/non usata.",
+                ),
+                var_with_status(
+                    key="avg_key_passes_for",
+                    label=f"Passaggi chiave (media team) – {team_ctx.team_name}",
+                    team_ctx=team_ctx,
+                    value=_safe_float(key_passes_mean),
+                    unit="key passes",
+                    status="available" if key_passes_mean is not None else "missing",
+                    impl_status="implemented" if key_passes_mean is not None else "todo",
+                    source_table="fixture_player_stats",
+                    source_description="Somma passes_key dei player per fixture/team, poi media pre-match.",
+                    formula="avg(sum(player.passes_key) per fixture/team)",
+                    meta=key_passes_meta or {"matches_count": 0},
+                    sample=sample_season,
+                    applied_to_model=False,
+                    notes="Disponibile solo se `fixture_player_stats.passes_key` è popolato per la stagione.",
                 ),
             ]
 
