@@ -194,6 +194,63 @@ export type ModelLegendResponse = {
   sections: ModelLegendSection[]
 }
 
+export type FrameworkImplementationStatus =
+  | 'implementata'
+  | 'parzialmente implementata'
+  | 'solo debug'
+  | 'da implementare'
+
+export type FrameworkMarketId =
+  | 'tiri_in_porta'
+  | 'tiri_totali'
+  | 'corner'
+  | 'cartellini'
+  | 'falli'
+  | 'goal_over_under'
+
+export type MatchAnalysisFrameworkVariable = {
+  area: string
+  key: string
+  name: string
+  description: string
+  impacted_markets: FrameworkMarketId[]
+  theoretical_weight: number
+  weight_label: string
+  data_source: string
+  implementation_status: FrameworkImplementationStatus
+  applied_now: boolean
+  notes?: string | null
+}
+
+export type MatchAnalysisFrameworkArea = {
+  id: string
+  title: string
+  description: string
+  variables: MatchAnalysisFrameworkVariable[]
+}
+
+export type MatchAnalysisMarketFramework = {
+  id: FrameworkMarketId
+  title: string
+  primary_variables: string[]
+  secondary_variables: string[]
+  warning_variables: string[]
+  less_relevant_variables: string[]
+}
+
+export type MatchAnalysisFrameworkResponse = {
+  title: string
+  description: string
+  version: string
+  areas: MatchAnalysisFrameworkArea[]
+  market_frameworks: MatchAnalysisMarketFramework[]
+  future_editable_weights: {
+    enabled_now: boolean
+    planned: boolean
+    description: string
+  }
+}
+
 function getApiBase(): string {
   const raw = import.meta.env.VITE_API_BASE_URL
   if (raw === undefined || raw === null || String(raw).trim() === '') {
@@ -313,6 +370,10 @@ export async function getBacktestBySide(season: number): Promise<BacktestBySideL
 
 export async function getModelLegend(): Promise<ModelLegendResponse> {
   return requestJson<ModelLegendResponse>('/api/model/legend')
+}
+
+export async function getMatchAnalysisFramework(): Promise<MatchAnalysisFrameworkResponse> {
+  return requestJson<MatchAnalysisFrameworkResponse>('/api/model/match-analysis-framework')
 }
 
 export async function runBuildSotFeatures(season: number): Promise<unknown> {

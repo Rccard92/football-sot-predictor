@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { getModelLegend, type ModelLegendResponse, type ModelLegendStatus } from '../lib/api'
+import { Link } from 'react-router-dom'
 
 function statusBadgeClass(status: ModelLegendStatus): string {
   if (status === 'applicata') return 'bg-emerald-100 text-emerald-800'
@@ -66,6 +67,11 @@ export function ModelLegend() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{data.model_version}</p>
               <h2 className="mt-1 text-xl font-semibold text-slate-900">{data.title}</h2>
               <p className="mt-2 text-sm text-slate-600">{data.description}</p>
+              <p className="mt-3 text-sm text-slate-700">
+                <Link to="/match-analysis-framework" className="font-medium text-slate-700 underline">
+                  Vedi Framework Analisi completo
+                </Link>
+              </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">baseline_v0_1</p>

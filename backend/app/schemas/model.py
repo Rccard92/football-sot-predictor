@@ -6,6 +6,23 @@ from pydantic import BaseModel
 LegendSectionStatus = Literal["applicata", "solo_debug", "applicata_alla_lettura", "non_applicata"]
 
 
+FrameworkImplementationStatus = Literal[
+    "implementata",
+    "parzialmente implementata",
+    "solo debug",
+    "da implementare",
+]
+
+FrameworkMarketId = Literal[
+    "tiri_in_porta",
+    "tiri_totali",
+    "corner",
+    "cartellini",
+    "falli",
+    "goal_over_under",
+]
+
+
 class ModelLegendVariable(BaseModel):
     technical_key: str
     name: str
@@ -31,3 +48,48 @@ class ModelLegendResponse(BaseModel):
     description: str
     expected_sot_formula: str
     sections: list[ModelLegendSection]
+
+
+class MatchAnalysisFrameworkVariable(BaseModel):
+    area: str
+    key: str
+    name: str
+    description: str
+    impacted_markets: list[FrameworkMarketId]
+    theoretical_weight: int
+    weight_label: str
+    data_source: str
+    implementation_status: FrameworkImplementationStatus
+    applied_now: bool
+    notes: str | None = None
+
+
+class MatchAnalysisFrameworkArea(BaseModel):
+    id: str
+    title: str
+    description: str
+    variables: list[MatchAnalysisFrameworkVariable]
+
+
+class MatchAnalysisMarketFramework(BaseModel):
+    id: FrameworkMarketId
+    title: str
+    primary_variables: list[str]
+    secondary_variables: list[str]
+    warning_variables: list[str]
+    less_relevant_variables: list[str]
+
+
+class FutureEditableWeightsInfo(BaseModel):
+    enabled_now: bool
+    planned: bool
+    description: str
+
+
+class MatchAnalysisFrameworkResponse(BaseModel):
+    title: str
+    description: str
+    version: str
+    areas: list[MatchAnalysisFrameworkArea]
+    market_frameworks: list[MatchAnalysisMarketFramework]
+    future_editable_weights: FutureEditableWeightsInfo

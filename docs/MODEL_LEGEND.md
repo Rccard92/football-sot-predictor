@@ -335,3 +335,9 @@ Questa implementazione mantiene invariati:
 - formula `expected_sot` baseline
 - logica `baseline_v0_1`
 - uso matematico di player impact, H2H e motivation context (restano informativi/debug).
+
+## Framework Analisi Partita (documentazione)
+
+Per una vista completa e consultabile di **tutte** le variabili che il modello può valutare pre-partita (divise per aree e per mercato), vedi:
+
+- [`docs/MATCH_ANALYSIS_FRAMEWORK.md`](docs/MATCH_ANALYSIS_FRAMEWORK.md)
