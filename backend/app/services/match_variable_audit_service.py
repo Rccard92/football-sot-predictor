@@ -9,7 +9,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED, FINISHED_STATUSES
-from app.models import Fixture, FixtureTeamStat, PlayerSotProfile, Team, TeamSotPrediction, TeamSotPredictionAdjustment
+from app.models import Fixture, FixtureTeamStat, Player, PlayerSotProfile, Team, TeamSotPrediction, TeamSotPredictionAdjustment
 from app.schemas.match_analysis import (
     AuditCalculationBlock,
     AuditDataPolicyBlock,
@@ -804,35 +804,39 @@ class MatchVariableAuditService:
         recent_vars += recent_form_vars(home_ctx, home_season, home_last5_agg, home_last5)
         recent_vars += recent_form_vars(away_ctx, away_season, away_last5_agg, away_last5)
 
-        # Player impact section: top 5 profiles
+        # Player impact section: top 5 profiles (join con Player per nome)
         season_id = int(fixture.season_id)
-        prof_q = (
-            select(PlayerSotProfile)
-            .where(PlayerSotProfile.season_id == season_id)
-            .order_by(PlayerSotProfile.impact_score.desc().nulls_last(), PlayerSotProfile.shots_on_target_per90.desc().nulls_last())
-        )
-        profiles = db.scalars(prof_q).all()
-
-        def top5_for_team(team_id: int) -> list[PlayerSotProfile]:
-            xs = [p for p in profiles if int(p.team_id) == team_id]
-            return xs[:5]
 
         def player_block(team_ctx: TeamContext) -> AuditVariable:
-            top = top5_for_team(team_ctx.team_id)
-            # sample_rows for this variable: map player records into calculation.meta, leave sample_rows empty (they are match rows)
-            meta_players = [
-                {
-                    "player_id": int(p.player_id),
-                    "name": p.player_name,
-                    "shots_on_target_per90": _safe_float(p.shots_on_target_per90),
-                    "total_minutes": int(p.total_minutes),
-                    "appearances": int(p.appearances),
-                    "reliability_score": int(p.reliability_score),
-                    "team_sot_share_pct": _safe_float(p.team_sot_share_pct),
-                    "impact_score": _safe_float(p.impact_score),
-                }
-                for p in top
-            ]
+            rows = db.execute(
+                select(PlayerSotProfile, Player)
+                .join(Player, Player.id == PlayerSotProfile.player_id, isouter=True)
+                .where(
+                    PlayerSotProfile.season_id == season_id,
+                    PlayerSotProfile.team_id == team_ctx.team_id,
+                )
+                .order_by(
+                    PlayerSotProfile.impact_score.desc().nulls_last(),
+                    PlayerSotProfile.shots_on_target_per90.desc().nulls_last(),
+                    PlayerSotProfile.total_minutes.desc(),
+                )
+                .limit(5)
+            ).all()
+
+            meta_players = []
+            for prof, pl in rows:
+                meta_players.append(
+                    {
+                        "player_id": int(prof.player_id),
+                        "name": (pl.name if pl is not None else "Giocatore non mappato"),
+                        "shots_on_target_per90": _safe_float(prof.shots_on_target_per90),
+                        "total_minutes": int(prof.total_minutes),
+                        "appearances": int(prof.appearances),
+                        "reliability_score": int(prof.reliability_score),
+                        "team_sot_share_pct": _safe_float(prof.team_sot_share_pct),
+                        "impact_score": _safe_float(prof.impact_score),
+                    }
+                )
             return self._var(
                 key="top5_players_by_impact",
                 label=f"Top 5 giocatori per impact_score – {team_ctx.team_name}",
