@@ -439,6 +439,10 @@ Dentro un componente, le **variabili** sono gli input elementari (o i segnali de
 - **Peso**: frazione del modello assegnata a quel blocco (somma tipicamente 1 sul mix finale, salvo casi speciali documentati nel `raw_json`).
 - **Contributo**: quanto quel blocco spinge il numero verso l’alto o il basso nel mix pesato; sulla UI è un aiuto alla lettura, non una ricalcolazione certificata se il modello non salva esplicitamente tutti i passaggi intermedi.
 
+### Formula finale e controllo somma
+
+La risposta include `prediction_formula_breakdown` (casa e trasferta): formula in forma simbolica e numerica, tabella contributi e **somma dei contributi** ricavata dai soli dati salvati. Se la differenza rispetto a `predicted_sot` supera **0,02**, la UI mostra un avviso (arrotondamenti, cap o fallback). Per la **componente offensiva v0.4**, il valore interno deriva da una **media pesata** e da un eventuale **cap**: la somma delle righe `contribution` negli input non coincide necessariamente con il valore finale del componente mostrato nel mix esterno.
+
 ### Fallback
 
 Se l’input grezzo mancava al momento della generazione, la catena di risoluzione ha usato sostituti (lega, medie alternative, costanti prudenziali). In audit compare **fallback** sulle righe interessate; il testo sintetico può elencare i codici salvati in `fallbacks_used`.

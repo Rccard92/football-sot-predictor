@@ -8,6 +8,7 @@ import type {
   SideSummary,
   SotFixtureExplanationResponse,
 } from '../../types/sotExplanation'
+import { InternalFormulaPanel, PredictionFinalFormulaSection } from './PredictionFinalFormulaSection'
 
 function fmtDate(iso: string) {
   try {
@@ -214,6 +215,11 @@ function ComponentsForTeam({
       </div>
       {components.map((c) => (
         <div key={`${c.id}-acc`} className="space-y-2">
+          {c.internal_formula ? (
+            <Accordion title={`Come è stato calcolato questo componente? — ${c.label}`}>
+              <InternalFormulaPanel block={c.internal_formula} />
+            </Accordion>
+          ) : null}
           {c.variables?.length ? (
             <Accordion title={`Variabili usate — ${c.label}`}>
               <VariableTable vars={c.variables} />
@@ -299,6 +305,23 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
           ) : null}
         </div>
       </SectionCard>
+
+      {data.prediction_formula_breakdown?.home || data.prediction_formula_breakdown?.away ? (
+        <SectionCard title="Formula finale della previsione">
+          <div className="space-y-6">
+            <PredictionFinalFormulaSection
+              teamName={fx.home_team.name}
+              formula={data.prediction_formula_breakdown?.home ?? undefined}
+              cardPredicted={summary.home.predicted_sot}
+            />
+            <PredictionFinalFormulaSection
+              teamName={fx.away_team.name}
+              formula={data.prediction_formula_breakdown?.away ?? undefined}
+              cardPredicted={summary.away.predicted_sot}
+            />
+          </div>
+        </SectionCard>
+      ) : null}
 
       {data.human_summary ? (
         <SectionCard title="Spiegazione sintetica">

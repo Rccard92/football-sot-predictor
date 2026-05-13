@@ -84,6 +84,35 @@ COMPARE_MODELS_ORDER: list[tuple[str, str]] = [
     (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, "v0.4"),
 ]
 
+CHECKSUM_TOLERANCE = 0.02
+CHECKSUM_WARNING_IT = (
+    "La somma dei contributi non coincide perfettamente con la prediction salvata. "
+    "Possibili arrotondamenti, cap o fallback."
+)
+
+V03_INCLUDES_BY_COMP: dict[str, list[str]] = {
+    "core_sot_component": [
+        "season_avg_sot_for",
+        "opponent_season_avg_sot_conceded",
+        "split_avg_sot_for",
+        "opponent_split_avg_sot_conceded",
+    ],
+    "shot_volume_component": [
+        "season_avg_shots_for",
+        "opponent_season_avg_shots_conceded",
+        "split_avg_shots_for",
+        "opponent_split_avg_shots_conceded",
+    ],
+    "shot_accuracy_component": ["shot_accuracy_for", "opponent_sot_allowed_ratio"],
+    "recent_form_component": [
+        "last5_avg_sot_for",
+        "opponent_last5_avg_sot_conceded",
+        "last10_avg_sot_for",
+        "opponent_last10_avg_sot_conceded",
+    ],
+    "goals_context_component": ["season_avg_goals_for", "opponent_season_avg_goals_conceded"],
+}
+
 
 def _safe_float(x: Any) -> float | None:
     if x is None:
@@ -467,6 +496,472 @@ def _build_side_components(model_version: str, raw: dict[str, Any] | None, predi
     return []
 
 
+def _round4(x: float | None) -> float | None:
+    if x is None:
+        return None
+    return round(float(x), 4)
+
+
+def _mul_expr(val: float | None, w: float | None) -> str:
+    if val is None:
+        return "—"
+    if w is None:
+        return f"{_round2(val)}"
+    return f"({_round2(val)} × {_round4(w)})"
+
+
+def _checksum_block(sum_contrib: float | None, stored: float | None) -> tuple[float | None, float | None, bool, str | None]:
+    if sum_contrib is None or stored is None:
+        return None, None, False, None
+    delta = round(float(sum_contrib) - float(stored), 4)
+    warn = abs(delta) > CHECKSUM_TOLERANCE
+    return round(float(sum_contrib), 4), delta, warn, CHECKSUM_WARNING_IT if warn else None
+
+
+def _build_formula_breakdown_v01(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    weights = raw.get("weights")
+    resolved = raw.get("resolved_inputs")
+    inputs = raw.get("inputs")
+    if not isinstance(weights, dict) or not isinstance(resolved, dict):
+        return {}
+    terms: list[dict[str, Any]] = []
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    contrib_vals: list[float] = []
+    for key, w_def in WEIGHTS_BASELINE_V0_1.items():
+        w = _safe_float(weights.get(key, w_def))
+        val = _safe_float(resolved.get(key))
+        if w is None or val is None:
+            continue
+        lab = V01_LABELS.get(key, key)
+        contrib = round(float(val) * float(w), 4)
+        contrib_vals.append(contrib)
+        terms.append(
+            {
+                "id": f"v01_{key}",
+                "label": lab,
+                "symbol": key,
+                "value": _round2(val),
+                "weight": w,
+                "contribution": contrib,
+                "calc_expression": _mul_expr(val, w),
+            },
+        )
+        sym_parts.append(f"({lab} × {w})")
+        num_parts.append(_mul_expr(val, w))
+    s = round(sum(contrib_vals), 4) if contrib_vals else None
+    sum_c, delta, warn, wmsg = _checksum_block(s, stored)
+    fb_list: list[str] = []
+    if isinstance(inputs, dict):
+        for fk in WEIGHTS_BASELINE_V0_1:
+            if inputs.get(fk) is None:
+                fb_list.append(str(fk))
+    return {
+        "model_version": BASELINE_SOT_MODEL_VERSION,
+        "stored_predicted_sot": _round2(stored),
+        "terms": terms,
+        "formula_symbolic": "expected_sot = " + " + ".join(sym_parts),
+        "formula_numeric": "expected_sot = " + " + ".join(num_parts) + f"\n= {' + '.join(str(round(x, 4)) for x in contrib_vals)}\n= {_round2(s)}",
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": t["weight"],
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+            }
+            for t in terms
+        ],
+        "sum_contributions": sum_c,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {
+            "cap_applied": False,
+            "fallbacks_used": fb_list,
+        },
+    }
+
+
+def _build_formula_breakdown_v03(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    comps = raw.get("components")
+    wmap = raw.get("weights")
+    if not isinstance(comps, dict) or not isinstance(wmap, dict):
+        return {}
+    terms: list[dict[str, Any]] = []
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    contrib_vals: list[float] = []
+    for comp_id, label_it, comp_key, w_def in V03_COMPONENT_META:
+        w = _safe_float(wmap.get(comp_key))
+        if w is None:
+            w = w_def
+        cobj = comps.get(comp_key) if isinstance(comps, dict) else None
+        val = _safe_float((cobj or {}).get("value")) if isinstance(cobj, dict) else None
+        if val is None:
+            continue
+        contrib = round(float(val) * float(w), 4)
+        contrib_vals.append(contrib)
+        terms.append(
+            {
+                "id": f"v03_{comp_id}",
+                "label": label_it,
+                "symbol": comp_key,
+                "value": _round2(val),
+                "weight": w,
+                "contribution": contrib,
+                "calc_expression": _mul_expr(val, w),
+            },
+        )
+        sym_parts.append(f"({label_it} × {w})")
+        num_parts.append(_mul_expr(val, w))
+    s = round(sum(contrib_vals), 4) if contrib_vals else None
+    sum_c, delta, warn, wmsg = _checksum_block(s, stored)
+    return {
+        "model_version": BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
+        "stored_predicted_sot": _round2(stored),
+        "terms": terms,
+        "formula_symbolic": "expected_sot = " + " + ".join(sym_parts),
+        "formula_numeric": "expected_sot = " + " + ".join(num_parts) + f"\n= {' + '.join(str(round(x, 4)) for x in contrib_vals)}\n= {_round2(s)}",
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": t["weight"],
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+            }
+            for t in terms
+        ],
+        "sum_contributions": sum_c,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {"cap_applied": False, "fallbacks_used": []},
+    }
+
+
+def _build_formula_breakdown_v04(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    comp = raw.get("offensive_production_component")
+    dbg = raw.get("debug") if isinstance(raw.get("debug"), dict) else {}
+    baseline_other = dbg.get("baseline_other_inputs")
+    if not isinstance(comp, dict) or not isinstance(baseline_other, dict):
+        return {}
+    offensive_val = _safe_float(comp.get("value"))
+    if offensive_val is None:
+        return {}
+    ow = _safe_float(comp.get("weight_in_model")) or 0.30
+    terms: list[dict[str, Any]] = []
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    contrib_vals: list[float] = []
+
+    lab0 = "Produzione offensiva (componente)"
+    c0 = round(float(offensive_val) * float(ow), 4)
+    contrib_vals.append(c0)
+    terms.append(
+        {
+            "id": "v04_offensive",
+            "label": lab0,
+            "symbol": "offensive_production_component",
+            "value": _round2(offensive_val),
+            "weight": ow,
+            "contribution": c0,
+            "calc_expression": _mul_expr(offensive_val, ow),
+        },
+    )
+    sym_parts.append(f"({lab0} × {ow})")
+    num_parts.append(_mul_expr(offensive_val, ow))
+
+    for key, label, w in V04_BASELINE_KEYS_ORDER[1:]:
+        val = _safe_float(baseline_other.get(key))
+        if val is None:
+            continue
+        contrib = round(float(val) * float(w), 4)
+        contrib_vals.append(contrib)
+        terms.append(
+            {
+                "id": f"v04_{key}",
+                "label": label,
+                "symbol": key,
+                "value": _round2(val),
+                "weight": w,
+                "contribution": contrib,
+                "calc_expression": _mul_expr(val, w),
+            },
+        )
+        sym_parts.append(f"({label} × {w})")
+        num_parts.append(_mul_expr(val, w))
+
+    s = round(sum(contrib_vals), 4) if contrib_vals else None
+    sum_c, delta, warn, wmsg = _checksum_block(s, stored)
+    fb = comp.get("fallbacks_used") if isinstance(comp.get("fallbacks_used"), list) else []
+    return {
+        "model_version": BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+        "stored_predicted_sot": _round2(stored),
+        "terms": terms,
+        "formula_symbolic": "expected_sot = " + " + ".join(sym_parts),
+        "formula_numeric": "expected_sot = " + " + ".join(num_parts) + f"\n= {' + '.join(str(round(x, 4)) for x in contrib_vals)}\n= {_round2(s)}",
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": t["weight"],
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+            }
+            for t in terms
+        ],
+        "sum_contributions": sum_c,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {
+            "cap_applied": bool(comp.get("cap_applied")),
+            "fallbacks_used": [str(x) for x in fb],
+        },
+    }
+
+
+def _build_formula_breakdown_v02(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    base = _safe_float(raw.get("baseline_expected_sot"))
+    bd = raw.get("adjustment_breakdown") if isinstance(raw.get("adjustment_breakdown"), dict) else {}
+    labels = {
+        "player": "Aggiustamento profilo giocatori",
+        "h2h": "Aggiustamento H2H",
+        "motivation": "Aggiustamento motivazione / contesto",
+        "availability": "Aggiustamento disponibilità",
+    }
+    terms: list[dict[str, Any]] = []
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    contrib_vals: list[float] = []
+    if base is not None:
+        terms.append(
+            {
+                "id": "v02_baseline",
+                "label": "Baseline v0.1",
+                "symbol": "baseline",
+                "value": _round2(base),
+                "weight": None,
+                "contribution": _round2(base),
+                "calc_expression": f"{_round2(base)}",
+            },
+        )
+        sym_parts.append("baseline_v0_1")
+        num_parts.append(f"{_round2(base)}")
+        contrib_vals.append(float(base))
+    for k, lab in labels.items():
+        sub = bd.get(k) if isinstance(bd.get(k), dict) else {}
+        delta = _safe_float(sub.get("adjustment")) or _safe_float(sub.get("delta"))
+        if delta is None or abs(delta) < 1e-9:
+            continue
+        terms.append(
+            {
+                "id": f"v02_{k}",
+                "label": lab,
+                "symbol": k,
+                "value": _round2(delta),
+                "weight": None,
+                "contribution": _round2(delta),
+                "calc_expression": f"{float(delta):+.4f}",
+            },
+        )
+        sym_parts.append(lab)
+        num_parts.append(f"({delta:+.4f})")
+        contrib_vals.append(float(delta))
+    s = round(sum(contrib_vals), 4) if contrib_vals else None
+    sum_c, delta, warn, wmsg = _checksum_block(s, stored)
+    return {
+        "model_version": str(raw.get("model_version") or BASELINE_SOT_MODEL_VERSION_V02),
+        "stored_predicted_sot": _round2(stored),
+        "terms": terms,
+        "formula_symbolic": "expected_sot = " + " + ".join(sym_parts),
+        "formula_numeric": "expected_sot = " + " + ".join(num_parts) + f"\n= {_round2(s)}",
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": t["weight"],
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+            }
+            for t in terms
+        ],
+        "sum_contributions": sum_c,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {"cap_applied": False, "fallbacks_used": []},
+    }
+
+
+def _build_prediction_formula_breakdown_side(
+    model_version: str,
+    raw: dict[str, Any] | None,
+    stored_predicted: float | None,
+) -> dict[str, Any] | None:
+    if stored_predicted is None or not isinstance(raw, dict):
+        return None
+    st = float(stored_predicted)
+    if model_version == BASELINE_SOT_MODEL_VERSION:
+        out = _build_formula_breakdown_v01(raw, st)
+    elif model_version == BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT:
+        out = _build_formula_breakdown_v03(raw, st)
+    elif model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
+        out = _build_formula_breakdown_v04(raw, st)
+    elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
+        out = _build_formula_breakdown_v02(raw, st)
+    else:
+        return None
+    if not out or not out.get("terms"):
+        return None
+    return out
+
+
+def _internal_formula_v04_offensive(comp: dict[str, Any], raw_root: dict[str, Any]) -> dict[str, Any]:
+    inputs = comp.get("inputs")
+    dbg_top = raw_root.get("debug") if isinstance(raw_root.get("debug"), dict) else {}
+    rows: list[dict[str, Any]] = []
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    num_vals: list[float] = []
+    sum_w = 0.0
+    sum_num = 0.0
+    if isinstance(inputs, dict):
+        for ik, blob in inputs.items():
+            if not isinstance(blob, dict):
+                continue
+            w_in = _safe_float(blob.get("weight")) or 0.0
+            val = _safe_float(blob.get("value"))
+            cb = _safe_float(blob.get("contribution"))
+            if cb is None and val is not None:
+                cb = round(float(val) * float(w_in), 4) if w_in else None
+            lab = V04_OFFENSIVE_INPUT_LABELS.get(str(ik), str(ik))
+            rows.append(
+                {
+                    "key": str(ik),
+                    "label": lab,
+                    "value": _round2(val),
+                    "weight": w_in if w_in else None,
+                    "contribution": cb,
+                    "calc_expression": _mul_expr(val, w_in) if w_in else str(_round2(val)),
+                },
+            )
+            if w_in and w_in > 0 and val is not None:
+                sym_parts.append(f"({lab} × {w_in})")
+                num_parts.append(_mul_expr(val, w_in))
+                cbb = float(cb) if cb is not None else float(val) * float(w_in)
+                num_vals.append(round(cbb, 4))
+                sum_w += float(w_in)
+                sum_num += cbb
+    capped = _safe_float(comp.get("value"))
+    raw_uncapped = _safe_float(dbg_top.get("raw_component_value")) if isinstance(dbg_top, dict) else None
+    cap_bounds = dbg_top.get("cap_bounds") if isinstance(dbg_top, dict) else None
+    cap_applied = bool(comp.get("cap_applied"))
+    fb = comp.get("fallbacks_used") if isinstance(comp.get("fallbacks_used"), list) else []
+    notes: list[str] = [
+        "Il componente offensivo in produzione combina segnali in scala SOT con media pesata (somma(val×peso)/somma(pesi)) "
+        "prima dell'eventuale cap ±0.75 sulla media SOT di riferimento.",
+    ]
+    if sum_w > 0:
+        blend = round(sum_num / sum_w, 4)
+        notes.append(f"Media pesata dai contributi salvati (display): {blend} (denominatore pesi: {round(sum_w, 4)}).")
+    if raw_uncapped is not None and capped is not None and (cap_applied or abs(float(raw_uncapped) - float(capped)) > 0.01):
+        notes.append(f"Valore grezzo (pre-cap, da raw_json): {raw_uncapped}; valore salvato componente: {capped}.")
+    if cap_bounds:
+        notes.append(f"Limiti cap (da raw_json): {cap_bounds}.")
+    sum_line = " + ".join(num_parts) if num_parts else ""
+    sum_nums = " + ".join(str(x) for x in num_vals) if num_vals else ""
+    return {
+        "title": "offensive_production_component",
+        "formula_symbolic": "blend ≈ " + " + ".join(sym_parts) + " (normalizzato; vedi nota)",
+        "formula_numeric": ("contributi numeratore: " + sum_line + (f"\n= {sum_nums}" if sum_nums else "")),
+        "rows": rows,
+        "notes": notes,
+        "flags": {"cap_applied": cap_applied, "fallbacks_used": [str(x) for x in fb]},
+    }
+
+
+def _internal_formula_v03_component(raw: dict[str, Any], comp_key: str, comp_label: str) -> dict[str, Any] | None:
+    comps = raw.get("components")
+    inputs = raw.get("inputs")
+    resolved = raw.get("resolved_inputs")
+    if not isinstance(comps, dict):
+        return None
+    cobj = comps.get(comp_key)
+    if not isinstance(cobj, dict):
+        return None
+    formula = str(cobj.get("formula") or comp_key)
+    rows: list[dict[str, Any]] = []
+    keys = V03_INCLUDES_BY_COMP.get(comp_key, [])
+    for k in keys:
+        iv = inputs.get(k) if isinstance(inputs, dict) else None
+        rv = resolved.get(k) if isinstance(resolved, dict) else None
+        rows.append(
+            {
+                "key": k,
+                "label": k,
+                "value": _round2(_safe_float(rv if rv is not None else iv)),
+                "raw_input": iv,
+                "resolved": _round2(_safe_float(rv)) if rv is not None else None,
+            },
+        )
+    return {
+        "title": comp_key,
+        "formula_text": formula,
+        "component_value": _round2(_safe_float(cobj.get("value"))),
+        "rows": rows,
+        "notes": ["Valore componente e formula sono quelli persistiti in raw_json (nessun ricalcolo)."],
+        "flags": {"cap_applied": False, "fallbacks_used": []},
+    }
+
+
+def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, Any] | None, components: list[dict[str, Any]]) -> None:
+    if not isinstance(raw, dict) or not components:
+        return
+    for comp in components:
+        cid = str(comp.get("id") or "")
+        if model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT and cid.startswith("v04_base_"):
+            vars_ = comp.get("variables") or []
+            if vars_ and isinstance(vars_[0], dict):
+                v0 = vars_[0]
+                comp["internal_formula"] = {
+                    "title": str(comp.get("label") or cid),
+                    "formula_text": "Contributo alla previsione finale = valore × peso (letto da baseline v0.1 / debug).",
+                    "rows": [v0],
+                    "notes": [],
+                    "flags": {"cap_applied": False, "fallbacks_used": []},
+                }
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT and cid == "v04_offensive_production":
+            ocomp = raw.get("offensive_production_component")
+            if isinstance(ocomp, dict):
+                comp["internal_formula"] = _internal_formula_v04_offensive(ocomp, raw)
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT and cid.startswith("v03_"):
+            ck = cid.replace("v03_", "")
+            inf = _internal_formula_v03_component(raw, ck, str(comp.get("label") or ck))
+            if inf:
+                comp["internal_formula"] = inf
+        elif model_version == BASELINE_SOT_MODEL_VERSION and cid.startswith("v01_"):
+            vars_ = comp.get("variables") or []
+            if vars_ and isinstance(vars_[0], dict):
+                v0 = vars_[0]
+                comp["internal_formula"] = {
+                    "title": str(comp.get("label") or cid),
+                    "formula_text": str(v0.get("formula") or ""),
+                    "rows": [v0],
+                    "notes": [],
+                    "flags": {
+                        "cap_applied": False,
+                        "fallbacks_used": [str(v0.get("key") or "")] if v0.get("fallback_used") else [],
+                    },
+                }
+        elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
+            comp["internal_formula"] = {
+                "title": str(comp.get("label") or cid),
+                "formula_text": str(comp.get("notes") or ""),
+                "rows": [],
+                "notes": ["Somma additiva baseline + aggiustamenti (v0.2)."],
+                "flags": {"cap_applied": False, "fallbacks_used": []},
+            }
+
+
 def _flatten_audit_variables(audit: MatchVariablesAuditResponse) -> dict[tuple[int, str], Any]:
     m: dict[tuple[int, str], Any] = {}
     for sec in audit.sections:
@@ -751,7 +1246,11 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
         _attach_samples_v03(comp_home, int(fx.home_team_id), audit_map, inc_map)
         _attach_samples_v03(comp_away, int(fx.away_team_id), audit_map, inc_map)
 
-    # Confronto modelli compatto
+    _enrich_components_with_internal_formula(active_mv, raw_home or {}, comp_home)
+    _enrich_components_with_internal_formula(active_mv, raw_away or {}, comp_away)
+
+    fb_home = _build_prediction_formula_breakdown_side(active_mv, raw_home, float(ph) if ph is not None else None)
+    fb_away = _build_prediction_formula_breakdown_side(active_mv, raw_away, float(pa) if pa is not None else None)
     comparison_rows: list[dict[str, Any]] = []
     for mv, short in COMPARE_MODELS_ORDER:
         h = preds.get(mv, {}).get("home")
@@ -863,6 +1362,7 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
             "deltas_text": deltas,
         },
         "components": {"home": comp_home, "away": comp_away},
+        "prediction_formula_breakdown": {"home": fb_home, "away": fb_away},
         "variables_used": {"home": variables_used_home, "away": variables_used_away},
         "quality_checks": {
             "status": "warnings" if quality_items else "ok",

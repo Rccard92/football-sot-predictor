@@ -58,6 +58,22 @@ export type ExplanationVariable = {
   parent_component_id?: string
 }
 
+export type FormulaFlags = {
+  cap_applied: boolean
+  fallbacks_used: string[]
+}
+
+export type InternalFormulaBlock = {
+  title: string
+  formula_text?: string
+  formula_symbolic?: string
+  formula_numeric?: string
+  component_value?: number | null
+  rows: Record<string, unknown>[]
+  notes: string[]
+  flags: FormulaFlags
+}
+
 export type ExplanationComponent = {
   id: string
   label: string
@@ -68,6 +84,38 @@ export type ExplanationComponent = {
   data_status: string
   notes?: string | null
   variables: ExplanationVariable[]
+  internal_formula?: InternalFormulaBlock
+}
+
+export type FormulaTerm = {
+  id: string
+  label: string
+  symbol: string
+  value: number | null
+  weight: number | null
+  contribution: number | null
+  calc_expression: string
+}
+
+export type FormulaComponentTableRow = {
+  componente: string
+  valore_componente: number | null
+  peso: number | null
+  calcolo_contributo: string
+  contributo_finale: number | null
+}
+
+export type PredictionFormulaBreakdownSide = {
+  model_version: string
+  stored_predicted_sot: number | null
+  terms: FormulaTerm[]
+  formula_symbolic: string
+  formula_numeric: string
+  components_table: FormulaComponentTableRow[]
+  sum_contributions: number | null
+  delta_vs_stored: number | null
+  checksum_warning: string | null
+  flags: FormulaFlags
 }
 
 export type ModelComparisonRow = {
@@ -106,6 +154,10 @@ export type SotFixtureExplanationResponse = {
     deltas_text: string[]
   }
   components?: { home: ExplanationComponent[]; away: ExplanationComponent[] }
+  prediction_formula_breakdown?: {
+    home: PredictionFormulaBreakdownSide | null
+    away: PredictionFormulaBreakdownSide | null
+  }
   variables_used?: { home: ExplanationVariable[]; away: ExplanationVariable[] }
   quality_checks?: { status: string; items: string[] }
   human_summary?: string
