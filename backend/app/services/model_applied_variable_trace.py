@@ -14,7 +14,7 @@ from app.services.model_applied_variable_manifest import (
     is_countable_role,
     manifest_for_model,
 )
-from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
+from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
 
 CHECKSUM_TOLERANCE = 0.02
 CHECKSUM_WARNING_IT = (

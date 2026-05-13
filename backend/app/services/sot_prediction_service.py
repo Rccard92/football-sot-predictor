@@ -13,17 +13,9 @@ from app.core.model_limitations import default_model_limitations_dict
 from app.models import Fixture, League, Season, Team, TeamSotFeature, TeamSotPrediction
 from app.services.model_applied_variable_manifest import manifest_for_model
 from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
+from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
 
 logger = logging.getLogger(__name__)
-
-WEIGHTS_BASELINE_V0_1 = {
-    "season_avg_sot_for": 0.30,
-    "opponent_season_avg_sot_conceded": 0.25,
-    "home_away_avg_sot_for": 0.15,
-    "opponent_home_away_avg_sot_conceded": 0.10,
-    "last5_avg_sot_for": 0.10,
-    "opponent_last5_avg_sot_conceded": 0.10,
-}
 
 PRUDENTIAL_FALLBACK_SOT = 3.5
 
