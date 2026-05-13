@@ -181,6 +181,14 @@ export function ModelDebug() {
                 </option>
               ))}
             </select>
+            {fixtureId ? (
+              <Link
+                to={`/match-variable-audit?fixture_id=${fixtureId}`}
+                className="mt-2 inline-block text-sm font-medium text-slate-700 underline"
+              >
+                Apri spiegazione previsione (audit fixture)
+              </Link>
+            ) : null}
           </div>
           <div className="flex items-end justify-between gap-3">
             <label className="flex items-center gap-2 text-sm text-slate-700">

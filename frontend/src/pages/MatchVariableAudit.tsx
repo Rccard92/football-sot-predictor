@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { AuditPageHeader } from '../components/audit/AuditPageHeader'
-import { MainDriversPanel } from '../components/audit/MainDriversPanel'
-import { MatchAuditHero } from '../components/audit/MatchAuditHero'
-import { PredictionAuditSummary } from '../components/audit/PredictionAuditSummary'
-import { FrameworkLevelSection } from '../components/audit/FrameworkLevelSection'
-import { TechnicalAuditPanel } from '../components/audit/TechnicalAuditPanel'
-import type { AuditMode, AuditResponse, FixturesListItem, FixturesListResponse } from '../components/audit/types'
-import { DEFAULT_SEASON, getModelStatus, type ModelStatusResponse } from '../lib/api'
+import { MatchExplanationView } from '../components/match-explanation/MatchExplanationView'
+import type { FixturesListItem, FixturesListResponse } from '../components/audit/types'
+import type { SotFixtureExplanationResponse } from '../types/sotExplanation'
 
 function useQuery(): URLSearchParams {
   const { search } = useLocation()
@@ -22,20 +17,17 @@ export function MatchVariableAudit() {
   const [fixtureId, setFixtureId] = useState<number | null>(
     Number.isFinite(fixtureIdFromQS) && fixtureIdFromQS > 0 ? fixtureIdFromQS : null,
   )
-  const [mode, setMode] = useState<AuditMode>('pre_match')
-  const market = 'shots_on_target' as const
 
-  const [loadingAudit, setLoadingAudit] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<AuditResponse | null>(null)
-  const [modelStatus, setModelStatus] = useState<ModelStatusResponse | null>(null)
+  const [data, setData] = useState<SotFixtureExplanationResponse | null>(null)
 
   useEffect(() => {
     const loadFixtures = async () => {
       setError(null)
       try {
         const res = (await fetch(
-          `${import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')}/api/match-analysis/fixtures?scope=upcoming&limit=60`,
+          `${import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')}/api/match-analysis/fixtures?scope=all&limit=120`,
         ).then((r) => r.json())) as FixturesListResponse
         setFixtures(res.fixtures ?? [])
         if (fixtureId == null && res.fixtures?.length) {
@@ -50,84 +42,86 @@ export function MatchVariableAudit() {
   }, [])
 
   useEffect(() => {
-    const loadStatus = async () => {
-      try {
-        setModelStatus(await getModelStatus(DEFAULT_SEASON))
-      } catch {
-        setModelStatus(null)
-      }
-    }
-    void loadStatus()
-  }, [])
-
-  useEffect(() => {
-    const loadAudit = async () => {
+    const load = async () => {
       if (!fixtureId) return
-      setLoadingAudit(true)
+      setLoading(true)
       setError(null)
       try {
         const base = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
-        const url = `${base}/api/match-analysis/fixture/${fixtureId}/variables?market=${market}&mode=${mode}`
+        const url = `${base}/api/debug/sot/fixture/${fixtureId}/explanation`
         const res = await fetch(url)
-        const parsed = (await res.json()) as unknown
+        const parsed = (await res.json()) as SotFixtureExplanationResponse
         if (!res.ok) {
-          const o = parsed as Record<string, unknown>
-          throw new Error((o.message as string) || (o.detail as string) || 'Richiesta non riuscita')
+          setData(null)
+          setError(parsed.message || `Errore HTTP ${res.status}`)
+          return
         }
-        setData(parsed as AuditResponse)
+        if (parsed.status === 'error') {
+          setData(null)
+          setError(parsed.message || 'Risposta di errore dal server')
+          return
+        }
+        setData(parsed)
       } catch (e) {
         setData(null)
         setError(e instanceof Error ? e.message : String(e))
       } finally {
-        setLoadingAudit(false)
+        setLoading(false)
       }
     }
-    void loadAudit()
-  }, [fixtureId, mode])
+    void load()
+  }, [fixtureId])
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
       <div className="mx-auto max-w-6xl space-y-6 px-4 sm:px-6">
-        <AuditPageHeader
-          fixtures={fixtures}
-          fixtureId={fixtureId}
-          onFixtureChange={(id) => setFixtureId(id)}
-          mode={mode}
-          onModeChange={(m) => setMode(m)}
-          activeModelVersion={data?.active_model_version ?? null}
-        />
+        <header className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm">
+          <h1 className="text-xl font-semibold text-slate-900">Spiegazione previsione partita</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Audit read-only: come il modello attivo ha costruito i tiri in porta attesi, usando solo dati già salvati.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <label className="text-xs font-medium text-slate-600" htmlFor="fixture-select">
+              Partita
+            </label>
+            <select
+              id="fixture-select"
+              className="max-w-xl rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+              value={fixtureId ?? ''}
+              onChange={(e) => setFixtureId(Number(e.target.value) || null)}
+              disabled={!fixtures.length}
+            >
+              {!fixtures.length ? <option value="">Nessuna fixture caricata</option> : null}
+              {fixtures.map((f) => (
+                <option key={f.fixture_id} value={f.fixture_id}>
+                  {f.kickoff_at?.slice(0, 10)} — {f.home_team.name} vs {f.away_team.name} ({f.status_short})
+                </option>
+              ))}
+            </select>
+          </div>
+        </header>
 
         {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">
-            {error}
-          </div>
+          <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">{error}</div>
         ) : null}
 
-        {loadingAudit ? (
+        {loading ? (
           <div className="space-y-3">
             <div className="h-24 animate-pulse rounded-2xl bg-slate-200/80" />
             <div className="h-48 animate-pulse rounded-2xl bg-slate-200/80" />
           </div>
-        ) : data ? (
-          <>
-            {modelStatus?.active_model_version &&
-            data.active_model_version &&
-            modelStatus.active_model_version !== data.active_model_version ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm">
-                Attenzione: la pagina <strong>Prossima Giornata</strong> sta usando{' '}
-                <strong>{modelStatus.active_model_version}</strong>, ma questa scheda audit sta mostrando variabili per{' '}
-                <strong>{data.active_model_version}</strong>.
-              </div>
-            ) : null}
-            <MatchAuditHero data={data} />
-            <PredictionAuditSummary data={data} />
-            <MainDriversPanel data={data} />
-            <FrameworkLevelSection data={data} />
-            <TechnicalAuditPanel data={data} />
-          </>
+        ) : null}
+
+        {!loading && data?.status === 'ok' && data.fixture && data.prediction_summary ? (
+          <MatchExplanationView data={data} />
+        ) : null}
+
+        {!loading && data?.status === 'missing' ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+            {data.message ?? 'Dati insufficienti per questa fixture.'}
+          </div>
         ) : null}
       </div>
     </div>
   )
 }
-

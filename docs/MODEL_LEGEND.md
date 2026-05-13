@@ -407,4 +407,56 @@ Quando il breakdown (`raw_json`) indica:
 
 ### Endpoints di debug (read-only)
 
-- `GET /api/debug/sot/fixture/{fixture_id}/model-comparison`:\n  confronto completo su una fixture, con diagnosi automatica.\n  Query param: `include_raw=true` per includere anche `raw_json` (tecnico).\n- `GET /api/debug/sot/serie-a/{season}/model-comparison/upcoming`:\n  panoramica della prossima giornata, ordinata per criticità (red_flag → inspect → stable).
+- `GET /api/debug/sot/fixture/{fixture_id}/model-comparison`: confronto completo su una fixture, con diagnosi automatica. Query param: `include_raw=true` per includere anche `raw_json` (tecnico).
+- `GET /api/debug/sot/serie-a/{season}/model-comparison/upcoming`: panoramica della prossima giornata, ordinata per criticità (red_flag → inspect → stable).
+- `GET /api/debug/sot/fixture/{fixture_id}/explanation`: pagina unificata “spiegazione previsione”: riassume fixture, modello attivo, previsto vs reale (se disponibile), componenti e variabili **già salvate** in `raw_json`, campioni partite dall’audit read-only, confronto versioni e controlli qualità. **Non** ricalcola la formula.
+
+## Come leggere il debug di una previsione
+
+La pagina **Spiegazione previsione partita** (frontend) legge l’endpoint `GET /api/debug/sot/fixture/{fixture_id}/explanation`. È pensata per audit **read-only**: niente rigenerazione modelli, niente nuove variabili.
+
+### Valore previsto e valore reale
+
+- **Previsto**: `predicted_sot` salvato su `team_sot_predictions` per il `model_version` attivo (la stessa priorità usata altrove: v0.4 → v0.3 → v0.2 → v0.1 se entrambe le squadre hanno il dato).
+- **Reale**: `actual_sot` sulla stessa riga di previsione, se presente, per partite concluse. Se manca, la UI indica che l’esito non è disponibile.
+- **Errore assoluto**: \(|previsto - reale|\) lato squadra e sul totale match (somma dei due lati).
+
+### Componente
+
+Un **componente** è un blocco aggregato del modello (es. “Core SOT diretto” in v0.3, oppure i sei fattori pesati in v0.1, oppure la componente offensiva v0.4 più i blocchi letti dalla baseline). Per ciascuno vedi:
+
+- valore del componente così com’è persistito;
+- **peso** nel mix (es. 0,55 per il core v0.3);
+- **contributo stimato** per la sola visualizzazione: di norma \(valore \times peso\) se il salvataggio non espone già `contribution`;
+- **direzione** (euristica UI: se il valore è molto sopra/sotto la previsione finale, “aumenta” / “riduce” / “neutro”).
+
+### Variabile
+
+Dentro un componente, le **variabili** sono gli input elementari (o i segnali derivati) presenti nel `raw_json` (es. `offensive_production_component.inputs` in v0.4). Per ciascuna: valore, unità, peso interno, contributo salvato o ricostruito solo per display, formula descrittiva, fonte dati, conteggio partite / somme se presenti, flag **fallback** / **cap**, nota **no leakage** (coerente con la policy audit pre/post match).
+
+### Peso e contributo
+
+- **Peso**: frazione del modello assegnata a quel blocco (somma tipicamente 1 sul mix finale, salvo casi speciali documentati nel `raw_json`).
+- **Contributo**: quanto quel blocco spinge il numero verso l’alto o il basso nel mix pesato; sulla UI è un aiuto alla lettura, non una ricalcolazione certificata se il modello non salva esplicitamente tutti i passaggi intermedi.
+
+### Fallback
+
+Se l’input grezzo mancava al momento della generazione, la catena di risoluzione ha usato sostituti (lega, medie alternative, costanti prudenziali). In audit compare **fallback** sulle righe interessate; il testo sintetico può elencare i codici salvati in `fallbacks_used`.
+
+### Red flag e controlli qualità
+
+La sezione “Controlli qualità” riassume:
+
+- segnali dal confronto modelli (`model-comparison` interno: fallback, cap, range tra versioni, prudenza/aggressività v0.4 vs v0.3);
+- storico molto corto (pochissime partite precedenti) se la meta v0.3 lo indica;
+- messaggi espliciti se v0.4 scende molto rispetto a v0.1.
+
+“Nessuna red flag rilevante” compare quando non emergono problemi dai controlli sopra.
+
+### Confronto modelli
+
+Tabella sintetica: per ogni `model_version` per cui esistono **entrambi** i lati, mostra previsto casa, trasferta e totale. Sotto, **delta testuali** (es. v0.4 − v0.1) già arrotondati lato server per lettura rapida.
+
+### Audit tecnico
+
+Blocco chiuso di default con il `raw_json` completo delle due previsioni attive: utile per ispezioni profonde senza appesantire la vista principale.

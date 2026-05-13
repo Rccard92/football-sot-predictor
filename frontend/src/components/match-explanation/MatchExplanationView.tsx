@@ -1,0 +1,391 @@
+import { useMemo, useState } from 'react'
+import type {
+  ExplanationComponent,
+  ExplanationFixture,
+  ExplanationSampleRow,
+  ExplanationVariable,
+  ModelComparisonRow,
+  SideSummary,
+  SotFixtureExplanationResponse,
+} from '../../types/sotExplanation'
+
+function fmtDate(iso: string) {
+  try {
+    const d = new Date(iso)
+    return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  } catch {
+    return iso
+  }
+}
+
+function Badge({
+  children,
+  tone,
+}: {
+  children: React.ReactNode
+  tone: 'slate' | 'emerald' | 'rose' | 'amber' | 'violet' | 'sky'
+}) {
+  const map = {
+    slate: 'bg-slate-100 text-slate-800 border-slate-200',
+    emerald: 'bg-emerald-50 text-emerald-900 border-emerald-200',
+    rose: 'bg-rose-50 text-rose-900 border-rose-200',
+    amber: 'bg-amber-50 text-amber-950 border-amber-200',
+    violet: 'bg-violet-50 text-violet-900 border-violet-200',
+    sky: 'bg-sky-50 text-sky-900 border-sky-200',
+  }
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${map[tone]}`}>
+      {children}
+    </span>
+  )
+}
+
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-2.5">
+        <h2 className="text-sm font-semibold tracking-tight text-slate-900">{title}</h2>
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  )
+}
+
+function Accordion({ title, defaultOpen, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(Boolean(defaultOpen))
+  return (
+    <div className="rounded-xl border border-slate-100">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-slate-800 hover:bg-slate-50"
+        onClick={() => setOpen(!open)}
+      >
+        {title}
+        <span className="text-slate-400">{open ? '−' : '+'}</span>
+      </button>
+      {open ? <div className="border-t border-slate-100 px-3 py-2">{children}</div> : null}
+    </div>
+  )
+}
+
+function SampleMatchesTable({ rows }: { rows: ExplanationSampleRow[] }) {
+  if (!rows.length) return <p className="text-xs text-slate-500">Nessuna riga campione disponibile.</p>
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-left text-[11px] text-slate-700">
+        <thead>
+          <tr className="border-b border-slate-200 text-slate-500">
+            <th className="py-1.5 pr-2 font-medium">Data</th>
+            <th className="py-1.5 pr-2 font-medium">Partita</th>
+            <th className="py-1.5 pr-2 font-medium">Squadra</th>
+            <th className="py-1.5 pr-2 font-medium">Lato</th>
+            <th className="py-1.5 pr-2 font-medium">SOT</th>
+            <th className="py-1.5 pr-2 font-medium">Tiri</th>
+            <th className="py-1.5 pr-2 font-medium">GF</th>
+            <th className="py-1.5 pr-2 font-medium">Avversario</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.fixture_id}-${r.date}-${r.side}`} className="border-b border-slate-100">
+              <td className="py-1.5 pr-2 whitespace-nowrap">{fmtDate(r.date)}</td>
+              <td className="py-1.5 pr-2">
+                {r.home_team} – {r.away_team}
+              </td>
+              <td className="py-1.5 pr-2">{r.team}</td>
+              <td className="py-1.5 pr-2">{r.side === 'home' ? 'Casa' : 'Trasferta'}</td>
+              <td className="py-1.5 pr-2">{r.shots_on_target ?? '—'}</td>
+              <td className="py-1.5 pr-2">{r.total_shots ?? '—'}</td>
+              <td className="py-1.5 pr-2">{r.goals_for ?? '—'}</td>
+              <td className="py-1.5 pr-2">{r.opponent}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function VariableTable({ vars }: { vars: ExplanationVariable[] }) {
+  if (!vars.length) return null
+  return (
+    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-100">
+      <table className="min-w-full text-left text-[11px]">
+        <thead>
+          <tr className="bg-slate-50 text-slate-600">
+            <th className="px-2 py-1.5 font-medium">Variabile</th>
+            <th className="px-2 py-1.5 font-medium">Valore</th>
+            <th className="px-2 py-1.5 font-medium">Peso</th>
+            <th className="px-2 py-1.5 font-medium">Contributo</th>
+            <th className="px-2 py-1.5 font-medium">Fonte</th>
+            <th className="px-2 py-1.5 font-medium">Note</th>
+          </tr>
+        </thead>
+        <tbody className="text-slate-800">
+          {vars.map((v) => (
+            <tr key={v.key} className="border-t border-slate-100">
+              <td className="px-2 py-1.5">{v.label}</td>
+              <td className="px-2 py-1.5 whitespace-nowrap">
+                {v.value ?? '—'} {v.unit ? <span className="text-slate-500">{v.unit}</span> : null}
+              </td>
+              <td className="px-2 py-1.5">{v.weight_internal != null ? `${Math.round(v.weight_internal * 100)}%` : '—'}</td>
+              <td className="px-2 py-1.5">{v.contribution ?? '—'}</td>
+              <td className="px-2 py-1.5 text-slate-600">{v.data_source ?? '—'}</td>
+              <td className="px-2 py-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {v.fallback_used ? <Badge tone="amber">Fallback</Badge> : null}
+                  {v.cap_applied ? <Badge tone="rose">Cap</Badge> : null}
+                  {v.no_data_leakage_note ? <Badge tone="emerald">No leakage</Badge> : null}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function SidePredictionCard({ title, s }: { title: string; s: SideSummary }) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+      <p className="text-xs font-semibold text-slate-900">{title}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{s.predicted_sot ?? '—'}</p>
+      <p className="text-[11px] text-slate-500">Previsti (SOT)</p>
+      {s.actual_sot != null ? (
+        <>
+          <p className="mt-2 text-lg font-medium tabular-nums text-slate-800">{s.actual_sot}</p>
+          <p className="text-[11px] text-slate-500">Reali</p>
+          <p className="mt-1 text-sm text-slate-700">
+            Errore: <span className="font-medium tabular-nums">{s.absolute_error ?? '—'}</span>
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {s.outcome_label ? <Badge tone="sky">{s.outcome_label}</Badge> : null}
+            {s.post_audit_judgment ? <Badge tone="violet">Audit: {s.post_audit_judgment}</Badge> : null}
+          </div>
+        </>
+      ) : (
+        <p className="mt-2 text-xs text-slate-500">Partita non conclusa o esito non disponibile nel DB.</p>
+      )}
+    </div>
+  )
+}
+
+function ComponentsForTeam({
+  teamName,
+  components,
+}: {
+  teamName: string
+  components: ExplanationComponent[]
+}) {
+  if (!components.length) {
+    return <p className="text-xs text-slate-500">Nessun breakdown componenti per {teamName}.</p>
+  }
+  return (
+    <div className="space-y-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{teamName}</h3>
+      <div className="overflow-x-auto rounded-xl border border-slate-100">
+        <table className="min-w-full text-left text-xs">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-slate-600">
+              <th className="px-3 py-2 font-medium">Componente</th>
+              <th className="px-3 py-2 font-medium">Valore</th>
+              <th className="px-3 py-2 font-medium">Peso</th>
+              <th className="px-3 py-2 font-medium">Contributo</th>
+              <th className="px-3 py-2 font-medium">Direzione</th>
+              <th className="px-3 py-2 font-medium">Dati</th>
+            </tr>
+          </thead>
+          <tbody className="text-slate-800">
+            {components.map((c) => (
+              <tr key={c.id} className="border-b border-slate-100 align-top">
+                <td className="px-3 py-2 font-medium text-slate-900">{c.label}</td>
+                <td className="px-3 py-2 tabular-nums">{c.value ?? '—'}</td>
+                <td className="px-3 py-2">{c.weight != null ? `${Math.round(c.weight * 100)}%` : '—'}</td>
+                <td className="px-3 py-2 tabular-nums">{c.contribution ?? '—'}</td>
+                <td className="px-3 py-2 capitalize text-slate-600">{c.direction}</td>
+                <td className="px-3 py-2">
+                  <Badge tone={c.data_status === 'ok' ? 'emerald' : 'amber'}>{c.data_status}</Badge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {components.map((c) => (
+        <div key={`${c.id}-acc`} className="space-y-2">
+          {c.variables?.length ? (
+            <Accordion title={`Variabili usate — ${c.label}`}>
+              <VariableTable vars={c.variables} />
+              {c.variables.map((v) => (
+                <div key={`${c.id}-${v.key}-m`} className="mt-2">
+                  {(v.sample_matches?.length ?? 0) > 0 ? (
+                    <Accordion title="Partite considerate (campione)">
+                      {v.sample_matches_note ? <p className="mb-2 text-[11px] text-slate-600">{v.sample_matches_note}</p> : null}
+                      <SampleMatchesTable rows={v.sample_matches ?? []} />
+                    </Accordion>
+                  ) : null}
+                </div>
+              ))}
+            </Accordion>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function MatchExplanationView({ data }: { data: SotFixtureExplanationResponse }) {
+  const fx = data.fixture as ExplanationFixture
+  const summary = data.prediction_summary
+  const finished = data.actual_result?.fixture_finished
+
+  const comparisonRows: ModelComparisonRow[] = useMemo(() => data.model_comparison?.rows ?? [], [data.model_comparison?.rows])
+
+  if (!fx || !summary) return null
+
+  return (
+    <div className="space-y-5">
+      <header className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            {fx.home_team.logo_url ? (
+              <img src={fx.home_team.logo_url} alt="" className="h-10 w-10 object-contain" />
+            ) : (
+              <div className="h-10 w-10 rounded-full bg-slate-100" />
+            )}
+            <div>
+              <p className="text-lg font-semibold text-slate-900">
+                {fx.home_team.name} <span className="text-slate-400">–</span> {fx.away_team.name}
+              </p>
+              <p className="text-xs text-slate-500">
+                {fmtDate(fx.kickoff_at)} · {fx.round ?? 'Giornata n/d'} · {fx.status_short}
+              </p>
+            </div>
+            {fx.away_team.logo_url ? (
+              <img src={fx.away_team.logo_url} alt="" className="h-10 w-10 object-contain" />
+            ) : (
+              <div className="h-10 w-10 rounded-full bg-slate-100" />
+            )}
+          </div>
+          <div className="flex flex-col items-start gap-1.5 sm:items-end">
+            <Badge tone="slate">Mercato: tiri in porta squadra</Badge>
+            <Badge tone={finished ? 'violet' : 'sky'}>
+              {summary.ui_mode === 'post_match_audit' ? 'Post-match audit' : 'Pre-match'}
+            </Badge>
+            {data.active_model_version ? (
+              <p className="text-right text-[11px] text-slate-600">
+                Modello: <span className="font-mono text-slate-900">{data.active_model_version}</span>
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </header>
+
+      <SectionCard title="Previsione vs esito">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SidePredictionCard title={fx.home_team.name} s={summary.home} />
+          <SidePredictionCard title={fx.away_team.name} s={summary.away} />
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+          <p className="text-xs font-semibold text-slate-800">Totale match</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{summary.match_total.predicted_sot ?? '—'}</p>
+          <p className="text-[11px] text-slate-500">Previsto</p>
+          {summary.match_total.actual_sot != null ? (
+            <p className="mt-2 text-sm text-slate-700">
+              Reale: <span className="font-semibold tabular-nums">{summary.match_total.actual_sot}</span> · Errore:{' '}
+              <span className="font-semibold tabular-nums">{summary.match_total.absolute_error ?? '—'}</span>
+            </p>
+          ) : null}
+        </div>
+      </SectionCard>
+
+      {data.human_summary ? (
+        <SectionCard title="Spiegazione sintetica">
+          <p className="text-sm leading-relaxed text-slate-800">{data.human_summary}</p>
+        </SectionCard>
+      ) : null}
+
+      <SectionCard title="Come è stato costruito il numero">
+        <ComponentsForTeam teamName={fx.home_team.name} components={data.components?.home ?? []} />
+        <div className="my-6 border-t border-slate-100" />
+        <ComponentsForTeam teamName={fx.away_team.name} components={data.components?.away ?? []} />
+      </SectionCard>
+
+      {comparisonRows.length > 0 ? (
+        <SectionCard title="Confronto con versioni precedenti">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-600">
+                  <th className="py-2 pr-3 font-medium">Modello</th>
+                  <th className="py-2 pr-3 font-medium">{fx.home_team.name}</th>
+                  <th className="py-2 pr-3 font-medium">{fx.away_team.name}</th>
+                  <th className="py-2 pr-3 font-medium">Totale</th>
+                </tr>
+              </thead>
+              <tbody className="text-slate-800">
+                {comparisonRows.map((r) => (
+                  <tr key={r.model_version} className="border-b border-slate-100">
+                    <td className="py-2 pr-3 font-mono text-[11px]">{r.label}</td>
+                    <td className="py-2 pr-3 tabular-nums">{r.home ?? '—'}</td>
+                    <td className="py-2 pr-3 tabular-nums">{r.away ?? '—'}</td>
+                    <td className="py-2 pr-3 tabular-nums">{r.total ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.model_comparison?.deltas_text?.length ? (
+            <ul className="mt-3 list-inside list-disc text-[11px] text-slate-600">
+              {data.model_comparison.deltas_text.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          ) : null}
+        </SectionCard>
+      ) : null}
+
+      <SectionCard title="Controlli qualità">
+        <ul className="space-y-1.5 text-sm text-slate-800">
+          {(data.quality_checks?.items ?? []).map((it) => (
+            <li key={it} className="flex gap-2">
+              <span className="text-slate-400">•</span>
+              <span>{it}</span>
+            </li>
+          ))}
+        </ul>
+      </SectionCard>
+
+      {finished ? (
+        <SectionCard title="Verifica post-partita">
+          <p className="mb-3 text-xs text-slate-600">
+            Soglie indicative: ≤0,50 ottima · ≤1,00 vicina · ≤1,50 accettabile · oltre da analizzare (solo UI).
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[summary.home, summary.away].map((s) => (
+              <div key={s.team_name} className="rounded-lg border border-slate-100 p-3 text-xs">
+                <p className="font-semibold text-slate-900">{s.team_name}</p>
+                <p className="mt-1 text-slate-700">
+                  Prev. {s.predicted_sot ?? '—'} · Reale {s.actual_sot ?? '—'} · Err. {s.absolute_error ?? '—'}
+                </p>
+                <p className="mt-1 text-slate-600">{s.post_audit_judgment ?? '—'}</p>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
+
+      <Accordion title="Audit tecnico completo (raw JSON salvato)">
+        <pre className="max-h-[420px] overflow-auto rounded-lg bg-slate-900 p-3 text-[10px] leading-relaxed text-emerald-100">
+          {JSON.stringify(data.technical_audit?.prediction_raw_json ?? {}, null, 2)}
+        </pre>
+        {data.technical_audit?.data_policy ? (
+          <p className="mt-2 text-[11px] text-slate-600">
+            No leakage: {data.technical_audit.data_policy.no_data_leakage ? 'sì' : 'no'} — {data.technical_audit.data_policy.included_matches_rule}
+          </p>
+        ) : null}
+      </Accordion>
+    </div>
+  )
+}

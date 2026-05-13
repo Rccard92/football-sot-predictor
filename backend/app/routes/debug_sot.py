@@ -11,10 +11,53 @@ from app.services.debug_sot_model_comparison import (
     build_model_comparison_for_fixture,
     build_model_comparison_for_upcoming,
 )
+from app.services.sot_fixture_explanation_service import build_fixture_sot_explanation
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/debug/sot", tags=["debug"])
+
+
+@router.get("/fixture/{fixture_id}/explanation", response_model=None)
+def debug_sot_fixture_explanation(fixture_id: int, db: Session = Depends(get_db)):
+    """
+    Read-only: spiegazione audit previsione SOT per fixture (dati già salvati, nessuna rigenerazione).
+    """
+    try:
+        payload = build_fixture_sot_explanation(db, int(fixture_id))
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET debug fixture explanation: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Errore database durante la lettura della spiegazione.",
+                    "failed_step": "database_operation",
+                    "details": f"{exc.__class__.__name__}",
+                    "fixture_id": int(fixture_id),
+                }
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET debug fixture explanation: errore inatteso")
+        return JSONResponse(
+            status_code=422,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Errore durante l'assemblaggio della spiegazione (dettaglio in note).",
+                    "failed_step": "unexpected_error",
+                    "details": f"{exc.__class__.__name__}: {exc!s}"[:800],
+                    "fixture_id": int(fixture_id),
+                }
+            ),
+        )
+
+    if isinstance(payload, dict) and payload.get("status") == "missing":
+        return JSONResponse(status_code=404, content=jsonable_encoder(payload))
+
+    return JSONResponse(status_code=200, content=jsonable_encoder(payload))
 
 
 @router.get("/fixture/{fixture_id}/model-comparison", response_model=None)
