@@ -12,6 +12,7 @@ from app.core.constants import (
     FINISHED_STATUSES,
 )
 from app.models import Fixture, League, PlayerSotProfile, Season, Team, TeamSotPrediction, TeamSotPredictionAdjustment
+from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 from app.services.predictions_v02.adjustments_player import compute_player_adjustment
 from app.services.predictions_v02.math_utils import round2 as _round2
 
@@ -338,6 +339,18 @@ class SotPredictionV02PlayerAdjustedService:
                                 "availability_adjustment": 0.0,
                                 "adjustment_breakdown": breakdown,
                             },
+                        )
+                        raw.setdefault("model_version", self.model_version)
+                        team_row = db.get(Team, int(team_id))
+                        tname = team_row.name if team_row is not None else str(team_id)
+                        raw = append_trace_to_raw_json(
+                            raw,
+                            model_version=self.model_version,
+                            team_id=int(team_id),
+                            team_name=tname,
+                            audit_map={},
+                            hours_to_kickoff=compute_hours_to_kickoff(fx.kickoff_at),
+                            prediction_confidence=int(base_pred.confidence_score or 60),
                         )
                         row = db.scalar(
                             select(TeamSotPrediction).where(

@@ -221,6 +221,13 @@ export type MatchAnalysisFrameworkVariable = {
   implementation_status: FrameworkImplementationStatus
   applied_now: boolean
   notes?: string | null
+  applied_layer?: string | null
+  direct_formula_impact?: boolean | null
+  decision_context_impact?: boolean | null
+  applied_to_model_versions?: string[] | null
+  application_role?: string | null
+  parent_component?: string | null
+  expected_in_debug?: boolean | null
 }
 
 export type MatchAnalysisFrameworkArea = {

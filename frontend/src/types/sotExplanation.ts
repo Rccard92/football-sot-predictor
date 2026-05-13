@@ -118,6 +118,73 @@ export type PredictionFormulaBreakdownSide = {
   flags: FormulaFlags
 }
 
+export type FrameworkConsistencySide = {
+  framework_applied_count: number
+  debug_trace_count: number
+  is_consistent: boolean
+  missing_trace_keys: string[]
+  extra_trace_keys: string[]
+  missing_data_keys: string[]
+  validation_warnings: string[]
+}
+
+export type FrameworkConsistencyPayload = {
+  model_version?: string | null
+  home: FrameworkConsistencySide
+  away: FrameworkConsistencySide
+}
+
+export type AppliedVariableTraceRow = {
+  key: string
+  trace_key: string
+  label: string
+  area: string
+  application_role: string
+  parent_component: string | null
+  team_id: number
+  team_name: string
+  value: unknown
+  unit: string | null
+  weight: number | null
+  contribution: number | null
+  formula: string | null
+  source: string | null
+  matches_count?: number | null
+  sample_rows_count?: number | null
+  fallback_used: boolean
+  cap_applied: boolean
+  notes: string | null
+  status?: string
+  model_version?: string
+}
+
+export type ComponentTreeNode = {
+  component_key: string | null
+  component_label: string | null
+  value: number | null
+  weight: number | null
+  contribution: number | null
+  data_status?: string
+  notes?: string | null
+  variables: ExplanationVariable[]
+}
+
+export type FinalFormulaTerm = {
+  component_key: string | null
+  component_label: string | null
+  value: number | null
+  weight: number | null
+  contribution: number | null
+}
+
+export type FinalFormulaSide = {
+  terms: FinalFormulaTerm[]
+  sum_contributions: number | null
+  saved_expected_sot: number | null
+  delta: number | null
+  checksum_warning?: string | null
+}
+
 export type ModelComparisonRow = {
   model_version: string
   label: string
@@ -133,6 +200,7 @@ export type SotFixtureExplanationResponse = {
   fixture?: ExplanationFixture
   market?: string
   active_model_version?: string | null
+  framework_consistency?: FrameworkConsistencyPayload
   prediction_summary?: {
     audit_mode: string
     ui_mode: string
@@ -158,6 +226,14 @@ export type SotFixtureExplanationResponse = {
     home: PredictionFormulaBreakdownSide | null
     away: PredictionFormulaBreakdownSide | null
   }
+  final_formula?: {
+    formula_label?: string
+    home: FinalFormulaSide | null
+    away: FinalFormulaSide | null
+  }
+  component_tree?: { home: ComponentTreeNode[]; away: ComponentTreeNode[] }
+  applied_variable_trace?: { home: AppliedVariableTraceRow[]; away: AppliedVariableTraceRow[] }
+  not_applied_variables?: { items: unknown[]; note?: string | null }
   variables_used?: { home: ExplanationVariable[]; away: ExplanationVariable[] }
   quality_checks?: { status: string; items: string[] }
   human_summary?: string

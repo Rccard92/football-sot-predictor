@@ -66,6 +66,10 @@ class MatchAnalysisFrameworkVariable(BaseModel):
     applied_layer: str | None = None
     direct_formula_impact: bool | None = None
     decision_context_impact: bool | None = None
+    applied_to_model_versions: list[str] | None = None
+    application_role: str | None = None
+    parent_component: str | None = None
+    expected_in_debug: bool | None = None
 
 
 class MatchAnalysisFrameworkArea(BaseModel):

@@ -12,7 +12,8 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     FINISHED_STATUSES,
 )
-from app.models import Fixture, FixtureTeamStat, League, Season, TeamSotPrediction
+from app.models import Fixture, FixtureTeamStat, League, Season, Team, TeamSotPrediction
+from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 from app.services.sot_feature_math import fixture_key_before
 from app.services.match_context_service import MatchContextService
 
@@ -560,6 +561,18 @@ class SotPredictionV03CoreSotService:
                     expected_v01 = float(base.predicted_sot or 0.0)
                     bd["expected_sot_v01_loaded"] = _round2(expected_v01)
                     bd["difference_from_v01"] = _round2(expected_v03 - expected_v01)
+
+                    team_row = db.get(Team, int(team_id))
+                    tname = team_row.name if team_row is not None else str(team_id)
+                    bd = append_trace_to_raw_json(
+                        bd,
+                        model_version=self.model_version,
+                        team_id=int(team_id),
+                        team_name=tname,
+                        audit_map={},
+                        hours_to_kickoff=compute_hours_to_kickoff(fx.kickoff_at),
+                        prediction_confidence=None,
+                    )
 
                     row = db.scalar(
                         select(TeamSotPrediction).where(

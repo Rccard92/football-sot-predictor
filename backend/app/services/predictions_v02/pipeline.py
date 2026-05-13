@@ -7,9 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, FINISHED_STATUSES
-from app.models import Fixture, PlayerAvailabilityEvent, TeamSotPrediction
+from app.models import Fixture, PlayerAvailabilityEvent, Team, TeamSotPrediction
 from app.services.h2h_service import build_h2h_summary_for_fixture
 from app.services.match_context_service import MatchContextService
+from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 from app.services.predictions_v02.math_utils import round2 as _round2
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,18 @@ def generate_v02_for_upcoming_season(service: Any, db: Session, season_year: int
                             "prediction_confidence_label_v0_2": conf_label,
                             "adjustment_breakdown": breakdown,
                         },
+                    )
+                    raw.setdefault("model_version", service.model_version)
+                    team_row = db.get(Team, int(team_id))
+                    tname = team_row.name if team_row is not None else str(team_id)
+                    raw = append_trace_to_raw_json(
+                        raw,
+                        model_version=service.model_version,
+                        team_id=int(team_id),
+                        team_name=tname,
+                        audit_map={},
+                        hours_to_kickoff=compute_hours_to_kickoff(fx.kickoff_at),
+                        prediction_confidence=int(conf_score),
                     )
                     row = db.scalar(
                         select(TeamSotPrediction).where(

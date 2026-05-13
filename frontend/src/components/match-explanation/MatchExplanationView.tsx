@@ -9,6 +9,11 @@ import type {
   SotFixtureExplanationResponse,
 } from '../../types/sotExplanation'
 import { InternalFormulaPanel, PredictionFinalFormulaSection } from './PredictionFinalFormulaSection'
+import {
+  AppliedVariableTraceTable,
+  ComponentTreeView,
+  FrameworkConsistencyCard,
+} from './MatchExplanationTraceability'
 
 function fmtDate(iso: string) {
   try {
@@ -288,6 +293,18 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
         </div>
       </header>
 
+      {data.framework_consistency ? (
+        <SectionCard title="Coerenza framework / modello">
+          <p className="mb-3 text-[11px] text-slate-600">
+            Modello attivo:{' '}
+            <span className="font-mono text-slate-900">
+              {data.framework_consistency.model_version ?? data.active_model_version ?? '—'}
+            </span>
+          </p>
+          <FrameworkConsistencyCard fc={data.framework_consistency} />
+        </SectionCard>
+      ) : null}
+
       <SectionCard title="Previsione vs esito">
         <div className="grid gap-3 sm:grid-cols-2">
           <SidePredictionCard title={fx.home_team.name} s={summary.home} />
@@ -320,6 +337,28 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
               cardPredicted={summary.away.predicted_sot}
             />
           </div>
+        </SectionCard>
+      ) : null}
+
+      {data.component_tree?.home?.length || data.component_tree?.away?.length ? (
+        <SectionCard title="Albero componenti">
+          <div className="space-y-6">
+            <ComponentTreeView nodes={data.component_tree?.home ?? []} teamName={fx.home_team.name} />
+            <div className="border-t border-slate-100" />
+            <ComponentTreeView nodes={data.component_tree?.away ?? []} teamName={fx.away_team.name} />
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {(data.applied_variable_trace?.home?.length ?? 0) > 0 || (data.applied_variable_trace?.away?.length ?? 0) > 0 ? (
+        <SectionCard title="Registro variabili applicate (trace)">
+          <p className="mb-3 text-[11px] text-slate-600">
+            Una riga per voce del manifest del modello attivo. I conteggi devono coincidere con la sezione coerenza.
+          </p>
+          <p className="mb-2 text-xs font-semibold text-slate-900">{fx.home_team.name}</p>
+          <AppliedVariableTraceTable rows={data.applied_variable_trace?.home ?? []} />
+          <p className="mb-2 mt-6 text-xs font-semibold text-slate-900">{fx.away_team.name}</p>
+          <AppliedVariableTraceTable rows={data.applied_variable_trace?.away ?? []} />
         </SectionCard>
       ) : null}
 
@@ -398,6 +437,18 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
           </div>
         </SectionCard>
       ) : null}
+
+      <Accordion title="Variabili non applicate al modello attivo">
+        <p className="text-[11px] text-slate-600">
+          {data.not_applied_variables?.note ??
+            'Le variabili del Framework non incluse nel manifest del modello attivo non entrano nel conteggio “applicate”. Filtra per modello nella pagina Framework Analisi.'}
+        </p>
+        {data.not_applied_variables?.items && data.not_applied_variables.items.length > 0 ? (
+          <pre className="mt-2 max-h-48 overflow-auto rounded bg-slate-50 p-2 text-[10px]">
+            {JSON.stringify(data.not_applied_variables.items, null, 2)}
+          </pre>
+        ) : null}
+      </Accordion>
 
       <Accordion title="Audit tecnico completo (raw JSON salvato)">
         <pre className="max-h-[420px] overflow-auto rounded-lg bg-slate-900 p-3 text-[10px] leading-relaxed text-emerald-100">

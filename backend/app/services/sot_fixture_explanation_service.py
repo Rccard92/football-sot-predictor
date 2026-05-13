@@ -25,6 +25,12 @@ from app.models import Fixture, Team, TeamSotPrediction
 from app.schemas.match_analysis import MatchVariablesAuditResponse
 from app.services.debug_sot_model_comparison import build_model_comparison_for_fixture
 from app.services.match_variable_audit_service import MatchVariableAuditService
+from app.services.model_applied_variable_manifest import is_countable_role, manifest_for_model
+from app.services.model_applied_variable_trace import (
+    build_applied_variable_trace_side,
+    compute_hours_to_kickoff,
+    validate_model_trace,
+)
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
 
 logger = logging.getLogger(__name__)
@@ -1109,6 +1115,84 @@ def _human_summary(
     return " ".join(chunks) if chunks else "Spiegazione non disponibile: mancano testi salvati sulla previsione."
 
 
+def _build_component_tree_side(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for c in components:
+        if not isinstance(c, dict):
+            continue
+        out.append(
+            {
+                "component_key": c.get("id"),
+                "component_label": c.get("label"),
+                "value": c.get("value"),
+                "weight": c.get("weight"),
+                "contribution": c.get("contribution"),
+                "data_status": c.get("data_status"),
+                "notes": c.get("notes"),
+                "variables": c.get("variables") if isinstance(c.get("variables"), list) else [],
+            },
+        )
+    return out
+
+
+def _build_final_formula_side(fb: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not fb or not isinstance(fb, dict):
+        return None
+    terms = fb.get("terms") or []
+    if not isinstance(terms, list):
+        return None
+    mapped: list[dict[str, Any]] = []
+    for t in terms:
+        if not isinstance(t, dict):
+            continue
+        mapped.append(
+            {
+                "component_key": t.get("symbol"),
+                "component_label": t.get("label"),
+                "value": t.get("value"),
+                "weight": t.get("weight"),
+                "contribution": t.get("contribution"),
+            },
+        )
+    return {
+        "terms": mapped,
+        "sum_contributions": fb.get("sum_contributions"),
+        "saved_expected_sot": fb.get("stored_predicted_sot"),
+        "delta": fb.get("delta_vs_stored"),
+        "checksum_warning": fb.get("checksum_warning"),
+    }
+
+
+def _framework_consistency_side(
+    *,
+    active_mv: str,
+    trace: list[dict[str, Any]],
+    raw: dict[str, Any] | None,
+    predicted: float | None,
+    sum_contributions: float | None,
+) -> dict[str, Any]:
+    specs = manifest_for_model(active_mv)
+    fw_applied = len([s for s in specs if is_countable_role(s.application_role)])
+    dbg_n = len([r for r in trace if isinstance(r, dict) and is_countable_role(str(r.get("application_role") or ""))])
+    val = validate_model_trace(
+        active_mv,
+        raw if isinstance(raw, dict) else {},
+        trace,
+        stored_predicted_sot=float(predicted) if predicted is not None else None,
+        sum_contributions=float(sum_contributions) if sum_contributions is not None else None,
+    )
+    missing_data = [str(r.get("key")) for r in trace if isinstance(r, dict) and r.get("status") == "missing" and r.get("key")]
+    return {
+        "framework_applied_count": fw_applied,
+        "debug_trace_count": dbg_n,
+        "is_consistent": bool(fw_applied == dbg_n and val.get("ok")),
+        "missing_trace_keys": val.get("missing_trace_keys") or [],
+        "extra_trace_keys": val.get("extra_trace_keys") or [],
+        "missing_data_keys": missing_data,
+        "validation_warnings": val.get("warnings") or [],
+    }
+
+
 def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any]:
     fx = db.get(Fixture, int(fixture_id))
     if fx is None:
@@ -1346,12 +1430,72 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
             if isinstance(v, dict):
                 variables_used_away.append({**v, "parent_component_id": comp.get("id")})
 
+    h_to_ko = compute_hours_to_kickoff(fx.kickoff_at if isinstance(fx.kickoff_at, datetime) else None)
+    conf_h = int(row_home.confidence_score) if row_home and row_home.confidence_score is not None else None
+    conf_a = int(row_away.confidence_score) if row_away and row_away.confidence_score is not None else None
+
+    trace_home = build_applied_variable_trace_side(
+        active_mv,
+        raw_home if isinstance(raw_home, dict) else {},
+        team_id=int(fx.home_team_id),
+        team_name=home.name,
+        audit_map=audit_map,
+        hours_to_kickoff=h_to_ko,
+        prediction_confidence=conf_h,
+    )
+    trace_away = build_applied_variable_trace_side(
+        active_mv,
+        raw_away if isinstance(raw_away, dict) else {},
+        team_id=int(fx.away_team_id),
+        team_name=away.name,
+        audit_map=audit_map,
+        hours_to_kickoff=h_to_ko,
+        prediction_confidence=conf_a,
+    )
+
+    sum_c_home = float(fb_home["sum_contributions"]) if isinstance(fb_home, dict) and fb_home.get("sum_contributions") is not None else None
+    sum_c_away = float(fb_away["sum_contributions"]) if isinstance(fb_away, dict) and fb_away.get("sum_contributions") is not None else None
+
+    fw_cons_home = _framework_consistency_side(
+        active_mv=active_mv,
+        trace=trace_home,
+        raw=raw_home if isinstance(raw_home, dict) else None,
+        predicted=float(ph) if ph is not None else None,
+        sum_contributions=sum_c_home,
+    )
+    fw_cons_away = _framework_consistency_side(
+        active_mv=active_mv,
+        trace=trace_away,
+        raw=raw_away if isinstance(raw_away, dict) else None,
+        predicted=float(pa) if pa is not None else None,
+        sum_contributions=sum_c_away,
+    )
+
     return {
         "status": "ok",
         "fixture": _fixture_payload(fx, home, away),
         "market": "shots_on_target",
         "active_model_version": active_mv,
+        "framework_consistency": {
+            "model_version": active_mv,
+            "home": fw_cons_home,
+            "away": fw_cons_away,
+        },
         "prediction_summary": prediction_summary,
+        "final_formula": {
+            "formula_label": "expected_sot: mix pesato (v0.1/v0.3/v0.4) o somma additiva (v0.2) — vedi terms",
+            "home": _build_final_formula_side(fb_home if isinstance(fb_home, dict) else None),
+            "away": _build_final_formula_side(fb_away if isinstance(fb_away, dict) else None),
+        },
+        "component_tree": {
+            "home": _build_component_tree_side(comp_home),
+            "away": _build_component_tree_side(comp_away),
+        },
+        "applied_variable_trace": {"home": trace_home, "away": trace_away},
+        "not_applied_variables": {
+            "items": [],
+            "note": "Variabili del Framework non incluse nel modello attivo: consulta Framework Analisi con filtro per model_version.",
+        },
         "actual_result": {
             "fixture_finished": played,
             "home_actual_sot": ah if played else None,

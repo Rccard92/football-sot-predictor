@@ -337,6 +337,32 @@ export function MatchAnalysisFramework() {
                               <span className="font-semibold text-slate-900">Note:</span> {v.notes}
                             </p>
                           ) : null}
+
+                          {v.application_role ? (
+                            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-700">
+                              <p>
+                                <span className="font-semibold text-slate-900">Ruolo nel modello:</span> {v.application_role}
+                              </p>
+                              {v.parent_component ? (
+                                <p className="mt-1">
+                                  <span className="font-semibold text-slate-900">Componente padre:</span>{' '}
+                                  <span className="font-mono">{v.parent_component}</span>
+                                </p>
+                              ) : null}
+                              {v.applied_to_model_versions?.length ? (
+                                <p className="mt-1">
+                                  <span className="font-semibold text-slate-900">Model version:</span>{' '}
+                                  <span className="font-mono">{v.applied_to_model_versions.join(', ')}</span>
+                                </p>
+                              ) : null}
+                              {v.expected_in_debug != null ? (
+                                <p className="mt-1">
+                                  <span className="font-semibold text-slate-900">Attesa in debug:</span>{' '}
+                                  {v.expected_in_debug ? 'sì' : 'no'}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </article>
                       ))}
                     </div>

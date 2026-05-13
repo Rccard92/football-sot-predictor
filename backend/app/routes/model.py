@@ -754,7 +754,7 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
 
         all_markets = ["tiri_in_porta", "tiri_totali", "corner", "cartellini", "falli", "goal_over_under"]
 
-        return MatchAnalysisFrameworkResponse(
+        _framework = MatchAnalysisFrameworkResponse(
             title="Match Analysis Framework",
             description=(
                 "Struttura consultabile delle variabili che il modello può considerare per analizzare una partita "
@@ -1722,7 +1722,12 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
             "planned": True,
             "description": "In futuro i pesi potranno essere modificati da frontend e salvati come configurazione modello.",
         },
-    )
+        )
+        from app.services.model_applied_variable_manifest import enrich_framework_areas
+
+        dump = _framework.model_dump()
+        enrich_framework_areas(dump["areas"])
+        return MatchAnalysisFrameworkResponse(**dump)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Errore durante build Match Analysis Framework")
         payload = {

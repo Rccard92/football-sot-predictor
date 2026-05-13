@@ -11,6 +11,8 @@ from app.core.config import get_settings
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, BASELINE_SOT_MODEL_VERSION_V02, FINISHED_STATUSES
 from app.core.model_limitations import default_model_limitations_dict
 from app.models import Fixture, League, Season, Team, TeamSotFeature, TeamSotPrediction
+from app.services.model_applied_variable_manifest import manifest_for_model
+from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 
 logger = logging.getLogger(__name__)
 
@@ -1058,6 +1060,19 @@ class SotPredictionService:
         model_version: str | None = None,
     ) -> None:
         mv = model_version or self.model_version
+        raw_out = raw_json
+        if manifest_for_model(mv):
+            fx = db.get(Fixture, int(fixture_id))
+            tm = db.get(Team, int(team_id))
+            raw_out = append_trace_to_raw_json(
+                raw_json,
+                model_version=mv,
+                team_id=int(team_id),
+                team_name=tm.name if tm is not None else str(team_id),
+                audit_map={},
+                hours_to_kickoff=compute_hours_to_kickoff(getattr(fx, "kickoff_at", None)),
+                prediction_confidence=int(confidence_score),
+            )
         row = db.scalar(
             select(TeamSotPrediction).where(
                 TeamSotPrediction.fixture_id == fixture_id,
@@ -1078,7 +1093,7 @@ class SotPredictionService:
                 over_probability=over_probability,
                 under_probability=under_probability,
                 recommendation=recommendation,
-                raw_json=raw_json,
+                raw_json=raw_out,
             )
             db.add(row)
         else:
@@ -1090,7 +1105,7 @@ class SotPredictionService:
             row.over_probability = over_probability
             row.under_probability = under_probability
             row.recommendation = recommendation
-            row.raw_json = raw_json
+            row.raw_json = raw_out
         db.flush()
 
     def generate_for_season(

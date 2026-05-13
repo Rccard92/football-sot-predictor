@@ -50,7 +50,13 @@ Decisione: giocabile / prudente / no bet
 Per ogni area, la tabella elenca le variabili che il modello può considerare.  
 Colonne: **variabile**, **descrizione**, **mercati**, **peso**, **fonte dati possibile**, **stato**, **applicata ora**, **note/limiti**.
 
-> **Applicata ora** significa: applicata al modello attuale in produzione (oggi: SOT con baseline storica + player adjustment v0.2). Non implica che sia “definitiva”.
+> **Applicata ora** è calcolata automaticamente dal **manifest variabili applicate** (`model_applied_variable_manifest`): una variabile risulta applicata solo se è elencata per almeno una `model_version` con ruolo tra `direct_formula_component`, `component_input`, `context_risk`, `quality_control`. Le altre risultano `debug_only` e non entrano nel conteggio coerenza con la pagina Debug/Spiegazione previsione.
+
+### Tracciabilità Framework ↔ Debug
+
+- Il manifest è la fonte di verità per cosa deve comparire in `applied_variable_trace` nella risposta `GET /api/debug/sot/fixture/{id}/explanation` e, in scrittura, come sezione aggiuntiva in `team_sot_predictions.raw_json`.
+- Nella pagina Debug, il box **Coerenza framework / modello** confronta il numero di voci applicate del manifest con le righe effettivamente tracciate per casa e trasferta.
+- Checklist quando aggiungi una nuova variabile applicata: aggiorna il manifest per la `model_version` interessata; assicurati che il trace builder popoli valore o `status` `missing`/`fallback`; aggiorna il Framework statico in `model.py` se serve una nuova riga consultabile; verifica X = Y in debug.
 
 ### 1) Dati base partita
 
