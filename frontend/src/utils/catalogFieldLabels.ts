@@ -12,6 +12,13 @@ import {
   shotsTiriDisplayName,
 } from './catalogShotsTiri'
 import {
+  matchesTiriInPortaSection,
+  organizeTiriInPortaSection,
+  TIRI_IN_PORTA_SECTION_SUBTITLE,
+  tiriInPortaDescription,
+  tiriInPortaDisplayName,
+} from './catalogTiriInPorta'
+import {
   goalOverUnderDescription,
   goalOverUnderDisplayName,
   matchesGoalOverUnderSection,
@@ -108,26 +115,10 @@ function isContestoPath(p: string, ep: string): boolean {
   return false
 }
 
-function matchesTiriInPortaSection(f: ModelRelevantField): boolean {
-  const p = normPath(f)
-  const b = blob(f)
-  return (
-    p.includes('shots on goal') ||
-    p.includes('shots on target') ||
-    p.includes('shot on goal') ||
-    p.includes('on target') ||
-    p.includes('shots_on') ||
-    /\bsot\b/.test(b) ||
-    (p.includes('shots') && p.includes('on') && p.includes('goal'))
-  )
-}
-
 export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId {
   const p = normPath(field)
   const ep = (field.endpoint || '').toLowerCase()
   const b = blob(field)
-
-  if (isQuoteContext(field)) return 'quote_bookmaker'
 
   if (ep.includes('injur') || b.includes('injur') || ep.includes('sidelined') || b.includes('sidelined')) {
     return 'infortuni'
@@ -142,6 +133,9 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
   if (ep.includes('standing') || p.includes('standing')) return 'classifica_motivazione'
 
   if (matchesTiriInPortaSection(field)) return 'tiri_in_porta'
+
+  if (isQuoteContext(field)) return 'quote_bookmaker'
+
   if (matchesShotsTiriSection(field)) return 'tiri'
 
   if (ep.includes('lineup') || p.includes('startxi') || p.includes('substitute') || p.includes('formation')) {
@@ -201,7 +195,7 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
   if (area.includes('tiri') || area.includes('shots')) {
     if (matchesTiriInPortaSection(field)) return 'tiri_in_porta'
     if (matchesShotsTiriSection(field)) return 'tiri'
-    return p.includes('porta') || p.includes('on goal') || p.includes('on target') ? 'tiri_in_porta' : 'tiri'
+    return 'altri'
   }
 
   return 'altri'
@@ -274,16 +268,6 @@ function shotsDisplay(p: string, nameIt: string): string | null {
   if (s.includes('outside') && s.includes('box')) return 'Tiri fuori area'
   if (s.includes('total shots') || (s.includes('shots') && s.includes('total'))) return 'Tiri totali'
   if (GENERIC_BAD.test(nameIt.trim()) && s.includes('shot')) return 'Tiri (dettaglio nel path)'
-  return null
-}
-
-function sotDisplay(p: string): string | null {
-  const s = p.toLowerCase()
-  if (s.includes('player') && (s.includes('on goal') || s.includes('on_target'))) return 'Tiri in porta giocatore'
-  if (s.includes('on goal') || s.includes('on target') || s.includes('shots on')) {
-    if (s.includes('against') || s.includes('conceded')) return 'Tiri in porta concessi'
-    return 'Tiri in porta fatti'
-  }
   return null
 }
 
@@ -385,6 +369,9 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   const goalTitle = goalOverUnderDisplayName(field)
   if (goalTitle) return goalTitle
 
+  const tiriPortaTitle = tiriInPortaDisplayName(field)
+  if (tiriPortaTitle) return tiriPortaTitle
+
   const shotsTiriTitle = shotsTiriDisplayName(field)
   if (shotsTiriTitle) return shotsTiriTitle
 
@@ -410,11 +397,6 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
       return 'Over/Under bookmaker — mercato da leggere nei dettagli'
     }
     return ni && !GENERIC_BAD.test(ni) ? ni : 'Quota bookmaker'
-  }
-
-  if (grp === 'tiri_in_porta') {
-    const s = sotDisplay(p)
-    if (s) return s
   }
 
   if (grp === 'tiri') {
@@ -478,6 +460,9 @@ export function getCatalogFieldDescription(field: ModelRelevantField): string {
   const goalDesc = goalOverUnderDescription(field)
   if (goalDesc) return goalDesc
 
+  const tiriPortaDesc = tiriInPortaDescription(field)
+  if (tiriPortaDesc) return tiriPortaDesc
+
   const shotsDesc = shotsTiriDescription(field)
   if (shotsDesc) return shotsDesc
 
@@ -497,6 +482,9 @@ export function getCatalogFieldTooltip(field: ModelRelevantField): string {
   }
   if (g === 'contesto_tecnico') {
     return 'Dato di contesto (date, round, stato) utile per ordinamento, rest days e anti-leakage; di solito non è una feature diretta.'
+  }
+  if (g === 'tiri_in_porta') {
+    return 'Solo tiri nello specchio (SOT): squadra, giocatore, stagione, concessi e quote dedicate; non include volume tiri totali o fuori.'
   }
   return `Gruppo: ${getSemanticGroupTitle(g)}.`
 }
@@ -536,6 +524,25 @@ export function groupFieldsBySemanticOrder(fields: ModelRelevantField[]): Semant
         title: getSemanticGroupTitle(id),
         parameters: allOrdered,
         subsections,
+        sectionReviewPending: false,
+      })
+      continue
+    }
+    if (id === 'tiri_in_porta') {
+      const organized = organizeTiriInPortaSection(raw)
+      const hasOrganized = organized.allOrdered.length > 0
+      const parameters = hasOrganized
+        ? organized.allOrdered
+        : [...raw].sort((a, b) =>
+            getCatalogFieldDisplayName(a).localeCompare(getCatalogFieldDisplayName(b), 'it', { sensitivity: 'base' }),
+          )
+      if (parameters.length === 0) continue
+      out.push({
+        id,
+        title: getSemanticGroupTitle(id),
+        parameters,
+        subsections: hasOrganized ? organized.subsections : undefined,
+        sectionSubtitle: TIRI_IN_PORTA_SECTION_SUBTITLE,
         sectionReviewPending: false,
       })
       continue
