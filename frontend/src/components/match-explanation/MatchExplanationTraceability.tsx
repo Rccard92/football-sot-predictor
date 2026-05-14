@@ -1,38 +1,109 @@
+import { useMemo, useState } from 'react'
 import type {
   AppliedVariableTraceRow,
   ComponentTreeNode,
   FrameworkConsistencyPayload,
 } from '../../types/sotExplanation'
+import {
+  deriveTraceabilityForSide,
+  roleLabel,
+  traceRowMatchesFilter,
+  type TraceFilter,
+} from '../../utils/explanationTraceability'
 
-function roleLabel(role: string): string {
-  if (role === 'direct_formula_component') return 'Formula finale'
-  if (role === 'component_input') return 'Input componente'
-  if (role === 'context_risk') return 'Contesto / rischio'
-  if (role === 'quality_control') return 'Qualità dati'
-  if (role === 'debug_only') return 'Solo debug'
-  return role
+function statusBorderClass(label: string): string {
+  if (label === 'OK') return 'border-emerald-200 bg-emerald-50/40'
+  if (label === 'OK con avvisi') return 'border-amber-200 bg-amber-50/50'
+  if (label === 'Errore formula') return 'border-rose-200 bg-rose-50/50'
+  if (label === 'Da controllare') return 'border-violet-200 bg-violet-50/40'
+  return 'border-slate-200 bg-slate-50/40'
 }
 
-export function FrameworkConsistencyCard({ fc }: { fc: FrameworkConsistencyPayload }) {
-  const rows = [
-    { side: 'Casa' as const, d: fc.home },
-    { side: 'Trasferta' as const, d: fc.away },
+export function FrameworkConsistencyCard({
+  fc,
+  traceHome,
+  traceAway,
+}: {
+  fc: FrameworkConsistencyPayload
+  traceHome: AppliedVariableTraceRow[]
+  traceAway: AppliedVariableTraceRow[]
+}) {
+  const homeM = useMemo(() => deriveTraceabilityForSide(traceHome, fc.home), [traceHome, fc.home])
+  const awayM = useMemo(() => deriveTraceabilityForSide(traceAway, fc.away), [traceAway, fc.away])
+
+  const blocks = [
+    { side: 'Casa' as const, d: fc.home, m: homeM },
+    { side: 'Trasferta' as const, d: fc.away, m: awayM },
   ]
+
   return (
     <div className="space-y-4">
-      {rows.map(({ side, d }) => (
-        <div
-          key={side}
-          className={`rounded-xl border p-3 ${d.is_consistent ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/50'}`}
-        >
+      <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-[11px] leading-relaxed text-slate-700">
+        <strong className="text-slate-900">Nota:</strong> le variabili dichiarate nel manifest non entrano tutte nella
+        somma numerica finale. Alcune servono per contesto, qualità dati o controlli. La previsione numerica è costruita
+        solo dalle voci indicate come «Formula finale» / «Input componente» nel trace, con dato disponibile.
+      </div>
+      {blocks.map(({ side, d, m }) => (
+        <div key={side} className={`rounded-xl border p-3 ${statusBorderClass(m.statusLabel)}`}>
           <p className="text-xs font-semibold text-slate-900">{side}</p>
-          <p className="mt-1 text-[11px] text-slate-700">
-            Variabili applicate (manifest): <span className="font-mono font-semibold">{d.framework_applied_count}</span> ·
-            Tracciate nello spaccato: <span className="font-mono font-semibold">{d.debug_trace_count}</span>
-          </p>
-          <p className="mt-1 text-xs font-semibold text-slate-900">Stato: {d.is_consistent ? 'OK' : 'Da controllare'}</p>
+          <dl className="mt-2 grid gap-1 text-[11px] text-slate-800 sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">Dichiarate dal modello (manifest)</dt>
+              <dd className="font-mono font-semibold">{m.manifestDeclared}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Tracciate nello spaccato</dt>
+              <dd className="font-mono font-semibold">{m.tracedCount}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Con valore disponibile</dt>
+              <dd className="font-mono font-semibold">{m.withValueAvailable}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Usate nella formula finale</dt>
+              <dd className="font-mono font-semibold">{m.formulaFinalCount}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Contesto / rischio</dt>
+              <dd className="font-mono font-semibold">{m.contextRiskCount}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Qualità dati</dt>
+              <dd className="font-mono font-semibold">{m.qualityDataCount}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Mancanti (dato)</dt>
+              <dd className="font-mono font-semibold">{m.missingDataRowCount}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Mancanti nel trace</dt>
+              <dd className="font-mono font-semibold">{m.notInTraceCount}</dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-xs font-semibold text-slate-900">Stato: {m.statusLabel}</p>
           {d.missing_data_keys?.length ? (
-            <p className="mt-2 text-[11px] text-amber-900">Dati mancanti: {d.missing_data_keys.join(', ')}</p>
+            <div className="mt-2">
+              <p className="text-[11px] font-medium text-amber-900">Dati mancanti:</p>
+              <ul className="mt-1 list-inside list-disc text-[11px] text-amber-950">
+                {d.missing_data_keys.map((k) => (
+                  <li key={k} className="font-mono">
+                    {k}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {d.missing_trace_keys?.length ? (
+            <div className="mt-2">
+              <p className="text-[11px] font-medium text-rose-900">Chiavi manifest assenti dal trace:</p>
+              <p className="mt-1 font-mono text-[10px] text-rose-950">{d.missing_trace_keys.join(', ')}</p>
+            </div>
+          ) : null}
+          {d.extra_trace_keys?.length ? (
+            <div className="mt-2">
+              <p className="text-[11px] font-medium text-rose-900">Chiavi trace extra rispetto al manifest:</p>
+              <p className="mt-1 font-mono text-[10px] text-rose-950">{d.extra_trace_keys.join(', ')}</p>
+            </div>
           ) : null}
           {d.validation_warnings?.length ? (
             <ul className="mt-2 list-inside list-disc text-[11px] text-amber-950">
@@ -79,38 +150,98 @@ export function ComponentTreeView({ nodes, teamName }: { nodes: ComponentTreeNod
   )
 }
 
+const FILTER_OPTIONS: { id: TraceFilter; label: string }[] = [
+  { id: 'all', label: 'Tutte' },
+  { id: 'formula', label: 'Formula finale' },
+  { id: 'context', label: 'Contesto/rischio' },
+  { id: 'quality', label: 'Qualità dati' },
+  { id: 'missing', label: 'Mancanti' },
+]
+
 export function AppliedVariableTraceTable({ rows }: { rows: AppliedVariableTraceRow[] }) {
+  const [filter, setFilter] = useState<TraceFilter>('all')
+  const filtered = useMemo(() => rows.filter((r) => traceRowMatchesFilter(r, filter)), [rows, filter])
+  const counts = useMemo(() => {
+    return {
+      all: rows.length,
+      formula: rows.filter((r) => traceRowMatchesFilter(r, 'formula')).length,
+      context: rows.filter((r) => traceRowMatchesFilter(r, 'context')).length,
+      quality: rows.filter((r) => traceRowMatchesFilter(r, 'quality')).length,
+      missing: rows.filter((r) => traceRowMatchesFilter(r, 'missing')).length,
+    }
+  }, [rows])
+
   if (!rows.length) return null
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-100">
-      <table className="min-w-full text-left text-[10px] text-slate-800">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-slate-600">
-            <th className="px-2 py-1.5 font-medium">Area</th>
-            <th className="px-2 py-1.5 font-medium">Variabile</th>
-            <th className="px-2 py-1.5 font-medium">Ruolo</th>
-            <th className="px-2 py-1.5 font-medium">Padre</th>
-            <th className="px-2 py-1.5 font-medium">Valore</th>
-            <th className="px-2 py-1.5 font-medium">Peso</th>
-            <th className="px-2 py-1.5 font-medium">Contr.</th>
-            <th className="px-2 py-1.5 font-medium">Stato</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.trace_key} className="border-b border-slate-100 align-top">
-              <td className="px-2 py-1.5 text-slate-600">{r.area}</td>
-              <td className="px-2 py-1.5 font-medium text-slate-900">{r.label}</td>
-              <td className="px-2 py-1.5">{roleLabel(r.application_role)}</td>
-              <td className="px-2 py-1.5 font-mono text-[9px] text-slate-500">{r.parent_component ?? '—'}</td>
-              <td className="px-2 py-1.5 tabular-nums">{r.value != null ? String(r.value) : '—'}</td>
-              <td className="px-2 py-1.5 tabular-nums">{r.weight != null ? String(r.weight) : '—'}</td>
-              <td className="px-2 py-1.5 tabular-nums">{r.contribution != null ? String(r.contribution) : '—'}</td>
-              <td className="px-2 py-1.5">{r.status ?? '—'}</td>
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setFilter(opt.id)}
+            className={`rounded-full border px-2.5 py-1 text-[10px] font-medium transition ${
+              filter === opt.id
+                ? 'border-slate-800 bg-slate-800 text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            {opt.label}
+            <span className="ml-1 tabular-nums opacity-80">
+              (
+              {opt.id === 'all'
+                ? counts.all
+                : opt.id === 'formula'
+                  ? counts.formula
+                  : opt.id === 'context'
+                    ? counts.context
+                    : opt.id === 'quality'
+                      ? counts.quality
+                      : counts.missing}
+              )
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-slate-100">
+        <table className="min-w-full text-left text-[10px] text-slate-800">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-slate-600">
+              <th className="px-2 py-1.5 font-medium">Area</th>
+              <th className="px-2 py-1.5 font-medium">Variabile</th>
+              <th className="px-2 py-1.5 font-medium">Ruolo</th>
+              <th className="px-2 py-1.5 font-medium">Padre</th>
+              <th className="px-2 py-1.5 font-medium">Valore</th>
+              <th className="px-2 py-1.5 font-medium">Peso</th>
+              <th className="px-2 py-1.5 font-medium">Contr.</th>
+              <th className="px-2 py-1.5 font-medium">Stato</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-2 py-3 text-center text-slate-500">
+                  Nessuna riga per questo filtro.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((r) => (
+                <tr key={r.trace_key} className="border-b border-slate-100 align-top">
+                  <td className="px-2 py-1.5 text-slate-600">{r.area}</td>
+                  <td className="px-2 py-1.5 font-medium text-slate-900">{r.label}</td>
+                  <td className="px-2 py-1.5">{roleLabel(r.application_role)}</td>
+                  <td className="px-2 py-1.5 font-mono text-[9px] text-slate-500">{r.parent_component ?? '—'}</td>
+                  <td className="px-2 py-1.5 tabular-nums">{r.value != null ? String(r.value) : '—'}</td>
+                  <td className="px-2 py-1.5 tabular-nums">{r.weight != null ? String(r.weight) : '—'}</td>
+                  <td className="px-2 py-1.5 tabular-nums">{r.contribution != null ? String(r.contribution) : '—'}</td>
+                  <td className="px-2 py-1.5">{r.status ?? '—'}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

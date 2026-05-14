@@ -101,10 +101,13 @@ export function PredictionFinalFormulaSection({
   teamName,
   formula,
   cardPredicted,
+  traceFormulaCount,
 }: {
   teamName: string
   formula: PredictionFormulaBreakdownSide | null | undefined
   cardPredicted: number | null
+  /** Conteggio «Usate nella formula finale» dal trace (deriveTraceabilityForSide), per confronto UI. */
+  traceFormulaCount?: number
 }) {
   if (!formula?.terms?.length) return null
 
@@ -112,6 +115,11 @@ export function PredictionFinalFormulaSection({
     cardPredicted != null &&
     formula.stored_predicted_sot != null &&
     Math.abs(Number(cardPredicted) - Number(formula.stored_predicted_sot)) > 0.01
+
+  // N mostrato all'utente = righe della tabella componenti (stessa griglia sotto).
+  const numericComponentsUsed = formula.components_table.length
+  const traceCountMismatch =
+    traceFormulaCount != null && traceFormulaCount !== numericComponentsUsed
 
   return (
     <div className="space-y-3 rounded-xl border border-slate-100 bg-white p-4">
@@ -126,6 +134,17 @@ export function PredictionFinalFormulaSection({
           )}
         </div>
       </div>
+
+      <p className="text-[11px] text-slate-700">
+        Variabili/componenti numerici usati:{' '}
+        <span className="font-mono font-semibold tabular-nums text-slate-900">{numericComponentsUsed}</span>
+      </p>
+      {traceCountMismatch ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
+          Il conteggio «Usate nella formula finale» nel trace ({traceFormulaCount}) non coincide con le righe della tabella
+          formula qui sotto ({numericComponentsUsed}). Controlla ruoli trace e breakdown salvato.
+        </p>
+      ) : null}
 
       <pre className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-900">
         {formula.formula_symbolic}

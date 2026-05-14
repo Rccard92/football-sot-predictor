@@ -8,6 +8,7 @@ import type {
   SideSummary,
   SotFixtureExplanationResponse,
 } from '../../types/sotExplanation'
+import { deriveTraceabilityForSide } from '../../utils/explanationTraceability'
 import { InternalFormulaPanel, PredictionFinalFormulaSection } from './PredictionFinalFormulaSection'
 import {
   AppliedVariableTraceTable,
@@ -46,11 +47,20 @@ function Badge({
   )
 }
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
       <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-2.5">
         <h2 className="text-sm font-semibold tracking-tight text-slate-900">{title}</h2>
+        {subtitle ? <p className="mt-1 text-[11px] leading-relaxed text-slate-600">{subtitle}</p> : null}
       </div>
       <div className="p-4">{children}</div>
     </section>
@@ -253,6 +263,17 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
 
   const comparisonRows: ModelComparisonRow[] = useMemo(() => data.model_comparison?.rows ?? [], [data.model_comparison?.rows])
 
+  const traceHome = data.applied_variable_trace?.home ?? []
+  const traceAway = data.applied_variable_trace?.away ?? []
+  const homeFormulaTraceCount = useMemo(() => {
+    if (!data.framework_consistency) return undefined
+    return deriveTraceabilityForSide(traceHome, data.framework_consistency.home).formulaFinalCount
+  }, [data.framework_consistency, traceHome])
+  const awayFormulaTraceCount = useMemo(() => {
+    if (!data.framework_consistency) return undefined
+    return deriveTraceabilityForSide(traceAway, data.framework_consistency.away).formulaFinalCount
+  }, [data.framework_consistency, traceAway])
+
   if (!fx || !summary) return null
 
   return (
@@ -294,14 +315,17 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
       </header>
 
       {data.framework_consistency ? (
-        <SectionCard title="Coerenza framework / modello">
+        <SectionCard
+          title="Tracciabilità variabili modello"
+          subtitle="Allineamento tra voci del manifest, righe del trace applicato e ruoli (formula, contesto, qualità). I conteggi qui sono la fonte di riferimento per il registro tabellare sotto."
+        >
           <p className="mb-3 text-[11px] text-slate-600">
             Modello attivo:{' '}
             <span className="font-mono text-slate-900">
               {data.framework_consistency.model_version ?? data.active_model_version ?? '—'}
             </span>
           </p>
-          <FrameworkConsistencyCard fc={data.framework_consistency} />
+          <FrameworkConsistencyCard fc={data.framework_consistency} traceHome={traceHome} traceAway={traceAway} />
         </SectionCard>
       ) : null}
 
@@ -330,11 +354,13 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
               teamName={fx.home_team.name}
               formula={data.prediction_formula_breakdown?.home ?? undefined}
               cardPredicted={summary.home.predicted_sot}
+              traceFormulaCount={homeFormulaTraceCount}
             />
             <PredictionFinalFormulaSection
               teamName={fx.away_team.name}
               formula={data.prediction_formula_breakdown?.away ?? undefined}
               cardPredicted={summary.away.predicted_sot}
+              traceFormulaCount={awayFormulaTraceCount}
             />
           </div>
         </SectionCard>
@@ -353,7 +379,8 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
       {(data.applied_variable_trace?.home?.length ?? 0) > 0 || (data.applied_variable_trace?.away?.length ?? 0) > 0 ? (
         <SectionCard title="Registro variabili applicate (trace)">
           <p className="mb-3 text-[11px] text-slate-600">
-            Una riga per voce del manifest del modello attivo. I conteggi devono coincidere con la sezione coerenza.
+            Una riga per applicazione tracciata. I totali in «Tracciabilità variabili modello» sono la fonte principale; qui
+            puoi filtrare per formula finale, contesto/rischio, qualità dati o righe con dato mancante.
           </p>
           <p className="mb-2 text-xs font-semibold text-slate-900">{fx.home_team.name}</p>
           <AppliedVariableTraceTable rows={data.applied_variable_trace?.home ?? []} />
