@@ -472,6 +472,12 @@ export type ModelRelevantField = {
   occurrences_collapsed?: number
   /** Opzionale: se assente in JSON, in UI si usa `key` come identificativo stabile. */
   stable_id?: string
+  /** Solo UI: dopo deduplicazione catalogo, tutte le key unite. */
+  merged_catalog_keys?: string[]
+  /** Solo UI: fonti alternative assorbite nel record primario. */
+  alternative_sources?: { endpoint: string; stable_id: string; json_path: string }[]
+  /** Solo UI: testo per ricerca su endpoint/key duplicati. */
+  dedupe_search_blob?: string
 }
 
 export type ModelRelevantArea = {

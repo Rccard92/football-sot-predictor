@@ -7,6 +7,7 @@ import {
   getSemanticGroupTitle,
 } from './catalogFieldLabels'
 import { formatCatalogExportDate, sampleValueAsExportString, downloadJson } from './exportCatalog'
+import { isCatalogFieldSelected } from './deduplicateCatalogFields'
 
 function escapeCsvCellLocal(value: string): string {
   const needsQuote = /[",\r\n]/.test(value)
@@ -30,9 +31,10 @@ export function filterModelRelevantField(
     onlyV04: boolean
     semanticGroup: string
   },
+  opts?: { skipQuery?: boolean },
 ): boolean {
   const q = o.q.trim().toLowerCase()
-  if (q) {
+  if (!opts?.skipQuery && q) {
     const g = getCatalogFieldGroup(f)
     const blob = [
       f.name_it,
@@ -43,6 +45,7 @@ export function filterModelRelevantField(
       getCatalogFieldDisplayName(f),
       getCatalogFieldDescription(f),
       getSemanticGroupTitle(g),
+      f.dedupe_search_blob ?? '',
     ]
       .join(' ')
       .toLowerCase()
@@ -95,6 +98,8 @@ export type ModelRelevantCsvRow = {
   sample_type: string
   sample_value: string
   is_selected: string
+  merged_catalog_keys: string
+  alternative_sources_json: string
 }
 
 const MR_CSV_HEADERS: (keyof ModelRelevantCsvRow)[] = [
@@ -119,6 +124,8 @@ const MR_CSV_HEADERS: (keyof ModelRelevantCsvRow)[] = [
   'sample_type',
   'sample_value',
   'is_selected',
+  'merged_catalog_keys',
+  'alternative_sources_json',
 ]
 
 function modelRelevantCsvString(rows: ModelRelevantCsvRow[]): string {
@@ -152,7 +159,9 @@ function enrichParam(p: ModelRelevantField, selectedIds: Set<string>) {
     display_description_it: getCatalogFieldDescription(p),
     semantic_group_it: getSemanticGroupTitle(gid),
     semantic_group_id: gid,
-    is_selected: selectedIds.has(p.key),
+    is_selected: isCatalogFieldSelected(p, selectedIds),
+    merged_catalog_keys: p.merged_catalog_keys,
+    alternative_sources: p.alternative_sources,
   }
 }
 
@@ -185,7 +194,11 @@ function flattenVisibleToCsvRows(
         db_status: p.db_status ?? '',
         sample_type: p.sample_type,
         sample_value: sampleValueAsExportString(p.sample_value),
-        is_selected: selectedIds.has(p.key) ? 'true' : 'false',
+        is_selected: isCatalogFieldSelected(p, selectedIds) ? 'true' : 'false',
+        merged_catalog_keys: (p.merged_catalog_keys ?? [p.key]).join(' | '),
+        alternative_sources_json: p.alternative_sources?.length
+          ? JSON.stringify(p.alternative_sources)
+          : '',
       })
     }
   }
@@ -199,7 +212,7 @@ export function buildModelRelevantFilteredExportPayload(
 ): Record<string, unknown> {
   const modelCount = visibleSections.reduce((acc, x) => acc + x.parameters.length, 0)
   const selectedInView = visibleSections.reduce(
-    (acc, x) => acc + x.parameters.filter((p) => selectedIds.has(p.key)).length,
+    (acc, x) => acc + x.parameters.filter((p) => isCatalogFieldSelected(p, selectedIds)).length,
     0,
   )
   return {

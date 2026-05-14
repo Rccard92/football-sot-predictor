@@ -1,5 +1,6 @@
 import { useId } from 'react'
 import type { ModelRelevantField } from '../../lib/api'
+import { isCatalogFieldSelected } from '../../utils/deduplicateCatalogFields'
 import { ModelRelevantFieldRow } from './ModelRelevantFieldRow'
 
 type Props = {
@@ -10,7 +11,7 @@ type Props = {
   /** Se definito, la checkbox è mostrata solo per i campi con key non in questo insieme (fonti tecniche). */
   technicalKeys?: Set<string>
   selectedIds: Set<string>
-  onToggleSelect?: (key: string) => void
+  onToggleSelect?: (field: ModelRelevantField) => void
   headerStats?: { total: number; usedV04: number; future: number }
   subsections?: { title: string; parameters: ModelRelevantField[] }[]
   sectionReviewPending?: boolean
@@ -75,7 +76,7 @@ export function ModelRelevantAreaSection({
                         key={p.key}
                         field={p}
                         showCheckbox={technicalKeys ? !technicalKeys.has(p.key) : true}
-                        selected={selectedIds.has(p.key)}
+                        selected={isCatalogFieldSelected(p, selectedIds)}
                         onToggle={onToggleSelect}
                       />
                     ))}
@@ -89,7 +90,7 @@ export function ModelRelevantAreaSection({
                 key={p.key}
                 field={p}
                 showCheckbox={technicalKeys ? !technicalKeys.has(p.key) : true}
-                selected={selectedIds.has(p.key)}
+                selected={isCatalogFieldSelected(p, selectedIds)}
                 onToggle={onToggleSelect}
               />
             ))

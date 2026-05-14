@@ -23,10 +23,15 @@ import { formatCatalogExportDate } from '../utils/exportCatalog'
 import {
   SEMANTIC_GROUP_ORDER,
   countV04Stats,
+  getCatalogFieldDescription,
+  getCatalogFieldDisplayName,
+  getCatalogFieldGroup,
+  getSemanticGroupTitle,
   groupFieldsBySemanticOrder,
   semanticGroupOptionsForFilter,
   type SemanticGroupSection,
 } from '../utils/catalogFieldLabels'
+import { deduplicateCatalogFields } from '../utils/deduplicateCatalogFields'
 
 export function ApiDataCatalog() {
   const [catalog, setCatalog] = useState<ModelRelevantCatalogResponse | null>(null)
@@ -117,19 +122,43 @@ export function ApiDataCatalog() {
     return [...s].sort()
   }, [catalog])
 
-  const flatFiltered = useMemo(() => {
+  const flatStructural = useMemo(() => {
     if (!catalog) return []
     const out: ModelRelevantField[] = []
     for (const a of catalog.areas) {
       for (const p of a.parameters) {
-        if (filterModelRelevantField(p, catalog, filterOpts)) out.push(p)
+        if (filterModelRelevantField(p, catalog, filterOpts, { skipQuery: true })) out.push(p)
       }
     }
     for (const p of catalog.technical_derivative_sources.fields) {
-      if (filterModelRelevantField(p, catalog, filterOpts)) out.push(p)
+      if (filterModelRelevantField(p, catalog, filterOpts, { skipQuery: true })) out.push(p)
     }
     return out
   }, [catalog, filterOpts])
+
+  const flatDeduped = useMemo(() => deduplicateCatalogFields(flatStructural), [flatStructural])
+
+  const flatFiltered = useMemo(() => {
+    const q = filterOpts.q.trim().toLowerCase()
+    if (!q) return flatDeduped
+    return flatDeduped.filter((f) => {
+      const g = getCatalogFieldGroup(f)
+      const blob = [
+        f.name_it,
+        f.json_path,
+        f.endpoint,
+        f.reason ?? '',
+        f.technical_name,
+        getCatalogFieldDisplayName(f),
+        getCatalogFieldDescription(f),
+        getSemanticGroupTitle(g),
+        f.dedupe_search_blob ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+      return blob.includes(q)
+    })
+  }, [flatDeduped, filterOpts.q])
 
   const visibleSemanticSections = useMemo(() => {
     const base = groupFieldsBySemanticOrder(flatFiltered)
@@ -158,11 +187,16 @@ export function ApiDataCatalog() {
     setOpenMap((prev) => ({ ...prev, [id]: !prev[id] }))
   }, [])
 
-  const toggleSelect = useCallback((key: string) => {
+  const toggleSelectMerged = useCallback((field: ModelRelevantField) => {
+    const keys = field.merged_catalog_keys ?? [field.key]
     setSelectedIds((prev) => {
       const n = new Set(prev)
-      if (n.has(key)) n.delete(key)
-      else n.add(key)
+      const any = keys.some((k) => n.has(k))
+      if (any) {
+        for (const k of keys) n.delete(k)
+      } else {
+        n.add(keys[0]!)
+      }
       return n
     })
   }, [])
@@ -328,7 +362,7 @@ export function ApiDataCatalog() {
                 onToggle={() => toggleOpen(sec.id)}
                 technicalKeys={technicalKeys}
                 selectedIds={selectedIds}
-                onToggleSelect={toggleSelect}
+                onToggleSelect={toggleSelectMerged}
                 headerStats={countV04Stats(sec.parameters)}
                 subsections={sec.subsections}
                 sectionReviewPending={sec.sectionReviewPending}

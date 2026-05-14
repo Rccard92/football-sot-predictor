@@ -13,7 +13,7 @@ type Props = {
   field: ModelRelevantField
   showCheckbox: boolean
   selected: boolean
-  onToggle?: (key: string) => void
+  onToggle?: (field: ModelRelevantField) => void
 }
 
 function Badge({
@@ -102,8 +102,7 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
   const v04Text = badgeV04Display(field)
   const displayName = getCatalogFieldDisplayName(field)
   const displayDesc = getCatalogFieldDescription(field)
-  const pathLine = [field.json_path, field.key].filter(Boolean).join(' · ')
-  const stableId = field.stable_id?.trim() || field.key
+  const pathLine = field.json_path
 
   return (
     <div className="rounded-lg border border-slate-200/90 bg-white px-3 py-2.5 shadow-sm sm:px-4 sm:py-3">
@@ -113,7 +112,7 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
             type="checkbox"
             checked={canSelect && selected}
             disabled={!canSelect}
-            onChange={() => canSelect && onToggle?.(field.key)}
+            onChange={() => canSelect && onToggle?.(field)}
             className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label={canSelect ? `Seleziona ${displayName}` : `${displayName} non selezionabile`}
           />
@@ -151,12 +150,24 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
                 <DetailRow label="JSON path">
                   <span className="font-mono text-xs break-all">{field.json_path}</span>
                 </DetailRow>
-                <DetailRow label="Stable id / key">
-                  <span className="font-mono text-xs break-all">{stableId}</span>
-                </DetailRow>
-                <DetailRow label="Endpoint">
+                <DetailRow label="Endpoint primario">
                   <span className="font-mono text-xs">{field.endpoint}</span>
                 </DetailRow>
+                {field.alternative_sources && field.alternative_sources.length > 0 ? (
+                  <DetailRow label="Fonti alternative">
+                    {field.alternative_sources.map((a) => a.endpoint).join(' · ')}
+                  </DetailRow>
+                ) : null}
+                <DetailRow label="Stable ID primario">
+                  <span className="font-mono text-xs break-all">{field.key}</span>
+                </DetailRow>
+                {field.alternative_sources && field.alternative_sources.length > 0 ? (
+                  <DetailRow label="Stable ID alternativi">
+                    <span className="font-mono text-xs break-all">
+                      {field.alternative_sources.map((a) => a.stable_id).join(' · ')}
+                    </span>
+                  </DetailRow>
+                ) : null}
                 <DetailRow label="Sample value">
                   <span className="font-mono text-xs break-all">{formatSample(field.sample_value)}</span>
                 </DetailRow>
