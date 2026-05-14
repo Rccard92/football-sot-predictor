@@ -59,6 +59,7 @@ function semanticGroupTone(g: string): 'emerald' | 'slate' | 'amber' | 'violet' 
   if (g === 'classifica_motivazione' || g === 'infortuni') return 'sky'
   if (g === 'formazioni_giocatori') return 'teal'
   if (g === 'tiri' || g === 'tiri_in_porta') return 'sky'
+  if (g === 'corner') return 'amber'
   return 'slate'
 }
 
@@ -88,6 +89,18 @@ function SemanticGroupBadge({ field }: { field: ModelRelevantField }) {
   )
 }
 
+function cornerBetCatalogLine(field: ModelRelevantField): string | null {
+  if (getCatalogFieldGroup(field) !== 'corner') return null
+  const ep = (field.endpoint || '').toLowerCase()
+  const jp = (field.json_path || '').toLowerCase()
+  if (!ep.includes('odds') && !ep.includes('bookmaker') && !jp.includes('bookmakers') && !jp.includes('bets.'))
+    return null
+  const parts = [field.name_it?.trim(), field.technical_name?.trim(), field.recommended_markets?.trim()].filter(
+    Boolean,
+  ) as string[]
+  return parts.length ? parts.join(' · ') : null
+}
+
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="border-b border-slate-100 py-2 last:border-0">
@@ -104,6 +117,7 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
   const displayName = getCatalogFieldDisplayName(field)
   const displayDesc = getCatalogFieldDescription(field)
   const pathLine = field.json_path
+  const cornerBetLine = cornerBetCatalogLine(field)
 
   return (
     <div className="rounded-lg border border-slate-200/90 bg-white px-3 py-2.5 shadow-sm sm:px-4 sm:py-3">
@@ -169,6 +183,11 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
                         </li>
                       ))}
                     </ul>
+                  </DetailRow>
+                ) : null}
+                {cornerBetLine ? (
+                  <DetailRow label="Mercato / bet (catalogo)">
+                    <span className="break-words text-sm">{cornerBetLine}</span>
                   </DetailRow>
                 ) : null}
                 <DetailRow label="Sample value">

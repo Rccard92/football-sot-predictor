@@ -19,6 +19,13 @@ import {
   tiriInPortaDisplayName,
 } from './catalogTiriInPorta'
 import {
+  CORNER_SECTION_SUBTITLE,
+  cornerDescription,
+  cornerDisplayName,
+  matchesCornerSection,
+  organizeCornerSection,
+} from './catalogCorner'
+import {
   goalOverUnderDescription,
   goalOverUnderDisplayName,
   matchesGoalOverUnderSection,
@@ -134,6 +141,8 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
 
   if (matchesTiriInPortaSection(field)) return 'tiri_in_porta'
 
+  if (matchesCornerSection(field)) return 'corner'
+
   if (isQuoteContext(field)) return 'quote_bookmaker'
 
   if (matchesShotsTiriSection(field)) return 'tiri'
@@ -173,8 +182,6 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
     return 'cartellini'
   }
 
-  if (p.includes('corner')) return 'corner'
-
   if (matchesGoalOverUnderSection(field)) return 'goal_over_under'
 
   if (field.classification === 'SORGENTE_DERIVATA_TECNICA' || field.selectable === false) {
@@ -190,7 +197,10 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
   if (area.includes('infortun')) return 'infortuni'
   if (area.includes('classifica') || area.includes('standing')) return 'classifica_motivazione'
   if (area.includes('formazion') || area.includes('giocator')) return 'formazioni_giocatori'
-  if (area.includes('corner')) return 'corner'
+  if (area.includes('corner')) {
+    if (matchesCornerSection(field)) return 'corner'
+    return 'altri'
+  }
   if (area.includes('rigor') || area.includes('penalt')) return 'rigori'
   if (area.includes('tiri') || area.includes('shots')) {
     if (matchesTiriInPortaSection(field)) return 'tiri_in_porta'
@@ -268,19 +278,6 @@ function shotsDisplay(p: string, nameIt: string): string | null {
   if (s.includes('outside') && s.includes('box')) return 'Tiri fuori area'
   if (s.includes('total shots') || (s.includes('shots') && s.includes('total'))) return 'Tiri totali'
   if (GENERIC_BAD.test(nameIt.trim()) && s.includes('shot')) return 'Tiri (dettaglio nel path)'
-  return null
-}
-
-function cornerDisplay(p: string, b: string): string | null {
-  if (b.includes('over') && b.includes('under') && b.includes('corner')) {
-    const m = p.match(/(\d+(?:\.\d+)?)/)
-    const line = m ? m[1] : ''
-    if (p.endsWith('.over') || b.includes('over')) return line ? `Over ${line} corner` : 'Over corner (linea nei dettagli)'
-    if (p.endsWith('.under') || b.includes('under')) return line ? `Under ${line} corner` : 'Under corner (linea nei dettagli)'
-  }
-  if (p.includes('corner')) {
-    if (p.includes('total') || p.includes('average')) return p.includes('against') ? 'Corner concessi' : 'Corner battuti'
-  }
   return null
 }
 
@@ -375,6 +372,9 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   const shotsTiriTitle = shotsTiriDisplayName(field)
   if (shotsTiriTitle) return shotsTiriTitle
 
+  const cornerTitle = cornerDisplayName(field)
+  if (cornerTitle) return cornerTitle
+
   const pen = penaltyDisplayName(field)
   if (pen) return pen
 
@@ -392,7 +392,6 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   if (grp === 'quote_bookmaker') {
     if (/\bover\b.*\bunder\b|\bunder\b.*\bover\b/.test(p) || (p.includes('over') && p.includes('under'))) {
       if (p.includes('goal') || b.includes('goal')) return 'Quota Over/Under goal'
-      if (p.includes('corner') || b.includes('corner')) return 'Quota Over/Under corner'
       if (p.includes('card') || b.includes('card')) return 'Quota Over/Under cartellini'
       return 'Over/Under bookmaker — mercato da leggere nei dettagli'
     }
@@ -402,11 +401,6 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   if (grp === 'tiri') {
     const sd = shotsDisplay(p, ni)
     if (sd) return sd
-  }
-
-  if (grp === 'corner') {
-    const cd = cornerDisplay(p, b)
-    if (cd) return cd
   }
 
   if (grp === 'cartellini') {
@@ -466,6 +460,9 @@ export function getCatalogFieldDescription(field: ModelRelevantField): string {
   const shotsDesc = shotsTiriDescription(field)
   if (shotsDesc) return shotsDesc
 
+  const cornerDesc = cornerDescription(field)
+  if (cornerDesc) return cornerDesc
+
   const reason = (field.reason || '').trim()
   if (reason.length >= 24) return reason
 
@@ -485,6 +482,9 @@ export function getCatalogFieldTooltip(field: ModelRelevantField): string {
   }
   if (g === 'tiri_in_porta') {
     return 'Solo tiri nello specchio (SOT): squadra, giocatore, stagione, concessi e quote dedicate; non include volume tiri totali o fuori.'
+  }
+  if (g === 'corner') {
+    return 'Solo calci d’angolo: statistiche battuti/concessi e mercati bookmaker chiaramente corner; non include tiri, goal o cartellini.'
   }
   return `Gruppo: ${getSemanticGroupTitle(g)}.`
 }
@@ -562,6 +562,25 @@ export function groupFieldsBySemanticOrder(fields: ModelRelevantField[]): Semant
         parameters,
         subsections: hasOrganized ? organized.subsections : undefined,
         sectionSubtitle: SHOTS_TIRI_SECTION_SUBTITLE,
+        sectionReviewPending: false,
+      })
+      continue
+    }
+    if (id === 'corner') {
+      const organized = organizeCornerSection(raw)
+      const hasOrganized = organized.allOrdered.length > 0
+      const parameters = hasOrganized
+        ? organized.allOrdered
+        : [...raw].sort((a, b) =>
+            getCatalogFieldDisplayName(a).localeCompare(getCatalogFieldDisplayName(b), 'it', { sensitivity: 'base' }),
+          )
+      if (parameters.length === 0) continue
+      out.push({
+        id,
+        title: getSemanticGroupTitle(id),
+        parameters,
+        subsections: hasOrganized ? organized.subsections : undefined,
+        sectionSubtitle: CORNER_SECTION_SUBTITLE,
         sectionReviewPending: false,
       })
       continue

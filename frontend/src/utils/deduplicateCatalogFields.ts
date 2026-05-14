@@ -42,6 +42,16 @@ const TIRI_IN_PORTA_ENDPOINT_PRIORITY = [
   'fixtures/headtohead',
 ] as const
 
+/** Priorità dedupe solo gruppo «Corner». */
+const CORNER_ENDPOINT_PRIORITY = [
+  'fixtures/statistics',
+  'teams/statistics',
+  'odds',
+  'odds/live',
+  'fixtures/events',
+  'fixtures/headtohead',
+] as const
+
 export type CatalogAlternativeSource = {
   endpoint: string
   stable_id: string
@@ -56,7 +66,9 @@ function endpointRank(field: ModelRelevantField): number {
       ? (TIRI_ENDPOINT_PRIORITY as readonly string[])
       : gid === 'tiri_in_porta'
         ? (TIRI_IN_PORTA_ENDPOINT_PRIORITY as readonly string[])
-        : (ENDPOINT_PRIORITY as readonly string[])
+        : gid === 'corner'
+          ? (CORNER_ENDPOINT_PRIORITY as readonly string[])
+          : (ENDPOINT_PRIORITY as readonly string[])
   const i = list.indexOf(e)
   return i === -1 ? list.length : i
 }
