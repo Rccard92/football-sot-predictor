@@ -43,7 +43,7 @@ export function ModelRelevantAreaSection({
         </div>
       </button>
       {open ? (
-        <div id={panelId} role="region" aria-labelledby={btnId} className="space-y-3 border-t border-slate-100 px-4 py-4 sm:px-5">
+        <div id={panelId} role="region" aria-labelledby={btnId} className="space-y-2 border-t border-slate-100 px-4 py-3 sm:px-5">
           {parameters.length === 0 ? (
             <p className="text-sm text-slate-500">Nessun campo in questa area con i filtri attuali.</p>
           ) : (
