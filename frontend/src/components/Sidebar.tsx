@@ -8,6 +8,7 @@ const navMain = [
 
 const navTech = [
   { to: '/model-debug', label: 'Debug Modello' },
+  { to: '/api-data-catalog', label: 'Catalogo dati API' },
   { to: '/dashboard', label: 'Dashboard modello' },
   { to: '/data-health', label: 'Data Health' },
   { to: '/backtest', label: 'Backtest' },

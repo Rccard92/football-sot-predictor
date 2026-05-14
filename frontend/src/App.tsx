@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { Admin } from './pages/Admin'
+import { ApiDataCatalog } from './pages/ApiDataCatalog'
 import { Backtest } from './pages/Backtest'
 import { Dashboard } from './pages/Dashboard'
 import { DataHealth } from './pages/DataHealth'
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/match-prediction" element={<MatchPrediction />} />
           <Route path="/backtest" element={<Backtest />} />
           <Route path="/model-legend" element={<ModelLegend />} />
+          <Route path="/api-data-catalog" element={<ApiDataCatalog />} />
           <Route path="/model-debug" element={<ModelDebug />} />
           <Route path="/match-analysis-framework" element={<MatchAnalysisFramework />} />
           <Route path="/match-variable-audit" element={<MatchVariableAudit />} />

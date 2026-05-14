@@ -468,3 +468,7 @@ Tabella sintetica: per ogni `model_version` per cui esistono **entrambi** i lati
 ### Audit tecnico
 
 Blocco chiuso di default con il `raw_json` completo delle due previsioni attive: utile per ispezioni profonde senza appesantire la vista principale.
+
+## Catalogo dati API
+
+Per una mappa ordinata dei parametri recuperabili da API-Football, dello stato in database e dell’uso nel modello v0.4 (solo consultazione), vedi [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).

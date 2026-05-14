@@ -380,6 +380,44 @@ export async function getModelLegend(): Promise<ModelLegendResponse> {
   return requestJson<ModelLegendResponse>('/api/model/legend')
 }
 
+/** Risposta [`GET /api/data-catalog/api-football`](../../backend/app/routes/data_catalog.py). */
+export type ApiFootballCatalogParameter = {
+  key: string
+  area_id: string
+  name_it: string
+  technical_name: string
+  description_it: string
+  endpoint: string
+  useful_markets: string[]
+  api_status: string
+  db_status: string
+  model_v04_status: string
+  implementation_status: string
+  difficulty: string
+  db_location: string
+  tooltip_it?: string
+  framework_keys: string[]
+  in_v04_manifest: boolean
+}
+
+export type ApiFootballCatalogArea = {
+  id: string
+  title: string
+  description_it: string
+  parameters: ApiFootballCatalogParameter[]
+}
+
+export type ApiFootballCatalogResponse = {
+  version: string
+  provider: string
+  model_version_reference?: string
+  areas: ApiFootballCatalogArea[]
+}
+
+export async function getApiFootballCatalog(): Promise<ApiFootballCatalogResponse> {
+  return requestJson<ApiFootballCatalogResponse>('/api/data-catalog/api-football')
+}
+
 export async function getMatchAnalysisFramework(): Promise<MatchAnalysisFrameworkResponse> {
   return requestJson<MatchAnalysisFrameworkResponse>('/api/model/match-analysis-framework')
 }
