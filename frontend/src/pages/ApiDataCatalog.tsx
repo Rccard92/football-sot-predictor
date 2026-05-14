@@ -16,6 +16,15 @@ import {
   persistSelectedDirectFields,
 } from '../components/catalog/DirectSelectedFieldsPanel'
 import { DirectScanDiagnosticsTable } from '../components/catalog/DirectScanDiagnostics'
+import {
+  buildFullCatalogExportPayload,
+  buildSelectedOnlyExportPayload,
+  countSelectedInCatalog,
+  downloadCsv,
+  downloadJson,
+  flattenCatalogForCsv,
+  formatCatalogExportDate,
+} from '../utils/exportCatalog'
 
 type UiMode = 'catalog' | 'diagnostics'
 
@@ -179,6 +188,24 @@ export function ApiDataCatalog() {
   const clearSel = useCallback(() => setSelectedIds(new Set()), [])
 
   const s = catalog?.summary
+  const selectedInCatalogCount = catalog ? countSelectedInCatalog(catalog, selectedIds) : 0
+
+  const exportDateStr = formatCatalogExportDate()
+  const exportFullJson = () => {
+    if (!catalog) return
+    downloadJson(`api-football-data-catalog-${exportDateStr}.json`, buildFullCatalogExportPayload(catalog, selectedIds))
+  }
+  const exportFullCsv = () => {
+    if (!catalog) return
+    downloadCsv(`api-football-data-catalog-${exportDateStr}.csv`, flattenCatalogForCsv(catalog, selectedIds))
+  }
+  const exportSelectedJson = () => {
+    if (!catalog) return
+    downloadJson(
+      `api-football-selected-fields-${exportDateStr}.json`,
+      buildSelectedOnlyExportPayload(catalog, selectedIds),
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -279,6 +306,34 @@ export function ApiDataCatalog() {
                 <dd className="text-lg font-semibold text-amber-950">{s?.fields_raw_json_only ?? 0}</dd>
               </div>
             </dl>
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={exportFullJson}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+              >
+                Esporta JSON completo
+              </button>
+              <button
+                type="button"
+                onClick={exportFullCsv}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+              >
+                Esporta CSV
+              </button>
+              <button
+                type="button"
+                onClick={exportSelectedJson}
+                disabled={selectedInCatalogCount === 0}
+                title={selectedInCatalogCount === 0 ? 'Seleziona almeno un campo con le checkbox per esportare.' : undefined}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Esporta selezionati
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Il JSON mantiene tutta la struttura del catalogo. Il CSV è utile per analisi in Excel o Google Sheets.
+            </p>
             {catalog.last_scan_at ? (
               <p className="mt-2 text-xs text-slate-500">Ultimo scan: {catalog.last_scan_at}</p>
             ) : null}
