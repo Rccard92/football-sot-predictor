@@ -25,6 +25,7 @@ import {
   countV04Stats,
   groupFieldsBySemanticOrder,
   semanticGroupOptionsForFilter,
+  type SemanticGroupSection,
 } from '../utils/catalogFieldLabels'
 
 export function ApiDataCatalog() {
@@ -130,7 +131,13 @@ export function ApiDataCatalog() {
     return out
   }, [catalog, filterOpts])
 
-  const visibleSemanticSections = useMemo(() => groupFieldsBySemanticOrder(flatFiltered), [flatFiltered])
+  const visibleSemanticSections = useMemo(() => {
+    const base = groupFieldsBySemanticOrder(flatFiltered)
+    const goal = base.find((s) => s.id === 'goal_over_under')
+    const rest = base.filter((s) => s.id !== 'goal_over_under')
+    const ordered: SemanticGroupSection[] = goal ? [goal, ...rest] : base
+    return ordered
+  }, [flatFiltered])
 
   const visibleCount = flatFiltered.length
 
@@ -323,6 +330,8 @@ export function ApiDataCatalog() {
                 selectedIds={selectedIds}
                 onToggleSelect={toggleSelect}
                 headerStats={countV04Stats(sec.parameters)}
+                subsections={sec.subsections}
+                sectionReviewPending={sec.sectionReviewPending}
               />
             ))
             )}

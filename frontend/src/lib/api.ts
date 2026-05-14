@@ -470,6 +470,8 @@ export type ModelRelevantField = {
   selectable: boolean
   original_json_path?: string
   occurrences_collapsed?: number
+  /** Opzionale: se assente in JSON, in UI si usa `key` come identificativo stabile. */
+  stable_id?: string
 }
 
 export type ModelRelevantArea = {

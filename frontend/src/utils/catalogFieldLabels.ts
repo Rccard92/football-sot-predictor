@@ -4,6 +4,13 @@
  */
 
 import type { ModelRelevantField } from '../lib/api'
+import {
+  goalOverUnderDescription,
+  goalOverUnderDisplayName,
+  matchesGoalOverUnderSection,
+  organizeGoalOverUnderSection,
+  type GoalSubsection,
+} from './catalogSections'
 
 export type SemanticGroupId =
   | 'tiri'
@@ -135,7 +142,12 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
   }
   if (p.includes('total passes') || p.includes('passes accurate')) return 'passaggi_possesso'
 
-  if (p.includes('penalty') || ep.includes('penalt')) return 'rigori'
+  if (
+    (p.includes('penalty') || ep.includes('penalt')) &&
+    !/^score\.penalty\.(home|away)$/.test(p)
+  ) {
+    return 'rigori'
+  }
 
   if (p.includes('foul')) return 'falli'
 
@@ -167,16 +179,7 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
     return 'tiri'
   }
 
-  if (
-    p.includes('goals') ||
-    p.startsWith('score.') ||
-    p.includes('under_over') ||
-    p.includes('halftime') ||
-    p.includes('fulltime') ||
-    p.includes('extratime')
-  ) {
-    return 'goal_over_under'
-  }
+  if (matchesGoalOverUnderSection(field)) return 'goal_over_under'
 
   if (field.classification === 'SORGENTE_DERIVATA_TECNICA' || field.selectable === false) {
     if (isContestoPath(p, ep)) return 'contesto_tecnico'
@@ -194,7 +197,6 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
   if (area.includes('corner')) return 'corner'
   if (area.includes('rigor') || area.includes('penalt')) return 'rigori'
   if (area.includes('tiri') || area.includes('shots')) return p.includes('porta') || p.includes('on goal') ? 'tiri_in_porta' : 'tiri'
-  if (area.includes('goal') || area.includes('partite') || area.includes('fixture')) return 'goal_over_under'
 
   return 'altri'
 }
@@ -374,6 +376,9 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   const b = blob(field)
   const ni = (field.name_it || '').trim()
 
+  const goalTitle = goalOverUnderDisplayName(field)
+  if (goalTitle) return goalTitle
+
   const pen = penaltyDisplayName(field)
   if (pen) return pen
 
@@ -461,6 +466,9 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
 }
 
 export function getCatalogFieldDescription(field: ModelRelevantField): string {
+  const goalDesc = goalOverUnderDescription(field)
+  if (goalDesc) return goalDesc
+
   const reason = (field.reason || '').trim()
   if (reason.length >= 24) return reason
 
@@ -489,6 +497,10 @@ export type SemanticGroupSection = {
   id: SemanticGroupId
   title: string
   parameters: ModelRelevantField[]
+  /** Sotto-gruppi UI (sezione Goal). */
+  subsections?: GoalSubsection[]
+  /** Altre sezioni non ancora riviste con le nuove regole bloccate. */
+  sectionReviewPending?: boolean
 }
 
 /** Raggruppa e ordina campi per gruppo statistico (accordion UI). */
@@ -499,13 +511,33 @@ export function groupFieldsBySemanticOrder(fields: ModelRelevantField[]): Semant
     const g = getCatalogFieldGroup(f)
     map.get(g)!.push(f)
   }
-  return SEMANTIC_GROUP_ORDER.map((id) => {
+  const out: SemanticGroupSection[] = []
+  for (const id of SEMANTIC_GROUP_ORDER) {
     const raw = map.get(id) ?? []
+    if (id === 'goal_over_under') {
+      const { allOrdered, subsections } = organizeGoalOverUnderSection(raw)
+      if (allOrdered.length === 0) continue
+      out.push({
+        id,
+        title: getSemanticGroupTitle(id),
+        parameters: allOrdered,
+        subsections,
+        sectionReviewPending: false,
+      })
+      continue
+    }
     const parameters = [...raw].sort((a, b) =>
       getCatalogFieldDisplayName(a).localeCompare(getCatalogFieldDisplayName(b), 'it', { sensitivity: 'base' }),
     )
-    return { id, title: getSemanticGroupTitle(id), parameters }
-  }).filter((x) => x.parameters.length > 0)
+    if (parameters.length === 0) continue
+    out.push({
+      id,
+      title: getSemanticGroupTitle(id),
+      parameters,
+      sectionReviewPending: true,
+    })
+  }
+  return out
 }
 
 export function countV04Stats(parameters: ModelRelevantField[]): {

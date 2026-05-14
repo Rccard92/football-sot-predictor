@@ -103,6 +103,7 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
   const displayName = getCatalogFieldDisplayName(field)
   const displayDesc = getCatalogFieldDescription(field)
   const pathLine = [field.json_path, field.key].filter(Boolean).join(' · ')
+  const stableId = field.stable_id?.trim() || field.key
 
   return (
     <div className="rounded-lg border border-slate-200/90 bg-white px-3 py-2.5 shadow-sm sm:px-4 sm:py-3">
@@ -144,41 +145,42 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
                 </p>
               ) : null}
               <div className="divide-y divide-slate-100 rounded-md border border-slate-100 bg-white px-2">
-                <DetailRow label="Nome originale (catalogo)">{field.name_it}</DetailRow>
-                <DetailRow label="Area API originale">{field.area}</DetailRow>
-                <DetailRow label="Mercati utili">{markets || '—'}</DetailRow>
-                <DetailRow label="Endpoint">
-                  <span className="font-mono text-xs">{field.endpoint}</span>
-                </DetailRow>
-                <DetailRow label="DB">{labelDbStatus(field.db_status ?? 'unknown')}</DetailRow>
-                <DetailRow label="Priorità">{field.priority ?? '—'}</DetailRow>
-                <DetailRow label="Tipo esempio">{labelSampleType(field.sample_type)}</DetailRow>
-                <DetailRow label="Sample value">
-                  <span className="font-mono text-xs break-all">{formatSample(field.sample_value)}</span>
+                <DetailRow label="Nome tecnico (technical_name)">
+                  <span className="font-mono text-xs break-all">{field.technical_name || '—'}</span>
                 </DetailRow>
                 <DetailRow label="JSON path">
                   <span className="font-mono text-xs break-all">{field.json_path}</span>
                 </DetailRow>
-                <DetailRow label="Key">
-                  <span className="font-mono text-xs break-all">{field.key}</span>
+                <DetailRow label="Stable id / key">
+                  <span className="font-mono text-xs break-all">{stableId}</span>
                 </DetailRow>
+                <DetailRow label="Endpoint">
+                  <span className="font-mono text-xs">{field.endpoint}</span>
+                </DetailRow>
+                <DetailRow label="Sample value">
+                  <span className="font-mono text-xs break-all">{formatSample(field.sample_value)}</span>
+                </DetailRow>
+                <DetailRow label="Stato DB">{labelDbStatus(field.db_status ?? 'unknown')}</DetailRow>
+                <DetailRow label="Stato modello v0.4">{field.model_v04_status}</DetailRow>
+                <DetailRow label="Area API originale">{field.area}</DetailRow>
+                <DetailRow label="Nome catalogo (name_it)">{field.name_it}</DetailRow>
+                <DetailRow label="Mercati utili">{markets || '—'}</DetailRow>
+                <DetailRow label="Priorità">{field.priority ?? '—'}</DetailRow>
+                <DetailRow label="Tipo esempio">{labelSampleType(field.sample_type)}</DetailRow>
                 {field.original_json_path && field.original_json_path !== field.json_path ? (
                   <DetailRow label="JSON path originale">
                     <span className="font-mono text-xs break-all">{field.original_json_path}</span>
                   </DetailRow>
                 ) : null}
-                <DetailRow label="Stato API">N/D (catalogo statico)</DetailRow>
-                <DetailRow label="Stato DB (raw)">{field.db_status ?? '—'}</DetailRow>
-                {field.db_location_hint ? (
-                  <DetailRow label="db_location_hint">
-                    <span className="font-mono text-xs break-all">{field.db_location_hint}</span>
-                  </DetailRow>
-                ) : null}
-                <DetailRow label="Stato modello v0.4 (raw)">{field.model_v04_status}</DetailRow>
                 <DetailRow label="Classificazione (raw)">{field.classification}</DetailRow>
                 <DetailRow label="Gruppo statistico (UI)">{getSemanticGroupTitle(getCatalogFieldGroup(field))}</DetailRow>
                 {field.reason && field.reason !== displayDesc ? (
                   <DetailRow label="Motivo (raw catalogo)">{field.reason}</DetailRow>
+                ) : null}
+                {field.db_location_hint ? (
+                  <DetailRow label="db_location_hint">
+                    <span className="font-mono text-xs break-all">{field.db_location_hint}</span>
+                  </DetailRow>
                 ) : null}
                 {field.occurrences_collapsed != null ? (
                   <DetailRow label="Occorrenze (collapse)">{String(field.occurrences_collapsed)}</DetailRow>
