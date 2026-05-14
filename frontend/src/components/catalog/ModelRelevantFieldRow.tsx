@@ -58,6 +58,7 @@ function semanticGroupTone(g: string): 'emerald' | 'slate' | 'amber' | 'violet' 
   if (g === 'contesto_tecnico') return 'violet'
   if (g === 'classifica_motivazione' || g === 'infortuni') return 'sky'
   if (g === 'formazioni_giocatori') return 'teal'
+  if (g === 'tiri' || g === 'tiri_in_porta') return 'sky'
   return 'slate'
 }
 
@@ -150,34 +151,41 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
                 <DetailRow label="JSON path">
                   <span className="font-mono text-xs break-all">{field.json_path}</span>
                 </DetailRow>
+                <DetailRow label="Stable ID / key">
+                  <span className="font-mono text-xs break-all">
+                    {(field.merged_catalog_keys?.length ? field.merged_catalog_keys : [field.key]).join(' · ')}
+                  </span>
+                </DetailRow>
                 <DetailRow label="Endpoint primario">
-                  <span className="font-mono text-xs">{field.endpoint}</span>
+                  <span className="font-mono text-xs">{field.endpoint || '—'}</span>
                 </DetailRow>
                 {field.alternative_sources && field.alternative_sources.length > 0 ? (
-                  <DetailRow label="Fonti alternative">
-                    {field.alternative_sources.map((a) => a.endpoint).join(' · ')}
-                  </DetailRow>
-                ) : null}
-                <DetailRow label="Stable ID primario">
-                  <span className="font-mono text-xs break-all">{field.key}</span>
-                </DetailRow>
-                {field.alternative_sources && field.alternative_sources.length > 0 ? (
-                  <DetailRow label="Stable ID alternativi">
-                    <span className="font-mono text-xs break-all">
-                      {field.alternative_sources.map((a) => a.stable_id).join(' · ')}
-                    </span>
+                  <DetailRow label="Fonti alternative (endpoint)">
+                    <ul className="list-inside list-disc space-y-0.5 font-mono text-xs">
+                      {field.alternative_sources.map((a) => (
+                        <li key={a.stable_id} className="break-all">
+                          {a.endpoint} — {a.stable_id}
+                          <span className="block pl-4 text-slate-600">{a.json_path}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </DetailRow>
                 ) : null}
                 <DetailRow label="Sample value">
                   <span className="font-mono text-xs break-all">{formatSample(field.sample_value)}</span>
                 </DetailRow>
+                <DetailRow label="Tipo esempio">{labelSampleType(field.sample_type)}</DetailRow>
                 <DetailRow label="Stato DB">{labelDbStatus(field.db_status ?? 'unknown')}</DetailRow>
+                {field.db_location_hint ? (
+                  <DetailRow label="db_location_hint">
+                    <span className="font-mono text-xs break-all">{field.db_location_hint}</span>
+                  </DetailRow>
+                ) : null}
                 <DetailRow label="Stato modello v0.4">{field.model_v04_status}</DetailRow>
                 <DetailRow label="Area API originale">{field.area}</DetailRow>
                 <DetailRow label="Nome catalogo (name_it)">{field.name_it}</DetailRow>
                 <DetailRow label="Mercati utili">{markets || '—'}</DetailRow>
                 <DetailRow label="Priorità">{field.priority ?? '—'}</DetailRow>
-                <DetailRow label="Tipo esempio">{labelSampleType(field.sample_type)}</DetailRow>
                 {field.original_json_path && field.original_json_path !== field.json_path ? (
                   <DetailRow label="JSON path originale">
                     <span className="font-mono text-xs break-all">{field.original_json_path}</span>
@@ -187,11 +195,6 @@ export function ModelRelevantFieldRow({ field, showCheckbox, selected, onToggle 
                 <DetailRow label="Gruppo statistico (UI)">{getSemanticGroupTitle(getCatalogFieldGroup(field))}</DetailRow>
                 {field.reason && field.reason !== displayDesc ? (
                   <DetailRow label="Motivo (raw catalogo)">{field.reason}</DetailRow>
-                ) : null}
-                {field.db_location_hint ? (
-                  <DetailRow label="db_location_hint">
-                    <span className="font-mono text-xs break-all">{field.db_location_hint}</span>
-                  </DetailRow>
                 ) : null}
                 {field.occurrences_collapsed != null ? (
                   <DetailRow label="Occorrenze (collapse)">{String(field.occurrences_collapsed)}</DetailRow>

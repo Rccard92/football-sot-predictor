@@ -5,6 +5,13 @@
 
 import type { ModelRelevantField } from '../lib/api'
 import {
+  matchesShotsTiriSection,
+  organizeShotsTiriSection,
+  SHOTS_TIRI_SECTION_SUBTITLE,
+  shotsTiriDescription,
+  shotsTiriDisplayName,
+} from './catalogShotsTiri'
+import {
   goalOverUnderDescription,
   goalOverUnderDisplayName,
   matchesGoalOverUnderSection,
@@ -30,8 +37,8 @@ export type SemanticGroupId =
   | 'altri'
 
 export const SEMANTIC_GROUP_ORDER: SemanticGroupId[] = [
-  'tiri',
   'tiri_in_porta',
+  'tiri',
   'goal_over_under',
   'corner',
   'cartellini',
@@ -101,6 +108,20 @@ function isContestoPath(p: string, ep: string): boolean {
   return false
 }
 
+function matchesTiriInPortaSection(f: ModelRelevantField): boolean {
+  const p = normPath(f)
+  const b = blob(f)
+  return (
+    p.includes('shots on goal') ||
+    p.includes('shots on target') ||
+    p.includes('shot on goal') ||
+    p.includes('on target') ||
+    p.includes('shots_on') ||
+    /\bsot\b/.test(b) ||
+    (p.includes('shots') && p.includes('on') && p.includes('goal'))
+  )
+}
+
 export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId {
   const p = normPath(field)
   const ep = (field.endpoint || '').toLowerCase()
@@ -119,6 +140,9 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
     if (p.includes('team') && (p.includes('rank') || p.includes('points'))) return 'classifica_motivazione'
   }
   if (ep.includes('standing') || p.includes('standing')) return 'classifica_motivazione'
+
+  if (matchesTiriInPortaSection(field)) return 'tiri_in_porta'
+  if (matchesShotsTiriSection(field)) return 'tiri'
 
   if (ep.includes('lineup') || p.includes('startxi') || p.includes('substitute') || p.includes('formation')) {
     return 'formazioni_giocatori'
@@ -157,28 +181,6 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
 
   if (p.includes('corner')) return 'corner'
 
-  if (
-    p.includes('shots on goal') ||
-    p.includes('shots on target') ||
-    p.includes('shot on goal') ||
-    p.includes('on target') ||
-    p.includes('shots_on') ||
-    /\bsot\b/.test(b) ||
-    (p.includes('shots') && p.includes('on') && p.includes('goal'))
-  ) {
-    return 'tiri_in_porta'
-  }
-
-  if (
-    p.includes('total shots') ||
-    p.includes('shots inside') ||
-    p.includes('shots outside') ||
-    p.includes('blocked shots') ||
-    (p.includes('shots') && !p.includes('on goal') && !p.includes('on target'))
-  ) {
-    return 'tiri'
-  }
-
   if (matchesGoalOverUnderSection(field)) return 'goal_over_under'
 
   if (field.classification === 'SORGENTE_DERIVATA_TECNICA' || field.selectable === false) {
@@ -196,7 +198,11 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
   if (area.includes('formazion') || area.includes('giocator')) return 'formazioni_giocatori'
   if (area.includes('corner')) return 'corner'
   if (area.includes('rigor') || area.includes('penalt')) return 'rigori'
-  if (area.includes('tiri') || area.includes('shots')) return p.includes('porta') || p.includes('on goal') ? 'tiri_in_porta' : 'tiri'
+  if (area.includes('tiri') || area.includes('shots')) {
+    if (matchesTiriInPortaSection(field)) return 'tiri_in_porta'
+    if (matchesShotsTiriSection(field)) return 'tiri'
+    return p.includes('porta') || p.includes('on goal') || p.includes('on target') ? 'tiri_in_porta' : 'tiri'
+  }
 
   return 'altri'
 }
@@ -379,6 +385,9 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   const goalTitle = goalOverUnderDisplayName(field)
   if (goalTitle) return goalTitle
 
+  const shotsTiriTitle = shotsTiriDisplayName(field)
+  if (shotsTiriTitle) return shotsTiriTitle
+
   const pen = penaltyDisplayName(field)
   if (pen) return pen
 
@@ -469,6 +478,9 @@ export function getCatalogFieldDescription(field: ModelRelevantField): string {
   const goalDesc = goalOverUnderDescription(field)
   if (goalDesc) return goalDesc
 
+  const shotsDesc = shotsTiriDescription(field)
+  if (shotsDesc) return shotsDesc
+
   const reason = (field.reason || '').trim()
   if (reason.length >= 24) return reason
 
@@ -499,6 +511,8 @@ export type SemanticGroupSection = {
   parameters: ModelRelevantField[]
   /** Sotto-gruppi UI (sezione Goal). */
   subsections?: GoalSubsection[]
+  /** Testo esplicativo sotto il titolo sezione (es. Tiri volume). */
+  sectionSubtitle?: string
   /** Altre sezioni non ancora riviste con le nuove regole bloccate. */
   sectionReviewPending?: boolean
 }
@@ -522,6 +536,25 @@ export function groupFieldsBySemanticOrder(fields: ModelRelevantField[]): Semant
         title: getSemanticGroupTitle(id),
         parameters: allOrdered,
         subsections,
+        sectionReviewPending: false,
+      })
+      continue
+    }
+    if (id === 'tiri') {
+      const organized = organizeShotsTiriSection(raw)
+      const hasOrganized = organized.allOrdered.length > 0
+      const parameters = hasOrganized
+        ? organized.allOrdered
+        : [...raw].sort((a, b) =>
+            getCatalogFieldDisplayName(a).localeCompare(getCatalogFieldDisplayName(b), 'it', { sensitivity: 'base' }),
+          )
+      if (parameters.length === 0) continue
+      out.push({
+        id,
+        title: getSemanticGroupTitle(id),
+        parameters,
+        subsections: hasOrganized ? organized.subsections : undefined,
+        sectionSubtitle: SHOTS_TIRI_SECTION_SUBTITLE,
         sectionReviewPending: false,
       })
       continue

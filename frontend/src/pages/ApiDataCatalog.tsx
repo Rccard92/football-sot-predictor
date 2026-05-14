@@ -357,6 +357,7 @@ export function ApiDataCatalog() {
               <ModelRelevantAreaSection
                 key={sec.id}
                 title={sec.title}
+                subtitle={sec.sectionSubtitle}
                 parameters={sec.parameters}
                 open={openMap[sec.id] ?? false}
                 onToggle={() => toggleOpen(sec.id)}

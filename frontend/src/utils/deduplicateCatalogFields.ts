@@ -20,16 +20,30 @@ const ENDPOINT_PRIORITY = [
   'fixtures/headtohead',
 ] as const
 
+/** Priorità dedupe solo gruppo «Tiri» (volume). */
+const TIRI_ENDPOINT_PRIORITY = [
+  'fixtures/statistics',
+  'teams/statistics',
+  'fixtures/players',
+  'players',
+  'players/statistics',
+  'fixtures/headtohead',
+] as const
+
 export type CatalogAlternativeSource = {
   endpoint: string
   stable_id: string
   json_path: string
 }
 
-function endpointRank(endpoint: string): number {
-  const e = endpoint.trim().toLowerCase()
-  const i = (ENDPOINT_PRIORITY as readonly string[]).indexOf(e)
-  return i === -1 ? ENDPOINT_PRIORITY.length : i
+function endpointRank(field: ModelRelevantField): number {
+  const e = (field.endpoint || '').trim().toLowerCase()
+  const list =
+    getCatalogFieldGroup(field) === 'tiri'
+      ? (TIRI_ENDPOINT_PRIORITY as readonly string[])
+      : (ENDPOINT_PRIORITY as readonly string[])
+  const i = list.indexOf(e)
+  return i === -1 ? list.length : i
 }
 
 function normJsonPath(f: ModelRelevantField): string {
@@ -69,8 +83,8 @@ export function deduplicateCatalogFields(fields: ModelRelevantField[]): ModelRel
       continue
     }
     const sorted = [...group].sort((a, b) => {
-      const ra = endpointRank(a.endpoint)
-      const rb = endpointRank(b.endpoint)
+      const ra = endpointRank(a)
+      const rb = endpointRank(b)
       if (ra !== rb) return ra - rb
       return a.key.localeCompare(b.key)
     })

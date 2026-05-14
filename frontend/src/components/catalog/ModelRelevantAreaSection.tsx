@@ -5,6 +5,8 @@ import { ModelRelevantFieldRow } from './ModelRelevantFieldRow'
 
 type Props = {
   title: string
+  /** Sottotitolo descrittivo sotto il titolo (opzionale). */
+  subtitle?: string
   parameters: ModelRelevantField[]
   open: boolean
   onToggle: () => void
@@ -19,6 +21,7 @@ type Props = {
 
 export function ModelRelevantAreaSection({
   title,
+  subtitle,
   parameters,
   open,
   onToggle,
@@ -44,6 +47,9 @@ export function ModelRelevantAreaSection({
       >
         <div>
           <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+          {subtitle ? (
+            <p className="mt-1 max-w-3xl text-sm leading-snug text-slate-600">{subtitle}</p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-slate-600">
           {sectionReviewPending ? (
