@@ -12,7 +12,6 @@ import {
   loadModelRelevantSelected,
   persistModelRelevantSelected,
 } from '../components/catalog/ModelRelevantSelectedPanel'
-import { ModelRelevantTechnicalSection } from '../components/catalog/ModelRelevantTechnicalSection'
 import {
   exportModelRelevantFilteredCsv,
   exportModelRelevantFilteredJson,
@@ -21,8 +20,12 @@ import {
   countSelectedModelFields,
 } from '../utils/exportModelRelevantCatalog'
 import { formatCatalogExportDate } from '../utils/exportCatalog'
-
-const TECH_SECTION_ID = 'technical_derivative'
+import {
+  SEMANTIC_GROUP_ORDER,
+  countV04Stats,
+  groupFieldsBySemanticOrder,
+  semanticGroupOptionsForFilter,
+} from '../utils/catalogFieldLabels'
 
 export function ApiDataCatalog() {
   const [catalog, setCatalog] = useState<ModelRelevantCatalogResponse | null>(null)
@@ -37,6 +40,7 @@ export function ApiDataCatalog() {
   const [modelV04, setModelV04] = useState('all')
   const [sampleType, setSampleType] = useState('all')
   const [onlyV04, setOnlyV04] = useState(false)
+  const [semanticGroup, setSemanticGroup] = useState('all')
 
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => loadModelRelevantSelected())
@@ -52,17 +56,16 @@ export function ApiDataCatalog() {
       modelV04,
       sampleType,
       onlyV04,
+      semanticGroup,
     }),
-    [search, areaId, endpoint, classification, priority, dbStatus, modelV04, sampleType, onlyV04],
+    [search, areaId, endpoint, classification, priority, dbStatus, modelV04, sampleType, onlyV04, semanticGroup],
   )
 
   const loadCatalog = useCallback(async () => {
     const res = await getApiFootballModelRelevantCatalog()
     setCatalog(res)
-    const om: Record<string, boolean> = { [TECH_SECTION_ID]: true }
-    for (const a of res.areas) {
-      om[a.id] = true
-    }
+    const om: Record<string, boolean> = {}
+    for (const id of SEMANTIC_GROUP_ORDER) om[id] = true
     setOpenMap(om)
   }, [])
 
@@ -85,10 +88,19 @@ export function ApiDataCatalog() {
     persistModelRelevantSelected(selectedIds)
   }, [selectedIds])
 
+  const technicalKeys = useMemo(() => {
+    const s = new Set<string>()
+    if (!catalog) return s
+    for (const p of catalog.technical_derivative_sources.fields) s.add(p.key)
+    return s
+  }, [catalog])
+
   const areaOptions = useMemo(
     () => (catalog ? catalog.areas.map((a) => ({ id: a.id, title: a.title })) : []),
     [catalog],
   )
+
+  const semanticGroupOptions = useMemo(() => semanticGroupOptionsForFilter(), [])
 
   const classificationOptions = useMemo(() => {
     if (!catalog) return []
@@ -98,29 +110,29 @@ export function ApiDataCatalog() {
         s.add(p.classification)
       }
     }
-    s.add('SORGENTE_DERIVATA_TECNICA')
+    for (const p of catalog.technical_derivative_sources.fields) {
+      s.add(p.classification)
+    }
     return [...s].sort()
   }, [catalog])
 
-  const visibleAreas = useMemo(() => {
+  const flatFiltered = useMemo(() => {
     if (!catalog) return []
-    return catalog.areas.map((area) => ({
-      area,
-      parameters: area.parameters.filter((p) => filterModelRelevantField(p, catalog, filterOpts)),
-    }))
+    const out: ModelRelevantField[] = []
+    for (const a of catalog.areas) {
+      for (const p of a.parameters) {
+        if (filterModelRelevantField(p, catalog, filterOpts)) out.push(p)
+      }
+    }
+    for (const p of catalog.technical_derivative_sources.fields) {
+      if (filterModelRelevantField(p, catalog, filterOpts)) out.push(p)
+    }
+    return out
   }, [catalog, filterOpts])
 
-  const visibleTechnical = useMemo(() => {
-    if (!catalog) return []
-    return catalog.technical_derivative_sources.fields.filter((p) =>
-      filterModelRelevantField(p, catalog, filterOpts),
-    )
-  }, [catalog, filterOpts])
+  const visibleSemanticSections = useMemo(() => groupFieldsBySemanticOrder(flatFiltered), [flatFiltered])
 
-  const visibleCount = useMemo(() => {
-    const m = visibleAreas.reduce((acc, x) => acc + x.parameters.length, 0)
-    return m + visibleTechnical.length
-  }, [visibleAreas, visibleTechnical])
+  const visibleCount = flatFiltered.length
 
   const fieldsByKey = useMemo(() => {
     const m = new Map<string, ModelRelevantField>()
@@ -154,11 +166,11 @@ export function ApiDataCatalog() {
 
   const exportJson = () => {
     if (!catalog) return
-    exportModelRelevantFilteredJson(catalog, visibleAreas, visibleTechnical, selectedIds)
+    exportModelRelevantFilteredJson(catalog, visibleSemanticSections, selectedIds)
   }
   const exportCsv = () => {
     if (!catalog) return
-    exportModelRelevantFilteredCsv(catalog, visibleAreas, visibleTechnical, selectedIds)
+    exportModelRelevantFilteredCsv(visibleSemanticSections, selectedIds)
   }
   const exportSelected = () => {
     if (!catalog) return
@@ -181,8 +193,8 @@ export function ApiDataCatalog() {
       <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
         <p className="font-medium">Catalogo model-relevant</p>
         <p className="mt-1 text-sky-900">
-          Le voci classificate come da nascondere in tab modello non compaiono. Le &quot;fonti tecniche&quot; sono
-          strumentali alle derivate ma non sono selezionabili come feature dirette.
+          Le voci classificate come da nascondere in tab modello non compaiono. Le fonti tecniche derivate sono incluse nel
+          gruppo statistico pertinente (di solito &quot;Contesto tecnico / fonti derivate&quot;) con checkbox disabilitate.
         </p>
       </div>
 
@@ -209,7 +221,8 @@ export function ApiDataCatalog() {
           <Card title="Riepilogo catalogo modello">
             <p className="mb-3 text-xs text-slate-500">
               Conteggi globali dal file sorgente. Con i filtri attivi sono visibili{' '}
-              <span className="font-semibold text-slate-800">{visibleCount}</span> righe (modello + fonti tecniche).
+              <span className="font-semibold text-slate-800">{visibleCount}</span> righe (catalogo modello + fonti
+              tecniche, raggruppate per gruppo statistico).
             </p>
             <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl bg-slate-50 px-3 py-2">
@@ -287,30 +300,33 @@ export function ApiDataCatalog() {
             onSampleTypeChange={setSampleType}
             onlyV04={onlyV04}
             onOnlyV04Change={setOnlyV04}
+            semanticGroup={semanticGroup}
+            onSemanticGroupChange={setSemanticGroup}
+            semanticGroupOptions={semanticGroupOptions}
           />
 
           <div className="space-y-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Variabili modello</h2>
-            {visibleAreas.map(({ area, parameters }) => (
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Gruppi statistici</h2>
+            {visibleSemanticSections.length === 0 ? (
+              <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Nessun campo corrisponde ai filtri attuali.
+              </p>
+            ) : (
+              visibleSemanticSections.map((sec) => (
               <ModelRelevantAreaSection
-                key={area.id}
-                area={area}
-                parameters={parameters}
-                open={openMap[area.id] ?? false}
-                onToggle={() => toggleOpen(area.id)}
-                showCheckbox
+                key={sec.id}
+                title={sec.title}
+                parameters={sec.parameters}
+                open={openMap[sec.id] ?? false}
+                onToggle={() => toggleOpen(sec.id)}
+                technicalKeys={technicalKeys}
                 selectedIds={selectedIds}
                 onToggleSelect={toggleSelect}
+                headerStats={countV04Stats(sec.parameters)}
               />
-            ))}
+            ))
+            )}
           </div>
-
-          <ModelRelevantTechnicalSection
-            title={catalog.technical_derivative_sources.title}
-            fields={visibleTechnical}
-            open={openMap[TECH_SECTION_ID] ?? true}
-            onToggle={() => toggleOpen(TECH_SECTION_ID)}
-          />
         </>
       ) : !error ? (
         <p className="text-sm text-slate-600">Caricamento…</p>

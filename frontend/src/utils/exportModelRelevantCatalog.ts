@@ -1,4 +1,11 @@
-import type { ModelRelevantArea, ModelRelevantCatalogResponse, ModelRelevantField } from '../lib/api'
+import type { ModelRelevantCatalogResponse, ModelRelevantField } from '../lib/api'
+import type { SemanticGroupSection } from './catalogFieldLabels'
+import {
+  getCatalogFieldDescription,
+  getCatalogFieldDisplayName,
+  getCatalogFieldGroup,
+  getSemanticGroupTitle,
+} from './catalogFieldLabels'
 import { formatCatalogExportDate, sampleValueAsExportString, downloadJson } from './exportCatalog'
 
 function escapeCsvCellLocal(value: string): string {
@@ -21,11 +28,24 @@ export function filterModelRelevantField(
     modelV04: string
     sampleType: string
     onlyV04: boolean
+    semanticGroup: string
   },
 ): boolean {
   const q = o.q.trim().toLowerCase()
   if (q) {
-    const blob = `${f.name_it} ${f.json_path} ${f.endpoint} ${f.reason ?? ''} ${f.technical_name}`.toLowerCase()
+    const g = getCatalogFieldGroup(f)
+    const blob = [
+      f.name_it,
+      f.json_path,
+      f.endpoint,
+      f.reason ?? '',
+      f.technical_name,
+      getCatalogFieldDisplayName(f),
+      getCatalogFieldDescription(f),
+      getSemanticGroupTitle(g),
+    ]
+      .join(' ')
+      .toLowerCase()
     if (!blob.includes(q)) return false
   }
   if (o.areaId !== 'all') {
@@ -39,6 +59,7 @@ export function filterModelRelevantField(
   if (o.modelV04 !== 'all' && f.model_v04_status !== o.modelV04) return false
   if (o.sampleType !== 'all' && f.sample_type !== o.sampleType) return false
   if (o.onlyV04 && f.model_v04_status !== 'used_v04') return false
+  if (o.semanticGroup !== 'all' && getCatalogFieldGroup(f) !== o.semanticGroup) return false
   return true
 }
 
@@ -56,6 +77,10 @@ export type ModelRelevantCsvRow = {
   section: string
   area_id: string
   area_title: string
+  semantic_group_id: string
+  semantic_group_it: string
+  display_name_it: string
+  display_description_it: string
   key: string
   name_it: string
   technical_name: string
@@ -76,6 +101,10 @@ const MR_CSV_HEADERS: (keyof ModelRelevantCsvRow)[] = [
   'section',
   'area_id',
   'area_title',
+  'semantic_group_id',
+  'semantic_group_it',
+  'display_name_it',
+  'display_description_it',
   'key',
   'name_it',
   'technical_name',
@@ -115,24 +144,34 @@ export function downloadModelRelevantCsv(filename: string, rows: ModelRelevantCs
   URL.revokeObjectURL(url)
 }
 
-function areaSlugForField(catalog: ModelRelevantCatalogResponse, areaTitle: string): string {
-  const a = catalog.areas.find((x) => x.title === areaTitle)
-  return a?.id ?? areaTitle
+function enrichParam(p: ModelRelevantField, selectedIds: Set<string>) {
+  const gid = getCatalogFieldGroup(p)
+  return {
+    ...p,
+    display_name_it: getCatalogFieldDisplayName(p),
+    display_description_it: getCatalogFieldDescription(p),
+    semantic_group_it: getSemanticGroupTitle(gid),
+    semantic_group_id: gid,
+    is_selected: selectedIds.has(p.key),
+  }
 }
 
 function flattenVisibleToCsvRows(
-  catalog: ModelRelevantCatalogResponse,
-  visibleAreas: { area: ModelRelevantArea; parameters: ModelRelevantField[] }[],
-  visibleTechnical: ModelRelevantField[],
+  visibleSections: SemanticGroupSection[],
   selectedIds: Set<string>,
 ): ModelRelevantCsvRow[] {
   const rows: ModelRelevantCsvRow[] = []
-  for (const { area, parameters } of visibleAreas) {
-    for (const p of parameters) {
+  for (const sec of visibleSections) {
+    for (const p of sec.parameters) {
+      const isTech = p.classification === 'SORGENTE_DERIVATA_TECNICA'
       rows.push({
-        section: 'modello',
-        area_id: area.id,
-        area_title: area.title,
+        section: isTech ? 'fonti_tecniche' : 'modello',
+        area_id: sec.id,
+        area_title: sec.title,
+        semantic_group_id: sec.id,
+        semantic_group_it: sec.title,
+        display_name_it: getCatalogFieldDisplayName(p),
+        display_description_it: getCatalogFieldDescription(p),
         key: p.key,
         name_it: p.name_it,
         technical_name: p.technical_name,
@@ -141,7 +180,7 @@ function flattenVisibleToCsvRows(
         description: p.reason ?? '',
         classification: p.classification,
         priority: p.priority ?? '',
-        recommended_markets: (p.recommended_markets ?? '').replace(/;/g, ';'),
+        recommended_markets: p.recommended_markets ?? '',
         model_v04_status: p.model_v04_status,
         db_status: p.db_status ?? '',
         sample_type: p.sample_type,
@@ -150,38 +189,16 @@ function flattenVisibleToCsvRows(
       })
     }
   }
-  for (const p of visibleTechnical) {
-    rows.push({
-      section: 'fonti_tecniche',
-      area_id: areaSlugForField(catalog, p.area),
-      area_title: p.area,
-      key: p.key,
-      name_it: p.name_it,
-      technical_name: p.technical_name,
-      json_path: p.json_path,
-      endpoint: p.endpoint,
-      description: p.reason ?? '',
-      classification: p.classification,
-      priority: p.priority ?? '',
-      recommended_markets: p.recommended_markets ?? '',
-      model_v04_status: p.model_v04_status,
-      db_status: p.db_status ?? '',
-      sample_type: p.sample_type,
-      sample_value: sampleValueAsExportString(p.sample_value),
-      is_selected: 'false',
-    })
-  }
   return rows
 }
 
 export function buildModelRelevantFilteredExportPayload(
   catalog: ModelRelevantCatalogResponse,
-  visibleAreas: { area: ModelRelevantArea; parameters: ModelRelevantField[] }[],
-  visibleTechnical: ModelRelevantField[],
+  visibleSections: SemanticGroupSection[],
   selectedIds: Set<string>,
 ): Record<string, unknown> {
-  const modelCount = visibleAreas.reduce((acc, x) => acc + x.parameters.length, 0)
-  const selectedInView = visibleAreas.reduce(
+  const modelCount = visibleSections.reduce((acc, x) => acc + x.parameters.length, 0)
+  const selectedInView = visibleSections.reduce(
     (acc, x) => acc + x.parameters.filter((p) => selectedIds.has(p.key)).length,
     0,
   )
@@ -192,22 +209,14 @@ export function buildModelRelevantFilteredExportPayload(
     source: catalog.source,
     summary: {
       ...catalog.summary,
-      exported_model_field_rows: modelCount,
-      exported_technical_field_rows: visibleTechnical.length,
+      exported_field_rows: modelCount,
       selected_in_export_view: selectedInView,
     },
-    areas: visibleAreas.map(({ area, parameters }) => ({
-      id: area.id,
-      title: area.title,
-      parameters: parameters.map((p) => ({
-        ...p,
-        is_selected: selectedIds.has(p.key),
-      })),
+    semantic_groups: visibleSections.map(({ id, title, parameters }) => ({
+      id,
+      title,
+      parameters: parameters.map((p) => enrichParam(p, selectedIds)),
     })),
-    technical_derivative_sources: {
-      title: catalog.technical_derivative_sources.title,
-      fields: visibleTechnical.map((f) => ({ ...f, is_selected: false })),
-    },
   }
 }
 
@@ -218,7 +227,7 @@ export function buildModelRelevantSelectedExportPayload(
   const parameters: Record<string, unknown>[] = []
   for (const a of catalog.areas) {
     for (const p of a.parameters) {
-      if (selectedIds.has(p.key)) parameters.push({ ...p, is_selected: true })
+      if (selectedIds.has(p.key)) parameters.push(enrichParam(p, selectedIds))
     }
   }
   return {
@@ -231,24 +240,21 @@ export function buildModelRelevantSelectedExportPayload(
 
 export function exportModelRelevantFilteredJson(
   catalog: ModelRelevantCatalogResponse,
-  visibleAreas: { area: ModelRelevantArea; parameters: ModelRelevantField[] }[],
-  visibleTechnical: ModelRelevantField[],
+  visibleSections: SemanticGroupSection[],
   selectedIds: Set<string>,
 ): void {
   const dateStr = formatCatalogExportDate()
   downloadJson(
     `api-football-model-catalog-${dateStr}.json`,
-    buildModelRelevantFilteredExportPayload(catalog, visibleAreas, visibleTechnical, selectedIds),
+    buildModelRelevantFilteredExportPayload(catalog, visibleSections, selectedIds),
   )
 }
 
 export function exportModelRelevantFilteredCsv(
-  catalog: ModelRelevantCatalogResponse,
-  visibleAreas: { area: ModelRelevantArea; parameters: ModelRelevantField[] }[],
-  visibleTechnical: ModelRelevantField[],
+  visibleSections: SemanticGroupSection[],
   selectedIds: Set<string>,
 ): void {
-  const rows = flattenVisibleToCsvRows(catalog, visibleAreas, visibleTechnical, selectedIds)
+  const rows = flattenVisibleToCsvRows(visibleSections, selectedIds)
   downloadModelRelevantCsv(`api-football-model-catalog-${formatCatalogExportDate()}.csv`, rows)
 }
 

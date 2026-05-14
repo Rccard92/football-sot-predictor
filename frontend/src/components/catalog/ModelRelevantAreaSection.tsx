@@ -1,25 +1,28 @@
 import { useId } from 'react'
-import type { ModelRelevantArea, ModelRelevantField } from '../../lib/api'
+import type { ModelRelevantField } from '../../lib/api'
 import { ModelRelevantFieldRow } from './ModelRelevantFieldRow'
 
 type Props = {
-  area: ModelRelevantArea
+  title: string
   parameters: ModelRelevantField[]
   open: boolean
   onToggle: () => void
-  showCheckbox: boolean
+  /** Se definito, la checkbox è mostrata solo per i campi con key non in questo insieme (fonti tecniche). */
+  technicalKeys?: Set<string>
   selectedIds: Set<string>
   onToggleSelect?: (key: string) => void
+  headerStats?: { total: number; usedV04: number; future: number }
 }
 
 export function ModelRelevantAreaSection({
-  area,
+  title,
   parameters,
   open,
   onToggle,
-  showCheckbox,
+  technicalKeys,
   selectedIds,
   onToggleSelect,
+  headerStats,
 }: Props) {
   const panelId = useId()
   const btnId = useId()
@@ -35,10 +38,16 @@ export function ModelRelevantAreaSection({
         className="flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4"
       >
         <div>
-          <h3 className="text-base font-semibold text-slate-900">{area.title}</h3>
+          <h3 className="text-base font-semibold text-slate-900">{title}</h3>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-slate-600">
           <span className="rounded-lg bg-slate-100 px-2 py-1 font-medium text-slate-800">Campi: {parameters.length}</span>
+          {headerStats ? (
+            <>
+              <span className="rounded-lg bg-violet-50 px-2 py-1 font-medium text-violet-900">v0.4: {headerStats.usedV04}</span>
+              <span className="rounded-lg bg-amber-50 px-2 py-1 font-medium text-amber-950">Future: {headerStats.future}</span>
+            </>
+          ) : null}
           <span className="rounded-lg bg-slate-50 px-2 py-1 font-medium text-slate-700">{open ? '▼' : '▶'}</span>
         </div>
       </button>
@@ -51,7 +60,7 @@ export function ModelRelevantAreaSection({
               <ModelRelevantFieldRow
                 key={p.key}
                 field={p}
-                showCheckbox={showCheckbox}
+                showCheckbox={technicalKeys ? !technicalKeys.has(p.key) : true}
                 selected={selectedIds.has(p.key)}
                 onToggle={onToggleSelect}
               />

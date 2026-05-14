@@ -24,6 +24,9 @@ type Props = {
   onSampleTypeChange: (v: string) => void
   onlyV04: boolean
   onOnlyV04Change: (v: boolean) => void
+  semanticGroup: string
+  onSemanticGroupChange: (v: string) => void
+  semanticGroupOptions: { id: string; title: string }[]
 }
 
 export function ModelRelevantFilters(props: Props) {
@@ -37,7 +40,7 @@ export function ModelRelevantFilters(props: Props) {
             type="search"
             value={props.search}
             onChange={(e) => props.onSearchChange(e.target.value)}
-            placeholder="Nome, path, endpoint, motivo…"
+            placeholder="Nome, path, gruppo statistico, descrizione UI…"
             className={inputCls}
           />
         </label>
@@ -55,6 +58,21 @@ export function ModelRelevantFilters(props: Props) {
         <label className="block text-xs font-medium text-slate-600">
           Endpoint
           <input value={props.endpoint} onChange={(e) => props.onEndpointChange(e.target.value)} className={inputCls} />
+        </label>
+        <label className="block text-xs font-medium text-slate-600">
+          Gruppo statistico
+          <select
+            value={props.semanticGroup}
+            onChange={(e) => props.onSemanticGroupChange(e.target.value)}
+            className={inputCls}
+          >
+            <option value="all">Tutti</option>
+            {props.semanticGroupOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.title}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block text-xs font-medium text-slate-600">
           Categoria
