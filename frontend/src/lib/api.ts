@@ -380,42 +380,83 @@ export async function getModelLegend(): Promise<ModelLegendResponse> {
   return requestJson<ModelLegendResponse>('/api/model/legend')
 }
 
-/** Risposta [`GET /api/data-catalog/api-football`](../../backend/app/routes/data_catalog.py). */
-export type ApiFootballCatalogParameter = {
-  key: string
-  area_id: string
-  name_it: string
-  technical_name: string
-  description_it: string
+/** Campo diretto da scan API-Football. */
+export type ApiFootballDirectField = {
+  stable_id: string
+  json_path: string
   endpoint: string
-  useful_markets: string[]
-  api_status: string
+  appeared_in_endpoints: string[]
+  area_id: string
+  technical_name: string
+  name_it: string
+  name_it_auto: boolean
+  description_it: string
+  tooltip_it: string | null
+  sample_value: unknown
+  sample_type: string
+  examples_count: number
+  appeared_in_raw_json: boolean
+  api_label: string
   db_status: string
+  db_location_hint: string | null
   model_v04_status: string
-  implementation_status: string
-  difficulty: string
-  db_location: string
-  tooltip_it?: string
-  framework_keys: string[]
-  in_v04_manifest: boolean
+  note_it: string | null
 }
 
-export type ApiFootballCatalogArea = {
+export type ApiFootballDirectArea = {
   id: string
   title: string
-  description_it: string
-  parameters: ApiFootballCatalogParameter[]
+  endpoints: string[]
+  direct_fields_found: number
+  fields_saved_in_db: number
+  fields_raw_json_only: number
+  fields_used_by_v04: number
+  parameters: ApiFootballDirectField[]
 }
 
-export type ApiFootballCatalogResponse = {
+export type ApiFootballDirectCatalogSummary = {
+  endpoints_scanned: number
+  endpoints_errors: number
+  direct_fields_found: number
+  fields_used_by_v04: number
+  fields_saved_in_db: number
+  fields_raw_json_only: number
+}
+
+export type ApiFootballDirectCatalogResponse = {
   version: string
+  season?: number | null
   provider: string
-  model_version_reference?: string
-  areas: ApiFootballCatalogArea[]
+  last_scan_at?: string | null
+  message?: string
+  summary: ApiFootballDirectCatalogSummary
+  areas: ApiFootballDirectArea[]
 }
 
-export async function getApiFootballCatalog(): Promise<ApiFootballCatalogResponse> {
-  return requestJson<ApiFootballCatalogResponse>('/api/data-catalog/api-football')
+export type ApiFootballScanDiagnostic = {
+  endpoint: string
+  params: Record<string, unknown>
+  status: string
+  fields_found: number
+  error: string | null
+  trace?: string
+}
+
+export type ApiFootballDirectScanResponse = ApiFootballDirectCatalogResponse & {
+  diagnostics?: ApiFootballScanDiagnostic[]
+}
+
+export async function getApiFootballCatalogDirect(): Promise<ApiFootballDirectCatalogResponse> {
+  return requestJson<ApiFootballDirectCatalogResponse>('/api/data-catalog/api-football/direct')
+}
+
+export async function postAdminDebugApiFootballCatalogScan(
+  season: number,
+): Promise<ApiFootballDirectScanResponse> {
+  return requestPostJson<ApiFootballDirectScanResponse>(
+    `/api/admin/debug/api-football-catalog/serie-a/${season}/scan`,
+    {},
+  )
 }
 
 export async function getMatchAnalysisFramework(): Promise<MatchAnalysisFrameworkResponse> {

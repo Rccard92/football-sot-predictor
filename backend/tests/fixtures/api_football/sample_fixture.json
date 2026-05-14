@@ -1,0 +1,18 @@
+{
+  "fixture": {
+    "id": 999,
+    "referee": "M. Mariani",
+    "date": "2025-01-15T18:00:00+00:00",
+    "status": {"short": "FT", "long": "Match Finished"},
+    "venue": {"id": 1, "name": "San Siro", "city": "Milano"}
+  },
+  "teams": {
+    "home": {"id": 10, "name": "Inter"},
+    "away": {"id": 20, "name": "Milan"}
+  },
+  "goals": {"home": 2, "away": 1},
+  "statistics": [
+    {"type": "Shots on Goal", "value": "5"},
+    {"type": "Total Shots", "value": "12"}
+  ]
+}

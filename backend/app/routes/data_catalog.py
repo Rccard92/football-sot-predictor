@@ -2,17 +2,45 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter
 
-from app.data.api_football_catalog import build_api_football_catalog_payload
+from app.core.config import get_settings
+from app.services.api_football_direct_catalog_io import load_direct_catalog_cache
 
 router = APIRouter(prefix="/data-catalog", tags=["data-catalog"])
 
+DIRECT_VERSION = "api_football_direct_catalog_v0_1"
 
-@router.get("/api-football")
-def get_api_football_catalog() -> dict:
+
+def _empty_direct_payload() -> dict[str, Any]:
+    return {
+        "version": DIRECT_VERSION,
+        "season": get_settings().default_season,
+        "provider": "API-Football / API-Sports",
+        "last_scan_at": None,
+        "message": "Nessuno scan eseguito. Avvia scan API per costruire il catalogo diretto.",
+        "summary": {
+            "endpoints_scanned": 0,
+            "endpoints_errors": 0,
+            "direct_fields_found": 0,
+            "fields_used_by_v04": 0,
+            "fields_saved_in_db": 0,
+            "fields_raw_json_only": 0,
+        },
+        "areas": [],
+    }
+
+
+@router.get("/api-football/direct")
+def get_api_football_direct_catalog() -> dict[str, Any]:
     """
-    Catalogo statico parametri API-Football con stato progetto e riferimenti manifest v0.4.
-    Nessuna query database.
+    Ultimo catalogo campi diretti da scan API-Football (cache file).
+    Non include la diagnostica dettagliata degli endpoint (solo nel POST scan).
     """
-    return build_api_football_catalog_payload()
+    data = load_direct_catalog_cache()
+    if not data:
+        return _empty_direct_payload()
+    out = {k: v for k, v in data.items() if k != "diagnostics"}
+    return out
