@@ -19,12 +19,16 @@ router = APIRouter(prefix="/debug/sot", tags=["debug"])
 
 
 @router.get("/fixture/{fixture_id}/explanation", response_model=None)
-def debug_sot_fixture_explanation(fixture_id: int, db: Session = Depends(get_db)):
+def debug_sot_fixture_explanation(
+    fixture_id: int,
+    db: Session = Depends(get_db),
+    model_version: str | None = Query(default=None),
+):
     """
     Read-only: spiegazione audit previsione SOT per fixture (dati già salvati, nessuna rigenerazione).
     """
     try:
-        payload = build_fixture_sot_explanation(db, int(fixture_id))
+        payload = build_fixture_sot_explanation(db, int(fixture_id), model_version=model_version)
     except (OperationalError, ProgrammingError) as exc:
         logger.warning("GET debug fixture explanation: DB error (%s)", exc.__class__.__name__, exc_info=True)
         return JSONResponse(

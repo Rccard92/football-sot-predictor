@@ -19,6 +19,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V10_SOT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, Team, TeamSotPrediction
@@ -88,6 +89,7 @@ COMPARE_MODELS_ORDER: list[tuple[str, str]] = [
     (BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED, "v0.2 player"),
     (BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT, "v0.3"),
     (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, "v0.4"),
+    (BASELINE_SOT_MODEL_VERSION_V10_SOT, "v1.0"),
 ]
 
 CHECKSUM_TOLERANCE = 0.02
@@ -183,6 +185,7 @@ def _active_model_version_from_preds(
 ) -> str | None:
     for mv in (
         BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+        BASELINE_SOT_MODEL_VERSION_V10_SOT,
         BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
         BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
         BASELINE_SOT_MODEL_VERSION_V02,
@@ -410,6 +413,72 @@ def _components_v04(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
     return out
 
 
+def _components_v10(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
+    out = _components_v04(raw, predicted)
+    formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+    terms_raw = formula.get("terms") if isinstance(formula.get("terms"), list) else []
+    va = raw.get("v04_alignment") if isinstance(raw.get("v04_alignment"), dict) else {}
+    v04ref = _safe_float(va.get("v04_expected_sot"))
+    v10exp = _safe_float(va.get("v10_expected_sot"))
+    delta = _safe_float(va.get("delta"))
+    status = str(va.get("status") or "")
+
+    exp_vars: list[dict[str, Any]] = []
+    for t in terms_raw:
+        if not isinstance(t, dict):
+            continue
+        key = str(t.get("key") or "")
+        w = _safe_float(t.get("weight"))
+        val = _safe_float(t.get("value"))
+        contrib = _safe_float(t.get("contribution"))
+        if contrib is None and val is not None and w is not None:
+            contrib = round(float(val) * float(w), 4)
+        exp_vars.append(
+            {
+                "key": key,
+                "label": str(t.get("label") or key),
+                "value": _round2(val),
+                "unit": "tiri in porta",
+                "weight_internal": w,
+                "contribution": contrib,
+                "formula": str(t.get("formula") or ""),
+                "data_source": str(t.get("source") or "raw_json v0.4 / formula v1.0"),
+                "matches_count": None,
+                "sum": None,
+                "sample_rows_count": None,
+                "fallback_used": bool(t.get("fallback_used")),
+                "cap_applied": bool(t.get("cap_applied")),
+                "no_data_leakage_note": "Sì (valori letti da snapshot v0.4)",
+                "sample_matches": [],
+                "sample_matches_note": None,
+                "status": "fallback" if t.get("fallback_used") else "available",
+            },
+        )
+
+    notes_align: list[str] = []
+    if v04ref is not None and v10exp is not None and delta is not None:
+        notes_align.append(
+            f"Confronto con `predicted_sot` v0.4 salvato: Δ = {_round2(delta)}. Stato: {status or '—'}.",
+        )
+    if str(raw.get("architecture") or "") == "explicit_terms_from_v04":
+        notes_align.append("Architettura: ricostruzione esplicita a 6 termini; nessun uso del solo numero v0.4 come input nascosto.")
+
+    out.append(
+        {
+            "id": "v10_explicit_weighted_sum",
+            "label": "Formula esplicita modello v1.0",
+            "value": _round2(predicted),
+            "weight": None,
+            "contribution": _round2(predicted),
+            "direction": "neutro",
+            "data_status": "ok" if status != "needs_review" else "fallback",
+            "notes": " ".join(notes_align) if notes_align else None,
+            "variables": exp_vars,
+        },
+    )
+    return out
+
+
 def _formula_hint_v04_input(key: str) -> str:
     if key == "avg_sot_for":
         return "sum(shots_on_target) / matches_count"
@@ -497,6 +566,8 @@ def _build_side_components(model_version: str, raw: dict[str, Any] | None, predi
         return _components_v03(raw, predicted)
     if model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
         return _components_v04(raw, predicted)
+    if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
+        return _components_v10(raw, predicted)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         return _components_v02(raw, predicted)
     return []
@@ -726,6 +797,84 @@ def _build_formula_breakdown_v04(raw: dict[str, Any], stored: float) -> dict[str
     }
 
 
+def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+    if formula.get("type") != "weighted_sum":
+        return {}
+    terms_raw = formula.get("terms")
+    if not isinstance(terms_raw, list) or not terms_raw:
+        return {}
+    terms: list[dict[str, Any]] = []
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    contrib_vals: list[float] = []
+    for t in terms_raw:
+        if not isinstance(t, dict):
+            continue
+        key = str(t.get("key") or "")
+        lab = str(t.get("label") or key)
+        w = _safe_float(t.get("weight"))
+        val = _safe_float(t.get("value"))
+        if w is None or val is None:
+            continue
+        contrib = round(float(val) * float(w), 4)
+        if t.get("contribution") is not None:
+            try:
+                contrib = round(float(t["contribution"]), 4)
+            except (TypeError, ValueError):
+                pass
+        contrib_vals.append(contrib)
+        terms.append(
+            {
+                "id": f"v10_term_{key}",
+                "label": lab,
+                "symbol": key,
+                "value": _round2(val),
+                "weight": w,
+                "contribution": contrib,
+                "calc_expression": _mul_expr(val, w),
+            },
+        )
+        sym_parts.append(f"({lab} × {w})")
+        num_parts.append(_mul_expr(val, w))
+    s = round(sum(contrib_vals), 4) if contrib_vals else None
+    sum_c, delta, warn, wmsg = _checksum_block(s, stored)
+    va = raw.get("v04_alignment") if isinstance(raw.get("v04_alignment"), dict) else {}
+    fb_list: list[str] = []
+    if va.get("status") == "needs_review":
+        fb_list.append("v04_alignment_needs_review")
+    sym_extra = str(formula.get("symbolic") or "").strip()
+    num_extra = str(formula.get("numeric") or "").strip()
+    return {
+        "model_version": BASELINE_SOT_MODEL_VERSION_V10_SOT,
+        "stored_predicted_sot": _round2(stored),
+        "terms": terms,
+        "formula_symbolic": sym_extra or ("expected_sot_v1 = " + " + ".join(sym_parts)),
+        "formula_numeric": num_extra or ("expected_sot_v1 = " + " + ".join(num_parts) + f"\n= {_round2(s)}"),
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": t["weight"],
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+            }
+            for t in terms
+        ],
+        "sum_contributions": sum_c,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {
+            "cap_applied": False,
+            "fallbacks_used": fb_list,
+            "v04_alignment": {
+                "status": va.get("status"),
+                "delta": _safe_float(va.get("delta")),
+            },
+        },
+    }
+
+
 def _build_formula_breakdown_v02(raw: dict[str, Any], stored: float) -> dict[str, Any]:
     base = _safe_float(raw.get("baseline_expected_sot"))
     bd = raw.get("adjustment_breakdown") if isinstance(raw.get("adjustment_breakdown"), dict) else {}
@@ -812,6 +961,8 @@ def _build_prediction_formula_breakdown_side(
         out = _build_formula_breakdown_v03(raw, st)
     elif model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
         out = _build_formula_breakdown_v04(raw, st)
+    elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
+        out = _build_formula_breakdown_v10(raw, st)
     elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         out = _build_formula_breakdown_v02(raw, st)
     else:
@@ -924,7 +1075,7 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
         return
     for comp in components:
         cid = str(comp.get("id") or "")
-        if model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT and cid.startswith("v04_base_"):
+        if model_version in (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, BASELINE_SOT_MODEL_VERSION_V10_SOT) and cid.startswith("v04_base_"):
             vars_ = comp.get("variables") or []
             if vars_ and isinstance(vars_[0], dict):
                 v0 = vars_[0]
@@ -935,7 +1086,7 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
                     "notes": [],
                     "flags": {"cap_applied": False, "fallbacks_used": []},
                 }
-        elif model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT and cid == "v04_offensive_production":
+        elif model_version in (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, BASELINE_SOT_MODEL_VERSION_V10_SOT) and cid == "v04_offensive_production":
             ocomp = raw.get("offensive_production_component")
             if isinstance(ocomp, dict):
                 comp["internal_formula"] = _internal_formula_v04_offensive(ocomp, raw)
@@ -958,6 +1109,30 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
                         "fallbacks_used": [str(v0.get("key") or "")] if v0.get("fallback_used") else [],
                     },
                 }
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT and cid == "v10_explicit_weighted_sum":
+            formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+            va = raw.get("v04_alignment") if isinstance(raw.get("v04_alignment"), dict) else {}
+            comp["internal_formula"] = {
+                "title": str(comp.get("label") or "Formula esplicita v1.0"),
+                "formula_text": str(formula.get("symbolic") or formula.get("type") or "weighted_sum"),
+                "rows": [
+                    {
+                        "key": "v04_alignment",
+                        "label": "Allineamento vs v0.4 (predicted_sot)",
+                        "value": _round2(_safe_float(va.get("delta"))),
+                    },
+                    {
+                        "key": "alignment_status",
+                        "label": "Stato",
+                        "value": str(va.get("status") or ""),
+                    },
+                ],
+                "notes": [str(formula.get("numeric") or "").strip()] if formula.get("numeric") else [],
+                "flags": {
+                    "cap_applied": False,
+                    "fallbacks_used": (["needs_review"] if va.get("status") == "needs_review" else []),
+                },
+            }
         elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
             comp["internal_formula"] = {
                 "title": str(comp.get("label") or cid),
@@ -1193,7 +1368,12 @@ def _framework_consistency_side(
     }
 
 
-def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any]:
+def build_fixture_sot_explanation(
+    db: Session,
+    fixture_id: int,
+    *,
+    model_version: str | None = None,
+) -> dict[str, Any]:
     fx = db.get(Fixture, int(fixture_id))
     if fx is None:
         return {
@@ -1239,7 +1419,14 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
         raw_by[(mv, side)] = r.raw_json if isinstance(r.raw_json, dict) else None
         actual_by[(mv, side)] = int(r.actual_sot) if r.actual_sot is not None else None
 
-    active_mv = _active_model_version_from_preds(preds)
+    active_mv: str | None = None
+    if model_version:
+        mvq = str(model_version).strip()
+        pr = preds.get(mvq) or {}
+        if pr.get("home") is not None and pr.get("away") is not None:
+            active_mv = mvq
+    if active_mv is None:
+        active_mv = _active_model_version_from_preds(preds)
     if active_mv is None:
         return {
             "status": "missing",
@@ -1294,7 +1481,7 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
     comp_home = _build_side_components(active_mv, raw_home, float(ph or 0.0))
     comp_away = _build_side_components(active_mv, raw_away, float(pa or 0.0))
 
-    if active_mv == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
+    if active_mv in (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, BASELINE_SOT_MODEL_VERSION_V10_SOT):
         _attach_samples_to_v04_variables(comp_home, int(fx.home_team_id), audit_map)
         _attach_samples_to_v04_variables(comp_away, int(fx.away_team_id), audit_map)
     elif active_mv == BASELINE_SOT_MODEL_VERSION:
@@ -1367,6 +1554,13 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
     if v04a is not None and v03a is not None:
         deltas.append(f"v0.4 vs v0.3 ({away.name}): {_round2(v04a - v03a):+}")
 
+    v10h = preds.get(BASELINE_SOT_MODEL_VERSION_V10_SOT, {}).get("home")
+    v10a = preds.get(BASELINE_SOT_MODEL_VERSION_V10_SOT, {}).get("away")
+    if v10h is not None and v04h is not None:
+        deltas.append(f"v1.0 vs v0.4 ({home.name}): {_round2(v10h - v04h):+}")
+    if v10a is not None and v04a is not None:
+        deltas.append(f"v1.0 vs v0.4 ({away.name}): {_round2(v10a - v04a):+}")
+
     quality_items: list[str] = []
     try:
         mc = build_model_comparison_for_fixture(db, int(fx.id), season=None, include_raw=False)
@@ -1381,7 +1575,7 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
     except Exception:
         pass
 
-    if active_mv == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
+    if active_mv in (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, BASELINE_SOT_MODEL_VERSION_V10_SOT):
         for side_l, raw, nm in (("home", raw_home, home.name), ("away", raw_away, away.name)):
             comp = raw.get("offensive_production_component") if isinstance(raw, dict) else None
             if isinstance(comp, dict):
@@ -1390,6 +1584,17 @@ def build_fixture_sot_explanation(db: Session, fixture_id: int) -> dict[str, Any
                 fb = comp.get("fallbacks_used")
                 if isinstance(fb, list) and fb:
                     quality_items.append(f"Fallback componente offensiva ({nm}): {', '.join(str(x) for x in fb)}.")
+
+    if active_mv == BASELINE_SOT_MODEL_VERSION_V10_SOT:
+        for raw, nm in ((raw_home, home.name), (raw_away, away.name)):
+            if not isinstance(raw, dict):
+                continue
+            va = raw.get("v04_alignment")
+            if isinstance(va, dict) and va.get("status") == "needs_review":
+                d = va.get("delta")
+                quality_items.append(
+                    f"Allineamento v1.0 vs v0.4 da revisionare ({nm}): Δ {va.get('delta')}.",
+                )
 
     if active_mv == BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT:
         mh = (raw_home or {}).get("meta") if isinstance(raw_home, dict) else None

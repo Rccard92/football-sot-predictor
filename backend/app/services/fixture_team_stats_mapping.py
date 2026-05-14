@@ -25,6 +25,8 @@ STAT_LABEL_ALIASES: dict[str, str] = {
     "total passes": "total_passes",
     "passes accurate": "accurate_passes",
     "passes %": "pass_accuracy_pct",
+    "expected goals": "expected_goals",
+    "expected_goals": "expected_goals",
 }
 
 
@@ -78,7 +80,7 @@ def statistics_list_to_fields(statistics: list[dict[str, Any]] | None) -> dict[s
         if not key:
             continue
         raw = item.get("value")
-        if key in ("ball_possession_pct", "pass_accuracy_pct"):
+        if key in ("ball_possession_pct", "pass_accuracy_pct", "expected_goals"):
             v = _parse_float(raw)
         else:
             v = _parse_int(raw)
@@ -105,6 +107,7 @@ def apply_parsed_to_row(row: Any, parsed: dict[str, Any], *, set_legacy_shots: b
         "total_passes",
         "accurate_passes",
         "pass_accuracy_pct",
+        "expected_goals",
     )
     for name in field_names:
         if name in parsed:

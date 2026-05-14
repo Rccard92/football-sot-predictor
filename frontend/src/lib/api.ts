@@ -489,6 +489,16 @@ export async function postGenerateV04OffensiveCoreSotUpcoming(
   )
 }
 
+/** Generazione previsioni upcoming baseline_v1_0_sot (correzione xG su v0.4). */
+export async function postGenerateV10SotUpcoming(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  const timeoutMs = opts?.timeoutMs ?? 300_000
+  return requestPostJsonWithOpts<unknown>(
+    `/api/predictions/sot/serie-a/${season}/generate-v10-sot`,
+    {},
+    { ...opts, timeoutMs },
+  )
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(

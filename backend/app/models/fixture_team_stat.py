@@ -49,6 +49,7 @@ class FixtureTeamStat(Base, TimestampMixin):
     total_passes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     accurate_passes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pass_accuracy_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    expected_goals: Mapped[float | None] = mapped_column(Float, nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     fixture = relationship("Fixture", back_populates="team_stats")

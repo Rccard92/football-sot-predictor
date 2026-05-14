@@ -18,6 +18,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V10_SOT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, League, Season, Team, TeamSotPrediction
@@ -39,6 +40,7 @@ def preferred_model_versions() -> list[str]:
         BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
         BASELINE_SOT_MODEL_VERSION_V02,
         BASELINE_SOT_MODEL_VERSION,
+        BASELINE_SOT_MODEL_VERSION_V10_SOT,
     ]
 
 
@@ -50,6 +52,43 @@ def _safe_details(exc: Exception) -> str:
     if "database_url" in lowered or "apikey" in lowered or "api_key" in lowered or "secret" in lowered:
         return f"{exc.__class__.__name__}: [redacted]"
     return msg[:800]
+
+
+def _v10_meets_recommend_criteria(
+    db: Session,
+    *,
+    upcoming_fixture_ids: list[int],
+    by_version: dict[str, dict[str, Any]],
+    upcoming_fixtures_total: int,
+) -> bool:
+    row = by_version.get(BASELINE_SOT_MODEL_VERSION_V10_SOT)
+    if not row or not row.get("is_available_for_upcoming"):
+        return False
+    up = int(row.get("upcoming_predictions") or 0)
+    if upcoming_fixtures_total <= 0 or up != 2 * upcoming_fixtures_total:
+        return False
+    if not upcoming_fixture_ids:
+        return False
+    preds = db.scalars(
+        select(TeamSotPrediction).where(
+            TeamSotPrediction.fixture_id.in_(upcoming_fixture_ids),
+            TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT,
+            TeamSotPrediction.predicted_sot.isnot(None),
+        ),
+    ).all()
+    if len(preds) != up:
+        return False
+    for p in preds:
+        raw = p.raw_json if isinstance(p.raw_json, dict) else {}
+        va = raw.get("v04_alignment")
+        if not isinstance(va, dict):
+            return False
+        st = va.get("status")
+        if st == "needs_review":
+            return False
+        if st not in ("aligned_with_v04", "minor_rounding_difference"):
+            return False
+    return True
 
 
 def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any], int]:
@@ -236,11 +275,21 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
     available_list = preferred_present + sorted(extras, key=lambda x: x["model_version"])
 
     recommended = None
-    for mv in preferred:
-        row = by_version.get(mv)
-        if row and row.get("is_available_for_upcoming"):
-            recommended = mv
-            break
+    if _v10_meets_recommend_criteria(
+        db,
+        upcoming_fixture_ids=upcoming_fixture_ids,
+        by_version=by_version,
+        upcoming_fixtures_total=int(upcoming_fixtures_total),
+    ):
+        recommended = BASELINE_SOT_MODEL_VERSION_V10_SOT
+    if recommended is None:
+        for mv in preferred:
+            if mv == BASELINE_SOT_MODEL_VERSION_V10_SOT:
+                continue
+            row = by_version.get(mv)
+            if row and row.get("is_available_for_upcoming"):
+                recommended = mv
+                break
     if recommended is None:
         warnings.append("Nessuna prediction upcoming trovata. Generare prima una baseline.")
 

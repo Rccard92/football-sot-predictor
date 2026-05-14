@@ -39,6 +39,7 @@ from app.services.sot_prediction_v02_service import SotPredictionV02Service
 from app.services.predictions_v02.player_adjusted_service import SotPredictionV02PlayerAdjustedService
 from app.services.predictions_v03.core_sot_service import SotPredictionV03CoreSotService
 from app.services.predictions_v04.offensive_core_sot_service import SotPredictionV04OffensiveCoreSotService
+from app.services.predictions_v10.baseline_v1_sot_service import SotPredictionV10BaselineSotService
 from app.services.prediction_readiness import (
     build_model_status_payload,
     build_upcoming_active_payload,
@@ -468,6 +469,70 @@ def generate_serie_a_predictions_v04_offensive_core_sot(
         "model_version": str(summary.get("model_version") or svc.model_version),
         "upcoming_fixtures": int(summary.get("upcoming_fixtures_found") or 0),
         "predictions_created_or_updated": int(summary.get("predictions_created_or_updated") or 0),
+        "errors": summary.get("errors") or [],
+    }
+    return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+
+@router.post("/serie-a/{season}/generate-v10-sot", response_model=None)
+def generate_serie_a_predictions_v10_sot(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    svc = SotPredictionV10BaselineSotService()
+    partial_result = {
+        "upcoming_fixtures": 0,
+        "predictions_created_or_updated": 0,
+        "architecture": "explicit_terms_from_v04",
+        "aligned_with_v04": 0,
+        "minor_rounding_difference": 0,
+        "needs_review": 0,
+        "errors": [],
+    }
+    try:
+        summary = svc.generate_for_upcoming_season(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST generate-v10-sot: errore database")
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "database_operation",
+                    "message": "Database non disponibile o schema non aggiornato.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("POST generate-v10-sot: errore inatteso")
+        return JSONResponse(
+            status_code=500,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "generate_v10_sot",
+                    "message": "Errore inatteso durante la generazione v1.0 SOT.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=409, content=jsonable_encoder(summary))
+
+    payload = {
+        "status": "success",
+        "season": int(season),
+        "model_version": str(summary.get("model_version") or svc.model_version),
+        "base_model_version": str(summary.get("base_model_version") or svc.base_model_version),
+        "architecture": str(summary.get("architecture") or "explicit_terms_from_v04"),
+        "upcoming_fixtures": int(summary.get("upcoming_fixtures") or 0),
+        "predictions_created_or_updated": int(summary.get("predictions_created_or_updated") or 0),
+        "aligned_with_v04": int(summary.get("aligned_with_v04") or 0),
+        "minor_rounding_difference": int(summary.get("minor_rounding_difference") or 0),
+        "needs_review": int(summary.get("needs_review") or 0),
         "errors": summary.get("errors") or [],
     }
     return JSONResponse(status_code=200, content=jsonable_encoder(payload))

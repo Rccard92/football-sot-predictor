@@ -20,6 +20,7 @@ import {
   getPlayerSotProfilesSummary,
   getUpcomingActiveWithOpts,
   postGenerateV04OffensiveCoreSotUpcoming,
+  postGenerateV10SotUpcoming,
   postRefreshUpcomingV04Pipeline,
   runBuildSotFeatures,
   runGenerateSotPredictions,
@@ -31,6 +32,7 @@ import {
 
 const SEASON = DEFAULT_SEASON
 const V04_MODEL = 'baseline_v0_4_offensive_core_sot' as const
+const V10_MODEL = 'baseline_v1_0_sot' as const
 
 type OpResult = {
   endpoint: string
@@ -48,6 +50,18 @@ function pickMessage(payload: unknown, okFallback: string): string {
     if (typeof o.status === 'string' && o.status === 'skipped' && typeof o.reason === 'string') {
       return `Operazione saltata: ${o.reason}`
     }
+      if (typeof o.status === 'string' && o.status === 'success') {
+        if (o.architecture === 'explicit_terms_from_v04' || o.aligned_with_v04 != null) {
+          return [
+            `architecture: ${String(o.architecture ?? '')}`,
+            `model_version: ${String(o.model_version ?? '')}`,
+            `create/update: ${String(o.predictions_created_or_updated ?? '')}`,
+            `allineati v0.4: ${String(o.aligned_with_v04 ?? '')}`,
+            `arrotondamento minore: ${String(o.minor_rounding_difference ?? '')}`,
+            `da revisionare: ${String(o.needs_review ?? '')}`,
+          ].join(' · ')
+        }
+      }
   }
   return okFallback
 }
@@ -150,10 +164,10 @@ export function Admin() {
           message: pickMessage(data, 'Operazione completata.'),
           body: data,
         })
-        if (['refresh-v04-pipeline', 'gen-v04', 'refresh-cards'].includes(action.id)) {
+        if (['refresh-v04-pipeline', 'gen-v04', 'gen-v10', 'refresh-cards'].includes(action.id)) {
           void loadCards()
         }
-        if (action.id === 'refresh-v04-pipeline' || action.id === 'gen-v04') {
+        if (action.id === 'refresh-v04-pipeline' || action.id === 'gen-v04' || action.id === 'gen-v10') {
           try {
             sessionStorage.setItem('sot_admin_refresh_upcoming', String(Date.now()))
           } catch {
@@ -250,6 +264,13 @@ export function Admin() {
       description: `Modello: ${V04_MODEL}`,
       endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v04-offensive-core-sot`,
       run: () => postGenerateV04OffensiveCoreSotUpcoming(SEASON),
+    },
+    {
+      id: 'gen-v10',
+      label: 'Genera modello v1.0 esplicito',
+      description: `Richiede ${V04_MODEL} già generato. Modello: ${V10_MODEL} (somma 6 termini da raw v0.4).`,
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v10-sot`,
+      run: () => postGenerateV10SotUpcoming(SEASON),
     },
     {
       id: 'verify-model',

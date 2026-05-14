@@ -6,6 +6,23 @@ Documento di riferimento per **baseline v0.1**, per le metriche di qualità e pe
 
 Stimare i **tiri in porta attesi** (shots on target, SOT) per squadra su una partita, usando solo statistiche di squadra storiche e medie derivate dal database. Il totale match è la **somma** delle due stime squadra quando entrambe sono disponibili.
 
+## baseline_v1_0_sot — architettura esplicita (senza xG)
+
+Versione **parallela** alla v0.4 (`baseline_v0_4_offensive_core_sot`): non modifica il servizio né i pesi v0.4. Per ogni lato (fixture, squadra) carica la riga `TeamSotPrediction` già salvata con `model_version = baseline_v0_4_offensive_core_sot`, legge `raw_json` e ricostruisce la previsione v1.0 come **somma pesata esplicita degli stessi sei termini esterni** usati in v0.4:
+
+- **0,30** × `offensive_production_component.value` (un solo valore già derivato internamente dai sotto-input offensivi; **non** si risommano i sotto-input con pesi 0,30);
+- **0,25** × `opp_avg_sot_conceded`, **0,15** × `team_split_avg_sot_for`, **0,10** × `opp_split_avg_sot_conceded`, **0,10** × `team_last5_avg_sot_for`, **0,10** × `opp_last5_avg_sot_conceded` da `debug.baseline_other_inputs`.
+
+**Non** si usa il solo `predicted_sot` v0.4 come input numerico nascosto: quel valore entra solo in `v04_alignment` (confronto con la somma ricostruita). Se `raw_json` v0.4 è incompleto, la generazione v1.0 segnala errore strutturato (`invalid_v04_raw_json`) per quel lato.
+
+### Allineamento e qualità
+
+`raw_json` v1.0 include `v04_alignment`: `delta = v10_expected_sot − v04_expected_sot` (riferimento v0.4 = `predicted_sot` salvato), `status` tra `aligned_with_v04` (|Δ| ≤ 0,03), `minor_rounding_difference` (|Δ| ≤ 0,10), `needs_review` (oltre 0,10). Il manifest/trace per v1.0 riusa **solo** le voci v0.4 (`_MANIFEST_V04`); `offensive_production_component` e `debug` sono copiati dalla riga v0.4 così i resolver `v04:*` restano operativi.
+
+### Roadmap (non attivo in questo step)
+
+Una **correzione moltiplicativa basata su xG** era stata prototipata in passato; il codice di riferimento è archiviato in `predictions_v10/xg_multiplier_legacy.py` e **non** è collegato alla pipeline v1.0 attuale.
+
 ## Baseline v0.1: formula e pesi
 
 Il valore atteso per lato è una **combinazione lineare** di sei fattori, ciascuno moltiplicato per un peso. I pesi di default (somma = 1) sono:

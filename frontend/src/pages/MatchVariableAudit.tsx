@@ -4,6 +4,12 @@ import { MatchExplanationView } from '../components/match-explanation/MatchExpla
 import type { FixturesListItem, FixturesListResponse } from '../components/audit/types'
 import type { SotFixtureExplanationResponse } from '../types/sotExplanation'
 
+const MODEL_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Automatico (consigliato dal server)' },
+  { value: 'baseline_v0_4_offensive_core_sot', label: 'v0.4 offensive core' },
+  { value: 'baseline_v1_0_sot', label: 'v1.0 SOT (xG)' },
+]
+
 function useQuery(): URLSearchParams {
   const { search } = useLocation()
   return useMemo(() => new URLSearchParams(search), [search])
@@ -12,10 +18,14 @@ function useQuery(): URLSearchParams {
 export function MatchVariableAudit() {
   const qs = useQuery()
   const fixtureIdFromQS = Number(qs.get('fixture_id') || '')
+  const modelFromQS = (qs.get('model_version') || '').trim()
 
   const [fixtures, setFixtures] = useState<FixturesListItem[]>([])
   const [fixtureId, setFixtureId] = useState<number | null>(
     Number.isFinite(fixtureIdFromQS) && fixtureIdFromQS > 0 ? fixtureIdFromQS : null,
+  )
+  const [modelVersion, setModelVersion] = useState<string>(
+    MODEL_OPTIONS.some((o) => o.value === modelFromQS) ? modelFromQS : '',
   )
 
   const [loading, setLoading] = useState(false)
@@ -48,7 +58,10 @@ export function MatchVariableAudit() {
       setError(null)
       try {
         const base = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
-        const url = `${base}/api/debug/sot/fixture/${fixtureId}/explanation`
+        const q = new URLSearchParams()
+        if (modelVersion) q.set('model_version', modelVersion)
+        const qsStr = q.toString()
+        const url = `${base}/api/debug/sot/fixture/${fixtureId}/explanation${qsStr ? `?${qsStr}` : ''}`
         const res = await fetch(url)
         const parsed = (await res.json()) as SotFixtureExplanationResponse
         if (!res.ok) {
@@ -70,7 +83,7 @@ export function MatchVariableAudit() {
       }
     }
     void load()
-  }, [fixtureId])
+  }, [fixtureId, modelVersion])
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
@@ -95,6 +108,21 @@ export function MatchVariableAudit() {
               {fixtures.map((f) => (
                 <option key={f.fixture_id} value={f.fixture_id}>
                   {f.kickoff_at?.slice(0, 10)} — {f.home_team.name} vs {f.away_team.name} ({f.status_short})
+                </option>
+              ))}
+            </select>
+            <label className="text-xs font-medium text-slate-600" htmlFor="model-version-select">
+              Modello
+            </label>
+            <select
+              id="model-version-select"
+              className="max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+              value={modelVersion}
+              onChange={(e) => setModelVersion(e.target.value)}
+            >
+              {MODEL_OPTIONS.map((o) => (
+                <option key={o.value || 'auto'} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>

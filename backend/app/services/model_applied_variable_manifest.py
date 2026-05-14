@@ -14,6 +14,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V10_SOT,
 )
 
 ApplicationRole = Literal[
@@ -63,6 +64,8 @@ def manifest_for_model(model_version: str) -> list[AppliedVariableSpec]:
         return _MANIFEST_V03
     if model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
         return _MANIFEST_V04
+    if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
+        return list(_MANIFEST_V04)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         return _MANIFEST_V02
     return []
@@ -85,6 +88,7 @@ def all_manifest_framework_keys_union() -> dict[str, list[AppliedVariableSpec]]:
         BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
         BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
         BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+        BASELINE_SOT_MODEL_VERSION_V10_SOT,
     ):
         for spec in manifest_for_model(mv):
             if spec.framework_key:
@@ -94,6 +98,7 @@ def all_manifest_framework_keys_union() -> dict[str, list[AppliedVariableSpec]]:
 
 _MODEL_PRIORITY: tuple[str, ...] = (
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
     BASELINE_SOT_MODEL_VERSION_V02,

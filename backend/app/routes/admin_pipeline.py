@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ from app.services.prediction_readiness import (
     upcoming_summary_from_payload,
 )
 from app.services.predictions_v04.offensive_core_sot_service import SotPredictionV04OffensiveCoreSotService
+from app.services.predictions_v10.baseline_v1_sot_service import SotPredictionV10BaselineSotService
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ def _ingestion_step(
 def admin_pipeline_refresh_upcoming_v04(
     season: int,
     db: Session = Depends(get_db),
+    generate_v10: bool = Query(default=False, description="Se true, dopo v0.4 genera anche baseline_v1_0_sot"),
 ):
     """
     Esegue in sequenza: fixture, statistiche squadra partite finite, classifica,
@@ -315,6 +317,41 @@ def admin_pipeline_refresh_upcoming_v04(
             details=str(exc)[:800],
             http_status=409,
         )
+
+    if generate_v10:
+        v10_svc = SotPredictionV10BaselineSotService()
+        try:
+            v10 = v10_svc.generate_for_upcoming_season(db, season)
+            pred10 = int(v10.get("predictions_created_or_updated") or 0)
+            ok10 = v10.get("status") == "success"
+            steps.append(
+                {
+                    "key": "generate_v10_upcoming",
+                    "label": "Genera previsioni v1.0 SOT (opzionale)",
+                    "status": "success" if ok10 else "failed",
+                    "records_processed": pred10,
+                    "predictions_created_or_updated": pred10,
+                    "architecture": str(v10.get("architecture") or "explicit_terms_from_v04"),
+                    "aligned_with_v04": int(v10.get("aligned_with_v04") or 0),
+                    "minor_rounding_difference": int(v10.get("minor_rounding_difference") or 0),
+                    "needs_review": int(v10.get("needs_review") or 0),
+                    "message": str(v10.get("message") or ("OK" if ok10 else "Errore generazione v1.0")),
+                },
+            )
+            if not ok10:
+                warnings.append(f"v1.0 SOT: {v10.get('message') or 'generazione non riuscita'}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pipeline: v10 optional failure: %s", exc, exc_info=True)
+            warnings.append(f"v1.0 SOT saltata: {str(exc)[:300]}")
+            steps.append(
+                {
+                    "key": "generate_v10_upcoming",
+                    "label": "Genera previsioni v1.0 SOT (opzionale)",
+                    "status": "skipped",
+                    "records_processed": 0,
+                    "message": str(exc)[:500],
+                },
+            )
 
     # 9 — Model status + 10 — Upcoming summary (lettura; non bloccano esito success)
     model_payload, _mc = build_model_status_payload(db, season)

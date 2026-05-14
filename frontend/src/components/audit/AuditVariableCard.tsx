@@ -68,7 +68,9 @@ export function AuditVariableCard({ v }: { v: AuditVariable }) {
             ) : null}
             {v.applied_to_model_versions?.length ? (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">
-                {v.applied_to_model_versions.includes('baseline_v0_4_offensive_core_sot')
+                {v.applied_to_model_versions.includes('baseline_v1_0_sot')
+                  ? 'Modello v1.0'
+                  : v.applied_to_model_versions.includes('baseline_v0_4_offensive_core_sot')
                   ? 'Modello v0.4'
                   : v.applied_to_model_versions.includes('baseline_v0_3_core_sot')
                   ? 'Modello v0.3'
