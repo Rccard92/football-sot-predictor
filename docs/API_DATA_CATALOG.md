@@ -1,54 +1,30 @@
-# Catalogo dati API (scan reale API-Football)
+# Catalogo dati API (catalogo model-relevant)
 
 ## A cosa serve
 
-Il **Catalogo dati API** è uno strumento di **consultazione e diagnostica**: elenca solo i **campi effettivamente presenti** nelle response API-Football dopo uno **scan** con parametri reali (Serie A, stagione configurata, fixture campionate dal database). Non include parametri “ipotetici” o non osservati (ad esempio metriche avanzate tipo xG o big chances **non** compaiono se l’API non le espone nello scan).
+La pagina **Catalogo dati API** mostra le variabili API-Football **classificate** per rilevanza statistico-modellistica, lette da un file statico curato nel repository. **Non** interroga API-Football al caricamento e **non** ricostruisce la classificazione in tempo reale.
 
-- **Frontend:** pagina *Catalogo dati API* (menu *Strumenti tecnici*), con due viste: **Catalogo diretto API** e **Diagnostica scan**, filtri, macro-aree a fisarmonica, badge coerenti con lo scan, selezione campi in `localStorage`.
-- **Backend:**
-  - `GET /api/data-catalog/api-football/direct` — legge l’**ultimo risultato** salvato in cache (file JSON sul server, tipicamente ignorato da git). Se non è mai stato eseguito uno scan, la risposta contiene un messaggio esplicativo e strutture vuote. **Non** include la diagnostica dettagliata degli endpoint.
-  - `POST /api/admin/debug/api-football-catalog/serie-a/{season}/scan` — esegue lo scan (DB + chiamate API + flatten + confronto `raw_json`), salva la cache e restituisce il catalogo completo con **`diagnostics`** per ogni chiamata endpoint.
+- **Frontend:** menu *Strumenti tecnici* — macro-aree a fisarmonica, filtri, checkbox solo sui campi “modello”, sezione separata **«Fonti tecniche per variabili derivate»** (sola lettura, senza selezione), export JSON/CSV della **vista filtrata**, `localStorage` `apiFootballModelRelevantSelected`.
+- **Backend principale:** `GET /api/data-catalog/model-relevant` — legge [`backend/app/data/api_football_model_relevant_catalog.json`](backend/app/data/api_football_model_relevant_catalog.json), esclude le righe con classificazione `NASCONDERE_*` o `DA_NASCONDERE`, separa `SORGENTE_DERIVATA_TECNICA` nel blocco `technical_derivative_sources`.
 
-La stessa **base URL** e **chiave** del progetto (`API_FOOTBALL_BASE_URL`, `API_FOOTBALL_KEY`) sono usate dallo scan. Se la chiave manca, il POST risponde con errore chiaro (es. 503).
+## Catalogo “grezzo” da scan (strumenti avanzati)
 
-## Dato diretto API vs variabile derivata
+Per operazioni di audit o confronto con response reali restano disponibili (non usati dalla pagina principale):
 
-| Concetto | Significato |
-|----------|-------------|
-| **Diretto API** | Valore osservato nello scan, con `json_path` e `endpoint` reali. È l’unico tipo di riga mostrato nel catalogo principale. |
-| **Derivato (modello / aggregazioni)** | Medie, trend, conversioni, componenti combinate, ecc. **Non** sono elencate in questa pagina; il pulsante “Crea variabili derivate da questi campi” è disabilitato (roadmap). |
+- `GET /api/data-catalog/api-football/direct` — ultimo scan in cache.
+- `POST /api/admin/debug/api-football-catalog/serie-a/{season}/scan` — esegue lo scan e aggiorna la cache.
 
-## Disponibile in response vs salvato in DB vs modello v0.4
+## Struttura della risposta `model-relevant`
 
-| Concetto | Significato |
-|----------|-------------|
-| **Trovato in API** | Il campo compare nel flatten della response dello scan (badge coerente in UI). |
-| **`db_status`** | Euristiche sul mapping verso colonne note o solo `raw_json` del DB; `unknown` quando non mappabile. Non si inventano colonne. |
-| **`model_v04_status`** | Solo se esiste un **mapping esplicito** verso concetti noti del modello (es. SOT, tiri, gol); altrimenti “non usato”. Nessuna modifica a formule o manifest: solo **etichettatura** in lettura. |
-| **`appeared_in_raw_json`** | Il path (o equivalente normalizzato) compare anche nel flatten di `raw_json` salvati su fixture/statistiche/lineup/giocatori. |
+- **`areas`:** raggruppamento per stringa `area` del JSON; ogni parametro include `key`, `classification`, `priority`, `recommended_markets`, `reason`, `model_v04_status`, `selectable: true`, ecc.
+- **`technical_derivative_sources`:** campi `SORGENTE_DERIVATA_TECNICA` con `selectable: false` (solo consultazione in UI).
 
-Metriche “avanzate” (xg, expected goals, big chances, …): compaiono **solo** se il flatten trova path/valori coerenti nello scan; altrimenti **non** vengono create righe fittizie.
+## Export
 
-## `json_path`
-
-Stringa che identifica la posizione del valore nel JSON normalizzato (es. indici negli array, chiavi oggetto). Utile per confrontare con payload reali e con `raw_json` in database.
-
-## Cache e deploy
-
-Il file di cache (percorso configurabile lato backend, default sotto `backend/app/data/cache/`) può essere **ignorato da git** così ogni ambiente non eredita scan di altri deploy. Il `GET /direct` funziona dopo almeno uno scan nell’ambiente corrente.
-
-## Selezione campi e localStorage
-
-Le checkbox usano uno **`stable_id`** stabile (derivato da endpoint + path). Le selezioni sono persistite in **`localStorage`** sotto la chiave `apiFootballDirectCatalogSelected` (array JSON di stringhe).
-
-- Il pulsante **“Crea variabili derivate da questi campi”** è disabilitato con tooltip che spiega che la funzione è pianificata e non modifica il modello in questa versione.
-
-## Diagnostica scan
-
-Dopo un POST scan, la vista **Diagnostica scan** mostra tabella per endpoint: parametri, stato HTTP/logico, conteggio campi trovati, messaggio di errore se presente. Utile per capire piani API, rate limit o endpoint non disponibili.
+I pulsanti **Esporta JSON** / **Esporta CSV** serializzano il catalogo **dopo i filtri attivi** nella UI (più metadati di contesto), non l’intero file sorgente né il catalogo da scan. **Esporta selezionati (JSON)** include solo le chiavi `key` selezionate tra i campi del catalogo modello.
 
 ## Manutenzione
 
-- Logica scan, flatten, aree, etichette: servizi sotto `backend/app/services/` (`api_football_direct_catalog_*`, `api_football_json_flatten`).
-- Route: `backend/app/routes/data_catalog.py`, `backend/app/routes/admin_debug_api_football_catalog.py`.
-- Il catalogo **statico** (`api_football_catalog.py`) è stato rimosso: l’unica fonte “diretta” per la UI è scan + cache.
+- Aggiornare il file `api_football_model_relevant_catalog.json` quando si raffinano le regole di scrematura (processo esterno al runtime dell’app).
+- Logica di filtro/split: [`backend/app/services/api_football_model_relevant_catalog.py`](backend/app/services/api_football_model_relevant_catalog.py).
+- Route: [`backend/app/routes/data_catalog.py`](backend/app/routes/data_catalog.py).

@@ -1,90 +1,65 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  DEFAULT_SEASON,
-  getApiFootballCatalogDirect,
-  postAdminDebugApiFootballCatalogScan,
-  type ApiFootballDirectCatalogResponse,
-  type ApiFootballDirectField,
-  type ApiFootballScanDiagnostic,
+  getApiFootballModelRelevantCatalog,
+  type ModelRelevantCatalogResponse,
+  type ModelRelevantField,
 } from '../lib/api'
 import { Card } from '../components/ui/Card'
-import { DirectCatalogAreaSection } from '../components/catalog/DirectCatalogAreaSection'
-import { DirectCatalogFilters } from '../components/catalog/DirectCatalogFilters'
+import { ModelRelevantAreaSection } from '../components/catalog/ModelRelevantAreaSection'
+import { ModelRelevantFilters } from '../components/catalog/ModelRelevantFilters'
 import {
-  DirectSelectedFieldsPanel,
-  loadSelectedDirectFields,
-  persistSelectedDirectFields,
-} from '../components/catalog/DirectSelectedFieldsPanel'
-import { DirectScanDiagnosticsTable } from '../components/catalog/DirectScanDiagnostics'
+  ModelRelevantSelectedPanel,
+  loadModelRelevantSelected,
+  persistModelRelevantSelected,
+} from '../components/catalog/ModelRelevantSelectedPanel'
+import { ModelRelevantTechnicalSection } from '../components/catalog/ModelRelevantTechnicalSection'
 import {
-  buildFullCatalogExportPayload,
-  buildSelectedOnlyExportPayload,
-  countSelectedInCatalog,
-  downloadCsv,
-  downloadJson,
-  flattenCatalogForCsv,
-  formatCatalogExportDate,
-} from '../utils/exportCatalog'
+  exportModelRelevantFilteredCsv,
+  exportModelRelevantFilteredJson,
+  exportModelRelevantSelectedJson,
+  filterModelRelevantField,
+  countSelectedModelFields,
+} from '../utils/exportModelRelevantCatalog'
+import { formatCatalogExportDate } from '../utils/exportCatalog'
 
-type UiMode = 'catalog' | 'diagnostics'
-
-function matches(
-  p: ApiFootballDirectField,
-  o: {
-    q: string
-    areaId: string
-    endpoint: string
-    dbStatus: string
-    modelV04: string
-    sampleType: string
-    onlyV04: boolean
-    onlyNotSavedDb: boolean
-    onlyWithTooltip: boolean
-    onlyNumeric: boolean
-  },
-): boolean {
-  const q = o.q.trim().toLowerCase()
-  if (q) {
-    const blob = `${p.name_it} ${p.json_path} ${p.endpoint} ${p.description_it}`.toLowerCase()
-    if (!blob.includes(q)) return false
-  }
-  if (o.areaId !== 'all' && p.area_id !== o.areaId) return false
-  if (o.endpoint.trim() && !p.endpoint.toLowerCase().includes(o.endpoint.trim().toLowerCase())) return false
-  if (o.dbStatus !== 'all' && p.db_status !== o.dbStatus) return false
-  if (o.modelV04 !== 'all' && p.model_v04_status !== o.modelV04) return false
-  if (o.sampleType !== 'all' && p.sample_type !== o.sampleType) return false
-  if (o.onlyV04 && p.model_v04_status !== 'used_v04') return false
-  if (o.onlyNotSavedDb && (p.db_status === 'saved_column' || p.db_status === 'raw_json_only')) return false
-  if (o.onlyWithTooltip && !p.tooltip_it) return false
-  if (o.onlyNumeric && p.sample_type !== 'numero' && p.sample_type !== 'percentuale') return false
-  return true
-}
+const TECH_SECTION_ID = 'technical_derivative'
 
 export function ApiDataCatalog() {
-  const [mode, setMode] = useState<UiMode>('catalog')
-  const [catalog, setCatalog] = useState<ApiFootballDirectCatalogResponse | null>(null)
-  const [diagnostics, setDiagnostics] = useState<ApiFootballScanDiagnostic[] | null>(null)
+  const [catalog, setCatalog] = useState<ModelRelevantCatalogResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [scanBusy, setScanBusy] = useState(false)
 
   const [search, setSearch] = useState('')
   const [areaId, setAreaId] = useState('all')
   const [endpoint, setEndpoint] = useState('')
+  const [classification, setClassification] = useState('all')
+  const [priority, setPriority] = useState('all')
   const [dbStatus, setDbStatus] = useState('all')
   const [modelV04, setModelV04] = useState('all')
   const [sampleType, setSampleType] = useState('all')
   const [onlyV04, setOnlyV04] = useState(false)
-  const [onlyNotSavedDb, setOnlyNotSavedDb] = useState(false)
-  const [onlyWithTooltip, setOnlyWithTooltip] = useState(false)
-  const [onlyNumeric, setOnlyNumeric] = useState(false)
 
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => loadSelectedDirectFields())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => loadModelRelevantSelected())
+
+  const filterOpts = useMemo(
+    () => ({
+      q: search,
+      areaId,
+      endpoint,
+      classification,
+      priority,
+      dbStatus,
+      modelV04,
+      sampleType,
+      onlyV04,
+    }),
+    [search, areaId, endpoint, classification, priority, dbStatus, modelV04, sampleType, onlyV04],
+  )
 
   const loadCatalog = useCallback(async () => {
-    const res = await getApiFootballCatalogDirect()
+    const res = await getApiFootballModelRelevantCatalog()
     setCatalog(res)
-    const om: Record<string, boolean> = {}
+    const om: Record<string, boolean> = { [TECH_SECTION_ID]: true }
     for (const a of res.areas) {
       om[a.id] = true
     }
@@ -107,123 +82,107 @@ export function ApiDataCatalog() {
   }, [loadCatalog])
 
   useEffect(() => {
-    persistSelectedDirectFields(selectedIds)
+    persistModelRelevantSelected(selectedIds)
   }, [selectedIds])
-
-  const fieldsByStable = useMemo(() => {
-    const m = new Map<string, ApiFootballDirectField>()
-    if (!catalog) return m
-    for (const a of catalog.areas) {
-      for (const p of a.parameters) {
-        m.set(p.stable_id, p)
-      }
-    }
-    return m
-  }, [catalog])
 
   const areaOptions = useMemo(
     () => (catalog ? catalog.areas.map((a) => ({ id: a.id, title: a.title })) : []),
     [catalog],
   )
 
-  const allFields = useMemo(() => {
+  const classificationOptions = useMemo(() => {
     if (!catalog) return []
-    return catalog.areas.flatMap((a) => a.parameters)
+    const s = new Set<string>()
+    for (const a of catalog.areas) {
+      for (const p of a.parameters) {
+        s.add(p.classification)
+      }
+    }
+    s.add('SORGENTE_DERIVATA_TECNICA')
+    return [...s].sort()
   }, [catalog])
 
-  const filterOpts = useMemo(
-    () => ({
-      q: search,
-      areaId,
-      endpoint,
-      dbStatus,
-      modelV04,
-      sampleType,
-      onlyV04,
-      onlyNotSavedDb,
-      onlyWithTooltip,
-      onlyNumeric,
-    }),
-    [search, areaId, endpoint, dbStatus, modelV04, sampleType, onlyV04, onlyNotSavedDb, onlyWithTooltip, onlyNumeric],
-  )
+  const visibleAreas = useMemo(() => {
+    if (!catalog) return []
+    return catalog.areas.map((area) => ({
+      area,
+      parameters: area.parameters.filter((p) => filterModelRelevantField(p, catalog, filterOpts)),
+    }))
+  }, [catalog, filterOpts])
 
-  const filtered = useMemo(() => allFields.filter((p) => matches(p, filterOpts)), [allFields, filterOpts])
+  const visibleTechnical = useMemo(() => {
+    if (!catalog) return []
+    return catalog.technical_derivative_sources.fields.filter((p) =>
+      filterModelRelevantField(p, catalog, filterOpts),
+    )
+  }, [catalog, filterOpts])
 
-  const visibleCount = filtered.length
+  const visibleCount = useMemo(() => {
+    const m = visibleAreas.reduce((acc, x) => acc + x.parameters.length, 0)
+    return m + visibleTechnical.length
+  }, [visibleAreas, visibleTechnical])
 
-  const runScan = async () => {
-    setScanBusy(true)
-    setError(null)
-    try {
-      const res = await postAdminDebugApiFootballCatalogScan(DEFAULT_SEASON)
-      const { diagnostics: d, ...rest } = res
-      setDiagnostics(d ?? null)
-      setCatalog(rest)
-      setMode('diagnostics')
-      const om: Record<string, boolean> = {}
-      for (const a of rest.areas) {
-        om[a.id] = true
+  const fieldsByKey = useMemo(() => {
+    const m = new Map<string, ModelRelevantField>()
+    if (!catalog) return m
+    for (const a of catalog.areas) {
+      for (const p of a.parameters) {
+        m.set(p.key, p)
       }
-      setOpenMap(om)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Scan fallito')
-    } finally {
-      setScanBusy(false)
     }
-  }
+    return m
+  }, [catalog])
+
+  const selectedInCatalogCount = catalog ? countSelectedModelFields(catalog, selectedIds) : 0
 
   const toggleOpen = useCallback((id: string) => {
     setOpenMap((prev) => ({ ...prev, [id]: !prev[id] }))
   }, [])
 
-  const toggleSelect = useCallback((id: string) => {
+  const toggleSelect = useCallback((key: string) => {
     setSelectedIds((prev) => {
       const n = new Set(prev)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
+      if (n.has(key)) n.delete(key)
+      else n.add(key)
       return n
     })
   }, [])
 
   const clearSel = useCallback(() => setSelectedIds(new Set()), [])
 
-  const s = catalog?.summary
-  const selectedInCatalogCount = catalog ? countSelectedInCatalog(catalog, selectedIds) : 0
+  const sum = catalog?.summary
+
+  const exportJson = () => {
+    if (!catalog) return
+    exportModelRelevantFilteredJson(catalog, visibleAreas, visibleTechnical, selectedIds)
+  }
+  const exportCsv = () => {
+    if (!catalog) return
+    exportModelRelevantFilteredCsv(catalog, visibleAreas, visibleTechnical, selectedIds)
+  }
+  const exportSelected = () => {
+    if (!catalog) return
+    exportModelRelevantSelectedJson(catalog, selectedIds)
+  }
 
   const exportDateStr = formatCatalogExportDate()
-  const exportFullJson = () => {
-    if (!catalog) return
-    downloadJson(`api-football-data-catalog-${exportDateStr}.json`, buildFullCatalogExportPayload(catalog, selectedIds))
-  }
-  const exportFullCsv = () => {
-    if (!catalog) return
-    downloadCsv(`api-football-data-catalog-${exportDateStr}.csv`, flattenCatalogForCsv(catalog, selectedIds))
-  }
-  const exportSelectedJson = () => {
-    if (!catalog) return
-    downloadJson(
-      `api-football-selected-fields-${exportDateStr}.json`,
-      buildSelectedOnlyExportPayload(catalog, selectedIds),
-    )
-  }
+  const exportJsonFilenameHint = `api-football-model-catalog-${exportDateStr}.json`
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold text-slate-900">Catalogo dati API</h1>
         <p className="mt-1 max-w-3xl text-sm text-slate-600">
-          Solo parametri trovati direttamente nelle response API-Football (ultimo scan). Nessuna variabile derivata dal
-          modello (medie, trend, componenti) è elencata qui.
+          Variabili API-Football classificate per rilevanza statistica e uso nel modello (catalogo statico curato). Nessuna
+          chiamata al provider al caricamento della pagina.
         </p>
       </header>
 
       <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
-        <p className="font-medium">Dato diretto API vs variabile derivata</p>
+        <p className="font-medium">Catalogo model-relevant</p>
         <p className="mt-1 text-sky-900">
-          Questa pagina mostra solo i parametri recuperabili direttamente da API-Football. Le variabili derivate dal
-          modello — come medie sulle ultime partite, trend, conversioni o componenti aggregati (es. offensive production)
-          — non compaiono in questa tab. Esempi: tiri in porta da statistiche partita = diretto; media tiri in porta
-          ultime 5 = derivata; precisione tiro = derivata.
+          Le voci classificate come da nascondere in tab modello non compaiono. Le &quot;fonti tecniche&quot; sono
+          strumentali alle derivate ma non sono selezionabili come feature dirette.
         </p>
       </div>
 
@@ -231,37 +190,13 @@ export function ApiDataCatalog() {
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{error}</div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setMode('catalog')}
-            className={`rounded-lg px-3 py-2 text-sm font-medium ${mode === 'catalog' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
-          >
-            Catalogo diretto API
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('diagnostics')}
-            className={`rounded-lg px-3 py-2 text-sm font-medium ${mode === 'diagnostics' ? 'bg-slate-900 text-white' : 'text-slate-700'}`}
-          >
-            Diagnostica scan
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={() => void runScan()}
-          disabled={scanBusy}
-          className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-50"
-        >
-          {scanBusy ? 'Scan in corso…' : `Esegui scan Serie A ${DEFAULT_SEASON}`}
-        </button>
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => void loadCatalog()}
           className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm"
         >
-          Ricarica da cache
+          Ricarica catalogo
         </button>
       </div>
 
@@ -269,79 +204,69 @@ export function ApiDataCatalog() {
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">{catalog.message}</div>
       ) : null}
 
-      {mode === 'diagnostics' ? (
-        <DirectScanDiagnosticsTable diagnostics={diagnostics} />
-      ) : null}
-
-      {mode === 'catalog' && catalog ? (
+      {catalog ? (
         <>
-          <Card title="Riepilogo (ultimo scan)">
+          <Card title="Riepilogo catalogo modello">
             <p className="mb-3 text-xs text-slate-500">
-              Conteggi sul catalogo completo. Filtri attivi:{' '}
-              <span className="font-semibold text-slate-800">{visibleCount}</span> campi visibili.
+              Conteggi globali dal file sorgente. Con i filtri attivi sono visibili{' '}
+              <span className="font-semibold text-slate-800">{visibleCount}</span> righe (modello + fonti tecniche).
             </p>
-            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl bg-slate-50 px-3 py-2">
-                <dt className="text-xs font-medium text-slate-500">Campi diretti trovati</dt>
-                <dd className="text-lg font-semibold text-slate-900">{s?.direct_fields_found ?? 0}</dd>
+                <dt className="text-xs font-medium text-slate-500">Macro-aree</dt>
+                <dd className="text-lg font-semibold text-slate-900">{sum?.area_count ?? 0}</dd>
               </div>
               <div className="rounded-xl bg-slate-50 px-3 py-2">
-                <dt className="text-xs font-medium text-slate-500">Endpoint ok (scan)</dt>
-                <dd className="text-lg font-semibold text-slate-900">{s?.endpoints_scanned ?? 0}</dd>
-              </div>
-              <div className="rounded-xl bg-rose-50 px-3 py-2">
-                <dt className="text-xs font-medium text-rose-800">Endpoint in errore</dt>
-                <dd className="text-lg font-semibold text-rose-950">{s?.endpoints_errors ?? 0}</dd>
-              </div>
-              <div className="rounded-xl bg-violet-50 px-3 py-2">
-                <dt className="text-xs font-medium text-violet-800">Usati da v0.4 (mapping)</dt>
-                <dd className="text-lg font-semibold text-violet-950">{s?.fields_used_by_v04 ?? 0}</dd>
-              </div>
-              <div className="rounded-xl bg-emerald-50 px-3 py-2">
-                <dt className="text-xs font-medium text-emerald-800">Salvati in colonna DB</dt>
-                <dd className="text-lg font-semibold text-emerald-950">{s?.fields_saved_in_db ?? 0}</dd>
+                <dt className="text-xs font-medium text-slate-500">Campi catalogo modello</dt>
+                <dd className="text-lg font-semibold text-slate-900">{sum?.model_field_count ?? 0}</dd>
               </div>
               <div className="rounded-xl bg-amber-50 px-3 py-2">
-                <dt className="text-xs font-medium text-amber-800">Solo raw_json</dt>
-                <dd className="text-lg font-semibold text-amber-950">{s?.fields_raw_json_only ?? 0}</dd>
+                <dt className="text-xs font-medium text-amber-800">Fonti tecniche (derivate)</dt>
+                <dd className="text-lg font-semibold text-amber-950">{sum?.technical_derivative_count ?? 0}</dd>
+              </div>
+              <div className="rounded-xl bg-violet-50 px-3 py-2">
+                <dt className="text-xs font-medium text-violet-800">Usati da v0.4 (nel catalogo)</dt>
+                <dd className="text-lg font-semibold text-violet-950">{sum?.fields_used_by_v04_in_model_catalog ?? 0}</dd>
               </div>
             </dl>
             <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
               <button
                 type="button"
-                onClick={exportFullJson}
+                onClick={exportJson}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
               >
-                Esporta JSON completo
+                Esporta JSON (vista filtrata)
               </button>
               <button
                 type="button"
-                onClick={exportFullCsv}
+                onClick={exportCsv}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
               >
-                Esporta CSV
+                Esporta CSV (vista filtrata)
               </button>
               <button
                 type="button"
-                onClick={exportSelectedJson}
+                onClick={exportSelected}
                 disabled={selectedInCatalogCount === 0}
-                title={selectedInCatalogCount === 0 ? 'Seleziona almeno un campo con le checkbox per esportare.' : undefined}
+                title={
+                  selectedInCatalogCount === 0
+                    ? 'Seleziona almeno un campo del catalogo modello con le checkbox.'
+                    : undefined
+                }
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Esporta selezionati
+                Esporta selezionati (JSON)
               </button>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Il JSON mantiene tutta la struttura del catalogo. Il CSV è utile per analisi in Excel o Google Sheets.
+              JSON e CSV riflettono i filtri attuali (non il catalogo grezzo da scan). File JSON tipico:{' '}
+              <span className="font-mono">{exportJsonFilenameHint}</span>.
             </p>
-            {catalog.last_scan_at ? (
-              <p className="mt-2 text-xs text-slate-500">Ultimo scan: {catalog.last_scan_at}</p>
-            ) : null}
           </Card>
 
-          <DirectSelectedFieldsPanel selectedIds={selectedIds} fieldsByStable={fieldsByStable} onClear={clearSel} />
+          <ModelRelevantSelectedPanel selectedIds={selectedIds} fieldsByKey={fieldsByKey} onClear={clearSel} />
 
-          <DirectCatalogFilters
+          <ModelRelevantFilters
             search={search}
             onSearchChange={setSearch}
             areaId={areaId}
@@ -349,6 +274,11 @@ export function ApiDataCatalog() {
             areaOptions={areaOptions}
             endpoint={endpoint}
             onEndpointChange={setEndpoint}
+            classification={classification}
+            onClassificationChange={setClassification}
+            classificationOptions={classificationOptions}
+            priority={priority}
+            onPriorityChange={setPriority}
             dbStatus={dbStatus}
             onDbStatusChange={setDbStatus}
             modelV04={modelV04}
@@ -357,32 +287,32 @@ export function ApiDataCatalog() {
             onSampleTypeChange={setSampleType}
             onlyV04={onlyV04}
             onOnlyV04Change={setOnlyV04}
-            onlyNotSavedDb={onlyNotSavedDb}
-            onOnlyNotSavedDbChange={setOnlyNotSavedDb}
-            onlyWithTooltip={onlyWithTooltip}
-            onOnlyWithTooltipChange={setOnlyWithTooltip}
-            onlyNumeric={onlyNumeric}
-            onOnlyNumericChange={setOnlyNumeric}
           />
 
           <div className="space-y-4">
-            {catalog.areas.map((area) => {
-              const vis = area.parameters.filter((p) => matches(p, filterOpts))
-              return (
-                <DirectCatalogAreaSection
-                  key={area.id}
-                  area={area}
-                  parameters={vis}
-                  open={openMap[area.id] ?? false}
-                  onToggle={() => toggleOpen(area.id)}
-                  selectedIds={selectedIds}
-                  onToggleSelect={toggleSelect}
-                />
-              )
-            })}
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Variabili modello</h2>
+            {visibleAreas.map(({ area, parameters }) => (
+              <ModelRelevantAreaSection
+                key={area.id}
+                area={area}
+                parameters={parameters}
+                open={openMap[area.id] ?? false}
+                onToggle={() => toggleOpen(area.id)}
+                showCheckbox
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+              />
+            ))}
           </div>
+
+          <ModelRelevantTechnicalSection
+            title={catalog.technical_derivative_sources.title}
+            fields={visibleTechnical}
+            open={openMap[TECH_SECTION_ID] ?? true}
+            onToggle={() => toggleOpen(TECH_SECTION_ID)}
+          />
         </>
-      ) : mode === 'catalog' && !catalog && !error ? (
+      ) : !error ? (
         <p className="text-sm text-slate-600">Caricamento…</p>
       ) : null}
     </div>

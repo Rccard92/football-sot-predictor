@@ -450,6 +450,59 @@ export async function getApiFootballCatalogDirect(): Promise<ApiFootballDirectCa
   return requestJson<ApiFootballDirectCatalogResponse>('/api/data-catalog/api-football/direct')
 }
 
+/** Campo catalogo model-relevant (file statico classificato). */
+export type ModelRelevantField = {
+  key: string
+  area: string
+  endpoint: string
+  json_path: string
+  name_it: string
+  technical_name: string
+  sample_type: string
+  sample_value?: unknown
+  db_status?: string
+  db_location_hint?: string | null
+  model_v04_status: string
+  classification: string
+  priority?: string
+  recommended_markets?: string
+  reason?: string
+  selectable: boolean
+  original_json_path?: string
+  occurrences_collapsed?: number
+}
+
+export type ModelRelevantArea = {
+  id: string
+  title: string
+  parameters: ModelRelevantField[]
+}
+
+export type ModelRelevantCatalogSummary = {
+  model_field_count: number
+  technical_derivative_count: number
+  area_count: number
+  fields_used_by_v04_in_model_catalog?: number
+  raw_fields_original?: number | null
+  hide_from_model_catalog?: number | null
+}
+
+export type ModelRelevantCatalogResponse = {
+  version: string
+  message?: string | null
+  source: Record<string, unknown>
+  summary: ModelRelevantCatalogSummary
+  areas: ModelRelevantArea[]
+  technical_derivative_sources: {
+    title: string
+    fields: ModelRelevantField[]
+  }
+}
+
+export async function getApiFootballModelRelevantCatalog(): Promise<ModelRelevantCatalogResponse> {
+  return requestJson<ModelRelevantCatalogResponse>('/api/data-catalog/model-relevant')
+}
+
 export async function postAdminDebugApiFootballCatalogScan(
   season: number,
 ): Promise<ApiFootballDirectScanResponse> {

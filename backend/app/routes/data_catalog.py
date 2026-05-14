@@ -8,6 +8,11 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.services.api_football_direct_catalog_io import load_direct_catalog_cache
+from app.services.api_football_model_relevant_catalog import (
+    build_model_relevant_response,
+    empty_model_relevant_payload,
+    load_model_relevant_raw,
+)
 
 router = APIRouter(prefix="/data-catalog", tags=["data-catalog"])
 
@@ -31,6 +36,20 @@ def _empty_direct_payload() -> dict[str, Any]:
         },
         "areas": [],
     }
+
+
+@router.get("/model-relevant")
+def get_api_football_model_relevant_catalog() -> dict[str, Any]:
+    """
+    Catalogo campi API-Football classificati per uso statistico/modello.
+    Legge da file statico; esclude NASCONDERE_* / DA_NASCONDERE; separa SORGENTE_DERIVATA_TECNICA.
+    """
+    raw = load_model_relevant_raw()
+    if not raw:
+        return empty_model_relevant_payload(
+            "File catalogo non trovato: app/data/api_football_model_relevant_catalog.json",
+        )
+    return build_model_relevant_response(raw)
 
 
 @router.get("/api-football/direct")
