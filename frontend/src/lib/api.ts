@@ -282,6 +282,18 @@ function extractErrorMessage(body: unknown, statusText: string): string {
   return statusText || 'Richiesta non riuscita'
 }
 
+/** Errore HTTP da chiamate admin (include status e body JSON se presente). */
+export class AdminHttpError extends Error {
+  readonly status: number
+  readonly body: unknown
+  constructor(status: number, message: string, body: unknown) {
+    super(message)
+    this.name = 'AdminHttpError'
+    this.status = status
+    this.body = body
+  }
+}
+
 async function requestJson<T>(path: string): Promise<T> {
   const base = getApiBase()
   const p = path.startsWith('/') ? path : `/${path}`
@@ -336,6 +348,177 @@ async function requestPostJson<T>(path: string, body: unknown = {}): Promise<T> 
   }
 
   return parsed as T
+}
+
+/** Opzioni per richieste admin lunghe (timeout client + AbortSignal). */
+export type AdminRequestOpts = {
+  signal?: AbortSignal
+  /** Se impostato, abort dopo N ms (messaggio: Timeout operazione). */
+  timeoutMs?: number
+}
+
+function createLinkedTimeoutSignal(timeoutMs: number, outer?: AbortSignal): { signal: AbortSignal; cancel: () => void } {
+  const c = new AbortController()
+  const tid = window.setTimeout(() => {
+    c.abort(new Error(`Timeout operazione dopo ${Math.round(timeoutMs / 1000)} s`))
+  }, timeoutMs)
+  const cancel = () => window.clearTimeout(tid)
+  if (outer) {
+    const onOuter = () => {
+      cancel()
+      try {
+        c.abort(outer.reason)
+      } catch {
+        c.abort()
+      }
+    }
+    if (outer.aborted) {
+      onOuter()
+    } else {
+      outer.addEventListener('abort', onOuter, { once: true })
+    }
+  }
+  return { signal: c.signal, cancel }
+}
+
+async function requestPostJsonWithOpts<T>(path: string, body: unknown = {}, opts?: AdminRequestOpts): Promise<T> {
+  const base = getApiBase()
+  const p = path.startsWith('/') ? path : `/${path}`
+  let cancelTimeout: (() => void) | undefined
+  let signal: AbortSignal | undefined = opts?.signal
+  if (opts?.timeoutMs != null && opts.timeoutMs > 0) {
+    const x = createLinkedTimeoutSignal(opts.timeoutMs, opts.signal)
+    signal = x.signal
+    cancelTimeout = x.cancel
+  }
+  try {
+    const res = await fetch(`${base}${p}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal,
+    })
+
+    const ct = res.headers.get('content-type') ?? ''
+    let parsed: unknown = null
+    if (ct.includes('application/json')) {
+      try {
+        parsed = await res.json()
+      } catch {
+        parsed = null
+      }
+    }
+
+    if (!res.ok) {
+      throw new AdminHttpError(res.status, extractErrorMessage(parsed, res.statusText), parsed)
+    }
+
+    return parsed as T
+  } finally {
+    cancelTimeout?.()
+  }
+}
+
+async function requestJsonWithOpts<T>(path: string, opts?: AdminRequestOpts): Promise<T> {
+  const base = getApiBase()
+  const urlPath = path.startsWith('/') ? path : `/${path}`
+  let cancelTimeout: (() => void) | undefined
+  let signal: AbortSignal | undefined = opts?.signal
+  if (opts?.timeoutMs != null && opts.timeoutMs > 0) {
+    const x = createLinkedTimeoutSignal(opts.timeoutMs, opts.signal)
+    signal = x.signal
+    cancelTimeout = x.cancel
+  }
+  try {
+    const res = await fetch(`${base}${urlPath}`, { method: 'GET', signal })
+
+    const ct = res.headers.get('content-type') ?? ''
+    let body: unknown = null
+    if (ct.includes('application/json')) {
+      try {
+        body = await res.json()
+      } catch {
+        body = null
+      }
+    }
+
+    if (!res.ok) {
+      throw new AdminHttpError(res.status, extractErrorMessage(body, res.statusText), body)
+    }
+
+    if (body && typeof body === 'object' && 'status' in body) {
+      const st = (body as Record<string, unknown>).status
+      if (st === 'error') {
+        throw new AdminHttpError(
+          res.status,
+          extractErrorMessage(body, 'Errore API'),
+          body,
+        )
+      }
+    }
+
+    return body as T
+  } finally {
+    cancelTimeout?.()
+  }
+}
+
+/** Pipeline completa refresh + v0.4 (può durare molti minuti). */
+export async function postRefreshUpcomingV04Pipeline(
+  season: number,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  const timeoutMs = opts?.timeoutMs ?? 900_000
+  return requestPostJsonWithOpts<unknown>(
+    `/api/admin/pipeline/serie-a/${season}/refresh-upcoming-v04`,
+    {},
+    { ...opts, timeoutMs },
+  )
+}
+
+/** Solo generazione previsioni upcoming modello v0.4 offensive core SOT. */
+export async function postGenerateV04OffensiveCoreSotUpcoming(
+  season: number,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  const timeoutMs = opts?.timeoutMs ?? 300_000
+  return requestPostJsonWithOpts<unknown>(
+    `/api/predictions/sot/serie-a/${season}/generate-v04-offensive-core-sot`,
+    {},
+    { ...opts, timeoutMs },
+  )
+}
+
+/** GET admin/diagnostica con timeout opzionale. */
+export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
+  return requestJsonWithOpts<ModelStatusResponse>(
+    `/api/predictions/sot/serie-a/${season}/model-status`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 60_000 },
+  )
+}
+
+export async function getUpcomingActiveWithOpts(
+  season: number,
+  query: { limit?: number; onlyNextRound?: boolean; modelVersion?: string | null },
+  opts?: AdminRequestOpts,
+): Promise<UpcomingActiveResponse> {
+  const p = new URLSearchParams()
+  if (query.limit != null) p.set('limit', String(query.limit))
+  if (query.onlyNextRound != null) p.set('only_next_round', String(query.onlyNextRound))
+  if (query.modelVersion) p.set('model_version', query.modelVersion)
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/upcoming-active${q ? `?${q}` : ''}`
+  return requestJsonWithOpts<UpcomingActiveResponse>(path, { ...opts, timeoutMs: opts?.timeoutMs ?? 60_000 })
+}
+
+/** POST ingest/admin generici con timeout client predefinito (3 min). */
+export async function adminPostJson<T>(path: string, body: unknown = {}, opts?: AdminRequestOpts): Promise<T> {
+  return requestPostJsonWithOpts<T>(path, body, { timeoutMs: 180_000, ...opts })
+}
+
+/** GET admin/diagnostica con timeout predefinito (90 s). */
+export async function adminGetJson<T>(path: string, opts?: AdminRequestOpts): Promise<T> {
+  return requestJsonWithOpts<T>(path, { ...opts, timeoutMs: opts?.timeoutMs ?? 90_000 })
 }
 
 export async function getDashboard(season: number): Promise<SerieADashboardResponse> {
@@ -524,16 +707,16 @@ export async function getMatchAnalysisFramework(): Promise<MatchAnalysisFramewor
   return requestJson<MatchAnalysisFrameworkResponse>('/api/model/match-analysis-framework')
 }
 
-export async function runBuildSotFeatures(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/features/sot/serie-a/${season}/build`, {})
+export async function runBuildSotFeatures(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/features/sot/serie-a/${season}/build`, {}, { timeoutMs: 300_000, ...opts })
 }
 
-export async function runGenerateSotPredictions(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate`, {})
+export async function runGenerateSotPredictions(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate`, {}, { timeoutMs: 300_000, ...opts })
 }
 
-export async function runSotBacktest(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/backtest/sot/serie-a/${season}/run`, {})
+export async function runSotBacktest(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/backtest/sot/serie-a/${season}/run`, {}, { timeoutMs: 300_000, ...opts })
 }
 
 /** Allineato a `UpcomingSotCalculationBreakdown` (backend). */
@@ -637,11 +820,16 @@ export type ModelStatusVersionRow = {
 }
 
 export type ModelStatusResponse = {
+  status?: string
   season: number
-  active_model_version: string
+  active_model_version: string | null
+  recommended_model_version?: string | null
+  upcoming_fixtures_total?: number
   available_model_versions: ModelStatusVersionRow[]
-  recommended_model_version: string
   warnings: string[]
+  message?: string
+  failed_step?: string
+  details?: string
 }
 
 export type UpcomingActiveSidePrediction = {
@@ -840,12 +1028,12 @@ export async function getUpcomingActive(
   return requestJson<UpcomingActiveResponse>(path)
 }
 
-export async function buildUpcomingSotFeatures(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/features/sot/serie-a/${season}/build-upcoming`, {})
+export async function buildUpcomingSotFeatures(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/features/sot/serie-a/${season}/build-upcoming`, {}, opts)
 }
 
-export async function generateUpcomingSotPredictions(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {})
+export async function generateUpcomingSotPredictions(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {}, opts)
 }
 
 export async function generateUpcomingSotPredictionsV02(season: number): Promise<unknown> {
@@ -891,20 +1079,22 @@ export async function getUpcomingV03CoreSot(
 export async function adminRefreshPostMatchday(
   season: number,
   forceUpdate = false,
+  opts?: AdminRequestOpts,
 ): Promise<unknown> {
-  return requestPostJson<unknown>(
+  return requestPostJsonWithOpts<unknown>(
     `/api/admin/refresh/serie-a/${season}/post-matchday?force_update=${String(forceUpdate)}`,
     {},
+    { timeoutMs: 900_000, ...opts },
   )
 }
 
-export async function adminIngestStandings(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/standings`, {})
+export async function adminIngestStandings(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/standings`, {}, opts)
 }
 
-export async function adminRegenerateUpcomingPredictions(season: number): Promise<unknown> {
-  await requestPostJson<unknown>(`/api/features/sot/serie-a/${season}/build-upcoming`, {})
-  return requestPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {})
+export async function adminRegenerateUpcomingPredictions(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  await adminPostJson<unknown>(`/api/features/sot/serie-a/${season}/build-upcoming`, {}, opts)
+  return adminPostJson<unknown>(`/api/predictions/sot/serie-a/${season}/generate-upcoming`, {}, opts)
 }
 
 export async function evaluateSotLine(
@@ -971,34 +1161,34 @@ export async function evaluateMatchLine(
   })
 }
 
-export async function adminBootstrapSerieA(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/bootstrap`, {})
+export async function adminBootstrapSerieA(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/bootstrap`, {}, opts)
 }
 
-export async function adminIngestTeamStats(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/team-stats`, {})
+export async function adminIngestTeamStats(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/team-stats`, {}, opts)
 }
 
-export async function adminIngestPlayerStats(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/player-stats`, {})
+export async function adminIngestPlayerStats(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/player-stats`, {}, opts)
 }
 
-export async function adminIngestLineups(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/lineups`, {})
+export async function adminIngestLineups(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/lineups`, {}, opts)
 }
 
-export async function adminTestInjuriesApi(season: number): Promise<unknown> {
-  return requestJson<unknown>(`/api/admin/api-football/injuries/test?season=${season}`)
+export async function adminTestInjuriesApi(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminGetJson<unknown>(`/api/admin/api-football/injuries/test?season=${season}`, opts)
 }
 
-export async function adminIngestAvailability(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/availability`, {})
+export async function adminIngestAvailability(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/availability`, {}, opts)
 }
 
-export async function buildPlayerSotProfiles(season: number): Promise<unknown> {
-  return requestPostJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/build`, {})
+export async function buildPlayerSotProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/build`, {}, opts)
 }
 
-export async function getPlayerSotProfilesSummary(season: number): Promise<unknown> {
-  return requestJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/summary`)
+export async function getPlayerSotProfilesSummary(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminGetJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/summary`, opts)
 }

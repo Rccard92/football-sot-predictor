@@ -30,7 +30,7 @@ export function UpcomingMatches() {
     try {
       const s = await getModelStatus(SEASON)
       setStatus(s)
-      const mv = selectedModel || s.active_model_version || s.recommended_model_version
+      const mv = selectedModel || s.active_model_version || s.recommended_model_version || null
       if (!selectedModel) setSelectedModel(mv)
       const res = await getUpcomingActive(SEASON, { limit: 20, onlyNextRound: true, modelVersion: mv })
       setData(res)
@@ -45,6 +45,22 @@ export function UpcomingMatches() {
 
   useEffect(() => {
     void load()
+  }, [load])
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('sot_admin_refresh_upcoming')
+      if (!raw) return
+      const ts = Number(raw)
+      if (!Number.isFinite(ts) || Date.now() - ts > 120_000) {
+        sessionStorage.removeItem('sot_admin_refresh_upcoming')
+        return
+      }
+      sessionStorage.removeItem('sot_admin_refresh_upcoming')
+      void load()
+    } catch {
+      /* ignore */
+    }
   }, [load])
 
   const hasPredictions = data?.matches?.some((m) => Boolean(m.home_prediction && m.away_prediction)) ?? false

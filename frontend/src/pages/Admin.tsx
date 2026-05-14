@@ -1,29 +1,47 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
+  AdminHttpError,
   DEFAULT_SEASON,
   adminBootstrapSerieA,
-  adminIngestStandings,
   adminIngestAvailability,
-  adminRefreshPostMatchday,
-  adminRegenerateUpcomingPredictions,
   adminIngestLineups,
   adminIngestPlayerStats,
+  adminIngestStandings,
   adminIngestTeamStats,
+  adminRefreshPostMatchday,
+  adminRegenerateUpcomingPredictions,
   adminTestInjuriesApi,
   buildPlayerSotProfiles,
   buildUpcomingSotFeatures,
   generateUpcomingSotPredictions,
+  getDataHealth,
+  getIngestionRuns,
+  getModelStatusWithOpts,
   getPlayerSotProfilesSummary,
+  getUpcomingActiveWithOpts,
+  postGenerateV04OffensiveCoreSotUpcoming,
+  postRefreshUpcomingV04Pipeline,
   runBuildSotFeatures,
   runGenerateSotPredictions,
   runSotBacktest,
+  type AdminRequestOpts,
+  type ModelStatusResponse,
+  type UpcomingActiveResponse,
 } from '../lib/api'
 
 const SEASON = DEFAULT_SEASON
+const V04_MODEL = 'baseline_v0_4_offensive_core_sot' as const
 
-type Btn = { id: string; label: string; description?: string; run: () => Promise<unknown> }
+type OpResult = {
+  endpoint: string
+  httpStatus: number | string
+  durationMs: number
+  ok: boolean
+  message: string
+  body?: unknown
+}
 
-function adminPickMessage(payload: unknown, ok: string): string {
+function pickMessage(payload: unknown, okFallback: string): string {
   if (payload && typeof payload === 'object') {
     const o = payload as Record<string, unknown>
     if (typeof o.message === 'string' && o.message.trim()) return o.message
@@ -31,221 +49,524 @@ function adminPickMessage(payload: unknown, ok: string): string {
       return `Operazione saltata: ${o.reason}`
     }
   }
-  return ok
+  return okFallback
 }
 
-type AdminMsg = { ok: boolean; text: string; json?: unknown }
+type AdminAction = {
+  id: string
+  label: string
+  description?: string
+  endpoint: string
+  run: (opts?: AdminRequestOpts) => Promise<unknown>
+}
+
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+      {subtitle ? <p className="mt-1 text-xs text-slate-600">{subtitle}</p> : null}
+      <div className="mt-4">{children}</div>
+    </div>
+  )
+}
+
+function ActionButton({
+  action,
+  pendingId,
+  onRun,
+}: {
+  action: AdminAction
+  pendingId: string | null
+  onRun: (a: AdminAction) => void
+}) {
+  const busy = pendingId === action.id
+  const anyBusy = pendingId !== null
+  return (
+    <button
+      type="button"
+      disabled={anyBusy}
+      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-medium text-slate-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+      onClick={() => onRun(action)}
+    >
+      <span className="block">{busy ? 'In corso…' : action.label}</span>
+      {action.description ? (
+        <span className="mt-1 block text-xs font-normal text-slate-500">{action.description}</span>
+      ) : null}
+      <span className="mt-1 block font-mono text-[10px] text-slate-400">{action.endpoint}</span>
+    </button>
+  )
+}
 
 export function Admin() {
-  const [loadingId, setLoadingId] = useState<string | null>(null)
-  const [msg, setMsg] = useState<AdminMsg | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [lastResult, setLastResult] = useState<OpResult | null>(null)
+  const [legacyOpen, setLegacyOpen] = useState(false)
+  const [modelStatus, setModelStatus] = useState<ModelStatusResponse | null>(null)
+  const [upcomingActive, setUpcomingActive] = useState<UpcomingActiveResponse | null>(null)
+  const [cardsError, setCardsError] = useState<string | null>(null)
 
-  const baseActions: Btn[] = [
+  const loadCards = useCallback(async () => {
+    setCardsError(null)
+    try {
+      const s = await getModelStatusWithOpts(SEASON)
+      setModelStatus(s)
+      const mv = s.active_model_version || s.recommended_model_version || V04_MODEL
+      const u = await getUpcomingActiveWithOpts(
+        SEASON,
+        { limit: 20, onlyNextRound: true, modelVersion: mv },
+      )
+      setUpcomingActive(u)
+    } catch (e) {
+      setModelStatus(null)
+      setUpcomingActive(null)
+      setCardsError(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadCards()
+  }, [loadCards])
+
+  const runAction = useCallback(
+    async (action: AdminAction) => {
+      const t0 = performance.now()
+      setPendingId(action.id)
+      try {
+        const data = await action.run()
+        const ms = Math.round(performance.now() - t0)
+        setLastResult({
+          endpoint: action.endpoint,
+          httpStatus: 200,
+          durationMs: ms,
+          ok: true,
+          message: pickMessage(data, 'Operazione completata.'),
+          body: data,
+        })
+        if (['refresh-v04-pipeline', 'gen-v04', 'refresh-cards'].includes(action.id)) {
+          void loadCards()
+        }
+        if (action.id === 'refresh-v04-pipeline' || action.id === 'gen-v04') {
+          try {
+            sessionStorage.setItem('sot_admin_refresh_upcoming', String(Date.now()))
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch (err) {
+        const ms = Math.round(performance.now() - t0)
+        if (err instanceof AdminHttpError) {
+          setLastResult({
+            endpoint: action.endpoint,
+            httpStatus: err.status,
+            durationMs: ms,
+            ok: false,
+            message: err.message,
+            body: err.body,
+          })
+        } else {
+          setLastResult({
+            endpoint: action.endpoint,
+            httpStatus: '—',
+            durationMs: ms,
+            ok: false,
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
+      } finally {
+        setPendingId(null)
+      }
+    },
+    [loadCards, modelStatus],
+  )
+
+  const section1: AdminAction[] = [
     {
       id: 'bootstrap',
-      label: 'Importa calendario e squadre',
-      description: 'Bootstrap Serie A dalla API Football.',
+      label: 'Aggiorna calendario e squadre',
+      description: 'Bootstrap Serie A (lega, squadre, calendario) da API-Football.',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/bootstrap`,
       run: () => adminBootstrapSerieA(SEASON),
     },
     {
       id: 'team-stats',
-      label: 'Importa statistiche di squadra (partite finite)',
+      label: 'Aggiorna statistiche squadra partite finite',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/team-stats`,
       run: () => adminIngestTeamStats(SEASON),
     },
-  ]
-
-  const layerActions: Btn[] = [
     {
-      id: 'player-stats',
-      label: 'Importa statistiche giocatori (partite finite)',
-      run: () => adminIngestPlayerStats(SEASON),
+      id: 'standings',
+      label: 'Aggiorna classifica',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/standings`,
+      run: () => adminIngestStandings(SEASON),
     },
     {
-      id: 'lineups',
-      label: 'Importa formazioni (partite finite)',
-      run: () => adminIngestLineups(SEASON),
-    },
-    {
-      id: 'injuries-test',
-      label: 'Prova endpoint infortuni API (lettura)',
-      run: () => adminTestInjuriesApi(SEASON),
+      id: 'player-lineups',
+      label: 'Aggiorna dati giocatori e formazioni',
+      description: 'Statistiche giocatori e formazioni partite finite (due step in sequenza).',
+      endpoint: `POST …/player-stats poi …/lineups`,
+      run: async () => {
+        await adminIngestPlayerStats(SEASON)
+        return adminIngestLineups(SEASON)
+      },
     },
     {
       id: 'availability',
-      label: 'Importa disponibilità / infortuni (prudente)',
+      label: 'Aggiorna disponibilità / infortuni',
+      description: 'Import prudente assenze; richiede API configurata.',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability`,
       run: () => adminIngestAvailability(SEASON),
     },
     {
-      id: 'profiles-build',
-      label: 'Calcola profili impatto giocatori (stagione)',
+      id: 'profiles',
+      label: 'Ricalcola profili giocatori',
+      endpoint: `POST /api/features/player-sot-profiles/serie-a/${SEASON}/build`,
       run: () => buildPlayerSotProfiles(SEASON),
     },
     {
+      id: 'dataset-base',
+      label: 'Aggiorna tutto il dataset base',
+      description: 'Squadra finite + giocatori + formazioni in sequenza.',
+      endpoint: `POST team-stats, player-stats, lineups`,
+      run: async () => {
+        await adminIngestTeamStats(SEASON)
+        await adminIngestPlayerStats(SEASON)
+        return adminIngestLineups(SEASON)
+      },
+    },
+  ]
+
+  const section2: AdminAction[] = [
+    {
+      id: 'gen-v04',
+      label: 'Genera previsioni v0.4 prossima giornata',
+      description: `Modello: ${V04_MODEL}`,
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v04-offensive-core-sot`,
+      run: () => postGenerateV04OffensiveCoreSotUpcoming(SEASON),
+    },
+    {
+      id: 'verify-model',
+      label: 'Verifica stato modello',
+      endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/model-status`,
+      run: async () => {
+        const s = await getModelStatusWithOpts(SEASON)
+        setModelStatus(s)
+        return s
+      },
+    },
+    {
+      id: 'verify-upcoming',
+      label: 'Verifica prossima giornata attiva',
+      endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/upcoming-active`,
+      run: async () => {
+        const mv = modelStatus?.active_model_version || modelStatus?.recommended_model_version || V04_MODEL
+        const u = await getUpcomingActiveWithOpts(SEASON, {
+          limit: 20,
+          onlyNextRound: true,
+          modelVersion: mv,
+        })
+        setUpcomingActive(u)
+        return u
+      },
+    },
+    {
+      id: 'refresh-v04-pipeline',
+      label: 'Aggiorna prossima giornata completa',
+      description:
+        'Pipeline: fixture, stats squadra, classifica, giocatori, formazioni, disponibilità (best-effort), profili, previsioni v0.4, stato modello.',
+      endpoint: `POST /api/admin/pipeline/serie-a/${SEASON}/refresh-upcoming-v04`,
+      run: () => postRefreshUpcomingV04Pipeline(SEASON),
+    },
+  ]
+
+  const section3: AdminAction[] = [
+    {
+      id: 'ingest-runs',
+      label: 'Mostra ultimi ingestion runs',
+      endpoint: `GET /api/admin/ingest/runs`,
+      run: () => getIngestionRuns(),
+    },
+    {
+      id: 'data-health',
+      label: 'Controlla copertura dati',
+      endpoint: `GET /api/admin/data-health/serie-a/${SEASON}`,
+      run: () => getDataHealth(SEASON),
+    },
+    {
+      id: 'injuries-test',
+      label: 'Prova lettura API infortuni (nessuna scrittura)',
+      endpoint: `GET /api/admin/api-football/injuries/test?season=${SEASON}`,
+      run: () => adminTestInjuriesApi(SEASON),
+    },
+    {
       id: 'profiles-summary',
-      label: 'Mostra riepilogo profili (GET)',
+      label: 'Riepilogo profili giocatori (GET)',
+      endpoint: `GET /api/features/player-sot-profiles/serie-a/${SEASON}/summary`,
       run: () => getPlayerSotProfilesSummary(SEASON),
     },
   ]
 
-  const modelActions: Btn[] = [
+  const legacyActions: AdminAction[] = [
     {
-      id: 'post-matchday-refresh',
-      label: 'Aggiorna dopo giornata',
-      description: 'Esegue la pipeline post-matchday completa lato backend.',
+      id: 'legacy-post-matchday',
+      label: 'Legacy: pipeline post-giornata v0.1 (+ backtest)',
+      description: 'Lungo: include feature/predizioni completate v0.1, backtest e upcoming v0.1.',
+      endpoint: `POST /api/admin/refresh/serie-a/${SEASON}/post-matchday`,
       run: () => adminRefreshPostMatchday(SEASON),
     },
     {
-      id: 'standings-ingest',
-      label: 'Importa classifica',
-      description: 'Scarica standings e salva snapshot + entries.',
-      run: () => adminIngestStandings(SEASON),
-    },
-    {
-      id: 'regen-upcoming',
-      label: 'Rigenera upcoming predictions',
-      description: 'Ricostruisce feature upcoming e previsioni upcoming.',
+      id: 'legacy-regen-upcoming',
+      label: 'Legacy: rigenera feature + upcoming v0.1',
+      endpoint: `POST build-upcoming + generate-upcoming`,
       run: () => adminRegenerateUpcomingPredictions(SEASON),
     },
     {
-      id: 'feat',
-      label: 'Costruisci feature completate',
+      id: 'legacy-build-features',
+      label: 'Legacy: costruisci feature complete v0.1',
+      endpoint: `POST /api/features/sot/serie-a/${SEASON}/build`,
       run: () => runBuildSotFeatures(SEASON),
     },
     {
-      id: 'pred',
-      label: 'Genera previsioni completate',
+      id: 'legacy-gen-predictions',
+      label: 'Legacy: genera previsioni complete v0.1',
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate`,
       run: () => runGenerateSotPredictions(SEASON),
     },
     {
-      id: 'bt',
-      label: 'Esegui backtest',
+      id: 'legacy-backtest',
+      label: 'Legacy: esegui backtest',
+      endpoint: `POST /api/backtest/sot/serie-a/${SEASON}/run`,
       run: () => runSotBacktest(SEASON),
     },
     {
-      id: 'feat-up',
-      label: 'Costruisci feature partite future',
+      id: 'legacy-build-upcoming-feat',
+      label: 'Legacy: costruisci feature partite future',
+      endpoint: `POST /api/features/sot/serie-a/${SEASON}/build-upcoming`,
       run: () => buildUpcomingSotFeatures(SEASON),
     },
     {
-      id: 'pred-up',
-      label: 'Genera previsioni partite future',
+      id: 'legacy-gen-upcoming',
+      label: 'Legacy: genera previsioni partite future v0.1',
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-upcoming`,
       run: () => generateUpcomingSotPredictions(SEASON),
     },
   ]
 
-  const runBtn = async (a: Btn) => {
-    setLoadingId(a.id)
-    setMsg(null)
-    try {
-      const out = await a.run()
-      const text =
-        a.id === 'bootstrap'
-          ? adminPickMessage(out, 'Bootstrap avviato.')
-          : a.id === 'injuries-test' || a.id === 'profiles-summary'
-            ? adminPickMessage(out, 'Risposta ricevuta.')
-            : adminPickMessage(out, 'Operazione completata.')
-      const showJson = a.id === 'injuries-test' || a.id === 'profiles-summary'
-      setMsg({ ok: true, text, json: showJson ? out : undefined })
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
-    } finally {
-      setLoadingId(null)
-    }
+  const refreshCardsAction: AdminAction = {
+    id: 'refresh-cards',
+    label: 'Aggiorna stato modello',
+    endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/model-status + upcoming-active`,
+    run: async () => {
+      await loadCards()
+      return { refreshed: true }
+    },
   }
-
-  const loadDataLayers = async () => {
-    setLoadingId('load-layers')
-    setMsg(null)
-    try {
-      await adminIngestTeamStats(SEASON)
-      await adminIngestPlayerStats(SEASON)
-      await adminIngestLineups(SEASON)
-      setMsg({
-        ok: true,
-        text:
-          'Importazione completata: statistiche squadra, statistiche giocatori e formazioni storiche. Aggiorna la dashboard per vedere le percentuali di copertura.',
-      })
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
-    } finally {
-      setLoadingId(null)
-    }
-  }
-
-  const renderButtons = (actions: Btn[]) => (
-    <div className="flex flex-col gap-3">
-      {actions.map((a) => (
-        <button
-          key={a.id}
-          type="button"
-          disabled={loadingId !== null}
-          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-medium text-slate-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={() => void runBtn(a)}
-        >
-          <span className="block">{loadingId === a.id ? 'In corso…' : a.label}</span>
-          {a.description ? (
-            <span className="mt-1 block text-xs font-normal text-slate-500">{a.description}</span>
-          ) : null}
-        </button>
-      ))}
-    </div>
-  )
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
       <div className="mx-auto max-w-3xl space-y-6 px-4 sm:px-6">
         <header className="pt-4">
-          <h1 className="text-2xl font-semibold text-slate-900">Admin</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Admin / Strumenti tecnici</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Operazioni di ingestion e rigenerazione dati. Richiedono chiavi API sul server dove necessario.
+            Operazioni su dati Serie A e modello v0.4. Ogni pulsante ha timeout lato client; solo il pulsante cliccato
+            mostra «In corso…».
           </p>
           <p className="mt-1 text-xs text-slate-500">Stagione {SEASON}</p>
         </header>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">Calendario e dati squadra</h2>
-          <p className="mt-1 text-xs text-slate-600">Primi passi per popolare il campionato.</p>
-          <div className="mt-4">{renderButtons(baseActions)}</div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">Layer giocatori, formazioni, disponibilità</h2>
-          <p className="mt-1 text-xs text-slate-600">
-            Dati aggiuntivi per analisi e dashboard: non modificano da soli la formula baseline dei tiri in porta.
-          </p>
-          <div className="mt-4">{renderButtons(layerActions)}</div>
-          <button
-            type="button"
-            disabled={loadingId !== null}
-            className="mt-4 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-semibold text-indigo-950 transition hover:bg-indigo-100/80 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => void loadDataLayers()}
-          >
-            {loadingId === 'load-layers' ? 'In corso…' : 'Importa in sequenza: squadra + giocatori + formazioni'}
-          </button>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">Feature, previsioni e backtest</h2>
-          <p className="mt-1 text-xs text-slate-600">Pipeline del modello baseline v0.1.</p>
-          <div className="mt-4">{renderButtons(modelActions)}</div>
-        </div>
-
-        {msg ? (
-          <div
-            className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${
-              msg.ok
-                ? 'border-emerald-200 bg-emerald-50/90 text-emerald-950'
-                : 'border-rose-200 bg-rose-50/90 text-rose-950'
-            }`}
-          >
-            <p>{msg.text}</p>
-            {msg.json !== undefined ? (
-              <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-white/80 p-3 text-xs text-slate-800 ring-1 ring-slate-200/80">
-                {JSON.stringify(msg.json, null, 2)}
-              </pre>
-            ) : null}
+        {cardsError ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            Card stato: {cardsError}
           </div>
         ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Stato modello attivo</h2>
+            <dl className="mt-2 space-y-1 text-xs text-slate-700">
+              <div>
+                <dt className="text-slate-500">Attivo / consigliato</dt>
+                <dd className="font-mono text-[11px]">
+                  {modelStatus?.active_model_version ?? '—'} / {modelStatus?.recommended_model_version ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Fixture upcoming (totali)</dt>
+                <dd>{modelStatus?.upcoming_fixtures_total ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Versioni in DB</dt>
+                <dd className="max-h-24 overflow-y-auto font-mono text-[10px]">
+                  {(modelStatus?.available_model_versions ?? [])
+                    .map((v) => v.model_version)
+                    .join(', ') || '—'}
+                </dd>
+              </div>
+              {(modelStatus?.warnings?.length ?? 0) > 0 ? (
+                <div>
+                  <dt className="text-amber-700">Warning</dt>
+                  <dd className="text-amber-900">{(modelStatus?.warnings ?? []).join(' · ')}</dd>
+                </div>
+              ) : null}
+            </dl>
+            <ActionButton action={refreshCardsAction} pendingId={pendingId} onRun={runAction} />
+          </div>
+
+          <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Prossima giornata attiva</h2>
+            <dl className="mt-2 space-y-1 text-xs text-slate-700">
+              <div>
+                <dt className="text-slate-500">Modello in uso</dt>
+                <dd className="font-mono text-[11px]">{upcomingActive?.model_version_used ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Partite / predictions (squadre)</dt>
+                <dd>
+                  {upcomingActive?.matches_count ?? 0} partite ·{' '}
+                  {(upcomingActive?.matches ?? []).reduce((acc, m) => {
+                    const h = m.home_prediction ? 1 : 0
+                    const a = m.away_prediction ? 1 : 0
+                    return acc + h + a
+                  }, 0)}{' '}
+                  lati con prediction
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Prima / ultima partita</dt>
+                <dd className="font-mono text-[10px]">
+                  {upcomingActive?.matches?.[0]?.kickoff_at
+                    ? String(upcomingActive.matches[0].kickoff_at)
+                    : '—'}{' '}
+                  →{' '}
+                  {upcomingActive?.matches?.length
+                    ? String(upcomingActive.matches[upcomingActive.matches.length - 1]!.kickoff_at)
+                    : '—'}
+                </dd>
+              </div>
+              {(upcomingActive?.warnings?.length ?? 0) > 0 ? (
+                <div>
+                  <dt className="text-amber-700">Warning</dt>
+                  <dd className="text-amber-900">{(upcomingActive?.warnings ?? []).join(' · ')}</dd>
+                </div>
+              ) : null}
+            </dl>
+            <button
+              type="button"
+              disabled={pendingId !== null}
+              className="mt-3 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-medium text-emerald-950 hover:bg-emerald-100/80 disabled:opacity-50"
+              onClick={() =>
+                void runAction({
+                  id: 'verify-upcoming-header',
+                  label: '',
+                  endpoint: `GET …/upcoming-active`,
+                  run: async () => {
+                    const mv =
+                      modelStatus?.active_model_version || modelStatus?.recommended_model_version || V04_MODEL
+                    const u = await getUpcomingActiveWithOpts(SEASON, {
+                      limit: 20,
+                      onlyNextRound: true,
+                      modelVersion: mv,
+                    })
+                    setUpcomingActive(u)
+                    return u
+                  },
+                })
+              }
+            >
+              {pendingId === 'verify-upcoming-header' ? 'In corso…' : 'Verifica prossima giornata'}
+            </button>
+          </div>
+        </div>
+
+        <Section
+          title="1 — Aggiornamento dati Serie A"
+          subtitle="Ingestion da API-Football dove richiesto."
+        >
+          <div className="flex flex-col gap-3">
+            {section1.map((a) => (
+              <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
+            ))}
+          </div>
+        </Section>
+
+        <Section
+          title="2 — Modello attivo v0.4"
+          subtitle="Flusso consigliato per la dashboard e Prossima giornata."
+        >
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl border-2 border-indigo-400 bg-indigo-50/80 p-1">
+              <ActionButton
+                action={section2.find((x) => x.id === 'refresh-v04-pipeline')!}
+                pendingId={pendingId}
+                onRun={runAction}
+              />
+            </div>
+            {section2
+              .filter((x) => x.id !== 'refresh-v04-pipeline')
+              .map((a) => (
+                <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
+              ))}
+          </div>
+        </Section>
+
+        <Section title="3 — Diagnostica" subtitle="Letture e controlli senza modificare il modello v0.4.">
+          <div className="flex flex-col gap-3">
+            {section3.map((a) => (
+              <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
+            ))}
+          </div>
+        </Section>
+
+        <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-left text-sm font-semibold text-slate-800"
+            onClick={() => setLegacyOpen((o) => !o)}
+          >
+            <span>4 — Legacy / storico (v0.1 e strumenti non usati nel flusso principale)</span>
+            <span className="text-slate-500">{legacyOpen ? '▾' : '▸'}</span>
+          </button>
+          {legacyOpen ? (
+            <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4">
+              {legacyActions.map((a) => (
+                <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-900">Risultato ultima operazione</h2>
+          {lastResult ? (
+            <div className="mt-3 space-y-2 text-sm">
+              <p className={lastResult.ok ? 'text-emerald-800' : 'text-rose-800'}>{lastResult.message}</p>
+              <ul className="list-inside list-disc text-xs text-slate-600">
+                <li>
+                  Endpoint: <span className="font-mono">{lastResult.endpoint}</span>
+                </li>
+                <li>HTTP: {String(lastResult.httpStatus)}</li>
+                <li>Durata: {lastResult.durationMs} ms</li>
+              </ul>
+              {lastResult.body !== undefined ? (
+                <details className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <summary className="cursor-pointer text-xs font-medium text-slate-700">JSON risposta</summary>
+                  <pre className="mt-2 max-h-96 overflow-auto rounded bg-white p-2 text-[11px] text-slate-800">
+                    {JSON.stringify(lastResult.body, null, 2)}
+                  </pre>
+                </details>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">Esegui un&apos;azione per vedere endpoint, durata e payload.</p>
+          )}
+        </div>
       </div>
     </div>
   )

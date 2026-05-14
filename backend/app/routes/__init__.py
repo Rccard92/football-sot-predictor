@@ -7,6 +7,7 @@ from app.routes import (
     admin_debug_player_stats,
     admin_debug_offensive_variables,
     admin_ingest,
+    admin_pipeline,
     admin_refresh,
     backtest,
     data_catalog,
@@ -31,6 +32,7 @@ api_router.include_router(admin_debug_player_stats.router)
 api_router.include_router(admin_debug_api_football_catalog.router)
 api_router.include_router(admin_debug_offensive_variables.router)
 api_router.include_router(admin_ingest.router)
+api_router.include_router(admin_pipeline.router)
 api_router.include_router(admin_refresh.router)
 api_router.include_router(admin_data_health.router)
 api_router.include_router(ingestion.router)
