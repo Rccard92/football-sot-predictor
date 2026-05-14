@@ -19,6 +19,13 @@ import {
   tiriInPortaDisplayName,
 } from './catalogTiriInPorta'
 import {
+  CARTELLINI_SECTION_SUBTITLE,
+  cartelliniDescription,
+  cartelliniDisplayName,
+  matchesCartelliniSection,
+  organizeCartelliniSection,
+} from './catalogCartellini'
+import {
   CORNER_SECTION_SUBTITLE,
   cornerDescription,
   cornerDisplayName,
@@ -143,6 +150,8 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
 
   if (matchesCornerSection(field)) return 'corner'
 
+  if (matchesCartelliniSection(field)) return 'cartellini'
+
   if (isQuoteContext(field)) return 'quote_bookmaker'
 
   if (matchesShotsTiriSection(field)) return 'tiri'
@@ -178,10 +187,6 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
 
   if (p.includes('foul')) return 'falli'
 
-  if (p.includes('yellow') || p.includes('red') || p.includes('card') || p.includes('booking')) {
-    return 'cartellini'
-  }
-
   if (matchesGoalOverUnderSection(field)) return 'goal_over_under'
 
   if (field.classification === 'SORGENTE_DERIVATA_TECNICA' || field.selectable === false) {
@@ -199,6 +204,10 @@ export function getCatalogFieldGroup(field: ModelRelevantField): SemanticGroupId
   if (area.includes('formazion') || area.includes('giocator')) return 'formazioni_giocatori'
   if (area.includes('corner')) {
     if (matchesCornerSection(field)) return 'corner'
+    return 'altri'
+  }
+  if (area.includes('cartellin') || area.includes('card') || area.includes('ammoniz') || area.includes('espuls')) {
+    if (matchesCartelliniSection(field)) return 'cartellini'
     return 'altri'
   }
   if (area.includes('rigor') || area.includes('penalt')) return 'rigori'
@@ -278,14 +287,6 @@ function shotsDisplay(p: string, nameIt: string): string | null {
   if (s.includes('outside') && s.includes('box')) return 'Tiri fuori area'
   if (s.includes('total shots') || (s.includes('shots') && s.includes('total'))) return 'Tiri totali'
   if (GENERIC_BAD.test(nameIt.trim()) && s.includes('shot')) return 'Tiri (dettaglio nel path)'
-  return null
-}
-
-function cardsDisplay(p: string): string | null {
-  const s = p.toLowerCase()
-  if (s.includes('yellow') && s.includes('red')) return 'Cartellini gialli e rossi'
-  if (s.includes('yellow')) return s.includes('player') ? 'Cartellini gialli giocatore' : 'Cartellini gialli'
-  if (s.includes('red')) return s.includes('player') ? 'Cartellini rossi giocatore' : 'Cartellini rossi'
   return null
 }
 
@@ -375,6 +376,9 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   const cornerTitle = cornerDisplayName(field)
   if (cornerTitle) return cornerTitle
 
+  const cartelliniTitle = cartelliniDisplayName(field)
+  if (cartelliniTitle) return cartelliniTitle
+
   const pen = penaltyDisplayName(field)
   if (pen) return pen
 
@@ -392,7 +396,6 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   if (grp === 'quote_bookmaker') {
     if (/\bover\b.*\bunder\b|\bunder\b.*\bover\b/.test(p) || (p.includes('over') && p.includes('under'))) {
       if (p.includes('goal') || b.includes('goal')) return 'Quota Over/Under goal'
-      if (p.includes('card') || b.includes('card')) return 'Quota Over/Under cartellini'
       return 'Over/Under bookmaker — mercato da leggere nei dettagli'
     }
     return ni && !GENERIC_BAD.test(ni) ? ni : 'Quota bookmaker'
@@ -401,11 +404,6 @@ export function getCatalogFieldDisplayName(field: ModelRelevantField): string {
   if (grp === 'tiri') {
     const sd = shotsDisplay(p, ni)
     if (sd) return sd
-  }
-
-  if (grp === 'cartellini') {
-    const cd = cardsDisplay(p)
-    if (cd) return cd
   }
 
   if (grp === 'falli') {
@@ -463,6 +461,9 @@ export function getCatalogFieldDescription(field: ModelRelevantField): string {
   const cornerDesc = cornerDescription(field)
   if (cornerDesc) return cornerDesc
 
+  const cartelliniDesc = cartelliniDescription(field)
+  if (cartelliniDesc) return cartelliniDesc
+
   const reason = (field.reason || '').trim()
   if (reason.length >= 24) return reason
 
@@ -485,6 +486,9 @@ export function getCatalogFieldTooltip(field: ModelRelevantField): string {
   }
   if (g === 'corner') {
     return 'Solo calci d’angolo: statistiche battuti/concessi e mercati bookmaker chiaramente corner; non include tiri, goal o cartellini.'
+  }
+  if (g === 'cartellini') {
+    return 'Solo disciplina: gialli/rossi squadra e giocatore, classifiche top cards e quote cartellini chiare; non include falli, tiri o corner.'
   }
   return `Gruppo: ${getSemanticGroupTitle(g)}.`
 }
@@ -581,6 +585,25 @@ export function groupFieldsBySemanticOrder(fields: ModelRelevantField[]): Semant
         parameters,
         subsections: hasOrganized ? organized.subsections : undefined,
         sectionSubtitle: CORNER_SECTION_SUBTITLE,
+        sectionReviewPending: false,
+      })
+      continue
+    }
+    if (id === 'cartellini') {
+      const organized = organizeCartelliniSection(raw)
+      const hasOrganized = organized.allOrdered.length > 0
+      const parameters = hasOrganized
+        ? organized.allOrdered
+        : [...raw].sort((a, b) =>
+            getCatalogFieldDisplayName(a).localeCompare(getCatalogFieldDisplayName(b), 'it', { sensitivity: 'base' }),
+          )
+      if (parameters.length === 0) continue
+      out.push({
+        id,
+        title: getSemanticGroupTitle(id),
+        parameters,
+        subsections: hasOrganized ? organized.subsections : undefined,
+        sectionSubtitle: CARTELLINI_SECTION_SUBTITLE,
         sectionReviewPending: false,
       })
       continue
