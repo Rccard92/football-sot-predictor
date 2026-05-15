@@ -2,11 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.sot_prediction_service import (
-    SotPredictionService,
-    WEIGHTS_BASELINE_V0_1,
-    confidence_score_from_feature_row,
-)
+from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
+from app.services.sot_prediction_service import SotPredictionService, confidence_score_from_feature_row
 
 
 def test_baseline_weights_sum_to_one():

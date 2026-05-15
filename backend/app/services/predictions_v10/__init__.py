@@ -1,3 +1,5 @@
-from .baseline_v1_sot_service import SotPredictionV10BaselineSotService
+"""
+Utilities and services for SOT v1.0 predictions.
 
-__all__ = ["SotPredictionV10BaselineSotService"]
+Do not import heavy services here to avoid circular imports during app startup.
+"""

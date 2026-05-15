@@ -33,7 +33,7 @@ from app.services.model_applied_variable_trace import (
     validate_model_trace,
 )
 from app.services.predictions_v10.offensive_production_blend import offensive_inputs_as_map
-from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
+from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
 
 logger = logging.getLogger(__name__)
 

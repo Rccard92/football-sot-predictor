@@ -6,7 +6,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
 )
-from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
+from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
 from app.services.sot_fixture_explanation_service import (
     V03_COMPONENT_META,
     _build_prediction_formula_breakdown_side,

@@ -2,10 +2,8 @@ import pytest
 
 from app.schemas.predictions import UpcomingSotCalculationBreakdown
 from app.services.sot_line_evaluate import evaluate_match_sot_line
-from app.services.sot_prediction_service import (
-    WEIGHTS_BASELINE_V0_1,
-    upcoming_calculation_breakdown_from_raw_json,
-)
+from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
+from app.services.sot_prediction_service import upcoming_calculation_breakdown_from_raw_json
 
 
 def test_breakdown_contributions_match_weights():

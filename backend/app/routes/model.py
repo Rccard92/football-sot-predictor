@@ -12,7 +12,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
 )
 from app.schemas.model import MatchAnalysisFrameworkResponse, ModelLegendResponse
-from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
+from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
 
 router = APIRouter(prefix="/model", tags=["model"])
 
