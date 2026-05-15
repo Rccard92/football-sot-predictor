@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     FINISHED_STATUSES,
@@ -81,6 +82,9 @@ class SotPredictionV10BaselineSotService:
         xg_applied = 0
         xg_fallback = 0
         created = 0
+        formula_terms_ok = 0
+        formula_terms_bad = 0
+        all_quality_warnings: list[str] = []
         errors: list[dict[str, Any]] = []
 
         for fx in upcoming:
@@ -108,8 +112,19 @@ class SotPredictionV10BaselineSotService:
                     continue
 
                 base_raw = pred_v04.raw_json if isinstance(pred_v04.raw_json, dict) else {}
+                pred_v01 = db.scalar(
+                    select(TeamSotPrediction).where(
+                        TeamSotPrediction.fixture_id == fx.id,
+                        TeamSotPrediction.team_id == int(team_id),
+                        TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
+                    ),
+                )
+                raw_v01 = pred_v01.raw_json if pred_v01 and isinstance(pred_v01.raw_json, dict) else None
                 try:
-                    base_terms, base_explicit_sot = build_explicit_v04_terms_from_saved_raw(base_raw)
+                    base_terms, base_explicit_sot, quality_meta = build_explicit_v04_terms_from_saved_raw(
+                        base_raw,
+                        raw_v01=raw_v01,
+                    )
                 except ValueError as exc:
                     errors.append(
                         {
@@ -141,6 +156,10 @@ class SotPredictionV10BaselineSotService:
                 v04_ref = float(pred_v04.predicted_sot)
                 delta_base = round(float(base_explicit_sot) - v04_ref, 2)
                 align_st = alignment_status(delta_base)
+                fq_status = str(quality_meta.get("formula_quality_status") or "ok")
+                fq_warnings = list(quality_meta.get("formula_quality_warnings") or [])
+                if fq_status == "needs_review":
+                    align_st = "needs_review"
                 if align_st == "aligned_with_v04":
                     aligned_n += 1
                 elif align_st == "minor_rounding_difference":
@@ -172,6 +191,18 @@ class SotPredictionV10BaselineSotService:
                 merged["difference_from_v04"] = float(delta_base)
                 merged["formula"] = formula_payload
                 merged["xg_component"] = xg_comp
+                merged["formula_quality_status"] = fq_status
+                merged["formula_quality_warnings"] = fq_warnings
+                terms_n = len(formula_payload.get("terms") or [])
+                if terms_n == 7:
+                    formula_terms_ok += 1
+                else:
+                    formula_terms_bad += 1
+                    fq_warnings.append(f"formula_terms_count={terms_n} (atteso 7)")
+                merged["formula_terms_count"] = terms_n
+                for w in fq_warnings:
+                    if w and w not in all_quality_warnings:
+                        all_quality_warnings.append(w)
                 merged["v04_alignment"] = {
                     "v04_expected_sot": _round2(v04_ref),
                     "v10_expected_sot": float(base_explicit_sot),
@@ -227,6 +258,11 @@ class SotPredictionV10BaselineSotService:
                     continue
 
         aligned_base_terms_count = int(aligned_n) + int(minor_n)
+        global_warnings: list[str] = list(dict.fromkeys(all_quality_warnings))
+        if formula_terms_bad > 0:
+            global_warnings.append(
+                f"{formula_terms_bad} predizioni con formula_terms_count != 7 (rigenerare dopo fix builder)",
+            )
         return {
             "status": "success",
             "season": int(season_year),
@@ -235,6 +271,10 @@ class SotPredictionV10BaselineSotService:
             "architecture": self.architecture,
             "upcoming_fixtures": len(upcoming),
             "predictions_created_or_updated": int(created),
+            "formula_terms_count": 7,
+            "formula_terms_ok_count": int(formula_terms_ok),
+            "formula_terms_bad_count": int(formula_terms_bad),
+            "formula_quality_warnings": global_warnings,
             "xg_applied_count": int(xg_applied),
             "xg_fallback_count": int(xg_fallback),
             "aligned_base_terms_count": aligned_base_terms_count,

@@ -539,6 +539,10 @@ def generate_serie_a_predictions_v10_sot(
         "aligned_with_v04": int(summary.get("aligned_with_v04") or 0),
         "minor_rounding_difference": int(summary.get("minor_rounding_difference") or 0),
         "needs_review": int(summary.get("needs_review") or 0),
+        "formula_terms_count": int(summary.get("formula_terms_count") or 7),
+        "formula_terms_ok_count": int(summary.get("formula_terms_ok_count") or 0),
+        "formula_terms_bad_count": int(summary.get("formula_terms_bad_count") or 0),
+        "formula_quality_warnings": summary.get("formula_quality_warnings") or [],
         "errors": summary.get("errors") or [],
     }
     return JSONResponse(status_code=200, content=jsonable_encoder(payload))

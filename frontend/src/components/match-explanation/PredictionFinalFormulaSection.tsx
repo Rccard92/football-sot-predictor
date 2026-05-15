@@ -119,7 +119,9 @@ export function PredictionFinalFormulaSection({
   // N mostrato all'utente = righe della tabella componenti (stessa griglia sotto).
   const numericComponentsUsed = formula.components_table.length
   const traceCountMismatch =
-    traceFormulaCount != null && traceFormulaCount !== numericComponentsUsed
+    traceFormulaCount != null &&
+    numericComponentsUsed > 0 &&
+    traceFormulaCount !== numericComponentsUsed
 
   return (
     <div className="space-y-3 rounded-xl border border-slate-100 bg-white p-4">
@@ -162,12 +164,18 @@ export function PredictionFinalFormulaSection({
               <th className="px-3 py-2 font-medium">Peso</th>
               <th className="px-3 py-2 font-medium">Calcolo contributo</th>
               <th className="px-3 py-2 font-medium">Contributo finale</th>
+              <th className="px-3 py-2 font-medium">Provenienza</th>
             </tr>
           </thead>
           <tbody className="text-slate-800">
             {formula.components_table.map((r) => (
               <tr key={r.componente} className="border-b border-slate-100">
-                <td className="px-3 py-2 font-medium">{r.componente}</td>
+                <td className="px-3 py-2 font-medium">
+                  {r.componente}
+                  {r.fallback_used ? (
+                    <span className="ml-1 text-[10px] font-normal text-amber-800">(fallback)</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2 tabular-nums">{r.valore_componente ?? '—'}</td>
                 <td className="px-3 py-2 tabular-nums">
                   {r.peso != null && Number.isFinite(Number(r.peso))
@@ -176,6 +184,12 @@ export function PredictionFinalFormulaSection({
                 </td>
                 <td className="px-3 py-2 font-mono text-[10px] text-slate-700">{r.calcolo_contributo}</td>
                 <td className="px-3 py-2 tabular-nums font-medium">{r.contributo_finale ?? '—'}</td>
+                <td className="px-3 py-2 font-mono text-[9px] text-slate-500">
+                  {r.source_path ?? '—'}
+                  {r.fallback_reason ? (
+                    <span className="mt-0.5 block text-amber-900">{String(r.fallback_reason)}</span>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

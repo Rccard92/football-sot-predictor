@@ -46,9 +46,9 @@ export function traceRowIsFormulaRole(r: AppliedVariableTraceRow): boolean {
   return role === 'direct_formula_component' || role === 'component_input'
 }
 
-/** Conta nella formula numerica finale (stesso bucket della card, esclusi mancanti). */
+/** Conta nella formula numerica finale: solo termini sommati (direct_formula_component). */
 export function traceRowCountsAsFormulaFinal(r: AppliedVariableTraceRow): boolean {
-  return traceRowIsFormulaRole(r) && !traceRowIsMissingData(r)
+  return r.application_role === 'direct_formula_component' && !traceRowIsMissingData(r)
 }
 
 export function traceRowIsContextRisk(r: AppliedVariableTraceRow): boolean {

@@ -103,12 +103,19 @@ export type FormulaComponentTableRow = {
   peso: number | null
   calcolo_contributo: string
   contributo_finale: number | null
+  source_path?: string | null
+  fallback_used?: boolean
+  fallback_reason?: string | null
+  status?: string | null
 }
 
 export type PredictionFormulaBreakdownSide = {
   model_version: string
   stored_predicted_sot: number | null
   terms: FormulaTerm[]
+  formula_terms_count?: number
+  formula_quality_status?: string | null
+  formula_quality_warnings?: string[]
   formula_symbolic: string
   formula_numeric: string
   components_table: FormulaComponentTableRow[]

@@ -232,6 +232,25 @@ def _row_for_spec(
 
     if r.startswith("v04:formula_term:"):
         term = r.split(":")[-1]
+        arch = str(raw.get("architecture") or "")
+        formula_obj = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+        terms_list = formula_obj.get("terms") if isinstance(formula_obj.get("terms"), list) else []
+        if arch in ("explicit_terms_from_v04_plus_xg", "explicit_terms_from_v04") and terms_list:
+            ft = next((t for t in terms_list if isinstance(t, dict) and str(t.get("key") or "") == term), None)
+            if ft:
+                base["value"] = _r2(_sf(ft.get("value")))
+                base["weight"] = _sf(ft.get("weight"))
+                base["contribution"] = _r2(_sf(ft.get("contribution")))
+                sp = ft.get("source_path") or ft.get("source")
+                base["source"] = str(sp) if sp else base["source"]
+                base["fallback_used"] = bool(ft.get("fallback_used"))
+                base["status"] = str(ft.get("status") or ("fallback" if base["fallback_used"] else "available"))
+                base["formula"] = str(ft.get("formula") or base["formula"])
+                fr = ft.get("fallback_reason")
+                base["notes"] = str(fr) if fr else base["notes"]
+                base["unit"] = "xG medi" if term == "expected_goals" else "tiri in porta"
+                base["cap_applied"] = bool(ft.get("cap_applied"))
+                return base
         comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
         dbg = raw.get("debug") if isinstance(raw.get("debug"), dict) else {}
         bo = dbg.get("baseline_other_inputs") if isinstance(dbg.get("baseline_other_inputs"), dict) else {}

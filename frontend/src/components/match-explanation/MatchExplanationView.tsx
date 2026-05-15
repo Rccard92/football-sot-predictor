@@ -8,7 +8,6 @@ import type {
   SideSummary,
   SotFixtureExplanationResponse,
 } from '../../types/sotExplanation'
-import { deriveTraceabilityForSide } from '../../utils/explanationTraceability'
 import { InternalFormulaPanel, PredictionFinalFormulaSection } from './PredictionFinalFormulaSection'
 import {
   AppliedVariableTraceTable,
@@ -266,13 +265,15 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
   const traceHome = data.applied_variable_trace?.home ?? []
   const traceAway = data.applied_variable_trace?.away ?? []
   const homeFormulaTraceCount = useMemo(() => {
-    if (!data.framework_consistency) return undefined
-    return deriveTraceabilityForSide(traceHome, data.framework_consistency.home).formulaFinalCount
-  }, [data.framework_consistency, traceHome])
+    const n = data.prediction_formula_breakdown?.home?.formula_terms_count
+    if (n != null) return n
+    return data.prediction_formula_breakdown?.home?.components_table?.length ?? undefined
+  }, [data.prediction_formula_breakdown?.home])
   const awayFormulaTraceCount = useMemo(() => {
-    if (!data.framework_consistency) return undefined
-    return deriveTraceabilityForSide(traceAway, data.framework_consistency.away).formulaFinalCount
-  }, [data.framework_consistency, traceAway])
+    const n = data.prediction_formula_breakdown?.away?.formula_terms_count
+    if (n != null) return n
+    return data.prediction_formula_breakdown?.away?.components_table?.length ?? undefined
+  }, [data.prediction_formula_breakdown?.away])
 
   if (!fx || !summary) return null
 

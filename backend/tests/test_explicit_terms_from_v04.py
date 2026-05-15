@@ -31,13 +31,15 @@ def _sample_raw_v04() -> dict:
 
 
 def test_build_explicit_terms_six_weights():
-    terms, expected = build_explicit_v04_terms_from_saved_raw(_sample_raw_v04())
+    terms, expected, quality = build_explicit_v04_terms_from_saved_raw(_sample_raw_v04())
     assert len(terms) == 6
     assert terms[0]["key"] == "offensive_production_component"
     assert terms[0]["weight"] == 0.30
+    assert all(t.get("source_path") for t in terms)
     wmap = {t["key"]: t["weight"] for t in terms[1:]}
     assert wmap["opp_avg_sot_conceded"] == 0.25
     assert abs(expected - 3.30) < 1e-6
+    assert quality.get("formula_quality_status") == "ok"
 
 
 def test_alignment_status_thresholds():

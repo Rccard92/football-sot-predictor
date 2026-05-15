@@ -863,8 +863,10 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
         w = _safe_float(t.get("weight"))
         val = _safe_float(t.get("value"))
         contrib_stored = _safe_float(t.get("contribution"))
+        contrib = round(float(contrib_stored or 0.0), 4) if contrib_stored is not None else None
         if key == "expected_goals":
-            contrib = round(float(contrib_stored or 0.0), 4)
+            if contrib is None:
+                contrib = 0.0
             terms.append(
                 {
                     "id": "v10_term_expected_goals",
@@ -874,18 +876,24 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
                     "weight": w,
                     "contribution": contrib,
                     "calc_expression": f"xG_adjustment({_round2(contrib)})",
+                    "source_path": str(t.get("source_path") or t.get("source") or ""),
+                    "fallback_used": bool(t.get("fallback_used")),
+                    "fallback_reason": t.get("fallback_reason"),
+                    "status": t.get("status"),
                 },
             )
             sym_parts.append(f"xG_adjustment({_round2(contrib)})")
             num_parts.append(f"{_round4(contrib)}")
             contrib_vals.append(contrib)
             continue
-        if w is None or val is None:
+        if w is None:
             continue
-        contrib = round(float(val) * float(w), 4)
-        if contrib_stored is not None:
-            contrib = round(float(contrib_stored), 4)
+        if contrib is None and val is not None:
+            contrib = round(float(val) * float(w), 4)
+        if contrib is None:
+            contrib = 0.0
         contrib_vals.append(contrib)
+        calc_expr = _mul_expr(val, w) if val is not None else f"contributo salvato ({_round4(contrib)})"
         terms.append(
             {
                 "id": f"v10_term_{key}",
@@ -894,11 +902,19 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
                 "value": _round2(val),
                 "weight": w,
                 "contribution": contrib,
-                "calc_expression": _mul_expr(val, w),
+                "calc_expression": calc_expr,
+                "source_path": str(t.get("source_path") or t.get("source") or ""),
+                "fallback_used": bool(t.get("fallback_used")),
+                "fallback_reason": t.get("fallback_reason"),
+                "status": t.get("status"),
             },
         )
-        sym_parts.append(f"({lab} × {w})")
-        num_parts.append(_mul_expr(val, w))
+        if val is not None:
+            sym_parts.append(f"({lab} × {w})")
+            num_parts.append(_mul_expr(val, w))
+        else:
+            sym_parts.append(f"(— × {w})")
+            num_parts.append(f"{_round4(contrib)}")
     s = round(sum(contrib_vals), 4) if contrib_vals else None
     sum_c, delta, warn, wmsg = _checksum_block(s, stored)
     va = raw.get("v04_alignment") if isinstance(raw.get("v04_alignment"), dict) else {}
@@ -908,12 +924,21 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
         fb_list.append("v04_alignment_needs_review")
     if xc.get("fallback_used"):
         fb_list.append("xg_fallback")
+    fq_warn = raw.get("formula_quality_warnings") if isinstance(raw.get("formula_quality_warnings"), list) else []
+    for w in fq_warn:
+        if isinstance(w, str) and w and w not in fb_list:
+            fb_list.append(w)
+    if raw.get("formula_quality_status") == "needs_review":
+        fb_list.append("formula_quality_needs_review")
     sym_extra = str(formula.get("symbolic") or "").strip()
     num_extra = str(formula.get("numeric") or "").strip()
     return {
         "model_version": BASELINE_SOT_MODEL_VERSION_V10_SOT,
         "stored_predicted_sot": _round2(stored),
         "terms": terms,
+        "formula_terms_count": len(terms_raw) if isinstance(terms_raw, list) else len(terms),
+        "formula_quality_status": raw.get("formula_quality_status"),
+        "formula_quality_warnings": fq_warn,
         "formula_symbolic": sym_extra or ("expected_sot_v1 = " + " + ".join(sym_parts)),
         "formula_numeric": num_extra or ("expected_sot_v1 = " + " + ".join(num_parts) + f"\n= {_round2(s)}"),
         "components_table": [
@@ -923,6 +948,10 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
                 "peso": t["weight"],
                 "calcolo_contributo": t["calc_expression"],
                 "contributo_finale": t["contribution"],
+                "source_path": t.get("source_path"),
+                "fallback_used": t.get("fallback_used"),
+                "fallback_reason": t.get("fallback_reason"),
+                "status": t.get("status"),
             }
             for t in terms
         ],
