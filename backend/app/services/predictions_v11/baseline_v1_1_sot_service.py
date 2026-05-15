@@ -14,7 +14,7 @@ from app.services.sot_feature_registry import V11_ARCHITECTURE, V11_MODEL_STAGE
 
 
 class SotPredictionV11BaselineSotService:
-    """v1.1 stage 3: 45% offensiva + 35% difensiva + 20% split casa/trasferta (strict)."""
+    """v1.1 stage 4: 35% offensiva + 30% difensiva + 15% split + 20% forma recente (strict)."""
 
     model_version = BASELINE_SOT_MODEL_VERSION_V11_SOT
     architecture = V11_ARCHITECTURE
@@ -135,8 +135,8 @@ class SotPredictionV11BaselineSotService:
 
                 existing.raw_json = merged
                 existing.explanation = (
-                    "v1.1 stage 3: 45% produzione offensiva + 35% resistenza difensiva avversaria "
-                    "+ 20% split casa/trasferta (solo dati reali, nessun fallback)."
+                    "v1.1 stage 4: 35% produzione offensiva + 30% resistenza difensiva avversaria "
+                    "+ 15% split casa/trasferta + 20% forma recente (solo dati reali, nessun fallback)."
                 )
 
                 if result.valid and result.expected_sot is not None:
@@ -181,7 +181,7 @@ class SotPredictionV11BaselineSotService:
             "season": int(season_year),
             "model_version": self.model_version,
             "model_stage": self.model_stage,
-            "formula_terms_count": 3,
+            "formula_terms_count": 4,
             "architecture": self.architecture,
             "upcoming_fixtures": len(upcoming),
             "predictions_created_or_updated": int(created),

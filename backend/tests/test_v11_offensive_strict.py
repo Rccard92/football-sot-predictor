@@ -1,4 +1,4 @@
-"""Test produzione offensiva + blend 45/35/20 v1.1 stage 3."""
+"""Test produzione offensiva + blend 35/30/15/20 v1.1 stage 4."""
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -32,6 +32,11 @@ LEAGUE_V11_MOCK = {
     "away_league_split_avg_sot_conceded": 3.3,
     "away_league_split_avg_total_shots_for": 11.0,
     "away_league_split_avg_total_shots_conceded": 11.2,
+    "league_recent_avg_sot_for": 3.45,
+    "league_recent_avg_sot_conceded": 3.38,
+    "league_recent_avg_total_shots_for": 11.8,
+    "league_recent_avg_total_shots_conceded": 11.5,
+    "league_recent_avg_goals_for": 1.15,
 }
 
 
@@ -154,7 +159,7 @@ def test_missing_inside_box_data():
     assert "avg_inside_box_shots_for" in keys
 
 
-def test_valid_blend_45_35_20():
+def test_valid_blend_four_terms():
     team_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=10, away=90 + i) for i in range(1, 7)]
     opp_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=team_fx, opponent_fixtures=opp_fx)
@@ -169,15 +174,18 @@ def test_valid_blend_45_35_20():
     assert result.component is not None
     assert result.defensive_component is not None
     assert result.split_component is not None
+    assert result.recent_component is not None
     off_val = float(result.component["value"])
     def_val = float(result.defensive_component["value"])
     split_val = float(result.split_component["value"])
-    expected = round(off_val * 0.45 + def_val * 0.35 + split_val * 0.20, 2)
+    recent_val = float(result.recent_component["value"])
+    expected = round(off_val * 0.35 + def_val * 0.30 + split_val * 0.15 + recent_val * 0.20, 2)
     assert result.expected_sot == pytest.approx(expected, rel=1e-4)
-    assert result.raw_json["formula"]["terms_count"] == 3
+    assert result.raw_json["formula"]["terms_count"] == 4
     assert len(result.component["inputs"]) == 9
     assert len(result.defensive_component["inputs"]) == 6
     assert len(result.split_component["inputs"]) == 5
+    assert len(result.recent_component["inputs"]) == 6
 
 
 def test_league_baseline_missing_raises():

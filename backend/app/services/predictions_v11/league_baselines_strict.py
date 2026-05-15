@@ -4,6 +4,7 @@ Medie lega per normalizzazione v1.1 — nessun fallback prudenziale.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
@@ -47,11 +48,20 @@ REQUIRED_LEAGUE_SPLIT_AWAY_KEYS: tuple[str, ...] = (
     "away_league_split_avg_total_shots_conceded",
 )
 
+REQUIRED_LEAGUE_RECENT_KEYS: tuple[str, ...] = (
+    "league_recent_avg_sot_for",
+    "league_recent_avg_sot_conceded",
+    "league_recent_avg_total_shots_for",
+    "league_recent_avg_total_shots_conceded",
+    "league_recent_avg_goals_for",
+)
+
 REQUIRED_LEAGUE_KEYS: tuple[str, ...] = (
     REQUIRED_LEAGUE_OFFENSIVE_KEYS
     + REQUIRED_LEAGUE_DEFENSIVE_KEYS
     + REQUIRED_LEAGUE_SPLIT_HOME_KEYS
     + REQUIRED_LEAGUE_SPLIT_AWAY_KEYS
+    + REQUIRED_LEAGUE_RECENT_KEYS
 )
 
 
@@ -217,6 +227,56 @@ def compute_league_v11_baselines_strict(
             if home_st.total_shots is not None:
                 away_shots_conceded_vals.append(float(home_st.total_shots))
 
+    team_to_fxs: defaultdict[int, list[Fixture]] = defaultdict(list)
+    for f in eligible:
+        team_to_fxs[int(f.home_team_id)].append(f)
+        team_to_fxs[int(f.away_team_id)].append(f)
+
+    league_recent_sot_for_vals: list[float] = []
+    league_recent_sot_conceded_vals: list[float] = []
+    league_recent_shots_for_vals: list[float] = []
+    league_recent_shots_conceded_vals: list[float] = []
+    league_recent_goals_vals: list[float] = []
+
+    for tid, fxs in team_to_fxs.items():
+        if len(fxs) < 5:
+            continue
+        ordered = sorted(fxs, key=lambda fx: (fx.kickoff_at, int(fx.id)))
+        last5 = ordered[-5:]
+        sot_for_row: list[float] = []
+        shots_for_row: list[float] = []
+        goals_row: list[float] = []
+        sot_conc_row: list[float] = []
+        shots_conc_row: list[float] = []
+        ok_window = True
+        for fx in last5:
+            hid, ahid = int(fx.home_team_id), int(fx.away_team_id)
+            oid = ahid if tid == hid else hid
+            st_team = stats_by_fx_team.get((int(fx.id), tid))
+            st_opp = stats_by_fx_team.get((int(fx.id), oid))
+            if st_team is None or st_team.shots_on_target is None or st_team.total_shots is None:
+                ok_window = False
+                break
+            if st_opp is None or st_opp.shots_on_target is None or st_opp.total_shots is None:
+                ok_window = False
+                break
+            gf = goals_by_fx_team.get((int(fx.id), tid))
+            if gf is None:
+                ok_window = False
+                break
+            sot_for_row.append(float(st_team.shots_on_target))
+            shots_for_row.append(float(st_team.total_shots))
+            goals_row.append(float(gf))
+            sot_conc_row.append(float(st_opp.shots_on_target))
+            shots_conc_row.append(float(st_opp.total_shots))
+        if not ok_window or len(sot_for_row) != 5:
+            continue
+        league_recent_sot_for_vals.append(sum(sot_for_row) / 5.0)
+        league_recent_shots_for_vals.append(sum(shots_for_row) / 5.0)
+        league_recent_goals_vals.append(sum(goals_row) / 5.0)
+        league_recent_sot_conceded_vals.append(sum(sot_conc_row) / 5.0)
+        league_recent_shots_conceded_vals.append(sum(shots_conc_row) / 5.0)
+
     baselines: dict[str, float | None] = {
         "league_avg_sot_for": _mean(sot_vals),
         "league_avg_total_shots_for": _mean(shots_vals),
@@ -239,6 +299,11 @@ def compute_league_v11_baselines_strict(
         "away_league_split_avg_sot_conceded": _mean(away_sot_conceded_vals),
         "away_league_split_avg_total_shots_for": _mean(away_shots_for_vals),
         "away_league_split_avg_total_shots_conceded": _mean(away_shots_conceded_vals),
+        "league_recent_avg_sot_for": _mean(league_recent_sot_for_vals),
+        "league_recent_avg_sot_conceded": _mean(league_recent_sot_conceded_vals),
+        "league_recent_avg_total_shots_for": _mean(league_recent_shots_for_vals),
+        "league_recent_avg_total_shots_conceded": _mean(league_recent_shots_conceded_vals),
+        "league_recent_avg_goals_for": _mean(league_recent_goals_vals),
         "sample_team_stat_rows": len(stats),
         "sample_fixtures": len(eligible),
     }

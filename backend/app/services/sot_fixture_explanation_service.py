@@ -502,8 +502,8 @@ def _v11_get_component(raw: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
-    """v1.1 stage 3: offensiva 45% + difensiva 35% + split casa/trasferta 20%."""
-    off_w, def_w, split_w = 0.45, 0.35, 0.20
+    """v1.1 stage 4: offensiva 35% + difensiva 30% + split 15% + forma recente 20%."""
+    off_w, def_w, split_w, recent_w = 0.35, 0.30, 0.15, 0.20
     if raw.get("prediction_valid") is False or str(raw.get("status") or "") == "incomplete":
         miss = raw.get("missing_required_fields") if isinstance(raw.get("missing_required_fields"), list) else []
         notes = [str(m.get("message") or m.get("feature_key")) for m in miss if isinstance(m, dict)]
@@ -521,6 +521,7 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
             {"id": "v11_offensive_production", "label": "Produzione offensiva composita", "weight": off_w, **missing_card},
             {"id": "v11_opponent_defensive_resistance", "label": "Resistenza difensiva avversaria", "weight": def_w, **missing_card},
             {"id": "v11_home_away_split", "label": "Split casa/trasferta", "weight": split_w, **missing_card},
+            {"id": "v11_recent_form", "label": "Forma recente", "weight": recent_w, **missing_card},
         ]
 
     formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
@@ -530,14 +531,17 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
     off = _v11_get_component(raw, "offensive_production_component")
     defc = _v11_get_component(raw, "opponent_defensive_resistance_component")
     splitc = _v11_get_component(raw, "home_away_split_component")
+    recentc = _v11_get_component(raw, "recent_form_component")
 
     off_term = term_by_key.get("offensive_production_component", {})
     def_term = term_by_key.get("opponent_defensive_resistance_component", {})
     split_term = term_by_key.get("home_away_split_component", {})
+    recent_term = term_by_key.get("recent_form_component", {})
 
     off_val = _round2(_safe_float(off.get("value") if off else off_term.get("value")))
     def_val = _round2(_safe_float(defc.get("value") if defc else def_term.get("value")))
     split_val = _round2(_safe_float(splitc.get("value") if splitc else split_term.get("value")))
+    recent_val = _round2(_safe_float(recentc.get("value") if recentc else recent_term.get("value")))
 
     def _contrib(term: dict, val: float | None, w: float) -> float | None:
         c = _round2(_safe_float(term.get("contribution")))
@@ -548,13 +552,16 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
     off_contrib = _contrib(off_term, off_val, off_w)
     def_contrib = _contrib(def_term, def_val, def_w)
     split_contrib = _contrib(split_term, split_val, split_w)
+    recent_contrib = _contrib(recent_term, recent_val, recent_w)
 
-    split_note = "Peso formula finale 20%. Contesto split reale della partita."
+    split_note = "Peso formula finale 15%. Contesto split reale della partita."
     if splitc:
         sc = splitc.get("split_context")
         osc = splitc.get("opponent_split_context")
         if sc or osc:
             split_note += f" split_context={sc}; opponent_split_context={osc}."
+
+    recent_note = "Peso formula finale 20%. Ultime 5 partite squadra e avversario (nessun fallback se campione insufficiente)."
 
     return [
         {
@@ -565,7 +572,7 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
             "contribution": off_contrib,
             "direction": "neutro",
             "data_status": "ok",
-            "notes": "Peso formula finale 45%. Componente interna: 9 input normalizzati.",
+            "notes": "Peso formula finale 35%. Componente interna: 9 input normalizzati.",
             "variables": _v11_component_sub_vars(off) if off else [],
         },
         {
@@ -576,7 +583,7 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
             "contribution": def_contrib,
             "direction": "neutro",
             "data_status": "ok",
-            "notes": "Peso formula finale 35%. Concessi ricostruiti dalle stats degli avversari dell'avversario.",
+            "notes": "Peso formula finale 30%. Concessi ricostruiti dalle stats degli avversari dell'avversario.",
             "variables": _v11_component_sub_vars(defc) if defc else [],
         },
         {
@@ -589,6 +596,17 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
             "data_status": "ok",
             "notes": split_note,
             "variables": _v11_component_sub_vars(splitc) if splitc else [],
+        },
+        {
+            "id": "v11_recent_form",
+            "label": str(recentc.get("label") or "Forma recente"),
+            "value": recent_val,
+            "weight": recent_w,
+            "contribution": recent_contrib,
+            "direction": "neutro",
+            "data_status": "ok",
+            "notes": recent_note,
+            "variables": _v11_component_sub_vars(recentc) if recentc else [],
         },
     ]
 
@@ -1467,6 +1485,10 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
             scomp = _v11_get_component(raw, "home_away_split_component")
             if scomp:
                 comp["internal_formula"] = _internal_formula_v04_offensive(scomp, raw)
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT and cid == "v11_recent_form":
+            rcomp = _v11_get_component(raw, "recent_form_component")
+            if rcomp:
+                comp["internal_formula"] = _internal_formula_v04_offensive(rcomp, raw)
         elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT and cid == "v10_offensive_production":
             ocomp = raw.get("offensive_production_component")
             if isinstance(ocomp, dict):

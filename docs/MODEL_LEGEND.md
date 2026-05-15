@@ -6,19 +6,20 @@ Documento di riferimento per **baseline v0.1**, per le metriche di qualità e pe
 
 Stimare i **tiri in porta attesi** (shots on target, SOT) per squadra su una partita, usando solo statistiche di squadra storiche e medie derivate dal database. Il totale match è la **somma** delle due stime squadra quando entrambe sono disponibili.
 
-## baseline_v1_1_sot — Stage 3 (offensiva + difensiva + split casa/trasferta)
+## baseline_v1_1_sot — Stage 4 (offensiva + difensiva + split + forma recente)
 
-Versione **strict**: nessun fallback, nessun mock. Se manca un dato obbligatorio, lo storico ha meno di 5 partite stagionali, o meno di 5 partite nello split richiesto, la prediction è **incompleta** (`prediction_valid: false`).
+Versione **strict**: nessun fallback, nessun mock. Se manca un dato obbligatorio, lo storico ha meno di 5 partite stagionali, meno di 5 partite nello split richiesto, o **meno di 5 partite** per costruire le finestre „ultime 5“ squadra/avversario per la forma recente, la prediction è **incompleta** (`prediction_valid: false`).
 
-Formula stage 3:
+Formula stage 4:
 
-`expected_sot = (offensive_production_component × 0,45) + (opponent_defensive_resistance_component × 0,35) + (home_away_split_component × 0,20)`
+`expected_sot = (offensive_production_component × 0,35) + (opponent_defensive_resistance_component × 0,30) + (home_away_split_component × 0,15) + (recent_form_component × 0,20)`
 
 - **Produzione offensiva:** 9 input — [`offensive_production_strict.py`](backend/app/services/predictions_v11/offensive_production_strict.py).
 - **Resistenza difensiva avversaria:** 6 input — [`opponent_defensive_resistance_strict.py`](backend/app/services/predictions_v11/opponent_defensive_resistance_strict.py).
 - **Split casa/trasferta:** 5 input sul contesto reale casa/trasferta — [`home_away_split_strict.py`](backend/app/services/predictions_v11/home_away_split_strict.py).
+- **Forma recente:** 6 input sulle ultime 5 partite per squadra e avversario — [`recent_form_strict.py`](backend/app/services/predictions_v11/recent_form_strict.py). Non c’è fallback se il campione ultime 5 non è disponibile.
 
-Lo split usa partite precedenti della squadra nello stesso contesto della fixture target e partite dell'avversario nello split opposto.
+Lo split usa partite precedenti della squadra nello stesso contesto della fixture target e partite dell'avversario nello split opposto. La forma recente usa le stesse ultime 5 (cronologiche) per squadra e per avversario, con medie lega „recent-aware“ per normalizzazione.
 
 Generazione: `POST /api/predictions/sot/serie-a/{season}/generate-v11-sot`. Dettaglio feature: [`SOT_MODEL_FEATURE_REGISTRY.md`](SOT_MODEL_FEATURE_REGISTRY.md).
 

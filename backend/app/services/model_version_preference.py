@@ -18,6 +18,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
 )
+from app.services.sot_feature_registry import V11_MODEL_STAGE
 from app.models import TeamSotPrediction
 
 MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
@@ -273,7 +274,7 @@ def enrich_v11_model_status_row(
     row["valid_predictions"] = int(valid)
     row["incomplete_predictions"] = int(incomplete)
     row["missing_required_data_count"] = int(missing_count)
-    row["model_stage"] = "offensive_plus_opponent_defense_plus_home_away_split"
+    row["model_stage"] = V11_MODEL_STAGE
 
 
 def build_v11_coherence_warnings(

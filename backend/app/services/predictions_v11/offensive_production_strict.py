@@ -24,15 +24,22 @@ from app.services.predictions_v11.feature_sources import (
 )
 from app.services.predictions_v11.league_baselines_strict import (
     MissingLeagueBaselineError,
+    REQUIRED_LEAGUE_RECENT_KEYS,
     compute_league_v11_baselines_strict,
 )
 from app.services.predictions_v11.opponent_defensive_resistance_strict import (
     compute_opponent_defensive_resistance_component,
 )
+from app.services.predictions_v11.recent_feature_sources import (
+    COMPONENT_KEY_RECENT,
+    COMPONENT_LABEL_RECENT,
+)
+from app.services.predictions_v11.recent_form_strict import compute_recent_form_component
 from app.services.predictions_v11.shared_stats import agg_for_team
 from app.services.predictions_v11.v11_shared import (
     FORMULA_DEFENSIVE_WEIGHT,
     FORMULA_OFFENSIVE_WEIGHT,
+    FORMULA_RECENT_WEIGHT,
     FORMULA_SPLIT_WEIGHT,
     clamp,
     incomplete_raw_json,
@@ -220,6 +227,7 @@ def _fail_result(
         component=None,
         defensive_component=None,
         split_component=None,
+        recent_component=None,
         raw_json=raw,
         missing_required_fields=raw["missing_required_fields"],
         formula_quality_status=formula_quality_status,
@@ -232,7 +240,7 @@ def compute_v11_side(
     ctx: V10PriorContext,
     prior_fixtures: list[Fixture],
 ) -> V11SideResult:
-    """Stage 3: blend 45% offensiva + 35% difensiva + 20% split casa/trasferta."""
+    """Stage 4: blend 35% offensiva + 30% difensiva + 15% split + 20% forma recente."""
     sample_count = len(prior_fixtures)
     all_missing: list[dict[str, Any]] = []
 
@@ -244,9 +252,13 @@ def compute_v11_side(
             cutoff_fixture_id=int(ctx.cutoff_fixture_id),
         )
     except MissingLeagueBaselineError as exc:
+        mk = set(exc.missing_keys)
+        fq = "missing_required_league_baseline"
+        if mk & set(REQUIRED_LEAGUE_RECENT_KEYS):
+            fq = "missing_required_recent_league_baseline"
         return _fail_result(
             missing=[],
-            formula_quality_status="missing_required_league_baseline",
+            formula_quality_status=fq,
             sample_count=sample_count,
             league_error=exc.missing_keys,
         )
@@ -261,6 +273,11 @@ def compute_v11_side(
         league_baselines=lb,
     )
     split_comp, split_miss, split_status, team_split_n, opp_split_n = compute_home_away_split_component(
+        ctx,
+        prior_fixtures,
+        league_baselines=lb,
+    )
+    recent_comp, recent_miss, recent_status, team_recent_n, opp_recent_n = compute_recent_form_component(
         ctx,
         prior_fixtures,
         league_baselines=lb,
@@ -296,8 +313,22 @@ def compute_v11_side(
                 formula_quality_status="missing_required_league_split_baseline",
                 sample_count=max(team_split_n, opp_split_n),
             )
+    if recent_comp is None:
+        all_missing.extend(recent_miss)
+        if recent_status == "insufficient_recent_sample":
+            return _fail_result(
+                missing=all_missing,
+                formula_quality_status="insufficient_recent_sample",
+                sample_count=max(off_sample, def_sample, team_split_n, opp_split_n, team_recent_n, opp_recent_n),
+            )
+        if recent_status == "missing_required_recent_league_baseline":
+            return _fail_result(
+                missing=all_missing,
+                formula_quality_status="missing_required_recent_league_baseline",
+                sample_count=max(team_recent_n, opp_recent_n),
+            )
 
-    if off_comp is None or def_comp is None or split_comp is None:
+    if off_comp is None or def_comp is None or split_comp is None or recent_comp is None:
         fq = "missing_required_data"
         if off_status == "insufficient_sample" or def_status == "insufficient_sample":
             fq = "insufficient_sample"
@@ -305,22 +336,29 @@ def compute_v11_side(
             fq = "insufficient_split_sample"
         elif split_status == "missing_required_league_split_baseline":
             fq = "missing_required_league_split_baseline"
+        elif recent_status == "insufficient_recent_sample":
+            fq = "insufficient_recent_sample"
+        elif recent_status == "missing_required_recent_league_baseline":
+            fq = "missing_required_recent_league_baseline"
         return _fail_result(
             missing=all_missing,
             formula_quality_status=fq,
-            sample_count=max(off_sample, def_sample, team_split_n, opp_split_n),
+            sample_count=max(off_sample, def_sample, team_split_n, opp_split_n, team_recent_n, opp_recent_n),
         )
 
     off_val = float(off_comp["value"])
     def_val = float(def_comp["value"])
     split_val = float(split_comp["value"])
+    recent_val = float(recent_comp["value"])
     off_contrib = round2(off_val * FORMULA_OFFENSIVE_WEIGHT) or 0.0
     def_contrib = round2(def_val * FORMULA_DEFENSIVE_WEIGHT) or 0.0
     split_contrib = round2(split_val * FORMULA_SPLIT_WEIGHT) or 0.0
+    recent_contrib = round2(recent_val * FORMULA_RECENT_WEIGHT) or 0.0
     expected_sot = round2(
         off_val * FORMULA_OFFENSIVE_WEIGHT
         + def_val * FORMULA_DEFENSIVE_WEIGHT
-        + split_val * FORMULA_SPLIT_WEIGHT,
+        + split_val * FORMULA_SPLIT_WEIGHT
+        + recent_val * FORMULA_RECENT_WEIGHT,
     ) or 0.0
 
     raw_json: dict[str, Any] = {
@@ -332,7 +370,7 @@ def compute_v11_side(
         "expected_sot": expected_sot,
         "formula": {
             "type": "weighted_components",
-            "terms_count": 3,
+            "terms_count": 4,
             "terms": [
                 {
                     "key": COMPONENT_KEY_OFFENSIVE,
@@ -358,6 +396,14 @@ def compute_v11_side(
                     "contribution": split_contrib,
                     "status": "available",
                 },
+                {
+                    "key": COMPONENT_KEY_RECENT,
+                    "label": COMPONENT_LABEL_RECENT,
+                    "value": recent_val,
+                    "weight": FORMULA_RECENT_WEIGHT,
+                    "contribution": recent_contrib,
+                    "status": "available",
+                },
             ],
             "final_sum": expected_sot,
         },
@@ -365,16 +411,20 @@ def compute_v11_side(
             COMPONENT_KEY_OFFENSIVE: off_comp,
             COMPONENT_KEY_DEFENSIVE: def_comp,
             COMPONENT_KEY_SPLIT: split_comp,
+            "recent_form_component": recent_comp,
         },
         COMPONENT_KEY_OFFENSIVE: off_comp,
         COMPONENT_KEY_DEFENSIVE: def_comp,
         COMPONENT_KEY_SPLIT: split_comp,
+        COMPONENT_KEY_RECENT: recent_comp,
         "formula_quality_status": "ok",
         "warnings": [],
         "sample_count": sample_count,
         "opponent_sample_count": def_sample,
         "team_split_sample_count": team_split_n,
         "opponent_split_sample_count": opp_split_n,
+        "team_recent_window_n": team_recent_n,
+        "opponent_recent_window_n": opp_recent_n,
         "no_data_leakage": True,
     }
 
@@ -384,6 +434,7 @@ def compute_v11_side(
         component=off_comp,
         defensive_component=def_comp,
         split_component=split_comp,
+        recent_component=recent_comp,
         raw_json=raw_json,
         missing_required_fields=[],
         formula_quality_status="ok",

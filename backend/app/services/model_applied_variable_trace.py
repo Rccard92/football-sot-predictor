@@ -326,8 +326,8 @@ def _row_for_spec(
                 ),
                 None,
             )
-            base["weight"] = _sf(ft.get("weight")) if ft else 0.45
-            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(ov * 0.45 if ov is not None else None)
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.35
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(ov * 0.35 if ov is not None else None)
             base["unit"] = "tiri in porta"
             base["fallback_used"] = False
             base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
@@ -355,8 +355,8 @@ def _row_for_spec(
                 ),
                 None,
             )
-            base["weight"] = _sf(ft.get("weight")) if ft else 0.35
-            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(dv * 0.35 if dv is not None else None)
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.30
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(dv * 0.30 if dv is not None else None)
             base["unit"] = "tiri in porta"
             base["fallback_used"] = False
             base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
@@ -384,13 +384,40 @@ def _row_for_spec(
                 ),
                 None,
             )
-            base["weight"] = _sf(ft.get("weight")) if ft else 0.20
-            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(sv * 0.20 if sv is not None else None)
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.15
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(sv * 0.15 if sv is not None else None)
             base["unit"] = "tiri in porta"
             base["fallback_used"] = False
             sc = split_comp.get("split_context")
             if sc:
                 base["notes"] = f"split_context={sc}; opponent_split_context={split_comp.get('opponent_split_context')}"
+            base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
+            return base
+        recent_comp = (
+            raw.get("recent_form_component") if isinstance(raw.get("recent_form_component"), dict) else {}
+        )
+        if not recent_comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            recent_comp = (
+                comps_root.get("recent_form_component")
+                if isinstance(comps_root.get("recent_form_component"), dict)
+                else {}
+            )
+        if term == "recent_form_component" and recent_comp:
+            rv_v = _sf(recent_comp.get("value"))
+            base["value"] = _r2(rv_v)
+            ft = next(
+                (
+                    t
+                    for t in terms_list
+                    if isinstance(t, dict) and str(t.get("key") or "") == "recent_form_component"
+                ),
+                None,
+            )
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.20
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(rv_v * 0.20 if rv_v is not None else None)
+            base["unit"] = "tiri in porta"
+            base["fallback_used"] = False
             base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
             return base
         base["status"] = "missing"
@@ -403,6 +430,35 @@ def _row_for_spec(
         if blob is None:
             base["status"] = "missing"
             base["notes"] = "Chiave assente in offensive_production_component.inputs"
+            return base
+        base["value"] = _r2(_sf(blob.get("normalized_value") if blob.get("normalized_value") is not None else blob.get("value")))
+        base["weight"] = _sf(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight"))
+        base["contribution"] = _r2(_sf(blob.get("internal_contribution") if blob.get("internal_contribution") is not None else blob.get("contribution")))
+        rv = _sf(blob.get("raw_value"))
+        if rv is not None:
+            base["notes"] = f"valore grezzo: {_r2(rv)}"
+        base["unit"] = "scala SOT"
+        base["matches_count"] = blob.get("sample_count") if blob.get("sample_count") is not None else blob.get("matches_count")
+        base["fallback_used"] = False
+        sp = blob.get("source_path") or blob.get("db_field")
+        base["source"] = str(sp) if sp else "fixture_team_stats"
+        base["status"] = str(blob.get("status") or "available")
+        return base
+
+    if r.startswith("v11:recent_input:"):
+        ik = r.split(":")[-1]
+        comp = raw.get("recent_form_component") if isinstance(raw.get("recent_form_component"), dict) else {}
+        if not comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            comp = (
+                comps_root.get("recent_form_component")
+                if isinstance(comps_root.get("recent_form_component"), dict)
+                else {}
+            )
+        blob = offensive_inputs_as_map(comp).get(ik)
+        if blob is None:
+            base["status"] = "missing"
+            base["notes"] = "Chiave assente in recent_form_component.inputs"
             return base
         base["value"] = _r2(_sf(blob.get("normalized_value") if blob.get("normalized_value") is not None else blob.get("value")))
         base["weight"] = _sf(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight"))
@@ -530,6 +586,26 @@ def _row_for_spec(
             comp = (
                 comps_root.get("home_away_split_component")
                 if isinstance(comps_root.get("home_away_split_component"), dict)
+                else {}
+            )
+        q = comp.get("quality") if isinstance(comp.get("quality"), dict) else {}
+        base["value"] = _sf(q.get("inputs_available"))
+        base["unit"] = "conteggio"
+        base["formula"] = (
+            f"inputs_total={q.get('inputs_total')}; fallback_count={q.get('fallback_count')}; "
+            f"missing={q.get('missing_required')}"
+        )
+        base["fallback_used"] = False
+        base["status"] = "available" if int(q.get("fallback_count") or 0) == 0 else "missing"
+        return base
+
+    if r == "v11:quality:recent_component":
+        comp = raw.get("recent_form_component") if isinstance(raw.get("recent_form_component"), dict) else {}
+        if not comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            comp = (
+                comps_root.get("recent_form_component")
+                if isinstance(comps_root.get("recent_form_component"), dict)
                 else {}
             )
         q = comp.get("quality") if isinstance(comp.get("quality"), dict) else {}

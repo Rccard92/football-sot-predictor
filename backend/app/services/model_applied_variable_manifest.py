@@ -489,6 +489,23 @@ _V11_SPLIT_INPUTS: list[tuple[str, str, str]] = [
     ("home_away_performance_delta", "Differenza rendimento casa/fuori", "home_away_delta"),
 ]
 
+_V11_RECENT_INPUTS: list[tuple[str, str, str]] = [
+    ("recent_avg_sot_for", "SOT fatti ultime 5", "recent_avg_sot_for"),
+    (
+        "recent_opponent_avg_sot_conceded",
+        "SOT concessi avversario ultime 5",
+        "recent_opponent_avg_sot_conceded",
+    ),
+    ("recent_avg_total_shots_for", "Tiri totali fatti ultime 5", "recent_avg_total_shots_for"),
+    (
+        "recent_opponent_avg_total_shots_conceded",
+        "Tiri totali concessi avversario ultime 5",
+        "recent_opponent_avg_total_shots_conceded",
+    ),
+    ("recent_avg_goals_for", "Goal fatti ultime 5", "recent_avg_goals_for"),
+    ("recent_trend_vs_season", "Trend rispetto alla media stagionale", "recent_trend_vs_season"),
+]
+
 _MANIFEST_V11: list[AppliedVariableSpec] = [
     AppliedVariableSpec(
         trace_key="v11_term_offensive_production_component",
@@ -522,6 +539,17 @@ _MANIFEST_V11: list[AppliedVariableSpec] = [
         expected_in_debug=True,
         framework_key=None,
         resolver="v11:formula_term:home_away_split_component",
+    ),
+    AppliedVariableSpec(
+        trace_key="v11_term_recent_form_component",
+        label="Forma recente",
+        area="Formula finale v1.1",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v11:formula_term:recent_form_component",
     ),
 ]
 for inp_k, lab, fwk in _V11_OFFENSIVE_INPUTS:
@@ -566,6 +594,20 @@ for inp_k, lab, fwk in _V11_SPLIT_INPUTS:
             resolver=f"v11:split_input:{inp_k}",
         ),
     )
+for inp_k, lab, fwk in _V11_RECENT_INPUTS:
+    _MANIFEST_V11.append(
+        AppliedVariableSpec(
+            trace_key=f"v11_recent_input_{inp_k}",
+            label=lab,
+            area="Forma recente",
+            application_role="component_input",
+            parent_component="recent_form_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v11:recent_input:{inp_k}",
+        ),
+    )
 _MANIFEST_V11.extend(
     [
         AppliedVariableSpec(
@@ -600,6 +642,17 @@ _MANIFEST_V11.extend(
             expected_in_debug=True,
             framework_key=None,
             resolver="v11:quality:split_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_recent_quality",
+            label="Qualità input componente forma recente",
+            area="Qualità dati",
+            application_role="quality_control",
+            parent_component="recent_form_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=None,
+            resolver="v11:quality:recent_component",
         ),
         AppliedVariableSpec(
             trace_key="v11_ctx_kickoff_timedelta",
