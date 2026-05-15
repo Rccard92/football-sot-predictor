@@ -21,6 +21,7 @@ import {
   getUpcomingActiveWithOpts,
   postGenerateV04OffensiveCoreSotUpcoming,
   postGenerateV10SotUpcoming,
+  postGenerateV11SotUpcoming,
   postRefreshUpcomingV04Pipeline,
   runBuildSotFeatures,
   runGenerateSotPredictions,
@@ -30,9 +31,9 @@ import {
   type UpcomingActiveResponse,
 } from '../lib/api'
 
+import { V04_MODEL, V10_MODEL, V11_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
+
 const SEASON = DEFAULT_SEASON
-const V04_MODEL = 'baseline_v0_4_offensive_core_sot' as const
-const V10_MODEL = 'baseline_v1_0_sot' as const
 
 type OpResult = {
   endpoint: string
@@ -137,7 +138,7 @@ export function Admin() {
     try {
       const s = await getModelStatusWithOpts(SEASON)
       setModelStatus(s)
-      const mv = s.recommended_model_version || s.active_model_version || V10_MODEL
+      const mv = s.recommended_model_version || s.active_model_version || V11_MODEL
       const u = await getUpcomingActiveWithOpts(
         SEASON,
         { limit: 20, onlyNextRound: true, modelVersion: mv },
@@ -169,10 +170,10 @@ export function Admin() {
           message: pickMessage(data, 'Operazione completata.'),
           body: data,
         })
-        if (['refresh-v04-pipeline', 'gen-v04', 'gen-v10', 'refresh-cards'].includes(action.id)) {
+        if (['refresh-v04-pipeline', 'gen-v04', 'gen-v10', 'gen-v11', 'refresh-cards'].includes(action.id)) {
           void loadCards()
         }
-        if (action.id === 'refresh-v04-pipeline' || action.id === 'gen-v04' || action.id === 'gen-v10') {
+        if (action.id === 'refresh-v04-pipeline' || action.id === 'gen-v04' || action.id === 'gen-v10' || action.id === 'gen-v11') {
           try {
             sessionStorage.setItem('sot_admin_refresh_upcoming', String(Date.now()))
           } catch {
@@ -271,6 +272,13 @@ export function Admin() {
       run: () => postGenerateV04OffensiveCoreSotUpcoming(SEASON),
     },
     {
+      id: 'gen-v11',
+      label: 'Genera modello v1.1 SOT',
+      description: 'Stage 1: Produzione offensiva composita — solo dati reali (nessun fallback).',
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v11-sot`,
+      run: () => postGenerateV11SotUpcoming(SEASON),
+    },
+    {
       id: 'gen-v10',
       label: 'Genera modello v1.0 SOT',
       description: `Formula esplicita v0.4 + xG. Richiede ${V04_MODEL} già generato. Modello: ${V10_MODEL}.`,
@@ -292,7 +300,7 @@ export function Admin() {
       label: 'Verifica prossima giornata attiva',
       endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/upcoming-active`,
       run: async () => {
-        const mv = modelStatus?.recommended_model_version || modelStatus?.active_model_version || V10_MODEL
+        const mv = modelStatus?.recommended_model_version || modelStatus?.active_model_version || V11_MODEL
         const u = await getUpcomingActiveWithOpts(SEASON, {
           limit: 20,
           onlyNextRound: true,
@@ -436,8 +444,8 @@ export function Admin() {
               <div>
                 <dt className="text-slate-500">Versioni in DB</dt>
                 <dd className="max-h-24 overflow-y-auto font-mono text-[10px]">
-                  {(modelStatus?.available_model_versions ?? [])
-                    .map((v) => v.model_version)
+                  {filterVersionsForUi(modelStatus?.available_model_versions ?? [])
+                    .map((v) => labelForModelVersion(v.model_version))
                     .join(', ') || '—'}
                 </dd>
               </div>
@@ -500,7 +508,7 @@ export function Admin() {
                   endpoint: `GET …/upcoming-active`,
                   run: async () => {
                     const mv =
-                      modelStatus?.recommended_model_version || modelStatus?.active_model_version || V10_MODEL
+                      modelStatus?.recommended_model_version || modelStatus?.active_model_version || V11_MODEL
                     const u = await getUpcomingActiveWithOpts(SEASON, {
                       limit: 20,
                       onlyNextRound: true,

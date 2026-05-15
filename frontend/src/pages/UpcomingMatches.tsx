@@ -11,6 +11,7 @@ import {
   type UpcomingActiveResponse,
 } from '../lib/api'
 import { MatchCard } from '../components/upcoming'
+import { V11_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
 
@@ -109,6 +110,11 @@ export function UpcomingMatches() {
                 {isRecommendedView && recommendedModel === activeModel ? (
                   <span className="ml-2 text-[11px] font-medium text-emerald-700">(raccomandato)</span>
                 ) : null}
+                {modelInView === V11_MODEL ? (
+                  <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
+                    Stage: Produzione offensiva only
+                  </span>
+                ) : null}
               </p>
               {recommendedModel && recommendedModel !== activeModel ? (
                 <p className="text-xs text-slate-600">
@@ -131,18 +137,18 @@ export function UpcomingMatches() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm"
                 >
-                  {[...(status?.available_model_versions ?? [])]
+                  {filterVersionsForUi(status?.available_model_versions ?? [])
                     .sort((a, b) => {
                       const rec = status?.recommended_model_version
                       if (a.model_version === rec) return -1
                       if (b.model_version === rec) return 1
-                      if (a.model_version === 'baseline_v1_0_sot') return -1
-                      if (b.model_version === 'baseline_v1_0_sot') return 1
+                      if (a.model_version === V11_MODEL) return -1
+                      if (b.model_version === V11_MODEL) return 1
                       return a.model_version.localeCompare(b.model_version)
                     })
                     .map((v) => (
                     <option key={v.model_version} value={v.model_version}>
-                      {v.model_version}
+                      {labelForModelVersion(v.model_version)}
                       {v.model_version === status?.recommended_model_version ? ' (consigliato)' : ''}
                       {v.is_available_for_upcoming ? '' : ' (no upcoming)'}
                     </option>

@@ -11,6 +11,10 @@ from typing import Any
 FEATURE_REGISTRY_VERSION = "v10_2026_05"
 V10_ARCHITECTURE = "feature_registry_explicit_terms_plus_xg"
 
+V11_ARCHITECTURE = "component_based_strict_real_data"
+V11_MODEL_STAGE = "offensive_production_only"
+V11_MIN_COMPLETED_MATCHES = 5
+
 WEIGHT_OFFENSIVE = 0.30
 
 

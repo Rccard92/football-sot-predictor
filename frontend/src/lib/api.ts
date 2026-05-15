@@ -499,6 +499,16 @@ export async function postGenerateV10SotUpcoming(season: number, opts?: AdminReq
   )
 }
 
+/** Generazione previsioni upcoming baseline_v1_1_sot (stage 1: produzione offensiva, solo dati reali). */
+export async function postGenerateV11SotUpcoming(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  const timeoutMs = opts?.timeoutMs ?? 300_000
+  return requestPostJsonWithOpts<unknown>(
+    `/api/predictions/sot/serie-a/${season}/generate-v11-sot`,
+    {},
+    { ...opts, timeoutMs },
+  )
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(

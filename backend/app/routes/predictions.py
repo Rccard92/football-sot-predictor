@@ -40,6 +40,7 @@ from app.services.predictions_v02.player_adjusted_service import SotPredictionV0
 from app.services.predictions_v03.core_sot_service import SotPredictionV03CoreSotService
 from app.services.predictions_v04.offensive_core_sot_service import SotPredictionV04OffensiveCoreSotService
 from app.services.predictions_v10.baseline_v1_sot_service import SotPredictionV10BaselineSotService
+from app.services.predictions_v11.baseline_v1_1_sot_service import SotPredictionV11BaselineSotService
 from app.services.prediction_readiness import (
     build_model_status_payload,
     build_upcoming_active_payload,
@@ -546,6 +547,72 @@ def generate_serie_a_predictions_v10_sot(
         "errors": summary.get("errors") or [],
     }
     return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+
+@router.post("/serie-a/{season}/generate-v11-sot", response_model=None)
+def generate_serie_a_predictions_v11_sot(
+    season: int,
+    db: Session = Depends(get_db),
+):
+    svc = SotPredictionV11BaselineSotService()
+    partial_result = {
+        "upcoming_fixtures": 0,
+        "predictions_created_or_updated": 0,
+        "valid_predictions": 0,
+        "incomplete_predictions": 0,
+        "missing_required_data_count": 0,
+        "errors": [],
+    }
+    try:
+        summary = svc.generate_for_upcoming_season(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST generate-v11-sot: errore database")
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "database_operation",
+                    "message": "Database non disponibile o schema non aggiornato.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("POST generate-v11-sot: errore inatteso")
+        return JSONResponse(
+            status_code=500,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "generate_v11_sot",
+                    "message": "Errore inatteso durante la generazione v1.1 SOT.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=409, content=jsonable_encoder(summary))
+
+    status = str(summary.get("status") or "success")
+    code = 200 if status in ("success", "partial_success") else 409
+    payload = {
+        "status": status,
+        "season": int(season),
+        "model_version": str(summary.get("model_version") or svc.model_version),
+        "model_stage": str(summary.get("model_stage") or svc.model_stage),
+        "architecture": str(summary.get("architecture") or svc.architecture),
+        "upcoming_fixtures": int(summary.get("upcoming_fixtures") or 0),
+        "predictions_created_or_updated": int(summary.get("predictions_created_or_updated") or 0),
+        "valid_predictions": int(summary.get("valid_predictions") or 0),
+        "incomplete_predictions": int(summary.get("incomplete_predictions") or 0),
+        "missing_required_data_count": int(summary.get("missing_required_data_count") or 0),
+        "missing_required_data": summary.get("missing_required_data") or [],
+        "errors": summary.get("errors") or [],
+    }
+    return JSONResponse(status_code=code, content=jsonable_encoder(payload))
 
 
 @router.get("/serie-a/{season}/upcoming-v04-offensive-core-sot", response_model=None)

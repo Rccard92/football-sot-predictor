@@ -6,6 +6,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
 )
 from app.services.model_version_preference import (
     MODEL_VERSION_PREFERENCE_ORDER,
@@ -14,20 +15,31 @@ from app.services.model_version_preference import (
 )
 
 
-def test_preferred_model_versions_v10_first() -> None:
+def test_preferred_model_versions_v11_first() -> None:
     versions = preferred_model_versions()
-    assert versions[0] == BASELINE_SOT_MODEL_VERSION_V10_SOT
+    assert versions[0] == BASELINE_SOT_MODEL_VERSION_V11_SOT
+    assert versions[1] == BASELINE_SOT_MODEL_VERSION_V10_SOT
     assert BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT in versions
-    assert versions.index(BASELINE_SOT_MODEL_VERSION_V10_SOT) < versions.index(
-        BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    assert versions.index(BASELINE_SOT_MODEL_VERSION_V11_SOT) < versions.index(
+        BASELINE_SOT_MODEL_VERSION_V10_SOT,
     )
 
 
-def test_resolve_active_model_v10_wins_when_both_present() -> None:
+def test_resolve_active_model_v11_wins_when_all_present() -> None:
     preds = {
         BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT: {"home": 4.2, "away": 3.8},
         BASELINE_SOT_MODEL_VERSION_V10_SOT: {"home": 4.5, "away": 4.0},
+        BASELINE_SOT_MODEL_VERSION_V11_SOT: {"home": 3.9, "away": 3.7},
         BASELINE_SOT_MODEL_VERSION: {"home": 3.0, "away": 2.9},
+    }
+    assert resolve_active_model_for_fixture_preds(preds) == BASELINE_SOT_MODEL_VERSION_V11_SOT
+
+
+def test_resolve_active_model_v10_when_v11_partial() -> None:
+    preds = {
+        BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT: {"home": 4.2, "away": 3.8},
+        BASELINE_SOT_MODEL_VERSION_V10_SOT: {"home": 4.5, "away": 4.0},
+        BASELINE_SOT_MODEL_VERSION_V11_SOT: {"home": 3.9, "away": None},
     }
     assert resolve_active_model_for_fixture_preds(preds) == BASELINE_SOT_MODEL_VERSION_V10_SOT
 

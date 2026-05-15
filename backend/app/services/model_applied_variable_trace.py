@@ -301,6 +301,67 @@ def _row_for_spec(
         base["status"] = "fallback" if base["fallback_used"] else "available"
         return base
 
+    if r.startswith("v11:formula_term:"):
+        term = r.split(":")[-1]
+        formula_obj = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+        terms_list = formula_obj.get("terms") if isinstance(formula_obj.get("terms"), list) else []
+        ft = next((t for t in terms_list if isinstance(t, dict) and str(t.get("key") or "") == term), None)
+        if ft:
+            base["value"] = _r2(_sf(ft.get("value")))
+            base["weight"] = _sf(ft.get("weight"))
+            base["contribution"] = _r2(_sf(ft.get("contribution")))
+            base["unit"] = "tiri in porta"
+            base["status"] = str(ft.get("status") or "available")
+            base["fallback_used"] = False
+            return base
+        comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
+        if term == "offensive_production_component" and comp:
+            ov = _sf(comp.get("value"))
+            base["value"] = _r2(ov)
+            base["weight"] = 1.0
+            base["contribution"] = _r2(ov)
+            base["unit"] = "tiri in porta"
+            base["fallback_used"] = False
+            base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
+            return base
+        base["status"] = "missing"
+        return base
+
+    if r.startswith("v11:offensive_input:"):
+        ik = r.split(":")[-1]
+        comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
+        blob = offensive_inputs_as_map(comp).get(ik)
+        if blob is None:
+            base["status"] = "missing"
+            base["notes"] = "Chiave assente in offensive_production_component.inputs"
+            return base
+        base["value"] = _r2(_sf(blob.get("normalized_value") if blob.get("normalized_value") is not None else blob.get("value")))
+        base["weight"] = _sf(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight"))
+        base["contribution"] = _r2(_sf(blob.get("internal_contribution") if blob.get("internal_contribution") is not None else blob.get("contribution")))
+        rv = _sf(blob.get("raw_value"))
+        if rv is not None:
+            base["notes"] = f"valore grezzo: {_r2(rv)}"
+        base["unit"] = "scala SOT"
+        base["matches_count"] = blob.get("sample_count") if blob.get("sample_count") is not None else blob.get("matches_count")
+        base["fallback_used"] = False
+        sp = blob.get("source_path") or blob.get("db_field")
+        base["source"] = str(sp) if sp else "fixture_team_stats"
+        base["status"] = str(blob.get("status") or "available")
+        return base
+
+    if r == "v11:quality:offensive_component":
+        comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
+        q = comp.get("quality") if isinstance(comp.get("quality"), dict) else {}
+        base["value"] = _sf(q.get("inputs_available"))
+        base["unit"] = "conteggio"
+        base["formula"] = (
+            f"inputs_total={q.get('inputs_total')}; fallback_count={q.get('fallback_count')}; "
+            f"missing={q.get('missing_required')}"
+        )
+        base["fallback_used"] = False
+        base["status"] = "available" if int(q.get("fallback_count") or 0) == 0 else "missing"
+        return base
+
     if r.startswith("v04:formula_term:"):
         term = r.split(":")[-1]
         arch = str(raw.get("architecture") or "")

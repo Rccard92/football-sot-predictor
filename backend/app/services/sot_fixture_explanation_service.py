@@ -20,6 +20,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, Team, TeamSotPrediction
@@ -90,8 +91,17 @@ COMPARE_MODELS_ORDER: list[tuple[str, str]] = [
     (BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED, "v0.2 player"),
     (BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT, "v0.3"),
     (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, "v0.4"),
+    (BASELINE_SOT_MODEL_VERSION_V11_SOT, "v1.1"),
     (BASELINE_SOT_MODEL_VERSION_V10_SOT, "v1.0"),
 ]
+
+UI_COMPARE_MODEL_VERSIONS: frozenset[str] = frozenset(
+    {
+        BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        BASELINE_SOT_MODEL_VERSION_V10_SOT,
+        BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    },
+)
 
 CHECKSUM_TOLERANCE = 0.02
 CHECKSUM_WARNING_IT = (
@@ -452,6 +462,74 @@ def _v10_xg_component_block(
     }
 
 
+def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
+    """v1.1 stage 1: unica componente Produzione offensiva composita."""
+    if raw.get("prediction_valid") is False or str(raw.get("status") or "") == "incomplete":
+        miss = raw.get("missing_required_fields") if isinstance(raw.get("missing_required_fields"), list) else []
+        notes = [str(m.get("message") or m.get("feature_key")) for m in miss if isinstance(m, dict)]
+        fq = str(raw.get("formula_quality_status") or "missing_required_data")
+        return [
+            {
+                "id": "v11_offensive_production",
+                "label": "Produzione offensiva composita",
+                "value": None,
+                "weight": 1.0,
+                "contribution": None,
+                "direction": "neutro",
+                "data_status": "missing",
+                "notes": f"Predizione incompleta ({fq}). " + ("; ".join(notes[:5]) if notes else "Rigenerare v1.1."),
+                "variables": [],
+            },
+        ]
+
+    off = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
+    if not off:
+        comps = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+        off = comps.get("offensive_production_component") if isinstance(comps.get("offensive_production_component"), dict) else {}
+
+    off_inputs = offensive_inputs_as_map(off) if off else {}
+    sub_vars: list[dict[str, Any]] = []
+    for ik, blob in off_inputs.items():
+        if not isinstance(blob, dict):
+            continue
+        sub_vars.append(
+            {
+                "key": str(ik),
+                "label": str(blob.get("label") or ik),
+                "value": _round2(_safe_float(blob.get("normalized_value") if blob.get("normalized_value") is not None else blob.get("value"))),
+                "raw_value": _round2(_safe_float(blob.get("raw_value"))),
+                "normalized_value": _round2(_safe_float(blob.get("normalized_value"))),
+                "unit": "scala SOT",
+                "weight_internal": _safe_float(blob.get("internal_weight")),
+                "internal_weight": _safe_float(blob.get("internal_weight")),
+                "contribution": _safe_float(blob.get("internal_contribution")),
+                "internal_contribution": _safe_float(blob.get("internal_contribution")),
+                "formula": str(blob.get("formula") or ""),
+                "data_source": str(blob.get("source_path") or blob.get("db_field") or ""),
+                "api_source": str(blob.get("api_source") or ""),
+                "matches_count": blob.get("sample_count"),
+                "fallback_used": False,
+                "status": str(blob.get("status") or "available"),
+                "no_data_leakage_note": "Sì (solo partite precedenti)",
+            },
+        )
+
+    val = _round2(_safe_float(off.get("value"))) if off else _round2(predicted)
+    return [
+        {
+            "id": "v11_offensive_production",
+            "label": str(off.get("label") or "Produzione offensiva composita") if off else "Produzione offensiva composita",
+            "value": val,
+            "weight": 1.0,
+            "contribution": val,
+            "direction": "neutro",
+            "data_status": "ok",
+            "notes": "Stage 1 v1.1: expected_sot = offensive_production_component (solo dati reali).",
+            "variables": sub_vars,
+        },
+    ]
+
+
 def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
     formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
     terms_raw = formula.get("terms") if isinstance(formula.get("terms"), list) else []
@@ -727,6 +805,8 @@ def _build_side_components(model_version: str, raw: dict[str, Any] | None, predi
         return _components_v03(raw, predicted)
     if model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
         return _components_v04(raw, predicted)
+    if model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT:
+        return _components_v11(raw, predicted)
     if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
         return _components_v10(raw, predicted)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
@@ -1312,6 +1392,13 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
                     "notes": [],
                     "flags": {"cap_applied": False, "fallbacks_used": []},
                 }
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT and cid == "v11_offensive_production":
+            ocomp = raw.get("offensive_production_component")
+            if not isinstance(ocomp, dict):
+                comps = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+                ocomp = comps.get("offensive_production_component")
+            if isinstance(ocomp, dict):
+                comp["internal_formula"] = _internal_formula_v04_offensive(ocomp, raw)
         elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT and cid == "v10_offensive_production":
             ocomp = raw.get("offensive_production_component")
             if isinstance(ocomp, dict):

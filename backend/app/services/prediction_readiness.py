@@ -19,13 +19,16 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, League, Season, Team, TeamSotPrediction
 from app.services.ingestion_service import IngestionService
 from app.services.model_version_preference import (
     build_v10_coherence_warnings,
+    build_v11_coherence_warnings,
     enrich_v10_model_status_row,
+    enrich_v11_model_status_row,
     preferred_model_versions,
     resolve_recommended_model_version,
 )
@@ -212,6 +215,12 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
             "generated_at": r.get("generated_at"),
             "is_available_for_upcoming": bool(up_n > 0),
         }
+    if BASELINE_SOT_MODEL_VERSION_V11_SOT in by_version:
+        enrich_v11_model_status_row(
+            db,
+            by_version[BASELINE_SOT_MODEL_VERSION_V11_SOT],
+            upcoming_fixture_ids=upcoming_fixture_ids,
+        )
     if BASELINE_SOT_MODEL_VERSION_V10_SOT in by_version:
         enrich_v10_model_status_row(
             db,
@@ -246,6 +255,12 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
     )
     if recommended is None:
         warnings.append("Nessuna prediction upcoming trovata. Generare prima una baseline.")
+    warnings.extend(
+        build_v11_coherence_warnings(
+            by_version=by_version,
+            recommended=recommended,
+        ),
+    )
     warnings.extend(
         build_v10_coherence_warnings(
             db,

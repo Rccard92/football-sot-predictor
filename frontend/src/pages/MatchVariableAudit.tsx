@@ -3,13 +3,10 @@ import { useLocation } from 'react-router-dom'
 import { MatchExplanationView } from '../components/match-explanation/MatchExplanationView'
 import type { FixturesListItem, FixturesListResponse } from '../components/audit/types'
 import type { SotFixtureExplanationResponse } from '../types/sotExplanation'
+import { MODEL_OPTIONS_AUDIT } from '../lib/modelVersions'
 import { formatExplanationApiError, formatFetchError } from '../utils/formatFetchError'
 
-const MODEL_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Automatico (consigliato dal server)' },
-  { value: 'baseline_v0_4_offensive_core_sot', label: 'v0.4 offensive core' },
-  { value: 'baseline_v1_0_sot', label: 'v1.0 SOT (xG)' },
-]
+const MODEL_OPTIONS = MODEL_OPTIONS_AUDIT
 
 function useQuery(): URLSearchParams {
   const { search } = useLocation()

@@ -15,6 +15,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
 )
 
 ApplicationRole = Literal[
@@ -66,6 +67,8 @@ def manifest_for_model(model_version: str) -> list[AppliedVariableSpec]:
         return _MANIFEST_V04
     if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
         return list(_MANIFEST_V10)
+    if model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT:
+        return list(_MANIFEST_V11)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         return _MANIFEST_V02
     return []
@@ -89,6 +92,7 @@ def all_manifest_framework_keys_union() -> dict[str, list[AppliedVariableSpec]]:
         BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
         BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
         BASELINE_SOT_MODEL_VERSION_V10_SOT,
+        BASELINE_SOT_MODEL_VERSION_V11_SOT,
     ):
         for spec in manifest_for_model(mv):
             if spec.framework_key:
@@ -97,6 +101,7 @@ def all_manifest_framework_keys_union() -> dict[str, list[AppliedVariableSpec]]:
 
 
 _MODEL_PRIORITY: tuple[str, ...] = (
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
@@ -440,6 +445,73 @@ _MANIFEST_V10_EXPECTED_GOALS = AppliedVariableSpec(
     expected_in_debug=True,
     framework_key="expected_goals",
     resolver="v10:xg_component:expected_goals",
+)
+
+
+_V11_OFFENSIVE_INPUTS: list[tuple[str, str, str]] = [
+    ("avg_sot_for", "Media tiri in porta fatti", "avg_sot_for"),
+    ("avg_total_shots_for", "Media tiri totali fatti", "avg_shots_for"),
+    ("shot_accuracy_for", "Precisione tiro", "conv_shots_to_sot"),
+    ("avg_inside_box_shots_for", "Media tiri dentro area", "avg_box_shots_for"),
+    ("avg_outside_box_shots_for", "Media tiri fuori area", "avg_outbox_shots_for"),
+    ("avg_blocked_shots_for", "Media tiri bloccati", "avg_blocked_shots_for"),
+    ("avg_shots_off_goal_for", "Media tiri fuori dallo specchio", "avg_shots_off_goal_for"),
+    ("avg_goals_for", "Media goal fatti", "avg_goals_for"),
+    ("offensive_trend", "Trend offensivo recente", "offensive_trend"),
+]
+
+_MANIFEST_V11: list[AppliedVariableSpec] = [
+    AppliedVariableSpec(
+        trace_key="v11_term_offensive_production_component",
+        label="Produzione offensiva composita",
+        area="Formula finale v1.1",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v11:formula_term:offensive_production_component",
+    ),
+]
+for inp_k, lab, fwk in _V11_OFFENSIVE_INPUTS:
+    _MANIFEST_V11.append(
+        AppliedVariableSpec(
+            trace_key=f"v11_off_input_{inp_k}",
+            label=lab,
+            area="Produzione offensiva composita",
+            application_role="component_input",
+            parent_component="offensive_production_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v11:offensive_input:{inp_k}",
+        ),
+    )
+_MANIFEST_V11.extend(
+    [
+        AppliedVariableSpec(
+            trace_key="v11_offensive_quality",
+            label="Qualità input componente offensiva",
+            area="Qualità dati",
+            application_role="quality_control",
+            parent_component="offensive_production_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=None,
+            resolver="v11:quality:offensive_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_ctx_kickoff_timedelta",
+            label="Distanza temporale dal calcio d'inizio",
+            area="Contesto match",
+            application_role="context_risk",
+            parent_component=None,
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key="tempo_al_kickoff",
+            resolver="fixture:hours_to_kickoff",
+        ),
+    ],
 )
 
 

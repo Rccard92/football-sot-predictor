@@ -16,10 +16,12 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
 )
 from app.models import TeamSotPrediction
 
 MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
@@ -31,6 +33,45 @@ MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
 
 def preferred_model_versions() -> list[str]:
     return list(MODEL_VERSION_PREFERENCE_ORDER)
+
+
+def v11_meets_recommend_criteria(
+    db: Session,
+    *,
+    upcoming_fixture_ids: list[int],
+    by_version: dict[str, dict[str, Any]],
+    upcoming_fixtures_total: int,
+) -> bool:
+    row = by_version.get(BASELINE_SOT_MODEL_VERSION_V11_SOT)
+    if not row or not row.get("is_available_for_upcoming"):
+        return False
+    up = int(row.get("upcoming_predictions") or 0)
+    if upcoming_fixtures_total <= 0 or up != 2 * upcoming_fixtures_total:
+        return False
+    incomplete = int(row.get("incomplete_predictions") or 0)
+    if incomplete > 0:
+        return False
+    if int(row.get("missing_required_data_count") or 0) > 0:
+        return False
+    if not upcoming_fixture_ids:
+        return False
+    preds = db.scalars(
+        select(TeamSotPrediction).where(
+            TeamSotPrediction.fixture_id.in_(upcoming_fixture_ids),
+            TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        ),
+    ).all()
+    if len(preds) != up:
+        return False
+    for p in preds:
+        if p.predicted_sot is None:
+            return False
+        raw = p.raw_json if isinstance(p.raw_json, dict) else {}
+        if raw.get("prediction_valid") is False:
+            return False
+        if str(raw.get("formula_quality_status") or "") != "ok":
+            return False
+    return True
 
 
 def v10_meets_recommend_criteria(
@@ -77,6 +118,13 @@ def resolve_recommended_model_version(
     by_version: dict[str, dict[str, Any]],
     upcoming_fixtures_total: int,
 ) -> str | None:
+    if v11_meets_recommend_criteria(
+        db,
+        upcoming_fixture_ids=upcoming_fixture_ids,
+        by_version=by_version,
+        upcoming_fixtures_total=upcoming_fixtures_total,
+    ):
+        return BASELINE_SOT_MODEL_VERSION_V11_SOT
     if v10_meets_recommend_criteria(
         db,
         upcoming_fixture_ids=upcoming_fixture_ids,
@@ -85,7 +133,7 @@ def resolve_recommended_model_version(
     ):
         return BASELINE_SOT_MODEL_VERSION_V10_SOT
     for mv in MODEL_VERSION_PREFERENCE_ORDER:
-        if mv == BASELINE_SOT_MODEL_VERSION_V10_SOT:
+        if mv in (BASELINE_SOT_MODEL_VERSION_V11_SOT, BASELINE_SOT_MODEL_VERSION_V10_SOT):
             continue
         row = by_version.get(mv)
         if row and row.get("is_available_for_upcoming"):
@@ -186,4 +234,65 @@ def build_v10_coherence_warnings(
     if preds and int(v10_row.get("xg_fallback_count") or 0) == len(preds):
         warnings.append("xG sempre in fallback sulle righe v1.0 upcoming: verificare ingestion team-stats.")
 
+    return warnings
+
+
+def enrich_v11_model_status_row(
+    db: Session,
+    row: dict[str, Any],
+    *,
+    upcoming_fixture_ids: list[int],
+) -> None:
+    if not upcoming_fixture_ids:
+        row["valid_predictions"] = 0
+        row["incomplete_predictions"] = 0
+        row["missing_required_data_count"] = 0
+        return
+    preds = db.scalars(
+        select(TeamSotPrediction).where(
+            TeamSotPrediction.fixture_id.in_(upcoming_fixture_ids),
+            TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        ),
+    ).all()
+    valid = 0
+    incomplete = 0
+    missing_count = 0
+    for p in preds:
+        raw = p.raw_json if isinstance(p.raw_json, dict) else {}
+        if (
+            p.predicted_sot is not None
+            and raw.get("prediction_valid") is not False
+            and str(raw.get("formula_quality_status") or "") == "ok"
+        ):
+            valid += 1
+        else:
+            incomplete += 1
+            miss = raw.get("missing_required_fields")
+            if isinstance(miss, list) and miss:
+                missing_count += 1
+    row["valid_predictions"] = int(valid)
+    row["incomplete_predictions"] = int(incomplete)
+    row["missing_required_data_count"] = int(missing_count)
+    row["model_stage"] = "offensive_production_only"
+
+
+def build_v11_coherence_warnings(
+    *,
+    by_version: dict[str, dict[str, Any]],
+    recommended: str | None,
+) -> list[str]:
+    warnings: list[str] = []
+    v11_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V11_SOT)
+    if not v11_row:
+        warnings.append("baseline_v1_1_sot assente in DB: generare con POST generate-v11-sot.")
+        return warnings
+    if recommended != BASELINE_SOT_MODEL_VERSION_V11_SOT:
+        inc = int(v11_row.get("incomplete_predictions") or 0)
+        if inc > 0:
+            warnings.append(
+                f"v1.1 presente ma non raccomandata: {inc} predizioni incomplete (dati obbligatori mancanti).",
+            )
+        return warnings
+    if int(v11_row.get("incomplete_predictions") or 0) > 0:
+        warnings.append("v1.1 raccomandata ma con predizioni incomplete: verificare ingestion team-stats.")
     return warnings
