@@ -12,6 +12,7 @@ class V11SideResult:
     expected_sot: float | None
     component: dict[str, Any] | None
     raw_json: dict[str, Any]
+    defensive_component: dict[str, Any] | None = None
     missing_required_fields: list[dict[str, Any]] = field(default_factory=list)
     formula_quality_status: str = "ok"
     sample_count: int = 0

@@ -460,6 +460,23 @@ _V11_OFFENSIVE_INPUTS: list[tuple[str, str, str]] = [
     ("offensive_trend", "Trend offensivo recente", "offensive_trend"),
 ]
 
+_V11_DEFENSIVE_INPUTS: list[tuple[str, str, str]] = [
+    ("opponent_avg_sot_conceded", "SOT concessi avversario stagione", "avg_sot_conceded"),
+    ("opponent_avg_total_shots_conceded", "Tiri totali concessi avversario", "avg_shots_conceded"),
+    (
+        "opponent_avg_inside_box_shots_conceded",
+        "Tiri dentro area concessi avversario",
+        "avg_box_shots_conceded",
+    ),
+    (
+        "opponent_avg_outside_box_shots_conceded",
+        "Tiri fuori area concessi avversario",
+        "avg_outbox_shots_conceded",
+    ),
+    ("opponent_avg_blocked_shots_conceded", "Tiri bloccati concessi avversario", "avg_blocked_shots_conceded"),
+    ("opponent_defensive_trend_recent", "Trend difensivo recente avversario", "defensive_trend"),
+]
+
 _MANIFEST_V11: list[AppliedVariableSpec] = [
     AppliedVariableSpec(
         trace_key="v11_term_offensive_production_component",
@@ -471,6 +488,17 @@ _MANIFEST_V11: list[AppliedVariableSpec] = [
         expected_in_debug=True,
         framework_key=None,
         resolver="v11:formula_term:offensive_production_component",
+    ),
+    AppliedVariableSpec(
+        trace_key="v11_term_opponent_defensive_resistance_component",
+        label="Resistenza difensiva avversaria",
+        area="Formula finale v1.1",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v11:formula_term:opponent_defensive_resistance_component",
     ),
 ]
 for inp_k, lab, fwk in _V11_OFFENSIVE_INPUTS:
@@ -487,6 +515,20 @@ for inp_k, lab, fwk in _V11_OFFENSIVE_INPUTS:
             resolver=f"v11:offensive_input:{inp_k}",
         ),
     )
+for inp_k, lab, fwk in _V11_DEFENSIVE_INPUTS:
+    _MANIFEST_V11.append(
+        AppliedVariableSpec(
+            trace_key=f"v11_def_input_{inp_k}",
+            label=lab,
+            area="Resistenza difensiva avversaria",
+            application_role="component_input",
+            parent_component="opponent_defensive_resistance_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v11:defensive_input:{inp_k}",
+        ),
+    )
 _MANIFEST_V11.extend(
     [
         AppliedVariableSpec(
@@ -499,6 +541,17 @@ _MANIFEST_V11.extend(
             expected_in_debug=True,
             framework_key=None,
             resolver="v11:quality:offensive_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_defensive_quality",
+            label="Qualità input componente difensiva avversaria",
+            area="Qualità dati",
+            application_role="quality_control",
+            parent_component="opponent_defensive_resistance_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=None,
+            resolver="v11:quality:defensive_component",
         ),
         AppliedVariableSpec(
             trace_key="v11_ctx_kickoff_timedelta",

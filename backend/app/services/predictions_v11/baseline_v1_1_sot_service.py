@@ -14,7 +14,7 @@ from app.services.sot_feature_registry import V11_ARCHITECTURE, V11_MODEL_STAGE
 
 
 class SotPredictionV11BaselineSotService:
-    """v1.1 stage 1: expected_sot = offensive_production_component (strict real data)."""
+    """v1.1 stage 2: 60% produzione offensiva + 40% resistenza difensiva avversaria (strict)."""
 
     model_version = BASELINE_SOT_MODEL_VERSION_V11_SOT
     architecture = V11_ARCHITECTURE
@@ -135,7 +135,8 @@ class SotPredictionV11BaselineSotService:
 
                 existing.raw_json = merged
                 existing.explanation = (
-                    "v1.1 stage 1: Produzione offensiva composita (solo dati reali, nessun fallback)."
+                    "v1.1 stage 2: 60% produzione offensiva + 40% resistenza difensiva avversaria "
+                    "(solo dati reali, nessun fallback)."
                 )
 
                 if result.valid and result.expected_sot is not None:
@@ -180,6 +181,7 @@ class SotPredictionV11BaselineSotService:
             "season": int(season_year),
             "model_version": self.model_version,
             "model_stage": self.model_stage,
+            "formula_terms_count": 2,
             "architecture": self.architecture,
             "upcoming_fixtures": len(upcoming),
             "predictions_created_or_updated": int(created),

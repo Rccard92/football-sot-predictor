@@ -462,34 +462,9 @@ def _v10_xg_component_block(
     }
 
 
-def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
-    """v1.1 stage 1: unica componente Produzione offensiva composita."""
-    if raw.get("prediction_valid") is False or str(raw.get("status") or "") == "incomplete":
-        miss = raw.get("missing_required_fields") if isinstance(raw.get("missing_required_fields"), list) else []
-        notes = [str(m.get("message") or m.get("feature_key")) for m in miss if isinstance(m, dict)]
-        fq = str(raw.get("formula_quality_status") or "missing_required_data")
-        return [
-            {
-                "id": "v11_offensive_production",
-                "label": "Produzione offensiva composita",
-                "value": None,
-                "weight": 1.0,
-                "contribution": None,
-                "direction": "neutro",
-                "data_status": "missing",
-                "notes": f"Predizione incompleta ({fq}). " + ("; ".join(notes[:5]) if notes else "Rigenerare v1.1."),
-                "variables": [],
-            },
-        ]
-
-    off = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
-    if not off:
-        comps = raw.get("components") if isinstance(raw.get("components"), dict) else {}
-        off = comps.get("offensive_production_component") if isinstance(comps.get("offensive_production_component"), dict) else {}
-
-    off_inputs = offensive_inputs_as_map(off) if off else {}
+def _v11_component_sub_vars(comp: dict[str, Any]) -> list[dict[str, Any]]:
     sub_vars: list[dict[str, Any]] = []
-    for ik, blob in off_inputs.items():
+    for ik, blob in offensive_inputs_as_map(comp).items():
         if not isinstance(blob, dict):
             continue
         sub_vars.append(
@@ -513,19 +488,92 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
                 "no_data_leakage_note": "Sì (solo partite precedenti)",
             },
         )
+    return sub_vars
 
-    val = _round2(_safe_float(off.get("value"))) if off else _round2(predicted)
+
+def _v11_get_component(raw: dict[str, Any], key: str) -> dict[str, Any]:
+    comp = raw.get(key) if isinstance(raw.get(key), dict) else {}
+    if comp:
+        return comp
+    comps = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+    c = comps.get(key)
+    return c if isinstance(c, dict) else {}
+
+
+def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
+    """v1.1 stage 2: offensiva 60% + resistenza difensiva avversaria 40%."""
+    off_w, def_w = 0.60, 0.40
+    if raw.get("prediction_valid") is False or str(raw.get("status") or "") == "incomplete":
+        miss = raw.get("missing_required_fields") if isinstance(raw.get("missing_required_fields"), list) else []
+        notes = [str(m.get("message") or m.get("feature_key")) for m in miss if isinstance(m, dict)]
+        fq = str(raw.get("formula_quality_status") or "missing_required_data")
+        note = f"Predizione incompleta ({fq}). " + ("; ".join(notes[:5]) if notes else "Rigenerare v1.1.")
+        return [
+            {
+                "id": "v11_offensive_production",
+                "label": "Produzione offensiva composita",
+                "value": None,
+                "weight": off_w,
+                "contribution": None,
+                "direction": "neutro",
+                "data_status": "missing",
+                "notes": note,
+                "variables": [],
+            },
+            {
+                "id": "v11_opponent_defensive_resistance",
+                "label": "Resistenza difensiva avversaria",
+                "value": None,
+                "weight": def_w,
+                "contribution": None,
+                "direction": "neutro",
+                "data_status": "missing",
+                "notes": note,
+                "variables": [],
+            },
+        ]
+
+    formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+    terms = formula.get("terms") if isinstance(formula.get("terms"), list) else []
+    term_by_key = {str(t.get("key")): t for t in terms if isinstance(t, dict) and t.get("key")}
+
+    off = _v11_get_component(raw, "offensive_production_component")
+    defc = _v11_get_component(raw, "opponent_defensive_resistance_component")
+
+    off_term = term_by_key.get("offensive_production_component", {})
+    def_term = term_by_key.get("opponent_defensive_resistance_component", {})
+
+    off_val = _round2(_safe_float(off.get("value") if off else off_term.get("value")))
+    def_val = _round2(_safe_float(defc.get("value") if defc else def_term.get("value")))
+    off_contrib = _round2(_safe_float(off_term.get("contribution")))
+    if off_contrib is None and off_val is not None:
+        off_contrib = _round2(float(off_val) * off_w)
+    def_contrib = _round2(_safe_float(def_term.get("contribution")))
+    if def_contrib is None and def_val is not None:
+        def_contrib = _round2(float(def_val) * def_w)
+
     return [
         {
             "id": "v11_offensive_production",
-            "label": str(off.get("label") or "Produzione offensiva composita") if off else "Produzione offensiva composita",
-            "value": val,
-            "weight": 1.0,
-            "contribution": val,
+            "label": str(off.get("label") or "Produzione offensiva composita"),
+            "value": off_val,
+            "weight": off_w,
+            "contribution": off_contrib,
             "direction": "neutro",
             "data_status": "ok",
-            "notes": "Stage 1 v1.1: expected_sot = offensive_production_component (solo dati reali).",
-            "variables": sub_vars,
+            "notes": "Peso formula finale 60%. Componente interna: 9 input normalizzati.",
+            "variables": _v11_component_sub_vars(off) if off else [],
+        },
+        {
+            "id": "v11_opponent_defensive_resistance",
+            "label": str(defc.get("label") or "Resistenza difensiva avversaria"),
+            "value": def_val,
+            "weight": def_w,
+            "contribution": def_contrib,
+            "direction": "neutro",
+            "data_status": "ok",
+            "notes": "Peso formula finale 40%. Concessi ricostruiti dalle stats degli avversari dell'avversario.",
+            "variables": _v11_component_sub_vars(defc) if defc else [],
         },
     ]
 
@@ -1393,12 +1441,13 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
                     "flags": {"cap_applied": False, "fallbacks_used": []},
                 }
         elif model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT and cid == "v11_offensive_production":
-            ocomp = raw.get("offensive_production_component")
-            if not isinstance(ocomp, dict):
-                comps = raw.get("components") if isinstance(raw.get("components"), dict) else {}
-                ocomp = comps.get("offensive_production_component")
-            if isinstance(ocomp, dict):
+            ocomp = _v11_get_component(raw, "offensive_production_component")
+            if ocomp:
                 comp["internal_formula"] = _internal_formula_v04_offensive(ocomp, raw)
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT and cid == "v11_opponent_defensive_resistance":
+            dcomp = _v11_get_component(raw, "opponent_defensive_resistance_component")
+            if dcomp:
+                comp["internal_formula"] = _internal_formula_v04_offensive(dcomp, raw)
         elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT and cid == "v10_offensive_production":
             ocomp = raw.get("offensive_production_component")
             if isinstance(ocomp, dict):

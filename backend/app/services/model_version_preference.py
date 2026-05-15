@@ -273,7 +273,7 @@ def enrich_v11_model_status_row(
     row["valid_predictions"] = int(valid)
     row["incomplete_predictions"] = int(incomplete)
     row["missing_required_data_count"] = int(missing_count)
-    row["model_stage"] = "offensive_production_only"
+    row["model_stage"] = "offensive_plus_opponent_defense"
 
 
 def build_v11_coherence_warnings(

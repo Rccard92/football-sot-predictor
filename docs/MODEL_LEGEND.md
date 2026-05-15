@@ -6,15 +6,16 @@ Documento di riferimento per **baseline v0.1**, per le metriche di qualità e pe
 
 Stimare i **tiri in porta attesi** (shots on target, SOT) per squadra su una partita, usando solo statistiche di squadra storiche e medie derivate dal database. Il totale match è la **somma** delle due stime squadra quando entrambe sono disponibili.
 
-## baseline_v1_1_sot — Stage 1 (solo produzione offensiva)
+## baseline_v1_1_sot — Stage 2 (offensiva + resistenza difensiva avversaria)
 
-Versione **strict**: nessun fallback, nessun mock. Se manca un dato obbligatorio o lo storico ha meno di 5 partite, la prediction è **incompleta** (`prediction_valid: false`).
+Versione **strict**: nessun fallback, nessun mock. Se manca un dato obbligatorio o lo storico ha meno di 5 partite (squadra o avversario), la prediction è **incompleta** (`prediction_valid: false`).
 
-Formula stage 1:
+Formula stage 2:
 
-`expected_sot = offensive_production_component` (peso **1,00** nella formula finale).
+`expected_sot = (offensive_production_component × 0,60) + (opponent_defensive_resistance_component × 0,40)`
 
-Gli stessi 9 input interni della tabella sotto (pesi interni identici a v1.0) alimentano il blend; implementazione in [`predictions_v11/offensive_production_strict.py`](backend/app/services/predictions_v11/offensive_production_strict.py).
+- **Produzione offensiva:** 9 input interni (pesi come v1.0) sulle partite precedenti della squadra — [`offensive_production_strict.py`](backend/app/services/predictions_v11/offensive_production_strict.py).
+- **Resistenza difensiva avversaria:** 6 input sui concessi ricostruiti dalle partite precedenti dell'avversario — [`opponent_defensive_resistance_strict.py`](backend/app/services/predictions_v11/opponent_defensive_resistance_strict.py).
 
 Generazione: `POST /api/predictions/sot/serie-a/{season}/generate-v11-sot`. Dettaglio feature: [`SOT_MODEL_FEATURE_REGISTRY.md`](SOT_MODEL_FEATURE_REGISTRY.md).
 

@@ -1,4 +1,4 @@
-"""Debug read-only: 9 feature produzione offensiva v1.1 (strict)."""
+"""Debug read-only: feature v1.1 offensiva (9) + difensiva avversaria (6)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,35 @@ from app.models import Fixture, Team
 from app.services.predictions_v10.v10_prior_context import build_prior_context
 from app.services.predictions_v10.offensive_production_blend import offensive_inputs_as_map
 from app.services.predictions_v11.offensive_production_strict import compute_v11_side
+from app.services.sot_feature_registry import V11_MODEL_STAGE
+
+
+def _inputs_from_component(comp: dict[str, Any] | None, parent: str) -> list[dict[str, Any]]:
+    if not comp:
+        return []
+    out: list[dict[str, Any]] = []
+    for k, blob in offensive_inputs_as_map(comp).items():
+        if not isinstance(blob, dict):
+            continue
+        out.append(
+            {
+                "key": k,
+                "label": blob.get("label"),
+                "raw_value": blob.get("raw_value"),
+                "normalized_value": blob.get("normalized_value"),
+                "internal_weight": blob.get("internal_weight"),
+                "internal_contribution": blob.get("internal_contribution"),
+                "source_path": blob.get("source_path"),
+                "api_source": blob.get("api_source"),
+                "db_field": blob.get("db_field"),
+                "sample_count": blob.get("sample_count"),
+                "fallback_used": False,
+                "status": blob.get("status"),
+                "application_role": "component_input",
+                "parent_component": parent,
+            },
+        )
+    return out
 
 
 def build_fixture_features_debug_v11(
@@ -43,32 +72,14 @@ def build_fixture_features_debug_v11(
                 "message": str(exc)[:500],
                 "features": [],
                 "offensive_component_inputs": [],
+                "defensive_component_inputs": [],
             }
 
         raw = result.raw_json
         off = result.component or {}
-        offensive_inputs: list[dict[str, Any]] = []
-        for k, blob in offensive_inputs_as_map(off).items():
-            if not isinstance(blob, dict):
-                continue
-            offensive_inputs.append(
-                {
-                    "key": k,
-                    "label": blob.get("label"),
-                    "raw_value": blob.get("raw_value"),
-                    "normalized_value": blob.get("normalized_value"),
-                    "internal_weight": blob.get("internal_weight"),
-                    "internal_contribution": blob.get("internal_contribution"),
-                    "source_path": blob.get("source_path"),
-                    "api_source": blob.get("api_source"),
-                    "db_field": blob.get("db_field"),
-                    "sample_count": blob.get("sample_count"),
-                    "fallback_used": False,
-                    "status": blob.get("status") or ("missing_required_data" if not result.valid else "available"),
-                    "application_role": "component_input",
-                    "parent_component": "offensive_production_component",
-                },
-            )
+        defc = result.defensive_component or {}
+        offensive_inputs = _inputs_from_component(off, "offensive_production_component")
+        defensive_inputs = _inputs_from_component(defc, "opponent_defensive_resistance_component")
 
         return {
             "team": team.name if team else str(team_id),
@@ -77,20 +88,26 @@ def build_fixture_features_debug_v11(
             "prediction_valid": result.valid,
             "expected_sot": result.expected_sot,
             "formula_quality_status": result.formula_quality_status,
+            "formula_terms_count": (raw.get("formula") or {}).get("terms_count") if isinstance(raw.get("formula"), dict) else None,
             "missing_required_fields": result.missing_required_fields,
             "offensive_production_component": {
                 "value": off.get("value"),
                 "quality": off.get("quality"),
             },
+            "opponent_defensive_resistance_component": {
+                "value": defc.get("value"),
+                "quality": defc.get("quality"),
+            },
             "offensive_component_inputs": offensive_inputs,
-            "features": offensive_inputs,
+            "defensive_component_inputs": defensive_inputs,
+            "features": offensive_inputs + defensive_inputs,
         }
 
     return {
         "status": "ok",
         "fixture_id": int(fixture_id),
         "model_version": model_version,
-        "model_stage": "offensive_production_only",
+        "model_stage": V11_MODEL_STAGE,
         "home": _side(int(fx.home_team_id), int(fx.away_team_id)),
         "away": _side(int(fx.away_team_id), int(fx.home_team_id)),
     }
