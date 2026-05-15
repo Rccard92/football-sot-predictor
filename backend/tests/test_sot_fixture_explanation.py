@@ -4,12 +4,15 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V10_SOT,
 )
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
 from app.services.sot_fixture_explanation_service import (
     V03_COMPONENT_META,
     _build_prediction_formula_breakdown_side,
     _components_v01,
+    _components_v10_feature_registry,
+    _enrich_components_with_internal_formula,
     _internal_formula_v04_offensive,
     _outcome_sot,
     _post_audit_judgment,
@@ -98,6 +101,55 @@ def test_prediction_formula_breakdown_v04():
     assert out is not None
     assert len(out["terms"]) == 6
     assert out["checksum_warning"] is None
+
+
+def test_components_v10_legacy_raw_without_offensive_component():
+    raw = {
+        "architecture": "feature_registry_explicit_terms_plus_xg",
+        "formula": {
+            "terms": [
+                {"key": "opp_avg_sot_conceded", "value": 4.0, "weight": 0.25, "contribution": 1.0},
+                {"key": "team_split_avg_sot_for", "value": 3.5, "weight": 0.15, "contribution": 0.525},
+            ],
+        },
+    }
+    comps = _components_v10_feature_registry(raw, 3.49)
+    assert len(comps) >= 2
+    off = next(c for c in comps if c.get("id") == "v10_offensive_production")
+    assert off.get("value") is None
+    assert "Rigenerare" in str(off.get("notes") or "")
+
+
+def test_enrich_v10_without_offensive_component_does_not_raise():
+    raw = {"architecture": "feature_registry_explicit_terms_plus_xg", "formula": {"terms": []}}
+    comps = [
+        {
+            "id": "v10_offensive_production",
+            "label": "Produzione offensiva composita",
+            "variables": [],
+        },
+    ]
+    _enrich_components_with_internal_formula(BASELINE_SOT_MODEL_VERSION_V10_SOT, raw, comps)
+    assert "internal_formula" not in comps[0]
+
+
+def test_internal_v04_offensive_list_inputs():
+    comp = {
+        "value": 3.2,
+        "inputs": [
+            {
+                "key": "avg_sot_for",
+                "label": "Media SOT",
+                "raw_value": 3.5,
+                "normalized_value": 3.5,
+                "internal_weight": 0.30,
+                "internal_contribution": 1.05,
+            },
+        ],
+    }
+    out = _internal_formula_v04_offensive(comp, {})
+    assert len(out["rows"]) == 1
+    assert out["rows"][0]["key"] == "avg_sot_for"
 
 
 def test_internal_v04_offensive_notes_when_cap():

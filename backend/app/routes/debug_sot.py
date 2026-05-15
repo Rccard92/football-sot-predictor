@@ -41,6 +41,7 @@ def debug_sot_fixture_explanation(
                     "failed_step": "database_operation",
                     "details": f"{exc.__class__.__name__}",
                     "fixture_id": int(fixture_id),
+                    "model_version": model_version,
                 }
             ),
         )
@@ -51,13 +52,17 @@ def debug_sot_fixture_explanation(
             content=jsonable_encoder(
                 {
                     "status": "error",
-                    "message": "Errore durante l'assemblaggio della spiegazione (dettaglio in note).",
-                    "failed_step": "unexpected_error",
+                    "message": "Errore durante la costruzione della spiegazione.",
+                    "failed_step": "build_explanation",
                     "details": f"{exc.__class__.__name__}: {exc!s}"[:800],
                     "fixture_id": int(fixture_id),
+                    "model_version": model_version,
                 }
             ),
         )
+
+    if isinstance(payload, dict) and payload.get("status") == "error":
+        return JSONResponse(status_code=422, content=jsonable_encoder(payload))
 
     if isinstance(payload, dict) and payload.get("status") == "missing":
         return JSONResponse(status_code=404, content=jsonable_encoder(payload))
@@ -76,12 +81,33 @@ def debug_sot_fixture_features(
         payload = build_fixture_features_debug(db, int(fixture_id), model_version=model_version or "baseline_v1_0_sot")
     except (OperationalError, ProgrammingError) as exc:
         logger.warning("GET debug fixture features: DB error (%s)", exc.__class__.__name__, exc_info=True)
-        return JSONResponse(status_code=503, content=jsonable_encoder({"status": "error", "message": "Database error"}))
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Errore database durante la lettura delle feature.",
+                    "failed_step": "database_operation",
+                    "details": f"{exc.__class__.__name__}",
+                    "fixture_id": int(fixture_id),
+                    "model_version": model_version,
+                }
+            ),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("GET debug fixture features")
         return JSONResponse(
             status_code=422,
-            content=jsonable_encoder({"status": "error", "message": str(exc)[:500], "fixture_id": int(fixture_id)}),
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Errore durante la risoluzione delle feature.",
+                    "failed_step": "build_features",
+                    "details": f"{exc.__class__.__name__}: {exc!s}"[:800],
+                    "fixture_id": int(fixture_id),
+                    "model_version": model_version,
+                }
+            ),
         )
     if payload.get("status") == "missing":
         return JSONResponse(status_code=404, content=jsonable_encoder(payload))

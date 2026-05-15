@@ -462,7 +462,14 @@ def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> l
     out: list[dict[str, Any]] = []
 
     off = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
-    off_inputs = offensive_inputs_as_map(off)
+    off_missing_note = (
+        "Componente non disponibile nel raw_json salvato. Rigenerare v1.0 (generate-v10-sot)."
+        if not off
+        else ""
+    )
+    off_inputs = offensive_inputs_as_map(off) if off else {}
+    if off and not off_inputs:
+        off_missing_note = "Input interni assenti o vuoti nel raw_json. Rigenerare v1.0."
     sub_vars: list[dict[str, Any]] = []
     for ik, blob in off_inputs.items():
         if not isinstance(blob, dict):
@@ -495,8 +502,8 @@ def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> l
             "weight": _safe_float(off.get("weight_in_final_formula")) or _safe_float(off.get("weight_in_model")) or 0.30,
             "contribution": _round2(_safe_float(off.get("contribution_in_final_formula") or off.get("contribution"))),
             "direction": "neutro",
-            "data_status": "fallback" if off.get("fallbacks_used") else "ok",
-            "notes": str(off.get("explanation") or ""),
+            "data_status": "fallback" if (off.get("fallbacks_used") or off_missing_note) else "ok",
+            "notes": off_missing_note or str(off.get("explanation") or ""),
             "variables": sub_vars,
         },
     )
@@ -1185,33 +1192,48 @@ def _internal_formula_v04_offensive(comp: dict[str, Any], raw_root: dict[str, An
     num_vals: list[float] = []
     sum_w = 0.0
     sum_num = 0.0
+    def _append_input_row(ik: str, blob: dict[str, Any]) -> None:
+        nonlocal sum_w, sum_num
+        w_in = _safe_float(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight")) or 0.0
+        val = _safe_float(
+            blob.get("normalized_value")
+            if blob.get("normalized_value") is not None
+            else blob.get("value"),
+        )
+        cb = _safe_float(
+            blob.get("internal_contribution") if blob.get("internal_contribution") is not None else blob.get("contribution"),
+        )
+        if cb is None and val is not None:
+            cb = round(float(val) * float(w_in), 4) if w_in else None
+        lab = str(blob.get("label") or V04_OFFENSIVE_INPUT_LABELS.get(str(ik), str(ik)))
+        rows.append(
+            {
+                "key": str(ik),
+                "label": lab,
+                "value": _round2(val),
+                "raw_value": _round2(_safe_float(blob.get("raw_value"))),
+                "normalized_value": _round2(_safe_float(blob.get("normalized_value"))),
+                "weight": w_in if w_in else None,
+                "contribution": cb,
+                "calc_expression": _mul_expr(val, w_in) if w_in else str(_round2(val)),
+            },
+        )
+        if w_in and w_in > 0 and val is not None:
+            sym_parts.append(f"({lab} × {w_in})")
+            num_parts.append(_mul_expr(val, w_in))
+            cbb = float(cb) if cb is not None else float(val) * float(w_in)
+            num_vals.append(round(cbb, 4))
+            sum_w += float(w_in)
+            sum_num += cbb
+
     if isinstance(inputs, dict):
         for ik, blob in inputs.items():
-            if not isinstance(blob, dict):
-                continue
-            w_in = _safe_float(blob.get("weight")) or 0.0
-            val = _safe_float(blob.get("value"))
-            cb = _safe_float(blob.get("contribution"))
-            if cb is None and val is not None:
-                cb = round(float(val) * float(w_in), 4) if w_in else None
-            lab = V04_OFFENSIVE_INPUT_LABELS.get(str(ik), str(ik))
-            rows.append(
-                {
-                    "key": str(ik),
-                    "label": lab,
-                    "value": _round2(val),
-                    "weight": w_in if w_in else None,
-                    "contribution": cb,
-                    "calc_expression": _mul_expr(val, w_in) if w_in else str(_round2(val)),
-                },
-            )
-            if w_in and w_in > 0 and val is not None:
-                sym_parts.append(f"({lab} × {w_in})")
-                num_parts.append(_mul_expr(val, w_in))
-                cbb = float(cb) if cb is not None else float(val) * float(w_in)
-                num_vals.append(round(cbb, 4))
-                sum_w += float(w_in)
-                sum_num += cbb
+            if isinstance(blob, dict):
+                _append_input_row(str(ik), blob)
+    elif isinstance(inputs, list):
+        for blob in inputs:
+            if isinstance(blob, dict) and blob.get("key"):
+                _append_input_row(str(blob.get("key")), blob)
     capped = _safe_float(comp.get("value"))
     raw_uncapped = _safe_float(dbg_top.get("raw_component_value")) if isinstance(dbg_top, dict) else None
     cap_bounds = dbg_top.get("cap_bounds") if isinstance(dbg_top, dict) else None
@@ -1290,6 +1312,10 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
                     "notes": [],
                     "flags": {"cap_applied": False, "fallbacks_used": []},
                 }
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT and cid == "v10_offensive_production":
+            ocomp = raw.get("offensive_production_component")
+            if isinstance(ocomp, dict):
+                comp["internal_formula"] = _internal_formula_v04_offensive(ocomp, raw)
         elif model_version in (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, BASELINE_SOT_MODEL_VERSION_V10_SOT) and cid == "v04_offensive_production":
             ocomp = raw.get("offensive_production_component")
             if isinstance(ocomp, dict):
@@ -1645,6 +1671,41 @@ def build_fixture_sot_explanation(
 
     audit_map = _flatten_audit_variables(audit) if audit else {}
 
+    try:
+        return _build_fixture_sot_explanation_body(
+            db,
+            fx,
+            home,
+            away,
+            mode_audit,
+            audit_map,
+            audit,
+            model_version=model_version,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("build_fixture_sot_explanation: errore inatteso fixture_id=%s", fixture_id)
+        return {
+            "status": "error",
+            "message": "Errore durante la costruzione della spiegazione.",
+            "failed_step": "build_explanation",
+            "details": f"{exc.__class__.__name__}: {exc!s}"[:800],
+            "fixture_id": int(fixture_id),
+            "model_version": model_version,
+            "fixture": _fixture_payload(fx, home, away),
+        }
+
+
+def _build_fixture_sot_explanation_body(
+    db: Session,
+    fx: Fixture,
+    home: Team,
+    away: Team,
+    mode_audit: Literal["pre_match", "post_match"],
+    audit_map: dict[tuple[int, str], Any],
+    audit: Any,
+    *,
+    model_version: str | None = None,
+) -> dict[str, Any]:
     rows = list(db.scalars(select(TeamSotPrediction).where(TeamSotPrediction.fixture_id == int(fx.id))).all())
     preds: dict[str, dict[str, float | None]] = {}
     raw_by: dict[tuple[str, Side], dict[str, Any]] = {}
@@ -1833,6 +1894,15 @@ def build_fixture_sot_explanation(
         for raw, nm in ((raw_home, home.name), (raw_away, away.name)):
             if not isinstance(raw, dict):
                 continue
+            formula_obj = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+            if not formula_obj.get("terms"):
+                quality_items.append(
+                    f"Formula terms assenti nel raw_json ({nm}). Rigenerare v1.0.",
+                )
+            if not isinstance(raw.get("offensive_production_component"), dict):
+                quality_items.append(
+                    f"Componente offensiva assente nel raw_json ({nm}). Rigenerare v1.0.",
+                )
             va = raw.get("v04_alignment")
             if isinstance(va, dict) and va.get("status") == "needs_review":
                 quality_items.append(
@@ -1971,7 +2041,11 @@ def build_fixture_sot_explanation(
                 "home": raw_home,
                 "away": raw_away,
             },
-            "data_policy": audit.data_policy.model_dump(mode="json") if audit else None,
+            "data_policy": (
+                audit.data_policy.model_dump(mode="json")
+                if audit is not None and getattr(audit, "data_policy", None) is not None
+                else None
+            ),
         },
     }
 

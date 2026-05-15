@@ -31,7 +31,17 @@ def build_fixture_features_debug(
 
     def _side(team_id: int, opponent_id: int) -> dict[str, Any]:
         team = db.get(Team, int(team_id))
-        resolved = resolve_side_features(db, fx, team_id=int(team_id), opponent_id=int(opponent_id))
+        try:
+            resolved = resolve_side_features(db, fx, team_id=int(team_id), opponent_id=int(opponent_id))
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "team": team.name if team else str(team_id),
+                "team_id": int(team_id),
+                "status": "error",
+                "message": str(exc)[:500],
+                "features": [],
+                "offensive_component_inputs": [],
+            }
         features: list[dict[str, Any]] = []
         for t in resolved["base_terms"] + [resolved["xg_term"]]:
             features.append(

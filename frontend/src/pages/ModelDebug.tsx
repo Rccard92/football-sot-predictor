@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { DEFAULT_SEASON } from '../lib/api'
+import { formatFetchError } from '../utils/formatFetchError'
 
 type FixturesListItem = {
   fixture_id: number
@@ -86,6 +87,7 @@ export function ModelDebug() {
   const [includeRaw, setIncludeRaw] = useState(false)
 
   const [loading, setLoading] = useState(false)
+  const [fixturesError, setFixturesError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<DebugModelComparisonResponse | null>(null)
 
@@ -94,6 +96,7 @@ export function ModelDebug() {
 
   useEffect(() => {
     const loadFixtures = async () => {
+      setFixturesError(null)
       try {
         const res = await fetchJson<FixturesListResponse>(
           `/api/match-analysis/fixtures?scope=upcoming&limit=60`,
@@ -104,6 +107,7 @@ export function ModelDebug() {
         }
       } catch (e) {
         setFixtures([])
+        setFixturesError(formatFetchError(e, 'GET /api/match-analysis/fixtures'))
       }
     }
     void loadFixtures()
@@ -202,6 +206,12 @@ export function ModelDebug() {
           </div>
         </div>
       </header>
+
+      {fixturesError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">
+          {fixturesError}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">

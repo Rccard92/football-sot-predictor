@@ -45,5 +45,26 @@ async def sqlalchemy_unhandled_handler(request: Request, exc: SQLAlchemyError) -
     )
     return JSONResponse(
         status_code=500,
-        content={"detail": "Errore database interno."},
+        content={
+            "status": "error",
+            "detail": "Errore database interno.",
+            "message": "Errore database interno.",
+            "failed_step": "database_operation",
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def global_unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all: risposta JSON (con header CORS dal middleware) invece di crash senza body."""
+    logger.exception("Eccezione non gestita su %s", request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "detail": "Errore interno del server.",
+            "message": "Errore interno del server.",
+            "failed_step": "unexpected_error",
+            "details": f"{exc.__class__.__name__}: {exc!s}"[:800],
+        },
     )

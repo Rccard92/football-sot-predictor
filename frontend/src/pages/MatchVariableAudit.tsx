@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { MatchExplanationView } from '../components/match-explanation/MatchExplanationView'
 import type { FixturesListItem, FixturesListResponse } from '../components/audit/types'
 import type { SotFixtureExplanationResponse } from '../types/sotExplanation'
+import { formatExplanationApiError, formatFetchError } from '../utils/formatFetchError'
 
 const MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Automatico (consigliato dal server)' },
@@ -29,22 +30,29 @@ export function MatchVariableAudit() {
   )
 
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [fixturesError, setFixturesError] = useState<string | null>(null)
+  const [explanationError, setExplanationError] = useState<string | null>(null)
   const [data, setData] = useState<SotFixtureExplanationResponse | null>(null)
 
   useEffect(() => {
     const loadFixtures = async () => {
-      setError(null)
+      setFixturesError(null)
       try {
-        const res = (await fetch(
-          `${import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')}/api/match-analysis/fixtures?scope=all&limit=120`,
-        ).then((r) => r.json())) as FixturesListResponse
-        setFixtures(res.fixtures ?? [])
-        if (fixtureId == null && res.fixtures?.length) {
-          setFixtureId(res.fixtures[0].fixture_id)
+        const url = `${import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')}/api/match-analysis/fixtures?scope=all&limit=120`
+        const res = await fetch(url)
+        const body = (await res.json()) as FixturesListResponse & { message?: string }
+        if (!res.ok) {
+          setFixtures([])
+          setFixturesError(body.message || `Errore HTTP ${res.status} su /match-analysis/fixtures`)
+          return
+        }
+        setFixtures(body.fixtures ?? [])
+        if (fixtureId == null && body.fixtures?.length) {
+          setFixtureId(body.fixtures[0].fixture_id)
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        setFixtures([])
+        setFixturesError(formatFetchError(e, 'GET /api/match-analysis/fixtures'))
       }
     }
     void loadFixtures()
@@ -55,7 +63,7 @@ export function MatchVariableAudit() {
     const load = async () => {
       if (!fixtureId) return
       setLoading(true)
-      setError(null)
+      setExplanationError(null)
       try {
         const base = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
         const q = new URLSearchParams()
@@ -64,20 +72,15 @@ export function MatchVariableAudit() {
         const url = `${base}/api/debug/sot/fixture/${fixtureId}/explanation${qsStr ? `?${qsStr}` : ''}`
         const res = await fetch(url)
         const parsed = (await res.json()) as SotFixtureExplanationResponse
-        if (!res.ok) {
+        if (!res.ok || parsed.status === 'error') {
           setData(null)
-          setError(parsed.message || `Errore HTTP ${res.status}`)
-          return
-        }
-        if (parsed.status === 'error') {
-          setData(null)
-          setError(parsed.message || 'Risposta di errore dal server')
+          setExplanationError(formatExplanationApiError(parsed))
           return
         }
         setData(parsed)
       } catch (e) {
         setData(null)
-        setError(e instanceof Error ? e.message : String(e))
+        setExplanationError(formatFetchError(e, `GET .../fixture/${fixtureId}/explanation`))
       } finally {
         setLoading(false)
       }
@@ -129,8 +132,16 @@ export function MatchVariableAudit() {
           </div>
         </header>
 
-        {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">{error}</div>
+        {fixturesError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">
+            {fixturesError}
+          </div>
+        ) : null}
+
+        {explanationError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">
+            {explanationError}
+          </div>
         ) : null}
 
         {loading ? (

@@ -16,7 +16,12 @@ class Settings(BaseSettings):
     database_url: str
     api_football_key: str = ""
     api_football_base_url: str = "https://v3.football.api-sports.io"
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = (
+        "https://frontend-production-9b20.up.railway.app,"
+        "http://localhost:5173,"
+        "http://localhost:3000"
+    )
+    frontend_origins: str = ""
     app_env: str = "development"
     default_league_id: int = 135
     default_season: int = 2025
@@ -25,7 +30,17 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        raw = self.cors_origins
+        if self.frontend_origins.strip():
+            raw = f"{raw},{self.frontend_origins}" if raw else self.frontend_origins
+        seen: set[str] = set()
+        out: list[str] = []
+        for part in raw.split(","):
+            o = part.strip()
+            if o and o not in seen:
+                seen.add(o)
+                out.append(o)
+        return out
 
 
 @lru_cache

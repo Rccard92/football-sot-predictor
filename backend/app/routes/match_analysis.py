@@ -137,5 +137,11 @@ def list_audit_fixtures(
         return JSONResponse(status_code=404, content=jsonable_encoder(payload))
     except Exception as exc:  # noqa: BLE001
         logger.exception("GET match-analysis fixtures: errore inatteso")
-        raise HTTPException(status_code=500, detail="Errore inatteso") from exc
+        payload = AuditErrorResponse(
+            status="error",
+            message="Errore durante il caricamento delle fixture per audit.",
+            failed_step="unexpected_error",
+            details=f"{exc.__class__.__name__}: {exc!s}"[:800],
+        )
+        return JSONResponse(status_code=500, content=jsonable_encoder(payload))
 
