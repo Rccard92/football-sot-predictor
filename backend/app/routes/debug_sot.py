@@ -13,7 +13,6 @@ from app.services.debug_sot_model_comparison import (
     build_model_comparison_for_upcoming,
 )
 from app.services.predictions_v10.v10_features_debug import build_fixture_features_debug
-from app.services.predictions_v11.v11_features_debug import build_fixture_features_debug_v11
 from app.services.sot_fixture_explanation_service import build_fixture_sot_explanation
 
 logger = logging.getLogger(__name__)
@@ -82,6 +81,8 @@ def debug_sot_fixture_features(
     mv = model_version or "baseline_v1_0_sot"
     try:
         if mv == BASELINE_SOT_MODEL_VERSION_V11_SOT:
+            from app.services.predictions_v11.v11_features_debug import build_fixture_features_debug_v11
+
             payload = build_fixture_features_debug_v11(db, int(fixture_id), model_version=mv)
         else:
             payload = build_fixture_features_debug(db, int(fixture_id), model_version=mv)

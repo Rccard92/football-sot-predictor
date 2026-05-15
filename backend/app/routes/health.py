@@ -7,6 +7,12 @@ from app.core.database import SessionLocal
 router = APIRouter()
 
 
+@router.get("/ping")
+def ping() -> dict[str, str]:
+    """Liveness minimale per probe container (nessun DB, nessun servizio modello)."""
+    return {"status": "ok"}
+
+
 @router.get("/health")
 def health_check() -> dict:
     settings = get_settings()

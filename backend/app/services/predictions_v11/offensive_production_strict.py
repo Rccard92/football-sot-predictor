@@ -29,6 +29,7 @@ from app.services.predictions_v11.league_baselines_strict import (
 from app.services.predictions_v11.opponent_defensive_resistance_strict import (
     compute_opponent_defensive_resistance_component,
 )
+from app.services.predictions_v11.shared_stats import agg_for_team
 from app.services.predictions_v11.v11_shared import (
     FORMULA_DEFENSIVE_WEIGHT,
     FORMULA_OFFENSIVE_WEIGHT,
@@ -46,67 +47,6 @@ from app.services.sot_feature_registry import V11_ARCHITECTURE, V11_MIN_COMPLETE
 
 COMPONENT_KEY_OFFENSIVE = "offensive_production_component"
 COMPONENT_LABEL_OFFENSIVE = "Produzione offensiva composita"
-
-
-def _agg_for_team(
-    *,
-    fixtures: list[Fixture],
-    stats_map: dict,
-    team_id: int,
-) -> dict[str, Any]:
-    sot_sum = sot_n = 0
-    shots_sum = shots_n = 0
-    in_sum = in_n = 0
-    out_sum = out_n = 0
-    blocked_sum = blocked_n = 0
-    off_goal_sum = off_goal_n = 0
-    goals_sum = goals_n = 0
-
-    for f in fixtures:
-        st = stats_map.get((int(f.id), int(team_id)))
-        if st and st.shots_on_target is not None:
-            sot_sum += int(st.shots_on_target)
-            sot_n += 1
-        if st and st.total_shots is not None:
-            shots_sum += int(st.total_shots)
-            shots_n += 1
-        if st and st.shots_inside_box is not None:
-            in_sum += int(st.shots_inside_box)
-            in_n += 1
-        if st and st.shots_outside_box is not None:
-            out_sum += int(st.shots_outside_box)
-            out_n += 1
-        if st and st.blocked_shots is not None:
-            blocked_sum += int(st.blocked_shots)
-            blocked_n += 1
-        if st and st.shots_off_target is not None:
-            off_goal_sum += int(st.shots_off_target)
-            off_goal_n += 1
-        gf = f.goals_home if int(f.home_team_id) == int(team_id) else f.goals_away
-        if gf is not None:
-            goals_sum += int(gf)
-            goals_n += 1
-
-    def mean(sum_: int, n: int) -> float | None:
-        return (sum_ / n) if n > 0 else None
-
-    return {
-        "matches_count": len(fixtures),
-        "sot_mean": mean(sot_sum, sot_n),
-        "sot_n": sot_n,
-        "shots_mean": mean(shots_sum, shots_n),
-        "shots_n": shots_n,
-        "inside_mean": mean(in_sum, in_n),
-        "inside_n": in_n,
-        "outside_mean": mean(out_sum, out_n),
-        "outside_n": out_n,
-        "blocked_mean": mean(blocked_sum, blocked_n),
-        "blocked_n": blocked_n,
-        "off_goal_mean": mean(off_goal_sum, off_goal_n),
-        "off_goal_n": off_goal_n,
-        "goals_mean": mean(goals_sum, goals_n),
-        "goals_n": goals_n,
-    }
 
 
 def compute_offensive_production_component(
@@ -138,8 +78,8 @@ def compute_offensive_production_component(
     league_goals = float(league_baselines["league_avg_goals_for"])
     league_acc = float(league_baselines["league_avg_shot_accuracy"])
 
-    season_agg = _agg_for_team(fixtures=prior_fixtures, stats_map=stats_map, team_id=team_id)
-    last5_agg = _agg_for_team(
+    season_agg = agg_for_team(fixtures=prior_fixtures, stats_map=stats_map, team_id=team_id)
+    last5_agg = agg_for_team(
         fixtures=last_n(prior_fixtures, 5),
         stats_map=stats_map,
         team_id=team_id,

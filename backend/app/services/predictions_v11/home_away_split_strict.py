@@ -7,7 +7,7 @@ from typing import Any
 from app.models import Fixture
 from app.services.predictions_v10.v10_prior_context import V10PriorContext
 from app.services.predictions_v11.league_baselines_strict import split_league_baselines_for_context
-from app.services.predictions_v11.offensive_production_strict import _agg_for_team
+from app.services.predictions_v11.shared_stats import agg_for_team
 from app.services.predictions_v11.opponent_stats_agg import agg_conceded_by_opponent
 from app.services.predictions_v11.split_feature_sources import (
     COMPONENT_KEY_SPLIT,
@@ -76,13 +76,13 @@ def compute_home_away_split_component(
     league_shots_conceded = float(lb_split["league_split_avg_total_shots_conceded"])
 
     stats_map = ctx.stats_map
-    team_split_agg = _agg_for_team(fixtures=team_split, stats_map=stats_map, team_id=int(ctx.team_id))
+    team_split_agg = agg_for_team(fixtures=team_split, stats_map=stats_map, team_id=int(ctx.team_id))
     opp_split_agg = agg_conceded_by_opponent(
         fixtures=opp_split,
         stats_map=stats_map,
         opponent_id=int(ctx.opponent_id),
     )
-    season_agg = _agg_for_team(fixtures=prior_fixtures, stats_map=stats_map, team_id=int(ctx.team_id))
+    season_agg = agg_for_team(fixtures=prior_fixtures, stats_map=stats_map, team_id=int(ctx.team_id))
 
     def require_mean(agg: dict[str, Any], mean_key: str, count_key: str, feature_key: str) -> float | None:
         if int(agg.get(count_key) or 0) <= 0:
