@@ -12,6 +12,8 @@ from app.core.constants import BASELINE_SOT_MODEL_VERSION_V11_SOT
 from app.models import Fixture
 from app.services.predictions_v10.v10_prior_context import V10PriorContext
 from app.services.predictions_v11.defensive_feature_sources import COMPONENT_KEY_DEFENSIVE, COMPONENT_LABEL_DEFENSIVE
+from app.services.predictions_v11.home_away_split_strict import compute_home_away_split_component
+from app.services.predictions_v11.split_feature_sources import COMPONENT_KEY_SPLIT, COMPONENT_LABEL_SPLIT
 from app.services.predictions_v11.feature_sources import (
     INPUT_API_SOURCES,
     INPUT_DB_FIELDS,
@@ -30,6 +32,7 @@ from app.services.predictions_v11.opponent_defensive_resistance_strict import (
 from app.services.predictions_v11.v11_shared import (
     FORMULA_DEFENSIVE_WEIGHT,
     FORMULA_OFFENSIVE_WEIGHT,
+    FORMULA_SPLIT_WEIGHT,
     clamp,
     incomplete_raw_json,
     last_n,
@@ -276,6 +279,7 @@ def _fail_result(
         expected_sot=None,
         component=None,
         defensive_component=None,
+        split_component=None,
         raw_json=raw,
         missing_required_fields=raw["missing_required_fields"],
         formula_quality_status=formula_quality_status,
@@ -288,7 +292,7 @@ def compute_v11_side(
     ctx: V10PriorContext,
     prior_fixtures: list[Fixture],
 ) -> V11SideResult:
-    """Stage 2: blend 60% offensiva + 40% resistenza difensiva avversaria."""
+    """Stage 3: blend 45% offensiva + 35% difensiva + 20% split casa/trasferta."""
     sample_count = len(prior_fixtures)
     all_missing: list[dict[str, Any]] = []
 
@@ -316,6 +320,11 @@ def compute_v11_side(
         ctx,
         league_baselines=lb,
     )
+    split_comp, split_miss, split_status, team_split_n, opp_split_n = compute_home_away_split_component(
+        ctx,
+        prior_fixtures,
+        league_baselines=lb,
+    )
 
     if off_comp is None:
         all_missing.extend(off_miss)
@@ -333,22 +342,46 @@ def compute_v11_side(
                 formula_quality_status="insufficient_sample",
                 sample_count=def_sample,
             )
+    if split_comp is None:
+        all_missing.extend(split_miss)
+        if split_status == "insufficient_split_sample":
+            return _fail_result(
+                missing=all_missing,
+                formula_quality_status="insufficient_split_sample",
+                sample_count=max(team_split_n, opp_split_n),
+            )
+        if split_status == "missing_required_league_split_baseline":
+            return _fail_result(
+                missing=all_missing,
+                formula_quality_status="missing_required_league_split_baseline",
+                sample_count=max(team_split_n, opp_split_n),
+            )
 
-    if off_comp is None or def_comp is None:
+    if off_comp is None or def_comp is None or split_comp is None:
         fq = "missing_required_data"
         if off_status == "insufficient_sample" or def_status == "insufficient_sample":
             fq = "insufficient_sample"
+        elif split_status == "insufficient_split_sample":
+            fq = "insufficient_split_sample"
+        elif split_status == "missing_required_league_split_baseline":
+            fq = "missing_required_league_split_baseline"
         return _fail_result(
             missing=all_missing,
             formula_quality_status=fq,
-            sample_count=max(off_sample, def_sample),
+            sample_count=max(off_sample, def_sample, team_split_n, opp_split_n),
         )
 
     off_val = float(off_comp["value"])
     def_val = float(def_comp["value"])
+    split_val = float(split_comp["value"])
     off_contrib = round2(off_val * FORMULA_OFFENSIVE_WEIGHT) or 0.0
     def_contrib = round2(def_val * FORMULA_DEFENSIVE_WEIGHT) or 0.0
-    expected_sot = round2(off_val * FORMULA_OFFENSIVE_WEIGHT + def_val * FORMULA_DEFENSIVE_WEIGHT) or 0.0
+    split_contrib = round2(split_val * FORMULA_SPLIT_WEIGHT) or 0.0
+    expected_sot = round2(
+        off_val * FORMULA_OFFENSIVE_WEIGHT
+        + def_val * FORMULA_DEFENSIVE_WEIGHT
+        + split_val * FORMULA_SPLIT_WEIGHT,
+    ) or 0.0
 
     raw_json: dict[str, Any] = {
         "model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
@@ -359,7 +392,7 @@ def compute_v11_side(
         "expected_sot": expected_sot,
         "formula": {
             "type": "weighted_components",
-            "terms_count": 2,
+            "terms_count": 3,
             "terms": [
                 {
                     "key": COMPONENT_KEY_OFFENSIVE,
@@ -377,19 +410,31 @@ def compute_v11_side(
                     "contribution": def_contrib,
                     "status": "available",
                 },
+                {
+                    "key": COMPONENT_KEY_SPLIT,
+                    "label": COMPONENT_LABEL_SPLIT,
+                    "value": split_val,
+                    "weight": FORMULA_SPLIT_WEIGHT,
+                    "contribution": split_contrib,
+                    "status": "available",
+                },
             ],
             "final_sum": expected_sot,
         },
         "components": {
             COMPONENT_KEY_OFFENSIVE: off_comp,
             COMPONENT_KEY_DEFENSIVE: def_comp,
+            COMPONENT_KEY_SPLIT: split_comp,
         },
         COMPONENT_KEY_OFFENSIVE: off_comp,
         COMPONENT_KEY_DEFENSIVE: def_comp,
+        COMPONENT_KEY_SPLIT: split_comp,
         "formula_quality_status": "ok",
         "warnings": [],
         "sample_count": sample_count,
         "opponent_sample_count": def_sample,
+        "team_split_sample_count": team_split_n,
+        "opponent_split_sample_count": opp_split_n,
         "no_data_leakage": True,
     }
 
@@ -398,6 +443,7 @@ def compute_v11_side(
         expected_sot=expected_sot,
         component=off_comp,
         defensive_component=def_comp,
+        split_component=split_comp,
         raw_json=raw_json,
         missing_required_fields=[],
         formula_quality_status="ok",

@@ -112,7 +112,7 @@ export function UpcomingMatches() {
                 ) : null}
                 {modelInView === V11_MODEL ? (
                   <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
-                    Stage: Produzione offensiva + Resistenza difensiva avversaria
+                    Stage: Produzione offensiva + Resistenza difensiva + Split casa/trasferta
                   </span>
                 ) : null}
               </p>

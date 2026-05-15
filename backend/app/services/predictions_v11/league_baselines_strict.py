@@ -33,7 +33,26 @@ REQUIRED_LEAGUE_DEFENSIVE_KEYS: tuple[str, ...] = (
     "league_avg_blocked_shots_conceded",
 )
 
-REQUIRED_LEAGUE_KEYS: tuple[str, ...] = REQUIRED_LEAGUE_OFFENSIVE_KEYS + REQUIRED_LEAGUE_DEFENSIVE_KEYS
+REQUIRED_LEAGUE_SPLIT_HOME_KEYS: tuple[str, ...] = (
+    "home_league_split_avg_sot_for",
+    "home_league_split_avg_sot_conceded",
+    "home_league_split_avg_total_shots_for",
+    "home_league_split_avg_total_shots_conceded",
+)
+
+REQUIRED_LEAGUE_SPLIT_AWAY_KEYS: tuple[str, ...] = (
+    "away_league_split_avg_sot_for",
+    "away_league_split_avg_sot_conceded",
+    "away_league_split_avg_total_shots_for",
+    "away_league_split_avg_total_shots_conceded",
+)
+
+REQUIRED_LEAGUE_KEYS: tuple[str, ...] = (
+    REQUIRED_LEAGUE_OFFENSIVE_KEYS
+    + REQUIRED_LEAGUE_DEFENSIVE_KEYS
+    + REQUIRED_LEAGUE_SPLIT_HOME_KEYS
+    + REQUIRED_LEAGUE_SPLIT_AWAY_KEYS
+)
 
 
 class MissingLeagueBaselineError(Exception):
@@ -58,6 +77,17 @@ def _validate_keys(baselines: dict[str, float | None], keys: tuple[str, ...], sa
     if missing:
         raise MissingLeagueBaselineError(missing, sample_fixtures=sample_fixtures)
     return {k: float(baselines[k]) for k in keys}  # type: ignore[arg-type]
+
+
+def split_league_baselines_for_context(full: dict[str, float], *, is_home_context: bool) -> dict[str, float]:
+    """Mappa chiavi league_split_* per il contesto casa/trasferta della predizione."""
+    prefix = "home_" if is_home_context else "away_"
+    return {
+        "league_split_avg_sot_for": float(full[f"{prefix}league_split_avg_sot_for"]),
+        "league_split_avg_sot_conceded": float(full[f"{prefix}league_split_avg_sot_conceded"]),
+        "league_split_avg_total_shots_for": float(full[f"{prefix}league_split_avg_total_shots_for"]),
+        "league_split_avg_total_shots_conceded": float(full[f"{prefix}league_split_avg_total_shots_conceded"]),
+    }
 
 
 def compute_league_v11_baselines_strict(
@@ -105,6 +135,15 @@ def compute_league_v11_baselines_strict(
     inside_conceded_vals: list[float] = []
     outside_conceded_vals: list[float] = []
     blocked_conceded_vals: list[float] = []
+
+    home_sot_for_vals: list[float] = []
+    home_sot_conceded_vals: list[float] = []
+    home_shots_for_vals: list[float] = []
+    home_shots_conceded_vals: list[float] = []
+    away_sot_for_vals: list[float] = []
+    away_sot_conceded_vals: list[float] = []
+    away_shots_for_vals: list[float] = []
+    away_shots_conceded_vals: list[float] = []
 
     goals_by_fx_team: dict[tuple[int, int], float] = {}
     for f in eligible:
@@ -161,6 +200,22 @@ def compute_league_v11_baselines_strict(
                 outside_conceded_vals.append(float(home_st.shots_outside_box))
             if home_st.blocked_shots is not None:
                 blocked_conceded_vals.append(float(home_st.blocked_shots))
+            if home_st.shots_on_target is not None:
+                home_sot_for_vals.append(float(home_st.shots_on_target))
+            if away_st.shots_on_target is not None:
+                home_sot_conceded_vals.append(float(away_st.shots_on_target))
+            if home_st.total_shots is not None:
+                home_shots_for_vals.append(float(home_st.total_shots))
+            if away_st.total_shots is not None:
+                home_shots_conceded_vals.append(float(away_st.total_shots))
+            if away_st.shots_on_target is not None:
+                away_sot_for_vals.append(float(away_st.shots_on_target))
+            if home_st.shots_on_target is not None:
+                away_sot_conceded_vals.append(float(home_st.shots_on_target))
+            if away_st.total_shots is not None:
+                away_shots_for_vals.append(float(away_st.total_shots))
+            if home_st.total_shots is not None:
+                away_shots_conceded_vals.append(float(home_st.total_shots))
 
     baselines: dict[str, float | None] = {
         "league_avg_sot_for": _mean(sot_vals),
@@ -176,6 +231,14 @@ def compute_league_v11_baselines_strict(
         "league_avg_inside_box_shots_conceded": _mean(inside_conceded_vals),
         "league_avg_outside_box_shots_conceded": _mean(outside_conceded_vals),
         "league_avg_blocked_shots_conceded": _mean(blocked_conceded_vals),
+        "home_league_split_avg_sot_for": _mean(home_sot_for_vals),
+        "home_league_split_avg_sot_conceded": _mean(home_sot_conceded_vals),
+        "home_league_split_avg_total_shots_for": _mean(home_shots_for_vals),
+        "home_league_split_avg_total_shots_conceded": _mean(home_shots_conceded_vals),
+        "away_league_split_avg_sot_for": _mean(away_sot_for_vals),
+        "away_league_split_avg_sot_conceded": _mean(away_sot_conceded_vals),
+        "away_league_split_avg_total_shots_for": _mean(away_shots_for_vals),
+        "away_league_split_avg_total_shots_conceded": _mean(away_shots_conceded_vals),
         "sample_team_stat_rows": len(stats),
         "sample_fixtures": len(eligible),
     }

@@ -477,6 +477,18 @@ _V11_DEFENSIVE_INPUTS: list[tuple[str, str, str]] = [
     ("opponent_defensive_trend_recent", "Trend difensivo recente avversario", "defensive_trend"),
 ]
 
+_V11_SPLIT_INPUTS: list[tuple[str, str, str]] = [
+    ("split_avg_sot_for", "SOT fatti casa/fuori", "split_avg_sot_for"),
+    ("split_opponent_avg_sot_conceded", "SOT concessi avversario casa/fuori", "split_avg_sot_conceded"),
+    ("split_avg_total_shots_for", "Tiri totali fatti casa/fuori", "split_avg_shots_for"),
+    (
+        "split_opponent_avg_total_shots_conceded",
+        "Tiri totali concessi avversario casa/fuori",
+        "split_avg_shots_conceded",
+    ),
+    ("home_away_performance_delta", "Differenza rendimento casa/fuori", "home_away_delta"),
+]
+
 _MANIFEST_V11: list[AppliedVariableSpec] = [
     AppliedVariableSpec(
         trace_key="v11_term_offensive_production_component",
@@ -499,6 +511,17 @@ _MANIFEST_V11: list[AppliedVariableSpec] = [
         expected_in_debug=True,
         framework_key=None,
         resolver="v11:formula_term:opponent_defensive_resistance_component",
+    ),
+    AppliedVariableSpec(
+        trace_key="v11_term_home_away_split_component",
+        label="Split casa/trasferta",
+        area="Formula finale v1.1",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v11:formula_term:home_away_split_component",
     ),
 ]
 for inp_k, lab, fwk in _V11_OFFENSIVE_INPUTS:
@@ -529,6 +552,20 @@ for inp_k, lab, fwk in _V11_DEFENSIVE_INPUTS:
             resolver=f"v11:defensive_input:{inp_k}",
         ),
     )
+for inp_k, lab, fwk in _V11_SPLIT_INPUTS:
+    _MANIFEST_V11.append(
+        AppliedVariableSpec(
+            trace_key=f"v11_split_input_{inp_k}",
+            label=lab,
+            area="Split casa/trasferta",
+            application_role="component_input",
+            parent_component="home_away_split_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v11:split_input:{inp_k}",
+        ),
+    )
 _MANIFEST_V11.extend(
     [
         AppliedVariableSpec(
@@ -552,6 +589,17 @@ _MANIFEST_V11.extend(
             expected_in_debug=True,
             framework_key=None,
             resolver="v11:quality:defensive_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_split_quality",
+            label="Qualità input componente split casa/trasferta",
+            area="Qualità dati",
+            application_role="quality_control",
+            parent_component="home_away_split_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=None,
+            resolver="v11:quality:split_component",
         ),
         AppliedVariableSpec(
             trace_key="v11_ctx_kickoff_timedelta",

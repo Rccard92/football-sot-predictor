@@ -6,12 +6,19 @@ from typing import Any
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V11_SOT
 from app.models import Fixture
-from app.services.sot_feature_registry import V11_ARCHITECTURE, V11_MODEL_STAGE
+from app.services.sot_feature_registry import (
+    V11_ARCHITECTURE,
+    V11_FORMULA_DEFENSIVE_WEIGHT,
+    V11_FORMULA_OFFENSIVE_WEIGHT,
+    V11_FORMULA_SPLIT_WEIGHT,
+    V11_MODEL_STAGE,
+)
 
 MISSING_DATA_MSG = "Dato obbligatorio non disponibile per il modello v1.1"
 
-FORMULA_OFFENSIVE_WEIGHT = 0.60
-FORMULA_DEFENSIVE_WEIGHT = 0.40
+FORMULA_OFFENSIVE_WEIGHT = V11_FORMULA_OFFENSIVE_WEIGHT
+FORMULA_DEFENSIVE_WEIGHT = V11_FORMULA_DEFENSIVE_WEIGHT
+FORMULA_SPLIT_WEIGHT = V11_FORMULA_SPLIT_WEIGHT
 
 
 def safe_float(x: Any) -> float | None:

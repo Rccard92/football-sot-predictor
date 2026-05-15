@@ -603,7 +603,7 @@ def generate_serie_a_predictions_v11_sot(
         "season": int(season),
         "model_version": str(summary.get("model_version") or svc.model_version),
         "model_stage": str(summary.get("model_stage") or svc.model_stage),
-        "formula_terms_count": int(summary.get("formula_terms_count") or 2),
+        "formula_terms_count": int(summary.get("formula_terms_count") or 3),
         "architecture": str(summary.get("architecture") or svc.architecture),
         "upcoming_fixtures": int(summary.get("upcoming_fixtures") or 0),
         "predictions_created_or_updated": int(summary.get("predictions_created_or_updated") or 0),

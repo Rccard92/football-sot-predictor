@@ -1,4 +1,4 @@
-"""Debug read-only: feature v1.1 offensiva (9) + difensiva avversaria (6)."""
+"""Debug read-only: feature v1.1 offensiva (9) + difensiva (6) + split (5)."""
 
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ def _inputs_from_component(comp: dict[str, Any] | None, parent: str) -> list[dic
                 "api_source": blob.get("api_source"),
                 "db_field": blob.get("db_field"),
                 "sample_count": blob.get("sample_count"),
+                "split_context": blob.get("split_context"),
                 "fallback_used": False,
                 "status": blob.get("status"),
                 "application_role": "component_input",
@@ -73,13 +74,16 @@ def build_fixture_features_debug_v11(
                 "features": [],
                 "offensive_component_inputs": [],
                 "defensive_component_inputs": [],
+                "split_component_inputs": [],
             }
 
         raw = result.raw_json
         off = result.component or {}
         defc = result.defensive_component or {}
+        splitc = result.split_component or {}
         offensive_inputs = _inputs_from_component(off, "offensive_production_component")
         defensive_inputs = _inputs_from_component(defc, "opponent_defensive_resistance_component")
+        split_inputs = _inputs_from_component(splitc, "home_away_split_component")
 
         return {
             "team": team.name if team else str(team_id),
@@ -88,19 +92,22 @@ def build_fixture_features_debug_v11(
             "prediction_valid": result.valid,
             "expected_sot": result.expected_sot,
             "formula_quality_status": result.formula_quality_status,
-            "formula_terms_count": (raw.get("formula") or {}).get("terms_count") if isinstance(raw.get("formula"), dict) else None,
+            "formula_terms_count": (raw.get("formula") or {}).get("terms_count")
+            if isinstance(raw.get("formula"), dict)
+            else None,
             "missing_required_fields": result.missing_required_fields,
-            "offensive_production_component": {
-                "value": off.get("value"),
-                "quality": off.get("quality"),
-            },
-            "opponent_defensive_resistance_component": {
-                "value": defc.get("value"),
-                "quality": defc.get("quality"),
+            "offensive_production_component": {"value": off.get("value"), "quality": off.get("quality")},
+            "opponent_defensive_resistance_component": {"value": defc.get("value"), "quality": defc.get("quality")},
+            "home_away_split_component": {
+                "value": splitc.get("value"),
+                "quality": splitc.get("quality"),
+                "split_context": splitc.get("split_context"),
+                "opponent_split_context": splitc.get("opponent_split_context"),
             },
             "offensive_component_inputs": offensive_inputs,
             "defensive_component_inputs": defensive_inputs,
-            "features": offensive_inputs + defensive_inputs,
+            "split_component_inputs": split_inputs,
+            "features": offensive_inputs + defensive_inputs + split_inputs,
         }
 
     return {

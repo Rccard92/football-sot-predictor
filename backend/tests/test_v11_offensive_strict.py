@@ -1,4 +1,4 @@
-"""Test produzione offensiva + blend 60/40 v1.1."""
+"""Test produzione offensiva + blend 45/35/20 v1.1 stage 3."""
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -24,6 +24,14 @@ LEAGUE_V11_MOCK = {
     "league_avg_inside_box_shots_conceded": 5.0,
     "league_avg_outside_box_shots_conceded": 4.0,
     "league_avg_blocked_shots_conceded": 2.0,
+    "home_league_split_avg_sot_for": 3.5,
+    "home_league_split_avg_sot_conceded": 3.4,
+    "home_league_split_avg_total_shots_for": 12.0,
+    "home_league_split_avg_total_shots_conceded": 11.5,
+    "away_league_split_avg_sot_for": 3.2,
+    "away_league_split_avg_sot_conceded": 3.3,
+    "away_league_split_avg_total_shots_for": 11.0,
+    "away_league_split_avg_total_shots_conceded": 11.2,
 }
 
 
@@ -91,7 +99,7 @@ def _ctx(
 
 def test_insufficient_team_sample():
     fixtures = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc)) for i in range(1, 4)]
-    opp = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=20, away=90 + i) for i in range(1, 7)]
+    opp = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=fixtures, opponent_fixtures=opp)
     db = MagicMock()
     with patch(
@@ -115,7 +123,7 @@ def test_missing_inside_box_data():
             blocked_shots=2,
             shots_off_target=5,
         )
-    opp = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=20, away=90 + i) for i in range(1, 7)]
+    opp = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=fixtures, opponent_fixtures=opp)
     ctx = V10PriorContext(
         season_id=ctx.season_id,
@@ -146,9 +154,9 @@ def test_missing_inside_box_data():
     assert "avg_inside_box_shots_for" in keys
 
 
-def test_valid_blend_60_40():
-    team_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc)) for i in range(1, 7)]
-    opp_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=20, away=90 + i) for i in range(1, 7)]
+def test_valid_blend_45_35_20():
+    team_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=10, away=90 + i) for i in range(1, 7)]
+    opp_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=team_fx, opponent_fixtures=opp_fx)
     db = MagicMock()
     with patch(
@@ -160,13 +168,16 @@ def test_valid_blend_60_40():
     assert result.expected_sot is not None
     assert result.component is not None
     assert result.defensive_component is not None
+    assert result.split_component is not None
     off_val = float(result.component["value"])
     def_val = float(result.defensive_component["value"])
-    expected = round(off_val * 0.60 + def_val * 0.40, 2)
+    split_val = float(result.split_component["value"])
+    expected = round(off_val * 0.45 + def_val * 0.35 + split_val * 0.20, 2)
     assert result.expected_sot == pytest.approx(expected, rel=1e-4)
-    assert result.raw_json["formula"]["terms_count"] == 2
+    assert result.raw_json["formula"]["terms_count"] == 3
     assert len(result.component["inputs"]) == 9
     assert len(result.defensive_component["inputs"]) == 6
+    assert len(result.split_component["inputs"]) == 5
 
 
 def test_league_baseline_missing_raises():

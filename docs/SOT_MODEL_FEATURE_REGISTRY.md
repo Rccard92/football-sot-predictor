@@ -1,51 +1,49 @@
-# Registry feature — baseline_v1_1_sot (Stage 2)
+# Registry feature — baseline_v1_1_sot (Stage 3)
 
 Modello: `baseline_v1_1_sot`  
 Architettura: `component_based_strict_real_data`  
-Stage: `offensive_plus_opponent_defense`
+Stage: `offensive_plus_opponent_defense_plus_home_away_split`
 
 **Regola:** il modello v1.1 non usa fallback o mock. Se un dato obbligatorio manca, la prediction viene marcata come incompleta (`prediction_valid: false`, `predicted_sot: null`).
 
-Formula stage 2:
+Formula stage 3:
 
-`expected_sot_v1_1 = (offensive_production_component × 0.60) + (opponent_defensive_resistance_component × 0.40)`
+`expected_sot_v1_1 = (offensive_production_component × 0.45) + (opponent_defensive_resistance_component × 0.35) + (home_away_split_component × 0.20)`
 
-## Componente 1 — Produzione offensiva composita (peso formula 0.60)
+Lo split casa/trasferta usa il contesto reale della partita: casa per la squadra di casa, trasferta per la squadra ospite, e split opposto per l'avversario.
 
-| feature_key | Peso interno | API | DB |
-|-------------|--------------|-----|-----|
-| avg_sot_for | 0.30 | fixtures/statistics::Shots on Goal | fixture_team_stats.shots_on_target |
-| avg_total_shots_for | 0.18 | fixtures/statistics::Total Shots | fixture_team_stats.total_shots |
-| shot_accuracy_for | 0.14 | derivata | shots_on_target / total_shots |
-| avg_inside_box_shots_for | 0.14 | fixtures/statistics::Shots insidebox | fixture_team_stats.shots_inside_box |
-| avg_outside_box_shots_for | 0.05 | fixtures/statistics::Shots outsidebox | fixture_team_stats.shots_outside_box |
-| avg_blocked_shots_for | 0.05 | fixtures/statistics::Blocked Shots | fixture_team_stats.blocked_shots |
-| avg_shots_off_goal_for | 0.04 | fixtures/statistics::Shots off Goal | fixture_team_stats.shots_off_target |
-| avg_goals_for | 0.05 | fixtures::goals | fixtures.goals (lato squadra) |
-| offensive_trend | 0.05 | derivata | last5 SOT − season SOT |
+## Componente 1 — Produzione offensiva composita (peso formula 0.45)
 
-Dati da **partite precedenti della squadra** analizzata (stesso cutoff anti-leakage).
+9 input interni (vedi Stage 1/2). Dati da partite precedenti della squadra analizzata.
 
-## Componente 2 — Resistenza difensiva avversaria (peso formula 0.40)
+## Componente 2 — Resistenza difensiva avversaria (peso formula 0.35)
+
+6 input interni (vedi Stage 2). Concessi ricostruiti dalle partite precedenti dell'avversario.
+
+## Componente 3 — Split casa/trasferta (peso formula 0.20)
 
 | feature_key | Peso interno | API | DB |
 |-------------|--------------|-----|-----|
-| opponent_avg_sot_conceded | 0.35 | fixtures/statistics::Shots on Goal | stats avversario dell'avversario |
-| opponent_avg_total_shots_conceded | 0.22 | fixtures/statistics::Total Shots | stats avversario dell'avversario |
-| opponent_avg_inside_box_shots_conceded | 0.18 | fixtures/statistics::Shots insidebox | stats avversario dell'avversario |
-| opponent_avg_outside_box_shots_conceded | 0.07 | fixtures/statistics::Shots outsidebox | stats avversario dell'avversario |
-| opponent_avg_blocked_shots_conceded | 0.06 | fixtures/statistics::Blocked Shots | stats avversario dell'avversario |
-| opponent_defensive_trend_recent | 0.12 | derivata | last5 SOT concessi − season SOT concessi |
+| split_avg_sot_for | 0.30 | fixtures/statistics::Shots on Goal | fixture_team_stats.shots_on_target |
+| split_opponent_avg_sot_conceded | 0.30 | fixtures/statistics::Shots on Goal | stats avversari nell'split avversario |
+| split_avg_total_shots_for | 0.15 | fixtures/statistics::Total Shots | fixture_team_stats.total_shots |
+| split_opponent_avg_total_shots_conceded | 0.15 | fixtures/statistics::Total Shots | stats avversari nell'split avversario |
+| home_away_performance_delta | 0.10 | derivata | split_avg_sot_for − season_avg_sot_for |
 
-**Concessi:** per ogni partita precedente dell'**avversario**, si leggono le statistiche della squadra che ha affrontato l'avversario in quella partita (equivalente a `sot_against` in `PriorMatch`).
+**Filtri split:**
 
-Medie lega defensive: `league_avg_*_conceded` calcolate sullo stesso cutoff (stat dell'altra squadra per ogni coppia fixture/squadra).
+- Squadra in casa: solo partite precedenti giocate in casa; avversario solo partite precedenti in trasferta.
+- Squadra in trasferta: solo partite precedenti fuori casa; avversario solo partite precedenti in casa.
 
-## Vincoli
+**Sample minimo split:** 5 partite valide per squadra e per avversario nello split richiesto (`min_split_matches = 5`). Se insufficiente → `insufficient_split_sample`, nessun fallback su media stagione.
 
-- **Sample minimo:** 5 partite finite precedenti per la squadra e per l'avversario.
-- **No data leakage:** solo partite con `kickoff_at < target.kickoff_at` e status finito.
-- **Normalizzazione lega:** medie offensive e defensive sullo stesso cutoff; se assenti o ≤ 0 → `missing_required_league_baseline`.
+**Normalizzazione lega split:** `league_split_avg_sot_for`, `league_split_avg_sot_conceded`, `league_split_avg_total_shots_for`, `league_split_avg_total_shots_conceded` (calcolate per contesto home/away sul cutoff).
+
+## Vincoli globali
+
+- **Sample minimo componenti stagionali:** 5 partite (`min_completed_matches = 5`).
+- **No data leakage:** solo partite con kickoff precedente e status finito.
+- **Nessun fallback** su medie lega o stagione se dati split mancanti.
 
 ## Generazione
 
