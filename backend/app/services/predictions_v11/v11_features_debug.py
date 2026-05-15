@@ -14,6 +14,27 @@ from app.services.predictions_v11.offensive_production_strict import compute_v11
 from app.services.sot_feature_registry import V11_MODEL_STAGE
 
 
+def _recent_goals_debug(recentc: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(recentc, dict):
+        return None
+    inp = recentc.get("inputs")
+    if not isinstance(inp, list):
+        return None
+    for x in inp:
+        if isinstance(x, dict) and x.get("key") == "recent_avg_goals_for":
+            norm = x.get("normalization") if isinstance(x.get("normalization"), dict) else {}
+            return {
+                "recent_avg_goals_for": x.get("raw_value"),
+                "league_recent_avg_goals_for": norm.get("league_recent_avg_goals_for"),
+                "recent_goals_for_scaled": x.get("normalized_value"),
+                "league_recent_avg_sot_for": norm.get("league_recent_avg_sot_for"),
+                "source_path": x.get("source_path"),
+                "sample_count": x.get("sample_count"),
+                "status": x.get("status"),
+            }
+    return None
+
+
 def _inputs_from_component(comp: dict[str, Any] | None, parent: str) -> list[dict[str, Any]]:
     if not comp:
         return []
@@ -21,25 +42,28 @@ def _inputs_from_component(comp: dict[str, Any] | None, parent: str) -> list[dic
     for k, blob in offensive_inputs_as_map(comp).items():
         if not isinstance(blob, dict):
             continue
-        out.append(
-            {
-                "key": k,
-                "label": blob.get("label"),
-                "raw_value": blob.get("raw_value"),
-                "normalized_value": blob.get("normalized_value"),
-                "internal_weight": blob.get("internal_weight"),
-                "internal_contribution": blob.get("internal_contribution"),
-                "source_path": blob.get("source_path"),
-                "api_source": blob.get("api_source"),
-                "db_field": blob.get("db_field"),
-                "sample_count": blob.get("sample_count"),
-                "split_context": blob.get("split_context"),
-                "fallback_used": False,
-                "status": blob.get("status"),
-                "application_role": "component_input",
-                "parent_component": parent,
-            },
-        )
+        row: dict[str, Any] = {
+            "key": k,
+            "label": blob.get("label"),
+            "raw_value": blob.get("raw_value"),
+            "normalized_value": blob.get("normalized_value"),
+            "internal_weight": blob.get("internal_weight"),
+            "internal_contribution": blob.get("internal_contribution"),
+            "source_path": blob.get("source_path"),
+            "api_source": blob.get("api_source"),
+            "db_field": blob.get("db_field"),
+            "sample_count": blob.get("sample_count"),
+            "split_context": blob.get("split_context"),
+            "fallback_used": False,
+            "status": blob.get("status"),
+            "application_role": "component_input",
+            "parent_component": parent,
+        }
+        if "normalization" in blob:
+            row["normalization"] = blob.get("normalization")
+        if "no_data_leakage" in blob:
+            row["no_data_leakage"] = blob.get("no_data_leakage")
+        out.append(row)
     return out
 
 
@@ -76,6 +100,7 @@ def build_fixture_features_debug_v11(
                 "defensive_component_inputs": [],
                 "split_component_inputs": [],
                 "recent_component_inputs": [],
+                "recent_goals_debug": None,
                 "xg_component_inputs": [],
             }
 
@@ -110,12 +135,17 @@ def build_fixture_features_debug_v11(
                 "split_context": splitc.get("split_context"),
                 "opponent_split_context": splitc.get("opponent_split_context"),
             },
-            "recent_form_component": {"value": recentc.get("value"), "quality": recentc.get("quality")},
+            "recent_form_component": {
+                "value": recentc.get("value"),
+                "quality": recentc.get("quality"),
+                "league_baselines_recent": recentc.get("league_baselines_recent"),
+            },
             "xg_chance_quality_component": {"value": xgc.get("value"), "quality": xgc.get("quality")},
             "offensive_component_inputs": offensive_inputs,
             "defensive_component_inputs": defensive_inputs,
             "split_component_inputs": split_inputs,
             "recent_component_inputs": recent_inputs,
+            "recent_goals_debug": _recent_goals_debug(recentc),
             "xg_component_inputs": xg_inputs,
             "features": offensive_inputs + defensive_inputs + split_inputs + recent_inputs + xg_inputs,
         }

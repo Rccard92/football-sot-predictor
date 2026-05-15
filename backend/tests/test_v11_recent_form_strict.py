@@ -15,6 +15,7 @@ LB_RECENT_OK: dict[str, float] = {
     "league_recent_avg_total_shots_for": 12.0,
     "league_recent_avg_total_shots_conceded": 11.5,
     "league_recent_avg_goals_for": 1.2,
+    "league_recent_goals_baseline_team_count": 18.0,
 }
 
 
@@ -132,6 +133,15 @@ def test_ok_six_inputs_and_trend():
     }
     trend_blob = next(b for b in comp["inputs"] if b.get("key") == "recent_trend_vs_season")
     assert trend_blob.get("sample_count") == 5
+    lbr = comp.get("league_baselines_recent") or {}
+    assert lbr.get("league_recent_avg_goals_for") == 1.2
+    assert lbr.get("sample_teams_count") == 18
+    assert lbr.get("no_data_leakage") is True
+    assert "fixtures.goals_home" in str(lbr.get("source_path", ""))
+    goals_blob = next(b for b in comp["inputs"] if b.get("key") == "recent_avg_goals_for")
+    norm = goals_blob.get("normalization") or {}
+    assert norm.get("league_recent_avg_goals_for") == 1.2
+    assert norm.get("league_recent_avg_sot_for") == 3.5
 
 
 def test_v11_side_insufficient_recent_via_offensive_pipeline():

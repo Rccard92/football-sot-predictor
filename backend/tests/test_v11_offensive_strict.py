@@ -37,6 +37,7 @@ LEAGUE_V11_MOCK = {
     "league_recent_avg_total_shots_for": 11.8,
     "league_recent_avg_total_shots_conceded": 11.5,
     "league_recent_avg_goals_for": 1.15,
+    "league_recent_goals_baseline_team_count": 2.0,
     "league_avg_xg_for": 1.2,
     "league_avg_xg_conceded": 1.2,
 }

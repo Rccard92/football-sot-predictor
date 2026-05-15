@@ -322,6 +322,7 @@ def compute_league_v11_baselines_strict(
         "league_recent_avg_sot_conceded": _mean(league_recent_sot_conceded_vals),
         "league_recent_avg_total_shots_for": _mean(league_recent_shots_for_vals),
         "league_recent_avg_total_shots_conceded": _mean(league_recent_shots_conceded_vals),
+        "league_recent_avg_goals_for": _mean(league_recent_goals_vals),
         "league_avg_xg_for": _mean(xg_for_vals),
         "league_avg_xg_conceded": _mean(xg_conceded_vals),
         "sample_team_stat_rows": len(stats),
@@ -331,6 +332,7 @@ def compute_league_v11_baselines_strict(
     out = _validate_keys(baselines, REQUIRED_LEAGUE_KEYS, len(eligible))
     out["sample_team_stat_rows"] = float(baselines["sample_team_stat_rows"])
     out["sample_fixtures"] = float(baselines["sample_fixtures"])
+    out["league_recent_goals_baseline_team_count"] = float(len(league_recent_goals_vals))
     return out
 
 

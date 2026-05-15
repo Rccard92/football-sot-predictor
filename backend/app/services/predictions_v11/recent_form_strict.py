@@ -29,6 +29,12 @@ from app.services.predictions_v11.v11_shared import (
 )
 from app.services.sot_feature_registry import V11_MIN_RECENT_MATCHES
 
+LEAGUE_RECENT_BASELINE_SOURCE_PATH_IT = (
+    "fixtures.goals_home / fixtures.goals_away (goal fatti dalla squadra in ogni match); "
+    "per league_recent_*: ultime 5 partite finite per squadra con almeno 5 precedenti prima del cutoff, "
+    "poi media aritmetica fra le squadri che entrano nel campione (stesso perimetro di SOT/tiri)."
+)
+
 
 def _missing_recent_league_keys(league_baselines: dict[str, float]) -> list[str]:
     miss: list[str] = []
@@ -154,25 +160,29 @@ def compute_recent_form_component(
         ic = round4(norm_v * iw)
         component_sum += ic
         sym_parts.append(f"({RECENT_INPUT_LABELS[key]} × {iw})")
-        inputs_list.append(
-            {
-                "key": key,
-                "label": RECENT_INPUT_LABELS[key],
-                "raw_value": round2(raw_v if key != "recent_trend_vs_season" else trend_raw),
-                "normalized_value": round2(norm_v),
-                "internal_weight": iw,
-                "internal_contribution": ic,
-                "source_path": RECENT_INPUT_SOURCE_PATHS[key],
-                "api_source": RECENT_INPUT_API_SOURCES[key],
-                "db_field": RECENT_INPUT_DB_FIELDS[key],
-                "sample_count": window_n,
-                "fallback_used": False,
-                "no_data_leakage": True,
-                "status": "available",
-                "application_role": "component_input",
-                "parent_component": COMPONENT_KEY_RECENT,
-            },
-        )
+        inp_row: dict[str, Any] = {
+            "key": key,
+            "label": RECENT_INPUT_LABELS[key],
+            "raw_value": round2(raw_v if key != "recent_trend_vs_season" else trend_raw),
+            "normalized_value": round2(norm_v),
+            "internal_weight": iw,
+            "internal_contribution": ic,
+            "source_path": RECENT_INPUT_SOURCE_PATHS[key],
+            "api_source": RECENT_INPUT_API_SOURCES[key],
+            "db_field": RECENT_INPUT_DB_FIELDS[key],
+            "sample_count": window_n,
+            "fallback_used": False,
+            "no_data_leakage": True,
+            "status": "available",
+            "application_role": "component_input",
+            "parent_component": COMPONENT_KEY_RECENT,
+        }
+        if key == "recent_avg_goals_for":
+            inp_row["normalization"] = {
+                "league_recent_avg_goals_for": round2(lr_g),
+                "league_recent_avg_sot_for": round2(lr_sf),
+            }
+        inputs_list.append(inp_row)
 
     component_value = round2(component_sum) or 0.0
     internal_formula = (
@@ -197,5 +207,15 @@ def compute_recent_form_component(
             "no_data_leakage": True,
         },
         "fallbacks_used": [],
+        "league_baselines_recent": {
+            "league_recent_avg_goals_for": round2(lr_g),
+            "league_recent_avg_sot_for": round2(lr_sf),
+            "league_recent_avg_sot_conceded": round2(lr_sc),
+            "league_recent_avg_total_shots_for": round2(lr_tf),
+            "league_recent_avg_total_shots_conceded": round2(lr_tc),
+            "source_path": LEAGUE_RECENT_BASELINE_SOURCE_PATH_IT,
+            "sample_teams_count": int(float(league_baselines.get("league_recent_goals_baseline_team_count", 0) or 0)),
+            "no_data_leakage": True,
+        },
     }
     return comp, [], "ok", window_n, window_n
