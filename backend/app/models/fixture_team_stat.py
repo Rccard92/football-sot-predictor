@@ -34,7 +34,7 @@ class FixtureTeamStat(Base, TimestampMixin):
     side: Mapped[str | None] = mapped_column(String(8), nullable=True)
     shots: Mapped[int | None] = mapped_column(Integer, nullable=True)
     shots_on_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    shots_off_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    shots_off_goal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_shots: Mapped[int | None] = mapped_column(Integer, nullable=True)
     blocked_shots: Mapped[int | None] = mapped_column(Integer, nullable=True)
     shots_inside_box: Mapped[int | None] = mapped_column(Integer, nullable=True)

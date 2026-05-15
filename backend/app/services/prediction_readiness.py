@@ -277,7 +277,7 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
         elif not by_version[mv]["is_available_for_upcoming"]:
             warnings.append(f"Model version senza coverage upcoming: {mv}")
 
-    payload = {
+    payload: dict[str, Any] = {
         "status": "success",
         "season": int(season),
         "active_model_version": recommended,
@@ -286,6 +286,15 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
         "available_model_versions": available_list,
         "warnings": warnings,
     }
+    v11_payload_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V11_SOT)
+    if isinstance(v11_payload_row, dict):
+        mfs = v11_payload_row.get("missing_fields_summary")
+        if isinstance(mfs, dict) and mfs:
+            ranked = sorted(((str(k), int(v)) for k, v in mfs.items()), key=lambda kv: (-kv[1], kv[0]))[:3]
+            payload["v11_diagnostic_hints"] = {
+                "missing_fields_summary": {str(k): int(v) for k, v in mfs.items()},
+                "top_missing_feature_keys": [k for k, _ in ranked],
+            }
     return payload, 200
 
 

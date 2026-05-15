@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES
 from app.models import Fixture, FixtureTeamStat
+from app.services.predictions_v11.shared_stats import blocked_shots_from_team_stat, shots_off_goal_from_team_stat
 from app.services.sot_feature_math import fixture_key_before
 
 REQUIRED_LEAGUE_OFFENSIVE_KEYS: tuple[str, ...] = (
@@ -179,10 +180,12 @@ def compute_league_v11_baselines_strict(
             inside_vals.append(float(st.shots_inside_box))
         if st.shots_outside_box is not None:
             outside_vals.append(float(st.shots_outside_box))
-        if st.blocked_shots is not None:
-            blocked_vals.append(float(st.blocked_shots))
-        if st.shots_off_target is not None:
-            off_goal_vals.append(float(st.shots_off_target))
+        b_for, _ = blocked_shots_from_team_stat(st)
+        if b_for is not None:
+            blocked_vals.append(float(b_for))
+        og_for, _ = shots_off_goal_from_team_stat(st)
+        if og_for is not None:
+            off_goal_vals.append(float(og_for))
         gf = goals_by_fx_team.get((int(st.fixture_id), int(st.team_id)))
         if gf is not None:
             goals_vals.append(gf)
@@ -210,8 +213,9 @@ def compute_league_v11_baselines_strict(
                 inside_conceded_vals.append(float(away_st.shots_inside_box))
             if away_st.shots_outside_box is not None:
                 outside_conceded_vals.append(float(away_st.shots_outside_box))
-            if away_st.blocked_shots is not None:
-                blocked_conceded_vals.append(float(away_st.blocked_shots))
+            b_away_c, _ = blocked_shots_from_team_stat(away_st)
+            if b_away_c is not None:
+                blocked_conceded_vals.append(float(b_away_c))
             if home_st.shots_on_target is not None:
                 sot_conceded_vals.append(float(home_st.shots_on_target))
             if home_st.expected_goals is not None:
@@ -222,8 +226,9 @@ def compute_league_v11_baselines_strict(
                 inside_conceded_vals.append(float(home_st.shots_inside_box))
             if home_st.shots_outside_box is not None:
                 outside_conceded_vals.append(float(home_st.shots_outside_box))
-            if home_st.blocked_shots is not None:
-                blocked_conceded_vals.append(float(home_st.blocked_shots))
+            b_home_c, _ = blocked_shots_from_team_stat(home_st)
+            if b_home_c is not None:
+                blocked_conceded_vals.append(float(b_home_c))
             if home_st.shots_on_target is not None:
                 home_sot_for_vals.append(float(home_st.shots_on_target))
             if away_st.shots_on_target is not None:

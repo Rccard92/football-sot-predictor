@@ -62,7 +62,7 @@ def _fixture_and_stats(team_id: int = 10, *, sot: int = 4, shots: int = 12) -> t
         shots_inside_box=7,
         shots_outside_box=5,
         blocked_shots=3,
-        shots_off_target=4,
+        shots_off_goal=4,
     )
     return fx, st
 
@@ -128,7 +128,7 @@ def test_trend_uses_last5_minus_season():
             shots_inside_box=5,
             shots_outside_box=3,
             blocked_shots=2,
-            shots_off_target=2,
+            shots_off_goal=2,
         )
     ctx = _make_ctx()
     ctx.stats_map = stats_map

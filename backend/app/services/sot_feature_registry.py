@@ -69,7 +69,7 @@ FORMULA_TERM_SPECS: tuple[FeatureSpec, ...] = (
         feature_key="offensive_production_component",
         label="Produzione offensiva composita",
         source_table="fixture_team_stats",
-        source_field="shots_on_target,total_shots,shots_inside_box,shots_outside_box,blocked_shots,shots_off_target",
+        source_field="shots_on_target,total_shots,shots_inside_box,shots_outside_box,blocked_shots,shots_off_goal",
         api_source="fixtures/statistics + fixtures.goals",
         resolver_name="resolve_offensive_production_component",
         formula="9 segnali normalizzati lega × pesi interni (totale 1.00) × 0.30 formula finale",
@@ -197,7 +197,7 @@ _OFFENSIVE_INPUT_SPECS_DATA: tuple[tuple[str, str, str, str, str], ...] = (
     ("avg_inside_box_shots_for", "shots_inside_box", "fixtures/statistics::Shots insidebox", "fixture_team_stats.shots_inside_box", "0.14"),
     ("avg_outside_box_shots_for", "shots_outside_box", "fixtures/statistics::Shots outsidebox", "fixture_team_stats.shots_outside_box", "0.05"),
     ("avg_blocked_shots_for", "blocked_shots", "fixtures/statistics::Blocked Shots", "fixture_team_stats.blocked_shots", "0.05"),
-    ("avg_shots_off_goal_for", "shots_off_target", "fixtures/statistics::Shots off Goal", "fixture_team_stats.shots_off_target", "0.04"),
+    ("avg_shots_off_goal_for", "shots_off_goal", "fixtures/statistics::Shots off Goal", "fixture_team_stats.shots_off_goal", "0.04"),
     ("avg_goals_for", "goals", "fixtures::goals", "fixtures.goals", "0.05"),
     ("offensive_trend", "derived", "fixture_team_stats.shots_on_target", "derived:last5_sot_minus_season_sot", "0.05"),
 )

@@ -28,7 +28,11 @@ from app.models import (
 )
 from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES, fixture_eligible_for_upcoming_sot
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
-from app.services.fixture_team_stats_mapping import apply_parsed_to_row, statistics_list_to_fields
+from app.services.fixture_team_stats_mapping import (
+    apply_parsed_to_row,
+    backfill_shot_columns_from_raw_json_if_null,
+    statistics_list_to_fields,
+)
 from app.services.player_stats_parsing import (
     parse_fixture_player_statistics,
     player_entry_flags,
@@ -807,6 +811,7 @@ class IngestionService:
                         row.side = side
                         row.raw_json = block
                     apply_parsed_to_row(row, parsed)
+                    backfill_shot_columns_from_raw_json_if_null(row)
                     processed += 1
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=processed)
@@ -914,6 +919,7 @@ class IngestionService:
                         row.side = side
                         row.raw_json = block
                     apply_parsed_to_row(row, parsed)
+                    backfill_shot_columns_from_raw_json_if_null(row)
                     rows_this += 1
                     summary["team_stats_rows_created_or_updated"] += 1
 

@@ -14,7 +14,7 @@ def _stat(**kwargs) -> SimpleNamespace:
         shots_inside_box=6,
         shots_outside_box=3,
         blocked_shots=2,
-        shots_off_target=5,
+        shots_off_goal=5,
         expected_goals=1.2,
     )
     d.update(kwargs)

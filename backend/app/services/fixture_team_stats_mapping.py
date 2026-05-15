@@ -7,7 +7,15 @@ from typing import Any
 
 STAT_LABEL_ALIASES: dict[str, str] = {
     "shots on goal": "shots_on_target",
-    "shots off goal": "shots_off_target",
+    "shots off goal": "shots_off_goal",
+    "shots off target": "shots_off_goal",
+    "shot off target": "shots_off_goal",
+    "shots offtarget": "shots_off_goal",
+    "shots off-target": "shots_off_goal",
+    "shot off goal": "shots_off_goal",
+    "shots offgoal": "shots_off_goal",
+    "blocked shot": "blocked_shots",
+    "blockedshot": "blocked_shots",
     "total shots": "total_shots",
     "shots total": "total_shots",
     "blocked shots": "blocked_shots",
@@ -92,7 +100,7 @@ def statistics_list_to_fields(statistics: list[dict[str, Any]] | None) -> dict[s
 def apply_parsed_to_row(row: Any, parsed: dict[str, Any], *, set_legacy_shots: bool = True) -> None:
     field_names = (
         "shots_on_target",
-        "shots_off_target",
+        "shots_off_goal",
         "total_shots",
         "blocked_shots",
         "shots_inside_box",
@@ -117,3 +125,17 @@ def apply_parsed_to_row(row: Any, parsed: dict[str, Any], *, set_legacy_shots: b
             row.shots = parsed["total_shots"]
         if "shots_on_target" in parsed:
             row.shots_on_target = parsed["shots_on_target"]
+
+
+def backfill_shot_columns_from_raw_json_if_null(row: Any) -> None:
+    """Se bloccati / off-goal sono ancora null dopo il parse, ripete il mapping solo sul raw_json."""
+    if getattr(row, "blocked_shots", None) is not None and getattr(row, "shots_off_goal", None) is not None:
+        return
+    raw = getattr(row, "raw_json", None)
+    if not isinstance(raw, dict):
+        return
+    parsed = statistics_list_to_fields(raw.get("statistics"))
+    if getattr(row, "blocked_shots", None) is None and "blocked_shots" in parsed:
+        row.blocked_shots = parsed["blocked_shots"]
+    if getattr(row, "shots_off_goal", None) is None and "shots_off_goal" in parsed:
+        row.shots_off_goal = parsed["shots_off_goal"]

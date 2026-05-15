@@ -23,7 +23,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     FINISHED_STATUSES,
 )
-from app.models import Fixture, Team, TeamSotPrediction
+from app.models import Fixture, Season, Team, TeamSotPrediction
 from app.schemas.match_analysis import MatchVariablesAuditResponse
 from app.services.debug_sot_model_comparison import build_model_comparison_for_fixture
 from app.services.match_variable_audit_service import MatchVariableAuditService
@@ -116,6 +116,8 @@ CHECKSUM_WARNING_IT = (
     "La somma dei contributi non coincide perfettamente con la prediction salvata. "
     "Possibili arrotondamenti, cap o fallback."
 )
+
+V11_BLOCKED_OFF_DIAG_KEYS = frozenset({"avg_blocked_shots_for", "avg_shots_off_goal_for"})
 
 V03_INCLUDES_BY_COMP: dict[str, list[str]] = {
     "core_sot_component": [
@@ -942,6 +944,25 @@ def _mul_expr(val: float | None, w: float | None) -> str:
     if w is None:
         return f"{_round2(val)}"
     return f"({_round2(val)} × {_round4(w)})"
+
+
+def _fixture_season_year(db: Session, fx: Fixture) -> int | None:
+    yr = db.scalar(select(Season.year).where(Season.id == int(fx.season_id)))
+    return int(yr) if yr is not None else None
+
+
+def _v11_shot_coverage_remediation_hints(*, raw: dict[str, Any] | None, season_year: int | None) -> list[str]:
+    if raw is None or raw.get("prediction_valid") is not False:
+        return []
+    miss = raw.get("missing_required_fields")
+    hit_keys: set[str] = set()
+    if isinstance(miss, list):
+        for m in miss:
+            if not isinstance(m, dict):
+                continue
+            fk = str(m.get("feature_key") or "")
+        f"Diagnostica copertura (GET): `{dbg}`; rieseguire l'ingestion statistiche squadra da Admin.",
+    ]
 
 
 def _checksum_block(sum_contrib: float | None, stored: float | None) -> tuple[float | None, float | None, bool, str | None]:
@@ -2210,6 +2231,20 @@ def _build_fixture_sot_explanation_body(
         sum_contributions=sum_c_away,
     )
 
+    remediation_hints: dict[str, list[str]] | None = None
+    if active_mv == BASELINE_SOT_MODEL_VERSION_V11_SOT:
+        sy = _fixture_season_year(db, fx)
+        rh_home = _v11_shot_coverage_remediation_hints(
+            raw=raw_home if isinstance(raw_home, dict) else None,
+            season_year=sy,
+        )
+        rh_away = _v11_shot_coverage_remediation_hints(
+            raw=raw_away if isinstance(raw_away, dict) else None,
+            season_year=sy,
+        )
+        if rh_home or rh_away:
+            remediation_hints = {"home": rh_home, "away": rh_away}
+
     return {
         "status": "ok",
         "fixture": _fixture_payload(fx, home, away),
@@ -2252,6 +2287,7 @@ def _build_fixture_sot_explanation_body(
             "items": quality_items or ["Nessuna red flag rilevante."],
         },
         "human_summary": human,
+        "remediation_hints": remediation_hints,
         "technical_audit": {
             "prediction_raw_json": {
                 "home": raw_home,

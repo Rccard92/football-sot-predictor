@@ -79,8 +79,8 @@ def compute_league_offensive_baselines(
             outside_vals.append(float(st.shots_outside_box))
         if st.blocked_shots is not None:
             blocked_vals.append(float(st.blocked_shots))
-        if st.shots_off_target is not None:
-            off_goal_vals.append(float(st.shots_off_target))
+        if st.shots_off_goal is not None:
+            off_goal_vals.append(float(st.shots_off_goal))
         gf = goals_by_fx_team.get((int(st.fixture_id), int(st.team_id)))
         if gf is not None:
             goals_vals.append(gf)

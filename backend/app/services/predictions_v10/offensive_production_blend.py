@@ -58,7 +58,7 @@ INPUT_SOURCE_PATHS: dict[str, str] = {
     "avg_inside_box_shots_for": "fixture_team_stats.shots_inside_box",
     "avg_outside_box_shots_for": "fixture_team_stats.shots_outside_box",
     "avg_blocked_shots_for": "fixture_team_stats.blocked_shots",
-    "avg_shots_off_goal_for": "fixture_team_stats.shots_off_target",
+    "avg_shots_off_goal_for": "fixture_team_stats.shots_off_goal",
     "avg_goals_for": "fixtures.goals",
     "offensive_trend": "derived:last5_sot_minus_season_sot",
 }
@@ -138,8 +138,8 @@ def _agg_for_team(
         if st and st.blocked_shots is not None:
             blocked_sum += int(st.blocked_shots)
             blocked_n += 1
-        if st and st.shots_off_target is not None:
-            off_goal_sum += int(st.shots_off_target)
+        if st and st.shots_off_goal is not None:
+            off_goal_sum += int(st.shots_off_goal)
             off_goal_n += 1
         gf = f.goals_home if int(f.home_team_id) == int(team_id) else f.goals_away
         if gf is not None:

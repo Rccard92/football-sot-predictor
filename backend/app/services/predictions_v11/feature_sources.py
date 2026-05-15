@@ -33,7 +33,7 @@ INPUT_SOURCE_PATHS: dict[str, str] = {
     "avg_inside_box_shots_for": "fixture_team_stats.shots_inside_box",
     "avg_outside_box_shots_for": "fixture_team_stats.shots_outside_box",
     "avg_blocked_shots_for": "fixture_team_stats.blocked_shots",
-    "avg_shots_off_goal_for": "fixture_team_stats.shots_off_target",
+    "avg_shots_off_goal_for": "fixture_team_stats.shots_off_goal",
     "avg_goals_for": "fixtures.goals",
     "offensive_trend": "derived:last5_sot_minus_season_sot",
 }
@@ -45,7 +45,7 @@ INPUT_DB_FIELDS: dict[str, str] = {
     "avg_inside_box_shots_for": "fixture_team_stats.shots_inside_box",
     "avg_outside_box_shots_for": "fixture_team_stats.shots_outside_box",
     "avg_blocked_shots_for": "fixture_team_stats.blocked_shots",
-    "avg_shots_off_goal_for": "fixture_team_stats.shots_off_target",
+    "avg_shots_off_goal_for": "fixture_team_stats.shots_off_goal",
     "avg_goals_for": "fixtures.goals_home / fixtures.goals_away",
     "offensive_trend": "fixture_team_stats.shots_on_target",
 }

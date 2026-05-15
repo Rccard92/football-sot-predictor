@@ -16,6 +16,7 @@ import {
   generateUpcomingSotPredictions,
   getDataHealth,
   getIngestionRuns,
+  getTeamShotStatsSummary,
   getModelStatusWithOpts,
   getPlayerSotProfilesSummary,
   getUpcomingActiveWithOpts,
@@ -332,6 +333,14 @@ export function Admin() {
       label: 'Controlla copertura dati',
       endpoint: `GET /api/admin/data-health/serie-a/${SEASON}`,
       run: () => getDataHealth(SEASON),
+    },
+    {
+      id: 'team-shot-stats-summary',
+      label: 'Verifica copertura statistiche tiri',
+      description:
+        'Bloccati e Shots off Goal: % copertura colonne fixture_team_stats; campione sintetico in risposta JSON.',
+      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/team-shot-stats-summary`,
+      run: () => getTeamShotStatsSummary(SEASON),
     },
     {
       id: 'injuries-test',

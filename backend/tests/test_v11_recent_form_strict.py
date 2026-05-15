@@ -50,7 +50,7 @@ def _ctx(
             shots_inside_box=6,
             shots_outside_box=3,
             blocked_shots=2,
-            shots_off_target=5,
+            shots_off_goal=5,
         )
     for f in opponent_fixtures:
         other = int(f.away_team_id) if int(f.home_team_id) == opponent_id else int(f.home_team_id)

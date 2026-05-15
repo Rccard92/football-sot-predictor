@@ -36,7 +36,7 @@ Il termine **Produzione offensiva composita** (`offensive_production_component`)
 | avg_inside_box_shots_for | Media tiri dentro area | fixtures/statistics::Shots insidebox | shots_inside_box | component_input | offensive_production_component | 0,14 |
 | avg_outside_box_shots_for | Media tiri fuori area | fixtures/statistics::Shots outsidebox | shots_outside_box | component_input | offensive_production_component | 0,05 |
 | avg_blocked_shots_for | Media tiri bloccati | fixtures/statistics::Blocked Shots | blocked_shots | component_input | offensive_production_component | 0,05 |
-| avg_shots_off_goal_for | Media tiri fuori dallo specchio | fixtures/statistics::Shots off Goal | shots_off_target | component_input | offensive_production_component | 0,04 |
+| avg_shots_off_goal_for | Media tiri fuori dallo specchio | fixtures/statistics::Shots off Goal | shots_off_goal | component_input | offensive_production_component | 0,04 |
 | avg_goals_for | Media goal fatti | fixtures::goals | goals (fixtures) | component_input | offensive_production_component | 0,05 |
 | offensive_trend | Trend offensivo recente | derived | last5 SOT − season SOT | component_input | offensive_production_component | 0,05 |
 

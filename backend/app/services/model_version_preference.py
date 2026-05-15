@@ -4,6 +4,7 @@ Ordine di preferenza modelli SOT e risoluzione modello raccomandato/attivo.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from sqlalchemy import select
@@ -251,6 +252,7 @@ def enrich_v11_model_status_row(
         row["missing_required_data_count"] = 0
         row["xg_available_predictions"] = 0
         row["xg_missing_predictions"] = 0
+        row["missing_fields_summary"] = {}
         return
     preds = db.scalars(
         select(TeamSotPrediction).where(
@@ -263,6 +265,7 @@ def enrich_v11_model_status_row(
     missing_count = 0
     xg_available = 0
     xg_missing = 0
+    summary_counts: Counter[str] = Counter()
     for p in preds:
         raw = p.raw_json if isinstance(p.raw_json, dict) else {}
         fq = str(raw.get("formula_quality_status") or "")
@@ -283,12 +286,30 @@ def enrich_v11_model_status_row(
             miss = raw.get("missing_required_fields")
             if isinstance(miss, list) and miss:
                 missing_count += 1
+                for m in miss:
+                    if isinstance(m, dict):
+                        fk = m.get("feature_key")
+                        if fk:
+                            summary_counts[str(fk)] += 1
     row["valid_predictions"] = int(valid)
     row["incomplete_predictions"] = int(incomplete)
     row["missing_required_data_count"] = int(missing_count)
     row["xg_available_predictions"] = int(xg_available)
     row["xg_missing_predictions"] = int(xg_missing)
     row["model_stage"] = V11_MODEL_STAGE
+    row["missing_fields_summary"] = {
+        k: int(summary_counts[k])
+        for k in sorted(summary_counts.keys(), key=lambda x: (-summary_counts[x], x))
+    }
+
+
+def _append_top_v11_missing_field_hints(warnings: list[str], v11_row: dict[str, Any]) -> None:
+    mfs = v11_row.get("missing_fields_summary")
+    if not isinstance(mfs, dict) or not mfs:
+        return
+    ranked = sorted(((str(k), int(v)) for k, v in mfs.items()), key=lambda kv: (-kv[1], kv[0]))[:3]
+    hints = ", ".join(f"{k} ({v})" for k, v in ranked)
+    warnings.append(f"Feature mancanti più frequenti (v1.1 incomplete): {hints}.")
 
 
 def build_v11_coherence_warnings(
@@ -307,10 +328,12 @@ def build_v11_coherence_warnings(
             warnings.append(
                 f"v1.1 presente ma non raccomandata: {inc} predizioni incomplete (dati obbligatori mancanti).",
             )
+            _append_top_v11_missing_field_hints(warnings, v11_row)
         return warnings
     inc = int(v11_row.get("incomplete_predictions") or 0)
     if inc > 0:
         warnings.append("v1.1 raccomandata ma con predizioni incomplete: verificare ingestion team-stats.")
+        _append_top_v11_missing_field_hints(warnings, v11_row)
         xg_miss = int(v11_row.get("xg_missing_predictions") or 0)
         if xg_miss > 0 and xg_miss >= max(1, inc // 2):
             warnings.append(

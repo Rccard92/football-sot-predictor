@@ -549,6 +549,41 @@ export async function getDataHealth(season: number): Promise<SerieADataHealthRes
   return requestJson<SerieADataHealthResponse>(`/api/admin/data-health/serie-a/${season}`)
 }
 
+/** Risposta GET `/api/admin/debug/serie-a/{season}/team-shot-stats-summary`. */
+export type TeamShotStatsCoverageEntry = {
+  rows_with_value: number
+  coverage_pct: number
+}
+
+export type TeamShotStatsSummaryResponse = {
+  status: string
+  season: number
+  rows_total: number
+  coverage: Record<string, TeamShotStatsCoverageEntry>
+  column_null_but_raw_parseable: { blocked_shots: number; shots_off_goal: number }
+  sample: Array<{
+    fixture_id: number
+    team_id: number
+    team_name: string
+    shots_on_target: number | null
+    total_shots: number | null
+    shots_inside_box: number | null
+    shots_outside_box: number | null
+    blocked_shots: number | null
+    shots_off_goal: number | null
+  }>
+}
+
+export async function getTeamShotStatsSummary(
+  season: number,
+  opts?: AdminRequestOpts,
+): Promise<TeamShotStatsSummaryResponse> {
+  return adminGetJson<TeamShotStatsSummaryResponse>(
+    `/api/admin/debug/serie-a/${season}/team-shot-stats-summary`,
+    opts,
+  )
+}
+
 export async function getIngestionRuns(): Promise<IngestionRunsResponse> {
   return requestJson<IngestionRunsResponse>('/api/admin/ingest/runs')
 }
@@ -839,6 +874,10 @@ export type ModelStatusVersionRow = {
   is_available_for_upcoming: boolean
   xg_applied_count?: number
   xg_fallback_count?: number
+  valid_predictions?: number
+  incomplete_predictions?: number
+  missing_required_data_count?: number
+  missing_fields_summary?: Record<string, number>
 }
 
 export type ModelStatusResponse = {
@@ -849,6 +888,11 @@ export type ModelStatusResponse = {
   upcoming_fixtures_total?: number
   available_model_versions: ModelStatusVersionRow[]
   warnings: string[]
+  /** Presente quando ci sono conteggi su feature mancanti per predizioni v1.1 incomplete. */
+  v11_diagnostic_hints?: {
+    missing_fields_summary: Record<string, number>
+    top_missing_feature_keys: string[]
+  }
   message?: string
   failed_step?: string
   details?: string

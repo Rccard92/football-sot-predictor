@@ -165,25 +165,39 @@ def compute_offensive_production_component(
         ic = round4(norm_v * iw)
         component_sum += ic
         sym_parts.append(f"({INPUT_LABELS[key]} × {iw})")
-        inputs_list.append(
-            {
-                "key": key,
-                "label": INPUT_LABELS[key],
-                "raw_value": round2(raw_v if key != "offensive_trend" else trend_raw),
-                "normalized_value": round2(norm_v),
-                "internal_weight": iw,
-                "internal_contribution": ic,
-                "source_path": INPUT_SOURCE_PATHS[key],
-                "api_source": INPUT_API_SOURCES[key],
-                "db_field": INPUT_DB_FIELDS[key],
-                "sample_count": sample_count,
-                "fallback_used": False,
-                "no_data_leakage": True,
-                "status": "available",
-                "application_role": "component_input",
-                "parent_component": COMPONENT_KEY_OFFENSIVE,
-            },
-        )
+        spath = INPUT_SOURCE_PATHS[key]
+        extra_notes: str | None = None
+        if key == "avg_blocked_shots_for":
+            spath = str(season_agg.get("blocked_shots_trace_path") or spath)
+        elif key == "avg_shots_off_goal_for":
+            spath = str(season_agg.get("shots_off_goal_trace_path") or spath)
+        if key in ("avg_blocked_shots_for", "avg_shots_off_goal_for") and (
+            "raw_json" in spath or " | " in spath
+        ):
+            extra_notes = (
+                "Nel campione sono entrate partite con colonne DB nulle ma "
+                "statistiche disponibili nel raw_json persistente (sempre dati API reali, senza imputazione)."
+            )
+        row_input: dict[str, Any] = {
+            "key": key,
+            "label": INPUT_LABELS[key],
+            "raw_value": round2(raw_v if key != "offensive_trend" else trend_raw),
+            "normalized_value": round2(norm_v),
+            "internal_weight": iw,
+            "internal_contribution": ic,
+            "source_path": spath,
+            "api_source": INPUT_API_SOURCES[key],
+            "db_field": INPUT_DB_FIELDS[key],
+            "sample_count": sample_count,
+            "fallback_used": False,
+            "no_data_leakage": True,
+            "status": "available",
+            "application_role": "component_input",
+            "parent_component": COMPONENT_KEY_OFFENSIVE,
+        }
+        if extra_notes:
+            row_input["notes"] = extra_notes
+        inputs_list.append(row_input)
 
     component_value = round2(component_sum) or 0.0
     internal_formula = (

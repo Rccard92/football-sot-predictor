@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.models import Fixture
+from app.services.fixture_team_stats_mapping import statistics_list_to_fields
 
 
 def expected_goals_from_team_stat(st: Any) -> tuple[float | None, str]:
@@ -49,6 +50,64 @@ def expected_goals_from_team_stat(st: Any) -> tuple[float | None, str]:
     return None, "fixture_team_stats.expected_goals"
 
 
+_BLOCKED_COL = "fixture_team_stats.blocked_shots"
+_BLOCKED_RAW = 'fixture_team_stats.raw_json.statistics["Blocked Shots"]'
+_OFF_GOAL_COL = "fixture_team_stats.shots_off_goal"
+_OFF_GOAL_RAW = 'fixture_team_stats.raw_json.statistics["Shots off Goal"]'
+
+
+def blocked_shots_from_team_stat(st: Any) -> tuple[int | None, str]:
+    """Colonna DB prima; se null, prova raw_json.statistics già persistito (solo lettura)."""
+    if st is None:
+        return None, _BLOCKED_COL
+    cv = getattr(st, "blocked_shots", None)
+    if cv is not None:
+        try:
+            return int(cv), _BLOCKED_COL
+        except (TypeError, ValueError):
+            pass
+    raw = getattr(st, "raw_json", None)
+    if isinstance(raw, dict):
+        parsed = statistics_list_to_fields(raw.get("statistics"))
+        if "blocked_shots" in parsed:
+            try:
+                return int(parsed["blocked_shots"]), _BLOCKED_RAW
+            except (TypeError, ValueError):
+                pass
+    return None, _BLOCKED_COL
+
+
+def shots_off_goal_from_team_stat(st: Any) -> tuple[int | None, str]:
+    """shots_off_goal (API Shots off Goal); colonna poi raw_json.statistics."""
+    if st is None:
+        return None, _OFF_GOAL_COL
+    cv = getattr(st, "shots_off_goal", None)
+    if cv is not None:
+        try:
+            return int(cv), _OFF_GOAL_COL
+        except (TypeError, ValueError):
+            pass
+    raw = getattr(st, "raw_json", None)
+    if isinstance(raw, dict):
+        parsed = statistics_list_to_fields(raw.get("statistics"))
+        if "shots_off_goal" in parsed:
+            try:
+                return int(parsed["shots_off_goal"]), _OFF_GOAL_RAW
+            except (TypeError, ValueError):
+                pass
+    return None, _OFF_GOAL_COL
+
+
+def _blend_trace_path(*, n: int, n_col: int, col_path: str, raw_path: str) -> str:
+    if n <= 0:
+        return col_path
+    if n_col == n:
+        return col_path
+    if n_col == 0:
+        return raw_path
+    return f"{col_path} | {raw_path}"
+
+
 def agg_for_team(
     *,
     fixtures: list[Fixture],
@@ -60,7 +119,9 @@ def agg_for_team(
     in_sum = in_n = 0
     out_sum = out_n = 0
     blocked_sum = blocked_n = 0
+    blocked_n_col = blocked_n_raw = 0
     off_goal_sum = off_goal_n = 0
+    off_goal_n_col = off_goal_n_raw = 0
     goals_sum = goals_n = 0
     xg_sum = 0.0
     xg_n = 0
@@ -79,12 +140,22 @@ def agg_for_team(
         if st and st.shots_outside_box is not None:
             out_sum += int(st.shots_outside_box)
             out_n += 1
-        if st and st.blocked_shots is not None:
-            blocked_sum += int(st.blocked_shots)
+        b_v, b_path = blocked_shots_from_team_stat(st)
+        if b_v is not None:
+            blocked_sum += b_v
             blocked_n += 1
-        if st and st.shots_off_target is not None:
-            off_goal_sum += int(st.shots_off_target)
+            if _BLOCKED_RAW in b_path:
+                blocked_n_raw += 1
+            else:
+                blocked_n_col += 1
+        og_v, og_path = shots_off_goal_from_team_stat(st)
+        if og_v is not None:
+            off_goal_sum += og_v
             off_goal_n += 1
+            if _OFF_GOAL_RAW in og_path:
+                off_goal_n_raw += 1
+            else:
+                off_goal_n_col += 1
         gf = f.goals_home if int(f.home_team_id) == int(team_id) else f.goals_away
         if gf is not None:
             goals_sum += int(gf)
@@ -118,4 +189,16 @@ def agg_for_team(
         "goals_n": goals_n,
         "xg_mean": mean_xg(),
         "xg_n": xg_n,
+        "blocked_shots_trace_path": _blend_trace_path(
+            n=blocked_n,
+            n_col=blocked_n_col,
+            col_path=_BLOCKED_COL,
+            raw_path=_BLOCKED_RAW,
+        ),
+        "shots_off_goal_trace_path": _blend_trace_path(
+            n=off_goal_n,
+            n_col=off_goal_n_col,
+            col_path=_OFF_GOAL_COL,
+            raw_path=_OFF_GOAL_RAW,
+        ),
     }

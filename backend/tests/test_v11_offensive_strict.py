@@ -49,7 +49,7 @@ def _stat(**kwargs):
         shots_inside_box=6,
         shots_outside_box=3,
         blocked_shots=2,
-        shots_off_target=5,
+        shots_off_goal=5,
         expected_goals=1.25,
     )
     defaults.update(kwargs)
@@ -84,7 +84,7 @@ def _ctx(
             shots_inside_box=6,
             shots_outside_box=3,
             blocked_shots=2,
-            shots_off_target=5,
+            shots_off_goal=5,
         )
     for f in opponent_fixtures:
         other = int(f.away_team_id) if int(f.home_team_id) == opponent_id else int(f.home_team_id)
@@ -138,7 +138,7 @@ def test_missing_inside_box_data():
             shots_inside_box=None,
             shots_outside_box=3,
             blocked_shots=2,
-            shots_off_target=5,
+            shots_off_goal=5,
         )
     opp = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=fixtures, opponent_fixtures=opp)

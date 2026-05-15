@@ -985,7 +985,7 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         description="Media pre-match dei tiri fuori porta (Shots off Goal).",
                         markets=["tiri_totali"],
                         weight=45,
-                        data_source="fixture_team_stats.shots_off_target",
+                        data_source="fixture_team_stats.shots_off_goal",
                         status="implementata",
                         applied_now=True,
                         notes="Input interno Produzione offensiva composita (baseline_v1_0_sot).",
