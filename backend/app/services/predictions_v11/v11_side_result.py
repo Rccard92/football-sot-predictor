@@ -15,6 +15,7 @@ class V11SideResult:
     defensive_component: dict[str, Any] | None = None
     split_component: dict[str, Any] | None = None
     recent_component: dict[str, Any] | None = None
+    xg_component: dict[str, Any] | None = None
     missing_required_fields: list[dict[str, Any]] = field(default_factory=list)
     formula_quality_status: str = "ok"
     sample_count: int = 0

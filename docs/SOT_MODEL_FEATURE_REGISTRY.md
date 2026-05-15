@@ -1,22 +1,22 @@
-# Registry feature — baseline_v1_1_sot (Stage 4)
+# Registry feature — baseline_v1_1_sot (Stage 5)
 
 Modello: `baseline_v1_1_sot`  
 Architettura: `component_based_strict_real_data`  
-Stage: `offensive_plus_opponent_defense_plus_home_away_split_plus_recent_form`
+Stage: `offensive_plus_opponent_defense_plus_home_away_split_plus_recent_form_plus_xg`
 
 **Regola:** il modello v1.1 non usa fallback o mock. Se un dato obbligatorio manca, la prediction viene marcata come incompleta (`prediction_valid: false`, `predicted_sot: null`).
 
-Formula stage 4:
+Formula stage 5:
 
-`expected_sot_v1_1 = (offensive_production_component × 0.35) + (opponent_defensive_resistance_component × 0.30) + (home_away_split_component × 0.15) + (recent_form_component × 0.20)`
+`expected_sot_v1_1 = (offensive_production_component × 0.30) + (opponent_defensive_resistance_component × 0.25) + (home_away_split_component × 0.15) + (recent_form_component × 0.15) + (xg_chance_quality_component × 0.15)`
 
 Lo split casa/trasferta usa il contesto reale della partita: casa per la squadra di casa, trasferta per la squadra ospite, e split opposto per l'avversario.
 
-## Componente 1 — Produzione offensiva composita (peso formula 0.35)
+## Componente 1 — Produzione offensiva composita (peso formula 0.30)
 
 9 input interni (vedi Stage 1/2). Dati da partite precedenti della squadra analizzata.
 
-## Componente 2 — Resistenza difensiva avversaria (peso formula 0.30)
+## Componente 2 — Resistenza difensiva avversaria (peso formula 0.25)
 
 6 input interni (vedi Stage 2). Concessi ricostruiti dalle partite precedenti dell'avversario.
 
@@ -39,7 +39,7 @@ Lo split casa/trasferta usa il contesto reale della partita: casa per la squadra
 
 **Normalizzazione lega split:** `league_split_avg_sot_for`, `league_split_avg_sot_conceded`, `league_split_avg_total_shots_for`, `league_split_avg_total_shots_conceded` (calcolate per contesto home/away sul cutoff).
 
-## Componente 4 — Forma recente (peso formula 0.20)
+## Componente 4 — Forma recente (peso formula 0.15)
 
 Finestra **ultime 5** partite finite (ordine kickoff, id) sia per la squadra sia per l’avversario (storici separati).  
 **Nessun fallback** se `prior_fixtures` o `opponent_prior_fixtures` hanno meno di 5 partite o se non si possono costruire le medie richieste.
@@ -59,12 +59,31 @@ Se le medie lega „recent“ non sono definibili → errore baseline / `missing
 
 Implementazione: [`recent_form_strict.py`](backend/app/services/predictions_v11/recent_form_strict.py), metadati input [`recent_feature_sources.py`](backend/app/services/predictions_v11/recent_feature_sources.py).
 
+## Componente 5 — Qualità occasioni / xG (peso formula 0.15)
+
+Fonte API-Football: `fixtures/statistics` include `expected_goals` quando disponibile; persistenza DB in `fixture_team_stats.expected_goals` (float nullable). Se la colonna è `NULL` ma il campo è presente in `fixture_team_stats.raw_json`, il valore può essere letto da lì e la traccia indica la fonte alternativa — **non** si inventano valori.
+
+**Campione minimo:** almeno **5** partite con `expected_goals` disponibile per la squadra (media stagionale xG) **e** 5 partite con xG per il ramo concessi avversario (`min_xg_matches = 5`). Se insufficiente → `insufficient_xg_sample`, **nessun fallback**.
+
+Servono anche le medie lega `league_avg_xg_for` e `league_avg_xg_conceded` sul campione eligible; se mancanti o non valide → `missing_required_xg_league_baseline`.
+
+| feature_key | Peso interno | Ruolo |
+|-------------|--------------|-------|
+| avg_xg_for | 0.30 | xG medi prodotti dalla squadra (scala SOT via lega) |
+| opponent_avg_xg_conceded | 0.30 | xG medi concessi dall’avversario (pool avversari, scala SOT) |
+| team_xg_delta_vs_league | 0.15 | Delta vs `league_avg_xg_for` (raw = differenza semplice; normalizzato su scala SOT) |
+| opponent_xg_conceded_delta_vs_league | 0.15 | Delta vs `league_avg_xg_conceded` |
+| xg_prudent_adjustment_signal | 0.10 | Segnale prudente `league_avg_sot_for × (1 + xg_adjustment_pct)` con cap su `xg_adjustment_pct` |
+
+Implementazione: [`xg_quality_strict.py`](backend/app/services/predictions_v11/xg_quality_strict.py), metadati [`xg_feature_sources.py`](backend/app/services/predictions_v11/xg_feature_sources.py).
+
 ## Vincoli globali
 
 - **Sample minimo componenti stagionali:** 5 partite (`min_completed_matches = 5`).
 - **Forma recente:** 5 partite per lato (squadra e avversario) per le finestre ultime 5; nessuna imputazione.
+- **xG:** 5 partite con xG per lato (conteggi `team_xg_sample_n` / `opponent_xg_sample_n`); nessun fallback silenzioso.
 - **No data leakage:** solo partite con kickoff precedente e status finito.
-- **Nessun fallback** su medie lega o stagione se dati split o forma recente mancano.
+- **Nessun fallback** su medie lega o stagione se dati split, forma recente o xG mancano.
 
 ## Generazione
 

@@ -10,11 +10,12 @@ from app.models import Fixture, League, Season, Team, TeamSotPrediction
 from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 from app.services.predictions_v10.v10_prior_context import build_prior_context
 from app.services.predictions_v11.offensive_production_strict import compute_v11_side
+from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG
 from app.services.sot_feature_registry import V11_ARCHITECTURE, V11_MODEL_STAGE
 
 
 class SotPredictionV11BaselineSotService:
-    """v1.1 stage 4: 35% offensiva + 30% difensiva + 15% split + 20% forma recente (strict)."""
+    """v1.1 stage 5: 30% offensiva + 25% difensiva + 15% split + 15% forma recente + 15% xG (strict)."""
 
     model_version = BASELINE_SOT_MODEL_VERSION_V11_SOT
     architecture = V11_ARCHITECTURE
@@ -50,6 +51,8 @@ class SotPredictionV11BaselineSotService:
                     "predictions_created_or_updated": 0,
                     "valid_predictions": 0,
                     "incomplete_predictions": 0,
+                    "xg_available_predictions": 0,
+                    "xg_missing_predictions": 0,
                     "errors": [],
                 },
             }
@@ -70,6 +73,8 @@ class SotPredictionV11BaselineSotService:
                     "predictions_created_or_updated": 0,
                     "valid_predictions": 0,
                     "incomplete_predictions": 0,
+                    "xg_available_predictions": 0,
+                    "xg_missing_predictions": 0,
                     "errors": [],
                 },
             }
@@ -77,6 +82,8 @@ class SotPredictionV11BaselineSotService:
         valid_n = 0
         incomplete_n = 0
         created = 0
+        xg_available_n = 0
+        xg_missing_n = 0
         missing_required_data: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
 
@@ -106,6 +113,16 @@ class SotPredictionV11BaselineSotService:
                     continue
 
                 merged = dict(result.raw_json)
+                fq_stat = str(result.formula_quality_status or merged.get("formula_quality_status") or "")
+                comps_m = merged.get("components") if isinstance(merged.get("components"), dict) else {}
+                has_xg_comp = isinstance(comps_m.get(COMPONENT_KEY_XG), dict) or isinstance(
+                    merged.get(COMPONENT_KEY_XG),
+                    dict,
+                )
+                if fq_stat == "ok" and has_xg_comp:
+                    xg_available_n += 1
+                elif fq_stat in ("insufficient_xg_sample", "missing_required_xg_league_baseline"):
+                    xg_missing_n += 1
                 team_row = db.get(Team, int(team_id))
                 tname = team_row.name if team_row is not None else str(team_id)
                 merged = append_trace_to_raw_json(
@@ -135,8 +152,9 @@ class SotPredictionV11BaselineSotService:
 
                 existing.raw_json = merged
                 existing.explanation = (
-                    "v1.1 stage 4: 35% produzione offensiva + 30% resistenza difensiva avversaria "
-                    "+ 15% split casa/trasferta + 20% forma recente (solo dati reali, nessun fallback)."
+                    "v1.1 stage 5: 30% produzione offensiva + 25% resistenza difensiva avversaria "
+                    "+ 15% split casa/trasferta + 15% forma recente + 15% qualità occasioni / xG "
+                    "(solo dati reali, nessun fallback)."
                 )
 
                 if result.valid and result.expected_sot is not None:
@@ -181,12 +199,14 @@ class SotPredictionV11BaselineSotService:
             "season": int(season_year),
             "model_version": self.model_version,
             "model_stage": self.model_stage,
-            "formula_terms_count": 4,
+            "formula_terms_count": 5,
             "architecture": self.architecture,
             "upcoming_fixtures": len(upcoming),
             "predictions_created_or_updated": int(created),
             "valid_predictions": int(valid_n),
             "incomplete_predictions": int(incomplete_n),
+            "xg_available_predictions": int(xg_available_n),
+            "xg_missing_predictions": int(xg_missing_n),
             "missing_required_data_count": len(missing_required_data),
             "missing_required_data": missing_required_data,
             "errors": errors,

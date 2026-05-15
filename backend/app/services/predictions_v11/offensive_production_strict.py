@@ -25,6 +25,7 @@ from app.services.predictions_v11.feature_sources import (
 from app.services.predictions_v11.league_baselines_strict import (
     MissingLeagueBaselineError,
     REQUIRED_LEAGUE_RECENT_KEYS,
+    REQUIRED_LEAGUE_XG_KEYS,
     compute_league_v11_baselines_strict,
 )
 from app.services.predictions_v11.opponent_defensive_resistance_strict import (
@@ -36,11 +37,14 @@ from app.services.predictions_v11.recent_feature_sources import (
 )
 from app.services.predictions_v11.recent_form_strict import compute_recent_form_component
 from app.services.predictions_v11.shared_stats import agg_for_team
+from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG, COMPONENT_LABEL_XG
+from app.services.predictions_v11.xg_quality_strict import compute_xg_chance_quality_component
 from app.services.predictions_v11.v11_shared import (
     FORMULA_DEFENSIVE_WEIGHT,
     FORMULA_OFFENSIVE_WEIGHT,
     FORMULA_RECENT_WEIGHT,
     FORMULA_SPLIT_WEIGHT,
+    FORMULA_XG_WEIGHT,
     clamp,
     incomplete_raw_json,
     last_n,
@@ -228,6 +232,7 @@ def _fail_result(
         defensive_component=None,
         split_component=None,
         recent_component=None,
+        xg_component=None,
         raw_json=raw,
         missing_required_fields=raw["missing_required_fields"],
         formula_quality_status=formula_quality_status,
@@ -240,7 +245,7 @@ def compute_v11_side(
     ctx: V10PriorContext,
     prior_fixtures: list[Fixture],
 ) -> V11SideResult:
-    """Stage 4: blend 35% offensiva + 30% difensiva + 15% split + 20% forma recente."""
+    """Stage 5: blend 30% offensiva + 25% difensiva + 15% split + 15% forma recente + 15% xG."""
     sample_count = len(prior_fixtures)
     all_missing: list[dict[str, Any]] = []
 
@@ -254,7 +259,9 @@ def compute_v11_side(
     except MissingLeagueBaselineError as exc:
         mk = set(exc.missing_keys)
         fq = "missing_required_league_baseline"
-        if mk & set(REQUIRED_LEAGUE_RECENT_KEYS):
+        if mk & set(REQUIRED_LEAGUE_XG_KEYS):
+            fq = "missing_required_xg_league_baseline"
+        elif mk & set(REQUIRED_LEAGUE_RECENT_KEYS):
             fq = "missing_required_recent_league_baseline"
         return _fail_result(
             missing=[],
@@ -278,6 +285,11 @@ def compute_v11_side(
         league_baselines=lb,
     )
     recent_comp, recent_miss, recent_status, team_recent_n, opp_recent_n = compute_recent_form_component(
+        ctx,
+        prior_fixtures,
+        league_baselines=lb,
+    )
+    xg_comp, xg_miss, xg_status, team_xg_n, opp_xg_n = compute_xg_chance_quality_component(
         ctx,
         prior_fixtures,
         league_baselines=lb,
@@ -327,8 +339,31 @@ def compute_v11_side(
                 formula_quality_status="missing_required_recent_league_baseline",
                 sample_count=max(team_recent_n, opp_recent_n),
             )
+    if xg_comp is None:
+        all_missing.extend(xg_miss)
+        if xg_status == "insufficient_xg_sample":
+            return _fail_result(
+                missing=all_missing,
+                formula_quality_status="insufficient_xg_sample",
+                sample_count=max(
+                    off_sample,
+                    def_sample,
+                    team_split_n,
+                    opp_split_n,
+                    team_recent_n,
+                    opp_recent_n,
+                    team_xg_n,
+                    opp_xg_n,
+                ),
+            )
+        if xg_status == "missing_required_xg_league_baseline":
+            return _fail_result(
+                missing=all_missing,
+                formula_quality_status="missing_required_xg_league_baseline",
+                sample_count=max(team_xg_n, opp_xg_n),
+            )
 
-    if off_comp is None or def_comp is None or split_comp is None or recent_comp is None:
+    if off_comp is None or def_comp is None or split_comp is None or recent_comp is None or xg_comp is None:
         fq = "missing_required_data"
         if off_status == "insufficient_sample" or def_status == "insufficient_sample":
             fq = "insufficient_sample"
@@ -340,25 +375,41 @@ def compute_v11_side(
             fq = "insufficient_recent_sample"
         elif recent_status == "missing_required_recent_league_baseline":
             fq = "missing_required_recent_league_baseline"
+        elif xg_status == "insufficient_xg_sample":
+            fq = "insufficient_xg_sample"
+        elif xg_status == "missing_required_xg_league_baseline":
+            fq = "missing_required_xg_league_baseline"
         return _fail_result(
             missing=all_missing,
             formula_quality_status=fq,
-            sample_count=max(off_sample, def_sample, team_split_n, opp_split_n, team_recent_n, opp_recent_n),
+            sample_count=max(
+                off_sample,
+                def_sample,
+                team_split_n,
+                opp_split_n,
+                team_recent_n,
+                opp_recent_n,
+                team_xg_n,
+                opp_xg_n,
+            ),
         )
 
     off_val = float(off_comp["value"])
     def_val = float(def_comp["value"])
     split_val = float(split_comp["value"])
     recent_val = float(recent_comp["value"])
+    xg_val = float(xg_comp["value"])
     off_contrib = round2(off_val * FORMULA_OFFENSIVE_WEIGHT) or 0.0
     def_contrib = round2(def_val * FORMULA_DEFENSIVE_WEIGHT) or 0.0
     split_contrib = round2(split_val * FORMULA_SPLIT_WEIGHT) or 0.0
     recent_contrib = round2(recent_val * FORMULA_RECENT_WEIGHT) or 0.0
+    xg_contrib = round2(xg_val * FORMULA_XG_WEIGHT) or 0.0
     expected_sot = round2(
         off_val * FORMULA_OFFENSIVE_WEIGHT
         + def_val * FORMULA_DEFENSIVE_WEIGHT
         + split_val * FORMULA_SPLIT_WEIGHT
-        + recent_val * FORMULA_RECENT_WEIGHT,
+        + recent_val * FORMULA_RECENT_WEIGHT
+        + xg_val * FORMULA_XG_WEIGHT,
     ) or 0.0
 
     raw_json: dict[str, Any] = {
@@ -370,7 +421,7 @@ def compute_v11_side(
         "expected_sot": expected_sot,
         "formula": {
             "type": "weighted_components",
-            "terms_count": 4,
+            "terms_count": 5,
             "terms": [
                 {
                     "key": COMPONENT_KEY_OFFENSIVE,
@@ -404,6 +455,14 @@ def compute_v11_side(
                     "contribution": recent_contrib,
                     "status": "available",
                 },
+                {
+                    "key": COMPONENT_KEY_XG,
+                    "label": COMPONENT_LABEL_XG,
+                    "value": xg_val,
+                    "weight": FORMULA_XG_WEIGHT,
+                    "contribution": xg_contrib,
+                    "status": "available",
+                },
             ],
             "final_sum": expected_sot,
         },
@@ -412,11 +471,13 @@ def compute_v11_side(
             COMPONENT_KEY_DEFENSIVE: def_comp,
             COMPONENT_KEY_SPLIT: split_comp,
             "recent_form_component": recent_comp,
+            COMPONENT_KEY_XG: xg_comp,
         },
         COMPONENT_KEY_OFFENSIVE: off_comp,
         COMPONENT_KEY_DEFENSIVE: def_comp,
         COMPONENT_KEY_SPLIT: split_comp,
         COMPONENT_KEY_RECENT: recent_comp,
+        COMPONENT_KEY_XG: xg_comp,
         "formula_quality_status": "ok",
         "warnings": [],
         "sample_count": sample_count,
@@ -425,6 +486,8 @@ def compute_v11_side(
         "opponent_split_sample_count": opp_split_n,
         "team_recent_window_n": team_recent_n,
         "opponent_recent_window_n": opp_recent_n,
+        "team_xg_sample_n": team_xg_n,
+        "opponent_xg_sample_n": opp_xg_n,
         "no_data_leakage": True,
     }
 
@@ -435,6 +498,7 @@ def compute_v11_side(
         defensive_component=def_comp,
         split_component=split_comp,
         recent_component=recent_comp,
+        xg_component=xg_comp,
         raw_json=raw_json,
         missing_required_fields=[],
         formula_quality_status="ok",

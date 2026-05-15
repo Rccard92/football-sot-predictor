@@ -56,12 +56,18 @@ REQUIRED_LEAGUE_RECENT_KEYS: tuple[str, ...] = (
     "league_recent_avg_goals_for",
 )
 
+REQUIRED_LEAGUE_XG_KEYS: tuple[str, ...] = (
+    "league_avg_xg_for",
+    "league_avg_xg_conceded",
+)
+
 REQUIRED_LEAGUE_KEYS: tuple[str, ...] = (
     REQUIRED_LEAGUE_OFFENSIVE_KEYS
     + REQUIRED_LEAGUE_DEFENSIVE_KEYS
     + REQUIRED_LEAGUE_SPLIT_HOME_KEYS
     + REQUIRED_LEAGUE_SPLIT_AWAY_KEYS
     + REQUIRED_LEAGUE_RECENT_KEYS
+    + REQUIRED_LEAGUE_XG_KEYS
 )
 
 
@@ -139,9 +145,11 @@ def compute_league_v11_baselines_strict(
     off_goal_vals: list[float] = []
     goals_vals: list[float] = []
     accuracy_vals: list[float] = []
+    xg_for_vals: list[float] = []
 
     sot_conceded_vals: list[float] = []
     shots_conceded_vals: list[float] = []
+    xg_conceded_vals: list[float] = []
     inside_conceded_vals: list[float] = []
     outside_conceded_vals: list[float] = []
     blocked_conceded_vals: list[float] = []
@@ -184,6 +192,8 @@ def compute_league_v11_baselines_strict(
             and float(st.total_shots) > 0
         ):
             accuracy_vals.append(float(st.shots_on_target) / float(st.total_shots))
+        if st.expected_goals is not None:
+            xg_for_vals.append(float(st.expected_goals))
 
     for f in eligible:
         hid, aid = int(f.home_team_id), int(f.away_team_id)
@@ -192,6 +202,8 @@ def compute_league_v11_baselines_strict(
         if home_st and away_st:
             if away_st.shots_on_target is not None:
                 sot_conceded_vals.append(float(away_st.shots_on_target))
+            if away_st.expected_goals is not None:
+                xg_conceded_vals.append(float(away_st.expected_goals))
             if away_st.total_shots is not None:
                 shots_conceded_vals.append(float(away_st.total_shots))
             if away_st.shots_inside_box is not None:
@@ -202,6 +214,8 @@ def compute_league_v11_baselines_strict(
                 blocked_conceded_vals.append(float(away_st.blocked_shots))
             if home_st.shots_on_target is not None:
                 sot_conceded_vals.append(float(home_st.shots_on_target))
+            if home_st.expected_goals is not None:
+                xg_conceded_vals.append(float(home_st.expected_goals))
             if home_st.total_shots is not None:
                 shots_conceded_vals.append(float(home_st.total_shots))
             if home_st.shots_inside_box is not None:
@@ -303,7 +317,8 @@ def compute_league_v11_baselines_strict(
         "league_recent_avg_sot_conceded": _mean(league_recent_sot_conceded_vals),
         "league_recent_avg_total_shots_for": _mean(league_recent_shots_for_vals),
         "league_recent_avg_total_shots_conceded": _mean(league_recent_shots_conceded_vals),
-        "league_recent_avg_goals_for": _mean(league_recent_goals_vals),
+        "league_avg_xg_for": _mean(xg_for_vals),
+        "league_avg_xg_conceded": _mean(xg_conceded_vals),
         "sample_team_stat_rows": len(stats),
         "sample_fixtures": len(eligible),
     }

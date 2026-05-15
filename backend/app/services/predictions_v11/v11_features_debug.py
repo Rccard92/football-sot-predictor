@@ -1,4 +1,4 @@
-"""Debug read-only: feature v1.1 offensiva (9) + difensiva (6) + split (5) + forma recente (6)."""
+"""Debug read-only: feature v1.1 offensiva (9) + difensiva (6) + split (5) + forma recente (6) + xG (5)."""
 
 from __future__ import annotations
 
@@ -76,6 +76,7 @@ def build_fixture_features_debug_v11(
                 "defensive_component_inputs": [],
                 "split_component_inputs": [],
                 "recent_component_inputs": [],
+                "xg_component_inputs": [],
             }
 
         raw = result.raw_json
@@ -83,10 +84,12 @@ def build_fixture_features_debug_v11(
         defc = result.defensive_component or {}
         splitc = result.split_component or {}
         recentc = result.recent_component or {}
+        xgc = result.xg_component or {}
         offensive_inputs = _inputs_from_component(off, "offensive_production_component")
         defensive_inputs = _inputs_from_component(defc, "opponent_defensive_resistance_component")
         split_inputs = _inputs_from_component(splitc, "home_away_split_component")
         recent_inputs = _inputs_from_component(recentc, "recent_form_component")
+        xg_inputs = _inputs_from_component(xgc, "xg_chance_quality_component")
 
         return {
             "team": team.name if team else str(team_id),
@@ -108,11 +111,13 @@ def build_fixture_features_debug_v11(
                 "opponent_split_context": splitc.get("opponent_split_context"),
             },
             "recent_form_component": {"value": recentc.get("value"), "quality": recentc.get("quality")},
+            "xg_chance_quality_component": {"value": xgc.get("value"), "quality": xgc.get("quality")},
             "offensive_component_inputs": offensive_inputs,
             "defensive_component_inputs": defensive_inputs,
             "split_component_inputs": split_inputs,
             "recent_component_inputs": recent_inputs,
-            "features": offensive_inputs + defensive_inputs + split_inputs + recent_inputs,
+            "xg_component_inputs": xg_inputs,
+            "features": offensive_inputs + defensive_inputs + split_inputs + recent_inputs + xg_inputs,
         }
 
     return {

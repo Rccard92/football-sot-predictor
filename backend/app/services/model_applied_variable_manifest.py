@@ -506,6 +506,18 @@ _V11_RECENT_INPUTS: list[tuple[str, str, str]] = [
     ("recent_trend_vs_season", "Trend rispetto alla media stagionale", "recent_trend_vs_season"),
 ]
 
+_V11_XG_INPUTS: list[tuple[str, str, str]] = [
+    ("avg_xg_for", "xG prodotti", "avg_xg_for"),
+    ("opponent_avg_xg_conceded", "xG concessi dall'avversario", "opponent_avg_xg_conceded"),
+    ("team_xg_delta_vs_league", "Delta xG squadra vs media lega", "team_xg_delta_vs_league"),
+    (
+        "opponent_xg_conceded_delta_vs_league",
+        "Delta xG concesso avversario vs media lega",
+        "opponent_xg_conceded_delta_vs_league",
+    ),
+    ("xg_prudent_adjustment_signal", "xG adjustment prudente", "xg_prudent_adjustment_signal"),
+]
+
 _MANIFEST_V11: list[AppliedVariableSpec] = [
     AppliedVariableSpec(
         trace_key="v11_term_offensive_production_component",
@@ -550,6 +562,17 @@ _MANIFEST_V11: list[AppliedVariableSpec] = [
         expected_in_debug=True,
         framework_key=None,
         resolver="v11:formula_term:recent_form_component",
+    ),
+    AppliedVariableSpec(
+        trace_key="v11_term_xg_chance_quality_component",
+        label="Qualità occasioni / xG",
+        area="Formula finale v1.1",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v11:formula_term:xg_chance_quality_component",
     ),
 ]
 for inp_k, lab, fwk in _V11_OFFENSIVE_INPUTS:
@@ -608,6 +631,20 @@ for inp_k, lab, fwk in _V11_RECENT_INPUTS:
             resolver=f"v11:recent_input:{inp_k}",
         ),
     )
+for inp_k, lab, fwk in _V11_XG_INPUTS:
+    _MANIFEST_V11.append(
+        AppliedVariableSpec(
+            trace_key=f"v11_xg_input_{inp_k}",
+            label=lab,
+            area="Qualità occasioni / xG",
+            application_role="component_input",
+            parent_component="xg_chance_quality_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v11:xg_input:{inp_k}",
+        ),
+    )
 _MANIFEST_V11.extend(
     [
         AppliedVariableSpec(
@@ -653,6 +690,17 @@ _MANIFEST_V11.extend(
             expected_in_debug=True,
             framework_key=None,
             resolver="v11:quality:recent_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_xg_quality",
+            label="Qualità input componente xG",
+            area="Qualità dati",
+            application_role="quality_control",
+            parent_component="xg_chance_quality_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=None,
+            resolver="v11:quality:xg_component",
         ),
         AppliedVariableSpec(
             trace_key="v11_ctx_kickoff_timedelta",

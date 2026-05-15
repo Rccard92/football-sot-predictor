@@ -1,29 +1,32 @@
-"""Manifest e trace baseline_v1_1_sot stage 4 (forma recente)."""
+"""Manifest e trace baseline_v1_1_sot stage 5 (xG)."""
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V11_SOT
 from app.services.model_applied_variable_manifest import is_countable_role, manifest_for_model
 from app.services.model_applied_variable_trace import build_applied_variable_trace_side
 
 
-def test_v11_manifest_four_formula_twenty_six_inputs():
+def test_v11_manifest_five_formula_thirty_one_inputs():
     specs = manifest_for_model(BASELINE_SOT_MODEL_VERSION_V11_SOT)
     formula_direct = [s for s in specs if s.application_role == "direct_formula_component"]
     comp_in = [s for s in specs if s.application_role == "component_input"]
-    assert len(formula_direct) == 4
+    assert len(formula_direct) == 5
     keys = {s.trace_key for s in formula_direct}
     assert "v11_term_offensive_production_component" in keys
     assert "v11_term_opponent_defensive_resistance_component" in keys
     assert "v11_term_home_away_split_component" in keys
     assert "v11_term_recent_form_component" in keys
-    assert len(comp_in) == 26
+    assert "v11_term_xg_chance_quality_component" in keys
+    assert len(comp_in) == 31
     off_in = [s for s in comp_in if s.parent_component == "offensive_production_component"]
     def_in = [s for s in comp_in if s.parent_component == "opponent_defensive_resistance_component"]
     split_in = [s for s in comp_in if s.parent_component == "home_away_split_component"]
     recent_in = [s for s in comp_in if s.parent_component == "recent_form_component"]
+    xg_in = [s for s in comp_in if s.parent_component == "xg_chance_quality_component"]
     assert len(off_in) == 9
     assert len(def_in) == 6
     assert len(split_in) == 5
     assert len(recent_in) == 6
+    assert len(xg_in) == 5
 
 
 def test_v11_trace_from_saved_raw():
@@ -31,20 +34,20 @@ def test_v11_trace_from_saved_raw():
         "prediction_valid": True,
         "formula_quality_status": "ok",
         "formula": {
-            "terms_count": 4,
+            "terms_count": 5,
             "terms": [
                 {
                     "key": "offensive_production_component",
                     "value": 3.84,
-                    "weight": 0.35,
-                    "contribution": 1.34,
+                    "weight": 0.30,
+                    "contribution": 1.15,
                     "status": "available",
                 },
                 {
                     "key": "opponent_defensive_resistance_component",
                     "value": 3.54,
-                    "weight": 0.30,
-                    "contribution": 1.06,
+                    "weight": 0.25,
+                    "contribution": 0.89,
                     "status": "available",
                 },
                 {
@@ -57,8 +60,15 @@ def test_v11_trace_from_saved_raw():
                 {
                     "key": "recent_form_component",
                     "value": 3.60,
-                    "weight": 0.20,
-                    "contribution": 0.72,
+                    "weight": 0.15,
+                    "contribution": 0.54,
+                    "status": "available",
+                },
+                {
+                    "key": "xg_chance_quality_component",
+                    "value": 3.50,
+                    "weight": 0.15,
+                    "contribution": 0.53,
                     "status": "available",
                 },
             ],
@@ -138,6 +148,24 @@ def test_v11_trace_from_saved_raw():
             ],
             "quality": {"inputs_total": 6, "inputs_available": 6, "fallback_count": 0},
         },
+        "xg_chance_quality_component": {
+            "value": 3.50,
+            "inputs": [
+                {
+                    "key": "avg_xg_for",
+                    "label": "xG prodotti",
+                    "raw_value": 1.2,
+                    "normalized_value": 3.4,
+                    "internal_weight": 0.30,
+                    "internal_contribution": 1.0,
+                    "source_path": "fixture_team_stats.expected_goals",
+                    "sample_count": 5,
+                    "fallback_used": False,
+                    "status": "available",
+                },
+            ],
+            "quality": {"inputs_total": 5, "inputs_available": 5, "fallback_count": 0},
+        },
     }
     trace = build_applied_variable_trace_side(
         BASELINE_SOT_MODEL_VERSION_V11_SOT,
@@ -157,12 +185,16 @@ def test_v11_trace_from_saved_raw():
     assert "home" in str(split_inp.get("notes") or "")
     recent_inp = next(r for r in trace if r.get("trace_key") == "v11_recent_input_recent_avg_sot_for")
     assert recent_inp["value"] == 4.0
+    xg_inp = next(r for r in trace if r.get("trace_key") == "v11_xg_input_avg_xg_for")
+    assert xg_inp["value"] == 3.4
     term_off = next(r for r in trace if r.get("trace_key") == "v11_term_offensive_production_component")
     assert term_off["value"] == 3.84
     term_split = next(r for r in trace if r.get("trace_key") == "v11_term_home_away_split_component")
     assert term_split["value"] == 3.77
     term_recent = next(r for r in trace if r.get("trace_key") == "v11_term_recent_form_component")
     assert term_recent["value"] == 3.60
+    term_xg = next(r for r in trace if r.get("trace_key") == "v11_term_xg_chance_quality_component")
+    assert term_xg["value"] == 3.50
     assert len([r for r in trace if is_countable_role(str(r.get("application_role")))]) == len(
         [s for s in manifest_for_model(BASELINE_SOT_MODEL_VERSION_V11_SOT) if is_countable_role(s.application_role)],
     )

@@ -1,4 +1,4 @@
-"""Test produzione offensiva + blend 35/30/15/20 v1.1 stage 4."""
+"""Test produzione offensiva + blend 30/25/15/15/15 v1.1 stage 5."""
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -37,11 +37,23 @@ LEAGUE_V11_MOCK = {
     "league_recent_avg_total_shots_for": 11.8,
     "league_recent_avg_total_shots_conceded": 11.5,
     "league_recent_avg_goals_for": 1.15,
+    "league_avg_xg_for": 1.2,
+    "league_avg_xg_conceded": 1.2,
 }
 
 
 def _stat(**kwargs):
-    return SimpleNamespace(**kwargs)
+    defaults: dict = dict(
+        shots_on_target=4,
+        total_shots=12,
+        shots_inside_box=6,
+        shots_outside_box=3,
+        blocked_shots=2,
+        shots_off_target=5,
+        expected_goals=1.25,
+    )
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
 
 
 def _fx(fid: int, kickoff: datetime, home: int = 10, away: int = 2, gh: int = 1, ga: int = 0):
@@ -159,7 +171,7 @@ def test_missing_inside_box_data():
     assert "avg_inside_box_shots_for" in keys
 
 
-def test_valid_blend_four_terms():
+def test_valid_blend_five_terms():
     team_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=10, away=90 + i) for i in range(1, 7)]
     opp_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=team_fx, opponent_fixtures=opp_fx)
@@ -179,13 +191,19 @@ def test_valid_blend_four_terms():
     def_val = float(result.defensive_component["value"])
     split_val = float(result.split_component["value"])
     recent_val = float(result.recent_component["value"])
-    expected = round(off_val * 0.35 + def_val * 0.30 + split_val * 0.15 + recent_val * 0.20, 2)
+    xg_val = float(result.xg_component["value"])
+    expected = round(
+        off_val * 0.30 + def_val * 0.25 + split_val * 0.15 + recent_val * 0.15 + xg_val * 0.15,
+        2,
+    )
     assert result.expected_sot == pytest.approx(expected, rel=1e-4)
-    assert result.raw_json["formula"]["terms_count"] == 4
+    assert result.raw_json["formula"]["terms_count"] == 5
+    assert len(result.xg_component["inputs"]) == 5
     assert len(result.component["inputs"]) == 9
     assert len(result.defensive_component["inputs"]) == 6
     assert len(result.split_component["inputs"]) == 5
     assert len(result.recent_component["inputs"]) == 6
+    assert result.xg_component is not None
 
 
 def test_league_baseline_missing_raises():

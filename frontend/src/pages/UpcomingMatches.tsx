@@ -112,7 +112,7 @@ export function UpcomingMatches() {
                 ) : null}
                 {modelInView === V11_MODEL ? (
                   <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
-                    Stage: Produzione offensiva + Difensiva avversaria + Split + Forma recente (v1.1)
+                    Stage: v1.1 — Offensiva + Difensiva avversaria + Split + Forma recente + xG (5 termini)
                   </span>
                 ) : null}
               </p>

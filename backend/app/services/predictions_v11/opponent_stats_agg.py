@@ -6,6 +6,8 @@ from typing import Any
 
 from app.models import Fixture, FixtureTeamStat
 
+from app.services.predictions_v11.shared_stats import expected_goals_from_team_stat
+
 
 def agg_conceded_by_opponent(
     *,
@@ -64,4 +66,39 @@ def agg_conceded_by_opponent(
         "outside_n": out_n,
         "blocked_mean": mean(blocked_sum, blocked_n),
         "blocked_n": blocked_n,
+    }
+
+
+def agg_xg_conceded_by_opponent(
+    *,
+    fixtures: list[Fixture],
+    stats_map: dict[tuple[int, int], FixtureTeamStat],
+    opponent_id: int,
+) -> dict[str, Any]:
+    """Media xG prodotti dagli avversari dell'avversario (concession pool)."""
+    xg_sum = 0.0
+    xg_n = 0
+
+    for f in fixtures:
+        oid = int(opponent_id)
+        if int(f.home_team_id) == oid:
+            other_id = int(f.away_team_id)
+        elif int(f.away_team_id) == oid:
+            other_id = int(f.home_team_id)
+        else:
+            continue
+
+        st = stats_map.get((int(f.id), other_id))
+        xv, _ = expected_goals_from_team_stat(st)
+        if xv is not None:
+            xg_sum += float(xv)
+            xg_n += 1
+
+    def mean_xg() -> float | None:
+        return (xg_sum / xg_n) if xg_n > 0 else None
+
+    return {
+        "matches_count": len(fixtures),
+        "xg_mean": mean_xg(),
+        "xg_n": xg_n,
     }

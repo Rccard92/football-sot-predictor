@@ -20,6 +20,7 @@ from app.core.constants import (
 )
 from app.services.sot_feature_registry import V11_MODEL_STAGE
 from app.models import TeamSotPrediction
+from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG
 
 MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
@@ -248,6 +249,8 @@ def enrich_v11_model_status_row(
         row["valid_predictions"] = 0
         row["incomplete_predictions"] = 0
         row["missing_required_data_count"] = 0
+        row["xg_available_predictions"] = 0
+        row["xg_missing_predictions"] = 0
         return
     preds = db.scalars(
         select(TeamSotPrediction).where(
@@ -258,12 +261,21 @@ def enrich_v11_model_status_row(
     valid = 0
     incomplete = 0
     missing_count = 0
+    xg_available = 0
+    xg_missing = 0
     for p in preds:
         raw = p.raw_json if isinstance(p.raw_json, dict) else {}
+        fq = str(raw.get("formula_quality_status") or "")
+        comps = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+        has_xg = isinstance(comps.get(COMPONENT_KEY_XG), dict) or isinstance(raw.get(COMPONENT_KEY_XG), dict)
+        if fq == "ok" and has_xg:
+            xg_available += 1
+        elif fq in ("insufficient_xg_sample", "missing_required_xg_league_baseline"):
+            xg_missing += 1
         if (
             p.predicted_sot is not None
             and raw.get("prediction_valid") is not False
-            and str(raw.get("formula_quality_status") or "") == "ok"
+            and fq == "ok"
         ):
             valid += 1
         else:
@@ -274,6 +286,8 @@ def enrich_v11_model_status_row(
     row["valid_predictions"] = int(valid)
     row["incomplete_predictions"] = int(incomplete)
     row["missing_required_data_count"] = int(missing_count)
+    row["xg_available_predictions"] = int(xg_available)
+    row["xg_missing_predictions"] = int(xg_missing)
     row["model_stage"] = V11_MODEL_STAGE
 
 
@@ -294,6 +308,12 @@ def build_v11_coherence_warnings(
                 f"v1.1 presente ma non raccomandata: {inc} predizioni incomplete (dati obbligatori mancanti).",
             )
         return warnings
-    if int(v11_row.get("incomplete_predictions") or 0) > 0:
+    inc = int(v11_row.get("incomplete_predictions") or 0)
+    if inc > 0:
         warnings.append("v1.1 raccomandata ma con predizioni incomplete: verificare ingestion team-stats.")
+        xg_miss = int(v11_row.get("xg_missing_predictions") or 0)
+        if xg_miss > 0 and xg_miss >= max(1, inc // 2):
+            warnings.append(
+                "Molte predizioni v1.1 incomplete per dati xG (expected_goals): verificare fixture_team_stats e medie lega.",
+            )
     return warnings

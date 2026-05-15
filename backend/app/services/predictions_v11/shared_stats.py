@@ -11,6 +11,44 @@ from typing import Any
 from app.models import Fixture
 
 
+def expected_goals_from_team_stat(st: Any) -> tuple[float | None, str]:
+    """Legge expected_goals dalla colonna DB o, se assente, da raw_json (tracciato come fonte alternativa)."""
+    if st is None:
+        return None, "fixture_team_stats.expected_goals"
+    ev = getattr(st, "expected_goals", None)
+    if ev is not None:
+        try:
+            v = float(ev)
+            if v == v:
+                return v, "fixture_team_stats.expected_goals"
+        except (TypeError, ValueError):
+            pass
+    raw = getattr(st, "raw_json", None)
+    if isinstance(raw, dict):
+        for k in ("expected_goals", "value"):
+            if k in raw:
+                try:
+                    vv = float(raw[k])
+                    if vv == vv:
+                        return vv, "fixture_team_stats.raw_json"
+                except (TypeError, ValueError):
+                    pass
+        for block in raw.get("statistics") or []:
+            if not isinstance(block, dict):
+                continue
+            t = str(block.get("type") or "").lower()
+            if "expected" in t and "goal" in t:
+                val = block.get("value") or block.get("Value")
+                try:
+                    if val is not None:
+                        vv = float(val)
+                        if vv == vv:
+                            return vv, "fixture_team_stats.raw_json::statistics"
+                except (TypeError, ValueError):
+                    pass
+    return None, "fixture_team_stats.expected_goals"
+
+
 def agg_for_team(
     *,
     fixtures: list[Fixture],
@@ -24,6 +62,8 @@ def agg_for_team(
     blocked_sum = blocked_n = 0
     off_goal_sum = off_goal_n = 0
     goals_sum = goals_n = 0
+    xg_sum = 0.0
+    xg_n = 0
 
     for f in fixtures:
         st = stats_map.get((int(f.id), int(team_id)))
@@ -49,9 +89,16 @@ def agg_for_team(
         if gf is not None:
             goals_sum += int(gf)
             goals_n += 1
+        xg, _sp = expected_goals_from_team_stat(st)
+        if xg is not None:
+            xg_sum += float(xg)
+            xg_n += 1
 
     def mean(sum_: int, n: int) -> float | None:
         return (sum_ / n) if n > 0 else None
+
+    def mean_xg() -> float | None:
+        return (xg_sum / xg_n) if xg_n > 0 else None
 
     return {
         "matches_count": len(fixtures),
@@ -69,4 +116,6 @@ def agg_for_team(
         "off_goal_n": off_goal_n,
         "goals_mean": mean(goals_sum, goals_n),
         "goals_n": goals_n,
+        "xg_mean": mean_xg(),
+        "xg_n": xg_n,
     }
