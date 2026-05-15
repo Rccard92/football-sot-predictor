@@ -47,7 +47,7 @@ class ResolvedFeature:
     fallback_reason: str | None
     status: str
     no_data_leakage: bool = True
-    inputs: dict[str, Any] | None = None
+    inputs: dict[str, Any] | list[dict[str, Any]] | None = None
     formula: str = ""
     application_role: str = "direct_formula_component"
 
@@ -55,12 +55,12 @@ class ResolvedFeature:
 FORMULA_TERM_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         feature_key="offensive_production_component",
-        label="Produzione offensiva (componente)",
+        label="Produzione offensiva composita",
         source_table="fixture_team_stats",
-        source_field="shots_on_target,total_shots,shots_inside_box,shots_outside_box",
+        source_field="shots_on_target,total_shots,shots_inside_box,shots_outside_box,blocked_shots,shots_off_target",
         api_source="fixtures/statistics + fixtures.goals",
         resolver_name="resolve_offensive_production_component",
-        formula="blend pesato segnali offensivi (cap ±0.75) × 0.30",
+        formula="9 segnali normalizzati lega × pesi interni (totale 1.00) × 0.30 formula finale",
         unit="tiri in porta",
         default_weight=WEIGHT_OFFENSIVE,
         required=True,
@@ -156,23 +156,58 @@ EXPECTED_GOALS_SPEC = FeatureSpec(
 
 OFFENSIVE_INPUT_KEYS: tuple[str, ...] = (
     "avg_sot_for",
-    "avg_goals_for",
-    "offensive_trend",
-    "shot_accuracy_for",
     "avg_total_shots_for",
+    "shot_accuracy_for",
     "avg_inside_box_shots_for",
     "avg_outside_box_shots_for",
+    "avg_blocked_shots_for",
+    "avg_shots_off_goal_for",
+    "avg_goals_for",
+    "offensive_trend",
 )
 
 OFFENSIVE_INPUT_LABELS: dict[str, str] = {
-    "avg_sot_for": "Media tiri in porta fatti (stagione)",
-    "avg_goals_for": "Media goal fatti",
-    "offensive_trend": "Trend offensivo ultime vs stagione",
-    "shot_accuracy_for": "Precisione tiro (SOT / tiri totali)",
+    "avg_sot_for": "Media tiri in porta fatti",
     "avg_total_shots_for": "Media tiri totali fatti",
+    "shot_accuracy_for": "Precisione tiro",
     "avg_inside_box_shots_for": "Media tiri dentro area",
     "avg_outside_box_shots_for": "Media tiri fuori area",
+    "avg_blocked_shots_for": "Media tiri bloccati",
+    "avg_shots_off_goal_for": "Media tiri fuori dallo specchio",
+    "avg_goals_for": "Media goal fatti",
+    "offensive_trend": "Trend offensivo recente",
 }
+
+_OFFENSIVE_INPUT_SPECS_DATA: tuple[tuple[str, str, str, str, str], ...] = (
+    ("avg_sot_for", "shots_on_target", "fixtures/statistics::Shots on Goal", "fixture_team_stats.shots_on_target", "0.30"),
+    ("avg_total_shots_for", "total_shots", "fixtures/statistics::Total Shots", "fixture_team_stats.total_shots", "0.18"),
+    ("shot_accuracy_for", "derived", "derived", "derived:shots_on_target/total_shots", "0.14"),
+    ("avg_inside_box_shots_for", "shots_inside_box", "fixtures/statistics::Shots insidebox", "fixture_team_stats.shots_inside_box", "0.14"),
+    ("avg_outside_box_shots_for", "shots_outside_box", "fixtures/statistics::Shots outsidebox", "fixture_team_stats.shots_outside_box", "0.05"),
+    ("avg_blocked_shots_for", "blocked_shots", "fixtures/statistics::Blocked Shots", "fixture_team_stats.blocked_shots", "0.05"),
+    ("avg_shots_off_goal_for", "shots_off_target", "fixtures/statistics::Shots off Goal", "fixture_team_stats.shots_off_target", "0.04"),
+    ("avg_goals_for", "goals", "fixtures::goals", "fixtures.goals", "0.05"),
+    ("offensive_trend", "derived", "fixture_team_stats.shots_on_target", "derived:last5_sot_minus_season_sot", "0.05"),
+)
+
+OFFENSIVE_COMPONENT_INPUT_SPECS: tuple[FeatureSpec, ...] = tuple(
+    FeatureSpec(
+        feature_key=key,
+        label=OFFENSIVE_INPUT_LABELS[key],
+        source_table="fixture_team_stats",
+        source_field=field,
+        api_source=api,
+        resolver_name=f"resolve_offensive_input_{key}",
+        formula=f"input interno × {w} (componente offensiva)",
+        unit="misto",
+        default_weight=float(w),
+        required=False,
+        fallback_policy="league_normalized_fallback",
+        audit_group="offensive_production",
+        application_role="component_input",
+    )
+    for key, field, api, _spath, w in _OFFENSIVE_INPUT_SPECS_DATA
+)
 
 
 def formula_term_spec_by_key(key: str) -> FeatureSpec | None:

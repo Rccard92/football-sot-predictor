@@ -135,13 +135,54 @@ export function ComponentTreeView({ nodes, teamName }: { nodes: ComponentTreeNod
               </span>
             ) : null}
             {n.variables?.length ? (
-              <ul className="mt-1 space-y-0.5 border-l border-slate-100 pl-2 text-[11px] text-slate-600">
-                {n.variables.map((v) => (
-                  <li key={v.key}>
-                    {v.label}: <span className="tabular-nums">{v.value ?? '—'}</span>
-                  </li>
-                ))}
-              </ul>
+              n.variables.some((v) => v.raw_value != null || v.normalized_value != null) ? (
+                <div className="mt-2 overflow-x-auto rounded border border-slate-100">
+                  <table className="min-w-full text-left text-[10px] text-slate-700">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-600">
+                        <th className="px-1.5 py-1 font-medium">Input</th>
+                        <th className="px-1.5 py-1 font-medium">Grezzo</th>
+                        <th className="px-1.5 py-1 font-medium">Norm.</th>
+                        <th className="px-1.5 py-1 font-medium">Peso</th>
+                        <th className="px-1.5 py-1 font-medium">Contr.</th>
+                        <th className="px-1.5 py-1 font-medium">Fonte</th>
+                        <th className="px-1.5 py-1 font-medium">N</th>
+                        <th className="px-1.5 py-1 font-medium">FB</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {n.variables.map((v) => (
+                        <tr key={v.key} className="border-b border-slate-50">
+                          <td className="px-1.5 py-1">{v.label}</td>
+                          <td className="px-1.5 py-1 tabular-nums">{v.raw_value ?? v.value ?? '—'}</td>
+                          <td className="px-1.5 py-1 tabular-nums">{v.normalized_value ?? v.value ?? '—'}</td>
+                          <td className="px-1.5 py-1 tabular-nums">
+                            {v.internal_weight != null
+                              ? `${Math.round(Number(v.internal_weight) * 100)}%`
+                              : v.weight_internal != null
+                                ? `${Math.round(Number(v.weight_internal) * 100)}%`
+                                : '—'}
+                          </td>
+                          <td className="px-1.5 py-1 tabular-nums">
+                            {v.internal_contribution ?? v.contribution ?? '—'}
+                          </td>
+                          <td className="px-1.5 py-1 font-mono text-[9px] text-slate-500">{v.data_source ?? '—'}</td>
+                          <td className="px-1.5 py-1 tabular-nums">{v.matches_count ?? '—'}</td>
+                          <td className="px-1.5 py-1">{v.fallback_used ? 'sì' : 'no'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <ul className="mt-1 space-y-0.5 border-l border-slate-100 pl-2 text-[11px] text-slate-600">
+                  {n.variables.map((v) => (
+                    <li key={v.key}>
+                      {v.label}: <span className="tabular-nums">{v.value ?? '—'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )
             ) : null}
           </li>
         ))}

@@ -1,6 +1,5 @@
 """
-Blend componente offensiva v1.0 (logica allineata a v0.4, solo lettura DB).
-Non importa SotPredictionV04OffensiveCoreSotService per non modificare v0.4.
+Blend componente Produzione offensiva composita v1.0 (solo DB, normalizzazione lega).
 """
 
 from __future__ import annotations
@@ -13,17 +12,79 @@ from app.services.predictions_v10.v10_prior_context import V10PriorContext
 PRUDENTIAL_FALLBACK_SOT = 3.5
 PRUDENTIAL_FALLBACK_SHOTS = 12.0
 PRUDENTIAL_FALLBACK_ACCURACY = 0.32
-PRUDENTIAL_SOT_PER_GOAL = 3.0
+PRUDENTIAL_FALLBACK_GOALS = 1.1
+WEIGHT_IN_FINAL_FORMULA = 0.30
+
+OFFENSIVE_INTERNAL_WEIGHTS: dict[str, float] = {
+    "avg_sot_for": 0.30,
+    "avg_total_shots_for": 0.18,
+    "shot_accuracy_for": 0.14,
+    "avg_inside_box_shots_for": 0.14,
+    "avg_outside_box_shots_for": 0.05,
+    "avg_blocked_shots_for": 0.05,
+    "avg_shots_off_goal_for": 0.04,
+    "avg_goals_for": 0.05,
+    "offensive_trend": 0.05,
+}
+
+INPUT_LABELS: dict[str, str] = {
+    "avg_sot_for": "Media tiri in porta fatti",
+    "avg_total_shots_for": "Media tiri totali fatti",
+    "shot_accuracy_for": "Precisione tiro",
+    "avg_inside_box_shots_for": "Media tiri dentro area",
+    "avg_outside_box_shots_for": "Media tiri fuori area",
+    "avg_blocked_shots_for": "Media tiri bloccati",
+    "avg_shots_off_goal_for": "Media tiri fuori dallo specchio",
+    "avg_goals_for": "Media goal fatti",
+    "offensive_trend": "Trend offensivo recente",
+}
+
+INPUT_API_SOURCES: dict[str, str] = {
+    "avg_sot_for": "fixtures/statistics::Shots on Goal",
+    "avg_total_shots_for": "fixtures/statistics::Total Shots",
+    "shot_accuracy_for": "derived",
+    "avg_inside_box_shots_for": "fixtures/statistics::Shots insidebox",
+    "avg_outside_box_shots_for": "fixtures/statistics::Shots outsidebox",
+    "avg_blocked_shots_for": "fixtures/statistics::Blocked Shots",
+    "avg_shots_off_goal_for": "fixtures/statistics::Shots off Goal",
+    "avg_goals_for": "fixtures::goals",
+    "offensive_trend": "fixture_team_stats.shots_on_target",
+}
+
+INPUT_SOURCE_PATHS: dict[str, str] = {
+    "avg_sot_for": "fixture_team_stats.shots_on_target",
+    "avg_total_shots_for": "fixture_team_stats.total_shots",
+    "shot_accuracy_for": "derived:shots_on_target/total_shots",
+    "avg_inside_box_shots_for": "fixture_team_stats.shots_inside_box",
+    "avg_outside_box_shots_for": "fixture_team_stats.shots_outside_box",
+    "avg_blocked_shots_for": "fixture_team_stats.blocked_shots",
+    "avg_shots_off_goal_for": "fixture_team_stats.shots_off_target",
+    "avg_goals_for": "fixtures.goals",
+    "offensive_trend": "derived:last5_sot_minus_season_sot",
+}
+
+INPUT_ORDER: tuple[str, ...] = tuple(OFFENSIVE_INTERNAL_WEIGHTS.keys())
+
+
+def offensive_inputs_as_map(comp: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Indice inputs da lista o dict (compat audit/trace)."""
+    if not isinstance(comp, dict):
+        return {}
+    raw_inp = comp.get("inputs")
+    if isinstance(raw_inp, list):
+        return {str(x.get("key")): x for x in raw_inp if isinstance(x, dict) and x.get("key")}
+    if isinstance(raw_inp, dict):
+        return {str(k): v for k, v in raw_inp.items() if isinstance(v, dict)}
+    return {}
 
 
 def _safe_float(x: Any) -> float | None:
     if x is None:
         return None
     try:
-        return float(x)
+        v = float(x)
+        return None if v != v else v
     except (TypeError, ValueError):
-        return None
-    except Exception:
         return None
 
 
@@ -31,6 +92,10 @@ def _round2(x: float | None) -> float | None:
     if x is None:
         return None
     return round(float(x), 2)
+
+
+def _round4(x: float) -> float:
+    return round(float(x), 4)
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:
@@ -52,6 +117,8 @@ def _agg_for_team(
     shots_sum = shots_n = 0
     in_sum = in_n = 0
     out_sum = out_n = 0
+    blocked_sum = blocked_n = 0
+    off_goal_sum = off_goal_n = 0
     goals_sum = goals_n = 0
 
     for f in fixtures:
@@ -68,10 +135,13 @@ def _agg_for_team(
         if st and st.shots_outside_box is not None:
             out_sum += int(st.shots_outside_box)
             out_n += 1
-        if int(f.home_team_id) == int(team_id):
-            gf = f.goals_home
-        else:
-            gf = f.goals_away
+        if st and st.blocked_shots is not None:
+            blocked_sum += int(st.blocked_shots)
+            blocked_n += 1
+        if st and st.shots_off_target is not None:
+            off_goal_sum += int(st.shots_off_target)
+            off_goal_n += 1
+        gf = f.goals_home if int(f.home_team_id) == int(team_id) else f.goals_away
         if gf is not None:
             goals_sum += int(gf)
             goals_n += 1
@@ -81,244 +151,175 @@ def _agg_for_team(
 
     return {
         "matches_count": len(fixtures),
-        "sot_sum": sot_sum,
-        "sot_n": sot_n,
         "sot_mean": mean(sot_sum, sot_n),
-        "shots_sum": shots_sum,
-        "shots_n": shots_n,
         "shots_mean": mean(shots_sum, shots_n),
-        "inside_sum": in_sum,
-        "inside_n": in_n,
         "inside_mean": mean(in_sum, in_n),
-        "outside_sum": out_sum,
-        "outside_n": out_n,
         "outside_mean": mean(out_sum, out_n),
-        "goals_sum": goals_sum,
-        "goals_n": goals_n,
+        "blocked_mean": mean(blocked_sum, blocked_n),
+        "off_goal_mean": mean(off_goal_sum, off_goal_n),
         "goals_mean": mean(goals_sum, goals_n),
     }
 
 
-def _resolve_with_fallback(raw: float | None, fallback: float, *, reason: str) -> tuple[float, dict[str, Any]]:
-    if raw is None or (isinstance(raw, float) and raw != raw):
-        return float(fallback), {"fallback_used": True, "fallback_value": fallback, "reason": reason}
-    return float(raw), {"fallback_used": False}
+def _scale_to_sot(
+    raw: float | None,
+    league_avg_raw: float | None,
+    league_avg_sot: float,
+    *,
+    fallback_signal: float,
+) -> tuple[float, bool]:
+    if raw is None:
+        return fallback_signal, True
+    if league_avg_raw is None or league_avg_raw <= 0 or league_avg_sot <= 0:
+        return fallback_signal, True
+    return float(raw) * float(league_avg_sot) / float(league_avg_raw), False
 
 
-def _ratio(num: float | None, den: float | None) -> float | None:
-    if num is None or den is None or den == 0:
-        return None
-    return float(num) / float(den)
+def _build_formula_symbolic() -> str:
+    parts = [
+        f"({key} × {OFFENSIVE_INTERNAL_WEIGHTS[key]})"
+        for key in INPUT_ORDER
+    ]
+    return "offensive_production_component = " + " + ".join(parts)
 
 
 def compute_offensive_production_component(ctx: V10PriorContext, prior_fixtures: list[Fixture]) -> dict[str, Any]:
-    """Ritorna dict con value, inputs, fallbacks_used, cap_applied (compatibile audit v0.4)."""
+    """Produzione offensiva composita con 9 input normalizzati e audit in lista."""
     team_id = ctx.team_id
     stats_map = ctx.stats_map
-    last5 = _last_n(prior_fixtures, 5)
-    last10 = _last_n(prior_fixtures, 10)
+    lb = ctx.league_baselines if isinstance(ctx.league_baselines, dict) else {}
+    league_sot = float(lb.get("league_avg_sot_for") or ctx.league_avg_sot or PRUDENTIAL_FALLBACK_SOT)
+    league_shots = float(lb.get("league_avg_total_shots_for") or PRUDENTIAL_FALLBACK_SHOTS)
+    league_inside = float(lb.get("league_avg_inside_box_shots_for") or league_sot)
+    league_outside = float(lb.get("league_avg_outside_box_shots_for") or league_sot)
+    league_blocked = float(lb.get("league_avg_blocked_shots_for") or league_sot)
+    league_off_goal = float(lb.get("league_avg_shots_off_goal_for") or league_sot)
+    league_goals = float(lb.get("league_avg_goals_for") or PRUDENTIAL_FALLBACK_GOALS)
+    league_acc = float(lb.get("league_avg_shot_accuracy") or PRUDENTIAL_FALLBACK_ACCURACY)
+
     season_agg = _agg_for_team(fixtures=prior_fixtures, stats_map=stats_map, team_id=team_id)
-    last5_agg = _agg_for_team(fixtures=last5, stats_map=stats_map, team_id=team_id)
-    last10_agg = _agg_for_team(fixtures=last10, stats_map=stats_map, team_id=team_id)
-
-    fallbacks_used: list[str] = []
-    avg_sot_for_raw = _safe_float(season_agg.get("sot_mean"))
-    avg_sot_for, fb = _resolve_with_fallback(avg_sot_for_raw, PRUDENTIAL_FALLBACK_SOT, reason="avg_sot_for_missing")
-    if fb.get("fallback_used"):
-        fallbacks_used.append("avg_sot_for")
-
-    avg_total_shots_for_raw = _safe_float(season_agg.get("shots_mean"))
-    avg_total_shots_for, fb2 = _resolve_with_fallback(
-        avg_total_shots_for_raw,
-        PRUDENTIAL_FALLBACK_SHOTS,
-        reason="avg_total_shots_for_missing",
+    last5_agg = _agg_for_team(
+        fixtures=_last_n(prior_fixtures, 5),
+        stats_map=stats_map,
+        team_id=team_id,
     )
-    if fb2.get("fallback_used"):
-        fallbacks_used.append("avg_total_shots_for")
+    sample_count = int(season_agg.get("matches_count") or 0)
 
-    avg_inside_box_shots_for_raw = _safe_float(season_agg.get("inside_mean"))
-    avg_outside_box_shots_for_raw = _safe_float(season_agg.get("outside_mean"))
+    avg_sot_raw = _safe_float(season_agg.get("sot_mean"))
+    avg_shots_raw = _safe_float(season_agg.get("shots_mean"))
+    avg_inside_raw = _safe_float(season_agg.get("inside_mean"))
+    avg_outside_raw = _safe_float(season_agg.get("outside_mean"))
+    avg_blocked_raw = _safe_float(season_agg.get("blocked_mean"))
+    avg_off_goal_raw = _safe_float(season_agg.get("off_goal_mean"))
+    avg_goals_raw = _safe_float(season_agg.get("goals_mean"))
 
-    shot_accuracy_raw = _ratio(avg_sot_for_raw, avg_total_shots_for_raw)
-    shot_accuracy_for, fb_acc = _resolve_with_fallback(
-        shot_accuracy_raw,
-        PRUDENTIAL_FALLBACK_ACCURACY,
-        reason="shot_accuracy_missing_or_zero_denom",
-    )
-    if fb_acc.get("fallback_used"):
-        fallbacks_used.append("shot_accuracy_for")
+    avg_sot_for = float(avg_sot_raw) if avg_sot_raw is not None else league_sot
+    fb_sot = avg_sot_raw is None
 
-    avg_goals_for_raw = _safe_float(season_agg.get("goals_mean"))
-    avg_goals_for, fb_g = _resolve_with_fallback(avg_goals_for_raw, 1.1, reason="avg_goals_for_missing")
-    if fb_g.get("fallback_used"):
-        fallbacks_used.append("avg_goals_for")
-
-    total_shots_signal = avg_total_shots_for * shot_accuracy_for
-    inside_box_signal = (
-        None if avg_inside_box_shots_for_raw is None else float(avg_inside_box_shots_for_raw) * shot_accuracy_for
-    )
-    outside_box_signal = (
-        None if avg_outside_box_shots_for_raw is None else float(avg_outside_box_shots_for_raw) * shot_accuracy_for * 0.7
-    )
-
-    acc_ratio = shot_accuracy_for / PRUDENTIAL_FALLBACK_ACCURACY if PRUDENTIAL_FALLBACK_ACCURACY else 1.0
-    shot_accuracy_signal = _clamp(avg_sot_for * acc_ratio, avg_sot_for - 0.5, avg_sot_for + 0.5)
-
-    goals_signal = avg_goals_for * PRUDENTIAL_SOT_PER_GOAL
+    shot_accuracy_raw: float | None = None
+    if avg_sot_raw is not None and avg_shots_raw is not None and avg_shots_raw > 0:
+        shot_accuracy_raw = float(avg_sot_raw) / float(avg_shots_raw)
+    shot_accuracy_fb = shot_accuracy_raw is None
 
     last5_sot = _safe_float(last5_agg.get("sot_mean"))
-    last10_sot = _safe_float(last10_agg.get("sot_mean"))
-    d5 = (last5_sot - avg_sot_for_raw) if (last5_sot is not None and avg_sot_for_raw is not None) else 0.0
-    d10 = (last10_sot - avg_sot_for_raw) if (last10_sot is not None and avg_sot_for_raw is not None) else 0.0
-    trend_delta = _clamp(float((d5 + d10) / 2.0), -0.5, 0.5)
-    offensive_trend_signal = _clamp(avg_sot_for + trend_delta, avg_sot_for - 0.5, avg_sot_for + 0.5)
+    trend_raw = (last5_sot - avg_sot_raw) if (last5_sot is not None and avg_sot_raw is not None) else 0.0
+    trend_fb = last5_sot is None or avg_sot_raw is None
 
-    w = {
-        "avg_sot_for": 0.35,
-        "avg_total_shots_for": 0.25,
-        "avg_inside_box_shots_for": 0.15,
-        "avg_outside_box_shots_for": 0.05,
-        "shot_accuracy_for": 0.10,
-        "avg_goals_for": 0.05,
-        "offensive_trend": 0.05,
-    }
+    normalized: dict[str, tuple[float, float, bool]] = {}
 
-    if inside_box_signal is None:
-        fallbacks_used.append("avg_inside_box_shots_for_missing_redistribute")
-        w["avg_sot_for"] += 0.10
-        w["avg_total_shots_for"] += 0.05
-        w["avg_inside_box_shots_for"] = 0.0
+    normalized["avg_sot_for"] = (avg_sot_for, avg_sot_for, fb_sot)
 
-    def contrib(val: float | None, weight: float) -> float:
-        if val is None or weight <= 0:
-            return 0.0
-        return float(val) * float(weight)
+    n_shots, fb_shots = _scale_to_sot(avg_shots_raw, league_shots, league_sot, fallback_signal=avg_sot_for)
+    normalized["avg_total_shots_for"] = (float(avg_shots_raw or 0), n_shots, fb_shots or avg_shots_raw is None)
 
-    numerator = denom = 0.0
-    for val, wk in (
-        (avg_sot_for, w["avg_sot_for"]),
-        (total_shots_signal, w["avg_total_shots_for"]),
-        (inside_box_signal, w["avg_inside_box_shots_for"]),
-        (outside_box_signal, w["avg_outside_box_shots_for"]),
-        (shot_accuracy_signal, w["shot_accuracy_for"]),
-        (goals_signal, w["avg_goals_for"]),
-        (offensive_trend_signal, w["offensive_trend"]),
-    ):
-        numerator += contrib(val, wk)
-        denom += wk
+    if shot_accuracy_raw is not None and league_acc > 0:
+        n_acc = (float(shot_accuracy_raw) / league_acc) * league_sot
+        normalized["shot_accuracy_for"] = (float(shot_accuracy_raw), n_acc, shot_accuracy_fb)
+    else:
+        normalized["shot_accuracy_for"] = (PRUDENTIAL_FALLBACK_ACCURACY, avg_sot_for, True)
 
-    raw_component = numerator / denom if denom > 0 else avg_sot_for
-    capped_component = _clamp(raw_component, avg_sot_for - 0.75, avg_sot_for + 0.75)
-    cap_applied = abs(capped_component - raw_component) > 1e-9
+    n_in, fb_in = _scale_to_sot(avg_inside_raw, league_inside, league_sot, fallback_signal=avg_sot_for)
+    normalized["avg_inside_box_shots_for"] = (float(avg_inside_raw or 0), n_in, fb_in or avg_inside_raw is None)
 
-    def mk_input(
-        *,
-        key: str,
-        value: float | None,
-        sum_key: str | None,
-        weight: float,
-        contribution: float,
-        status: str,
-        source_field: str,
-    ) -> dict[str, Any]:
-        return {
-            "key": key,
-            "value": _round2(value),
-            "source_table": "fixture_team_stats",
-            "source_field": source_field,
-            "source_path": f"fixture_team_stats.{source_field}",
-            "api_source": "fixtures/statistics",
-            "matches_count": int(season_agg.get("matches_count") or 0),
-            "sum": int(season_agg.get(sum_key) or 0) if sum_key else None,
-            "weight": weight,
-            "contribution": _round2(contribution),
-            "status": status,
-            "fallback_used": status != "available",
-            "no_data_leakage": True,
-        }
+    n_out, fb_out = _scale_to_sot(avg_outside_raw, league_outside, league_sot, fallback_signal=avg_sot_for)
+    normalized["avg_outside_box_shots_for"] = (float(avg_outside_raw or 0), n_out, fb_out or avg_outside_raw is None)
 
-    inputs = {
-        "avg_sot_for": mk_input(
-            key="avg_sot_for",
-            value=avg_sot_for,
-            sum_key="sot_sum",
-            weight=w["avg_sot_for"],
-            contribution=avg_sot_for * w["avg_sot_for"],
-            status="available" if avg_sot_for_raw is not None else "fallback",
-            source_field="shots_on_target",
-        ),
-        "avg_total_shots_for": mk_input(
-            key="avg_total_shots_for",
-            value=avg_total_shots_for,
-            sum_key="shots_sum",
-            weight=w["avg_total_shots_for"],
-            contribution=total_shots_signal * w["avg_total_shots_for"],
-            status="available" if avg_total_shots_for_raw is not None else "fallback",
-            source_field="total_shots",
-        ),
-        "avg_inside_box_shots_for": mk_input(
-            key="avg_inside_box_shots_for",
-            value=avg_inside_box_shots_for_raw,
-            sum_key="inside_sum",
-            weight=w["avg_inside_box_shots_for"],
-            contribution=(inside_box_signal or 0.0) * w["avg_inside_box_shots_for"],
-            status="available" if avg_inside_box_shots_for_raw is not None else "fallback",
-            source_field="shots_inside_box",
-        ),
-        "avg_outside_box_shots_for": mk_input(
-            key="avg_outside_box_shots_for",
-            value=avg_outside_box_shots_for_raw,
-            sum_key="outside_sum",
-            weight=w["avg_outside_box_shots_for"],
-            contribution=(outside_box_signal or 0.0) * w["avg_outside_box_shots_for"],
-            status="available" if avg_outside_box_shots_for_raw is not None else "fallback",
-            source_field="shots_outside_box",
-        ),
-        "shot_accuracy_for": {
-            **mk_input(
-                key="shot_accuracy_for",
-                value=shot_accuracy_for,
-                sum_key=None,
-                weight=w["shot_accuracy_for"],
-                contribution=shot_accuracy_signal * w["shot_accuracy_for"],
-                status="available" if shot_accuracy_raw is not None else "fallback",
-                source_field="derived_shots_on_target/total_shots",
-            ),
-        },
-        "avg_goals_for": {
-            **mk_input(
-                key="avg_goals_for",
-                value=avg_goals_for,
-                sum_key="goals_sum",
-                weight=w["avg_goals_for"],
-                contribution=goals_signal * w["avg_goals_for"],
-                status="available" if avg_goals_for_raw is not None else "fallback",
-                source_field="goals (fixtures)",
-            ),
-        },
-        "offensive_trend": {
-            **mk_input(
-                key="offensive_trend",
-                value=trend_delta,
-                sum_key=None,
-                weight=w["offensive_trend"],
-                contribution=offensive_trend_signal * w["offensive_trend"],
-                status="available" if (last5_sot is not None or last10_sot is not None) else "fallback",
-                source_field="derived_last5_last10_vs_season",
-            ),
-        },
-    }
+    n_blk, fb_blk = _scale_to_sot(avg_blocked_raw, league_blocked, league_sot, fallback_signal=avg_sot_for)
+    normalized["avg_blocked_shots_for"] = (float(avg_blocked_raw or 0), n_blk, fb_blk or avg_blocked_raw is None)
+
+    n_off, fb_off = _scale_to_sot(avg_off_goal_raw, league_off_goal, league_sot, fallback_signal=avg_sot_for)
+    normalized["avg_shots_off_goal_for"] = (float(avg_off_goal_raw or 0), n_off, fb_off or avg_off_goal_raw is None)
+
+    if avg_goals_raw is not None and league_goals > 0:
+        n_goals = (float(avg_goals_raw) / league_goals) * league_sot
+        normalized["avg_goals_for"] = (float(avg_goals_raw), n_goals, False)
+    else:
+        normalized["avg_goals_for"] = (float(avg_goals_raw or 0), avg_sot_for, avg_goals_raw is None)
+
+    trend_clamped = _clamp(float(trend_raw), -1.0, 1.0)
+    n_trend = avg_sot_for + trend_clamped
+    normalized["offensive_trend"] = (float(trend_raw), n_trend, trend_fb)
+
+    inputs_list: list[dict[str, Any]] = []
+    component_sum = 0.0
+    missing_inputs: list[str] = []
+    fallback_count = 0
+
+    for key in INPUT_ORDER:
+        raw_v, norm_v, fb = normalized[key]
+        iw = OFFENSIVE_INTERNAL_WEIGHTS[key]
+        ic = _round4(norm_v * iw)
+        component_sum += ic
+        if fb:
+            fallback_count += 1
+        if key == "avg_inside_box_shots_for" and avg_inside_raw is None:
+            missing_inputs.append(key)
+        elif key not in ("avg_sot_for", "offensive_trend") and normalized[key][2]:
+            if key not in missing_inputs:
+                missing_inputs.append(key)
+
+        inputs_list.append(
+            {
+                "key": key,
+                "label": INPUT_LABELS[key],
+                "raw_value": _round2(raw_v if key != "offensive_trend" else trend_raw),
+                "normalized_value": _round2(norm_v),
+                "internal_weight": iw,
+                "internal_contribution": ic,
+                "source_path": INPUT_SOURCE_PATHS[key],
+                "api_source": INPUT_API_SOURCES[key],
+                "sample_count": sample_count,
+                "fallback_used": fb,
+                "application_role": "component_input",
+                "parent_component": "offensive_production_component",
+            },
+        )
+
+    component_value = _round2(component_sum) or 0.0
+    contrib_final = _round4(float(component_value) * WEIGHT_IN_FINAL_FORMULA)
 
     return {
-        "value": _round2(capped_component),
-        "inputs": inputs,
-        "fallbacks_used": fallbacks_used,
-        "cap_applied": cap_applied,
-        "cap_bounds": {"min": _round2(avg_sot_for - 0.75), "max": _round2(avg_sot_for + 0.75)},
+        "key": "offensive_production_component",
+        "label": "Produzione offensiva composita",
+        "value": component_value,
+        "weight_in_final_formula": WEIGHT_IN_FINAL_FORMULA,
+        "weight_in_model": WEIGHT_IN_FINAL_FORMULA,
+        "contribution_in_final_formula": contrib_final,
+        "contribution": contrib_final,
+        "formula": _build_formula_symbolic(),
+        "inputs": inputs_list,
+        "quality": {
+            "inputs_total": len(INPUT_ORDER),
+            "inputs_available": len(INPUT_ORDER) - len(missing_inputs),
+            "fallback_count": fallback_count,
+            "missing_inputs": missing_inputs,
+        },
+        "fallbacks_used": [inp["key"] for inp in inputs_list if inp.get("fallback_used")],
+        "cap_applied": False,
         "explanation": (
-            "Componente offensiva in scala SOT da DB (v1.0 registry): SOT, volume tiri, inside/outside, "
-            "precisione, goal e trend con cap ±0.75."
+            "Produzione offensiva composita: 9 segnali normalizzati alla scala SOT lega "
+            "e combinati con pesi interni (totale 1.00), poi × 0.30 nella formula finale."
         ),
-        "debug": {"raw_value": _round2(raw_component)},
-        "weight_in_model": 0.30,
+        "application_role": "direct_formula_component",
+        "parent_component": None,
     }

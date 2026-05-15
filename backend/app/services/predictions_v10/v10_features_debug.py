@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V10_SOT
 from app.models import Fixture, Team
+from app.services.predictions_v10.offensive_production_blend import offensive_inputs_as_map
 from app.services.predictions_v10.v10_feature_resolvers import resolve_side_features
 
 
@@ -46,25 +47,40 @@ def build_fixture_features_debug(
                     "fallback_used": t.fallback_used,
                     "fallback_reason": t.fallback_reason,
                     "status": t.status,
+                    "application_role": "direct_formula_component",
                 },
             )
         off = resolved.get("offensive_component") if isinstance(resolved.get("offensive_component"), dict) else {}
-        inputs = off.get("inputs") if isinstance(off.get("inputs"), dict) else {}
-        offensive_inputs = [
-            {
-                "key": k,
-                "value": (v or {}).get("value"),
-                "source_path": (v or {}).get("source_path"),
-                "fallback_used": (v or {}).get("fallback_used"),
-                "status": (v or {}).get("status"),
-            }
-            for k, v in inputs.items()
-            if isinstance(v, dict)
-        ]
+        offensive_inputs: list[dict[str, Any]] = []
+        for k, blob in offensive_inputs_as_map(off).items():
+            if not isinstance(blob, dict):
+                continue
+            offensive_inputs.append(
+                {
+                    "key": k,
+                    "label": blob.get("label"),
+                    "raw_value": blob.get("raw_value"),
+                    "normalized_value": blob.get("normalized_value"),
+                    "internal_weight": blob.get("internal_weight"),
+                    "internal_contribution": blob.get("internal_contribution"),
+                    "source_path": blob.get("source_path"),
+                    "api_source": blob.get("api_source"),
+                    "sample_count": blob.get("sample_count"),
+                    "fallback_used": blob.get("fallback_used"),
+                    "application_role": "component_input",
+                    "parent_component": "offensive_production_component",
+                },
+            )
         return {
             "team": team.name if team else str(team_id),
             "team_id": int(team_id),
             "features": features,
+            "offensive_production_component": {
+                "value": off.get("value"),
+                "weight_in_final_formula": off.get("weight_in_final_formula"),
+                "contribution_in_final_formula": off.get("contribution_in_final_formula"),
+                "quality": off.get("quality"),
+            },
             "offensive_component_inputs": offensive_inputs,
             "base_explicit_sot": resolved["base_explicit_sot"],
             "final_sot": resolved["final_sot"],

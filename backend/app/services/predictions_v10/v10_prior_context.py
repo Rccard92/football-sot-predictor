@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES
 from app.models import Fixture, FixtureTeamStat
+from app.services.predictions_v10.v10_league_offensive_baselines import compute_league_offensive_baselines
 from app.services.sot_feature_math import PriorMatch, fixture_key_before, league_avg_sot_from_prior_fixtures
 
 
@@ -31,6 +32,7 @@ class V10PriorContext:
     opponent_prior_count: int
     team_prior_fixtures: list[Fixture]
     opponent_prior_fixtures: list[Fixture]
+    league_baselines: dict[str, float | None]
 
 
 def _prior_fixtures_for_team(
@@ -128,6 +130,12 @@ def build_prior_context(
     )
     all_ids = list({int(f.id) for f in team_prior_fx + opp_prior_fx})
     stats_map = _team_stats_map(db, all_ids)
+    league_baselines = compute_league_offensive_baselines(
+        db,
+        season_id=season_id,
+        cutoff_kickoff=cutoff_kickoff,
+        cutoff_fixture_id=cutoff_fixture_id,
+    )
 
     return V10PriorContext(
         season_id=season_id,
@@ -144,4 +152,5 @@ def build_prior_context(
         opponent_prior_count=len(opp_prior_fx),
         team_prior_fixtures=team_prior_fx,
         opponent_prior_fixtures=opp_prior_fx,
+        league_baselines=league_baselines,
     )

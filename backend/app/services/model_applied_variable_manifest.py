@@ -65,7 +65,7 @@ def manifest_for_model(model_version: str) -> list[AppliedVariableSpec]:
     if model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
         return _MANIFEST_V04
     if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
-        return list(_MANIFEST_V04) + [_MANIFEST_V10_EXPECTED_GOALS]
+        return list(_MANIFEST_V10)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         return _MANIFEST_V02
     return []
@@ -97,8 +97,8 @@ def all_manifest_framework_keys_union() -> dict[str, list[AppliedVariableSpec]]:
 
 
 _MODEL_PRIORITY: tuple[str, ...] = (
-    BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
+    BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
     BASELINE_SOT_MODEL_VERSION_V02,
@@ -339,6 +339,96 @@ _MANIFEST_V03.append(
     )
 )
 
+
+_V10_FORMULA_TERMS: list[tuple[str, str, str | None]] = [
+    ("offensive_production_component", "Produzione offensiva composita", None),
+    ("opp_avg_sot_conceded", "Tiri in porta concessi dall'avversario (stagione)", "avg_sot_conceded"),
+    ("team_split_avg_sot_for", "SOT fatti in split casa/trasferta", None),
+    ("opp_split_avg_sot_conceded", "SOT concessi avversario in split", None),
+    ("team_last5_avg_sot_for", "SOT fatti ultime 5", None),
+    ("opp_last5_avg_sot_conceded", "SOT concessi avversario ultime 5", None),
+]
+
+_V10_OFFENSIVE_INPUTS: list[tuple[str, str, str]] = [
+    ("avg_sot_for", "Media tiri in porta fatti", "avg_sot_for"),
+    ("avg_total_shots_for", "Media tiri totali fatti", "avg_shots_for"),
+    ("shot_accuracy_for", "Precisione tiro", "conv_shots_to_sot"),
+    ("avg_inside_box_shots_for", "Media tiri dentro area", "avg_box_shots_for"),
+    ("avg_outside_box_shots_for", "Media tiri fuori area", "avg_outbox_shots_for"),
+    ("avg_blocked_shots_for", "Media tiri bloccati", "avg_blocked_shots_for"),
+    ("avg_shots_off_goal_for", "Media tiri fuori dallo specchio", "avg_shots_off_goal_for"),
+    ("avg_goals_for", "Media goal fatti", "avg_goals_for"),
+    ("offensive_trend", "Trend offensivo recente", "offensive_trend"),
+]
+
+_MANIFEST_V10: list[AppliedVariableSpec] = []
+for trace_k, lab, fwk in _V10_FORMULA_TERMS:
+    _MANIFEST_V10.append(
+        AppliedVariableSpec(
+            trace_key=f"v10_term_{trace_k}",
+            label=lab,
+            area="Formula finale v1.0",
+            application_role="direct_formula_component",
+            parent_component=None,
+            direct_formula_impact=True,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v10:formula_term:{trace_k}",
+        )
+    )
+for inp_k, lab, fwk in _V10_OFFENSIVE_INPUTS:
+    _MANIFEST_V10.append(
+        AppliedVariableSpec(
+            trace_key=f"v10_off_input_{inp_k}",
+            label=lab,
+            area="Produzione offensiva composita",
+            application_role="component_input",
+            parent_component="offensive_production_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v10:offensive_input:{inp_k}",
+        )
+    )
+_MANIFEST_V10.append(
+    AppliedVariableSpec(
+        trace_key="v10_expected_goals",
+        label="xG / Expected goals",
+        area="Qualità occasioni",
+        application_role="direct_formula_component",
+        parent_component="xg_quality_component",
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key="expected_goals",
+        resolver="v10:xg_component:expected_goals",
+    )
+)
+_MANIFEST_V10.extend(
+    [
+        AppliedVariableSpec(
+            trace_key="v10_offensive_quality",
+            label="Qualità input componente offensiva",
+            area="Qualità dati",
+            application_role="quality_control",
+            parent_component="offensive_production_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=None,
+            resolver="v10:quality:offensive_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v10_ctx_kickoff_timedelta",
+            label="Distanza temporale dal calcio d'inizio",
+            area="Contesto match",
+            application_role="context_risk",
+            parent_component=None,
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key="tempo_al_kickoff",
+            resolver="fixture:hours_to_kickoff",
+        ),
+    ]
+)
 
 _MANIFEST_V10_EXPECTED_GOALS = AppliedVariableSpec(
     trace_key="v10_expected_goals",

@@ -14,6 +14,7 @@ from app.services.model_applied_variable_manifest import (
     is_countable_role,
     manifest_for_model,
 )
+from app.services.predictions_v10.offensive_production_blend import INPUT_LABELS, offensive_inputs_as_map
 from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
 
 CHECKSUM_TOLERANCE = 0.02
@@ -230,6 +231,76 @@ def _row_for_spec(
             base["status"] = "missing"
         return base
 
+    if r.startswith("v10:formula_term:"):
+        term = r.split(":")[-1]
+        formula_obj = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+        terms_list = formula_obj.get("terms") if isinstance(formula_obj.get("terms"), list) else []
+        ft = next((t for t in terms_list if isinstance(t, dict) and str(t.get("key") or "") == term), None)
+        if ft:
+            base["value"] = _r2(_sf(ft.get("value")))
+            base["weight"] = _sf(ft.get("weight"))
+            base["contribution"] = _r2(_sf(ft.get("contribution")))
+            sp = ft.get("source_path") or ft.get("source")
+            base["source"] = str(sp) if sp else base["source"]
+            base["fallback_used"] = bool(ft.get("fallback_used"))
+            base["status"] = str(ft.get("status") or ("fallback" if base["fallback_used"] else "available"))
+            base["formula"] = str(ft.get("formula") or base["formula"])
+            base["unit"] = "xG medi" if term == "expected_goals" else "tiri in porta"
+            return base
+        comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
+        if term == "offensive_production_component":
+            ov = _sf(comp.get("value"))
+            ow = _sf(comp.get("weight_in_final_formula")) or _sf(comp.get("weight_in_model")) or 0.30
+            base["value"] = _r2(ov)
+            base["weight"] = ow
+            base["contribution"] = _r2(_sf(comp.get("contribution_in_final_formula")))
+            if base["contribution"] is None and ov is not None and ow is not None:
+                base["contribution"] = _r2(float(ov) * float(ow))
+            base["unit"] = "tiri in porta"
+            base["formula"] = str(comp.get("formula") or "Produzione offensiva composita × 0.30")
+            base["fallback_used"] = bool(comp.get("fallbacks_used"))
+            base["status"] = "fallback" if base["fallback_used"] else "available"
+            return base
+        base["status"] = "missing"
+        return base
+
+    if r.startswith("v10:offensive_input:"):
+        ik = r.split(":")[-1]
+        comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
+        blob = offensive_inputs_as_map(comp).get(ik)
+        if blob is None:
+            base["status"] = "missing"
+            base["notes"] = "Chiave assente in offensive_production_component.inputs"
+            return base
+        base["value"] = _r2(_sf(blob.get("normalized_value") if blob.get("normalized_value") is not None else blob.get("value")))
+        base["weight"] = _sf(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight"))
+        base["contribution"] = _r2(_sf(blob.get("internal_contribution") if blob.get("internal_contribution") is not None else blob.get("contribution")))
+        rv = _sf(blob.get("raw_value"))
+        if rv is not None:
+            base["notes"] = f"valore grezzo: {_r2(rv)}"
+        base["unit"] = "scala SOT"
+        base["formula"] = str(blob.get("formula") or INPUT_LABELS.get(ik, ik))
+        base["matches_count"] = blob.get("sample_count") if blob.get("sample_count") is not None else blob.get("matches_count")
+        base["fallback_used"] = bool(blob.get("fallback_used"))
+        base["cap_applied"] = False
+        sp = blob.get("source_path") or blob.get("source_table")
+        base["source"] = str(sp) if sp else "fixture_team_stats"
+        base["status"] = "fallback" if base["fallback_used"] else "available"
+        return base
+
+    if r == "v10:quality:offensive_component":
+        comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
+        q = comp.get("quality") if isinstance(comp.get("quality"), dict) else {}
+        base["value"] = _sf(q.get("inputs_available"))
+        base["unit"] = "conteggio"
+        base["formula"] = (
+            f"inputs_total={q.get('inputs_total')}; fallback_count={q.get('fallback_count')}; "
+            f"missing={q.get('missing_inputs')}"
+        )
+        base["fallback_used"] = int(q.get("fallback_count") or 0) > 0
+        base["status"] = "fallback" if base["fallback_used"] else "available"
+        return base
+
     if r.startswith("v04:formula_term:"):
         term = r.split(":")[-1]
         arch = str(raw.get("architecture") or "")
@@ -293,8 +364,7 @@ def _row_for_spec(
     if r.startswith("v04:offensive_input:"):
         ik = r.split(":")[-1]
         comp = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
-        inputs = comp.get("inputs") if isinstance(comp.get("inputs"), dict) else {}
-        blob = inputs.get(ik) if isinstance(inputs.get(ik), dict) else None
+        blob = offensive_inputs_as_map(comp).get(ik)
         if blob is None:
             base["status"] = "missing"
             base["notes"] = "Chiave assente in offensive_production_component.inputs"

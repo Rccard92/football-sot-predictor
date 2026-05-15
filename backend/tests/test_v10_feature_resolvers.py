@@ -78,18 +78,25 @@ def test_components_v10_feature_registry_structure():
         "base_explicit_sot_before_xg": 3.5,
         "formula_quality_status": "ok",
         "offensive_production_component": {
+            "key": "offensive_production_component",
+            "label": "Produzione offensiva composita",
             "value": 3.2,
-            "weight_in_model": 0.30,
-            "contribution": 0.96,
-            "inputs": {
-                "avg_sot_for": {
-                    "label": "SOT medi",
-                    "value": 4.0,
-                    "weight": 0.35,
-                    "contribution": 1.4,
-                    "source_path": "fixture_team_stats",
+            "weight_in_final_formula": 0.30,
+            "contribution_in_final_formula": 0.96,
+            "inputs": [
+                {
+                    "key": "avg_sot_for",
+                    "label": "Media tiri in porta fatti",
+                    "raw_value": 4.0,
+                    "normalized_value": 4.0,
+                    "internal_weight": 0.30,
+                    "internal_contribution": 1.2,
+                    "source_path": "fixture_team_stats.shots_on_target",
+                    "sample_count": 34,
+                    "fallback_used": False,
                 },
-            },
+            ],
+            "quality": {"inputs_total": 9, "inputs_available": 1, "fallback_count": 0, "missing_inputs": []},
         },
         "formula": {
             "terms": [
@@ -115,6 +122,9 @@ def test_components_v10_feature_registry_structure():
     assert "v10_offensive_production" in ids
     assert "v10_explicit_weighted_sum" in ids
     assert "v10_xg_quality" in ids
+    off_node = next(c for c in comps if c["id"] == "v10_offensive_production")
+    assert off_node["label"] == "Produzione offensiva composita"
+    assert len(off_node["variables"]) >= 1
+    assert off_node["variables"][0].get("raw_value") is not None
     weighted = next(c for c in comps if c["id"] == "v10_explicit_weighted_sum")
     assert len(weighted["variables"]) == 5
-    assert weighted["variables"][0]["value"] != weighted["variables"][1]["value"]

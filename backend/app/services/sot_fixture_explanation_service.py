@@ -32,6 +32,7 @@ from app.services.model_applied_variable_trace import (
     compute_hours_to_kickoff,
     validate_model_trace,
 )
+from app.services.predictions_v10.offensive_production_blend import offensive_inputs_as_map
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
 
 logger = logging.getLogger(__name__)
@@ -461,7 +462,7 @@ def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> l
     out: list[dict[str, Any]] = []
 
     off = raw.get("offensive_production_component") if isinstance(raw.get("offensive_production_component"), dict) else {}
-    off_inputs = off.get("inputs") if isinstance(off.get("inputs"), dict) else {}
+    off_inputs = offensive_inputs_as_map(off)
     sub_vars: list[dict[str, Any]] = []
     for ik, blob in off_inputs.items():
         if not isinstance(blob, dict):
@@ -470,12 +471,17 @@ def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> l
             {
                 "key": str(ik),
                 "label": str(blob.get("label") or ik),
-                "value": _round2(_safe_float(blob.get("value"))),
-                "unit": str(blob.get("unit") or "misto"),
-                "weight_internal": _safe_float(blob.get("weight")),
-                "contribution": _safe_float(blob.get("contribution")),
+                "value": _round2(_safe_float(blob.get("normalized_value") if blob.get("normalized_value") is not None else blob.get("value"))),
+                "raw_value": _round2(_safe_float(blob.get("raw_value"))),
+                "normalized_value": _round2(_safe_float(blob.get("normalized_value"))),
+                "unit": str(blob.get("unit") or "scala SOT"),
+                "weight_internal": _safe_float(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight")),
+                "internal_weight": _safe_float(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight")),
+                "contribution": _safe_float(blob.get("internal_contribution") if blob.get("internal_contribution") is not None else blob.get("contribution")),
+                "internal_contribution": _safe_float(blob.get("internal_contribution") if blob.get("internal_contribution") is not None else blob.get("contribution")),
                 "formula": str(blob.get("formula") or ""),
                 "data_source": str(blob.get("source_path") or blob.get("source_table") or ""),
+                "matches_count": blob.get("sample_count") if blob.get("sample_count") is not None else blob.get("matches_count"),
                 "fallback_used": bool(blob.get("fallback_used")),
                 "status": str(blob.get("status") or "available"),
                 "no_data_leakage_note": "Sì (solo partite precedenti)",
@@ -484,10 +490,10 @@ def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> l
     out.append(
         {
             "id": "v10_offensive_production",
-            "label": "Produzione offensiva (componente)",
+            "label": str(off.get("label") or "Produzione offensiva composita"),
             "value": _round2(_safe_float(off.get("value"))),
-            "weight": _safe_float(off.get("weight_in_model")) or 0.30,
-            "contribution": _round2(_safe_float(off.get("contribution"))),
+            "weight": _safe_float(off.get("weight_in_final_formula")) or _safe_float(off.get("weight_in_model")) or 0.30,
+            "contribution": _round2(_safe_float(off.get("contribution_in_final_formula") or off.get("contribution"))),
             "direction": "neutro",
             "data_status": "fallback" if off.get("fallbacks_used") else "ok",
             "notes": str(off.get("explanation") or ""),

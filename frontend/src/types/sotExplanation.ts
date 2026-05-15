@@ -56,6 +56,10 @@ export type ExplanationVariable = {
   sample_matches_note?: string | null
   status?: string
   parent_component_id?: string
+  raw_value?: number | null
+  normalized_value?: number | null
+  internal_weight?: number | null
+  internal_contribution?: number | null
 }
 
 export type FormulaFlags = {

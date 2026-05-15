@@ -6,11 +6,33 @@ Documento di riferimento per **baseline v0.1**, per le metriche di qualità e pe
 
 Stimare i **tiri in porta attesi** (shots on target, SOT) per squadra su una partita, usando solo statistiche di squadra storiche e medie derivate dal database. Il totale match è la **somma** delle due stime squadra quando entrambe sono disponibili.
 
+## baseline_v1_0_sot — Produzione offensiva composita
+
+Il termine **Produzione offensiva composita** (`offensive_production_component`) è l’unico segnale offensivo nella **formula finale** (peso **0,30**). Gli input sotto non sono righe della formula a 7 termini: compaiono solo in audit/trace come `component_input` con `parent_component = offensive_production_component`.
+
+| feature_key | Nome | Fonte API | DB field | Ruolo | Parent | Peso interno |
+|-------------|------|-----------|----------|-------|--------|--------------|
+| avg_sot_for | Media tiri in porta fatti | fixtures/statistics::Shots on Goal | shots_on_target | component_input | offensive_production_component | 0,30 |
+| avg_total_shots_for | Media tiri totali fatti | fixtures/statistics::Total Shots | total_shots | component_input | offensive_production_component | 0,18 |
+| shot_accuracy_for | Precisione tiro | derived | shots_on_target / total_shots | component_input | offensive_production_component | 0,14 |
+| avg_inside_box_shots_for | Media tiri dentro area | fixtures/statistics::Shots insidebox | shots_inside_box | component_input | offensive_production_component | 0,14 |
+| avg_outside_box_shots_for | Media tiri fuori area | fixtures/statistics::Shots outsidebox | shots_outside_box | component_input | offensive_production_component | 0,05 |
+| avg_blocked_shots_for | Media tiri bloccati | fixtures/statistics::Blocked Shots | blocked_shots | component_input | offensive_production_component | 0,05 |
+| avg_shots_off_goal_for | Media tiri fuori dallo specchio | fixtures/statistics::Shots off Goal | shots_off_target | component_input | offensive_production_component | 0,04 |
+| avg_goals_for | Media goal fatti | fixtures::goals | goals (fixtures) | component_input | offensive_production_component | 0,05 |
+| offensive_trend | Trend offensivo recente | derived | last5 SOT − season SOT | component_input | offensive_production_component | 0,05 |
+
+Normalizzazione: ogni input grezzo è scalato alla **scala SOT lega** (medie su partite finite prima del kickoff) prima del blend; il valore del componente è la somma pesata dei segnali normalizzati (totale pesi interni = 1,00), arrotondato a 2 decimali.
+
+Implementazione: [`offensive_production_blend.py`](backend/app/services/predictions_v10/offensive_production_blend.py), medie lega [`v10_league_offensive_baselines.py`](backend/app/services/predictions_v10/v10_league_offensive_baselines.py).
+
 ## baseline_v1_0_sot — Step 1: xG diretto API
 
 Versione **parallela** alla v0.4 (`baseline_v0_4_offensive_core_sot`): non modifica il servizio né i pesi v0.4.
 
-### Base: 6 termini espliciti v0.4
+### Base: 6 termini espliciti (feature registry DB)
+
+Per ogni lato i valori sono risolti da DB (`v10_feature_resolvers`), non da snapshot v0.4:
 
 Per ogni lato carica la predizione v0.4 salvata, legge `raw_json` e ricostruisce la **base esplicita** come somma dei sei termini esterni (stessi pesi v0.4):
 

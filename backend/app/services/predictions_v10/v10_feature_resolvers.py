@@ -100,12 +100,17 @@ def resolve_all_base_terms(ctx: V10PriorContext) -> tuple[list[ResolvedFeature],
 
     off_comp = compute_offensive_production_component(ctx, ctx.team_prior_fixtures)
     off_val = _safe_float(off_comp.get("value"))
-    off_fb = bool(off_comp.get("fallbacks_used"))
+    off_fb_list = off_comp.get("fallbacks_used") if isinstance(off_comp.get("fallbacks_used"), list) else []
+    off_fb = bool(off_fb_list)
+    off_contrib = _safe_float(off_comp.get("contribution_in_final_formula"))
+    if off_contrib is None and off_val is not None:
+        off_contrib = _r4(float(off_val) * WEIGHT_OFFENSIVE)
+    spec_off = formula_term_spec_by_key("offensive_production_component")
     off_term = ResolvedFeature(
         key="offensive_production_component",
-        label="Produzione offensiva (componente)",
+        label=spec_off.label if spec_off else "Produzione offensiva composita",
         value=_r2(off_val),
-        contribution=_r4(float(off_val or 0) * WEIGHT_OFFENSIVE) if off_val is not None else 0.0,
+        contribution=_r4(float(off_contrib or 0)),
         weight=WEIGHT_OFFENSIVE,
         source_table="fixture_team_stats",
         source_field="blend_offensive_signals",
@@ -113,10 +118,10 @@ def resolve_all_base_terms(ctx: V10PriorContext) -> tuple[list[ResolvedFeature],
         source_path="v10:offensive_production_blend",
         sample_count=ctx.team_prior_count,
         fallback_used=off_fb,
-        fallback_reason="; ".join(off_comp.get("fallbacks_used") or []) if off_fb else None,
+        fallback_reason="; ".join(str(x) for x in off_fb_list) if off_fb else None,
         status="fallback" if off_fb else ("available" if off_val is not None else "missing"),
-        formula="blend componente offensiva × 0.30",
-        inputs=off_comp.get("inputs") if isinstance(off_comp.get("inputs"), dict) else {},
+        formula=str(off_comp.get("formula") or "Produzione offensiva composita × 0.30"),
+        inputs=off_comp.get("inputs") if isinstance(off_comp.get("inputs"), list) else {},
     )
 
     mappings: list[tuple[str, str, str, str]] = [
