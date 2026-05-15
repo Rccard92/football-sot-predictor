@@ -961,6 +961,18 @@ def _v11_shot_coverage_remediation_hints(*, raw: dict[str, Any] | None, season_y
             if not isinstance(m, dict):
                 continue
             fk = str(m.get("feature_key") or "")
+            if fk in V11_BLOCKED_OFF_DIAG_KEYS:
+                hit_keys.add(fk)
+    if not hit_keys:
+        return []
+    ys = season_year if season_year is not None else "«season»"
+    dbg = f"/api/admin/debug/serie-a/{ys}/team-shot-stats-summary"
+    keys_it = sorted(hit_keys)
+    return [
+        f"baseline_v1_1_sot incompleta per: {', '.join(keys_it)}.",
+        "API: endpoints fixtures/statistics con voci «Blocked Shots» e «Shots off Goal».",
+        "DB: `fixture_team_stats.blocked_shots`, `fixture_team_stats.shots_off_goal` "
+        "(in lettura v1.1 è supportato anche `raw_json.statistics` se persistito).",
         f"Diagnostica copertura (GET): `{dbg}`; rieseguire l'ingestion statistiche squadra da Admin.",
     ]
 
