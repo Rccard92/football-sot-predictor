@@ -1235,6 +1235,14 @@ export async function adminIngestTeamStats(season: number, opts?: AdminRequestOp
   return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/team-stats`, {}, opts)
 }
 
+export async function adminIngestPlayerMatchStats(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/player-match-stats`, {}, opts)
+}
+
+export async function getPlayerMatchDbSummary(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminGetJson<unknown>(`/api/admin/debug/serie-a/${season}/player-db-summary`, opts)
+}
+
 export async function adminIngestPlayerStats(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/player-stats`, {}, opts)
 }

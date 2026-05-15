@@ -5,6 +5,7 @@ import {
   adminBootstrapSerieA,
   adminIngestAvailability,
   adminIngestLineups,
+  adminIngestPlayerMatchStats,
   adminIngestPlayerStats,
   adminIngestStandings,
   adminIngestTeamStats,
@@ -17,6 +18,7 @@ import {
   getDataHealth,
   getIngestionRuns,
   getTeamShotStatsSummary,
+  getPlayerMatchDbSummary,
   getModelStatusWithOpts,
   getPlayerSotProfilesSummary,
   getUpcomingActiveWithOpts,
@@ -48,27 +50,34 @@ type OpResult = {
 function pickMessage(payload: unknown, okFallback: string): string {
   if (payload && typeof payload === 'object') {
     const o = payload as Record<string, unknown>
+    if (typeof o.status === 'string' && (o.fixtures_processed != null || o.player_match_stats_upserted != null)) {
+      const p = o.fixtures_processed
+      const s = o.fixtures_skipped
+      const m = o.player_match_stats_upserted
+      const pl = o.players_upserted
+      return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
+    }
     if (typeof o.message === 'string' && o.message.trim()) return o.message
     if (typeof o.status === 'string' && o.status === 'skipped' && typeof o.reason === 'string') {
       return `Operazione saltata: ${o.reason}`
     }
-      if (typeof o.status === 'string' && o.status === 'success') {
-        if (
-          o.architecture === 'explicit_terms_from_v04_plus_xg' ||
-          o.architecture === 'explicit_terms_from_v04' ||
-          o.xg_applied_count != null
-        ) {
-          return [
-            `Formula esplicita v0.4 + xG`,
-            `architecture: ${String(o.architecture ?? '')}`,
-            `create/update: ${String(o.predictions_created_or_updated ?? '')}`,
-            `xg applicati: ${String(o.xg_applied_count ?? '')}`,
-            `xg fallback: ${String(o.xg_fallback_count ?? '')}`,
-            `base allineata: ${String(o.aligned_base_terms_count ?? '')}`,
-            `da revisionare: ${String(o.needs_review ?? '')}`,
-          ].join(' · ')
-        }
+    if (typeof o.status === 'string' && o.status === 'success') {
+      if (
+        o.architecture === 'explicit_terms_from_v04_plus_xg' ||
+        o.architecture === 'explicit_terms_from_v04' ||
+        o.xg_applied_count != null
+      ) {
+        return [
+          `Formula esplicita v0.4 + xG`,
+          `architecture: ${String(o.architecture ?? '')}`,
+          `create/update: ${String(o.predictions_created_or_updated ?? '')}`,
+          `xg applicati: ${String(o.xg_applied_count ?? '')}`,
+          `xg fallback: ${String(o.xg_fallback_count ?? '')}`,
+          `base allineata: ${String(o.aligned_base_terms_count ?? '')}`,
+          `da revisionare: ${String(o.needs_review ?? '')}`,
+        ].join(' · ')
       }
+    }
   }
   return okFallback
 }
@@ -217,6 +226,13 @@ export function Admin() {
       run: () => adminBootstrapSerieA(SEASON),
     },
     {
+      id: 'player-match-stats',
+      label: 'Aggiorna statistiche giocatori',
+      description: 'Importa fixtures/players per le partite finite e salva player_match_stats.',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/player-match-stats`,
+      run: () => adminIngestPlayerMatchStats(SEASON),
+    },
+    {
       id: 'team-stats',
       label: 'Aggiorna statistiche squadra partite finite',
       endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/team-stats`,
@@ -322,6 +338,12 @@ export function Admin() {
   ]
 
   const section3: AdminAction[] = [
+    {
+      id: 'player-db-summary',
+      label: 'Riepilogo Player DB (match stats)',
+      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/player-db-summary`,
+      run: () => getPlayerMatchDbSummary(SEASON),
+    },
     {
       id: 'ingest-runs',
       label: 'Mostra ultimi ingestion runs',

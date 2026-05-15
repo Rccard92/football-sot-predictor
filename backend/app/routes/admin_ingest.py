@@ -13,6 +13,7 @@ from app.models import IngestionRun
 from app.schemas.ingestion import IngestionRunRead
 from app.services.ingestion_service import IngestionService
 from app.services.player_data.orchestrator import run_player_db_update
+from app.services.player_data.player_match_stats_ingestion import ingest_serie_a_player_match_stats
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,25 @@ def admin_ingest_serie_a_team_stats(
     if summary.get("status") == "error":
         return JSONResponse(status_code=502, content=jsonable_encoder(summary))
     return jsonable_encoder(summary)
+
+
+@router.post("/serie-a/{season}/player-match-stats", response_model=None)
+def admin_ingest_serie_a_player_match_stats(
+    season: int,
+    force: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    try:
+        payload = ingest_serie_a_player_match_stats(db, season, force=force)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("player-match-stats: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload.get("status") == "error":
+        return JSONResponse(status_code=502, content=jsonable_encoder(payload))
+    return jsonable_encoder(payload)
 
 
 @router.post("/serie-a/{season}/player-db", response_model=None)
