@@ -11,6 +11,7 @@ from app.services.debug_sot_model_comparison import (
     build_model_comparison_for_fixture,
     build_model_comparison_for_upcoming,
 )
+from app.services.predictions_v10.v10_features_debug import build_fixture_features_debug
 from app.services.sot_fixture_explanation_service import build_fixture_sot_explanation
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,29 @@ def debug_sot_fixture_explanation(
     if isinstance(payload, dict) and payload.get("status") == "missing":
         return JSONResponse(status_code=404, content=jsonable_encoder(payload))
 
+    return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+
+@router.get("/fixture/{fixture_id}/features", response_model=None)
+def debug_sot_fixture_features(
+    fixture_id: int,
+    db: Session = Depends(get_db),
+    model_version: str | None = Query(default="baseline_v1_0_sot"),
+):
+    """Risoluzione read-only feature registry per casa/trasferta (nessuna persistenza)."""
+    try:
+        payload = build_fixture_features_debug(db, int(fixture_id), model_version=model_version or "baseline_v1_0_sot")
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("GET debug fixture features: DB error (%s)", exc.__class__.__name__, exc_info=True)
+        return JSONResponse(status_code=503, content=jsonable_encoder({"status": "error", "message": "Database error"}))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET debug fixture features")
+        return JSONResponse(
+            status_code=422,
+            content=jsonable_encoder({"status": "error", "message": str(exc)[:500], "fixture_id": int(fixture_id)}),
+        )
+    if payload.get("status") == "missing":
+        return JSONResponse(status_code=404, content=jsonable_encoder(payload))
     return JSONResponse(status_code=200, content=jsonable_encoder(payload))
 
 

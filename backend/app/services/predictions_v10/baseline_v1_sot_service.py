@@ -6,19 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import (
-    BASELINE_SOT_MODEL_VERSION,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, League, Season, Team, TeamSotPrediction
 from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
-from app.services.predictions_v10.explicit_terms_from_v04 import (
-    alignment_status,
-    build_explicit_v04_terms_from_saved_raw,
-    build_formula_payload_v10,
-)
-from app.services.predictions_v10.xg_adjustment_component import compute_xg_adjustment_for_side
+from app.services.predictions_v10.explicit_terms_from_v04 import alignment_status
+from app.services.predictions_v10.v10_formula_builder import build_v10_side_formula
+from app.services.sot_feature_registry import V10_ARCHITECTURE
 
 
 def _round2(x: float | None) -> float | None:
@@ -28,11 +24,11 @@ def _round2(x: float | None) -> float | None:
 
 
 class SotPredictionV10BaselineSotService:
-    """v1.0: 6 termini espliciti v0.4 + correzione additiva expected_goals (xG)."""
+    """v1.0: 6 termini da feature registry DB + correzione additiva expected_goals (xG)."""
 
     model_version = BASELINE_SOT_MODEL_VERSION_V10_SOT
     base_model_version = BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
-    architecture = "explicit_terms_from_v04_plus_xg"
+    architecture = V10_ARCHITECTURE
 
     def _season_row(self, db: Session, season_year: int) -> tuple[League, Season]:
         from app.core.config import get_settings
@@ -106,55 +102,44 @@ class SotPredictionV10BaselineSotService:
                             "fixture_id": int(fx.id),
                             "team_id": int(team_id),
                             "error": "missing_v04_prediction",
-                            "message": "Prediction v0.4 mancante: genera v0.4 prima di v1.0.",
+                            "message": "Prediction v0.4 mancante: genera v0.4 prima di v1.0 (solo confronto alignment).",
                         },
                     )
                     continue
 
-                base_raw = pred_v04.raw_json if isinstance(pred_v04.raw_json, dict) else {}
-                pred_v01 = db.scalar(
-                    select(TeamSotPrediction).where(
-                        TeamSotPrediction.fixture_id == fx.id,
-                        TeamSotPrediction.team_id == int(team_id),
-                        TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION,
-                    ),
-                )
-                raw_v01 = pred_v01.raw_json if pred_v01 and isinstance(pred_v01.raw_json, dict) else None
                 try:
-                    base_terms, base_explicit_sot, quality_meta = build_explicit_v04_terms_from_saved_raw(
-                        base_raw,
-                        raw_v01=raw_v01,
+                    built = build_v10_side_formula(
+                        db,
+                        fx,
+                        team_id=int(team_id),
+                        opponent_id=int(opp_by_team[int(team_id)]),
                     )
-                except ValueError as exc:
+                except Exception as exc:  # noqa: BLE001
                     errors.append(
                         {
                             "fixture_id": int(fx.id),
                             "team_id": int(team_id),
-                            "error": "invalid_v04_raw_json",
-                            "message": f"raw_json v0.4 incompleto per ricostruire i 6 termini: {exc}",
+                            "error": "feature_resolution_failed",
+                            "message": str(exc)[:500],
                         },
                     )
                     continue
 
-                xg_comp, xg_adj_sot = compute_xg_adjustment_for_side(
-                    db,
-                    season_id=int(season.id),
-                    cutoff_kickoff=fx.kickoff_at,
-                    cutoff_fixture_id=int(fx.id),
-                    team_id=int(team_id),
-                    opponent_id=int(opp_by_team[int(team_id)]),
-                    base_explicit_sot=float(base_explicit_sot),
-                )
+                base_explicit_sot = float(built["base_explicit_sot"])
+                final_sot = float(built["final_sot"])
+                xg_comp = built["xg_component"] if isinstance(built["xg_component"], dict) else {}
+                formula_payload = built["formula_payload"]
+                quality_meta = built["quality_meta"] if isinstance(built["quality_meta"], dict) else {}
+                off_comp = built.get("offensive_production_component") if isinstance(built.get("offensive_production_component"), dict) else {}
+
                 if xg_comp.get("xg_adjustment_applied"):
                     xg_applied += 1
                 else:
                     xg_fallback += 1
 
-                final_sot = round(float(base_explicit_sot) + float(xg_adj_sot), 2)
-                diff_base = round(final_sot - float(base_explicit_sot), 2)
-
+                diff_base = round(final_sot - base_explicit_sot, 2)
                 v04_ref = float(pred_v04.predicted_sot)
-                delta_base = round(float(base_explicit_sot) - v04_ref, 2)
+                delta_base = round(base_explicit_sot - v04_ref, 2)
                 align_st = alignment_status(delta_base)
                 fq_status = str(quality_meta.get("formula_quality_status") or "ok")
                 fq_warnings = list(quality_meta.get("formula_quality_warnings") or [])
@@ -167,47 +152,40 @@ class SotPredictionV10BaselineSotService:
                 else:
                     review_n += 1
 
-                formula_payload = build_formula_payload_v10(
-                    base_terms,
-                    base_explicit_sot=float(base_explicit_sot),
-                    xg_component=xg_comp,
-                    final_sot=final_sot,
-                )
-
-                merged: dict[str, Any] = {
-                    k: v
-                    for k, v in base_raw.items()
-                    if k not in ("model_version", "applied_variable_trace", "baseline_v04_expected_sot")
-                }
-                merged["model_version"] = self.model_version
-                merged["architecture"] = self.architecture
-                merged["base_terms_source"] = "baseline_v0_4_explicit_terms"
-                merged["base_model_version"] = self.base_model_version
-                merged["does_not_use_v04_as_black_box"] = True
-                merged["base_explicit_sot_before_xg"] = float(base_explicit_sot)
-                merged["expected_sot"] = float(final_sot)
-                merged["difference_from_explicit_base"] = float(diff_base)
-                merged["v04_expected_sot_reference"] = _round2(v04_ref)
-                merged["difference_from_v04"] = float(delta_base)
-                merged["formula"] = formula_payload
-                merged["xg_component"] = xg_comp
-                merged["formula_quality_status"] = fq_status
-                merged["formula_quality_warnings"] = fq_warnings
                 terms_n = len(formula_payload.get("terms") or [])
                 if terms_n == 7:
                     formula_terms_ok += 1
                 else:
                     formula_terms_bad += 1
                     fq_warnings.append(f"formula_terms_count={terms_n} (atteso 7)")
-                merged["formula_terms_count"] = terms_n
                 for w in fq_warnings:
                     if w and w not in all_quality_warnings:
                         all_quality_warnings.append(w)
-                merged["v04_alignment"] = {
-                    "v04_expected_sot": _round2(v04_ref),
-                    "v10_expected_sot": float(base_explicit_sot),
-                    "delta": float(delta_base),
-                    "status": align_st,
+
+                merged: dict[str, Any] = {
+                    "model_version": self.model_version,
+                    "architecture": self.architecture,
+                    "feature_registry_version": built.get("feature_registry_version"),
+                    "base_terms_source": "feature_registry",
+                    "base_model_version": self.base_model_version,
+                    "does_not_use_v04_as_black_box": True,
+                    "base_explicit_sot_before_xg": float(base_explicit_sot),
+                    "expected_sot": float(final_sot),
+                    "difference_from_explicit_base": float(diff_base),
+                    "v04_expected_sot_reference": _round2(v04_ref),
+                    "difference_from_v04": float(delta_base),
+                    "formula": formula_payload,
+                    "xg_component": xg_comp,
+                    "offensive_production_component": off_comp,
+                    "formula_quality_status": fq_status,
+                    "formula_quality_warnings": fq_warnings,
+                    "formula_terms_count": terms_n,
+                    "v04_alignment": {
+                        "v04_expected_sot": _round2(v04_ref),
+                        "v10_expected_sot": float(base_explicit_sot),
+                        "delta": float(delta_base),
+                        "status": align_st,
+                    },
                 }
 
                 team_row = db.get(Team, int(team_id))
@@ -239,8 +217,8 @@ class SotPredictionV10BaselineSotService:
                 existing.predicted_sot = float(final_sot)
                 existing.raw_json = merged
                 existing.explanation = (
-                    "v1.0: somma esplicita 6 termini v0.4 + correzione additiva xG (expected_goals); "
-                    "predicted_sot v0.4 usato solo in v04_alignment sulla base."
+                    "v1.0: 6 termini da feature registry (DB) + xG additivo; "
+                    "v0.4 predicted_sot solo in v04_alignment."
                 )
                 created += 1
                 try:
@@ -261,7 +239,7 @@ class SotPredictionV10BaselineSotService:
         global_warnings: list[str] = list(dict.fromkeys(all_quality_warnings))
         if formula_terms_bad > 0:
             global_warnings.append(
-                f"{formula_terms_bad} predizioni con formula_terms_count != 7 (rigenerare dopo fix builder)",
+                f"{formula_terms_bad} predizioni con formula_terms_count != 7",
             )
         return {
             "status": "success",

@@ -235,7 +235,10 @@ def _row_for_spec(
         arch = str(raw.get("architecture") or "")
         formula_obj = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
         terms_list = formula_obj.get("terms") if isinstance(formula_obj.get("terms"), list) else []
-        if arch in ("explicit_terms_from_v04_plus_xg", "explicit_terms_from_v04") and terms_list:
+        if (
+            arch.startswith("feature_registry")
+            or arch in ("explicit_terms_from_v04_plus_xg", "explicit_terms_from_v04")
+        ) and terms_list:
             ft = next((t for t in terms_list if isinstance(t, dict) and str(t.get("key") or "") == term), None)
             if ft:
                 base["value"] = _r2(_sf(ft.get("value")))
@@ -308,7 +311,8 @@ def _row_for_spec(
         fb_list = comp.get("fallbacks_used") if isinstance(comp.get("fallbacks_used"), list) else []
         base["fallback_used"] = ik in [str(x) for x in fb_list]
         base["cap_applied"] = bool(comp.get("cap_applied"))
-        base["source"] = str(blob.get("source_table") or "fixture_team_stats / fixtures")
+        sp = blob.get("source_path") or blob.get("source_table")
+        base["source"] = str(sp) if sp else "fixture_team_stats / fixtures"
         st = blob.get("status")
         base["status"] = str(st) if st else ("fallback" if base["fallback_used"] else "available")
         return base
