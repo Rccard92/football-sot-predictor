@@ -58,6 +58,28 @@ Applicare xG solo se: campione squadra ≥ 5, campione concessi avversario ≥ 5
 
 Un prototipo **moltiplicativo** su v0.4 è in [`predictions_v10/xg_multiplier_legacy.py`](backend/app/services/predictions_v10/xg_multiplier_legacy.py); la pipeline attuale usa la formula **additiva** su `base_explicit_sot`.
 
+### Modello principale (tool UI)
+
+Quando v1.0 è **completa** su tutte le fixture upcoming (2 righe per partita, `v04_alignment` ok), il tool la **raccomanda** come modello attivo:
+
+- ordine preferenza: `model_version_preference.py` (v1.0 prima di v0.4);
+- `model-status` / `upcoming-active` / spiegazione fixture / audit variabili usano la stessa risoluzione;
+- Framework Analisi: variabile `expected_goals` = **implementata** su `baseline_v1_0_sot`.
+
+v0.4 resta disponibile per confronto storico; non riceve il termine xG.
+
+### Checklist allineamento tool (nuova variabile o layer)
+
+Per ogni nuova variabile in formula, aggiornare in coerenza:
+
+1. manifest + trace (`model_applied_variable_*`);
+2. `baseline_v1_sot_service` / componenti spiegazione;
+3. `get_match_analysis_framework` (card variabile);
+4. `match_variable_audit_service` (componenti v1.0);
+5. `model-status` (conteggi/warning se applicabile);
+6. frontend: `mapping.ts` driver, Admin/Upcoming se cambia il modello raccomandato;
+7. test priorità modello + smoke: generate-v10, model-status, explanation 7 termini.
+
 ## Baseline v0.1: formula e pesi
 
 Il valore atteso per lato è una **combinazione lineare** di sei fattori, ciascuno moltiplicato per un peso. I pesi di default (somma = 1) sono:

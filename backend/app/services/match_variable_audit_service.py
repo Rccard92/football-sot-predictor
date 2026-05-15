@@ -13,6 +13,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V10_SOT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, FixtureTeamStat, Player, PlayerSotProfile, Team, TeamSotPrediction, TeamSotPredictionAdjustment
@@ -1311,7 +1312,10 @@ class MatchVariableAuditService:
             away_team_expected_sot_v02=read_predicted(away_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED),
         )
 
-        # Active model selection (prefer v0.4 > v0.3 > v0.2 > v0.1, if present for both teams)
+        # Active model selection (prefer v1.0 > v0.4 > v0.3 > v0.2 > v0.1, if present for both teams)
+        v10_home = read_predicted(home_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V10_SOT)
+        v10_away = read_predicted(away_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V10_SOT)
+        has_v10 = v10_home is not None and v10_away is not None
         v04_home = read_predicted(home_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT)
         v04_away = read_predicted(away_ctx.team_id, BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT)
         has_v04 = v04_home is not None and v04_away is not None
@@ -1320,7 +1324,9 @@ class MatchVariableAuditService:
         has_v03 = v03_home is not None and v03_away is not None
         has_v02 = summary.home_team_expected_sot_v02 is not None and summary.away_team_expected_sot_v02 is not None
         active_model_version = (
-            BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
+            BASELINE_SOT_MODEL_VERSION_V10_SOT
+            if has_v10
+            else BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
             if has_v04
             else BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT
             if has_v03
@@ -1515,7 +1521,7 @@ class MatchVariableAuditService:
 
         # Add active model component cards (main view) for v0.3 if predictions exist
         # (skip if v0.4 exists: v0.4 has its own single component card)
-        if has_v03 and not has_v04:
+        if has_v03 and not has_v04 and not has_v10:
             def _v03_row(team_id: int) -> TeamSotPrediction | None:
                 return db.scalar(
                     select(TeamSotPrediction).where(
@@ -1569,8 +1575,105 @@ class MatchVariableAuditService:
             comp_vars = _component_vars(home_ctx) + _component_vars(away_ctx)
             sections.insert(1, mk_section("active_model_components", "Componenti applicate al calcolo", comp_vars))
 
+        # Add active model component cards (main view) for v1.0 if predictions exist
+        if has_v10:
+            def _v10_row(team_id: int) -> TeamSotPrediction | None:
+                return db.scalar(
+                    select(TeamSotPrediction).where(
+                        TeamSotPrediction.fixture_id == fixture.id,
+                        TeamSotPrediction.team_id == team_id,
+                        TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT,
+                    )
+                )
+
+            def _v10_component_vars(team_ctx: TeamContext) -> list[AuditVariable]:
+                row = _v10_row(team_ctx.team_id)
+                raw = row.raw_json if row and isinstance(row.raw_json, dict) else {}
+                xc = raw.get("xg_component") if isinstance(raw.get("xg_component"), dict) else {}
+                formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+                terms = formula.get("terms") if isinstance(formula.get("terms"), list) else []
+                out: list[AuditVariable] = []
+                for t in terms:
+                    if not isinstance(t, dict):
+                        continue
+                    key = str(t.get("key") or "")
+                    if not key or key == "expected_goals":
+                        continue
+                    comp_val = _safe_float(t.get("contribution"))
+                    v = self._var(
+                        key=f"v10_term_{key}",
+                        label=f"{t.get('label') or key} – {team_ctx.team_name}",
+                        team_ctx=team_ctx,
+                        value=comp_val,
+                        unit=self.unit_sot,
+                        status="available" if comp_val is not None else "missing",
+                        impl_status="implemented",
+                        applied_to_model=False,
+                        weight=_safe_float(t.get("weight")),
+                        weight_label=None,
+                        source_table="team_sot_predictions.raw_json",
+                        source_description="Termine esplicito formula v1.0 (nessun ricalcolo).",
+                        calculation=AuditCalculationBlock(
+                            formula=str(t.get("formula") or f"v1.0 term '{key}'"),
+                            meta={"term_key": key, "value": t.get("value"), "weight": t.get("weight")},
+                            result=comp_val,
+                        ),
+                        sample_rows=[],
+                        notes="Termine base esplicito v1.0.",
+                    )
+                    v.active_model_version = active_model_version
+                    v.applied_to_model_versions = [BASELINE_SOT_MODEL_VERSION_V10_SOT]
+                    v.applied_to_active_model = active_model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT
+                    v.is_supporting_variable = False
+                    v.display_in_main_audit = True
+                    v.display_in_technical_audit = True
+                    v.component_value = comp_val
+                    v.component_weight = _safe_float(t.get("weight"))
+                    out.append(v)
+                if xc:
+                    adj = _safe_float(xc.get("xg_adjustment_sot"))
+                    fb = bool(xc.get("fallback_used")) or not bool(xc.get("xg_adjustment_applied"))
+                    v = self._var(
+                        key="v10_component_expected_goals",
+                        label=f"xG (expected_goals) – {team_ctx.team_name}",
+                        team_ctx=team_ctx,
+                        value=_safe_float(xc.get("team_avg_xg_for")),
+                        unit="xG medi",
+                        status="available" if adj is not None else "missing",
+                        impl_status="implemented",
+                        applied_to_model=False,
+                        weight=_safe_float(xc.get("xg_sensitivity")),
+                        weight_label=None,
+                        source_table="fixture_team_stats.expected_goals",
+                        source_description="Correzione additiva xG salvata in raw_json.xg_component.",
+                        calculation=AuditCalculationBlock(
+                            formula=str(xc.get("formula") or "base_explicit_sot * xg_adjustment_pct"),
+                            meta={"xg_component": xc},
+                            result=adj,
+                        ),
+                        sample_rows=[],
+                        notes=str(xc.get("fallback_reason") or "Correzione xG applicata al calcolo v1.0."),
+                    )
+                    v.active_model_version = active_model_version
+                    v.applied_to_model_versions = [BASELINE_SOT_MODEL_VERSION_V10_SOT]
+                    v.applied_to_active_model = active_model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT
+                    v.is_supporting_variable = False
+                    v.display_in_main_audit = True
+                    v.display_in_technical_audit = True
+                    v.component_value = adj
+                    v.component_weight = _safe_float(xc.get("xg_sensitivity"))
+                    v.component_breakdown = {"stored_component": xc, "fallback_used": fb}
+                    if fb:
+                        v.status = "fallback"
+                    out.append(v)
+                return out
+
+            comp_vars = _v10_component_vars(home_ctx) + _v10_component_vars(away_ctx)
+            if comp_vars:
+                sections.insert(1, mk_section("active_model_components", "Componenti applicate al calcolo", comp_vars))
+
         # Add active model component cards (main view) for v0.4 if predictions exist
-        if has_v04:
+        elif has_v04:
             def _v04_row(team_id: int) -> TeamSotPrediction | None:
                 return db.scalar(
                     select(TeamSotPrediction).where(

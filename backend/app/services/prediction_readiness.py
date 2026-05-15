@@ -23,6 +23,12 @@ from app.core.constants import (
 )
 from app.models import Fixture, League, Season, Team, TeamSotPrediction
 from app.services.ingestion_service import IngestionService
+from app.services.model_version_preference import (
+    build_v10_coherence_warnings,
+    enrich_v10_model_status_row,
+    preferred_model_versions,
+    resolve_recommended_model_version,
+)
 from app.services.sot_feature_service import SotFeatureService
 from app.services.sot_prediction_service import (  # type: ignore[attr-defined]
     SotPredictionService,
@@ -33,17 +39,6 @@ from app.services.sot_prediction_service import (  # type: ignore[attr-defined]
 logger = logging.getLogger(__name__)
 
 
-def preferred_model_versions() -> list[str]:
-    return [
-        BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
-        BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
-        BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
-        BASELINE_SOT_MODEL_VERSION_V02,
-        BASELINE_SOT_MODEL_VERSION,
-        BASELINE_SOT_MODEL_VERSION_V10_SOT,
-    ]
-
-
 def _safe_details(exc: Exception) -> str:
     msg = f"{exc.__class__.__name__}: {exc}"
     lowered = msg.lower()
@@ -52,43 +47,6 @@ def _safe_details(exc: Exception) -> str:
     if "database_url" in lowered or "apikey" in lowered or "api_key" in lowered or "secret" in lowered:
         return f"{exc.__class__.__name__}: [redacted]"
     return msg[:800]
-
-
-def _v10_meets_recommend_criteria(
-    db: Session,
-    *,
-    upcoming_fixture_ids: list[int],
-    by_version: dict[str, dict[str, Any]],
-    upcoming_fixtures_total: int,
-) -> bool:
-    row = by_version.get(BASELINE_SOT_MODEL_VERSION_V10_SOT)
-    if not row or not row.get("is_available_for_upcoming"):
-        return False
-    up = int(row.get("upcoming_predictions") or 0)
-    if upcoming_fixtures_total <= 0 or up != 2 * upcoming_fixtures_total:
-        return False
-    if not upcoming_fixture_ids:
-        return False
-    preds = db.scalars(
-        select(TeamSotPrediction).where(
-            TeamSotPrediction.fixture_id.in_(upcoming_fixture_ids),
-            TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT,
-            TeamSotPrediction.predicted_sot.isnot(None),
-        ),
-    ).all()
-    if len(preds) != up:
-        return False
-    for p in preds:
-        raw = p.raw_json if isinstance(p.raw_json, dict) else {}
-        va = raw.get("v04_alignment")
-        if not isinstance(va, dict):
-            return False
-        st = va.get("status")
-        if st == "needs_review":
-            return False
-        if st not in ("aligned_with_v04", "minor_rounding_difference"):
-            return False
-    return True
 
 
 def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any], int]:
@@ -254,6 +212,12 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
             "generated_at": r.get("generated_at"),
             "is_available_for_upcoming": bool(up_n > 0),
         }
+    if BASELINE_SOT_MODEL_VERSION_V10_SOT in by_version:
+        enrich_v10_model_status_row(
+            db,
+            by_version[BASELINE_SOT_MODEL_VERSION_V10_SOT],
+            upcoming_fixture_ids=upcoming_fixture_ids,
+        )
 
     if not by_version:
         warnings.append("Nessuna prediction trovata in team_sot_predictions per questa stagione.")
@@ -274,24 +238,23 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
     extras = [v for k, v in by_version.items() if k not in preferred]
     available_list = preferred_present + sorted(extras, key=lambda x: x["model_version"])
 
-    recommended = None
-    if _v10_meets_recommend_criteria(
+    recommended = resolve_recommended_model_version(
         db,
         upcoming_fixture_ids=upcoming_fixture_ids,
         by_version=by_version,
         upcoming_fixtures_total=int(upcoming_fixtures_total),
-    ):
-        recommended = BASELINE_SOT_MODEL_VERSION_V10_SOT
-    if recommended is None:
-        for mv in preferred:
-            if mv == BASELINE_SOT_MODEL_VERSION_V10_SOT:
-                continue
-            row = by_version.get(mv)
-            if row and row.get("is_available_for_upcoming"):
-                recommended = mv
-                break
+    )
     if recommended is None:
         warnings.append("Nessuna prediction upcoming trovata. Generare prima una baseline.")
+    warnings.extend(
+        build_v10_coherence_warnings(
+            db,
+            upcoming_fixture_ids=upcoming_fixture_ids,
+            upcoming_fixtures_total=int(upcoming_fixtures_total),
+            by_version=by_version,
+            recommended=recommended,
+        ),
+    )
 
     for mv in preferred:
         if mv not in by_version:
@@ -365,7 +328,35 @@ def build_upcoming_active_payload(
         )
         return n > 0
 
-    recommended = next((mv for mv in preferred if has_any_upcoming(mv)), BASELINE_SOT_MODEL_VERSION)
+    upcoming_fixture_ids_local = [int(f.id) for f in upcoming]
+    by_version_upcoming: dict[str, dict[str, Any]] = {}
+    for mv in preferred:
+        if not has_any_upcoming(mv):
+            continue
+        n = int(
+            db.scalar(
+                select(func.count())
+                .select_from(TeamSotPrediction)
+                .where(
+                    TeamSotPrediction.fixture_id.in_(upcoming_fixture_ids_local),
+                    TeamSotPrediction.model_version == mv,
+                    TeamSotPrediction.predicted_sot.isnot(None),
+                ),
+            )
+            or 0,
+        )
+        by_version_upcoming[mv] = {
+            "is_available_for_upcoming": n > 0,
+            "upcoming_predictions": n,
+        }
+    recommended = resolve_recommended_model_version(
+        db,
+        upcoming_fixture_ids=upcoming_fixture_ids_local,
+        by_version=by_version_upcoming,
+        upcoming_fixtures_total=len(upcoming),
+    )
+    if recommended is None:
+        recommended = next((mv for mv in preferred if has_any_upcoming(mv)), BASELINE_SOT_MODEL_VERSION)
     requested = model_version or recommended
     warnings: list[str] = []
     if model_version is not None and requested not in preferred:

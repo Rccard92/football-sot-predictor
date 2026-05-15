@@ -827,6 +827,8 @@ export type ModelStatusVersionRow = {
   max_expected_sot: number | null
   generated_at: string | null
   is_available_for_upcoming: boolean
+  xg_applied_count?: number
+  xg_fallback_count?: number
 }
 
 export type ModelStatusResponse = {

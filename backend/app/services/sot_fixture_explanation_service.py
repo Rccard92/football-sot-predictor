@@ -183,21 +183,9 @@ def _direction_label(value: float | None, predicted: float) -> str:
 def _active_model_version_from_preds(
     preds: dict[str, dict[str, float | None]],
 ) -> str | None:
-    for mv in (
-        BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
-        BASELINE_SOT_MODEL_VERSION_V10_SOT,
-        BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
-        BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED,
-        BASELINE_SOT_MODEL_VERSION_V02,
-        BASELINE_SOT_MODEL_VERSION,
-    ):
-        row = preds.get(mv) or {}
-        if row.get("home") is not None and row.get("away") is not None:
-            return mv
-    for mv, row in preds.items():
-        if row.get("home") is not None or row.get("away") is not None:
-            return mv
-    return None
+    from app.services.model_version_preference import resolve_active_model_for_fixture_preds
+
+    return resolve_active_model_for_fixture_preds(preds)
 
 
 def _components_v01(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:

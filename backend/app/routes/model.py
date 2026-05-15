@@ -9,6 +9,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V02,
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V10_SOT,
 )
 from app.schemas.model import MatchAnalysisFrameworkResponse, ModelLegendResponse
 from app.services.sot_prediction_service import WEIGHTS_BASELINE_V0_1
@@ -1006,15 +1007,33 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                     ),
                     v(
                         area="Produzione offensiva squadra",
-                        key="xg_for",
-                        name="xG",
-                        description="Expected goals prodotti (se disponibile).",
+                        key="expected_goals",
+                        name="Expected goals (xG)",
+                        description="Expected goals prodotti; termine additivo nel modello v1.0 SOT.",
                         markets=["goal_over_under", "tiri_in_porta", "tiri_totali"],
                         weight=70,
-                        data_source="Advanced stats provider",
-                        status="non disponibile",
+                        data_source="fixtures/statistics::expected_goals (DB: fixture_team_stats.expected_goals)",
+                        status="implementata",
+                        applied_now=True,
+                        applied_layer="sot_formula",
+                        direct_formula_impact=True,
+                        applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V10_SOT],
+                        notes=(
+                            "Applicata solo a baseline_v1_0_sot come 7° termine additivo. "
+                            "Non modifica v0.4. Fallback se campione xG insufficiente."
+                        ),
+                    ),
+                    v(
+                        area="Produzione offensiva squadra",
+                        key="xg_for",
+                        name="xG (alias deprecato)",
+                        description="Alias storico: usare expected_goals.",
+                        markets=["goal_over_under", "tiri_in_porta", "tiri_totali"],
+                        weight=70,
+                        data_source="Vedi expected_goals",
+                        status="implementata",
                         applied_now=False,
-                        notes="Dato non disponibile nel provider/raw_json attuale. Richiede provider avanzato o fonte esterna.",
+                        notes="Deprecato: la variabile attiva nel modello è expected_goals (baseline_v1_0_sot).",
                     ),
                     v(
                         area="Produzione offensiva squadra",

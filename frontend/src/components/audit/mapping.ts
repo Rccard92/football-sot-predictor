@@ -61,6 +61,36 @@ export function buildMainDrivers(data: AuditResponse): MainDriver[] {
   const fx = data.fixture
   const idx = idxVars(data)
 
+  if (active === 'baseline_v1_0_sot') {
+    const xgHome = pickTeamVar(idx, 'v10_component_expected_goals', fx.home_team.id)?.value ?? null
+    const xgAway = pickTeamVar(idx, 'v10_component_expected_goals', fx.away_team.id)?.value ?? null
+    drivers.push({
+      id: 'v10_xg_component',
+      title: `xG (expected_goals): ${fx.home_team.name} ${fmtNum(xgHome)} · ${fx.away_team.name} ${fmtNum(xgAway)}`,
+      direction: 'info',
+      impact: 'alto',
+      explanation: '7° termine additivo v1.0: correzione da expected_goals su base esplicita v0.4.',
+    })
+    const baseHome =
+      pickTeamVar(idx, 'v10_term_season_avg_sot_for', fx.home_team.id)?.value ??
+      pickTeamVar(idx, 'v10_term_core_sot', fx.home_team.id)?.value ??
+      null
+    const baseAway =
+      pickTeamVar(idx, 'v10_term_season_avg_sot_for', fx.away_team.id)?.value ??
+      pickTeamVar(idx, 'v10_term_core_sot', fx.away_team.id)?.value ??
+      null
+    if (baseHome != null || baseAway != null) {
+      drivers.push({
+        id: 'v10_explicit_base',
+        title: `Base esplicita: ${fx.home_team.name} ${fmtNum(baseHome)} · ${fx.away_team.name} ${fmtNum(baseAway)}`,
+        direction: 'info',
+        impact: 'medio',
+        explanation: 'Termini espliciti v0.4 riportati nella formula v1.0 (senza ricalcolo).',
+      })
+    }
+    return drivers
+  }
+
   if (active === 'baseline_v0_4_offensive_core_sot') {
     const hv = pickTeamVar(idx, 'v04_component_offensive_production', fx.home_team.id)?.value ?? null
     const av = pickTeamVar(idx, 'v04_component_offensive_production', fx.away_team.id)?.value ?? null

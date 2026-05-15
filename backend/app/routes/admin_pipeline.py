@@ -60,7 +60,7 @@ def _ingestion_step(
 def admin_pipeline_refresh_upcoming_v04(
     season: int,
     db: Session = Depends(get_db),
-    generate_v10: bool = Query(default=False, description="Se true, dopo v0.4 genera anche baseline_v1_0_sot"),
+    generate_v10: bool = Query(default=True, description="Se true, dopo v0.4 genera anche baseline_v1_0_sot"),
 ):
     """
     Esegue in sequenza: fixture, statistiche squadra partite finite, classifica,
@@ -361,12 +361,13 @@ def admin_pipeline_refresh_upcoming_v04(
     if model_payload.get("status") != "success":
         warnings.append("Lettura model-status con anomalie dopo pipeline.")
 
+    recommended_mv = model_payload.get("recommended_model_version")
     up_payload, up_code = build_upcoming_active_payload(
         db,
         season,
         limit=50,
         only_next_round=True,
-        model_version=BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+        model_version=recommended_mv,
     )
     if up_code != 200:
         warnings.append("Lettura upcoming-active non riuscita dopo pipeline.")
@@ -378,7 +379,8 @@ def admin_pipeline_refresh_upcoming_v04(
         "status": "success",
         "season": int(season),
         "active_model_version": active_mv,
-        "model_version_used_for_summary": BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+        "recommended_model_version": model_payload.get("recommended_model_version"),
+        "model_version_used_for_summary": recommended_mv or active_mv,
         "steps": steps,
         "model_status": model_payload,
         "upcoming_summary": summary,

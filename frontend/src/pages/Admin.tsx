@@ -137,7 +137,7 @@ export function Admin() {
     try {
       const s = await getModelStatusWithOpts(SEASON)
       setModelStatus(s)
-      const mv = s.active_model_version || s.recommended_model_version || V04_MODEL
+      const mv = s.recommended_model_version || s.active_model_version || V10_MODEL
       const u = await getUpcomingActiveWithOpts(
         SEASON,
         { limit: 20, onlyNextRound: true, modelVersion: mv },
@@ -292,7 +292,7 @@ export function Admin() {
       label: 'Verifica prossima giornata attiva',
       endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/upcoming-active`,
       run: async () => {
-        const mv = modelStatus?.active_model_version || modelStatus?.recommended_model_version || V04_MODEL
+        const mv = modelStatus?.recommended_model_version || modelStatus?.active_model_version || V10_MODEL
         const u = await getUpcomingActiveWithOpts(SEASON, {
           limit: 20,
           onlyNextRound: true,
@@ -418,9 +418,15 @@ export function Admin() {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Stato modello attivo</h2>
             <dl className="mt-2 space-y-1 text-xs text-slate-700">
               <div>
-                <dt className="text-slate-500">Attivo / consigliato</dt>
+                <dt className="text-slate-500">Raccomandato</dt>
+                <dd className="font-mono text-[11px] font-semibold text-indigo-900">
+                  {modelStatus?.recommended_model_version ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Attivo</dt>
                 <dd className="font-mono text-[11px]">
-                  {modelStatus?.active_model_version ?? '—'} / {modelStatus?.recommended_model_version ?? '—'}
+                  {modelStatus?.active_model_version ?? '—'}
                 </dd>
               </div>
               <div>
@@ -494,7 +500,7 @@ export function Admin() {
                   endpoint: `GET …/upcoming-active`,
                   run: async () => {
                     const mv =
-                      modelStatus?.active_model_version || modelStatus?.recommended_model_version || V04_MODEL
+                      modelStatus?.recommended_model_version || modelStatus?.active_model_version || V10_MODEL
                     const u = await getUpcomingActiveWithOpts(SEASON, {
                       limit: 20,
                       onlyNextRound: true,

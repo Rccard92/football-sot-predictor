@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DEFAULT_SEASON,
@@ -23,6 +23,7 @@ export function UpcomingMatches() {
   const [predBusy, setPredBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const didInitModel = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -30,8 +31,13 @@ export function UpcomingMatches() {
     try {
       const s = await getModelStatus(SEASON)
       setStatus(s)
-      const mv = selectedModel || s.active_model_version || s.recommended_model_version || null
-      if (!selectedModel) setSelectedModel(mv)
+      const recommended = s.recommended_model_version || s.active_model_version || null
+      if (!didInitModel.current) {
+        if (s.recommended_model_version) setSelectedModel(s.recommended_model_version)
+        else if (s.active_model_version) setSelectedModel(s.active_model_version)
+        didInitModel.current = true
+      }
+      const mv = selectedModel || recommended
       const res = await getUpcomingActive(SEASON, { limit: 20, onlyNextRound: true, modelVersion: mv })
       setData(res)
     } catch (e) {
@@ -75,8 +81,11 @@ export function UpcomingMatches() {
     }
 
   const activeModel = status?.active_model_version ?? null
+  const recommendedModel = status?.recommended_model_version ?? null
   const modelInView = selectedModel ?? null
   const isDifferentFromActive = Boolean(activeModel && modelInView && activeModel !== modelInView)
+  const isRecommendedView =
+    Boolean(recommendedModel && modelInView && recommendedModel === modelInView)
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
@@ -97,7 +106,16 @@ export function UpcomingMatches() {
                 <span className="font-normal text-slate-800">
                   {status?.active_model_version ?? '—'}
                 </span>
+                {isRecommendedView && recommendedModel === activeModel ? (
+                  <span className="ml-2 text-[11px] font-medium text-emerald-700">(raccomandato)</span>
+                ) : null}
               </p>
+              {recommendedModel && recommendedModel !== activeModel ? (
+                <p className="text-xs text-slate-600">
+                  Modello raccomandato:{' '}
+                  <span className="font-medium text-slate-900">{recommendedModel}</span>
+                </p>
+              ) : null}
               {isDifferentFromActive ? (
                 <p className="text-xs text-slate-600">
                   Modello in vista:{' '}
@@ -113,7 +131,16 @@ export function UpcomingMatches() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm"
                 >
-                  {(status?.available_model_versions ?? []).map((v) => (
+                  {[...(status?.available_model_versions ?? [])]
+                    .sort((a, b) => {
+                      const rec = status?.recommended_model_version
+                      if (a.model_version === rec) return -1
+                      if (b.model_version === rec) return 1
+                      if (a.model_version === 'baseline_v1_0_sot') return -1
+                      if (b.model_version === 'baseline_v1_0_sot') return 1
+                      return a.model_version.localeCompare(b.model_version)
+                    })
+                    .map((v) => (
                     <option key={v.model_version} value={v.model_version}>
                       {v.model_version}
                       {v.model_version === status?.recommended_model_version ? ' (consigliato)' : ''}

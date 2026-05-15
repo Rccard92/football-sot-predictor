@@ -6,6 +6,7 @@ from app.routes import (
     admin_debug_api_football_catalog,
     admin_debug_player_stats,
     admin_debug_offensive_variables,
+    admin_debug_expected_goals,
     admin_ingest,
     admin_pipeline,
     admin_refresh,
@@ -31,6 +32,7 @@ api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(admin_debug_player_stats.router)
 api_router.include_router(admin_debug_api_football_catalog.router)
 api_router.include_router(admin_debug_offensive_variables.router)
+api_router.include_router(admin_debug_expected_goals.router)
 api_router.include_router(admin_ingest.router)
 api_router.include_router(admin_pipeline.router)
 api_router.include_router(admin_refresh.router)
