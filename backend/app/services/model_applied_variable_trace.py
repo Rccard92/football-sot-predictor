@@ -342,6 +342,35 @@ def _row_for_spec(
             base["status"] = "missing"
         return base
 
+    if r == "v10:xg_component:expected_goals":
+        xc = raw.get("xg_component") if isinstance(raw.get("xg_component"), dict) else {}
+        formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+        terms = formula.get("terms") if isinstance(formula.get("terms"), list) else []
+        xg_term = next((t for t in terms if isinstance(t, dict) and t.get("key") == "expected_goals"), None)
+        contrib = _r2(_sf((xg_term or {}).get("contribution"))) if xg_term else _r2(_sf(xc.get("xg_adjustment_sot")))
+        base["value"] = _r2(_sf(xc.get("team_avg_xg_for")))
+        base["weight"] = _sf(xc.get("xg_sensitivity")) or 0.10
+        base["contribution"] = contrib if contrib is not None else 0.0
+        base["formula"] = (
+            "correzione esplicita basata su xG prodotti e xG concessi dall'avversario "
+            "(base_explicit_sot * xg_adjustment_pct)"
+        )
+        base["source"] = str(xc.get("source") or "fixtures/statistics::expected_goals")
+        base["unit"] = "xG medi"
+        base["cap_applied"] = bool(xc.get("cap_applied"))
+        fb = bool(xc.get("fallback_used")) or not bool(xc.get("xg_adjustment_applied"))
+        base["fallback_used"] = fb
+        if fb or not bool(xc.get("xg_available")):
+            base["status"] = "fallback"
+            base["notes"] = str(xc.get("fallback_reason") or "") or None
+        else:
+            base["status"] = "available"
+            base["notes"] = (
+                "Dato diretto API-Football. Usato per stimare la qualità delle occasioni e correggere "
+                "in modo prudente la previsione tiri in porta."
+            )
+        return base
+
     base["status"] = "missing"
     base["notes"] = f"Resolver non gestito: {r}"
     return base

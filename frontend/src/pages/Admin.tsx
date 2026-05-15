@@ -51,13 +51,18 @@ function pickMessage(payload: unknown, okFallback: string): string {
       return `Operazione saltata: ${o.reason}`
     }
       if (typeof o.status === 'string' && o.status === 'success') {
-        if (o.architecture === 'explicit_terms_from_v04' || o.aligned_with_v04 != null) {
+        if (
+          o.architecture === 'explicit_terms_from_v04_plus_xg' ||
+          o.architecture === 'explicit_terms_from_v04' ||
+          o.xg_applied_count != null
+        ) {
           return [
+            `Formula esplicita v0.4 + xG`,
             `architecture: ${String(o.architecture ?? '')}`,
-            `model_version: ${String(o.model_version ?? '')}`,
             `create/update: ${String(o.predictions_created_or_updated ?? '')}`,
-            `allineati v0.4: ${String(o.aligned_with_v04 ?? '')}`,
-            `arrotondamento minore: ${String(o.minor_rounding_difference ?? '')}`,
+            `xg applicati: ${String(o.xg_applied_count ?? '')}`,
+            `xg fallback: ${String(o.xg_fallback_count ?? '')}`,
+            `base allineata: ${String(o.aligned_base_terms_count ?? '')}`,
             `da revisionare: ${String(o.needs_review ?? '')}`,
           ].join(' · ')
         }
@@ -267,8 +272,8 @@ export function Admin() {
     },
     {
       id: 'gen-v10',
-      label: 'Genera modello v1.0 esplicito',
-      description: `Richiede ${V04_MODEL} già generato. Modello: ${V10_MODEL} (somma 6 termini da raw v0.4).`,
+      label: 'Genera modello v1.0 SOT',
+      description: `Formula esplicita v0.4 + xG. Richiede ${V04_MODEL} già generato. Modello: ${V10_MODEL}.`,
       endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v10-sot`,
       run: () => postGenerateV10SotUpcoming(SEASON),
     },

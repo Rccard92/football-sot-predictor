@@ -414,20 +414,26 @@ def _components_v04(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
 
 
 def _components_v10(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
-    out = _components_v04(raw, predicted)
+    base_sot = _safe_float(raw.get("base_explicit_sot_before_xg"))
+    ref_for_v04 = float(base_sot) if base_sot is not None else float(predicted)
+    out = _components_v04(raw, ref_for_v04)
+
     formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
     terms_raw = formula.get("terms") if isinstance(formula.get("terms"), list) else []
     va = raw.get("v04_alignment") if isinstance(raw.get("v04_alignment"), dict) else {}
     v04ref = _safe_float(va.get("v04_expected_sot"))
-    v10exp = _safe_float(va.get("v10_expected_sot"))
+    v10base = _safe_float(va.get("v10_expected_sot"))
     delta = _safe_float(va.get("delta"))
     status = str(va.get("status") or "")
+    xc = raw.get("xg_component") if isinstance(raw.get("xg_component"), dict) else {}
 
     exp_vars: list[dict[str, Any]] = []
     for t in terms_raw:
         if not isinstance(t, dict):
             continue
         key = str(t.get("key") or "")
+        if key == "expected_goals":
+            continue
         w = _safe_float(t.get("weight"))
         val = _safe_float(t.get("value"))
         contrib = _safe_float(t.get("contribution"))
@@ -456,12 +462,13 @@ def _components_v10(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
         )
 
     notes_align: list[str] = []
-    if v04ref is not None and v10exp is not None and delta is not None:
+    if v04ref is not None and v10base is not None and delta is not None:
         notes_align.append(
-            f"Confronto con `predicted_sot` v0.4 salvato: Δ = {_round2(delta)}. Stato: {status or '—'}.",
+            f"Base esplicita vs `predicted_sot` v0.4: Δ = {_round2(delta)}. Stato: {status or '—'}.",
         )
-    if str(raw.get("architecture") or "") == "explicit_terms_from_v04":
-        notes_align.append("Architettura: ricostruzione esplicita a 6 termini; nessun uso del solo numero v0.4 come input nascosto.")
+    arch = str(raw.get("architecture") or "")
+    if arch in ("explicit_terms_from_v04_plus_xg", "explicit_terms_from_v04"):
+        notes_align.append("Architettura: termini espliciti v0.4" + (" + correzione xG additiva." if "xg" in arch else "."))
 
     out.append(
         {
@@ -476,6 +483,57 @@ def _components_v10(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
             "variables": exp_vars,
         },
     )
+
+    if xc:
+        fb = bool(xc.get("fallback_used")) or not bool(xc.get("xg_adjustment_applied"))
+        adj_sot = _safe_float(xc.get("xg_adjustment_sot"))
+        pct = _safe_float(xc.get("xg_adjustment_pct"))
+        tfor = _safe_float(xc.get("team_avg_xg_for"))
+        oconc = _safe_float(xc.get("opponent_avg_xg_conceded"))
+        var_row = {
+            "key": "expected_goals",
+            "label": "xG / Expected goals",
+            "value": _round2(tfor),
+            "unit": "xG medi",
+            "weight_internal": _safe_float(xc.get("xg_sensitivity")) or 0.10,
+            "contribution": _round2(adj_sot),
+            "formula": str(xc.get("formula") or "base_explicit_sot * xg_adjustment_pct"),
+            "data_source": str(xc.get("source") or "fixtures/statistics::expected_goals"),
+            "matches_count": xc.get("team_xg_sample_matches"),
+            "sum": None,
+            "sample_rows_count": xc.get("opponent_xg_conceded_sample_matches"),
+            "fallback_used": fb,
+            "cap_applied": bool(xc.get("cap_applied")),
+            "no_data_leakage_note": "Sì (solo partite precedenti alla fixture)",
+            "sample_matches": [],
+            "sample_matches_note": (
+                f"Campione lega: {xc.get('league_xg_sample_matches')}. "
+                f"Avversario concessi: {xc.get('opponent_xg_conceded_sample_matches')}."
+            ),
+            "status": "fallback" if fb else "available",
+        }
+        out.append(
+            {
+                "id": "v10_xg_quality",
+                "label": "Qualità occasioni (xG)",
+                "value": _round2(tfor),
+                "weight": None,
+                "contribution": _round2(adj_sot),
+                "direction": "neutro",
+                "data_status": "fallback" if fb else "ok",
+                "notes": (
+                    f"xG medio concessi avversario: {_round2(oconc)}. "
+                    f"Correzione %: {round(float(pct or 0.0) * 100, 3)}%. "
+                    f"Fallback: {xc.get('fallback_reason')}"
+                    if fb
+                    else (
+                        f"xG medio concessi avversario: {_round2(oconc)}. "
+                        f"Base {_round2(base_sot)} + Δ xG {_round2(adj_sot)} = {_round2(predicted)}."
+                    )
+                ),
+                "variables": [var_row],
+            },
+        )
     return out
 
 
@@ -799,7 +857,8 @@ def _build_formula_breakdown_v04(raw: dict[str, Any], stored: float) -> dict[str
 
 def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str, Any]:
     formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
-    if formula.get("type") != "weighted_sum":
+    ftype = str(formula.get("type") or "")
+    if ftype not in ("weighted_sum", "explicit_weighted_sum_plus_adjustments"):
         return {}
     terms_raw = formula.get("terms")
     if not isinstance(terms_raw, list) or not terms_raw:
@@ -815,14 +874,29 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
         lab = str(t.get("label") or key)
         w = _safe_float(t.get("weight"))
         val = _safe_float(t.get("value"))
+        contrib_stored = _safe_float(t.get("contribution"))
+        if key == "expected_goals":
+            contrib = round(float(contrib_stored or 0.0), 4)
+            terms.append(
+                {
+                    "id": "v10_term_expected_goals",
+                    "label": lab,
+                    "symbol": key,
+                    "value": _round2(val),
+                    "weight": w,
+                    "contribution": contrib,
+                    "calc_expression": f"xG_adjustment({_round2(contrib)})",
+                },
+            )
+            sym_parts.append(f"xG_adjustment({_round2(contrib)})")
+            num_parts.append(f"{_round4(contrib)}")
+            contrib_vals.append(contrib)
+            continue
         if w is None or val is None:
             continue
         contrib = round(float(val) * float(w), 4)
-        if t.get("contribution") is not None:
-            try:
-                contrib = round(float(t["contribution"]), 4)
-            except (TypeError, ValueError):
-                pass
+        if contrib_stored is not None:
+            contrib = round(float(contrib_stored), 4)
         contrib_vals.append(contrib)
         terms.append(
             {
@@ -840,9 +914,12 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
     s = round(sum(contrib_vals), 4) if contrib_vals else None
     sum_c, delta, warn, wmsg = _checksum_block(s, stored)
     va = raw.get("v04_alignment") if isinstance(raw.get("v04_alignment"), dict) else {}
+    xc = raw.get("xg_component") if isinstance(raw.get("xg_component"), dict) else {}
     fb_list: list[str] = []
     if va.get("status") == "needs_review":
         fb_list.append("v04_alignment_needs_review")
+    if xc.get("fallback_used"):
+        fb_list.append("xg_fallback")
     sym_extra = str(formula.get("symbolic") or "").strip()
     num_extra = str(formula.get("numeric") or "").strip()
     return {
@@ -865,12 +942,14 @@ def _build_formula_breakdown_v10(raw: dict[str, Any], stored: float) -> dict[str
         "delta_vs_stored": delta,
         "checksum_warning": wmsg,
         "flags": {
-            "cap_applied": False,
+            "cap_applied": bool(xc.get("cap_applied")),
             "fallbacks_used": fb_list,
             "v04_alignment": {
                 "status": va.get("status"),
                 "delta": _safe_float(va.get("delta")),
             },
+            "base_sum": _safe_float(formula.get("base_sum")),
+            "adjustment_sum": _safe_float(formula.get("adjustment_sum")),
         },
     }
 
@@ -1118,7 +1197,7 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
                 "rows": [
                     {
                         "key": "v04_alignment",
-                        "label": "Allineamento vs v0.4 (predicted_sot)",
+                        "label": "Allineamento base vs v0.4 (predicted_sot)",
                         "value": _round2(_safe_float(va.get("delta"))),
                     },
                     {
@@ -1131,6 +1210,46 @@ def _enrich_components_with_internal_formula(model_version: str, raw: dict[str, 
                 "flags": {
                     "cap_applied": False,
                     "fallbacks_used": (["needs_review"] if va.get("status") == "needs_review" else []),
+                },
+            }
+        elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT and cid == "v10_xg_quality":
+            xc = raw.get("xg_component") if isinstance(raw.get("xg_component"), dict) else {}
+            rows = [
+                {"key": "team_avg_xg_for", "label": "xG medio squadra", "value": _round2(_safe_float(xc.get("team_avg_xg_for")))},
+                {
+                    "key": "opponent_avg_xg_conceded",
+                    "label": "xG medio concessi avversario",
+                    "value": _round2(_safe_float(xc.get("opponent_avg_xg_conceded"))),
+                },
+                {"key": "league_avg_xg_for", "label": "xG medio lega (fatti)", "value": _round2(_safe_float(xc.get("league_avg_xg_for")))},
+                {
+                    "key": "league_avg_xg_conceded",
+                    "label": "xG medio lega (concessi)",
+                    "value": _round2(_safe_float(xc.get("league_avg_xg_conceded"))),
+                },
+                {"key": "attack_xg_delta", "label": "Delta offensivo xG", "value": _round2(_safe_float(xc.get("attack_xg_delta")))},
+                {"key": "opponent_xg_delta", "label": "Delta avversario xG", "value": _round2(_safe_float(xc.get("opponent_xg_delta")))},
+                {"key": "xg_adjustment_pct", "label": "xg_adjustment_pct", "value": _round2(_safe_float(xc.get("xg_adjustment_pct")))},
+                {"key": "xg_adjustment_sot", "label": "Contributo SOT (Δ)", "value": _round2(_safe_float(xc.get("xg_adjustment_sot")))},
+                {
+                    "key": "team_xg_sample_matches",
+                    "label": "Sample partite squadra",
+                    "value": xc.get("team_xg_sample_matches"),
+                },
+                {
+                    "key": "opponent_xg_conceded_sample_matches",
+                    "label": "Sample concessi avversario",
+                    "value": xc.get("opponent_xg_conceded_sample_matches"),
+                },
+            ]
+            comp["internal_formula"] = {
+                "title": str(comp.get("label") or "xG"),
+                "formula_text": "expected_sot_v1 = base_explicit_sot + (base_explicit_sot * xg_adjustment_pct)",
+                "rows": rows,
+                "notes": ([str(xc.get("fallback_reason") or "fallback")] if xc.get("fallback_used") else []),
+                "flags": {
+                    "cap_applied": bool(xc.get("cap_applied")),
+                    "fallbacks_used": ["xg"] if xc.get("fallback_used") else [],
                 },
             }
         elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
@@ -1591,9 +1710,13 @@ def build_fixture_sot_explanation(
                 continue
             va = raw.get("v04_alignment")
             if isinstance(va, dict) and va.get("status") == "needs_review":
-                d = va.get("delta")
                 quality_items.append(
-                    f"Allineamento v1.0 vs v0.4 da revisionare ({nm}): Δ {va.get('delta')}.",
+                    f"Base esplicita vs v0.4 da revisionare ({nm}): Δ {va.get('delta')}.",
+                )
+            xc = raw.get("xg_component")
+            if isinstance(xc, dict) and xc.get("fallback_used"):
+                quality_items.append(
+                    f"Correzione xG non applicata ({nm}): {xc.get('fallback_reason') or 'fallback'}.",
                 )
 
     if active_mv == BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT:

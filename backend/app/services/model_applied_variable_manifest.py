@@ -65,7 +65,7 @@ def manifest_for_model(model_version: str) -> list[AppliedVariableSpec]:
     if model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT:
         return _MANIFEST_V04
     if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
-        return list(_MANIFEST_V04)
+        return list(_MANIFEST_V04) + [_MANIFEST_V10_EXPECTED_GOALS]
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         return _MANIFEST_V02
     return []
@@ -337,6 +337,19 @@ _MANIFEST_V03.append(
         framework_key=None,
         resolver="v03:quality:team_priors_matches_count",
     )
+)
+
+
+_MANIFEST_V10_EXPECTED_GOALS = AppliedVariableSpec(
+    trace_key="v10_expected_goals",
+    label="xG / Expected goals",
+    area="Qualità occasioni",
+    application_role="direct_formula_component",
+    parent_component="xg_quality_component",
+    direct_formula_impact=True,
+    expected_in_debug=True,
+    framework_key="expected_goals",
+    resolver="v10:xg_component:expected_goals",
 )
 
 

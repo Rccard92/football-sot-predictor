@@ -15,8 +15,9 @@ from app.services.model_applied_variable_trace import append_trace_to_raw_json, 
 from app.services.predictions_v10.explicit_terms_from_v04 import (
     alignment_status,
     build_explicit_v04_terms_from_saved_raw,
-    build_formula_strings,
+    build_formula_payload_v10,
 )
+from app.services.predictions_v10.xg_adjustment_component import compute_xg_adjustment_for_side
 
 
 def _round2(x: float | None) -> float | None:
@@ -26,10 +27,11 @@ def _round2(x: float | None) -> float | None:
 
 
 class SotPredictionV10BaselineSotService:
-    """v1.0: somma pesata esplicita dei 6 termini esterni v0.4 da `raw_json` v0.4 persistito (nessun xG)."""
+    """v1.0: 6 termini espliciti v0.4 + correzione additiva expected_goals (xG)."""
 
     model_version = BASELINE_SOT_MODEL_VERSION_V10_SOT
     base_model_version = BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
+    architecture = "explicit_terms_from_v04_plus_xg"
 
     def _season_row(self, db: Session, season_year: int) -> tuple[League, Season]:
         from app.core.config import get_settings
@@ -76,10 +78,16 @@ class SotPredictionV10BaselineSotService:
         aligned_n = 0
         minor_n = 0
         review_n = 0
+        xg_applied = 0
+        xg_fallback = 0
         created = 0
         errors: list[dict[str, Any]] = []
 
         for fx in upcoming:
+            opp_by_team = {
+                int(fx.home_team_id): int(fx.away_team_id),
+                int(fx.away_team_id): int(fx.home_team_id),
+            }
             for team_id in (int(fx.home_team_id), int(fx.away_team_id)):
                 pred_v04 = db.scalar(
                     select(TeamSotPrediction).where(
@@ -101,7 +109,7 @@ class SotPredictionV10BaselineSotService:
 
                 base_raw = pred_v04.raw_json if isinstance(pred_v04.raw_json, dict) else {}
                 try:
-                    terms, expected = build_explicit_v04_terms_from_saved_raw(base_raw)
+                    base_terms, base_explicit_sot = build_explicit_v04_terms_from_saved_raw(base_raw)
                 except ValueError as exc:
                     errors.append(
                         {
@@ -113,9 +121,26 @@ class SotPredictionV10BaselineSotService:
                     )
                     continue
 
+                xg_comp, xg_adj_sot = compute_xg_adjustment_for_side(
+                    db,
+                    season_id=int(season.id),
+                    cutoff_kickoff=fx.kickoff_at,
+                    cutoff_fixture_id=int(fx.id),
+                    team_id=int(team_id),
+                    opponent_id=int(opp_by_team[int(team_id)]),
+                    base_explicit_sot=float(base_explicit_sot),
+                )
+                if xg_comp.get("xg_adjustment_applied"):
+                    xg_applied += 1
+                else:
+                    xg_fallback += 1
+
+                final_sot = round(float(base_explicit_sot) + float(xg_adj_sot), 2)
+                diff_base = round(final_sot - float(base_explicit_sot), 2)
+
                 v04_ref = float(pred_v04.predicted_sot)
-                delta = round(float(expected) - v04_ref, 2)
-                align_st = alignment_status(delta)
+                delta_base = round(float(base_explicit_sot) - v04_ref, 2)
+                align_st = alignment_status(delta_base)
                 if align_st == "aligned_with_v04":
                     aligned_n += 1
                 elif align_st == "minor_rounding_difference":
@@ -123,30 +148,34 @@ class SotPredictionV10BaselineSotService:
                 else:
                     review_n += 1
 
-                symbolic, numeric = build_formula_strings(terms, expected)
+                formula_payload = build_formula_payload_v10(
+                    base_terms,
+                    base_explicit_sot=float(base_explicit_sot),
+                    xg_component=xg_comp,
+                    final_sot=final_sot,
+                )
 
                 merged: dict[str, Any] = {
                     k: v
                     for k, v in base_raw.items()
-                    if k not in ("model_version", "applied_variable_trace", "xg_component", "baseline_v04_expected_sot")
+                    if k not in ("model_version", "applied_variable_trace", "baseline_v04_expected_sot")
                 }
                 merged["model_version"] = self.model_version
-                merged["architecture"] = "explicit_terms_from_v04"
+                merged["architecture"] = self.architecture
+                merged["base_terms_source"] = "baseline_v0_4_explicit_terms"
                 merged["base_model_version"] = self.base_model_version
                 merged["does_not_use_v04_as_black_box"] = True
-                merged["expected_sot"] = float(expected)
+                merged["base_explicit_sot_before_xg"] = float(base_explicit_sot)
+                merged["expected_sot"] = float(final_sot)
+                merged["difference_from_explicit_base"] = float(diff_base)
                 merged["v04_expected_sot_reference"] = _round2(v04_ref)
-                merged["difference_from_v04"] = float(delta)
-                merged["formula"] = {
-                    "type": "weighted_sum",
-                    "terms": terms,
-                    "symbolic": symbolic,
-                    "numeric": numeric,
-                }
+                merged["difference_from_v04"] = float(delta_base)
+                merged["formula"] = formula_payload
+                merged["xg_component"] = xg_comp
                 merged["v04_alignment"] = {
                     "v04_expected_sot": _round2(v04_ref),
-                    "v10_expected_sot": float(expected),
-                    "delta": float(delta),
+                    "v10_expected_sot": float(base_explicit_sot),
+                    "delta": float(delta_base),
                     "status": align_st,
                 }
 
@@ -176,11 +205,11 @@ class SotPredictionV10BaselineSotService:
                         model_version=self.model_version,
                     )
                     db.add(existing)
-                existing.predicted_sot = float(expected)
+                existing.predicted_sot = float(final_sot)
                 existing.raw_json = merged
                 existing.explanation = (
-                    "v1.0: somma pesata esplicita dei 6 termini esterni della formula v0.4 ricostruiti da raw_json v0.4; "
-                    "predicted_sot v0.4 usato solo in v04_alignment."
+                    "v1.0: somma esplicita 6 termini v0.4 + correzione additiva xG (expected_goals); "
+                    "predicted_sot v0.4 usato solo in v04_alignment sulla base."
                 )
                 created += 1
                 try:
@@ -197,14 +226,18 @@ class SotPredictionV10BaselineSotService:
                     )
                     continue
 
+        aligned_base_terms_count = int(aligned_n) + int(minor_n)
         return {
             "status": "success",
             "season": int(season_year),
             "model_version": self.model_version,
             "base_model_version": self.base_model_version,
-            "architecture": "explicit_terms_from_v04",
+            "architecture": self.architecture,
             "upcoming_fixtures": len(upcoming),
             "predictions_created_or_updated": int(created),
+            "xg_applied_count": int(xg_applied),
+            "xg_fallback_count": int(xg_fallback),
+            "aligned_base_terms_count": aligned_base_terms_count,
             "aligned_with_v04": int(aligned_n),
             "minor_rounding_difference": int(minor_n),
             "needs_review": int(review_n),

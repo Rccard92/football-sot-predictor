@@ -51,7 +51,7 @@ def test_manifest_v10_matches_v04_length():
 
     m4 = manifest_for_model(BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT)
     m10 = manifest_for_model(BASELINE_SOT_MODEL_VERSION_V10_SOT)
-    assert len(m10) == len(m4)
+    assert len(m10) == len(m4) + 1
 
 
 def test_trace_v10_same_length_as_manifest():

@@ -152,3 +152,64 @@ def build_formula_strings(terms: list[dict[str, Any]], expected: float) -> tuple
     symbolic = "expected_sot_v1 = " + " + ".join(sym_parts)
     numeric = "expected_sot_v1 = " + " + ".join(num_parts) + f"\n= {_r4(sum(float(t['contribution']) for t in terms))}\n= {_r2(expected)}"
     return symbolic, numeric
+
+
+def build_xg_formula_term(xg_component: dict[str, Any]) -> dict[str, Any]:
+    """7° termine: correzione additiva expected_goals."""
+    from app.services.predictions_v10.xg_adjustment_component import XG_SENSITIVITY
+
+    applied = bool(xg_component.get("xg_adjustment_applied"))
+    adj_sot = float(xg_component.get("xg_adjustment_sot") or 0.0)
+    team_avg = _sf(xg_component.get("team_avg_xg_for"))
+    return {
+        "key": "expected_goals",
+        "label": "xG / Expected goals",
+        "type": "adjustment_component",
+        "value": _r2(team_avg) if team_avg is not None else None,
+        "weight": XG_SENSITIVITY,
+        "contribution": _r4(adj_sot) if applied else 0.0,
+        "formula": "base_explicit_sot * xg_adjustment_pct",
+        "source": str(xg_component.get("source") or "fixtures/statistics::expected_goals"),
+        "status": "available" if applied else "fallback",
+        "fallback_used": bool(xg_component.get("fallback_used")),
+        "cap_applied": bool(xg_component.get("cap_applied")),
+        "application_role": "direct_formula_component",
+        "parent_component": "xg_quality_component",
+    }
+
+
+def build_formula_payload_v10(
+    base_terms: list[dict[str, Any]],
+    *,
+    base_explicit_sot: float,
+    xg_component: dict[str, Any],
+    final_sot: float,
+) -> dict[str, Any]:
+    xg_term = build_xg_formula_term(xg_component)
+    all_terms = list(base_terms) + [xg_term]
+    adj_sum = float(xg_term.get("contribution") or 0.0)
+    base_sum = _r2(base_explicit_sot)
+
+    base_sym = [f"({_r2(float(t['value']))} × {t['weight']})" for t in base_terms]
+    base_num = [f"({_r4(float(t['contribution']))})" for t in base_terms]
+    xg_sym = f"xG_adjustment({_r2(adj_sum)})"
+    xg_num = f"{_r4(adj_sum)}"
+
+    symbolic = "expected_sot_v1 = " + " + ".join(base_sym) + " + " + xg_sym
+    numeric = (
+        "expected_sot_v1 = "
+        + " + ".join(base_num)
+        + f" + {xg_num}\n= {_r4(float(base_explicit_sot) + adj_sum)}\n= {_r2(final_sot)}"
+    )
+
+    return {
+        "type": "explicit_weighted_sum_plus_adjustments",
+        "base_terms_count": 6,
+        "adjustment_terms_count": 1,
+        "terms": all_terms,
+        "base_sum": base_sum,
+        "adjustment_sum": _r2(adj_sum),
+        "final_sum": _r2(final_sot),
+        "symbolic": symbolic,
+        "numeric": numeric,
+    }
