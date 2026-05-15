@@ -37,6 +37,7 @@ class FixturePlayerStat(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
+    api_player_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position: Mapped[str | None] = mapped_column(String(32), nullable=True)
     rating: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -60,6 +61,9 @@ class FixturePlayerStat(Base, TimestampMixin):
     fouls_committed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     yellow_cards: Mapped[int | None] = mapped_column(Integer, nullable=True)
     red_cards: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    penalty_scored: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    penalty_missed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    penalty_won: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     fixture = relationship("Fixture", back_populates="player_stats")

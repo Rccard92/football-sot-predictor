@@ -7,6 +7,10 @@ from app.models.ingestion_run import IngestionRun
 from app.models.league import League
 from app.models.player import Player
 from app.models.player_availability_event import PlayerAvailabilityEvent
+from app.models.player_registry import PlayerRegistry
+from app.models.player_match_stat import PlayerMatchStat
+from app.models.player_season_profile import PlayerSeasonProfile
+from app.models.player_team_season import PlayerTeamSeason
 from app.models.player_sot_profile import PlayerSotProfile
 from app.models.prediction_backtest import PredictionBacktest
 from app.models.season import Season
@@ -26,6 +30,10 @@ __all__ = [
     "League",
     "Player",
     "PlayerAvailabilityEvent",
+    "PlayerMatchStat",
+    "PlayerRegistry",
+    "PlayerSeasonProfile",
+    "PlayerTeamSeason",
     "PlayerSotProfile",
     "PredictionBacktest",
     "Season",

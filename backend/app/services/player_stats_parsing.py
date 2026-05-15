@@ -84,6 +84,10 @@ _TYPE_ALIASES: dict[str, str] = {
     "fouls committed": "fouls_committed",
     "yellow cards": "yellow_cards",
     "red cards": "red_cards",
+    "penalty scored": "penalty_scored",
+    "penalty miss": "penalty_missed",
+    "penalty misses": "penalty_missed",
+    "penalty won": "penalty_won",
 }
 
 
@@ -158,6 +162,11 @@ def _nested_statistics_v3_to_fields(statistics: list[dict[str, Any]]) -> dict[st
     cards = s0.get("cards") if isinstance(s0.get("cards"), dict) else {}
     out["yellow_cards"] = _int_summable(cards.get("yellow"))
     out["red_cards"] = _int_summable(cards.get("red"))
+
+    penalties = s0.get("penalties") if isinstance(s0.get("penalties"), dict) else {}
+    out["penalty_scored"] = _int_summable(penalties.get("scored"))
+    out["penalty_missed"] = _int_summable(penalties.get("missed"))
+    out["penalty_won"] = _int_summable(penalties.get("won"))
 
     return out
 

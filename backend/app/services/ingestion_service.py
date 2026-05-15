@@ -1186,6 +1186,9 @@ class IngestionService:
             "fouls_committed",
             "yellow_cards",
             "red_cards",
+            "penalty_scored",
+            "penalty_missed",
+            "penalty_won",
         )
         for attr in int_attrs:
             if attr in parsed:
@@ -1286,11 +1289,13 @@ class IngestionService:
                                     fixture_id=f.id,
                                     player_id=player.id,
                                     team_id=team.id,
+                                    api_player_id=api_player_id,
                                     raw_json=entry,
                                 )
                                 db.add(row)
                             else:
                                 row.team_id = team.id
+                                row.api_player_id = api_player_id
                                 row.raw_json = entry
                             self._apply_parsed_player_stat(
                                 row,

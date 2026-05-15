@@ -9,6 +9,8 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "seasons",
         "teams",
         "players",
+        "player_registry",
+        "player_team_seasons",
         "fixtures",
         "fixture_team_stats",
         "fixture_player_stats",
@@ -19,6 +21,8 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "prediction_backtests",
         "player_sot_profiles",
         "player_availability_events",
+        "player_match_stats",
+        "player_season_profiles",
     },
 )
 

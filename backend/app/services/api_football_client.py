@@ -140,6 +140,11 @@ class ApiFootballClient:
         body = self.get("fixtures/players", {"fixture": fixture_id})
         return list(body.get("response") or [])
 
+    def get_player_squads(self, team_api_id: int) -> list[dict[str, Any]]:
+        """GET /players/squads — una o più entry {team, players}."""
+        body = self.get("players/squads", {"team": team_api_id})
+        return list(body.get("response") or [])
+
     def get_fixture_lineups(self, fixture_id: int) -> list[dict[str, Any]]:
         body = self.get("fixtures/lineups", {"fixture": fixture_id})
         return list(body.get("response") or [])

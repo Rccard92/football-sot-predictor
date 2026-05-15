@@ -40,6 +40,11 @@ class _Appearance:
     kickoff: Any
     minutes: int
     sot: int
+    shots: int
+    goals: int
+    assists: int
+    passes_key: int
+    rating: float | None
     substitute: bool | None
     is_start: bool
 
@@ -160,6 +165,10 @@ class PlayerSotProfileService:
                 m = int(fp.minutes) if fp.minutes is not None else 0
                 sot = int(fp.shots_on_target) if fp.shots_on_target is not None else 0
                 st = int(fp.shots_total) if fp.shots_total is not None else 0
+                gk = int(fp.goals) if fp.goals is not None else 0
+                ast = int(fp.assists) if fp.assists is not None else 0
+                pk = int(fp.passes_key) if fp.passes_key is not None else 0
+                rtg = float(fp.rating) if fp.rating is not None else None
                 sub = fp.substitute
                 starters = lineup_starters.get((fp.fixture_id, fp.team_id))
                 if starters:
@@ -185,6 +194,11 @@ class PlayerSotProfileService:
                         kickoff=fx.kickoff_at,
                         minutes=m,
                         sot=sot,
+                        shots=st,
+                        goals=gk,
+                        assists=ast,
+                        passes_key=pk,
+                        rating=rtg,
                         substitute=sub,
                         is_start=is_start,
                     ),
@@ -209,6 +223,7 @@ class PlayerSotProfileService:
                 sot_per90 = (total_sot / total_minutes * 90.0) if total_minutes > 0 else 0.0
 
                 team_sot_sum = 0
+                team_shots_sum = 0
                 for a in apps:
                     fts = db.scalar(
                         select(FixtureTeamStat).where(
@@ -218,7 +233,12 @@ class PlayerSotProfileService:
                     )
                     if fts and fts.shots_on_target is not None:
                         team_sot_sum += int(fts.shots_on_target)
+                    if fts and fts.total_shots is not None:
+                        team_shots_sum += int(fts.total_shots)
                 team_share_pct = (100.0 * total_sot / team_sot_sum) if team_sot_sum > 0 else 0.0
+                team_total_shots_share_pct = (
+                    (100.0 * total_shots_val / team_shots_sum) if team_shots_sum > 0 else 0.0
+                )
 
                 last5 = apps[-5:]
                 per90s: list[float] = []
@@ -228,6 +248,23 @@ class PlayerSotProfileService:
                     else:
                         per90s.append(0.0)
                 last5_avg = sum(per90s) / len(per90s) if per90s else 0.0
+
+                total_goals = sum(a.goals for a in apps)
+                total_assists = sum(a.assists for a in apps)
+                total_key = sum(a.passes_key for a in apps)
+                kp_per90 = (total_key / total_minutes * 90.0) if total_minutes > 0 else 0.0
+                ratings_all = [a.rating for a in apps if a.rating is not None]
+                avg_rating_val = (
+                    round(sum(ratings_all) / len(ratings_all), 4) if ratings_all else None
+                )
+
+                recent_minutes_last5 = sum(a.minutes for a in last5)
+                recent_shots_total_last5 = sum(a.shots for a in last5)
+                recent_shots_on_last5 = sum(a.sot for a in last5)
+                last5_ratings = [a.rating for a in last5 if a.rating is not None]
+                recent_rating_last5 = (
+                    round(sum(last5_ratings) / len(last5_ratings), 4) if last5_ratings else None
+                )
 
                 rel = 50
                 if total_minutes >= 900:
@@ -257,6 +294,16 @@ class PlayerSotProfileService:
                     last5_shots_on_target_per90=round(float(last5_avg), 4),
                     reliability_score=rel,
                     impact_score=impact,
+                    goals_total=total_goals,
+                    assists_total=total_assists,
+                    key_passes_total=total_key,
+                    key_passes_per90=round(float(kp_per90), 4),
+                    avg_rating=avg_rating_val,
+                    recent_minutes_last5=recent_minutes_last5,
+                    recent_shots_total_last5=recent_shots_total_last5,
+                    recent_shots_on_last5=recent_shots_on_last5,
+                    recent_rating_last5=recent_rating_last5,
+                    team_total_shots_share_pct=round(float(team_total_shots_share_pct), 4),
                 )
                 db.add(row)
                 n_ok += 1
