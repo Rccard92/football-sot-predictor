@@ -6,11 +6,13 @@ from app.services.player_data.player_db_health import (
     player_season_profiles_health_summary,
 )
 from app.services.player_data.player_match_stats_ingestion import ingest_serie_a_player_match_stats
+from app.services.player_data.player_profiles_debug import build_fixture_player_profiles_debug
 from app.services.player_data.profile_builder import build_serie_a_player_season_profiles
 from app.services.player_data.registry import upsert_player_registry
 from app.services.player_data.squads import sync_serie_a_player_squads
 
 __all__ = [
+    "build_fixture_player_profiles_debug",
     "build_serie_a_player_season_profiles",
     "ingest_serie_a_player_match_stats",
     "player_db_health_summary",

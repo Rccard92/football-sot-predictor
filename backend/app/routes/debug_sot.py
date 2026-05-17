@@ -13,6 +13,7 @@ from app.services.debug_sot_model_comparison import (
     build_model_comparison_for_upcoming,
 )
 from app.services.predictions_v10.v10_features_debug import build_fixture_features_debug
+from app.services.player_data.player_profiles_debug import build_fixture_player_profiles_debug
 from app.services.sot_fixture_explanation_service import build_fixture_sot_explanation
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,64 @@ def debug_sot_fixture_explanation(
 
     if isinstance(payload, dict) and payload.get("status") == "missing":
         return JSONResponse(status_code=404, content=jsonable_encoder(payload))
+
+    return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+
+@router.get("/fixture/{fixture_id}/player-profiles", response_model=None)
+def debug_sot_fixture_player_profiles(
+    fixture_id: int,
+    db: Session = Depends(get_db),
+    season: int | None = Query(default=None),
+    limit: int = Query(default=15, ge=1, le=50),
+    sort: str = Query(default="shooting_impact_score_desc"),
+):
+    """Read-only: profili Player DB per casa/trasferta (nessuna API esterna)."""
+    try:
+        payload = build_fixture_player_profiles_debug(
+            db,
+            int(fixture_id),
+            season_year=season,
+            limit=int(limit),
+            sort=sort,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning(
+            "GET debug fixture player-profiles: DB error (%s)",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Errore database durante la lettura dei profili giocatori.",
+                    "failed_step": "database_operation",
+                    "details": f"{exc.__class__.__name__}",
+                    "fixture_id": int(fixture_id),
+                },
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET debug fixture player-profiles: errore inatteso")
+        return JSONResponse(
+            status_code=422,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Errore durante la lettura dei profili giocatori.",
+                    "failed_step": "build_player_profiles",
+                    "details": f"{exc.__class__.__name__}: {exc!s}"[:800],
+                    "fixture_id": int(fixture_id),
+                },
+            ),
+        )
+
+    if isinstance(payload, dict) and payload.get("status") == "error":
+        msg = str(payload.get("message") or "")
+        code = 404 if "non trovata" in msg.lower() or "not found" in msg.lower() else 400
+        return JSONResponse(status_code=code, content=jsonable_encoder(payload))
 
     return JSONResponse(status_code=200, content=jsonable_encoder(payload))
 

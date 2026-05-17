@@ -1,5 +1,7 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
+import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
+
 export const DEFAULT_SEASON = Number(import.meta.env.VITE_DEFAULT_SEASON) || 2025
 
 export type LeagueDashboardBlock = {
@@ -1249,6 +1251,20 @@ export async function buildPlayerSeasonProfiles(season: number, opts?: AdminRequ
     {},
     opts,
   )
+}
+
+export async function getFixturePlayerProfiles(
+  fixtureId: number,
+  opts?: { season?: number; limit?: number },
+): Promise<FixturePlayerProfilesResponse> {
+  const base = getApiBase()
+  const q = new URLSearchParams()
+  if (opts?.season != null) q.set('season', String(opts.season))
+  if (opts?.limit != null) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  const path = `/api/debug/sot/fixture/${fixtureId}/player-profiles${qs ? `?${qs}` : ''}`
+  const res = await fetch(`${base}${path}`)
+  return (await res.json()) as FixturePlayerProfilesResponse
 }
 
 export async function adminIngestPlayerStats(season: number, opts?: AdminRequestOpts): Promise<unknown> {

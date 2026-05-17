@@ -14,6 +14,7 @@ import {
   ComponentTreeView,
   FrameworkConsistencyCard,
 } from './MatchExplanationTraceability'
+import { PlayerDbProfilesSection } from './PlayerDbProfilesSection'
 
 function fmtDate(iso: string) {
   try {
@@ -376,6 +377,8 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
           </div>
         </SectionCard>
       ) : null}
+
+      <PlayerDbProfilesSection fixtureId={fx.fixture_id} />
 
       {(data.applied_variable_trace?.home?.length ?? 0) > 0 || (data.applied_variable_trace?.away?.length ?? 0) > 0 ? (
         <SectionCard title="Registro variabili applicate (trace)">
