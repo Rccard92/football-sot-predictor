@@ -13,7 +13,24 @@ from app.services.debug_sot_model_comparison import (
     build_model_comparison_for_upcoming,
 )
 from app.services.predictions_v10.v10_features_debug import build_fixture_features_debug
-from app.services.player_data.player_profiles_debug import build_fixture_player_profiles_debug
+from app.services.player_data.player_profiles_debug import (
+    PROFILE_LIMIT_MAX,
+    build_fixture_player_profiles_debug,
+)
+
+
+def _resolve_player_profiles_limit(limit: str) -> int:
+    """limit numerico 1..100 oppure 'all' (max profili per squadra)."""
+    raw = (limit or "15").strip().lower()
+    if raw == "all":
+        return PROFILE_LIMIT_MAX
+    try:
+        n = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"limit non valido: {limit}") from exc
+    if n < 1 or n > PROFILE_LIMIT_MAX:
+        raise ValueError(f"limit deve essere tra 1 e {PROFILE_LIMIT_MAX}, oppure 'all'")
+    return n
 from app.services.sot_fixture_explanation_service import build_fixture_sot_explanation
 
 logger = logging.getLogger(__name__)
@@ -77,16 +94,32 @@ def debug_sot_fixture_player_profiles(
     fixture_id: int,
     db: Session = Depends(get_db),
     season: int | None = Query(default=None),
-    limit: int = Query(default=15, ge=1, le=50),
+    limit: str = Query(
+        default="15",
+        description="Numero profili per squadra (1-100) oppure 'all' (= max 100).",
+    ),
     sort: str = Query(default="shooting_impact_score_desc"),
 ):
     """Read-only: profili Player DB per casa/trasferta (nessuna API esterna)."""
+    try:
+        resolved_limit = _resolve_player_profiles_limit(limit)
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": str(exc),
+                    "fixture_id": int(fixture_id),
+                },
+            ),
+        )
     try:
         payload = build_fixture_player_profiles_debug(
             db,
             int(fixture_id),
             season_year=season,
-            limit=int(limit),
+            limit=resolved_limit,
             sort=sort,
         )
     except (OperationalError, ProgrammingError) as exc:

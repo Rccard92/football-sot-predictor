@@ -12,6 +12,7 @@ from app.models import Fixture, PlayerRegistry, PlayerSeasonProfile, PlayerTeamS
 from app.services.ingestion_service import IngestionService
 
 SUPPORTED_SORTS = frozenset({"shooting_impact_score_desc"})
+PROFILE_LIMIT_MAX = 100
 
 QUALITY_BLOCK: dict[str, Any] = {
     "source": "player_season_profiles",

@@ -1253,14 +1253,16 @@ export async function buildPlayerSeasonProfiles(season: number, opts?: AdminRequ
   )
 }
 
+export type PlayerProfilesLimit = 10 | 15 | 25 | 'all'
+
 export async function getFixturePlayerProfiles(
   fixtureId: number,
-  opts?: { season?: number; limit?: number },
+  opts?: { season?: number; limit?: PlayerProfilesLimit },
 ): Promise<FixturePlayerProfilesResponse> {
   const base = getApiBase()
   const q = new URLSearchParams()
   if (opts?.season != null) q.set('season', String(opts.season))
-  if (opts?.limit != null) q.set('limit', String(opts.limit))
+  if (opts?.limit != null) q.set('limit', opts.limit === 'all' ? 'all' : String(opts.limit))
   const qs = q.toString()
   const path = `/api/debug/sot/fixture/${fixtureId}/player-profiles${qs ? `?${qs}` : ''}`
   const res = await fetch(`${base}${path}`)
