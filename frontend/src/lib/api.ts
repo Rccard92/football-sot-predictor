@@ -1243,6 +1243,14 @@ export async function getPlayerMatchDbSummary(season: number, opts?: AdminReques
   return adminGetJson<unknown>(`/api/admin/debug/serie-a/${season}/player-db-summary`, opts)
 }
 
+export async function buildPlayerSeasonProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(
+    `/api/admin/features/player-season-profiles/serie-a/${season}/build`,
+    {},
+    opts,
+  )
+}
+
 export async function adminIngestPlayerStats(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/player-stats`, {}, opts)
 }

@@ -6,6 +6,7 @@ import {
   adminIngestAvailability,
   adminIngestLineups,
   adminIngestPlayerMatchStats,
+  buildPlayerSeasonProfiles,
   adminIngestPlayerStats,
   adminIngestStandings,
   adminIngestTeamStats,
@@ -56,6 +57,28 @@ function pickMessage(payload: unknown, okFallback: string): string {
       const m = o.player_match_stats_upserted
       const pl = o.players_upserted
       return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
+    }
+    if (typeof o.status === 'string' && o.profiles_created_or_updated != null) {
+      const updated = o.profiles_created_or_updated
+      const impact = o.profiles_with_shooting_impact
+      const lowMin = o.profiles_without_enough_minutes
+      const sample = Array.isArray(o.top_players_sample) ? o.top_players_sample : []
+      const topName =
+        sample.length > 0 && sample[0] && typeof sample[0] === 'object'
+          ? String((sample[0] as Record<string, unknown>).player_name ?? '')
+          : ''
+      const warnN = Array.isArray(o.warnings) ? o.warnings.length : 0
+      const errN = Array.isArray(o.errors) ? o.errors.length : 0
+      return [
+        `Profili giocatori: status ${String(o.status)}`,
+        `aggiornati ${String(updated ?? '—')}`,
+        `con shooting impact ${String(impact ?? '—')}`,
+        `minuti insufficienti ${String(lowMin ?? '—')}`,
+        topName ? `top: ${topName}` : '',
+        warnN || errN ? `warnings ${warnN} · errori ${errN}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
     }
     if (typeof o.message === 'string' && o.message.trim()) return o.message
     if (typeof o.status === 'string' && o.status === 'skipped' && typeof o.reason === 'string') {
@@ -233,6 +256,13 @@ export function Admin() {
       run: () => adminIngestPlayerMatchStats(SEASON),
     },
     {
+      id: 'player-season-profiles',
+      label: 'Calcola profili giocatori',
+      description: 'Aggrega player_match_stats e aggiorna player_season_profiles.',
+      endpoint: `POST /api/admin/features/player-season-profiles/serie-a/${SEASON}/build`,
+      run: () => buildPlayerSeasonProfiles(SEASON),
+    },
+    {
       id: 'team-stats',
       label: 'Aggiorna statistiche squadra partite finite',
       endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/team-stats`,
@@ -340,7 +370,7 @@ export function Admin() {
   const section3: AdminAction[] = [
     {
       id: 'player-db-summary',
-      label: 'Riepilogo Player DB (match stats)',
+      label: 'Riepilogo Player DB',
       endpoint: `GET /api/admin/debug/serie-a/${SEASON}/player-db-summary`,
       run: () => getPlayerMatchDbSummary(SEASON),
     },
