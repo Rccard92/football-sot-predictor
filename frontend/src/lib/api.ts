@@ -1,5 +1,6 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
+import type { FixtureLineupsResponse } from '../types/fixtureLineups'
 import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
 
 export const DEFAULT_SEASON = Number(import.meta.env.VITE_DEFAULT_SEASON) || 2025
@@ -1273,8 +1274,32 @@ export async function adminIngestPlayerStats(season: number, opts?: AdminRequest
   return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/player-stats`, {}, opts)
 }
 
-export async function adminIngestLineups(season: number, opts?: AdminRequestOpts): Promise<unknown> {
-  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/lineups`, {}, opts)
+export type LineupsIngestOptions = {
+  fixtureId?: number
+  force?: boolean
+}
+
+export async function adminIngestLineups(
+  season: number,
+  ingestOpts?: LineupsIngestOptions,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  const params = new URLSearchParams()
+  if (ingestOpts?.fixtureId != null) params.set('fixture_id', String(ingestOpts.fixtureId))
+  if (ingestOpts?.force) params.set('force', 'true')
+  const qs = params.toString()
+  const path = `/api/admin/ingest/serie-a/${season}/lineups${qs ? `?${qs}` : ''}`
+  return adminPostJson<unknown>(path, {}, opts)
+}
+
+export async function getFixtureLineups(fixtureId: number): Promise<FixtureLineupsResponse> {
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/debug/sot/fixture/${fixtureId}/lineups`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok && res.status !== 200) {
+    throw new Error(extractErrorMessage(body, res.statusText))
+  }
+  return body as FixtureLineupsResponse
 }
 
 export async function adminTestInjuriesApi(season: number, opts?: AdminRequestOpts): Promise<unknown> {

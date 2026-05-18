@@ -58,6 +58,22 @@ function pickMessage(payload: unknown, okFallback: string): string {
       const pl = o.players_upserted
       return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
     }
+    if (typeof o.fixtures_checked === 'number' || typeof o.lineups_upserted === 'number') {
+      const nav = Array.isArray(o.not_available_yet) ? o.not_available_yet.length : 0
+      const errN = Array.isArray(o.errors) ? o.errors.length : 0
+      return [
+        `Formazioni: status ${String(o.status ?? '—')}`,
+        `controllate ${String(o.fixtures_checked ?? '—')}`,
+        `con lineups ${String(o.fixtures_with_lineups ?? '—')}`,
+        `senza lineups ${String(o.fixtures_without_lineups ?? '—')}`,
+        `upsert squadre ${String(o.lineups_upserted ?? '—')}`,
+        `giocatori ${String(o.lineup_players_upserted ?? '—')}`,
+        nav ? `non ancora disp. ${nav}` : '',
+        errN ? `errori ${errN}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    }
     if (typeof o.status === 'string' && o.profiles_created_or_updated != null) {
       const updated = o.profiles_created_or_updated
       const impact = o.profiles_with_shooting_impact
@@ -247,6 +263,14 @@ export function Admin() {
       description: 'Bootstrap Serie A (lega, squadre, calendario) da API-Football.',
       endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/bootstrap`,
       run: () => adminBootstrapSerieA(SEASON),
+    },
+    {
+      id: 'official-lineups',
+      label: 'Aggiorna formazioni ufficiali',
+      description:
+        'Recupera fixtures/lineups per le partite vicine (48h) o in corso. Non modifica la formula v1.1.',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/lineups`,
+      run: () => adminIngestLineups(SEASON),
     },
     {
       id: 'player-match-stats',

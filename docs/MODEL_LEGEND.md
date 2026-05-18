@@ -25,6 +25,17 @@ Lo split usa partite precedenti della squadra nello stesso contesto della fixtur
 
 Generazione: `POST /api/predictions/sot/serie-a/{season}/generate-v11-sot`. Dettaglio feature: [`SOT_MODEL_FEATURE_REGISTRY.md`](SOT_MODEL_FEATURE_REGISTRY.md).
 
+## Lineups / formazioni ufficiali (step 7 — solo DB e audit)
+
+- **Fonte:** API-Football `fixtures/lineups` (solo tramite ingestion admin, mai durante `generate-v11-sot`).
+- **Persistenza:** `fixture_lineups` (testata per squadra) + `fixture_lineup_players` (titolari e panchina normalizzati).
+- **Non sono mock:** se l’API non restituisce formazioni, non si inventano probabili o ultimi titolari; stato `not_available_yet`.
+- **Non entrano ancora nella formula** `baseline_v1_1_sot` (stage 6 invariato). Lo step **7B** collegherà le lineups al Player layer (`top_shooter_presence` / assenze).
+- **Ingestion:** `POST /api/admin/ingest/serie-a/{season}/lineups` (opz. `fixture_id`, `force`). Default: fixture entro 48h o in corso.
+- **Audit:** `GET /api/debug/sot/fixture/{id}/lineups` e sezione «Lineups / Formazioni ufficiali» in spiegazione partita.
+
+Implementazione: [`lineup_ingestion.py`](backend/app/services/lineups/lineup_ingestion.py), [`lineup_debug.py`](backend/app/services/lineups/lineup_debug.py).
+
 ## baseline_v1_0_sot — Produzione offensiva composita
 
 Il termine **Produzione offensiva composita** (`offensive_production_component`) è l’unico segnale offensivo nella **formula finale** (peso **0,30**). Gli input sotto non sono righe della formula a 7 termini: compaiono solo in audit/trace come `component_input` con `parent_component = offensive_production_component`.

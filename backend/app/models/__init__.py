@@ -1,6 +1,7 @@
 from app.models.base import Base
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
+from app.models.fixture_lineup_player import FixtureLineupPlayer
 from app.models.fixture_player_stat import FixturePlayerStat
 from app.models.fixture_team_stat import FixtureTeamStat
 from app.models.ingestion_run import IngestionRun
@@ -24,6 +25,7 @@ __all__ = [
     "Base",
     "Fixture",
     "FixtureLineup",
+    "FixtureLineupPlayer",
     "FixturePlayerStat",
     "FixtureTeamStat",
     "IngestionRun",

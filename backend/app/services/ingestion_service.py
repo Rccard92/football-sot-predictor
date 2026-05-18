@@ -1347,6 +1347,9 @@ class IngestionService:
         *,
         run_source: str = "serie_a_lineups",
     ) -> IngestionRun:
+        from app.services.lineups.lineup_parsing import block_has_official_lineup
+        from app.services.lineups.lineup_persist import upsert_lineup_from_api_block
+
         run = self._begin_run(db, run_source, meta={"season": season})
         processed = 0
         try:
@@ -1369,6 +1372,8 @@ class IngestionService:
                     )
                     continue
                 for block in blocks:
+                    if not isinstance(block, dict) or not block_has_official_lineup(block):
+                        continue
                     team_block = block.get("team") or {}
                     try:
                         team_api = int(team_block["id"])
@@ -1377,47 +1382,15 @@ class IngestionService:
                     team = db.scalar(select(Team).where(Team.api_team_id == team_api))
                     if team is None:
                         continue
-                    formation = block.get("formation")
-                    formation_str = str(formation) if formation else None
-                    coach = block.get("coach")
-                    coach_name = None
-                    if isinstance(coach, dict):
-                        cn = coach.get("name")
-                        if cn:
-                            coach_name = str(cn)[:255]
-                    start_xi = block.get("startXI")
-                    substitutes = block.get("substitutes")
-                    lineup_json = {
-                        "startXI": start_xi,
-                        "substitutes": substitutes,
-                        "coach": coach,
-                    }
-                    row = db.scalar(
-                        select(FixtureLineup).where(
-                            FixtureLineup.fixture_id == f.id,
-                            FixtureLineup.team_id == team.id,
-                        ),
+                    _row, _pn = upsert_lineup_from_api_block(
+                        db,
+                        fixture=f,
+                        season_row=season_row,
+                        team=team,
+                        block=block,
                     )
-                    if row is None:
-                        row = FixtureLineup(
-                            fixture_id=f.id,
-                            team_id=team.id,
-                            formation=formation_str,
-                            coach_name=coach_name,
-                            start_xi=start_xi,
-                            substitutes=substitutes,
-                            lineup_json=lineup_json,
-                            raw_json=block,
-                        )
-                        db.add(row)
-                    else:
-                        row.formation = formation_str
-                        row.coach_name = coach_name
-                        row.start_xi = start_xi  # type: ignore[assignment]
-                        row.substitutes = substitutes  # type: ignore[assignment]
-                        row.lineup_json = lineup_json
-                        row.raw_json = block
-                    processed += 1
+                    if _row is not None:
+                        processed += 1
             db.commit()
             return self._finish_run(db, run, success=True, records_processed=processed)
         except Exception as exc:

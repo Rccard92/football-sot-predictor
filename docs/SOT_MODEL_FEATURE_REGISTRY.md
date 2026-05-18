@@ -96,6 +96,18 @@ Contesto audit (contributo 0): `top_shooter_presence_status` (lineups), `top_sho
 
 Implementazione: [`player_layer_strict.py`](backend/app/services/predictions_v11/player_layer_strict.py), metadati [`player_layer_feature_sources.py`](backend/app/services/predictions_v11/player_layer_feature_sources.py).
 
+## Lineups / formazioni (audit — non in formula v1.1)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Fonte API | `fixtures/lineups` |
+| Tabelle | `fixture_lineups`, `fixture_lineup_players` |
+| Ingestion | `POST /api/admin/ingest/serie-a/{season}/lineups` |
+| Debug | `GET /api/debug/sot/fixture/{id}/lineups` |
+| Stato assenza | `not_available_yet` (non errore modello) |
+| Impatto formula | **Nessuno** in step 7; step 7B userà titolari per `top_shooter_presence_status` |
+| Mock / fallback | Vietati |
+
 ## Vincoli globali
 
 - **Sample minimo componenti stagionali:** 5 partite (`min_completed_matches = 5`).
@@ -112,3 +124,4 @@ Implementazione: [`player_layer_strict.py`](backend/app/services/predictions_v11
 
 - `GET /api/debug/sot/fixture/{id}/explanation?model_version=baseline_v1_1_sot`
 - `GET /api/debug/sot/fixture/{id}/features?model_version=baseline_v1_1_sot`
+- `GET /api/debug/sot/fixture/{id}/lineups`
