@@ -19,6 +19,7 @@ import {
   getDataHealth,
   getIngestionRuns,
   getTeamShotStatsSummary,
+  getAvailabilityApiRawList,
   getAvailabilityRawCheck,
   getAvailabilitySummary,
   getPlayerMatchDbSummary,
@@ -37,6 +38,7 @@ import {
   type UpcomingActiveResponse,
 } from '../lib/api'
 
+import type { AvailabilityApiRawListResponse } from '../types/fixtureAvailability'
 import { V04_MODEL, V10_MODEL, V11_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
@@ -224,6 +226,12 @@ export function Admin() {
   const [cardsError, setCardsError] = useState<string | null>(null)
   const [availDebugFixtureId, setAvailDebugFixtureId] = useState('')
   const [availDebugPlayerSearch, setAvailDebugPlayerSearch] = useState('Rovella')
+  const [apiRawList, setApiRawList] = useState<AvailabilityApiRawListResponse | null>(null)
+  const [apiRawLoading, setApiRawLoading] = useState(false)
+  const [apiRawTeamId, setApiRawTeamId] = useState('')
+  const [apiRawFixtureId, setApiRawFixtureId] = useState('')
+  const [apiRawDate, setApiRawDate] = useState('')
+  const [apiRawPlayerFilter, setApiRawPlayerFilter] = useState('')
 
   const loadCards = useCallback(async () => {
     setCardsError(null)
@@ -246,6 +254,41 @@ export function Admin() {
   useEffect(() => {
     void loadCards()
   }, [loadCards])
+
+  const loadApiRawList = useCallback(async () => {
+    setApiRawLoading(true)
+    try {
+      const teamId = apiRawTeamId.trim() ? parseInt(apiRawTeamId.trim(), 10) : undefined
+      const fixtureId = apiRawFixtureId.trim() ? parseInt(apiRawFixtureId.trim(), 10) : undefined
+      if (apiRawTeamId.trim() && !Number.isFinite(teamId)) {
+        throw new Error('team_id non valido')
+      }
+      if (apiRawFixtureId.trim() && !Number.isFinite(fixtureId)) {
+        throw new Error('fixture_id non valido')
+      }
+      const data = await getAvailabilityApiRawList(SEASON, {
+        teamId: Number.isFinite(teamId) ? teamId : undefined,
+        fixtureId: Number.isFinite(fixtureId) ? fixtureId : undefined,
+        date: apiRawDate.trim() || undefined,
+      })
+      setApiRawList(data)
+    } catch (e) {
+      setApiRawList({
+        status: 'error',
+        season: SEASON,
+        message: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setApiRawLoading(false)
+    }
+  }, [apiRawTeamId, apiRawFixtureId, apiRawDate])
+
+  const apiRawFilteredRecords = (() => {
+    const rows = apiRawList?.records ?? []
+    const q = apiRawPlayerFilter.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter((r) => (r.player_name ?? '').toLowerCase().includes(q))
+  })()
 
   const runAction = useCallback(
     async (action: AdminAction) => {
@@ -728,6 +771,121 @@ export function Admin() {
                 placeholder="Rovella"
               />
             </label>
+          </div>
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+            <p className="text-xs font-medium text-amber-950">Indisponibili API raw (solo lettura)</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-3">
+              <label className="block text-[11px] text-slate-600">
+                team_id (opz.)
+                <input
+                  type="number"
+                  value={apiRawTeamId}
+                  onChange={(e) => setApiRawTeamId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block text-[11px] text-slate-600">
+                fixture_id (opz.)
+                <input
+                  type="number"
+                  value={apiRawFixtureId}
+                  onChange={(e) => setApiRawFixtureId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block text-[11px] text-slate-600">
+                date (YYYY-MM-DD, opz.)
+                <input
+                  type="text"
+                  value={apiRawDate}
+                  onChange={(e) => setApiRawDate(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                  placeholder="2025-05-17"
+                />
+              </label>
+            </div>
+            <label className="mt-2 block text-[11px] text-slate-600">
+              Cerca giocatore (filtro locale)
+              <input
+                type="text"
+                value={apiRawPlayerFilter}
+                onChange={(e) => setApiRawPlayerFilter(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="Zaniolo, Rovella"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={apiRawLoading}
+              onClick={() => void loadApiRawList()}
+              className="mt-3 rounded-lg bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+            >
+              {apiRawLoading ? 'Caricamento...' : 'Carica tutti gli indisponibili API'}
+            </button>
+            {apiRawList ? (
+              <div className="mt-3 space-y-2 text-[11px] text-slate-700">
+                <p>
+                  <span className="font-medium">request:</span>{' '}
+                  <span className="font-mono">{apiRawList.request ?? '-'}</span>
+                </p>
+                <p>
+                  results: {String(apiRawList.results ?? '-')} | api_league_id:{' '}
+                  {String(apiRawList.api_league_id ?? '-')} | league_internal_id:{' '}
+                  {String(apiRawList.league_internal_id ?? '-')}
+                </p>
+                {apiRawList.errors && apiRawList.errors.length > 0 ? (
+                  <p className="text-rose-700">errors: {apiRawList.errors.join('; ')}</p>
+                ) : null}
+                {apiRawList.coverage?.injuries != null ? (
+                  <p>coverage.injuries: {String(apiRawList.coverage.injuries)}</p>
+                ) : null}
+                {apiRawList.message ? <p className="text-rose-700">{apiRawList.message}</p> : null}
+                <div className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white">
+                  <table className="w-full text-left text-[10px]">
+                    <thead className="sticky top-0 bg-slate-100">
+                      <tr>
+                        <th className="px-2 py-1">Data</th>
+                        <th className="px-2 py-1">Fx API</th>
+                        <th className="px-2 py-1">Squadra</th>
+                        <th className="px-2 py-1">Giocatore</th>
+                        <th className="px-2 py-1">Tipo</th>
+                        <th className="px-2 py-1">Motivo</th>
+                        <th className="px-2 py-1">Fonte</th>
+                        <th className="px-2 py-1">Pl API</th>
+                        <th className="px-2 py-1">Tm API</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {apiRawFilteredRecords.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="px-2 py-2 text-slate-500">
+                            Nessun record
+                          </td>
+                        </tr>
+                      ) : (
+                        apiRawFilteredRecords.map((r, i) => (
+                          <tr key={i} className="border-t border-slate-100">
+                            <td className="px-2 py-1 whitespace-nowrap">{r.fixture_date ?? '-'}</td>
+                            <td className="px-2 py-1">{r.fixture_api_id ?? '-'}</td>
+                            <td className="px-2 py-1">{r.team_name ?? '-'}</td>
+                            <td className="px-2 py-1">{r.player_name ?? '-'}</td>
+                            <td className="px-2 py-1">{r.type ?? r.parsed_type ?? '-'}</td>
+                            <td className="px-2 py-1">{r.reason ?? '-'}</td>
+                            <td className="px-2 py-1">{r.source ?? '-'}</td>
+                            <td className="px-2 py-1">{r.player_api_id ?? '-'}</td>
+                            <td className="px-2 py-1">{r.team_api_id ?? '-'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-slate-500">
+                  Righe in tabella: {apiRawFilteredRecords.length}
+                  {apiRawPlayerFilter.trim() ? ` (filtrate da ${apiRawList.records?.length ?? 0})` : ''}
+                </p>
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-col gap-3">
             {section3.map((a) => (

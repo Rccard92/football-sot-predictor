@@ -167,6 +167,7 @@ class ApiFootballClient:
         return [x for x in items if isinstance(x, dict)], err_list
 
     def get_injuries(self, league: int, season: int) -> list[dict[str, Any]]:
+        """league = API-Football api_league_id (es. 135 Serie A), non leagues.id interno."""
         body = self.get("injuries", {"league": league, "season": season})
         items, _ = self.injuries_response_items(body)
         return items
@@ -177,12 +178,13 @@ class ApiFootballClient:
         return items
 
     def get_injuries_by_team(self, league: int, season: int, team: int) -> list[dict[str, Any]]:
+        """league = api_league_id; team = api_team_id."""
         body = self.get("injuries", {"league": league, "season": season, "team": int(team)})
         items, _ = self.injuries_response_items(body)
         return items
 
     def get_league_season_coverage(self, league_id: int, season: int) -> dict[str, Any]:
-        """GET /leagues?id=&season= — estrae coverage stagione se presente."""
+        """GET /leagues?id=&season= — league_id = api_league_id API-Football."""
         body = self.get("leagues", {"id": int(league_id), "season": int(season)})
         items = list(body.get("response") or [])
         if not items:

@@ -77,9 +77,42 @@ export type AvailabilityApiCheckBlock = {
   players: Record<string, unknown>[]
 }
 
+export type AvailabilityApiRawRecord = {
+  fixture_api_id?: number | null
+  fixture_date?: string | null
+  team_api_id?: number | null
+  team_name?: string | null
+  player_api_id?: number | null
+  player_name?: string | null
+  type?: string | null
+  reason?: string | null
+  parsed_status?: string | null
+  parsed_type?: string | null
+  source?: string
+  raw_json?: Record<string, unknown>
+}
+
+export type AvailabilityApiRawListResponse = {
+  status: string
+  season: number
+  league_internal_id?: number
+  api_league_id?: number
+  request?: string
+  results?: number
+  errors?: string[]
+  records?: AvailabilityApiRawRecord[]
+  coverage?: {
+    injuries?: boolean
+    raw?: Record<string, unknown>
+  }
+  message?: string
+}
+
 export type AvailabilityRawCheckResponse = {
   status: string
   season: number
+  league_internal_id?: number
+  api_league_id?: number
   league_id?: number
   fixture?: Record<string, unknown>
   coverage?: {

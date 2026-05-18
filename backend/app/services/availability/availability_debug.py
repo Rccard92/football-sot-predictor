@@ -290,16 +290,15 @@ def build_fixture_availability_debug(db: Session, fixture_id: int) -> dict[str, 
 
 
 def build_season_availability_summary(db: Session, season_year: int) -> dict[str, Any]:
-    from app.services.ingestion_service import IngestionService
+    from app.services.availability.availability_league import resolve_serie_a_league_context
 
-    ing = IngestionService()
-    season_row = ing._serie_a_season_row(db, int(season_year))
-    league_id = int(season_row.league_id)
+    ctx = resolve_serie_a_league_context(db, int(season_year))
+    league_internal_id = ctx.league_internal_id
 
     rows = db.scalars(
         select(PlayerAvailability).where(
             PlayerAvailability.season == int(season_year),
-            PlayerAvailability.league_id == league_id,
+            PlayerAvailability.league_id == league_internal_id,
         ),
     ).all()
     active = [r for r in rows if r.is_active]
@@ -312,7 +311,8 @@ def build_season_availability_summary(db: Session, season_year: int) -> dict[str
     return {
         "status": "ok",
         "season": int(season_year),
-        "league_id": league_id,
+        "league_internal_id": league_internal_id,
+        "api_league_id": ctx.api_league_id,
         "total_records": len(rows),
         "active_records": len(active),
         "inactive_records": len(rows) - len(active),

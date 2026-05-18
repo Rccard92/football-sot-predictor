@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import Fixture, PlayerAvailability, PlayerRegistry, PlayerSeasonProfile, Season, Team
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.availability.availability_league import resolve_serie_a_league_context
 from app.services.availability.availability_parsing import parse_injuries_item
 from app.services.ingestion_service import IngestionService
 
@@ -269,7 +270,9 @@ def build_availability_raw_check(
 ) -> dict[str, Any]:
     ing = IngestionService()
     season_row = ing._serie_a_season_row(db, int(season_year))
-    league_id = int(season_row.league_id)
+    ctx = resolve_serie_a_league_context(db, int(season_year))
+    league_internal_id = ctx.league_internal_id
+    api_league_id = ctx.api_league_id
 
     fx = db.scalar(
         select(Fixture)
@@ -294,7 +297,7 @@ def build_availability_raw_check(
     api = client or ApiFootballClient()
 
     try:
-        coverage = api.get_league_season_coverage(league_id, int(season_year))
+        coverage = api.get_league_season_coverage(api_league_id, int(season_year))
     except Exception as exc:  # noqa: BLE001
         coverage = {"_fetch_error": str(exc)[:300]}
 
@@ -308,20 +311,20 @@ def build_availability_raw_check(
         "home_team": _fetch_injuries_block(
             api,
             label="home_team",
-            request=f"injuries?league={league_id}&season={season_year}&team={api_home}",
-            fetcher=lambda: api.get("injuries", {"league": league_id, "season": season_year, "team": api_home}),
+            request=f"injuries?league={api_league_id}&season={season_year}&team={api_home}",
+            fetcher=lambda: api.get("injuries", {"league": api_league_id, "season": season_year, "team": api_home}),
         ),
         "away_team": _fetch_injuries_block(
             api,
             label="away_team",
-            request=f"injuries?league={league_id}&season={season_year}&team={api_away}",
-            fetcher=lambda: api.get("injuries", {"league": league_id, "season": season_year, "team": api_away}),
+            request=f"injuries?league={api_league_id}&season={season_year}&team={api_away}",
+            fetcher=lambda: api.get("injuries", {"league": api_league_id, "season": season_year, "team": api_away}),
         ),
         "league_season": _fetch_injuries_block(
             api,
             label="league_season",
-            request=f"injuries?league={league_id}&season={season_year}",
-            fetcher=lambda: api.get("injuries", {"league": league_id, "season": season_year}),
+            request=f"injuries?league={api_league_id}&season={season_year}",
+            fetcher=lambda: api.get("injuries", {"league": api_league_id, "season": season_year}),
         ),
     }
 
@@ -329,7 +332,7 @@ def build_availability_raw_check(
         db.scalars(
             select(PlayerAvailability).where(
                 PlayerAvailability.season == int(season_year),
-                PlayerAvailability.league_id == league_id,
+                PlayerAvailability.league_id == league_internal_id,
                 PlayerAvailability.is_active.is_(True),
                 or_(
                     PlayerAvailability.fixture_id == int(fx.id),
@@ -342,7 +345,7 @@ def build_availability_raw_check(
         db.scalars(
             select(PlayerAvailability).where(
                 PlayerAvailability.season == int(season_year),
-                PlayerAvailability.league_id == league_id,
+                PlayerAvailability.league_id == league_internal_id,
                 PlayerAvailability.is_active.is_(True),
                 PlayerAvailability.api_team_id.in_([api_home, api_away]),
             ),
@@ -358,7 +361,7 @@ def build_availability_raw_check(
             query=player_search.strip(),
             api_checks=api_checks,
             season_year=int(season_year),
-            league_id=league_id,
+            league_id=league_internal_id,
             api_home_team_id=api_home,
             api_away_team_id=api_away,
             db_fixture=db_fixture,
@@ -379,7 +382,8 @@ def build_availability_raw_check(
     return {
         "status": "success",
         "season": int(season_year),
-        "league_id": league_id,
+        "league_internal_id": league_internal_id,
+        "api_league_id": api_league_id,
         "fixture": {
             "fixture_id": int(fx.id),
             "api_fixture_id": api_fx,

@@ -1,6 +1,7 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
 import type {
+  AvailabilityApiRawListResponse,
   AvailabilityRawCheckResponse,
   AvailabilitySeasonSummary,
   FixtureAvailabilityResponse,
@@ -1364,6 +1365,28 @@ export async function getAvailabilityRawCheck(
     `/api/admin/debug/serie-a/${season}/availability-raw-check?${params.toString()}`,
     { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
   )
+}
+
+export async function getAvailabilityApiRawList(
+  season: number,
+  opts?: AdminRequestOpts & {
+    teamId?: number
+    fixtureId?: number
+    date?: string
+    source?: string
+  },
+): Promise<AvailabilityApiRawListResponse> {
+  const params = new URLSearchParams()
+  if (opts?.teamId != null) params.set('team_id', String(opts.teamId))
+  if (opts?.fixtureId != null) params.set('fixture_id', String(opts.fixtureId))
+  if (opts?.date?.trim()) params.set('date', opts.date.trim())
+  if (opts?.source?.trim()) params.set('source', opts.source.trim())
+  const qs = params.toString()
+  const path = `/api/admin/debug/serie-a/${season}/availability-api-raw-list${qs ? `?${qs}` : ''}`
+  return adminGetJson<AvailabilityApiRawListResponse>(path, {
+    ...opts,
+    timeoutMs: opts?.timeoutMs ?? 120_000,
+  })
 }
 
 export async function buildPlayerSotProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {

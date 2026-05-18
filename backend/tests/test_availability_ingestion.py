@@ -45,15 +45,24 @@ def test_availability_package_no_predictions_import():
     assert "sot_fixture_explanation_service" not in src
 
 
+@patch("app.services.availability.availability_ingestion.resolve_serie_a_league_context")
 @patch("app.services.availability.availability_ingestion.ApiFootballClient")
 @patch("app.services.availability.availability_ingestion.IngestionService")
-def test_ingest_team_level_item_saved(mock_ing_cls, mock_client_cls):
+def test_ingest_team_level_item_saved(mock_ing_cls, mock_client_cls, mock_ctx):
+    from app.services.availability.availability_league import SerieALeagueContext
+
     db = MagicMock()
     season_row = MagicMock()
     season_row.id = 1
-    season_row.league_id = 135
+    season_row.league_id = 1
     season_row.year = 2025
     mock_ing_cls.return_value._serie_a_season_row.return_value = season_row
+    mock_ctx.return_value = SerieALeagueContext(
+        league_internal_id=1,
+        api_league_id=135,
+        league_name="Serie A",
+        season_row_id=1,
+    )
 
     fx = MagicMock()
     fx.id = 10
@@ -93,5 +102,10 @@ def test_ingest_team_level_item_saved(mock_ing_cls, mock_client_cls):
         )
 
     assert summary["status"] in ("success", "partial_success")
+    assert summary["api_league_id"] == 135
+    assert summary["league_internal_id"] == 1
     assert mock_upsert.call_count >= 1
+    mock_client.get_injuries_by_team.assert_called()
+    team_call_league = mock_client.get_injuries_by_team.call_args[0][0]
+    assert team_call_league == 135
     assert summary.get("records_team_level", 0) >= 0 or summary["availability_records_upserted"] >= 1

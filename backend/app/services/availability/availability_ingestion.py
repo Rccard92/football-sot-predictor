@@ -13,6 +13,7 @@ from app.core.constants import UPCOMING_EXCLUDED_STATUSES
 from app.models import Fixture, PlayerSeasonProfile, Season, Team
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.availability.availability_helpers import select_top_shooter_api_ids
+from app.services.availability.availability_league import resolve_serie_a_league_context
 from app.services.availability.availability_parsing import parse_injuries_item
 from app.services.availability.availability_persist import deactivate_scope, upsert_availability_record
 from app.services.ingestion_service import IngestionService
@@ -99,7 +100,7 @@ def _merge_items(*batches: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _fetch_for_fixture(
     api: ApiFootballClient,
     *,
-    league_id: int,
+    api_league_id: int,
     season_year: int,
     fx: Fixture,
 ) -> tuple[list[dict[str, Any]], int, int]:
@@ -119,13 +120,13 @@ def _fetch_for_fixture(
 
     if home is not None:
         try:
-            batches.append(api.get_injuries_by_team(league_id, season_year, int(home.api_team_id)))
+            batches.append(api.get_injuries_by_team(api_league_id, season_year, int(home.api_team_id)))
             calls_team += 1
         except ApiFootballError as exc:
             logger.warning("injuries home team %s: %s", home.api_team_id, exc)
     if away is not None:
         try:
-            batches.append(api.get_injuries_by_team(league_id, season_year, int(away.api_team_id)))
+            batches.append(api.get_injuries_by_team(api_league_id, season_year, int(away.api_team_id)))
             calls_team += 1
         except ApiFootballError as exc:
             logger.warning("injuries away team %s: %s", away.api_team_id, exc)
@@ -179,7 +180,9 @@ def ingest_serie_a_availability(
 ) -> dict[str, Any]:
     ing = IngestionService()
     season_row = ing._serie_a_season_row(db, int(season_year))
-    league_id = int(season_row.league_id)
+    ctx = resolve_serie_a_league_context(db, int(season_year))
+    league_internal_id = ctx.league_internal_id
+    api_league_id = ctx.api_league_id
     api = client or ApiFootballClient()
 
     target_fixtures: list[Fixture] = []
@@ -228,14 +231,14 @@ def ingest_serie_a_availability(
 
     fixtures_checked = len(target_fixtures)
     teams_checked = len(api_team_ids_scope) or len(
-        db.scalars(select(Team).where(Team.league_id == league_id)).all(),
+        db.scalars(select(Team).where(Team.league_id == league_internal_id)).all(),
     )
 
     if force:
         deactivate_scope(
             db,
             season=int(season_year),
-            league_id=league_id,
+            league_id=league_internal_id,
             fixture_ids=scope_fixture_db_ids or None,
             team_ids=scope_team_db_ids or None,
         )
@@ -251,7 +254,7 @@ def ingest_serie_a_availability(
             try:
                 merged, cf, ct = _fetch_for_fixture(
                     api,
-                    league_id=league_id,
+                    api_league_id=api_league_id,
                     season_year=int(season_year),
                     fx=fx,
                 )
@@ -271,7 +274,7 @@ def ingest_serie_a_availability(
     elif api_team_ids_scope:
         for api_tid in api_team_ids_scope:
             try:
-                batch = api.get_injuries_by_team(league_id, int(season_year), int(api_tid))
+                batch = api.get_injuries_by_team(api_league_id, int(season_year), int(api_tid))
                 all_items.extend(batch)
                 api_calls_by_team += 1
                 api_calls += 1
@@ -279,7 +282,7 @@ def ingest_serie_a_availability(
                 errors.append({"api_team_id": api_tid, "error": "api_error", "message": str(exc)[:500]})
     else:
         try:
-            all_items = api.get_injuries(league_id, int(season_year))
+            all_items = api.get_injuries(api_league_id, int(season_year))
             api_calls = 1
         except ApiFootballError as exc:
             return _error_summary(
@@ -362,7 +365,7 @@ def ingest_serie_a_availability(
             _row, reg_ok = upsert_availability_record(
                 db,
                 season=int(season_year),
-                league_id=league_id,
+                league_id=league_internal_id,
                 parsed=parsed,
             )
             upserted += 1
@@ -381,7 +384,7 @@ def ingest_serie_a_availability(
                     pmap = _profile_map_for_team(
                         db,
                         season_year=int(season_year),
-                        league_id=league_id,
+                        league_id=league_internal_id,
                         api_team_id=at,
                     )
                     top_cache[at] = set(select_top_shooter_api_ids(pmap))
@@ -389,7 +392,7 @@ def ingest_serie_a_availability(
                     prof = _profile_map_for_team(
                         db,
                         season_year=int(season_year),
-                        league_id=league_id,
+                        league_id=league_internal_id,
                         api_team_id=at,
                     ).get(int(parsed.api_player_id))
                     top_shooters_flagged.append(
@@ -428,6 +431,8 @@ def ingest_serie_a_availability(
     return {
         "status": status,
         "season": int(season_year),
+        "league_internal_id": league_internal_id,
+        "api_league_id": api_league_id,
         "fixtures_checked": fixtures_checked,
         "teams_checked": teams_checked,
         "api_calls": api_calls,
