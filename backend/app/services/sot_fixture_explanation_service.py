@@ -596,12 +596,33 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
         f"Peso formula finale {int(xg_w * 100)}%. expected_goals da API-Football / fixture_team_stats; "
         "campione minimo 5 partite con xG per squadra e avversario; nessun fallback silenzioso."
     )
-    player_note = (
-        f"Peso formula finale {int(player_w * 100)}%. Top 5 giocatori da player_season_profiles "
-        "(min 3 eleggibili, minuti ≥180); presenza/assenza top shooter non ancora nel calcolo numerico."
-    )
+    pl_mode = str(playerc.get("mode") or "historical_recent_profile")
+    if pl_mode == "lineup_adjusted":
+        player_note = (
+            f"Peso formula finale {int(player_w * 100)}%. Modalità: lineup-adjusted — "
+            "titolari ufficiali da fixture_lineup_players + profili player_season_profiles; "
+            "presenza/assenza top shooter integrate nel calcolo numerico."
+        )
+        la = playerc.get("lineup_adjustment") if isinstance(playerc.get("lineup_adjustment"), dict) else {}
+        if la.get("status") == "applied":
+            player_note += (
+                f" Top shooter titolari: {la.get('top_shooters_starting')}/{la.get('top_shooters_total')}; "
+                f"in panchina: {la.get('top_shooters_on_bench')}; "
+                f"fuori distinta: {la.get('top_shooters_not_in_lineup')}."
+            )
+        starters = playerc.get("lineup_starters") if isinstance(playerc.get("lineup_starters"), list) else []
+        if starters:
+            sn = [str(p.get("name") or p.get("api_player_id")) for p in starters[:11] if isinstance(p, dict)]
+            if sn:
+                player_note += f" Titolari usati: {', '.join(sn)}."
+    else:
+        player_note = (
+            f"Peso formula finale {int(player_w * 100)}%. "
+            "Lineups non disponibili, Player layer in modalità storico/recent impact "
+            "(top 5 da player_season_profiles, min 3 eleggibili, minuti ≥180)."
+        )
     top_players = playerc.get("top_players") if isinstance(playerc.get("top_players"), list) else []
-    if top_players:
+    if top_players and pl_mode != "lineup_adjusted":
         names = [str(p.get("name") or p.get("api_player_id")) for p in top_players[:5] if isinstance(p, dict)]
         if names:
             player_note += f" Top: {', '.join(names)}."

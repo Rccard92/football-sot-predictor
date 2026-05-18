@@ -9,13 +9,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Fixture, FixtureLineup, FixtureLineupPlayer, PlayerSeasonProfile, Season, Team
+from app.services.predictions_v11.player_layer_lineup_helpers import select_top_shooter_api_ids
 from app.services.sot_feature_registry import V11_MIN_PLAYER_MINUTES
 
 QUALITY_BLOCK: dict[str, Any] = {
     "source": "fixture_lineups",
     "api_live_call": False,
-    "model_impact": False,
-    "note": "Lineups mostrate in audit. L'impatto sul modello verrà applicato nello step successivo (7B).",
+    "model_impact": True,
+    "note": (
+        "Lineups ufficiali usate dal Player layer (baseline_v1_1_sot) in modalità lineup-adjusted "
+        "quando disponibili per casa e trasferta. Nessuna API live in generazione predizioni."
+    ),
 }
 
 NOT_AVAILABLE_MESSAGE = (
@@ -59,30 +63,6 @@ def _profile_map_for_team(
     for p in rows:
         out[int(p.api_player_id)] = p
     return out
-
-
-def _top_shooter_api_ids(starters: list[dict[str, Any]], profiles: dict[int, PlayerSeasonProfile]) -> set[int]:
-    ranked: list[tuple[float, float, float, int]] = []
-    for row in starters:
-        apid = row.get("api_player_id")
-        if apid is None:
-            continue
-        pr = profiles.get(int(apid))
-        if pr is None or not _eligible_profile(pr):
-            continue
-        impact = _float_or_none(pr.shooting_impact_score)
-        sot90 = _float_or_none(pr.shots_on_per90)
-        mins = _float_or_none(pr.minutes_total)
-        ranked.append(
-            (
-                impact is None,
-                -(impact or 0.0),
-                -(sot90 or 0.0),
-                int(apid),
-            ),
-        )
-    ranked.sort()
-    return {int(item[3]) for item in ranked[:5]}
 
 
 def _pack_player_row(
@@ -135,15 +115,7 @@ def _pack_team_side(
     starters_raw = [p for p in players if p.is_starter]
     subs_raw = [p for p in players if p.is_substitute and not p.is_starter]
 
-    starters_packed = [
-        _pack_player_row(
-            lp,
-            profiles.get(int(lp.api_player_id)) if lp.api_player_id is not None else None,
-            is_top_shooter=False,
-        )
-        for lp in starters_raw
-    ]
-    top_ids = _top_shooter_api_ids(starters_packed, profiles)
+    top_ids = set(select_top_shooter_api_ids(profiles))
     starters: list[dict[str, Any]] = []
     for lp in starters_raw:
         apid = lp.api_player_id

@@ -19,22 +19,22 @@ Formula stage 6:
 - **Split casa/trasferta:** 5 input sul contesto reale casa/trasferta — [`home_away_split_strict.py`](backend/app/services/predictions_v11/home_away_split_strict.py).
 - **Forma recente:** 6 input sulle ultime 5 partite per squadra e avversario — [`recent_form_strict.py`](backend/app/services/predictions_v11/recent_form_strict.py). Non c’è fallback se il campione ultime 5 non è disponibile.
 - **Qualità occasioni / xG:** 5 input da `expected_goals` (API-Football / `fixture_team_stats`, eventuale `raw_json` se la colonna è null ma il provider ha inviato il campo) — [`xg_quality_strict.py`](backend/app/services/predictions_v11/xg_quality_strict.py). **Nessun fallback** se il campione xG o le medie lega xG non sono disponibili. Quando `expected_goals` non è fornito dall’API per una partita, non si imputa alcun valore: la riga resta senza xG e può rendere il campione insufficiente.
-- **Player layer / impatto giocatori:** 7 segnali numerici da `player_season_profiles` (top 5 per `shooting_impact_score`, minuti ≥180, `reliability_score` valorizzato) — [`player_layer_strict.py`](backend/app/services/predictions_v11/player_layer_strict.py). **Nessuna** API live, **nessun** lineup/injury nel valore numerico; `top_shooter_presence` / `top_shooter_absence` compaiono in audit con stato non applicato.
+- **Player layer / impatto giocatori:** due modalità — **storico** (`historical_recent_profile`: top 5 da `player_season_profiles`) o **lineup-adjusted** (step 7B: titolari ufficiali + presenza/assenza top shooter quando entrambe le formazioni sono in DB). Sempre 6 componenti finali, peso 13% invariato. Nessuna API live, nessun injuries in 7B — [`player_layer_strict.py`](backend/app/services/predictions_v11/player_layer_strict.py).
 
 Lo split usa partite precedenti della squadra nello stesso contesto della fixture target e partite dell'avversario nello split opposto. La forma recente usa le stesse ultime 5 (cronologiche) per squadra e per avversario, con medie lega „recent-aware“ per normalizzazione. Il componente xG scala i segnali sulla **scala SOT lega** (come le altre componenti) usando `league_avg_xg_for`, `league_avg_xg_conceded`, `league_avg_sot_for`, `league_avg_sot_conceded`.
 
 Generazione: `POST /api/predictions/sot/serie-a/{season}/generate-v11-sot`. Dettaglio feature: [`SOT_MODEL_FEATURE_REGISTRY.md`](SOT_MODEL_FEATURE_REGISTRY.md).
 
-## Lineups / formazioni ufficiali (step 7 — solo DB e audit)
+## Lineups / formazioni ufficiali (step 7 + 7B)
 
-- **Fonte:** API-Football `fixtures/lineups` (solo tramite ingestion admin, mai durante `generate-v11-sot`).
-- **Persistenza:** `fixture_lineups` (testata per squadra) + `fixture_lineup_players` (titolari e panchina normalizzati).
-- **Non sono mock:** se l’API non restituisce formazioni, non si inventano probabili o ultimi titolari; stato `not_available_yet`.
-- **Non entrano ancora nella formula** `baseline_v1_1_sot` (stage 6 invariato). Lo step **7B** collegherà le lineups al Player layer (`top_shooter_presence` / assenze).
-- **Ingestion:** `POST /api/admin/ingest/serie-a/{season}/lineups` (opz. `fixture_id`, `force`). Default: fixture entro 48h o in corso.
-- **Audit:** `GET /api/debug/sot/fixture/{id}/lineups` e sezione «Lineups / Formazioni ufficiali» in spiegazione partita.
+- **Fonte:** API-Football `fixtures/lineups` (solo ingestion admin, mai durante `generate-v11-sot`).
+- **Persistenza:** `fixture_lineups` + `fixture_lineup_players` (titolari e panchina).
+- **Non sono mock:** se l’API non restituisce formazioni, non si inventano probabili; stato `not_available_yet`.
+- **Step 7B:** con formazioni casa e trasferta disponibili, il **Player layer** passa a `lineup_adjusted` (titolari + top shooter presence/absence). Senza lineups resta `historical_recent_profile` — la predizione non viene invalidata.
+- **Ingestion:** `POST /api/admin/ingest/serie-a/{season}/lineups`.
+- **Audit:** `GET /api/debug/sot/fixture/{id}/lineups` + albero componenti Player layer.
 
-Implementazione: [`lineup_ingestion.py`](backend/app/services/lineups/lineup_ingestion.py), [`lineup_debug.py`](backend/app/services/lineups/lineup_debug.py).
+Implementazione: [`lineup_ingestion.py`](backend/app/services/lineups/lineup_ingestion.py), [`lineup_debug.py`](backend/app/services/lineups/lineup_debug.py), [`player_layer_lineup_helpers.py`](backend/app/services/predictions_v11/player_layer_lineup_helpers.py).
 
 ## baseline_v1_0_sot — Produzione offensiva composita
 

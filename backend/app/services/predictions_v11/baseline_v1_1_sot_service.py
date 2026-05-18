@@ -10,7 +10,12 @@ from app.models import Fixture, League, Season, Team, TeamSotPrediction
 from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 from app.services.predictions_v10.v10_prior_context import build_prior_context
 from app.services.predictions_v11.offensive_production_strict import compute_v11_side
-from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER
+from app.services.predictions_v11.player_layer_feature_sources import (
+    COMPONENT_KEY_PLAYER,
+    PLAYER_LAYER_MODE_HISTORICAL,
+    PLAYER_LAYER_MODE_LINEUP,
+)
+from app.services.predictions_v11.player_layer_lineup_helpers import fixture_both_lineups_available
 from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG
 from app.services.sot_feature_registry import V11_ARCHITECTURE, V11_MODEL_STAGE
 
@@ -87,6 +92,9 @@ class SotPredictionV11BaselineSotService:
         xg_missing_n = 0
         player_layer_available_n = 0
         player_layer_missing_n = 0
+        lineup_adjusted_n = 0
+        historical_player_layer_n = 0
+        lineups_missing_n = 0
         missing_required_data: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
 
@@ -130,8 +138,28 @@ class SotPredictionV11BaselineSotService:
                     xg_available_n += 1
                 elif fq_stat in ("insufficient_xg_sample", "missing_required_xg_league_baseline"):
                     xg_missing_n += 1
+                player_comp_blob = comps_m.get(COMPONENT_KEY_PLAYER) if isinstance(
+                    comps_m.get(COMPONENT_KEY_PLAYER),
+                    dict,
+                ) else merged.get(COMPONENT_KEY_PLAYER)
+                if not isinstance(player_comp_blob, dict):
+                    player_comp_blob = None
+
                 if fq_stat == "ok" and has_player_comp:
                     player_layer_available_n += 1
+                    pl_mode = str((player_comp_blob or {}).get("mode") or PLAYER_LAYER_MODE_HISTORICAL)
+                    if pl_mode == PLAYER_LAYER_MODE_LINEUP:
+                        lineup_adjusted_n += 1
+                    elif pl_mode == PLAYER_LAYER_MODE_HISTORICAL:
+                        historical_player_layer_n += 1
+                        both_lu = fixture_both_lineups_available(
+                            db,
+                            fixture_id=int(fx.id),
+                            home_team_id=int(fx.home_team_id),
+                            away_team_id=int(fx.away_team_id),
+                        )
+                        if not both_lu:
+                            lineups_missing_n += 1
                 elif fq_stat in (
                     "insufficient_player_profile_sample",
                     "missing_required_player_league_baseline",
@@ -224,6 +252,9 @@ class SotPredictionV11BaselineSotService:
             "xg_missing_predictions": int(xg_missing_n),
             "player_layer_available_predictions": int(player_layer_available_n),
             "player_layer_missing_predictions": int(player_layer_missing_n),
+            "lineup_adjusted_predictions": int(lineup_adjusted_n),
+            "historical_player_layer_predictions": int(historical_player_layer_n),
+            "lineups_missing_predictions": int(lineups_missing_n),
             "missing_required_data_count": len(missing_required_data),
             "missing_required_data": missing_required_data,
             "errors": errors,

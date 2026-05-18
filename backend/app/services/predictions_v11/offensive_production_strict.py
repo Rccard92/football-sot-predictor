@@ -560,7 +560,9 @@ def compute_v11_side(
                     "weight": FORMULA_PLAYER_WEIGHT,
                     "contribution": player_contrib,
                     "status": "available",
-                    "mode": "historical_recent_profile",
+                    "mode": str(
+                        (player_comp or {}).get("mode") or "historical_recent_profile",
+                    ),
                 },
             ],
             "final_sum": expected_sot,

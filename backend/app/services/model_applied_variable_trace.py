@@ -776,10 +776,15 @@ def _row_for_spec(
                 if isinstance(comps_root.get("player_layer_component"), dict)
                 else {}
             )
-        blob = offensive_inputs_as_map(comp).get("top_shooter_presence_status")
-        base["value"] = None
-        base["status"] = str(blob.get("status") if isinstance(blob, dict) else "not_applicable_until_lineups")
-        base["notes"] = "Non applicato fino a integrazione lineups."
+        blob = offensive_inputs_as_map(comp).get("top_shooter_starter_presence_signal")
+        st = str(blob.get("status") if isinstance(blob, dict) else "not_available_yet")
+        base["value"] = blob.get("raw_value") if isinstance(blob, dict) else None
+        base["status"] = st
+        if st == "available":
+            base["application_role"] = "component_input"
+            base["notes"] = "Presenza top shooter titolari (fixture_lineups + player_season_profiles)."
+        else:
+            base["notes"] = "Lineups non disponibili: segnale non ancora applicato."
         base["fallback_used"] = False
         return base
 
@@ -792,10 +797,18 @@ def _row_for_spec(
                 if isinstance(comps_root.get("player_layer_component"), dict)
                 else {}
             )
-        blob = offensive_inputs_as_map(comp).get("top_shooter_absence_status")
-        base["value"] = None
-        base["status"] = str(blob.get("status") if isinstance(blob, dict) else "not_applicable_until_injuries_or_lineups")
-        base["notes"] = "Non applicato fino a integrazione injuries/lineups."
+        blob = offensive_inputs_as_map(comp).get("top_shooter_lineup_absence_signal")
+        st = str(blob.get("status") if isinstance(blob, dict) else "not_available_yet")
+        base["value"] = blob.get("raw_value") if isinstance(blob, dict) else None
+        base["status"] = st
+        if st == "available":
+            base["application_role"] = "component_input"
+            base["notes"] = (
+                "Top shooter non titolari / non in distinta. "
+                "Non distingue ancora infortunio/squalifica (injuries/sidelined step successivo)."
+            )
+        else:
+            base["notes"] = "Lineups non disponibili: segnale non ancora applicato."
         base["fallback_used"] = False
         return base
 

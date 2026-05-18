@@ -91,21 +91,35 @@ Fonte: `player_season_profiles` (nessuna API live in generazione). Per ogni squa
 | top_players_rating_signal | 0.08 | player_season_profiles.avg_rating |
 | top_players_reliability_signal | 0.06 | player_season_profiles.reliability_score |
 
-Normalizzazione: `team_avg × league_avg_sot_for / league_player_avg` per ciascun segnale (baseline lega = media delle medie team sui top 5).  
-Contesto audit (contributo 0): `top_shooter_presence_status` (lineups), `top_shooter_absence_status` (injuries/lineups).
+Normalizzazione (modalità storica): `team_avg × league_avg_sot_for / league_player_avg` per ciascun segnale (baseline lega = media delle medie team sui top 5).
 
-Implementazione: [`player_layer_strict.py`](backend/app/services/predictions_v11/player_layer_strict.py), metadati [`player_layer_feature_sources.py`](backend/app/services/predictions_v11/player_layer_feature_sources.py).
+### Stage 7B — Player layer lineup-adjusted
 
-## Lineups / formazioni (audit — non in formula v1.1)
+Quando **entrambe** le formazioni ufficiali (casa e trasferta) sono in DB (`fixture_lineups.is_available`, titolari in `fixture_lineup_players`):
+
+- `mode = lineup_adjusted`
+- Calcolo sui **titolari** con profilo `player_season_profiles` (match `api_player_id`)
+- Top shooter: top 5 squadra per `shooting_impact_score` / SOT90 / minuti (non solo attaccanti)
+- Input aggiuntivi con peso interno: `top_shooter_starter_presence_signal` (0.12), `top_shooter_lineup_absence_signal` (0.05)
+- Normalizzazione presence: `league_avg_sot_for × (0.85 + signal × 0.30)`; absence: `league_avg_sot_for × (1 − clamp(signal × 0.25, 0, 0.25))`
+- **Nessuna** API live in `generate-v11-sot`; **nessun** injuries/sidelined; **nessun** fallback
+
+Se lineups non disponibili: `mode = historical_recent_profile` (7 segnali storici); presence/absence con `not_available_yet` e contributo 0. La predizione **non** viene invalidata.
+
+Pesi interni lineup-adjusted (somma 1.0): starters SOT/90 0.23, shots/90 0.15, SOT share 0.15, shots share 0.08, recent minutes 0.10, rating 0.07, reliability 0.05, presence 0.12, absence 0.05.
+
+Implementazione: [`player_layer_strict.py`](backend/app/services/predictions_v11/player_layer_strict.py), [`player_layer_lineup_helpers.py`](backend/app/services/predictions_v11/player_layer_lineup_helpers.py), metadati [`player_layer_feature_sources.py`](backend/app/services/predictions_v11/player_layer_feature_sources.py).
+
+## Lineups / formazioni (DB + Player layer 7B)
 
 | Aspetto | Dettaglio |
 |---------|-----------|
-| Fonte API | `fixtures/lineups` |
+| Fonte API | `fixtures/lineups` (solo ingestion admin) |
 | Tabelle | `fixture_lineups`, `fixture_lineup_players` |
 | Ingestion | `POST /api/admin/ingest/serie-a/{season}/lineups` |
 | Debug | `GET /api/debug/sot/fixture/{id}/lineups` |
 | Stato assenza | `not_available_yet` (non errore modello) |
-| Impatto formula | **Nessuno** in step 7; step 7B userà titolari per `top_shooter_presence_status` |
+| Impatto formula | Via **Player layer** (6ª componente, peso 13% invariato) in modalità `lineup_adjusted` |
 | Mock / fallback | Vietati |
 
 ## Vincoli globali

@@ -565,6 +565,9 @@ def generate_serie_a_predictions_v11_sot(
         "xg_missing_predictions": 0,
         "player_layer_available_predictions": 0,
         "player_layer_missing_predictions": 0,
+        "lineup_adjusted_predictions": 0,
+        "historical_player_layer_predictions": 0,
+        "lineups_missing_predictions": 0,
         "errors": [],
     }
     try:
@@ -618,6 +621,9 @@ def generate_serie_a_predictions_v11_sot(
         "xg_missing_predictions": int(summary.get("xg_missing_predictions") or 0),
         "player_layer_available_predictions": int(summary.get("player_layer_available_predictions") or 0),
         "player_layer_missing_predictions": int(summary.get("player_layer_missing_predictions") or 0),
+        "lineup_adjusted_predictions": int(summary.get("lineup_adjusted_predictions") or 0),
+        "historical_player_layer_predictions": int(summary.get("historical_player_layer_predictions") or 0),
+        "lineups_missing_predictions": int(summary.get("lineups_missing_predictions") or 0),
         "missing_required_data": summary.get("missing_required_data") or [],
         "errors": summary.get("errors") or [],
     }

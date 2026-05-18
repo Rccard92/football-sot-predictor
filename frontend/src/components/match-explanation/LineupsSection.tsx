@@ -4,7 +4,7 @@ import type { LineupPlayerRow, LineupTeamSide } from '../../types/fixtureLineups
 import { formatFetchError } from '../../utils/formatFetchError'
 
 const INTRO_NOTE =
-  'Formazioni ufficiali da fixture_lineups (API-Football fixtures/lineups). Solo audit in questo step: non modificano ancora la formula v1.1.'
+  'Formazioni ufficiali da fixture_lineups (ingestion admin). Quando casa e trasferta sono disponibili, il Player layer v1.1 passa in modalità lineup-adjusted (nessuna API live in generazione predizioni).'
 
 const EMPTY_MSG =
   'Formazioni ufficiali non ancora disponibili. Di solito vengono recuperate vicino all’inizio della partita. Da Admin puoi cliccare «Aggiorna formazioni ufficiali».'
