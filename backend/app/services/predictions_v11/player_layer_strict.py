@@ -48,6 +48,14 @@ from app.services.predictions_v11.player_layer_lineup_helpers import (
     select_top_shooter_api_ids,
     starter_has_offensive_profile,
 )
+from app.services.availability.availability_fixture_scope import (
+    applicable_for_team,
+    generic_for_team,
+    load_fixture_availability_buckets,
+)
+from app.services.availability.availability_player_adjustment import (
+    compute_player_availability_adjustment,
+)
 from app.services.predictions_v11.v11_shared import (
     missing_field,
     round2,
@@ -283,6 +291,60 @@ def _build_input_blob(
     return blob
 
 
+def _apply_fixture_availability_adjustment(
+    db: Session,
+    *,
+    fx: Fixture,
+    team: Team,
+    comp: dict[str, Any],
+    profiles_by_api: dict[int, PlayerSeasonProfile],
+    top_shooter_api_ids: list[int],
+) -> dict[str, Any]:
+    buckets = load_fixture_availability_buckets(db, int(fx.id))
+    if buckets is None:
+        comp["availability_adjustment"] = {
+            "status": "no_applicable_records_for_fixture",
+            "scope": "fixture_applicable_only",
+            "fixture_id": int(fx.id),
+            "api_fixture_id": int(fx.api_fixture_id),
+            "records_considered": 0,
+            "generic_records_ignored": 0,
+            "top_shooters_unavailable": [],
+            "note": "Fixture availability non risolvibile.",
+        }
+        return comp
+
+    applicable = applicable_for_team(
+        buckets,
+        api_team_id=int(team.api_team_id),
+        team_id=int(team.id),
+    )
+    generic_n = len(
+        generic_for_team(
+            buckets,
+            api_team_id=int(team.api_team_id),
+            team_id=int(team.id),
+        ),
+    )
+    delta, blob = compute_player_availability_adjustment(
+        applicable,
+        top_shooter_api_ids,
+        profiles_by_api,
+        fixture_id=int(fx.id),
+        api_fixture_id=int(fx.api_fixture_id),
+        generic_records_ignored=generic_n,
+    )
+    if delta != 0.0:
+        new_val = round2(float(comp.get("value") or 0.0) + delta)
+        comp["value"] = new_val
+        comp["internal_formula"] = (
+            str(comp.get("internal_formula") or "")
+            + f"\n- availability (fixture_applicable_only): {delta}"
+        )
+    comp["availability_adjustment"] = blob
+    return comp
+
+
 def _compute_historical_player_layer(
     db: Session,
     ctx: V10PriorContext,
@@ -291,6 +353,7 @@ def _compute_historical_player_layer(
     player_league_baselines: dict[str, float],
     season: Season,
     team: Team,
+    fx: Fixture,
     rows: list[_ProfileRow],
     players_considered: int,
     top: list[_ProfileRow],
@@ -389,13 +452,20 @@ def _compute_historical_player_layer(
             "status": "not_applied",
             "reason": "Lineups non disponibili per entrambe le squadre",
         },
-        "availability_adjustment": {
-            "status": "not_applied",
-            "reason": "Injuries/sidelined non ancora integrati",
-        },
+        "availability_adjustment": {},
         "quality": quality,
         "fallbacks_used": [],
     }
+    profiles_by_api = {int(r.profile.api_player_id): r.profile for r in rows}
+    top_shooter_ids = select_top_shooter_api_ids(profiles_by_api)
+    comp = _apply_fixture_availability_adjustment(
+        db,
+        fx=fx,
+        team=team,
+        comp=comp,
+        profiles_by_api=profiles_by_api,
+        top_shooter_api_ids=top_shooter_ids,
+    )
     return comp, [], "ok", top_players_payload, quality
 
 
@@ -617,13 +687,18 @@ def _compute_lineup_adjusted_player_layer(
             "absence_signal": round2(absence_signal),
             "warning": warnings[0] if warnings else None,
         },
-        "availability_adjustment": {
-            "status": "not_applied",
-            "reason": "Injuries/sidelined non ancora integrati",
-        },
+        "availability_adjustment": {},
         "quality": quality,
         "fallbacks_used": [],
     }
+    comp = _apply_fixture_availability_adjustment(
+        db,
+        fx=fx,
+        team=team,
+        comp=comp,
+        profiles_by_api=profiles_by_api,
+        top_shooter_api_ids=list(top_shooter_ids),
+    )
     return comp, [], "ok", [_pack_starter_player(r) for r in starter_rows], quality
 
 
@@ -693,6 +768,12 @@ def compute_player_layer_component(
         else:
             return lineup_result
 
+    if fx is None:
+        fx = load_fixture_for_lineup(db, int(ctx.cutoff_fixture_id))
+
+    if fx is None:
+        return None, missing, "missing_required_data", [], {}
+
     return _compute_historical_player_layer(
         db,
         ctx,
@@ -700,6 +781,7 @@ def compute_player_layer_component(
         player_league_baselines=player_league_baselines,
         season=season,
         team=team,
+        fx=fx,
         rows=rows,
         players_considered=players_considered,
         top=top,

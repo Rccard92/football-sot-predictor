@@ -774,6 +774,10 @@ export function Admin() {
           </div>
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
             <p className="text-xs font-medium text-amber-950">Indisponibili API raw (solo lettura)</p>
+            <p className="mt-1 text-[10px] text-amber-900/90">
+              Risposta grezza API stagione: può includere record non applicabili alla partita specifica. Non
+              usare per l&apos;audit fixture.
+            </p>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
               <label className="block text-[11px] text-slate-600">
                 team_id (opz.)

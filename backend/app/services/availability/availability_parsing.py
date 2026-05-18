@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 SOURCE_INJURIES = "api_football_injuries"
@@ -16,6 +16,7 @@ class ParsedAvailabilityRecord:
     api_team_id: int | None
     team_name: str | None
     api_fixture_id: int | None
+    fixture_date: date | None
     availability_status: str
     availability_type: str | None
     reason: str | None
@@ -139,6 +140,9 @@ def parse_injuries_item(item: dict[str, Any]) -> ParsedAvailabilityRecord | None
     except (TypeError, ValueError):
         pass
     reported_at = _parse_datetime(fx.get("date"))
+    fixture_date: date | None = None
+    if reported_at is not None:
+        fixture_date = reported_at.date()
 
     api_type, reason = _extract_type_reason(item, pl)
     status, atype = _map_status_type(api_type, reason)
@@ -149,6 +153,7 @@ def parse_injuries_item(item: dict[str, Any]) -> ParsedAvailabilityRecord | None
         api_team_id=api_team_id,
         team_name=team_name,
         api_fixture_id=api_fixture_id,
+        fixture_date=fixture_date,
         availability_status=status,
         availability_type=atype,
         reason=reason,

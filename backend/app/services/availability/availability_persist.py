@@ -9,6 +9,7 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.orm import Session
 
 from app.models import Fixture, PlayerAvailability, PlayerRegistry, Team
+from app.services.availability.availability_fixture_scope import infer_record_scope_from_parsed
 from app.services.availability.availability_parsing import ParsedAvailabilityRecord
 
 
@@ -128,6 +129,14 @@ def upsert_availability_record(
     row.reported_at = parsed.reported_at
     row.start_date = parsed.start_date
     row.end_date = parsed.end_date
+    row.fixture_date = parsed.fixture_date
+    if row.fixture_date is None and fixture is not None and fixture.kickoff_at is not None:
+        ko = fixture.kickoff_at
+        row.fixture_date = ko.date() if hasattr(ko, "date") else ko
+    row.record_scope = infer_record_scope_from_parsed(
+        parsed,
+        fixture_id_fk=int(fixture.id) if fixture is not None else None,
+    )
     row.fetched_at = now
     row.is_active = True
     row.raw_json = parsed.raw_json

@@ -2,34 +2,43 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.models import Fixture, PlayerAvailability, PlayerSeasonProfile, Season, Team
+from app.models import Fixture, PlayerAvailability, PlayerSeasonProfile, Team
+from app.services.availability.availability_fixture_scope import (
+    applicable_for_team,
+    build_fixture_context,
+    generic_for_team,
+    infer_record_scope_from_row,
+    load_fixture_availability_buckets,
+)
 from app.services.availability.availability_helpers import (
     HIGH_IMPACT_THRESHOLD,
     select_top_shooter_api_ids,
 )
+from app.services.availability.availability_league import resolve_serie_a_league_context
 from app.services.sot_feature_registry import V11_MIN_PLAYER_MINUTES
+
+QUESTION = "Chi è indisponibile per questa partita?"
+SCOPE_LABEL = "fixture_applicable_only"
+EMPTY_APPLICABLE_MESSAGE = (
+    "Nessun indisponibile applicabile a questa partita trovato nel DB."
+)
 
 QUALITY_BLOCK: dict[str, Any] = {
     "source": "player_availability",
     "api_live_call": False,
-    "model_impact": False,
+    "model_impact": True,
     "note": (
-        "Dati indisponibilità solo per audit (stage 8A). Nessun impatto sulla formula baseline_v1_1_sot. "
-        "Penalità Player layer previste in stage 8B."
+        "Sono mostrati solo record applicabili alla fixture: fixture-level o team-level "
+        "con date compatibili. I record generici senza data non vengono applicati al modello."
     ),
 }
-
-NOT_AVAILABLE_MESSAGE = (
-    "Nessun record di indisponibilità attivo nel DB per questa partita. "
-    "Esegui «Aggiorna indisponibili» da Admin (injuries API)."
-)
 
 
 def _float_or_none(v: Decimal | float | int | None) -> float | None:
@@ -49,33 +58,6 @@ def _eligible_profile(p: PlayerSeasonProfile) -> bool:
     return True
 
 
-def _kickoff_date(fixture: Fixture) -> date:
-    ko = fixture.kickoff_at
-    if isinstance(ko, datetime):
-        return ko.date()
-    return ko  # type: ignore[return-value]
-
-
-def _date_in_range(kickoff: date, start: date | None, end: date | None) -> tuple[bool, str]:
-    """
-    Ritorna (include, date_window).
-    - active_unbounded: end null e active
-    - unknown: nessuna data
-    - in_range / out_of_range
-    """
-    if start is None and end is None:
-        return True, "unknown"
-    if end is None:
-        if start is not None and kickoff < start:
-            return False, "out_of_range"
-        return True, "active_unbounded"
-    if start is not None and kickoff < start:
-        return False, "out_of_range"
-    if kickoff > end:
-        return False, "out_of_range"
-    return True, "in_range"
-
-
 def _profile_map_for_team(
     db: Session,
     *,
@@ -93,68 +75,27 @@ def _profile_map_for_team(
     return {int(p.api_player_id): p for p in rows}
 
 
-def _query_fixture_availability(
-    db: Session,
-    *,
-    fixture: Fixture,
-    season_year: int,
-    league_id: int,
-    home: Team,
-    away: Team,
-) -> tuple[list[PlayerAvailability], list[str]]:
-    api_fx = int(fixture.api_fixture_id)
-    api_home = int(home.api_team_id)
-    api_away = int(away.api_team_id)
-    kickoff = _kickoff_date(fixture)
-
-    candidates = list(
-        db.scalars(
-            select(PlayerAvailability).where(
-                PlayerAvailability.season == int(season_year),
-                PlayerAvailability.league_id == int(league_id),
-                PlayerAvailability.is_active.is_(True),
-                or_(
-                    PlayerAvailability.fixture_id == int(fixture.id),
-                    PlayerAvailability.api_fixture_id == api_fx,
-                    and_(
-                        PlayerAvailability.api_team_id.in_([api_home, api_away]),
-                        or_(
-                            PlayerAvailability.api_fixture_id.is_(None),
-                            PlayerAvailability.api_fixture_id == api_fx,
-                        ),
-                    ),
-                ),
-            )
-            .order_by(PlayerAvailability.team_id.asc(), PlayerAvailability.player_name.asc()),
-        ).all(),
-    )
-
-    warnings: list[str] = []
-    included: list[PlayerAvailability] = []
-    for row in candidates:
-        ok, window = _date_in_range(kickoff, row.start_date, row.end_date)
-        if not ok:
-            continue
-        included.append(row)
-        if window == "active_unbounded":
-            warnings.append(
-                f"{row.player_name}: record attivo senza end_date (active_unbounded).",
-            )
-        elif window == "unknown":
-            warnings.append(f"{row.player_name}: nessuna start/end_date (date_window unknown).")
-
-    return included, warnings
+def _date_window_label(kickoff: date, start: date | None, end: date | None) -> str:
+    if start is None and end is None:
+        return "unknown"
+    if start is not None and kickoff < start:
+        return "out_of_range"
+    if end is not None and kickoff > end:
+        return "out_of_range"
+    if end is None and start is not None:
+        return "active_unbounded"
+    return "in_range"
 
 
-def _pack_player_row(
+def _pack_record_row(
     av: PlayerAvailability,
     profile: PlayerSeasonProfile | None,
     *,
     is_top_shooter: bool,
     kickoff: date,
+    applicability_reason: str,
 ) -> dict[str, Any]:
     impact = _float_or_none(profile.shooting_impact_score) if profile else None
-    _, date_window = _date_in_range(kickoff, av.start_date, av.end_date)
     return {
         "api_player_id": av.api_player_id,
         "player_name": av.player_name,
@@ -162,9 +103,13 @@ def _pack_player_row(
         "availability_type": av.availability_type,
         "reason": av.reason,
         "source": av.source,
+        "record_scope": infer_record_scope_from_row(av),
         "api_fixture_id": av.api_fixture_id,
-        "is_team_level": av.api_fixture_id is None and av.fixture_id is None,
-        "date_window": date_window,
+        "fixture_date": av.fixture_date.isoformat() if av.fixture_date else None,
+        "start_date": av.start_date.isoformat() if av.start_date else None,
+        "end_date": av.end_date.isoformat() if av.end_date else None,
+        "date_window": _date_window_label(kickoff, av.start_date, av.end_date),
+        "applicability_reason": applicability_reason,
         "shots_on_per90": _float_or_none(profile.shots_on_per90) if profile else None,
         "team_sot_share": _float_or_none(profile.team_sot_share) if profile else None,
         "shooting_impact_score": impact,
@@ -178,12 +123,12 @@ def _pack_team_side(
     db: Session,
     *,
     team: Team,
-    records: list[PlayerAvailability],
+    applicable: list[PlayerAvailability],
+    generic: list[PlayerAvailability],
     season_year: int,
     league_id: int,
     kickoff: date,
 ) -> dict[str, Any]:
-    team_recs = [r for r in records if r.team_id == int(team.id) or r.api_team_id == int(team.api_team_id)]
     pmap = _profile_map_for_team(
         db,
         season_year=season_year,
@@ -191,107 +136,121 @@ def _pack_team_side(
         api_team_id=int(team.api_team_id),
     )
     top_ids = set(select_top_shooter_api_ids(pmap))
-    players = [
-        _pack_player_row(
+
+    applicable_rows = [
+        _pack_record_row(
             r,
             pmap.get(int(r.api_player_id)) if r.api_player_id is not None else None,
             is_top_shooter=r.api_player_id is not None and int(r.api_player_id) in top_ids,
             kickoff=kickoff,
+            applicability_reason="fixture_applicable",
         )
-        for r in team_recs
+        for r in applicable
     ]
+    generic_rows = [
+        _pack_record_row(
+            r,
+            pmap.get(int(r.api_player_id)) if r.api_player_id is not None else None,
+            is_top_shooter=r.api_player_id is not None and int(r.api_player_id) in top_ids,
+            kickoff=kickoff,
+            applicability_reason="generic_not_applied",
+        )
+        for r in generic
+    ]
+
     return {
         "team_id": int(team.id),
         "team_name": team.name,
         "api_team_id": int(team.api_team_id),
-        "unavailable_count": len(players),
-        "players": players,
+        "applicable_records": applicable_rows,
+        "generic_records_not_applied": generic_rows,
+        "unavailable_count": len(applicable_rows),
+        "players": applicable_rows,
     }
 
 
 def build_fixture_availability_debug(db: Session, fixture_id: int) -> dict[str, Any]:
-    fx = db.scalar(
-        select(Fixture)
-        .options(joinedload(Fixture.home_team), joinedload(Fixture.away_team))
-        .where(Fixture.id == int(fixture_id)),
-    )
-    if fx is None:
+    buckets = load_fixture_availability_buckets(db, int(fixture_id))
+    if buckets is None:
         return {"status": "error", "message": f"Fixture {fixture_id} non trovata", "fixture_id": int(fixture_id)}
 
-    season_row = db.scalar(select(Season).where(Season.id == int(fx.season_id)))
-    if season_row is None:
-        return {"status": "error", "message": "Stagione non trovata", "fixture_id": int(fixture_id)}
+    ctx = buckets.ctx
+    fx = db.scalar(select(Fixture).where(Fixture.id == int(fixture_id)))
+    home = db.get(Team, ctx.home_team_id)
+    away = db.get(Team, ctx.away_team_id)
+    if fx is None or home is None or away is None:
+        return {"status": "error", "message": "Fixture o squadre non risolte", "fixture_id": int(fixture_id)}
 
-    season_year = int(season_row.year)
-    league_id = int(fx.league_id)
-    home = fx.home_team
-    away = fx.away_team
-    if home is None or away is None:
-        return {"status": "error", "message": "Squadre fixture non risolte", "fixture_id": int(fixture_id)}
+    home_applicable = applicable_for_team(
+        buckets,
+        api_team_id=ctx.api_home_team_id,
+        team_id=ctx.home_team_id,
+    )
+    away_applicable = applicable_for_team(
+        buckets,
+        api_team_id=ctx.api_away_team_id,
+        team_id=ctx.away_team_id,
+    )
+    home_generic = generic_for_team(
+        buckets,
+        api_team_id=ctx.api_home_team_id,
+        team_id=ctx.home_team_id,
+    )
+    away_generic = generic_for_team(
+        buckets,
+        api_team_id=ctx.api_away_team_id,
+        team_id=ctx.away_team_id,
+    )
 
-    kickoff = _kickoff_date(fx)
-    records, warnings = _query_fixture_availability(
+    fixture_label = f"{ctx.home_name} - {ctx.away_name}"
+    home_side = _pack_team_side(
         db,
-        fixture=fx,
-        season_year=season_year,
-        league_id=league_id,
-        home=home,
-        away=away,
+        team=home,
+        applicable=home_applicable,
+        generic=home_generic,
+        season_year=ctx.season_year,
+        league_id=ctx.league_id,
+        kickoff=ctx.kickoff,
+    )
+    away_side = _pack_team_side(
+        db,
+        team=away,
+        applicable=away_applicable,
+        generic=away_generic,
+        season_year=ctx.season_year,
+        league_id=ctx.league_id,
+        kickoff=ctx.kickoff,
     )
 
-    fixture_level_count = sum(
-        1 for r in records if r.fixture_id == int(fx.id) or r.api_fixture_id == int(fx.api_fixture_id)
-    )
-    team_level_count = len(records) - fixture_level_count
-
-    if not records:
-        return {
-            "status": "not_available_yet",
-            "fixture_id": int(fixture_id),
-            "api_fixture_id": int(fx.api_fixture_id),
-            "season": season_year,
-            "availability_available": False,
-            "message": NOT_AVAILABLE_MESSAGE,
-            "fixture_level_count": 0,
-            "team_level_count": 0,
-            "warnings": warnings,
-            "home": {"team_name": home.name, "unavailable_count": 0, "players": []},
-            "away": {"team_name": away.name, "unavailable_count": 0, "players": []},
-            "quality": QUALITY_BLOCK,
-        }
-
-    return {
-        "status": "ok",
+    total_applicable = len(home_applicable) + len(away_applicable)
+    payload: dict[str, Any] = {
+        "status": "success",
         "fixture_id": int(fixture_id),
-        "api_fixture_id": int(fx.api_fixture_id),
-        "season": season_year,
-        "availability_available": True,
-        "fixture_level_count": fixture_level_count,
-        "team_level_count": team_level_count,
-        "warnings": warnings,
-        "home": _pack_team_side(
-            db,
-            team=home,
-            records=records,
-            season_year=season_year,
-            league_id=league_id,
-            kickoff=kickoff,
+        "api_fixture_id": ctx.api_fixture_id,
+        "season": ctx.season_year,
+        "fixture_label": fixture_label,
+        "question": QUESTION,
+        "availability_scope": SCOPE_LABEL,
+        "availability_available": total_applicable > 0,
+        "message": EMPTY_APPLICABLE_MESSAGE if total_applicable == 0 else None,
+        "fixture_level_count": sum(
+            1
+            for r in buckets.applicable
+            if r.api_fixture_id == ctx.api_fixture_id or r.fixture_id == ctx.fixture_id
         ),
-        "away": _pack_team_side(
-            db,
-            team=away,
-            records=records,
-            season_year=season_year,
-            league_id=league_id,
-            kickoff=kickoff,
+        "team_level_count": sum(
+            1
+            for r in buckets.applicable
+            if r.api_fixture_id is None and r.fixture_id is None
         ),
+        "home": home_side,
+        "away": away_side,
         "quality": QUALITY_BLOCK,
     }
+    return payload
 
 
 def build_season_availability_summary(db: Session, season_year: int) -> dict[str, Any]:
-    from app.services.availability.availability_league import resolve_serie_a_league_context
-
     ctx = resolve_serie_a_league_context(db, int(season_year))
     league_internal_id = ctx.league_internal_id
 
@@ -305,8 +264,11 @@ def build_season_availability_summary(db: Session, season_year: int) -> dict[str
     with_fixture = sum(1 for r in active if r.fixture_id is not None or r.api_fixture_id is not None)
     with_registry = sum(1 for r in active if r.player_id is not None)
     sources: dict[str, int] = {}
+    scopes: dict[str, int] = {}
     for r in active:
         sources[r.source] = sources.get(r.source, 0) + 1
+        sc = infer_record_scope_from_row(r)
+        scopes[sc] = scopes.get(sc, 0) + 1
 
     return {
         "status": "ok",
@@ -319,4 +281,5 @@ def build_season_availability_summary(db: Session, season_year: int) -> dict[str
         "active_with_fixture": with_fixture,
         "active_with_registry": with_registry,
         "by_source": sources,
+        "by_record_scope": scopes,
     }

@@ -18,6 +18,20 @@ if TYPE_CHECKING:
     from app.models.player_registry import PlayerRegistry
     from app.models.team import Team
 
+SCOPE_FIXTURE_LEVEL = "fixture_level"
+SCOPE_TEAM_LEVEL = "team_level"
+SCOPE_SEASON_LEVEL = "season_level"
+SCOPE_MANUAL_FIXTURE_LEVEL = "manual_fixture_level"
+SCOPE_MANUAL_TEAM_LEVEL = "manual_team_level"
+
+RECORD_SCOPES = (
+    SCOPE_FIXTURE_LEVEL,
+    SCOPE_TEAM_LEVEL,
+    SCOPE_SEASON_LEVEL,
+    SCOPE_MANUAL_FIXTURE_LEVEL,
+    SCOPE_MANUAL_TEAM_LEVEL,
+)
+
 
 class PlayerAvailability(Base, TimestampMixin):
     __tablename__ = "player_availability"
@@ -70,6 +84,8 @@ class PlayerAvailability(Base, TimestampMixin):
 
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    fixture_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    record_scope: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

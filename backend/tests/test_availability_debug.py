@@ -1,56 +1,99 @@
-"""Debug availability — top shooter, team-level, date range."""
+"""Debug availability — fixture applicable only."""
 
-from datetime import date
-from decimal import Decimal
-from unittest.mock import MagicMock
+from datetime import date, datetime
+from unittest.mock import MagicMock, patch
 
-from app.models import PlayerSeasonProfile
-from app.services.availability.availability_debug import _date_in_range, _pack_player_row
-
-
-def test_date_in_range_active_unbounded():
-    ok, window = _date_in_range(date(2025, 5, 20), date(2025, 5, 1), None)
-    assert ok is True
-    assert window == "active_unbounded"
+from app.models.player_availability import SCOPE_FIXTURE_LEVEL, SCOPE_TEAM_LEVEL
+from app.services.availability.availability_debug import build_fixture_availability_debug
+from app.services.availability.availability_fixture_scope import FixtureAvailabilityBuckets, FixtureContext
 
 
-def test_date_in_range_out_of_range():
-    ok, window = _date_in_range(date(2025, 5, 20), date(2025, 5, 1), date(2025, 5, 10))
-    assert ok is False
-    assert window == "out_of_range"
+def _ctx() -> FixtureContext:
+    return FixtureContext(
+        fixture_id=371,
+        api_fixture_id=1378173,
+        kickoff=date(2025, 5, 17),
+        season_year=2025,
+        league_id=1,
+        home_team_id=1,
+        away_team_id=2,
+        api_home_team_id=487,
+        api_away_team_id=1001,
+        home_name="Lazio",
+        away_name="Pisa",
+    )
 
 
-def test_pack_player_row_top_shooter_and_high_impact():
-    av = MagicMock()
-    av.api_player_id = 10
-    av.player_name = "Striker"
-    av.availability_status = "suspended"
-    av.availability_type = "suspension"
-    av.reason = "Yellow Cards"
-    av.source = "api_football_injuries"
-    av.api_fixture_id = None
-    av.fixture_id = None
-    av.start_date = None
-    av.end_date = None
+@patch("app.services.availability.availability_debug.load_fixture_availability_buckets")
+def test_audit_excludes_team_level_without_dates_from_applicable(mock_buckets):
+    db = MagicMock()
+    ctx = _ctx()
 
-    prof = MagicMock(spec=PlayerSeasonProfile)
-    prof.shots_on_per90 = Decimal("0.5")
-    prof.team_sot_share = Decimal("0.2")
-    prof.shooting_impact_score = Decimal("70")
-    prof.reliability_score = 80
-    prof.minutes_total = 2000
-    prof.shots_total_per90 = Decimal("2.0")
+    applicable_row = MagicMock()
+    applicable_row.api_player_id = 1
+    applicable_row.player_name = "Rovella"
+    applicable_row.api_team_id = 487
+    applicable_row.team_id = 1
+    applicable_row.availability_status = "suspended"
+    applicable_row.availability_type = "suspension"
+    applicable_row.reason = "Yellow Cards"
+    applicable_row.source = "api_football_injuries"
+    applicable_row.record_scope = SCOPE_FIXTURE_LEVEL
+    applicable_row.api_fixture_id = 1378173
+    applicable_row.fixture_id = 371
+    applicable_row.fixture_date = None
+    applicable_row.start_date = date(2025, 5, 1)
+    applicable_row.end_date = None
 
-    row = _pack_player_row(av, prof, is_top_shooter=True, kickoff=date(2025, 5, 20))
-    assert row["is_top_shooter"] is True
-    assert row["high_impact"] is True
-    assert row["is_team_level"] is True
-    assert row["date_window"] == "unknown"
+    generic_row = MagicMock()
+    generic_row.api_player_id = 2
+    generic_row.player_name = "Old Injury"
+    generic_row.api_team_id = 487
+    generic_row.team_id = 1
+    generic_row.availability_status = "injured"
+    generic_row.availability_type = "injury"
+    generic_row.reason = "Knee"
+    generic_row.source = "api_football_injuries"
+    generic_row.record_scope = SCOPE_TEAM_LEVEL
+    generic_row.api_fixture_id = None
+    generic_row.fixture_id = None
+    generic_row.fixture_date = None
+    generic_row.start_date = None
+    generic_row.end_date = None
 
+    mock_buckets.return_value = FixtureAvailabilityBuckets(
+        ctx=ctx,
+        applicable=[applicable_row],
+        generic_not_applied=[generic_row],
+        excluded=[],
+    )
 
-def test_debug_module_no_predictions_import():
-    import importlib
+    fx = MagicMock()
+    fx.id = 371
+    fx.api_fixture_id = 1378173
+    fx.kickoff_at = datetime(2025, 5, 17, 15, 0)
 
-    mod = importlib.import_module("app.services.availability.availability_debug")
-    src = open(mod.__file__, encoding="utf-8").read()
-    assert "predictions_v11" not in src
+    home = MagicMock()
+    home.id = 1
+    home.name = "Lazio"
+    home.api_team_id = 487
+
+    away = MagicMock()
+    away.id = 2
+    away.name = "Pisa"
+    away.api_team_id = 1001
+
+    db.scalar.side_effect = [fx]
+    db.get.side_effect = lambda _model, pk: home if pk == 1 else away
+    db.scalars.return_value.all.return_value = []
+
+    out = build_fixture_availability_debug(db, 371)
+
+    assert out["status"] == "success"
+    assert out["availability_scope"] == "fixture_applicable_only"
+    home_applicable = out["home"]["applicable_records"]
+    assert len(home_applicable) == 1
+    assert home_applicable[0]["player_name"] == "Rovella"
+    generic = out["home"]["generic_records_not_applied"]
+    assert len(generic) == 1
+    assert generic[0]["player_name"] == "Old Injury"

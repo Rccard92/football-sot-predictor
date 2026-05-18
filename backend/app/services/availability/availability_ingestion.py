@@ -300,6 +300,7 @@ def ingest_serie_a_availability(
     upserted = 0
     records_fixture_level = 0
     records_team_level = 0
+    by_record_scope: dict[str, int] = {}
     top_shooters_flagged: list[dict[str, Any]] = []
     top_cache: dict[int, set[int]] = {}
 
@@ -368,6 +369,10 @@ def ingest_serie_a_availability(
                 league_id=league_internal_id,
                 parsed=parsed,
             )
+            sc = getattr(_row, "record_scope", None) or (
+                "fixture_level" if parsed.api_fixture_id else "team_level"
+            )
+            by_record_scope[sc] = by_record_scope.get(sc, 0) + 1
             upserted += 1
             if parsed.api_fixture_id is not None:
                 records_fixture_level += 1
@@ -444,6 +449,7 @@ def ingest_serie_a_availability(
         "players_matched_to_registry": matched,
         "players_not_matched_to_registry": not_matched,
         "top_shooters_flagged": top_shooters_flagged,
+        "by_record_scope": by_record_scope,
         "errors": errors,
     }
 

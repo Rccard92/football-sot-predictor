@@ -5,6 +5,13 @@ export type AvailabilityPlayerRow = {
   availability_type: string | null
   reason: string | null
   source?: string
+  record_scope?: string
+  api_fixture_id?: number | null
+  fixture_date?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  date_window?: string
+  applicability_reason?: string
   shots_on_per90?: number | null
   team_sot_share?: number | null
   shooting_impact_score?: number | null
@@ -17,8 +24,11 @@ export type AvailabilityTeamSide = {
   team_id?: number
   team_name: string
   api_team_id?: number
+  applicable_records: AvailabilityPlayerRow[]
+  generic_records_not_applied: AvailabilityPlayerRow[]
   unavailable_count: number
-  players: AvailabilityPlayerRow[]
+  /** @deprecated usa applicable_records */
+  players?: AvailabilityPlayerRow[]
 }
 
 export type FixtureAvailabilityResponse = {
@@ -26,8 +36,13 @@ export type FixtureAvailabilityResponse = {
   fixture_id?: number
   api_fixture_id?: number
   season?: number
+  fixture_label?: string
+  question?: string
+  availability_scope?: string
   availability_available?: boolean
-  message?: string
+  message?: string | null
+  fixture_level_count?: number
+  team_level_count?: number
   home?: AvailabilityTeamSide
   away?: AvailabilityTeamSide
   quality?: {
@@ -41,33 +56,35 @@ export type FixtureAvailabilityResponse = {
 export type AvailabilityIngestSummary = {
   status: string
   season?: number
+  league_internal_id?: number
+  api_league_id?: number
   fixtures_checked?: number
   teams_checked?: number
   api_calls?: number
+  api_calls_by_fixture?: number
+  api_calls_by_team?: number
   availability_records_upserted?: number
+  records_fixture_level?: number
+  records_team_level?: number
   players_matched_to_registry?: number
   players_not_matched_to_registry?: number
-  top_shooters_flagged?: {
-    player_name: string
-    team_name?: string | null
-    api_player_id?: number | null
-    reason?: string | null
-    availability_status?: string
-    shooting_impact_score?: number | null
-  }[]
-  errors?: { error?: string; message?: string }[]
+  top_shooters_flagged?: unknown[]
+  errors?: unknown[]
+  by_record_scope?: Record<string, number>
 }
 
 export type AvailabilitySeasonSummary = {
   status: string
   season: number
-  league_id?: number
+  league_internal_id?: number
+  api_league_id?: number
   total_records?: number
   active_records?: number
   inactive_records?: number
   active_with_fixture?: number
   active_with_registry?: number
   by_source?: Record<string, number>
+  by_record_scope?: Record<string, number>
 }
 
 export type AvailabilityApiCheckBlock = {
