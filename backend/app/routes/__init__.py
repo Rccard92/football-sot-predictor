@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.routes import (
     admin,
+    admin_debug_availability,
     admin_debug_player_db,
     admin_data_health,
     admin_debug_api_football_catalog,
@@ -32,6 +33,7 @@ from app.routes import (
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(admin.router, tags=["admin"])
+api_router.include_router(admin_debug_availability.router)
 api_router.include_router(admin_debug_player_db.router)
 api_router.include_router(admin_debug_player_stats.router)
 api_router.include_router(admin_debug_api_football_catalog.router)

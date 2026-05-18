@@ -206,19 +206,30 @@ def admin_ingest_serie_a_lineups(
 @router.post("/serie-a/{season}/availability", response_model=None)
 def admin_ingest_serie_a_availability(
     season: int,
+    fixture_id: int | None = Query(None),
+    team_id: int | None = Query(None),
+    force: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     _require_api_football_key()
-    svc = IngestionService()
+    from app.services.availability.availability_ingestion import ingest_serie_a_availability
+
     try:
-        run = svc.ingest_serie_a_availability(db, season)
+        summary = ingest_serie_a_availability(
+            db,
+            int(season),
+            fixture_id=fixture_id,
+            team_id=team_id,
+            force=force,
+        )
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("availability: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
-    payload = IngestionRunRead.model_validate(run).model_dump()
-    if run.status == "failed":
-        return JSONResponse(status_code=502, content=jsonable_encoder(payload))
-    return jsonable_encoder(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=502, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
 
 
 @router.post("/serie-a/{season}/standings", response_model=None)

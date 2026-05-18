@@ -227,11 +227,22 @@ def admin_pipeline_refresh_upcoming_v04(
 
     # 6 — Disponibilità / infortuni (non critico)
     try:
-        r6 = svc.ingest_serie_a_availability(db, season)
-        st = _ingestion_step(key="availability", label="Disponibilità / infortuni", run=r6)
-        steps.append(st)
-        if r6.status != "success":
-            warnings.append(f"Disponibilità: {r6.error_message or 'step non completato'}")
+        from app.services.availability.availability_ingestion import ingest_serie_a_availability
+
+        r6 = ingest_serie_a_availability(db, season)
+        rec6 = int(r6.get("availability_records_upserted") or 0)
+        ok6 = r6.get("status") in ("success", "partial_success")
+        steps.append(
+            {
+                "key": "availability",
+                "label": "Disponibilità / infortuni",
+                "status": "success" if ok6 else "skipped",
+                "records_processed": rec6,
+                "message": f"Upsert {rec6} record" if ok6 else str(r6.get("errors") or "non completato")[:200],
+            },
+        )
+        if not ok6:
+            warnings.append(f"Disponibilità: step non completato")
     except Exception as exc:  # noqa: BLE001
         logger.warning("pipeline: availability optional failure: %s", exc, exc_info=True)
         warnings.append(f"Disponibilità saltata: {str(exc)[:300]}")

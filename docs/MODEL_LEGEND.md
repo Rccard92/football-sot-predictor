@@ -36,6 +36,18 @@ Generazione: `POST /api/predictions/sot/serie-a/{season}/generate-v11-sot`. Dett
 
 Implementazione: [`lineup_ingestion.py`](backend/app/services/lineups/lineup_ingestion.py), [`lineup_debug.py`](backend/app/services/lineups/lineup_debug.py), [`player_layer_lineup_helpers.py`](backend/app/services/predictions_v11/player_layer_lineup_helpers.py).
 
+## Availability / Indisponibili (step 8A)
+
+- **Fonte:** API-Football `injuries` (league + season, una chiamata per run; filtro fixture/team lato app).
+- **Persistenza:** `player_availability` (UUID, FK opzionali `fixtures`, `teams`, `player_registry`).
+- **Non sono mock:** assenza di record ≠ giocatore disponibile; nessun record finto se l’API è vuota.
+- **Nessun impatto formula in 8A:** `quality.model_impact = false` in audit; penalità Player layer previste in **step 8B**.
+- **Ingestion:** `POST /api/admin/ingest/serie-a/{season}/availability` (query `fixture_id`, `team_id`, `force`).
+- **Summary admin:** `GET /api/admin/debug/serie-a/{season}/availability-summary`.
+- **Audit partita:** `GET /api/debug/sot/fixture/{id}/availability` (badge top shooter, impatto alto ≥70).
+
+Implementazione: [`availability_ingestion.py`](backend/app/services/availability/availability_ingestion.py), [`availability_debug.py`](backend/app/services/availability/availability_debug.py). Tabella legacy `player_availability_events` resta per la dashboard storica.
+
 ## baseline_v1_0_sot — Produzione offensiva composita
 
 Il termine **Produzione offensiva composita** (`offensive_production_component`) è l’unico segnale offensivo nella **formula finale** (peso **0,30**). Gli input sotto non sono righe della formula a 7 termini: compaiono solo in audit/trace come `component_input` con `parent_component = offensive_production_component`.

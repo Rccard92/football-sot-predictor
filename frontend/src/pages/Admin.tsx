@@ -19,6 +19,7 @@ import {
   getDataHealth,
   getIngestionRuns,
   getTeamShotStatsSummary,
+  getAvailabilitySummary,
   getPlayerMatchDbSummary,
   getModelStatusWithOpts,
   getPlayerSotProfilesSummary,
@@ -57,6 +58,30 @@ function pickMessage(payload: unknown, okFallback: string): string {
       const m = o.player_match_stats_upserted
       const pl = o.players_upserted
       return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
+    }
+    if (typeof o.availability_records_upserted === 'number') {
+      const top = Array.isArray(o.top_shooters_flagged) ? o.top_shooters_flagged.length : 0
+      const errN = Array.isArray(o.errors) ? o.errors.length : 0
+      return [
+        `Indisponibili: status ${String(o.status ?? '—')}`,
+        `fixture controllate ${String(o.fixtures_checked ?? '—')}`,
+        `record upsert ${String(o.availability_records_upserted ?? '—')}`,
+        `registry ok ${String(o.players_matched_to_registry ?? '—')}`,
+        `registry mancanti ${String(o.players_not_matched_to_registry ?? '—')}`,
+        top ? `top shooter segnalati ${top}` : '',
+        errN ? `errori ${errN}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    }
+    if (typeof o.active_records === 'number' && o.season != null) {
+      return [
+        `Availability summary ${String(o.season)}`,
+        `attivi ${String(o.active_records ?? '—')}`,
+        `totale ${String(o.total_records ?? '—')}`,
+        `con fixture ${String(o.active_with_fixture ?? '—')}`,
+        `con registry ${String(o.active_with_registry ?? '—')}`,
+      ].join(' · ')
     }
     if (typeof o.fixtures_checked === 'number' || typeof o.lineups_upserted === 'number') {
       const nav = Array.isArray(o.not_available_yet) ? o.not_available_yet.length : 0
@@ -310,10 +335,17 @@ export function Admin() {
     },
     {
       id: 'availability',
-      label: 'Aggiorna disponibilità / infortuni',
-      description: 'Import prudente assenze; richiede API configurata.',
+      label: 'Aggiorna indisponibili',
+      description: 'Injuries API-Football → player_availability (prossimi 7 giorni). Solo audit, nessun impatto formula v1.1.',
       endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability`,
       run: () => adminIngestAvailability(SEASON),
+    },
+    {
+      id: 'availability-summary',
+      label: 'Verifica availability summary',
+      description: 'Conteggi record attivi/inattivi in player_availability per la stagione.',
+      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/availability-summary`,
+      run: () => getAvailabilitySummary(SEASON),
     },
     {
       id: 'profiles',

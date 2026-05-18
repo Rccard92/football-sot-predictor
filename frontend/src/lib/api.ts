@@ -1,5 +1,6 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
+import type { AvailabilitySeasonSummary, FixtureAvailabilityResponse } from '../types/fixtureAvailability'
 import type { FixtureLineupsResponse } from '../types/fixtureLineups'
 import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
 
@@ -1306,8 +1307,44 @@ export async function adminTestInjuriesApi(season: number, opts?: AdminRequestOp
   return adminGetJson<unknown>(`/api/admin/api-football/injuries/test?season=${season}`, opts)
 }
 
-export async function adminIngestAvailability(season: number, opts?: AdminRequestOpts): Promise<unknown> {
-  return adminPostJson<unknown>(`/api/admin/ingest/serie-a/${season}/availability`, {}, opts)
+export type AvailabilityIngestOptions = {
+  fixtureId?: number
+  teamId?: number
+  force?: boolean
+}
+
+export async function adminIngestAvailability(
+  season: number,
+  ingestOpts?: AvailabilityIngestOptions,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  const params = new URLSearchParams()
+  if (ingestOpts?.fixtureId != null) params.set('fixture_id', String(ingestOpts.fixtureId))
+  if (ingestOpts?.teamId != null) params.set('team_id', String(ingestOpts.teamId))
+  if (ingestOpts?.force) params.set('force', 'true')
+  const qs = params.toString()
+  const path = `/api/admin/ingest/serie-a/${season}/availability${qs ? `?${qs}` : ''}`
+  return adminPostJson<unknown>(path, {}, opts)
+}
+
+export async function getFixtureAvailability(fixtureId: number): Promise<FixtureAvailabilityResponse> {
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/debug/sot/fixture/${fixtureId}/availability`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok && res.status !== 200) {
+    throw new Error(extractErrorMessage(body, res.statusText))
+  }
+  return body as FixtureAvailabilityResponse
+}
+
+export async function getAvailabilitySummary(season: number): Promise<AvailabilitySeasonSummary> {
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/admin/debug/serie-a/${season}/availability-summary`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(body, res.statusText))
+  }
+  return body as AvailabilitySeasonSummary
 }
 
 export async function buildPlayerSotProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {
