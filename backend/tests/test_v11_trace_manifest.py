@@ -230,3 +230,122 @@ def test_v11_trace_from_saved_raw():
     assert len([r for r in trace if is_countable_role(str(r.get("application_role")))]) == len(
         [s for s in manifest_for_model(BASELINE_SOT_MODEL_VERSION_V11_SOT) if is_countable_role(s.application_role)],
     )
+
+
+def _lineup_player_input(key: str, *, raw: float, norm: float, iw: float, ic: float) -> dict:
+    return {
+        "key": key,
+        "label": key,
+        "raw_value": raw,
+        "normalized_value": norm,
+        "internal_weight": iw,
+        "internal_contribution": ic,
+        "source_path": f"fixture_lineup_players + player_season_profiles ({key})",
+        "sample_count": 11,
+        "fallback_used": False,
+        "status": "available",
+        "audit_note": "Calcolato sui titolari ufficiali disponibili, modalità lineup_adjusted.",
+    }
+
+
+def test_v11_trace_lineup_adjusted_top_players_keys_available():
+    """In lineup_adjusted gli input devono usare chiavi top_players_* per il manifest."""
+    player_inputs = [
+        _lineup_player_input("top_players_sot_per90_signal", raw=0.9, norm=3.5, iw=0.23, ic=0.81),
+        _lineup_player_input("top_players_shots_per90_signal", raw=2.1, norm=3.2, iw=0.15, ic=0.48),
+        _lineup_player_input("top_players_sot_share_signal", raw=0.2, norm=3.0, iw=0.15, ic=0.45),
+        _lineup_player_input("top_players_shots_share_signal", raw=0.15, norm=2.8, iw=0.08, ic=0.22),
+        _lineup_player_input("top_players_recent_minutes_signal", raw=400.0, norm=3.1, iw=0.10, ic=0.31),
+        _lineup_player_input("top_players_rating_signal", raw=7.1, norm=3.0, iw=0.07, ic=0.21),
+        _lineup_player_input("top_players_reliability_signal", raw=85.0, norm=2.9, iw=0.05, ic=0.15),
+        {
+            "key": "top_shooter_starter_presence_signal",
+            "raw_value": 0.6,
+            "normalized_value": 3.4,
+            "internal_weight": 0.12,
+            "internal_contribution": 0.41,
+            "status": "available",
+        },
+        {
+            "key": "top_shooter_lineup_absence_signal",
+            "raw_value": 0.27,
+            "normalized_value": 3.2,
+            "internal_weight": 0.05,
+            "internal_contribution": 0.16,
+            "status": "available",
+        },
+    ]
+    raw = {
+        "prediction_valid": True,
+        "formula_quality_status": "ok",
+        "formula": {
+            "terms_count": 6,
+            "terms": [
+                {"key": "player_layer_component", "value": 3.55, "weight": 0.13, "contribution": 0.46, "status": "available"},
+            ],
+        },
+        "player_layer_component": {
+            "mode": "lineup_adjusted",
+            "lineups_available": True,
+            "value": 3.55,
+            "inputs": player_inputs,
+            "quality": {"inputs_total": 9, "inputs_available": 9, "fallback_count": 0},
+        },
+    }
+    trace = build_applied_variable_trace_side(
+        BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        raw,
+        team_id=1,
+        team_name="Test",
+        audit_map={},
+        hours_to_kickoff=2.0,
+        prediction_confidence=None,
+    )
+    for key in (
+        "top_players_sot_per90_signal",
+        "top_players_shots_per90_signal",
+        "top_players_sot_share_signal",
+        "top_players_shots_share_signal",
+        "top_players_recent_minutes_signal",
+        "top_players_rating_signal",
+        "top_players_reliability_signal",
+    ):
+        row = next(r for r in trace if r.get("trace_key") == f"v11_player_input_{key}")
+        assert row["status"] == "available", key
+        assert row["value"] is not None, key
+        assert row.get("key") == key
+
+
+def test_v11_trace_lineup_legacy_starters_alias():
+    """Predizioni salvate con chiavi starters_* restano leggibili nel trace."""
+    raw = {
+        "prediction_valid": True,
+        "formula_quality_status": "ok",
+        "formula": {"terms": [{"key": "player_layer_component", "value": 3.0, "weight": 0.13, "contribution": 0.39}]},
+        "player_layer_component": {
+            "mode": "lineup_adjusted",
+            "value": 3.0,
+            "inputs": [
+                {
+                    "key": "starters_sot_per90_signal",
+                    "raw_value": 0.8,
+                    "normalized_value": 3.2,
+                    "internal_weight": 0.23,
+                    "internal_contribution": 0.74,
+                    "status": "available",
+                },
+            ],
+        },
+    }
+    trace = build_applied_variable_trace_side(
+        BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        raw,
+        team_id=1,
+        team_name="Test",
+        audit_map={},
+        hours_to_kickoff=2.0,
+        prediction_confidence=None,
+    )
+    row = next(r for r in trace if r.get("trace_key") == "v11_player_input_top_players_sot_per90_signal")
+    assert row["status"] == "available"
+    assert row["value"] == 3.2

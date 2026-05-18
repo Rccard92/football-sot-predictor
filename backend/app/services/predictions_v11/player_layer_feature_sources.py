@@ -109,6 +109,51 @@ LINEUP_INTERNAL_WEIGHTS: dict[str, float] = {
     "top_shooter_lineup_absence_signal": 0.05,
 }
 
+# Calcolo interno su titolari (starters_*) → chiavi stabili manifest/trace (top_players_*)
+LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL: dict[str, str] = {
+    "starters_sot_per90_signal": "top_players_sot_per90_signal",
+    "starters_shots_per90_signal": "top_players_shots_per90_signal",
+    "starters_sot_share_signal": "top_players_sot_share_signal",
+    "starters_shots_share_signal": "top_players_shots_share_signal",
+    "starters_recent_minutes_signal": "top_players_recent_minutes_signal",
+    "starters_rating_signal": "top_players_rating_signal",
+    "starters_reliability_signal": "top_players_reliability_signal",
+}
+
+TOP_PLAYERS_TO_LINEUP_STARTER_SIGNAL: dict[str, str] = {
+    v: k for k, v in LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL.items()
+}
+
+LINEUP_MODE_STABLE_INPUT_ORDER: tuple[str, ...] = (
+    PLAYER_NUMERIC_INPUT_ORDER + PLAYER_LINEUP_CONTEXT_INPUT_ORDER
+)
+
+LINEUP_MODE_STABLE_WEIGHTS: dict[str, float] = {
+    "top_players_sot_per90_signal": LINEUP_INTERNAL_WEIGHTS["starters_sot_per90_signal"],
+    "top_players_shots_per90_signal": LINEUP_INTERNAL_WEIGHTS["starters_shots_per90_signal"],
+    "top_players_sot_share_signal": LINEUP_INTERNAL_WEIGHTS["starters_sot_share_signal"],
+    "top_players_shots_share_signal": LINEUP_INTERNAL_WEIGHTS["starters_shots_share_signal"],
+    "top_players_recent_minutes_signal": LINEUP_INTERNAL_WEIGHTS["starters_recent_minutes_signal"],
+    "top_players_rating_signal": LINEUP_INTERNAL_WEIGHTS["starters_rating_signal"],
+    "top_players_reliability_signal": LINEUP_INTERNAL_WEIGHTS["starters_reliability_signal"],
+    "top_shooter_starter_presence_signal": LINEUP_INTERNAL_WEIGHTS["top_shooter_starter_presence_signal"],
+    "top_shooter_lineup_absence_signal": LINEUP_INTERNAL_WEIGHTS["top_shooter_lineup_absence_signal"],
+}
+
+LINEUP_TOP_PLAYERS_SOURCE_PATHS: dict[str, str] = {
+    "top_players_sot_per90_signal": "fixture_lineup_players + player_season_profiles.shots_on_per90",
+    "top_players_shots_per90_signal": "fixture_lineup_players + player_season_profiles.shots_total_per90",
+    "top_players_sot_share_signal": "fixture_lineup_players + player_season_profiles.team_sot_share",
+    "top_players_shots_share_signal": "fixture_lineup_players + player_season_profiles.team_shots_share",
+    "top_players_recent_minutes_signal": "fixture_lineup_players + player_season_profiles.recent_minutes_last5",
+    "top_players_rating_signal": "fixture_lineup_players + player_season_profiles.avg_rating",
+    "top_players_reliability_signal": "fixture_lineup_players + player_season_profiles.reliability_score",
+}
+
+LINEUP_TOP_PLAYERS_AUDIT_NOTE = (
+    "Calcolato sui titolari ufficiali disponibili, modalità lineup_adjusted."
+)
+
 REQUIRED_LEAGUE_PLAYER_KEYS: tuple[str, ...] = (
     "league_top_players_avg_sot_per90",
     "league_top_players_avg_shots_per90",

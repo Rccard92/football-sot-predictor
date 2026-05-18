@@ -479,6 +479,7 @@ def _v11_component_sub_vars(comp: dict[str, Any]) -> list[dict[str, Any]]:
     for ik, blob in offensive_inputs_as_map(comp).items():
         if not isinstance(blob, dict):
             continue
+        audit_note = str(blob.get("audit_note") or "").strip()
         sub_vars.append(
             {
                 "key": str(ik),
@@ -491,7 +492,7 @@ def _v11_component_sub_vars(comp: dict[str, Any]) -> list[dict[str, Any]]:
                 "internal_weight": _safe_float(blob.get("internal_weight")),
                 "contribution": _safe_float(blob.get("internal_contribution")),
                 "internal_contribution": _safe_float(blob.get("internal_contribution")),
-                "formula": str(blob.get("formula") or ""),
+                "formula": audit_note or str(blob.get("formula") or ""),
                 "data_source": str(blob.get("source_path") or blob.get("db_field") or ""),
                 "api_source": str(blob.get("api_source") or ""),
                 "matches_count": blob.get("sample_count"),

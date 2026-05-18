@@ -563,7 +563,16 @@ def _row_for_spec(
                 if isinstance(comps_root.get("player_layer_component"), dict)
                 else {}
             )
-        blob = offensive_inputs_as_map(comp).get(ik)
+        inputs_map = offensive_inputs_as_map(comp)
+        blob = inputs_map.get(ik)
+        if blob is None and str(comp.get("mode") or "") == "lineup_adjusted":
+            from app.services.predictions_v11.player_layer_feature_sources import (
+                TOP_PLAYERS_TO_LINEUP_STARTER_SIGNAL,
+            )
+
+            legacy_key = TOP_PLAYERS_TO_LINEUP_STARTER_SIGNAL.get(ik)
+            if legacy_key:
+                blob = inputs_map.get(legacy_key)
         if blob is None:
             base["status"] = "missing"
             base["notes"] = "Chiave assente in player_layer_component.inputs"

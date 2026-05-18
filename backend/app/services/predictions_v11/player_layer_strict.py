@@ -15,9 +15,12 @@ from app.services.predictions_v11.player_layer_feature_sources import (
     COMPONENT_KEY_PLAYER,
     COMPONENT_LABEL_PLAYER,
     LEAGUE_PLAYER_BASELINE_FIELD_MAP,
-    LINEUP_INTERNAL_WEIGHTS,
     LINEUP_LEAGUE_BASELINE_FIELD_MAP,
-    LINEUP_NUMERIC_INPUT_ORDER,
+    LINEUP_MODE_STABLE_INPUT_ORDER,
+    LINEUP_MODE_STABLE_WEIGHTS,
+    LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL,
+    LINEUP_TOP_PLAYERS_AUDIT_NOTE,
+    LINEUP_TOP_PLAYERS_SOURCE_PATHS,
     PLAYER_INPUT_API_SOURCES,
     PLAYER_INPUT_DB_FIELDS,
     PLAYER_INPUT_LABELS,
@@ -254,7 +257,10 @@ def _build_input_blob(
     status: str,
     application_role: str,
     audit_note: str | None = None,
+    source_path: str | None = None,
+    api_source: str | None = None,
 ) -> dict[str, Any]:
+    sp = source_path if source_path is not None else PLAYER_INPUT_SOURCE_PATHS[key]
     blob: dict[str, Any] = {
         "key": key,
         "label": PLAYER_INPUT_LABELS[key],
@@ -262,9 +268,9 @@ def _build_input_blob(
         "normalized_value": round2(norm_v),
         "internal_weight": iw,
         "internal_contribution": ic,
-        "source_path": PLAYER_INPUT_SOURCE_PATHS[key],
-        "api_source": PLAYER_INPUT_API_SOURCES[key],
-        "db_field": PLAYER_INPUT_DB_FIELDS[key],
+        "source_path": sp,
+        "api_source": api_source if api_source is not None else PLAYER_INPUT_API_SOURCES.get(key, "player_season_profiles"),
+        "db_field": sp,
         "sample_count": sample_count,
         "fallback_used": False,
         "no_data_leakage": True,
@@ -470,46 +476,65 @@ def _compute_lineup_adjusted_player_layer(
     )
 
     raw_starter_signals = team_signals_from_starters(starter_rows)
-    raw_signals = dict(raw_starter_signals)
-    raw_signals["top_shooter_starter_presence_signal"] = presence_signal
-    raw_signals["top_shooter_lineup_absence_signal"] = absence_signal
 
-    normalized: dict[str, float | None] = {}
+    normalized_internal: dict[str, float | None] = {}
     for sig_key, league_key in LINEUP_LEAGUE_BASELINE_FIELD_MAP.items():
         team_v = raw_starter_signals.get(sig_key)
         league_v = player_league_baselines.get(league_key)
-        normalized[sig_key] = _scale_to_sot(team_v, league_v, float(lsot_for))
+        normalized_internal[sig_key] = _scale_to_sot(team_v, league_v, float(lsot_for))
 
-    normalized["top_shooter_starter_presence_signal"] = normalize_presence_signal(
+    normalized_internal["top_shooter_starter_presence_signal"] = normalize_presence_signal(
         presence_signal,
         float(lsot_for),
     )
-    normalized["top_shooter_lineup_absence_signal"] = normalize_absence_signal(
+    normalized_internal["top_shooter_lineup_absence_signal"] = normalize_absence_signal(
         absence_signal,
         float(lsot_for),
     )
+
+    normalized_stable: dict[str, float | None] = {}
+    for starter_key, stable_key in LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL.items():
+        normalized_stable[stable_key] = normalized_internal.get(starter_key)
+    normalized_stable["top_shooter_starter_presence_signal"] = normalized_internal[
+        "top_shooter_starter_presence_signal"
+    ]
+    normalized_stable["top_shooter_lineup_absence_signal"] = normalized_internal[
+        "top_shooter_lineup_absence_signal"
+    ]
+
+    raw_stable: dict[str, float | None] = {}
+    for starter_key, stable_key in LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL.items():
+        raw_stable[stable_key] = raw_starter_signals.get(starter_key)
+    raw_stable["top_shooter_starter_presence_signal"] = presence_signal
+    raw_stable["top_shooter_lineup_absence_signal"] = absence_signal
 
     inputs_list: list[dict[str, Any]] = []
     component_sum = 0.0
     sym_parts: list[str] = []
     starter_n = len(starter_rows)
 
-    for key in LINEUP_NUMERIC_INPUT_ORDER:
-        norm_v = normalized.get(key)
+    for key in LINEUP_MODE_STABLE_INPUT_ORDER:
+        norm_v = normalized_stable.get(key)
         if norm_v is None:
             missing.append(missing_field(key, **meta))
             return None, missing, "missing_required_data", [_pack_starter_player(r) for r in starter_rows], {
                 "starters_with_profile": starter_n,
             }
-        iw = LINEUP_INTERNAL_WEIGHTS[key]
+        iw = LINEUP_MODE_STABLE_WEIGHTS[key]
         ic = round4(float(norm_v) * iw)
         component_sum += ic
         sym_parts.append(f"({PLAYER_INPUT_LABELS[key]} × {iw})")
-        audit_note = TOP_SHOOTER_ABSENCE_AUDIT_NOTE if key == "top_shooter_lineup_absence_signal" else None
+        if key == "top_shooter_lineup_absence_signal":
+            audit_note = TOP_SHOOTER_ABSENCE_AUDIT_NOTE
+        elif key in PLAYER_NUMERIC_INPUT_ORDER:
+            audit_note = LINEUP_TOP_PLAYERS_AUDIT_NOTE
+        else:
+            audit_note = None
+        src = LINEUP_TOP_PLAYERS_SOURCE_PATHS.get(key) or PLAYER_INPUT_SOURCE_PATHS.get(key)
         inputs_list.append(
             _build_input_blob(
                 key=key,
-                raw_v=raw_signals.get(key),
+                raw_v=raw_stable.get(key),
                 norm_v=norm_v,
                 iw=iw,
                 ic=ic,
@@ -517,6 +542,8 @@ def _compute_lineup_adjusted_player_layer(
                 status="available",
                 application_role="component_input",
                 audit_note=audit_note,
+                source_path=src,
+                api_source="fixture_lineups" if key in PLAYER_NUMERIC_INPUT_ORDER else "fixture_lineups",
             ),
         )
 
@@ -558,8 +585,8 @@ def _compute_lineup_adjusted_player_layer(
         "has_mock_data": False,
         "has_fallback_data": False,
         "no_data_leakage": True,
-        "inputs_total": len(LINEUP_NUMERIC_INPUT_ORDER),
-        "inputs_available": len(LINEUP_NUMERIC_INPUT_ORDER),
+        "inputs_total": len(LINEUP_MODE_STABLE_INPUT_ORDER),
+        "inputs_available": len(LINEUP_MODE_STABLE_INPUT_ORDER),
         "missing_required": [],
         "missing_lineup_player_profiles": missing_lineup_player_profiles,
         "warnings": warnings,

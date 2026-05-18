@@ -7,7 +7,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.predictions_v11.player_layer_feature_sources import LINEUP_INTERNAL_WEIGHTS, LINEUP_NUMERIC_INPUT_ORDER
+from app.services.predictions_v11.player_layer_feature_sources import (
+    LINEUP_INTERNAL_WEIGHTS,
+    LINEUP_MODE_STABLE_INPUT_ORDER,
+    LINEUP_MODE_STABLE_WEIGHTS,
+    LINEUP_NUMERIC_INPUT_ORDER,
+    LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL,
+    PLAYER_NUMERIC_INPUT_ORDER,
+)
 from app.services.predictions_v11.player_layer_lineup_helpers import (
     TOP_SHOOTERS_TOTAL,
     classify_top_shooters_in_lineup,
@@ -43,6 +50,16 @@ def _profile(
 def test_lineup_internal_weights_sum_to_one():
     total = sum(LINEUP_INTERNAL_WEIGHTS[k] for k in LINEUP_NUMERIC_INPUT_ORDER)
     assert abs(total - 1.0) < 1e-9
+
+
+def test_lineup_stable_weights_sum_to_one():
+    total = sum(LINEUP_MODE_STABLE_WEIGHTS[k] for k in LINEUP_MODE_STABLE_INPUT_ORDER)
+    assert abs(total - 1.0) < 1e-9
+
+
+def test_starter_to_top_players_maps_all_seven():
+    assert set(LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL.values()) == set(PLAYER_NUMERIC_INPUT_ORDER)
+    assert len(LINEUP_STARTER_TO_TOP_PLAYERS_SIGNAL) == 7
 
 
 def test_classify_top_shooters_starting_bench_missing():
