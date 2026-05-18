@@ -119,10 +119,10 @@ def upgrade() -> None:
                     league_id = f.league_id,
                     season = s.year,
                     api_team_id = t.api_team_id
-                FROM fixtures f
-                JOIN seasons s ON s.id = f.season_id
-                JOIN teams t ON t.id = fl.team_id
+                FROM fixtures f, seasons s, teams t
                 WHERE fl.fixture_id = f.id
+                  AND s.id = f.season_id
+                  AND t.id = fl.team_id
                   AND fl.api_fixture_id IS NULL
                 """
             ),
