@@ -1,4 +1,4 @@
-"""Test produzione offensiva + blend 30/25/15/15/15 v1.1 stage 5."""
+"""Test produzione offensiva + blend 6 componenti v1.1 stage 6."""
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -40,6 +40,23 @@ LEAGUE_V11_MOCK = {
     "league_recent_goals_baseline_team_count": 2.0,
     "league_avg_xg_for": 1.2,
     "league_avg_xg_conceded": 1.2,
+}
+
+PLAYER_LB_MOCK = {
+    "league_top_players_avg_sot_per90": 0.5,
+    "league_top_players_avg_shots_per90": 2.0,
+    "league_top_players_avg_sot_share": 0.2,
+    "league_top_players_avg_shots_share": 0.15,
+    "league_top_players_recent_minutes": 200.0,
+    "league_top_players_avg_rating": 7.0,
+    "league_top_players_reliability": 80.0,
+}
+
+MOCK_PLAYER_COMP = {
+    "key": "player_layer_component",
+    "value": 3.0,
+    "inputs": [{"key": f"top_players_{k}_signal", "internal_contribution": 0.1} for k in ("sot_per90",)],
+    "quality": {"fallback_count": 0, "top_players_used": 5},
 }
 
 
@@ -115,14 +132,33 @@ def _ctx(
     )
 
 
+def _patch_v11_player(db: MagicMock):
+    from app.models import Season
+
+    db.get.side_effect = lambda model, _pk: SimpleNamespace(year=2025, league_id=1) if model is Season else None
+    return (
+        patch(
+            "app.services.predictions_v11.offensive_production_strict.compute_league_player_baselines_strict",
+            return_value=PLAYER_LB_MOCK,
+        ),
+        patch(
+            "app.services.predictions_v11.offensive_production_strict.compute_player_layer_component",
+            return_value=(MOCK_PLAYER_COMP, [], "ok", [], {}),
+        ),
+    )
+
+
 def test_insufficient_team_sample():
     fixtures = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc)) for i in range(1, 4)]
     opp = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=fixtures, opponent_fixtures=opp)
     db = MagicMock()
-    with patch(
-        "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
-        return_value=LEAGUE_V11_MOCK,
+    with (
+        patch(
+            "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
+            return_value=LEAGUE_V11_MOCK,
+        ),
+        *_patch_v11_player(db),
     ):
         result = compute_v11_side(db, ctx, fixtures)
     assert not result.valid
@@ -161,9 +197,12 @@ def test_missing_inside_box_data():
         league_baselines=ctx.league_baselines,
     )
     db = MagicMock()
-    with patch(
-        "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
-        return_value=LEAGUE_V11_MOCK,
+    with (
+        patch(
+            "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
+            return_value=LEAGUE_V11_MOCK,
+        ),
+        *_patch_v11_player(db),
     ):
         result = compute_v11_side(db, ctx, fixtures)
     assert not result.valid
@@ -172,14 +211,17 @@ def test_missing_inside_box_data():
     assert "avg_inside_box_shots_for" in keys
 
 
-def test_valid_blend_five_terms():
+def test_valid_blend_six_terms():
     team_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=10, away=90 + i) for i in range(1, 7)]
     opp_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
     ctx = _ctx(team_fixtures=team_fx, opponent_fixtures=opp_fx)
     db = MagicMock()
-    with patch(
-        "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
-        return_value=LEAGUE_V11_MOCK,
+    with (
+        patch(
+            "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
+            return_value=LEAGUE_V11_MOCK,
+        ),
+        *_patch_v11_player(db),
     ):
         result = compute_v11_side(db, ctx, team_fx)
     assert result.valid
@@ -188,17 +230,19 @@ def test_valid_blend_five_terms():
     assert result.defensive_component is not None
     assert result.split_component is not None
     assert result.recent_component is not None
+    assert result.player_layer_component is not None
     off_val = float(result.component["value"])
     def_val = float(result.defensive_component["value"])
     split_val = float(result.split_component["value"])
     recent_val = float(result.recent_component["value"])
     xg_val = float(result.xg_component["value"])
+    player_val = float(result.player_layer_component["value"])
     expected = round(
-        off_val * 0.30 + def_val * 0.25 + split_val * 0.15 + recent_val * 0.15 + xg_val * 0.15,
+        off_val * 0.25 + def_val * 0.22 + split_val * 0.13 + recent_val * 0.15 + xg_val * 0.12 + player_val * 0.13,
         2,
     )
     assert result.expected_sot == pytest.approx(expected, rel=1e-4)
-    assert result.raw_json["formula"]["terms_count"] == 5
+    assert result.raw_json["formula"]["terms_count"] == 6
     assert len(result.xg_component["inputs"]) == 5
     assert len(result.component["inputs"]) == 9
     assert len(result.defensive_component["inputs"]) == 6

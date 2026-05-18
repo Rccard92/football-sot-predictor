@@ -175,9 +175,14 @@ def test_v11_side_insufficient_recent_via_offensive_pipeline():
         "away_league_split_avg_total_shots_conceded": 11.2,
         **LB_RECENT_OK,
     }
-    with patch(
-        "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
-        return_value=league_full,
+    from test_v11_offensive_strict import _patch_v11_player
+
+    with (
+        patch(
+            "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
+            return_value=league_full,
+        ),
+        *_patch_v11_player(db),
     ):
         result = compute_v11_side(db, ctx, team_fx)
     assert not result.valid

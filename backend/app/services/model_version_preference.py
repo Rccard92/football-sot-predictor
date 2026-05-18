@@ -21,6 +21,7 @@ from app.core.constants import (
 )
 from app.services.sot_feature_registry import V11_MODEL_STAGE
 from app.models import TeamSotPrediction
+from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER
 from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG
 
 MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
@@ -74,6 +75,20 @@ def v11_meets_recommend_criteria(
             return False
         if str(raw.get("formula_quality_status") or "") != "ok":
             return False
+        comps = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+        has_player = isinstance(comps.get(COMPONENT_KEY_PLAYER), dict) or isinstance(
+            raw.get(COMPONENT_KEY_PLAYER),
+            dict,
+        )
+        if not has_player:
+            return False
+        plc = comps.get(COMPONENT_KEY_PLAYER) if isinstance(comps.get(COMPONENT_KEY_PLAYER), dict) else raw.get(
+            COMPONENT_KEY_PLAYER,
+        )
+        if isinstance(plc, dict):
+            q = plc.get("quality") if isinstance(plc.get("quality"), dict) else {}
+            if int(q.get("fallback_count") or 0) > 0:
+                return False
     return True
 
 
@@ -252,6 +267,8 @@ def enrich_v11_model_status_row(
         row["missing_required_data_count"] = 0
         row["xg_available_predictions"] = 0
         row["xg_missing_predictions"] = 0
+        row["player_layer_available_predictions"] = 0
+        row["player_layer_missing_predictions"] = 0
         row["missing_fields_summary"] = {}
         return
     preds = db.scalars(
@@ -265,6 +282,8 @@ def enrich_v11_model_status_row(
     missing_count = 0
     xg_available = 0
     xg_missing = 0
+    player_available = 0
+    player_missing = 0
     summary_counts: Counter[str] = Counter()
     for p in preds:
         raw = p.raw_json if isinstance(p.raw_json, dict) else {}
@@ -275,6 +294,14 @@ def enrich_v11_model_status_row(
             xg_available += 1
         elif fq in ("insufficient_xg_sample", "missing_required_xg_league_baseline"):
             xg_missing += 1
+        has_player = isinstance(comps.get(COMPONENT_KEY_PLAYER), dict) or isinstance(raw.get(COMPONENT_KEY_PLAYER), dict)
+        if fq == "ok" and has_player:
+            player_available += 1
+        elif fq in (
+            "insufficient_player_profile_sample",
+            "missing_required_player_league_baseline",
+        ):
+            player_missing += 1
         if (
             p.predicted_sot is not None
             and raw.get("prediction_valid") is not False
@@ -296,6 +323,8 @@ def enrich_v11_model_status_row(
     row["missing_required_data_count"] = int(missing_count)
     row["xg_available_predictions"] = int(xg_available)
     row["xg_missing_predictions"] = int(xg_missing)
+    row["player_layer_available_predictions"] = int(player_available)
+    row["player_layer_missing_predictions"] = int(player_missing)
     row["model_stage"] = V11_MODEL_STAGE
     row["missing_fields_summary"] = {
         k: int(summary_counts[k])
@@ -338,5 +367,11 @@ def build_v11_coherence_warnings(
         if xg_miss > 0 and xg_miss >= max(1, inc // 2):
             warnings.append(
                 "Molte predizioni v1.1 incomplete per dati xG (expected_goals): verificare fixture_team_stats e medie lega.",
+            )
+        pl_miss = int(v11_row.get("player_layer_missing_predictions") or 0)
+        if pl_miss > 0 and pl_miss >= max(1, inc // 2):
+            warnings.append(
+                "Molte predizioni v1.1 incomplete per player layer: calcolare profili con "
+                "POST .../player-season-profiles/.../build e verificare player-db-summary.",
             )
     return warnings

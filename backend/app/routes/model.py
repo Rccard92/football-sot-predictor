@@ -1394,7 +1394,7 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                 "id": "xg_chance_quality_v11",
                 "title": "Qualità occasioni / xG (baseline v1.1)",
                 "description": (
-                    "Quinta componente della formula baseline_v1_1_sot: expected_goals (API-Football) normalizzato sulla scala SOT "
+                    "Quinta componente (peso 0,12) della formula baseline_v1_1_sot: expected_goals (API-Football) normalizzato sulla scala SOT "
                     "rispetto alle medie lega e al campione minimo (5+5 partite con xG disponibile)."
                 ),
                 "variables": [
@@ -1408,7 +1408,7 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
                         data_source="fixtures/statistics::expected_goals → fixture_team_stats.expected_goals",
                         status="implementata",
                         applied_now=True,
-                        notes="baseline_v1_1_sot Stage 5: ingresso della componente xG; campione minimo 5 partite con xG.",
+                        notes="baseline_v1_1_sot Stage 6: componente xG; campione minimo 5 partite con xG.",
                         applied_layer="sot_formula",
                         direct_formula_impact=True,
                         applied_to_model_versions=[BASELINE_SOT_MODEL_VERSION_V11_SOT],

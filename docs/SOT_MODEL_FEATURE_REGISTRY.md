@@ -1,26 +1,26 @@
-# Registry feature — baseline_v1_1_sot (Stage 5)
+# Registry feature — baseline_v1_1_sot (Stage 6)
 
 Modello: `baseline_v1_1_sot`  
 Architettura: `component_based_strict_real_data`  
-Stage: `offensive_plus_opponent_defense_plus_home_away_split_plus_recent_form_plus_xg`
+Stage: `offensive_defense_split_recent_xg_player_profile`
 
 **Regola:** il modello v1.1 non usa fallback o mock. Se un dato obbligatorio manca, la prediction viene marcata come incompleta (`prediction_valid: false`, `predicted_sot: null`).
 
-Formula stage 5:
+Formula stage 6:
 
-`expected_sot_v1_1 = (offensive_production_component × 0.30) + (opponent_defensive_resistance_component × 0.25) + (home_away_split_component × 0.15) + (recent_form_component × 0.15) + (xg_chance_quality_component × 0.15)`
+`expected_sot_v1_1 = (offensive_production_component × 0.25) + (opponent_defensive_resistance_component × 0.22) + (home_away_split_component × 0.13) + (recent_form_component × 0.15) + (xg_chance_quality_component × 0.12) + (player_layer_component × 0.13)`
 
 Lo split casa/trasferta usa il contesto reale della partita: casa per la squadra di casa, trasferta per la squadra ospite, e split opposto per l'avversario.
 
-## Componente 1 — Produzione offensiva composita (peso formula 0.30)
+## Componente 1 — Produzione offensiva composita (peso formula 0.25)
 
 9 input interni (vedi Stage 1/2). Dati da partite precedenti della squadra analizzata.
 
-## Componente 2 — Resistenza difensiva avversaria (peso formula 0.25)
+## Componente 2 — Resistenza difensiva avversaria (peso formula 0.22)
 
 6 input interni (vedi Stage 2). Concessi ricostruiti dalle partite precedenti dell'avversario.
 
-## Componente 3 — Split casa/trasferta (peso formula 0.15)
+## Componente 3 — Split casa/trasferta (peso formula 0.13)
 
 | feature_key | Peso interno | API | DB |
 |-------------|--------------|-----|-----|
@@ -59,7 +59,7 @@ Se le medie lega „recent“ non sono definibili → errore baseline / `missing
 
 Implementazione: [`recent_form_strict.py`](backend/app/services/predictions_v11/recent_form_strict.py), metadati input [`recent_feature_sources.py`](backend/app/services/predictions_v11/recent_feature_sources.py).
 
-## Componente 5 — Qualità occasioni / xG (peso formula 0.15)
+## Componente 5 — Qualità occasioni / xG (peso formula 0.12)
 
 Fonte API-Football: `fixtures/statistics` include `expected_goals` quando disponibile; persistenza DB in `fixture_team_stats.expected_goals` (float nullable). Se la colonna è `NULL` ma il campo è presente in `fixture_team_stats.raw_json`, il valore può essere letto da lì e la traccia indica la fonte alternativa — **non** si inventano valori.
 
@@ -76,6 +76,25 @@ Servono anche le medie lega `league_avg_xg_for` e `league_avg_xg_conceded` sul c
 | xg_prudent_adjustment_signal | 0.10 | Segnale prudente `league_avg_sot_for × (1 + xg_adjustment_pct)` con cap su `xg_adjustment_pct` |
 
 Implementazione: [`xg_quality_strict.py`](backend/app/services/predictions_v11/xg_quality_strict.py), metadati [`xg_feature_sources.py`](backend/app/services/predictions_v11/xg_feature_sources.py).
+
+## Componente 6 — Player layer / impatto giocatori (peso formula 0.13)
+
+Fonte: `player_season_profiles` (nessuna API live in generazione). Per ogni squadra: top **5** profili per `shooting_impact_score` tra giocatori con `minutes_total ≥ 180`, `reliability_score` valorizzato e almeno uno tra `shots_on_per90` / `shots_total_per90`. Se meno di **3** eleggibili → `insufficient_player_profile_sample`.
+
+| feature_key | Peso interno | source_path |
+|-------------|--------------|-------------|
+| top_players_sot_per90_signal | 0.28 | player_season_profiles.shots_on_per90 |
+| top_players_shots_per90_signal | 0.18 | player_season_profiles.shots_total_per90 |
+| top_players_sot_share_signal | 0.18 | player_season_profiles.team_sot_share |
+| top_players_shots_share_signal | 0.10 | player_season_profiles.team_shots_share |
+| top_players_recent_minutes_signal | 0.12 | player_season_profiles.recent_minutes_last5 |
+| top_players_rating_signal | 0.08 | player_season_profiles.avg_rating |
+| top_players_reliability_signal | 0.06 | player_season_profiles.reliability_score |
+
+Normalizzazione: `team_avg × league_avg_sot_for / league_player_avg` per ciascun segnale (baseline lega = media delle medie team sui top 5).  
+Contesto audit (contributo 0): `top_shooter_presence_status` (lineups), `top_shooter_absence_status` (injuries/lineups).
+
+Implementazione: [`player_layer_strict.py`](backend/app/services/predictions_v11/player_layer_strict.py), metadati [`player_layer_feature_sources.py`](backend/app/services/predictions_v11/player_layer_feature_sources.py).
 
 ## Vincoli globali
 

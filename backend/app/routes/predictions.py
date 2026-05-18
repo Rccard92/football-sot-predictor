@@ -563,6 +563,8 @@ def generate_serie_a_predictions_v11_sot(
         "missing_required_data_count": 0,
         "xg_available_predictions": 0,
         "xg_missing_predictions": 0,
+        "player_layer_available_predictions": 0,
+        "player_layer_missing_predictions": 0,
         "errors": [],
     }
     try:
@@ -605,7 +607,7 @@ def generate_serie_a_predictions_v11_sot(
         "season": int(season),
         "model_version": str(summary.get("model_version") or svc.model_version),
         "model_stage": str(summary.get("model_stage") or svc.model_stage),
-        "formula_terms_count": int(summary.get("formula_terms_count") or 5),
+        "formula_terms_count": int(summary.get("formula_terms_count") or 6),
         "architecture": str(summary.get("architecture") or svc.architecture),
         "upcoming_fixtures": int(summary.get("upcoming_fixtures") or 0),
         "predictions_created_or_updated": int(summary.get("predictions_created_or_updated") or 0),
@@ -614,6 +616,8 @@ def generate_serie_a_predictions_v11_sot(
         "missing_required_data_count": int(summary.get("missing_required_data_count") or 0),
         "xg_available_predictions": int(summary.get("xg_available_predictions") or 0),
         "xg_missing_predictions": int(summary.get("xg_missing_predictions") or 0),
+        "player_layer_available_predictions": int(summary.get("player_layer_available_predictions") or 0),
+        "player_layer_missing_predictions": int(summary.get("player_layer_missing_predictions") or 0),
         "missing_required_data": summary.get("missing_required_data") or [],
         "errors": summary.get("errors") or [],
     }

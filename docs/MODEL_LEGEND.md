@@ -6,19 +6,20 @@ Documento di riferimento per **baseline v0.1**, per le metriche di qualità e pe
 
 Stimare i **tiri in porta attesi** (shots on target, SOT) per squadra su una partita, usando solo statistiche di squadra storiche e medie derivate dal database. Il totale match è la **somma** delle due stime squadra quando entrambe sono disponibili.
 
-## baseline_v1_1_sot — Stage 5 (offensiva + difensiva + split + forma recente + xG)
+## baseline_v1_1_sot — Stage 6 (offensiva + difensiva + split + forma recente + xG + player layer)
 
-Versione **strict**: nessun fallback, nessun mock. Se manca un dato obbligatorio, lo storico ha meno di 5 partite stagionali, meno di 5 partite nello split richiesto, meno di 5 partite per le finestre „ultime 5“ squadra/avversario per la forma recente, o **meno di 5 partite con xG disponibile** per squadra o per il ramo concessi avversario, la prediction è **incompleta** (`prediction_valid: false`).
+Versione **strict**: nessun fallback, nessun mock. Se manca un dato obbligatorio, lo storico ha meno di 5 partite stagionali, meno di 5 partite nello split richiesto, meno di 5 partite per le finestre „ultime 5“ squadra/avversario per la forma recente, **meno di 5 partite con xG disponibile** per squadra o per il ramo concessi avversario, **meno di 3 profili giocatore eleggibili** (top player da `player_season_profiles`) o **baseline lega player assente**, la prediction è **incompleta** (`prediction_valid: false`).
 
-Formula stage 5:
+Formula stage 6:
 
-`expected_sot = (offensive_production_component × 0,30) + (opponent_defensive_resistance_component × 0,25) + (home_away_split_component × 0,15) + (recent_form_component × 0,15) + (xg_chance_quality_component × 0,15)`
+`expected_sot = (offensive_production_component × 0,25) + (opponent_defensive_resistance_component × 0,22) + (home_away_split_component × 0,13) + (recent_form_component × 0,15) + (xg_chance_quality_component × 0,12) + (player_layer_component × 0,13)`
 
 - **Produzione offensiva:** 9 input — [`offensive_production_strict.py`](backend/app/services/predictions_v11/offensive_production_strict.py).
 - **Resistenza difensiva avversaria:** 6 input — [`opponent_defensive_resistance_strict.py`](backend/app/services/predictions_v11/opponent_defensive_resistance_strict.py).
 - **Split casa/trasferta:** 5 input sul contesto reale casa/trasferta — [`home_away_split_strict.py`](backend/app/services/predictions_v11/home_away_split_strict.py).
 - **Forma recente:** 6 input sulle ultime 5 partite per squadra e avversario — [`recent_form_strict.py`](backend/app/services/predictions_v11/recent_form_strict.py). Non c’è fallback se il campione ultime 5 non è disponibile.
 - **Qualità occasioni / xG:** 5 input da `expected_goals` (API-Football / `fixture_team_stats`, eventuale `raw_json` se la colonna è null ma il provider ha inviato il campo) — [`xg_quality_strict.py`](backend/app/services/predictions_v11/xg_quality_strict.py). **Nessun fallback** se il campione xG o le medie lega xG non sono disponibili. Quando `expected_goals` non è fornito dall’API per una partita, non si imputa alcun valore: la riga resta senza xG e può rendere il campione insufficiente.
+- **Player layer / impatto giocatori:** 7 segnali numerici da `player_season_profiles` (top 5 per `shooting_impact_score`, minuti ≥180, `reliability_score` valorizzato) — [`player_layer_strict.py`](backend/app/services/predictions_v11/player_layer_strict.py). **Nessuna** API live, **nessun** lineup/injury nel valore numerico; `top_shooter_presence` / `top_shooter_absence` compaiono in audit con stato non applicato.
 
 Lo split usa partite precedenti della squadra nello stesso contesto della fixture target e partite dell'avversario nello split opposto. La forma recente usa le stesse ultime 5 (cronologiche) per squadra e per avversario, con medie lega „recent-aware“ per normalizzazione. Il componente xG scala i segnali sulla **scala SOT lega** (come le altre componenti) usando `league_avg_xg_for`, `league_avg_xg_conceded`, `league_avg_sot_for`, `league_avg_sot_conceded`.
 

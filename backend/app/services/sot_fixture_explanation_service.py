@@ -34,10 +34,12 @@ from app.services.model_applied_variable_trace import (
     validate_model_trace,
 )
 from app.services.predictions_v10.offensive_production_blend import offensive_inputs_as_map
+from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER, COMPONENT_LABEL_PLAYER
 from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG, COMPONENT_LABEL_XG
 from app.services.sot_feature_registry import (
     V11_FORMULA_DEFENSIVE_WEIGHT,
     V11_FORMULA_OFFENSIVE_WEIGHT,
+    V11_FORMULA_PLAYER_WEIGHT,
     V11_FORMULA_RECENT_WEIGHT,
     V11_FORMULA_SPLIT_WEIGHT,
     V11_FORMULA_XG_WEIGHT,
@@ -512,12 +514,13 @@ def _v11_get_component(raw: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
-    """v1.1 stage 5: offensiva + difensiva + split + forma recente + xG (pesi da registry)."""
+    """v1.1 stage 6: offensiva + difensiva + split + forma recente + xG + player layer."""
     off_w = float(V11_FORMULA_OFFENSIVE_WEIGHT)
     def_w = float(V11_FORMULA_DEFENSIVE_WEIGHT)
     split_w = float(V11_FORMULA_SPLIT_WEIGHT)
     recent_w = float(V11_FORMULA_RECENT_WEIGHT)
     xg_w = float(V11_FORMULA_XG_WEIGHT)
+    player_w = float(V11_FORMULA_PLAYER_WEIGHT)
     if raw.get("prediction_valid") is False or str(raw.get("status") or "") == "incomplete":
         miss = raw.get("missing_required_fields") if isinstance(raw.get("missing_required_fields"), list) else []
         notes = [str(m.get("message") or m.get("feature_key")) for m in miss if isinstance(m, dict)]
@@ -537,6 +540,7 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
             {"id": "v11_home_away_split", "label": "Split casa/trasferta", "weight": split_w, **missing_card},
             {"id": "v11_recent_form", "label": "Forma recente", "weight": recent_w, **missing_card},
             {"id": "v11_xg_chance_quality", "label": COMPONENT_LABEL_XG, "weight": xg_w, **missing_card},
+            {"id": "v11_player_layer", "label": COMPONENT_LABEL_PLAYER, "weight": player_w, **missing_card},
         ]
 
     formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
@@ -548,18 +552,21 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
     splitc = _v11_get_component(raw, "home_away_split_component")
     recentc = _v11_get_component(raw, "recent_form_component")
     xgc = _v11_get_component(raw, COMPONENT_KEY_XG)
+    playerc = _v11_get_component(raw, COMPONENT_KEY_PLAYER)
 
     off_term = term_by_key.get("offensive_production_component", {})
     def_term = term_by_key.get("opponent_defensive_resistance_component", {})
     split_term = term_by_key.get("home_away_split_component", {})
     recent_term = term_by_key.get("recent_form_component", {})
     xg_term = term_by_key.get(COMPONENT_KEY_XG, {})
+    player_term = term_by_key.get(COMPONENT_KEY_PLAYER, {})
 
     off_val = _round2(_safe_float(off.get("value") if off else off_term.get("value")))
     def_val = _round2(_safe_float(defc.get("value") if defc else def_term.get("value")))
     split_val = _round2(_safe_float(splitc.get("value") if splitc else split_term.get("value")))
     recent_val = _round2(_safe_float(recentc.get("value") if recentc else recent_term.get("value")))
     xg_val = _round2(_safe_float(xgc.get("value") if xgc else xg_term.get("value")))
+    player_val = _round2(_safe_float(playerc.get("value") if playerc else player_term.get("value")))
 
     def _contrib(term: dict, val: float | None, w: float) -> float | None:
         c = _round2(_safe_float(term.get("contribution")))
@@ -572,6 +579,7 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
     split_contrib = _contrib(split_term, split_val, split_w)
     recent_contrib = _contrib(recent_term, recent_val, recent_w)
     xg_contrib = _contrib(xg_term, xg_val, xg_w)
+    player_contrib = _contrib(player_term, player_val, player_w)
 
     split_note = f"Peso formula finale {int(split_w * 100)}%. Contesto split reale della partita."
     if splitc:
@@ -588,6 +596,15 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
         f"Peso formula finale {int(xg_w * 100)}%. expected_goals da API-Football / fixture_team_stats; "
         "campione minimo 5 partite con xG per squadra e avversario; nessun fallback silenzioso."
     )
+    player_note = (
+        f"Peso formula finale {int(player_w * 100)}%. Top 5 giocatori da player_season_profiles "
+        "(min 3 eleggibili, minuti ≥180); presenza/assenza top shooter non ancora nel calcolo numerico."
+    )
+    top_players = playerc.get("top_players") if isinstance(playerc.get("top_players"), list) else []
+    if top_players:
+        names = [str(p.get("name") or p.get("api_player_id")) for p in top_players[:5] if isinstance(p, dict)]
+        if names:
+            player_note += f" Top: {', '.join(names)}."
 
     return [
         {
@@ -645,7 +662,94 @@ def _components_v11(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
             "notes": xg_note,
             "variables": _v11_component_sub_vars(xgc) if xgc else [],
         },
+        {
+            "id": "v11_player_layer",
+            "label": str(playerc.get("label") or COMPONENT_LABEL_PLAYER),
+            "value": player_val,
+            "weight": player_w,
+            "contribution": player_contrib,
+            "direction": "neutro",
+            "data_status": "ok",
+            "notes": player_note,
+            "variables": _v11_component_sub_vars(playerc) if playerc else [],
+        },
     ]
+
+
+def _build_formula_breakdown_v11(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+    if str(formula.get("type") or "") != "weighted_components":
+        return {}
+    terms_raw = formula.get("terms")
+    if not isinstance(terms_raw, list) or not terms_raw:
+        return {}
+    terms: list[dict[str, Any]] = []
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    contrib_vals: list[float] = []
+    for t in terms_raw:
+        if not isinstance(t, dict):
+            continue
+        key = str(t.get("key") or "")
+        lab = str(t.get("label") or key)
+        w = _safe_float(t.get("weight"))
+        val = _safe_float(t.get("value"))
+        contrib_stored = _safe_float(t.get("contribution"))
+        contrib = round(float(contrib_stored or 0.0), 4) if contrib_stored is not None else None
+        if w is None:
+            continue
+        if contrib is None and val is not None:
+            contrib = round(float(val) * float(w), 4)
+        if contrib is None:
+            contrib = 0.0
+        contrib_vals.append(contrib)
+        calc_expr = _mul_expr(val, w) if val is not None else f"contributo salvato ({_round4(contrib)})"
+        terms.append(
+            {
+                "id": f"v11_term_{key}",
+                "label": lab,
+                "symbol": key,
+                "value": _round2(val),
+                "weight": w,
+                "contribution": contrib,
+                "calc_expression": calc_expr,
+                "status": t.get("status"),
+            },
+        )
+        if val is not None:
+            sym_parts.append(f"({lab} × {w})")
+            num_parts.append(_mul_expr(val, w))
+        else:
+            sym_parts.append(f"(— × {w})")
+            num_parts.append(f"{_round4(contrib)}")
+    s = round(sum(contrib_vals), 4) if contrib_vals else None
+    sum_c, delta, warn, wmsg = _checksum_block(s, stored)
+    fq_warn = raw.get("formula_quality_warnings") if isinstance(raw.get("formula_quality_warnings"), list) else []
+    return {
+        "model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        "stored_predicted_sot": _round2(stored),
+        "terms": terms,
+        "formula_terms_count": len(terms_raw) if isinstance(terms_raw, list) else len(terms),
+        "formula_quality_status": raw.get("formula_quality_status"),
+        "formula_quality_warnings": fq_warn,
+        "formula_symbolic": "expected_sot_v1_1 = " + " + ".join(sym_parts),
+        "formula_numeric": "expected_sot_v1_1 = " + " + ".join(num_parts) + f"\n= {_round2(s)}",
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": t["weight"],
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+                "status": t.get("status"),
+            }
+            for t in terms
+        ],
+        "sum_contributions": sum_c,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {"cap_applied": False, "fallbacks_used": []},
+    }
 
 
 def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
@@ -1403,6 +1507,8 @@ def _build_prediction_formula_breakdown_side(
         out = _build_formula_breakdown_v04(raw, st)
     elif model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
         out = _build_formula_breakdown_v10(raw, st)
+    elif model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT:
+        out = _build_formula_breakdown_v11(raw, st)
     elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         out = _build_formula_breakdown_v02(raw, st)
     else:

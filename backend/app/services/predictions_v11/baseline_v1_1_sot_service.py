@@ -10,12 +10,13 @@ from app.models import Fixture, League, Season, Team, TeamSotPrediction
 from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
 from app.services.predictions_v10.v10_prior_context import build_prior_context
 from app.services.predictions_v11.offensive_production_strict import compute_v11_side
+from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER
 from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG
 from app.services.sot_feature_registry import V11_ARCHITECTURE, V11_MODEL_STAGE
 
 
 class SotPredictionV11BaselineSotService:
-    """v1.1 stage 5: 30% offensiva + 25% difensiva + 15% split + 15% forma recente + 15% xG (strict)."""
+    """v1.1 stage 6: 6 componenti strict (incluso player layer da player_season_profiles)."""
 
     model_version = BASELINE_SOT_MODEL_VERSION_V11_SOT
     architecture = V11_ARCHITECTURE
@@ -84,6 +85,8 @@ class SotPredictionV11BaselineSotService:
         created = 0
         xg_available_n = 0
         xg_missing_n = 0
+        player_layer_available_n = 0
+        player_layer_missing_n = 0
         missing_required_data: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
 
@@ -119,10 +122,21 @@ class SotPredictionV11BaselineSotService:
                     merged.get(COMPONENT_KEY_XG),
                     dict,
                 )
+                has_player_comp = isinstance(comps_m.get(COMPONENT_KEY_PLAYER), dict) or isinstance(
+                    merged.get(COMPONENT_KEY_PLAYER),
+                    dict,
+                )
                 if fq_stat == "ok" and has_xg_comp:
                     xg_available_n += 1
                 elif fq_stat in ("insufficient_xg_sample", "missing_required_xg_league_baseline"):
                     xg_missing_n += 1
+                if fq_stat == "ok" and has_player_comp:
+                    player_layer_available_n += 1
+                elif fq_stat in (
+                    "insufficient_player_profile_sample",
+                    "missing_required_player_league_baseline",
+                ):
+                    player_layer_missing_n += 1
                 team_row = db.get(Team, int(team_id))
                 tname = team_row.name if team_row is not None else str(team_id)
                 merged = append_trace_to_raw_json(
@@ -152,9 +166,10 @@ class SotPredictionV11BaselineSotService:
 
                 existing.raw_json = merged
                 existing.explanation = (
-                    "v1.1 stage 5: 30% produzione offensiva + 25% resistenza difensiva avversaria "
-                    "+ 15% split casa/trasferta + 15% forma recente + 15% qualità occasioni / xG "
-                    "(solo dati reali, nessun fallback)."
+                    "v1.1 stage 6: 25% produzione offensiva + 22% resistenza difensiva avversaria "
+                    "+ 13% split casa/trasferta + 15% forma recente + 12% qualità occasioni / xG "
+                    "+ 13% player layer (profili storici player_season_profiles; "
+                    "solo dati reali, nessun fallback)."
                 )
 
                 if result.valid and result.expected_sot is not None:
@@ -199,7 +214,7 @@ class SotPredictionV11BaselineSotService:
             "season": int(season_year),
             "model_version": self.model_version,
             "model_stage": self.model_stage,
-            "formula_terms_count": 5,
+            "formula_terms_count": 6,
             "architecture": self.architecture,
             "upcoming_fixtures": len(upcoming),
             "predictions_created_or_updated": int(created),
@@ -207,6 +222,8 @@ class SotPredictionV11BaselineSotService:
             "incomplete_predictions": int(incomplete_n),
             "xg_available_predictions": int(xg_available_n),
             "xg_missing_predictions": int(xg_missing_n),
+            "player_layer_available_predictions": int(player_layer_available_n),
+            "player_layer_missing_predictions": int(player_layer_missing_n),
             "missing_required_data_count": len(missing_required_data),
             "missing_required_data": missing_required_data,
             "errors": errors,

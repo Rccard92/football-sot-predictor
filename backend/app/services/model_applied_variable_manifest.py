@@ -506,6 +506,16 @@ _V11_RECENT_INPUTS: list[tuple[str, str, str]] = [
     ("recent_trend_vs_season", "Trend rispetto alla media stagionale", "recent_trend_vs_season"),
 ]
 
+_V11_PLAYER_INPUTS: list[tuple[str, str, str]] = [
+    ("top_players_sot_per90_signal", "Tiri in porta per 90 dei top player", "top_players_sot_per90_signal"),
+    ("top_players_shots_per90_signal", "Tiri totali per 90 dei top player", "top_players_shots_per90_signal"),
+    ("top_players_sot_share_signal", "Quota SOT squadra top player", "top_players_sot_share_signal"),
+    ("top_players_shots_share_signal", "Quota tiri squadra top player", "top_players_shots_share_signal"),
+    ("top_players_recent_minutes_signal", "Minuti recenti top player", "top_players_recent_minutes_signal"),
+    ("top_players_rating_signal", "Rating medio top player", "top_players_rating_signal"),
+    ("top_players_reliability_signal", "Affidabilità profili top player", "top_players_reliability_signal"),
+]
+
 _V11_XG_INPUTS: list[tuple[str, str, str]] = [
     ("avg_xg_for", "xG prodotti", "avg_xg_for"),
     ("opponent_avg_xg_conceded", "xG concessi dall'avversario", "opponent_avg_xg_conceded"),
@@ -573,6 +583,17 @@ _MANIFEST_V11: list[AppliedVariableSpec] = [
         expected_in_debug=True,
         framework_key=None,
         resolver="v11:formula_term:xg_chance_quality_component",
+    ),
+    AppliedVariableSpec(
+        trace_key="v11_term_player_layer_component",
+        label="Player layer / Impatto giocatori",
+        area="Formula finale v1.1",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v11:formula_term:player_layer_component",
     ),
 ]
 for inp_k, lab, fwk in _V11_OFFENSIVE_INPUTS:
@@ -645,6 +666,20 @@ for inp_k, lab, fwk in _V11_XG_INPUTS:
             resolver=f"v11:xg_input:{inp_k}",
         ),
     )
+for inp_k, lab, fwk in _V11_PLAYER_INPUTS:
+    _MANIFEST_V11.append(
+        AppliedVariableSpec(
+            trace_key=f"v11_player_input_{inp_k}",
+            label=lab,
+            area="Player layer / Impatto giocatori",
+            application_role="component_input",
+            parent_component="player_layer_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=fwk,
+            resolver=f"v11:player_input:{inp_k}",
+        ),
+    )
 _MANIFEST_V11.extend(
     [
         AppliedVariableSpec(
@@ -701,6 +736,39 @@ _MANIFEST_V11.extend(
             expected_in_debug=True,
             framework_key=None,
             resolver="v11:quality:xg_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_player_quality",
+            label="Qualità input componente player layer",
+            area="Qualità dati",
+            application_role="quality_control",
+            parent_component="player_layer_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key=None,
+            resolver="v11:quality:player_component",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_ctx_top_shooter_presence",
+            label="Presenza top shooter (lineups)",
+            area="Player layer / contesto",
+            application_role="not_available",
+            parent_component="player_layer_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key="top_shooter_presence",
+            resolver="v11:ctx:top_shooter_presence",
+        ),
+        AppliedVariableSpec(
+            trace_key="v11_ctx_top_shooter_absence",
+            label="Assenza top shooter (injuries/lineups)",
+            area="Player layer / contesto",
+            application_role="not_available",
+            parent_component="player_layer_component",
+            direct_formula_impact=False,
+            expected_in_debug=True,
+            framework_key="top_shooter_absence",
+            resolver="v11:ctx:top_shooter_absence",
         ),
         AppliedVariableSpec(
             trace_key="v11_ctx_kickoff_timedelta",

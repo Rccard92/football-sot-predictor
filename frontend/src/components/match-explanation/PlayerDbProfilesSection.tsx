@@ -15,7 +15,7 @@ const LIMIT_OPTIONS: { value: PlayerProfilesLimit; label: string }[] = [
 ]
 
 const INTRO_NOTE =
-  'Questa sezione mostra i migliori profili giocatore disponibili nel Player DB, ordinati per impatto tiri. I dati sono aggregati da player_match_stats e player_season_profiles. Al momento sono solo informativi e non modificano ancora la previsione del modello v1.1.'
+  'Questa sezione mostra i migliori profili giocatore disponibili nel Player DB, ordinati per impatto tiri. I dati provengono da player_match_stats e player_season_profiles. Per baseline_v1_1_sot entrano nel calcolo tramite il componente Player layer (top 5, minimo 3 profili eleggibili); presenza/assenza top shooter restano fuori fino a lineups/injuries.'
 
 const EMPTY_MSG =
   'Profili giocatori non disponibili. Esegui da Admin: 1. Aggiorna statistiche giocatori · 2. Calcola profili giocatori'

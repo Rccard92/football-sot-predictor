@@ -326,8 +326,8 @@ def _row_for_spec(
                 ),
                 None,
             )
-            base["weight"] = _sf(ft.get("weight")) if ft else 0.30
-            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(ov * 0.30 if ov is not None else None)
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.25
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(ov * 0.25 if ov is not None else None)
             base["unit"] = "tiri in porta"
             base["fallback_used"] = False
             base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
@@ -355,8 +355,8 @@ def _row_for_spec(
                 ),
                 None,
             )
-            base["weight"] = _sf(ft.get("weight")) if ft else 0.25
-            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(dv * 0.25 if dv is not None else None)
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.22
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(dv * 0.22 if dv is not None else None)
             base["unit"] = "tiri in porta"
             base["fallback_used"] = False
             base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
@@ -384,8 +384,8 @@ def _row_for_spec(
                 ),
                 None,
             )
-            base["weight"] = _sf(ft.get("weight")) if ft else 0.15
-            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(sv * 0.15 if sv is not None else None)
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.13
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(sv * 0.13 if sv is not None else None)
             base["unit"] = "tiri in porta"
             base["fallback_used"] = False
             sc = split_comp.get("split_context")
@@ -439,8 +439,33 @@ def _row_for_spec(
                 ),
                 None,
             )
-            base["weight"] = _sf(ft.get("weight")) if ft else 0.15
-            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(xv * 0.15 if xv is not None else None)
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.12
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(xv * 0.12 if xv is not None else None)
+            base["unit"] = "tiri in porta"
+            base["fallback_used"] = False
+            base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
+            return base
+        player_comp = raw.get("player_layer_component") if isinstance(raw.get("player_layer_component"), dict) else {}
+        if not player_comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            player_comp = (
+                comps_root.get("player_layer_component")
+                if isinstance(comps_root.get("player_layer_component"), dict)
+                else {}
+            )
+        if term == "player_layer_component" and player_comp:
+            pv = _sf(player_comp.get("value"))
+            base["value"] = _r2(pv)
+            ft = next(
+                (
+                    t
+                    for t in terms_list
+                    if isinstance(t, dict) and str(t.get("key") or "") == "player_layer_component"
+                ),
+                None,
+            )
+            base["weight"] = _sf(ft.get("weight")) if ft else 0.13
+            base["contribution"] = _r2(_sf(ft.get("contribution"))) if ft else _r2(pv * 0.13 if pv is not None else None)
             base["unit"] = "tiri in porta"
             base["fallback_used"] = False
             base["status"] = "available" if raw.get("prediction_valid", True) else "missing"
@@ -525,6 +550,35 @@ def _row_for_spec(
         base["fallback_used"] = False
         sp = blob.get("source_path") or blob.get("db_field")
         base["source"] = str(sp) if sp else "fixture_team_stats"
+        base["status"] = str(blob.get("status") or "available")
+        return base
+
+    if r.startswith("v11:player_input:"):
+        ik = r.split(":")[-1]
+        comp = raw.get("player_layer_component") if isinstance(raw.get("player_layer_component"), dict) else {}
+        if not comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            comp = (
+                comps_root.get("player_layer_component")
+                if isinstance(comps_root.get("player_layer_component"), dict)
+                else {}
+            )
+        blob = offensive_inputs_as_map(comp).get(ik)
+        if blob is None:
+            base["status"] = "missing"
+            base["notes"] = "Chiave assente in player_layer_component.inputs"
+            return base
+        base["value"] = _r2(_sf(blob.get("normalized_value") if blob.get("normalized_value") is not None else blob.get("value")))
+        base["weight"] = _sf(blob.get("internal_weight") if blob.get("internal_weight") is not None else blob.get("weight"))
+        base["contribution"] = _r2(_sf(blob.get("internal_contribution") if blob.get("internal_contribution") is not None else blob.get("contribution")))
+        rv = _sf(blob.get("raw_value"))
+        if rv is not None:
+            base["notes"] = f"valore grezzo: {_r2(rv)}"
+        base["unit"] = "scala SOT"
+        base["matches_count"] = blob.get("sample_count") if blob.get("sample_count") is not None else blob.get("matches_count")
+        base["fallback_used"] = False
+        sp = blob.get("source_path") or blob.get("db_field")
+        base["source"] = str(sp) if sp else "player_season_profiles"
         base["status"] = str(blob.get("status") or "available")
         return base
 
@@ -691,6 +745,58 @@ def _row_for_spec(
         )
         base["fallback_used"] = False
         base["status"] = "available" if int(q.get("fallback_count") or 0) == 0 else "missing"
+        return base
+
+    if r == "v11:quality:player_component":
+        comp = raw.get("player_layer_component") if isinstance(raw.get("player_layer_component"), dict) else {}
+        if not comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            comp = (
+                comps_root.get("player_layer_component")
+                if isinstance(comps_root.get("player_layer_component"), dict)
+                else {}
+            )
+        q = comp.get("quality") if isinstance(comp.get("quality"), dict) else {}
+        base["value"] = _sf(q.get("inputs_available"))
+        base["unit"] = "conteggio"
+        base["formula"] = (
+            f"inputs_total={q.get('inputs_total')}; top_players_used={q.get('top_players_used')}; "
+            f"players_considered={q.get('players_considered')}; fallback_count={q.get('fallback_count')}"
+        )
+        base["fallback_used"] = False
+        base["status"] = "available" if int(q.get("fallback_count") or 0) == 0 else "missing"
+        return base
+
+    if r == "v11:ctx:top_shooter_presence":
+        comp = raw.get("player_layer_component") if isinstance(raw.get("player_layer_component"), dict) else {}
+        if not comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            comp = (
+                comps_root.get("player_layer_component")
+                if isinstance(comps_root.get("player_layer_component"), dict)
+                else {}
+            )
+        blob = offensive_inputs_as_map(comp).get("top_shooter_presence_status")
+        base["value"] = None
+        base["status"] = str(blob.get("status") if isinstance(blob, dict) else "not_applicable_until_lineups")
+        base["notes"] = "Non applicato fino a integrazione lineups."
+        base["fallback_used"] = False
+        return base
+
+    if r == "v11:ctx:top_shooter_absence":
+        comp = raw.get("player_layer_component") if isinstance(raw.get("player_layer_component"), dict) else {}
+        if not comp:
+            comps_root = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+            comp = (
+                comps_root.get("player_layer_component")
+                if isinstance(comps_root.get("player_layer_component"), dict)
+                else {}
+            )
+        blob = offensive_inputs_as_map(comp).get("top_shooter_absence_status")
+        base["value"] = None
+        base["status"] = str(blob.get("status") if isinstance(blob, dict) else "not_applicable_until_injuries_or_lineups")
+        base["notes"] = "Non applicato fino a integrazione injuries/lineups."
+        base["fallback_used"] = False
         return base
 
     if r.startswith("v04:formula_term:"):

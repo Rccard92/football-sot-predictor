@@ -1,22 +1,23 @@
-"""Manifest e trace baseline_v1_1_sot stage 5 (xG)."""
+"""Manifest e trace baseline_v1_1_sot stage 6 (player layer)."""
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V11_SOT
 from app.services.model_applied_variable_manifest import is_countable_role, manifest_for_model
 from app.services.model_applied_variable_trace import build_applied_variable_trace_side
 
 
-def test_v11_manifest_five_formula_thirty_one_inputs():
+def test_v11_manifest_six_formula_thirty_eight_inputs():
     specs = manifest_for_model(BASELINE_SOT_MODEL_VERSION_V11_SOT)
     formula_direct = [s for s in specs if s.application_role == "direct_formula_component"]
     comp_in = [s for s in specs if s.application_role == "component_input"]
-    assert len(formula_direct) == 5
+    assert len(formula_direct) == 6
     keys = {s.trace_key for s in formula_direct}
     assert "v11_term_offensive_production_component" in keys
     assert "v11_term_opponent_defensive_resistance_component" in keys
     assert "v11_term_home_away_split_component" in keys
     assert "v11_term_recent_form_component" in keys
     assert "v11_term_xg_chance_quality_component" in keys
-    assert len(comp_in) == 31
+    assert "v11_term_player_layer_component" in keys
+    assert len(comp_in) == 38
     off_in = [s for s in comp_in if s.parent_component == "offensive_production_component"]
     def_in = [s for s in comp_in if s.parent_component == "opponent_defensive_resistance_component"]
     split_in = [s for s in comp_in if s.parent_component == "home_away_split_component"]
@@ -27,6 +28,8 @@ def test_v11_manifest_five_formula_thirty_one_inputs():
     assert len(split_in) == 5
     assert len(recent_in) == 6
     assert len(xg_in) == 5
+    player_in = [s for s in comp_in if s.parent_component == "player_layer_component"]
+    assert len(player_in) == 7
 
 
 def test_v11_trace_from_saved_raw():
@@ -34,26 +37,26 @@ def test_v11_trace_from_saved_raw():
         "prediction_valid": True,
         "formula_quality_status": "ok",
         "formula": {
-            "terms_count": 5,
+            "terms_count": 6,
             "terms": [
                 {
                     "key": "offensive_production_component",
                     "value": 3.84,
-                    "weight": 0.30,
+                    "weight": 0.25,
                     "contribution": 1.15,
                     "status": "available",
                 },
                 {
                     "key": "opponent_defensive_resistance_component",
                     "value": 3.54,
-                    "weight": 0.25,
+                    "weight": 0.22,
                     "contribution": 0.89,
                     "status": "available",
                 },
                 {
                     "key": "home_away_split_component",
                     "value": 3.77,
-                    "weight": 0.15,
+                    "weight": 0.13,
                     "contribution": 0.57,
                     "status": "available",
                 },
@@ -67,11 +70,36 @@ def test_v11_trace_from_saved_raw():
                 {
                     "key": "xg_chance_quality_component",
                     "value": 3.50,
-                    "weight": 0.15,
+                    "weight": 0.12,
                     "contribution": 0.53,
                     "status": "available",
                 },
+                {
+                    "key": "player_layer_component",
+                    "value": 3.40,
+                    "weight": 0.13,
+                    "contribution": 0.44,
+                    "status": "available",
+                },
             ],
+        },
+        "player_layer_component": {
+            "value": 3.40,
+            "inputs": [
+                {
+                    "key": "top_players_sot_per90_signal",
+                    "label": "SOT/90 top",
+                    "raw_value": 0.8,
+                    "normalized_value": 3.2,
+                    "internal_weight": 0.28,
+                    "internal_contribution": 0.90,
+                    "source_path": "player_season_profiles.shots_on_per90",
+                    "sample_count": 5,
+                    "fallback_used": False,
+                    "status": "available",
+                },
+            ],
+            "quality": {"inputs_total": 9, "inputs_available": 7, "fallback_count": 0, "top_players_used": 5},
         },
         "offensive_production_component": {
             "value": 3.84,
@@ -195,6 +223,10 @@ def test_v11_trace_from_saved_raw():
     assert term_recent["value"] == 3.60
     term_xg = next(r for r in trace if r.get("trace_key") == "v11_term_xg_chance_quality_component")
     assert term_xg["value"] == 3.50
+    term_pl = next(r for r in trace if r.get("trace_key") == "v11_term_player_layer_component")
+    assert term_pl["value"] == 3.40
+    pl_inp = next(r for r in trace if r.get("trace_key") == "v11_player_input_top_players_sot_per90_signal")
+    assert pl_inp["value"] == 3.2
     assert len([r for r in trace if is_countable_role(str(r.get("application_role")))]) == len(
         [s for s in manifest_for_model(BASELINE_SOT_MODEL_VERSION_V11_SOT) if is_countable_role(s.application_role)],
     )
