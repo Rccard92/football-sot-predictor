@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -100,6 +101,34 @@ def _search_in_players(players: list[dict[str, Any]], query: str) -> list[dict[s
     return [p for p in players if _name_matches(str(p.get("name") or ""), query)]
 
 
+def _decimal_float(v: Decimal | float | int | None) -> float | None:
+    if v is None:
+        return None
+    return float(v)
+
+
+def _serialize_profile_match(prof: PlayerSeasonProfile) -> tuple[dict[str, Any], str | None]:
+    """Ritorna (entry possible_matches, warning opzionale se registry assente)."""
+    reg = prof.registry
+    warning = None
+    player_name = reg.name if reg is not None else None
+    if reg is None:
+        warning = f"Profilo api_player_id={prof.api_player_id} senza player_registry collegato"
+    return (
+        {
+            "source": "player_season_profiles",
+            "player_name": player_name,
+            "api_player_id": prof.api_player_id,
+            "team_id": prof.team_id,
+            "api_team_id": prof.api_team_id,
+            "shooting_impact_score": _decimal_float(prof.shooting_impact_score),
+            "shots_on_per90": _decimal_float(prof.shots_on_per90),
+            "team_sot_share": _decimal_float(prof.team_sot_share),
+        },
+        warning,
+    )
+
+
 def _build_player_search(
     db: Session,
     *,
@@ -127,36 +156,36 @@ def _build_player_search(
         if _name_matches(r.get("player_name"), q)
     ]
     profiles = db.scalars(
-        select(PlayerSeasonProfile).where(
+        select(PlayerSeasonProfile)
+        .join(PlayerRegistry, PlayerRegistry.id == PlayerSeasonProfile.player_id)
+        .where(
             PlayerSeasonProfile.season == int(season_year),
             PlayerSeasonProfile.league_id == int(league_id),
             PlayerSeasonProfile.api_team_id.in_([api_home_team_id, api_away_team_id]),
-            PlayerSeasonProfile.player_name.ilike(f"%{q}%"),
-        ),
+            PlayerRegistry.name.ilike(f"%{q}%"),
+        )
+        .options(joinedload(PlayerSeasonProfile.registry)),
     ).all()
 
     possible: list[dict[str, Any]] = []
+    profile_warnings: list[str] = []
     for p in by_fixture + home + away + league:
         possible.append({"source": "api", **p})
     for reg in registry_rows:
         possible.append(
             {
                 "source": "player_registry",
-                "name": reg.name,
+                "player_name": reg.name,
                 "api_player_id": reg.api_player_id,
             },
         )
     for row in db_avail:
         possible.append({"source": "player_availability", **row})
     for prof in profiles:
-        possible.append(
-            {
-                "source": "player_season_profiles",
-                "name": prof.player_name,
-                "api_player_id": prof.api_player_id,
-                "api_team_id": prof.api_team_id,
-            },
-        )
+        entry, warn = _serialize_profile_match(prof)
+        possible.append(entry)
+        if warn:
+            profile_warnings.append(warn)
 
     return {
         "query": q,
@@ -167,6 +196,7 @@ def _build_player_search(
         "found_in_db_availability": len(db_avail) > 0,
         "found_in_player_registry": len(registry_rows) > 0,
         "found_in_player_season_profiles": len(profiles) > 0,
+        "profile_warnings": profile_warnings,
         "possible_matches": possible[:50],
     }
 
@@ -342,6 +372,8 @@ def build_availability_raw_check(
         db_teams=db_teams,
         player_search=player_search_block,
     )
+    if player_search_block:
+        diagnosis = diagnosis + list(player_search_block.get("profile_warnings") or [])
 
     ko = fx.kickoff_at
     return {
