@@ -149,9 +149,56 @@ class ApiFootballClient:
         body = self.get("fixtures/lineups", {"fixture": fixture_id})
         return list(body.get("response") or [])
 
+    @staticmethod
+    def injuries_response_items(body: dict[str, Any]) -> tuple[list[dict[str, Any]], list[Any]]:
+        """Normalizza response injuries + eventuali errori nel body."""
+        errs = body.get("errors")
+        err_list: list[Any] = []
+        if errs:
+            if isinstance(errs, dict):
+                err_list = [f"{k}: {v}" for k, v in errs.items()]
+            elif isinstance(errs, list):
+                err_list = list(errs)
+            else:
+                err_list = [str(errs)]
+        items = body.get("response") or []
+        if not isinstance(items, list):
+            items = []
+        return [x for x in items if isinstance(x, dict)], err_list
+
     def get_injuries(self, league: int, season: int) -> list[dict[str, Any]]:
         body = self.get("injuries", {"league": league, "season": season})
-        return list(body.get("response") or [])
+        items, _ = self.injuries_response_items(body)
+        return items
+
+    def get_injuries_by_fixture(self, api_fixture_id: int) -> list[dict[str, Any]]:
+        body = self.get("injuries", {"fixture": int(api_fixture_id)})
+        items, _ = self.injuries_response_items(body)
+        return items
+
+    def get_injuries_by_team(self, league: int, season: int, team: int) -> list[dict[str, Any]]:
+        body = self.get("injuries", {"league": league, "season": season, "team": int(team)})
+        items, _ = self.injuries_response_items(body)
+        return items
+
+    def get_league_season_coverage(self, league_id: int, season: int) -> dict[str, Any]:
+        """GET /leagues?id=&season= — estrae coverage stagione se presente."""
+        body = self.get("leagues", {"id": int(league_id), "season": int(season)})
+        items = list(body.get("response") or [])
+        if not items:
+            return {}
+        picked = items[0] if isinstance(items[0], dict) else {}
+        seasons = picked.get("seasons") or []
+        if not isinstance(seasons, list):
+            return {}
+        for s in seasons:
+            if not isinstance(s, dict):
+                continue
+            if int(s.get("year") or 0) == int(season):
+                cov = s.get("coverage")
+                return dict(cov) if isinstance(cov, dict) else {}
+        cov = picked.get("coverage")
+        return dict(cov) if isinstance(cov, dict) else {}
 
     def get_head_to_head(self, team_a_api_id: int, team_b_api_id: int) -> list[dict[str, Any]]:
         h2h = f"{team_a_api_id}-{team_b_api_id}"

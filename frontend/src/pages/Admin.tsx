@@ -19,6 +19,7 @@ import {
   getDataHealth,
   getIngestionRuns,
   getTeamShotStatsSummary,
+  getAvailabilityRawCheck,
   getAvailabilitySummary,
   getPlayerMatchDbSummary,
   getModelStatusWithOpts,
@@ -66,6 +67,8 @@ function pickMessage(payload: unknown, okFallback: string): string {
         `Indisponibili: status ${String(o.status ?? '—')}`,
         `fixture controllate ${String(o.fixtures_checked ?? '—')}`,
         `record upsert ${String(o.availability_records_upserted ?? '—')}`,
+        `fixture-level ${String(o.records_fixture_level ?? '—')} · team-level ${String(o.records_team_level ?? '—')}`,
+        `API calls ${String(o.api_calls ?? '—')} (fx ${String(o.api_calls_by_fixture ?? '—')} / team ${String(o.api_calls_by_team ?? '—')})`,
         `registry ok ${String(o.players_matched_to_registry ?? '—')}`,
         `registry mancanti ${String(o.players_not_matched_to_registry ?? '—')}`,
         top ? `top shooter segnalati ${top}` : '',
@@ -73,6 +76,19 @@ function pickMessage(payload: unknown, okFallback: string): string {
       ]
         .filter(Boolean)
         .join(' · ')
+    }
+    if (Array.isArray(o.diagnosis) && o.diagnosis.length > 0) {
+      const ps = o.player_search as Record<string, unknown> | undefined
+      const q = ps?.query ? String(ps.query) : ''
+      const apiChecks = o.api_checks as Record<string, { results?: number }> | undefined
+      const bf = apiChecks?.by_fixture?.results ?? 0
+      const ht = apiChecks?.home_team?.results ?? 0
+      const at = apiChecks?.away_team?.results ?? 0
+      return [
+        `Debug availability${q ? ` (${q})` : ''}`,
+        `by_fixture ${bf} · home ${ht} · away ${at}`,
+        `diagnosi: ${o.diagnosis.slice(0, 3).join(' | ')}`,
+      ].join(' · ')
     }
     if (typeof o.active_records === 'number' && o.season != null) {
       return [
@@ -206,6 +222,8 @@ export function Admin() {
   const [modelStatus, setModelStatus] = useState<ModelStatusResponse | null>(null)
   const [upcomingActive, setUpcomingActive] = useState<UpcomingActiveResponse | null>(null)
   const [cardsError, setCardsError] = useState<string | null>(null)
+  const [availDebugFixtureId, setAvailDebugFixtureId] = useState('')
+  const [availDebugPlayerSearch, setAvailDebugPlayerSearch] = useState('Rovella')
 
   const loadCards = useCallback(async () => {
     setCardsError(null)
@@ -457,6 +475,20 @@ export function Admin() {
       run: () => adminTestInjuriesApi(SEASON),
     },
     {
+      id: 'availability-raw-check',
+      label: 'Debug indisponibili fixture',
+      description:
+        'Confronta injuries API (fixture/team/league) vs DB. Usa fixture_id interno; opzionale player_search (es. Rovella).',
+      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/availability-raw-check`,
+      run: () => {
+        const fid = parseInt(availDebugFixtureId.trim(), 10)
+        if (!Number.isFinite(fid) || fid < 1) {
+          return Promise.reject(new Error('Inserisci un fixture_id numerico valido'))
+        }
+        return getAvailabilityRawCheck(SEASON, fid, availDebugPlayerSearch.trim() || undefined)
+      },
+    },
+    {
       id: 'profiles-summary',
       label: 'Riepilogo profili giocatori (GET)',
       endpoint: `GET /api/features/player-sot-profiles/serie-a/${SEASON}/summary`,
@@ -674,6 +706,29 @@ export function Admin() {
         </Section>
 
         <Section title="3 — Diagnostica" subtitle="Letture e controlli senza modificare il modello v0.4.">
+          <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+            <p className="text-xs font-medium text-violet-950">Parametri debug indisponibili fixture</p>
+            <label className="mt-2 block text-[11px] text-slate-600">
+              fixture_id (interno DB)
+              <input
+                type="number"
+                value={availDebugFixtureId}
+                onChange={(e) => setAvailDebugFixtureId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="es. 1234"
+              />
+            </label>
+            <label className="mt-2 block text-[11px] text-slate-600">
+              player_search (opzionale)
+              <input
+                type="text"
+                value={availDebugPlayerSearch}
+                onChange={(e) => setAvailDebugPlayerSearch(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="Rovella"
+              />
+            </label>
+          </div>
           <div className="flex flex-col gap-3">
             {section3.map((a) => (
               <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />

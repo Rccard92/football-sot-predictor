@@ -69,3 +69,44 @@ export type AvailabilitySeasonSummary = {
   active_with_registry?: number
   by_source?: Record<string, number>
 }
+
+export type AvailabilityApiCheckBlock = {
+  request: string
+  results: number
+  errors: string[]
+  players: Record<string, unknown>[]
+}
+
+export type AvailabilityRawCheckResponse = {
+  status: string
+  season: number
+  league_id?: number
+  fixture?: Record<string, unknown>
+  coverage?: {
+    injuries?: boolean
+    lineups?: boolean
+    players?: boolean
+    fixtures_statistics?: unknown
+    raw?: Record<string, unknown>
+  }
+  api_checks?: {
+    by_fixture?: AvailabilityApiCheckBlock
+    home_team?: AvailabilityApiCheckBlock
+    away_team?: AvailabilityApiCheckBlock
+    league_season?: AvailabilityApiCheckBlock
+  }
+  db_records_for_fixture?: Record<string, unknown>[]
+  db_records_for_teams?: Record<string, unknown>[]
+  player_search?: {
+    query: string
+    found_in_api_by_fixture?: boolean
+    found_in_api_home_team?: boolean
+    found_in_api_away_team?: boolean
+    found_in_api_league_season?: boolean
+    found_in_db_availability?: boolean
+    found_in_player_registry?: boolean
+    found_in_player_season_profiles?: boolean
+    possible_matches?: Record<string, unknown>[]
+  }
+  diagnosis?: string[]
+}

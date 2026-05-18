@@ -22,12 +22,25 @@ def test_parse_injuries_item_maps_status():
     assert rec.source == "api_football_injuries"
 
 
-def test_parse_injuries_suspension():
+def test_parse_injuries_suspension_yellow_cards():
     item = {**SAMPLE_INJURY, "type": "Yellow Cards", "reason": "Accumulation"}
     rec = parse_injuries_item(item)
     assert rec is not None
     assert rec.availability_status == "suspended"
     assert rec.availability_type == "suspension"
+
+
+def test_parse_injuries_player_type_squalifica():
+    item = {
+        "player": {"id": 1, "name": "Nicolò Rovella", "type": "Yellow Cards", "reason": "Squalifica"},
+        "team": {"id": 487, "name": "Lazio"},
+        "fixture": {"id": 100},
+    }
+    rec = parse_injuries_item(item)
+    assert rec is not None
+    assert rec.availability_status == "suspended"
+    assert rec.availability_type == "suspension"
+    assert rec.reason == "Squalifica"
 
 
 def test_parse_injuries_skip_without_player():

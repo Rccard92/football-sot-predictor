@@ -1,6 +1,10 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
-import type { AvailabilitySeasonSummary, FixtureAvailabilityResponse } from '../types/fixtureAvailability'
+import type {
+  AvailabilityRawCheckResponse,
+  AvailabilitySeasonSummary,
+  FixtureAvailabilityResponse,
+} from '../types/fixtureAvailability'
 import type { FixtureLineupsResponse } from '../types/fixtureLineups'
 import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
 
@@ -1345,6 +1349,21 @@ export async function getAvailabilitySummary(season: number): Promise<Availabili
     throw new Error(extractErrorMessage(body, res.statusText))
   }
   return body as AvailabilitySeasonSummary
+}
+
+export async function getAvailabilityRawCheck(
+  season: number,
+  fixtureId: number,
+  playerSearch?: string,
+  opts?: AdminRequestOpts,
+): Promise<AvailabilityRawCheckResponse> {
+  const params = new URLSearchParams()
+  params.set('fixture_id', String(fixtureId))
+  if (playerSearch?.trim()) params.set('player_search', playerSearch.trim())
+  return adminGetJson<AvailabilityRawCheckResponse>(
+    `/api/admin/debug/serie-a/${season}/availability-raw-check?${params.toString()}`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
+  )
 }
 
 export async function buildPlayerSotProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {

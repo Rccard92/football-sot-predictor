@@ -1,4 +1,4 @@
-"""Ingestion indisponibili Serie A (injuries API → player_availability)."""
+"""Ingestion indisponibili Serie A (injuries API multi-source → player_availability)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.constants import UPCOMING_EXCLUDED_STATUSES
 from app.models import Fixture, PlayerSeasonProfile, Season, Team
@@ -20,6 +20,7 @@ from app.services.ingestion_service import IngestionService
 logger = logging.getLogger(__name__)
 
 AVAILABILITY_HORIZON_DAYS = 7
+MAX_FIXTURES_MULTI_SOURCE = 10
 
 
 def _utc_now() -> datetime:
@@ -43,16 +44,19 @@ def _profile_map_for_team(
     return {int(p.api_player_id): p for p in rows}
 
 
-def _upcoming_fixture_api_ids(
+def _upcoming_fixtures(
     db: Session,
     *,
     season_row: Season,
-) -> set[int]:
+) -> list[Fixture]:
     now = _utc_now()
     horizon = now + timedelta(days=AVAILABILITY_HORIZON_DAYS)
-    api_ids: set[int] = set()
+    out: list[Fixture] = []
     fixtures = db.scalars(
-        select(Fixture).where(Fixture.season_id == int(season_row.id)).order_by(Fixture.kickoff_at.asc()),
+        select(Fixture)
+        .options(joinedload(Fixture.home_team), joinedload(Fixture.away_team))
+        .where(Fixture.season_id == int(season_row.id))
+        .order_by(Fixture.kickoff_at.asc()),
     ).all()
     for fx in fixtures:
         st = (fx.status or "").strip().upper()
@@ -62,16 +66,79 @@ def _upcoming_fixture_api_ids(
         if ko.tzinfo is None:
             ko = ko.replace(tzinfo=timezone.utc)
         if now <= ko <= horizon:
-            api_ids.add(int(fx.api_fixture_id))
-    return api_ids
+            out.append(fx)
+    return out[:MAX_FIXTURES_MULTI_SOURCE]
+
+
+def _dedupe_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    pl = item.get("player") if isinstance(item.get("player"), dict) else {}
+    tm = item.get("team") if isinstance(item.get("team"), dict) else {}
+    fx = item.get("fixture") if isinstance(item.get("fixture"), dict) else {}
+    pid = pl.get("id")
+    tid = tm.get("id")
+    fid = fx.get("id")
+    reason = item.get("reason") or (pl.get("reason") if isinstance(pl, dict) else None)
+    return (pid, tid, fid, str(reason or "")[:64])
+
+
+def _merge_items(*batches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    out: list[dict[str, Any]] = []
+    for batch in batches:
+        for item in batch:
+            if not isinstance(item, dict):
+                continue
+            key = _dedupe_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+    return out
+
+
+def _fetch_for_fixture(
+    api: ApiFootballClient,
+    *,
+    league_id: int,
+    season_year: int,
+    fx: Fixture,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Ritorna (items merged, calls_by_fixture, calls_by_team)."""
+    api_fx = int(fx.api_fixture_id)
+    home = fx.home_team
+    away = fx.away_team
+    batches: list[list[dict[str, Any]]] = []
+    calls_fixture = 0
+    calls_team = 0
+
+    try:
+        batches.append(api.get_injuries_by_fixture(api_fx))
+        calls_fixture += 1
+    except ApiFootballError as exc:
+        logger.warning("injuries by fixture %s: %s", api_fx, exc)
+
+    if home is not None:
+        try:
+            batches.append(api.get_injuries_by_team(league_id, season_year, int(home.api_team_id)))
+            calls_team += 1
+        except ApiFootballError as exc:
+            logger.warning("injuries home team %s: %s", home.api_team_id, exc)
+    if away is not None:
+        try:
+            batches.append(api.get_injuries_by_team(league_id, season_year, int(away.api_team_id)))
+            calls_team += 1
+        except ApiFootballError as exc:
+            logger.warning("injuries away team %s: %s", away.api_team_id, exc)
+
+    return _merge_items(*batches), calls_fixture, calls_team
 
 
 def _item_in_scope(
     item: dict[str, Any],
     *,
-    api_fixture_ids: set[int] | None,
-    api_team_ids: set[int] | None,
-    single_api_fixture_id: int | None,
+    api_fixture_id: int | None,
+    api_team_ids: set[int],
+    allow_team_level: bool,
 ) -> bool:
     fx = item.get("fixture") if isinstance(item.get("fixture"), dict) else {}
     api_fx = None
@@ -89,18 +156,16 @@ def _item_in_scope(
     except (TypeError, ValueError):
         pass
 
-    if single_api_fixture_id is not None:
-        return api_fx == single_api_fixture_id
-
-    if api_team_ids is not None and api_tm is not None and api_tm not in api_team_ids:
+    if api_tm is not None and api_tm not in api_team_ids:
         return False
 
-    if api_fixture_ids is not None:
-        if api_fx is not None:
-            return api_fx in api_fixture_ids
-        return False
+    if api_fixture_id is not None and api_fx == api_fixture_id:
+        return True
 
-    return True
+    if allow_team_level and api_tm is not None and api_tm in api_team_ids:
+        return True
+
+    return False
 
 
 def ingest_serie_a_availability(
@@ -117,43 +182,54 @@ def ingest_serie_a_availability(
     league_id = int(season_row.league_id)
     api = client or ApiFootballClient()
 
-    api_fixture_ids: set[int] | None = None
-    api_team_ids: set[int] | None = None
-    single_api_fixture_id: int | None = None
+    target_fixtures: list[Fixture] = []
     scope_fixture_db_ids: list[int] = []
     scope_team_db_ids: list[int] = []
-    fixtures_checked = 0
-    teams_checked = 0
+    api_team_ids_scope: set[int] = set()
 
     if fixture_id is not None:
         fx = db.scalar(
-            select(Fixture).where(
+            select(Fixture)
+            .options(joinedload(Fixture.home_team), joinedload(Fixture.away_team))
+            .where(
                 Fixture.id == int(fixture_id),
                 Fixture.season_id == int(season_row.id),
             ),
         )
         if fx is None:
             raise ValueError(f"Fixture {fixture_id} non trovata per stagione {season_year}")
-        single_api_fixture_id = int(fx.api_fixture_id)
+        target_fixtures = [fx]
         scope_fixture_db_ids = [int(fx.id)]
-        fixtures_checked = 1
-        teams_checked = 2
+        if fx.home_team:
+            api_team_ids_scope.add(int(fx.home_team.api_team_id))
+            scope_team_db_ids.append(int(fx.home_team_id))
+        if fx.away_team:
+            api_team_ids_scope.add(int(fx.away_team.api_team_id))
+            if fx.away_team_id not in scope_team_db_ids:
+                scope_team_db_ids.append(int(fx.away_team_id))
     elif team_id is not None:
         team = db.scalar(select(Team).where(Team.id == int(team_id)))
         if team is None:
             raise ValueError(f"Team {team_id} non trovato")
-        api_team_ids = {int(team.api_team_id)}
+        api_team_ids_scope = {int(team.api_team_id)}
         scope_team_db_ids = [int(team.id)]
-        teams_checked = 1
-        api_fixture_ids = _upcoming_fixture_api_ids(db, season_row=season_row)
-        fixtures_checked = len(api_fixture_ids)
+        target_fixtures = [
+            f
+            for f in _upcoming_fixtures(db, season_row=season_row)
+            if int(f.home_team_id) == int(team_id) or int(f.away_team_id) == int(team_id)
+        ]
     else:
-        api_fixture_ids = _upcoming_fixture_api_ids(db, season_row=season_row)
-        fixtures_checked = len(api_fixture_ids)
-        team_rows = db.scalars(
-            select(Team).where(Team.league_id == league_id),
-        ).all()
-        teams_checked = len(team_rows)
+        target_fixtures = _upcoming_fixtures(db, season_row=season_row)
+        for fx in target_fixtures:
+            if fx.home_team:
+                api_team_ids_scope.add(int(fx.home_team.api_team_id))
+            if fx.away_team:
+                api_team_ids_scope.add(int(fx.away_team.api_team_id))
+
+    fixtures_checked = len(target_fixtures)
+    teams_checked = len(api_team_ids_scope) or len(
+        db.scalars(select(Team).where(Team.league_id == league_id)).all(),
+    )
 
     if force:
         deactivate_scope(
@@ -164,57 +240,121 @@ def ingest_serie_a_availability(
             team_ids=scope_team_db_ids or None,
         )
 
+    all_items: list[dict[str, Any]] = []
     api_calls = 0
+    api_calls_by_fixture = 0
+    api_calls_by_team = 0
     errors: list[dict[str, Any]] = []
-    try:
-        items = api.get_injuries(league_id, int(season_year))
-        api_calls = 1
-    except ApiFootballError as exc:
-        return {
-            "status": "error",
-            "season": int(season_year),
-            "fixtures_checked": fixtures_checked,
-            "teams_checked": teams_checked,
-            "api_calls": 0,
-            "availability_records_upserted": 0,
-            "players_matched_to_registry": 0,
-            "players_not_matched_to_registry": 0,
-            "top_shooters_flagged": [],
-            "errors": [{"error": "api_error", "message": str(exc)[:500]}],
-        }
-    except Exception as exc:  # noqa: BLE001
-        return {
-            "status": "error",
-            "season": int(season_year),
-            "fixtures_checked": fixtures_checked,
-            "teams_checked": teams_checked,
-            "api_calls": 0,
-            "availability_records_upserted": 0,
-            "players_matched_to_registry": 0,
-            "players_not_matched_to_registry": 0,
-            "top_shooters_flagged": [],
-            "errors": [{"error": "unexpected_error", "message": str(exc)[:500]}],
-        }
 
-    if not isinstance(items, list):
-        items = []
+    if target_fixtures:
+        for fx in target_fixtures:
+            try:
+                merged, cf, ct = _fetch_for_fixture(
+                    api,
+                    league_id=league_id,
+                    season_year=int(season_year),
+                    fx=fx,
+                )
+                all_items.extend(merged)
+                api_calls_by_fixture += cf
+                api_calls_by_team += ct
+                api_calls += cf + ct
+            except Exception as exc:  # noqa: BLE001
+                errors.append(
+                    {
+                        "fixture_id": int(fx.id),
+                        "api_fixture_id": int(fx.api_fixture_id),
+                        "error": "fetch_failed",
+                        "message": str(exc)[:500],
+                    },
+                )
+    elif api_team_ids_scope:
+        for api_tid in api_team_ids_scope:
+            try:
+                batch = api.get_injuries_by_team(league_id, int(season_year), int(api_tid))
+                all_items.extend(batch)
+                api_calls_by_team += 1
+                api_calls += 1
+            except ApiFootballError as exc:
+                errors.append({"api_team_id": api_tid, "error": "api_error", "message": str(exc)[:500]})
+    else:
+        try:
+            all_items = api.get_injuries(league_id, int(season_year))
+            api_calls = 1
+        except ApiFootballError as exc:
+            return _error_summary(
+                season_year,
+                fixtures_checked,
+                teams_checked,
+                [{"error": "api_error", "message": str(exc)[:500]}],
+            )
+
+    # Dedupe globale dopo merge multi-fixture
+    all_items = _merge_items(all_items)
 
     matched = 0
     not_matched = 0
     upserted = 0
+    records_fixture_level = 0
+    records_team_level = 0
     top_shooters_flagged: list[dict[str, Any]] = []
     top_cache: dict[int, set[int]] = {}
 
-    for raw in items:
+    if fixture_id is not None and target_fixtures:
+        single_fx = target_fixtures[0]
+        scope_api_fx = int(single_fx.api_fixture_id)
+        scope_teams = api_team_ids_scope
+    else:
+        scope_api_fx = None
+        scope_teams = api_team_ids_scope
+
+    for raw in all_items:
         if not isinstance(raw, dict):
             continue
-        if not _item_in_scope(
-            raw,
-            api_fixture_ids=api_fixture_ids,
-            api_team_ids=api_team_ids,
-            single_api_fixture_id=single_api_fixture_id,
-        ):
-            continue
+
+        item_api_fx = None
+        fx_block = raw.get("fixture") if isinstance(raw.get("fixture"), dict) else {}
+        try:
+            if fx_block.get("id") is not None:
+                item_api_fx = int(fx_block["id"])
+        except (TypeError, ValueError):
+            pass
+
+        if target_fixtures:
+            in_scope = False
+            for fx in target_fixtures:
+                teams = set()
+                if fx.home_team:
+                    teams.add(int(fx.home_team.api_team_id))
+                if fx.away_team:
+                    teams.add(int(fx.away_team.api_team_id))
+                if _item_in_scope(
+                    raw,
+                    api_fixture_id=int(fx.api_fixture_id),
+                    api_team_ids=teams,
+                    allow_team_level=True,
+                ):
+                    in_scope = True
+                    break
+            if not in_scope:
+                continue
+        elif scope_teams:
+            if not _item_in_scope(
+                raw,
+                api_fixture_id=scope_api_fx,
+                api_team_ids=scope_teams,
+                allow_team_level=True,
+            ):
+                continue
+        elif api_team_ids_scope:
+            if not _item_in_scope(
+                raw,
+                api_fixture_id=None,
+                api_team_ids=api_team_ids_scope,
+                allow_team_level=True,
+            ):
+                continue
+
         parsed = parse_injuries_item(raw)
         if parsed is None:
             continue
@@ -226,6 +366,10 @@ def ingest_serie_a_availability(
                 parsed=parsed,
             )
             upserted += 1
+            if parsed.api_fixture_id is not None:
+                records_fixture_level += 1
+            else:
+                records_team_level += 1
             if reg_ok:
                 matched += 1
             else:
@@ -287,9 +431,37 @@ def ingest_serie_a_availability(
         "fixtures_checked": fixtures_checked,
         "teams_checked": teams_checked,
         "api_calls": api_calls,
+        "api_calls_by_fixture": api_calls_by_fixture,
+        "api_calls_by_team": api_calls_by_team,
         "availability_records_upserted": upserted,
+        "records_fixture_level": records_fixture_level,
+        "records_team_level": records_team_level,
         "players_matched_to_registry": matched,
         "players_not_matched_to_registry": not_matched,
         "top_shooters_flagged": top_shooters_flagged,
+        "errors": errors,
+    }
+
+
+def _error_summary(
+    season_year: int,
+    fixtures_checked: int,
+    teams_checked: int,
+    errors: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "status": "error",
+        "season": int(season_year),
+        "fixtures_checked": fixtures_checked,
+        "teams_checked": teams_checked,
+        "api_calls": 0,
+        "api_calls_by_fixture": 0,
+        "api_calls_by_team": 0,
+        "availability_records_upserted": 0,
+        "records_fixture_level": 0,
+        "records_team_level": 0,
+        "players_matched_to_registry": 0,
+        "players_not_matched_to_registry": 0,
+        "top_shooters_flagged": [],
         "errors": errors,
     }

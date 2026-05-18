@@ -35,21 +35,52 @@ def _norm_reason(reason: str | None) -> str | None:
     return s[:512]
 
 
+def _extract_type_reason(item: dict[str, Any], pl: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Priorità: player.type / player.reason, poi root type / reason."""
+    raw_type = pl.get("type")
+    if raw_type is None:
+        raw_type = item.get("type")
+    if isinstance(raw_type, dict):
+        raw_type = raw_type.get("type")
+
+    reason_raw = pl.get("reason")
+    if reason_raw is None:
+        reason_raw = item.get("reason")
+
+    api_type = str(raw_type).strip() if raw_type is not None else None
+    reason = _norm_reason(str(reason_raw) if reason_raw is not None else None)
+    return api_type or None, reason
+
+
 def _map_status_type(api_type: str | None, reason: str | None) -> tuple[str, str | None]:
+    combined = f"{api_type or ''} {reason or ''}".strip().lower()
     t = (api_type or "").strip().lower()
     r = (reason or "").strip().lower()
 
-    if "suspension" in t or "yellow card" in t or "red card" in t or "suspended" in t:
+    suspension_markers = (
+        "suspension",
+        "suspended",
+        "yellow card",
+        "red card",
+        "cards",
+        "squalifica",
+        "squalificato",
+        "ban",
+        "accumulation",
+    )
+    if any(m in combined for m in suspension_markers):
         return "suspended", "suspension"
-    if "doubt" in t or "doubtful" in t:
-        return "doubtful", "injury" if "injur" in r or "muscle" in r or "knee" in r else "other"
-    if "missing fixture" in t or "not available" in t:
-        return "out", "injury" if "injur" in r or not r else "other"
-    if "injur" in t or "injury" in r or "muscle" in r or "knee" in r or "hamstring" in r:
-        return "injured", "injury"
-    if "illness" in t or "ill" in r:
+
+    if "doubt" in combined or "doubtful" in combined:
+        return "doubtful", "injury" if any(x in r for x in ("injur", "muscle", "knee")) else "other"
+    if "missing fixture" in combined or "not available" in combined:
+        return "out", "injury" if any(x in r for x in ("injur", "muscle", "knee")) or not r else "other"
+    injury_markers = ("injur", "injured", "muscle", "knee", "ankle", "hamstring", "groin", "calf")
+    if any(m in combined for m in injury_markers):
+        return "injured" if "injured" in combined else "out", "injury"
+    if "illness" in combined or "ill" in r:
         return "out", "illness"
-    if "personal" in t:
+    if "personal" in combined:
         return "unavailable", "personal"
     if t:
         return "out", t[:32]
@@ -109,14 +140,7 @@ def parse_injuries_item(item: dict[str, Any]) -> ParsedAvailabilityRecord | None
         pass
     reported_at = _parse_datetime(fx.get("date"))
 
-    raw_type = item.get("type")
-    if isinstance(raw_type, dict):
-        raw_type = raw_type.get("type")
-    api_type = str(raw_type) if raw_type is not None else None
-    reason_raw = item.get("reason")
-    if reason_raw is None and isinstance(pl.get("reason"), str):
-        reason_raw = pl.get("reason")
-    reason = _norm_reason(str(reason_raw) if reason_raw is not None else None)
+    api_type, reason = _extract_type_reason(item, pl)
     status, atype = _map_status_type(api_type, reason)
 
     return ParsedAvailabilityRecord(
