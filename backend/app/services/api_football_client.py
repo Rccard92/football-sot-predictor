@@ -208,9 +208,25 @@ class ApiFootballClient:
         return items
 
     def get_sidelined_by_player(self, api_player_id: int) -> list[dict[str, Any]]:
-        body = self.get("sidelined", {"player": int(api_player_id)})
-        items, _ = self.injuries_response_items(body)
-        return items
+        try:
+            body = self.get("sidelined", {"player": int(api_player_id)})
+            items, errs = self.injuries_response_items(body)
+            if errs:
+                logger.warning(
+                    "sidelined player=%s parse warnings: %s",
+                    api_player_id,
+                    errs[:3],
+                )
+            return items if isinstance(items, list) else []
+        except ApiFootballError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "get_sidelined_by_player player=%s failed: %s",
+                api_player_id,
+                exc,
+            )
+            return []
 
     def get_league_season_coverage(self, league_id: int, season: int) -> dict[str, Any]:
         """GET /leagues?id=&season= — league_id = api_league_id API-Football."""

@@ -203,15 +203,53 @@ def admin_ingest_serie_a_lineups(
     return jsonable_encoder(summary)
 
 
+def _availability_upcoming_error_payload(
+    exc: Exception,
+    *,
+    season: int,
+    phase: str = "route_handler",
+    use_sidelined: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    import traceback as tb
+
+    tail = "".join(tb.format_exception(type(exc), exc, exc.__traceback__)[-4:]).strip()[:800]
+    return {
+        "status": "error",
+        "phase": phase,
+        "message": str(exc)[:500],
+        "season": int(season),
+        "dry_run": bool(dry_run),
+        "use_sidelined": bool(use_sidelined),
+        "providers": {
+            "api_football_injuries": {"called": False, "status": "error", "error": str(exc)[:300]},
+            "api_football_sidelined": {
+                "called": False,
+                "status": "skipped" if not use_sidelined else "error",
+            },
+        },
+        "errors": [
+            {
+                "phase": phase,
+                "type": exc.__class__.__name__,
+                "message": str(exc)[:500],
+                "traceback_tail": tail,
+            },
+        ],
+    }
+
+
 @router.post("/serie-a/{season}/availability-upcoming", response_model=None)
 def admin_ingest_serie_a_availability_upcoming(
     season: int,
     days_ahead: int = Query(14, ge=1, le=60),
     force: bool = Query(False),
     fixture_id: int | None = Query(None),
+    use_sidelined: bool = Query(True),
+    dry_run: bool = Query(False),
     db: Session = Depends(get_db),
 ):
-    """Ingestione operativa multi-source: ids batch + league/season filtrato + fixture direct."""
+    """Ingestione provider injuries + sidelined (resiliente: JSON anche su errori provider)."""
     _require_api_football_key()
     from app.services.availability.availability_upcoming_ingestion import (
         ingest_serie_a_availability_upcoming,
@@ -224,15 +262,33 @@ def admin_ingest_serie_a_availability_upcoming(
             days_ahead=int(days_ahead),
             force=force,
             fixture_id=fixture_id,
+            use_sidelined=use_sidelined,
+            dry_run=dry_run,
         )
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("availability-upcoming: errore database")
-        raise HTTPException(status_code=503, detail="Database error") from exc
+        payload = _availability_upcoming_error_payload(
+            exc,
+            season=season,
+            phase="database",
+            use_sidelined=use_sidelined,
+            dry_run=dry_run,
+        )
+        return JSONResponse(status_code=200, content=jsonable_encoder(payload))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if summary.get("status") == "error":
-        return JSONResponse(status_code=502, content=jsonable_encoder(summary))
-    return jsonable_encoder(summary)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[availability-upcoming] unhandled in route")
+        payload = _availability_upcoming_error_payload(
+            exc,
+            season=season,
+            phase="route_handler",
+            use_sidelined=use_sidelined,
+            dry_run=dry_run,
+        )
+        return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+    return JSONResponse(status_code=200, content=jsonable_encoder(summary))
 
 
 @router.post("/serie-a/{season}/availability", response_model=None)

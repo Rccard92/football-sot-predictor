@@ -63,3 +63,57 @@ def test_sidelined_provider_fetches_by_player(mock_top_ids):
     assert len(result.candidates) >= 1
     assert result.candidates[0].source == "api_football_sidelined"
     assert result.candidates[0].api_fixture_id == 1378236
+
+
+def test_sidelined_not_available_without_client_method():
+    fx = MagicMock()
+    fx.id = 1
+    fx.api_fixture_id = 100
+    fx.home_team = MagicMock(api_team_id=487, id=10, name="H")
+    fx.away_team = None
+
+    api = MagicMock(spec=[])
+    ctx = ProviderContext(
+        db=MagicMock(),
+        season_year=2025,
+        league_internal_id=1,
+        api_league_id=135,
+        upcoming_fixtures=[fx],
+        upcoming_api_fixture_ids=[100],
+        fx_by_api_id={100: fx},
+        api_client=api,
+    )
+
+    result = ApiFootballSidelinedProvider().fetch_candidates(ctx)
+    assert result.status == "not_available"
+    assert result.called is False
+
+
+@patch("app.services.availability.providers.api_football_sidelined_provider._top_api_player_ids")
+def test_sidelined_skips_team_without_api_id(mock_top_ids):
+    mock_top_ids.return_value = [(1, "P")]
+    fx = MagicMock()
+    fx.id = 1
+    fx.api_fixture_id = 100
+    fx.kickoff_at = MagicMock()
+    fx.kickoff_at.date.return_value = MagicMock()
+    fx.home_team = MagicMock(api_team_id=None, id=10, name="H")
+    fx.away_team = MagicMock(api_team_id=499, id=11, name="A")
+
+    api = MagicMock()
+    api.get_sidelined_by_player.return_value = []
+
+    ctx = ProviderContext(
+        db=MagicMock(),
+        season_year=2025,
+        league_internal_id=1,
+        api_league_id=135,
+        upcoming_fixtures=[fx],
+        upcoming_api_fixture_ids=[100],
+        fx_by_api_id={100: fx},
+        api_client=api,
+    )
+
+    result = ApiFootballSidelinedProvider().fetch_candidates(ctx)
+    assert result.status == "success"
+    mock_top_ids.assert_called_once()

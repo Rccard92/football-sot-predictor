@@ -77,6 +77,8 @@ function pickMessage(payload: unknown, okFallback: string): string {
         | Record<
             string,
             {
+              status?: string
+              error?: string
               applicable_saved?: number
               candidates_total?: number
               candidate_not_applied?: number
@@ -87,16 +89,25 @@ function pickMessage(payload: unknown, okFallback: string): string {
       if (providers?.api_football_injuries || providers?.api_football_sidelined) {
         const inj = providers.api_football_injuries
         const sid = providers.api_football_sidelined
+        const phase = o.phase != null ? String(o.phase) : null
+        const msg = o.message != null ? String(o.message) : null
+        const dryRun = o.dry_run === true ? ' · dry_run' : ''
         return [
           `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
+          phase ? `fase ${phase}` : '',
+          msg ?? '',
           `fixture ${String(o.fixtures_checked ?? '—')}`,
-          `injuries salvati ${String(inj?.applicable_saved ?? 0)}/${String(inj?.candidates_total ?? 0)}`,
-          `sidelined salvati ${String(sid?.applicable_saved ?? 0)}/${String(sid?.candidates_total ?? 0)}`,
-          `giocatori controllati sidelined ${String(sid?.players_checked ?? 0)}`,
+          `injuries [${String(inj?.status ?? '—')}] salvati ${String(inj?.applicable_saved ?? 0)}/${String(inj?.candidates_total ?? 0)}`,
+          `sidelined [${String(sid?.status ?? '—')}] salvati ${String(sid?.applicable_saved ?? 0)}/${String(sid?.candidates_total ?? 0)}`,
+          sid?.players_checked != null ? `giocatori sidelined ${String(sid.players_checked)}` : '',
+          inj?.error ? `injuries err: ${String(inj.error).slice(0, 80)}` : '',
+          sid?.error ? `sidelined err: ${String(sid.error).slice(0, 80)}` : '',
           `salvati ${String(o.records_saved ?? '—')} · aggiornati ${String(o.records_updated ?? '—')}`,
+          o.records_would_save != null ? `would_save ${String(o.records_would_save)}` : '',
           `con indisponibili ${withN} · senza ${withoutN}`,
           `coverage ${coverage}`,
           errN ? `errori ${errN}` : '',
+          dryRun,
         ]
           .filter(Boolean)
           .join(' · ')
@@ -367,11 +378,19 @@ export function Admin() {
       try {
         const data = await action.run()
         const ms = Math.round(performance.now() - t0)
+        const dataStatus =
+          data && typeof data === 'object' && 'status' in data
+            ? String((data as Record<string, unknown>).status)
+            : 'success'
+        const okish =
+          dataStatus === 'success' ||
+          dataStatus === 'partial_success' ||
+          dataStatus === 'partial_error'
         setLastResult({
           endpoint: action.endpoint,
           httpStatus: 200,
           durationMs: ms,
-          ok: true,
+          ok: okish,
           message: pickMessage(data, 'Operazione completata.'),
           body: data,
         })
@@ -388,21 +407,37 @@ export function Admin() {
       } catch (err) {
         const ms = Math.round(performance.now() - t0)
         if (err instanceof AdminHttpError) {
+          const body = err.body
+          const bodyStatus =
+            body && typeof body === 'object' && 'status' in body
+              ? String((body as Record<string, unknown>).status)
+              : null
+          const partial =
+            bodyStatus === 'error' ||
+            bodyStatus === 'partial_error' ||
+            bodyStatus === 'partial_success'
           setLastResult({
             endpoint: action.endpoint,
             httpStatus: err.status,
             durationMs: ms,
-            ok: false,
-            message: err.message,
+            ok: partial,
+            message: partial && body ? pickMessage(body, err.message) : err.message,
             body: err.body,
           })
         } else {
+          const raw = err instanceof Error ? err.message : String(err)
+          const isNetwork =
+            raw === 'Failed to fetch' ||
+            /network|abort|fetch/i.test(raw) ||
+            err instanceof TypeError
           setLastResult({
             endpoint: action.endpoint,
             httpStatus: '—',
             durationMs: ms,
             ok: false,
-            message: err instanceof Error ? err.message : String(err),
+            message: isNetwork
+              ? 'Errore di rete o backend non raggiungibile. Controlla /api/health e Railway logs.'
+              : raw,
           })
         }
       } finally {
@@ -468,8 +503,8 @@ export function Admin() {
       id: 'availability-upcoming',
       label: 'Aggiorna indisponibili prossima giornata',
       description:
-        'Provider injuries + sidelined (API-Football): solo candidati HIGH/MEDIUM salvati per le prossime partite.',
-      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability-upcoming`,
+        'Provider injuries + sidelined (API-Football). Debug: ?use_sidelined=false o ?dry_run=true. Solo HIGH/MEDIUM salvati.',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability-upcoming?days_ahead=14`,
       run: () => adminIngestAvailabilityUpcoming(SEASON, { daysAhead: 14 }),
     },
     {

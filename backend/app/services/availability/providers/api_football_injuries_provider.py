@@ -69,31 +69,32 @@ class ApiFootballInjuriesProvider(AvailabilityProvider):
     name = PROVIDER_INJURIES
 
     def fetch_candidates(self, ctx: ProviderContext) -> ProviderFetchResult:
-        api = ctx.api_client or ApiFootballClient()
-        result = ProviderFetchResult(provider_name=PROVIDER_INJURIES, called=True)
-
+        result = ProviderFetchResult(provider_name=PROVIDER_INJURIES, called=True, status="success")
         try:
+            api = ctx.api_client or ApiFootballClient()
             fetch_result = fetch_injuries_multi_source(
                 api,
                 api_league_id=int(ctx.api_league_id),
                 season_year=int(ctx.season_year),
                 upcoming_api_fixture_ids=ctx.upcoming_api_fixture_ids,
             )
+            result.api_calls = fetch_result.api_calls
+            result.raw_items_total = sum(s.results_total for s in fetch_result.sources.values())
+
+            for item, source_detail in fetch_result.merged_items:
+                api_fx = item_api_fixture_id(item)
+                if api_fx is None or api_fx not in ctx.fx_by_api_id:
+                    continue
+                fx = ctx.fx_by_api_id[api_fx]
+                cand = _injuries_item_to_candidate(item, source_detail=source_detail, fx=fx, ctx=ctx)
+                if cand is not None:
+                    result.candidates.append(cand)
         except ApiFootballError as exc:
-            result.called = False
+            result.called = True
+            result.status = "error"
             result.error = str(exc)[:500]
-            return result
-
-        result.api_calls = fetch_result.api_calls
-        result.raw_items_total = sum(s.results_total for s in fetch_result.sources.values())
-
-        for item, source_detail in fetch_result.merged_items:
-            api_fx = item_api_fixture_id(item)
-            if api_fx is None or api_fx not in ctx.fx_by_api_id:
-                continue
-            fx = ctx.fx_by_api_id[api_fx]
-            cand = _injuries_item_to_candidate(item, source_detail=source_detail, fx=fx, ctx=ctx)
-            if cand is not None:
-                result.candidates.append(cand)
-
+        except Exception as exc:  # noqa: BLE001
+            result.called = True
+            result.status = "error"
+            result.error = str(exc)[:500]
         return result

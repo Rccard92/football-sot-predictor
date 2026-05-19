@@ -33,6 +33,7 @@ class ProviderContext:
 class ProviderFetchResult:
     provider_name: str
     called: bool = True
+    status: str = "success"
     candidates: list[NormalizedAvailabilityCandidate] = field(default_factory=list)
     api_calls: int = 0
     players_checked: int = 0

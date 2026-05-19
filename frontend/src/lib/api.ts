@@ -1325,6 +1325,10 @@ export type AvailabilityUpcomingIngestOptions = {
   daysAhead?: number
   force?: boolean
   fixtureId?: number
+  /** default true — false salta provider sidelined */
+  useSidelined?: boolean
+  /** default false — fetch senza salvataggio DB */
+  dryRun?: boolean
 }
 
 export async function adminIngestAvailabilityUpcoming(
@@ -1336,6 +1340,8 @@ export async function adminIngestAvailabilityUpcoming(
   if (ingestOpts?.daysAhead != null) params.set('days_ahead', String(ingestOpts.daysAhead))
   if (ingestOpts?.force) params.set('force', 'true')
   if (ingestOpts?.fixtureId != null) params.set('fixture_id', String(ingestOpts.fixtureId))
+  if (ingestOpts?.useSidelined === false) params.set('use_sidelined', 'false')
+  if (ingestOpts?.dryRun) params.set('dry_run', 'true')
   const qs = params.toString()
   const path = `/api/admin/ingest/serie-a/${season}/availability-upcoming${qs ? `?${qs}` : ''}`
   return adminPostJson<AvailabilityUpcomingIngestResponse>(path, {}, { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 })

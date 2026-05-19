@@ -23,6 +23,8 @@ def ingest_serie_a_availability_upcoming(
     force: bool = False,
     fixture_id: int | None = None,
     client: ApiFootballClient | None = None,
+    use_sidelined: bool = True,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     return run_availability_upcoming_orchestrator(
         db,
@@ -31,4 +33,6 @@ def ingest_serie_a_availability_upcoming(
         force=force,
         fixture_id=fixture_id,
         client=client,
+        use_sidelined=use_sidelined,
+        dry_run=dry_run,
     )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import select
 
 from app.models import PlayerSeasonProfile
@@ -17,8 +19,11 @@ from app.services.availability.providers.base import (
 )
 from app.services.availability.providers.types import NormalizedAvailabilityCandidate
 
+logger = logging.getLogger(__name__)
+
 SOURCE_DETAIL_SIDELINED_PLAYER = "api_football_sidelined_player"
 MAX_PLAYERS_PER_TEAM = 20
+MAX_SIDELINED_API_CALLS = 100
 
 
 def _top_api_player_ids(
@@ -47,102 +52,150 @@ def _top_api_player_ids(
     return out
 
 
+def _team_entries(fx) -> list[tuple[int, str | None, int | None]]:
+    """(api_team_id, team_name, team_internal_id) — salta team senza api_team_id."""
+    out: list[tuple[int, str | None, int | None]] = []
+    if fx.home_team is not None and fx.home_team.api_team_id is not None:
+        out.append(
+            (
+                int(fx.home_team.api_team_id),
+                fx.home_team.name,
+                int(fx.home_team_id) if fx.home_team_id is not None else None,
+            ),
+        )
+    if fx.away_team is not None and fx.away_team.api_team_id is not None:
+        out.append(
+            (
+                int(fx.away_team.api_team_id),
+                fx.away_team.name,
+                int(fx.away_team_id) if fx.away_team_id is not None else None,
+            ),
+        )
+    return out
+
+
 class ApiFootballSidelinedProvider(AvailabilityProvider):
     name = PROVIDER_SIDELINED
 
     def fetch_candidates(self, ctx: ProviderContext) -> ProviderFetchResult:
-        api = ctx.api_client or ApiFootballClient()
-        result = ProviderFetchResult(provider_name=PROVIDER_SIDELINED, called=True)
-        players_checked = 0
+        result = ProviderFetchResult(provider_name=PROVIDER_SIDELINED, called=True, status="success")
+        try:
+            api = ctx.api_client or ApiFootballClient()
+            if not hasattr(api, "get_sidelined_by_player"):
+                result.called = False
+                result.status = "not_available"
+                result.error = "Client API-Football senza metodo get_sidelined_by_player"
+                return result
 
-        for fx in ctx.upcoming_fixtures:
-            api_fx_id = int(fx.api_fixture_id)
-            teams: list[tuple[int, str | None, str | None]] = []
-            if fx.home_team is not None:
-                teams.append(
-                    (
-                        int(fx.home_team.api_team_id),
-                        fx.home_team.name,
-                        "home",
-                    ),
-                )
-            if fx.away_team is not None:
-                teams.append(
-                    (
-                        int(fx.away_team.api_team_id),
-                        fx.away_team.name,
-                        "away",
-                    ),
-                )
+            players_checked = 0
+            api_calls_cap_hit = False
 
-            for api_team_id, team_name, _side in teams:
-                team_internal_id = None
-                if fx.home_team and int(fx.home_team.api_team_id) == api_team_id:
-                    team_internal_id = int(fx.home_team_id)
-                elif fx.away_team and int(fx.away_team.api_team_id) == api_team_id:
-                    team_internal_id = int(fx.away_team_id)
-                player_list = _top_api_player_ids(
-                    ctx.db,
-                    season=int(ctx.season_year),
-                    league_id=int(ctx.league_internal_id),
-                    api_team_id=api_team_id,
-                )
-                for api_pid, pname in player_list:
-                    players_checked += 1
-                    try:
-                        raw_items = api.get_sidelined_by_player(api_pid)
-                        result.api_calls += 1
-                        result.raw_items_total += len(raw_items)
-                    except ApiFootballError as exc:
-                        ctx.errors.append(
-                            {
-                                "provider": PROVIDER_SIDELINED,
-                                "api_player_id": api_pid,
-                                "error": "api_error",
-                                "message": str(exc)[:300],
-                            },
-                        )
-                        continue
-
-                    parsed_rows = parse_sidelined_entries(
-                        raw_items,
-                        api_player_id=api_pid,
-                        player_name=pname,
+            for fx in ctx.upcoming_fixtures:
+                api_fx_id = int(fx.api_fixture_id)
+                for api_team_id, team_name, team_internal_id in _team_entries(fx):
+                    player_list = _top_api_player_ids(
+                        ctx.db,
+                        season=int(ctx.season_year),
+                        league_id=int(ctx.league_internal_id),
                         api_team_id=api_team_id,
-                        team_name=team_name,
                     )
-                    for row in parsed_rows:
-                        ko = fx.kickoff_at
-                        fixture_date = ko.date() if hasattr(ko, "date") else None
-                        raw = dict(row.get("raw_json") or {})
-                        result.candidates.append(
-                            NormalizedAvailabilityCandidate(
-                                fixture_id=int(fx.id),
-                                api_fixture_id=api_fx_id,
-                                season=int(ctx.season_year),
-                                league_id=int(ctx.league_internal_id),
-                                api_league_id=int(ctx.api_league_id),
-                                team_id=team_internal_id,
+                    for api_pid, pname in player_list:
+                        if result.api_calls >= MAX_SIDELINED_API_CALLS:
+                            api_calls_cap_hit = True
+                            break
+                        players_checked += 1
+                        try:
+                            raw_items = api.get_sidelined_by_player(api_pid)
+                            result.api_calls += 1
+                            if not isinstance(raw_items, list):
+                                raw_items = []
+                            result.raw_items_total += len(raw_items)
+                        except ApiFootballError as exc:
+                            ctx.errors.append(
+                                {
+                                    "provider": PROVIDER_SIDELINED,
+                                    "api_player_id": api_pid,
+                                    "error": "api_error",
+                                    "message": str(exc)[:300],
+                                },
+                            )
+                            continue
+                        except Exception as exc:  # noqa: BLE001
+                            ctx.errors.append(
+                                {
+                                    "provider": PROVIDER_SIDELINED,
+                                    "api_player_id": api_pid,
+                                    "error": "fetch_failed",
+                                    "message": str(exc)[:300],
+                                },
+                            )
+                            continue
+
+                        try:
+                            parsed_rows = parse_sidelined_entries(
+                                raw_items,
+                                api_player_id=api_pid,
+                                player_name=pname,
                                 api_team_id=api_team_id,
                                 team_name=team_name,
-                                player_id=None,
-                                api_player_id=api_pid,
-                                player_name=str(row["player_name"]),
-                                availability_status=str(row["availability_status"]),
-                                availability_type=row.get("availability_type"),
-                                reason=row.get("reason"),
-                                source=SOURCE_API_FOOTBALL_SIDELINED,
-                                source_detail=SOURCE_DETAIL_SIDELINED_PLAYER,
-                                record_scope="provider_date_range_for_fixture",
-                                confidence="LOW",
-                                applicability_status="candidate",
-                                applicability_reason=None,
-                                start_date=row.get("start_date"),
-                                end_date=row.get("end_date"),
-                                fixture_date=fixture_date,
-                                raw_json=raw,
-                            ),
-                        )
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            ctx.errors.append(
+                                {
+                                    "provider": PROVIDER_SIDELINED,
+                                    "api_player_id": api_pid,
+                                    "error": "parse_failed",
+                                    "message": str(exc)[:300],
+                                },
+                            )
+                            continue
 
-        result.players_checked = players_checked
+                        for row in parsed_rows:
+                            ko = fx.kickoff_at
+                            fixture_date = ko.date() if hasattr(ko, "date") else None
+                            raw = dict(row.get("raw_json") or {})
+                            result.candidates.append(
+                                NormalizedAvailabilityCandidate(
+                                    fixture_id=int(fx.id),
+                                    api_fixture_id=api_fx_id,
+                                    season=int(ctx.season_year),
+                                    league_id=int(ctx.league_internal_id),
+                                    api_league_id=int(ctx.api_league_id),
+                                    team_id=team_internal_id,
+                                    api_team_id=api_team_id,
+                                    team_name=team_name,
+                                    player_id=None,
+                                    api_player_id=api_pid,
+                                    player_name=str(row.get("player_name") or pname),
+                                    availability_status=str(row.get("availability_status") or "unknown"),
+                                    availability_type=row.get("availability_type"),
+                                    reason=row.get("reason"),
+                                    source=SOURCE_API_FOOTBALL_SIDELINED,
+                                    source_detail=SOURCE_DETAIL_SIDELINED_PLAYER,
+                                    record_scope="provider_date_range_for_fixture",
+                                    confidence="LOW",
+                                    applicability_status="candidate",
+                                    applicability_reason=None,
+                                    start_date=row.get("start_date"),
+                                    end_date=row.get("end_date"),
+                                    fixture_date=fixture_date,
+                                    raw_json=raw,
+                                ),
+                            )
+                    if api_calls_cap_hit:
+                        break
+                if api_calls_cap_hit:
+                    break
+
+            result.players_checked = players_checked
+            if api_calls_cap_hit:
+                result.error = (
+                    f"Cap API sidelined raggiunto ({MAX_SIDELINED_API_CALLS} chiamate); "
+                    "ridurre fixture o usare use_sidelined=false."
+                )
+                logger.warning("%s %s", PROVIDER_SIDELINED, result.error)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("sidelined provider fatal error")
+            result.status = "error"
+            result.error = str(exc)[:500]
         return result

@@ -126,3 +126,98 @@ def test_orchestrator_persists_only_applied(
     assert len(per_fx["candidates_applied"]) == 1
     assert len(per_fx["candidates_not_applied"]) == 1
     mock_persist.assert_called_once()
+
+
+@patch("app.services.availability.providers.availability_provider_orchestrator.persist_availability_upcoming_run")
+@patch("app.services.availability.providers.availability_provider_orchestrator.upsert_availability_candidate")
+@patch("app.services.availability.providers.availability_provider_orchestrator._run_sidelined_provider")
+@patch("app.services.availability.providers.availability_provider_orchestrator._run_injuries_provider")
+@patch("app.services.availability.providers.availability_provider_orchestrator.resolve_serie_a_league_context")
+@patch("app.services.availability.providers.availability_provider_orchestrator.resolve_upcoming_fixtures")
+@patch("app.services.availability.providers.availability_provider_orchestrator.IngestionService")
+def test_orchestrator_dry_run_skips_upsert(
+    mock_ing_cls,
+    mock_upcoming,
+    mock_ctx,
+    mock_inj_run,
+    mock_side_run,
+    mock_upsert,
+    mock_persist,
+):
+    db = MagicMock()
+    mock_ing_cls.return_value._serie_a_season_row.return_value = MagicMock(id=1)
+    mock_ctx.return_value = MagicMock(league_internal_id=1, api_league_id=135)
+
+    fx = MagicMock()
+    fx.id = 1
+    fx.api_fixture_id = 100
+    fx.kickoff_at = datetime(2025, 5, 20, 18, 0, tzinfo=timezone.utc)
+    fx.home_team = MagicMock(api_team_id=1, id=1, name="H")
+    fx.away_team = MagicMock(api_team_id=2, id=2, name="A")
+    mock_upcoming.return_value = [fx]
+
+    mock_inj_run.return_value = ProviderFetchResult(
+        provider_name=PROVIDER_INJURIES,
+        candidates=[_injury_candidate(100)],
+    )
+    mock_side_run.return_value = ProviderFetchResult(provider_name=PROVIDER_SIDELINED, status="skipped")
+
+    summary = run_availability_upcoming_orchestrator(
+        db,
+        2025,
+        dry_run=True,
+        use_sidelined=False,
+        client=MagicMock(),
+    )
+
+    mock_upsert.assert_not_called()
+    assert summary["dry_run"] is True
+    assert summary["records_saved"] == 0
+    assert summary["records_would_save"] == 1
+    assert summary["providers"]["api_football_sidelined"]["status"] == "skipped"
+
+
+@patch("app.services.availability.providers.availability_provider_orchestrator.persist_availability_upcoming_run")
+@patch("app.services.availability.providers.availability_provider_orchestrator.upsert_availability_candidate")
+@patch("app.services.availability.providers.availability_provider_orchestrator._run_sidelined_provider")
+@patch("app.services.availability.providers.availability_provider_orchestrator._run_injuries_provider")
+@patch("app.services.availability.providers.availability_provider_orchestrator.resolve_serie_a_league_context")
+@patch("app.services.availability.providers.availability_provider_orchestrator.resolve_upcoming_fixtures")
+@patch("app.services.availability.providers.availability_provider_orchestrator.IngestionService")
+def test_orchestrator_sidelined_error_still_saves_injuries(
+    mock_ing_cls,
+    mock_upcoming,
+    mock_ctx,
+    mock_inj_run,
+    mock_side_run,
+    mock_upsert,
+    mock_persist,
+):
+    db = MagicMock()
+    mock_ing_cls.return_value._serie_a_season_row.return_value = MagicMock(id=1)
+    mock_ctx.return_value = MagicMock(league_internal_id=1, api_league_id=135)
+
+    fx = MagicMock()
+    fx.id = 1
+    fx.api_fixture_id = 100
+    fx.kickoff_at = datetime(2025, 5, 20, 18, 0, tzinfo=timezone.utc)
+    fx.home_team = MagicMock(api_team_id=1, id=1, name="H")
+    fx.away_team = MagicMock(api_team_id=2, id=2, name="A")
+    mock_upcoming.return_value = [fx]
+
+    mock_inj_run.return_value = ProviderFetchResult(
+        provider_name=PROVIDER_INJURIES,
+        candidates=[_injury_candidate(100)],
+    )
+    mock_side_run.return_value = ProviderFetchResult(
+        provider_name=PROVIDER_SIDELINED,
+        status="error",
+        error="timeout",
+    )
+    mock_upsert.return_value = (MagicMock(), True, True)
+
+    summary = run_availability_upcoming_orchestrator(db, 2025, client=MagicMock())
+
+    assert mock_upsert.call_count == 1
+    assert summary["status"] == "partial_error"
+    assert summary["providers"]["api_football_sidelined"]["status"] == "error"

@@ -64,6 +64,7 @@ export type AvailabilitySourceStats = {
 
 export type AvailabilityProviderReport = {
   called?: boolean
+  status?: 'success' | 'error' | 'skipped' | 'not_available'
   candidates_total?: number
   applicable_saved?: number
   candidate_not_applied?: number
@@ -97,8 +98,13 @@ export type ProviderCandidatesBlock = {
 
 export type AvailabilityUpcomingIngestResponse = {
   status: string
+  phase?: string
+  message?: string
+  dry_run?: boolean
+  use_sidelined?: boolean
   season?: number
   api_league_id?: number
+  records_would_save?: number | null
   fixtures_checked?: number
   upcoming_api_fixture_ids?: number[]
   providers?: {
@@ -123,7 +129,15 @@ export type AvailabilityUpcomingIngestResponse = {
   fixtures_without_availability?: unknown[]
   provider_future_availability_coverage?: 'ok' | 'empty'
   warnings?: string[]
-  errors?: unknown[]
+  errors?: {
+    phase?: string
+    type?: string
+    message?: string
+    traceback_tail?: string
+    error?: string
+    api_fixture_id?: number
+    api_player_id?: number
+  }[]
 }
 
 export type LastAvailabilityUpcoming = {
