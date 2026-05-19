@@ -227,10 +227,12 @@ def admin_pipeline_refresh_upcoming_v04(
 
     # 6 — Disponibilità / infortuni (non critico)
     try:
-        from app.services.availability.availability_ingestion import ingest_serie_a_availability
+        from app.services.availability.availability_upcoming_ingestion import (
+            ingest_serie_a_availability_upcoming,
+        )
 
-        r6 = ingest_serie_a_availability(db, season)
-        rec6 = int(r6.get("availability_records_upserted") or 0)
+        r6 = ingest_serie_a_availability_upcoming(db, season)
+        rec6 = int(r6.get("records_saved") or 0)
         ok6 = r6.get("status") in ("success", "partial_success")
         steps.append(
             {

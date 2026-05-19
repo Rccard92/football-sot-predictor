@@ -45,16 +45,16 @@ def test_audit_excludes_team_level_without_dates_from_applicable(mock_buckets):
     applicable_row.start_date = date(2025, 5, 1)
     applicable_row.end_date = None
 
-    generic_row = MagicMock()
-    generic_row.api_player_id = 2
-    generic_row.player_name = "Old Injury"
-    generic_row.api_team_id = 487
-    generic_row.team_id = 1
-    generic_row.availability_status = "injured"
-    generic_row.availability_type = "injury"
-    generic_row.reason = "Knee"
-    generic_row.source = "api_football_injuries"
-    generic_row.record_scope = SCOPE_TEAM_LEVEL
+    excluded_row = MagicMock()
+    excluded_row.api_player_id = 2
+    excluded_row.player_name = "Old Injury"
+    excluded_row.api_team_id = 487
+    excluded_row.team_id = 1
+    excluded_row.availability_status = "injured"
+    excluded_row.availability_type = "injury"
+    excluded_row.reason = "Knee"
+    excluded_row.source = "api_football_injuries"
+    excluded_row.record_scope = SCOPE_TEAM_LEVEL
     generic_row.api_fixture_id = None
     generic_row.fixture_id = None
     generic_row.fixture_date = None
@@ -64,7 +64,8 @@ def test_audit_excludes_team_level_without_dates_from_applicable(mock_buckets):
     mock_buckets.return_value = FixtureAvailabilityBuckets(
         ctx=ctx,
         applicable=[applicable_row],
-        generic_not_applied=[generic_row],
+        generic_not_applied=[],
+        excluded=[excluded_row],
         excluded=[],
     )
 
@@ -95,5 +96,4 @@ def test_audit_excludes_team_level_without_dates_from_applicable(mock_buckets):
     assert len(home_applicable) == 1
     assert home_applicable[0]["player_name"] == "Rovella"
     generic = out["home"]["generic_records_not_applied"]
-    assert len(generic) == 1
-    assert generic[0]["player_name"] == "Old Injury"
+    assert len(generic) == 0

@@ -17,7 +17,7 @@ from app.models.player_availability import (
     SCOPE_SEASON_LEVEL,
     SCOPE_TEAM_LEVEL,
 )
-from app.services.availability.availability_parsing import ParsedAvailabilityRecord
+from app.services.availability.availability_parsing import SOURCE_INJURIES, ParsedAvailabilityRecord
 
 SOURCE_MANUAL = "manual_override"
 
@@ -138,17 +138,22 @@ def classify_record_for_fixture(row: PlayerAvailability, ctx: FixtureContext) ->
             return "applicable"
         return "excluded"
 
-    if scope in (SCOPE_TEAM_LEVEL, SCOPE_MANUAL_TEAM_LEVEL):
+    if scope == SCOPE_TEAM_LEVEL:
+        if (row.source or "").strip() == SOURCE_INJURIES:
+            return "excluded"
+        if row.start_date is None:
+            return "generic_not_applied"
+        if not _kickoff_in_date_range(ctx.kickoff, row.start_date, row.end_date):
+            return "excluded"
+        return "generic_not_applied"
+
+    if scope == SCOPE_MANUAL_TEAM_LEVEL:
         if row.api_fixture_id is not None and int(row.api_fixture_id) != ctx.api_fixture_id:
             return "excluded"
         if row.start_date is None:
             return "generic_not_applied"
         if not _kickoff_in_date_range(ctx.kickoff, row.start_date, row.end_date):
-            if row.end_date is not None and ctx.kickoff > row.end_date:
-                return "excluded"
-            if row.start_date is not None and ctx.kickoff < row.start_date:
-                return "excluded"
-            return "generic_not_applied"
+            return "excluded"
         return "applicable"
 
     if scope == SCOPE_SEASON_LEVEL:

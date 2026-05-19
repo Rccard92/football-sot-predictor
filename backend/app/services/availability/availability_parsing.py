@@ -76,16 +76,27 @@ def _map_status_type(api_type: str | None, reason: str | None) -> tuple[str, str
         return "doubtful", "injury" if any(x in r for x in ("injur", "muscle", "knee")) else "other"
     if "missing fixture" in combined or "not available" in combined:
         return "out", "injury" if any(x in r for x in ("injur", "muscle", "knee")) or not r else "other"
-    injury_markers = ("injur", "injured", "muscle", "knee", "ankle", "hamstring", "groin", "calf")
+    injury_markers = (
+        "injur",
+        "injured",
+        "muscle",
+        "knee",
+        "ankle",
+        "hamstring",
+        "groin",
+        "calf",
+        "unknown injury",
+        "illness",
+    )
     if any(m in combined for m in injury_markers):
-        return "injured" if "injured" in combined else "out", "injury"
-    if "illness" in combined or "ill" in r:
+        return "out", "injury"
+    if "ill" in r and "skill" not in r:
         return "out", "illness"
     if "personal" in combined:
         return "unavailable", "personal"
     if t:
-        return "out", t[:32]
-    return "unknown", "other"
+        return "unavailable", "other"
+    return "unavailable", "other"
 
 
 def _parse_datetime(val: Any) -> datetime | None:

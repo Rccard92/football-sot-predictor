@@ -4,7 +4,7 @@ import type { AvailabilityPlayerRow, AvailabilityTeamSide } from '../../types/fi
 import { formatFetchError } from '../../utils/formatFetchError'
 
 const SUBTITLE =
-  'Mostra solo i record applicabili alla fixture selezionata: fixture-level o team-level con date compatibili.'
+  'Mostra solo i record collegati alla fixture selezionata o override manuali validi per la data.'
 
 const EMPTY_MSG =
   'Nessun indisponibile applicabile a questa partita trovato nel DB.'

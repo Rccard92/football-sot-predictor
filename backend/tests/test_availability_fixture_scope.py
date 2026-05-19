@@ -64,15 +64,16 @@ def test_fixture_level_excluded_other_fixture():
     assert classify_record_for_fixture(row, ctx) == "excluded"
 
 
-def test_team_level_applicable_in_date_range():
+def test_team_level_api_excluded_even_in_date_range():
     ctx = _ctx()
     row = _row(
         record_scope=SCOPE_TEAM_LEVEL,
+        source="api_football_injuries",
         api_fixture_id=None,
         start_date=date(2025, 5, 1),
         end_date=date(2025, 5, 20),
     )
-    assert classify_record_for_fixture(row, ctx) == "applicable"
+    assert classify_record_for_fixture(row, ctx) == "excluded"
 
 
 def test_team_level_generic_without_start_date():

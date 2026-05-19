@@ -15,7 +15,9 @@ from app.core.database import get_db
 from app.services.availability.availability_api_raw_list import build_availability_api_raw_list
 from app.services.availability.availability_debug import build_season_availability_summary
 from app.services.availability.availability_league import AvailabilityLeagueConfigError
+from app.services.availability.availability_fixture_flow_debug import build_availability_fixture_flow_debug
 from app.services.availability.availability_raw_check import build_availability_raw_check
+from app.services.api_football_client import ApiFootballClient, ApiFootballError
 
 logger = logging.getLogger(__name__)
 
@@ -172,4 +174,72 @@ def admin_debug_availability_api_raw_list(
         )
     if payload.get("status") == "configuration_error":
         return JSONResponse(status_code=400, content=jsonable_encoder(payload))
+    return JSONResponse(status_code=200, content=jsonable_encoder(payload))
+
+
+@router.get("/serie-a/{season}/availability-fixture-flow", response_model=None)
+def admin_debug_availability_fixture_flow(
+    season: int,
+    fixture_id: int = Query(..., description="ID interno fixture"),
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    fx_row = None
+    try:
+        from app.models import Fixture
+
+        fx_row = db.get(Fixture, int(fixture_id))
+        api_items: list | None = None
+        api_err: str | None = None
+        if fx_row is not None:
+            try:
+                api = ApiFootballClient()
+                api_items = api.get_injuries_by_fixture(int(fx_row.api_fixture_id))
+            except ApiFootballError as exc:
+                api_err = str(exc)
+        payload = build_availability_fixture_flow_debug(
+            db,
+            int(season),
+            int(fixture_id),
+            api_items=api_items,
+            api_error=api_err,
+        )
+    except (OperationalError, ProgrammingError):
+        logger.exception("availability-fixture-flow: errore database")
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": "Database non disponibile o schema non aggiornato.",
+                    "season": int(season),
+                    "fixture_id": int(fixture_id),
+                },
+            ),
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": str(exc),
+                    "season": int(season),
+                    "fixture_id": int(fixture_id),
+                },
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("availability-fixture-flow: errore inatteso")
+        return JSONResponse(
+            status_code=502,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "message": str(exc)[:500],
+                    "season": int(season),
+                    "fixture_id": int(fixture_id),
+                },
+            ),
+        )
     return JSONResponse(status_code=200, content=jsonable_encoder(payload))

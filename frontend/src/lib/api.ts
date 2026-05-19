@@ -1318,6 +1318,37 @@ export type AvailabilityIngestOptions = {
   force?: boolean
 }
 
+export type AvailabilityUpcomingIngestOptions = {
+  daysAhead?: number
+  force?: boolean
+  fixtureId?: number
+}
+
+export async function adminIngestAvailabilityUpcoming(
+  season: number,
+  ingestOpts?: AvailabilityUpcomingIngestOptions,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  const params = new URLSearchParams()
+  if (ingestOpts?.daysAhead != null) params.set('days_ahead', String(ingestOpts.daysAhead))
+  if (ingestOpts?.force) params.set('force', 'true')
+  if (ingestOpts?.fixtureId != null) params.set('fixture_id', String(ingestOpts.fixtureId))
+  const qs = params.toString()
+  const path = `/api/admin/ingest/serie-a/${season}/availability-upcoming${qs ? `?${qs}` : ''}`
+  return adminPostJson<unknown>(path, {}, { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 })
+}
+
+export async function getAvailabilityFixtureFlow(
+  season: number,
+  fixtureId: number,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  return adminGetJson<unknown>(
+    `/api/admin/debug/serie-a/${season}/availability-fixture-flow?fixture_id=${fixtureId}`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
+  )
+}
+
 export async function adminIngestAvailability(
   season: number,
   ingestOpts?: AvailabilityIngestOptions,

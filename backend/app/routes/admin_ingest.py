@@ -203,6 +203,38 @@ def admin_ingest_serie_a_lineups(
     return jsonable_encoder(summary)
 
 
+@router.post("/serie-a/{season}/availability-upcoming", response_model=None)
+def admin_ingest_serie_a_availability_upcoming(
+    season: int,
+    days_ahead: int = Query(14, ge=1, le=60),
+    force: bool = Query(False),
+    fixture_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Ingestione operativa: injuries?fixture= per partite upcoming (unico flusso per audit/modello)."""
+    _require_api_football_key()
+    from app.services.availability.availability_upcoming_ingestion import (
+        ingest_serie_a_availability_upcoming,
+    )
+
+    try:
+        summary = ingest_serie_a_availability_upcoming(
+            db,
+            int(season),
+            days_ahead=int(days_ahead),
+            force=force,
+            fixture_id=fixture_id,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("availability-upcoming: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=502, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
+
+
 @router.post("/serie-a/{season}/availability", response_model=None)
 def admin_ingest_serie_a_availability(
     season: int,
@@ -211,6 +243,7 @@ def admin_ingest_serie_a_availability(
     force: bool = Query(False),
     db: Session = Depends(get_db),
 ):
+    """Legacy/debug: league+season e team injuries (non usare per audit operativo)."""
     _require_api_football_key()
     from app.services.availability.availability_ingestion import ingest_serie_a_availability
 

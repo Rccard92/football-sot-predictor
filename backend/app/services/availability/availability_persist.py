@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.models import Fixture, PlayerAvailability, PlayerRegistry, Team
 from app.services.availability.availability_fixture_scope import infer_record_scope_from_parsed
-from app.services.availability.availability_parsing import ParsedAvailabilityRecord
+from app.models.player_availability import SCOPE_FIXTURE_LEVEL
+from app.services.availability.availability_parsing import SOURCE_INJURIES, ParsedAvailabilityRecord
 
 
 def _utc_now() -> datetime:
@@ -59,9 +60,33 @@ def _match_existing(
     else:
         q = q.where(
             PlayerAvailability.api_fixture_id.is_(None),
+            PlayerAvailability.api_player_id == parsed.api_player_id,
             PlayerAvailability.reason == parsed.reason,
         )
     return db.scalar(q)
+
+
+def deactivate_fixture_injuries(
+    db: Session,
+    *,
+    season: int,
+    league_id: int,
+    api_fixture_id: int,
+) -> int:
+    """Disattiva solo record API injuries della stessa api_fixture_id (non manual_override)."""
+    stmt = (
+        update(PlayerAvailability)
+        .where(
+            PlayerAvailability.season == int(season),
+            PlayerAvailability.league_id == int(league_id),
+            PlayerAvailability.is_active.is_(True),
+            PlayerAvailability.source == SOURCE_INJURIES,
+            PlayerAvailability.api_fixture_id == int(api_fixture_id),
+        )
+        .values(is_active=False)
+    )
+    res = db.execute(stmt)
+    return int(res.rowcount or 0)
 
 
 def deactivate_scope(
@@ -140,4 +165,32 @@ def upsert_availability_record(
     row.fetched_at = now
     row.is_active = True
     row.raw_json = parsed.raw_json
+    return row, matched
+
+
+def upsert_fixture_injury_record(
+    db: Session,
+    *,
+    fx: Fixture,
+    season_year: int,
+    league_internal_id: int,
+    parsed: ParsedAvailabilityRecord,
+    fetched_at: datetime | None = None,
+) -> tuple[PlayerAvailability, bool]:
+    """Upsert fixture-level da injuries?fixture= con FK e date dalla fixture DB."""
+    ko = fx.kickoff_at
+    parsed.api_fixture_id = int(fx.api_fixture_id)
+    parsed.fixture_date = ko.date() if hasattr(ko, "date") else ko
+    row, matched = upsert_availability_record(
+        db,
+        season=int(season_year),
+        league_id=int(league_internal_id),
+        parsed=parsed,
+        fetched_at=fetched_at,
+    )
+    row.fixture_id = int(fx.id)
+    row.api_fixture_id = int(fx.api_fixture_id)
+    row.record_scope = SCOPE_FIXTURE_LEVEL
+    if row.fixture_date is None and ko is not None:
+        row.fixture_date = ko.date() if hasattr(ko, "date") else ko
     return row, matched

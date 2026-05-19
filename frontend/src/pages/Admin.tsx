@@ -4,6 +4,8 @@ import {
   DEFAULT_SEASON,
   adminBootstrapSerieA,
   adminIngestAvailability,
+  adminIngestAvailabilityUpcoming,
+  getAvailabilityFixtureFlow,
   adminIngestLineups,
   adminIngestPlayerMatchStats,
   buildPlayerSeasonProfiles,
@@ -61,6 +63,23 @@ function pickMessage(payload: unknown, okFallback: string): string {
       const m = o.player_match_stats_upserted
       const pl = o.players_upserted
       return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
+    }
+    if (typeof o.records_saved === 'number' && o.fixtures_checked != null) {
+      const withN = Array.isArray(o.fixtures_with_availability) ? o.fixtures_with_availability.length : 0
+      const withoutN = Array.isArray(o.fixtures_without_availability)
+        ? o.fixtures_without_availability.length
+        : 0
+      const errN = Array.isArray(o.errors) ? o.errors.length : 0
+      return [
+        `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
+        `fixture ${String(o.fixtures_checked ?? '—')}`,
+        `API calls ${String(o.api_calls ?? '—')}`,
+        `record salvati ${String(o.records_saved ?? '—')}`,
+        `con indisponibili ${withN} · senza ${withoutN}`,
+        errN ? `errori ${errN}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
     }
     if (typeof o.availability_records_upserted === 'number') {
       const top = Array.isArray(o.top_shooters_flagged) ? o.top_shooters_flagged.length : 0
@@ -395,11 +414,12 @@ export function Admin() {
       },
     },
     {
-      id: 'availability',
-      label: 'Aggiorna indisponibili',
-      description: 'Injuries API-Football → player_availability (prossimi 7 giorni). Solo audit, nessun impatto formula v1.1.',
-      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability`,
-      run: () => adminIngestAvailability(SEASON),
+      id: 'availability-upcoming',
+      label: 'Aggiorna indisponibili prossima giornata',
+      description:
+        'Recupera injuries per ogni partita upcoming tramite injuries?fixture= e salva solo record applicabili alla partita.',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability-upcoming`,
+      run: () => adminIngestAvailabilityUpcoming(SEASON, { daysAhead: 14 }),
     },
     {
       id: 'availability-summary',
@@ -518,6 +538,20 @@ export function Admin() {
       run: () => adminTestInjuriesApi(SEASON),
     },
     {
+      id: 'availability-fixture-flow',
+      label: 'Debug flusso indisponibili fixture',
+      description:
+        'Mostra request injuries?fixture=, risultati API, record DB e audit applicabili per la fixture.',
+      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/availability-fixture-flow`,
+      run: () => {
+        const fid = parseInt(availDebugFixtureId.trim(), 10)
+        if (!Number.isFinite(fid) || fid < 1) {
+          return Promise.reject(new Error('Inserisci un fixture_id numerico valido'))
+        }
+        return getAvailabilityFixtureFlow(SEASON, fid)
+      },
+    },
+    {
       id: 'availability-raw-check',
       label: 'Debug indisponibili fixture',
       description:
@@ -582,6 +616,14 @@ export function Admin() {
       label: 'Legacy: genera previsioni partite future v0.1',
       endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-upcoming`,
       run: () => generateUpcomingSotPredictions(SEASON),
+    },
+    {
+      id: 'availability-legacy',
+      label: 'Legacy: indisponibili league/season (debug)',
+      description:
+        'NON usare per audit/modello. Chiama injuries?league&season e può popolare record storici team-level.',
+      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability`,
+      run: () => adminIngestAvailability(SEASON),
     },
   ]
 
@@ -773,10 +815,10 @@ export function Admin() {
             </label>
           </div>
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-            <p className="text-xs font-medium text-amber-950">Indisponibili API raw (solo lettura)</p>
-            <p className="mt-1 text-[10px] text-amber-900/90">
-              Risposta grezza API stagione: può includere record non applicabili alla partita specifica. Non
-              usare per l&apos;audit fixture.
+            <p className="text-xs font-semibold text-amber-950">Debug avanzato — Indisponibili API raw</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-amber-950">
+              Questa sezione mostra la risposta grezza dell&apos;API per debug. Può includere record di tutta
+              la stagione e NON viene usata per audit partita o modello.
             </p>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
               <label className="block text-[11px] text-slate-600">
