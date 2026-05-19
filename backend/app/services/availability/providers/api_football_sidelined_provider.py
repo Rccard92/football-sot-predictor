@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
-from app.models import PlayerSeasonProfile
+from app.models import PlayerRegistry, PlayerSeasonProfile
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.availability.availability_helpers import _eligible_profile, _sort_key_profile
 from app.services.availability.availability_sidelined_parsing import parse_sidelined_entries
@@ -26,29 +29,58 @@ MAX_PLAYERS_PER_TEAM = 20
 MAX_SIDELINED_API_CALLS = 100
 
 
-def _top_api_player_ids(
+@dataclass(frozen=True)
+class SidelinedPlayerPick:
+    player_id: uuid.UUID
+    api_player_id: int
+    player_name: str
+    team_id: int | None
+    api_team_id: int
+
+
+def _top_players_for_team(
     db,
     *,
     season: int,
     league_id: int,
     api_team_id: int,
     limit: int = MAX_PLAYERS_PER_TEAM,
-) -> list[tuple[int, str]]:
+) -> list[SidelinedPlayerPick]:
+    """Top profili per squadra con nome da PlayerRegistry (non PlayerSeasonProfile)."""
     rows = list(
         db.scalars(
-            select(PlayerSeasonProfile).where(
+            select(PlayerSeasonProfile)
+            .join(PlayerRegistry, PlayerRegistry.id == PlayerSeasonProfile.player_id)
+            .where(
                 PlayerSeasonProfile.season == int(season),
                 PlayerSeasonProfile.league_id == int(league_id),
                 PlayerSeasonProfile.api_team_id == int(api_team_id),
-            ),
+            )
+            .options(joinedload(PlayerSeasonProfile.registry)),
         ).all(),
     )
     eligible = [p for p in rows if _eligible_profile(p)]
     eligible.sort(key=_sort_key_profile)
-    out: list[tuple[int, str]] = []
-    for p in eligible[:limit]:
-        if p.api_player_id is not None:
-            out.append((int(p.api_player_id), p.player_name or "?"))
+    out: list[SidelinedPlayerPick] = []
+    for profile in eligible:
+        if len(out) >= limit:
+            break
+        reg = profile.registry
+        api_pid = profile.api_player_id
+        if api_pid is None and reg is not None:
+            api_pid = reg.api_player_id
+        if api_pid is None:
+            continue
+        name = (reg.name if reg is not None else None) or "?"
+        out.append(
+            SidelinedPlayerPick(
+                player_id=profile.player_id,
+                api_player_id=int(api_pid),
+                player_name=str(name),
+                team_id=int(profile.team_id) if profile.team_id is not None else None,
+                api_team_id=int(api_team_id),
+            ),
+        )
     return out
 
 
@@ -68,7 +100,7 @@ def _team_entries(fx) -> list[tuple[int, str | None, int | None]]:
             (
                 int(fx.away_team.api_team_id),
                 fx.away_team.name,
-                int(fx.away_team_id) if fx.away_team_id is not None else None,
+                int(fx.away_team.id) if fx.away_team.id is not None else None,
             ),
         )
     return out
@@ -93,17 +125,19 @@ class ApiFootballSidelinedProvider(AvailabilityProvider):
             for fx in ctx.upcoming_fixtures:
                 api_fx_id = int(fx.api_fixture_id)
                 for api_team_id, team_name, team_internal_id in _team_entries(fx):
-                    player_list = _top_api_player_ids(
+                    player_list = _top_players_for_team(
                         ctx.db,
                         season=int(ctx.season_year),
                         league_id=int(ctx.league_internal_id),
                         api_team_id=api_team_id,
                     )
-                    for api_pid, pname in player_list:
+                    for pick in player_list:
                         if result.api_calls >= MAX_SIDELINED_API_CALLS:
                             api_calls_cap_hit = True
                             break
                         players_checked += 1
+                        api_pid = pick.api_player_id
+                        pname = pick.player_name
                         try:
                             raw_items = api.get_sidelined_by_player(api_pid)
                             result.api_calls += 1
@@ -161,13 +195,15 @@ class ApiFootballSidelinedProvider(AvailabilityProvider):
                                     season=int(ctx.season_year),
                                     league_id=int(ctx.league_internal_id),
                                     api_league_id=int(ctx.api_league_id),
-                                    team_id=team_internal_id,
+                                    team_id=team_internal_id or pick.team_id,
                                     api_team_id=api_team_id,
                                     team_name=team_name,
-                                    player_id=None,
+                                    player_id=pick.player_id,
                                     api_player_id=api_pid,
                                     player_name=str(row.get("player_name") or pname),
-                                    availability_status=str(row.get("availability_status") or "unknown"),
+                                    availability_status=str(
+                                        row.get("availability_status") or "unknown",
+                                    ),
                                     availability_type=row.get("availability_type"),
                                     reason=row.get("reason"),
                                     source=SOURCE_API_FOOTBALL_SIDELINED,

@@ -1,10 +1,15 @@
 """Test parse sidelined e provider."""
 
+import uuid
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+from app.models import PlayerSeasonProfile
 from app.services.availability.availability_sidelined_parsing import parse_sidelined_entries
 from app.services.availability.providers.api_football_sidelined_provider import (
     ApiFootballSidelinedProvider,
+    SidelinedPlayerPick,
+    _top_players_for_team,
 )
 from app.services.availability.providers.base import ProviderContext
 
@@ -24,9 +29,46 @@ def test_parse_sidelined_entries_dates():
     assert rows[0]["api_player_id"] == 42
 
 
-@patch("app.services.availability.providers.api_football_sidelined_provider._top_api_player_ids")
-def test_sidelined_provider_fetches_by_player(mock_top_ids):
-    mock_top_ids.return_value = [(99, "Test Player")]
+def test_top_players_for_team_uses_registry_name():
+    pid = uuid.uuid4()
+    profile = PlayerSeasonProfile(
+        season=2025,
+        league_id=1,
+        api_team_id=487,
+        player_id=pid,
+        api_player_id=99,
+        minutes_total=Decimal("1500"),
+        reliability_score=80,
+        shots_on_per90=Decimal("0.5"),
+        shooting_impact_score=Decimal("75"),
+    )
+    reg = MagicMock()
+    reg.id = pid
+    reg.api_player_id = 99
+    reg.name = "Registry Player Name"
+    profile.registry = reg
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [profile]
+
+    picks = _top_players_for_team(db, season=2025, league_id=1, api_team_id=487, limit=20)
+    assert len(picks) == 1
+    assert picks[0].api_player_id == 99
+    assert picks[0].player_name == "Registry Player Name"
+    assert picks[0].player_id == pid
+
+
+@patch("app.services.availability.providers.api_football_sidelined_provider._top_players_for_team")
+def test_sidelined_provider_fetches_by_player(mock_top_players):
+    mock_top_players.return_value = [
+        SidelinedPlayerPick(
+            player_id=uuid.uuid4(),
+            api_player_id=99,
+            player_name="Test Player",
+            team_id=10,
+            api_team_id=487,
+        ),
+    ]
     fx = MagicMock()
     fx.id = 1
     fx.api_fixture_id = 1378236
@@ -63,6 +105,7 @@ def test_sidelined_provider_fetches_by_player(mock_top_ids):
     assert len(result.candidates) >= 1
     assert result.candidates[0].source == "api_football_sidelined"
     assert result.candidates[0].api_fixture_id == 1378236
+    assert result.status == "success"
 
 
 def test_sidelined_not_available_without_client_method():
@@ -89,9 +132,17 @@ def test_sidelined_not_available_without_client_method():
     assert result.called is False
 
 
-@patch("app.services.availability.providers.api_football_sidelined_provider._top_api_player_ids")
-def test_sidelined_skips_team_without_api_id(mock_top_ids):
-    mock_top_ids.return_value = [(1, "P")]
+@patch("app.services.availability.providers.api_football_sidelined_provider._top_players_for_team")
+def test_sidelined_skips_team_without_api_id(mock_top_players):
+    mock_top_players.return_value = [
+        SidelinedPlayerPick(
+            player_id=uuid.uuid4(),
+            api_player_id=1,
+            player_name="P",
+            team_id=11,
+            api_team_id=499,
+        ),
+    ]
     fx = MagicMock()
     fx.id = 1
     fx.api_fixture_id = 100
@@ -116,4 +167,4 @@ def test_sidelined_skips_team_without_api_id(mock_top_ids):
 
     result = ApiFootballSidelinedProvider().fetch_candidates(ctx)
     assert result.status == "success"
-    mock_top_ids.assert_called_once()
+    mock_top_players.assert_called_once()
