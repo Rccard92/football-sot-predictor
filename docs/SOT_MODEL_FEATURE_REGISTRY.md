@@ -122,20 +122,17 @@ Implementazione: [`player_layer_strict.py`](backend/app/services/predictions_v11
 | Impatto formula | Via **Player layer** (6ª componente, peso 13% invariato) in modalità `lineup_adjusted` |
 | Mock / fallback | Vietati |
 
-## Availability / Indisponibili (DB, audit 8A)
+## Availability / Indisponibili (step 8A) — **rimosso / disattivato**
 
 | Aspetto | Dettaglio |
 |---------|-----------|
-| Fonte API | `injuries` (league + season; filtro fixture/team in app) |
-| Tabella | `player_availability` (upsert idempotico; `is_active` per storico) |
-| Legacy | `player_availability_events` (dashboard; non usata dal flusso 8A) |
-| Ingestion | `POST /api/admin/ingest/serie-a/{season}/availability` |
-| Summary admin | `GET /api/admin/debug/serie-a/{season}/availability-summary` |
-| Debug fixture | `GET /api/debug/sot/fixture/{id}/availability` |
-| Impatto formula | **Nessuno in 8A** (`model_impact: false`); step 8B futuro |
-| Assenza record | Non implica disponibilità certa; nessun mock da lineups/minuti |
+| Stato | Feature rimossa (maggio 2026): ingest, admin, audit UI e package `services/availability/` eliminati |
+| Motivo | Dati API-Sports (`injuries`, `sidelined`) e Sportmonks non affidabili per uso predittivo |
+| Impatto formula | **Nessuno** — `availability_adjustment` sempre `disabled`, penalità `0` in v1.1 e v0.2 |
+| Tabelle DB | `player_availability`, `player_availability_events` mantenute (storico; nessun drop migration) |
+| Player layer | Peso 13% invariato; nessun injuries/sidelined nel calcolo |
 
-Implementazione: [`availability_ingestion.py`](backend/app/services/availability/availability_ingestion.py), [`availability_persist.py`](backend/app/services/availability/availability_persist.py), [`availability_debug.py`](backend/app/services/availability/availability_debug.py). Package isolato: nessun import da `predictions_v11`.
+La componente indisponibili/infortuni è stata rimossa perché i dati da API-Sports e valutazioni Sportmonks si sono dimostrati non affidabili. Il modello SOT Prediction non utilizza attualmente assenze o infortuni nel calcolo.
 
 ## Vincoli globali
 
@@ -154,4 +151,3 @@ Implementazione: [`availability_ingestion.py`](backend/app/services/availability
 - `GET /api/debug/sot/fixture/{id}/explanation?model_version=baseline_v1_1_sot`
 - `GET /api/debug/sot/fixture/{id}/features?model_version=baseline_v1_1_sot`
 - `GET /api/debug/sot/fixture/{id}/lineups`
-- `GET /api/debug/sot/fixture/{id}/availability`

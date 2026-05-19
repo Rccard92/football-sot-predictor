@@ -176,7 +176,7 @@ Senza formazioni ufficiali, il player impact misura **forza della rosa** (non â€
 
 | Variabile | Descrizione | Mercati | Peso | Fonte dati possibile | Stato | Applicata ora | Note/limiti |
 |---|---|---|---:|---|---|---|---|
-| injuries_list | Lista infortunati | tutti | 75 | injuries API | solo debug | no | Se dati non affidabili â†’ warning |
+| injuries_list | Lista infortunati | tutti | 75 | injuries API | deprecato / rimosso | no | Componente disattivata: dati API non affidabili |
 | suspensions_list | Lista squalificati | tutti | 75 | injuries/discipline API | da implementare | no | |
 | absences_list | Indisponibili generici | tutti | 65 | provider | da implementare | no | |
 | doubtful_players | Diffidati/ballottaggi | tutti | 35 | news | da implementare | no | Estremamente rumoroso |

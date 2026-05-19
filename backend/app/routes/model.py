@@ -1503,9 +1503,9 @@ def get_match_analysis_framework() -> MatchAnalysisFrameworkResponse:
             {
                 "id": "injuries_availability",
                 "title": "Assenti / infortunati / squalificati",
-                "description": "Disponibilità giocatori e impatto sul match; distinguere assenza assorbita vs improvvisa.",
+                "description": "Rimosso dal modello: dati injuries/sidelined API-Sports non affidabili. Nessun impatto sul calcolo SOT.",
                 "variables": [
-                    v(area="Assenti / infortunati / squalificati", key="infortunati", name="Infortunati", description="Lista infortunati.", markets=all_markets, weight=85, data_source="Injuries provider", status="solo debug", applied_now=False, notes="Solo warning in questa fase."),
+                    v(area="Assenti / infortunati / squalificati", key="infortunati", name="Infortunati", description="Lista infortunati.", markets=all_markets, weight=85, data_source="Injuries provider", status="deprecato", applied_now=False, notes="Feature rimossa; applied_now sempre false."),
                     v(area="Assenti / infortunati / squalificati", key="squalificati", name="Squalificati", description="Lista squalificati.", markets=all_markets, weight=85, data_source="Discipline provider", status="da implementare", applied_now=False),
                     v(area="Assenti / infortunati / squalificati", key="indisponibili", name="Indisponibili", description="Indisponibili generici.", markets=all_markets, weight=65, data_source="Provider", status="da implementare", applied_now=False),
                     v(area="Assenti / infortunati / squalificati", key="diffidati", name="Diffidati", description="Diffidati/ballottaggi (se utile).", markets=all_markets, weight=35, data_source="News/provider", status="da implementare", applied_now=False),

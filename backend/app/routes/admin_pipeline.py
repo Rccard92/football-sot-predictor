@@ -225,40 +225,7 @@ def admin_pipeline_refresh_upcoming_v04(
             },
         )
 
-    # 6 — Disponibilità / infortuni (non critico)
-    try:
-        from app.services.availability.availability_upcoming_ingestion import (
-            ingest_serie_a_availability_upcoming,
-        )
-
-        r6 = ingest_serie_a_availability_upcoming(db, season)
-        rec6 = int(r6.get("records_saved") or 0)
-        ok6 = r6.get("status") in ("success", "partial_success")
-        steps.append(
-            {
-                "key": "availability",
-                "label": "Disponibilità / infortuni",
-                "status": "success" if ok6 else "skipped",
-                "records_processed": rec6,
-                "message": f"Upsert {rec6} record" if ok6 else str(r6.get("errors") or "non completato")[:200],
-            },
-        )
-        if not ok6:
-            warnings.append(f"Disponibilità: step non completato")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("pipeline: availability optional failure: %s", exc, exc_info=True)
-        warnings.append(f"Disponibilità saltata: {str(exc)[:300]}")
-        steps.append(
-            {
-                "key": "availability",
-                "label": "Disponibilità / infortuni",
-                "status": "skipped",
-                "records_processed": 0,
-                "message": str(exc)[:500],
-            },
-        )
-
-    # 7 — Profili giocatori (non critico)
+    # 6 — Profili giocatori (non critico)
     try:
         prof = PlayerSotProfileService().build_for_season(db, season)
         ok = prof.get("status") == "success"

@@ -3,9 +3,6 @@ import {
   AdminHttpError,
   DEFAULT_SEASON,
   adminBootstrapSerieA,
-  adminIngestAvailability,
-  adminIngestAvailabilityUpcoming,
-  getAvailabilityFixtureFlow,
   adminIngestLineups,
   adminIngestPlayerMatchStats,
   buildPlayerSeasonProfiles,
@@ -14,16 +11,12 @@ import {
   adminIngestTeamStats,
   adminRefreshPostMatchday,
   adminRegenerateUpcomingPredictions,
-  adminTestInjuriesApi,
   buildPlayerSotProfiles,
   buildUpcomingSotFeatures,
   generateUpcomingSotPredictions,
   getDataHealth,
   getIngestionRuns,
   getTeamShotStatsSummary,
-  getAvailabilityApiRawList,
-  getAvailabilityRawCheck,
-  getAvailabilitySummary,
   getPlayerMatchDbSummary,
   getModelStatusWithOpts,
   getPlayerSotProfilesSummary,
@@ -40,7 +33,6 @@ import {
   type UpcomingActiveResponse,
 } from '../lib/api'
 
-import type { AvailabilityApiRawListResponse } from '../types/fixtureAvailability'
 import { V04_MODEL, V10_MODEL, V11_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
@@ -63,124 +55,6 @@ function pickMessage(payload: unknown, okFallback: string): string {
       const m = o.player_match_stats_upserted
       const pl = o.players_upserted
       return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
-    }
-    if (typeof o.records_saved === 'number' && o.fixtures_checked != null) {
-      const withN = Array.isArray(o.fixtures_with_availability) ? o.fixtures_with_availability.length : 0
-      const withoutN = Array.isArray(o.fixtures_without_availability)
-        ? o.fixtures_without_availability.length
-        : 0
-      const errN = Array.isArray(o.errors) ? o.errors.length : 0
-      const coverage = o.provider_future_availability_coverage
-        ? String(o.provider_future_availability_coverage)
-        : '—'
-      const providers = o.providers as
-        | Record<
-            string,
-            {
-              status?: string
-              error?: string
-              applicable_saved?: number
-              candidates_total?: number
-              candidate_not_applied?: number
-              players_checked?: number
-            }
-          >
-        | undefined
-      if (providers?.api_football_injuries || providers?.api_football_sidelined) {
-        const inj = providers.api_football_injuries
-        const sid = providers.api_football_sidelined
-        const phase = o.phase != null ? String(o.phase) : null
-        const msg = o.message != null ? String(o.message) : null
-        const dryRun = o.dry_run === true ? ' · dry_run' : ''
-        return [
-          `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
-          phase ? `fase ${phase}` : '',
-          msg ?? '',
-          `fixture ${String(o.fixtures_checked ?? '—')}`,
-          `injuries [${String(inj?.status ?? '—')}] salvati ${String(inj?.applicable_saved ?? 0)}/${String(inj?.candidates_total ?? 0)}`,
-          `sidelined [${String(sid?.status ?? '—')}] salvati ${String(sid?.applicable_saved ?? 0)}/${String(sid?.candidates_total ?? 0)}`,
-          sid?.players_checked != null ? `giocatori sidelined ${String(sid.players_checked)}` : '',
-          inj?.error ? `injuries err: ${String(inj.error).slice(0, 80)}` : '',
-          sid?.error ? `sidelined err: ${String(sid.error).slice(0, 80)}` : '',
-          `salvati ${String(o.records_saved ?? '—')} · aggiornati ${String(o.records_updated ?? '—')}`,
-          o.records_would_save != null ? `would_save ${String(o.records_would_save)}` : '',
-          `con indisponibili ${withN} · senza ${withoutN}`,
-          `coverage ${coverage}`,
-          errN ? `errori ${errN}` : '',
-          dryRun,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      }
-      const src = o.sources as Record<string, { results_total?: number; records_matching_upcoming?: number }> | undefined
-      const leagueTotal = src?.league_season_filtered?.results_total ?? '—'
-      const leagueMatch = src?.league_season_filtered?.records_matching_upcoming ?? '—'
-      return [
-        `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
-        `fixture ${String(o.fixtures_checked ?? '—')}`,
-        `raw stagionale ${leagueTotal} → matching ${leagueMatch}`,
-        `salvati ${String(o.records_saved ?? '—')} · aggiornati ${String(o.records_updated ?? '—')}`,
-        `con indisponibili ${withN} · senza ${withoutN}`,
-        `coverage ${coverage}`,
-        errN ? `errori ${errN}` : '',
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    }
-    if (typeof o.records_saved === 'number' && o.fixtures_checked != null) {
-      const withN = Array.isArray(o.fixtures_with_availability) ? o.fixtures_with_availability.length : 0
-      const withoutN = Array.isArray(o.fixtures_without_availability)
-        ? o.fixtures_without_availability.length
-        : 0
-      const errN = Array.isArray(o.errors) ? o.errors.length : 0
-      return [
-        `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
-        `fixture ${String(o.fixtures_checked ?? '—')}`,
-        `record salvati ${String(o.records_saved ?? '—')}`,
-        `con indisponibili ${withN} · senza ${withoutN}`,
-        errN ? `errori ${errN}` : '',
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    }
-    if (typeof o.availability_records_upserted === 'number') {
-      const top = Array.isArray(o.top_shooters_flagged) ? o.top_shooters_flagged.length : 0
-      const errN = Array.isArray(o.errors) ? o.errors.length : 0
-      return [
-        `Indisponibili: status ${String(o.status ?? '—')}`,
-        `fixture controllate ${String(o.fixtures_checked ?? '—')}`,
-        `record upsert ${String(o.availability_records_upserted ?? '—')}`,
-        `fixture-level ${String(o.records_fixture_level ?? '—')} · team-level ${String(o.records_team_level ?? '—')}`,
-        `API calls ${String(o.api_calls ?? '—')} (fx ${String(o.api_calls_by_fixture ?? '—')} / team ${String(o.api_calls_by_team ?? '—')})`,
-        `registry ok ${String(o.players_matched_to_registry ?? '—')}`,
-        `registry mancanti ${String(o.players_not_matched_to_registry ?? '—')}`,
-        top ? `top shooter segnalati ${top}` : '',
-        errN ? `errori ${errN}` : '',
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    }
-    if (Array.isArray(o.diagnosis) && o.diagnosis.length > 0) {
-      const ps = o.player_search as Record<string, unknown> | undefined
-      const q = ps?.query ? String(ps.query) : ''
-      const apiChecks = o.api_checks as Record<string, { results?: number }> | undefined
-      const bf = apiChecks?.by_fixture?.results ?? 0
-      const ht = apiChecks?.home_team?.results ?? 0
-      const at = apiChecks?.away_team?.results ?? 0
-      return [
-        `Debug availability${q ? ` (${q})` : ''}`,
-        `by_fixture ${bf} · home ${ht} · away ${at}`,
-        `diagnosi: ${o.diagnosis.slice(0, 3).join(' | ')}`,
-      ].join(' · ')
-    }
-    if (typeof o.active_records === 'number' && o.season != null) {
-      return [
-        `Availability summary ${String(o.season)}`,
-        `attivi ${String(o.active_records ?? '—')}`,
-        `totale ${String(o.total_records ?? '—')}`,
-        `con fixture ${String(o.active_with_fixture ?? '—')}`,
-        `con registry ${String(o.active_with_registry ?? '—')}`,
-      ].join(' · ')
     }
     if (typeof o.fixtures_checked === 'number' || typeof o.lineups_upserted === 'number') {
       const nav = Array.isArray(o.not_available_yet) ? o.not_available_yet.length : 0
@@ -305,14 +179,6 @@ export function Admin() {
   const [modelStatus, setModelStatus] = useState<ModelStatusResponse | null>(null)
   const [upcomingActive, setUpcomingActive] = useState<UpcomingActiveResponse | null>(null)
   const [cardsError, setCardsError] = useState<string | null>(null)
-  const [availDebugFixtureId, setAvailDebugFixtureId] = useState('')
-  const [availDebugPlayerSearch, setAvailDebugPlayerSearch] = useState('Rovella')
-  const [apiRawList, setApiRawList] = useState<AvailabilityApiRawListResponse | null>(null)
-  const [apiRawLoading, setApiRawLoading] = useState(false)
-  const [apiRawTeamId, setApiRawTeamId] = useState('')
-  const [apiRawFixtureId, setApiRawFixtureId] = useState('')
-  const [apiRawDate, setApiRawDate] = useState('')
-  const [apiRawPlayerFilter, setApiRawPlayerFilter] = useState('')
 
   const loadCards = useCallback(async () => {
     setCardsError(null)
@@ -335,41 +201,6 @@ export function Admin() {
   useEffect(() => {
     void loadCards()
   }, [loadCards])
-
-  const loadApiRawList = useCallback(async () => {
-    setApiRawLoading(true)
-    try {
-      const teamId = apiRawTeamId.trim() ? parseInt(apiRawTeamId.trim(), 10) : undefined
-      const fixtureId = apiRawFixtureId.trim() ? parseInt(apiRawFixtureId.trim(), 10) : undefined
-      if (apiRawTeamId.trim() && !Number.isFinite(teamId)) {
-        throw new Error('team_id non valido')
-      }
-      if (apiRawFixtureId.trim() && !Number.isFinite(fixtureId)) {
-        throw new Error('fixture_id non valido')
-      }
-      const data = await getAvailabilityApiRawList(SEASON, {
-        teamId: Number.isFinite(teamId) ? teamId : undefined,
-        fixtureId: Number.isFinite(fixtureId) ? fixtureId : undefined,
-        date: apiRawDate.trim() || undefined,
-      })
-      setApiRawList(data)
-    } catch (e) {
-      setApiRawList({
-        status: 'error',
-        season: SEASON,
-        message: e instanceof Error ? e.message : String(e),
-      })
-    } finally {
-      setApiRawLoading(false)
-    }
-  }, [apiRawTeamId, apiRawFixtureId, apiRawDate])
-
-  const apiRawFilteredRecords = (() => {
-    const rows = apiRawList?.records ?? []
-    const q = apiRawPlayerFilter.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter((r) => (r.player_name ?? '').toLowerCase().includes(q))
-  })()
 
   const runAction = useCallback(
     async (action: AdminAction) => {
@@ -500,21 +331,6 @@ export function Admin() {
       },
     },
     {
-      id: 'availability-upcoming',
-      label: 'Aggiorna indisponibili prossima giornata',
-      description:
-        'Provider injuries + sidelined (API-Football). Debug: ?use_sidelined=false o ?dry_run=true. Solo HIGH/MEDIUM salvati.',
-      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability-upcoming?days_ahead=14`,
-      run: () => adminIngestAvailabilityUpcoming(SEASON, { daysAhead: 14 }),
-    },
-    {
-      id: 'availability-summary',
-      label: 'Verifica availability summary',
-      description: 'Conteggi record attivi/inattivi in player_availability per la stagione.',
-      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/availability-summary`,
-      run: () => getAvailabilitySummary(SEASON),
-    },
-    {
       id: 'profiles',
       label: 'Ricalcola profili giocatori',
       endpoint: `POST /api/features/player-sot-profiles/serie-a/${SEASON}/build`,
@@ -584,7 +400,7 @@ export function Admin() {
       id: 'refresh-v04-pipeline',
       label: 'Aggiorna prossima giornata completa',
       description:
-        'Pipeline: fixture, stats squadra, classifica, giocatori, formazioni, disponibilità (best-effort), profili, previsioni v0.4, stato modello.',
+        'Pipeline: fixture, stats squadra, classifica, giocatori, formazioni, profili, previsioni v0.4, stato modello.',
       endpoint: `POST /api/admin/pipeline/serie-a/${SEASON}/refresh-upcoming-v04`,
       run: () => postRefreshUpcomingV04Pipeline(SEASON),
     },
@@ -616,40 +432,6 @@ export function Admin() {
         'Bloccati e Shots off Goal: % copertura colonne fixture_team_stats; campione sintetico in risposta JSON.',
       endpoint: `GET /api/admin/debug/serie-a/${SEASON}/team-shot-stats-summary`,
       run: () => getTeamShotStatsSummary(SEASON),
-    },
-    {
-      id: 'injuries-test',
-      label: 'Prova lettura API infortuni (nessuna scrittura)',
-      endpoint: `GET /api/admin/api-football/injuries/test?season=${SEASON}`,
-      run: () => adminTestInjuriesApi(SEASON),
-    },
-    {
-      id: 'availability-fixture-flow',
-      label: 'Debug flusso indisponibili fixture (solo DB)',
-      description:
-        'Conteggi DB, record applicabili/esclusi, diagnosi e request API attesa (nessuna chiamata live).',
-      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/availability-fixture-flow`,
-      run: () => {
-        const fid = parseInt(availDebugFixtureId.trim(), 10)
-        if (!Number.isFinite(fid) || fid < 1) {
-          return Promise.reject(new Error('Inserisci un fixture_id numerico valido'))
-        }
-        return getAvailabilityFixtureFlow(SEASON, fid)
-      },
-    },
-    {
-      id: 'availability-raw-check',
-      label: 'Debug indisponibili fixture',
-      description:
-        'Confronta injuries API (fixture/team/league) vs DB. Usa fixture_id interno; opzionale player_search (es. Rovella).',
-      endpoint: `GET /api/admin/debug/serie-a/${SEASON}/availability-raw-check`,
-      run: () => {
-        const fid = parseInt(availDebugFixtureId.trim(), 10)
-        if (!Number.isFinite(fid) || fid < 1) {
-          return Promise.reject(new Error('Inserisci un fixture_id numerico valido'))
-        }
-        return getAvailabilityRawCheck(SEASON, fid, availDebugPlayerSearch.trim() || undefined)
-      },
     },
     {
       id: 'profiles-summary',
@@ -702,14 +484,6 @@ export function Admin() {
       label: 'Legacy: genera previsioni partite future v0.1',
       endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-upcoming`,
       run: () => generateUpcomingSotPredictions(SEASON),
-    },
-    {
-      id: 'availability-legacy',
-      label: 'Legacy: indisponibili league/season (debug)',
-      description:
-        'NON usare per audit/modello. Chiama injuries?league&season e può popolare record storici team-level.',
-      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability`,
-      run: () => adminIngestAvailability(SEASON),
     },
   ]
 
@@ -877,148 +651,6 @@ export function Admin() {
         </Section>
 
         <Section title="3 — Diagnostica" subtitle="Letture e controlli senza modificare il modello v0.4.">
-          <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
-            <p className="text-xs font-medium text-violet-950">Parametri debug indisponibili fixture</p>
-            <label className="mt-2 block text-[11px] text-slate-600">
-              fixture_id (interno DB)
-              <input
-                type="number"
-                value={availDebugFixtureId}
-                onChange={(e) => setAvailDebugFixtureId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                placeholder="es. 1234"
-              />
-            </label>
-            <label className="mt-2 block text-[11px] text-slate-600">
-              player_search (opzionale)
-              <input
-                type="text"
-                value={availDebugPlayerSearch}
-                onChange={(e) => setAvailDebugPlayerSearch(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                placeholder="Rovella"
-              />
-            </label>
-          </div>
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-            <p className="text-xs font-semibold text-amber-950">Debug avanzato — Indisponibili API raw</p>
-            <p className="mt-1 text-[10px] leading-relaxed text-amber-950">
-              Questa lista è grezza e stagionale. Non alimenta direttamente audit o modello. Il flusso operativo
-              filtra questi record sugli api_fixture_id della prossima giornata (POST availability-upcoming).
-            </p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              <label className="block text-[11px] text-slate-600">
-                team_id (opz.)
-                <input
-                  type="number"
-                  value={apiRawTeamId}
-                  onChange={(e) => setApiRawTeamId(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                />
-              </label>
-              <label className="block text-[11px] text-slate-600">
-                fixture_id (opz.)
-                <input
-                  type="number"
-                  value={apiRawFixtureId}
-                  onChange={(e) => setApiRawFixtureId(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                />
-              </label>
-              <label className="block text-[11px] text-slate-600">
-                date (YYYY-MM-DD, opz.)
-                <input
-                  type="text"
-                  value={apiRawDate}
-                  onChange={(e) => setApiRawDate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                  placeholder="2025-05-17"
-                />
-              </label>
-            </div>
-            <label className="mt-2 block text-[11px] text-slate-600">
-              Cerca giocatore (filtro locale)
-              <input
-                type="text"
-                value={apiRawPlayerFilter}
-                onChange={(e) => setApiRawPlayerFilter(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                placeholder="Zaniolo, Rovella"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={apiRawLoading}
-              onClick={() => void loadApiRawList()}
-              className="mt-3 rounded-lg bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
-            >
-              {apiRawLoading ? 'Caricamento...' : 'Carica tutti gli indisponibili API'}
-            </button>
-            {apiRawList ? (
-              <div className="mt-3 space-y-2 text-[11px] text-slate-700">
-                <p>
-                  <span className="font-medium">request:</span>{' '}
-                  <span className="font-mono">{apiRawList.request ?? '-'}</span>
-                </p>
-                <p>
-                  results: {String(apiRawList.results ?? '-')} | api_league_id:{' '}
-                  {String(apiRawList.api_league_id ?? '-')} | league_internal_id:{' '}
-                  {String(apiRawList.league_internal_id ?? '-')}
-                </p>
-                {apiRawList.errors && apiRawList.errors.length > 0 ? (
-                  <p className="text-rose-700">errors: {apiRawList.errors.join('; ')}</p>
-                ) : null}
-                {apiRawList.coverage?.injuries != null ? (
-                  <p>coverage.injuries: {String(apiRawList.coverage.injuries)}</p>
-                ) : null}
-                {apiRawList.message ? <p className="text-rose-700">{apiRawList.message}</p> : null}
-                <div className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white">
-                  <table className="w-full text-left text-[10px]">
-                    <thead className="sticky top-0 bg-slate-100">
-                      <tr>
-                        <th className="px-2 py-1">Data</th>
-                        <th className="px-2 py-1">Fx API</th>
-                        <th className="px-2 py-1">Squadra</th>
-                        <th className="px-2 py-1">Giocatore</th>
-                        <th className="px-2 py-1">Tipo</th>
-                        <th className="px-2 py-1">Motivo</th>
-                        <th className="px-2 py-1">Fonte</th>
-                        <th className="px-2 py-1">Pl API</th>
-                        <th className="px-2 py-1">Tm API</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {apiRawFilteredRecords.length === 0 ? (
-                        <tr>
-                          <td colSpan={9} className="px-2 py-2 text-slate-500">
-                            Nessun record
-                          </td>
-                        </tr>
-                      ) : (
-                        apiRawFilteredRecords.map((r, i) => (
-                          <tr key={i} className="border-t border-slate-100">
-                            <td className="px-2 py-1 whitespace-nowrap">{r.fixture_date ?? '-'}</td>
-                            <td className="px-2 py-1">{r.fixture_api_id ?? '-'}</td>
-                            <td className="px-2 py-1">{r.team_name ?? '-'}</td>
-                            <td className="px-2 py-1">{r.player_name ?? '-'}</td>
-                            <td className="px-2 py-1">{r.type ?? r.parsed_type ?? '-'}</td>
-                            <td className="px-2 py-1">{r.reason ?? '-'}</td>
-                            <td className="px-2 py-1">{r.source ?? '-'}</td>
-                            <td className="px-2 py-1">{r.player_api_id ?? '-'}</td>
-                            <td className="px-2 py-1">{r.team_api_id ?? '-'}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-slate-500">
-                  Righe in tabella: {apiRawFilteredRecords.length}
-                  {apiRawPlayerFilter.trim() ? ` (filtrate da ${apiRawList.records?.length ?? 0})` : ''}
-                </p>
-              </div>
-            ) : null}
-          </div>
           <div className="flex flex-col gap-3">
             {section3.map((a) => (
               <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />

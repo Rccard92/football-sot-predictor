@@ -1402,7 +1402,8 @@ class IngestionService:
         return self.ingest_serie_a_lineups(db, season, run_source="sync_completed_fixture_lineups")
 
     def ingest_serie_a_availability(self, db: Session, season: int) -> IngestionRun:
-        """Importa injuries API-Football come eventi di disponibilità (solo debug; non usato nel baseline)."""
+        # DEPRECATED: indisponibili disattivati — nessuna route admin espone questo metodo.
+        """Importa injuries API-Football come eventi di disponibilità (legacy, non usato)."""
         run = self._begin_run(db, "serie_a_availability", meta={"season": season})
         settings = get_settings()
         try:

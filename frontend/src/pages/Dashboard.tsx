@@ -285,9 +285,9 @@ export function Dashboard() {
         </SectionCard>
 
         {/* Step 9: layer giocatori / formazioni (copertura dati) */}
-        <SectionCard title="Layer giocatori, formazioni e disponibilità">
+        <SectionCard title="Layer giocatori e formazioni">
           {!dashboard.loading && !dashboard.error && d ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm">
                 <p className="text-xs font-medium text-slate-500">Statistiche giocatori (copertura)</p>
                 <p className="mt-2 text-xl font-semibold tabular-nums text-slate-900">
@@ -314,19 +314,10 @@ export function Dashboard() {
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Giocatori con profilo calcolato per la stagione</p>
               </div>
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium text-slate-500">Eventi assenze / infortuni (import)</p>
-                <p className="mt-2 text-xl font-semibold tabular-nums text-slate-900">
-                  {d.availability_events_total ?? 0}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Record salvati (non usati ancora nel baseline)
-                </p>
-              </div>
-            </div>
+</div>
           ) : dashboard.loading && pageInit ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, i) => (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
                 <SkeletonBlock key={i} className="h-24 w-full rounded-2xl" />
               ))}
             </div>

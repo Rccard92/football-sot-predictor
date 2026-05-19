@@ -48,14 +48,6 @@ from app.services.predictions_v11.player_layer_lineup_helpers import (
     select_top_shooter_api_ids,
     starter_has_offensive_profile,
 )
-from app.services.availability.availability_fixture_scope import (
-    applicable_for_team,
-    generic_for_team,
-    load_fixture_availability_buckets,
-)
-from app.services.availability.availability_player_adjustment import (
-    compute_player_availability_adjustment,
-)
 from app.services.predictions_v11.v11_shared import (
     missing_field,
     round2,
@@ -300,48 +292,19 @@ def _apply_fixture_availability_adjustment(
     profiles_by_api: dict[int, PlayerSeasonProfile],
     top_shooter_api_ids: list[int],
 ) -> dict[str, Any]:
-    buckets = load_fixture_availability_buckets(db, int(fx.id))
-    if buckets is None:
-        comp["availability_adjustment"] = {
-            "status": "no_applicable_records_for_fixture",
-            "scope": "fixture_applicable_only",
-            "fixture_id": int(fx.id),
-            "api_fixture_id": int(fx.api_fixture_id),
-            "records_considered": 0,
-            "generic_records_ignored": 0,
-            "top_shooters_unavailable": [],
-            "note": "Fixture availability non risolvibile.",
-        }
-        return comp
-
-    applicable = applicable_for_team(
-        buckets,
-        api_team_id=int(team.api_team_id),
-        team_id=int(team.id),
-    )
-    generic_n = len(
-        generic_for_team(
-            buckets,
-            api_team_id=int(team.api_team_id),
-            team_id=int(team.id),
-        ),
-    )
-    delta, blob = compute_player_availability_adjustment(
-        applicable,
-        top_shooter_api_ids,
-        profiles_by_api,
-        fixture_id=int(fx.id),
-        api_fixture_id=int(fx.api_fixture_id),
-        generic_records_ignored=generic_n,
-    )
-    if delta != 0.0:
-        new_val = round2(float(comp.get("value") or 0.0) + delta)
-        comp["value"] = new_val
-        comp["internal_formula"] = (
-            str(comp.get("internal_formula") or "")
-            + f"\n- availability (fixture_applicable_only): {delta}"
-        )
-    comp["availability_adjustment"] = blob
+    """Indisponibili disattivati: nessuna penalità sul Player layer."""
+    del db, team, profiles_by_api, top_shooter_api_ids
+    comp["availability_adjustment"] = {
+        "status": "disabled",
+        "applied": False,
+        "penalty": 0.0,
+        "scope": "fixture_applicable_only",
+        "fixture_id": int(fx.id),
+        "api_fixture_id": int(fx.api_fixture_id),
+        "records_considered": 0,
+        "top_shooters_unavailable": [],
+        "note": "Componente indisponibili disattivata: dati API non affidabili.",
+    }
     return comp
 
 

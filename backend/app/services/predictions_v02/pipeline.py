@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION, FINISHED_STATUSES
-from app.models import Fixture, PlayerAvailabilityEvent, Team, TeamSotPrediction
+from app.models import Fixture, Team, TeamSotPrediction
 from app.services.h2h_service import build_h2h_summary_for_fixture
 from app.services.match_context_service import MatchContextService
 from app.services.model_applied_variable_trace import append_trace_to_raw_json, compute_hours_to_kickoff
@@ -170,26 +170,14 @@ def generate_v02_for_upcoming_season(service: Any, db: Session, season_year: int
                     "details": str(exc),
                 }
 
-            try:
-                availability_events = db.scalars(
-                    select(PlayerAvailabilityEvent).where(
-                        PlayerAvailabilityEvent.season_id == season.id,
-                        PlayerAvailabilityEvent.team_id == team_id,
-                    ),
-                ).all()
-                availability_adj, availability_bd = service.compute_availability_adjustment(
-                    top_profiles=top_profiles,
-                    availability_events=availability_events,
-                )
-            except Exception as exc:
-                logger.exception("v02 availability adjustment failed for fixture %s team %s", fx.id, team_id)
-                availability_adj = 0.0
-                availability_bd = {
-                    "status": "not_available",
-                    "availability_status": "not_available",
-                    "penalty": 0.0,
-                    "details": str(exc),
-                }
+            availability_adj = 0.0
+            availability_bd = {
+                "status": "disabled",
+                "availability_status": "disabled",
+                "applied": False,
+                "penalty": 0.0,
+                "note": "Componente indisponibili disattivata: dati API non affidabili.",
+            }
 
             total_adj, adjusted_expected = service.compute_adjusted_prediction(
                 baseline_expected_sot=baseline_expected,
@@ -207,7 +195,7 @@ def generate_v02_for_upcoming_season(service: Any, db: Session, season_year: int
                     str((team_ctx or {}).get("turnover_risk")) == "alto"
                     or str((opp_ctx or {}).get("turnover_risk")) == "alto"
                 ),
-                availability_not_available=availability_bd.get("availability_status") == "not_available",
+                availability_not_available=True,
                 abs_total_adjustment=abs(total_adj),
             )
             breakdown = {
