@@ -1,42 +1,54 @@
-"""Debug flusso availability fixture."""
+"""Debug flusso availability fixture (solo DB)."""
 
 from unittest.mock import MagicMock, patch
 
 from app.services.availability.availability_fixture_flow_debug import build_availability_fixture_flow_debug
 
 
-@patch("app.services.availability.availability_fixture_flow_debug.build_fixture_availability_debug")
+@patch("app.services.availability.availability_fixture_flow_debug.resolve_serie_a_league_context")
 @patch("app.services.availability.availability_fixture_flow_debug.load_fixture_availability_buckets")
-def test_fixture_flow_includes_fixture_request(mock_buckets, mock_audit):
+@patch("app.services.availability.availability_fixture_flow_debug.build_fixture_context")
+def test_fixture_flow_db_only_response(mock_ctx, mock_buckets, mock_league):
     db = MagicMock()
+    ctx = MagicMock()
+    ctx.fixture_id = 371
+    ctx.api_fixture_id = 1378173
+    ctx.season_year = 2025
+    ctx.league_id = 1
+    ctx.kickoff = MagicMock()
+    ctx.home_team_id = 10
+    ctx.away_team_id = 11
+    ctx.api_home_team_id = 487
+    ctx.api_away_team_id = 499
+    ctx.home_name = "Lazio"
+    ctx.away_name = "Pisa"
+    mock_ctx.return_value = ctx
+
+    league_ctx = MagicMock()
+    league_ctx.api_league_id = 135
+    mock_league.return_value = league_ctx
+
+    buckets = MagicMock()
+    buckets.applicable = []
+    buckets.generic_not_applied = []
+    buckets.excluded = []
+    buckets.ctx = ctx
+    mock_buckets.return_value = buckets
+
     fx = MagicMock()
-    fx.id = 371
-    fx.api_fixture_id = 1378173
-    fx.season_id = 1
-    fx.league_id = 1
     fx.kickoff_at = MagicMock()
     fx.kickoff_at.isoformat.return_value = "2025-05-17T15:00:00+00:00"
-    fx.home_team = MagicMock()
-    fx.home_team.name = "Lazio"
-    fx.away_team = MagicMock()
-    fx.away_team.name = "Pisa"
-
-    season_row = MagicMock()
-    season_row.year = 2025
-
-    db.scalar.side_effect = [fx, season_row]
+    fx.status = "NS"
+    db.scalar.side_effect = [fx, None]
     db.scalars.return_value.all.return_value = []
 
-    mock_buckets.return_value = MagicMock(applicable=[])
-    mock_audit.return_value = {"status": "success", "home": {}, "away": {}}
+    out = build_availability_fixture_flow_debug(db, 2025, 371)
 
-    out = build_availability_fixture_flow_debug(
-        db,
-        2025,
-        371,
-        api_items=[{"player": {"id": 1, "name": "Test"}}],
-    )
-
-    assert out["request"] == "injuries?fixture=1378173"
-    assert out["api_results_count"] == 1
+    assert out["status"] == "success"
+    assert out["fixture"]["api_fixture_id"] == 1378173
+    assert out["api_football_expected_request"]["fixture_request"] == "injuries?fixture=1378173"
+    assert out["api_football_expected_request"]["api_league_id"] == 135
+    assert "db_checks" in out
+    assert "excluded_records" in out
     assert "diagnosis" in out
+    assert "api_results_count" not in out

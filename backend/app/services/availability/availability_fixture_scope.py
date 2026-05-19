@@ -162,6 +162,48 @@ def classify_record_for_fixture(row: PlayerAvailability, ctx: FixtureContext) ->
     return "excluded"
 
 
+def exclusion_reason(row: PlayerAvailability, ctx: FixtureContext) -> str:
+    """Motivo testuale per record non applicabili (debug audit)."""
+    scope = infer_record_scope_from_row(row)
+
+    if not _record_team_in_fixture(row, ctx):
+        if scope == SCOPE_SEASON_LEVEL:
+            return "season_level"
+        if row.api_fixture_id is not None and int(row.api_fixture_id) != ctx.api_fixture_id:
+            return "wrong_fixture"
+        return "wrong_team"
+
+    if scope in (SCOPE_FIXTURE_LEVEL, SCOPE_MANUAL_FIXTURE_LEVEL):
+        if _fixture_level_matches(row, ctx):
+            return "fixture_level_match"
+        return "wrong_fixture"
+
+    if scope == SCOPE_TEAM_LEVEL:
+        if (row.source or "").strip() == SOURCE_INJURIES:
+            return "team_level_api_excluded"
+        if row.start_date is None:
+            return "team_level_without_dates"
+        if row.end_date is not None and ctx.kickoff > row.end_date:
+            return "dates_out_of_range"
+        if row.start_date is not None and ctx.kickoff < row.start_date:
+            return "dates_out_of_range"
+        return "team_level_not_applicable"
+
+    if scope == SCOPE_MANUAL_TEAM_LEVEL:
+        if row.api_fixture_id is not None and int(row.api_fixture_id) != ctx.api_fixture_id:
+            return "wrong_fixture"
+        if row.start_date is None:
+            return "manual_team_without_dates"
+        if not _kickoff_in_date_range(ctx.kickoff, row.start_date, row.end_date):
+            return "dates_out_of_range"
+        return "manual_team_valid"
+
+    if scope == SCOPE_SEASON_LEVEL:
+        return "season_level"
+
+    return "unknown"
+
+
 def build_fixture_context(db: Session, fixture_id: int) -> FixtureContext | None:
     fx = db.scalar(
         select(Fixture)

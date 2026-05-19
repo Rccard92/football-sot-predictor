@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react'
-import { getFixtureAvailability } from '../../lib/api'
-import type { AvailabilityPlayerRow, AvailabilityTeamSide } from '../../types/fixtureAvailability'
+import { DEFAULT_SEASON, getFixtureAvailability } from '../../lib/api'
+import type {
+  AvailabilityAuditMeta,
+  AvailabilityTeamSide,
+  FixtureAvailabilityResponse,
+} from '../../types/fixtureAvailability'
 import { formatFetchError } from '../../utils/formatFetchError'
+import { AvailabilityDebugPanel } from './AvailabilityDebugPanel'
 
 const SUBTITLE =
   'Mostra solo i record collegati alla fixture selezionata o override manuali validi per la data.'
 
 const EMPTY_MSG =
   'Nessun indisponibile applicabile a questa partita trovato nel DB.'
+
+const DEBUG_HINT =
+  'Apri «Debug indisponibili» sotto per vedere request audit, conteggi DB, record esclusi e diagnosi.'
 
 const GENERIC_NOTE =
   'Questi record esistono nel DB, ma non hanno fixture/date sufficienti per considerarli validi per questa partita.'
@@ -17,7 +25,9 @@ function fmtNum(v: number | null | undefined, d: number): string {
   return v.toFixed(d)
 }
 
-function AvailabilityTable({ rows }: { rows: AvailabilityPlayerRow[] }) {
+type Row = import('../../types/fixtureAvailability').AvailabilityPlayerRow
+
+function AvailabilityTable({ rows }: { rows: Row[] }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="min-w-full text-left text-[11px]">
@@ -94,7 +104,13 @@ function TeamAvailabilityCard({ side }: { side: AvailabilityTeamSide }) {
   )
 }
 
-export function AvailabilitySection({ fixtureId }: { fixtureId: number }) {
+export function AvailabilitySection({
+  fixtureId,
+  season = DEFAULT_SEASON,
+}: {
+  fixtureId: number
+  season?: number
+}) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [emptyApplicable, setEmptyApplicable] = useState(false)
@@ -103,6 +119,8 @@ export function AvailabilitySection({ fixtureId }: { fixtureId: number }) {
   const [away, setAway] = useState<AvailabilityTeamSide | null>(null)
   const [qualityNote, setQualityNote] = useState<string | null>(null)
   const [fixtureLabel, setFixtureLabel] = useState<string | null>(null)
+  const [auditResponse, setAuditResponse] = useState<FixtureAvailabilityResponse | null>(null)
+  const [auditMeta, setAuditMeta] = useState<AvailabilityAuditMeta | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -110,9 +128,20 @@ export function AvailabilitySection({ fixtureId }: { fixtureId: number }) {
       setLoading(true)
       setError(null)
       setEmptyApplicable(false)
+      const auditUrl = `/api/debug/sot/fixture/${fixtureId}/availability`
+      const t0 = performance.now()
       try {
         const data = await getFixtureAvailability(fixtureId)
+        const durationMs = Math.round(performance.now() - t0)
         if (cancelled) return
+
+        setAuditResponse(data)
+        setAuditMeta({
+          url: auditUrl,
+          httpStatus: 200,
+          durationMs,
+        })
+
         if (data.status === 'error') {
           setError(data.message || 'Impossibile caricare le indisponibilità.')
           return
@@ -137,7 +166,15 @@ export function AvailabilitySection({ fixtureId }: { fixtureId: number }) {
         setHome(data.home)
         setAway(data.away)
       } catch (e) {
-        if (!cancelled) setError(formatFetchError(e, `GET .../fixture/${fixtureId}/availability`))
+        if (!cancelled) {
+          setError(formatFetchError(e, `GET .../fixture/${fixtureId}/availability`))
+          setAuditMeta({
+            url: auditUrl,
+            httpStatus: 0,
+            durationMs: Math.round(performance.now() - t0),
+            error: formatFetchError(e, auditUrl),
+          })
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -169,6 +206,7 @@ export function AvailabilitySection({ fixtureId }: { fixtureId: number }) {
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
               {emptyMessage}
             </p>
+            <p className="text-[10px] text-slate-500">{DEBUG_HINT}</p>
             {home || away ? (
               <div className="flex flex-col gap-4">
                 {home ? <TeamAvailabilityCard side={home} /> : null}
@@ -182,6 +220,15 @@ export function AvailabilitySection({ fixtureId }: { fixtureId: number }) {
             <TeamAvailabilityCard side={away} />
             {qualityNote ? <p className="text-[10px] text-slate-500">{qualityNote}</p> : null}
           </div>
+        ) : null}
+
+        {!loading ? (
+          <AvailabilityDebugPanel
+            fixtureId={fixtureId}
+            season={season}
+            auditResponse={auditResponse}
+            auditMeta={auditMeta}
+          />
         ) : null}
       </div>
     </section>

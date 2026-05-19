@@ -125,6 +125,89 @@ export type AvailabilityApiRawListResponse = {
   message?: string
 }
 
+export type AvailabilityFixtureFlowDebug = {
+  status: string
+  season?: number
+  message?: string
+  fixture_id?: number
+  fixture?: {
+    fixture_id: number
+    api_fixture_id: number
+    label: string
+    kickoff_at: string
+    status: string
+    home_team: string
+    home_team_id: number
+    api_home_team_id: number
+    away_team: string
+    away_team_id: number
+    api_away_team_id: number
+  }
+  audit_endpoint?: {
+    url: string
+    records_returned: number
+  }
+  api_football_expected_request?: {
+    fixture_request: string
+    api_league_id: number
+    note: string
+  }
+  db_checks?: {
+    player_availability_total_for_fixture_api_id: number
+    player_availability_total_for_home_team: number
+    player_availability_total_for_away_team: number
+    fixture_level_records: Record<string, unknown>[]
+    manual_fixture_level_records: Record<string, unknown>[]
+    manual_team_level_valid_records: Record<string, unknown>[]
+    generic_records_not_applied: Record<string, unknown>[]
+  }
+  applicable_records?: {
+    home: Record<string, unknown>[]
+    away: Record<string, unknown>[]
+  }
+  excluded_records?: {
+    player_name: string
+    team_name: string
+    reason_excluded: string
+    record_scope: string
+    source: string | null
+    api_player_id?: number | null
+    api_fixture_id?: number | null
+  }[]
+  diagnosis?: string[]
+  last_availability_fetched_at?: string | null
+}
+
+export type AvailabilityLiveFixtureCheck = {
+  status: string
+  season?: number
+  fixture_id?: number
+  api_fixture_id?: number
+  message?: string
+  request?: string
+  results?: number
+  records?: {
+    player_name?: string | null
+    player_api_id?: number | null
+    team_name?: string | null
+    team_api_id?: number | null
+    type?: string | null
+    reason?: string | null
+    parsed_status?: string | null
+    parsed_type?: string | null
+    raw_json?: Record<string, unknown>
+  }[]
+  errors?: string[]
+  note?: string
+}
+
+export type AvailabilityAuditMeta = {
+  url: string
+  httpStatus: number
+  durationMs: number
+  error?: string
+}
+
 export type AvailabilityRawCheckResponse = {
   status: string
   season: number

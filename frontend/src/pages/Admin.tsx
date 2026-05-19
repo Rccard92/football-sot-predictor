@@ -539,9 +539,9 @@ export function Admin() {
     },
     {
       id: 'availability-fixture-flow',
-      label: 'Debug flusso indisponibili fixture',
+      label: 'Debug flusso indisponibili fixture (solo DB)',
       description:
-        'Mostra request injuries?fixture=, risultati API, record DB e audit applicabili per la fixture.',
+        'Conteggi DB, record applicabili/esclusi, diagnosi e request API attesa (nessuna chiamata live).',
       endpoint: `GET /api/admin/debug/serie-a/${SEASON}/availability-fixture-flow`,
       run: () => {
         const fid = parseInt(availDebugFixtureId.trim(), 10)

@@ -2,6 +2,8 @@
 
 import type {
   AvailabilityApiRawListResponse,
+  AvailabilityFixtureFlowDebug,
+  AvailabilityLiveFixtureCheck,
   AvailabilityRawCheckResponse,
   AvailabilitySeasonSummary,
   FixtureAvailabilityResponse,
@@ -1342,9 +1344,20 @@ export async function getAvailabilityFixtureFlow(
   season: number,
   fixtureId: number,
   opts?: AdminRequestOpts,
-): Promise<unknown> {
-  return adminGetJson<unknown>(
+): Promise<AvailabilityFixtureFlowDebug> {
+  return adminGetJson<AvailabilityFixtureFlowDebug>(
     `/api/admin/debug/serie-a/${season}/availability-fixture-flow?fixture_id=${fixtureId}`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
+  )
+}
+
+export async function getAvailabilityLiveFixtureCheck(
+  season: number,
+  fixtureId: number,
+  opts?: AdminRequestOpts,
+): Promise<AvailabilityLiveFixtureCheck> {
+  return adminGetJson<AvailabilityLiveFixtureCheck>(
+    `/api/admin/debug/serie-a/${season}/availability-live-fixture-check?fixture_id=${fixtureId}`,
     { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
   )
 }
