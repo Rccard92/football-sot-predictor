@@ -5,6 +5,8 @@ export type AvailabilityPlayerRow = {
   availability_type: string | null
   reason: string | null
   source?: string
+  source_label?: string
+  source_detail?: string | null
   record_scope?: string
   api_fixture_id?: number | null
   fixture_date?: string | null
@@ -60,12 +62,49 @@ export type AvailabilitySourceStats = {
   error?: string
 }
 
+export type AvailabilityProviderReport = {
+  called?: boolean
+  candidates_total?: number
+  applicable_saved?: number
+  candidate_not_applied?: number
+  players_checked?: number
+  api_calls?: number
+  error?: string
+}
+
+export type ProviderCandidateRow = {
+  player_name?: string
+  api_player_id?: number | null
+  team_name?: string | null
+  source?: string
+  source_detail?: string
+  record_scope?: string
+  confidence?: string
+  applicability_status?: string
+  applicability_reason?: string | null
+  availability_status?: string
+  availability_type?: string | null
+  start_date?: string | null
+  end_date?: string | null
+}
+
+export type ProviderCandidatesBlock = {
+  candidates_from_injuries?: ProviderCandidateRow[]
+  candidates_from_sidelined?: ProviderCandidateRow[]
+  candidates_applied?: ProviderCandidateRow[]
+  candidates_not_applied?: ProviderCandidateRow[]
+}
+
 export type AvailabilityUpcomingIngestResponse = {
   status: string
   season?: number
   api_league_id?: number
   fixtures_checked?: number
   upcoming_api_fixture_ids?: number[]
+  providers?: {
+    api_football_injuries?: AvailabilityProviderReport
+    api_football_sidelined?: AvailabilityProviderReport
+  }
   sources?: {
     ids_batch?: AvailabilitySourceStats
     league_season_filtered?: AvailabilitySourceStats
@@ -98,8 +137,11 @@ export type LastAvailabilityUpcoming = {
   records_from_fixture_direct?: number
   in_last_upcoming_set?: boolean
   provider_future_availability_coverage?: string
+  provider_candidates?: ProviderCandidatesBlock
   note?: string
 }
+
+export type { ProviderCandidatesBlock as AvailabilityProviderCandidates }
 
 export type AvailabilityIngestSummary = {
   status: string
@@ -225,6 +267,7 @@ export type AvailabilityFixtureFlowDebug = {
   diagnosis?: string[]
   last_availability_fetched_at?: string | null
   last_availability_upcoming?: LastAvailabilityUpcoming
+  provider_candidates?: ProviderCandidatesBlock
 }
 
 export type AvailabilityLiveFixtureCheck = {

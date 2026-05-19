@@ -9,8 +9,52 @@ import type {
   AvailabilityFixtureFlowDebug,
   AvailabilityLiveFixtureCheck,
   FixtureAvailabilityResponse,
+  ProviderCandidateRow,
 } from '../../types/fixtureAvailability'
 import { formatFetchError } from '../../utils/formatFetchError'
+
+function CandidateTable({
+  title,
+  rows,
+  tone,
+}: {
+  title: string
+  rows: ProviderCandidateRow[]
+  tone: 'emerald' | 'amber'
+}) {
+  if (!rows.length) return null
+  const border = tone === 'emerald' ? 'border-emerald-200' : 'border-amber-200'
+  const head = tone === 'emerald' ? 'text-emerald-900' : 'text-amber-900'
+  return (
+    <div className={`rounded-lg border ${border} p-2`}>
+      <p className={`text-[10px] font-semibold uppercase tracking-wide ${head}`}>{title}</p>
+      <div className="mt-1.5 overflow-x-auto">
+        <table className="min-w-full text-left text-[10px]">
+          <thead className="text-slate-500">
+            <tr>
+              <th className="pr-2 py-0.5">Giocatore</th>
+              <th className="pr-2 py-0.5">Fonte</th>
+              <th className="pr-2 py-0.5">Confidence</th>
+              <th className="pr-2 py-0.5">Motivo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, 15).map((r, i) => (
+              <tr key={`${r.player_name}-${i}`} className="border-t border-slate-100">
+                <td className="py-0.5 pr-2">{r.player_name ?? '—'}</td>
+                <td className="py-0.5 pr-2">
+                  {r.source === 'api_football_sidelined' ? 'Sidelined API' : 'Injuries API'}
+                </td>
+                <td className="py-0.5 pr-2">{r.confidence ?? '—'}</td>
+                <td className="py-0.5 pr-2 text-slate-600">{r.applicability_reason ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
 
 function jsonPreview(x: unknown): string {
   try {
@@ -223,6 +267,33 @@ export function AvailabilityDebugPanel({
             Copia JSON audit
           </button>
         </div>
+
+        {flow?.provider_candidates ||
+        flow?.last_availability_upcoming?.provider_candidates ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
+              Provider candidates (ultimo availability-upcoming)
+            </p>
+            <CandidateTable
+              title="Applicati (HIGH/MEDIUM)"
+              rows={
+                flow?.provider_candidates?.candidates_applied ??
+                flow?.last_availability_upcoming?.provider_candidates?.candidates_applied ??
+                []
+              }
+              tone="emerald"
+            />
+            <CandidateTable
+              title="Non applicati (LOW / scartati)"
+              rows={
+                flow?.provider_candidates?.candidates_not_applied ??
+                flow?.last_availability_upcoming?.provider_candidates?.candidates_not_applied ??
+                []
+              }
+              tone="amber"
+            />
+          </div>
+        ) : null}
 
         {flow?.last_availability_upcoming ? (
           <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2.5">

@@ -272,6 +272,7 @@ def build_availability_fixture_flow_debug(
                 ),
             },
             "last_availability_upcoming": last_upcoming,
+            "provider_candidates": last_upcoming.get("provider_candidates") or {},
             "db_checks": {
                 "player_availability_total_for_fixture_api_id": len(db_by_api_fixture),
                 "player_availability_total_for_home_team": len(db_home_team),

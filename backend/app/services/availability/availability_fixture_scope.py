@@ -14,6 +14,8 @@ from app.models.player_availability import (
     SCOPE_FIXTURE_LEVEL,
     SCOPE_MANUAL_FIXTURE_LEVEL,
     SCOPE_MANUAL_TEAM_LEVEL,
+    SCOPE_PROVIDER_CURRENT,
+    SCOPE_PROVIDER_DATE_RANGE,
     SCOPE_SEASON_LEVEL,
     SCOPE_TEAM_LEVEL,
 )
@@ -133,7 +135,12 @@ def classify_record_for_fixture(row: PlayerAvailability, ctx: FixtureContext) ->
             return "excluded"
         return "excluded"
 
-    if scope in (SCOPE_FIXTURE_LEVEL, SCOPE_MANUAL_FIXTURE_LEVEL):
+    if scope in (
+        SCOPE_FIXTURE_LEVEL,
+        SCOPE_MANUAL_FIXTURE_LEVEL,
+        SCOPE_PROVIDER_CURRENT,
+        SCOPE_PROVIDER_DATE_RANGE,
+    ):
         if _fixture_level_matches(row, ctx):
             return "applicable"
         return "excluded"
@@ -173,7 +180,12 @@ def exclusion_reason(row: PlayerAvailability, ctx: FixtureContext) -> str:
             return "wrong_fixture"
         return "wrong_team"
 
-    if scope in (SCOPE_FIXTURE_LEVEL, SCOPE_MANUAL_FIXTURE_LEVEL):
+    if scope in (
+        SCOPE_FIXTURE_LEVEL,
+        SCOPE_MANUAL_FIXTURE_LEVEL,
+        SCOPE_PROVIDER_CURRENT,
+        SCOPE_PROVIDER_DATE_RANGE,
+    ):
         if _fixture_level_matches(row, ctx):
             return "fixture_level_match"
         return "wrong_fixture"

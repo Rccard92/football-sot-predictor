@@ -10,8 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.models import Fixture, PlayerAvailability, PlayerRegistry, Team
 from app.services.availability.availability_fixture_scope import infer_record_scope_from_parsed
-from app.models.player_availability import SCOPE_FIXTURE_LEVEL
+from app.models.player_availability import (
+    SCOPE_FIXTURE_LEVEL,
+    SOURCE_API_FOOTBALL_INJURIES,
+    SOURCE_API_FOOTBALL_SIDELINED,
+)
 from app.services.availability.availability_parsing import SOURCE_INJURIES, ParsedAvailabilityRecord
+from app.services.availability.providers.types import NormalizedAvailabilityCandidate
+
+API_AUTO_SOURCES = (SOURCE_API_FOOTBALL_INJURIES, SOURCE_API_FOOTBALL_SIDELINED)
 
 
 def _utc_now() -> datetime:
@@ -41,7 +48,7 @@ def _resolve_team(db: Session, api_team_id: int | None) -> Team | None:
     return db.scalar(select(Team).where(Team.api_team_id == int(api_team_id)))
 
 
-def _match_existing(
+def _match_existing_parsed(
     db: Session,
     *,
     season: int,
@@ -55,14 +62,31 @@ def _match_existing(
         PlayerAvailability.api_team_id == parsed.api_team_id,
         PlayerAvailability.api_player_id == parsed.api_player_id,
     )
+    if parsed.source_detail is not None:
+        q = q.where(PlayerAvailability.source_detail == parsed.source_detail)
     if parsed.api_fixture_id is not None:
         q = q.where(PlayerAvailability.api_fixture_id == int(parsed.api_fixture_id))
     else:
         q = q.where(
             PlayerAvailability.api_fixture_id.is_(None),
-            PlayerAvailability.api_player_id == parsed.api_player_id,
             PlayerAvailability.reason == parsed.reason,
         )
+    return db.scalar(q)
+
+
+def _match_existing_candidate(
+    db: Session,
+    candidate: NormalizedAvailabilityCandidate,
+) -> PlayerAvailability | None:
+    q = select(PlayerAvailability).where(
+        PlayerAvailability.season == int(candidate.season),
+        PlayerAvailability.league_id == int(candidate.league_id),
+        PlayerAvailability.source == candidate.source,
+        PlayerAvailability.source_detail == candidate.source_detail,
+        PlayerAvailability.api_team_id == candidate.api_team_id,
+        PlayerAvailability.api_player_id == candidate.api_player_id,
+        PlayerAvailability.api_fixture_id == int(candidate.api_fixture_id),
+    )
     return db.scalar(q)
 
 
@@ -73,14 +97,32 @@ def deactivate_fixture_injuries(
     league_id: int,
     api_fixture_id: int,
 ) -> int:
-    """Disattiva solo record API injuries della stessa api_fixture_id (non manual_override)."""
+    """Disattiva solo record API injuries (legacy)."""
+    return deactivate_fixture_api_availability(
+        db,
+        season=season,
+        league_id=league_id,
+        api_fixture_id=api_fixture_id,
+        sources=(SOURCE_INJURIES,),
+    )
+
+
+def deactivate_fixture_api_availability(
+    db: Session,
+    *,
+    season: int,
+    league_id: int,
+    api_fixture_id: int,
+    sources: tuple[str, ...] = API_AUTO_SOURCES,
+) -> int:
+    """Disattiva record API automatici per fixture (non manual_override)."""
     stmt = (
         update(PlayerAvailability)
         .where(
             PlayerAvailability.season == int(season),
             PlayerAvailability.league_id == int(league_id),
             PlayerAvailability.is_active.is_(True),
-            PlayerAvailability.source == SOURCE_INJURIES,
+            PlayerAvailability.source.in_(list(sources)),
             PlayerAvailability.api_fixture_id == int(api_fixture_id),
         )
         .values(is_active=False)
@@ -130,7 +172,7 @@ def upsert_availability_record(
     registry_id = _resolve_registry_id(db, parsed.api_player_id)
     matched = registry_id is not None
 
-    row = _match_existing(db, season=season, league_id=league_id, parsed=parsed)
+    row = _match_existing_parsed(db, season=season, league_id=league_id, parsed=parsed)
     created = row is None
     if row is None:
         row = PlayerAvailability(
@@ -173,6 +215,63 @@ def upsert_availability_record(
         raw["_meta"] = meta
     row.raw_json = raw
     return row, matched, created
+
+
+def upsert_availability_candidate(
+    db: Session,
+    *,
+    candidate: NormalizedAvailabilityCandidate,
+    fetched_at: datetime | None = None,
+) -> tuple[PlayerAvailability, bool, bool]:
+    """Upsert da candidato provider normalizzato."""
+    now = fetched_at or _utc_now()
+    if candidate.team_id is None and candidate.api_team_id is not None:
+        team = _resolve_team(db, candidate.api_team_id)
+        if team is not None:
+            candidate.team_id = int(team.id)
+    registry_id = _resolve_registry_id(db, candidate.api_player_id)
+    matched_reg = registry_id is not None
+
+    row = _match_existing_candidate(db, candidate)
+    created = row is None
+    if row is None:
+        row = PlayerAvailability(
+            season=int(candidate.season),
+            league_id=int(candidate.league_id),
+            player_name=candidate.player_name,
+            source=candidate.source,
+            source_detail=candidate.source_detail,
+        )
+        db.add(row)
+
+    row.fixture_id = int(candidate.fixture_id)
+    row.api_fixture_id = int(candidate.api_fixture_id)
+    row.team_id = candidate.team_id
+    row.api_team_id = candidate.api_team_id
+    row.team_name = candidate.team_name
+    row.player_id = registry_id
+    row.api_player_id = candidate.api_player_id
+    row.player_name = candidate.player_name
+    row.availability_status = candidate.availability_status
+    row.availability_type = candidate.availability_type
+    row.reason = candidate.reason
+    row.source_detail = candidate.source_detail
+    row.reported_at = candidate.reported_at
+    row.start_date = candidate.start_date
+    row.end_date = candidate.end_date
+    row.fixture_date = candidate.fixture_date
+    row.record_scope = candidate.record_scope
+    row.fetched_at = now
+    row.is_active = True
+    raw = dict(candidate.raw_json) if candidate.raw_json else {}
+    meta = raw.setdefault("_meta", {})
+    if isinstance(meta, dict):
+        meta["confidence"] = candidate.confidence
+        meta["applicability_status"] = candidate.applicability_status
+        meta["applicability_reason"] = candidate.applicability_reason
+        meta["api_league_id"] = int(candidate.api_league_id)
+    row.raw_json = raw
+    return row, matched_reg, created
 
 
 def upsert_fixture_injury_record(

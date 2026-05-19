@@ -104,6 +104,12 @@ def _pack_record_row(
         "availability_type": av.availability_type,
         "reason": av.reason,
         "source": av.source,
+        "source_label": (
+            "Sidelined API"
+            if (av.source or "").strip() == "api_football_sidelined"
+            else "Injuries API"
+        ),
+        "source_detail": av.source_detail,
         "record_scope": infer_record_scope_from_row(av),
         "api_fixture_id": av.api_fixture_id,
         "fixture_date": av.fixture_date.isoformat() if av.fixture_date else None,

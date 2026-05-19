@@ -207,6 +207,11 @@ class ApiFootballClient:
         items, _ = self.injuries_response_items(body)
         return items
 
+    def get_sidelined_by_player(self, api_player_id: int) -> list[dict[str, Any]]:
+        body = self.get("sidelined", {"player": int(api_player_id)})
+        items, _ = self.injuries_response_items(body)
+        return items
+
     def get_league_season_coverage(self, league_id: int, season: int) -> dict[str, Any]:
         """GET /leagues?id=&season= — league_id = api_league_id API-Football."""
         body = self.get("leagues", {"id": int(league_id), "season": int(season)})

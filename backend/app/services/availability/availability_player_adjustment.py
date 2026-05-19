@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.models import PlayerAvailability, PlayerSeasonProfile
+from app.services.availability.providers.availability_confidence import filter_records_for_player_layer
 
 UNAVAILABLE_STATUSES = frozenset(
     {"out", "injured", "suspended", "doubtful", "unavailable", "unknown"},
@@ -38,6 +39,9 @@ def compute_player_availability_adjustment(
     api_fixture_id: int,
     generic_records_ignored: int = 0,
 ) -> tuple[float, dict[str, Any]]:
+    raw_count = len(applicable_records)
+    applicable_records, ignored_low, sources_used = filter_records_for_player_layer(applicable_records)
+
     if not applicable_records:
         return 0.0, {
             "status": "no_applicable_records_for_fixture",
@@ -45,6 +49,8 @@ def compute_player_availability_adjustment(
             "fixture_id": int(fixture_id),
             "api_fixture_id": int(api_fixture_id),
             "records_considered": 0,
+            "records_ignored_low_confidence": ignored_low,
+            "sources_used": sources_used,
             "generic_records_ignored": int(generic_records_ignored),
             "top_shooters_unavailable": [],
             "penalty": 0.0,
@@ -57,6 +63,8 @@ def compute_player_availability_adjustment(
             "fixture_id": int(fixture_id),
             "api_fixture_id": int(api_fixture_id),
             "records_considered": len(applicable_records),
+            "records_ignored_low_confidence": ignored_low,
+            "sources_used": sources_used,
             "generic_records_ignored": int(generic_records_ignored),
             "top_shooters_unavailable": [],
             "penalty": 0.0,
@@ -115,6 +123,9 @@ def compute_player_availability_adjustment(
         "fixture_id": int(fixture_id),
         "api_fixture_id": int(api_fixture_id),
         "records_considered": len(applicable_records),
+        "records_raw_applicable": raw_count,
+        "records_ignored_low_confidence": ignored_low,
+        "sources_used": sources_used,
         "generic_records_ignored": int(generic_records_ignored),
         "top_shooters_unavailable": matched,
         "penalty": total,

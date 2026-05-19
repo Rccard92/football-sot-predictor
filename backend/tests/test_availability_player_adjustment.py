@@ -8,11 +8,16 @@ from app.services.availability.availability_player_adjustment import (
 )
 
 
-def _av_row(api_player_id: int, status: str = "out") -> MagicMock:
+def _av_row(api_player_id: int, status: str = "out", *, confidence: str | None = None) -> MagicMock:
     r = MagicMock()
     r.api_player_id = api_player_id
     r.availability_status = status
     r.player_name = f"Player {api_player_id}"
+    r.source = "api_football_injuries"
+    if confidence:
+        r.raw_json = {"_meta": {"confidence": confidence}}
+    else:
+        r.raw_json = {}
     return r
 
 
@@ -42,3 +47,17 @@ def test_top_shooter_penalty_capped():
     assert delta <= 0.0
     assert delta >= MAX_PENALTY
     assert len(blob["top_shooters_unavailable"]) >= 1
+    assert "sources_used" in blob
+
+
+def test_low_confidence_ignored():
+    applicable = [_av_row(101, "injured", confidence="LOW")]
+    delta, blob = compute_player_availability_adjustment(
+        applicable,
+        [101],
+        {},
+        fixture_id=10,
+        api_fixture_id=99,
+    )
+    assert delta == 0.0
+    assert blob["records_ignored_low_confidence"] == 1

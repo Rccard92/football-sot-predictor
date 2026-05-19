@@ -25,6 +25,13 @@ function fmtNum(v: number | null | undefined, d: number): string {
   return v.toFixed(d)
 }
 
+function sourceBadgeLabel(r: Row): string | null {
+  if (r.source_label) return r.source_label
+  if (r.source === 'api_football_sidelined') return 'Sidelined API'
+  if (r.source === 'api_football_injuries') return 'Injuries API'
+  return null
+}
+
 type Row = import('../../types/fixtureAvailability').AvailabilityPlayerRow
 
 function AvailabilityTable({ rows }: { rows: Row[] }) {
@@ -34,6 +41,7 @@ function AvailabilityTable({ rows }: { rows: Row[] }) {
         <thead className="bg-slate-50 text-slate-600">
           <tr>
             <th className="px-2 py-1.5 font-medium">Giocatore</th>
+            <th className="px-2 py-1.5 font-medium">Fonte</th>
             <th className="px-2 py-1.5 font-medium">Status</th>
             <th className="px-2 py-1.5 font-medium">Tipo</th>
             <th className="px-2 py-1.5 font-medium">Motivo</th>
@@ -59,6 +67,21 @@ function AvailabilityTable({ rows }: { rows: Row[] }) {
                     </span>
                   ) : null}
                 </span>
+              </td>
+              <td className="px-2 py-1.5">
+                {sourceBadgeLabel(r) ? (
+                  <span
+                    className={
+                      r.source === 'api_football_sidelined'
+                        ? 'rounded border border-indigo-200 bg-indigo-50 px-1 py-px text-[9px] font-medium text-indigo-900'
+                        : 'rounded border border-sky-200 bg-sky-50 px-1 py-px text-[9px] font-medium text-sky-900'
+                    }
+                  >
+                    {sourceBadgeLabel(r)}
+                  </span>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
               </td>
               <td className="px-2 py-1.5 text-slate-700">{r.availability_status}</td>
               <td className="px-2 py-1.5 text-slate-600">{r.availability_type ?? '—'}</td>

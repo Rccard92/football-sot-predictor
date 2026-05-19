@@ -39,7 +39,21 @@ def test_fixture_flow_db_only_response(mock_ctx, mock_buckets, mock_league, mock
         "season": 2025,
         "last_run_at": "2025-05-18T10:00:00+00:00",
         "upcoming_api_fixture_ids": [1378173],
-        "per_fixture": {"1378173": {"records_matching": 2, "records_saved": 2}},
+        "per_fixture": {
+            "1378173": {
+                "records_matching": 2,
+                "records_saved": 2,
+                "candidates_applied": [
+                    {
+                        "player_name": "A",
+                        "source": "api_football_injuries",
+                        "confidence": "HIGH",
+                        "applicability_reason": "injuries_fixture_level_match",
+                    },
+                ],
+                "candidates_not_applied": [],
+            },
+        },
     }
 
     fx = MagicMock()
@@ -61,3 +75,5 @@ def test_fixture_flow_db_only_response(mock_ctx, mock_buckets, mock_league, mock
     assert "api_results_count" not in out
     assert "last_availability_upcoming" in out
     assert out["last_availability_upcoming"]["records_saved_this_fixture"] == 2
+    assert "provider_candidates" in out
+    assert len(out["provider_candidates"]["candidates_applied"]) == 1

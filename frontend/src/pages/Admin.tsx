@@ -64,18 +64,46 @@ function pickMessage(payload: unknown, okFallback: string): string {
       const pl = o.players_upserted
       return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
     }
-    if (typeof o.records_saved === 'number' && o.fixtures_checked != null && o.sources != null) {
+    if (typeof o.records_saved === 'number' && o.fixtures_checked != null) {
       const withN = Array.isArray(o.fixtures_with_availability) ? o.fixtures_with_availability.length : 0
       const withoutN = Array.isArray(o.fixtures_without_availability)
         ? o.fixtures_without_availability.length
         : 0
       const errN = Array.isArray(o.errors) ? o.errors.length : 0
-      const src = o.sources as Record<string, { results_total?: number; records_matching_upcoming?: number }>
-      const leagueTotal = src.league_season_filtered?.results_total ?? '—'
-      const leagueMatch = src.league_season_filtered?.records_matching_upcoming ?? '—'
       const coverage = o.provider_future_availability_coverage
         ? String(o.provider_future_availability_coverage)
         : '—'
+      const providers = o.providers as
+        | Record<
+            string,
+            {
+              applicable_saved?: number
+              candidates_total?: number
+              candidate_not_applied?: number
+              players_checked?: number
+            }
+          >
+        | undefined
+      if (providers?.api_football_injuries || providers?.api_football_sidelined) {
+        const inj = providers.api_football_injuries
+        const sid = providers.api_football_sidelined
+        return [
+          `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
+          `fixture ${String(o.fixtures_checked ?? '—')}`,
+          `injuries salvati ${String(inj?.applicable_saved ?? 0)}/${String(inj?.candidates_total ?? 0)}`,
+          `sidelined salvati ${String(sid?.applicable_saved ?? 0)}/${String(sid?.candidates_total ?? 0)}`,
+          `giocatori controllati sidelined ${String(sid?.players_checked ?? 0)}`,
+          `salvati ${String(o.records_saved ?? '—')} · aggiornati ${String(o.records_updated ?? '—')}`,
+          `con indisponibili ${withN} · senza ${withoutN}`,
+          `coverage ${coverage}`,
+          errN ? `errori ${errN}` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      }
+      const src = o.sources as Record<string, { results_total?: number; records_matching_upcoming?: number }> | undefined
+      const leagueTotal = src?.league_season_filtered?.results_total ?? '—'
+      const leagueMatch = src?.league_season_filtered?.records_matching_upcoming ?? '—'
       return [
         `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
         `fixture ${String(o.fixtures_checked ?? '—')}`,
@@ -440,7 +468,7 @@ export function Admin() {
       id: 'availability-upcoming',
       label: 'Aggiorna indisponibili prossima giornata',
       description:
-        'Recupera injuries con strategia batch + filtro fixture e salva solo record applicabili alle prossime partite.',
+        'Provider injuries + sidelined (API-Football): solo candidati HIGH/MEDIUM salvati per le prossime partite.',
       endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability-upcoming`,
       run: () => adminIngestAvailabilityUpcoming(SEASON, { daysAhead: 14 }),
     },

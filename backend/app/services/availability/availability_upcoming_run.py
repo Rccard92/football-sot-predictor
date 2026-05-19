@@ -96,4 +96,10 @@ def fixture_stats_from_run_meta(
         "records_from_fixture_direct": int(fx_block.get("records_from_fixture_direct") or 0),
         "in_last_upcoming_set": in_upcoming,
         "provider_future_availability_coverage": run_meta.get("provider_future_availability_coverage"),
+        "provider_candidates": {
+            "candidates_from_injuries": fx_block.get("candidates_from_injuries") or [],
+            "candidates_from_sidelined": fx_block.get("candidates_from_sidelined") or [],
+            "candidates_applied": fx_block.get("candidates_applied") or [],
+            "candidates_not_applied": fx_block.get("candidates_not_applied") or [],
+        },
     }

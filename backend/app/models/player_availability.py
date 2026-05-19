@@ -23,8 +23,14 @@ SCOPE_TEAM_LEVEL = "team_level"
 SCOPE_SEASON_LEVEL = "season_level"
 SCOPE_MANUAL_FIXTURE_LEVEL = "manual_fixture_level"
 SCOPE_MANUAL_TEAM_LEVEL = "manual_team_level"
+SCOPE_PROVIDER_CURRENT = "provider_current_for_fixture"
+SCOPE_PROVIDER_DATE_RANGE = "provider_date_range_for_fixture"
+
+SOURCE_API_FOOTBALL_INJURIES = "api_football_injuries"
+SOURCE_API_FOOTBALL_SIDELINED = "api_football_sidelined"
 
 SOURCE_DETAIL_IDS_BATCH = "api_football_injuries_ids_batch"
+SOURCE_DETAIL_SIDELINED_PLAYER = "api_football_sidelined_player"
 SOURCE_DETAIL_LEAGUE_SEASON_FILTERED = "api_football_injuries_league_season_filtered"
 SOURCE_DETAIL_FIXTURE_DIRECT = "api_football_injuries_fixture_direct"
 
@@ -32,6 +38,7 @@ SOURCE_DETAILS = (
     SOURCE_DETAIL_IDS_BATCH,
     SOURCE_DETAIL_LEAGUE_SEASON_FILTERED,
     SOURCE_DETAIL_FIXTURE_DIRECT,
+    SOURCE_DETAIL_SIDELINED_PLAYER,
 )
 
 RECORD_SCOPES = (
@@ -40,6 +47,8 @@ RECORD_SCOPES = (
     SCOPE_SEASON_LEVEL,
     SCOPE_MANUAL_FIXTURE_LEVEL,
     SCOPE_MANUAL_TEAM_LEVEL,
+    SCOPE_PROVIDER_CURRENT,
+    SCOPE_PROVIDER_DATE_RANGE,
 )
 
 
