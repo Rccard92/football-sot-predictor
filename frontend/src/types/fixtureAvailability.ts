@@ -53,6 +53,54 @@ export type FixtureAvailabilityResponse = {
   }
 }
 
+export type AvailabilitySourceStats = {
+  called?: boolean
+  results_total?: number
+  records_matching_upcoming?: number
+  error?: string
+}
+
+export type AvailabilityUpcomingIngestResponse = {
+  status: string
+  season?: number
+  api_league_id?: number
+  fixtures_checked?: number
+  upcoming_api_fixture_ids?: number[]
+  sources?: {
+    ids_batch?: AvailabilitySourceStats
+    league_season_filtered?: AvailabilitySourceStats
+    fixture_direct?: AvailabilitySourceStats
+  }
+  records_saved?: number
+  records_updated?: number
+  api_calls?: number
+  fixtures_with_availability?: {
+    fixture_id: number
+    api_fixture_id: number
+    fixture: string
+    records_saved: number
+    players?: { player_name: string; api_player_id?: number; source_detail?: string }[]
+  }[]
+  fixtures_without_availability?: unknown[]
+  provider_future_availability_coverage?: 'ok' | 'empty'
+  warnings?: string[]
+  errors?: unknown[]
+}
+
+export type LastAvailabilityUpcoming = {
+  last_run_at?: string | null
+  sources?: Record<string, AvailabilitySourceStats>
+  upcoming_api_fixture_ids?: number[]
+  records_matching_this_fixture?: number
+  records_saved_this_fixture?: number
+  records_from_ids_batch?: number
+  records_from_league_season_filtered?: number
+  records_from_fixture_direct?: number
+  in_last_upcoming_set?: boolean
+  provider_future_availability_coverage?: string
+  note?: string
+}
+
 export type AvailabilityIngestSummary = {
   status: string
   season?: number
@@ -176,6 +224,7 @@ export type AvailabilityFixtureFlowDebug = {
   }[]
   diagnosis?: string[]
   last_availability_fetched_at?: string | null
+  last_availability_upcoming?: LastAvailabilityUpcoming
 }
 
 export type AvailabilityLiveFixtureCheck = {

@@ -224,10 +224,35 @@ export function AvailabilityDebugPanel({
           </button>
         </div>
 
+        {flow?.last_availability_upcoming ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-900">
+              Ultimo aggiornamento availability-upcoming
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-[11px] text-blue-950">
+              <li>
+                last_run_at: <strong>{flow.last_availability_upcoming.last_run_at ?? '—'}</strong>
+              </li>
+              <li>
+                matching: <strong>{flow.last_availability_upcoming.records_matching_this_fixture ?? 0}</strong>
+                {' · '}
+                salvati: <strong>{flow.last_availability_upcoming.records_saved_this_fixture ?? 0}</strong>
+              </li>
+              <li>
+                ids_batch: <strong>{flow.last_availability_upcoming.records_from_ids_batch ?? 0}</strong>
+                {' · '}
+                league: <strong>{flow.last_availability_upcoming.records_from_league_season_filtered ?? 0}</strong>
+                {' · '}
+                fixture: <strong>{flow.last_availability_upcoming.records_from_fixture_direct ?? 0}</strong>
+              </li>
+            </ul>
+          </div>
+        ) : null}
+
         {flow?.api_football_expected_request ? (
           <div className="rounded-lg border border-slate-200 bg-white p-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              API attesa (non chiamata automaticamente)
+              API attesa (flusso operativo multi-source)
             </p>
             <p className="mt-1 text-[11px] text-slate-700">
               <code>{flow.api_football_expected_request.fixture_request}</code>

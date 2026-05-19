@@ -64,6 +64,30 @@ function pickMessage(payload: unknown, okFallback: string): string {
       const pl = o.players_upserted
       return `Player match stats: status ${String(o.status)} · processate ${String(p ?? '—')} · saltate ${String(s ?? '—')} · righe match ${String(m ?? '—')} · giocatori toccati ${String(pl ?? '—')}`
     }
+    if (typeof o.records_saved === 'number' && o.fixtures_checked != null && o.sources != null) {
+      const withN = Array.isArray(o.fixtures_with_availability) ? o.fixtures_with_availability.length : 0
+      const withoutN = Array.isArray(o.fixtures_without_availability)
+        ? o.fixtures_without_availability.length
+        : 0
+      const errN = Array.isArray(o.errors) ? o.errors.length : 0
+      const src = o.sources as Record<string, { results_total?: number; records_matching_upcoming?: number }>
+      const leagueTotal = src.league_season_filtered?.results_total ?? '—'
+      const leagueMatch = src.league_season_filtered?.records_matching_upcoming ?? '—'
+      const coverage = o.provider_future_availability_coverage
+        ? String(o.provider_future_availability_coverage)
+        : '—'
+      return [
+        `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
+        `fixture ${String(o.fixtures_checked ?? '—')}`,
+        `raw stagionale ${leagueTotal} → matching ${leagueMatch}`,
+        `salvati ${String(o.records_saved ?? '—')} · aggiornati ${String(o.records_updated ?? '—')}`,
+        `con indisponibili ${withN} · senza ${withoutN}`,
+        `coverage ${coverage}`,
+        errN ? `errori ${errN}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    }
     if (typeof o.records_saved === 'number' && o.fixtures_checked != null) {
       const withN = Array.isArray(o.fixtures_with_availability) ? o.fixtures_with_availability.length : 0
       const withoutN = Array.isArray(o.fixtures_without_availability)
@@ -73,7 +97,6 @@ function pickMessage(payload: unknown, okFallback: string): string {
       return [
         `Indisponibili prossima giornata: ${String(o.status ?? '—')}`,
         `fixture ${String(o.fixtures_checked ?? '—')}`,
-        `API calls ${String(o.api_calls ?? '—')}`,
         `record salvati ${String(o.records_saved ?? '—')}`,
         `con indisponibili ${withN} · senza ${withoutN}`,
         errN ? `errori ${errN}` : '',
@@ -417,7 +440,7 @@ export function Admin() {
       id: 'availability-upcoming',
       label: 'Aggiorna indisponibili prossima giornata',
       description:
-        'Recupera injuries per ogni partita upcoming tramite injuries?fixture= e salva solo record applicabili alla partita.',
+        'Recupera injuries con strategia batch + filtro fixture e salva solo record applicabili alle prossime partite.',
       endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/availability-upcoming`,
       run: () => adminIngestAvailabilityUpcoming(SEASON, { daysAhead: 14 }),
     },
@@ -817,8 +840,8 @@ export function Admin() {
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
             <p className="text-xs font-semibold text-amber-950">Debug avanzato — Indisponibili API raw</p>
             <p className="mt-1 text-[10px] leading-relaxed text-amber-950">
-              Questa sezione mostra la risposta grezza dell&apos;API per debug. Può includere record di tutta
-              la stagione e NON viene usata per audit partita o modello.
+              Questa lista è grezza e stagionale. Non alimenta direttamente audit o modello. Il flusso operativo
+              filtra questi record sugli api_fixture_id della prossima giornata (POST availability-upcoming).
             </p>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
               <label className="block text-[11px] text-slate-600">

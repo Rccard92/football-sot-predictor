@@ -35,8 +35,9 @@ QUALITY_BLOCK: dict[str, Any] = {
     "api_live_call": False,
     "model_impact": True,
     "note": (
-        "Solo record collegati alla fixture selezionata (fixture-level da injuries?fixture=) "
-        "o override manuali validi per la data. I record API stagionali team-level non sono mostrati."
+        "Solo record fixture-level salvati per questa partita (da availability-upcoming: "
+        "league/season filtrato su upcoming, ids batch, o fixture direct). "
+        "Raw stagionale e team-level non sono mostrati."
     ),
 }
 

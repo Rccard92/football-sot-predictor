@@ -43,5 +43,13 @@ def test_parse_injuries_player_type_squalifica():
     assert rec.reason == "Squalifica"
 
 
+def test_parse_injuries_hamstring_thigh():
+    item = {**SAMPLE_INJURY, "type": "Missing Fixture", "reason": "Hamstring Injury"}
+    rec = parse_injuries_item(item)
+    assert rec is not None
+    assert rec.availability_status == "out"
+    assert rec.availability_type == "injury"
+
+
 def test_parse_injuries_skip_without_player():
     assert parse_injuries_item({"team": {"id": 1}}) is None

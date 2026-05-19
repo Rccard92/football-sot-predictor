@@ -5,10 +5,11 @@ from unittest.mock import MagicMock, patch
 from app.services.availability.availability_fixture_flow_debug import build_availability_fixture_flow_debug
 
 
+@patch("app.services.availability.availability_fixture_flow_debug.get_last_availability_upcoming_run")
 @patch("app.services.availability.availability_fixture_flow_debug.resolve_serie_a_league_context")
 @patch("app.services.availability.availability_fixture_flow_debug.load_fixture_availability_buckets")
 @patch("app.services.availability.availability_fixture_flow_debug.build_fixture_context")
-def test_fixture_flow_db_only_response(mock_ctx, mock_buckets, mock_league):
+def test_fixture_flow_db_only_response(mock_ctx, mock_buckets, mock_league, mock_last_run):
     db = MagicMock()
     ctx = MagicMock()
     ctx.fixture_id = 371
@@ -34,6 +35,12 @@ def test_fixture_flow_db_only_response(mock_ctx, mock_buckets, mock_league):
     buckets.excluded = []
     buckets.ctx = ctx
     mock_buckets.return_value = buckets
+    mock_last_run.return_value = {
+        "season": 2025,
+        "last_run_at": "2025-05-18T10:00:00+00:00",
+        "upcoming_api_fixture_ids": [1378173],
+        "per_fixture": {"1378173": {"records_matching": 2, "records_saved": 2}},
+    }
 
     fx = MagicMock()
     fx.kickoff_at = MagicMock()
@@ -52,3 +59,5 @@ def test_fixture_flow_db_only_response(mock_ctx, mock_buckets, mock_league):
     assert "excluded_records" in out
     assert "diagnosis" in out
     assert "api_results_count" not in out
+    assert "last_availability_upcoming" in out
+    assert out["last_availability_upcoming"]["records_saved_this_fixture"] == 2

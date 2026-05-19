@@ -8,6 +8,10 @@ from typing import Any
 
 SOURCE_INJURIES = "api_football_injuries"
 
+SOURCE_DETAIL_IDS_BATCH = "api_football_injuries_ids_batch"
+SOURCE_DETAIL_LEAGUE_SEASON_FILTERED = "api_football_injuries_league_season_filtered"
+SOURCE_DETAIL_FIXTURE_DIRECT = "api_football_injuries_fixture_direct"
+
 
 @dataclass
 class ParsedAvailabilityRecord:
@@ -24,6 +28,7 @@ class ParsedAvailabilityRecord:
     start_date: Any
     end_date: Any
     source: str
+    source_detail: str | None = None
     raw_json: dict[str, Any]
 
 
@@ -62,6 +67,7 @@ def _map_status_type(api_type: str | None, reason: str | None) -> tuple[str, str
         "suspension",
         "suspended",
         "yellow card",
+        "yellow cards",
         "red card",
         "cards",
         "squalifica",
@@ -75,7 +81,22 @@ def _map_status_type(api_type: str | None, reason: str | None) -> tuple[str, str
     if "doubt" in combined or "doubtful" in combined:
         return "doubtful", "injury" if any(x in r for x in ("injur", "muscle", "knee")) else "other"
     if "missing fixture" in combined or "not available" in combined:
-        return "out", "injury" if any(x in r for x in ("injur", "muscle", "knee")) or not r else "other"
+        if any(m in combined for m in suspension_markers):
+            return "suspended", "suspension"
+        if any(
+            x in r
+            for x in (
+                "injur",
+                "muscle",
+                "knee",
+                "ankle",
+                "hamstring",
+                "thigh",
+                "illness",
+            )
+        ):
+            return "out", "injury"
+        return "unavailable", "other"
     injury_markers = (
         "injur",
         "injured",
@@ -83,6 +104,7 @@ def _map_status_type(api_type: str | None, reason: str | None) -> tuple[str, str
         "knee",
         "ankle",
         "hamstring",
+        "thigh",
         "groin",
         "calf",
         "unknown injury",

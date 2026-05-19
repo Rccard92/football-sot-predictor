@@ -24,6 +24,16 @@ SCOPE_SEASON_LEVEL = "season_level"
 SCOPE_MANUAL_FIXTURE_LEVEL = "manual_fixture_level"
 SCOPE_MANUAL_TEAM_LEVEL = "manual_team_level"
 
+SOURCE_DETAIL_IDS_BATCH = "api_football_injuries_ids_batch"
+SOURCE_DETAIL_LEAGUE_SEASON_FILTERED = "api_football_injuries_league_season_filtered"
+SOURCE_DETAIL_FIXTURE_DIRECT = "api_football_injuries_fixture_direct"
+
+SOURCE_DETAILS = (
+    SOURCE_DETAIL_IDS_BATCH,
+    SOURCE_DETAIL_LEAGUE_SEASON_FILTERED,
+    SOURCE_DETAIL_FIXTURE_DIRECT,
+)
+
 RECORD_SCOPES = (
     SCOPE_FIXTURE_LEVEL,
     SCOPE_TEAM_LEVEL,
@@ -75,6 +85,7 @@ class PlayerAvailability(Base, TimestampMixin):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     source: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_detail: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

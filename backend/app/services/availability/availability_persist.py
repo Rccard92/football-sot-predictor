@@ -119,10 +119,10 @@ def upsert_availability_record(
     league_id: int,
     parsed: ParsedAvailabilityRecord,
     fetched_at: datetime | None = None,
-) -> tuple[PlayerAvailability, bool]:
+) -> tuple[PlayerAvailability, bool, bool]:
     """
-    Upsert idempotente. Ritorna (row, registry_matched).
-  registry_matched=True se player_id risolto in player_registry.
+    Upsert idempotente. Ritorna (row, registry_matched, created).
+    registry_matched=True se player_id risolto in player_registry.
     """
     now = fetched_at or _utc_now()
     fixture = _resolve_fixture(db, parsed.api_fixture_id, season, league_id)
@@ -131,6 +131,7 @@ def upsert_availability_record(
     matched = registry_id is not None
 
     row = _match_existing(db, season=season, league_id=league_id, parsed=parsed)
+    created = row is None
     if row is None:
         row = PlayerAvailability(
             season=int(season),
@@ -151,6 +152,7 @@ def upsert_availability_record(
     row.availability_status = parsed.availability_status
     row.availability_type = parsed.availability_type
     row.reason = parsed.reason
+    row.source_detail = parsed.source_detail
     row.reported_at = parsed.reported_at
     row.start_date = parsed.start_date
     row.end_date = parsed.end_date
@@ -164,8 +166,13 @@ def upsert_availability_record(
     )
     row.fetched_at = now
     row.is_active = True
-    row.raw_json = parsed.raw_json
-    return row, matched
+    raw = dict(parsed.raw_json) if parsed.raw_json else {}
+    meta = raw.get("_meta")
+    if not isinstance(meta, dict):
+        meta = {}
+        raw["_meta"] = meta
+    row.raw_json = raw
+    return row, matched, created
 
 
 def upsert_fixture_injury_record(
@@ -176,12 +183,20 @@ def upsert_fixture_injury_record(
     league_internal_id: int,
     parsed: ParsedAvailabilityRecord,
     fetched_at: datetime | None = None,
-) -> tuple[PlayerAvailability, bool]:
-    """Upsert fixture-level da injuries?fixture= con FK e date dalla fixture DB."""
+    source_detail: str | None = None,
+    api_league_id: int | None = None,
+) -> tuple[PlayerAvailability, bool, bool]:
+    """Upsert fixture-level con FK e date dalla fixture DB."""
     ko = fx.kickoff_at
     parsed.api_fixture_id = int(fx.api_fixture_id)
     parsed.fixture_date = ko.date() if hasattr(ko, "date") else ko
-    row, matched = upsert_availability_record(
+    if source_detail:
+        parsed.source_detail = source_detail
+    if api_league_id is not None and parsed.raw_json is not None:
+        meta = parsed.raw_json.setdefault("_meta", {})
+        if isinstance(meta, dict):
+            meta["api_league_id"] = int(api_league_id)
+    row, matched, created = upsert_availability_record(
         db,
         season=int(season_year),
         league_id=int(league_internal_id),
@@ -193,4 +208,4 @@ def upsert_fixture_injury_record(
     row.record_scope = SCOPE_FIXTURE_LEVEL
     if row.fixture_date is None and ko is not None:
         row.fixture_date = ko.date() if hasattr(ko, "date") else ko
-    return row, matched
+    return row, matched, created

@@ -363,7 +363,7 @@ def ingest_serie_a_availability(
         if parsed is None:
             continue
         try:
-            _row, reg_ok = upsert_availability_record(
+            _row, reg_ok, _created = upsert_availability_record(
                 db,
                 season=int(season_year),
                 league_id=league_internal_id,

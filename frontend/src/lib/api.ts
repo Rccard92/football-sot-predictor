@@ -4,6 +4,7 @@ import type {
   AvailabilityApiRawListResponse,
   AvailabilityFixtureFlowDebug,
   AvailabilityLiveFixtureCheck,
+  AvailabilityUpcomingIngestResponse,
   AvailabilityRawCheckResponse,
   AvailabilitySeasonSummary,
   FixtureAvailabilityResponse,
@@ -1330,14 +1331,14 @@ export async function adminIngestAvailabilityUpcoming(
   season: number,
   ingestOpts?: AvailabilityUpcomingIngestOptions,
   opts?: AdminRequestOpts,
-): Promise<unknown> {
+): Promise<AvailabilityUpcomingIngestResponse> {
   const params = new URLSearchParams()
   if (ingestOpts?.daysAhead != null) params.set('days_ahead', String(ingestOpts.daysAhead))
   if (ingestOpts?.force) params.set('force', 'true')
   if (ingestOpts?.fixtureId != null) params.set('fixture_id', String(ingestOpts.fixtureId))
   const qs = params.toString()
   const path = `/api/admin/ingest/serie-a/${season}/availability-upcoming${qs ? `?${qs}` : ''}`
-  return adminPostJson<unknown>(path, {}, { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 })
+  return adminPostJson<AvailabilityUpcomingIngestResponse>(path, {}, { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 })
 }
 
 export async function getAvailabilityFixtureFlow(

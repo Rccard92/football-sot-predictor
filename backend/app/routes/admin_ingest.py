@@ -211,7 +211,7 @@ def admin_ingest_serie_a_availability_upcoming(
     fixture_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Ingestione operativa: injuries?fixture= per partite upcoming (unico flusso per audit/modello)."""
+    """Ingestione operativa multi-source: ids batch + league/season filtrato + fixture direct."""
     _require_api_football_key()
     from app.services.availability.availability_upcoming_ingestion import (
         ingest_serie_a_availability_upcoming,

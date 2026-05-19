@@ -177,6 +177,30 @@ class ApiFootballClient:
         items, _ = self.injuries_response_items(body)
         return items
 
+    def get_injuries_by_ids(
+        self,
+        api_fixture_ids: list[int],
+        *,
+        chunk_size: int = 20,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """GET injuries?ids=1-2-3 — batch fixture API ids. Ritorna (items, error_messages)."""
+        ids = [int(x) for x in api_fixture_ids if x is not None]
+        if not ids:
+            return [], []
+        out: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for i in range(0, len(ids), int(chunk_size)):
+            chunk = ids[i : i + int(chunk_size)]
+            ids_param = "-".join(str(x) for x in chunk)
+            try:
+                body = self.get("injuries", {"ids": ids_param})
+                items, errs = self.injuries_response_items(body)
+                out.extend(items)
+                errors.extend(errs)
+            except ApiFootballError as exc:
+                errors.append(str(exc)[:500])
+        return out, errors
+
     def get_injuries_by_team(self, league: int, season: int, team: int) -> list[dict[str, Any]]:
         """league = api_league_id; team = api_team_id."""
         body = self.get("injuries", {"league": league, "season": season, "team": int(team)})

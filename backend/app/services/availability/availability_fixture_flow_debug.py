@@ -23,6 +23,10 @@ from app.services.availability.availability_fixture_scope import (
     load_fixture_availability_buckets,
 )
 from app.services.availability.availability_league import resolve_serie_a_league_context
+from app.services.availability.availability_upcoming_run import (
+    fixture_stats_from_run_meta,
+    get_last_availability_upcoming_run,
+)
 
 
 def _serialize_row(row: PlayerAvailability, *, team_name: str | None = None) -> dict[str, Any]:
@@ -35,6 +39,7 @@ def _serialize_row(row: PlayerAvailability, *, team_name: str | None = None) -> 
         "availability_type": row.availability_type,
         "reason": row.reason,
         "source": row.source,
+        "source_detail": row.source_detail,
         "record_scope": infer_record_scope_from_row(row),
         "api_fixture_id": row.api_fixture_id,
         "fixture_id": row.fixture_id,
@@ -218,10 +223,17 @@ def build_availability_fixture_flow_debug(
                     f"{team_api_excl} record team-level da ingestione league/season esclusi "
                     "(usare POST availability-upcoming).",
                 )
+        last_run = get_last_availability_upcoming_run(db, int(season_year))
+        last_upcoming = fixture_stats_from_run_meta(last_run, api_fx_id)
         if records_returned == 0:
             diagnosis.append(
-                "Esegui Admin → Aggiorna indisponibili prossima giornata e verifica records_from_fixture_api.",
+                "Esegui Admin → Aggiorna indisponibili prossima giornata e verifica sources/records_matching_upcoming.",
             )
+            if last_upcoming.get("records_matching_this_fixture") == 0 and last_run:
+                diagnosis.append(
+                    "Ultimo availability-upcoming: 0 record matching per questa fixture "
+                    f"(coverage={last_upcoming.get('provider_future_availability_coverage')}).",
+                )
         if not diagnosis:
             diagnosis.append("Record applicabili presenti: audit dovrebbe mostrarli.")
 
@@ -255,10 +267,11 @@ def build_availability_fixture_flow_debug(
                 "fixture_request": f"injuries?fixture={api_fx_id}",
                 "api_league_id": api_league_id,
                 "note": (
-                    "L'audit partita usa solo record fixture-level o override manuali validi "
-                    "per questa fixture. Usa «Controlla API live» per vedere la risposta API senza salvare."
+                    "Flusso operativo: injuries ids batch + league/season filtrato su upcoming, "
+                    "poi fixture direct. L'audit usa solo record fixture-level salvati per questa partita."
                 ),
             },
+            "last_availability_upcoming": last_upcoming,
             "db_checks": {
                 "player_availability_total_for_fixture_api_id": len(db_by_api_fixture),
                 "player_availability_total_for_home_team": len(db_home_team),
