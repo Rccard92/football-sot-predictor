@@ -28,8 +28,8 @@ class ParsedAvailabilityRecord:
     start_date: Any
     end_date: Any
     source: str
-    source_detail: str | None = None
     raw_json: dict[str, Any]
+    source_detail: str | None = None
 
 
 def _norm_reason(reason: str | None) -> str | None:
