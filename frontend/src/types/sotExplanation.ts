@@ -1,4 +1,5 @@
 import type { SportApiLineupsAuditPayload } from './sportapi'
+import type { LineupImpactSimulationPayload } from './lineupImpact'
 
 export type ExplanationStatus = 'ok' | 'missing' | 'error'
 
@@ -255,4 +256,5 @@ export type SotFixtureExplanationResponse = {
     data_policy: { no_data_leakage: boolean; included_matches_rule: string } | null
   }
   sportapi_lineups?: SportApiLineupsAuditPayload
+  lineup_impact_simulation?: LineupImpactSimulationPayload
 }

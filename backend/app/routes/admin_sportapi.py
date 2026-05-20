@@ -14,8 +14,10 @@ from app.core.database import get_db
 from app.schemas.sportapi import SportApiMappingConfirmBody
 from app.services.sportapi.sportapi_client import SportApiDisabledError
 from app.services.sportapi.sportapi_fixture_resolve import FIXTURE_NOT_FOUND_MSG
+from app.services.sportapi.sportapi_lineup_impact_service import LineupImpactSimulationService
 from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
 from app.services.sportapi.sportapi_matching_service import SportApiMatchingService
+from app.services.sportapi.sportapi_player_matching_service import SportApiPlayerMatchingService
 
 logger = logging.getLogger(__name__)
 
@@ -147,3 +149,52 @@ def sportapi_get_lineups(
     if not_found:
         raise HTTPException(status_code=404, detail=not_found)
     return jsonable_encoder(out)
+
+
+@router.get("/fixture/{fixture_id}/player-matching", response_model=None)
+def sportapi_player_matching_preview(
+    fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Preview matching giocatori SportAPI ↔ API-Sports (solo DB)."""
+    from app.models import Team
+    from app.services.sportapi.sportapi_fixture_resolve import resolve_fixture_or_error
+    from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
+
+    try:
+        fx, err = resolve_fixture_or_error(db, int(fixture_id))
+        if fx is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(err or {}).get("message", FIXTURE_NOT_FOUND_MSG),
+            )
+        home = db.get(Team, int(fx.home_team_id))
+        away = db.get(Team, int(fx.away_team_id))
+        lineups = build_sportapi_lineups_audit(
+            db,
+            int(fx.id),
+            home_team_name=home.name if home else "Casa",
+            away_team_name=away.name if away else "Trasferta",
+        )
+        svc = SportApiPlayerMatchingService()
+        players = svc.collect_sportapi_players_from_lineups(lineups)
+        matching = svc.match_players_for_fixture(db, int(fx.id), sportapi_players=players)
+        impact = LineupImpactSimulationService().simulate_for_fixture(
+            db,
+            int(fx.id),
+            home_team_name=home.name if home else None,
+            away_team_name=away.name if away else None,
+        )
+        return jsonable_encoder(
+            {
+                "fixture_id": int(fx.id),
+                "sportapi_lineups_available": lineups.get("available"),
+                "player_matching": matching,
+                "lineup_impact_simulation": impact,
+            },
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi player matching DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc

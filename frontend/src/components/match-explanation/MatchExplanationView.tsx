@@ -14,6 +14,7 @@ import {
   ComponentTreeView,
   FrameworkConsistencyCard,
 } from './MatchExplanationTraceability'
+import { LineupImpactSimulationCard } from '../sportapi/LineupImpactSimulationCard'
 import { SportApiLineupsCard } from '../sportapi/SportApiLineupsCard'
 import { LineupsSection } from './LineupsSection'
 import { PlayerDbProfilesSection } from './PlayerDbProfilesSection'
@@ -388,6 +389,8 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
         data={data.sportapi_lineups}
         apiFixtureId={fx.api_fixture_id}
       />
+
+      <LineupImpactSimulationCard data={data.lineup_impact_simulation} />
 
       {(data.applied_variable_trace?.home?.length ?? 0) > 0 || (data.applied_variable_trace?.away?.length ?? 0) > 0 ? (
         <SectionCard title="Registro variabili applicate (trace)">

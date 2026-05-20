@@ -7,9 +7,14 @@ import {
   getSportApiLineups,
 } from '../../lib/api'
 import {
+  getSportApiPlayerMatchingPreview,
+} from '../../lib/api'
+import { LineupImpactSimulationCard } from '../sportapi/LineupImpactSimulationCard'
+import {
   SportApiLineupsCard,
   sportApiLineupsFromStored,
 } from '../sportapi/SportApiLineupsCard'
+import type { LineupImpactSimulationPayload } from '../../types/lineupImpact'
 import type { SportApiCandidate, SportApiFixtureDebugResponse, SportApiLineupsStoredResponse } from '../../types/sportapi'
 
 const FIXTURE_NOT_FOUND_MSG =
@@ -46,6 +51,7 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
   const [error, setError] = useState<string | null>(null)
   const [debug, setDebug] = useState<SportApiFixtureDebugResponse | null>(null)
   const [stored, setStored] = useState<SportApiLineupsStoredResponse | null>(null)
+  const [lineupImpact, setLineupImpact] = useState<LineupImpactSimulationPayload | null>(null)
   const [manualEventId, setManualEventId] = useState('')
 
   useEffect(() => {
@@ -88,6 +94,15 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
     }
   }, [fixtureIdInput])
 
+  const loadImpactPreview = useCallback(async (fid: number) => {
+    try {
+      const preview = await getSportApiPlayerMatchingPreview(fid)
+      setLineupImpact(preview.lineup_impact_simulation ?? null)
+    } catch {
+      setLineupImpact(null)
+    }
+  }, [])
+
   const runConfirm = useCallback(async () => {
     const fid = actionFixtureId()
     const eid = parseInt(manualEventId.trim(), 10)
@@ -113,12 +128,13 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
       })
       const lineups = await getSportApiLineups(fid)
       setStored(lineups)
+      await loadImpactPreview(fid)
     } catch (e) {
       setError(formatFetchError(e, 'Salva mapping'))
     } finally {
       setLoading(null)
     }
-  }, [manualEventId, debug])
+  }, [manualEventId, debug, loadImpactPreview])
 
   const runFetchLineups = useCallback(async () => {
     const fid = actionFixtureId()
@@ -132,12 +148,13 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
       await fetchSportApiLineups(fid)
       const lineups = await getSportApiLineups(fid)
       setStored(lineups)
+      await loadImpactPreview(fid)
     } catch (e) {
       setError(formatFetchError(e, 'Importa lineups'))
     } finally {
       setLoading(null)
     }
-  }, [debug, fixtureIdInput])
+  }, [debug, fixtureIdInput, loadImpactPreview])
 
   const runLoadStored = useCallback(async () => {
     const fid = actionFixtureId()
@@ -146,12 +163,13 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
     setError(null)
     try {
       setStored(await getSportApiLineups(fid))
+      await loadImpactPreview(fid)
     } catch (e) {
       setError(formatFetchError(e, 'Carica dati salvati'))
     } finally {
       setLoading(null)
     }
-  }, [debug, fixtureIdInput])
+  }, [debug, fixtureIdInput, loadImpactPreview])
 
   const enabled = debug?.sportapi_enabled !== false
   const fx = debug?.fixture
@@ -331,15 +349,18 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
       ) : null}
 
       {stored?.mapping || stored?.fetched_at || stored?.available ? (
-        <SportApiLineupsCard
-          compact
-          data={sportApiLineupsFromStored(
-            stored,
-            debug?.fixture?.home_team_name ?? 'Casa',
-            debug?.fixture?.away_team_name ?? 'Trasferta',
-          )}
-          apiFixtureId={debug?.fixture?.api_fixture_id}
-        />
+        <>
+          <SportApiLineupsCard
+            compact
+            data={sportApiLineupsFromStored(
+              stored,
+              debug?.fixture?.home_team_name ?? 'Casa',
+              debug?.fixture?.away_team_name ?? 'Trasferta',
+            )}
+            apiFixtureId={debug?.fixture?.api_fixture_id}
+          />
+          <LineupImpactSimulationCard data={lineupImpact ?? undefined} />
+        </>
       ) : null}
     </div>
   )

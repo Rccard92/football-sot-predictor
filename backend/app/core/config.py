@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     sportapi_rapidapi_host: str = "sportapi7.p.rapidapi.com"
     sportapi_base_url: str = "https://sportapi7.p.rapidapi.com"
     use_sportapi_lineups_in_model: bool = False
+    use_sportapi_lineup_impact_in_model: bool = False
 
     @property
     def cors_origins_list(self) -> list[str]:

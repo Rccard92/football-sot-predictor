@@ -2440,7 +2440,26 @@ def _build_fixture_sot_explanation_body(
             ),
         },
         "sportapi_lineups": _sportapi_lineups_for_explanation(db, fx, home, away),
+        "lineup_impact_simulation": _lineup_impact_for_explanation(db, fx, home, away, active_mv),
     }
+
+
+def _lineup_impact_for_explanation(
+    db: Session,
+    fx: Fixture,
+    home: Team,
+    away: Team,
+    active_model_version: str | None,
+) -> dict[str, Any]:
+    from app.services.sportapi.sportapi_lineup_impact_service import LineupImpactSimulationService
+
+    return LineupImpactSimulationService().simulate_for_fixture(
+        db,
+        int(fx.id),
+        active_model_version=active_model_version,
+        home_team_name=home.name,
+        away_team_name=away.name,
+    )
 
 
 def _sportapi_lineups_for_explanation(db: Session, fx: Fixture, home: Team, away: Team) -> dict[str, Any]:

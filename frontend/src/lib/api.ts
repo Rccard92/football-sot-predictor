@@ -1345,6 +1345,23 @@ export async function getSportApiLineups(
   )
 }
 
+export type SportApiPlayerMatchingPreviewResponse = {
+  fixture_id: number
+  sportapi_lineups_available?: boolean
+  player_matching?: unknown
+  lineup_impact_simulation?: import('../types/lineupImpact').LineupImpactSimulationPayload
+}
+
+export async function getSportApiPlayerMatchingPreview(
+  fixtureId: number,
+  opts?: AdminRequestOpts,
+): Promise<SportApiPlayerMatchingPreviewResponse> {
+  return adminGetJson<SportApiPlayerMatchingPreviewResponse>(
+    `/api/admin/sportapi/fixture/${fixtureId}/player-matching`,
+    opts,
+  )
+}
+
 export async function buildPlayerSotProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminPostJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/build`, {}, opts)
 }
