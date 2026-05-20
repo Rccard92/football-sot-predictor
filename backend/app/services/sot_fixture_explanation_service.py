@@ -2439,7 +2439,20 @@ def _build_fixture_sot_explanation_body(
                 else None
             ),
         },
+        "sportapi_lineups": _sportapi_lineups_for_explanation(db, fx, home, away),
     }
+
+
+def _sportapi_lineups_for_explanation(db: Session, fx: Fixture, home: Team, away: Team) -> dict[str, Any]:
+    """Solo lettura DB — nessuna chiamata SportAPI."""
+    from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
+
+    return build_sportapi_lineups_audit(
+        db,
+        int(fx.id),
+        home_team_name=home.name,
+        away_team_name=away.name,
+    )
 
 
 def _fixture_payload(fx: Fixture, home: Team, away: Team) -> dict[str, Any]:

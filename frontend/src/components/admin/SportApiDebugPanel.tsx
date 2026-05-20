@@ -6,6 +6,10 @@ import {
   getSportApiFixtureDebug,
   getSportApiLineups,
 } from '../../lib/api'
+import {
+  SportApiLineupsCard,
+  sportApiLineupsFromStored,
+} from '../sportapi/SportApiLineupsCard'
 import type { SportApiCandidate, SportApiFixtureDebugResponse, SportApiLineupsStoredResponse } from '../../types/sportapi'
 
 const FIXTURE_NOT_FOUND_MSG =
@@ -326,48 +330,16 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
         </div>
       ) : null}
 
-      {stored?.mapping || stored?.fetched_at ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-xs">
-          <p className="font-semibold text-emerald-950">Dati SportAPI salvati</p>
-          <p>
-            event_id {stored.mapping?.provider_event_id ?? '—'} · confidence{' '}
-            {stored.mapping?.confidence_score ?? '—'} · confirmed{' '}
-            {String(stored.confirmed ?? '—')}
-          </p>
-          <p>Ultimo fetch: {stored.fetched_at ?? '—'}</p>
-          <p className="mt-2 font-medium">Home — titolari {stored.home?.players?.length ?? 0}</p>
-          <ul className="max-h-24 overflow-auto font-mono text-[10px]">
-            {(stored.home?.players ?? []).map((p) => (
-              <li key={p.provider_player_id}>
-                {p.jersey_number ?? '·'} {p.player_name} ({p.position ?? '—'})
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 font-medium">Home missing {stored.home?.missing_players?.length ?? 0}</p>
-          <ul className="max-h-20 overflow-auto font-mono text-[10px]">
-            {(stored.home?.missing_players ?? []).map((m) => (
-              <li key={m.provider_player_id}>
-                {m.player_name} — {m.reason ?? m.description ?? '—'}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 font-medium">Away — titolari {stored.away?.players?.length ?? 0}</p>
-          <ul className="max-h-24 overflow-auto font-mono text-[10px]">
-            {(stored.away?.players ?? []).map((p) => (
-              <li key={p.provider_player_id}>
-                {p.jersey_number ?? '·'} {p.player_name} ({p.position ?? '—'})
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 font-medium">Away missing {stored.away?.missing_players?.length ?? 0}</p>
-          <ul className="max-h-20 overflow-auto font-mono text-[10px]">
-            {(stored.away?.missing_players ?? []).map((m) => (
-              <li key={m.provider_player_id}>
-                {m.player_name} — {m.reason ?? m.description ?? '—'}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {stored?.mapping || stored?.fetched_at || stored?.available ? (
+        <SportApiLineupsCard
+          compact
+          data={sportApiLineupsFromStored(
+            stored,
+            debug?.fixture?.home_team_name ?? 'Casa',
+            debug?.fixture?.away_team_name ?? 'Trasferta',
+          )}
+          apiFixtureId={debug?.fixture?.api_fixture_id}
+        />
       ) : null}
     </div>
   )

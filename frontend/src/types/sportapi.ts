@@ -46,49 +46,78 @@ export type SportApiFixtureDebugResponse = {
   api_calls?: number
 }
 
-export type SportApiLineupsStoredResponse = {
-  status: string
-  fixture_id: number
-  mapping?: {
-    provider_event_id: number
-    confidence_score?: number | null
-    matched_by?: string | null
-  } | null
-  confirmed?: boolean | null
-  home_formation?: string | null
-  away_formation?: string | null
-  fetched_at?: string | null
-  home?: {
-    players: SportApiPlayerRow[]
-    substitutes: SportApiPlayerRow[]
-    missing_players: SportApiMissingRow[]
-  }
-  away?: {
-    players: SportApiPlayerRow[]
-    substitutes: SportApiPlayerRow[]
-    missing_players: SportApiMissingRow[]
-  }
-  model_usage?: { used_in_prediction: boolean; note: string }
-  raw_payload?: unknown
-}
+export type SportApiDisplayRole = 'P' | 'D' | 'C' | 'A'
 
-export type SportApiPlayerRow = {
+export type SportApiLineupPlayer = {
   provider_player_id: number
   player_name: string
   short_name?: string | null
   position?: string | null
+  display_role: SportApiDisplayRole
   jersey_number?: number | null
   is_substitute?: boolean
   avg_rating?: number | null
+  original_index?: number
 }
 
-export type SportApiMissingRow = {
+export type SportApiMissingPlayer = {
   provider_player_id: number
   player_name: string
+  short_name?: string | null
   position?: string | null
+  display_role: SportApiDisplayRole
   jersey_number?: number | null
   reason?: string | null
   description?: string | null
   external_type?: string | null
   expected_end_date?: string | null
+  original_index?: number
 }
+
+export type SportApiMissingGrouped = {
+  injured: SportApiMissingPlayer[]
+  suspended: SportApiMissingPlayer[]
+  other: SportApiMissingPlayer[]
+}
+
+export type SportApiTeamLineupSide = {
+  team_name: string
+  formation?: string | null
+  confirmed?: boolean | null
+  starters: SportApiLineupPlayer[]
+  substitutes: SportApiLineupPlayer[]
+  tactical_lines?: SportApiLineupPlayer[][]
+  missing_players: SportApiMissingGrouped
+}
+
+export type SportApiLineupsAuditPayload = {
+  available: boolean
+  provider_event_id?: number | null
+  confidence_score?: number | null
+  confirmed?: boolean | null
+  fetched_at?: string | null
+  home: SportApiTeamLineupSide
+  away: SportApiTeamLineupSide
+}
+
+/** Risposta GET admin/sportapi/lineups (include metadati + payload audit). */
+export type SportApiLineupsStoredResponse = SportApiLineupsAuditPayload & {
+  status: string
+  fixture_id: number
+  input_id?: number
+  mapping?: {
+    provider_event_id: number
+    confidence_score?: number | null
+    matched_by?: string | null
+  } | null
+  home_formation?: string | null
+  away_formation?: string | null
+  model_usage?: { used_in_prediction: boolean; note: string }
+  raw_payload?: unknown
+}
+
+/** @deprecated usa SportApiLineupPlayer */
+export type SportApiPlayerRow = SportApiLineupPlayer
+
+/** @deprecated usa SportApiMissingPlayer */
+export type SportApiMissingRow = SportApiMissingPlayer

@@ -20,6 +20,7 @@ from app.models.fixture_provider_lineup import FixtureProviderLineup
 from app.models.fixture_provider_lineup_player import FixtureProviderLineupPlayer
 from app.services.sportapi.sportapi_client import SportApiClient, SportApiDisabledError, SportApiError
 from app.services.sportapi.sportapi_fixture_resolve import FIXTURE_NOT_FOUND_MSG, resolve_fixture_or_error
+from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
 from app.services.sportapi.sportapi_payload import (
     event_team_ids,
     event_tournament_info,
@@ -32,6 +33,12 @@ from app.services.sportapi.sportapi_payload import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _payload_with_index(payload: dict[str, Any], index: int) -> dict[str, Any]:
+    out = dict(payload)
+    out["_original_index"] = index
+    return out
 
 
 def _parse_expected_end(val: Any) -> datetime | None:
@@ -202,11 +209,12 @@ class SportApiLineupService:
             ("home", home_side, mapping.provider_home_team_id),
             ("away", away_side, mapping.provider_away_team_id),
         ):
-            for p in players_from_side(side_data):
+            for pi, p in enumerate(players_from_side(side_data)):
                 pid = player_id_from_row(p)
                 if pid is None:
                     continue
                 substitute = bool(p.get("substitute") or p.get("isSubstitute"))
+                pl_raw = p if isinstance(p, dict) else {}
                 db.add(
                     FixtureProviderLineupPlayer(
                         fixture_id=internal_id,
@@ -215,22 +223,23 @@ class SportApiLineupService:
                         provider_player_id=pid,
                         provider_team_id=_int_or_none(team_id),
                         team_side=side_key,
-                        player_name=player_display_name(p)[:255],
-                        short_name=str(p.get("shortName") or "")[:128] or None,
-                        position=str(p.get("position") or p.get("pos") or "")[:32] or None,
-                        jersey_number=_int_or_none(p.get("jerseyNumber") or p.get("shirtNumber")),
+                        player_name=player_display_name(pl_raw)[:255],
+                        short_name=str(pl_raw.get("shortName") or "")[:128] or None,
+                        position=str(pl_raw.get("position") or pl_raw.get("pos") or "")[:32] or None,
+                        jersey_number=_int_or_none(pl_raw.get("jerseyNumber") or pl_raw.get("shirtNumber")),
                         is_substitute=substitute,
-                        avg_rating=_float_or_none(p.get("avgRating") or p.get("rating")),
-                        raw_payload=p,
+                        avg_rating=_float_or_none(pl_raw.get("avgRating") or pl_raw.get("rating")),
+                        raw_payload=_payload_with_index(pl_raw, pi),
                     ),
                 )
                 n_players += 1
-            for m in missing_from_side(side_data):
+            for mi, m in enumerate(missing_from_side(side_data)):
                 pid = player_id_from_row(m)
                 if pid is None:
                     pid = _int_or_none(m.get("id"))
                 if pid is None:
                     continue
+                miss_raw = m if isinstance(m, dict) else {}
                 db.add(
                     FixtureMissingPlayer(
                         fixture_id=internal_id,
@@ -239,16 +248,16 @@ class SportApiLineupService:
                         provider_player_id=pid,
                         provider_team_id=_int_or_none(team_id),
                         team_side=side_key,
-                        player_name=player_display_name(m)[:255],
-                        position=str(m.get("position") or "")[:32] or None,
-                        jersey_number=_int_or_none(m.get("jerseyNumber")),
-                        reason=str(m.get("reason") or m.get("type") or "")[:64] or None,
-                        description=str(m.get("description") or "")[:512] or None,
-                        external_type=str(m.get("externalType") or m.get("external_type") or "")[:64] or None,
+                        player_name=player_display_name(miss_raw)[:255],
+                        position=str(miss_raw.get("position") or "")[:32] or None,
+                        jersey_number=_int_or_none(miss_raw.get("jerseyNumber")),
+                        reason=str(miss_raw.get("reason") or miss_raw.get("type") or "")[:64] or None,
+                        description=str(miss_raw.get("description") or "")[:512] or None,
+                        external_type=str(miss_raw.get("externalType") or miss_raw.get("external_type") or "")[:64] or None,
                         expected_end_date=_parse_expected_end(
-                            m.get("expectedEndDate") or m.get("expected_end_date"),
+                            miss_raw.get("expectedEndDate") or miss_raw.get("expected_end_date"),
                         ),
-                        raw_payload=m,
+                        raw_payload=_payload_with_index(miss_raw, mi),
                     ),
                 )
                 n_missing += 1
@@ -293,74 +302,28 @@ class SportApiLineupService:
                 FixtureProviderLineup.provider_name == PROVIDER_SPORTAPI,
             ),
         )
-        players = list(
-            db.scalars(
-                select(FixtureProviderLineupPlayer)
-                .where(
-                    FixtureProviderLineupPlayer.fixture_id == internal_id,
-                    FixtureProviderLineupPlayer.provider_name == PROVIDER_SPORTAPI,
-                )
-                .order_by(
-                    FixtureProviderLineupPlayer.team_side,
-                    FixtureProviderLineupPlayer.is_substitute,
-                    FixtureProviderLineupPlayer.jersey_number,
-                ),
-            ).all(),
+
+        home_name = fx.home_team.name if fx.home_team else "Casa"
+        away_name = fx.away_team.name if fx.away_team else "Trasferta"
+        audit = build_sportapi_lineups_audit(
+            db,
+            internal_id,
+            home_team_name=home_name,
+            away_team_name=away_name,
         )
-        missing = list(
-            db.scalars(
-                select(FixtureMissingPlayer).where(
-                    FixtureMissingPlayer.fixture_id == internal_id,
-                    FixtureMissingPlayer.provider_name == PROVIDER_SPORTAPI,
-                ),
-            ).all(),
-        )
-
-        def _pl_row(p: FixtureProviderLineupPlayer) -> dict[str, Any]:
-            return {
-                "provider_player_id": p.provider_player_id,
-                "player_name": p.player_name,
-                "short_name": p.short_name,
-                "position": p.position,
-                "jersey_number": p.jersey_number,
-                "is_substitute": p.is_substitute,
-                "avg_rating": p.avg_rating,
-            }
-
-        def _miss_row(m: FixtureMissingPlayer) -> dict[str, Any]:
-            return {
-                "provider_player_id": m.provider_player_id,
-                "player_name": m.player_name,
-                "position": m.position,
-                "jersey_number": m.jersey_number,
-                "reason": m.reason,
-                "description": m.description,
-                "external_type": m.external_type,
-                "expected_end_date": m.expected_end_date.isoformat() if m.expected_end_date else None,
-            }
-
-        home_players = [_pl_row(p) for p in players if p.team_side == "home" and not p.is_substitute]
-        away_players = [_pl_row(p) for p in players if p.team_side == "away" and not p.is_substitute]
-        home_subs = [_pl_row(p) for p in players if p.team_side == "home" and p.is_substitute]
-        away_subs = [_pl_row(p) for p in players if p.team_side == "away" and p.is_substitute]
-        home_missing = [_miss_row(m) for m in missing if m.team_side == "home"]
-        away_missing = [_miss_row(m) for m in missing if m.team_side == "away"]
 
         out: dict[str, Any] = {
-            "status": "ok" if mapping else "not_found",
+            "status": "ok" if mapping or lineup else "not_found",
             "fixture_id": internal_id,
             "input_id": int(fixture_id),
             "mapping": None,
-            "confirmed": lineup.confirmed if lineup else None,
-            "home_formation": lineup.home_formation if lineup else None,
-            "away_formation": lineup.away_formation if lineup else None,
-            "fetched_at": lineup.fetched_at.isoformat() if lineup and lineup.fetched_at else None,
-            "home": {"players": home_players, "substitutes": home_subs, "missing_players": home_missing},
-            "away": {"players": away_players, "substitutes": away_subs, "missing_players": away_missing},
+            "home_formation": lineup.home_formation if lineup else audit["home"].get("formation"),
+            "away_formation": lineup.away_formation if lineup else audit["away"].get("formation"),
             "model_usage": {
                 "used_in_prediction": False,
                 "note": "Dati non usati nel modello",
             },
+            **audit,
         }
         if mapping:
             out["mapping"] = {

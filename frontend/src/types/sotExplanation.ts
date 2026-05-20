@@ -1,3 +1,5 @@
+import type { SportApiLineupsAuditPayload } from './sportapi'
+
 export type ExplanationStatus = 'ok' | 'missing' | 'error'
 
 export type ExplanationFixtureTeam = { id: number; name: string; logo_url?: string | null }
@@ -252,4 +254,5 @@ export type SotFixtureExplanationResponse = {
     prediction_raw_json: { home: unknown; away: unknown }
     data_policy: { no_data_leakage: boolean; included_matches_rule: string } | null
   }
+  sportapi_lineups?: SportApiLineupsAuditPayload
 }
