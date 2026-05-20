@@ -154,7 +154,7 @@ def clamp_factor(raw: float, confirmed: bool, *, confidence_multiplier: float = 
     adjusted = raw * confidence_multiplier
     if confirmed:
         return max(0.65, min(1.20, adjusted))
-    return max(0.75, min(1.15, adjusted)
+    return max(0.75, min(1.15, adjusted))
 
 
 def build_reason_sentence(
