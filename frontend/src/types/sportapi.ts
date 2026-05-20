@@ -16,16 +16,25 @@ export type SportApiFixtureDebugResponse = {
   message?: string
   sportapi_enabled?: boolean
   use_sportapi_lineups_in_model?: boolean
+  input_id?: number
+  resolved_via?: 'db_id' | 'api_fixture_id' | null
   fixture?: {
     fixture_id: number
     api_fixture_id: number
+    league_id?: number
+    league_api_id?: number | null
     league_name?: string | null
+    season_id?: number
     round?: string | null
+    timezone?: string | null
+    home_team_id?: number
     home_team_name?: string | null
+    away_team_id?: number
     away_team_name?: string | null
     kickoff_at?: string
     kickoff_timestamp?: number
     match_date?: string
+    resolved_via?: 'db_id' | 'api_fixture_id' | null
   }
   candidates?: SportApiCandidate[]
   best_candidate?: SportApiCandidate | null

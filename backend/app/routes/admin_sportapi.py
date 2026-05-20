@@ -13,12 +13,22 @@ from app.core.config import sportapi_configured
 from app.core.database import get_db
 from app.schemas.sportapi import SportApiMappingConfirmBody
 from app.services.sportapi.sportapi_client import SportApiDisabledError
+from app.services.sportapi.sportapi_fixture_resolve import FIXTURE_NOT_FOUND_MSG
 from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
 from app.services.sportapi.sportapi_matching_service import SportApiMatchingService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/sportapi", tags=["admin-sportapi"])
+
+
+def _fixture_not_found_message(payload: dict) -> str | None:
+    msg = str(payload.get("message") or "")
+    if payload.get("status") != "error":
+        return None
+    if msg == FIXTURE_NOT_FOUND_MSG or "non trovata" in msg.lower():
+        return msg or FIXTURE_NOT_FOUND_MSG
+    return None
 
 
 def _require_sportapi_enabled() -> None:
@@ -51,8 +61,9 @@ def sportapi_debug_fixture_match(
             },
         )
 
-    if payload.get("status") == "error" and "non trovata" in str(payload.get("message", "")).lower():
-        raise HTTPException(status_code=404, detail=payload.get("message"))
+    not_found = _fixture_not_found_message(payload)
+    if not_found:
+        raise HTTPException(status_code=404, detail=not_found)
     return jsonable_encoder(payload)
 
 
@@ -83,6 +94,10 @@ def sportapi_confirm_mapping(
         raise HTTPException(status_code=503, detail="Database error") from exc
     except SportApiDisabledError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    not_found = _fixture_not_found_message(out)
+    if not_found:
+        raise HTTPException(status_code=404, detail=not_found)
     return jsonable_encoder(out)
 
 
@@ -103,6 +118,9 @@ def sportapi_fetch_lineups(
 
     if out.get("status") == "error":
         msg = str(out.get("message") or "")
+        not_found = _fixture_not_found_message(out)
+        if not_found:
+            raise HTTPException(status_code=404, detail=not_found)
         if "non trovato" in msg.lower():
             raise HTTPException(status_code=404, detail=msg)
         raise HTTPException(status_code=502, detail=msg)
@@ -124,4 +142,8 @@ def sportapi_get_lineups(
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("sportapi get lineups DB error")
         raise HTTPException(status_code=503, detail="Database error") from exc
+
+    not_found = _fixture_not_found_message(out)
+    if not_found:
+        raise HTTPException(status_code=404, detail=not_found)
     return jsonable_encoder(out)

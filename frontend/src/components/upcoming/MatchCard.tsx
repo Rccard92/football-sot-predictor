@@ -102,6 +102,14 @@ export function MatchCard({
             >
               Apri audit variabili
             </Link>
+            {match.api_fixture_id ? (
+              <Link
+                to={`/admin?sportapi_fixture=${match.api_fixture_id}`}
+                className="font-medium text-slate-700 underline"
+              >
+                Debug SportAPI
+              </Link>
+            ) : null}
           </span>
         </p>
       </div>

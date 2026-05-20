@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   AdminHttpError,
   DEFAULT_SEASON,
@@ -174,6 +175,9 @@ function ActionButton({
 }
 
 export function Admin() {
+  const [searchParams] = useSearchParams()
+  const sportapiFixtureRef = searchParams.get('sportapi_fixture') ?? undefined
+  const sportapiSectionRef = useRef<HTMLDivElement | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<OpResult | null>(null)
   const [legacyOpen, setLegacyOpen] = useState(false)
@@ -202,6 +206,12 @@ export function Admin() {
   useEffect(() => {
     void loadCards()
   }, [loadCards])
+
+  useEffect(() => {
+    if (sportapiFixtureRef && sportapiSectionRef.current) {
+      sportapiSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [sportapiFixtureRef])
 
   const runAction = useCallback(
     async (action: AdminAction) => {
@@ -659,12 +669,14 @@ export function Admin() {
           </div>
         </Section>
 
-        <Section
-          title="5 — SportAPI Debug"
-          subtitle="Fonte secondaria RapidAPI: mapping, probabili/ufficiali lineups, missingPlayers. Non usata nel modello."
-        >
-          <SportApiDebugPanel />
-        </Section>
+        <div ref={sportapiSectionRef}>
+          <Section
+            title="5 — SportAPI Debug"
+            subtitle="Fonte secondaria RapidAPI: mapping, probabili/ufficiali lineups, missingPlayers. Non usata nel modello."
+          >
+            <SportApiDebugPanel initialFixtureRef={sportapiFixtureRef} />
+          </Section>
+        </div>
 
         <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4">
           <button

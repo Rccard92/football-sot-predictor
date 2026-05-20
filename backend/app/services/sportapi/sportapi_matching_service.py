@@ -6,12 +6,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
-
 from app.core.config import get_settings, sportapi_configured
-from app.models import Fixture
 from app.services.sportapi.sportapi_client import SportApiClient, SportApiDisabledError, SportApiError
+from app.services.sportapi.sportapi_fixture_resolve import FIXTURE_NOT_FOUND_MSG, resolve_fixture_or_error
 from app.services.sportapi.sportapi_normalize import (
     extract_round_number,
     normalize_team_name,
@@ -105,17 +102,14 @@ class SportApiMatchingService:
 
     def debug_match_fixture(self, db: Session, fixture_id: int) -> dict[str, Any]:
         settings = get_settings()
-        fx = db.scalar(
-            select(Fixture)
-            .where(Fixture.id == int(fixture_id))
-            .options(
-                joinedload(Fixture.home_team),
-                joinedload(Fixture.away_team),
-                joinedload(Fixture.league),
-            ),
-        )
+        fx, resolve_meta = resolve_fixture_or_error(db, int(fixture_id))
         if fx is None:
-            return {"status": "error", "message": "Fixture non trovata", "fixture_id": int(fixture_id)}
+            err = resolve_meta or {}
+            err.setdefault("message", FIXTURE_NOT_FOUND_MSG)
+            err["input_id"] = int(fixture_id)
+            return err
+
+        resolved_via = resolve_meta.get("resolved_via") if resolve_meta else None
 
         league = fx.league
         kickoff = fx.kickoff_at
@@ -128,9 +122,11 @@ class SportApiMatchingService:
             "fixture_id": int(fx.id),
             "api_fixture_id": int(fx.api_fixture_id),
             "league_id": int(fx.league_id),
+            "league_api_id": int(league.api_league_id) if league else None,
             "league_name": league.name if league else None,
             "season_id": int(fx.season_id),
             "round": fx.round,
+            "timezone": fx.timezone,
             "home_team_id": int(fx.home_team_id),
             "home_team_name": fx.home_team.name if fx.home_team else None,
             "away_team_id": int(fx.away_team_id),
@@ -138,12 +134,15 @@ class SportApiMatchingService:
             "kickoff_at": kickoff.isoformat(),
             "kickoff_timestamp": fixture_ts,
             "match_date": match_date,
+            "resolved_via": resolved_via,
         }
 
         base = {
             "status": "ok",
             "sportapi_enabled": sportapi_configured(),
             "use_sportapi_lineups_in_model": settings.use_sportapi_lineups_in_model,
+            "input_id": int(fixture_id),
+            "resolved_via": resolved_via,
             "fixture": fixture_payload,
             "candidates": [],
             "best_candidate": None,

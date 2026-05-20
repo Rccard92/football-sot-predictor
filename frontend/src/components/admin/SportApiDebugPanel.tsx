@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
+  AdminHttpError,
   confirmSportApiMapping,
   fetchSportApiLineups,
   getSportApiFixtureDebug,
@@ -7,7 +8,23 @@ import {
 } from '../../lib/api'
 import type { SportApiCandidate, SportApiFixtureDebugResponse, SportApiLineupsStoredResponse } from '../../types/sportapi'
 
+const FIXTURE_NOT_FOUND_MSG =
+  "Fixture non trovata. Verifica di aver inserito l'ID interno DB oppure l'api_fixture_id API-Football."
+
 function formatFetchError(e: unknown, label: string): string {
+  if (e instanceof AdminHttpError) {
+    if (e.status === 404) {
+      const detail =
+        typeof e.body === 'object' &&
+        e.body !== null &&
+        'detail' in e.body &&
+        typeof (e.body as { detail: unknown }).detail === 'string'
+          ? (e.body as { detail: string }).detail
+          : e.message
+      return detail || FIXTURE_NOT_FOUND_MSG
+    }
+    return `${label}: ${e.message}`
+  }
   const raw = e instanceof Error ? e.message : String(e)
   if (raw === 'Failed to fetch' || /network|abort/i.test(raw)) {
     return `${label}: errore di rete o backend non raggiungibile.`
@@ -15,7 +32,11 @@ function formatFetchError(e: unknown, label: string): string {
   return `${label}: ${raw}`
 }
 
-export function SportApiDebugPanel() {
+type SportApiDebugPanelProps = {
+  initialFixtureRef?: string
+}
+
+export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProps) {
   const [fixtureIdInput, setFixtureIdInput] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -23,15 +44,27 @@ export function SportApiDebugPanel() {
   const [stored, setStored] = useState<SportApiLineupsStoredResponse | null>(null)
   const [manualEventId, setManualEventId] = useState('')
 
+  useEffect(() => {
+    const trimmed = initialFixtureRef?.trim()
+    if (trimmed) {
+      setFixtureIdInput(trimmed)
+    }
+  }, [initialFixtureRef])
+
   const fixtureId = () => {
     const n = parseInt(fixtureIdInput.trim(), 10)
     return Number.isFinite(n) && n > 0 ? n : null
   }
 
+  const actionFixtureId = () => {
+    if (debug?.fixture?.fixture_id != null) return debug.fixture.fixture_id
+    return fixtureId()
+  }
+
   const runDebug = useCallback(async () => {
     const fid = fixtureId()
     if (fid == null) {
-      setError('Inserisci fixture_id interno (DB) numerico valido')
+      setError('Inserisci un ID numerico valido (ID interno DB o api_fixture_id API-Football)')
       return
     }
     setLoading('debug')
@@ -52,7 +85,7 @@ export function SportApiDebugPanel() {
   }, [fixtureIdInput])
 
   const runConfirm = useCallback(async () => {
-    const fid = fixtureId()
+    const fid = actionFixtureId()
     const eid = parseInt(manualEventId.trim(), 10)
     if (fid == null || !Number.isFinite(eid)) {
       setError('fixture_id e provider_event_id validi richiesti')
@@ -81,10 +114,10 @@ export function SportApiDebugPanel() {
     } finally {
       setLoading(null)
     }
-  }, [fixtureIdInput, manualEventId, debug])
+  }, [manualEventId, debug])
 
   const runFetchLineups = useCallback(async () => {
-    const fid = fixtureId()
+    const fid = actionFixtureId()
     if (fid == null) {
       setError('fixture_id valido richiesto')
       return
@@ -100,10 +133,10 @@ export function SportApiDebugPanel() {
     } finally {
       setLoading(null)
     }
-  }, [fixtureIdInput])
+  }, [debug, fixtureIdInput])
 
   const runLoadStored = useCallback(async () => {
-    const fid = fixtureId()
+    const fid = actionFixtureId()
     if (fid == null) return
     setLoading('stored')
     setError(null)
@@ -114,9 +147,10 @@ export function SportApiDebugPanel() {
     } finally {
       setLoading(null)
     }
-  }, [fixtureIdInput])
+  }, [debug, fixtureIdInput])
 
   const enabled = debug?.sportapi_enabled !== false
+  const fx = debug?.fixture
 
   return (
     <div className="space-y-4">
@@ -129,13 +163,13 @@ export function SportApiDebugPanel() {
       </p>
 
       <label className="block text-xs text-slate-600">
-        fixture_id (interno DB, non api_fixture_id)
+        Fixture ID o API-Football fixture_id
         <input
           type="number"
           value={fixtureIdInput}
           onChange={(e) => setFixtureIdInput(e.target.value)}
           className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-          placeholder="es. ID da tabella fixtures"
+          placeholder="es. 1378236"
         />
       </label>
 
@@ -182,17 +216,67 @@ export function SportApiDebugPanel() {
 
       {error ? <p className="text-xs text-rose-700">{error}</p> : null}
 
-      {debug?.fixture ? (
+      {fx ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800">
           <p className="font-semibold">Fixture API-Football</p>
-          <p>
-            DB id {debug.fixture.fixture_id} · API {debug.fixture.api_fixture_id} ·{' '}
-            {debug.fixture.home_team_name} vs {debug.fixture.away_team_name}
-          </p>
-          <p>
-            {debug.fixture.kickoff_at} · {debug.fixture.match_date} · round {debug.fixture.round ?? '—'}
-          </p>
-          <p className="mt-1">
+          <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">ID DB</dt>
+              <dd className="font-mono">{fx.fixture_id}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">api_fixture_id</dt>
+              <dd className="font-mono">{fx.api_fixture_id}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Casa</dt>
+              <dd>{fx.home_team_name ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Trasferta</dt>
+              <dd>{fx.away_team_name ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Kickoff</dt>
+              <dd>{fx.kickoff_at ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Timestamp</dt>
+              <dd className="font-mono">{fx.kickoff_timestamp ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Data partita</dt>
+              <dd>{fx.match_date ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Timezone</dt>
+              <dd>{fx.timezone ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Lega</dt>
+              <dd>
+                {fx.league_name ?? '—'}
+                {fx.league_api_id != null ? ` (API ${fx.league_api_id})` : ''}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Giornata</dt>
+              <dd>{fx.round ?? '—'}</dd>
+            </div>
+            {(fx.resolved_via ?? debug.resolved_via) ? (
+              <div>
+                <dt className="text-slate-500">Risolto via</dt>
+                <dd className="font-mono">{fx.resolved_via ?? debug.resolved_via}</dd>
+              </div>
+            ) : null}
+            {debug.input_id != null && debug.input_id !== fx.fixture_id ? (
+              <div>
+                <dt className="text-slate-500">Input inserito</dt>
+                <dd className="font-mono">{debug.input_id}</dd>
+              </div>
+            ) : null}
+          </dl>
+          <p className="mt-2">
             Raccomandazione: <strong>{debug.recommendation ?? '—'}</strong>
             {debug.confidence_score != null ? ` · score ${debug.confidence_score}` : ''}
           </p>

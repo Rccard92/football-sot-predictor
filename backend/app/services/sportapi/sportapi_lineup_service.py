@@ -19,6 +19,7 @@ from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI, FixtureProvid
 from app.models.fixture_provider_lineup import FixtureProviderLineup
 from app.models.fixture_provider_lineup_player import FixtureProviderLineupPlayer
 from app.services.sportapi.sportapi_client import SportApiClient, SportApiDisabledError, SportApiError
+from app.services.sportapi.sportapi_fixture_resolve import FIXTURE_NOT_FOUND_MSG, resolve_fixture_or_error
 from app.services.sportapi.sportapi_payload import (
     event_team_ids,
     event_tournament_info,
@@ -63,9 +64,14 @@ class SportApiLineupService:
         matched_by: str | None,
         raw_payload: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        fx, err = resolve_fixture_or_error(db, int(fixture_id))
+        if fx is None:
+            return err or {"status": "error", "message": FIXTURE_NOT_FOUND_MSG, "input_id": int(fixture_id)}
+        internal_id = int(fx.id)
+
         row = db.scalar(
             select(FixtureProviderMapping).where(
-                FixtureProviderMapping.fixture_id == int(fixture_id),
+                FixtureProviderMapping.fixture_id == internal_id,
                 FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
             ),
         )
@@ -86,7 +92,7 @@ class SportApiLineupService:
 
         if row is None:
             row = FixtureProviderMapping(
-                fixture_id=int(fixture_id),
+                fixture_id=internal_id,
                 provider_name=PROVIDER_SPORTAPI,
                 provider_event_id=int(provider_event_id),
             )
@@ -107,16 +113,22 @@ class SportApiLineupService:
         db.refresh(row)
         return {
             "status": "success",
-            "fixture_id": int(fixture_id),
+            "fixture_id": internal_id,
+            "input_id": int(fixture_id),
             "provider_event_id": int(row.provider_event_id),
             "confidence_score": row.confidence_score,
             "matched_by": row.matched_by,
         }
 
     def fetch_and_persist_lineups(self, db: Session, fixture_id: int) -> dict[str, Any]:
+        fx, err = resolve_fixture_or_error(db, int(fixture_id))
+        if fx is None:
+            return err or {"status": "error", "message": FIXTURE_NOT_FOUND_MSG, "input_id": int(fixture_id)}
+        internal_id = int(fx.id)
+
         mapping = db.scalar(
             select(FixtureProviderMapping).where(
-                FixtureProviderMapping.fixture_id == int(fixture_id),
+                FixtureProviderMapping.fixture_id == internal_id,
                 FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
             ),
         )
@@ -124,17 +136,18 @@ class SportApiLineupService:
             return {
                 "status": "error",
                 "message": "Mapping SportAPI non trovato. Conferma il mapping prima del fetch lineups.",
-                "fixture_id": int(fixture_id),
+                "fixture_id": internal_id,
+                "input_id": int(fixture_id),
             }
 
         event_id = int(mapping.provider_event_id)
         try:
             raw = self._client.get_lineups(event_id)
         except SportApiDisabledError as exc:
-            return {"status": "disabled", "message": str(exc), "fixture_id": int(fixture_id)}
+            return {"status": "disabled", "message": str(exc), "fixture_id": internal_id, "input_id": int(fixture_id)}
         except SportApiError as exc:
-            logger.warning("sportapi lineups fetch failed fixture=%s: %s", fixture_id, exc)
-            return {"status": "error", "message": str(exc), "fixture_id": int(fixture_id)}
+            logger.warning("sportapi lineups fetch failed fixture=%s: %s", internal_id, exc)
+            return {"status": "error", "message": str(exc), "fixture_id": internal_id, "input_id": int(fixture_id)}
 
         lineups = lineups_block(raw)
         confirmed = bool(lineups.get("confirmed", False))
@@ -150,13 +163,13 @@ class SportApiLineupService:
         now = datetime.now(timezone.utc)
         lineup_row = db.scalar(
             select(FixtureProviderLineup).where(
-                FixtureProviderLineup.fixture_id == int(fixture_id),
+                FixtureProviderLineup.fixture_id == internal_id,
                 FixtureProviderLineup.provider_name == PROVIDER_SPORTAPI,
             ),
         )
         if lineup_row is None:
             lineup_row = FixtureProviderLineup(
-                fixture_id=int(fixture_id),
+                fixture_id=internal_id,
                 provider_name=PROVIDER_SPORTAPI,
                 provider_event_id=event_id,
             )
@@ -172,13 +185,13 @@ class SportApiLineupService:
 
         db.execute(
             delete(FixtureProviderLineupPlayer).where(
-                FixtureProviderLineupPlayer.fixture_id == int(fixture_id),
+                FixtureProviderLineupPlayer.fixture_id == internal_id,
                 FixtureProviderLineupPlayer.provider_name == PROVIDER_SPORTAPI,
             ),
         )
         db.execute(
             delete(FixtureMissingPlayer).where(
-                FixtureMissingPlayer.fixture_id == int(fixture_id),
+                FixtureMissingPlayer.fixture_id == internal_id,
                 FixtureMissingPlayer.provider_name == PROVIDER_SPORTAPI,
             ),
         )
@@ -196,7 +209,7 @@ class SportApiLineupService:
                 substitute = bool(p.get("substitute") or p.get("isSubstitute"))
                 db.add(
                     FixtureProviderLineupPlayer(
-                        fixture_id=int(fixture_id),
+                        fixture_id=internal_id,
                         provider_lineup_id=int(lineup_row.id),
                         provider_name=PROVIDER_SPORTAPI,
                         provider_player_id=pid,
@@ -220,7 +233,7 @@ class SportApiLineupService:
                     continue
                 db.add(
                     FixtureMissingPlayer(
-                        fixture_id=int(fixture_id),
+                        fixture_id=internal_id,
                         provider_lineup_id=int(lineup_row.id),
                         provider_name=PROVIDER_SPORTAPI,
                         provider_player_id=pid,
@@ -243,7 +256,8 @@ class SportApiLineupService:
         db.commit()
         return {
             "status": "success",
-            "fixture_id": int(fixture_id),
+            "fixture_id": internal_id,
+            "input_id": int(fixture_id),
             "provider_event_id": event_id,
             "confirmed": confirmed,
             "players_saved": n_players,
@@ -259,15 +273,23 @@ class SportApiLineupService:
         *,
         include_raw: bool = False,
     ) -> dict[str, Any]:
+        fx, err = resolve_fixture_or_error(db, int(fixture_id))
+        if fx is None:
+            return {
+                **(err or {"status": "error", "message": FIXTURE_NOT_FOUND_MSG}),
+                "input_id": int(fixture_id),
+            }
+        internal_id = int(fx.id)
+
         mapping = db.scalar(
             select(FixtureProviderMapping).where(
-                FixtureProviderMapping.fixture_id == int(fixture_id),
+                FixtureProviderMapping.fixture_id == internal_id,
                 FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
             ),
         )
         lineup = db.scalar(
             select(FixtureProviderLineup).where(
-                FixtureProviderLineup.fixture_id == int(fixture_id),
+                FixtureProviderLineup.fixture_id == internal_id,
                 FixtureProviderLineup.provider_name == PROVIDER_SPORTAPI,
             ),
         )
@@ -275,7 +297,7 @@ class SportApiLineupService:
             db.scalars(
                 select(FixtureProviderLineupPlayer)
                 .where(
-                    FixtureProviderLineupPlayer.fixture_id == int(fixture_id),
+                    FixtureProviderLineupPlayer.fixture_id == internal_id,
                     FixtureProviderLineupPlayer.provider_name == PROVIDER_SPORTAPI,
                 )
                 .order_by(
@@ -288,7 +310,7 @@ class SportApiLineupService:
         missing = list(
             db.scalars(
                 select(FixtureMissingPlayer).where(
-                    FixtureMissingPlayer.fixture_id == int(fixture_id),
+                    FixtureMissingPlayer.fixture_id == internal_id,
                     FixtureMissingPlayer.provider_name == PROVIDER_SPORTAPI,
                 ),
             ).all(),
@@ -326,7 +348,8 @@ class SportApiLineupService:
 
         out: dict[str, Any] = {
             "status": "ok" if mapping else "not_found",
-            "fixture_id": int(fixture_id),
+            "fixture_id": internal_id,
+            "input_id": int(fixture_id),
             "mapping": None,
             "confirmed": lineup.confirmed if lineup else None,
             "home_formation": lineup.home_formation if lineup else None,

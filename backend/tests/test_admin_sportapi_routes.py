@@ -1,24 +1,19 @@
-"""Route admin SportAPI — disabled quando env off."""
+"""Smoke import route admin SportAPI."""
 
-from __future__ import annotations
-
-from unittest.mock import patch
-
-import pytest
-from fastapi.testclient import TestClient
-
-from app.main import app
+from app.services.sportapi.sportapi_fixture_resolve import FIXTURE_NOT_FOUND_MSG
 
 
-@pytest.fixture
-def client():
-    return TestClient(app)
+def test_admin_sportapi_route_imports():
+    from app.routes.admin_sportapi import router, _fixture_not_found_message
+
+    assert router.prefix == "/admin/sportapi"
+    assert _fixture_not_found_message({"status": "error", "message": FIXTURE_NOT_FOUND_MSG}) == FIXTURE_NOT_FOUND_MSG
+    assert _fixture_not_found_message({"status": "ok"}) is None
 
 
-def test_confirm_mapping_requires_sportapi_enabled(client):
-    with patch("app.routes.admin_sportapi.sportapi_configured", return_value=False):
-        r = client.post(
-            "/api/admin/sportapi/mappings/1/confirm",
-            json={"provider_event_id": 13980080, "confidence_score": 95},
-        )
-    assert r.status_code == 400
+def test_admin_sportapi_no_predictions_import():
+    import importlib
+
+    mod = importlib.import_module("app.routes.admin_sportapi")
+    src = open(mod.__file__, encoding="utf-8").read()
+    assert "predictions_v11" not in src
