@@ -7,6 +7,12 @@ export type PlayerLineupStatus =
   | 'OUT_OF_LINEUP'
   | 'UNMAPPED'
 
+export type RosterPlayerStatus =
+  | 'ACTIVE'
+  | 'TRANSFERRED_OUT'
+  | 'NOT_IN_CURRENT_SQUAD'
+  | 'UNKNOWN'
+
 export type SportApiPlayerMatchRow = {
   sportapi_player_id: number
   sportapi_player_name: string
@@ -47,6 +53,29 @@ export type LineupImpactTopPlayer = {
   replacement_credit?: number
   net_loss_share?: number
   is_top5_sot_team?: boolean
+  roster_status?: RosterPlayerStatus
+  included_as_unknown?: boolean
+}
+
+export type LineupImpactExcludedPlayer = {
+  player_name?: string | null
+  team_sot_share_pct?: number | null
+  roster_status?: RosterPlayerStatus
+  exclusion_reason?: string
+  shots_on_target_per90?: number | null
+}
+
+export type LineupImpactDefensivePlayer = {
+  player_id?: number
+  player_name?: string
+  defensive_role?: string
+  defensive_importance?: number
+  status?: PlayerLineupStatus
+  status_note?: string
+  defensive_penalty?: number
+  defensive_replacement_credit?: number
+  net_defensive_loss?: number
+  replacement_player_name?: string | null
 }
 
 /** @deprecated use LineupImpactTopPlayer */
@@ -62,6 +91,8 @@ export type LineupImpactSideSimulation = {
   impact_pct?: number | null
   confirmed?: boolean
   lineup_confidence_weight?: number
+  offensive_lineup_factor?: number
+  opponent_defensive_weakness_factor?: number
   factor?: number
   attacking_lineup_factor?: number
   gross_penalty_share?: number
@@ -69,9 +100,18 @@ export type LineupImpactSideSimulation = {
   net_lineup_loss_share?: number
   net_missing_sot_share?: number
   missing_top5_sot_share?: number
+  defensive_weakness_factor?: number
+  gross_defensive_loss?: number
+  defensive_replacement_credit?: number
+  net_defensive_loss?: number
   top_sot_players?: LineupImpactTopPlayer[]
+  defensive_key_players?: LineupImpactDefensivePlayer[]
+  excluded_players?: LineupImpactExcludedPlayer[]
   summary_by_status?: Partial<Record<PlayerLineupStatus, number>>
   reasons?: string[]
+  offensive_reasons?: string[]
+  defensive_reasons?: string[]
+  roster_sync_hint?: 'ok' | 'missing' | 'stale'
   top5_sot_players?: LineupImpactTopPlayer[]
   top5_present?: LineupImpactTopPlayer[]
   top5_missing?: LineupImpactTopPlayer[]
@@ -94,6 +134,9 @@ export type LineupImpactSimulationPayload = {
   player_matching_summary?: Record<string, number>
   sportapi_player_matching?: SportApiPlayerMatchRow[]
   explanation_bullets?: string[]
-  defensive_opponent_factor?: null
+  defensive_opponent_factor?: {
+    home_opponent_factor?: number
+    away_opponent_factor?: number
+  } | null
   note?: string
 }

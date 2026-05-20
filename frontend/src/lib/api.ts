@@ -1362,6 +1362,17 @@ export async function getSportApiPlayerMatchingPreview(
   )
 }
 
+export async function syncSportApiFixtureSquads(
+  fixtureId: number,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  return adminPostJson<unknown>(
+    `/api/admin/sportapi/fixture/${fixtureId}/sync-api-squads`,
+    {},
+    opts,
+  )
+}
+
 export async function buildPlayerSotProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminPostJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/build`, {}, opts)
 }

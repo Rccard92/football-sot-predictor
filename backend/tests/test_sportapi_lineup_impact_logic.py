@@ -153,3 +153,14 @@ def test_confidence_unmapped_lowers_label():
     )
     assert label in ("media", "bassa")
     assert any("non mappati" in r for r in reasons)
+
+
+def test_confidence_roster_missing():
+    label, reasons = compute_impact_confidence(
+        confirmed=False,
+        top_players=[],
+        profiles_missing=False,
+        roster_sync_hints=["missing", "ok"],
+    )
+    assert label in ("media", "bassa")
+    assert any("Rosa attuale" in r for r in reasons)

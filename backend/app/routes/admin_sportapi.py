@@ -9,7 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.core.config import sportapi_configured
+from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
 from app.schemas.sportapi import SportApiMappingConfirmBody
 from app.services.sportapi.sportapi_client import SportApiDisabledError
@@ -31,6 +31,14 @@ def _fixture_not_found_message(payload: dict) -> str | None:
     if msg == FIXTURE_NOT_FOUND_MSG or "non trovata" in msg.lower():
         return msg or FIXTURE_NOT_FOUND_MSG
     return None
+
+
+def _require_api_football_key() -> None:
+    if not get_settings().api_football_key.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="API-Football key mancante: imposta API_FOOTBALL_KEY per sincronizzare le rose",
+        )
 
 
 def _require_sportapi_enabled() -> None:
@@ -149,6 +157,49 @@ def sportapi_get_lineups(
     if not_found:
         raise HTTPException(status_code=404, detail=not_found)
     return jsonable_encoder(out)
+
+
+@router.post("/fixture/{fixture_id}/sync-api-squads", response_model=None)
+def sportapi_sync_api_squads_for_fixture(
+    fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Sync manuale rosa API-Sports per casa e trasferta della fixture."""
+    from app.models import Season, Team
+    from app.services.player_data.squads import sync_team_squads
+    from app.services.sportapi.sportapi_fixture_resolve import resolve_fixture_or_error
+
+    _require_api_football_key()
+    try:
+        fx, err = resolve_fixture_or_error(db, int(fixture_id))
+        if fx is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(err or {}).get("message", FIXTURE_NOT_FOUND_MSG),
+            )
+        season = db.get(Season, int(fx.season_id))
+        if season is None:
+            raise HTTPException(status_code=400, detail="Stagione fixture non trovata")
+        payload = sync_team_squads(
+            db,
+            int(season.year),
+            [int(fx.home_team_id), int(fx.away_team_id)],
+        )
+        home = db.get(Team, int(fx.home_team_id))
+        away = db.get(Team, int(fx.away_team_id))
+        payload["fixture_id"] = int(fx.id)
+        payload["teams"] = [
+            {"team_id": int(fx.home_team_id), "name": home.name if home else None},
+            {"team_id": int(fx.away_team_id), "name": away.name if away else None},
+        ]
+        return jsonable_encoder(payload)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi sync api squads DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
 
 
 @router.get("/fixture/{fixture_id}/player-matching", response_model=None)

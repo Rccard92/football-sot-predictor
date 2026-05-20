@@ -8,6 +8,7 @@ import {
 } from '../../lib/api'
 import {
   getSportApiPlayerMatchingPreview,
+  syncSportApiFixtureSquads,
 } from '../../lib/api'
 import { LineupImpactSimulationCard } from '../sportapi/LineupImpactSimulationCard'
 import {
@@ -156,6 +157,24 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
     }
   }, [debug, fixtureIdInput, loadImpactPreview])
 
+  const runSyncSquads = useCallback(async () => {
+    const fid = actionFixtureId()
+    if (fid == null) {
+      setError('fixture_id valido richiesto')
+      return
+    }
+    setLoading('squads')
+    setError(null)
+    try {
+      await syncSportApiFixtureSquads(fid)
+      await loadImpactPreview(fid)
+    } catch (e) {
+      setError(formatFetchError(e, 'Aggiorna rosa API-Sports'))
+    } finally {
+      setLoading(null)
+    }
+  }, [debug, fixtureIdInput, loadImpactPreview])
+
   const runLoadStored = useCallback(async () => {
     const fid = actionFixtureId()
     if (fid == null) return
@@ -227,6 +246,14 @@ export function SportApiDebugPanel({ initialFixtureRef }: SportApiDebugPanelProp
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
         >
           {loading === 'stored' ? '…' : 'Ricarica salvati'}
+        </button>
+        <button
+          type="button"
+          disabled={loading !== null}
+          onClick={() => void runSyncSquads()}
+          className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-950 hover:bg-sky-100 disabled:opacity-50"
+        >
+          {loading === 'squads' ? 'Sync…' : 'Aggiorna rosa attuale API-Sports'}
         </button>
       </div>
 

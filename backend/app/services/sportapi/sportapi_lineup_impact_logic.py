@@ -191,6 +191,10 @@ def compute_impact_confidence(
     confirmed: bool,
     top_players: list[dict[str, Any]],
     profiles_missing: bool,
+    roster_sync_hints: list[str] | None = None,
+    excluded_count: int = 0,
+    roster_unknown_in_top: int = 0,
+    defensive_stats_limited: bool = False,
 ) -> tuple[str, list[str]]:
     score = 100
     reasons: list[str] = []
@@ -201,6 +205,23 @@ def compute_impact_confidence(
     if profiles_missing:
         score -= 25
         reasons.append("Profili player_sot_profiles assenti per la stagione")
+
+    hints = roster_sync_hints or []
+    if any(h == "missing" for h in hints):
+        score -= 20
+        reasons.append("Rosa attuale API-Sports non sincronizzata — eseguire «Aggiorna rosa attuale» da Admin")
+    elif any(h == "stale" for h in hints):
+        score -= 10
+        reasons.append("Rosa attuale API-Sports vuota o obsoleta per una o più squadre")
+    if excluded_count:
+        score -= min(excluded_count * 3, 12)
+        reasons.append(f"{excluded_count} giocatori esclusi (non più in rosa)")
+    if roster_unknown_in_top:
+        score -= roster_unknown_in_top * 8
+        reasons.append(f"{roster_unknown_in_top} top player con stato rosa sconosciuto")
+    if defensive_stats_limited:
+        score -= 8
+        reasons.append("Statistiche difensive limitate — uso minuti/ruolo")
 
     unmapped = sum(1 for p in top_players if p.get("status") == "UNMAPPED")
     out_lineup = sum(1 for p in top_players if p.get("status") == "OUT_OF_LINEUP")

@@ -1,4 +1,6 @@
 import type {
+  LineupImpactDefensivePlayer,
+  LineupImpactExcludedPlayer,
   LineupImpactSimulationPayload,
   LineupImpactSideSimulation,
   LineupImpactTopPlayer,
@@ -53,6 +55,12 @@ function confidenceBadgeClass(label: string | undefined): string {
   }
 }
 
+function rosterHintLabel(hint: string | undefined): string {
+  if (hint === 'missing') return 'Rosa API-Sports non sincronizzata'
+  if (hint === 'stale') return 'Rosa API-Sports obsoleta/vuota'
+  return 'Rosa API-Sports aggiornata'
+}
+
 function TopPlayerRow({ player, index }: { player: LineupImpactTopPlayer; index: number }) {
   const share = player.team_sot_share_pct
   return (
@@ -84,33 +92,44 @@ function TopPlayerRow({ player, index }: { player: LineupImpactTopPlayer; index:
   )
 }
 
-function StatusSummary({ side }: { side: LineupImpactSideSimulation }) {
-  const summary = side.summary_by_status
-  if (!summary || Object.keys(summary).length === 0) return null
-
-  const items: { key: PlayerLineupStatus; label: string }[] = [
-    { key: 'STARTER', label: 'Titolari' },
-    { key: 'BENCH', label: 'Panchina' },
-    { key: 'MISSING', label: 'Indisponibili' },
-    { key: 'OUT_OF_LINEUP', label: 'Fuori lista' },
-    { key: 'UNMAPPED', label: 'Non mappati' },
-  ]
-
+function DefensivePlayerRow({ player }: { player: LineupImpactDefensivePlayer }) {
+  const imp = (player.defensive_importance ?? 0) * 100
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {items.map(({ key, label }) => {
-        const n = summary[key]
-        if (!n) return null
-        return (
-          <span
-            key={key}
-            className={`rounded-md border px-2 py-0.5 text-[10px] font-medium ${statusBadgeClass(key)}`}
-          >
-            {label}: {n}
-          </span>
-        )
-      })}
-    </div>
+    <li className="border-b border-slate-100 py-1.5 text-xs last:border-0">
+      <span className="font-medium text-slate-900">{player.player_name}</span>
+      {imp > 0 ? (
+        <span className="ml-2 font-mono text-[10px] text-slate-600">
+          imp. {imp.toFixed(0)}%
+        </span>
+      ) : null}
+      {player.status ? (
+        <span
+          className={`ml-2 rounded border px-1 py-0.5 text-[10px] ${statusBadgeClass(player.status)}`}
+        >
+          {statusLabelIT(player.status)}
+        </span>
+      ) : null}
+      {(player.net_defensive_loss ?? 0) > 0 ? (
+        <p className="mt-0.5 text-[10px] text-orange-800">
+          Perdita difensiva netta: {((player.net_defensive_loss ?? 0) * 100).toFixed(1)}%
+          {player.replacement_player_name
+            ? ` — compensata da ${player.replacement_player_name}`
+            : ''}
+        </p>
+      ) : null}
+    </li>
+  )
+}
+
+function ExcludedRow({ player }: { player: LineupImpactExcludedPlayer }) {
+  return (
+    <li className="text-xs text-slate-700">
+      <span className="font-medium">{player.player_name}</span>
+      {player.team_sot_share_pct != null ? (
+        <span className="font-mono text-slate-500"> — share {player.team_sot_share_pct.toFixed(1)}%</span>
+      ) : null}
+      <span className="text-slate-500"> — {player.exclusion_reason ?? 'escluso'}</span>
+    </li>
   )
 }
 
@@ -118,8 +137,12 @@ function SideImpactBlock({ side }: { side: LineupImpactSideSimulation }) {
   const base = side.base_sot ?? side.base_expected_sot
   const adj = side.adjusted_sot ?? side.adjusted_sot_simulated
   const pct = side.impact_pct
-  const factor = side.factor ?? side.attacking_lineup_factor
+  const offFactor = side.offensive_lineup_factor ?? side.attacking_lineup_factor
+  const oppDef = side.opponent_defensive_weakness_factor ?? 1
+  const finalFactor = side.factor ?? (offFactor != null ? offFactor * oppDef : undefined)
   const topPlayers = side.top_sot_players ?? side.top5_sot_players ?? []
+  const defPlayers = side.defensive_key_players ?? []
+  const excluded = side.excluded_players ?? []
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -127,6 +150,13 @@ function SideImpactBlock({ side }: { side: LineupImpactSideSimulation }) {
       {side.formation ? (
         <p className="text-xs text-slate-600">
           Modulo <span className="font-mono">{side.formation}</span>
+        </p>
+      ) : null}
+      {side.roster_sync_hint ? (
+        <p
+          className={`mt-1 text-[10px] ${side.roster_sync_hint === 'ok' ? 'text-emerald-800' : 'text-amber-800'}`}
+        >
+          {rosterHintLabel(side.roster_sync_hint)}
         </p>
       ) : null}
 
@@ -141,12 +171,18 @@ function SideImpactBlock({ side }: { side: LineupImpactSideSimulation }) {
         <dd className={pct != null && pct < 0 ? 'text-rose-700' : 'text-emerald-800'}>
           {pct != null ? `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%` : '—'}
         </dd>
-        <dt className="text-slate-500">Factor</dt>
-        <dd className="font-mono">{factor != null ? factor.toFixed(4) : '—'}</dd>
+        <dt className="text-slate-500">Offensive factor</dt>
+        <dd className="font-mono">{offFactor != null ? offFactor.toFixed(4) : '—'}</dd>
+        <dt className="text-slate-500">Opp. defensive weakness</dt>
+        <dd className="font-mono text-orange-800">{oppDef.toFixed(4)}</dd>
+        <dt className="text-slate-500">Factor finale</dt>
+        <dd className="font-mono font-semibold">
+          {finalFactor != null ? finalFactor.toFixed(4) : '—'}
+        </dd>
       </dl>
 
-      <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/60 px-2 py-2 text-[10px]">
-        <p className="font-semibold uppercase text-slate-500">Metriche penalità</p>
+      <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/50 px-2 py-2 text-[10px]">
+        <p className="font-semibold uppercase text-indigo-800">Impatto offensivo</p>
         <dl className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
           <dt className="text-slate-500">Gross penalty</dt>
           <dd className="font-mono">
@@ -169,7 +205,30 @@ function SideImpactBlock({ side }: { side: LineupImpactSideSimulation }) {
         </dl>
       </div>
 
-      <StatusSummary side={side} />
+      <div className="mt-2 rounded-lg border border-orange-100 bg-orange-50/40 px-2 py-2 text-[10px]">
+        <p className="font-semibold uppercase text-orange-900">Impatto difensivo (concessione avversario)</p>
+        <dl className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5">
+          <dt className="text-slate-500">Weakness factor (nostro)</dt>
+          <dd className="font-mono">
+            {(side.defensive_weakness_factor ?? 1).toFixed(4)}
+          </dd>
+          <dt className="text-slate-500">Net defensive loss</dt>
+          <dd className="font-mono">
+            {side.net_defensive_loss != null
+              ? `${(side.net_defensive_loss * 100).toFixed(1)}%`
+              : '—'}
+          </dd>
+        </dl>
+        {defPlayers.length > 0 ? (
+          <ul className="mt-2 list-none space-y-0">
+            {defPlayers.map((p, i) => (
+              <DefensivePlayerRow key={p.player_id ?? i} player={p} />
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-slate-500">Nessun difensore chiave penalizzato</p>
+        )}
+      </div>
 
       {topPlayers.length > 0 ? (
         <div className="mt-3">
@@ -181,6 +240,19 @@ function SideImpactBlock({ side }: { side: LineupImpactSideSimulation }) {
               <TopPlayerRow key={p.player_id ?? i} player={p} index={i} />
             ))}
           </ol>
+        </div>
+      ) : null}
+
+      {excluded.length > 0 ? (
+        <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-2 py-2">
+          <p className="text-[10px] font-semibold uppercase text-slate-500">
+            Giocatori esclusi dal calcolo
+          </p>
+          <ul className="mt-1 list-inside list-disc">
+            {excluded.map((ex, i) => (
+              <ExcludedRow key={i} player={ex} />
+            ))}
+          </ul>
         </div>
       ) : null}
     </div>
