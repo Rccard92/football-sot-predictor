@@ -17,3 +17,4 @@ frontend/node_modules
 # Cache scan catalogo API-Football (generato da POST scan)
 backend/app/data/cache/*.json
 !backend/app/data/cache/.gitkeep
+
