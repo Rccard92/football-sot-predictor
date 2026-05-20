@@ -44,6 +44,18 @@ La componente indisponibili/infortuni è stata **rimossa** perché i dati da API
 - **Player layer (13%):** nessun aggiustamento da injuries/sidelined; solo profili storici o lineup-adjusted (step 7B).
 - **Endpoint ingest/debug:** rimossi dall’admin e dall’audit partita.
 
+## SportAPI RapidAPI — Lineups e Missing Players
+
+- **Fonte primaria invariata:** API-Football per fixture, statistiche, SOT e prediction.
+- **SportAPI (RapidAPI `sportapi7`):** fonte **secondaria** solo per arricchimento pre-match in admin/debug: mapping `fixtures` ↔ `event_id`, probabili/ufficiali lineups (`confirmed`), `missingPlayers`.
+- **Matching:** data kickoff (UTC), `startTimestamp`, nomi squadra normalizzati, campionato/paese, round — soglie `AUTO_SAFE` ≥90, `REVIEW` 75–89.
+- **Persistenza:** `fixture_provider_mappings`, `fixture_provider_lineups`, `fixture_provider_lineup_players`, `fixture_missing_players` (separate da `fixture_lineups` API-Football).
+- **Modello:** `USE_SPORTAPI_LINEUPS_IN_MODEL=false` — i dati salvati **non influenzano** il calcolo SOT; badge UI «Dati non usati nel modello».
+- **Operatività:** nessun cron/sync di massa; chiamate manuali da **Admin → SportAPI Debug**; rispettare il limite del piano RapidAPI Basic.
+- **Endpoint:** `GET/POST /api/admin/sportapi/debug/fixture/{id}`, `.../mappings/{id}/confirm`, `.../lineups/{id}/fetch`, `GET .../lineups/{id}`.
+
+Implementazione: [`backend/app/services/sportapi/`](backend/app/services/sportapi/), [`admin_sportapi.py`](backend/app/routes/admin_sportapi.py).
+
 ## baseline_v1_0_sot — Produzione offensiva composita
 
 Il termine **Produzione offensiva composita** (`offensive_production_component`) è l’unico segnale offensivo nella **formula finale** (peso **0,30**). Gli input sotto non sono righe della formula a 7 termini: compaiono solo in audit/trace come `component_input` con `parent_component = offensive_production_component`.

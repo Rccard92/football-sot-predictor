@@ -33,6 +33,7 @@ import {
   type UpcomingActiveResponse,
 } from '../lib/api'
 
+import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
 import { V04_MODEL, V10_MODEL, V11_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
@@ -656,6 +657,13 @@ export function Admin() {
               <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
             ))}
           </div>
+        </Section>
+
+        <Section
+          title="5 — SportAPI Debug"
+          subtitle="Fonte secondaria RapidAPI: mapping, probabili/ufficiali lineups, missingPlayers. Non usata nel modello."
+        >
+          <SportApiDebugPanel />
         </Section>
 
         <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4">

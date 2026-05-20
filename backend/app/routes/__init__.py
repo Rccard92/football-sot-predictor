@@ -13,6 +13,7 @@ from app.routes import (
     admin_ingest,
     admin_pipeline,
     admin_refresh,
+    admin_sportapi,
     backtest,
     data_catalog,
     debug_sot,
@@ -43,6 +44,7 @@ api_router.include_router(admin_features_player_season_profiles.router)
 api_router.include_router(admin_pipeline.router)
 api_router.include_router(admin_refresh.router)
 api_router.include_router(admin_data_health.router)
+api_router.include_router(admin_sportapi.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(features.router)

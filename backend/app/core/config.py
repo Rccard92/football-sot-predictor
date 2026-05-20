@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # Fallback numerico quando non c'è media lega (<3 partite o nessuna partita precedente in lega)
     sot_feature_fallback_baseline: float | None = 3.0
 
+    # SportAPI RapidAPI (secondaria: mapping/lineups debug only — non usata nel modello se false)
+    sportapi_enabled: bool = False
+    sportapi_rapidapi_key: str = ""
+    sportapi_rapidapi_host: str = "sportapi7.p.rapidapi.com"
+    sportapi_base_url: str = "https://sportapi7.p.rapidapi.com"
+    use_sportapi_lineups_in_model: bool = False
+
     @property
     def cors_origins_list(self) -> list[str]:
         raw = self.cors_origins
@@ -46,3 +53,9 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def sportapi_configured() -> bool:
+    """True se SportAPI è abilitata e la chiave RapidAPI è presente."""
+    s = get_settings()
+    return bool(s.sportapi_enabled) and bool((s.sportapi_rapidapi_key or "").strip())

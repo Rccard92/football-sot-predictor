@@ -1,6 +1,7 @@
 /** Client HTTP verso il backend. Base URL da `VITE_API_BASE_URL` (senza trailing slash). */
 
 import type { FixtureLineupsResponse } from '../types/fixtureLineups'
+import type { SportApiFixtureDebugResponse, SportApiLineupsStoredResponse } from '../types/sportapi'
 import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
 
 export const DEFAULT_SEASON = Number(import.meta.env.VITE_DEFAULT_SEASON) || 2025
@@ -1300,6 +1301,48 @@ export async function getFixtureLineups(fixtureId: number): Promise<FixtureLineu
     throw new Error(extractErrorMessage(body, res.statusText))
   }
   return body as FixtureLineupsResponse
+}
+
+export async function getSportApiFixtureDebug(
+  fixtureId: number,
+  opts?: AdminRequestOpts,
+): Promise<SportApiFixtureDebugResponse> {
+  return adminGetJson<SportApiFixtureDebugResponse>(
+    `/api/admin/sportapi/debug/fixture/${fixtureId}`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 90_000 },
+  )
+}
+
+export async function confirmSportApiMapping(
+  fixtureId: number,
+  body: {
+    provider_event_id: number
+    confidence_score?: number | null
+    matched_by?: string | null
+    raw_payload?: Record<string, unknown> | null
+  },
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/sportapi/mappings/${fixtureId}/confirm`, body, opts)
+}
+
+export async function fetchSportApiLineups(fixtureId: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/sportapi/lineups/${fixtureId}/fetch`, {}, {
+    ...opts,
+    timeoutMs: opts?.timeoutMs ?? 60_000,
+  })
+}
+
+export async function getSportApiLineups(
+  fixtureId: number,
+  includeRaw = false,
+  opts?: AdminRequestOpts,
+): Promise<SportApiLineupsStoredResponse> {
+  const qs = includeRaw ? '?include_raw=true' : ''
+  return adminGetJson<SportApiLineupsStoredResponse>(
+    `/api/admin/sportapi/lineups/${fixtureId}${qs}`,
+    opts,
+  )
 }
 
 export async function buildPlayerSotProfiles(season: number, opts?: AdminRequestOpts): Promise<unknown> {

@@ -134,6 +134,15 @@ Implementazione: [`player_layer_strict.py`](backend/app/services/predictions_v11
 
 La componente indisponibili/infortuni è stata rimossa perché i dati da API-Sports e valutazioni Sportmonks si sono dimostrati non affidabili. Il modello SOT Prediction non utilizza attualmente assenze o infortuni nel calcolo.
 
+## SportAPI RapidAPI (debug only)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Stato | Integrato solo admin/debug; `SPORTAPI_ENABLED=false` di default |
+| Uso modello | **Nessuno** finché `USE_SPORTAPI_LINEUPS_IN_MODEL=false` |
+| Tabelle | `fixture_provider_mappings`, `fixture_provider_lineups`, `fixture_provider_lineup_players`, `fixture_missing_players` |
+| Endpoint | `/api/admin/sportapi/*` (4 route manuali) |
+
 ## Vincoli globali
 
 - **Sample minimo componenti stagionali:** 5 partite (`min_completed_matches = 5`).
