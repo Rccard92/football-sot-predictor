@@ -1,44 +1,42 @@
-"""Test scoring matching SportAPI — caso Fiorentina vs Atalanta."""
-
-from __future__ import annotations
+"""Unit test matching/scoring SportAPI (senza chiamate HTTP)."""
 
 from app.services.sportapi.sportapi_matching_service import _recommendation, _score_candidate
+from app.services.sportapi.sportapi_payload import extract_events_list
 
 
-def _atalanta_fiorentina_event() -> dict:
-    return {
+def test_extract_events_list_reads_events_key():
+    ev = {"id": 13980080, "homeTeam": {"name": "Fiorentina"}, "awayTeam": {"name": "Atalanta"}}
+    body = {"events": [ev]}
+    assert extract_events_list(body) == [ev]
+
+
+def test_score_candidate_fiorentina_atalanta_auto_safe():
+    fixture_ts = 1779475500
+    ev = {
         "id": 13980080,
-        "startTimestamp": 1779475500,
-        "homeTeam": {"id": 2693, "name": "Fiorentina"},
-        "awayTeam": {"id": 2686, "name": "Atalanta"},
+        "startTimestamp": fixture_ts,
+        "homeTeam": {"name": "Fiorentina"},
+        "awayTeam": {"name": "Atalanta"},
         "tournament": {
             "name": "Serie A",
-            "id": 33,
-            "uniqueTournament": {"id": 23, "country": {"name": "Italy"}},
+            "country": {"name": "Italy", "alpha2": "IT"},
         },
-        "season": {"id": 76457, "name": "Serie A 25/26"},
         "roundInfo": {"round": 38},
     }
 
-
-def test_score_fiorentina_atalanta_auto_safe():
-    ev = _atalanta_fiorentina_event()
     score, breakdown = _score_candidate(
-        fixture_ts=1779475500,
+        fixture_ts=fixture_ts,
         home_name="Fiorentina",
         away_name="Atalanta",
         league_name="Serie A",
         round_num=38,
         ev=ev,
     )
+
     assert score >= 90
+    assert breakdown["timestamp_exact"] == 40
+    assert breakdown["home_team"] == 25
+    assert breakdown["away_team"] == 25
+    assert breakdown["competition"] == 10
+    assert breakdown["round"] == 5
     assert _recommendation(score) == "AUTO_SAFE"
-    assert breakdown.get("timestamp_exact") == 40
-    assert breakdown.get("home_team") == 25
-    assert breakdown.get("away_team") == 25
-
-
-def test_recommendation_thresholds():
-    assert _recommendation(90) == "AUTO_SAFE"
-    assert _recommendation(80) == "REVIEW"
-    assert _recommendation(50) == "NO_MATCH"

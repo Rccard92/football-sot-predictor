@@ -4,8 +4,11 @@ from __future__ import annotations
 
 
 def scheduled_events_path(date_yyyy_mm_dd: str) -> str:
-    """Eventi programmati per data (YYYY-MM-DD)."""
-    return f"api/v1/event/by-date/{date_yyyy_mm_dd}"
+    """Eventi calcio programmati per data (YYYY-MM-DD).
+
+    RapidAPI: GET /api/v1/sport/football/scheduled-events/{date}
+    """
+    return f"api/v1/sport/football/scheduled-events/{date_yyyy_mm_dd}"
 
 
 def event_path(event_id: int) -> str:
