@@ -5,7 +5,12 @@
 
 import type { AppliedVariableTraceRow, FrameworkConsistencySide } from '../types/sotExplanation'
 
-export type TraceabilityStatusLabel = 'OK' | 'OK con avvisi' | 'Da controllare' | 'Errore formula'
+export type TraceabilityStatusLabel =
+  | 'OK'
+  | 'OK con avvisi'
+  | 'Parziale / fallback v1.1'
+  | 'Da controllare'
+  | 'Errore formula'
 
 export type TraceabilityDerivedMetrics = {
   manifestDeclared: number
@@ -70,12 +75,26 @@ export function traceRowMatchesFilter(r: AppliedVariableTraceRow, f: TraceFilter
   return true
 }
 
+function traceHasFallbackV11(trace: AppliedVariableTraceRow[]): boolean {
+  return trace.some(
+    (r) =>
+      (r.trace_key === 'v20_context_lineup_impact_status' || r.key === 'v20_context_lineup_impact_status') &&
+      String(r.value || '').includes('fallback_v11'),
+  )
+}
+
 function deriveStatus(args: {
   formulaFinalCount: number
   traceAligned: boolean
   missingDataKeysLen: number
+  manifestDeclared: number
+  fallbackV11: boolean
 }): TraceabilityStatusLabel {
-  if (args.formulaFinalCount === 0) return 'Errore formula'
+  if (args.formulaFinalCount === 0) {
+    if (args.manifestDeclared > 0 && args.fallbackV11) return 'Parziale / fallback v1.1'
+    return 'Errore formula'
+  }
+  if (args.fallbackV11) return 'Parziale / fallback v1.1'
   if (!args.traceAligned) return 'Da controllare'
   if (args.missingDataKeysLen > 0) return 'OK con avvisi'
   return 'OK'
@@ -101,10 +120,14 @@ export function deriveTraceabilityForSide(
     notInTraceCount === 0 &&
     extraInTraceCount === 0
 
+  const fallbackV11 = traceHasFallbackV11(trace)
+
   const statusLabel = deriveStatus({
     formulaFinalCount,
     traceAligned: traceAlignedWithManifest,
     missingDataKeysLen: fc.missing_data_keys?.length ?? 0,
+    manifestDeclared,
+    fallbackV11,
   })
 
   return {

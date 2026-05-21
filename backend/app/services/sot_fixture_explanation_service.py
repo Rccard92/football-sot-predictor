@@ -21,6 +21,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, Season, Team, TeamSotPrediction
@@ -774,6 +775,164 @@ def _build_formula_breakdown_v11(raw: dict[str, Any], stored: float) -> dict[str
     }
 
 
+def _build_formula_breakdown_v20(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+    if str(formula.get("type") or "") != "lineup_impact_multiplicative":
+        base_v = _safe_float(raw.get("base_v1_1_sot"))
+        off_v = _safe_float(raw.get("offensive_lineup_factor")) or 1.0
+        opp_v = _safe_float(raw.get("opponent_defensive_weakness_factor")) or 1.0
+        if base_v is None:
+            return {}
+        terms = [
+            {"key": "base_v1_1_sot", "label": "Base SOT v1.1", "value": base_v, "status": "available"},
+            {"key": "offensive_lineup_factor", "label": "Fattore offensivo", "value": off_v, "status": "available"},
+            {
+                "key": "opponent_defensive_weakness_factor",
+                "label": "Debolezza dif. avversario",
+                "value": opp_v,
+                "status": "available",
+            },
+            {"key": "adjusted_sot", "label": "SOT adjusted", "value": stored, "status": "available"},
+        ]
+    else:
+        terms_raw = formula.get("terms")
+        if not isinstance(terms_raw, list) or not terms_raw:
+            return {}
+        terms = [t for t in terms_raw if isinstance(t, dict)]
+
+    sym_parts: list[str] = []
+    num_parts: list[str] = []
+    out_terms: list[dict[str, Any]] = []
+    product_vals: list[float] = []
+    for t in terms:
+        key = str(t.get("key") or "")
+        lab = str(t.get("label") or key)
+        val = _safe_float(t.get("value"))
+        if val is None and key != "adjusted_sot":
+            continue
+        if key in ("base_v1_1_sot", "offensive_lineup_factor", "opponent_defensive_weakness_factor") and val is not None:
+            product_vals.append(float(val))
+        calc_expr = f"{_round2(val)}" if val is not None else "—"
+        out_terms.append(
+            {
+                "id": f"v20_term_{key}",
+                "label": lab,
+                "symbol": key,
+                "value": _round2(val),
+                "weight": None,
+                "contribution": _round2(val),
+                "calc_expression": calc_expr,
+                "status": t.get("status"),
+            },
+        )
+        if val is not None:
+            sym_parts.append(lab)
+            num_parts.append(str(_round2(val)))
+
+    product = round(float(product_vals[0]) * float(product_vals[1]) * float(product_vals[2]), 3) if len(product_vals) >= 3 else None
+    _sum_c, delta, _warn, wmsg = _checksum_block(product, stored)
+    li_status = str(raw.get("lineup_impact_status") or "")
+    fq_warn: list[str] = list(raw.get("warnings") or []) if isinstance(raw.get("warnings"), list) else []
+    if li_status == "fallback_v11_only":
+        fq_warn.append("Fallback controllato v1.1: Lineup Impact non disponibile.")
+    return {
+        "model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+        "stored_predicted_sot": _round2(stored),
+        "terms": out_terms,
+        "formula_terms_count": len(out_terms),
+        "formula_quality_status": "ok" if li_status != "fallback_v11_only" else "partial_fallback_v11",
+        "formula_quality_warnings": fq_warn,
+        "lineup_impact_status": li_status,
+        "formula_symbolic": "adjusted_sot_v2_0 = base_v1_1 × offensive_factor × opponent_defensive_weakness",
+        "formula_numeric": " × ".join(num_parts) + (f"\n= {_round2(product)}" if product is not None else ""),
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": "×",
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+                "status": t.get("status"),
+            }
+            for t in out_terms
+        ],
+        "sum_contributions": product,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {"cap_applied": False, "fallbacks_used": li_status == "fallback_v11_only"},
+    }
+
+
+def _components_v20(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
+    v11_raw = raw.get("v11_base") if isinstance(raw.get("v11_base"), dict) else {}
+    base_parts = _components_v11(v11_raw, _safe_float(raw.get("base_v1_1_sot")) or predicted) if v11_raw else []
+    for p in base_parts:
+        p["label"] = f"[Base v1.1] {p.get('label', '')}"
+        p["id"] = f"v20_base_{p.get('id', '')}"
+
+    off = _round2(_safe_float(raw.get("offensive_lineup_factor")))
+    opp = _round2(_safe_float(raw.get("opponent_defensive_weakness_factor")))
+    li_status = str(raw.get("lineup_impact_status") or "")
+    li_missing = li_status == "fallback_v11_only"
+    side_blob = raw.get("lineup_impact_side") if isinstance(raw.get("lineup_impact_side"), dict) else {}
+
+    lineup_parts: list[dict[str, Any]] = [
+        {
+            "id": "v20_lineup_offensive_factor",
+            "label": "Fattore offensivo formazione",
+            "weight": None,
+            "value": off,
+            "contribution": off,
+            "direction": "neutro" if off is None or off == 1.0 else ("aumenta" if (off or 0) > 1 else "riduce"),
+            "data_status": "missing" if li_missing and off is None else "ok",
+            "notes": None if not li_missing else "Lineup Impact assente: fattore 1.0.",
+            "variables": [],
+        },
+        {
+            "id": "v20_lineup_opponent_defensive_weakness",
+            "label": "Debolezza difensiva avversario (moltiplicatore)",
+            "weight": None,
+            "value": opp,
+            "contribution": opp,
+            "direction": "neutro",
+            "data_status": "missing" if li_missing and opp is None else "ok",
+            "notes": "Usato come opponent_defensive_weakness_factor nella formula v2.0.",
+            "variables": [],
+        },
+        {
+            "id": "v20_lineup_adjusted",
+            "label": "SOT adjusted finale v2.0",
+            "weight": None,
+            "value": _round2(predicted),
+            "contribution": _round2(predicted),
+            "direction": "neutro",
+            "data_status": "ok",
+            "notes": f"Stato Lineup Impact: {li_status or '—'}.",
+            "variables": [],
+        },
+    ]
+    excl = side_blob.get("excluded_players") or []
+    if isinstance(excl, list) and excl:
+        lineup_parts.append(
+            {
+                "id": "v20_lineup_excluded",
+                "label": "Giocatori esclusi dal calcolo",
+                "weight": None,
+                "value": float(len(excl)),
+                "contribution": None,
+                "direction": "neutro",
+                "data_status": "ok",
+                "notes": "; ".join(
+                    f"{e.get('player_name')}: {e.get('exclusion_reason', '')}"
+                    for e in excl[:3]
+                    if isinstance(e, dict)
+                ),
+                "variables": [],
+            },
+        )
+    return base_parts + lineup_parts
+
+
 def _components_v10_feature_registry(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
     formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
     terms_raw = formula.get("terms") if isinstance(formula.get("terms"), list) else []
@@ -1051,6 +1210,8 @@ def _build_side_components(model_version: str, raw: dict[str, Any] | None, predi
         return _components_v04(raw, predicted)
     if model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT:
         return _components_v11(raw, predicted)
+    if model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
+        return _components_v20(raw, predicted)
     if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
         return _components_v10(raw, predicted)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
@@ -1531,6 +1692,8 @@ def _build_prediction_formula_breakdown_side(
         out = _build_formula_breakdown_v10(raw, st)
     elif model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT:
         out = _build_formula_breakdown_v11(raw, st)
+    elif model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
+        out = _build_formula_breakdown_v20(raw, st)
     elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         out = _build_formula_breakdown_v02(raw, st)
     else:
@@ -2397,7 +2560,11 @@ def _build_fixture_sot_explanation_body(
         },
         "prediction_summary": prediction_summary,
         "final_formula": {
-            "formula_label": "expected_sot: mix pesato (v0.1/v0.3/v0.4) o somma additiva (v0.2) — vedi terms",
+            "formula_label": (
+                "v2.0: base_v1_1 × offensive_lineup_factor × opponent_defensive_weakness"
+                if active_mv == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+                else "expected_sot: mix pesato (v0.1/v0.3/v0.4) o somma additiva (v0.2) — vedi terms"
+            ),
             "home": _build_final_formula_side(fb_home if isinstance(fb_home, dict) else None),
             "away": _build_final_formula_side(fb_away if isinstance(fb_away, dict) else None),
         },

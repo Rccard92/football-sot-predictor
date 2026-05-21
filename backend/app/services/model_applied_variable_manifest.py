@@ -16,6 +16,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
 )
 
 ApplicationRole = Literal[
@@ -69,6 +70,8 @@ def manifest_for_model(model_version: str) -> list[AppliedVariableSpec]:
         return list(_MANIFEST_V10)
     if model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT:
         return list(_MANIFEST_V11)
+    if model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
+        return list(_MANIFEST_V20)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         return _MANIFEST_V02
     return []
@@ -93,6 +96,7 @@ def all_manifest_framework_keys_union() -> dict[str, list[AppliedVariableSpec]]:
         BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
         BASELINE_SOT_MODEL_VERSION_V10_SOT,
         BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     ):
         for spec in manifest_for_model(mv):
             if spec.framework_key:
@@ -101,6 +105,7 @@ def all_manifest_framework_keys_union() -> dict[str, list[AppliedVariableSpec]]:
 
 
 _MODEL_PRIORITY: tuple[str, ...] = (
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
@@ -783,6 +788,189 @@ _MANIFEST_V11.extend(
         ),
     ],
 )
+
+
+# --- v2.0: formula moltiplicativa Lineup Impact + qualità/contesto (per-lato nel trace) ---
+_MANIFEST_V20_LINEUP: list[AppliedVariableSpec] = [
+    AppliedVariableSpec(
+        trace_key="v20_formula_base_sot_v11",
+        label="Base SOT v1.1",
+        area="Formula finale v2.0",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:formula:base_v11",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_formula_offensive_lineup_factor",
+        label="Fattore offensivo formazione",
+        area="Formula finale v2.0",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:formula:offensive_factor",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_formula_opponent_defensive_weakness",
+        label="Debolezza difensiva avversario",
+        area="Formula finale v2.0",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:formula:opponent_defensive_weakness",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_formula_adjusted_sot",
+        label="SOT adjusted finale v2.0",
+        area="Formula finale v2.0",
+        application_role="direct_formula_component",
+        parent_component=None,
+        direct_formula_impact=True,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:formula:adjusted_sot",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_quality_sportapi_lineup_available",
+        label="Lineups SportAPI disponibili",
+        area="Lineup Impact / qualità",
+        application_role="quality_control",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:quality:sportapi_lineup_available",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_quality_sportapi_lineup_confirmed",
+        label="Formazione SportAPI confermata",
+        area="Lineup Impact / contesto",
+        application_role="context_risk",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:context:sportapi_lineup_confirmed",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_context_sportapi_lineup_fetched_at",
+        label="Freshness lineups SportAPI",
+        area="Lineup Impact / contesto",
+        application_role="context_risk",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:context:lineup_freshness",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_quality_current_squad_available",
+        label="Rosa attuale API-Sports sincronizzata",
+        area="Lineup Impact / qualità",
+        application_role="quality_control",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:quality:current_squad_available",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_quality_player_mapping_confidence",
+        label="Confidence mapping giocatori SportAPI",
+        area="Lineup Impact / qualità",
+        application_role="quality_control",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:quality:player_mapping_confidence",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_quality_lineup_impact_confidence",
+        label="Confidence Lineup Impact",
+        area="Lineup Impact / qualità",
+        application_role="quality_control",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:quality:lineup_impact_confidence",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_input_replacement_credit",
+        label="Credito sostituti offensivi",
+        area="Lineup Impact / input",
+        application_role="component_input",
+        parent_component="lineup_impact_offensive",
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:lineup_input:replacement_credit",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_input_net_offensive_loss",
+        label="Perdita offensiva netta lineup",
+        area="Lineup Impact / input",
+        application_role="component_input",
+        parent_component="lineup_impact_offensive",
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:lineup_input:net_offensive_loss",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_input_net_defensive_loss",
+        label="Perdita difensiva netta lineup",
+        area="Lineup Impact / input",
+        application_role="component_input",
+        parent_component="lineup_impact_defensive",
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:lineup_input:net_defensive_loss",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_input_defensive_weakness_factor",
+        label="Fattore debolezza difensiva propria",
+        area="Lineup Impact / input",
+        application_role="component_input",
+        parent_component="lineup_impact_defensive",
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:lineup_input:defensive_weakness_factor",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_context_excluded_transferred_players",
+        label="Giocatori esclusi (non in rosa)",
+        area="Lineup Impact / contesto",
+        application_role="context_risk",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:context:excluded_transferred_players",
+    ),
+    AppliedVariableSpec(
+        trace_key="v20_context_lineup_impact_status",
+        label="Stato Lineup Impact",
+        area="Lineup Impact / contesto",
+        application_role="context_risk",
+        parent_component=None,
+        direct_formula_impact=False,
+        expected_in_debug=True,
+        framework_key=None,
+        resolver="v20:context:lineup_impact_status",
+    ),
+]
+
+_MANIFEST_V20: list[AppliedVariableSpec] = list(_MANIFEST_V11) + list(_MANIFEST_V20_LINEUP)
 
 
 # --- v0.4: 6 termini formula + input offensivi + qualità ---

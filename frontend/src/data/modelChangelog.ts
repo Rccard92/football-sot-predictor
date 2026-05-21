@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.0.1',
+    date: '2026-05-19',
+    title: 'Tracciabilità modello 2.0',
+    type: 'patch',
+    summary:
+      'Collegata la tracciabilità variabili al modello Lineup Impact, con lettura dei fattori offensivi, difensivi e dei fallback dati.',
+    highlights: [
+      'Aggiunto manifest variabili per v2.0.',
+      'Tracciati offensive factor e defensive weakness factor.',
+      'Migliorata gestione dei dati mancanti nel modello 2.0.',
+      'Evitato stato errore formula quando il modello usa fallback controllato.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.0.0',
     date: '2026-05-19',
     title: 'v2.0 SOT Lineup Impact',

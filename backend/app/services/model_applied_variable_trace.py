@@ -8,7 +8,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from app.core.constants import BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
+from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+)
 from app.services.model_applied_variable_manifest import (
     AppliedVariableSpec,
     is_countable_role,
@@ -984,9 +987,162 @@ def _row_for_spec(
             )
         return base
 
+    if r.startswith("v20:"):
+        side_blob = raw.get("lineup_impact_side") if isinstance(raw.get("lineup_impact_side"), dict) else {}
+        readiness = raw.get("pre_match_readiness") if isinstance(raw.get("pre_match_readiness"), dict) else {}
+        li_status = str(raw.get("lineup_impact_status") or "")
+        li_missing = li_status in ("fallback_v11_only",) or not bool(raw.get("sportapi_lineups_available"))
+
+        if r == "v20:formula:base_v11":
+            base["value"] = _r2(_sf(raw.get("base_v1_1_sot")))
+            base["unit"] = "tiri in porta"
+            base["formula"] = "base_v1_1_sot (output v1.1)"
+            base["contribution"] = base["value"]
+            if base["value"] is None:
+                base["status"] = "missing"
+            return base
+
+        if r == "v20:formula:offensive_factor":
+            base["value"] = _r2(_sf(raw.get("offensive_lineup_factor")))
+            base["unit"] = "moltiplicatore"
+            base["formula"] = "× offensive_lineup_factor"
+            if base["value"] is None:
+                base["status"] = "missing" if li_missing else "fallback"
+                base["fallback_used"] = True
+                base["notes"] = "Fattore offensivo assente: default 1.0 in generazione."
+            return base
+
+        if r == "v20:formula:opponent_defensive_weakness":
+            base["value"] = _r2(_sf(raw.get("opponent_defensive_weakness_factor")))
+            base["unit"] = "moltiplicatore"
+            base["formula"] = "× opponent_defensive_weakness_factor"
+            if base["value"] is None:
+                base["status"] = "missing" if li_missing else "fallback"
+                base["fallback_used"] = True
+            return base
+
+        if r == "v20:formula:adjusted_sot":
+            formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
+            terms = formula.get("terms") if isinstance(formula.get("terms"), list) else []
+            adj_t = next((t for t in terms if isinstance(t, dict) and t.get("key") == "adjusted_sot"), None)
+            val = _sf((adj_t or {}).get("value")) if adj_t else _sf(raw.get("predicted_sot"))
+            base["value"] = _r2(val)
+            base["contribution"] = base["value"]
+            base["unit"] = "tiri in porta"
+            base["formula"] = "base × offensive × opp_def"
+            if base["value"] is None:
+                base["status"] = "missing"
+            return base
+
+        if r == "v20:quality:sportapi_lineup_available":
+            avail = raw.get("sportapi_lineups_available")
+            if avail is None:
+                avail = readiness.get("lineup_freshness") == "ok"
+            base["value"] = 1.0 if avail else 0.0
+            base["unit"] = "flag"
+            base["status"] = "available" if avail else "missing"
+            if not avail:
+                base["notes"] = "Lineups SportAPI non in DB."
+            return base
+
+        if r == "v20:context:sportapi_lineup_confirmed":
+            conf = raw.get("sportapi_lineup_confirmed")
+            if conf is None:
+                conf = side_blob.get("confirmed")
+            base["value"] = 1.0 if conf else 0.0
+            base["unit"] = "flag"
+            base["status"] = "available" if conf is not None else "missing"
+            return base
+
+        if r == "v20:context:lineup_freshness":
+            fresh = readiness.get("lineup_freshness") or ("ok" if raw.get("sportapi_lineups_available") else "missing")
+            base["value"] = fresh
+            base["unit"] = "stato"
+            base["status"] = "available" if fresh == "ok" else "missing"
+            return base
+
+        if r == "v20:quality:current_squad_available":
+            rs = readiness.get("roster_sync") or "missing"
+            base["value"] = rs
+            base["unit"] = "stato"
+            base["status"] = "available" if rs == "ok" else ("fallback" if rs == "partial" else "missing")
+            return base
+
+        if r == "v20:quality:player_mapping_confidence":
+            pm = readiness.get("player_mapping") or "missing"
+            base["value"] = pm
+            base["unit"] = "stato"
+            base["status"] = "available" if pm == "ok" else ("fallback" if pm == "partial" else "missing")
+            return base
+
+        if r == "v20:quality:lineup_impact_confidence":
+            lab = raw.get("lineup_impact_confidence") or raw.get("lineup_impact_simulation_status")
+            base["value"] = lab
+            base["unit"] = "label"
+            base["status"] = "available" if lab else "missing"
+            if str(lab or "").lower() == "bassa":
+                base["notes"] = "Confidence Lineup Impact bassa."
+            return base
+
+        if r == "v20:lineup_input:replacement_credit":
+            cred = _sf(side_blob.get("defensive_replacement_credit")) or _sf(side_blob.get("replacement_credit"))
+            if cred is None:
+                top = side_blob.get("top_sot_players") or []
+                cred = sum(float(p.get("replacement_credit") or 0) for p in top if isinstance(p, dict))
+            base["value"] = _r2(cred) if cred else 0.0
+            base["unit"] = "quota"
+            base["status"] = "missing" if li_missing and not cred else "available"
+            return base
+
+        if r == "v20:lineup_input:net_offensive_loss":
+            base["value"] = _r2(_sf(side_blob.get("net_offensive_loss") or side_blob.get("gross_offensive_loss")))
+            base["unit"] = "quota"
+            base["status"] = "missing" if li_missing and base["value"] is None else "available"
+            return base
+
+        if r == "v20:lineup_input:net_defensive_loss":
+            base["value"] = _r2(_sf(side_blob.get("net_defensive_loss")))
+            base["unit"] = "quota"
+            base["status"] = "missing" if li_missing and base["value"] is None else "available"
+            return base
+
+        if r == "v20:lineup_input:defensive_weakness_factor":
+            base["value"] = _r2(_sf(side_blob.get("defensive_weakness_factor")))
+            base["unit"] = "moltiplicatore"
+            base["status"] = "missing" if li_missing and base["value"] is None else "available"
+            return base
+
+        if r == "v20:context:excluded_transferred_players":
+            excl = side_blob.get("excluded_players") or []
+            n = len(excl) if isinstance(excl, list) else 0
+            base["value"] = float(n)
+            base["unit"] = "conteggio"
+            base["notes"] = ", ".join(
+                str((e or {}).get("player_name") or "") for e in (excl[:3] if isinstance(excl, list) else [])
+            ) or None
+            base["status"] = "available"
+            return base
+
+        if r == "v20:context:lineup_impact_status":
+            base["value"] = li_status or None
+            base["unit"] = "stato"
+            base["status"] = "available" if li_status else "missing"
+            if li_status == "fallback_v11_only":
+                base["notes"] = "Fallback controllato: risultato equivalente a v1.1."
+                base["fallback_used"] = True
+            return base
+
     base["status"] = "missing"
     base["notes"] = f"Resolver non gestito: {r}"
     return base
+
+
+def _raw_effective_for_spec(model_version: str, spec: AppliedVariableSpec, raw: dict[str, Any]) -> dict[str, Any]:
+    if model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT and spec.resolver.startswith("v11:"):
+        v11 = raw.get("v11_base")
+        if isinstance(v11, dict):
+            return v11
+    return raw
 
 
 def build_applied_variable_trace_side(
@@ -1000,11 +1156,12 @@ def build_applied_variable_trace_side(
     prediction_confidence: int | None,
 ) -> list[dict[str, Any]]:
     specs = manifest_for_model(model_version)
+    raw_dict = raw if isinstance(raw, dict) else {}
     return [
         _row_for_spec(
             sp,
             model_version=model_version,
-            raw=raw if isinstance(raw, dict) else {},
+            raw=_raw_effective_for_spec(model_version, sp, raw_dict),
             team_id=team_id,
             team_name=team_name,
             audit_map=audit_map,
@@ -1043,6 +1200,17 @@ def validate_model_trace(
         warnings.append(f"Trace incompleto: mancano chiavi manifest {missing[:12]}{'…' if len(missing) > 12 else ''}")
     if extra:
         warnings.append(f"Trace con chiavi extra rispetto al manifest: {extra[:12]}")
+
+    if model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT and stored_predicted_sot is not None:
+        base_v = _sf((raw or {}).get("base_v1_1_sot"))
+        off_v = _sf((raw or {}).get("offensive_lineup_factor")) or 1.0
+        opp_v = _sf((raw or {}).get("opponent_defensive_weakness_factor")) or 1.0
+        if base_v is not None:
+            product = round(float(base_v) * float(off_v) * float(opp_v), 3)
+            if abs(product - float(stored_predicted_sot)) > CHECKSUM_TOLERANCE:
+                warnings.append(
+                    f"Prodotto v2.0 {product} ≠ prediction salvata {stored_predicted_sot} (tolleranza arrotondamento).",
+                )
 
     if (
         model_version == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT

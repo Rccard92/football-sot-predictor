@@ -15,6 +15,7 @@ function statusBorderClass(label: string): string {
   if (label === 'OK') return 'border-emerald-200 bg-emerald-50/40'
   if (label === 'OK con avvisi') return 'border-amber-200 bg-amber-50/50'
   if (label === 'Errore formula') return 'border-rose-200 bg-rose-50/50'
+  if (label === 'Parziale / fallback v1.1') return 'border-amber-200 bg-amber-50/60'
   if (label === 'Da controllare') return 'border-violet-200 bg-violet-50/40'
   return 'border-slate-200 bg-slate-50/40'
 }

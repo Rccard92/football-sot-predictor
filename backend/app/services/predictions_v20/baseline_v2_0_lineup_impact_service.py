@@ -190,12 +190,47 @@ class SotPredictionV20LineupImpactService:
             if warn:
                 explanation_parts.append(warn[0])
 
-            merged_raw = {
+            v11_raw = v11.raw_json if isinstance(v11.raw_json, dict) else {}
+            merged_raw: dict[str, Any] = {
                 **raw_extra,
+                "v11_base": dict(v11_raw),
+                "predicted_sot": adjusted,
+                "sportapi_lineups_available": bool(impact.get("sportapi_lineups_available")),
+                "sportapi_lineup_confirmed": impact.get("confirmed"),
+                "lineup_impact_side": dict(side_data),
                 "pre_match_readiness": readiness,
                 "lineup_impact_home": home_side,
                 "lineup_impact_away": away_side,
                 "warnings": warn,
+                "formula": {
+                    "type": "lineup_impact_multiplicative",
+                    "terms": [
+                        {
+                            "key": "base_v1_1_sot",
+                            "label": "Base SOT v1.1",
+                            "value": round(base, 4),
+                            "status": "available",
+                        },
+                        {
+                            "key": "offensive_lineup_factor",
+                            "label": "Fattore offensivo formazione",
+                            "value": round(off, 4),
+                            "status": "available" if impact.get("sportapi_lineups_available") else "fallback",
+                        },
+                        {
+                            "key": "opponent_defensive_weakness_factor",
+                            "label": "Debolezza difensiva avversario",
+                            "value": round(opp_def, 4),
+                            "status": "available" if impact.get("sportapi_lineups_available") else "fallback",
+                        },
+                        {
+                            "key": "adjusted_sot",
+                            "label": "SOT adjusted v2.0",
+                            "value": adjusted,
+                            "status": "available",
+                        },
+                    ],
+                },
             }
             merged_raw = append_trace_to_raw_json(
                 merged_raw,
