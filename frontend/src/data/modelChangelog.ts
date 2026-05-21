@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.2.0',
+    date: '2026-05-19',
+    title: 'Consiglio giocata SOT',
+    type: 'minor',
+    summary:
+      'Aggiunto il modulo che trasforma la previsione SOT in indicazioni operative su linee Over statistiche e più caute.',
+    highlights: [
+      'Aggiunta giocata statistica sulla linea più vicina alla previsione.',
+      'Aggiunta giocata cauta con margine minimo di sicurezza.',
+      'Aggiunto calcolo del margine rispetto alla linea.',
+      'Aggiunto livello di rischio della giocata.',
+      'Aggiunta distinzione tra totale match, casa e trasferta.',
+      'Il consiglio usa il modello attualmente selezionato.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.3',
     date: '2026-05-19',
     title: 'Calibrazione Overall XI e refresh formazioni',

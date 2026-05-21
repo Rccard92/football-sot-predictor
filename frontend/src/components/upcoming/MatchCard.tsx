@@ -119,13 +119,45 @@ export function MatchCard({
             ) : null}
           </div>
         </div>
+        {match.betting_advice_compact ? (
+          <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2 text-xs text-slate-800">
+            <p className="font-medium text-indigo-950">Consiglio giocata SOT (totale)</p>
+            <p className="mt-1 tabular-nums">
+              Totale previsto:{' '}
+              {match.betting_advice_compact.total_expected_sot != null
+                ? formatNum(match.betting_advice_compact.total_expected_sot)
+                : '—'}
+            </p>
+            <p className="mt-0.5">
+              Statistica:{' '}
+              <span className="font-semibold">{match.betting_advice_compact.statistical_pick ?? '—'}</span>
+              {match.betting_advice_compact.statistical_margin != null ? (
+                <span className="text-slate-600">
+                  {' '}
+                  (margine {formatSignedNum(match.betting_advice_compact.statistical_margin)})
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-0.5">
+              Cauta:{' '}
+              <span className="font-semibold">{match.betting_advice_compact.cautious_pick ?? '—'}</span>
+            </p>
+          </div>
+        ) : null}
+
         <p className="mt-3 text-xs text-slate-600">
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             <Link
               to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
               className="font-medium text-slate-700 underline"
             >
-              Apri audit variabili
+              {match.betting_advice_compact ? 'Vedi consiglio completo' : 'Vedi consiglio giocata'}
+            </Link>
+            <Link
+              to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
+              className="font-medium text-slate-500 underline"
+            >
+              Audit variabili
             </Link>
             {match.api_fixture_id ? (
               <Link

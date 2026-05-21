@@ -2660,9 +2660,46 @@ def _build_fixture_sot_explanation_body(
                 else None
             ),
         },
-        "sportapi_lineups": _sportapi_lineups_for_explanation(db, fx, home, away),
-        "lineup_impact_simulation": _lineup_impact_for_explanation(db, fx, home, away, active_mv),
+        "sportapi_lineups": (sportapi_lineups := _sportapi_lineups_for_explanation(db, fx, home, away)),
+        "lineup_impact_simulation": (lineup_impact := _lineup_impact_for_explanation(db, fx, home, away, active_mv)),
+        "betting_advice": _betting_advice_for_explanation(
+            ph,
+            pa,
+            active_mv=active_mv,
+            home_name=home.name,
+            away_name=away.name,
+            lineup_impact=lineup_impact,
+            sportapi_lineups=sportapi_lineups,
+        ),
     }
+
+
+def _betting_advice_for_explanation(
+    home_predicted: float | None,
+    away_predicted: float | None,
+    *,
+    active_mv: str | None,
+    home_name: str,
+    away_name: str,
+    lineup_impact: dict[str, Any],
+    sportapi_lineups: dict[str, Any],
+) -> dict[str, Any]:
+    from app.services.sot_betting_advice_service import (
+        AdviceContext,
+        advice_context_from_explanation_payload,
+        build_fixture_betting_advice,
+    )
+
+    ctx = advice_context_from_explanation_payload(lineup_impact, sportapi_lineups)
+    ctx.model_version = active_mv
+    return build_fixture_betting_advice(
+        home_predicted,
+        away_predicted,
+        model_version=active_mv,
+        context=ctx,
+        home_team_name=home_name,
+        away_team_name=away_name,
+    )
 
 
 def _lineup_impact_for_explanation(

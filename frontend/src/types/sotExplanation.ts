@@ -208,6 +208,32 @@ export type ModelComparisonRow = {
   total: number | null
 }
 
+export type BettingAdviceMarket = {
+  market_type: string
+  predicted_value: number | null
+  lines?: number[]
+  statistical_pick: string | null
+  statistical_line?: number | null
+  statistical_margin: number | null
+  statistical_risk: string | null
+  cautious_pick: string | null
+  cautious_line?: number | null
+  cautious_margin: number | null
+  cautious_note?: string | null
+  confidence_label: string
+  reasons?: string[]
+}
+
+export type FixtureBettingAdvice = {
+  model_version?: string | null
+  model_label: string
+  home_team_name?: string | null
+  away_team_name?: string | null
+  match_total: BettingAdviceMarket
+  home_team_sot: BettingAdviceMarket
+  away_team_sot: BettingAdviceMarket
+}
+
 export type SotFixtureExplanationResponse = {
   status: ExplanationStatus
   message?: string
@@ -259,4 +285,5 @@ export type SotFixtureExplanationResponse = {
   }
   sportapi_lineups?: SportApiLineupsAuditPayload
   lineup_impact_simulation?: LineupImpactSimulationPayload
+  betting_advice?: FixtureBettingAdvice | null
 }

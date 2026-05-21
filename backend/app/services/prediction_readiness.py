@@ -465,6 +465,18 @@ def build_upcoming_active_payload(
         if home and away:
             total_exp = round(float(home["expected_sot"]) + float(away["expected_sot"]), 2)
 
+        betting_compact = None
+        if home and away:
+            from app.services.sot_betting_advice_service import build_betting_advice_compact
+
+            home_exp = float(home["expected_sot"])
+            away_exp = float(away["expected_sot"])
+            betting_compact = build_betting_advice_compact(
+                home_exp,
+                away_exp,
+                model_version=mv_used,
+            )
+
         matches.append(
             {
                 "fixture_id": int(fx.id),
@@ -486,6 +498,7 @@ def build_upcoming_active_payload(
                 "home_prediction": home,
                 "away_prediction": away,
                 "total_expected_sot": total_exp,
+                "betting_advice_compact": betting_compact,
             },
         )
 

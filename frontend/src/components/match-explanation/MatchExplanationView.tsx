@@ -17,6 +17,7 @@ import { LineupImpactSimulationCard } from '../sportapi/LineupImpactSimulationCa
 import { SportApiLineupsCard } from '../sportapi/SportApiLineupsCard'
 import { PlayerDbProfilesSection } from './PlayerDbProfilesSection'
 import { PredictionModelSummary } from './PredictionModelSummary'
+import { SotBettingAdviceCard } from './SotBettingAdviceCard'
 import { V20LineupImpactBreakdown } from './V20LineupImpactBreakdown'
 import { V20_MODEL } from '../../lib/modelVersions'
 
@@ -352,6 +353,8 @@ export function MatchExplanationView({
           matchTotal={summary.match_total}
         />
       </SectionCard>
+
+      {data.betting_advice ? <SotBettingAdviceCard advice={data.betting_advice} /> : null}
 
       {data.active_model_version === V20_MODEL ? (
         <V20LineupImpactBreakdown

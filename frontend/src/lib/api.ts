@@ -981,6 +981,15 @@ export type UpcomingActiveMatchRow = {
   home_prediction: UpcomingActiveSidePrediction | null
   away_prediction: UpcomingActiveSidePrediction | null
   total_expected_sot: number | null
+  betting_advice_compact?: {
+    total_expected_sot: number | null
+    statistical_pick: string | null
+    cautious_pick: string | null
+    statistical_margin?: number | null
+    cautious_margin?: number | null
+    statistical_risk?: string | null
+    model_label?: string | null
+  } | null
 }
 
 export type UpcomingActiveResponse = {
