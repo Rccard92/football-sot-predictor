@@ -27,6 +27,23 @@ function formatOdd(v: number | null | undefined): string {
   return v.toFixed(2)
 }
 
+function rowStatusLabel(status: string): string {
+  switch (status) {
+    case 'ok':
+      return 'OK'
+    case 'incomplete_1x2':
+      return '1X2 incompleto'
+    case 'no_1x2':
+      return 'Senza 1X2'
+    case 'api_error':
+      return 'Errore API'
+    case 'no_mapping':
+      return 'No mapping'
+    default:
+      return status
+  }
+}
+
 export function SportApiNextRound1x2Panel() {
   const [batchBusy, setBatchBusy] = useState(false)
   const [testBusy, setTestBusy] = useState(false)
@@ -34,6 +51,7 @@ export function SportApiNextRound1x2Panel() {
   const [batchResult, setBatchResult] = useState<SportApiNextRound1x2Response | null>(null)
   const [testResult, setTestResult] = useState<SportApiOddsTestEventResponse | null>(null)
   const [eventId, setEventId] = useState('13980080')
+  const [rawFtOpen, setRawFtOpen] = useState(false)
 
   const runBatch = async () => {
     setBatchBusy(true)
@@ -61,6 +79,7 @@ export function SportApiNextRound1x2Panel() {
     setTestBusy(true)
     setError(null)
     setTestResult(null)
+    setRawFtOpen(false)
     try {
       const out = await postSportApiOddsTestEvent(
         {
@@ -78,6 +97,8 @@ export function SportApiNextRound1x2Panel() {
   }
 
   const n1x2 = testResult?.normalized_1x2
+  const normStatus = n1x2?.normalization_status
+  const debugFt = n1x2?.debug_full_time_market ?? n1x2?.raw_market
 
   return (
     <section className="rounded-2xl border border-emerald-200/80 bg-emerald-50/30 p-4 shadow-sm">
@@ -129,11 +150,19 @@ export function SportApiNextRound1x2Panel() {
             ) : null}
           </p>
         ) : null}
-        {n1x2?.market_found ? (
+        {normStatus === 'ok' ? (
           <p className="mt-1 text-xs text-slate-700">
-            1X2: <strong>{formatOdd(n1x2.home_odd)}</strong> /{' '}
-            <strong>{formatOdd(n1x2.draw_odd)}</strong> / <strong>{formatOdd(n1x2.away_odd)}</strong>
-            {n1x2.market_name_original ? (
+            1X2: <strong>{formatOdd(n1x2?.home_odd)}</strong> /{' '}
+            <strong>{formatOdd(n1x2?.draw_odd)}</strong> / <strong>{formatOdd(n1x2?.away_odd)}</strong>
+            {n1x2?.market_name_original ? (
+              <span className="text-slate-500"> ({n1x2.market_name_original})</span>
+            ) : null}
+          </p>
+        ) : normStatus === 'incomplete' ? (
+          <p className="mt-1 text-xs text-amber-700">
+            1X2 incompleto — quote parziali: {formatOdd(n1x2?.home_odd)} / {formatOdd(n1x2?.draw_odd)}{' '}
+            / {formatOdd(n1x2?.away_odd)}
+            {n1x2?.market_name_original ? (
               <span className="text-slate-500"> ({n1x2.market_name_original})</span>
             ) : null}
           </p>
@@ -144,6 +173,23 @@ export function SportApiNextRound1x2Panel() {
               ? ` Mercati: ${n1x2.available_markets.slice(0, 8).join(', ')}…`
               : null}
           </p>
+        ) : null}
+
+        {testResult?.status === 'success' && debugFt != null && normStatus !== 'ok' ? (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setRawFtOpen((o) => !o)}
+              className="text-[11px] font-medium text-slate-800 underline"
+            >
+              {rawFtOpen ? 'Nascondi' : 'Mostra'} Raw mercato Full time
+            </button>
+            {rawFtOpen ? (
+              <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-slate-900 p-2 text-[10px] text-slate-100">
+                {JSON.stringify(debugFt, null, 2)}
+              </pre>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -188,13 +234,10 @@ export function SportApiNextRound1x2Panel() {
                     <td className="py-1.5 pr-2 text-center font-mono">{formatOdd(r.draw_odd)}</td>
                     <td className="py-1.5 pr-2 text-center font-mono">{formatOdd(r.away_odd)}</td>
                     <td className="py-1.5 text-slate-600">
-                      {r.status === 'ok'
-                        ? 'OK'
-                        : r.status === 'no_1x2'
-                          ? 'Senza 1X2'
-                          : r.status === 'no_mapping'
-                            ? 'No mapping'
-                            : r.error ?? r.status}
+                      {rowStatusLabel(r.status)}
+                      {r.error ? (
+                        <span className="mt-0.5 block text-[9px] text-red-600">{r.error}</span>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

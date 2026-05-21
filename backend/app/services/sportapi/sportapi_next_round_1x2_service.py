@@ -17,7 +17,10 @@ from app.models.sportapi_fixture_odds_snapshot import MARKET_1X2, SportApiFixtur
 from app.models.sportapi_odds_provider import DEFAULT_PROVIDER_SLUG, SportApiOddsProvider
 from app.services.sportapi.sportapi_client import SportApiClient, SportApiError
 from app.services.sportapi.sportapi_event_odds_test_service import candidate_provider_ids
-from app.services.sportapi.sportapi_odds_1x2_normalize import extract_1x2_from_event_odds
+from app.services.sportapi.sportapi_odds_1x2_normalize import (
+    extract_1x2_from_event_odds,
+    row_status_from_normalization,
+)
 from app.services.sportapi.sportapi_round_refresh_service import SportApiRoundRefreshService
 
 logger = logging.getLogger(__name__)
@@ -111,8 +114,8 @@ class SportApiNextRound1x2Service:
             for pid in candidate_ids:
                 try:
                     raw = self._client.get_event_odds(event_id, pid)
-                    norm = extract_1x2_from_event_odds(raw)
-                    if norm.get("market_found") or raw:
+                    norm_probe = extract_1x2_from_event_odds(raw)
+                    if norm_probe.get("market_matched") or raw:
                         working_id = pid
                         break
                 except SportApiError as exc:
@@ -123,11 +126,19 @@ class SportApiNextRound1x2Service:
                 msg = last_err or f"Quote non trovate event_id={event_id}"
                 errors.append(f"fixture {fx.id}: {msg}")
                 rows.append(
-                    self._row_skeleton(fx, team_cache, db, status="error", error=msg, sportapi_event_id=event_id),
+                    self._row_skeleton(
+                        fx,
+                        team_cache,
+                        db,
+                        status="api_error",
+                        error=msg,
+                        sportapi_event_id=event_id,
+                    ),
                 )
                 continue
 
             norm = extract_1x2_from_event_odds(raw)
+            row_status = row_status_from_normalization(norm)
             snap = SportApiFixtureOddsSnapshot(
                 fixture_id=int(fx.id),
                 api_fixture_id=int(fx.api_fixture_id) if fx.api_fixture_id else None,
@@ -156,13 +167,15 @@ class SportApiNextRound1x2Service:
                     fx,
                     team_cache,
                     db,
-                    status="ok" if norm.get("market_found") else "no_1x2",
+                    status=row_status,
                     sportapi_event_id=event_id,
                     provider_id_used=working_id,
                     home_odd=norm.get("home_odd"),
                     draw_odd=norm.get("draw_odd"),
                     away_odd=norm.get("away_odd"),
-                    market_found=bool(norm.get("market_found")),
+                    market_found=bool(norm.get("market_matched")),
+                    outcomes_complete=bool(norm.get("outcomes_complete")),
+                    normalization_status=norm.get("normalization_status"),
                     available_markets=norm.get("available_markets") or [],
                 ),
             )
@@ -192,6 +205,8 @@ class SportApiNextRound1x2Service:
         draw_odd: float | None = None,
         away_odd: float | None = None,
         market_found: bool | None = None,
+        outcomes_complete: bool | None = None,
+        normalization_status: str | None = None,
         available_markets: list[str] | None = None,
         error: str | None = None,
     ) -> dict[str, Any]:
@@ -206,6 +221,8 @@ class SportApiNextRound1x2Service:
             "provider_id_used": provider_id_used,
             "status": status,
             "market_found": market_found,
+            "outcomes_complete": outcomes_complete,
+            "normalization_status": normalization_status,
             "home_odd": home_odd,
             "draw_odd": draw_odd,
             "away_odd": away_odd,

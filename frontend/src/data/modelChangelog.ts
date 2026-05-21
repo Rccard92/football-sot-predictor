@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.7.1',
+    date: '2026-05-19',
+    title: 'Fix riconoscimento mercato 1X2 SportAPI',
+    type: 'patch',
+    summary:
+      'Corretto il riconoscimento del mercato Full time come 1X2 nella discovery quote SportAPI.',
+    highlights: [
+      'Il mercato Full time viene ora normalizzato come 1X2.',
+      'Migliorato il parser degli outcome 1 / X / 2.',
+      'Migliorata la gestione dei campi quota con nomi diversi.',
+      'Aggiunto debug raw del mercato quando la normalizzazione fallisce.',
+      'Le quote restano solo informative e non influenzano ancora i pronostici.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.7.0',
     date: '2026-05-19',
     title: 'SportAPI Bookmakers e quote 1X2',

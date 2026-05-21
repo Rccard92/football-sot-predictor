@@ -47,17 +47,28 @@ def candidate_provider_ids(
     return out
 
 
+def _enrich_normalized(
+    norm: dict[str, Any],
+    *,
+    provider_id: int | None,
+    provider_slug: str,
+) -> dict[str, Any]:
+    out = dict(norm)
+    if provider_id is not None:
+        out["provider_id"] = int(provider_id)
+    out["provider_slug"] = provider_slug
+    return out
+
+
 def _has_usable_odds(raw: Any) -> bool:
-    norm = extract_1x2_from_event_odds(raw)
-    if norm.get("market_found"):
-        return True
     if raw is None:
         return False
+    norm = extract_1x2_from_event_odds(raw)
+    if norm.get("market_matched") or norm.get("market_found"):
+        return True
     if isinstance(raw, dict) and raw:
         return True
-    if isinstance(raw, list) and raw:
-        return True
-    return False
+    return bool(isinstance(raw, list) and raw)
 
 
 class SportApiEventOddsTestService:
@@ -98,7 +109,11 @@ class SportApiEventOddsTestService:
                 if _has_usable_odds(raw):
                     working_id = pid
                     raw_payload = raw
-                    normalized_1x2 = extract_1x2_from_event_odds(raw)
+                    normalized_1x2 = _enrich_normalized(
+                        extract_1x2_from_event_odds(raw),
+                        provider_id=pid,
+                        provider_slug=slug,
+                    )
                     break
                 attempts.append({"provider_id": pid, "status": "empty_odds"})
                 last_error = "Payload senza mercati utilizzabili"

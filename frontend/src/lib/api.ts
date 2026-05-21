@@ -811,8 +811,13 @@ export type SportApiProviderDetailResponse = {
   raw?: unknown
 }
 
+export type SportApi1x2NormalizationStatus = 'ok' | 'incomplete' | 'not_found'
+
 export type SportApi1x2Normalized = {
   market_found: boolean
+  market_matched?: boolean
+  outcomes_complete?: boolean
+  normalization_status?: SportApi1x2NormalizationStatus
   market_key: string
   market_name_original: string | null
   home_odd: number | null
@@ -821,8 +826,14 @@ export type SportApi1x2Normalized = {
   home_label?: string | null
   draw_label?: string | null
   away_label?: string | null
+  home_odd_raw?: unknown
+  draw_odd_raw?: unknown
+  away_odd_raw?: unknown
+  provider_id?: number | null
+  provider_slug?: string | null
   available_markets?: string[]
   raw_market?: unknown
+  debug_full_time_market?: unknown
 }
 
 export type SportApiOddsTestEventResponse = {
@@ -847,6 +858,8 @@ export type SportApiNextRound1x2Row = {
   provider_id_used: number | null
   status: string
   market_found?: boolean | null
+  outcomes_complete?: boolean | null
+  normalization_status?: SportApi1x2NormalizationStatus | null
   home_odd: number | null
   draw_odd: number | null
   away_odd: number | null
