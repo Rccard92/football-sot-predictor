@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.0.2',
+    date: '2026-05-19',
+    title: 'Pulizia Audit e confronto modelli',
+    type: 'patch',
+    summary:
+      'Pagina Spiegazione previsione più chiara: solo partite upcoming, previsione compatta, SportAPI come unica fonte formazioni e confronto versioni con v2.0.',
+    highlights: [
+      'Dropdown partite limitato al prossimo turno (upcoming).',
+      'Sezione «Previsione modello» a tre colonne senza esito reale.',
+      'Player DB con default Top 5.',
+      'Rimossa sezione formazioni API-Football dall’audit.',
+      'Badge SportAPI coerente con v2.0; mapping giocatori in accordion chiuso.',
+      'Confronto modelli da v2.0 a v0.1 con delta v2.0 vs v1.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.0.1',
     date: '2026-05-19',
     title: 'Tracciabilità modello 2.0',

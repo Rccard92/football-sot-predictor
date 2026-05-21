@@ -8,6 +8,7 @@ import type { PlayerDbProfileRow, PlayerDbTeamSide } from '../../types/playerDbP
 import { formatFetchError } from '../../utils/formatFetchError'
 
 const LIMIT_OPTIONS: { value: PlayerProfilesLimit; label: string }[] = [
+  { value: 5, label: 'Top 5' },
   { value: 10, label: 'Top 10' },
   { value: 15, label: 'Top 15' },
   { value: 25, label: 'Top 25' },
@@ -15,7 +16,7 @@ const LIMIT_OPTIONS: { value: PlayerProfilesLimit; label: string }[] = [
 ]
 
 const INTRO_NOTE =
-  'Questa sezione mostra i migliori profili giocatore disponibili nel Player DB, ordinati per impatto tiri. Per baseline_v1_1_sot: con formazioni ufficiali in DB il Player layer usa modalità lineup-adjusted (titolari + presenza/assenza top shooter); altrimenti resta in modalità storico/recent (top 5 profili). Dettaglio nell’albero componenti e in Lineups.'
+  'Migliori profili giocatore nel Player DB, ordinati per impatto tiri. Con formazioni SportAPI e modello v2.0 il layer player può usare titolari e assenze; altrimenti modalità storica (top profili). Dettaglio in albero componenti e in Lineup Impact.'
 
 const EMPTY_MSG =
   'Profili giocatori non disponibili. Esegui da Admin: 1. Aggiorna statistiche giocatori · 2. Calcola profili giocatori'
@@ -245,7 +246,7 @@ export function PlayerDbProfilesSection({
   fixtureId: number
   season?: number
 }) {
-  const [limitChoice, setLimitChoice] = useState<PlayerProfilesLimit>(15)
+  const [limitChoice, setLimitChoice] = useState<PlayerProfilesLimit>(5)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)

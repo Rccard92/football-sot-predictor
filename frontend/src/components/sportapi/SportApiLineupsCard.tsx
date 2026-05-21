@@ -16,18 +16,39 @@ function emptySide(name: string) {
   }
 }
 
+const V20_MODEL = 'baseline_v2_0_lineup_impact'
+
 export function SportApiLineupsCard({
   data,
   compact = false,
   apiFixtureId,
+  activeModelVersion,
 }: {
   data: SportApiLineupsAuditPayload | null | undefined
   compact?: boolean
   /** Link Admin pre-fill quando dati assenti */
   apiFixtureId?: number | null
+  activeModelVersion?: string | null
 }) {
   const confirmed = data?.confirmed
   const available = data?.available === true
+  const v20Active = activeModelVersion === V20_MODEL
+
+  const modelBadge = (() => {
+    if (!available) return null
+    if (v20Active) {
+      return (
+        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-900">
+          Dati usati dal modello v2.0
+        </span>
+      )
+    }
+    return (
+      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+        Dati disponibili per v2.0
+      </span>
+    )
+  })()
 
   return (
     <section
@@ -38,9 +59,7 @@ export function SportApiLineupsCard({
           <h2 className="text-sm font-semibold tracking-tight text-slate-900">
             SportAPI — Formazioni e indisponibili
           </h2>
-          <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-900">
-            Dati non usati nel modello
-          </span>
+          {modelBadge}
           {available && confirmed === true ? (
             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-900">
               Formazioni ufficiali

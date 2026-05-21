@@ -35,7 +35,7 @@ export function MatchVariableAudit() {
     const loadFixtures = async () => {
       setFixturesError(null)
       try {
-        const url = `${import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')}/api/match-analysis/fixtures?scope=all&limit=120`
+        const url = `${import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')}/api/match-analysis/fixtures?scope=upcoming&only_next_round=true&limit=40`
         const res = await fetch(url)
         const body = (await res.json()) as FixturesListResponse & { message?: string }
         if (!res.ok) {
@@ -43,9 +43,18 @@ export function MatchVariableAudit() {
           setFixturesError(body.message || `Errore HTTP ${res.status} su /match-analysis/fixtures`)
           return
         }
-        setFixtures(body.fixtures ?? [])
-        if (fixtureId == null && body.fixtures?.length) {
-          setFixtureId(body.fixtures[0].fixture_id)
+        const list = body.fixtures ?? []
+        setFixtures(list)
+        if (list.length === 0) {
+          setFixtureId(null)
+          return
+        }
+        const ids = new Set(list.map((f) => f.fixture_id))
+        const qsValid = Number.isFinite(fixtureIdFromQS) && fixtureIdFromQS > 0 && ids.has(fixtureIdFromQS)
+        if (qsValid) {
+          setFixtureId(fixtureIdFromQS)
+        } else if (fixtureId == null || !ids.has(fixtureId)) {
+          setFixtureId(list[0].fixture_id)
         }
       } catch (e) {
         setFixtures([])
@@ -102,9 +111,11 @@ export function MatchVariableAudit() {
               className="max-w-xl rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
               value={fixtureId ?? ''}
               onChange={(e) => setFixtureId(Number(e.target.value) || null)}
-              disabled={!fixtures.length}
+              disabled={fixtures.length === 0}
             >
-              {!fixtures.length ? <option value="">Nessuna fixture caricata</option> : null}
+              {fixtures.length === 0 ? (
+                <option value="">Nessuna partita futura disponibile</option>
+              ) : null}
               {fixtures.map((f) => (
                 <option key={f.fixture_id} value={f.fixture_id}>
                   {f.kickoff_at?.slice(0, 10)} — {f.home_team.name} vs {f.away_team.name} ({f.status_short})
@@ -128,6 +139,12 @@ export function MatchVariableAudit() {
             </select>
           </div>
         </header>
+
+        {fixtures.length === 0 && !fixturesError ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+            Nessuna partita futura disponibile. Aggiorna il calendario da Admin.
+          </div>
+        ) : null}
 
         {fixturesError ? (
           <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">

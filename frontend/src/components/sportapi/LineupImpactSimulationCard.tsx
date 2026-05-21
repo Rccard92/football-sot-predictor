@@ -417,7 +417,17 @@ export function LineupImpactSimulationCard({
         )}
 
         {showMatching && (data.sportapi_player_matching?.length ?? 0) > 0 ? (
-          <SportApiPlayerMatchingPanel matches={data.sportapi_player_matching!} compact />
+          <details className="rounded-xl border border-slate-100">
+            <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-50">
+              Dettagli tecnici mapping giocatori
+              <span className="mt-0.5 block text-[10px] font-normal text-slate-500">
+                Mostra come i giocatori SportAPI sono stati collegati ai profili API-Sports.
+              </span>
+            </summary>
+            <div className="border-t border-slate-100 px-3 py-2">
+              <SportApiPlayerMatchingPanel matches={data.sportapi_player_matching!} compact />
+            </div>
+          </details>
         ) : null}
       </div>
     </section>

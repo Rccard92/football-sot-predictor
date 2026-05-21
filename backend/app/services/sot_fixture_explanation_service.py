@@ -97,14 +97,25 @@ V04_INPUT_TO_AUDIT_KEY: dict[str, str] = {
 }
 
 COMPARE_MODELS_ORDER: list[tuple[str, str]] = [
-    (BASELINE_SOT_MODEL_VERSION, "v0.1"),
-    (BASELINE_SOT_MODEL_VERSION_V02, "v0.2"),
-    (BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED, "v0.2 player"),
-    (BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT, "v0.3"),
-    (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, "v0.4"),
+    (BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, "v2.0 Lineup Impact"),
     (BASELINE_SOT_MODEL_VERSION_V11_SOT, "v1.1"),
     (BASELINE_SOT_MODEL_VERSION_V10_SOT, "v1.0"),
+    (BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, "v0.4"),
+    (BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT, "v0.3"),
+    (BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED, "v0.2 player"),
+    (BASELINE_SOT_MODEL_VERSION_V02, "v0.2"),
+    (BASELINE_SOT_MODEL_VERSION, "v0.1"),
 ]
+
+
+def _comparison_role_label(model_version: str, active_mv: str | None) -> str:
+    if model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
+        return "Lineup Impact"
+    if model_version == BASELINE_SOT_MODEL_VERSION_V11_SOT:
+        return "stabile"
+    if active_mv and model_version == active_mv:
+        return "attivo"
+    return "legacy"
 
 UI_COMPARE_MODEL_VERSIONS: frozenset[str] = frozenset(
     {
@@ -2377,6 +2388,7 @@ def _build_fixture_sot_explanation_body(
             {
                 "model_version": mv,
                 "label": short,
+                "role_label": _comparison_role_label(mv, active_mv),
                 "home": _round2(h),
                 "away": _round2(a_),
                 "total": _round2((h + a_)) if h is not None and a_ is not None else None,
@@ -2384,27 +2396,14 @@ def _build_fixture_sot_explanation_body(
         )
 
     deltas: list[str] = []
-    v01h = preds.get(BASELINE_SOT_MODEL_VERSION, {}).get("home")
-    v01a = preds.get(BASELINE_SOT_MODEL_VERSION, {}).get("away")
-    v03h = preds.get(BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT, {}).get("home")
-    v03a = preds.get(BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT, {}).get("away")
-    v04h = preds.get(BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, {}).get("home")
-    v04a = preds.get(BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, {}).get("away")
-    if v04h is not None and v01h is not None:
-        deltas.append(f"v0.4 vs v0.1 ({home.name}): {_round2(v04h - v01h):+}")
-    if v04a is not None and v01a is not None:
-        deltas.append(f"v0.4 vs v0.1 ({away.name}): {_round2(v04a - v01a):+}")
-    if v04h is not None and v03h is not None:
-        deltas.append(f"v0.4 vs v0.3 ({home.name}): {_round2(v04h - v03h):+}")
-    if v04a is not None and v03a is not None:
-        deltas.append(f"v0.4 vs v0.3 ({away.name}): {_round2(v04a - v03a):+}")
-
-    v10h = preds.get(BASELINE_SOT_MODEL_VERSION_V10_SOT, {}).get("home")
-    v10a = preds.get(BASELINE_SOT_MODEL_VERSION_V10_SOT, {}).get("away")
-    if v10h is not None and v04h is not None:
-        deltas.append(f"v1.0 vs v0.4 ({home.name}): {_round2(v10h - v04h):+}")
-    if v10a is not None and v04a is not None:
-        deltas.append(f"v1.0 vs v0.4 ({away.name}): {_round2(v10a - v04a):+}")
+    v20h = preds.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, {}).get("home")
+    v20a = preds.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, {}).get("away")
+    v11h = preds.get(BASELINE_SOT_MODEL_VERSION_V11_SOT, {}).get("home")
+    v11a = preds.get(BASELINE_SOT_MODEL_VERSION_V11_SOT, {}).get("away")
+    if v20h is not None and v11h is not None:
+        deltas.append(f"v2.0 vs v1.1 ({home.name}): {_round2(v20h - v11h):+}")
+    if v20a is not None and v11a is not None:
+        deltas.append(f"v2.0 vs v1.1 ({away.name}): {_round2(v20a - v11a):+}")
 
     quality_items: list[str] = []
     try:

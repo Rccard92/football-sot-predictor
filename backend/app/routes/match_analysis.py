@@ -17,6 +17,7 @@ from app.schemas.match_analysis import (
     MatchVariablesAuditResponse,
 )
 from app.services.match_variable_audit_service import MatchVariableAuditService
+from app.services.sot_prediction_service import _fixture_round_display
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ def list_audit_fixtures(
     db: Session = Depends(get_db),
     season: int | None = Query(default=None),
     scope: str = Query(default="upcoming"),
+    only_next_round: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> AuditFixturesListResponse:
     if scope not in ("upcoming", "completed", "all"):
@@ -106,6 +108,10 @@ def list_audit_fixtures(
 
         if scope == "upcoming":
             rows = [f for f in rows if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)]
+            if only_next_round and rows:
+                r0 = _fixture_round_display(rows[0]) or rows[0].round
+                if r0:
+                    rows = [f for f in rows if (_fixture_round_display(f) or f.round) == r0]
         elif scope == "completed":
             rows = [f for f in rows if (f.status or "").upper() in FINISHED_STATUSES]
         else:

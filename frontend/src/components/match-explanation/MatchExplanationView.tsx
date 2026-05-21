@@ -5,7 +5,6 @@ import type {
   ExplanationSampleRow,
   ExplanationVariable,
   ModelComparisonRow,
-  SideSummary,
   SotFixtureExplanationResponse,
 } from '../../types/sotExplanation'
 import { InternalFormulaPanel, PredictionFinalFormulaSection } from './PredictionFinalFormulaSection'
@@ -16,8 +15,8 @@ import {
 } from './MatchExplanationTraceability'
 import { LineupImpactSimulationCard } from '../sportapi/LineupImpactSimulationCard'
 import { SportApiLineupsCard } from '../sportapi/SportApiLineupsCard'
-import { LineupsSection } from './LineupsSection'
 import { PlayerDbProfilesSection } from './PlayerDbProfilesSection'
+import { PredictionModelSummary } from './PredictionModelSummary'
 
 function fmtDate(iso: string) {
   try {
@@ -165,29 +164,22 @@ function VariableTable({ vars }: { vars: ExplanationVariable[] }) {
   )
 }
 
-function SidePredictionCard({ title, s }: { title: string; s: SideSummary }) {
-  return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-      <p className="text-xs font-semibold text-slate-900">{title}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{s.predicted_sot ?? '—'}</p>
-      <p className="text-[11px] text-slate-500">Previsti (SOT)</p>
-      {s.actual_sot != null ? (
-        <>
-          <p className="mt-2 text-lg font-medium tabular-nums text-slate-800">{s.actual_sot}</p>
-          <p className="text-[11px] text-slate-500">Reali</p>
-          <p className="mt-1 text-sm text-slate-700">
-            Errore: <span className="font-medium tabular-nums">{s.absolute_error ?? '—'}</span>
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {s.outcome_label ? <Badge tone="sky">{s.outcome_label}</Badge> : null}
-            {s.post_audit_judgment ? <Badge tone="violet">Audit: {s.post_audit_judgment}</Badge> : null}
-          </div>
-        </>
-      ) : (
-        <p className="mt-2 text-xs text-slate-500">Partita non conclusa o esito non disponibile nel DB.</p>
-      )}
-    </div>
-  )
+const MODEL_COMPARE_ORDER: string[] = [
+  'baseline_v2_0_lineup_impact',
+  'baseline_v1_1_sot',
+  'baseline_v1_0_sot',
+  'baseline_v0_4_offensive_core_sot',
+  'baseline_v0_3_core_sot',
+  'baseline_v0_2_player_adjusted',
+  'baseline_v0_2_context_player',
+  'baseline_v0_1',
+]
+
+function roleBadgeTone(role: string | null | undefined): 'slate' | 'emerald' | 'violet' | 'sky' {
+  if (role === 'Lineup Impact') return 'violet'
+  if (role === 'stabile') return 'emerald'
+  if (role === 'attivo') return 'sky'
+  return 'slate'
 }
 
 function ComponentsForTeam({
@@ -262,9 +254,16 @@ function ComponentsForTeam({
 export function MatchExplanationView({ data }: { data: SotFixtureExplanationResponse }) {
   const fx = data.fixture as ExplanationFixture
   const summary = data.prediction_summary
-  const finished = data.actual_result?.fixture_finished
 
-  const comparisonRows: ModelComparisonRow[] = useMemo(() => data.model_comparison?.rows ?? [], [data.model_comparison?.rows])
+  const comparisonRows: ModelComparisonRow[] = useMemo(() => {
+    const rows = data.model_comparison?.rows ?? []
+    const order = new Map(MODEL_COMPARE_ORDER.map((mv, i) => [mv, i]))
+    return [...rows].sort((a, b) => {
+      const ia = order.get(a.model_version) ?? 999
+      const ib = order.get(b.model_version) ?? 999
+      return ia - ib
+    })
+  }, [data.model_comparison?.rows])
 
   const traceHome = data.applied_variable_trace?.home ?? []
   const traceAway = data.applied_variable_trace?.away ?? []
@@ -307,7 +306,7 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
           </div>
           <div className="flex flex-col items-start gap-1.5 sm:items-end">
             <Badge tone="slate">Mercato: tiri in porta squadra</Badge>
-            <Badge tone={finished ? 'violet' : 'sky'}>
+            <Badge tone={data.actual_result?.fixture_finished ? 'violet' : 'sky'}>
               {summary.ui_mode === 'post_match_audit' ? 'Post-match audit' : 'Pre-match'}
             </Badge>
             {data.active_model_version ? (
@@ -334,22 +333,16 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
         </SectionCard>
       ) : null}
 
-      <SectionCard title="Previsione vs esito">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SidePredictionCard title={fx.home_team.name} s={summary.home} />
-          <SidePredictionCard title={fx.away_team.name} s={summary.away} />
-        </div>
-        <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
-          <p className="text-xs font-semibold text-slate-800">Totale match</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{summary.match_total.predicted_sot ?? '—'}</p>
-          <p className="text-[11px] text-slate-500">Previsto</p>
-          {summary.match_total.actual_sot != null ? (
-            <p className="mt-2 text-sm text-slate-700">
-              Reale: <span className="font-semibold tabular-nums">{summary.match_total.actual_sot}</span> · Errore:{' '}
-              <span className="font-semibold tabular-nums">{summary.match_total.absolute_error ?? '—'}</span>
-            </p>
-          ) : null}
-        </div>
+      <SectionCard
+        title="Previsione modello"
+        subtitle="Solo valori previsti dal modello attivo — senza esito reale post-partita."
+      >
+        <PredictionModelSummary
+          fixture={fx}
+          home={summary.home}
+          away={summary.away}
+          matchTotal={summary.match_total}
+        />
       </SectionCard>
 
       {data.prediction_formula_breakdown?.home || data.prediction_formula_breakdown?.away ? (
@@ -381,19 +374,18 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
         </SectionCard>
       ) : null}
 
-      <PlayerDbProfilesSection fixtureId={fx.fixture_id} />
-
-      <LineupsSection fixtureId={fx.fixture_id} />
-
       <SportApiLineupsCard
         data={data.sportapi_lineups}
         apiFixtureId={fx.api_fixture_id}
+        activeModelVersion={data.active_model_version}
       />
 
       <LineupImpactSimulationCard
         data={data.lineup_impact_simulation}
         fixtureId={fx.fixture_id}
       />
+
+      <PlayerDbProfilesSection fixtureId={fx.fixture_id} />
 
       {(data.applied_variable_trace?.home?.length ?? 0) > 0 || (data.applied_variable_trace?.away?.length ?? 0) > 0 ? (
         <SectionCard title="Registro variabili applicate (trace)">
@@ -435,7 +427,12 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
               <tbody className="text-slate-800">
                 {comparisonRows.map((r) => (
                   <tr key={r.model_version} className="border-b border-slate-100">
-                    <td className="py-2 pr-3 font-mono text-[11px]">{r.label}</td>
+                    <td className="py-2 pr-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[11px]">{r.label}</span>
+                        {r.role_label ? <Badge tone={roleBadgeTone(r.role_label)}>{r.role_label}</Badge> : null}
+                      </div>
+                    </td>
                     <td className="py-2 pr-3 tabular-nums">{r.home ?? '—'}</td>
                     <td className="py-2 pr-3 tabular-nums">{r.away ?? '—'}</td>
                     <td className="py-2 pr-3 tabular-nums">{r.total ?? '—'}</td>
@@ -445,11 +442,9 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
             </table>
           </div>
           {data.model_comparison?.deltas_text?.length ? (
-            <ul className="mt-3 list-inside list-disc text-[11px] text-slate-600">
-              {data.model_comparison.deltas_text.map((t) => (
-                <li key={t}>{t}</li>
-              ))}
-            </ul>
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-600">
+              {data.model_comparison.deltas_text.join(' · ')}
+            </p>
           ) : null}
         </SectionCard>
       ) : null}
@@ -464,25 +459,6 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
           ))}
         </ul>
       </SectionCard>
-
-      {finished ? (
-        <SectionCard title="Verifica post-partita">
-          <p className="mb-3 text-xs text-slate-600">
-            Soglie indicative: ≤0,50 ottima · ≤1,00 vicina · ≤1,50 accettabile · oltre da analizzare (solo UI).
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {[summary.home, summary.away].map((s) => (
-              <div key={s.team_name} className="rounded-lg border border-slate-100 p-3 text-xs">
-                <p className="font-semibold text-slate-900">{s.team_name}</p>
-                <p className="mt-1 text-slate-700">
-                  Prev. {s.predicted_sot ?? '—'} · Reale {s.actual_sot ?? '—'} · Err. {s.absolute_error ?? '—'}
-                </p>
-                <p className="mt-1 text-slate-600">{s.post_audit_judgment ?? '—'}</p>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      ) : null}
 
       <Accordion title="Variabili non applicate al modello attivo">
         <p className="text-[11px] text-slate-600">

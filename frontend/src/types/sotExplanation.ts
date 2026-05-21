@@ -202,6 +202,7 @@ export type FinalFormulaSide = {
 export type ModelComparisonRow = {
   model_version: string
   label: string
+  role_label?: string | null
   home: number | null
   away: number | null
   total: number | null

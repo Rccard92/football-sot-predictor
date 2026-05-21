@@ -1301,7 +1301,7 @@ export async function buildPlayerSeasonProfiles(season: number, opts?: AdminRequ
   )
 }
 
-export type PlayerProfilesLimit = 10 | 15 | 25 | 'all'
+export type PlayerProfilesLimit = 5 | 10 | 15 | 25 | 'all'
 
 export async function getFixturePlayerProfiles(
   fixtureId: number,
