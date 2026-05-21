@@ -30,8 +30,9 @@ export function formatExplanationApiError(parsed: {
   if (parsed.details) parts.push(String(parsed.details))
   const base = parts.join(' — ') || 'Errore durante il caricamento della spiegazione'
   if (
-    parsed.failed_step === 'build_explanation' ||
-    (parsed.details && /offensive|raw_json|formula/i.test(parsed.details))
+    parsed.failed_step !== 'build_explanation' &&
+    parsed.details &&
+    /offensive_production|formula terms assenti|Componente offensiva assente/i.test(parsed.details)
   ) {
     return `${base}. Suggerimento: rigenerare v1.0 (POST generate-v10-sot) se il raw_json è vecchio.`
   }

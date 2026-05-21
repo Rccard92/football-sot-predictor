@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.0.3',
+    date: '2026-05-19',
+    title: 'Fix spiegazione previsione',
+    type: 'patch',
+    summary:
+      'Corretta la costruzione della spiegazione partita quando alcune versioni legacy del modello non sono disponibili.',
+    highlights: [
+      'Risolto errore su variabili legacy mancanti.',
+      'Il confronto versioni ora ignora automaticamente i dati non disponibili.',
+      'La pagina Audit non si blocca più se manca una versione storica.',
+      'Migliorata la gestione dei fallback nella spiegazione previsione.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.0.2',
     date: '2026-05-19',
     title: 'Pulizia Audit e confronto modelli',

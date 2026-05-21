@@ -235,6 +235,7 @@ export type SotFixtureExplanationResponse = {
   model_comparison?: {
     rows: ModelComparisonRow[]
     deltas_text: string[]
+    warning?: string | null
   }
   components?: { home: ExplanationComponent[]; away: ExplanationComponent[] }
   prediction_formula_breakdown?: {

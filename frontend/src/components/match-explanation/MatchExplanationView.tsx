@@ -412,7 +412,7 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
         <ComponentsForTeam teamName={fx.away_team.name} components={data.components?.away ?? []} />
       </SectionCard>
 
-      {comparisonRows.length > 0 ? (
+      {comparisonRows.length > 0 || data.model_comparison?.warning ? (
         <SectionCard title="Confronto con versioni precedenti">
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-xs">
@@ -441,6 +441,9 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
               </tbody>
             </table>
           </div>
+          {data.model_comparison?.warning ? (
+            <p className="mt-3 text-[11px] text-amber-800">{data.model_comparison.warning}</p>
+          ) : null}
           {data.model_comparison?.deltas_text?.length ? (
             <p className="mt-3 text-[11px] leading-relaxed text-slate-600">
               {data.model_comparison.deltas_text.join(' · ')}

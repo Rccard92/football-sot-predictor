@@ -5,10 +5,13 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
 )
 from app.services.sot_model_constants import WEIGHTS_BASELINE_V0_1
 from app.services.sot_fixture_explanation_service import (
     V03_COMPONENT_META,
+    _build_model_comparison_section,
     _build_prediction_formula_breakdown_side,
     _components_v01,
     _components_v10_feature_registry,
@@ -162,3 +165,35 @@ def test_internal_v04_offensive_notes_when_cap():
     raw_root = {"debug": {"raw_component_value": 4.2, "cap_bounds": {"min": 2.25, "max": 3.75}}}
     out = _internal_formula_v04_offensive(comp, raw_root)
     assert any("grezzo" in n.lower() or "cap" in n.lower() for n in out["notes"])
+
+
+def test_model_comparison_skips_missing_legacy_versions():
+    preds = {
+        BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT: {"home": 4.0, "away": 3.5},
+        BASELINE_SOT_MODEL_VERSION_V11_SOT: {"home": 3.8, "away": 3.2},
+    }
+    out = _build_model_comparison_section(
+        preds,
+        active_mv=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+        home_name="Casa",
+        away_name="Trasferta",
+    )
+    assert len(out["rows"]) == 2
+    assert out["rows"][0]["model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    assert len(out["deltas_text"]) == 2
+    assert out.get("warning")
+
+
+def test_model_comparison_v04_quality_delta_does_not_require_undefined_names():
+    """Regressione NameError: v04h/v01h devono essere letti da preds, non variabili libere."""
+    preds = {
+        BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT: {"home": 2.0, "away": 2.5},
+        BASELINE_SOT_MODEL_VERSION: {"home": 3.5, "away": 3.5},
+    }
+    out = _build_model_comparison_section(
+        preds,
+        active_mv=BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        home_name="Milan",
+        away_name="Cagliari",
+    )
+    assert len(out["rows"]) == 2

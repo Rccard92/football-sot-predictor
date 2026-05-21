@@ -117,6 +117,68 @@ def _comparison_role_label(model_version: str, active_mv: str | None) -> str:
         return "attivo"
     return "legacy"
 
+
+def _pred_side_value(
+    preds: dict[str, dict[str, float | None]],
+    model_version: str,
+    side: Side,
+) -> float | None:
+    side_preds = preds.get(model_version)
+    if not isinstance(side_preds, dict):
+        return None
+    return side_preds.get(side)
+
+
+def _build_model_comparison_section(
+    preds: dict[str, dict[str, float | None]],
+    *,
+    active_mv: str,
+    home_name: str,
+    away_name: str,
+) -> dict[str, Any]:
+    """Confronto storico: include solo versioni con almeno un valore salvato in DB."""
+    comparison_rows: list[dict[str, Any]] = []
+    for mv, short in COMPARE_MODELS_ORDER:
+        h = _pred_side_value(preds, mv, "home")
+        a_ = _pred_side_value(preds, mv, "away")
+        if h is None and a_ is None:
+            continue
+        comparison_rows.append(
+            {
+                "model_version": mv,
+                "label": short,
+                "role_label": _comparison_role_label(mv, active_mv),
+                "home": _round2(h),
+                "away": _round2(a_),
+                "total": _round2((h + a_)) if h is not None and a_ is not None else None,
+            },
+        )
+
+    deltas: list[str] = []
+    v20h = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, "home")
+    v20a = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, "away")
+    v11h = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION_V11_SOT, "home")
+    v11a = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION_V11_SOT, "away")
+    if v20h is not None and v11h is not None:
+        deltas.append(f"v2.0 vs v1.1 ({home_name}): {_round2(v20h - v11h):+}")
+    if v20a is not None and v11a is not None:
+        deltas.append(f"v2.0 vs v1.1 ({away_name}): {_round2(v20a - v11a):+}")
+
+    warning: str | None = None
+    legacy_versions = [mv for mv, _ in COMPARE_MODELS_ORDER[2:]]
+    has_any_legacy = any(
+        _pred_side_value(preds, mv, "home") is not None or _pred_side_value(preds, mv, "away") is not None
+        for mv in legacy_versions
+    )
+    if legacy_versions and not has_any_legacy:
+        warning = "Alcune versioni precedenti non sono disponibili per questa fixture."
+
+    return {
+        "rows": comparison_rows,
+        "deltas_text": deltas,
+        "warning": warning,
+    }
+
 UI_COMPARE_MODEL_VERSIONS: frozenset[str] = frozenset(
     {
         BASELINE_SOT_MODEL_VERSION_V11_SOT,
@@ -2378,32 +2440,24 @@ def _build_fixture_sot_explanation_body(
 
     fb_home = _build_prediction_formula_breakdown_side(active_mv, raw_home, float(ph) if ph is not None else None)
     fb_away = _build_prediction_formula_breakdown_side(active_mv, raw_away, float(pa) if pa is not None else None)
-    comparison_rows: list[dict[str, Any]] = []
-    for mv, short in COMPARE_MODELS_ORDER:
-        h = preds.get(mv, {}).get("home")
-        a_ = preds.get(mv, {}).get("away")
-        if h is None and a_ is None:
-            continue
-        comparison_rows.append(
-            {
-                "model_version": mv,
-                "label": short,
-                "role_label": _comparison_role_label(mv, active_mv),
-                "home": _round2(h),
-                "away": _round2(a_),
-                "total": _round2((h + a_)) if h is not None and a_ is not None else None,
-            },
+    try:
+        model_comparison = _build_model_comparison_section(
+            preds,
+            active_mv=active_mv,
+            home_name=home.name,
+            away_name=away.name,
         )
-
-    deltas: list[str] = []
-    v20h = preds.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, {}).get("home")
-    v20a = preds.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, {}).get("away")
-    v11h = preds.get(BASELINE_SOT_MODEL_VERSION_V11_SOT, {}).get("home")
-    v11a = preds.get(BASELINE_SOT_MODEL_VERSION_V11_SOT, {}).get("away")
-    if v20h is not None and v11h is not None:
-        deltas.append(f"v2.0 vs v1.1 ({home.name}): {_round2(v20h - v11h):+}")
-    if v20a is not None and v11a is not None:
-        deltas.append(f"v2.0 vs v1.1 ({away.name}): {_round2(v20a - v11a):+}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "build_fixture_sot_explanation: confronto versioni non disponibile (%s)",
+            exc.__class__.__name__,
+            exc_info=True,
+        )
+        model_comparison = {
+            "rows": [],
+            "deltas_text": [],
+            "warning": "Confronto versioni non disponibile per questa fixture.",
+        }
 
     quality_items: list[str] = []
     try:
@@ -2461,6 +2515,10 @@ def _build_fixture_sot_explanation_body(
         if isinstance(ma, dict) and int(ma.get("team_priors_matches_count") or 0) < 8:
             quality_items.append(f"Storico ridotto per {away.name} (partite precedenti < 8).")
 
+    v04h = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, "home")
+    v04a = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT, "away")
+    v01h = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION, "home")
+    v01a = _pred_side_value(preds, BASELINE_SOT_MODEL_VERSION, "away")
     if v04h is not None and v01h is not None and (v04h - v01h) <= -0.75:
         quality_items.append(f"v0.4 riduce {home.name} di {v04h - v01h:.2f} rispetto a v0.1.")
     if v04a is not None and v01a is not None and (v04a - v01a) <= -0.75:
@@ -2581,10 +2639,7 @@ def _build_fixture_sot_explanation_body(
             "home_actual_sot": ah if played else None,
             "away_actual_sot": aa if played else None,
         },
-        "model_comparison": {
-            "rows": comparison_rows,
-            "deltas_text": deltas,
-        },
+        "model_comparison": model_comparison,
         "components": {"home": comp_home, "away": comp_away},
         "prediction_formula_breakdown": {"home": fb_home, "away": fb_away},
         "variables_used": {"home": variables_used_home, "away": variables_used_away},
