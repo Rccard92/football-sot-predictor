@@ -397,14 +397,16 @@ export function MatchExplanationView({
         data={data.sportapi_lineups}
         apiFixtureId={fx.api_fixture_id}
         fixtureId={fx.fixture_id}
+        kickoffAt={fx.kickoff_at}
         activeModelVersion={data.active_model_version}
         lineupImpact={data.lineup_impact_simulation}
+        onDataRefresh={onDataRefresh}
+        regenerateV20AfterFetch={data.active_model_version === V20_MODEL}
       />
 
       <LineupImpactSimulationCard
         data={data.lineup_impact_simulation}
         fixtureId={fx.fixture_id}
-        regenerateV20AfterFetch={data.active_model_version === V20_MODEL}
         onDataRefresh={onDataRefresh}
       />
 

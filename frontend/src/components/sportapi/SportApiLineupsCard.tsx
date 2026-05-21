@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getFixturePlayerProfiles } from '../../lib/api'
+import { useSportApiLineupRefresh } from '../../hooks/useSportApiLineupRefresh'
 import { V11_MODEL, V20_MODEL } from '../../lib/modelVersions'
+import {
+  formatSportApiFetchedAt,
+  freshnessBadgeClass,
+  getSportApiFreshnessBadge,
+} from '../../utils/sportApiLineupMeta'
 import type { LineupImpactSimulationPayload } from '../../types/lineupImpact'
 import type { PlayerDbProfileRow } from '../../types/playerDbProfiles'
 import type { SportApiLineupsAuditPayload, SportApiLineupsStoredResponse } from '../../types/sportapi'
@@ -26,15 +32,21 @@ export function SportApiLineupsCard({
   compact = false,
   apiFixtureId,
   fixtureId,
+  kickoffAt,
   activeModelVersion,
   lineupImpact,
+  onDataRefresh,
+  regenerateV20AfterFetch = false,
 }: {
   data: SportApiLineupsAuditPayload | null | undefined
   compact?: boolean
   apiFixtureId?: number | null
   fixtureId?: number | null
+  kickoffAt?: string | null
   activeModelVersion?: string | null
   lineupImpact?: LineupImpactSimulationPayload | null
+  onDataRefresh?: () => void | Promise<void>
+  regenerateV20AfterFetch?: boolean
 }) {
   const confirmed = data?.confirmed
   const available = data?.available === true
@@ -95,6 +107,15 @@ export function SportApiLineupsCard({
     )
   })()
 
+  const refresh = useSportApiLineupRefresh({
+    fixtureId,
+    regenerateV20: regenerateV20AfterFetch,
+    onDataRefresh,
+  })
+
+  const formattedFetchedAt = formatSportApiFetchedAt(data?.fetched_at)
+  const freshness = getSportApiFreshnessBadge(data?.fetched_at, kickoffAt)
+
   const matching = lineupImpact?.sportapi_player_matching
   const meta = {
     confirmed,
@@ -124,11 +145,42 @@ export function SportApiLineupsCard({
             </span>
           ) : null}
         </div>
-        {data?.fetched_at ? (
-          <p className="mt-1 text-[11px] text-slate-600">
-            Ultimo import: {data.fetched_at}
-            {data.provider_event_id != null ? ` · event_id ${data.provider_event_id}` : ''}
-            {data.confidence_score != null ? ` · mapping ${data.confidence_score}` : ''}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {formattedFetchedAt ? (
+            <span className="text-[11px] text-slate-600">
+              Ultimo aggiornamento: <span className="font-medium text-slate-800">{formattedFetchedAt}</span>
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-500">Nessun aggiornamento SportAPI registrato</span>
+          )}
+          {freshness ? (
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${freshnessBadgeClass(freshness.level)}`}
+            >
+              {freshness.label}
+            </span>
+          ) : null}
+          {fixtureId != null && onDataRefresh ? (
+            <button
+              type="button"
+              disabled={refresh.busy || !available}
+              onClick={() => void refresh.runRefresh()}
+              className="rounded-md border border-violet-300 bg-white px-2 py-1 text-[10px] font-medium text-violet-900 hover:bg-violet-50 disabled:opacity-50"
+            >
+              {refresh.buttonLabel}
+            </button>
+          ) : null}
+        </div>
+        {fixtureId != null && onDataRefresh ? (
+          <p className="mt-1 text-[10px] text-slate-500">Consuma 1 chiamata SportAPI</p>
+        ) : null}
+        {refresh.successMessage ? (
+          <p className="mt-1 text-[10px] text-emerald-800">{refresh.successMessage}</p>
+        ) : null}
+        {refresh.error ? <p className="mt-1 text-[10px] text-rose-700">{refresh.error}</p> : null}
+        {data?.fetched_at && (data.provider_event_id != null || profilesLoading) ? (
+          <p className="mt-0.5 text-[10px] text-slate-500">
+            {data.provider_event_id != null ? `event_id ${data.provider_event_id}` : ''}
             {profilesLoading ? ' · profili in caricamento…' : ''}
           </p>
         ) : null}
@@ -160,7 +212,6 @@ export function SportApiLineupsCard({
               matching={matching}
               profiles={homeProfiles}
               meta={meta}
-              lineupConfidenceLabel={lineupImpact?.confidence_label ?? null}
             />
             <SportApiLineupSide
               side={data.away}
@@ -168,7 +219,6 @@ export function SportApiLineupsCard({
               matching={matching}
               profiles={awayProfiles}
               meta={meta}
-              lineupConfidenceLabel={lineupImpact?.confidence_label ?? null}
             />
           </div>
         )}

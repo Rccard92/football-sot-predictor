@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.3',
+    date: '2026-05-19',
+    title: 'Calibrazione Overall XI e refresh formazioni',
+    type: 'patch',
+    summary:
+      'Migliorata la leggibilità dell’ultimo aggiornamento SportAPI, corretto il calcolo della confidence e resa più realistica la valutazione della forza dell’XI titolare.',
+    highlights: [
+      'Data ultimo import SportAPI normalizzata in formato leggibile.',
+      'Pulsante refresh formazione spostato accanto all’ultimo aggiornamento.',
+      'Corretta incoerenza tra Confidence numerica e badge.',
+      'Migliorato il calcolo Overall XI.',
+      'Attacco SOT ora considera anche forza base squadra e titolari effettivi.',
+      'Aggiunte spiegazioni sintetiche dei punteggi formazione.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.2',
     date: '2026-05-19',
     title: 'Chiarita logica formazione nel modello 2.0',

@@ -36,7 +36,6 @@ export function SportApiLineupSide({
   matching,
   profiles,
   meta,
-  lineupConfidenceLabel,
 }: {
   side: SportApiTeamLineupSide
   lineupSide?: LineupImpactSideSimulation
@@ -48,7 +47,6 @@ export function SportApiLineupSide({
     fetchedAt?: string | null
     profilesMissing?: boolean
   }
-  lineupConfidenceLabel?: string | null
 }) {
   const profilesMap = useMemo(() => profilesToApiIdMap(profiles), [profiles])
 
@@ -65,10 +63,10 @@ export function SportApiLineupSide({
         fetchedAt: meta.fetchedAt,
         profilesMissing: meta.profilesMissing,
         rosterSyncHint: lineupSide?.roster_sync_hint,
-        lineupConfidenceLabel,
         missingPlayersCount: countMissing(side.missing_players),
+        teamBaseSotV11: lineupSide?.base_sot ?? lineupSide?.base_expected_sot ?? null,
       }),
-    [side, lineupSide, matching, profilesMap, meta, lineupConfidenceLabel],
+    [side, lineupSide, matching, profilesMap, meta],
   )
 
   const forceRows = useMemo(
