@@ -1,4 +1,4 @@
-"""Admin: discovery bookmakers API-Sports."""
+"""Admin: bookmakers API-Sports (legacy) e provider/quote SportAPI."""
 
 from __future__ import annotations
 
@@ -11,11 +11,19 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
-from app.schemas.bookmakers import SportApiOddsDiscoveryBody
+from app.schemas.bookmakers import (
+    SportApiNextRound1x2Body,
+    SportApiOddsDiscoveryBody,
+    SportApiOddsTestEventBody,
+)
 from app.services.api_football_client import ApiFootballError
 from app.services.odds_bookmakers_sync_service import OddsBookmakersSyncService
 from app.services.sportapi.sportapi_client import SportApiDisabledError, SportApiError
+from app.services.sportapi.sportapi_event_odds_test_service import SportApiEventOddsTestService
+from app.services.sportapi.sportapi_next_round_1x2_service import SportApiNextRound1x2Service
 from app.services.sportapi.sportapi_odds_discovery_service import SportApiOddsDiscoveryService
+from app.services.sportapi.sportapi_odds_provider_detail_service import SportApiOddsProviderDetailService
+from app.services.sportapi.sportapi_odds_providers_sync_service import SportApiOddsProvidersSyncService
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +38,17 @@ def _require_api_football_key() -> None:
         )
 
 
+def _require_sportapi() -> None:
+    if not sportapi_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="SportAPI disabilitata: imposta SPORTAPI_ENABLED=true e SPORTAPI_RAPIDAPI_KEY",
+        )
+
+
 @router.get("", response_model=None)
 def list_bookmakers(db: Session = Depends(get_db)):
+    """Legacy API-Sports — non esposto in UI v2.7."""
     try:
         out = OddsBookmakersSyncService().list_payload(db)
     except (OperationalError, ProgrammingError) as exc:
@@ -42,6 +59,7 @@ def list_bookmakers(db: Session = Depends(get_db)):
 
 @router.post("/sync", response_model=None)
 def sync_bookmakers(db: Session = Depends(get_db)):
+    """Legacy API-Sports sync."""
     _require_api_football_key()
     try:
         out = OddsBookmakersSyncService().sync_from_api(db)
@@ -59,11 +77,111 @@ def sync_bookmakers(db: Session = Depends(get_db)):
     return jsonable_encoder(out)
 
 
+@router.get("/sportapi/providers", response_model=None)
+def list_sportapi_providers(db: Session = Depends(get_db)):
+    try:
+        out = SportApiOddsProvidersSyncService().list_payload(db)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("list sportapi providers DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.post("/sportapi/providers/sync", response_model=None)
+def sync_sportapi_providers(db: Session = Depends(get_db)):
+    _require_sportapi()
+    try:
+        out = SportApiOddsProvidersSyncService().sync_it_app(db)
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SportApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sync sportapi providers DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.post("/sportapi/providers/{slug}/sync-detail", response_model=None)
+def sync_sportapi_provider_detail(slug: str, db: Session = Depends(get_db)):
+    _require_sportapi()
+    try:
+        out = SportApiOddsProviderDetailService().sync_detail(db, slug)
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SportApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sync sportapi provider detail DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.post("/sportapi/odds/test-event", response_model=None)
+def sportapi_odds_test_event(
+    body: SportApiOddsTestEventBody,
+    db: Session = Depends(get_db),
+):
+    _require_sportapi()
+    try:
+        out = SportApiEventOddsTestService().test_event(
+            db,
+            sportapi_event_id=int(body.sportapi_event_id),
+            provider_slug=body.provider_slug,
+            provider_id=body.provider_id,
+            save_snapshot=bool(body.save_snapshot),
+            fixture_id=body.fixture_id,
+            api_fixture_id=body.api_fixture_id,
+        )
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SportApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi test event DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+
+    if out.get("status") == "error":
+        raise HTTPException(status_code=502, detail=str(out.get("message") or "Test quote fallito"))
+    return jsonable_encoder(out)
+
+
+@router.post("/sportapi/odds/next-round-1x2", response_model=None)
+def sportapi_odds_next_round_1x2(
+    body: SportApiNextRound1x2Body,
+    db: Session = Depends(get_db),
+):
+    _require_sportapi()
+    try:
+        out = SportApiNextRound1x2Service().run(
+            db,
+            provider_slug=body.provider_slug,
+            season_year=body.season_year,
+            force=bool(body.force),
+        )
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SportApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi next round 1x2 DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+
+    if out.get("status") == "error":
+        raise HTTPException(status_code=400, detail=str(out.get("message") or "Batch 1X2 fallito"))
+    return jsonable_encoder(out)
+
+
 @router.post("/sportapi/odds-discovery", response_model=None)
 def sportapi_odds_discovery(
     body: SportApiOddsDiscoveryBody,
     db: Session = Depends(get_db),
 ):
+    """Legacy discovery — deprecato in UI, mantenuto per compatibilità."""
     if not sportapi_configured():
         raise HTTPException(
             status_code=400,

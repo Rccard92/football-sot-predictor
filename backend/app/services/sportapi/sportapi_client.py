@@ -128,6 +128,19 @@ class SportApiClient:
     def get_lineups(self, event_id: int) -> Any:
         return self.get(sportapi_paths.lineups_path(event_id))
 
+    def get_odds_providers(self, country: str = "IT", channel: str = "app") -> Any:
+        """GET /api/v1/odds/providers/{country}/{channel}"""
+        return self.get(sportapi_paths.odds_providers_path(country, channel))
+
+    def get_odds_provider_detail(self, slug: str) -> Any:
+        """GET /api/v1/odds/{slug}"""
+        try:
+            return self.get(sportapi_paths.odds_provider_slug_path(slug))
+        except SportApiError as exc:
+            if "404" in str(exc):
+                raise SportApiError(f"Provider SportAPI non trovato: {slug}") from exc
+            raise
+
     def get_event_odds(self, event_id: int, provider_id: int = 1) -> Any:
         """GET /api/v1/event/{event_id}/odds/{provider_id}/all"""
         path = sportapi_paths.event_odds_path(event_id, provider_id)

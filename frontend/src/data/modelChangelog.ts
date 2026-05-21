@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.7.0',
+    date: '2026-05-19',
+    title: 'SportAPI Bookmakers e quote 1X2',
+    type: 'minor',
+    summary:
+      'La tab Bookmakers usa SportAPI come unica fonte visibile: sync provider Italia, dettaglio Sisal e recupero manuale quote 1X2 del prossimo turno.',
+    highlights: [
+      'Sync provider odds SportAPI (mercato IT, canale app).',
+      'Dettaglio bookmaker Sisal con oddsProvider, oddsFrom e liveOddsFrom.',
+      'Test quote per singolo evento con scelta automatica del provider_id funzionante.',
+      'Batch manuale quote 1X2 per il prossimo turno Serie A.',
+      'Quote e provider solo informativi: nessun impatto su pronostici o consiglio giocata.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.6.1',
     date: '2026-05-19',
     title: 'SportAPI odds discovery',

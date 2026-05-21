@@ -764,6 +764,161 @@ export async function postSportApiOddsDiscovery(
   )
 }
 
+export const SPORTAPI_DEFAULT_PROVIDER_SLUG = 'sisal-italy-affiliate'
+
+export type SportApiOddsProviderRow = {
+  id: number
+  provider_slug: string
+  provider_name: string
+  provider_country: string | null
+  provider_id: number | null
+  odds_from_id: number | null
+  odds_from_slug: string | null
+  odds_from_name: string | null
+  live_odds_from_id: number | null
+  working_odds_provider_id: number | null
+  is_selected: boolean
+  is_active: boolean
+  last_synced_at: string | null
+}
+
+export type SportApiProvidersListResponse = {
+  status: string
+  total: number
+  last_synced_at: string | null
+  providers: SportApiOddsProviderRow[]
+}
+
+export type SportApiProvidersSyncSummary = {
+  status: string
+  country: string
+  channel: string
+  fetched: number
+  created: number
+  updated: number
+  skipped: number
+  total_in_db: number
+}
+
+export type SportApiProviderDetailResponse = {
+  status: string
+  provider: SportApiOddsProviderRow & {
+    live_odds_from_slug?: string | null
+    live_odds_from_name?: string | null
+    default_bet_slip_link?: string | null
+    primary_color?: string | null
+  }
+  raw?: unknown
+}
+
+export type SportApi1x2Normalized = {
+  market_found: boolean
+  market_key: string
+  market_name_original: string | null
+  home_odd: number | null
+  draw_odd: number | null
+  away_odd: number | null
+  home_label?: string | null
+  draw_label?: string | null
+  away_label?: string | null
+  available_markets?: string[]
+  raw_market?: unknown
+}
+
+export type SportApiOddsTestEventResponse = {
+  status: string
+  message?: string
+  sportapi_event_id: number
+  provider_slug: string
+  working_provider_id?: number
+  candidate_provider_ids?: number[]
+  attempts?: { provider_id: number; status: string; message?: string }[]
+  normalized_1x2?: SportApi1x2Normalized
+  snapshot_id?: number | null
+  raw_available?: boolean
+}
+
+export type SportApiNextRound1x2Row = {
+  fixture_id: number
+  api_fixture_id: number | null
+  kickoff_at: string | null
+  match_label: string
+  sportapi_event_id: number | null
+  provider_id_used: number | null
+  status: string
+  market_found?: boolean | null
+  home_odd: number | null
+  draw_odd: number | null
+  away_odd: number | null
+  available_markets?: string[]
+  error?: string | null
+}
+
+export type SportApiNextRound1x2Response = {
+  status: string
+  message?: string
+  provider_slug: string
+  working_provider_id?: number | null
+  candidate_provider_ids?: number[]
+  total_fixtures: number
+  processed: number
+  skipped_no_mapping: number
+  errors: string[]
+  rows: SportApiNextRound1x2Row[]
+}
+
+export async function getSportApiProviders(): Promise<SportApiProvidersListResponse> {
+  return adminGetJson<SportApiProvidersListResponse>('/api/admin/bookmakers/sportapi/providers')
+}
+
+export async function postSyncSportApiProviders(
+  opts?: AdminRequestOpts,
+): Promise<SportApiProvidersSyncSummary> {
+  return adminPostJson<SportApiProvidersSyncSummary>(
+    '/api/admin/bookmakers/sportapi/providers/sync',
+    {},
+    opts,
+  )
+}
+
+export async function postSyncSportApiProviderDetail(
+  slug: string,
+  opts?: AdminRequestOpts,
+): Promise<SportApiProviderDetailResponse> {
+  return adminPostJson<SportApiProviderDetailResponse>(
+    `/api/admin/bookmakers/sportapi/providers/${encodeURIComponent(slug)}/sync-detail`,
+    {},
+    opts,
+  )
+}
+
+export async function postSportApiOddsTestEvent(
+  body: {
+    sportapi_event_id: number
+    provider_slug?: string
+    provider_id?: number | null
+    save_snapshot?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiOddsTestEventResponse> {
+  return adminPostJson<SportApiOddsTestEventResponse>(
+    '/api/admin/bookmakers/sportapi/odds/test-event',
+    body,
+    opts,
+  )
+}
+
+export async function postSportApiNextRound1x2(
+  body?: { provider_slug?: string; force?: boolean; season_year?: number },
+  opts?: AdminRequestOpts,
+): Promise<SportApiNextRound1x2Response> {
+  return adminPostJson<SportApiNextRound1x2Response>(
+    '/api/admin/bookmakers/sportapi/odds/next-round-1x2',
+    body ?? {},
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 300_000 },
+  )
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(

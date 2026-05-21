@@ -1,22 +1,32 @@
 import { useState } from 'react'
-import { ApiSportsBookmakersPanel } from '../components/bookmakers/ApiSportsBookmakersPanel'
-import { SportApiOddsDiscoveryPanel } from '../components/bookmakers/SportApiOddsDiscoveryPanel'
+import { SportApiNextRound1x2Panel } from '../components/bookmakers/SportApiNextRound1x2Panel'
+import { SportApiProvidersPanel } from '../components/bookmakers/SportApiProvidersPanel'
+import { SportApiSelectedProviderPanel } from '../components/bookmakers/SportApiSelectedProviderPanel'
+import type { SportApiOddsProviderRow } from '../lib/api'
 
 export function Bookmakers() {
-  const [apiSportsTotal, setApiSportsTotal] = useState(0)
+  const [providers, setProviders] = useState<SportApiOddsProviderRow[]>([])
+  const [reloadKey, setReloadKey] = useState(0)
 
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-lg font-semibold tracking-tight text-slate-900">Bookmakers</h1>
+        <h1 className="text-lg font-semibold tracking-tight text-slate-900">SportAPI Bookmakers</h1>
         <p className="mt-1 max-w-3xl text-sm text-slate-600">
-          Discovery quote e bookmaker: lista globale API-Sports e test per evento su SportAPI. Le quote non sono
-          ancora usate nei pronostici o nel consiglio giocata.
+          Provider italiani e quote 1X2 informative da SportAPI. Le quote non alimentano pronostici,
+          consiglio giocata o monitoraggio.
         </p>
       </header>
 
-      <ApiSportsBookmakersPanel onTotalsChange={setApiSportsTotal} />
-      <SportApiOddsDiscoveryPanel apiSportsBookmakersTotal={apiSportsTotal} />
+      <SportApiProvidersPanel
+        key={`prov-${reloadKey}`}
+        onProvidersChange={setProviders}
+      />
+      <SportApiSelectedProviderPanel
+        providers={providers}
+        onRefresh={() => setReloadKey((k) => k + 1)}
+      />
+      <SportApiNextRound1x2Panel />
     </div>
   )
 }
