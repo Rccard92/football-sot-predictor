@@ -17,6 +17,8 @@ import { LineupImpactSimulationCard } from '../sportapi/LineupImpactSimulationCa
 import { SportApiLineupsCard } from '../sportapi/SportApiLineupsCard'
 import { PlayerDbProfilesSection } from './PlayerDbProfilesSection'
 import { PredictionModelSummary } from './PredictionModelSummary'
+import { V20LineupImpactBreakdown } from './V20LineupImpactBreakdown'
+import { V20_MODEL } from '../../lib/modelVersions'
 
 function fmtDate(iso: string) {
   try {
@@ -251,7 +253,13 @@ function ComponentsForTeam({
   )
 }
 
-export function MatchExplanationView({ data }: { data: SotFixtureExplanationResponse }) {
+export function MatchExplanationView({
+  data,
+  onDataRefresh,
+}: {
+  data: SotFixtureExplanationResponse
+  onDataRefresh?: () => void | Promise<void>
+}) {
   const fx = data.fixture as ExplanationFixture
   const summary = data.prediction_summary
 
@@ -345,6 +353,17 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
         />
       </SectionCard>
 
+      {data.active_model_version === V20_MODEL ? (
+        <V20LineupImpactBreakdown
+          fixture={fx}
+          homeSummary={summary.home}
+          awaySummary={summary.away}
+          lineupImpact={data.lineup_impact_simulation}
+          sportapiFetchedAt={data.sportapi_lineups?.fetched_at ?? null}
+          activeModelVersion={data.active_model_version}
+        />
+      ) : null}
+
       {data.prediction_formula_breakdown?.home || data.prediction_formula_breakdown?.away ? (
         <SectionCard title="Formula finale della previsione">
           <div className="space-y-6">
@@ -385,6 +404,8 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
       <LineupImpactSimulationCard
         data={data.lineup_impact_simulation}
         fixtureId={fx.fixture_id}
+        regenerateV20AfterFetch={data.active_model_version === V20_MODEL}
+        onDataRefresh={onDataRefresh}
       />
 
       <PlayerDbProfilesSection fixtureId={fx.fixture_id} />

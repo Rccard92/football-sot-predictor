@@ -193,6 +193,10 @@ class SotPredictionV20LineupImpactService:
             v11_raw = v11.raw_json if isinstance(v11.raw_json, dict) else {}
             merged_raw: dict[str, Any] = {
                 **raw_extra,
+                "lineup_impact_basis": "sportapi_lineup_top5_status",
+                "sportapi_fetched_at": impact.get("sportapi_fetched_at"),
+                "starters_count_home": impact.get("starters_count_home"),
+                "starters_count_away": impact.get("starters_count_away"),
                 "v11_base": dict(v11_raw),
                 "predicted_sot": adjusted,
                 "sportapi_lineups_available": bool(impact.get("sportapi_lineups_available")),

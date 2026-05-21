@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { MatchExplanationView } from '../components/match-explanation/MatchExplanationView'
 import type { FixturesListItem, FixturesListResponse } from '../components/audit/types'
@@ -65,34 +65,35 @@ export function MatchVariableAudit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    const load = async () => {
-      if (!fixtureId) return
-      setLoading(true)
-      setExplanationError(null)
-      try {
-        const base = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
-        const q = new URLSearchParams()
-        if (modelVersion) q.set('model_version', modelVersion)
-        const qsStr = q.toString()
-        const url = `${base}/api/debug/sot/fixture/${fixtureId}/explanation${qsStr ? `?${qsStr}` : ''}`
-        const res = await fetch(url)
-        const parsed = (await res.json()) as SotFixtureExplanationResponse
-        if (!res.ok || parsed.status === 'error') {
-          setData(null)
-          setExplanationError(formatExplanationApiError(parsed))
-          return
-        }
-        setData(parsed)
-      } catch (e) {
+  const reloadExplanation = useCallback(async () => {
+    if (!fixtureId) return
+    setLoading(true)
+    setExplanationError(null)
+    try {
+      const base = import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
+      const q = new URLSearchParams()
+      if (modelVersion) q.set('model_version', modelVersion)
+      const qsStr = q.toString()
+      const url = `${base}/api/debug/sot/fixture/${fixtureId}/explanation${qsStr ? `?${qsStr}` : ''}`
+      const res = await fetch(url)
+      const parsed = (await res.json()) as SotFixtureExplanationResponse
+      if (!res.ok || parsed.status === 'error') {
         setData(null)
-        setExplanationError(formatFetchError(e, `GET .../fixture/${fixtureId}/explanation`))
-      } finally {
-        setLoading(false)
+        setExplanationError(formatExplanationApiError(parsed))
+        return
       }
+      setData(parsed)
+    } catch (e) {
+      setData(null)
+      setExplanationError(formatFetchError(e, `GET .../fixture/${fixtureId}/explanation`))
+    } finally {
+      setLoading(false)
     }
-    void load()
   }, [fixtureId, modelVersion])
+
+  useEffect(() => {
+    void reloadExplanation()
+  }, [reloadExplanation])
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
@@ -166,7 +167,7 @@ export function MatchVariableAudit() {
         ) : null}
 
         {!loading && data?.status === 'ok' && data.fixture && data.prediction_summary ? (
-          <MatchExplanationView data={data} />
+          <MatchExplanationView data={data} onDataRefresh={reloadExplanation} />
         ) : null}
 
         {!loading && data?.status === 'missing' ? (

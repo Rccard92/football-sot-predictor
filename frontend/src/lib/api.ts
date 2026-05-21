@@ -513,6 +513,20 @@ export async function postGenerateV11SotUpcoming(season: number, opts?: AdminReq
   )
 }
 
+/** Rigenera previsioni v2.0 per una singola fixture (dopo aggiornamento formazione SportAPI). */
+export async function postRegenerateV20ForFixture(
+  season: number,
+  fixtureId: number,
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  const timeoutMs = opts?.timeoutMs ?? 120_000
+  return requestPostJsonWithOpts<unknown>(
+    `/api/predictions/sot/serie-a/${season}/fixture/${fixtureId}/regenerate-v20`,
+    {},
+    { ...opts, timeoutMs },
+  )
+}
+
 /** Generazione previsioni v2.0 Lineup Impact (base v1.1 × fattori formazione, solo DB). */
 export async function postGenerateV20LineupImpactUpcoming(
   season: number,

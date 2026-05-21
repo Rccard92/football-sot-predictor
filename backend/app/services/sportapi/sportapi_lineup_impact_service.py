@@ -257,6 +257,9 @@ class LineupImpactSimulationService:
             ),
         )
 
+        home_sa = sportapi_lineups.get("home") or {}
+        away_sa = sportapi_lineups.get("away") or {}
+
         return {
             "status": "ok" if sportapi_lineups.get("available") else "no_lineups",
             "fixture_id": int(fx.id),
@@ -264,6 +267,9 @@ class LineupImpactSimulationService:
             "used_in_model": settings.use_sportapi_lineup_impact_in_model,
             "profiles_missing": profiles_missing,
             "sportapi_lineups_available": bool(sportapi_lineups.get("available")),
+            "sportapi_fetched_at": sportapi_lineups.get("fetched_at"),
+            "starters_count_home": len(home_sa.get("starters") or []),
+            "starters_count_away": len(away_sa.get("starters") or []),
             "confirmed": confirmed,
             "confidence_label": confidence_label,
             "confidence_reasons": confidence_reasons,

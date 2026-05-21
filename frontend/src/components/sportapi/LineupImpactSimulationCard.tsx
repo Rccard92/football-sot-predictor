@@ -1,5 +1,10 @@
 import { useCallback, useState } from 'react'
-import { fetchSportApiLineups, syncSportApiFixtureSquads } from '../../lib/api'
+import {
+  DEFAULT_SEASON,
+  fetchSportApiLineups,
+  postRegenerateV20ForFixture,
+  syncSportApiFixtureSquads,
+} from '../../lib/api'
 import type {
   LineupImpactDefensivePlayer,
   LineupImpactExcludedPlayer,
@@ -268,15 +273,21 @@ export function LineupImpactSimulationCard({
   data,
   showMatching = true,
   fixtureId,
+  season = DEFAULT_SEASON,
+  regenerateV20AfterFetch = false,
   onDataRefresh,
 }: {
   data: LineupImpactSimulationPayload | null | undefined
   showMatching?: boolean
   fixtureId?: number
+  season?: number
+  /** In Audit: dopo fetch SportAPI ricalcola predizioni v2.0 salvate. */
+  regenerateV20AfterFetch?: boolean
   onDataRefresh?: () => void | Promise<void>
 }) {
   const [syncLoading, setSyncLoading] = useState(false)
   const [fetchLoading, setFetchLoading] = useState(false)
+  const [v20Loading, setV20Loading] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const effectiveFixtureId = fixtureId ?? data?.fixture_id
@@ -310,13 +321,34 @@ export function LineupImpactSimulationCard({
     setSyncError(null)
     try {
       await fetchSportApiLineups(fid)
+      if (regenerateV20AfterFetch) {
+        setV20Loading(true)
+        try {
+          const out = (await postRegenerateV20ForFixture(season, fid)) as {
+            status?: string
+            message?: string
+            predictions_ok?: number
+          }
+          if (out?.status === 'error') {
+            throw new Error(out.message ?? 'Rigenerazione v2.0 non riuscita')
+          }
+          if ((out?.predictions_ok ?? 0) === 0 && out?.status !== 'success') {
+            throw new Error(
+              out?.message ??
+                'Manca la base v1.1 per questa partita: genera v1.1 da Admin prima del ricalcolo v2.0.',
+            )
+          }
+        } finally {
+          setV20Loading(false)
+        }
+      }
       await onDataRefresh?.()
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : String(e))
     } finally {
       setFetchLoading(false)
     }
-  }, [effectiveFixtureId, onDataRefresh])
+  }, [effectiveFixtureId, onDataRefresh, regenerateV20AfterFetch, season])
 
   if (!data || data.status === 'error') {
     return null
@@ -360,11 +392,15 @@ export function LineupImpactSimulationCard({
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={fetchLoading || syncLoading}
+              disabled={fetchLoading || syncLoading || v20Loading}
               onClick={() => void runFetchLineups()}
               className="rounded-md border border-violet-300 bg-white px-2 py-1 text-[10px] font-medium text-violet-900 hover:bg-violet-50 disabled:opacity-50"
             >
-              {fetchLoading ? 'Fetch…' : 'Aggiorna formazione SportAPI'}
+              {fetchLoading
+                ? 'Fetch…'
+                : v20Loading
+                  ? 'Ricalcolo v2.0…'
+                  : 'Aggiorna formazione SportAPI'}
             </button>
             <button
               type="button"

@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.2',
+    date: '2026-05-19',
+    title: 'Chiarita logica formazione nel modello 2.0',
+    type: 'patch',
+    summary:
+      'Audit v2.0 più trasparente: formula base × fattori formazione, status Top 5 e ricalcolo automatico dopo aggiornamento SportAPI.',
+    highlights: [
+      'Sezione dedicata v2.0 con base v1.1, fattori offensivo/difensivo e formula moltiplicativa.',
+      'Tabella Top 5 con status lineup (titolare, panchina, assente) e penalità.',
+      'Nota esplicita: la rosa completa non entra nel moltiplicatore, solo lo XI SportAPI sui Top 5.',
+      'Dopo «Aggiorna formazione SportAPI» in Audit si ricalcolano le predizioni v2.0 salvate.',
+      'Metadati audit in raw_json (basis, fetched_at, conteggio titolari).',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.1',
     date: '2026-05-19',
     title: 'Migliorata disposizione tattica e Overall XI',
