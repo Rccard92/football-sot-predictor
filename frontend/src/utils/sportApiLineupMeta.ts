@@ -15,6 +15,23 @@ export function freshnessBadgeClass(level: SportApiFreshnessLevel): string {
   return FRESHNESS_STYLES[level]
 }
 
+/** Kickoff report: 22-05-2026 18:00 (Europe/Rome). */
+export function formatKickoffReport(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const parts = d.toLocaleString('it-IT', {
+    timeZone: 'Europe/Rome',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  return parts.replace(',', '').replace(/\//g, '-')
+}
+
 /** Formato leggibile: 21-05-2026 14:37 (Europe/Rome). */
 export function formatSportApiFetchedAt(iso: string | null | undefined): string | null {
   if (!iso) return null

@@ -421,6 +421,18 @@ def build_upcoming_active_payload(
         row = pred_map.get((int(fx.id), int(team_id), BASELINE_SOT_MODEL_VERSION_V11_SOT))
         return float(row.predicted_sot) if row and row.predicted_sot is not None else None
 
+    from app.services.sportapi.sportapi_lineup_status import (
+        formation_status_from_lineup,
+        load_lineups_by_fixture_ids,
+    )
+    from app.services.sot_betting_advice_service import (
+        advice_context_from_upcoming_lineup,
+        build_betting_advice_compact,
+        build_upcoming_report_markets,
+    )
+
+    lineups_by_fx = load_lineups_by_fixture_ids(db, fx_ids)
+
     matches: list[dict[str, Any]] = []
     for fx in upcoming:
         mv_used = pick_match_version(fx)
@@ -465,16 +477,25 @@ def build_upcoming_active_payload(
         if home and away:
             total_exp = round(float(home["expected_sot"]) + float(away["expected_sot"]), 2)
 
-        betting_compact = None
-        if home and away:
-            from app.services.sot_betting_advice_service import build_betting_advice_compact
+        lineup_status = formation_status_from_lineup(lineups_by_fx.get(int(fx.id)))
+        advice_ctx = advice_context_from_upcoming_lineup(lineup_status)
 
+        betting_compact = None
+        markets: list[dict[str, Any]] = []
+        if home and away:
             home_exp = float(home["expected_sot"])
             away_exp = float(away["expected_sot"])
+            markets = build_upcoming_report_markets(
+                home_exp,
+                away_exp,
+                model_version=mv_used,
+                context=advice_ctx,
+            )
             betting_compact = build_betting_advice_compact(
                 home_exp,
                 away_exp,
                 model_version=mv_used,
+                context=advice_ctx,
             )
 
         matches.append(
@@ -499,6 +520,8 @@ def build_upcoming_active_payload(
                 "away_prediction": away,
                 "total_expected_sot": total_exp,
                 "betting_advice_compact": betting_compact,
+                "markets": markets,
+                "lineup_status": lineup_status,
             },
         )
 

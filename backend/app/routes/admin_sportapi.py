@@ -50,22 +50,23 @@ def _require_sportapi_enabled() -> None:
         )
 
 
-@router.post("/serie-a/{season}/refresh-next-round-lineups", response_model=None)
-def sportapi_refresh_next_round_lineups(
+def _refresh_next_round_lineups_handler(
     season: int,
-    db: Session = Depends(get_db),
-    force: bool = Query(False),
-    sync_squads: bool = Query(False),
-    limit: int = Query(50, ge=1, le=100),
+    db: Session,
+    *,
+    force: bool,
+    sync_squads: bool,
+    regenerate_v20: bool,
+    limit: int,
 ):
-    """Batch: mapping (se serve) + lineups SportAPI per il prossimo turno."""
     _require_sportapi_enabled()
     try:
-        out = SportApiRoundRefreshService().refresh_next_round_lineups(
+        return SportApiRoundRefreshService().refresh_next_round_lineups(
             db,
             int(season),
             force=force,
             sync_squads=sync_squads,
+            regenerate_v20=regenerate_v20,
             limit=limit,
         )
     except (OperationalError, ProgrammingError) as exc:
@@ -73,6 +74,47 @@ def sportapi_refresh_next_round_lineups(
         raise HTTPException(status_code=503, detail="Database error") from exc
     except SportApiDisabledError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/serie-a/{season}/refresh-next-round-lineups", response_model=None)
+def sportapi_refresh_next_round_lineups(
+    season: int,
+    db: Session = Depends(get_db),
+    force: bool = Query(False),
+    sync_squads: bool = Query(False),
+    regenerate_v20: bool = Query(False),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Batch: mapping (se serve) + lineups SportAPI per il prossimo turno."""
+    out = _refresh_next_round_lineups_handler(
+        season,
+        db,
+        force=force,
+        sync_squads=sync_squads,
+        regenerate_v20=regenerate_v20,
+        limit=limit,
+    )
+    return jsonable_encoder(out)
+
+
+@router.post("/lineups/serie-a/{season}/next-round/refresh", response_model=None)
+def sportapi_refresh_next_round_lineups_alias(
+    season: int,
+    db: Session = Depends(get_db),
+    force: bool = Query(False),
+    sync_squads: bool = Query(False),
+    regenerate_v20: bool = Query(False),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Alias batch refresh lineups prossimo turno."""
+    out = _refresh_next_round_lineups_handler(
+        season,
+        db,
+        force=force,
+        sync_squads=sync_squads,
+        regenerate_v20=regenerate_v20,
+        limit=limit,
+    )
     return jsonable_encoder(out)
 
 

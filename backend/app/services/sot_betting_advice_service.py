@@ -257,6 +257,43 @@ def build_fixture_betting_advice(
     }
 
 
+def _market_to_report_row(market: dict[str, Any]) -> dict[str, Any]:
+    stat_ln = market.get("statistical_line")
+    caut_ln = market.get("cautious_line")
+    return {
+        "market_id": market.get("market_type"),
+        "label": "SOT Totale" if market.get("market_type") == "match_total_sot" else str(market.get("market_type")),
+        "predicted_value": market.get("predicted_value"),
+        "statistical_pick": market.get("statistical_pick"),
+        "cautious_pick": market.get("cautious_pick"),
+        "statistical_margin": market.get("statistical_margin"),
+        "cautious_margin": market.get("cautious_margin"),
+        "statistical_risk": market.get("statistical_risk"),
+        "confidence_label": market.get("confidence_label"),
+        "cautious_same_as_statistical": (
+            stat_ln is not None and caut_ln is not None and float(stat_ln) == float(caut_ln)
+        ),
+    }
+
+
+def build_upcoming_report_markets(
+    home_sot: float | None,
+    away_sot: float | None,
+    *,
+    model_version: str | None = None,
+    context: AdviceContext | None = None,
+) -> list[dict[str, Any]]:
+    """Mercati per report rapido upcoming (estendibile oltre SOT Totale)."""
+    full = build_fixture_betting_advice(home_sot, away_sot, model_version=model_version, context=context)
+    markets: list[dict[str, Any]] = []
+    match = full.get("match_total")
+    if isinstance(match, dict) and match.get("predicted_value") is not None:
+        row = _market_to_report_row(match)
+        row["label"] = "SOT Totale"
+        markets.append(row)
+    return markets
+
+
 def build_betting_advice_compact(
     home_sot: float | None,
     away_sot: float | None,
@@ -264,19 +301,32 @@ def build_betting_advice_compact(
     model_version: str | None = None,
     context: AdviceContext | None = None,
 ) -> dict[str, Any] | None:
-    full = build_fixture_betting_advice(home_sot, away_sot, model_version=model_version, context=context)
-    match = full.get("match_total") or {}
-    if match.get("predicted_value") is None:
+    markets = build_upcoming_report_markets(home_sot, away_sot, model_version=model_version, context=context)
+    if not markets:
         return None
+    m0 = markets[0]
     return {
-        "total_expected_sot": match.get("predicted_value"),
-        "statistical_pick": match.get("statistical_pick"),
-        "cautious_pick": match.get("cautious_pick"),
-        "statistical_margin": match.get("statistical_margin"),
-        "cautious_margin": match.get("cautious_margin"),
-        "statistical_risk": match.get("statistical_risk"),
-        "model_label": full.get("model_label"),
+        "total_expected_sot": m0.get("predicted_value"),
+        "statistical_pick": m0.get("statistical_pick"),
+        "cautious_pick": m0.get("cautious_pick"),
+        "statistical_margin": m0.get("statistical_margin"),
+        "cautious_margin": m0.get("cautious_margin"),
+        "statistical_risk": m0.get("statistical_risk"),
+        "confidence_label": m0.get("confidence_label"),
+        "cautious_same_as_statistical": m0.get("cautious_same_as_statistical"),
+        "model_label": model_display_label(model_version),
     }
+
+
+def advice_context_from_upcoming_lineup(
+    lineup_row: dict[str, Any] | None,
+) -> AdviceContext:
+    if not lineup_row or not lineup_row.get("has_lineup"):
+        return AdviceContext(profiles_missing=False)
+    return AdviceContext(
+        sportapi_confirmed=lineup_row.get("confirmed"),
+        sportapi_fetched_at=lineup_row.get("fetched_at"),
+    )
 
 
 def advice_context_from_explanation_payload(

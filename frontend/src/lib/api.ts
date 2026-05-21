@@ -543,14 +543,15 @@ export async function postGenerateV20LineupImpactUpcoming(
 
 export async function postRefreshNextRoundSportApiLineups(
   season: number,
-  opts?: AdminRequestOpts & { force?: boolean; syncSquads?: boolean },
-): Promise<unknown> {
+  opts?: AdminRequestOpts & { force?: boolean; syncSquads?: boolean; regenerateV20?: boolean },
+): Promise<SportApiRoundRefreshSummary> {
   const p = new URLSearchParams()
   if (opts?.force) p.set('force', 'true')
   if (opts?.syncSquads) p.set('sync_squads', 'true')
+  if (opts?.regenerateV20) p.set('regenerate_v20', 'true')
   const q = p.toString()
-  return adminPostJson<unknown>(
-    `/api/admin/sportapi/serie-a/${season}/refresh-next-round-lineups${q ? `?${q}` : ''}`,
+  return adminPostJson<SportApiRoundRefreshSummary>(
+    `/api/admin/sportapi/lineups/serie-a/${season}/next-round/refresh${q ? `?${q}` : ''}`,
     {},
     opts,
   )
@@ -969,6 +970,46 @@ export type UpcomingActiveSidePrediction = {
   breakdown: Record<string, unknown> | null
 }
 
+export type QuickPlayMarket = {
+  market_id: string
+  label: string
+  predicted_value: number | null
+  statistical_pick: string | null
+  cautious_pick: string | null
+  statistical_margin?: number | null
+  cautious_margin?: number | null
+  statistical_risk?: string | null
+  confidence_label?: string | null
+  cautious_same_as_statistical?: boolean
+}
+
+export type LineupStatusPayload = {
+  label: string
+  has_lineup?: boolean
+  confirmed?: boolean | null
+  fetched_at?: string | null
+}
+
+export type SportApiRoundRefreshSummary = {
+  status: string
+  message?: string
+  season?: number
+  total_fixtures: number
+  updated: number
+  skipped_no_mapping: number
+  skipped_recent: number
+  failed: number
+  v20_regenerated?: number
+  estimated_api_calls: number
+  results?: Array<{
+    fixture_id: number
+    status: string
+    error?: string | null
+    mapping_ok?: boolean
+    lineups_ok?: boolean
+  }>
+}
+
 export type UpcomingActiveMatchRow = {
   fixture_id: number
   api_fixture_id: number
@@ -981,6 +1022,8 @@ export type UpcomingActiveMatchRow = {
   home_prediction: UpcomingActiveSidePrediction | null
   away_prediction: UpcomingActiveSidePrediction | null
   total_expected_sot: number | null
+  markets?: QuickPlayMarket[]
+  lineup_status?: LineupStatusPayload | null
   betting_advice_compact?: {
     total_expected_sot: number | null
     statistical_pick: string | null
@@ -988,6 +1031,8 @@ export type UpcomingActiveMatchRow = {
     statistical_margin?: number | null
     cautious_margin?: number | null
     statistical_risk?: string | null
+    confidence_label?: string | null
+    cautious_same_as_statistical?: boolean
     model_label?: string | null
   } | null
 }

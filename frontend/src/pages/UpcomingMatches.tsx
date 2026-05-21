@@ -10,7 +10,7 @@ import {
   type ModelStatusResponse,
   type UpcomingActiveResponse,
 } from '../lib/api'
-import { MatchCard } from '../components/upcoming'
+import { MatchCard, QuickPlayReportSection } from '../components/upcoming'
 import {
   V11_MODEL,
   V20_MODEL,
@@ -282,6 +282,11 @@ export function UpcomingMatches() {
               ) : null}
               {data.matches_count} partite
             </p>
+            <QuickPlayReportSection
+              matches={data.matches}
+              modelVersion={modelInView}
+              onRefreshComplete={load}
+            />
             {data.matches.map((m) => (
               <MatchCard
                 key={m.fixture_id}

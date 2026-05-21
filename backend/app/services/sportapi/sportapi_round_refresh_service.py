@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -17,9 +18,22 @@ from app.services.player_data.squads import sync_team_squads
 from app.services.sot_feature_service import SotFeatureService
 from app.services.sot_prediction_service import _fixture_round_display
 from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
+from app.services.sportapi.sportapi_lineup_status import lineup_row_for_fixture
 from app.services.sportapi.sportapi_matching_service import SportApiMatchingService
 
 logger = logging.getLogger(__name__)
+
+SKIP_FETCH_MINUTES = 10.0
+
+
+def _fetched_at_age_minutes(fetched_at: datetime | None) -> float | None:
+    if fetched_at is None:
+        return None
+    now = datetime.now(timezone.utc)
+    ft = fetched_at
+    if ft.tzinfo is None:
+        ft = ft.replace(tzinfo=timezone.utc)
+    return (now - ft.astimezone(timezone.utc)).total_seconds() / 60.0
 
 
 class SportApiRoundRefreshService:
@@ -59,16 +73,14 @@ class SportApiRoundRefreshService:
             is not None
         )
 
-    def _has_lineups(self, db: Session, fixture_id: int) -> bool:
-        return (
-            db.scalar(
-                select(FixtureProviderLineup.id).where(
-                    FixtureProviderLineup.fixture_id == int(fixture_id),
-                    FixtureProviderLineup.provider_name == PROVIDER_SPORTAPI,
-                ),
-            )
-            is not None
-        )
+    def _apply_lineup_meta(self, row: dict[str, Any], db: Session, fixture_id: int) -> None:
+        lu = lineup_row_for_fixture(db, int(fixture_id))
+        if lu is None:
+            row["lineups_ok"] = False
+            return
+        row["lineups_ok"] = True
+        row["confirmed"] = bool(lu.confirmed)
+        row["fetched_at"] = lu.fetched_at.isoformat() if lu.fetched_at else None
 
     def refresh_next_round_lineups(
         self,
@@ -77,20 +89,46 @@ class SportApiRoundRefreshService:
         *,
         force: bool = False,
         sync_squads: bool = False,
+        regenerate_v20: bool = False,
         limit: int = 50,
     ) -> dict[str, Any]:
         season = self._season_row(db, season_year)
-        if season is None:
-            return {"status": "error", "message": "Stagione non trovata", "fixtures": [], "estimated_api_calls": 0}
+        if not season:
+            return {
+                "status": "error",
+                "message": "Stagione non trovata",
+                "total_fixtures": 0,
+                "updated": 0,
+                "skipped_no_mapping": 0,
+                "skipped_recent": 0,
+                "failed": 0,
+                "estimated_api_calls": 0,
+                "results": [],
+            }
 
         fixtures = self.upcoming_next_round_fixtures(db, season_year, limit=limit)
         if not fixtures:
-            return {"status": "success", "message": "Nessuna fixture upcoming", "fixtures": [], "estimated_api_calls": 0}
+            return {
+                "status": "success",
+                "message": "Nessuna fixture upcoming",
+                "total_fixtures": 0,
+                "updated": 0,
+                "skipped_no_mapping": 0,
+                "skipped_recent": 0,
+                "failed": 0,
+                "estimated_api_calls": 0,
+                "results": [],
+            }
 
         lineup_svc = SportApiLineupService()
         match_svc = SportApiMatchingService()
         results: list[dict[str, Any]] = []
         api_calls = 0
+        updated = 0
+        skipped_no_mapping = 0
+        skipped_recent = 0
+        failed = 0
+        v20_regenerated = 0
 
         for fx in fixtures:
             fid = int(fx.id)
@@ -99,11 +137,13 @@ class SportApiRoundRefreshService:
                 "api_fixture_id": int(fx.api_fixture_id),
                 "status": "ok",
                 "mapping_ok": self._has_mapping(db, fid),
-                "lineups_ok": self._has_lineups(db, fid),
+                "lineups_ok": False,
                 "confirmed": None,
                 "fetched_at": None,
                 "error": None,
+                "v20_regenerated": False,
             }
+            lineup_updated_this_run = False
             try:
                 need_mapping = force or not row["mapping_ok"]
                 if need_mapping:
@@ -111,48 +151,90 @@ class SportApiRoundRefreshService:
                     api_calls += int(debug.get("api_calls") or 1)
                     best = debug.get("best_candidate") if isinstance(debug.get("best_candidate"), dict) else None
                     if best and debug.get("recommendation") == "AUTO_SAFE":
-                        out_map = lineup_svc.confirm_mapping(
-                            db,
-                            fid,
-                            provider_event_id=int(best["provider_event_id"]),
-                            confidence_score=float(best.get("confidence_score") or 90),
-                            matched_by="auto_timestamp_teams",
-                            raw_payload=best,
-                        )
-                        if out_map.get("status") != "error":
-                            row["mapping_ok"] = True
-                    else:
+                        conf = float(best.get("confidence_score") or 90)
+                        if conf >= 90:
+                            out_map = lineup_svc.confirm_mapping(
+                                db,
+                                fid,
+                                provider_event_id=int(best["provider_event_id"]),
+                                confidence_score=conf,
+                                matched_by="auto_timestamp_teams",
+                                raw_payload=best,
+                            )
+                            if out_map.get("status") != "error":
+                                row["mapping_ok"] = True
+                    if not row["mapping_ok"]:
                         row["status"] = "mapping_failed"
                         row["error"] = str(debug.get("message") or "Nessun candidato AUTO_SAFE")
+                        skipped_no_mapping += 1
                         results.append(row)
                         continue
 
-                need_lineups = force or (row["mapping_ok"] and not row["lineups_ok"])
-                if need_lineups and row["mapping_ok"]:
+                self._apply_lineup_meta(row, db, fid)
+
+                if row["mapping_ok"] and row["lineups_ok"] and not force:
+                    lu = lineup_row_for_fixture(db, fid)
+                    age_min = _fetched_at_age_minutes(lu.fetched_at if lu else None)
+                    if age_min is not None and age_min < SKIP_FETCH_MINUTES:
+                        row["status"] = "skipped_recent"
+                        skipped_recent += 1
+                        results.append(row)
+                        continue
+
+                lu = lineup_row_for_fixture(db, fid)
+                should_fetch = force or lu is None
+                if not should_fetch and lu and lu.fetched_at:
+                    age_min = _fetched_at_age_minutes(lu.fetched_at)
+                    should_fetch = age_min is None or age_min >= SKIP_FETCH_MINUTES
+
+                if should_fetch:
                     fetch_out = lineup_svc.fetch_and_persist_lineups(db, fid)
                     api_calls += 1
-                    row["lineups_ok"] = fetch_out.get("status") == "success"
-                    row["confirmed"] = fetch_out.get("confirmed")
-                    row["fetched_at"] = fetch_out.get("fetched_at")
-                    if fetch_out.get("status") != "success":
+                    if fetch_out.get("status") == "success":
+                        row["lineups_ok"] = True
+                        row["confirmed"] = fetch_out.get("confirmed")
+                        row["fetched_at"] = fetch_out.get("fetched_at")
+                        row["status"] = "updated"
+                        lineup_updated_this_run = True
+                        updated += 1
+                    else:
                         row["status"] = "lineups_failed"
                         row["error"] = str(fetch_out.get("message") or "fetch lineups fallito")
-                elif row["mapping_ok"] and row["lineups_ok"]:
-                    row["status"] = "skipped"
+                        failed += 1
+                else:
+                    self._apply_lineup_meta(row, db, fid)
+                    row["status"] = "unchanged"
 
-                if sync_squads:
+                if sync_squads and row["mapping_ok"]:
                     sync_team_squads(db, int(season.year), [int(fx.home_team_id), int(fx.away_team_id)])
+
+                if regenerate_v20 and lineup_updated_this_run:
+                    from app.services.predictions_v20.baseline_v2_0_lineup_impact_service import (
+                        SotPredictionV20LineupImpactService,
+                    )
+
+                    v20_out = SotPredictionV20LineupImpactService().generate_for_fixture(db, fid)
+                    if v20_out.get("status") in ("success", "partial_success"):
+                        row["v20_regenerated"] = True
+                        v20_regenerated += 1
 
             except Exception as exc:  # noqa: BLE001
                 logger.exception("refresh fixture %s", fid)
                 row["status"] = "error"
                 row["error"] = str(exc)[:300]
+                failed += 1
             results.append(row)
 
         return {
             "status": "success",
             "season": int(season_year),
+            "total_fixtures": len(fixtures),
             "fixtures_count": len(fixtures),
+            "updated": updated,
+            "skipped_no_mapping": skipped_no_mapping,
+            "skipped_recent": skipped_recent,
+            "failed": failed,
+            "v20_regenerated": v20_regenerated,
             "estimated_api_calls": api_calls,
             "results": results,
         }

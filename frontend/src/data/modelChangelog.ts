@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.3.0',
+    date: '2026-05-19',
+    title: 'Report rapido giocate',
+    type: 'minor',
+    summary:
+      'In Prossima giornata compare una tabella sintetica con giocate statistiche e caute, stato formazione SportAPI e aggiornamento batch del turno.',
+    highlights: [
+      'Tabella «Report rapido giocate» sopra le card del prossimo turno.',
+      'Colonne: data, match, mercato SOT totale, previsti, statistica, cauta, confidence e formazione.',
+      'Link «Dettaglio» che porta alla card completa della partita.',
+      'Pulsante per aggiornare le formazioni SportAPI di tutto il turno (con conferma).',
+      'Le partite aggiornate negli ultimi 10 minuti vengono saltate per risparmiare chiamate API.',
+      'Opzione di rigenerare le previsioni v2.0 dopo il refresh quando il modello in vista è 2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.2.0',
     date: '2026-05-19',
     title: 'Consiglio giocata SOT',

@@ -7,6 +7,7 @@ from app.services.sot_betting_advice_service import (
     MATCH_TOTAL_LINES,
     advice_confidence_label,
     build_market_advice,
+    build_upcoming_report_markets,
     cautious_line,
     risk_label,
     statistical_line,
@@ -63,3 +64,17 @@ def test_no_statistical_pick_when_too_low():
     out = build_market_advice("match_total_sot", 3.2)
     assert out["statistical_pick"] is None
     assert "Nessuna" in " ".join(out["reasons"])
+
+
+def test_build_upcoming_report_markets_767():
+    markets = build_upcoming_report_markets(3.5, 4.17)
+    assert len(markets) == 1
+    m = markets[0]
+    assert m["market_id"] == "match_total_sot"
+    assert m["label"] == "SOT Totale"
+    assert m["predicted_value"] == 7.67
+    assert m["statistical_pick"] == "Over 7.5 SOT"
+    assert m["statistical_risk"] == "Molto tirata"
+    assert m["cautious_pick"] == "Over 6.5 SOT"
+    assert m["cautious_same_as_statistical"] is False
+    assert m["confidence_label"] is not None

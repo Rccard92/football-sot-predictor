@@ -38,7 +38,10 @@ export function MatchCard({
     (away?.pre_match_readiness as Record<string, string> | undefined)
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+    <article
+      id={`match-${match.fixture_id}`}
+      className="scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm"
+    >
       <div className="border-b border-slate-100 bg-gradient-to-b from-slate-50/80 to-white px-5 py-5 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
