@@ -28,6 +28,7 @@ from app.models.team_sot_feature import TeamSotFeature
 from app.models.team_sot_prediction_adjustment import TeamSotPredictionAdjustment
 from app.models.team_sot_prediction import TeamSotPrediction
 from app.models.tracked_betting_pick import TrackedBettingPick
+from app.models.odds_bookmaker import OddsBookmaker
 
 __all__ = [
     "Base",
@@ -61,4 +62,5 @@ __all__ = [
     "TeamSotPredictionAdjustment",
     "TeamSotPrediction",
     "TrackedBettingPick",
+    "OddsBookmaker",
 ]

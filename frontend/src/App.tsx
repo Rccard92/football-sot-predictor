@@ -13,6 +13,7 @@ import { ModelLegend } from './pages/ModelLegend'
 import { Teams } from './pages/Teams'
 import { Changelog } from './pages/Changelog'
 import { BetMonitoring } from './pages/BetMonitoring'
+import { Bookmakers } from './pages/Bookmakers'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<UpcomingMatches />} />
           <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
+          <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/data-health" element={<DataHealth />} />

@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.6.0',
+    date: '2026-05-19',
+    title: 'Bookmakers discovery',
+    type: 'minor',
+    summary:
+      'Aggiunta la nuova sezione Bookmakers per recuperare e consultare i bookmaker disponibili da API-Sports.',
+    highlights: [
+      'Aggiunta tab Bookmakers.',
+      'Aggiunto recupero bookmakers da API-Sports.',
+      'Aggiunto salvataggio bookmakers nel database.',
+      'Aggiunta tabella consultabile con ricerca e filtri.',
+      'Preparata la base per la futura integrazione quote e mercati.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.5.0',
     date: '2026-05-19',
     title: 'Pronostico definitivo pre-match',

@@ -677,6 +677,42 @@ export async function postRefreshTrackedPickResults(
   )
 }
 
+export type OddsBookmakerRow = {
+  id: number
+  provider: string
+  provider_bookmaker_id: number
+  name: string
+  is_selected: boolean
+  is_active: boolean
+  last_synced_at: string | null
+}
+
+export type AdminBookmakersListResponse = {
+  status: string
+  total: number
+  last_synced_at: string | null
+  bookmakers: OddsBookmakerRow[]
+}
+
+export type BookmakersSyncSummary = {
+  status: string
+  fetched_count: number
+  created_count: number
+  updated_count: number
+  skipped_count?: number
+  total_saved: number
+  last_synced_at: string
+  errors: string[]
+}
+
+export async function getAdminBookmakers(): Promise<AdminBookmakersListResponse> {
+  return adminGetJson<AdminBookmakersListResponse>('/api/admin/bookmakers')
+}
+
+export async function postSyncBookmakers(opts?: AdminRequestOpts): Promise<BookmakersSyncSummary> {
+  return adminPostJson<BookmakersSyncSummary>('/api/admin/bookmakers/sync', {}, opts)
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(
