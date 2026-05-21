@@ -11,6 +11,7 @@ import {
 import type { LineupImpactSimulationPayload } from '../../types/lineupImpact'
 import type { PlayerDbProfileRow } from '../../types/playerDbProfiles'
 import type { SportApiLineupsAuditPayload, SportApiLineupsStoredResponse } from '../../types/sportapi'
+import { LineupRefreshImpactDetail } from '../upcoming/LineupRefreshImpactDetail'
 import { SportApiLineupSide } from './SportApiLineupSide'
 
 const EMPTY_MISSING = { injured: [], suspended: [], other: [] }
@@ -176,6 +177,16 @@ export function SportApiLineupsCard({
         ) : null}
         {refresh.successMessage ? (
           <p className="mt-1 text-[10px] text-emerald-800">{refresh.successMessage}</p>
+        ) : null}
+        {refresh.lastImpact ? (
+          <div className="mt-2 rounded-lg border border-violet-100 bg-white/80 px-2 py-2">
+            <LineupRefreshImpactDetail
+              impact={{
+                has_comparison: true,
+                ...refresh.lastImpact,
+              }}
+            />
+          </div>
         ) : null}
         {refresh.error ? <p className="mt-1 text-[10px] text-rose-700">{refresh.error}</p> : null}
         {data?.fetched_at && (data.provider_event_id != null || profilesLoading) ? (

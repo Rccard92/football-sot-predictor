@@ -433,6 +433,10 @@ def build_upcoming_active_payload(
 
     lineups_by_fx = load_lineups_by_fixture_ids(db, fx_ids)
 
+    from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
+
+    impacts_by_fx = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(db, fx_ids)
+
     matches: list[dict[str, Any]] = []
     for fx in upcoming:
         mv_used = pick_match_version(fx)
@@ -522,6 +526,8 @@ def build_upcoming_active_payload(
                 "betting_advice_compact": betting_compact,
                 "markets": markets,
                 "lineup_status": lineup_status,
+                "lineup_refresh_impact": impacts_by_fx.get(int(fx.id))
+                or {"has_comparison": False},
             },
         )
 

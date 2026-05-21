@@ -6,6 +6,7 @@ import {
   pickShortLabel,
   riskBadgeClass,
 } from '../../utils/bettingAdviceDisplay'
+import { LineupRefreshImpactBadge } from './LineupRefreshImpactBadge'
 import { formatNum } from './format'
 
 export function QuickPlayReportMobile({ matches }: { matches: UpcomingActiveMatchRow[] }) {
@@ -50,6 +51,10 @@ export function QuickPlayReportMobile({ matches }: { matches: UpcomingActiveMatc
                 <p className="text-[10px] text-slate-500">Cauta</p>
                 <p className="font-semibold text-emerald-900">{pickShortLabel(market?.cautious_pick)}</p>
               </div>
+            </div>
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-slate-500">Variazione</p>
+              <LineupRefreshImpactBadge impact={m.lineup_refresh_impact} showReason compact />
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <span className={`rounded-full border px-2 py-0.5 text-[10px] ${confidenceBadgeClass(market?.confidence_label)}`}>

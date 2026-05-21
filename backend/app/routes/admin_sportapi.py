@@ -18,6 +18,7 @@ from app.services.sportapi.sportapi_lineup_impact_service import LineupImpactSim
 from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
 from app.services.sportapi.sportapi_matching_service import SportApiMatchingService
 from app.services.sportapi.sportapi_player_matching_service import SportApiPlayerMatchingService
+from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
 from app.services.sportapi.sportapi_round_refresh_service import SportApiRoundRefreshService
 
 logger = logging.getLogger(__name__)
@@ -202,26 +203,50 @@ def sportapi_confirm_mapping(
 def sportapi_fetch_lineups(
     fixture_id: int,
     db: Session = Depends(get_db),
+    track_impact: bool = Query(False),
+    regenerate_v20: bool = Query(True),
 ):
-    """Fetch lineups per event_id mappato (1 chiamata API)."""
+    """Fetch lineups per event_id mappato (1 chiamata API). Con track_impact: snapshot pre/post e delta v2.0."""
     _require_sportapi_enabled()
     try:
-        out = SportApiLineupService().fetch_and_persist_lineups(db, int(fixture_id))
+        if track_impact:
+            out = LineupRefreshImpactOrchestrator().refresh_fixture_with_impact(
+                db,
+                int(fixture_id),
+                regenerate_v20=regenerate_v20,
+            )
+        else:
+            out = SportApiLineupService().fetch_and_persist_lineups(db, int(fixture_id))
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("sportapi fetch lineups DB error")
         raise HTTPException(status_code=503, detail="Database error") from exc
     except SportApiDisabledError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if out.get("status") == "error":
-        msg = str(out.get("message") or "")
-        not_found = _fixture_not_found_message(out)
+    refresh_result = out.get("refresh_result") if track_impact else out
+    status = str((refresh_result or out).get("status") or out.get("status") or "")
+    if status == "error":
+        msg = str((refresh_result or out).get("message") or out.get("message") or "")
+        not_found = _fixture_not_found_message(refresh_result or out)
         if not_found:
             raise HTTPException(status_code=404, detail=not_found)
         if "non trovato" in msg.lower():
             raise HTTPException(status_code=404, detail=msg)
         raise HTTPException(status_code=502, detail=msg)
     return jsonable_encoder(out)
+
+
+@router.get("/lineups/{fixture_id}/last-refresh-impact", response_model=None)
+def sportapi_last_refresh_impact(
+    fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Ultimo confronto pre/post refresh formazioni per la fixture."""
+    latest = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(db, [int(fixture_id)])
+    row = latest.get(int(fixture_id))
+    if not row:
+        return jsonable_encoder({"has_comparison": False, "fixture_id": int(fixture_id)})
+    return jsonable_encoder({"has_comparison": True, "fixture_id": int(fixture_id), **row})
 
 
 @router.get("/lineups/{fixture_id}", response_model=None)

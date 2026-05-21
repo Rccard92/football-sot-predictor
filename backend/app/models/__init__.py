@@ -5,6 +5,7 @@ from app.models.fixture_lineup_player import FixtureLineupPlayer
 from app.models.fixture_missing_player import FixtureMissingPlayer
 from app.models.fixture_provider_lineup import FixtureProviderLineup
 from app.models.fixture_provider_lineup_player import FixtureProviderLineupPlayer
+from app.models.fixture_lineup_refresh_impact import FixtureLineupRefreshImpact
 from app.models.fixture_provider_mapping import FixtureProviderMapping
 from app.models.fixture_player_stat import FixturePlayerStat
 from app.models.fixture_team_stat import FixtureTeamStat
@@ -35,6 +36,7 @@ __all__ = [
     "FixtureMissingPlayer",
     "FixtureProviderLineup",
     "FixtureProviderLineupPlayer",
+    "FixtureLineupRefreshImpact",
     "FixtureProviderMapping",
     "FixturePlayerStat",
     "FixtureTeamStat",

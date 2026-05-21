@@ -990,6 +990,63 @@ export type LineupStatusPayload = {
   fetched_at?: string | null
 }
 
+export type LineupRefreshImpactReason = {
+  text: string
+  player_name?: string | null
+  previous_status?: string | null
+  new_status?: string | null
+  impact_type?: string | null
+  affected_team?: string | null
+  affected_prediction?: string | null
+  estimated_sot_impact?: number | null
+}
+
+export type LineupRefreshImpactDelta = {
+  direction_total?: string | null
+  delta_total_sot?: number | null
+  direction_home?: string | null
+  delta_home_sot?: number | null
+  direction_away?: string | null
+  delta_away_sot?: number | null
+  before_total_sot?: number | null
+  after_total_sot?: number | null
+  before_home_sot?: number | null
+  after_home_sot?: number | null
+  before_away_sot?: number | null
+  after_away_sot?: number | null
+  main_reason?: string | null
+  severity?: string | null
+  reasons?: LineupRefreshImpactReason[]
+}
+
+export type LineupRefreshImpactPayload = LineupRefreshImpactDelta & {
+  has_comparison: boolean
+  created_at?: string | null
+}
+
+export type SportApiFetchLineupsResponse = {
+  status: string
+  message?: string
+  fixture_id?: number
+  refresh_result?: Record<string, unknown>
+  impact_delta?: LineupRefreshImpactDelta | null
+  impact_id?: number | null
+}
+
+export type SportApiRoundRefreshResultRow = {
+  fixture_id: number
+  status: string
+  error?: string | null
+  mapping_ok?: boolean
+  lineups_ok?: boolean
+  match_name?: string | null
+  before_total_sot?: number | null
+  after_total_sot?: number | null
+  delta_total_sot?: number | null
+  direction_total?: string | null
+  main_reason?: string | null
+}
+
 export type SportApiRoundRefreshSummary = {
   status: string
   message?: string
@@ -1000,14 +1057,11 @@ export type SportApiRoundRefreshSummary = {
   skipped_recent: number
   failed: number
   v20_regenerated?: number
+  up_count?: number
+  down_count?: number
+  flat_count?: number
   estimated_api_calls: number
-  results?: Array<{
-    fixture_id: number
-    status: string
-    error?: string | null
-    mapping_ok?: boolean
-    lineups_ok?: boolean
-  }>
+  results?: SportApiRoundRefreshResultRow[]
 }
 
 export type UpcomingActiveMatchRow = {
@@ -1024,6 +1078,7 @@ export type UpcomingActiveMatchRow = {
   total_expected_sot: number | null
   markets?: QuickPlayMarket[]
   lineup_status?: LineupStatusPayload | null
+  lineup_refresh_impact?: LineupRefreshImpactPayload | null
   betting_advice_compact?: {
     total_expected_sot: number | null
     statistical_pick: string | null
@@ -1440,11 +1495,23 @@ export async function confirmSportApiMapping(
   return adminPostJson<unknown>(`/api/admin/sportapi/mappings/${fixtureId}/confirm`, body, opts)
 }
 
-export async function fetchSportApiLineups(fixtureId: number, opts?: AdminRequestOpts): Promise<unknown> {
-  return adminPostJson<unknown>(`/api/admin/sportapi/lineups/${fixtureId}/fetch`, {}, {
-    ...opts,
-    timeoutMs: opts?.timeoutMs ?? 60_000,
-  })
+export async function fetchSportApiLineups(
+  fixtureId: number,
+  opts?: AdminRequestOpts & { trackImpact?: boolean; regenerateV20?: boolean },
+): Promise<SportApiFetchLineupsResponse> {
+  const p = new URLSearchParams()
+  if (opts?.trackImpact) p.set('track_impact', 'true')
+  if (opts?.regenerateV20 === false) p.set('regenerate_v20', 'false')
+  else if (opts?.trackImpact || opts?.regenerateV20) p.set('regenerate_v20', 'true')
+  const q = p.toString()
+  return adminPostJson<SportApiFetchLineupsResponse>(
+    `/api/admin/sportapi/lineups/${fixtureId}/fetch${q ? `?${q}` : ''}`,
+    {},
+    {
+      ...opts,
+      timeoutMs: opts?.timeoutMs ?? 120_000,
+    },
+  )
 }
 
 export async function getSportApiLineups(

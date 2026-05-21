@@ -6,6 +6,7 @@ import {
   pickShortLabel,
   riskBadgeClass,
 } from '../../utils/bettingAdviceDisplay'
+import { LineupRefreshImpactBadge } from './LineupRefreshImpactBadge'
 import { formatNum, formatSignedNum } from './format'
 
 function TeamLogosMatch({ match }: { match: UpcomingActiveMatchRow }) {
@@ -79,6 +80,7 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
             <th className="px-3 py-2">Cauta</th>
             <th className="px-3 py-2">Confidence</th>
             <th className="px-3 py-2">Formazione</th>
+            <th className="px-3 py-2">Variazione</th>
             <th className="px-3 py-2">Azione</th>
           </tr>
         </thead>
@@ -114,6 +116,9 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
                   >
                     {m.lineup_status?.label ?? '—'}
                   </span>
+                </td>
+                <td className="px-3 py-2.5">
+                  <LineupRefreshImpactBadge impact={m.lineup_refresh_impact} showReason />
                 </td>
                 <td className="px-3 py-2.5">
                   <a

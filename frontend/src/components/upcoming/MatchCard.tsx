@@ -3,6 +3,7 @@ import type {
   UpcomingActiveMatchRow,
 } from '../../lib/api'
 import { V20_MODEL, labelForModelVersion } from '../../lib/modelVersions'
+import { LineupRefreshImpactDetail } from './LineupRefreshImpactDetail'
 import { formatKickoff, formatNum, formatSignedNum } from './format'
 import { Link } from 'react-router-dom'
 
@@ -122,6 +123,16 @@ export function MatchCard({
             ) : null}
           </div>
         </div>
+        {isV20 ? (
+          <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/30 px-3 py-3">
+            <p className="text-xs font-semibold text-violet-950">
+              Variazione dopo ultimo aggiornamento formazioni
+            </p>
+            <div className="mt-2">
+              <LineupRefreshImpactDetail impact={match.lineup_refresh_impact} />
+            </div>
+          </div>
+        ) : null}
         {match.betting_advice_compact ? (
           <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2 text-xs text-slate-800">
             <p className="font-medium text-indigo-950">Consiglio giocata SOT (totale)</p>

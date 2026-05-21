@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { DEFAULT_SEASON, postRefreshNextRoundSportApiLineups, type SportApiRoundRefreshSummary, type UpcomingActiveMatchRow } from '../../lib/api'
 import { V20_MODEL } from '../../lib/modelVersions'
+import { formatImpactLine } from '../../utils/lineupRefreshImpactDisplay'
 import { QuickPlayReportMobile } from './QuickPlayReportMobile'
 import { QuickPlayReportTable } from './QuickPlayReportTable'
 
@@ -46,6 +47,10 @@ export function QuickPlayReportSection({
     (r) => r.status === 'error' || r.status === 'lineups_failed' || r.status === 'mapping_failed',
   )
 
+  const impactRows = (refreshResult?.results ?? []).filter(
+    (r) => r.direction_total && (r.status === 'updated' || r.status === 'ok'),
+  )
+
   return (
     <section className="overflow-hidden rounded-2xl border border-indigo-200/80 bg-white shadow-sm">
       <div className="border-b border-indigo-100 bg-indigo-50/40 px-4 py-3">
@@ -81,7 +86,23 @@ export function QuickPlayReportSection({
               {refreshResult.v20_regenerated != null && refreshResult.v20_regenerated > 0 ? (
                 <li>Previsioni v2.0 rigenerate: {refreshResult.v20_regenerated}</li>
               ) : null}
+              {refreshResult.up_count != null ? (
+                <li>
+                  {refreshResult.up_count} pronostici saliti · {refreshResult.down_count ?? 0} scesi ·{' '}
+                  {refreshResult.flat_count ?? 0} stabili
+                </li>
+              ) : null}
             </ul>
+            {impactRows.length > 0 ? (
+              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto border-t border-emerald-200/80 pt-2 text-[10px]">
+                {impactRows.map((r) => (
+                  <li key={r.fixture_id}>
+                    <span className="font-medium">{r.match_name ?? `Fixture ${r.fixture_id}`}</span>:{' '}
+                    {formatImpactLine(r.direction_total, r.delta_total_sot, r.main_reason)}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : null}
         {errors.length > 0 ? (

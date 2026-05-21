@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.constants import FINISHED_STATUSES
-from app.models import Fixture, FixtureProviderLineup, FixtureProviderMapping, League, Season
+from app.models import Fixture, FixtureProviderLineup, FixtureProviderMapping, League, Season, Team
+from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
+from app.services.sportapi.lineup_refresh_snapshot_service import build_snapshot
 from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI
 from app.services.ingestion_service import IngestionService
 from app.services.player_data.squads import sync_team_squads
@@ -129,6 +131,10 @@ class SportApiRoundRefreshService:
         skipped_recent = 0
         failed = 0
         v20_regenerated = 0
+        up_count = 0
+        down_count = 0
+        flat_count = 0
+        impact_orch = LineupRefreshImpactOrchestrator()
 
         for fx in fixtures:
             fid = int(fx.id)
@@ -144,6 +150,10 @@ class SportApiRoundRefreshService:
                 "v20_regenerated": False,
             }
             lineup_updated_this_run = False
+            before_snapshot: dict[str, Any] | None = None
+            home_t = db.get(Team, int(fx.home_team_id))
+            away_t = db.get(Team, int(fx.away_team_id))
+            row["match_name"] = f"{home_t.name if home_t else 'Casa'} – {away_t.name if away_t else 'Trasferta'}"
             try:
                 need_mapping = force or not row["mapping_ok"]
                 if need_mapping:
@@ -187,6 +197,9 @@ class SportApiRoundRefreshService:
                     age_min = _fetched_at_age_minutes(lu.fetched_at)
                     should_fetch = age_min is None or age_min >= SKIP_FETCH_MINUTES
 
+                if should_fetch and regenerate_v20:
+                    before_snapshot = build_snapshot(db, fid)
+
                 if should_fetch:
                     fetch_out = lineup_svc.fetch_and_persist_lineups(db, fid)
                     api_calls += 1
@@ -218,6 +231,26 @@ class SportApiRoundRefreshService:
                         row["v20_regenerated"] = True
                         v20_regenerated += 1
 
+                if regenerate_v20 and lineup_updated_this_run and before_snapshot is not None:
+                    impact_delta = impact_orch.finalize_impact_after_refresh(
+                        db,
+                        fid,
+                        before_snapshot,
+                    )
+                    if impact_delta:
+                        row["before_total_sot"] = impact_delta.get("before_total_sot")
+                        row["after_total_sot"] = impact_delta.get("after_total_sot")
+                        row["delta_total_sot"] = impact_delta.get("delta_total_sot")
+                        row["direction_total"] = impact_delta.get("direction_total")
+                        row["main_reason"] = impact_delta.get("main_reason")
+                        ddir = str(impact_delta.get("direction_total") or "")
+                        if ddir == "UP":
+                            up_count += 1
+                        elif ddir == "DOWN":
+                            down_count += 1
+                        elif ddir == "FLAT":
+                            flat_count += 1
+
             except Exception as exc:  # noqa: BLE001
                 logger.exception("refresh fixture %s", fid)
                 row["status"] = "error"
@@ -235,6 +268,9 @@ class SportApiRoundRefreshService:
             "skipped_recent": skipped_recent,
             "failed": failed,
             "v20_regenerated": v20_regenerated,
+            "up_count": up_count,
+            "down_count": down_count,
+            "flat_count": flat_count,
             "estimated_api_calls": api_calls,
             "results": results,
         }

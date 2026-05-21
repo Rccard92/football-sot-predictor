@@ -46,6 +46,22 @@ export const MODEL_CHANGELOG: ChangelogEntry[] = [
     visible_to_user: true,
   },
   {
+    version: '2.3.1',
+    date: '2026-05-19',
+    title: 'Variazione pronostico dopo refresh formazioni',
+    type: 'patch',
+    summary:
+      'Aggiunto il confronto pre/post aggiornamento SportAPI per capire subito se e perché il pronostico SOT è salito, sceso o rimasto stabile.',
+    highlights: [
+      'Salvato snapshot della previsione prima e dopo il refresh formazioni.',
+      'Aggiunta freccia UP/DOWN/FLAT nella tabella Report rapido.',
+      'Aggiunti motivi leggibili della variazione.',
+      'Il refresh globale del turno mostra quante partite sono salite, scese o rimaste stabili.',
+      'La variazione confronta anche cambi nei titolari, missingPlayers e fattori lineup.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.2.0',
     date: '2026-05-19',
     title: 'Consiglio giocata SOT',

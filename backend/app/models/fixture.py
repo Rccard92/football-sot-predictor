@@ -65,3 +65,8 @@ class Fixture(Base, TimestampMixin):
     availability_events = relationship("PlayerAvailabilityEvent", back_populates="fixture")
     provider_mappings = relationship("FixtureProviderMapping", back_populates="fixture", cascade="all, delete-orphan")
     provider_lineups = relationship("FixtureProviderLineup", back_populates="fixture", cascade="all, delete-orphan")
+    lineup_refresh_impacts = relationship(
+        "FixtureLineupRefreshImpact",
+        back_populates="fixture",
+        cascade="all, delete-orphan",
+    )
