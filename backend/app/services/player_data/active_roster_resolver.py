@@ -8,7 +8,7 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Player, PlayerTeamSeason
+from app.models import PlayerTeamSeason
 
 RosterPlayerStatus = Literal["ACTIVE", "TRANSFERRED_OUT", "NOT_IN_CURRENT_SQUAD", "UNKNOWN"]
 
@@ -110,6 +110,7 @@ class ActiveRosterResolver:
         api_player_id: int,
         ctx: TeamRosterContext,
         legacy_team_id: int | None = None,
+        allow_legacy_active: bool = True,
     ) -> RosterStatusResult:
         api_pid = int(api_player_id)
 
@@ -126,10 +127,38 @@ class ActiveRosterResolver:
                 )
             return RosterStatusResult(status="NOT_IN_CURRENT_SQUAD", roster_source="player_team_seasons")
 
-        if legacy_team_id is not None and int(legacy_team_id) == int(ctx.internal_team_id):
+        if (
+            allow_legacy_active
+            and legacy_team_id is not None
+            and int(legacy_team_id) == int(ctx.internal_team_id)
+        ):
             return RosterStatusResult(status="ACTIVE", roster_source="legacy_team_id")
 
         return RosterStatusResult(status="UNKNOWN", roster_source=None)
+
+    def _classify_candidate(
+        self,
+        c: dict[str, Any],
+        ctx: TeamRosterContext,
+        *,
+        allow_legacy_active: bool,
+    ) -> dict[str, Any] | None:
+        api_pid = c.get("api_player_id")
+        if api_pid is None:
+            return None
+        res = self.resolve_player(
+            api_player_id=int(api_pid),
+            ctx=ctx,
+            legacy_team_id=c.get("legacy_team_id"),
+            allow_legacy_active=allow_legacy_active,
+        )
+        entry = {**c, "roster_status": res.status, "roster_source": res.roster_source}
+        if res.status in _EXCLUSION_STATUSES:
+            entry["exclusion_reason"] = _exclusion_reason_it(
+                res.status,
+                other_team=res.active_on_other_team,
+            )
+        return entry
 
     def filter_top_candidates(
         self,
@@ -138,10 +167,11 @@ class ActiveRosterResolver:
         ctx: TeamRosterContext,
         top_n: int = 5,
         scan_depth: int = 20,
+        allow_legacy_active: bool = False,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         candidates: dict con player_id, api_player_id, player_name, team_sot_share_pct, shots_on_target_per90, ...
-        Ritorna (top_for_impact, excluded_players).
+        Ritorna (top_for_impact, excluded_players dalla finestra scan_depth).
         """
         sorted_cands = sorted(
             candidates,
@@ -154,29 +184,15 @@ class ActiveRosterResolver:
         unknown_pool: list[dict[str, Any]] = []
 
         for c in sorted_cands:
-            api_pid = c.get("api_player_id")
-            if api_pid is None:
+            entry = self._classify_candidate(c, ctx, allow_legacy_active=allow_legacy_active)
+            if entry is None:
                 continue
-            res = self.resolve_player(
-                api_player_id=int(api_pid),
-                ctx=ctx,
-                legacy_team_id=c.get("legacy_team_id"),
-            )
-            entry = {**c, "roster_status": res.status, "roster_source": res.roster_source}
-            if res.status in _EXCLUSION_STATUSES:
-                excluded.append(
-                    {
-                        **entry,
-                        "exclusion_reason": _exclusion_reason_it(
-                            res.status,
-                            other_team=res.active_on_other_team,
-                        ),
-                    },
-                )
+            if entry.get("roster_status") in _EXCLUSION_STATUSES:
+                excluded.append(entry)
                 continue
-            if res.status == "ACTIVE":
+            if entry.get("roster_status") == "ACTIVE":
                 active_pool.append(entry)
-            elif res.status == "UNKNOWN":
+            elif entry.get("roster_status") == "UNKNOWN":
                 unknown_pool.append(entry)
 
         top: list[dict[str, Any]] = []
@@ -191,3 +207,36 @@ class ActiveRosterResolver:
                 top.append({**c, "included_as_unknown": True, "roster_status": "UNKNOWN"})
 
         return top, excluded
+
+    def collect_excluded_players(
+        self,
+        *,
+        candidates: list[dict[str, Any]],
+        ctx: TeamRosterContext,
+        min_share_pct: float = 3.0,
+        allow_legacy_active: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Tutti i candidati con status escluso e share minima (solo se rosa sincronizzata)."""
+        if not ctx.has_squad_data:
+            return []
+
+        excluded: list[dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        for c in candidates:
+            share = float(c.get("team_sot_share_pct") or 0)
+            if share < min_share_pct:
+                continue
+            entry = self._classify_candidate(c, ctx, allow_legacy_active=allow_legacy_active)
+            if entry is None:
+                continue
+            if entry.get("roster_status") not in _EXCLUSION_STATUSES:
+                continue
+            pid = entry.get("player_id")
+            if pid is not None and int(pid) in seen_ids:
+                continue
+            if pid is not None:
+                seen_ids.add(int(pid))
+            excluded.append(entry)
+
+        excluded.sort(key=lambda x: float(x.get("team_sot_share_pct") or 0), reverse=True)
+        return excluded

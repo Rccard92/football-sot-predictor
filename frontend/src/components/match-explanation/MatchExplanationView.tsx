@@ -390,7 +390,10 @@ export function MatchExplanationView({ data }: { data: SotFixtureExplanationResp
         apiFixtureId={fx.api_fixture_id}
       />
 
-      <LineupImpactSimulationCard data={data.lineup_impact_simulation} />
+      <LineupImpactSimulationCard
+        data={data.lineup_impact_simulation}
+        fixtureId={fx.fixture_id}
+      />
 
       {(data.applied_variable_trace?.home?.length ?? 0) > 0 || (data.applied_variable_trace?.away?.length ?? 0) > 0 ? (
         <SectionCard title="Registro variabili applicate (trace)">

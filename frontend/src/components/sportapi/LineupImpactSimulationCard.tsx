@@ -1,3 +1,5 @@
+import { useCallback, useState } from 'react'
+import { syncSportApiFixtureSquads } from '../../lib/api'
 import type {
   LineupImpactDefensivePlayer,
   LineupImpactExcludedPlayer,
@@ -128,7 +130,10 @@ function ExcludedRow({ player }: { player: LineupImpactExcludedPlayer }) {
       {player.team_sot_share_pct != null ? (
         <span className="font-mono text-slate-500"> — share {player.team_sot_share_pct.toFixed(1)}%</span>
       ) : null}
-      <span className="text-slate-500"> — {player.exclusion_reason ?? 'escluso'}</span>
+      <span className="text-slate-500">
+        {' '}
+        — escluso: {player.exclusion_reason ?? 'non più in rosa attuale'}
+      </span>
     </li>
   )
 }
@@ -262,10 +267,40 @@ function SideImpactBlock({ side }: { side: LineupImpactSideSimulation }) {
 export function LineupImpactSimulationCard({
   data,
   showMatching = true,
+  fixtureId,
+  onDataRefresh,
 }: {
   data: LineupImpactSimulationPayload | null | undefined
   showMatching?: boolean
+  fixtureId?: number
+  onDataRefresh?: () => void | Promise<void>
 }) {
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+
+  const effectiveFixtureId = fixtureId ?? data?.fixture_id
+  const rosterMissing =
+    data?.roster_filter_active === false ||
+    data?.home?.roster_sync_hint === 'missing' ||
+    data?.away?.roster_sync_hint === 'missing' ||
+    data?.home?.roster_sync_hint === 'stale' ||
+    data?.away?.roster_sync_hint === 'stale'
+
+  const runSyncSquads = useCallback(async () => {
+    const fid = effectiveFixtureId
+    if (fid == null) return
+    setSyncLoading(true)
+    setSyncError(null)
+    try {
+      await syncSportApiFixtureSquads(fid)
+      await onDataRefresh?.()
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSyncLoading(false)
+    }
+  }, [effectiveFixtureId, onDataRefresh])
+
   if (!data || data.status === 'error') {
     return null
   }
@@ -303,6 +338,24 @@ export function LineupImpactSimulationCard({
           <p className="mt-1 text-[11px] text-amber-800">
             Profili player_sot_profiles assenti per questa stagione — eseguire build profili da Admin.
           </p>
+        ) : null}
+        {rosterMissing ? (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950">
+            <p>
+              Rosa attuale non aggiornata: il filtro giocatori trasferiti potrebbe non essere attivo.
+            </p>
+            {effectiveFixtureId != null ? (
+              <button
+                type="button"
+                disabled={syncLoading}
+                onClick={() => void runSyncSquads()}
+                className="mt-2 rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+              >
+                {syncLoading ? 'Sincronizzazione…' : 'Aggiorna rosa attuale API-Sports'}
+              </button>
+            ) : null}
+            {syncError ? <p className="mt-1 text-rose-700">{syncError}</p> : null}
+          </div>
         ) : null}
         {(data.confidence_reasons?.length ?? 0) > 0 ? (
           <ul className="mt-2 list-inside list-disc text-[11px] text-slate-600">

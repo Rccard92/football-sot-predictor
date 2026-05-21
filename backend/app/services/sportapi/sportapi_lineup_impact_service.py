@@ -239,14 +239,15 @@ class LineupImpactSimulationService:
             )
 
         all_top = (home_off.get("top_sot_players") or []) + (away_off.get("top_sot_players") or [])
+        home_hint = roster_resolver.roster_sync_hint(home_ctx)
+        away_hint = roster_resolver.roster_sync_hint(away_ctx)
+        roster_filter_active = home_hint == "ok" and away_hint == "ok"
+
         confidence_label, confidence_reasons = compute_impact_confidence(
             confirmed=bool(confirmed),
             top_players=all_top,
             profiles_missing=profiles_missing,
-            roster_sync_hints=[
-                roster_resolver.roster_sync_hint(home_ctx),
-                roster_resolver.roster_sync_hint(away_ctx),
-            ],
+            roster_sync_hints=[home_hint, away_hint],
             excluded_count=len(home_excluded) + len(away_excluded),
             roster_unknown_in_top=sum(
                 1 for p in all_top if p.get("included_as_unknown") or p.get("roster_status") == "UNKNOWN"
@@ -258,6 +259,7 @@ class LineupImpactSimulationService:
 
         return {
             "status": "ok" if sportapi_lineups.get("available") else "no_lineups",
+            "fixture_id": int(fx.id),
             "simulation_only": True,
             "used_in_model": settings.use_sportapi_lineup_impact_in_model,
             "profiles_missing": profiles_missing,
@@ -265,6 +267,7 @@ class LineupImpactSimulationService:
             "confirmed": confirmed,
             "confidence_label": confidence_label,
             "confidence_reasons": confidence_reasons,
+            "roster_filter_active": roster_filter_active,
             "home": home_off,
             "away": away_off,
             "player_matching_summary": matching.get("summary") or {},
@@ -337,7 +340,25 @@ class LineupImpactSimulationService:
                     "shots_on_target_per90": pr.shots_on_target_per90,
                 },
             )
-        top, excluded = resolver.filter_top_candidates(candidates=candidates, ctx=ctx, top_n=5)
+        top, scan_excluded = resolver.filter_top_candidates(
+            candidates=candidates,
+            ctx=ctx,
+            top_n=5,
+            allow_legacy_active=False,
+        )
+        full_excluded = resolver.collect_excluded_players(
+            candidates=candidates,
+            ctx=ctx,
+            allow_legacy_active=False,
+        )
+        excluded_by_id: dict[int, dict[str, Any]] = {}
+        for ex in scan_excluded + full_excluded:
+            pid = ex.get("player_id")
+            if pid is not None:
+                excluded_by_id[int(pid)] = ex
+        excluded = list(excluded_by_id.values())
+        excluded.sort(key=lambda x: float(x.get("team_sot_share_pct") or 0), reverse=True)
+
         meta = {
             int(t["player_id"]): {
                 "roster_status": t.get("roster_status"),
@@ -515,8 +536,12 @@ class LineupImpactSimulationService:
                 api_player_id=api_pid,
                 ctx=roster_ctx,
                 legacy_team_id=pl.team_id,
+                allow_legacy_active=False,
             )
-            if roster.status not in ("ACTIVE", "UNKNOWN"):
+            if roster_ctx.has_squad_data:
+                if roster.status != "ACTIVE":
+                    continue
+            elif roster.status not in ("ACTIVE", "UNKNOWN"):
                 continue
             raw_imp = compute_raw_defensive_importance(
                 position=pos,

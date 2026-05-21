@@ -122,8 +122,10 @@ export type LineupImpactSideSimulation = {
 
 export type LineupImpactSimulationPayload = {
   status: string
+  fixture_id?: number
   simulation_only: boolean
   used_in_model: boolean
+  roster_filter_active?: boolean
   profiles_missing?: boolean
   sportapi_lineups_available?: boolean
   confirmed?: boolean | null

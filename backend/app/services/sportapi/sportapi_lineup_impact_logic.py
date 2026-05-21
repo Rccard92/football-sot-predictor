@@ -209,7 +209,9 @@ def compute_impact_confidence(
     hints = roster_sync_hints or []
     if any(h == "missing" for h in hints):
         score -= 20
-        reasons.append("Rosa attuale API-Sports non sincronizzata — eseguire «Aggiorna rosa attuale» da Admin")
+        reasons.append(
+            "Rosa attuale non aggiornata: il filtro giocatori trasferiti potrebbe non essere attivo.",
+        )
     elif any(h == "stale" for h in hints):
         score -= 10
         reasons.append("Rosa attuale API-Sports vuota o obsoleta per una o più squadre")

@@ -163,4 +163,4 @@ def test_confidence_roster_missing():
         roster_sync_hints=["missing", "ok"],
     )
     assert label in ("media", "bassa")
-    assert any("Rosa attuale" in r for r in reasons)
+    assert any("filtro giocatori trasferiti" in r for r in reasons)
