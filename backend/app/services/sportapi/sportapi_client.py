@@ -127,3 +127,16 @@ class SportApiClient:
 
     def get_lineups(self, event_id: int) -> Any:
         return self.get(sportapi_paths.lineups_path(event_id))
+
+    def get_event_odds(self, event_id: int, provider_id: int = 1) -> Any:
+        """GET /api/v1/event/{event_id}/odds/{provider_id}/all"""
+        path = sportapi_paths.event_odds_path(event_id, provider_id)
+        try:
+            return self.get(path)
+        except SportApiError as exc:
+            msg = str(exc)
+            if "404" in msg:
+                raise SportApiError(
+                    f"Quote SportAPI non trovate per event_id={int(event_id)} provider_id={int(provider_id)}",
+                ) from exc
+            raise

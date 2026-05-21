@@ -33,6 +33,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "fixture_lineup_refresh_impacts",
         "tracked_betting_picks",
         "odds_bookmakers",
+        "odds_discovery_snapshots",
     },
 )
 

@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.6.1',
+    date: '2026-05-19',
+    title: 'SportAPI odds discovery',
+    type: 'patch',
+    summary:
+      'Aggiunta la possibilità di testare le quote SportAPI per singola partita e confrontare la copertura con i bookmakers API-Sports.',
+    highlights: [
+      'Aggiunto test quote SportAPI per event_id/providerId.',
+      'Aggiunta normalizzazione difensiva dei mercati odds SportAPI.',
+      'Aggiunto raw payload consultabile.',
+      'Aggiunto confronto iniziale tra fonte API-Sports e fonte SportAPI.',
+      'Nessuna quota viene ancora usata nei pronostici.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.6.0',
     date: '2026-05-19',
     title: 'Bookmakers discovery',

@@ -713,6 +713,57 @@ export async function postSyncBookmakers(opts?: AdminRequestOpts): Promise<Bookm
   return adminPostJson<BookmakersSyncSummary>('/api/admin/bookmakers/sync', {}, opts)
 }
 
+export type SportApiNormalizedMarket = {
+  source: string
+  provider_id: number
+  market_name: string | null
+  bookmaker_name: string | null
+  outcome_name: string | null
+  line: string | null
+  price: string | null
+  status: string | null
+}
+
+export type SportApiOddsDiscoveryComparison = {
+  api_sports_bookmakers_total: number
+  sportapi_markets_on_event: number
+  sportapi_bookmakers_deduced: number | null
+  note: string
+}
+
+export type SportApiOddsDiscoveryResponse = {
+  status: string
+  message?: string
+  provider?: string
+  fixture_id?: number | null
+  api_fixture_id?: number | null
+  sportapi_event_id?: number
+  provider_id?: number
+  markets_count?: number
+  bookmakers_count?: number | null
+  raw_payload?: unknown
+  normalized_markets?: SportApiNormalizedMarket[]
+  snapshot_id?: number | null
+  comparison?: SportApiOddsDiscoveryComparison
+}
+
+export async function postSportApiOddsDiscovery(
+  body: {
+    fixture_id?: number | null
+    api_fixture_id?: number | null
+    sportapi_event_id?: number | null
+    provider_id?: number
+    save_snapshot?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiOddsDiscoveryResponse> {
+  return adminPostJson<SportApiOddsDiscoveryResponse>(
+    '/api/admin/bookmakers/sportapi/odds-discovery',
+    body,
+    opts,
+  )
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(
