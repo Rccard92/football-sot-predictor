@@ -22,7 +22,15 @@ function ScoreRow({
   )
 }
 
+const CONFIDENCE_BADGE: Record<string, string> = {
+  alta: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  media: 'border-amber-200 bg-amber-50 text-amber-950',
+  bassa: 'border-rose-200 bg-rose-50 text-rose-900',
+}
+
 export function SportApiOverallXiCard({ breakdown }: { breakdown: OverallXiBreakdown }) {
+  const confClass = CONFIDENCE_BADGE[breakdown.confidence_level] ?? CONFIDENCE_BADGE.media
+
   return (
     <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -36,11 +44,42 @@ export function SportApiOverallXiCard({ breakdown }: { breakdown: OverallXiBreak
         <p className="mt-1 text-[10px] text-amber-800">{breakdown.partial_note}</p>
       ) : null}
       <div className="mt-3 space-y-1 border-t border-indigo-100/80 pt-2">
-        <ScoreRow label="Forza offensiva SOT" value={breakdown.attacking_sot_score} partial={breakdown.partial} />
-        <ScoreRow label="Solidità difensiva" value={breakdown.defensive_stability_score} partial={breakdown.partial} />
-        <ScoreRow label="Equilibrio formazione" value={breakdown.lineup_balance_score} partial={breakdown.partial} />
-        <ScoreRow label="Affidabilità dato" value={breakdown.data_confidence_score} partial={breakdown.partial} />
+        <ScoreRow label="Attacco SOT" value={breakdown.attacking_sot_score} partial={breakdown.partial} />
+        <ScoreRow
+          label="Presenza top shooter"
+          value={breakdown.offensive_presence_score}
+          partial={breakdown.partial}
+        />
+        <ScoreRow
+          label="Solidità difensiva"
+          value={breakdown.defensive_stability_score}
+          partial={breakdown.partial}
+        />
+        <ScoreRow label="Continuità XI" value={breakdown.xi_continuity_score} partial={breakdown.partial} />
+        <ScoreRow label="Gestione assenze" value={breakdown.availability_score} partial={breakdown.partial} />
       </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-indigo-100/80 pt-2">
+        <span className="text-[11px] text-slate-600">Confidence dato</span>
+        <div className="flex items-center gap-2">
+          {breakdown.confidence_score != null ? (
+            <span className="text-sm font-semibold tabular-nums text-slate-900">
+              {breakdown.confidence_score}/100
+            </span>
+          ) : null}
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${confClass}`}>
+            {breakdown.confidence_level}
+          </span>
+        </div>
+      </div>
+
+      {breakdown.explanation_bullets.length > 0 ? (
+        <ul className="mt-3 list-inside list-disc space-y-0.5 border-t border-indigo-100/80 pt-2 text-[10px] leading-relaxed text-slate-700">
+          {breakdown.explanation_bullets.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   )
 }

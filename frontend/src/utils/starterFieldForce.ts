@@ -1,7 +1,13 @@
 import type { LineupImpactSideSimulation, SportApiPlayerMatchRow } from '../types/lineupImpact'
 import type { PlayerDbProfileRow } from '../types/playerDbProfiles'
 import type { SportApiDisplayRole, SportApiLineupPlayer } from '../types/sportapi'
-import { resolveTacticalLines, roleSortKey, tacticalLineIndexForPlayer } from './sportapiFormation'
+import {
+  buildTacticalLayout,
+  roleSortKey,
+  sortStartersByOriginalIndex,
+  tacticalLineIndexForLayout,
+  tacticalRoleForPlayer,
+} from './sportapiFormation'
 
 export type StarterFieldForceRow = {
   provider_player_id: number
@@ -16,6 +22,7 @@ export type StarterFieldForceRow = {
   defensive_impact: number | null
   reliability: number | null
   tactical_line_index: number
+  original_index: number
   sort_impact: number
 }
 
@@ -54,15 +61,15 @@ function defensiveImpact(
 export function buildStarterFieldRows(
   formation: string | null | undefined,
   starters: SportApiLineupPlayer[],
-  tacticalLinesFromApi: SportApiLineupPlayer[][] | undefined,
   lineupSide: LineupImpactSideSimulation | undefined,
   matching: SportApiPlayerMatchRow[] | undefined,
   profilesByApiId: Map<number, PlayerDbProfileRow>,
 ): StarterFieldForceRow[] {
-  const lines = resolveTacticalLines(formation, starters, tacticalLinesFromApi)
+  const ordered = sortStartersByOriginalIndex(starters)
+  const layout = buildTacticalLayout(formation, ordered)
 
-  const rows: StarterFieldForceRow[] = starters.map((s) => {
-    const role = (s.display_role || 'C') as SportApiDisplayRole
+  const rows: StarterFieldForceRow[] = ordered.map((s) => {
+    const role = tacticalRoleForPlayer(layout, s.provider_player_id)
     const m = matchRow(matching, s.provider_player_id)
     const apiId = m?.api_sports_player_id ?? m?.player_id
     const prof = apiId != null ? profilesByApiId.get(Number(apiId)) : undefined
@@ -104,17 +111,16 @@ export function buildStarterFieldRows(
       shooting_impact: prof?.shooting_impact_score ?? null,
       defensive_impact: defImp,
       reliability: prof?.reliability_score ?? null,
-      tactical_line_index: tacticalLineIndexForPlayer(lines, s.provider_player_id),
+      tactical_line_index: tacticalLineIndexForLayout(layout, s.provider_player_id),
+      original_index: s.original_index ?? 0,
       sort_impact: Math.max(prof?.shooting_impact_score ?? 0, (defImp ?? 0) * 100),
     }
   })
 
   rows.sort((a, b) => {
-    const ra = roleSortKey(a.role)
-    const rb = roleSortKey(b.role)
-    if (ra !== rb) return ra - rb
     if (a.tactical_line_index !== b.tactical_line_index) return a.tactical_line_index - b.tactical_line_index
-    return b.sort_impact - a.sort_impact
+    if (a.original_index !== b.original_index) return a.original_index - b.original_index
+    return roleSortKey(a.role) - roleSortKey(b.role) || b.sort_impact - a.sort_impact
   })
 
   return rows

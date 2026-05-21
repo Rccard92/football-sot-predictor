@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.1',
+    date: '2026-05-19',
+    title: 'Migliorata disposizione tattica e Overall XI',
+    type: 'patch',
+    summary:
+      'Corretta la disposizione dei giocatori in base al modulo e reso più robusto il calcolo dell’Overall della squadra in campo.',
+    highlights: [
+      'La formazione ora usa modulo e ordine originale SportAPI per disporre i titolari.',
+      'Migliorata la gestione di moduli come 4-3-3, 3-5-2, 3-4-2-1, 3-5-1-1 e 4-2-3-1.',
+      'L’Overall XI ora separa forza tecnica e confidence dato.',
+      'Aggiunti componenti più leggibili: Attacco SOT, Presenza top shooter, Solidità difensiva, Continuità XI e Gestione assenze.',
+      'Ridotti i punteggi sempre a 100 non informativi.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.0',
     date: '2026-05-19',
     title: 'Analisi forza formazione',

@@ -2,115 +2,221 @@ import type { SportApiDisplayRole, SportApiLineupPlayer } from '../types/sportap
 
 const ROLE_ORDER: Record<SportApiDisplayRole, number> = { P: 0, D: 1, C: 2, A: 3 }
 
-function extractSortKey(player: SportApiLineupPlayer): number {
-  const oi = player.original_index ?? 999
-  return oi
+export type TacticalLayoutPlayer = SportApiLineupPlayer & {
+  tactical_role: SportApiDisplayRole
+  api_role?: SportApiDisplayRole
 }
 
-function sortByRoleAndIndex(players: SportApiLineupPlayer[], role: SportApiDisplayRole): SportApiLineupPlayer[] {
-  return players
-    .filter((p) => (p.display_role || 'C') === role)
-    .sort((a, b) => extractSortKey(a) - extractSortKey(b))
+export type TacticalLayoutLine = {
+  label: string
+  tactical_role: SportApiDisplayRole
+  players: TacticalLayoutPlayer[]
 }
 
-function splitPool(pool: SportApiLineupPlayer[], n: number): [SportApiLineupPlayer[], SportApiLineupPlayer[]] {
-  if (n <= 0) return [[], [...pool]]
-  return [pool.slice(0, n), pool.slice(n)]
+export type TacticalLayoutResult = {
+  lines: TacticalLayoutLine[]
+  estimated: boolean
+  warning?: string
+  playerLineIndex: Map<number, number>
+  playerTacticalRole: Map<number, SportApiDisplayRole>
 }
 
 export function parseFormationCounts(formation: string | null | undefined): number[] {
   if (!formation) return []
   const matches = formation.match(/\d+/g)
   if (!matches) return []
-  return matches.map((x) => parseInt(x, 10)).filter((n) => !Number.isNaN(n))
+  return matches.map((x) => parseInt(x, 10)).filter((n) => !Number.isNaN(n) && n > 0)
 }
 
-/** Stesso algoritmo di build_tactical_lines (backend sportapi_lineup_present.py). */
-export function buildTacticalLinesFromFormation(
+/** Ordine SportAPI: preserva original_index o posizione in lista salvata. */
+export function sortStartersByOriginalIndex(starters: SportApiLineupPlayer[]): SportApiLineupPlayer[] {
+  return [...starters]
+    .map((p, i) => ({
+      ...p,
+      original_index: p.original_index ?? i,
+    }))
+    .sort((a, b) => (a.original_index ?? 0) - (b.original_index ?? 0))
+}
+
+function rowLabelForOutfieldIndex(i: number, totalOutfieldRows: number): string {
+  if (i === 0) return 'Difesa'
+  if (i === totalOutfieldRows - 1) return 'Attacco'
+  if (totalOutfieldRows >= 4 && i === totalOutfieldRows - 2) return 'Trequartista'
+  if (totalOutfieldRows >= 4 && i === 1) return 'Mediana'
+  return 'Centrocampo'
+}
+
+function tacticalRoleForOutfieldRow(i: number, totalOutfieldRows: number): SportApiDisplayRole {
+  if (i === 0) return 'D'
+  if (i === totalOutfieldRows - 1) return 'A'
+  return 'C'
+}
+
+function withTacticalMeta(
+  p: SportApiLineupPlayer,
+  tacticalRole: SportApiDisplayRole,
+): TacticalLayoutPlayer {
+  return {
+    ...p,
+    tactical_role: tacticalRole,
+    api_role: (p.display_role || 'C') as SportApiDisplayRole,
+  }
+}
+
+function buildIndexMaps(lines: TacticalLayoutLine[]): {
+  playerLineIndex: Map<number, number>
+  playerTacticalRole: Map<number, SportApiDisplayRole>
+} {
+  const playerLineIndex = new Map<number, number>()
+  const playerTacticalRole = new Map<number, SportApiDisplayRole>()
+  lines.forEach((line, li) => {
+    for (const p of line.players) {
+      playerLineIndex.set(p.provider_player_id, li)
+      playerTacticalRole.set(p.provider_player_id, p.tactical_role)
+    }
+  })
+  return { playerLineIndex, playerTacticalRole }
+}
+
+/** Assegnazione sequenziale: GK + blocchi del modulo nell’ordine originale SportAPI. */
+export function buildTacticalLayoutByFormation(
   formation: string | null | undefined,
   starters: SportApiLineupPlayer[],
-): SportApiLineupPlayer[][] {
-  if (!starters.length) return []
-
-  const byRole: Record<SportApiDisplayRole, SportApiLineupPlayer[]> = {
-    P: sortByRoleAndIndex(starters, 'P'),
-    D: sortByRoleAndIndex(starters, 'D'),
-    C: sortByRoleAndIndex(starters, 'C'),
-    A: sortByRoleAndIndex(starters, 'A'),
+): TacticalLayoutResult {
+  const ordered = sortStartersByOriginalIndex(starters)
+  if (!ordered.length) {
+    return { lines: [], estimated: false, playerLineIndex: new Map(), playerTacticalRole: new Map() }
   }
 
-  const lines: SportApiLineupPlayer[][] = []
-  if (byRole.P.length) lines.push(byRole.P.slice(0, 1))
-
   const counts = parseFormationCounts(formation)
-  let dPool = [...byRole.D]
-  let cPool = [...byRole.C]
-  let aPool = [...byRole.A]
+  const outfieldSum = counts.reduce((a, b) => a + b, 0)
+  const canUseSequential =
+    counts.length > 0 && ordered.length === 11 && outfieldSum === 10
 
-  if (counts.length) {
-    counts.forEach((n, i) => {
-      if (i === 0) {
-        const [chunk, rest] = splitPool(dPool, n)
-        dPool = rest
-        if (chunk.length) lines.push(chunk)
-      } else if (i === counts.length - 1) {
-        const [chunk, rest] = splitPool(aPool, n)
-        aPool = rest
-        if (chunk.length) lines.push(chunk)
-      } else {
-        const [chunk, rest] = splitPool(cPool, n)
-        cPool = rest
-        if (chunk.length) lines.push(chunk)
-      }
+  if (canUseSequential) {
+    const lines: TacticalLayoutLine[] = []
+    let idx = 0
+    const gk = ordered[idx++]
+    lines.push({
+      label: 'Portiere',
+      tactical_role: 'P',
+      players: [withTacticalMeta(gk, 'P')],
     })
-    const remainder = [...dPool, ...cPool, ...aPool]
-    if (remainder.length) lines.push(remainder)
-  } else {
-    for (const role of ['D', 'C', 'A'] as SportApiDisplayRole[]) {
-      if (byRole[role].length) lines.push(byRole[role])
+
+    counts.forEach((n, i) => {
+      const chunk = ordered.slice(idx, idx + n)
+      idx += n
+      const role = tacticalRoleForOutfieldRow(i, counts.length)
+      lines.push({
+        label: rowLabelForOutfieldIndex(i, counts.length),
+        tactical_role: role,
+        players: chunk.map((p) => withTacticalMeta(p, role)),
+      })
+    })
+
+    const maps = buildIndexMaps(lines)
+    return {
+      lines,
+      estimated: false,
+      ...maps,
     }
   }
 
-  return lines
+  return buildTacticalLayoutRoleFallback(ordered)
 }
 
-export function resolveTacticalLines(
+/** Fallback: P → D → C → A per ruolo API, ordine originale dentro ogni gruppo. */
+function buildTacticalLayoutRoleFallback(ordered: SportApiLineupPlayer[]): TacticalLayoutResult {
+  const warning = 'Disposizione tattica stimata: dati modulo incompleti.'
+
+  const gkCand =
+    ordered.find((p) => (p.display_role || 'C') === 'P') ?? ordered[0]
+  const rest = ordered.filter((p) => p.provider_player_id !== gkCand.provider_player_id)
+
+  const byRole: Record<SportApiDisplayRole, SportApiLineupPlayer[]> = {
+    P: [],
+    D: [],
+    C: [],
+    A: [],
+  }
+  for (const p of rest) {
+    const r = (p.display_role || 'C') as SportApiDisplayRole
+    if (r in byRole && r !== 'P') byRole[r].push(p)
+  }
+
+  const lines: TacticalLayoutLine[] = [
+    {
+      label: 'Portiere',
+      tactical_role: 'P',
+      players: [withTacticalMeta(gkCand, 'P')],
+    },
+  ]
+
+  if (byRole.D.length) {
+    lines.push({
+      label: 'Difesa',
+      tactical_role: 'D',
+      players: byRole.D.map((p) => withTacticalMeta(p, 'D')),
+    })
+  }
+  if (byRole.C.length) {
+    lines.push({
+      label: 'Centrocampo',
+      tactical_role: 'C',
+      players: byRole.C.map((p) => withTacticalMeta(p, 'C')),
+    })
+  }
+  if (byRole.A.length) {
+    lines.push({
+      label: 'Attacco',
+      tactical_role: 'A',
+      players: byRole.A.map((p) => withTacticalMeta(p, 'A')),
+    })
+  }
+
+  const remainder = rest.filter(
+    (p) =>
+      !lines.some((ln) => ln.players.some((x) => x.provider_player_id === p.provider_player_id)),
+  )
+  if (remainder.length) {
+    lines.push({
+      label: 'Altri',
+      tactical_role: 'C',
+      players: remainder.map((p) => withTacticalMeta(p, (p.display_role || 'C') as SportApiDisplayRole)),
+    })
+  }
+
+  const maps = buildIndexMaps(lines)
+  return {
+    lines,
+    estimated: true,
+    warning,
+    ...maps,
+  }
+}
+
+/**
+ * Layout tattico Audit: modulo + original_index (ignora tactical_lines backend basate su ruolo API).
+ */
+export function buildTacticalLayout(
   formation: string | null | undefined,
   starters: SportApiLineupPlayer[],
-  tacticalLinesFromApi?: SportApiLineupPlayer[][] | null,
-): SportApiLineupPlayer[][] {
-  if (tacticalLinesFromApi && tacticalLinesFromApi.length > 0) {
-    return tacticalLinesFromApi
-  }
-  return buildTacticalLinesFromFormation(formation, starters)
+): TacticalLayoutResult {
+  return buildTacticalLayoutByFormation(formation, starters)
 }
 
-/** Indice riga tattica per un giocatore (per ordinamento tabella). */
-export function tacticalLineIndexForPlayer(
-  lines: SportApiLineupPlayer[][],
+export function tacticalLineIndexForLayout(
+  layout: TacticalLayoutResult,
   providerPlayerId: number,
 ): number {
-  const idx = lines.findIndex((row) => row.some((p) => p.provider_player_id === providerPlayerId))
-  return idx >= 0 ? idx : 99
+  return layout.playerLineIndex.get(providerPlayerId) ?? 99
 }
 
-export function tacticalRowLabel(
-  formation: string | null | undefined,
-  rowIndex: number,
-  rowCount: number,
-): string | null {
-  if (rowCount <= 0) return null
-  if (rowIndex === 0) return 'Portiere'
-
-  const counts = parseFormationCounts(formation)
-  const isLast = rowIndex === rowCount - 1
-  const isSecondLast = rowIndex === rowCount - 2
-
-  if (counts.length >= 4 && isSecondLast && !isLast) return 'Trequartista'
-  if (isLast) return 'Attacco'
-  if (rowIndex === 1 || (counts.length && rowIndex === 1)) return 'Difesa'
-  if (isSecondLast && rowCount > 3) return 'Centrocampo alto'
-  return 'Centrocampo'
+export function tacticalRoleForPlayer(
+  layout: TacticalLayoutResult,
+  providerPlayerId: number,
+): SportApiDisplayRole {
+  return layout.playerTacticalRole.get(providerPlayerId) ?? 'C'
 }
 
 export function roleSortKey(role: SportApiDisplayRole | string | undefined): number {

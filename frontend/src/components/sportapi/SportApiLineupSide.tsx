@@ -4,13 +4,17 @@ import type { PlayerDbProfileRow } from '../../types/playerDbProfiles'
 import type { SportApiLineupPlayer, SportApiTeamLineupSide } from '../../types/sportapi'
 import { computeLineupOverallXi, profilesToApiIdMap } from '../../utils/lineupOverallXi'
 import { buildStarterFieldRows } from '../../utils/starterFieldForce'
-import { buildTacticalLinesFromFormation, resolveTacticalLines } from '../../utils/sportapiFormation'
+import { buildTacticalLayout } from '../../utils/sportapiFormation'
 import { SportApiMissingPanel } from './SportApiMissingPanel'
 import { SportApiOverallXiCard } from './SportApiOverallXiCard'
 import { SportApiStartersForceTable } from './SportApiStartersForceTable'
 import { SportApiTacticalFormation } from './SportApiTacticalFormation'
 import { RoleBadge } from './RoleBadge'
 import type { SportApiDisplayRole } from '../../types/sportapi'
+
+function countMissing(mp: SportApiTeamLineupSide['missing_players']): number {
+  return (mp.injured?.length ?? 0) + (mp.suspended?.length ?? 0) + (mp.other?.length ?? 0)
+}
 
 function BenchPlayerLine({ player }: { player: SportApiLineupPlayer }) {
   const name = player.short_name || player.player_name
@@ -32,6 +36,7 @@ export function SportApiLineupSide({
   matching,
   profiles,
   meta,
+  lineupConfidenceLabel,
 }: {
   side: SportApiTeamLineupSide
   lineupSide?: LineupImpactSideSimulation
@@ -43,19 +48,14 @@ export function SportApiLineupSide({
     fetchedAt?: string | null
     profilesMissing?: boolean
   }
+  lineupConfidenceLabel?: string | null
 }) {
   const profilesMap = useMemo(() => profilesToApiIdMap(profiles), [profiles])
 
-  const tacticalLines = useMemo(
-    () => resolveTacticalLines(side.formation, side.starters, side.tactical_lines),
-    [side.formation, side.starters, side.tactical_lines],
-  )
-
-  const builtLines = useMemo(
-    () => buildTacticalLinesFromFormation(side.formation, side.starters),
+  const tacticalLayout = useMemo(
+    () => buildTacticalLayout(side.formation, side.starters),
     [side.formation, side.starters],
   )
-  const remainderSize = Math.max(0, side.starters.length - builtLines.flat().length)
 
   const overallXi = useMemo(
     () =>
@@ -65,31 +65,15 @@ export function SportApiLineupSide({
         fetchedAt: meta.fetchedAt,
         profilesMissing: meta.profilesMissing,
         rosterSyncHint: lineupSide?.roster_sync_hint,
-        tacticalRemainderSize: remainderSize,
+        lineupConfidenceLabel,
+        missingPlayersCount: countMissing(side.missing_players),
       }),
-    [
-      side.starters,
-      side.formation,
-      lineupSide,
-      matching,
-      profilesMap,
-      meta,
-      side.confirmed,
-      remainderSize,
-    ],
+    [side, lineupSide, matching, profilesMap, meta, lineupConfidenceLabel],
   )
 
   const forceRows = useMemo(
-    () =>
-      buildStarterFieldRows(
-        side.formation,
-        side.starters,
-        side.tactical_lines,
-        lineupSide,
-        matching,
-        profilesMap,
-      ),
-    [side, lineupSide, matching, profilesMap],
+    () => buildStarterFieldRows(side.formation, side.starters, lineupSide, matching, profilesMap),
+    [side.formation, side.starters, lineupSide, matching, profilesMap],
   )
 
   const statusLabel =
@@ -117,11 +101,7 @@ export function SportApiLineupSide({
 
       <div>
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Formazione tattica</p>
-        <SportApiTacticalFormation
-          formation={side.formation}
-          starters={side.starters}
-          tacticalLinesFromApi={tacticalLines}
-        />
+        <SportApiTacticalFormation layout={tacticalLayout} />
       </div>
 
       <SportApiStartersForceTable rows={forceRows} />

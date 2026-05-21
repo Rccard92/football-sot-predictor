@@ -160,6 +160,7 @@ export function SportApiLineupsCard({
               matching={matching}
               profiles={homeProfiles}
               meta={meta}
+              lineupConfidenceLabel={lineupImpact?.confidence_label ?? null}
             />
             <SportApiLineupSide
               side={data.away}
@@ -167,6 +168,7 @@ export function SportApiLineupsCard({
               matching={matching}
               profiles={awayProfiles}
               meta={meta}
+              lineupConfidenceLabel={lineupImpact?.confidence_label ?? null}
             />
           </div>
         )}

@@ -2,16 +2,22 @@ import type { LineupImpactSideSimulation } from '../types/lineupImpact'
 import type { SportApiPlayerMatchRow } from '../types/lineupImpact'
 import type { PlayerDbProfileRow } from '../types/playerDbProfiles'
 import type { SportApiLineupPlayer } from '../types/sportapi'
-import { parseFormationCounts } from './sportapiFormation'
+import { sortStartersByOriginalIndex } from './sportapiFormation'
+
+export type ConfidenceLevel = 'alta' | 'media' | 'bassa'
 
 export type OverallXiBreakdown = {
   overall: number | null
   attacking_sot_score: number | null
+  offensive_presence_score: number | null
   defensive_stability_score: number | null
-  lineup_balance_score: number | null
-  data_confidence_score: number | null
+  xi_continuity_score: number | null
+  availability_score: number | null
+  confidence_score: number | null
+  confidence_level: ConfidenceLevel
   partial: boolean
   partial_note?: string
+  explanation_bullets: string[]
 }
 
 function clamp0_100(v: number): number {
@@ -48,7 +54,7 @@ export function computeAttackingSotScore(
   profilesByApiId: Map<number, PlayerDbProfileRow>,
 ): number | null {
   const sot90s: number[] = []
-  const shares: number[] = []
+  const shots90: number[] = []
 
   for (const s of starters) {
     const top = lineupSide?.top_sot_players?.find((p) => p.sportapi_player_id === s.provider_player_id)
@@ -57,27 +63,50 @@ export function computeAttackingSotScore(
       top?.sot_per_90 ??
       (prof?.shots_on_per90 != null ? Number(prof.shots_on_per90) : null)
     if (sot != null && !Number.isNaN(sot)) sot90s.push(sot)
-    const share = top?.team_sot_share ?? prof?.team_sot_share
-    if (share != null && !Number.isNaN(share)) shares.push(share > 1 ? share / 100 : share)
+    const sh =
+      prof?.shots_on_per90 != null
+        ? Number(prof.shots_on_per90)
+        : prof?.shots_total_per90 != null
+          ? Number(prof.shots_total_per90)
+          : null
+    if (sh != null && !Number.isNaN(sh)) shots90.push(sh)
   }
 
-  let score = 50
+  if (!sot90s.length && !shots90.length) return null
+
   const meanSot = avg(sot90s)
-  if (meanSot != null) score = clamp0_100((meanSot / 1.2) * 100)
-  const meanShare = avg(shares)
-  if (meanShare != null) score = clamp0_100(score * 0.6 + meanShare * 100 * 0.4)
+  const meanShots = avg(shots90)
+  let score = 45
+  if (meanSot != null) score = (meanSot / 1.35) * 85
+  if (meanShots != null) score = score * 0.55 + (meanShots / 3.5) * 85 * 0.45
 
-  const startersPresent = lineupSide?.top5_present?.length ?? 0
-  const startersMissing = lineupSide?.top5_missing?.length ?? 0
-  if (startersPresent > 0) score = clamp0_100(score + Math.min(10, startersPresent * 2))
-  if (startersMissing > 0) score = clamp0_100(score - Math.min(15, startersMissing * 5))
+  const prod = sot90s.reduce((a, b) => a + b, 0)
+  if (prod > 0) score = clamp0_100(score + Math.min(8, prod * 0.8))
 
-  const offFactor = lineupSide?.offensive_lineup_factor ?? lineupSide?.attacking_lineup_factor
-  if (offFactor != null && offFactor > 0) {
-    score = clamp0_100(score * 0.7 + Math.min(100, offFactor * 100) * 0.3)
-  }
+  return clamp0_100(score)
+}
 
-  return sot90s.length || shares.length || offFactor != null ? score : null
+export function computeOffensivePresenceScore(
+  lineupSide: LineupImpactSideSimulation | undefined,
+): number | null {
+  const top5 = lineupSide?.top_sot_players ?? lineupSide?.top5_sot_players ?? []
+  if (!top5.length) return null
+
+  let score = 55
+  const present = lineupSide?.top5_present ?? top5.filter((p) => p.status === 'STARTER')
+  const missing = lineupSide?.top5_missing ?? top5.filter((p) => p.status === 'MISSING' || p.status === 'OUT_OF_LINEUP')
+
+  const presentShare = present.reduce((a, p) => a + (p.team_sot_share ?? 0), 0)
+  const missingShare = missing.reduce((a, p) => a + (p.team_sot_share ?? 0), 0)
+  score = clamp0_100(50 + presentShare * 120 - missingShare * 80)
+
+  const credit = lineupSide?.replacement_credit_share ?? 0
+  if (credit > 0) score = clamp0_100(score + Math.min(12, credit * 80))
+
+  const benchTop = top5.filter((p) => p.status === 'BENCH')
+  if (benchTop.length) score = clamp0_100(score - benchTop.length * 4)
+
+  return score
 }
 
 export function computeDefensiveStabilityScore(
@@ -85,7 +114,6 @@ export function computeDefensiveStabilityScore(
   lineupSide: LineupImpactSideSimulation | undefined,
   matching: SportApiPlayerMatchRow[] | undefined,
 ): number | null {
-  const defPlayers = lineupSide?.defensive_key_players ?? []
   const starterPlayerIds = new Set<number>()
   for (const s of starters) {
     const m = matchBySportApiId(matching, s.provider_player_id)
@@ -93,64 +121,103 @@ export function computeDefensiveStabilityScore(
   }
 
   const imps: number[] = []
-  for (const d of defPlayers) {
-    if (d.player_id != null && starterPlayerIds.has(Number(d.player_id))) {
-      if (d.defensive_importance != null) imps.push(d.defensive_importance)
+  for (const d of lineupSide?.defensive_key_players ?? []) {
+    if (d.player_id != null && starterPlayerIds.has(Number(d.player_id)) && d.defensive_importance != null) {
+      imps.push(d.defensive_importance)
     }
   }
 
-  let score = imps.length ? clamp0_100(avg(imps)! * 100) : 55
+  let score = imps.length ? clamp0_100(avg(imps)! * 92 + 8) : 48
 
-  const hasGk = starters.some((s) => s.display_role === 'P')
-  if (hasGk) score = clamp0_100(score + 8)
+  const hasGk = starters.some((s) => (s.display_role || '') === 'P')
+  if (hasGk) score = clamp0_100(score + 6)
+
+  const defMissing = (lineupSide?.defensive_key_players ?? []).filter(
+    (d) => d.status === 'MISSING' || d.status === 'OUT_OF_LINEUP',
+  )
+  score = clamp0_100(score - defMissing.length * 9)
 
   const netDefLoss = lineupSide?.net_defensive_loss
   if (netDefLoss != null && netDefLoss > 0) {
-    score = clamp0_100(score - Math.min(25, netDefLoss * 100))
+    score = clamp0_100(score - Math.min(28, netDefLoss * 110))
   }
 
-  const weak = lineupSide?.defensive_weakness_factor ?? lineupSide?.opponent_defensive_weakness_factor
+  const weak = lineupSide?.defensive_weakness_factor
   if (weak != null && weak > 1) {
-    score = clamp0_100(score - Math.min(20, (weak - 1) * 40))
-  } else if (weak != null && weak < 1) {
-    score = clamp0_100(score + Math.min(10, (1 - weak) * 30))
+    score = clamp0_100(score - Math.min(22, (weak - 1) * 45))
   }
 
-  return imps.length || hasGk || weak != null ? score : null
+  return imps.length || hasGk || weak != null || defMissing.length ? score : null
 }
 
-export function computeLineupBalanceScore(
+export function computeXiContinuityScore(
   starters: SportApiLineupPlayer[],
-  formation: string | null | undefined,
   matching: SportApiPlayerMatchRow[] | undefined,
-  tacticalRemainderSize: number,
+  profilesByApiId: Map<number, PlayerDbProfileRow>,
+): number | null {
+  const minutes: number[] = []
+  let unmapped = 0
+  let lowReliability = 0
+
+  for (const s of starters) {
+    const m = matchBySportApiId(matching, s.provider_player_id)
+    const prof = profileForStarter(s, matching, profilesByApiId)
+    if (!m || m.recommendation !== 'AUTO_SAFE') unmapped += 1
+    const mins = prof?.minutes_total ?? prof?.recent_minutes_last5
+    if (mins != null && mins > 0) minutes.push(mins)
+    if (prof?.reliability_score != null && prof.reliability_score < 40) lowReliability += 1
+  }
+
+  if (!minutes.length && unmapped === starters.length) return null
+
+  let score = 58
+  const meanMin = avg(minutes)
+  if (meanMin != null) {
+    score = clamp0_100(35 + Math.min(55, (meanMin / 2500) * 55))
+  }
+
+  score = clamp0_100(score - unmapped * 7 - lowReliability * 5)
+
+  const mp = avg(
+    starters
+      .map((s) => profileForStarter(s, matching, profilesByApiId)?.matches_played)
+      .filter((x): x is number => x != null && x > 0),
+  )
+  if (mp != null) score = clamp0_100(score * 0.7 + Math.min(100, (mp / 30) * 100) * 0.3)
+
+  return score
+}
+
+export function computeAvailabilityScore(
+  starters: SportApiLineupPlayer[],
+  matching: SportApiPlayerMatchRow[] | undefined,
+  lineupSide: LineupImpactSideSimulation | undefined,
+  missingCount: number,
 ): number | null {
   if (!starters.length) return null
 
-  let score = 70
-  if (starters.length === 11) score += 15
-  else score -= (11 - starters.length) * 8
-
-  const roles = new Set(starters.map((s) => s.display_role || 'C'))
-  if (roles.has('P')) score += 5
-  if (roles.has('D')) score += 5
-  if (roles.has('C')) score += 5
-  if (roles.has('A')) score += 5
-
-  if (parseFormationCounts(formation).length) score += 5
+  let score = 72
+  if (starters.length === 11) score += 12
+  else score -= (11 - starters.length) * 9
 
   let unmapped = 0
+  let outOfLineup = 0
   for (const s of starters) {
     const m = matchBySportApiId(matching, s.provider_player_id)
-    if (!m || m.recommendation !== 'AUTO_SAFE' || !m.player_id) unmapped += 1
+    if (!m || m.recommendation !== 'AUTO_SAFE') unmapped += 1
+    const top = lineupSide?.top_sot_players?.find((p) => p.sportapi_player_id === s.provider_player_id)
+    if (top?.status === 'OUT_OF_LINEUP' || top?.status === 'UNMAPPED') outOfLineup += 1
   }
-  score -= unmapped * 6
-  if (tacticalRemainderSize > 2) score -= 8
 
-  return clamp0_100(score)
+  score = clamp0_100(score - unmapped * 5 - outOfLineup * 4 - Math.min(20, missingCount * 3))
+
+  const missingTop5 = lineupSide?.top5_missing?.length ?? 0
+  score = clamp0_100(score - missingTop5 * 6)
+
+  return score
 }
 
-export function computeDataConfidenceScore(
+export function computeConfidenceScore(
   starters: SportApiLineupPlayer[],
   matching: SportApiPlayerMatchRow[] | undefined,
   opts: {
@@ -159,44 +226,88 @@ export function computeDataConfidenceScore(
     fetchedAt?: string | null
     profilesMissing?: boolean
     rosterSyncHint?: string
+    lineupConfidenceLabel?: string | null
   },
-): number | null {
-  if (!starters.length) return null
+): { score: number | null; level: ConfidenceLevel } {
+  if (!starters.length) return { score: null, level: 'bassa' }
 
-  let score = 20
-  if (opts.confirmed === true) score += 40
-  else if (opts.confirmed === false) score += 20
+  let score = 25
+  if (opts.confirmed === true) score += 28
+  else if (opts.confirmed === false) score += 12
 
   const confs: number[] = []
+  let unmapped = 0
   for (const s of starters) {
     const m = matchBySportApiId(matching, s.provider_player_id)
-    if (m?.confidence_score != null) confs.push(m.confidence_score)
+    if (m?.confidence_score != null) confs.push(m.confidence_score * 100)
+    if (!m || m.recommendation !== 'AUTO_SAFE') unmapped += 1
   }
   const meanConf = avg(confs)
-  if (meanConf != null) score += clamp0_100(meanConf * 0.3)
+  if (meanConf != null) score += meanConf * 0.25
+  score -= unmapped * 5
 
-  if (opts.rosterSyncHint === 'ok') score += 15
-  else if (opts.rosterSyncHint === 'stale' || opts.rosterSyncHint === 'missing') score -= 10
+  if (opts.rosterSyncHint === 'ok') score += 12
+  else if (opts.rosterSyncHint === 'stale' || opts.rosterSyncHint === 'missing') score -= 12
 
-  if (!opts.profilesMissing) score += 15
-  else score -= 15
+  if (!opts.profilesMissing) score += 10
+  else score -= 18
 
   if (opts.fetchedAt) {
     try {
       const ageH = (Date.now() - new Date(opts.fetchedAt).getTime()) / 3600000
-      if (ageH > 48) score -= 10
-      else if (ageH < 24) score += 5
+      if (ageH > 72) score -= 15
+      else if (ageH > 48) score -= 8
+      else if (ageH < 24) score += 6
     } catch {
       /* ignore */
     }
   }
 
-  return clamp0_100(score)
+  if (opts.confidenceScore != null) {
+    score = score * 0.6 + clamp0_100(opts.confidenceScore * 100) * 0.4
+  }
+
+  const final = clamp0_100(score)
+  let level: ConfidenceLevel = 'media'
+  if (
+    opts.lineupConfidenceLabel === 'alta' ||
+    opts.lineupConfidenceLabel === 'media' ||
+    opts.lineupConfidenceLabel === 'bassa'
+  ) {
+    level = opts.lineupConfidenceLabel
+  } else if (final >= 75) level = 'alta'
+  else if (final < 50) level = 'bassa'
+
+  return { score: final, level }
+}
+
+function pickExplanationBullets(lineupSide: LineupImpactSideSimulation | undefined): string[] {
+  const pool: string[] = []
+  for (const r of lineupSide?.offensive_reasons ?? []) {
+    if (r && !pool.includes(r)) pool.push(r)
+  }
+  for (const r of lineupSide?.defensive_reasons ?? []) {
+    if (r && !pool.includes(r)) pool.push(r)
+  }
+  for (const r of lineupSide?.reasons ?? []) {
+    if (r && !pool.includes(r)) pool.push(r)
+  }
+  for (const r of lineupSide?.explanation_bullets ?? []) {
+    if (r && !pool.includes(r)) pool.push(r)
+  }
+
+  if (lineupSide?.roster_sync_hint === 'ok') {
+    pool.push('Rosa attuale aggiornata: giocatori trasferiti esclusi dal calcolo.')
+  } else if (lineupSide?.roster_sync_hint === 'stale' || lineupSide?.roster_sync_hint === 'missing') {
+    pool.push('Rosa attuale non sincronizzata: verificare sync squadre da Admin.')
+  }
+
+  return pool.slice(0, 3)
 }
 
 export function computeLineupOverallXi(
   starters: SportApiLineupPlayer[],
-  formation: string | null | undefined,
+  _formation: string | null | undefined,
   lineupSide: LineupImpactSideSimulation | undefined,
   matching: SportApiPlayerMatchRow[] | undefined,
   profilesByApiId: Map<number, PlayerDbProfileRow>,
@@ -206,47 +317,66 @@ export function computeLineupOverallXi(
     fetchedAt?: string | null
     profilesMissing?: boolean
     rosterSyncHint?: string
-    tacticalRemainderSize?: number
+    lineupConfidenceLabel?: string | null
+    missingPlayersCount?: number
   },
 ): OverallXiBreakdown {
-  const attacking = computeAttackingSotScore(starters, lineupSide, matching, profilesByApiId)
-  const defensive = computeDefensiveStabilityScore(starters, lineupSide, matching)
-  const balance = computeLineupBalanceScore(
-    starters,
-    formation,
+  const ordered = sortStartersByOriginalIndex(starters)
+
+  const attacking = computeAttackingSotScore(ordered, lineupSide, matching, profilesByApiId)
+  const offensivePresence = computeOffensivePresenceScore(lineupSide)
+  const defensive = computeDefensiveStabilityScore(ordered, lineupSide, matching)
+  const continuity = computeXiContinuityScore(ordered, matching, profilesByApiId)
+  const availability = computeAvailabilityScore(
+    ordered,
     matching,
-    meta.tacticalRemainderSize ?? 0,
+    lineupSide,
+    meta.missingPlayersCount ?? 0,
   )
-  const data = computeDataConfidenceScore(starters, matching, {
+
+  const { score: confidence, level: confidence_level } = computeConfidenceScore(ordered, matching, {
     confirmed: meta.confirmed,
     confidenceScore: meta.confidenceScore,
     fetchedAt: meta.fetchedAt,
     profilesMissing: meta.profilesMissing,
     rosterSyncHint: meta.rosterSyncHint ?? lineupSide?.roster_sync_hint,
+    lineupConfidenceLabel: meta.lineupConfidenceLabel,
   })
 
-  const parts = [attacking, defensive, balance, data]
-  const partial = parts.some((p) => p == null)
-  const weights = [0.35, 0.25, 0.2, 0.2]
-  const defaults = [50, 50, 50, 40]
+  const components = [
+    { v: attacking, w: 0.3 },
+    { v: offensivePresence, w: 0.2 },
+    { v: defensive, w: 0.25 },
+    { v: continuity, w: 0.15 },
+    { v: availability, w: 0.1 },
+  ]
+  const defaults = [50, 50, 50, 52, 60]
+  const partial = components.some((c) => c.v == null)
 
   let overall: number | null = null
-  if (parts.some((p) => p != null)) {
+  if (components.some((c) => c.v != null)) {
     let sum = 0
-    for (let i = 0; i < 4; i++) {
-      sum += (parts[i] ?? defaults[i]) * weights[i]
-    }
-    overall = clamp0_100(sum)
+    let wSum = 0
+    components.forEach((c, i) => {
+      const val = c.v ?? defaults[i]
+      sum += val * c.w
+      wSum += c.w
+    })
+    overall = clamp0_100(wSum > 0 ? sum / wSum : sum)
   }
 
   return {
     overall,
     attacking_sot_score: attacking,
+    offensive_presence_score: offensivePresence,
     defensive_stability_score: defensive,
-    lineup_balance_score: balance,
-    data_confidence_score: data,
+    xi_continuity_score: continuity,
+    availability_score: availability,
+    confidence_score: confidence,
+    confidence_level,
     partial,
-    partial_note: partial ? 'Alcuni sotto-punteggi stimati con dati parziali.' : undefined,
+    partial_note: partial ? 'Alcuni componenti stimati con dati parziali.' : undefined,
+    explanation_bullets: pickExplanationBullets(lineupSide),
   }
 }
 
