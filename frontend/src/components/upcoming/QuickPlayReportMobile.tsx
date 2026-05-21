@@ -1,8 +1,10 @@
 import type { UpcomingActiveMatchRow } from '../../lib/api'
 import { formatKickoffReport } from '../../utils/sportApiLineupMeta'
 import {
+  AFFIDABILITA_HELP,
   confidenceBadgeClass,
   formationBadgeClass,
+  formationStatusTooltip,
   pickShortLabel,
   riskBadgeClass,
 } from '../../utils/bettingAdviceDisplay'
@@ -14,6 +16,8 @@ export function QuickPlayReportMobile({ matches }: { matches: UpcomingActiveMatc
     <div className="space-y-3 md:hidden">
       {matches.map((m) => {
         const market = m.markets?.[0]
+        const formLabel = m.lineup_status?.label
+        const formTip = formationStatusTooltip(formLabel)
         return (
           <article
             key={m.fixture_id}
@@ -37,6 +41,10 @@ export function QuickPlayReportMobile({ matches }: { matches: UpcomingActiveMatc
                 {market?.predicted_value != null ? formatNum(market.predicted_value) : '—'}
               </span>
             </p>
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-slate-500">Variazione</p>
+              <LineupRefreshImpactBadge impact={m.lineup_refresh_impact} showReason compact />
+            </div>
             <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
               <div className="rounded-lg bg-slate-50 p-2">
                 <p className="text-[10px] text-slate-500">Statistica</p>
@@ -52,16 +60,18 @@ export function QuickPlayReportMobile({ matches }: { matches: UpcomingActiveMatc
                 <p className="font-semibold text-emerald-900">{pickShortLabel(market?.cautious_pick)}</p>
               </div>
             </div>
-            <div className="mt-2">
-              <p className="text-[10px] font-medium text-slate-500">Variazione</p>
-              <LineupRefreshImpactBadge impact={m.lineup_refresh_impact} showReason compact />
-            </div>
             <div className="mt-2 flex flex-wrap gap-2">
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${confidenceBadgeClass(market?.confidence_label)}`}>
-                {market?.confidence_label ?? '—'}
+              <span
+                title={AFFIDABILITA_HELP}
+                className={`rounded-full border px-2 py-0.5 text-[10px] ${confidenceBadgeClass(market?.confidence_label)}`}
+              >
+                Affidabilità: {market?.confidence_label ?? '—'}
               </span>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${formationBadgeClass(m.lineup_status?.label)}`}>
-                {m.lineup_status?.label ?? '—'}
+              <span
+                title={formTip || undefined}
+                className={`rounded-full border px-2 py-0.5 text-[10px] ${formationBadgeClass(formLabel)}`}
+              >
+                {formLabel ?? '—'}
               </span>
             </div>
             <a

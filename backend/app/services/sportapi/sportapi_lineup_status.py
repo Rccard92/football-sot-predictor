@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.models import FixtureProviderLineup
 from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI
 
-FORMATION_RECENT_HOURS = 2.0
+FORMATION_RECENT_HOURS = 6.0
 
 
 def _age_hours(fetched_at: datetime | None) -> float | None:
@@ -35,11 +35,9 @@ def formation_status_label(
     if confirmed is True:
         return "Ufficiale"
     age = _age_hours(fetched_at)
-    if age is not None and age < FORMATION_RECENT_HOURS:
-        return "Probabile aggiornata"
-    if age is not None and age >= FORMATION_RECENT_HOURS:
-        return "Probabile vecchia"
-    return "Probabile"
+    if age is not None and age <= FORMATION_RECENT_HOURS:
+        return "Aggiornata"
+    return "Da aggiornare"
 
 
 def lineup_row_for_fixture(db: Session, fixture_id: int) -> FixtureProviderLineup | None:

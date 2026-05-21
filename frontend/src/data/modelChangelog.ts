@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.4.1',
+    date: '2026-05-19',
+    title: 'Report rapido — fix UX',
+    type: 'patch',
+    summary:
+      'Migliorata la tabella Report rapido: colonna Variazione più visibile, etichette formazione chiare, Affidabilità al posto di Confidence e refresh turno che traccia subito i delta v2.0.',
+    highlights: [
+      'Colonna Variazione spostata subito dopo Previsti (desktop e mobile).',
+      'Stato formazione: Ufficiale, Aggiornata (≤6h), Da aggiornare, Mancante.',
+      'Colonna rinominata in Affidabilità con tooltip sulla qualità dei dati.',
+      'Refresh turno con tracciamento v2.0 quando il report usa previsioni 2.0.',
+      'Delta pronostico mostrato subito dopo il refresh, prima del reload completo.',
+      'Riepilogo refresh in accordion «Dettagli variazioni».',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.4.0',
     date: '2026-05-19',
     title: 'Layout più ampio e menu responsive',

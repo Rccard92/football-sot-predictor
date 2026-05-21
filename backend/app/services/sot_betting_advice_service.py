@@ -32,10 +32,12 @@ CAUTIOUS_MARGIN = 0.75
 class AdviceContext:
     model_version: str | None = None
     lineup_confidence_label: str | None = None
+    lineup_status_label: str | None = None
     sportapi_confirmed: bool | None = None
     sportapi_fetched_at: str | None = None
     profiles_missing: bool = False
     statistical_margin: float | None = None
+    statistical_risk: str | None = None
 
 
 def lines_for_market(market_type: MarketType) -> list[float]:
@@ -109,8 +111,21 @@ def advice_confidence_label(ctx: AdviceContext) -> str:
     elif ctx.sportapi_confirmed is False:
         score -= 6
 
+    fl = (ctx.lineup_status_label or "").strip()
+    if fl == "Ufficiale":
+        score += 8
+    elif fl == "Aggiornata":
+        score += 10
+    elif fl == "Da aggiornare":
+        score -= 12
+    elif fl == "Mancante":
+        score -= 18
+
     if ctx.profiles_missing:
         score -= 12
+
+    if ctx.statistical_risk == "Molto tirata":
+        score -= 4
 
     if ctx.sportapi_fetched_at:
         try:
@@ -176,9 +191,9 @@ def build_market_advice(
     caut_margin = _round_margin(pred - caut_ln) if caut_ln is not None else None
 
     ctx.statistical_margin = stat_margin
-    conf = advice_confidence_label(ctx)
-
     stat_pick = format_over_pick(stat_ln)
+    ctx.statistical_risk = risk_label(stat_margin) if stat_pick else None
+    conf = advice_confidence_label(ctx)
     caut_pick = format_over_pick(caut_ln)
     caut_note: str | None = None
     if stat_ln is not None and caut_ln is not None and stat_ln == caut_ln:
@@ -201,7 +216,7 @@ def build_market_advice(
         "statistical_pick": stat_pick,
         "statistical_line": stat_ln,
         "statistical_margin": stat_margin,
-        "statistical_risk": risk_label(stat_margin) if stat_pick else None,
+        "statistical_risk": ctx.statistical_risk,
         "cautious_pick": caut_pick,
         "cautious_line": caut_ln,
         "cautious_margin": caut_margin,
@@ -228,6 +243,7 @@ def build_fixture_betting_advice(
     match_ctx = AdviceContext(
         model_version=ctx.model_version,
         lineup_confidence_label=ctx.lineup_confidence_label,
+        lineup_status_label=ctx.lineup_status_label,
         sportapi_confirmed=ctx.sportapi_confirmed,
         sportapi_fetched_at=ctx.sportapi_fetched_at,
         profiles_missing=ctx.profiles_missing,
@@ -321,11 +337,18 @@ def build_betting_advice_compact(
 def advice_context_from_upcoming_lineup(
     lineup_row: dict[str, Any] | None,
 ) -> AdviceContext:
-    if not lineup_row or not lineup_row.get("has_lineup"):
-        return AdviceContext(profiles_missing=False)
+    st = lineup_row or {}
+    label = st.get("label")
+    if not st.get("has_lineup"):
+        return AdviceContext(
+            lineup_status_label=label or "Mancante",
+            profiles_missing=False,
+        )
     return AdviceContext(
-        sportapi_confirmed=lineup_row.get("confirmed"),
-        sportapi_fetched_at=lineup_row.get("fetched_at"),
+        lineup_status_label=label,
+        sportapi_confirmed=st.get("confirmed"),
+        sportapi_fetched_at=st.get("fetched_at"),
+        profiles_missing=False,
     )
 
 

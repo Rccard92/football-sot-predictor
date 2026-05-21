@@ -1,8 +1,10 @@
 import type { QuickPlayMarket, UpcomingActiveMatchRow } from '../../lib/api'
 import { formatKickoffReport } from '../../utils/sportApiLineupMeta'
 import {
+  AFFIDABILITA_HELP,
   confidenceBadgeClass,
   formationBadgeClass,
+  formationStatusTooltip,
   pickShortLabel,
   riskBadgeClass,
 } from '../../utils/bettingAdviceDisplay'
@@ -76,17 +78,26 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
             <th className="px-3 py-2">Match</th>
             <th className="px-3 py-2">Mercato</th>
             <th className="px-3 py-2">Previsti</th>
+            <th className="px-3 py-2">Variazione</th>
             <th className="px-3 py-2">Statistica</th>
             <th className="px-3 py-2">Cauta</th>
-            <th className="px-3 py-2">Confidence</th>
+            <th className="px-3 py-2">
+              <span className="inline-flex items-center gap-1" title={AFFIDABILITA_HELP}>
+                Affidabilità
+                <span className="cursor-help font-normal normal-case text-slate-400" aria-hidden>
+                  ⓘ
+                </span>
+              </span>
+            </th>
             <th className="px-3 py-2">Formazione</th>
-            <th className="px-3 py-2">Variazione</th>
             <th className="px-3 py-2">Azione</th>
           </tr>
         </thead>
         <tbody>
           {matches.map((m) => {
             const market = m.markets?.[0]
+            const formLabel = m.lineup_status?.label
+            const formTip = formationStatusTooltip(formLabel)
             return (
               <tr key={m.fixture_id} className="border-b border-slate-100 hover:bg-slate-50/50">
                 <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatKickoffReport(m.kickoff_at)}</td>
@@ -98,6 +109,9 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
                   {market?.predicted_value != null ? formatNum(market.predicted_value) : '—'}
                 </td>
                 <td className="px-3 py-2.5">
+                  <LineupRefreshImpactBadge impact={m.lineup_refresh_impact} showReason />
+                </td>
+                <td className="px-3 py-2.5">
                   <StatCell market={market} />
                 </td>
                 <td className="px-3 py-2.5">
@@ -105,6 +119,7 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
                 </td>
                 <td className="px-3 py-2.5">
                   <span
+                    title={AFFIDABILITA_HELP}
                     className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${confidenceBadgeClass(market?.confidence_label)}`}
                   >
                     {market?.confidence_label ?? '—'}
@@ -112,13 +127,11 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
                 </td>
                 <td className="px-3 py-2.5">
                   <span
-                    className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${formationBadgeClass(m.lineup_status?.label)}`}
+                    title={formTip || undefined}
+                    className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${formationBadgeClass(formLabel)}`}
                   >
-                    {m.lineup_status?.label ?? '—'}
+                    {formLabel ?? '—'}
                   </span>
-                </td>
-                <td className="px-3 py-2.5">
-                  <LineupRefreshImpactBadge impact={m.lineup_refresh_impact} showReason />
                 </td>
                 <td className="px-3 py-2.5">
                   <a

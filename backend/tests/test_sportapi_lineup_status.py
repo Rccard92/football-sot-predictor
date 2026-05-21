@@ -1,4 +1,4 @@
-"""Test etichette stato formazione SportAPI."""
+"""Test etichette stato formazione SportAPI per report rapido."""
 
 from __future__ import annotations
 
@@ -15,17 +15,15 @@ def test_formation_status_official():
     assert formation_status_label(has_lineup=True, confirmed=True, fetched_at=None) == "Ufficiale"
 
 
-def test_formation_status_probable_updated():
-    recent = datetime.now(timezone.utc) - timedelta(hours=1)
-    assert (
-        formation_status_label(has_lineup=True, confirmed=False, fetched_at=recent) == "Probabile aggiornata"
-    )
+def test_formation_status_updated_within_6h():
+    recent = datetime.now(timezone.utc) - timedelta(hours=3)
+    assert formation_status_label(has_lineup=True, confirmed=False, fetched_at=recent) == "Aggiornata"
 
 
-def test_formation_status_probable_stale():
-    old = datetime.now(timezone.utc) - timedelta(hours=5)
-    assert formation_status_label(has_lineup=True, confirmed=False, fetched_at=old) == "Probabile vecchia"
+def test_formation_status_stale_over_6h():
+    old = datetime.now(timezone.utc) - timedelta(hours=8)
+    assert formation_status_label(has_lineup=True, confirmed=False, fetched_at=old) == "Da aggiornare"
 
 
-def test_formation_status_probable_fallback():
-    assert formation_status_label(has_lineup=True, confirmed=False, fetched_at=None) == "Probabile"
+def test_formation_status_no_fetched_at():
+    assert formation_status_label(has_lineup=True, confirmed=False, fetched_at=None) == "Da aggiornare"

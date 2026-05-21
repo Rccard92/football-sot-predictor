@@ -1,7 +1,18 @@
-import { useCallback, useState } from 'react'
-import { DEFAULT_SEASON, postRefreshNextRoundSportApiLineups, type SportApiRoundRefreshSummary, type UpcomingActiveMatchRow } from '../../lib/api'
+import { useCallback, useMemo, useState } from 'react'
+import {
+  DEFAULT_SEASON,
+  postRefreshNextRoundSportApiLineups,
+  type LineupRefreshImpactPayload,
+  type SportApiRoundRefreshSummary,
+  type UpcomingActiveMatchRow,
+} from '../../lib/api'
 import { V20_MODEL } from '../../lib/modelVersions'
 import { formatImpactLine } from '../../utils/lineupRefreshImpactDisplay'
+import {
+  impactsFromRefreshResults,
+  mergeMatchesWithImpacts,
+  reportUsesV20Predictions,
+} from './quickPlayImpactMerge'
 import { QuickPlayReportMobile } from './QuickPlayReportMobile'
 import { QuickPlayReportTable } from './QuickPlayReportTable'
 
@@ -17,6 +28,12 @@ export function QuickPlayReportSection({
   const [refreshBusy, setRefreshBusy] = useState(false)
   const [refreshResult, setRefreshResult] = useState<SportApiRoundRefreshSummary | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [impactOverrides, setImpactOverrides] = useState<Record<number, LineupRefreshImpactPayload>>({})
+
+  const displayMatches = useMemo(
+    () => mergeMatchesWithImpacts(matches, impactOverrides),
+    [matches, impactOverrides],
+  )
 
   const runRefresh = useCallback(async () => {
     const n = matches.length
@@ -28,18 +45,23 @@ export function QuickPlayReportSection({
     setRefreshError(null)
     setRefreshResult(null)
     try {
+      const regenerateV20 = reportUsesV20Predictions(matches, modelVersion, V20_MODEL)
       const out = await postRefreshNextRoundSportApiLineups(DEFAULT_SEASON, {
-        regenerateV20: modelVersion === V20_MODEL,
+        regenerateV20,
         timeoutMs: 600_000,
       })
       setRefreshResult(out)
+      const merged = impactsFromRefreshResults(out.results)
+      if (Object.keys(merged).length) {
+        setImpactOverrides((prev) => ({ ...prev, ...merged }))
+      }
       await onRefreshComplete()
     } catch (e) {
       setRefreshError(e instanceof Error ? e.message : String(e))
     } finally {
       setRefreshBusy(false)
     }
-  }, [matches.length, modelVersion, onRefreshComplete])
+  }, [matches, modelVersion, onRefreshComplete])
 
   if (!matches.length) return null
 
@@ -47,9 +69,9 @@ export function QuickPlayReportSection({
     (r) => r.status === 'error' || r.status === 'lineups_failed' || r.status === 'mapping_failed',
   )
 
-  const impactRows = (refreshResult?.results ?? []).filter(
-    (r) => r.direction_total && (r.status === 'updated' || r.status === 'ok'),
-  )
+  const impactRows = (refreshResult?.results ?? []).filter((r) => r.direction_total)
+
+  const formationsUpdated = refreshResult?.updated ?? 0
 
   return (
     <section className="overflow-hidden rounded-2xl border border-indigo-200/80 bg-white shadow-sm">
@@ -75,17 +97,10 @@ export function QuickPlayReportSection({
         {refreshError ? <p className="mt-2 text-[11px] text-rose-700">{refreshError}</p> : null}
         {refreshResult ? (
           <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-[11px] text-emerald-950">
-            <p className="font-semibold">Esecuzione completata</p>
+            <p className="font-semibold">Aggiornamento completato</p>
             <ul className="mt-1 list-inside list-disc">
               <li>{refreshResult.total_fixtures} partite controllate</li>
-              <li>{refreshResult.updated} aggiornate</li>
-              <li>{refreshResult.skipped_no_mapping} senza mapping</li>
-              <li>{refreshResult.skipped_recent} saltate (dato recente)</li>
-              <li>{refreshResult.failed} errori</li>
-              <li>Chiamate stimate/usate: {refreshResult.estimated_api_calls}</li>
-              {refreshResult.v20_regenerated != null && refreshResult.v20_regenerated > 0 ? (
-                <li>Previsioni v2.0 rigenerate: {refreshResult.v20_regenerated}</li>
-              ) : null}
+              <li>{formationsUpdated} formazioni aggiornate</li>
               {refreshResult.up_count != null ? (
                 <li>
                   {refreshResult.up_count} pronostici saliti · {refreshResult.down_count ?? 0} scesi ·{' '}
@@ -94,14 +109,19 @@ export function QuickPlayReportSection({
               ) : null}
             </ul>
             {impactRows.length > 0 ? (
-              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto border-t border-emerald-200/80 pt-2 text-[10px]">
-                {impactRows.map((r) => (
-                  <li key={r.fixture_id}>
-                    <span className="font-medium">{r.match_name ?? `Fixture ${r.fixture_id}`}</span>:{' '}
-                    {formatImpactLine(r.direction_total, r.delta_total_sot, r.main_reason)}
-                  </li>
-                ))}
-              </ul>
+              <details className="mt-2 border-t border-emerald-200/80 pt-2">
+                <summary className="cursor-pointer text-[10px] font-medium text-emerald-950">
+                  Dettagli variazioni ({impactRows.length})
+                </summary>
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-[10px]">
+                  {impactRows.map((r) => (
+                    <li key={r.fixture_id}>
+                      <span className="font-medium">{r.match_name ?? `Fixture ${r.fixture_id}`}</span>:{' '}
+                      {formatImpactLine(r.direction_total, r.delta_total_sot, r.main_reason)}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             ) : null}
           </div>
         ) : null}
@@ -123,8 +143,8 @@ export function QuickPlayReportSection({
       </div>
 
       <div className="p-2 md:p-4">
-        <QuickPlayReportTable matches={matches} />
-        <QuickPlayReportMobile matches={matches} />
+        <QuickPlayReportTable matches={displayMatches} />
+        <QuickPlayReportMobile matches={displayMatches} />
       </div>
     </section>
   )
