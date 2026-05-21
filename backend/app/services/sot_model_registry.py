@@ -54,7 +54,7 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
         label="v1.0 SOT (xG)",
         short_label="v1.0",
         stage_badge="legacy",
-        description="Versione parallela con correzione xG.",
+        description="Versione legacy interna con correzione xG; non mostrata nella UI.",
         visible_in_ui=False,
     ),
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT: ModelDisplayInfo(
@@ -62,7 +62,7 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
         label="v0.4 offensive core",
         short_label="v0.4",
         stage_badge="legacy",
-        description="Core offensivo migliorato.",
+        description="Versione legacy interna offensive core; non mostrata nella UI.",
         visible_in_ui=False,
     ),
     BASELINE_SOT_MODEL_VERSION_V03_CORE_SOT: ModelDisplayInfo(
@@ -70,6 +70,7 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
         label="v0.3 core SOT",
         short_label="v0.3",
         stage_badge="legacy",
+        description="Versione legacy interna core SOT; non mostrata nella UI.",
         visible_in_ui=False,
     ),
     BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED: ModelDisplayInfo(
@@ -77,6 +78,7 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
         label="v0.2 player adjusted",
         short_label="v0.2",
         stage_badge="legacy",
+        description="Versione legacy interna player adjusted; non mostrata nella UI.",
         visible_in_ui=False,
     ),
     BASELINE_SOT_MODEL_VERSION_V02: ModelDisplayInfo(
@@ -84,6 +86,7 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
         label="v0.2 context",
         short_label="v0.2",
         stage_badge="legacy",
+        description="Versione legacy interna contesto; non mostrata nella UI.",
         visible_in_ui=False,
     ),
     BASELINE_SOT_MODEL_VERSION: ModelDisplayInfo(
@@ -91,6 +94,7 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
         label="v0.1 SOT",
         short_label="v0.1",
         stage_badge="legacy",
+        description="Versione legacy interna baseline v0.1; non mostrata nella UI.",
         visible_in_ui=False,
     ),
 }
