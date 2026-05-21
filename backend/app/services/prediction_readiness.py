@@ -437,6 +437,10 @@ def build_upcoming_active_payload(
 
     impacts_by_fx = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(db, fx_ids)
 
+    from app.services.tracked_betting_pick_service import TrackedBettingPickService
+
+    tracked_by_fx = TrackedBettingPickService().load_auto_pre_match_by_fixture_ids(db, fx_ids)
+
     matches: list[dict[str, Any]] = []
     for fx in upcoming:
         mv_used = pick_match_version(fx)
@@ -502,6 +506,13 @@ def build_upcoming_active_payload(
                 context=advice_ctx,
             )
 
+        tracked_rows = tracked_by_fx.get(int(fx.id)) or []
+        tracked_badge = None
+        tracked_summary = None
+        if tracked_rows:
+            tracked_badge = "Auto 30'"
+            tracked_summary = "Pronostico definitivo salvato 30 minuti prima della partita."
+
         matches.append(
             {
                 "fixture_id": int(fx.id),
@@ -528,6 +539,8 @@ def build_upcoming_active_payload(
                 "lineup_status": lineup_status,
                 "lineup_refresh_impact": impacts_by_fx.get(int(fx.id))
                 or {"has_comparison": False},
+                "tracked_pick_badge": tracked_badge,
+                "tracked_pick_summary": tracked_summary,
             },
         )
 

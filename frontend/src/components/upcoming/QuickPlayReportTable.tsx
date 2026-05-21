@@ -102,7 +102,17 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
               <tr key={m.fixture_id} className="border-b border-slate-100 hover:bg-slate-50/50">
                 <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatKickoffReport(m.kickoff_at)}</td>
                 <td className="px-3 py-2.5">
-                  <TeamLogosMatch match={m} />
+                  <div className="space-y-1">
+                    <TeamLogosMatch match={m} />
+                    {m.tracked_pick_badge ? (
+                      <span
+                        title={m.tracked_pick_summary ?? undefined}
+                        className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] font-medium text-violet-900"
+                      >
+                        {m.tracked_pick_badge}
+                      </span>
+                    ) : null}
+                  </div>
                 </td>
                 <td className="px-3 py-2.5 font-medium">{market?.label ?? 'SOT Totale'}</td>
                 <td className="px-3 py-2.5 tabular-nums font-semibold">

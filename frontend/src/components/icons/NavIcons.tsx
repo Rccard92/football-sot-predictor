@@ -39,6 +39,13 @@ const icons: Record<NavIconName, ReactNode> = {
       <polyline points="10 9 9 9 8 9" />
     </>
   ),
+  target: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </>
+  ),
   calendar: (
     <>
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />

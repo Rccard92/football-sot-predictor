@@ -70,3 +70,8 @@ class Fixture(Base, TimestampMixin):
         back_populates="fixture",
         cascade="all, delete-orphan",
     )
+    tracked_betting_picks = relationship(
+        "TrackedBettingPick",
+        back_populates="fixture",
+        cascade="all, delete-orphan",
+    )

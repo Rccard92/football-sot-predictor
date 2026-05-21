@@ -2,6 +2,7 @@ export type NavIconName =
   | 'activity'
   | 'file-text'
   | 'calendar'
+  | 'target'
   | 'history'
   | 'bug'
   | 'database'
@@ -24,6 +25,7 @@ export const NAV_MAIN: NavItem[] = [
   { to: '/match-analysis-framework', label: 'Framework Analisi', icon: 'activity', section: 'main' },
   { to: '/match-variable-audit', label: 'Spiegazione previsione', icon: 'file-text', section: 'main' },
   { to: '/', label: 'Prossima giornata', icon: 'calendar', section: 'main' },
+  { to: '/monitoraggio-giocate', label: 'Monitoraggio Giocate', icon: 'target', section: 'main' },
   { to: '/changelog', label: 'Changelog', icon: 'history', section: 'main' },
 ]
 

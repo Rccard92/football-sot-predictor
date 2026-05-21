@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.5.0',
+    date: '2026-05-19',
+    title: 'Pronostico definitivo pre-match',
+    type: 'minor',
+    summary:
+      'Aggiunto il job che aggiorna automaticamente le formazioni circa 30 minuti prima della partita e salva il pronostico definitivo da monitorare live.',
+    highlights: [
+      'Refresh automatico SportAPI vicino al calcio d\'inizio.',
+      'Salvataggio snapshot definitiva del pronostico v2.0.',
+      'Distinzione tra pronostico con formazione ufficiale e probabile.',
+      'Integrazione con Monitoraggio Giocate.',
+      'Riduzione del rischio di monitorare pronostici basati su formazioni vecchie.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.4.1',
     date: '2026-05-19',
     title: 'Report rapido — fix UX',

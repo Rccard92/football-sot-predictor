@@ -72,7 +72,18 @@ export function MatchCard({
           <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-800 ring-1 ring-slate-200">
             Modello: {labelForModelVersion(match.model_version_used)}
           </span>
+          {match.tracked_pick_badge ? (
+            <span
+              title={match.tracked_pick_summary ?? undefined}
+              className="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-900 ring-1 ring-violet-200"
+            >
+              {match.tracked_pick_badge}
+            </span>
+          ) : null}
         </div>
+        {match.tracked_pick_summary ? (
+          <p className="mt-1 text-[10px] text-violet-800">{match.tracked_pick_summary}</p>
+        ) : null}
         {isV20 && readiness ? (
           <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-slate-600">
             {Object.entries(readiness).map(([k, v]) => (

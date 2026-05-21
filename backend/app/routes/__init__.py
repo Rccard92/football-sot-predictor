@@ -2,6 +2,8 @@ from fastapi import APIRouter
 
 from app.routes import (
     admin,
+    admin_betting_picks,
+    admin_jobs,
     admin_debug_player_db,
     admin_data_health,
     admin_debug_api_football_catalog,
@@ -14,6 +16,7 @@ from app.routes import (
     admin_pipeline,
     admin_refresh,
     admin_sportapi,
+    betting_picks,
     backtest,
     data_catalog,
     debug_sot,
@@ -45,6 +48,9 @@ api_router.include_router(admin_pipeline.router)
 api_router.include_router(admin_refresh.router)
 api_router.include_router(admin_data_health.router)
 api_router.include_router(admin_sportapi.router)
+api_router.include_router(admin_jobs.router)
+api_router.include_router(admin_betting_picks.router)
+api_router.include_router(betting_picks.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(features.router)

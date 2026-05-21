@@ -561,6 +561,122 @@ export async function postSyncNextRoundApiSquadsBatch(season: number, opts?: Adm
   return adminPostJson<unknown>(`/api/admin/sportapi/serie-a/${season}/sync-api-squads-batch`, {}, opts)
 }
 
+export type PreMatchJobSummary = {
+  status: string
+  season?: number
+  checked: number
+  refreshed: number
+  picks_created: number
+  picks_updated: number
+  skipped: number
+  mapping_missing?: number
+  lineup_confirmed?: number
+  minutes_before?: number
+  window_minutes?: number
+  errors: { fixture_id?: number; error?: string }[]
+  results?: unknown[]
+}
+
+export type TrackedBettingPickRow = {
+  id: number
+  fixture_id: number
+  kickoff_at: string | null
+  match_name: string
+  home_team: UpcomingMatchTeam
+  away_team: UpcomingMatchTeam
+  suggested_pick: string | null
+  pick_type: string
+  pick_type_label: string
+  source: string
+  origin_label: string
+  formation_label: string
+  lineup_confirmed: boolean
+  predicted_total_sot: number | null
+  fixture_status: string | null
+  elapsed: number | null
+  score_home: number | null
+  score_away: number | null
+  result_home_sot: number | null
+  result_away_sot: number | null
+  result_total_sot: number | null
+  status: string
+  confidence_label: string | null
+  updated_at: string | null
+  auto_generated_at: string | null
+}
+
+export type TrackedBettingPicksResponse = {
+  status: string
+  season: number
+  picks: TrackedBettingPickRow[]
+  count: number
+}
+
+export type TrackedPicksRefreshResultsSummary = {
+  status: string
+  season: number
+  picks_checked: number
+  picks_updated: number
+  api_calls?: number
+  errors: { pick_id?: number; error?: string }[]
+}
+
+function adminCronHeaders(): Record<string, string> {
+  const secret = import.meta.env.VITE_ADMIN_CRON_SECRET as string | undefined
+  if (!secret?.trim()) return {}
+  return { 'X-Admin-Cron-Secret': secret.trim() }
+}
+
+export async function postPreMatchLineupRefreshJob(
+  body: { force?: boolean; minutes_before?: number; window_minutes?: number; season?: number } = {},
+  opts?: AdminRequestOpts,
+): Promise<PreMatchJobSummary> {
+  const base = getApiBase()
+  const p = '/api/admin/jobs/pre-match-lineup-refresh/run'
+  let cancelTimeout: (() => void) | undefined
+  let signal: AbortSignal | undefined = opts?.signal
+  if (opts?.timeoutMs != null && opts.timeoutMs > 0) {
+    const x = createLinkedTimeoutSignal(opts.timeoutMs, opts.signal)
+    signal = x.signal
+    cancelTimeout = x.cancel
+  }
+  try {
+    const res = await fetch(`${base}${p}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...adminCronHeaders() },
+      body: JSON.stringify(body),
+      signal,
+    })
+    const ct = res.headers.get('content-type') ?? ''
+    const parsed = ct.includes('application/json') ? await res.json() : await res.text()
+    if (!res.ok) {
+      const msg =
+        parsed && typeof parsed === 'object' && 'detail' in (parsed as object)
+          ? String((parsed as { detail: unknown }).detail)
+          : `HTTP ${res.status}`
+      throw new AdminHttpError(res.status, msg, parsed)
+    }
+    return parsed as PreMatchJobSummary
+  } finally {
+    cancelTimeout?.()
+  }
+}
+
+export async function getTrackedBettingPicks(season: number): Promise<TrackedBettingPicksResponse> {
+  return requestJson<TrackedBettingPicksResponse>(`/api/betting-picks/serie-a/${season}/tracked`)
+}
+
+export async function postRefreshTrackedPickResults(
+  season: number,
+  opts?: AdminRequestOpts,
+): Promise<TrackedPicksRefreshResultsSummary> {
+  return adminPostJson<TrackedPicksRefreshResultsSummary>(
+    `/api/admin/betting-picks/serie-a/${season}/refresh-results`,
+    {},
+    opts,
+  )
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(
@@ -1079,6 +1195,8 @@ export type UpcomingActiveMatchRow = {
   markets?: QuickPlayMarket[]
   lineup_status?: LineupStatusPayload | null
   lineup_refresh_impact?: LineupRefreshImpactPayload | null
+  tracked_pick_badge?: string | null
+  tracked_pick_summary?: string | null
   betting_advice_compact?: {
     total_expected_sot: number | null
     statistical_pick: string | null

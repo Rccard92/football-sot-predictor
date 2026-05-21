@@ -37,6 +37,7 @@ import {
   type UpcomingActiveResponse,
 } from '../lib/api'
 
+import { PreMatchJobPanel } from '../components/admin/PreMatchJobPanel'
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
 import { V04_MODEL, V10_MODEL, V11_MODEL, V20_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
@@ -697,6 +698,13 @@ export function Admin() {
               <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
             ))}
           </div>
+        </Section>
+
+        <Section
+          title="Job pre-match"
+          subtitle="Snapshot definitiva ~30 min prima del calcio d'inizio (SportAPI + v2.0 + monitoraggio giocate)."
+        >
+          <PreMatchJobPanel />
         </Section>
 
         <div ref={sportapiSectionRef}>
