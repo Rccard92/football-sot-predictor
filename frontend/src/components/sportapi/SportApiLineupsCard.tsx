@@ -1,6 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { getFixturePlayerProfiles } from '../../lib/api'
+import { V11_MODEL, V20_MODEL } from '../../lib/modelVersions'
+import type { LineupImpactSimulationPayload } from '../../types/lineupImpact'
+import type { PlayerDbProfileRow } from '../../types/playerDbProfiles'
 import type { SportApiLineupsAuditPayload, SportApiLineupsStoredResponse } from '../../types/sportapi'
-import { SportApiLineupBoard } from './SportApiLineupBoard'
+import { SportApiLineupSide } from './SportApiLineupSide'
 
 const EMPTY_MISSING = { injured: [], suspended: [], other: [] }
 
@@ -16,39 +21,87 @@ function emptySide(name: string) {
   }
 }
 
-const V20_MODEL = 'baseline_v2_0_lineup_impact'
-
 export function SportApiLineupsCard({
   data,
   compact = false,
   apiFixtureId,
+  fixtureId,
   activeModelVersion,
+  lineupImpact,
 }: {
   data: SportApiLineupsAuditPayload | null | undefined
   compact?: boolean
-  /** Link Admin pre-fill quando dati assenti */
   apiFixtureId?: number | null
+  fixtureId?: number | null
   activeModelVersion?: string | null
+  lineupImpact?: LineupImpactSimulationPayload | null
 }) {
   const confirmed = data?.confirmed
   const available = data?.available === true
-  const v20Active = activeModelVersion === V20_MODEL
+
+  const [homeProfiles, setHomeProfiles] = useState<PlayerDbProfileRow[]>([])
+  const [awayProfiles, setAwayProfiles] = useState<PlayerDbProfileRow[]>([])
+  const [profilesLoading, setProfilesLoading] = useState(false)
+
+  useEffect(() => {
+    if (!available || !fixtureId) {
+      setHomeProfiles([])
+      setAwayProfiles([])
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      setProfilesLoading(true)
+      try {
+        const res = await getFixturePlayerProfiles(fixtureId, { limit: 'all' })
+        if (cancelled || res.status !== 'success') return
+        setHomeProfiles(res.home?.players ?? [])
+        setAwayProfiles(res.away?.players ?? [])
+      } catch {
+        if (!cancelled) {
+          setHomeProfiles([])
+          setAwayProfiles([])
+        }
+      } finally {
+        if (!cancelled) setProfilesLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [available, fixtureId])
 
   const modelBadge = (() => {
     if (!available) return null
-    if (v20Active) {
+    if (activeModelVersion === V20_MODEL) {
       return (
         <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-900">
           Dati usati dal modello v2.0
         </span>
       )
     }
+    if (activeModelVersion === V11_MODEL) {
+      return (
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+          Dati disponibili, non usati da v1.1
+        </span>
+      )
+    }
     return (
       <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-700">
-        Dati disponibili per v2.0
+        Dati disponibili per analisi pre-match
       </span>
     )
   })()
+
+  const matching = lineupImpact?.sportapi_player_matching
+  const meta = {
+    confirmed,
+    confidenceScore: data?.confidence_score,
+    fetchedAt: data?.fetched_at,
+    profilesMissing: lineupImpact?.profiles_missing,
+  }
 
   return (
     <section
@@ -76,6 +129,7 @@ export function SportApiLineupsCard({
             Ultimo import: {data.fetched_at}
             {data.provider_event_id != null ? ` · event_id ${data.provider_event_id}` : ''}
             {data.confidence_score != null ? ` · mapping ${data.confidence_score}` : ''}
+            {profilesLoading ? ' · profili in caricamento…' : ''}
           </p>
         ) : null}
       </div>
@@ -99,26 +153,20 @@ export function SportApiLineupsCard({
             ) : null}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-stretch">
-            <SportApiLineupBoard
-              teamName={data.home.team_name}
-              formation={data.home.formation}
-              confirmed={confirmed}
-              starters={data.home.starters}
-              substitutes={data.home.substitutes}
-              missingPlayers={data.home.missing_players}
-              tacticalLines={data.home.tactical_lines}
-              compact={compact}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-start">
+            <SportApiLineupSide
+              side={data.home}
+              lineupSide={lineupImpact?.home}
+              matching={matching}
+              profiles={homeProfiles}
+              meta={meta}
             />
-            <SportApiLineupBoard
-              teamName={data.away.team_name}
-              formation={data.away.formation}
-              confirmed={confirmed}
-              starters={data.away.starters}
-              substitutes={data.away.substitutes}
-              missingPlayers={data.away.missing_players}
-              tacticalLines={data.away.tactical_lines}
-              compact={compact}
+            <SportApiLineupSide
+              side={data.away}
+              lineupSide={lineupImpact?.away}
+              matching={matching}
+              profiles={awayProfiles}
+              meta={meta}
             />
           </div>
         )}

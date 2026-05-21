@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.0',
+    date: '2026-05-19',
+    title: 'Analisi forza formazione',
+    type: 'minor',
+    summary:
+      'Migliorata la sezione formazioni con visualizzazione tattica ordinata, overall della squadra in campo e tabella dei parametri dei titolari.',
+    highlights: [
+      'Aggiunto Overall XI 0-100 per la squadra che scende in campo.',
+      'Aggiunti sotto-punteggi: forza offensiva SOT, solidità difensiva, equilibrio formazione e affidabilità dato.',
+      'Migliorata la disposizione tattica per modulo.',
+      'Aggiunta tabella dei titolari con SOT/90, tiri/90, quota SOT e impatti offensivi/difensivi.',
+      'Migliorata la lettura degli indisponibili.',
+      'Aggiornati i badge per distinguere dati usati in v2.0 e dati solo informativi in v1.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.0.3',
     date: '2026-05-19',
     title: 'Fix spiegazione previsione',
