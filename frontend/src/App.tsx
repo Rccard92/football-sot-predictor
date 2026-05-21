@@ -11,6 +11,7 @@ import { MatchVariableAudit } from './pages/MatchVariableAudit'
 import { ModelDebug } from './pages/ModelDebug'
 import { ModelLegend } from './pages/ModelLegend'
 import { Teams } from './pages/Teams'
+import { Changelog } from './pages/Changelog'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<UpcomingMatches />} />
+          <Route path="/changelog" element={<Changelog />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/data-health" element={<DataHealth />} />
           <Route path="/teams" element={<Teams />} />

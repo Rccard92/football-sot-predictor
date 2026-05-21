@@ -20,8 +20,10 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
+from app.services.sot_model_registry import user_visible_model_versions
 from app.models import Fixture, League, Season, Team, TeamSotPrediction
 from app.services.ingestion_service import IngestionService
 from app.services.model_version_preference import (
@@ -237,15 +239,16 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
             "season": int(season),
             "active_model_version": None,
             "recommended_model_version": None,
+            "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
             "upcoming_fixtures_total": int(upcoming_fixtures_total),
             "available_model_versions": [],
             "warnings": warnings,
         }
         return payload, 200
 
-    preferred_present = [by_version[k] for k in preferred if k in by_version]
-    extras = [v for k, v in by_version.items() if k not in preferred]
-    available_list = preferred_present + sorted(extras, key=lambda x: x["model_version"])
+    visible = user_visible_model_versions()
+    preferred_present = [by_version[k] for k in visible if k in by_version]
+    available_list = preferred_present
 
     recommended = resolve_recommended_model_version(
         db,
@@ -282,6 +285,7 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
         "season": int(season),
         "active_model_version": recommended,
         "recommended_model_version": recommended,
+        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
         "upcoming_fixtures_total": int(upcoming_fixtures_total),
         "available_model_versions": available_list,
         "warnings": warnings,
@@ -413,6 +417,10 @@ def build_upcoming_active_payload(
         row = pred_map.get((int(fx.id), int(team_id), BASELINE_SOT_MODEL_VERSION))
         return float(row.predicted_sot) if row and row.predicted_sot is not None else None
 
+    def baseline_v11(fx: Fixture, team_id: int) -> float | None:
+        row = pred_map.get((int(fx.id), int(team_id), BASELINE_SOT_MODEL_VERSION_V11_SOT))
+        return float(row.predicted_sot) if row and row.predicted_sot is not None else None
+
     matches: list[dict[str, Any]] = []
     for fx in upcoming:
         mv_used = pick_match_version(fx)
@@ -425,14 +433,26 @@ def build_upcoming_active_payload(
             if row is None or row.predicted_sot is None:
                 return None
             exp = float(row.predicted_sot)
-            b01 = baseline_v01(fx, team_id)
-            return {
+            raw = row.raw_json if isinstance(row.raw_json, dict) else {}
+            out: dict[str, Any] = {
                 "expected_sot": round(exp, 2),
                 "model_version": mv_used,
-                "baseline_v01_expected_sot": round(b01, 2) if b01 is not None else None,
-                "difference_from_v01": round(exp - b01, 2) if b01 is not None else None,
-                "breakdown": row.raw_json if isinstance(row.raw_json, dict) else None,
+                "breakdown": raw,
             }
+            if mv_used == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
+                b11 = baseline_v11(fx, team_id)
+                if b11 is not None:
+                    out["baseline_v11_expected_sot"] = round(b11, 2)
+                    out["difference_from_v11"] = round(exp - b11, 2)
+                readiness = raw.get("pre_match_readiness")
+                if isinstance(readiness, dict):
+                    out["pre_match_readiness"] = readiness
+            else:
+                b01 = baseline_v01(fx, team_id)
+                if b01 is not None:
+                    out["baseline_v01_expected_sot"] = round(b01, 2)
+                    out["difference_from_v01"] = round(exp - b01, 2)
+            return out
 
         home = side(int(fx.home_team_id))
         away = side(int(fx.away_team_id))
@@ -474,6 +494,7 @@ def build_upcoming_active_payload(
         "season": int(season),
         "model_version_used": requested if model_version else recommended,
         "recommended_model_version": recommended,
+        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
         "round": round_label,
         "matches_count": len(matches),
         "matches": matches,

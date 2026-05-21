@@ -18,6 +18,7 @@ from app.services.sportapi.sportapi_lineup_impact_service import LineupImpactSim
 from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
 from app.services.sportapi.sportapi_matching_service import SportApiMatchingService
 from app.services.sportapi.sportapi_player_matching_service import SportApiPlayerMatchingService
+from app.services.sportapi.sportapi_round_refresh_service import SportApiRoundRefreshService
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,50 @@ def _require_sportapi_enabled() -> None:
             status_code=400,
             detail="SportAPI disabilitata: imposta SPORTAPI_ENABLED=true e SPORTAPI_RAPIDAPI_KEY",
         )
+
+
+@router.post("/serie-a/{season}/refresh-next-round-lineups", response_model=None)
+def sportapi_refresh_next_round_lineups(
+    season: int,
+    db: Session = Depends(get_db),
+    force: bool = Query(False),
+    sync_squads: bool = Query(False),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Batch: mapping (se serve) + lineups SportAPI per il prossimo turno."""
+    _require_sportapi_enabled()
+    try:
+        out = SportApiRoundRefreshService().refresh_next_round_lineups(
+            db,
+            int(season),
+            force=force,
+            sync_squads=sync_squads,
+            limit=limit,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi refresh next round DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return jsonable_encoder(out)
+
+
+@router.post("/serie-a/{season}/sync-api-squads-batch", response_model=None)
+def sportapi_sync_api_squads_batch(
+    season: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Sync rose API-Sports per tutte le squadre del prossimo turno."""
+    _require_api_football_key()
+    try:
+        out = SportApiRoundRefreshService().sync_next_round_api_squads(db, int(season), limit=limit)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi sync squads batch DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return jsonable_encoder(out)
 
 
 @router.get("/debug/fixture/{fixture_id}", response_model=None)

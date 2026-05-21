@@ -15,17 +15,16 @@ from app.services.model_version_preference import (
 )
 
 
-def test_preferred_model_versions_v11_first() -> None:
+def test_preferred_model_versions_ui_v20_v11() -> None:
+    from app.core.constants import BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+
     versions = preferred_model_versions()
-    assert versions[0] == BASELINE_SOT_MODEL_VERSION_V11_SOT
-    assert versions[1] == BASELINE_SOT_MODEL_VERSION_V10_SOT
-    assert BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT in versions
-    assert versions.index(BASELINE_SOT_MODEL_VERSION_V11_SOT) < versions.index(
-        BASELINE_SOT_MODEL_VERSION_V10_SOT,
-    )
+    assert versions[0] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    assert versions[1] == BASELINE_SOT_MODEL_VERSION_V11_SOT
+    assert len(versions) == 2
 
 
-def test_resolve_active_model_v11_wins_when_all_present() -> None:
+def test_resolve_active_model_v11_wins_when_v20_absent() -> None:
     preds = {
         BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT: {"home": 4.2, "away": 3.8},
         BASELINE_SOT_MODEL_VERSION_V10_SOT: {"home": 4.5, "away": 4.0},
@@ -52,5 +51,6 @@ def test_resolve_active_model_v04_when_v10_partial() -> None:
     assert resolve_active_model_for_fixture_preds(preds) == BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT
 
 
-def test_preference_order_matches_export() -> None:
-    assert list(MODEL_VERSION_PREFERENCE_ORDER) == preferred_model_versions()
+def test_preference_order_includes_legacy_after_ui() -> None:
+    assert BASELINE_SOT_MODEL_VERSION_V11_SOT in MODEL_VERSION_PREFERENCE_ORDER
+    assert BASELINE_SOT_MODEL_VERSION_V10_SOT in MODEL_VERSION_PREFERENCE_ORDER

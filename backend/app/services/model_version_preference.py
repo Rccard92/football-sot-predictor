@@ -18,13 +18,17 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
 )
+from app.services.sot_model_registry import user_visible_model_versions
+from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
 from app.services.sot_feature_registry import V11_MODEL_STAGE
 from app.models import TeamSotPrediction
 from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER
 from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG
 
 MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
@@ -36,6 +40,10 @@ MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
 
 
 def preferred_model_versions() -> list[str]:
+    return list(user_visible_model_versions())
+
+
+def all_model_versions_preference_order() -> list[str]:
     return list(MODEL_VERSION_PREFERENCE_ORDER)
 
 
@@ -129,6 +137,47 @@ def v10_meets_recommend_criteria(
     return True
 
 
+def v20_meets_recommend_criteria(
+    db: Session,
+    *,
+    upcoming_fixture_ids: list[int],
+    by_version: dict[str, dict[str, Any]],
+    upcoming_fixtures_total: int,
+) -> bool:
+    row = by_version.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
+    if not row or not row.get("is_available_for_upcoming"):
+        return False
+    up = int(row.get("upcoming_predictions") or 0)
+    if upcoming_fixtures_total <= 0 or up != 2 * upcoming_fixtures_total:
+        return False
+    if not v11_meets_recommend_criteria(
+        db,
+        upcoming_fixture_ids=upcoming_fixture_ids,
+        by_version=by_version,
+        upcoming_fixtures_total=upcoming_fixtures_total,
+    ):
+        return False
+    if not upcoming_fixture_ids:
+        return False
+    from app.models import Fixture, Team
+
+    for fid in upcoming_fixture_ids:
+        fx = db.get(Fixture, int(fid))
+        if fx is None:
+            return False
+        home = db.get(Team, int(fx.home_team_id))
+        away = db.get(Team, int(fx.away_team_id))
+        audit = build_sportapi_lineups_audit(
+            db,
+            int(fid),
+            home_team_name=home.name if home else "Casa",
+            away_team_name=away.name if away else "Trasferta",
+        )
+        if not audit.get("available"):
+            return False
+    return True
+
+
 def resolve_recommended_model_version(
     db: Session,
     *,
@@ -136,6 +185,13 @@ def resolve_recommended_model_version(
     by_version: dict[str, dict[str, Any]],
     upcoming_fixtures_total: int,
 ) -> str | None:
+    if v20_meets_recommend_criteria(
+        db,
+        upcoming_fixture_ids=upcoming_fixture_ids,
+        by_version=by_version,
+        upcoming_fixtures_total=upcoming_fixtures_total,
+    ):
+        return BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     if v11_meets_recommend_criteria(
         db,
         upcoming_fixture_ids=upcoming_fixture_ids,
@@ -151,7 +207,11 @@ def resolve_recommended_model_version(
     ):
         return BASELINE_SOT_MODEL_VERSION_V10_SOT
     for mv in MODEL_VERSION_PREFERENCE_ORDER:
-        if mv in (BASELINE_SOT_MODEL_VERSION_V11_SOT, BASELINE_SOT_MODEL_VERSION_V10_SOT):
+        if mv in (
+            BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+            BASELINE_SOT_MODEL_VERSION_V11_SOT,
+            BASELINE_SOT_MODEL_VERSION_V10_SOT,
+        ):
             continue
         row = by_version.get(mv)
         if row and row.get("is_available_for_upcoming"):

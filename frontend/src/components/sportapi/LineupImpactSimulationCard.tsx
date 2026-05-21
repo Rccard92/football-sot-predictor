@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { syncSportApiFixtureSquads } from '../../lib/api'
+import { fetchSportApiLineups, syncSportApiFixtureSquads } from '../../lib/api'
 import type {
   LineupImpactDefensivePlayer,
   LineupImpactExcludedPlayer,
@@ -276,6 +276,7 @@ export function LineupImpactSimulationCard({
   onDataRefresh?: () => void | Promise<void>
 }) {
   const [syncLoading, setSyncLoading] = useState(false)
+  const [fetchLoading, setFetchLoading] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const effectiveFixtureId = fixtureId ?? data?.fixture_id
@@ -298,6 +299,22 @@ export function LineupImpactSimulationCard({
       setSyncError(e instanceof Error ? e.message : String(e))
     } finally {
       setSyncLoading(false)
+    }
+  }, [effectiveFixtureId, onDataRefresh])
+
+  const runFetchLineups = useCallback(async () => {
+    const fid = effectiveFixtureId
+    if (fid == null) return
+    if (!window.confirm('Aggiorna formazione SportAPI? Consuma 1 chiamata SportAPI.')) return
+    setFetchLoading(true)
+    setSyncError(null)
+    try {
+      await fetchSportApiLineups(fid)
+      await onDataRefresh?.()
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setFetchLoading(false)
     }
   }, [effectiveFixtureId, onDataRefresh])
 
@@ -339,23 +356,31 @@ export function LineupImpactSimulationCard({
             Profili player_sot_profiles assenti per questa stagione — eseguire build profili da Admin.
           </p>
         ) : null}
-        {rosterMissing ? (
-          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950">
-            <p>
-              Rosa attuale non aggiornata: il filtro giocatori trasferiti potrebbe non essere attivo.
-            </p>
-            {effectiveFixtureId != null ? (
-              <button
-                type="button"
-                disabled={syncLoading}
-                onClick={() => void runSyncSquads()}
-                className="mt-2 rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
-              >
-                {syncLoading ? 'Sincronizzazione…' : 'Aggiorna rosa attuale API-Sports'}
-              </button>
-            ) : null}
-            {syncError ? <p className="mt-1 text-rose-700">{syncError}</p> : null}
+        {effectiveFixtureId != null ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={fetchLoading || syncLoading}
+              onClick={() => void runFetchLineups()}
+              className="rounded-md border border-violet-300 bg-white px-2 py-1 text-[10px] font-medium text-violet-900 hover:bg-violet-50 disabled:opacity-50"
+            >
+              {fetchLoading ? 'Fetch…' : 'Aggiorna formazione SportAPI'}
+            </button>
+            <button
+              type="button"
+              disabled={syncLoading || fetchLoading}
+              onClick={() => void runSyncSquads()}
+              className="rounded-md border border-amber-300 bg-white px-2 py-1 text-[10px] font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {syncLoading ? 'Sincronizzazione…' : 'Aggiorna rosa attuale API-Sports'}
+            </button>
           </div>
+        ) : null}
+        {syncError ? <p className="mt-1 text-[11px] text-rose-700">{syncError}</p> : null}
+        {rosterMissing ? (
+          <p className="mt-2 text-[11px] text-amber-950">
+            Rosa attuale non aggiornata: il filtro giocatori trasferiti potrebbe non essere attivo.
+          </p>
         ) : null}
         {(data.confidence_reasons?.length ?? 0) > 0 ? (
           <ul className="mt-2 list-inside list-disc text-[11px] text-slate-600">

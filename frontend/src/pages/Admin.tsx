@@ -25,6 +25,9 @@ import {
   postGenerateV04OffensiveCoreSotUpcoming,
   postGenerateV10SotUpcoming,
   postGenerateV11SotUpcoming,
+  postGenerateV20LineupImpactUpcoming,
+  postRefreshNextRoundSportApiLineups,
+  postSyncNextRoundApiSquadsBatch,
   postRefreshUpcomingV04Pipeline,
   runBuildSotFeatures,
   runGenerateSotPredictions,
@@ -35,7 +38,7 @@ import {
 } from '../lib/api'
 
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
-import { V04_MODEL, V10_MODEL, V11_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
+import { V04_MODEL, V10_MODEL, V11_MODEL, V20_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
 
@@ -374,6 +377,34 @@ export function Admin() {
       description: 'Stage 1: Produzione offensiva composita — solo dati reali (nessun fallback).',
       endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v11-sot`,
       run: () => postGenerateV11SotUpcoming(SEASON),
+    },
+    {
+      id: 'gen-v20',
+      label: 'Genera previsioni v2.0 Lineup Impact',
+      description: `Richiede v1.1 e lineups SportAPI. Modello: ${V20_MODEL}.`,
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v20-lineup-impact`,
+      run: () => postGenerateV20LineupImpactUpcoming(SEASON),
+    },
+    {
+      id: 'sportapi-lineups-batch',
+      label: 'SportAPI: aggiorna formazioni prossimo turno',
+      description: 'Mapping AUTO_SAFE (se serve) + fetch lineups. Conferma mostra chiamate stimate.',
+      endpoint: `POST /api/admin/sportapi/serie-a/${SEASON}/refresh-next-round-lineups`,
+      run: async () => {
+        const fixtures = modelStatus?.upcoming_fixtures_total ?? 10
+        const est = fixtures
+        if (!window.confirm(`Stima ~${est} chiamate SportAPI (lineups + eventuale mapping). Continuare?`)) {
+          return { skipped: true }
+        }
+        return postRefreshNextRoundSportApiLineups(SEASON)
+      },
+    },
+    {
+      id: 'sportapi-squads-batch',
+      label: 'Aggiorna rose attuali prossimo turno',
+      description: 'Sync API-Sports per tutte le squadre del turno (nessuna chiamata SportAPI).',
+      endpoint: `POST /api/admin/sportapi/serie-a/${SEASON}/sync-api-squads-batch`,
+      run: () => postSyncNextRoundApiSquadsBatch(SEASON),
     },
     {
       id: 'gen-v10',

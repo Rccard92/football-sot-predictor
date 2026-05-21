@@ -2,8 +2,20 @@ import type {
   ModelLimitations,
   UpcomingActiveMatchRow,
 } from '../../lib/api'
+import { V20_MODEL, labelForModelVersion } from '../../lib/modelVersions'
 import { formatKickoff, formatNum, formatSignedNum } from './format'
 import { Link } from 'react-router-dom'
+
+function readinessLabel(key: string, value: string): string {
+  const labels: Record<string, Record<string, string>> = {
+    sportapi_mapping: { ok: 'Mapping OK', missing: 'Mapping assente' },
+    lineup_freshness: { ok: 'Lineups OK', stale: 'Lineups datate', missing: 'Lineups assenti' },
+    roster_sync: { ok: 'Rosa OK', partial: 'Rosa parziale', missing: 'Rosa non sync' },
+    player_mapping: { ok: 'Mapping giocatori OK', partial: 'Mapping parziale' },
+    model_v20: { ready: 'v2.0 pronto', partial: 'v2.0 parziale', fallback_v11: 'Fallback v1.1' },
+  }
+  return labels[key]?.[value] ?? `${key}: ${value}`
+}
 
 export function MatchCard({
   match,
@@ -16,10 +28,14 @@ export function MatchCard({
   const mainHome = home?.expected_sot ?? null
   const mainAway = away?.expected_sot ?? null
   const mainTotal = match.total_expected_sot ?? null
-  const homeB01 = home?.baseline_v01_expected_sot ?? null
-  const awayB01 = away?.baseline_v01_expected_sot ?? null
-  const homeDiff = home?.difference_from_v01 ?? null
-  const awayDiff = away?.difference_from_v01 ?? null
+  const isV20 = match.model_version_used === V20_MODEL
+  const homeB11 = home?.baseline_v11_expected_sot ?? null
+  const awayB11 = away?.baseline_v11_expected_sot ?? null
+  const homeDiff = home?.difference_from_v11 ?? null
+  const awayDiff = away?.difference_from_v11 ?? null
+  const readiness =
+    (home?.pre_match_readiness as Record<string, string> | undefined) ??
+    (away?.pre_match_readiness as Record<string, string> | undefined)
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
@@ -50,9 +66,18 @@ export function MatchCard({
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
           <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-800 ring-1 ring-slate-200">
-            Modello: {match.model_version_used}
+            Modello: {labelForModelVersion(match.model_version_used)}
           </span>
         </div>
+        {isV20 && readiness ? (
+          <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-slate-600">
+            {Object.entries(readiness).map(([k, v]) => (
+              <span key={k} className="rounded bg-slate-50 px-1.5 py-0.5 ring-1 ring-slate-200">
+                {readinessLabel(k, v)}
+              </span>
+            ))}
+          </p>
+        ) : null}
       </div>
 
       <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
@@ -62,12 +87,12 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainHome != null ? formatNum(mainHome) : '—'}
             </p>
-            {homeB01 != null && homeDiff != null ? (
+            {isV20 && homeB11 != null && homeDiff != null ? (
               homeDiff === 0 ? (
-                <p className="mt-1 text-xs text-slate-600">Nessuna differenza rispetto alla baseline v0.1.</p>
+                <p className="mt-1 text-xs text-slate-600">Allineato alla base v1.1.</p>
               ) : (
                 <p className="mt-1 text-xs text-slate-600">
-                  Baseline v0.1: {formatNum(homeB01)} <span className="text-slate-500">· Δ {formatSignedNum(homeDiff)}</span>
+                  vs v1.1: {formatNum(homeB11)} <span className="text-slate-500">· Δ {formatSignedNum(homeDiff)}</span>
                 </p>
               )
             ) : null}
@@ -83,12 +108,12 @@ export function MatchCard({
             <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
               {mainAway != null ? formatNum(mainAway) : '—'}
             </p>
-            {awayB01 != null && awayDiff != null ? (
+            {isV20 && awayB11 != null && awayDiff != null ? (
               awayDiff === 0 ? (
-                <p className="mt-1 text-xs text-slate-600">Nessuna differenza rispetto alla baseline v0.1.</p>
+                <p className="mt-1 text-xs text-slate-600">Allineato alla base v1.1.</p>
               ) : (
                 <p className="mt-1 text-xs text-slate-600">
-                  Baseline v0.1: {formatNum(awayB01)} <span className="text-slate-500">· Δ {formatSignedNum(awayDiff)}</span>
+                  vs v1.1: {formatNum(awayB11)} <span className="text-slate-500">· Δ {formatSignedNum(awayDiff)}</span>
                 </p>
               )
             ) : null}
@@ -113,32 +138,6 @@ export function MatchCard({
           </span>
         </p>
       </div>
-
-      <div className="border-t border-slate-100 px-5 py-4 sm:px-6">
-        <details className="group rounded-2xl border border-slate-200 bg-slate-50/50">
-          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 marker:hidden [&::-webkit-details-marker]:hidden">
-            <span className="flex items-center justify-between gap-2">
-              Perché cambia rispetto alla v0.1?
-              <span className="text-xs font-normal text-slate-500 group-open:hidden">Apri</span>
-              <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Chiudi</span>
-            </span>
-          </summary>
-          <div className="space-y-3 border-t border-slate-200 px-4 py-4 text-sm text-slate-700">
-            <p>
-              {match.home_team.name}: v0.1 {homeB01 != null ? formatNum(homeB01) : '—'} · attivo{' '}
-              {mainHome != null ? formatNum(mainHome) : '—'} · Δ {homeDiff != null ? formatSignedNum(homeDiff) : '—'}
-            </p>
-            <p>
-              {match.away_team.name}: v0.1 {awayB01 != null ? formatNum(awayB01) : '—'} · attivo{' '}
-              {mainAway != null ? formatNum(mainAway) : '—'} · Δ {awayDiff != null ? formatSignedNum(awayDiff) : '—'}
-            </p>
-            <p className="text-xs text-slate-600">
-              Dettagli tecnici (variabili, pesi, contributi e formule) sono disponibili nella pagina <strong>Audit Variabili</strong>.
-            </p>
-          </div>
-        </details>
-      </div>
     </article>
   )
 }
-

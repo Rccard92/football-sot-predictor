@@ -4,6 +4,7 @@ const navMain = [
   { to: '/match-analysis-framework', label: 'Framework Analisi' },
   { to: '/match-variable-audit', label: 'Spiegazione previsione' },
   { to: '/', label: 'Prossima giornata' },
+  { to: '/changelog', label: 'Changelog' },
 ] as const
 
 const navTech = [

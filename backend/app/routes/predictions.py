@@ -41,6 +41,7 @@ from app.services.predictions_v03.core_sot_service import SotPredictionV03CoreSo
 from app.services.predictions_v04.offensive_core_sot_service import SotPredictionV04OffensiveCoreSotService
 from app.services.predictions_v10.baseline_v1_sot_service import SotPredictionV10BaselineSotService
 from app.services.predictions_v11.baseline_v1_1_sot_service import SotPredictionV11BaselineSotService
+from app.services.predictions_v20.baseline_v2_0_lineup_impact_service import SotPredictionV20LineupImpactService
 from app.services.prediction_readiness import (
     build_model_status_payload,
     build_upcoming_active_payload,
@@ -628,6 +629,74 @@ def generate_serie_a_predictions_v11_sot(
         "errors": summary.get("errors") or [],
     }
     return JSONResponse(status_code=code, content=jsonable_encoder(payload))
+
+
+@router.post("/serie-a/{season}/generate-v20-lineup-impact", response_model=None)
+def generate_serie_a_predictions_v20_lineup_impact(
+    season: int,
+    db: Session = Depends(get_db),
+    fixture_id: int | None = Query(default=None),
+):
+    svc = SotPredictionV20LineupImpactService()
+    partial_result = {"upcoming_fixtures": 0, "predictions_ok": 0, "errors": []}
+    try:
+        if fixture_id is not None:
+            summary = svc.generate_for_fixture(db, int(fixture_id))
+        else:
+            summary = svc.generate_for_upcoming_season(db, season)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST generate-v20-lineup-impact: errore database")
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "database_operation",
+                    "message": "Database non disponibile o schema non aggiornato.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("POST generate-v20-lineup-impact: errore inatteso")
+        return JSONResponse(
+            status_code=500,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "failed_step": "generate_v20_lineup_impact",
+                    "message": "Errore inatteso durante la generazione v2.0 Lineup Impact.",
+                    "details": str(exc),
+                    "partial_result": partial_result,
+                },
+            ),
+        )
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=409, content=jsonable_encoder(summary))
+
+    status = str(summary.get("status") or "success")
+    code = 200 if status in ("success", "partial_success") else 409
+    return JSONResponse(status_code=code, content=jsonable_encoder(summary))
+
+
+@router.post("/serie-a/{season}/fixture/{fixture_id}/regenerate-v20", response_model=None)
+def regenerate_fixture_v20_lineup_impact(
+    season: int,
+    fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    _ = season
+    svc = SotPredictionV20LineupImpactService()
+    try:
+        summary = svc.generate_for_fixture(db, int(fixture_id))
+    except (OperationalError, ProgrammingError) as exc:
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=409, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
 
 
 @router.get("/serie-a/{season}/upcoming-v04-offensive-core-sot", response_model=None)

@@ -513,6 +513,39 @@ export async function postGenerateV11SotUpcoming(season: number, opts?: AdminReq
   )
 }
 
+/** Generazione previsioni v2.0 Lineup Impact (base v1.1 × fattori formazione, solo DB). */
+export async function postGenerateV20LineupImpactUpcoming(
+  season: number,
+  opts?: AdminRequestOpts & { fixtureId?: number },
+): Promise<unknown> {
+  const timeoutMs = opts?.timeoutMs ?? 300_000
+  const p = opts?.fixtureId != null ? `?fixture_id=${opts.fixtureId}` : ''
+  return requestPostJsonWithOpts<unknown>(
+    `/api/predictions/sot/serie-a/${season}/generate-v20-lineup-impact${p}`,
+    {},
+    { ...opts, timeoutMs },
+  )
+}
+
+export async function postRefreshNextRoundSportApiLineups(
+  season: number,
+  opts?: AdminRequestOpts & { force?: boolean; syncSquads?: boolean },
+): Promise<unknown> {
+  const p = new URLSearchParams()
+  if (opts?.force) p.set('force', 'true')
+  if (opts?.syncSquads) p.set('sync_squads', 'true')
+  const q = p.toString()
+  return adminPostJson<unknown>(
+    `/api/admin/sportapi/serie-a/${season}/refresh-next-round-lineups${q ? `?${q}` : ''}`,
+    {},
+    opts,
+  )
+}
+
+export async function postSyncNextRoundApiSquadsBatch(season: number, opts?: AdminRequestOpts): Promise<unknown> {
+  return adminPostJson<unknown>(`/api/admin/sportapi/serie-a/${season}/sync-api-squads-batch`, {}, opts)
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(
@@ -889,6 +922,7 @@ export type ModelStatusResponse = {
   season: number
   active_model_version: string | null
   recommended_model_version?: string | null
+  stable_model_version?: string | null
   upcoming_fixtures_total?: number
   available_model_versions: ModelStatusVersionRow[]
   warnings: string[]
@@ -902,11 +936,22 @@ export type ModelStatusResponse = {
   details?: string
 }
 
+export type PreMatchReadiness = {
+  sportapi_mapping?: string
+  lineup_freshness?: string
+  roster_sync?: string
+  player_mapping?: string
+  model_v20?: string
+}
+
 export type UpcomingActiveSidePrediction = {
   expected_sot: number
   model_version: string
-  baseline_v01_expected_sot: number | null
-  difference_from_v01: number | null
+  baseline_v01_expected_sot?: number | null
+  difference_from_v01?: number | null
+  baseline_v11_expected_sot?: number | null
+  difference_from_v11?: number | null
+  pre_match_readiness?: PreMatchReadiness
   breakdown: Record<string, unknown> | null
 }
 
@@ -928,6 +973,7 @@ export type UpcomingActiveResponse = {
   season: number
   model_version_used: string
   recommended_model_version: string
+  stable_model_version?: string | null
   round: string | null
   matches_count: number
   matches: UpcomingActiveMatchRow[]

@@ -11,7 +11,14 @@ import {
   type UpcomingActiveResponse,
 } from '../lib/api'
 import { MatchCard } from '../components/upcoming'
-import { V11_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
+import {
+  V11_MODEL,
+  V20_MODEL,
+  filterVersionsForUi,
+  labelForModelVersion,
+  stageBadgeForModel,
+  stageDescriptionForModel,
+} from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
 
@@ -95,8 +102,8 @@ export function UpcomingMatches() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Qual è la previsione del <strong>modello attivo</strong> per le prossime partite (con confronto vs baseline
-              v0.1).
+              Previsioni SOT per le prossime partite. Con <strong>v2.0</strong> vedi anche il confronto rispetto alla base{' '}
+              <strong>v1.1</strong>.
             </p>
           </div>
 
@@ -110,12 +117,20 @@ export function UpcomingMatches() {
                 {isRecommendedView && recommendedModel === activeModel ? (
                   <span className="ml-2 text-[11px] font-medium text-emerald-700">(raccomandato)</span>
                 ) : null}
-                {modelInView === V11_MODEL ? (
+                {modelInView === V20_MODEL || modelInView === V11_MODEL ? (
                   <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
-                    Stage: v1.1 — Offensiva + Difensiva + Split + Forma recente + xG + Player layer (6 termini)
+                    Stage: {stageBadgeForModel(modelInView)}
                   </span>
                 ) : null}
               </p>
+              {modelInView === V20_MODEL || modelInView === V11_MODEL ? (
+                <p className="text-xs text-slate-600">{stageDescriptionForModel(modelInView)}</p>
+              ) : null}
+              {status?.stable_model_version && modelInView === V11_MODEL ? (
+                <p className="text-xs text-slate-500">
+                  Modello stabile: {labelForModelVersion(status.stable_model_version)}
+                </p>
+              ) : null}
               {recommendedModel && recommendedModel !== activeModel ? (
                 <p className="text-xs text-slate-600">
                   Modello raccomandato:{' '}
