@@ -33,9 +33,8 @@ export function Changelog() {
   const legacy = legacyChangelogEntries()
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
-      <div className="mx-auto max-w-3xl space-y-8 px-4 py-6 sm:px-6">
-        <header>
+    <div className="space-y-8 pb-8">
+        <header className="max-w-3xl">
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Changelog modello</h1>
           <p className="mt-2 text-sm text-slate-600">
             Storico delle versioni del predittore SOT visibili in produzione.
@@ -86,7 +85,6 @@ export function Changelog() {
             ))}
           </ul>
         </details>
-      </div>
     </div>
   )
 }

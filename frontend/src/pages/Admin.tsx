@@ -540,8 +540,7 @@ export function Admin() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
-      <div className="mx-auto max-w-3xl space-y-6 px-4 sm:px-6">
+    <div className="space-y-6 pb-8">
         <header className="pt-4">
           <h1 className="text-2xl font-semibold text-slate-900">Admin / Strumenti tecnici</h1>
           <p className="mt-2 text-sm text-slate-600">
@@ -752,7 +751,6 @@ export function Admin() {
             <p className="mt-2 text-xs text-slate-500">Esegui un&apos;azione per vedere endpoint, durata e payload.</p>
           )}
         </div>
-      </div>
     </div>
   )
 }

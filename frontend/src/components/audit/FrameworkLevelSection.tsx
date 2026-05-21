@@ -34,7 +34,7 @@ export function FrameworkLevelSection({ data }: { data: AuditResponse }) {
       </p>
 
       {mainVars.length ? (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2 lg:gap-6">
           {mainVars.map((v) => (
             <AuditVariableCard key={`${v.key}:${v.team_id ?? 'na'}`} v={v} />
           ))}

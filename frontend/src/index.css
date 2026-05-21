@@ -18,3 +18,11 @@ body {
 #root {
   min-height: 100vh;
 }
+
+:root {
+  --content-max: 1320px;
+}
+
+.content-container {
+  max-width: var(--content-max);
+}

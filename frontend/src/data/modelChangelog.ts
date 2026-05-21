@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.4.0',
+    date: '2026-05-19',
+    title: 'Layout più ampio e menu responsive',
+    type: 'minor',
+    summary:
+      'Allargata la griglia principale del tool e migliorata la navigazione con sidebar comprimibile e menu mobile.',
+    highlights: [
+      'Aumentata la larghezza massima del contenuto a 1320px.',
+      'Migliorata la leggibilità di card, tabelle e sezioni Audit.',
+      'Aggiunta sidebar comprimibile su desktop.',
+      'Aggiunte icone alle voci di menu.',
+      'Su mobile la navigazione passa a menu hamburger.',
+      'Migliorata la gestione responsive generale del tool.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.3.0',
     date: '2026-05-19',
     title: 'Report rapido giocate',

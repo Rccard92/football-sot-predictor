@@ -43,8 +43,7 @@ export function ModelLegend() {
   )
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
-      <div className="mx-auto max-w-6xl space-y-6 px-4 sm:px-6">
+    <div className="space-y-6 pb-8">
         <header className="pt-4">
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Legenda Modello</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
@@ -198,7 +197,6 @@ export function ModelLegend() {
               ))}
           </>
         ) : null}
-      </div>
     </div>
   )
 }

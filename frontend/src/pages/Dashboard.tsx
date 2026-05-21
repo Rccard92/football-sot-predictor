@@ -208,8 +208,7 @@ export function Dashboard() {
   const lastFiveRuns: IngestionRunSummary[] = ingest.data?.runs?.slice(0, 5) ?? []
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] pb-12 pt-2">
-      <div className="mx-auto max-w-6xl space-y-8 px-4 sm:px-6">
+    <div className="space-y-8 pb-8">
         <header className="pt-4">
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard modello</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
@@ -331,7 +330,7 @@ export function Dashboard() {
           ) : null}
         </SectionCard>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
           {/* Backtest overview */}
           <SectionCard title="Qualità modello (partite giocate)">
             {!dashboard.loading && !dashboard.error && d?.player_profiles_sot_data_suspicious ? (
@@ -633,7 +632,6 @@ export function Dashboard() {
           </Link>
           .
         </p>
-      </div>
     </div>
   )
 }

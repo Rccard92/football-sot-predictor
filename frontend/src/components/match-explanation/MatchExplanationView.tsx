@@ -396,22 +396,24 @@ export function MatchExplanationView({
         </SectionCard>
       ) : null}
 
-      <SportApiLineupsCard
-        data={data.sportapi_lineups}
-        apiFixtureId={fx.api_fixture_id}
-        fixtureId={fx.fixture_id}
-        kickoffAt={fx.kickoff_at}
-        activeModelVersion={data.active_model_version}
-        lineupImpact={data.lineup_impact_simulation}
-        onDataRefresh={onDataRefresh}
-        regenerateV20AfterFetch={data.active_model_version === V20_MODEL}
-      />
+      <div className="grid gap-5 xl:grid-cols-2 xl:items-start xl:gap-6">
+        <SportApiLineupsCard
+          data={data.sportapi_lineups}
+          apiFixtureId={fx.api_fixture_id}
+          fixtureId={fx.fixture_id}
+          kickoffAt={fx.kickoff_at}
+          activeModelVersion={data.active_model_version}
+          lineupImpact={data.lineup_impact_simulation}
+          onDataRefresh={onDataRefresh}
+          regenerateV20AfterFetch={data.active_model_version === V20_MODEL}
+        />
 
-      <LineupImpactSimulationCard
-        data={data.lineup_impact_simulation}
-        fixtureId={fx.fixture_id}
-        onDataRefresh={onDataRefresh}
-      />
+        <LineupImpactSimulationCard
+          data={data.lineup_impact_simulation}
+          fixtureId={fx.fixture_id}
+          onDataRefresh={onDataRefresh}
+        />
+      </div>
 
       <PlayerDbProfilesSection fixtureId={fx.fixture_id} />
 

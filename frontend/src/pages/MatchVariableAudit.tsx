@@ -96,8 +96,7 @@ export function MatchVariableAudit() {
   }, [reloadExplanation])
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
-      <div className="mx-auto max-w-6xl space-y-6 px-4 sm:px-6">
+    <div className="space-y-6 pb-8">
         <header className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm">
           <h1 className="text-xl font-semibold text-slate-900">Spiegazione previsione partita</h1>
           <p className="mt-1 text-sm text-slate-600">
@@ -175,7 +174,6 @@ export function MatchVariableAudit() {
             {data.message ?? 'Dati insufficienti per questa fixture.'}
           </div>
         ) : null}
-      </div>
     </div>
   )
 }

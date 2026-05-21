@@ -96,8 +96,7 @@ export function UpcomingMatches() {
     Boolean(recommendedModel && modelInView && recommendedModel === modelInView)
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
-      <div className="mx-auto max-w-5xl space-y-8 px-4 sm:px-6">
+    <div className="space-y-8 pb-8">
         <header className="pt-4 space-y-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
@@ -301,7 +300,6 @@ export function UpcomingMatches() {
             </section>
           </div>
         )}
-      </div>
     </div>
   )
 }

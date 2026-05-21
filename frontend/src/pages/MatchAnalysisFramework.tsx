@@ -128,8 +128,7 @@ export function MatchAnalysisFramework() {
   }, [allVariables])
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9] pb-16 pt-2">
-      <div className="mx-auto max-w-6xl space-y-6 px-4 sm:px-6">
+    <div className="space-y-6 pb-8">
         <header className="pt-4 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -427,7 +426,6 @@ export function MatchAnalysisFramework() {
             </section>
           </>
         ) : null}
-      </div>
     </div>
   )
 }
