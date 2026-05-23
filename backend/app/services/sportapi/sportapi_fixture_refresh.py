@@ -99,11 +99,23 @@ def fetch_sportapi_lineups_for_fixture(
     return out
 
 
+def get_sportapi_event_id(db: Session, fixture_id: int) -> int | None:
+    row = db.scalar(
+        select(FixtureProviderMapping.provider_event_id).where(
+            FixtureProviderMapping.fixture_id == int(fixture_id),
+            FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
+        ),
+    )
+    return int(row) if row is not None else None
+
+
 def refresh_fixture_sportapi_pre_match(
     db: Session,
     fixture_id: int,
     *,
     force_mapping: bool = False,
+    force_fetch: bool = False,
+    skip_recent_minutes: float | None = None,
 ) -> dict[str, Any]:
     """Mapping (se serve) + fetch lineups per job pre-match."""
     fx = db.get(Fixture, int(fixture_id))
@@ -133,7 +145,8 @@ def refresh_fixture_sportapi_pre_match(
             row["error"] = str(map_out.get("message") or "mapping fallito")
             return row
 
-    fetch_out = fetch_sportapi_lineups_for_fixture(db, fixture_id, skip_recent_minutes=None)
+    skip_min = None if force_fetch else skip_recent_minutes
+    fetch_out = fetch_sportapi_lineups_for_fixture(db, fixture_id, skip_recent_minutes=skip_min)
     if fetch_out.get("status") == "success":
         row["lineups_ok"] = True
         row["confirmed"] = fetch_out.get("confirmed")

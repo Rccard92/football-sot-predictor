@@ -16,8 +16,25 @@ def test_parse_line_value_from_pick():
 
 
 def test_formation_snapshot_label():
-    assert "ufficiale" in formation_snapshot_label(True).lower()
-    assert "30" in formation_snapshot_label(False)
+    assert formation_snapshot_label(True) == "Formazione ufficiale"
+    assert "pre-match" in formation_snapshot_label(False, lineup_fetched_at=datetime.now(timezone.utc)).lower()
+
+
+def test_is_pick_concluded():
+    from app.models.tracked_betting_pick import STATUS_WON
+    from app.models.tracked_betting_pick import TrackedBettingPick
+    from app.services.tracked_betting_pick_service import is_pick_concluded
+
+    row = TrackedBettingPick(
+        fixture_id=1,
+        model_id="baseline_v2_0_lineup_impact",
+        source="auto_pre_match",
+        market_id="match_total_sot",
+        market_label="SOT Totale",
+        pick_type="cautious",
+        status=STATUS_WON,
+    )
+    assert is_pick_concluded(row)
 
 
 def test_pick_unchanged_logic():

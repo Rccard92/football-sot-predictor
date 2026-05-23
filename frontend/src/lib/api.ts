@@ -561,11 +561,33 @@ export async function postSyncNextRoundApiSquadsBatch(season: number, opts?: Adm
   return adminPostJson<unknown>(`/api/admin/sportapi/serie-a/${season}/sync-api-squads-batch`, {}, opts)
 }
 
+export type PreMatchJobResultRow = {
+  fixture_id: number
+  match?: string
+  match_name?: string
+  kickoff?: string | null
+  sportapi_event_id?: number | null
+  confirmed?: boolean
+  before_total_sot?: number | null
+  after_total_sot?: number | null
+  delta_total_sot?: number | null
+  monitoring_pick_status?: string
+  status?: string
+  error?: string
+}
+
 export type PreMatchJobSummary = {
   status: string
   season?: number
-  checked: number
+  message?: string
+  checked_fixtures?: number
+  eligible_fixtures?: number
   refreshed: number
+  skipped_recent?: number
+  skipped_no_mapping?: number
+  updated_monitoring_picks?: number
+  created_monitoring_picks?: number
+  checked: number
   picks_created: number
   picks_updated: number
   skipped: number
@@ -574,7 +596,7 @@ export type PreMatchJobSummary = {
   minutes_before?: number
   window_minutes?: number
   errors: { fixture_id?: number; error?: string }[]
-  results?: unknown[]
+  results?: PreMatchJobResultRow[]
 }
 
 export type TrackedBettingPickRow = {
@@ -665,12 +687,12 @@ function adminCronHeaders(): Record<string, string> {
   return { 'X-Admin-Cron-Secret': secret.trim() }
 }
 
-export async function postPreMatchLineupRefreshJob(
+export async function postPreMatchOfficialLineupRefreshJob(
   body: { force?: boolean; minutes_before?: number; window_minutes?: number; season?: number } = {},
   opts?: AdminRequestOpts,
 ): Promise<PreMatchJobSummary> {
   const base = getApiBase()
-  const p = '/api/admin/jobs/pre-match-lineup-refresh/run'
+  const p = '/api/admin/jobs/pre-match-official-lineups/run'
   let cancelTimeout: (() => void) | undefined
   let signal: AbortSignal | undefined = opts?.signal
   if (opts?.timeoutMs != null && opts.timeoutMs > 0) {
@@ -698,6 +720,14 @@ export async function postPreMatchLineupRefreshJob(
   } finally {
     cancelTimeout?.()
   }
+}
+
+/** @deprecated Usare postPreMatchOfficialLineupRefreshJob */
+export async function postPreMatchLineupRefreshJob(
+  body: { force?: boolean; minutes_before?: number; window_minutes?: number; season?: number } = {},
+  opts?: AdminRequestOpts,
+): Promise<PreMatchJobSummary> {
+  return postPreMatchOfficialLineupRefreshJob(body, opts)
 }
 
 export async function getTrackedBettingPicks(season: number): Promise<TrackedBettingPicksResponse> {
@@ -1741,6 +1771,8 @@ export type UpcomingActiveMatchRow = {
   lineup_refresh_impact?: LineupRefreshImpactPayload | null
   tracked_pick_badge?: string | null
   tracked_pick_summary?: string | null
+  tracked_pick_badges?: string[]
+  pre_match_job_updated_at?: string | null
   betting_advice_compact?: {
     total_expected_sot: number | null
     statistical_pick: string | null

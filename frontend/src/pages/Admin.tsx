@@ -701,7 +701,7 @@ export function Admin() {
         </Section>
 
         <Section
-          title="Job pre-match"
+          title="Job formazioni ufficiali pre-match"
           subtitle="Snapshot definitiva ~30 min prima del calcio d'inizio (SportAPI + v2.0 + monitoraggio giocate)."
         >
           <PreMatchJobPanel />

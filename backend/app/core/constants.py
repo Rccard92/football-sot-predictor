@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 
 FINISHED_STATUSES = frozenset({"FT", "AET", "PEN"})
 
+LIVE_STATUSES = frozenset({"1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INT"})
+
 # Short status API-Football: partite non ancora giocate (pianificazione)
 SCHEDULED_STATUSES = frozenset({"NS", "TBD", "PST", "CANC", "ABD", "AWD", "WO"})
 

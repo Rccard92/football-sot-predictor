@@ -116,7 +116,7 @@ def _origin_label(p: TrackedBettingPick) -> str:
     if p.is_backfilled or p.source == SOURCE_BACKFILL_ROUND:
         return "Ricostruita"
     if p.source == SOURCE_AUTO_PRE_MATCH:
-        return "Auto 30'"
+        return "Auto pre-match"
     if p.source == SOURCE_MANUAL:
         return "Manuale"
     return p.source
@@ -224,7 +224,10 @@ class TrackedPickResultsRefreshService:
                     "is_backfilled": bool(p.is_backfilled),
                     "prediction_source": p.prediction_source,
                     "backfill_warning": p.backfill_warning,
-                    "formation_label": formation_snapshot_label(bool(p.lineup_confirmed)),
+                    "formation_label": formation_snapshot_label(
+                        bool(p.lineup_confirmed),
+                        lineup_fetched_at=p.lineup_fetched_at,
+                    ),
                     "lineup_confirmed": bool(p.lineup_confirmed),
                     "predicted_total_sot": p.predicted_total_sot,
                     "line_value": p.line_value,

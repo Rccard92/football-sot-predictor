@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.12.0',
+    date: '2026-05-19',
+    title: 'Refresh ufficiale pre-match',
+    type: 'minor',
+    summary:
+      'Aggiunto job automatico per aggiornare le formazioni circa 30 minuti prima del calcio d’inizio e sincronizzare le prediction definitive nel monitoraggio live.',
+    highlights: [
+      'Refresh automatico SportAPI solo per partite vicine al kickoff.',
+      'Ricalcolo v2.0 dopo formazione ufficiale o probabile aggiornata.',
+      'Sincronizzazione automatica con Monitoraggio Giocate.',
+      'Aggiornamento della variazione pre/post formazione.',
+      'Evitate chiamate inutili su tutto il turno.',
+      'Preparazione all’esecuzione tramite cron Railway.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.11.0',
     date: '2026-05-19',
     title: 'Monitoraggio live SOT',

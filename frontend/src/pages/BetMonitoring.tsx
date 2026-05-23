@@ -88,12 +88,28 @@ function PickBadges({ p }: { p: TrackedBettingPickRow }) {
       <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
         {p.pick_type_label}
       </span>
-      {p.is_backfilled ? (
+      {p.source === 'auto_pre_match' ? (
+        <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-900">
+          Auto pre-match
+        </span>
+      ) : p.is_backfilled ? (
         <span
           className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900"
           title={p.backfill_warning ?? undefined}
         >
           {p.origin_label}
+        </span>
+      ) : null}
+      {p.lineup_confirmed ? (
+        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900">
+          Formazione ufficiale
+        </span>
+      ) : p.formation_label ? (
+        <span
+          className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900"
+          title={p.formation_label}
+        >
+          Probabile pre-match
         </span>
       ) : null}
     </span>

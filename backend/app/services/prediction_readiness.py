@@ -5,6 +5,7 @@ Lettura stato modelli e upcoming attivo (logica condivisa tra route GET e pipeli
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import case, func, select
@@ -439,7 +440,9 @@ def build_upcoming_active_payload(
 
     from app.services.tracked_betting_pick_service import TrackedBettingPickService
 
-    tracked_by_fx = TrackedBettingPickService().load_auto_pre_match_by_fixture_ids(db, fx_ids)
+    pick_svc = TrackedBettingPickService()
+    tracked_by_fx = pick_svc.load_auto_pre_match_by_fixture_ids(db, fx_ids)
+    open_by_fx = pick_svc.load_open_picks_by_fixture_ids(db, fx_ids)
 
     matches: list[dict[str, Any]] = []
     for fx in upcoming:
@@ -507,11 +510,27 @@ def build_upcoming_active_payload(
             )
 
         tracked_rows = tracked_by_fx.get(int(fx.id)) or []
+        open_rows = open_by_fx.get(int(fx.id)) or []
         tracked_badge = None
         tracked_summary = None
+        tracked_pick_badges: list[str] = []
+        pre_match_job_updated_at = None
+        if open_rows:
+            tracked_pick_badges.append("Monitorata")
+            tracked_badge = "Monitorata"
+            tracked_summary = "Pick sincronizzata nel monitoraggio giocate."
         if tracked_rows:
-            tracked_badge = "Auto 30'"
-            tracked_summary = "Pronostico definitivo salvato 30 minuti prima della partita."
+            latest_auto = max(
+                tracked_rows,
+                key=lambda r: r.auto_generated_at or r.prediction_generated_at or datetime.min.replace(tzinfo=timezone.utc),
+            )
+            if latest_auto.auto_generated_at:
+                pre_match_job_updated_at = latest_auto.auto_generated_at.isoformat()
+            if "Auto pre-match" not in tracked_pick_badges:
+                tracked_pick_badges.append("Auto pre-match")
+            if tracked_badge is None:
+                tracked_badge = "Auto pre-match"
+                tracked_summary = "Aggiornata dal job formazioni ufficiali pre-match."
 
         matches.append(
             {
@@ -541,6 +560,8 @@ def build_upcoming_active_payload(
                 or {"has_comparison": False},
                 "tracked_pick_badge": tracked_badge,
                 "tracked_pick_summary": tracked_summary,
+                "tracked_pick_badges": tracked_pick_badges,
+                "pre_match_job_updated_at": pre_match_job_updated_at,
             },
         )
 

@@ -104,14 +104,24 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
                 <td className="px-3 py-2.5">
                   <div className="space-y-1">
                     <TeamLogosMatch match={m} />
-                    {m.tracked_pick_badge ? (
+                    {(m.tracked_pick_badges?.length
+                      ? m.tracked_pick_badges
+                      : m.tracked_pick_badge
+                        ? [m.tracked_pick_badge]
+                        : []
+                    ).map((badge) => (
                       <span
+                        key={badge}
                         title={m.tracked_pick_summary ?? undefined}
-                        className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] font-medium text-violet-900"
+                        className={`mr-1 inline-block rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                          badge === 'Monitorata'
+                            ? 'border-indigo-200 bg-indigo-50 text-indigo-900'
+                            : 'border-violet-200 bg-violet-50 text-violet-900'
+                        }`}
                       >
-                        {m.tracked_pick_badge}
+                        {badge}
                       </span>
-                    ) : null}
+                    ))}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 font-medium">{market?.label ?? 'SOT Totale'}</td>

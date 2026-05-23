@@ -12,18 +12,27 @@ from sqlalchemy.orm import Session
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
 from app.models import TrackedBettingPick
 from app.models.tracked_betting_pick import (
-    BACKFILL_WARNING_RECONSTRUCTED,
     PICK_TYPE_CAUTIOUS,
     PICK_TYPE_STATISTICAL,
+    PREDICTION_SOURCE_CERTIFIED,
     SOURCE_AUTO_PRE_MATCH,
     SOURCE_BACKFILL_ROUND,
+    SOURCE_MANUAL,
+    STATUS_LIVE,
+    STATUS_LOST,
     STATUS_PENDING,
+    STATUS_UNAVAILABLE,
+    STATUS_VOID,
+    STATUS_WON,
 )
 
 MARKET_MATCH_TOTAL = "match_total_sot"
 MARKET_LABEL_MATCH_TOTAL = "SOT Totale"
 
 _OVER_LINE_RE = re.compile(r"over\s+([\d.]+)", re.I)
+
+CONCLUDED_STATUSES = frozenset({STATUS_WON, STATUS_LOST, STATUS_VOID, STATUS_UNAVAILABLE})
+OPEN_STATUSES = frozenset({STATUS_PENDING, STATUS_LIVE})
 
 
 def parse_line_value_from_pick(suggested_pick: str | None) -> float | None:
@@ -38,9 +47,11 @@ def parse_line_value_from_pick(suggested_pick: str | None) -> float | None:
         return None
 
 
-def formation_snapshot_label(lineup_confirmed: bool) -> str:
+def formation_snapshot_label(lineup_confirmed: bool, *, lineup_fetched_at: datetime | None = None) -> str:
     if lineup_confirmed:
-        return "Pronostico con formazione ufficiale"
+        return "Formazione ufficiale"
+    if lineup_fetched_at is not None:
+        return "Probabile aggiornata pre-match"
     return "Pronostico con probabile formazione aggiornata 30' prima"
 
 
@@ -58,12 +69,17 @@ def _confidence_to_reliability(label: str | None) -> float | None:
 def _pick_unchanged(existing: TrackedBettingPick, data: dict[str, Any]) -> bool:
     if existing.suggested_pick != data.get("suggested_pick"):
         return False
-    if existing.lineup_confirmed and data.get("lineup_confirmed"):
-        pt = existing.predicted_total_sot
-        nt = data.get("predicted_total_sot")
-        if pt is not None and nt is not None and abs(float(pt) - float(nt)) > 0.01:
-            return False
+    pt = existing.predicted_total_sot
+    nt = data.get("predicted_total_sot")
+    if pt is not None and nt is not None and abs(float(pt) - float(nt)) > 0.01:
+        return False
+    if bool(existing.lineup_confirmed) != bool(data.get("lineup_confirmed")):
+        return False
     return True
+
+
+def is_pick_concluded(pick: TrackedBettingPick) -> bool:
+    return pick.status in CONCLUDED_STATUSES
 
 
 class TrackedBettingPickService:
@@ -86,6 +102,30 @@ class TrackedBettingPickService:
             ),
         )
 
+    def get_open_pick(
+        self,
+        db: Session,
+        fixture_id: int,
+        *,
+        model_id: str,
+        market_id: str,
+        pick_type: str,
+    ) -> TrackedBettingPick | None:
+        """Pick monitorata non conclusa (auto, backfill o manual)."""
+        for src in (SOURCE_AUTO_PRE_MATCH, SOURCE_BACKFILL_ROUND, SOURCE_MANUAL):
+            row = db.scalar(
+                select(TrackedBettingPick).where(
+                    TrackedBettingPick.fixture_id == int(fixture_id),
+                    TrackedBettingPick.model_id == model_id,
+                    TrackedBettingPick.market_id == market_id,
+                    TrackedBettingPick.pick_type == pick_type,
+                    TrackedBettingPick.source == src,
+                ),
+            )
+            if row is not None and not is_pick_concluded(row):
+                return row
+        return None
+
     def load_auto_pre_match_by_fixture_ids(
         self,
         db: Session,
@@ -98,6 +138,27 @@ class TrackedBettingPickService:
         q = select(TrackedBettingPick).where(
             TrackedBettingPick.fixture_id.in_([int(x) for x in fixture_ids]),
             TrackedBettingPick.source == SOURCE_AUTO_PRE_MATCH,
+        )
+        if model_id:
+            q = q.where(TrackedBettingPick.model_id == model_id)
+        rows = list(db.scalars(q).all())
+        out: dict[int, list[TrackedBettingPick]] = {}
+        for r in rows:
+            out.setdefault(int(r.fixture_id), []).append(r)
+        return out
+
+    def load_open_picks_by_fixture_ids(
+        self,
+        db: Session,
+        fixture_ids: list[int],
+        *,
+        model_id: str | None = None,
+    ) -> dict[int, list[TrackedBettingPick]]:
+        if not fixture_ids:
+            return {}
+        q = select(TrackedBettingPick).where(
+            TrackedBettingPick.fixture_id.in_([int(x) for x in fixture_ids]),
+            TrackedBettingPick.status.in_(list(OPEN_STATUSES)),
         )
         if model_id:
             q = q.where(TrackedBettingPick.model_id == model_id)
@@ -180,12 +241,12 @@ class TrackedBettingPickService:
             pick_type=pick_type,
         )
         if existing is not None:
+            if is_pick_concluded(existing) and not force:
+                return "skipped"
             if not force and _pick_unchanged(existing, data):
                 return "skipped"
             for k, v in data.items():
                 setattr(existing, k, v)
-            if existing.status in (STATUS_PENDING,):
-                pass
             db.add(existing)
             return "updated"
 
@@ -241,9 +302,22 @@ class TrackedBettingPickService:
             "prediction_generated_at": now,
             "raw_prediction_payload": raw_prediction_payload,
             "raw_betting_advice_payload": raw_betting_advice_payload,
+            "is_backfilled": False,
+            "prediction_source": PREDICTION_SOURCE_CERTIFIED,
+            "backfill_warning": None,
         }
 
-        existing = self.get_auto_pre_match(
+        open_pick = self.get_open_pick(
+            db,
+            fixture_id,
+            model_id=model_id,
+            market_id=market_id,
+            pick_type=pick_type,
+        )
+        if open_pick is not None and is_pick_concluded(open_pick) and not force:
+            return "skipped"
+
+        existing_auto = self.get_auto_pre_match(
             db,
             fixture_id,
             model_id=model_id,
@@ -251,18 +325,38 @@ class TrackedBettingPickService:
             pick_type=pick_type,
         )
 
-        if existing is not None:
-            if existing.lineup_confirmed and not force:
+        if existing_auto is not None:
+            if is_pick_concluded(existing_auto) and not force:
                 return "skipped"
-            if not force and _pick_unchanged(existing, data):
+            if not force and _pick_unchanged(existing_auto, data):
                 return "skipped"
-
             for k, v in data.items():
-                setattr(existing, k, v)
-            existing.auto_generated_at = now
-            if existing.status == STATUS_PENDING:
-                pass
-            db.add(existing)
+                setattr(existing_auto, k, v)
+            existing_auto.auto_generated_at = now
+            existing_auto.source = SOURCE_AUTO_PRE_MATCH
+            db.add(existing_auto)
+            return "updated"
+
+        backfill = self.get_backfill_pick(
+            db,
+            fixture_id,
+            model_id=model_id,
+            market_id=market_id,
+            pick_type=pick_type,
+        )
+        if backfill is not None and not is_pick_concluded(backfill):
+            if not force and _pick_unchanged(backfill, data):
+                return "skipped"
+            for k, v in data.items():
+                setattr(backfill, k, v)
+            backfill.source = SOURCE_AUTO_PRE_MATCH
+            backfill.auto_generated_at = now
+            backfill.is_backfilled = False
+            backfill.backfill_warning = None
+            backfill.prediction_source = PREDICTION_SOURCE_CERTIFIED
+            if backfill.status not in OPEN_STATUSES:
+                backfill.status = STATUS_PENDING
+            db.add(backfill)
             return "updated"
 
         row = TrackedBettingPick(

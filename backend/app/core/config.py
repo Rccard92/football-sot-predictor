@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     admin_cron_secret: str = ""
     prematch_refresh_minutes_before: int = 30
     prematch_refresh_window_minutes: int = 10
+    prematch_refresh_skip_recent_minutes: int = 8
 
     @property
     def cors_origins_list(self) -> list[str]:
