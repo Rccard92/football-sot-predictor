@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.12.2',
+    date: '2026-05-19',
+    title: 'Sidebar fissa durante lo scroll',
+    type: 'patch',
+    summary:
+      'Migliorata la navigazione rendendo il menu laterale sempre visibile su desktop durante lo scroll.',
+    highlights: [
+      'Sidebar desktop resa sticky/fissa.',
+      'Migliorata la navigazione nelle pagine lunghe.',
+      'Mantenuto il comportamento hamburger su mobile.',
+      'Nessuna modifica a modelli, API o prediction engine.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.12.1',
     date: '2026-05-19',
     title: 'Fix SOT live monitoraggio',
