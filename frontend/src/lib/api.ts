@@ -933,11 +933,12 @@ export async function getSportApiProviders(): Promise<SportApiProvidersListRespo
 }
 
 export async function postSyncSportApiProviders(
+  body?: { country?: string; channel?: string },
   opts?: AdminRequestOpts,
 ): Promise<SportApiProvidersSyncSummary> {
   return adminPostJson<SportApiProvidersSyncSummary>(
     '/api/admin/bookmakers/sportapi/providers/sync',
-    {},
+    body ?? {},
     opts,
   )
 }
@@ -1143,8 +1144,11 @@ export type SportApiScanSotProviderRow = {
 
 export type SportApiScanSotProvidersResponse = {
   status: string
+  scan_status?: string
   sportapi_event_id: number
   country: string
+  providers_in_db?: number
+  providers_matching_country?: number
   providers_scanned: number
   providers_with_odds: number
   providers_with_sot: number
@@ -1157,9 +1161,11 @@ export async function postSportApiScanSotProviders(
   body: {
     sportapi_event_id: number
     country?: string
+    channel?: string
     max_providers?: number | null
     provider_slug?: string | null
     save_snapshot?: boolean
+    auto_sync_if_empty?: boolean
   },
   opts?: AdminRequestOpts,
 ): Promise<SportApiScanSotProvidersResponse> {

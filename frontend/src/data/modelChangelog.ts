@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.10.1',
+    date: '2026-05-19',
+    title: 'Fix scansione provider SOT',
+    type: 'patch',
+    summary:
+      'Corretta la scansione dei provider SportAPI e migliorata la diagnostica quando i mercati SOT non sono esposti dal feed.',
+    highlights: [
+      'Risolto caso in cui la scansione controllava 0 provider.',
+      'Aggiunta diagnostica provider salvati/controllati.',
+      'Migliorata gestione canale app/web se disponibile.',
+      'Aggiunta nota sulla differenza tra bookmaker reale e feed SportAPI.',
+      'Migliorato messaggio quando nessun mercato SOT viene trovato.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.10.0',
     date: '2026-05-19',
     title: 'Scansione provider per mercati SOT',

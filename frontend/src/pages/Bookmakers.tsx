@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { SportApiMarketsDiscoveryPanel } from '../components/bookmakers/SportApiMarketsDiscoveryPanel'
+import { SportApiOddsDetailsProbePanel } from '../components/bookmakers/SportApiOddsDetailsProbePanel'
 import { SportApiSotProviderScanPanel } from '../components/bookmakers/SportApiSotProviderScanPanel'
 import { SportApiNextRound1x2Panel } from '../components/bookmakers/SportApiNextRound1x2Panel'
 import { SportApiNextRoundSotOddsPanel } from '../components/bookmakers/SportApiNextRoundSotOddsPanel'
@@ -32,6 +33,7 @@ export function Bookmakers() {
       <SportApiNextRound1x2Panel />
       <SportApiMarketsDiscoveryPanel />
       <SportApiSotProviderScanPanel />
+      <SportApiOddsDetailsProbePanel />
       <SportApiNextRoundSotOddsPanel />
     </div>
   )

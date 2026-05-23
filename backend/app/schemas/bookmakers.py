@@ -57,3 +57,10 @@ class SportApiScanSotProvidersBody(BaseModel):
     max_providers: int | None = Field(default=None, ge=1, le=200)
     provider_slug: str | None = None
     save_snapshot: bool = False
+    auto_sync_if_empty: bool = False
+    channel: str = Field(default="app", min_length=2, max_length=16)
+
+
+class SportApiProvidersSyncBody(BaseModel):
+    country: str = Field(default="IT", min_length=2, max_length=8)
+    channel: str = Field(default="app", min_length=2, max_length=16)

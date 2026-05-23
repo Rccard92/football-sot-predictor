@@ -95,13 +95,17 @@ class SportApiOddsProvidersSyncService:
             existing = db.scalar(
                 select(SportApiOddsProvider).where(SportApiOddsProvider.provider_slug == slug),
             )
+            raw_with_channel = dict(norm["raw"]) if isinstance(norm["raw"], dict) else {"item": norm["raw"]}
+            raw_with_channel["_sync_channel"] = channel
+            raw_with_channel["_sync_country"] = country
+
             if existing is None:
                 existing = SportApiOddsProvider(
                     provider_slug=slug,
                     provider_name=norm["provider_name"],
                     provider_country=norm["provider_country"],
                     is_selected=(slug == DEFAULT_PROVIDER_SLUG),
-                    raw_payload=norm["raw"],
+                    raw_payload=raw_with_channel,
                     last_synced_at=now,
                 )
                 db.add(existing)
@@ -109,7 +113,7 @@ class SportApiOddsProvidersSyncService:
             else:
                 existing.provider_name = norm["provider_name"]
                 existing.provider_country = norm["provider_country"]
-                existing.raw_payload = norm["raw"]
+                existing.raw_payload = raw_with_channel
                 existing.last_synced_at = now
                 existing.is_active = True
                 updated += 1

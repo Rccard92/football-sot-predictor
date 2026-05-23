@@ -54,11 +54,14 @@ class SportApiOddsProviderDetailService:
             row = SportApiOddsProvider(
                 provider_slug=slug_norm,
                 provider_name=provider_name or slug_norm,
+                provider_country="IT",
                 is_selected=(slug_norm == DEFAULT_PROVIDER_SLUG),
             )
             db.add(row)
 
         row.provider_name = provider_name or row.provider_name
+        if not row.provider_country:
+            row.provider_country = "IT"
         row.provider_id = provider_id
         row.odds_from_id = odds_from_id
         row.odds_from_slug = odds_from_slug

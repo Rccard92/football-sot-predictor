@@ -92,6 +92,11 @@ export function SportApiSelectedProviderPanel({
 
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
 
+      <p className="mt-3 rounded-lg border border-violet-200/80 bg-white/60 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
+        Sisal Italy Affiliate può usare un feed quote esterno indicato da oddsFrom. Le quote esposte da
+        SportAPI potrebbero non coincidere con tutti i mercati disponibili nel conto Sisal Matchpoint.
+      </p>
+
       <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <dt className="text-slate-500">oddsProvider.id</dt>

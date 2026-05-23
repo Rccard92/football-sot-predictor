@@ -33,6 +33,7 @@ export function SportApiProvidersPanel({
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [channel, setChannel] = useState<'app' | 'web'>('app')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -69,9 +70,12 @@ export function SportApiProvidersPanel({
     setMsg(null)
     setError(null)
     try {
-      const out = await postSyncSportApiProviders({ timeoutMs: 120_000 })
+      const out = await postSyncSportApiProviders(
+        { country: 'IT', channel },
+        { timeoutMs: 120_000 },
+      )
       setMsg(
-        `IT/app: recuperati ${out.fetched} · creati ${out.created} · aggiornati ${out.updated} · totale DB ${out.total_in_db}`,
+        `IT/${channel}: recuperati ${out.fetched} · creati ${out.created} · aggiornati ${out.updated} · totale DB ${out.total_in_db}`,
       )
       await load()
     } catch (e) {
@@ -105,14 +109,25 @@ export function SportApiProvidersPanel({
             aggiornare il dettaglio (id quote, oddsFrom, liveOddsFrom).
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void runSyncIt()}
-          disabled={syncBusy || loading}
-          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-        >
-          {syncBusy ? 'Sync…' : 'Sync provider IT/app'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={channel}
+            onChange={(e) => setChannel(e.target.value as 'app' | 'web')}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+            title="Canale SportAPI"
+          >
+            <option value="app">App</option>
+            <option value="web">Web</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void runSyncIt()}
+            disabled={syncBusy || loading}
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+          >
+            {syncBusy ? 'Sync…' : 'Aggiorna provider Italia'}
+          </button>
+        </div>
       </div>
 
       <p className="mt-2 text-[10px] text-slate-500">

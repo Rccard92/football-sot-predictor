@@ -16,6 +16,7 @@ from app.schemas.bookmakers import (
     SportApiMarketsDiscoveryBody,
     SportApiNextRound1x2Body,
     SportApiNextRoundSotBody,
+    SportApiProvidersSyncBody,
     SportApiScanSotProvidersBody,
     SportApiOddsDiscoveryBody,
     SportApiOddsTestEventBody,
@@ -96,10 +97,18 @@ def list_sportapi_providers(db: Session = Depends(get_db)):
 
 
 @router.post("/sportapi/providers/sync", response_model=None)
-def sync_sportapi_providers(db: Session = Depends(get_db)):
+def sync_sportapi_providers(
+    body: SportApiProvidersSyncBody | None = None,
+    db: Session = Depends(get_db),
+):
     _require_sportapi()
+    sync_body = body or SportApiProvidersSyncBody()
     try:
-        out = SportApiOddsProvidersSyncService().sync_it_app(db)
+        out = SportApiOddsProvidersSyncService().sync_it_app(
+            db,
+            country=sync_body.country,
+            channel=sync_body.channel,
+        )
     except SportApiDisabledError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SportApiError as exc:
@@ -345,6 +354,8 @@ def sportapi_odds_scan_sot_providers(
             max_providers=body.max_providers,
             provider_slug=body.provider_slug,
             save_snapshot=bool(body.save_snapshot),
+            auto_sync_if_empty=bool(body.auto_sync_if_empty),
+            channel=body.channel,
         )
     except SportApiDisabledError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
