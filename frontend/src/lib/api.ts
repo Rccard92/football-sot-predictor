@@ -609,6 +609,11 @@ export type TrackedBettingPickRow = {
   live_sot_remaining?: number | null
   line_already_beaten?: boolean
   live_hint_label?: string | null
+  line_value?: number | null
+  is_live_fixture?: boolean
+  sot_display?: string
+  sot_unavailable_reason?: string | null
+  final_hint_label?: string | null
 }
 
 export type TrackedBettingPicksSummary = {
@@ -646,6 +651,8 @@ export type CreateTrackedPicksFromRoundSummary = {
 export type TrackedPicksRefreshResultsSummary = {
   status: string
   season: number
+  scope?: 'all' | 'live' | 'unfinished'
+  last_refreshed_at?: string
   picks_checked: number
   picks_updated: number
   api_calls?: number
@@ -699,11 +706,12 @@ export async function getTrackedBettingPicks(season: number): Promise<TrackedBet
 
 export async function postRefreshTrackedPickResults(
   season: number,
+  body?: { scope?: 'all' | 'live' | 'unfinished' },
   opts?: AdminRequestOpts,
 ): Promise<TrackedPicksRefreshResultsSummary> {
   return adminPostJson<TrackedPicksRefreshResultsSummary>(
     `/api/admin/betting-picks/serie-a/${season}/refresh-results`,
-    {},
+    body ?? {},
     opts,
   )
 }

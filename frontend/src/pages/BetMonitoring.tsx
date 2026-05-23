@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_SEASON,
   getTrackedBettingPicks,
@@ -8,6 +8,11 @@ import {
   type TrackedBettingPicksSummary,
 } from '../lib/api'
 import { formatKickoffReport } from '../utils/sportApiLineupMeta'
+import {
+  formatSotDisplay,
+  isLiveFixture,
+  LIVE_MONITOR_REFRESH_MS,
+} from '../utils/monitoring'
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'In attesa',
@@ -41,13 +46,13 @@ function sortByKickoffAsc(rows: TrackedBettingPickRow[]): TrackedBettingPickRow[
   })
 }
 
-function sotResult(p: TrackedBettingPickRow): string {
-  if (p.result_total_sot != null) {
-    const h = p.result_home_sot != null ? String(p.result_home_sot) : '—'
-    const a = p.result_away_sot != null ? String(p.result_away_sot) : '—'
-    return `${h}+${a} = ${p.result_total_sot.toFixed(1)}`
+function formatLastRefreshed(iso: string | null): string {
+  if (!iso) return ''
+  try {
+    return formatKickoffReport(iso)
+  } catch {
+    return iso
   }
-  return '—'
 }
 
 function SummaryCards({ summary }: { summary: TrackedBettingPicksSummary | null }) {
@@ -77,6 +82,34 @@ function SummaryCards({ summary }: { summary: TrackedBettingPicksSummary | null 
   )
 }
 
+function PickBadges({ p }: { p: TrackedBettingPickRow }) {
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+        {p.pick_type_label}
+      </span>
+      {p.is_backfilled ? (
+        <span
+          className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900"
+          title={p.backfill_warning ?? undefined}
+        >
+          {p.origin_label}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+function SotCell({ p }: { p: TrackedBettingPickRow }) {
+  const { main, hint, title } = formatSotDisplay(p)
+  return (
+    <div title={title}>
+      <div className="tabular-nums text-xs">{main}</div>
+      {hint ? <div className="text-[10px] text-sky-700">{hint}</div> : null}
+    </div>
+  )
+}
+
 export function BetMonitoring() {
   const [rows, setRows] = useState<TrackedBettingPickRow[]>([])
   const [summary, setSummary] = useState<TrackedBettingPicksSummary | null>(null)
@@ -85,6 +118,8 @@ export function BetMonitoring() {
   const [refreshBusy, setRefreshBusy] = useState(false)
   const [createBusy, setCreateBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
+  const [lastResultsRefreshAt, setLastResultsRefreshAt] = useState<string | null>(null)
+  const refreshBusyRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,6 +138,48 @@ export function BetMonitoring() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const runRefreshResults = useCallback(
+    async (scope: 'all' | 'live' | 'unfinished' = 'all') => {
+      if (refreshBusyRef.current) return
+      refreshBusyRef.current = true
+      setRefreshBusy(true)
+      if (scope === 'all') setActionMsg(null)
+      try {
+        const out = await postRefreshTrackedPickResults(DEFAULT_SEASON, { scope }, { timeoutMs: 300_000 })
+        if (out.last_refreshed_at) {
+          setLastResultsRefreshAt(out.last_refreshed_at)
+        }
+        if (scope === 'all') {
+          setActionMsg(
+            `Aggiornate ${out.picks_updated} giocate su ${out.picks_checked} controllate` +
+              (out.errors?.length ? ` · ${out.errors.length} errori` : ''),
+          )
+        }
+        await load()
+      } catch (e) {
+        if (scope === 'all') {
+          setActionMsg(e instanceof Error ? e.message : String(e))
+        }
+      } finally {
+        refreshBusyRef.current = false
+        setRefreshBusy(false)
+      }
+    },
+    [load],
+  )
+
+  useEffect(() => {
+    const hasLive = rows.some(isLiveFixture)
+    if (!hasLive || document.visibilityState === 'hidden') {
+      return
+    }
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden' || refreshBusyRef.current) return
+      void runRefreshResults('live')
+    }, LIVE_MONITOR_REFRESH_MS)
+    return () => window.clearInterval(id)
+  }, [rows, runRefreshResults])
 
   const runCreateFromRound = async (force = false) => {
     setCreateBusy(true)
@@ -130,24 +207,8 @@ export function BetMonitoring() {
     }
   }
 
-  const runRefreshResults = async () => {
-    setRefreshBusy(true)
-    setActionMsg(null)
-    try {
-      const out = await postRefreshTrackedPickResults(DEFAULT_SEASON, { timeoutMs: 300_000 })
-      setActionMsg(
-        `Aggiornate ${out.picks_updated} giocate su ${out.picks_checked} controllate` +
-          (out.errors?.length ? ` · ${out.errors.length} errori` : ''),
-      )
-      await load()
-    } catch (e) {
-      setActionMsg(e instanceof Error ? e.message : String(e))
-    } finally {
-      setRefreshBusy(false)
-    }
-  }
-
   const hasPicks = rows.length > 0
+  const hasLiveRows = rows.some(isLiveFixture)
 
   return (
     <div className="space-y-4">
@@ -158,6 +219,12 @@ export function BetMonitoring() {
             Pronostici definitivi (auto ~30 min pre-match) o ricostruiti dal turno. Risultati live e finali da
             API-Sports.
           </p>
+          {lastResultsRefreshAt ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Ultimo aggiornamento risultati: {formatLastRefreshed(lastResultsRefreshAt)}
+              {hasLiveRows ? ' · auto-refresh ogni 60s (partite live)' : ''}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -176,7 +243,7 @@ export function BetMonitoring() {
           <button
             type="button"
             disabled={refreshBusy || !hasPicks}
-            onClick={() => void runRefreshResults()}
+            onClick={() => void runRefreshResults('all')}
             title={
               hasPicks
                 ? 'Recupera score e SOT da API-Sports'
@@ -209,96 +276,113 @@ export function BetMonitoring() {
       ) : (
         <>
           <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-full text-left text-[11px] text-slate-800">
+            <table className="min-w-full text-left text-sm text-slate-800">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/80 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2">Data/Ora</th>
-                  <th className="px-3 py-2">Match</th>
-                  <th className="px-3 py-2">Pick</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2">Origine</th>
-                  <th className="px-3 py-2">Previsti</th>
-                  <th className="px-3 py-2">SOT live/finali</th>
-                  <th className="px-3 py-2">Risultato</th>
-                  <th className="px-3 py-2">Stato partita</th>
-                  <th className="px-3 py-2">Esito</th>
-                  <th className="px-3 py-2">Aggiornato</th>
+                <tr className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-3">Data/Ora</th>
+                  <th className="px-4 py-3">Match</th>
+                  <th className="px-4 py-3">Pick</th>
+                  <th className="px-4 py-3">Previsti</th>
+                  <th className="px-4 py-3">SOT live/finali</th>
+                  <th className="px-4 py-3">Risultato</th>
+                  <th className="px-4 py-3">Stato partita</th>
+                  <th className="px-4 py-3">Esito</th>
+                  <th className="px-4 py-3">Aggiornato</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((p) => (
-                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
-                      {p.kickoff_at ? formatKickoffReport(p.kickoff_at) : '—'}
-                    </td>
-                    <td className="px-3 py-2.5 font-medium">{p.match_name}</td>
-                    <td className="px-3 py-2.5">{p.suggested_pick ?? '—'}</td>
-                    <td className="px-3 py-2.5">{p.pick_type_label}</td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={
-                          p.is_backfilled
-                            ? 'rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-900'
-                            : ''
-                        }
-                        title={p.backfill_warning ?? undefined}
-                      >
-                        {p.origin_label}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums font-semibold">
-                      {p.predicted_total_sot != null ? p.predicted_total_sot.toFixed(2) : '—'}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="tabular-nums text-[10px]">{sotResult(p)}</div>
-                      {p.live_hint_label ? (
-                        <div className="text-[9px] text-sky-700">{p.live_hint_label}</div>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2.5 tabular-nums text-[10px]">{liveScore(p)}</td>
-                    <td className="px-3 py-2.5">
-                      <span className="font-medium">{p.fixture_status ?? '—'}</span>
-                      {p.elapsed != null ? (
-                        <span className="text-slate-500"> · {p.elapsed}&apos;</span>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusClass(p.status)}`}
-                      >
-                        {STATUS_LABELS[p.status] ?? p.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-[10px] text-slate-500">
-                      {p.updated_at ? formatKickoffReport(p.updated_at) : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((p) => {
+                  const live = isLiveFixture(p)
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`border-b border-slate-100 ${
+                        live ? 'bg-sky-50/60 font-semibold hover:bg-sky-50/80' : 'hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-xs">
+                        {p.kickoff_at ? formatKickoffReport(p.kickoff_at) : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{p.match_name}</span>
+                          {live ? (
+                            <span className="rounded bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                              LIVE
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div>{p.suggested_pick ?? '—'}</div>
+                        <PickBadges p={p} />
+                      </td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-sm">
+                        {p.predicted_total_sot != null ? p.predicted_total_sot.toFixed(2) : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <SotCell p={p} />
+                      </td>
+                      <td className={`px-4 py-3 tabular-nums text-sm ${live ? 'text-sky-900' : ''}`}>
+                        {liveScore(p)}
+                      </td>
+                      <td className={`px-4 py-3 text-sm ${live ? 'text-sky-900' : ''}`}>
+                        <span className="font-medium">{p.fixture_status ?? '—'}</span>
+                        {p.elapsed != null ? (
+                          <span className={live ? 'text-sky-800' : 'text-slate-500'}> · {p.elapsed}&apos;</span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(p.status)}`}
+                        >
+                          {STATUS_LABELS[p.status] ?? p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {p.updated_at ? formatKickoffReport(p.updated_at) : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
           <div className="space-y-3 md:hidden">
-            {rows.map((p) => (
-              <article key={p.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                <p className="text-[10px] text-slate-500">{p.kickoff_at ? formatKickoffReport(p.kickoff_at) : ''}</p>
-                <p className="font-semibold text-slate-900">{p.match_name}</p>
-                <p className="mt-1 text-sm">{p.suggested_pick}</p>
-                <p className="mt-2 text-[11px] text-slate-600">
-                  {p.pick_type_label} · {p.origin_label} · Previsti {p.predicted_total_sot?.toFixed(2) ?? '—'}
-                </p>
-                <p className="mt-1 text-[10px] text-slate-500">
-                  {p.fixture_status} {liveScore(p)} · {sotResult(p)}
-                </p>
-                {p.live_hint_label ? (
-                  <p className="text-[10px] text-sky-700">{p.live_hint_label}</p>
-                ) : null}
-                <span
-                  className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-[10px] ${statusClass(p.status)}`}
+            {rows.map((p) => {
+              const live = isLiveFixture(p)
+              const sot = formatSotDisplay(p)
+              return (
+                <article
+                  key={p.id}
+                  className={`rounded-xl border p-3 shadow-sm ${
+                    live ? 'border-sky-200 bg-sky-50/60' : 'border-slate-200 bg-white'
+                  }`}
                 >
-                  {STATUS_LABELS[p.status] ?? p.status}
-                </span>
-              </article>
-            ))}
+                  <p className="text-xs text-slate-500">{p.kickoff_at ? formatKickoffReport(p.kickoff_at) : ''}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-slate-900">{p.match_name}</p>
+                    {live ? (
+                      <span className="rounded bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold text-white">LIVE</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-sm">{p.suggested_pick}</p>
+                  <PickBadges p={p} />
+                  <p className="mt-2 text-xs text-slate-600">
+                    Previsti {p.predicted_total_sot?.toFixed(2) ?? '—'}
+                  </p>
+                  <p className={`mt-1 text-xs ${live ? 'font-semibold text-sky-900' : 'text-slate-500'}`}>
+                    {p.fixture_status} {liveScore(p)} · {sot.main}
+                  </p>
+                  {sot.hint ? <p className="text-[10px] text-sky-700">{sot.hint}</p> : null}
+                  <span
+                    className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-xs ${statusClass(p.status)}`}
+                  >
+                    {STATUS_LABELS[p.status] ?? p.status}
+                  </span>
+                </article>
+              )
+            })}
           </div>
         </>
       )}

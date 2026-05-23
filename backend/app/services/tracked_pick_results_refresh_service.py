@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +25,7 @@ from app.models.tracked_betting_pick import (
     STATUS_WON,
 )
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.fixture_sot_statistics import extract_sot_from_statistics_response
 from app.services.ingestion_service import IngestionService
 from app.services.tracked_betting_pick_service import formation_snapshot_label
 
@@ -30,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 LIVE_STATUSES = frozenset({"1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INT"})
 VOID_STATUSES = frozenset({"CANC", "ABD", "AWD", "WO"})
+RefreshScope = Literal["all", "live", "unfinished"]
 
 
 def _resolve_pick_outcome(total_sot: float | None, line_value: float | None) -> str | None:
@@ -63,6 +67,49 @@ def _live_over_hint(total_sot: float | None, line_value: float | None) -> dict[s
         "line_already_beaten": False,
         "live_hint_label": label,
     }
+
+
+def _final_hint_label(total_sot: float | None, line_value: float | None) -> str | None:
+    if total_sot is None or line_value is None:
+        return None
+    if float(total_sot) > float(line_value):
+        return "Linea superata"
+    return "Linea non superata"
+
+
+def _is_live_fixture(pick_status: str, fixture_status: str | None) -> bool:
+    fs = (fixture_status or "").strip().upper()
+    return pick_status == STATUS_LIVE or fs in LIVE_STATUSES
+
+
+def _sot_display_and_reason(
+    *,
+    fixture_status: str | None,
+    pick_status: str,
+    result_home_sot: float | None,
+    result_away_sot: float | None,
+    result_total_sot: float | None,
+) -> tuple[str, str | None]:
+    fs = (fixture_status or "").strip().upper()
+    is_live = _is_live_fixture(pick_status, fs)
+    is_finished = fs in FINISHED_STATUSES
+    is_scheduled = fs in SCHEDULED_STATUSES or fs in ("", "NS", "TBD", "PST")
+
+    if is_scheduled and not is_live:
+        return "—", None
+
+    if result_total_sot is not None:
+        h = int(result_home_sot) if result_home_sot is not None else "—"
+        a = int(result_away_sot) if result_away_sot is not None else "—"
+        total = result_total_sot
+        total_str = str(int(total)) if total == int(total) else f"{total:.1f}"
+        return f"{h} + {a} = {total_str}", None
+
+    if is_live:
+        return "SOT non disponibili", "Statistiche SOT non ancora disponibili da API-Sports"
+    if is_finished:
+        return "N/D", "SOT finali non disponibili da API-Sports"
+    return "—", None
 
 
 def _origin_label(p: TrackedBettingPick) -> str:
@@ -105,6 +152,17 @@ def _compute_summary(picks: list[TrackedBettingPick]) -> dict[str, Any]:
     }
 
 
+def _pick_in_scope(pick: TrackedBettingPick, fx: Fixture | None, scope: RefreshScope) -> bool:
+    if scope == "all":
+        return True
+    fs = (pick.fixture_status or (fx.status if fx else "") or "").strip().upper()
+    if scope == "live":
+        return pick.status == STATUS_LIVE or fs in LIVE_STATUSES
+    if scope == "unfinished":
+        return fs not in FINISHED_STATUSES
+    return True
+
+
 class TrackedPickResultsRefreshService:
     def __init__(self, client: ApiFootballClient | None = None) -> None:
         self._client = client or ApiFootballClient()
@@ -136,7 +194,20 @@ class TrackedPickResultsRefreshService:
             ht = teams.get(int(fx.home_team_id))
             at = teams.get(int(fx.away_team_id))
             pick_type_label = "Cauta" if p.pick_type == "cautious" else "Statistica"
+            fixture_status = p.fixture_status or fx.status
             live_hint = _live_over_hint(p.result_total_sot, p.line_value)
+            sot_display, sot_unavailable_reason = _sot_display_and_reason(
+                fixture_status=fixture_status,
+                pick_status=p.status,
+                result_home_sot=p.result_home_sot,
+                result_away_sot=p.result_away_sot,
+                result_total_sot=p.result_total_sot,
+            )
+            is_live = _is_live_fixture(p.status, fixture_status)
+            is_finished = (fixture_status or "").strip().upper() in FINISHED_STATUSES
+            final_hint_label = (
+                _final_hint_label(p.result_total_sot, p.line_value) if is_finished and p.result_total_sot is not None else None
+            )
             rows_out.append(
                 {
                     "id": int(p.id),
@@ -156,7 +227,8 @@ class TrackedPickResultsRefreshService:
                     "formation_label": formation_snapshot_label(bool(p.lineup_confirmed)),
                     "lineup_confirmed": bool(p.lineup_confirmed),
                     "predicted_total_sot": p.predicted_total_sot,
-                    "fixture_status": p.fixture_status or fx.status,
+                    "line_value": p.line_value,
+                    "fixture_status": fixture_status,
                     "elapsed": p.elapsed,
                     "score_home": p.score_home if p.score_home is not None else fx.goals_home,
                     "score_away": p.score_away if p.score_away is not None else fx.goals_away,
@@ -167,6 +239,10 @@ class TrackedPickResultsRefreshService:
                     "confidence_label": p.confidence_label,
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                     "auto_generated_at": p.auto_generated_at.isoformat() if p.auto_generated_at else None,
+                    "is_live_fixture": is_live,
+                    "sot_display": sot_display,
+                    "sot_unavailable_reason": sot_unavailable_reason,
+                    "final_hint_label": final_hint_label,
                     **live_hint,
                 },
             )
@@ -178,10 +254,16 @@ class TrackedPickResultsRefreshService:
             "summary": _compute_summary(picks),
         }
 
-    def refresh_results(self, db: Session, season_year: int) -> dict[str, Any]:
+    def refresh_results(
+        self,
+        db: Session,
+        season_year: int,
+        *,
+        scope: RefreshScope = "all",
+    ) -> dict[str, Any]:
         ingest = IngestionService()
         season_row = ingest._serie_a_season_row(db, season_year)  # noqa: SLF001
-        picks = list(
+        all_picks = list(
             db.scalars(
                 select(TrackedBettingPick)
                 .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
@@ -191,14 +273,34 @@ class TrackedPickResultsRefreshService:
                 ),
             ).all(),
         )
+        fixture_ids = list({int(p.fixture_id) for p in all_picks})
+        fixtures_map = (
+            {int(f.id): f for f in db.scalars(select(Fixture).where(Fixture.id.in_(fixture_ids))).all()}
+            if fixture_ids
+            else {}
+        )
+        team_ids: set[int] = set()
+        for fx in fixtures_map.values():
+            team_ids.add(int(fx.home_team_id))
+            team_ids.add(int(fx.away_team_id))
+        teams_map = (
+            {int(t.id): t for t in db.scalars(select(Team).where(Team.id.in_(list(team_ids)))).all()}
+            if team_ids
+            else {}
+        )
+
+        picks = [p for p in all_picks if _pick_in_scope(p, fixtures_map.get(int(p.fixture_id)), scope)]
         updated = 0
         errors: list[dict[str, Any]] = []
         api_calls = 0
+        last_refreshed_at = datetime.now(timezone.utc).isoformat()
 
         for pick in picks:
-            fx = db.get(Fixture, int(pick.fixture_id))
+            fx = fixtures_map.get(int(pick.fixture_id))
             if fx is None or not fx.api_fixture_id:
                 continue
+            ht = teams_map.get(int(fx.home_team_id))
+            at = teams_map.get(int(fx.away_team_id))
             try:
                 body = self._client.get("fixtures", {"id": int(fx.api_fixture_id)})
                 api_calls += 1
@@ -226,26 +328,31 @@ class TrackedPickResultsRefreshService:
 
                 stats_payload = self._client.get_fixture_statistics(int(fx.api_fixture_id))
                 api_calls += 1
-                from app.services.fixture_team_stats_mapping import statistics_list_to_fields
+                sot_result = extract_sot_from_statistics_response(
+                    stats_payload,
+                    home_team_id=int(fx.home_team_id),
+                    away_team_id=int(fx.away_team_id),
+                    home_api_team_id=int(ht.api_team_id) if ht and ht.api_team_id else None,
+                    away_api_team_id=int(at.api_team_id) if at and at.api_team_id else None,
+                )
 
-                home_sot: float | None = None
-                away_sot: float | None = None
-                for block in stats_payload:
-                    team_api = int((block.get("team") or {})["id"])
-                    parsed = statistics_list_to_fields(block.get("statistics"))
-                    sot = parsed.get("shots_on_target")
-                    team = db.scalar(select(Team).where(Team.api_team_id == team_api))
-                    if team is None:
-                        continue
-                    if int(team.id) == int(fx.home_team_id):
-                        home_sot = float(sot) if sot is not None else None
-                    elif int(team.id) == int(fx.away_team_id):
-                        away_sot = float(sot) if sot is not None else None
-
-                if home_sot is not None and away_sot is not None:
-                    pick.result_home_sot = home_sot
-                    pick.result_away_sot = away_sot
-                    pick.result_total_sot = round(home_sot + away_sot, 2)
+                if sot_result.get("sot_available"):
+                    pick.result_home_sot = sot_result["home_sot"]
+                    pick.result_away_sot = sot_result["away_sot"]
+                    pick.result_total_sot = sot_result["total_sot"]
+                elif st_short in LIVE_STATUSES or st_short in FINISHED_STATUSES:
+                    reason = sot_result.get("sot_unavailable_reason") or "SOT non disponibili"
+                    snippet = json.dumps(stats_payload, ensure_ascii=False)[:2048]
+                    log_fn = logger.warning if st_short in FINISHED_STATUSES else logger.info
+                    log_fn(
+                        "SOT non disponibili pick_id=%s api_fixture_id=%s status=%s reason=%s debug=%s raw=%s",
+                        pick.id,
+                        fx.api_fixture_id,
+                        st_short,
+                        reason,
+                        sot_result.get("debug"),
+                        snippet,
+                    )
 
                 if st_short in FINISHED_STATUSES:
                     if pick.result_total_sot is not None and pick.line_value is not None:
@@ -271,6 +378,8 @@ class TrackedPickResultsRefreshService:
         return {
             "status": "success",
             "season": season_year,
+            "scope": scope,
+            "last_refreshed_at": last_refreshed_at,
             "picks_checked": len(picks),
             "picks_updated": updated,
             "api_calls": api_calls,

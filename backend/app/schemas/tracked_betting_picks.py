@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
@@ -13,3 +15,7 @@ class CreateTrackedPicksFromRoundBody(BaseModel):
     model_id: str = Field(default=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
     pick_type: str = Field(default=PICK_TYPE_CAUTIOUS)
     force: bool = False
+
+
+class RefreshTrackedPickResultsBody(BaseModel):
+    scope: Literal["all", "live", "unfinished"] = "all"

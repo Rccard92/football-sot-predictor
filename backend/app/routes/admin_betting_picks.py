@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.services.api_football_client import ApiFootballError
-from app.schemas.tracked_betting_picks import CreateTrackedPicksFromRoundBody
+from app.schemas.tracked_betting_picks import (
+    CreateTrackedPicksFromRoundBody,
+    RefreshTrackedPickResultsBody,
+)
 from app.services.tracked_pick_round_backfill_service import TrackedPickRoundBackfillService
 from app.services.tracked_pick_results_refresh_service import TrackedPickResultsRefreshService
 
@@ -52,10 +55,15 @@ def create_tracked_picks_from_round(
 
 
 @router.post("/serie-a/{season}/refresh-results", response_model=None)
-def refresh_tracked_pick_results(season: int, db: Session = Depends(get_db)):
+def refresh_tracked_pick_results(
+    season: int,
+    body: RefreshTrackedPickResultsBody = RefreshTrackedPickResultsBody(),
+    db: Session = Depends(get_db),
+):
     _require_api_football_key()
+    scope = body.scope
     try:
-        out = TrackedPickResultsRefreshService().refresh_results(db, int(season))
+        out = TrackedPickResultsRefreshService().refresh_results(db, int(season), scope=scope)
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("refresh tracked results DB error")
         raise HTTPException(status_code=503, detail="Database error") from exc

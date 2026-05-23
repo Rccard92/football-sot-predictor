@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.11.0',
+    date: '2026-05-19',
+    title: 'Monitoraggio live SOT',
+    type: 'minor',
+    summary:
+      'Monitoraggio giocate più leggibile in live: SOT da API-Sports con parser robusto, auto-refresh ogni 60s sulle partite in corso e colonna SOT con messaggi espliciti quando i dati non sono disponibili.',
+    highlights: [
+      'Tabella monitoraggio semplificata: tipo e origine come badge nella colonna Pick.',
+      'Righe live evidenziate con badge LIVE e aggiornamento automatico ogni 60 secondi.',
+      'Parser SOT API-Sports migliorato (alias, fallback ordine squadre, valori "4.0").',
+      'Colonna SOT con formato "4 + 2 = 6" o messaggio "SOT non disponibili" con tooltip.',
+      'Refresh risultati con scope all / live / unfinished per ridurre chiamate API.',
+      'Hint live e finali sulla linea Over (superata / mancano N SOT).',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.10.1',
     date: '2026-05-19',
     title: 'Fix scansione provider SOT',
