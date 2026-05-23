@@ -37,6 +37,24 @@ NON_SOT_MARKET_KEYS = frozenset(
     },
 )
 
+_SOT_KEYWORDS = (
+    "shot on target",
+    "shots on target",
+    "total shots on target",
+    "team shots on target",
+    "player shots on target",
+    "on target",
+    "tiri in porta",
+    "tiri nello specchio",
+    "conclusioni in porta",
+)
+
+
+def _has_sot_keyword(n: str) -> bool:
+    if any(kw in n for kw in _SOT_KEYWORDS):
+        return True
+    return "on target" in n and ("shot" in n or "shots" in n)
+
 
 def _str_or_none(v: Any) -> str | None:
     if v is None:
@@ -146,26 +164,13 @@ def _guess_market_key(name: str | None) -> str:
             return "half_goals"
         return "half_1x2"
 
-    if "player" in n and any(kw in n for kw in ("shot on target", "shots on target", "tiri in porta")):
+    if "player" in n and _has_sot_keyword(n):
         return "player_sot"
-    if ("home" in n or "casa" in n) and any(kw in n for kw in ("shot on target", "shots on target", "tiri in porta")):
+    if ("home" in n or "casa" in n) and _has_sot_keyword(n):
         return "home_team_sot"
-    if ("away" in n or "ospite" in n or "trasferta" in n) and any(
-        kw in n for kw in ("shot on target", "shots on target", "tiri in porta"),
-    ):
+    if ("away" in n or "ospite" in n or "trasferta" in n) and _has_sot_keyword(n):
         return "away_team_sot"
-    if any(
-        kw in n
-        for kw in (
-            "shots on target",
-            "shot on target",
-            "total shots on target",
-            "team shots on target",
-            "tiri in porta",
-            "tiri nello specchio",
-            "conclusioni in porta",
-        )
-    ):
+    if _has_sot_keyword(n):
         return "match_total_sot"
 
     return "unknown"
