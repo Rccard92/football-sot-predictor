@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
 from app.models import TrackedBettingPick
 from app.models.tracked_betting_pick import (
+    BACKFILL_WARNING_RECONSTRUCTED,
     PICK_TYPE_CAUTIOUS,
     PICK_TYPE_STATISTICAL,
     SOURCE_AUTO_PRE_MATCH,
+    SOURCE_BACKFILL_ROUND,
     STATUS_PENDING,
 )
 
@@ -104,6 +106,102 @@ class TrackedBettingPickService:
         for r in rows:
             out.setdefault(int(r.fixture_id), []).append(r)
         return out
+
+    def get_backfill_pick(
+        self,
+        db: Session,
+        fixture_id: int,
+        *,
+        model_id: str,
+        market_id: str,
+        pick_type: str,
+    ) -> TrackedBettingPick | None:
+        return db.scalar(
+            select(TrackedBettingPick).where(
+                TrackedBettingPick.fixture_id == int(fixture_id),
+                TrackedBettingPick.model_id == model_id,
+                TrackedBettingPick.market_id == market_id,
+                TrackedBettingPick.pick_type == pick_type,
+                TrackedBettingPick.source == SOURCE_BACKFILL_ROUND,
+            ),
+        )
+
+    def upsert_backfill_round(
+        self,
+        db: Session,
+        *,
+        fixture_id: int,
+        model_id: str,
+        market_id: str = MARKET_MATCH_TOTAL,
+        market_label: str = MARKET_LABEL_MATCH_TOTAL,
+        pick_type: str,
+        suggested_pick: str | None,
+        line_value: float | None,
+        predicted_home_sot: float | None,
+        predicted_away_sot: float | None,
+        predicted_total_sot: float | None,
+        confidence_label: str | None,
+        lineup_confirmed: bool,
+        lineup_fetched_at: datetime | None,
+        raw_prediction_payload: dict[str, Any] | None,
+        raw_betting_advice_payload: dict[str, Any] | None,
+        is_backfilled: bool,
+        prediction_source: str | None,
+        backfill_warning: str | None,
+        force: bool = False,
+    ) -> Literal["created", "updated", "skipped"]:
+        if not suggested_pick:
+            return "skipped"
+
+        now = datetime.now(timezone.utc)
+        data = {
+            "suggested_pick": suggested_pick,
+            "line_value": line_value if line_value is not None else parse_line_value_from_pick(suggested_pick),
+            "predicted_home_sot": predicted_home_sot,
+            "predicted_away_sot": predicted_away_sot,
+            "predicted_total_sot": predicted_total_sot,
+            "confidence_label": confidence_label,
+            "reliability_score": _confidence_to_reliability(confidence_label),
+            "lineup_confirmed": bool(lineup_confirmed),
+            "lineup_fetched_at": lineup_fetched_at,
+            "prediction_generated_at": now,
+            "raw_prediction_payload": raw_prediction_payload,
+            "raw_betting_advice_payload": raw_betting_advice_payload,
+            "is_backfilled": bool(is_backfilled),
+            "prediction_source": prediction_source,
+            "backfill_warning": backfill_warning,
+        }
+
+        existing = self.get_backfill_pick(
+            db,
+            fixture_id,
+            model_id=model_id,
+            market_id=market_id,
+            pick_type=pick_type,
+        )
+        if existing is not None:
+            if not force and _pick_unchanged(existing, data):
+                return "skipped"
+            for k, v in data.items():
+                setattr(existing, k, v)
+            if existing.status in (STATUS_PENDING,):
+                pass
+            db.add(existing)
+            return "updated"
+
+        row = TrackedBettingPick(
+            fixture_id=int(fixture_id),
+            model_id=model_id,
+            source=SOURCE_BACKFILL_ROUND,
+            market_id=market_id,
+            market_label=market_label,
+            pick_type=pick_type,
+            status=STATUS_PENDING,
+            auto_generated_at=None,
+            **data,
+        )
+        db.add(row)
+        return "created"
 
     def upsert_auto_pre_match(
         self,

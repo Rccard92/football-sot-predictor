@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   DEFAULT_SEASON,
   getTrackedBettingPicks,
+  postCreateTrackedPicksFromRound,
   postRefreshTrackedPickResults,
   type TrackedBettingPickRow,
+  type TrackedBettingPicksSummary,
 } from '../lib/api'
 import { formatKickoffReport } from '../utils/sportApiLineupMeta'
 
@@ -39,12 +41,41 @@ function sotResult(p: TrackedBettingPickRow): string {
   return '—'
 }
 
+function SummaryCards({ summary }: { summary: TrackedBettingPicksSummary | null }) {
+  if (!summary) return null
+  const winRateLabel =
+    summary.win_rate != null
+      ? `${(summary.win_rate * 100).toFixed(1)}%`
+      : 'Win rate non disponibile.'
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+      {[
+        ['Monitorate', summary.total],
+        ['In attesa', summary.pending],
+        ['Live', summary.live],
+        ['Vinte', summary.won],
+        ['Perse', summary.lost],
+        ['N/D', summary.unavailable],
+        ['Void', summary.void],
+        ['Win rate', winRateLabel],
+      ].map(([label, val]) => (
+        <div key={String(label)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">{val}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function BetMonitoring() {
   const [rows, setRows] = useState<TrackedBettingPickRow[]>([])
+  const [summary, setSummary] = useState<TrackedBettingPicksSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshBusy, setRefreshBusy] = useState(false)
-  const [refreshMsg, setRefreshMsg] = useState<string | null>(null)
+  const [createBusy, setCreateBusy] = useState(false)
+  const [actionMsg, setActionMsg] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -52,6 +83,7 @@ export function BetMonitoring() {
     try {
       const data = await getTrackedBettingPicks(DEFAULT_SEASON)
       setRows(data.picks ?? [])
+      setSummary(data.summary ?? null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -63,22 +95,50 @@ export function BetMonitoring() {
     void load()
   }, [load])
 
+  const runCreateFromRound = async (force = false) => {
+    setCreateBusy(true)
+    setActionMsg(null)
+    try {
+      const out = await postCreateTrackedPicksFromRound(
+        DEFAULT_SEASON,
+        {
+          round: 'current',
+          model_id: 'baseline_v2_0_lineup_impact',
+          pick_type: 'cautious',
+          force,
+        },
+        { timeoutMs: 120_000 },
+      )
+      setActionMsg(
+        `Turno: create ${out.created}, aggiornate ${out.updated}, saltate ${out.skipped} su ${out.fixtures_total} partite` +
+          (out.errors?.length ? ` · ${out.errors.length} errori` : ''),
+      )
+      await load()
+    } catch (e) {
+      setActionMsg(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCreateBusy(false)
+    }
+  }
+
   const runRefreshResults = async () => {
     setRefreshBusy(true)
-    setRefreshMsg(null)
+    setActionMsg(null)
     try {
       const out = await postRefreshTrackedPickResults(DEFAULT_SEASON, { timeoutMs: 300_000 })
-      setRefreshMsg(
+      setActionMsg(
         `Aggiornate ${out.picks_updated} giocate su ${out.picks_checked} controllate` +
           (out.errors?.length ? ` · ${out.errors.length} errori` : ''),
       )
       await load()
     } catch (e) {
-      setRefreshMsg(e instanceof Error ? e.message : String(e))
+      setActionMsg(e instanceof Error ? e.message : String(e))
     } finally {
       setRefreshBusy(false)
     }
   }
+
+  const hasPicks = rows.length > 0
 
   return (
     <div className="space-y-4">
@@ -86,27 +146,57 @@ export function BetMonitoring() {
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-slate-900">Monitoraggio Giocate</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            Pronostici definitivi salvati automaticamente circa 30 minuti prima del calcio d&apos;inizio. I risultati
-            live e finali arrivano da API-Sports (non SportAPI).
+            Pronostici definitivi (auto ~30 min pre-match) o ricostruiti dal turno. Risultati live e finali da
+            API-Sports.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={refreshBusy}
-          onClick={() => void runRefreshResults()}
-          className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-900 hover:bg-indigo-50 disabled:opacity-50"
-        >
-          {refreshBusy ? 'Aggiornamento…' : 'Aggiorna risultati'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={createBusy}
+            onClick={() => void runCreateFromRound(hasPicks)}
+            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+            title="Usa le predizioni già salvate per il turno corrente (incluse partite terminate)"
+          >
+            {createBusy
+              ? 'Creazione…'
+              : hasPicks
+                ? 'Crea/aggiorna monitoraggio turno'
+                : 'Crea monitoraggio turno'}
+          </button>
+          <button
+            type="button"
+            disabled={refreshBusy || !hasPicks}
+            onClick={() => void runRefreshResults()}
+            title={
+              hasPicks
+                ? 'Recupera score e SOT da API-Sports'
+                : 'Crea prima le pick monitorate dal turno'
+            }
+            className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-900 hover:bg-indigo-50 disabled:opacity-50"
+          >
+            {refreshBusy ? 'Aggiornamento…' : 'Aggiorna risultati'}
+          </button>
+        </div>
       </div>
-      {refreshMsg ? <p className="text-sm text-slate-700">{refreshMsg}</p> : null}
+
+      {actionMsg ? <p className="text-sm text-slate-700">{actionMsg}</p> : null}
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+
+      {!loading && hasPicks ? <SummaryCards summary={summary} /> : null}
+
       {loading ? (
         <p className="text-sm text-slate-500">Caricamento…</p>
-      ) : rows.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          Nessuna giocata tracciata. Il job pre-match creerà i pick per le partite in finestra kickoff.
-        </p>
+      ) : !hasPicks ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          <p>
+            Nessuna giocata tracciata. Puoi crearle dal turno corrente usando le predizioni già disponibili,
+            oppure attendere il job pre-match automatico.
+          </p>
+          <p className="mt-3 text-[11px] text-slate-500">
+            «Aggiorna risultati» funziona solo dopo che esistono pick monitorate nel database.
+          </p>
+        </div>
       ) : (
         <>
           <div className="hidden overflow-x-auto md:block">
@@ -118,10 +208,10 @@ export function BetMonitoring() {
                   <th className="px-3 py-2">Pick</th>
                   <th className="px-3 py-2">Tipo</th>
                   <th className="px-3 py-2">Origine</th>
-                  <th className="px-3 py-2">Formazione</th>
                   <th className="px-3 py-2">Previsti</th>
-                  <th className="px-3 py-2">Live/Finale</th>
+                  <th className="px-3 py-2">SOT live/finali</th>
                   <th className="px-3 py-2">Risultato</th>
+                  <th className="px-3 py-2">Stato partita</th>
                   <th className="px-3 py-2">Esito</th>
                   <th className="px-3 py-2">Aggiornato</th>
                 </tr>
@@ -135,25 +225,38 @@ export function BetMonitoring() {
                     <td className="px-3 py-2.5 font-medium">{p.match_name}</td>
                     <td className="px-3 py-2.5">{p.suggested_pick ?? '—'}</td>
                     <td className="px-3 py-2.5">{p.pick_type_label}</td>
-                    <td className="px-3 py-2.5">{p.origin_label}</td>
-                    <td className="max-w-[10rem] px-3 py-2.5 text-[10px] leading-snug" title={p.formation_label}>
-                      {p.lineup_confirmed ? 'Ufficiale' : 'Probabile'}
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={
+                          p.is_backfilled
+                            ? 'rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-900'
+                            : ''
+                        }
+                        title={p.backfill_warning ?? undefined}
+                      >
+                        {p.origin_label}
+                      </span>
                     </td>
                     <td className="px-3 py-2.5 tabular-nums font-semibold">
                       {p.predicted_total_sot != null ? p.predicted_total_sot.toFixed(2) : '—'}
                     </td>
                     <td className="px-3 py-2.5">
-                      <div>
-                        <span className="font-medium">{p.fixture_status ?? '—'}</span>
-                        {p.elapsed != null ? (
-                          <span className="text-slate-500"> · {p.elapsed}&apos;</span>
-                        ) : null}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{liveScore(p)}</div>
+                      <div className="tabular-nums text-[10px]">{sotResult(p)}</div>
+                      {p.live_hint_label ? (
+                        <div className="text-[9px] text-sky-700">{p.live_hint_label}</div>
+                      ) : null}
                     </td>
-                    <td className="px-3 py-2.5 tabular-nums text-[10px]">{sotResult(p)}</td>
+                    <td className="px-3 py-2.5 tabular-nums text-[10px]">{liveScore(p)}</td>
                     <td className="px-3 py-2.5">
-                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusClass(p.status)}`}>
+                      <span className="font-medium">{p.fixture_status ?? '—'}</span>
+                      {p.elapsed != null ? (
+                        <span className="text-slate-500"> · {p.elapsed}&apos;</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusClass(p.status)}`}
+                      >
                         {STATUS_LABELS[p.status] ?? p.status}
                       </span>
                     </td>
@@ -174,8 +277,15 @@ export function BetMonitoring() {
                 <p className="mt-2 text-[11px] text-slate-600">
                   {p.pick_type_label} · {p.origin_label} · Previsti {p.predicted_total_sot?.toFixed(2) ?? '—'}
                 </p>
-                <p className="mt-1 text-[10px] text-slate-500">{p.formation_label}</p>
-                <span className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-[10px] ${statusClass(p.status)}`}>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  {p.fixture_status} {liveScore(p)} · {sotResult(p)}
+                </p>
+                {p.live_hint_label ? (
+                  <p className="text-[10px] text-sky-700">{p.live_hint_label}</p>
+                ) : null}
+                <span
+                  className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-[10px] ${statusClass(p.status)}`}
+                >
                   {STATUS_LABELS[p.status] ?? p.status}
                 </span>
               </article>

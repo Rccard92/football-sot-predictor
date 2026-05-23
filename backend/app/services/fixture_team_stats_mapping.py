@@ -7,6 +7,9 @@ from typing import Any
 
 STAT_LABEL_ALIASES: dict[str, str] = {
     "shots on goal": "shots_on_target",
+    "shots on target": "shots_on_target",
+    "tiri in porta": "shots_on_target",
+    "on target": "shots_on_target",
     "shots off goal": "shots_off_goal",
     "shots off target": "shots_off_goal",
     "shot off target": "shots_off_goal",

@@ -14,6 +14,16 @@ from app.models.mixins import TimestampMixin
 
 SOURCE_MANUAL = "manual"
 SOURCE_AUTO_PRE_MATCH = "auto_pre_match"
+SOURCE_BACKFILL_ROUND = "backfill_round"
+
+PREDICTION_SOURCE_CERTIFIED = "certified_pre_match"
+PREDICTION_SOURCE_DB_V20 = "db_v20"
+PREDICTION_SOURCE_DB_V11 = "db_v11"
+PREDICTION_SOURCE_RECONSTRUCTED = "reconstructed"
+
+BACKFILL_WARNING_RECONSTRUCTED = (
+    "Pick ricostruita da dati disponibili; non è una snapshot pre-match certificata."
+)
 
 PICK_TYPE_STATISTICAL = "statistical"
 PICK_TYPE_CAUTIOUS = "cautious"
@@ -62,5 +72,8 @@ class TrackedBettingPick(Base, TimestampMixin):
     score_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_prediction_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     raw_betting_advice_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    is_backfilled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    prediction_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    backfill_warning: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     fixture = relationship("Fixture", back_populates="tracked_betting_picks")

@@ -589,6 +589,9 @@ export type TrackedBettingPickRow = {
   pick_type_label: string
   source: string
   origin_label: string
+  is_backfilled?: boolean
+  prediction_source?: string | null
+  backfill_warning?: string | null
   formation_label: string
   lineup_confirmed: boolean
   predicted_total_sot: number | null
@@ -603,6 +606,20 @@ export type TrackedBettingPickRow = {
   confidence_label: string | null
   updated_at: string | null
   auto_generated_at: string | null
+  live_sot_remaining?: number | null
+  line_already_beaten?: boolean
+  live_hint_label?: string | null
+}
+
+export type TrackedBettingPicksSummary = {
+  total: number
+  pending: number
+  live: number
+  won: number
+  lost: number
+  unavailable: number
+  void: number
+  win_rate: number | null
 }
 
 export type TrackedBettingPicksResponse = {
@@ -610,6 +627,20 @@ export type TrackedBettingPicksResponse = {
   season: number
   picks: TrackedBettingPickRow[]
   count: number
+  summary?: TrackedBettingPicksSummary
+}
+
+export type CreateTrackedPicksFromRoundSummary = {
+  status: string
+  season: number
+  model_id?: string
+  pick_type?: string
+  fixtures_total: number
+  created: number
+  updated: number
+  skipped: number
+  errors: { fixture_id?: number; match?: string; error?: string }[]
+  warnings: string[]
 }
 
 export type TrackedPicksRefreshResultsSummary = {
@@ -673,6 +704,23 @@ export async function postRefreshTrackedPickResults(
   return adminPostJson<TrackedPicksRefreshResultsSummary>(
     `/api/admin/betting-picks/serie-a/${season}/refresh-results`,
     {},
+    opts,
+  )
+}
+
+export async function postCreateTrackedPicksFromRound(
+  season: number,
+  body?: {
+    round?: string
+    model_id?: string
+    pick_type?: string
+    force?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<CreateTrackedPicksFromRoundSummary> {
+  return adminPostJson<CreateTrackedPicksFromRoundSummary>(
+    `/api/admin/betting-picks/serie-a/${season}/create-from-round`,
+    body ?? {},
     opts,
   )
 }

@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.8.0',
+    date: '2026-05-19',
+    title: 'Monitoraggio turno e risultati reali',
+    type: 'minor',
+    summary:
+      'Migliorato il Monitoraggio Giocate con creazione manuale delle pick dal turno e aggiornamento dei risultati live/finali da API-Sports.',
+    highlights: [
+      'Aggiunto pulsante per creare il monitoraggio dal turno corrente.',
+      'Le pick possono essere ricostruite dalle predizioni già disponibili.',
+      'Aggiornamento risultati live/finali da API-Sports.',
+      'Calcolo esito vinta/persa per Over SOT.',
+      'Migliorata la gestione delle partite finite e live.',
+      'Il monitoraggio non dipende più solo dal job pre-match.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.7.1',
     date: '2026-05-19',
     title: 'Fix riconoscimento mercato 1X2 SportAPI',
