@@ -215,7 +215,10 @@ export function SportApiMarketsDiscoveryPanel() {
           <div>
             <h3 className="text-[11px] font-semibold text-slate-800">Possibili mercati SOT</h3>
             {result.sot_candidate_markets.length === 0 ? (
-              <p className="mt-1 text-[11px] text-slate-500">Nessun candidato rilevato per keyword.</p>
+              <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+                Nessun mercato SOT trovato su questo provider/evento. Le quote coprono solo mercati come
+                1X2, gol, entrambe segnano e corner.
+              </p>
             ) : (
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[640px] border-collapse text-[10px]">
@@ -259,24 +262,37 @@ export function SportApiMarketsDiscoveryPanel() {
           <div>
             <h3 className="text-[11px] font-semibold text-slate-800">Tutti i mercati ({result.markets_count})</h3>
             <div className="mt-2 max-h-80 overflow-y-auto overflow-x-auto rounded border border-slate-200 bg-white">
-              <table className="w-full min-w-[520px] border-collapse text-[10px]">
+              <table className="w-full min-w-[720px] border-collapse text-[10px]">
                 <thead className="sticky top-0 bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-slate-600">
-                    <th className="px-2 py-1">Nome</th>
-                    <th className="px-2 py-1">Linea</th>
+                    <th className="px-2 py-1">Market ID</th>
+                    <th className="px-2 py-1">Mercato</th>
+                    <th className="px-2 py-1">Gruppo</th>
+                    <th className="px-2 py-1">Periodo</th>
+                    <th className="px-2 py-1">Linea / choiceGroup</th>
                     <th className="px-2 py-1">Outcome</th>
+                    <th className="px-2 py-1">Stato</th>
                     <th className="px-2 py-1">Raw</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.normalized_markets.map((m, idx) => {
-                    const key = m.market_name || `market-${idx}`
+                    const key = `${m.market_name}|${m.choice_group ?? ''}|${idx}`
                     const open = rawOpen[key]
+                    const lineLabel = m.choice_group
+                      ? `${m.choice_group}${m.line != null ? ` (${m.line})` : ''}`
+                      : m.line != null
+                        ? String(m.line)
+                        : '—'
                     return (
                       <tr key={key} className="border-b border-slate-100 align-top">
+                        <td className="px-2 py-1 text-slate-500">{m.market_id ?? '—'}</td>
                         <td className="px-2 py-1 font-medium">{m.market_name}</td>
-                        <td className="px-2 py-1">{m.line ?? '—'}</td>
+                        <td className="px-2 py-1">{m.market_group ?? '—'}</td>
+                        <td className="px-2 py-1">{m.period ?? '—'}</td>
+                        <td className="px-2 py-1">{lineLabel}</td>
                         <td className="px-2 py-1 text-slate-600">{compactOutcomes(m)}</td>
+                        <td className="px-2 py-1">{m.status ?? '—'}</td>
                         <td className="px-2 py-1">
                           <button
                             type="button"

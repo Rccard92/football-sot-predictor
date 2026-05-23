@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.10.0',
+    date: '2026-05-19',
+    title: 'Scansione provider per mercati SOT',
+    type: 'minor',
+    summary:
+      'Migliorata la discovery SportAPI con raggruppamento corretto dei mercati e scansione dei provider italiani alla ricerca di mercati SOT.',
+    highlights: [
+      'I choice/outcome non vengono più mostrati come mercati separati.',
+      'I mercati vengono raggruppati correttamente con linee e outcome.',
+      'Aggiunta scansione dei provider italiani per cercare mercati SOT.',
+      'I mercati corner non vengono più confusi con SOT.',
+      'Migliorato il messaggio quando i SOT non sono disponibili.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.9.0',
     date: '2026-05-19',
     title: 'Discovery mercati SOT bookmaker',

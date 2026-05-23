@@ -49,3 +49,11 @@ class SportApiNextRoundSotBody(BaseModel):
     season_year: int | None = None
     market_key: str = Field(default="match_total_sot", min_length=1)
     limit: int = Field(default=50, ge=1, le=100)
+
+
+class SportApiScanSotProvidersBody(BaseModel):
+    sportapi_event_id: int = Field(..., ge=1)
+    country: str = Field(default="IT", min_length=2, max_length=8)
+    max_providers: int | None = Field(default=None, ge=1, le=200)
+    provider_slug: str | None = None
+    save_snapshot: bool = False

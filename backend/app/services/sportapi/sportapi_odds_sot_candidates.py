@@ -5,24 +5,20 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.services.sportapi.sportapi_odds_markets_normalize import NON_SOT_MARKET_KEYS
+
 _SOT_KEYWORDS_EN = (
-    "shot",
-    "shots",
     "shots on target",
     "shot on target",
-    "on target",
-    "target",
-    "goal attempts",
-    "attempts on target",
-    "shots on goal",
+    "total shots on target",
+    "team shots on target",
+    "player shots on target",
 )
+
 _SOT_KEYWORDS_IT = (
-    "tiri",
     "tiri in porta",
-    "tiro in porta",
-    "conclusioni",
+    "tiri nello specchio",
     "conclusioni in porta",
-    "conclusione in porta",
 )
 
 _EXCLUDE_PATTERNS = (
@@ -37,9 +33,14 @@ _EXCLUDE_PATTERNS = (
     r"\bdraw\s+no\s+bet\b",
     r"\b1x2\b",
     r"\bfull\s+time\b",
+    r"\bfulltime\b",
     r"\bmatch\s+winner\b",
     r"\bgoalscorer\b",
     r"\banytime\s+scorer\b",
+)
+
+_SOT_MARKET_KEYS = frozenset(
+    {"match_total_sot", "home_team_sot", "away_team_sot", "player_sot"},
 )
 
 _HOME_HINTS = ("home team", "home", "casa", "team 1", "team1")
@@ -51,12 +52,20 @@ def _norm_name(name: str) -> str:
     return re.sub(r"\s+", " ", name.strip().lower())
 
 
-def _is_excluded(name: str) -> bool:
+def _is_excluded_by_name(name: str) -> bool:
     n = _norm_name(name)
     for pat in _EXCLUDE_PATTERNS:
         if re.search(pat, n, re.I):
             return True
     return False
+
+
+def _is_non_sot_market_key(key: str | None) -> bool:
+    if not key:
+        return True
+    if key in NON_SOT_MARKET_KEYS:
+        return True
+    return key.startswith("half_")
 
 
 def _matched_keywords(name: str) -> list[str]:
@@ -65,16 +74,14 @@ def _matched_keywords(name: str) -> list[str]:
     for kw in _SOT_KEYWORDS_EN + _SOT_KEYWORDS_IT:
         if kw in n:
             found.append(kw)
+    if "on target" in n and ("shot" in n or "shots" in n):
+        if "on target" not in found:
+            found.append("on target")
     return found
 
 
 def _suggest_key(name: str, market_key_guess: str | None) -> str | None:
-    if market_key_guess in (
-        "match_total_sot",
-        "home_team_sot",
-        "away_team_sot",
-        "player_sot",
-    ):
+    if market_key_guess in _SOT_MARKET_KEYS:
         return market_key_guess
     n = _norm_name(name)
     if any(h in n for h in _PLAYER_HINTS):
@@ -83,8 +90,6 @@ def _suggest_key(name: str, market_key_guess: str | None) -> str | None:
         return "home_team_sot"
     if any(h in n for h in _AWAY_HINTS):
         return "away_team_sot"
-    if "total" in n or "match" in n:
-        return "match_total_sot"
     return "match_total_sot"
 
 
@@ -92,7 +97,14 @@ def _confidence(name: str, keywords: list[str], suggested: str | None) -> str:
     n = _norm_name(name)
     if not keywords:
         return "low"
-    strong = ("shots on target", "shot on target", "tiri in porta", "total shots on target")
+    strong = (
+        "shots on target",
+        "shot on target",
+        "tiri in porta",
+        "total shots on target",
+        "tiri nello specchio",
+        "conclusioni in porta",
+    )
     if any(k in n for k in strong):
         return "high"
     if suggested == "player_sot" and "player" not in n:
@@ -121,12 +133,17 @@ def find_sot_candidate_markets(normalized_markets: list[dict[str, Any]]) -> list
     candidates: list[dict[str, Any]] = []
     for m in normalized_markets:
         name = str(m.get("market_name") or "")
-        if not name or _is_excluded(name):
+        if not name or _is_excluded_by_name(name):
+            continue
+        key_guess = m.get("market_key_guess")
+        if _is_non_sot_market_key(str(key_guess) if key_guess else None):
             continue
         keywords = _matched_keywords(name)
         if not keywords:
             continue
-        suggested = _suggest_key(name, m.get("market_key_guess"))
+        suggested = _suggest_key(name, str(key_guess) if key_guess else None)
+        if suggested not in _SOT_MARKET_KEYS:
+            continue
         conf = _confidence(name, keywords, suggested)
         over_o, under_o, line_v = _over_under_from_outcomes(m.get("outcomes") or [])
         candidates.append(
@@ -134,6 +151,8 @@ def find_sot_candidate_markets(normalized_markets: list[dict[str, Any]]) -> list
                 "market_name": name,
                 "market_id": m.get("market_id"),
                 "market_group": m.get("market_group"),
+                "choice_group": m.get("choice_group"),
+                "period": m.get("period"),
                 "match_reason": ", ".join(keywords[:3]),
                 "mapping_confidence": conf,
                 "suggested_market_key": suggested,

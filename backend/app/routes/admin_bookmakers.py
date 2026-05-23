@@ -16,6 +16,7 @@ from app.schemas.bookmakers import (
     SportApiMarketsDiscoveryBody,
     SportApiNextRound1x2Body,
     SportApiNextRoundSotBody,
+    SportApiScanSotProvidersBody,
     SportApiOddsDiscoveryBody,
     SportApiOddsTestEventBody,
 )
@@ -26,6 +27,7 @@ from app.services.sportapi.sportapi_event_odds_test_service import SportApiEvent
 from app.services.sportapi.sportapi_markets_discovery_service import SportApiMarketsDiscoveryService
 from app.services.sportapi.sportapi_next_round_1x2_service import SportApiNextRound1x2Service
 from app.services.sportapi.sportapi_next_round_sot_odds_service import SportApiNextRoundSotOddsService
+from app.services.sportapi.sportapi_scan_sot_providers_service import SportApiScanSotProvidersService
 from app.services.sportapi.sportapi_odds_market_mapping_service import SportApiOddsMarketMappingService
 from app.services.sportapi.sportapi_odds_discovery_service import SportApiOddsDiscoveryService
 from app.services.sportapi.sportapi_odds_provider_detail_service import SportApiOddsProviderDetailService
@@ -324,6 +326,32 @@ def sportapi_odds_next_round_sot(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("sportapi next round sot DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.post("/sportapi/odds/scan-sot-providers", response_model=None)
+def sportapi_odds_scan_sot_providers(
+    body: SportApiScanSotProvidersBody,
+    db: Session = Depends(get_db),
+):
+    _require_sportapi()
+    try:
+        out = SportApiScanSotProvidersService().scan(
+            db,
+            sportapi_event_id=int(body.sportapi_event_id),
+            country=body.country,
+            max_providers=body.max_providers,
+            provider_slug=body.provider_slug,
+            save_snapshot=bool(body.save_snapshot),
+        )
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SportApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi scan sot providers DB error")
         db.rollback()
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(out)

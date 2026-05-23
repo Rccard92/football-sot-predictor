@@ -992,10 +992,13 @@ export type SportApiEventOddsMarket = {
   market_name: string
   market_id?: string | null
   market_group?: string | null
+  choice_group?: string | null
+  period?: string | null
   market_key_guess?: string | null
   line?: number | null
   outcomes: SportApiEventOddsOutcome[]
   outcomes_count: number
+  status?: string | null
   raw_market?: unknown
 }
 
@@ -1122,6 +1125,47 @@ export async function postSportApiNextRoundSot(
   return adminPostJson<SportApiNextRoundSotResponse>(
     '/api/admin/bookmakers/sportapi/odds/next-round-sot',
     body ?? {},
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 300_000 },
+  )
+}
+
+export type SportApiScanSotProviderRow = {
+  provider_name: string
+  provider_slug: string
+  working_provider_id: number | null
+  markets_count: number
+  has_sot_market: boolean
+  sot_candidate_markets: SportApiSotCandidateMarket[]
+  status: string
+  error: string | null
+  raw_payload?: unknown
+}
+
+export type SportApiScanSotProvidersResponse = {
+  status: string
+  sportapi_event_id: number
+  country: string
+  providers_scanned: number
+  providers_with_odds: number
+  providers_with_sot: number
+  providers_errors: number
+  rows: SportApiScanSotProviderRow[]
+  message?: string | null
+}
+
+export async function postSportApiScanSotProviders(
+  body: {
+    sportapi_event_id: number
+    country?: string
+    max_providers?: number | null
+    provider_slug?: string | null
+    save_snapshot?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiScanSotProvidersResponse> {
+  return adminPostJson<SportApiScanSotProvidersResponse>(
+    '/api/admin/bookmakers/sportapi/odds/scan-sot-providers',
+    body,
     { ...opts, timeoutMs: opts?.timeoutMs ?? 300_000 },
   )
 }

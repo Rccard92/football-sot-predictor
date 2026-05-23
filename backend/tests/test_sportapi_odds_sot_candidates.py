@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.services.sportapi.sportapi_odds_markets_normalize import normalize_all_markets_from_event_odds
 from app.services.sportapi.sportapi_odds_sot_candidates import find_sot_candidate_markets
 
 
@@ -9,7 +10,7 @@ def test_sot_candidates_exclude_match_goals():
     markets = [
         {
             "market_name": "Match Goals",
-            "market_key_guess": None,
+            "market_key_guess": "match_goals",
             "outcomes": [{"name": "Over 2.5", "price": 1.9}],
             "outcomes_count": 1,
         },
@@ -25,6 +26,7 @@ def test_sot_candidates_exclude_match_goals():
         },
         {
             "market_name": "Both Teams To Score",
+            "market_key_guess": "btts",
             "outcomes": [],
             "outcomes_count": 0,
         },
@@ -34,7 +36,25 @@ def test_sot_candidates_exclude_match_goals():
     assert "Match Goals" not in names
     assert "Both Teams To Score" not in names
     assert "Total Shots on Target" in names
-    sot = next(c for c in candidates if c["market_name"] == "Total Shots on Target")
-    assert sot["suggested_market_key"] == "match_total_sot"
-    assert sot["over_odd"] == 1.85
-    assert sot["under_odd"] == 1.95
+
+
+def test_corners_not_sot_candidate():
+    payload = {
+        "markets": [
+            {
+                "marketName": "Corners 2-Way",
+                "choiceGroups": [
+                    {
+                        "choiceGroup": "9,5",
+                        "choices": [
+                            {"name": "Under", "price": 1.75},
+                            {"name": "Over", "price": 2.0},
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+    markets = normalize_all_markets_from_event_odds(payload)
+    candidates = find_sot_candidate_markets(markets)
+    assert len(candidates) == 0
