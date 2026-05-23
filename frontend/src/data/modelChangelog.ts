@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.9.0',
+    date: '2026-05-19',
+    title: 'Discovery mercati SOT bookmaker',
+    type: 'minor',
+    summary:
+      'Ordinamento cronologico nel Monitoraggio Giocate e nuova discovery mercati SportAPI in Bookmakers con mapping SOT e test quote del turno.',
+    highlights: [
+      'Monitoraggio: partite ordinate per kickoff crescente (prima le più vicine).',
+      'Bookmakers: scoperta di tutti i mercati odds per evento SportAPI.',
+      'Rilevamento automatico candidati SOT (tiri in porta) con esclusione goals/BTTS/corners.',
+      'Salvataggio mapping mercato raw → chiave normalizzata (match_total_sot, ecc.).',
+      'Test batch Over/Under SOT sul prossimo turno usando i mapping salvati.',
+      'Quote SOT solo informative: nessun impatto su pronostici, consiglio o monitoraggio.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.8.0',
     date: '2026-05-19',
     title: 'Monitoraggio turno e risultati reali',

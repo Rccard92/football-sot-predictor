@@ -32,6 +32,15 @@ function liveScore(p: TrackedBettingPickRow): string {
   return '—'
 }
 
+function sortByKickoffAsc(rows: TrackedBettingPickRow[]): TrackedBettingPickRow[] {
+  return [...rows].sort((a, b) => {
+    const ta = a.kickoff_at ? new Date(a.kickoff_at).getTime() : Number.POSITIVE_INFINITY
+    const tb = b.kickoff_at ? new Date(b.kickoff_at).getTime() : Number.POSITIVE_INFINITY
+    if (ta !== tb) return ta - tb
+    return a.id - b.id
+  })
+}
+
 function sotResult(p: TrackedBettingPickRow): string {
   if (p.result_total_sot != null) {
     const h = p.result_home_sot != null ? String(p.result_home_sot) : '—'
@@ -82,7 +91,7 @@ export function BetMonitoring() {
     setError(null)
     try {
       const data = await getTrackedBettingPicks(DEFAULT_SEASON)
-      setRows(data.picks ?? [])
+      setRows(sortByKickoffAsc(data.picks ?? []))
       setSummary(data.summary ?? null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

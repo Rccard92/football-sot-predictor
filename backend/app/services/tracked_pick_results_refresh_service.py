@@ -117,7 +117,7 @@ class TrackedPickResultsRefreshService:
                 select(TrackedBettingPick)
                 .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
                 .where(Fixture.season_id == season_row.id)
-                .order_by(Fixture.kickoff_at.desc(), TrackedBettingPick.id.desc()),
+                .order_by(Fixture.kickoff_at.asc(), TrackedBettingPick.id.asc()),
             ).all(),
         )
         fx_ids = list({int(p.fixture_id) for p in picks})

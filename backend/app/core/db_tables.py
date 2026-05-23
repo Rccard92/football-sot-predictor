@@ -36,6 +36,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "odds_discovery_snapshots",
         "sportapi_odds_providers",
         "sportapi_fixture_odds_snapshots",
+        "sportapi_odds_market_mappings",
     },
 )
 

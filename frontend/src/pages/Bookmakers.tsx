@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { SportApiMarketsDiscoveryPanel } from '../components/bookmakers/SportApiMarketsDiscoveryPanel'
 import { SportApiNextRound1x2Panel } from '../components/bookmakers/SportApiNextRound1x2Panel'
+import { SportApiNextRoundSotOddsPanel } from '../components/bookmakers/SportApiNextRoundSotOddsPanel'
 import { SportApiProvidersPanel } from '../components/bookmakers/SportApiProvidersPanel'
 import { SportApiSelectedProviderPanel } from '../components/bookmakers/SportApiSelectedProviderPanel'
 import type { SportApiOddsProviderRow } from '../lib/api'
@@ -27,6 +29,8 @@ export function Bookmakers() {
         onRefresh={() => setReloadKey((k) => k + 1)}
       />
       <SportApiNextRound1x2Panel />
+      <SportApiMarketsDiscoveryPanel />
+      <SportApiNextRoundSotOddsPanel />
     </div>
   )
 }

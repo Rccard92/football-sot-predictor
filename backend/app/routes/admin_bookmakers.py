@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
 from app.schemas.bookmakers import (
+    SportApiMarketMappingBody,
+    SportApiMarketsDiscoveryBody,
     SportApiNextRound1x2Body,
+    SportApiNextRoundSotBody,
     SportApiOddsDiscoveryBody,
     SportApiOddsTestEventBody,
 )
@@ -20,7 +23,10 @@ from app.services.api_football_client import ApiFootballError
 from app.services.odds_bookmakers_sync_service import OddsBookmakersSyncService
 from app.services.sportapi.sportapi_client import SportApiDisabledError, SportApiError
 from app.services.sportapi.sportapi_event_odds_test_service import SportApiEventOddsTestService
+from app.services.sportapi.sportapi_markets_discovery_service import SportApiMarketsDiscoveryService
 from app.services.sportapi.sportapi_next_round_1x2_service import SportApiNextRound1x2Service
+from app.services.sportapi.sportapi_next_round_sot_odds_service import SportApiNextRoundSotOddsService
+from app.services.sportapi.sportapi_odds_market_mapping_service import SportApiOddsMarketMappingService
 from app.services.sportapi.sportapi_odds_discovery_service import SportApiOddsDiscoveryService
 from app.services.sportapi.sportapi_odds_provider_detail_service import SportApiOddsProviderDetailService
 from app.services.sportapi.sportapi_odds_providers_sync_service import SportApiOddsProvidersSyncService
@@ -215,4 +221,109 @@ def sportapi_odds_discovery(
         code = 400 if "Mapping" in msg or "Fixture" in msg else 502
         raise HTTPException(status_code=code, detail=msg)
 
+    return jsonable_encoder(out)
+
+
+@router.post("/sportapi/odds/markets-discovery", response_model=None)
+def sportapi_odds_markets_discovery(
+    body: SportApiMarketsDiscoveryBody,
+    db: Session = Depends(get_db),
+):
+    _require_sportapi()
+    try:
+        out = SportApiMarketsDiscoveryService().discover(
+            db,
+            sportapi_event_id=int(body.sportapi_event_id),
+            provider_slug=body.provider_slug,
+            provider_id=body.provider_id,
+        )
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SportApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi markets discovery DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+
+    if out.get("status") == "error":
+        raise HTTPException(status_code=502, detail=str(out.get("message") or "Discovery mercati fallita"))
+    return jsonable_encoder(out)
+
+
+@router.get("/sportapi/odds/market-mappings", response_model=None)
+def list_sportapi_market_mappings(
+    provider_slug: str | None = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        out = SportApiOddsMarketMappingService().list_payload(db, provider_slug)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("list sportapi market mappings DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.post("/sportapi/odds/market-mappings", response_model=None)
+def create_sportapi_market_mapping(
+    body: SportApiMarketMappingBody,
+    db: Session = Depends(get_db),
+):
+    try:
+        row = SportApiOddsMarketMappingService().upsert_mapping(
+            db,
+            provider_slug=body.provider_slug,
+            raw_market_name=body.raw_market_name,
+            normalized_market_key=body.normalized_market_key,
+            provider_id_used=body.provider_id_used,
+            raw_market_id=body.raw_market_id,
+            confidence=body.confidence,
+            sample_raw_market=body.sample_raw_market,
+        )
+        out = SportApiOddsMarketMappingService._row_dict(row)
+        return jsonable_encoder({"status": "success", "mapping": out})
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("create sportapi market mapping DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+
+
+@router.patch("/sportapi/odds/market-mappings/{mapping_id}/deactivate", response_model=None)
+def deactivate_sportapi_market_mapping(
+    mapping_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        ok = SportApiOddsMarketMappingService().deactivate(db, int(mapping_id))
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("deactivate sportapi market mapping DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="Mapping non trovato")
+    return jsonable_encoder({"status": "success", "id": int(mapping_id), "is_active": False})
+
+
+@router.post("/sportapi/odds/next-round-sot", response_model=None)
+def sportapi_odds_next_round_sot(
+    body: SportApiNextRoundSotBody,
+    db: Session = Depends(get_db),
+):
+    _require_sportapi()
+    try:
+        out = SportApiNextRoundSotOddsService().run(
+            db,
+            provider_slug=body.provider_slug,
+            season_year=body.season_year,
+            market_key=body.market_key,
+            limit=int(body.limit),
+        )
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SportApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi next round sot DB error")
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(out)

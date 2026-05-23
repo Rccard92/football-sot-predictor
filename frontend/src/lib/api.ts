@@ -980,6 +980,152 @@ export async function postSportApiNextRound1x2(
   )
 }
 
+export type SportApiEventOddsOutcome = {
+  name?: string | null
+  price?: number | null
+  line?: number | null
+  status?: string | null
+  raw?: unknown
+}
+
+export type SportApiEventOddsMarket = {
+  market_name: string
+  market_id?: string | null
+  market_group?: string | null
+  market_key_guess?: string | null
+  line?: number | null
+  outcomes: SportApiEventOddsOutcome[]
+  outcomes_count: number
+  raw_market?: unknown
+}
+
+export type SportApiSotCandidateMarket = {
+  market_name: string
+  market_id?: string | null
+  line?: number | null
+  match_reason?: string
+  mapping_confidence?: 'high' | 'medium' | 'low'
+  suggested_market_key?: string | null
+  over_odd?: number | null
+  under_odd?: number | null
+  outcomes_count?: number
+}
+
+export type SportApiMarketsDiscoveryResponse = {
+  status: string
+  message?: string
+  sportapi_event_id: number
+  provider_slug: string
+  working_provider_id?: number
+  candidate_provider_ids?: number[]
+  markets_count: number
+  sot_candidates_count?: number
+  normalized_markets: SportApiEventOddsMarket[]
+  sot_candidate_markets: SportApiSotCandidateMarket[]
+  raw_payload?: unknown
+}
+
+export type SportApiMarketMappingRow = {
+  id: number
+  provider_slug: string
+  provider_id_used?: number | null
+  raw_market_name: string
+  raw_market_id?: string | null
+  normalized_market_key: string
+  confidence: string
+  is_active: boolean
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type SportApiMarketMappingsResponse = {
+  status: string
+  count: number
+  mappings: SportApiMarketMappingRow[]
+}
+
+export type SportApiNextRoundSotRow = {
+  fixture_id: number
+  kickoff_at: string | null
+  match_label: string
+  sportapi_event_id: number | null
+  provider_id_used: number | null
+  market_name: string | null
+  line: number | null
+  over_odd: number | null
+  under_odd: number | null
+  status: string
+}
+
+export type SportApiNextRoundSotResponse = {
+  status: string
+  message?: string
+  provider_slug: string
+  market_key?: string
+  mappings_count: number
+  total_fixtures: number
+  rows: SportApiNextRoundSotRow[]
+  errors?: string[]
+}
+
+export async function postSportApiMarketsDiscovery(
+  body: {
+    sportapi_event_id: number
+    provider_slug?: string
+    provider_id?: number | null
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiMarketsDiscoveryResponse> {
+  return adminPostJson<SportApiMarketsDiscoveryResponse>(
+    '/api/admin/bookmakers/sportapi/odds/markets-discovery',
+    body,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 90_000 },
+  )
+}
+
+export async function getSportApiMarketMappings(
+  providerSlug?: string,
+): Promise<SportApiMarketMappingsResponse> {
+  const q = providerSlug ? `?provider_slug=${encodeURIComponent(providerSlug)}` : ''
+  return adminGetJson<SportApiMarketMappingsResponse>(
+    `/api/admin/bookmakers/sportapi/odds/market-mappings${q}`,
+  )
+}
+
+export async function postSportApiMarketMapping(
+  body: {
+    provider_slug?: string
+    raw_market_name: string
+    normalized_market_key: string
+    provider_id_used?: number | null
+    raw_market_id?: string | null
+    confidence?: string
+    sample_raw_market?: unknown
+  },
+): Promise<{ status: string; mapping: SportApiMarketMappingRow }> {
+  return adminPostJson('/api/admin/bookmakers/sportapi/odds/market-mappings', body)
+}
+
+export async function patchDeactivateSportApiMarketMapping(
+  mappingId: number,
+): Promise<{ status: string; id: number; is_active: boolean }> {
+  return adminPatchJson<{ status: string; id: number; is_active: boolean }>(
+    `/api/admin/bookmakers/sportapi/odds/market-mappings/${mappingId}/deactivate`,
+    {},
+  )
+}
+
+export async function postSportApiNextRoundSot(
+  body?: { provider_slug?: string; season_year?: number; market_key?: string; limit?: number },
+  opts?: AdminRequestOpts,
+): Promise<SportApiNextRoundSotResponse> {
+  return adminPostJson<SportApiNextRoundSotResponse>(
+    '/api/admin/bookmakers/sportapi/odds/next-round-sot',
+    body ?? {},
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 300_000 },
+  )
+}
+
 /** GET admin/diagnostica con timeout opzionale. */
 export async function getModelStatusWithOpts(season: number, opts?: AdminRequestOpts): Promise<ModelStatusResponse> {
   return requestJsonWithOpts<ModelStatusResponse>(
@@ -1005,6 +1151,43 @@ export async function getUpcomingActiveWithOpts(
 /** POST ingest/admin generici con timeout client predefinito (3 min). */
 export async function adminPostJson<T>(path: string, body: unknown = {}, opts?: AdminRequestOpts): Promise<T> {
   return requestPostJsonWithOpts<T>(path, body, { timeoutMs: 180_000, ...opts })
+}
+
+/** PATCH admin generici. */
+export async function adminPatchJson<T>(path: string, body: unknown = {}, opts?: AdminRequestOpts): Promise<T> {
+  const base = getApiBase()
+  const p = path.startsWith('/') ? path : `/${path}`
+  let cancelTimeout: (() => void) | undefined
+  let signal: AbortSignal | undefined = opts?.signal
+  const timeoutMs = opts?.timeoutMs ?? 90_000
+  if (timeoutMs > 0) {
+    const x = createLinkedTimeoutSignal(timeoutMs, opts?.signal)
+    signal = x.signal
+    cancelTimeout = x.cancel
+  }
+  try {
+    const res = await fetch(`${base}${p}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal,
+    })
+    const ct = res.headers.get('content-type') ?? ''
+    let parsed: unknown = null
+    if (ct.includes('application/json')) {
+      try {
+        parsed = await res.json()
+      } catch {
+        parsed = null
+      }
+    }
+    if (!res.ok) {
+      throw new AdminHttpError(res.status, extractErrorMessage(parsed, res.statusText), parsed)
+    }
+    return parsed as T
+  } finally {
+    cancelTimeout?.()
+  }
 }
 
 /** GET admin/diagnostica con timeout predefinito (90 s). */

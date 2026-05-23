@@ -26,3 +26,26 @@ class SportApiNextRound1x2Body(BaseModel):
     provider_slug: str = Field(default="sisal-italy-affiliate", min_length=1)
     force: bool = False
     season_year: int | None = None
+
+
+class SportApiMarketsDiscoveryBody(BaseModel):
+    sportapi_event_id: int = Field(..., ge=1)
+    provider_slug: str = Field(default="sisal-italy-affiliate", min_length=1)
+    provider_id: int | None = Field(default=None, ge=1)
+
+
+class SportApiMarketMappingBody(BaseModel):
+    provider_slug: str = Field(default="sisal-italy-affiliate", min_length=1)
+    raw_market_name: str = Field(..., min_length=1)
+    normalized_market_key: str = Field(..., min_length=1)
+    provider_id_used: int | None = Field(default=None, ge=1)
+    raw_market_id: str | None = None
+    confidence: str = Field(default="manual", min_length=1)
+    sample_raw_market: dict | None = None
+
+
+class SportApiNextRoundSotBody(BaseModel):
+    provider_slug: str = Field(default="sisal-italy-affiliate", min_length=1)
+    season_year: int | None = None
+    market_key: str = Field(default="match_total_sot", min_length=1)
+    limit: int = Field(default=50, ge=1, le=100)

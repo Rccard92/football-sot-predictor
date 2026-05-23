@@ -31,6 +31,7 @@ from app.models.tracked_betting_pick import TrackedBettingPick
 from app.models.odds_bookmaker import OddsBookmaker
 from app.models.odds_discovery_snapshot import OddsDiscoverySnapshot
 from app.models.sportapi_fixture_odds_snapshot import SportApiFixtureOddsSnapshot
+from app.models.sportapi_odds_market_mapping import SportApiOddsMarketMapping
 from app.models.sportapi_odds_provider import SportApiOddsProvider
 
 __all__ = [
@@ -69,4 +70,5 @@ __all__ = [
     "OddsDiscoverySnapshot",
     "SportApiOddsProvider",
     "SportApiFixtureOddsSnapshot",
+    "SportApiOddsMarketMapping",
 ]
