@@ -4,6 +4,7 @@ import {
   getTrackedBettingPicks,
   postCreateTrackedPicksFromRound,
   postRefreshTrackedPickResults,
+  type StatsDebugEntry,
   type TrackedBettingPickRow,
   type TrackedBettingPicksSummary,
 } from '../lib/api'
@@ -12,6 +13,7 @@ import {
   formatSotDisplay,
   isLiveFixture,
   LIVE_MONITOR_REFRESH_MS,
+  showMonitoringStatsDebug,
 } from '../utils/monitoring'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -116,12 +118,45 @@ function PickBadges({ p }: { p: TrackedBettingPickRow }) {
   )
 }
 
-function SotCell({ p }: { p: TrackedBettingPickRow }) {
+function SotStatsDebugPanel({ entry, fixtureStatus }: { entry: StatsDebugEntry; fixtureStatus: string | null }) {
+  return (
+    <details className="mt-1 text-[10px] text-slate-600">
+      <summary className="cursor-pointer text-indigo-700 hover:underline">Debug stats</summary>
+      <div className="mt-1 max-w-md space-y-0.5 rounded border border-slate-200 bg-slate-50 p-2 font-mono">
+        <p>api_fixture_id: {entry.api_fixture_id}</p>
+        <p>status: {fixtureStatus ?? entry.fixture_status ?? '—'}</p>
+        <p>statistics_found: {String(entry.statistics_found ?? false)}</p>
+        <p>
+          metriche: home={entry.metric_label_home ?? '—'} · away={entry.metric_label_away ?? '—'}
+        </p>
+        {entry.metric_labels_seen?.length ? (
+          <p className="break-all">labels: {entry.metric_labels_seen.join(', ')}</p>
+        ) : null}
+        {entry.extraction_error ? <p>error: {entry.extraction_error}</p> : null}
+        {entry.raw_statistics_sample ? (
+          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all text-[9px]">
+            {entry.raw_statistics_sample}
+          </pre>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+function SotCell({
+  p,
+  statsDebug,
+}: {
+  p: TrackedBettingPickRow
+  statsDebug?: StatsDebugEntry
+}) {
   const { main, hint, title } = formatSotDisplay(p)
+  const showDebug = showMonitoringStatsDebug() && statsDebug
   return (
     <div title={title}>
       <div className="tabular-nums text-xs">{main}</div>
       {hint ? <div className="text-[10px] text-sky-700">{hint}</div> : null}
+      {showDebug ? <SotStatsDebugPanel entry={statsDebug} fixtureStatus={p.fixture_status} /> : null}
     </div>
   )
 }
@@ -135,6 +170,7 @@ export function BetMonitoring() {
   const [createBusy, setCreateBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [lastResultsRefreshAt, setLastResultsRefreshAt] = useState<string | null>(null)
+  const [statsDebugByPickId, setStatsDebugByPickId] = useState<Record<number, StatsDebugEntry>>({})
   const refreshBusyRef = useRef(false)
 
   const load = useCallback(async () => {
@@ -165,6 +201,15 @@ export function BetMonitoring() {
         const out = await postRefreshTrackedPickResults(DEFAULT_SEASON, { scope }, { timeoutMs: 300_000 })
         if (out.last_refreshed_at) {
           setLastResultsRefreshAt(out.last_refreshed_at)
+        }
+        if (out.stats_debug?.length) {
+          setStatsDebugByPickId((prev) => {
+            const next = { ...prev }
+            for (const d of out.stats_debug!) {
+              next[d.pick_id] = d
+            }
+            return next
+          })
         }
         if (scope === 'all') {
           setActionMsg(
@@ -238,7 +283,7 @@ export function BetMonitoring() {
           {lastResultsRefreshAt ? (
             <p className="mt-1 text-xs text-slate-500">
               Ultimo aggiornamento risultati: {formatLastRefreshed(lastResultsRefreshAt)}
-              {hasLiveRows ? ' · auto-refresh ogni 60s (partite live)' : ''}
+              {hasLiveRows ? ' · auto-refresh ogni 5 min (partite live)' : ''}
             </p>
           ) : null}
         </div>
@@ -337,7 +382,7 @@ export function BetMonitoring() {
                         {p.predicted_total_sot != null ? p.predicted_total_sot.toFixed(2) : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <SotCell p={p} />
+                        <SotCell p={p} statsDebug={statsDebugByPickId[p.id]} />
                       </td>
                       <td className={`px-4 py-3 tabular-nums text-sm ${live ? 'text-sky-900' : ''}`}>
                         {liveScore(p)}
@@ -391,6 +436,9 @@ export function BetMonitoring() {
                     {p.fixture_status} {liveScore(p)} · {sot.main}
                   </p>
                   {sot.hint ? <p className="text-[10px] text-sky-700">{sot.hint}</p> : null}
+                  {showMonitoringStatsDebug() && statsDebugByPickId[p.id] ? (
+                    <SotStatsDebugPanel entry={statsDebugByPickId[p.id]} fixtureStatus={p.fixture_status} />
+                  ) : null}
                   <span
                     className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-xs ${statusClass(p.status)}`}
                   >

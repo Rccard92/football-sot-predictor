@@ -670,6 +670,21 @@ export type CreateTrackedPicksFromRoundSummary = {
   warnings: string[]
 }
 
+export type StatsDebugEntry = {
+  pick_id: number
+  fixture_id: number
+  api_fixture_id: number
+  fixture_status?: string
+  statistics_found?: boolean
+  raw_statistics_sample?: string
+  extracted_home_sot?: number | null
+  extracted_away_sot?: number | null
+  extraction_error?: string | null
+  metric_labels_seen?: string[]
+  metric_label_home?: string | null
+  metric_label_away?: string | null
+}
+
 export type TrackedPicksRefreshResultsSummary = {
   status: string
   season: number
@@ -679,6 +694,7 @@ export type TrackedPicksRefreshResultsSummary = {
   picks_updated: number
   api_calls?: number
   errors: { pick_id?: number; error?: string }[]
+  stats_debug?: StatsDebugEntry[]
 }
 
 function adminCronHeaders(): Record<string, string> {

@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.12.1',
+    date: '2026-05-19',
+    title: 'Fix SOT live monitoraggio',
+    type: 'patch',
+    summary:
+      'Migliorato il recupero dei tiri in porta live/finali da API-Sports e ridotto l’auto-refresh live a 5 minuti.',
+    highlights: [
+      'Auto-refresh live portato a 5 minuti.',
+      'Migliorato parser Shots on Goal / Shots on Target.',
+      'Aggiunto debug statistiche per partite live.',
+      'Migliorato matching home/away nelle statistiche API-Sports.',
+      'Migliorata visualizzazione dei SOT live/finali nel monitoraggio.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.12.0',
     date: '2026-05-19',
     title: 'Refresh ufficiale pre-match',

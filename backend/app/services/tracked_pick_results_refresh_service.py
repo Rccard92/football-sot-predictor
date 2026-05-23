@@ -106,7 +106,10 @@ def _sot_display_and_reason(
         return f"{h} + {a} = {total_str}", None
 
     if is_live:
-        return "SOT non disponibili", "Statistiche SOT non ancora disponibili da API-Sports"
+        return (
+            "SOT non disponibili",
+            "API-Sports non ha restituito i tiri in porta per questo aggiornamento.",
+        )
     if is_finished:
         return "N/D", "SOT finali non disponibili da API-Sports"
     return "—", None
@@ -295,6 +298,7 @@ class TrackedPickResultsRefreshService:
         picks = [p for p in all_picks if _pick_in_scope(p, fixtures_map.get(int(p.fixture_id)), scope)]
         updated = 0
         errors: list[dict[str, Any]] = []
+        stats_debug: list[dict[str, Any]] = []
         api_calls = 0
         last_refreshed_at = datetime.now(timezone.utc).isoformat()
 
@@ -337,15 +341,21 @@ class TrackedPickResultsRefreshService:
                     away_team_id=int(fx.away_team_id),
                     home_api_team_id=int(ht.api_team_id) if ht and ht.api_team_id else None,
                     away_api_team_id=int(at.api_team_id) if at and at.api_team_id else None,
+                    home_team_name=ht.name if ht else None,
+                    away_team_name=at.name if at else None,
                 )
+                dbg = sot_result.get("debug") if isinstance(sot_result.get("debug"), dict) else {}
 
                 if sot_result.get("sot_available"):
                     pick.result_home_sot = sot_result["home_sot"]
                     pick.result_away_sot = sot_result["away_sot"]
                     pick.result_total_sot = sot_result["total_sot"]
                 elif st_short in LIVE_STATUSES or st_short in FINISHED_STATUSES:
+                    pick.result_home_sot = None
+                    pick.result_away_sot = None
+                    pick.result_total_sot = None
                     reason = sot_result.get("sot_unavailable_reason") or "SOT non disponibili"
-                    snippet = json.dumps(stats_payload, ensure_ascii=False)[:2048]
+                    snippet = str(dbg.get("raw_statistics_sample") or json.dumps(stats_payload, ensure_ascii=False)[:2048])
                     log_fn = logger.warning if st_short in FINISHED_STATUSES else logger.info
                     log_fn(
                         "SOT non disponibili pick_id=%s api_fixture_id=%s status=%s reason=%s debug=%s raw=%s",
@@ -353,8 +363,24 @@ class TrackedPickResultsRefreshService:
                         fx.api_fixture_id,
                         st_short,
                         reason,
-                        sot_result.get("debug"),
+                        dbg,
                         snippet,
+                    )
+                    stats_debug.append(
+                        {
+                            "pick_id": int(pick.id),
+                            "fixture_id": int(fx.id),
+                            "api_fixture_id": int(fx.api_fixture_id),
+                            "fixture_status": st_short,
+                            "statistics_found": bool(dbg.get("statistics_found")),
+                            "raw_statistics_sample": snippet,
+                            "extracted_home_sot": sot_result.get("home_sot"),
+                            "extracted_away_sot": sot_result.get("away_sot"),
+                            "extraction_error": dbg.get("extraction_error"),
+                            "metric_labels_seen": dbg.get("labels_seen"),
+                            "metric_label_home": dbg.get("metric_label_home"),
+                            "metric_label_away": dbg.get("metric_label_away"),
+                        },
                     )
 
                 if st_short in FINISHED_STATUSES:
@@ -387,4 +413,5 @@ class TrackedPickResultsRefreshService:
             "picks_updated": updated,
             "api_calls": api_calls,
             "errors": errors,
+            "stats_debug": stats_debug,
         }
