@@ -604,49 +604,39 @@ export type TrackedBettingPickRow = {
   fixture_id: number
   kickoff_at: string | null
   match_name: string
-  home_team: UpcomingMatchTeam
-  away_team: UpcomingMatchTeam
-  suggested_pick: string | null
-  pick_type: string
-  pick_type_label: string
-  source: string
-  origin_label: string
-  is_backfilled?: boolean
-  prediction_source?: string | null
-  backfill_warning?: string | null
-  formation_label: string
-  lineup_confirmed: boolean
-  predicted_total_sot: number | null
-  fixture_status: string | null
-  elapsed: number | null
-  score_home: number | null
-  score_away: number | null
+  home_team_name: string
+  away_team_name: string
+  initial_predicted_total_sot: number | null
+  official_predicted_total_sot: number | null
+  initial_suggested_pick: string | null
+  initial_line_value: number | null
+  initial_odd: number | null
+  official_suggested_pick: string | null
+  official_line_value: number | null
+  official_odd: number | null
   result_home_sot: number | null
   result_away_sot: number | null
   result_total_sot: number | null
-  status: string
-  confidence_label: string | null
-  updated_at: string | null
-  auto_generated_at: string | null
-  live_sot_remaining?: number | null
-  line_already_beaten?: boolean
-  live_hint_label?: string | null
-  line_value?: number | null
-  is_live_fixture?: boolean
   sot_display?: string
   sot_unavailable_reason?: string | null
-  final_hint_label?: string | null
+  fixture_status: string | null
+  elapsed: number | null
+  fixture_status_label: string
+  initial_outcome: string
+  official_outcome: string
+  is_live_fixture?: boolean
+  status?: string
 }
 
 export type TrackedBettingPicksSummary = {
   total: number
-  pending: number
   live: number
-  won: number
-  lost: number
-  unavailable: number
-  void: number
-  win_rate: number | null
+  initial_won: number
+  initial_lost: number
+  official_won: number
+  official_lost: number
+  initial_win_rate: number | null
+  official_win_rate: number | null
 }
 
 export type TrackedBettingPicksResponse = {

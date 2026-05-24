@@ -27,12 +27,34 @@ export function formatSotDisplay(p: TrackedBettingPickRow): {
   title: string | undefined
 } {
   const main = p.sot_display ?? '—'
-  const hint = p.live_hint_label ?? p.final_hint_label ?? null
   let title = p.sot_unavailable_reason ?? undefined
   if (main === 'SOT non disponibili') {
     title = LIVE_SOT_UNAVAILABLE_TOOLTIP
   }
-  return { main, hint, title }
+  return { main, hint: null, title }
+}
+
+export function formatSotTotal(value: number | null | undefined): string {
+  if (value == null) return '—'
+  return value.toFixed(2)
+}
+
+export function formatOdd(value: number | null | undefined): string {
+  if (value == null) return '—'
+  return value.toFixed(2)
+}
+
+export function outcomeClass(outcome: string): string {
+  if (outcome === 'Vinta' || outcome === 'Vinta live') {
+    return 'text-emerald-800'
+  }
+  if (outcome === 'Persa') {
+    return 'text-rose-800'
+  }
+  if (outcome === 'Live') {
+    return 'text-sky-800'
+  }
+  return 'text-slate-700'
 }
 
 export function showMonitoringStatsDebug(): boolean {

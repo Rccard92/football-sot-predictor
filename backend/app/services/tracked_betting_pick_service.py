@@ -10,7 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
-from app.models import TrackedBettingPick
+from app.models import Fixture, TeamSotPrediction, TrackedBettingPick
+from app.services.sot_betting_advice_service import build_fixture_betting_advice
 from app.models.tracked_betting_pick import (
     PICK_TYPE_CAUTIOUS,
     PICK_TYPE_STATISTICAL,
@@ -80,6 +81,70 @@ def _pick_unchanged(existing: TrackedBettingPick, data: dict[str, Any]) -> bool:
 
 def is_pick_concluded(pick: TrackedBettingPick) -> bool:
     return pick.status in CONCLUDED_STATUSES
+
+
+def _seed_initial_snapshot(
+    pick: TrackedBettingPick,
+    *,
+    home_sot: float | None,
+    away_sot: float | None,
+    total_sot: float | None,
+    suggested_pick: str | None,
+    line_value: float | None,
+) -> None:
+    if pick.initial_predicted_total_sot is not None:
+        return
+    if total_sot is None and suggested_pick is None:
+        return
+    pick.initial_predicted_home_sot = home_sot
+    pick.initial_predicted_away_sot = away_sot
+    pick.initial_predicted_total_sot = total_sot
+    pick.initial_suggested_pick = suggested_pick
+    pick.initial_line_value = line_value if line_value is not None else parse_line_value_from_pick(suggested_pick)
+
+
+def _apply_initial_from_before(
+    pick: TrackedBettingPick,
+    *,
+    before_home_sot: float | None,
+    before_away_sot: float | None,
+    before_advice: dict[str, Any] | None = None,
+) -> None:
+    if pick.initial_predicted_total_sot is not None:
+        return
+    if before_home_sot is None or before_away_sot is None:
+        return
+    total = round(float(before_home_sot) + float(before_away_sot), 2)
+    pick_s: str | None = None
+    line: float | None = None
+    if before_advice:
+        match = before_advice.get("match_total") if isinstance(before_advice.get("match_total"), dict) else {}
+        if pick.pick_type == PICK_TYPE_CAUTIOUS:
+            pick_s = match.get("cautious_pick")
+            line_ln = match.get("cautious_line")
+            if pick_s:
+                pick_s = str(pick_s)
+                line = float(line_ln) if line_ln is not None else parse_line_value_from_pick(pick_s)
+    if pick_s is None and pick.pick_type == PICK_TYPE_CAUTIOUS:
+        advice = build_fixture_betting_advice(
+            float(before_home_sot),
+            float(before_away_sot),
+            model_version=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+        )
+        match = advice.get("match_total") if isinstance(advice.get("match_total"), dict) else {}
+        pick_s = match.get("cautious_pick")
+        line_ln = match.get("cautious_line")
+        if pick_s:
+            pick_s = str(pick_s)
+            line = float(line_ln) if line_ln is not None else parse_line_value_from_pick(pick_s)
+    _seed_initial_snapshot(
+        pick,
+        home_sot=round(float(before_home_sot), 2),
+        away_sot=round(float(before_away_sot), 2),
+        total_sot=total,
+        suggested_pick=pick_s,
+        line_value=line,
+    )
 
 
 class TrackedBettingPickService:
@@ -210,6 +275,9 @@ class TrackedBettingPickService:
         prediction_source: str | None,
         backfill_warning: str | None,
         force: bool = False,
+        before_home_sot: float | None = None,
+        before_away_sot: float | None = None,
+        before_advice: dict[str, Any] | None = None,
     ) -> Literal["created", "updated", "skipped"]:
         if not suggested_pick:
             return "skipped"
@@ -245,6 +313,12 @@ class TrackedBettingPickService:
                 return "skipped"
             if not force and _pick_unchanged(existing, data):
                 return "skipped"
+            _apply_initial_from_before(
+                existing,
+                before_home_sot=before_home_sot,
+                before_away_sot=before_away_sot,
+                before_advice=before_advice,
+            )
             for k, v in data.items():
                 setattr(existing, k, v)
             db.add(existing)
@@ -260,6 +334,14 @@ class TrackedBettingPickService:
             status=STATUS_PENDING,
             auto_generated_at=None,
             **data,
+        )
+        _seed_initial_snapshot(
+            row,
+            home_sot=predicted_home_sot,
+            away_sot=predicted_away_sot,
+            total_sot=predicted_total_sot,
+            suggested_pick=suggested_pick,
+            line_value=data["line_value"],
         )
         db.add(row)
         return "created"
@@ -284,14 +366,18 @@ class TrackedBettingPickService:
         raw_prediction_payload: dict[str, Any] | None,
         raw_betting_advice_payload: dict[str, Any] | None,
         force: bool = False,
+        before_home_sot: float | None = None,
+        before_away_sot: float | None = None,
+        before_advice: dict[str, Any] | None = None,
     ) -> Literal["created", "updated", "skipped"]:
         if not suggested_pick:
             return "skipped"
 
         now = datetime.now(timezone.utc)
+        line_resolved = line_value if line_value is not None else parse_line_value_from_pick(suggested_pick)
         data = {
             "suggested_pick": suggested_pick,
-            "line_value": line_value if line_value is not None else parse_line_value_from_pick(suggested_pick),
+            "line_value": line_resolved,
             "predicted_home_sot": predicted_home_sot,
             "predicted_away_sot": predicted_away_sot,
             "predicted_total_sot": predicted_total_sot,
@@ -330,6 +416,12 @@ class TrackedBettingPickService:
                 return "skipped"
             if not force and _pick_unchanged(existing_auto, data):
                 return "skipped"
+            _apply_initial_from_before(
+                existing_auto,
+                before_home_sot=before_home_sot,
+                before_away_sot=before_away_sot,
+                before_advice=before_advice,
+            )
             for k, v in data.items():
                 setattr(existing_auto, k, v)
             existing_auto.auto_generated_at = now
@@ -347,6 +439,12 @@ class TrackedBettingPickService:
         if backfill is not None and not is_pick_concluded(backfill):
             if not force and _pick_unchanged(backfill, data):
                 return "skipped"
+            _apply_initial_from_before(
+                backfill,
+                before_home_sot=before_home_sot,
+                before_away_sot=before_away_sot,
+                before_advice=before_advice,
+            )
             for k, v in data.items():
                 setattr(backfill, k, v)
             backfill.source = SOURCE_AUTO_PRE_MATCH
@@ -370,6 +468,21 @@ class TrackedBettingPickService:
             auto_generated_at=now,
             **data,
         )
+        if before_home_sot is not None and before_away_sot is not None:
+            _apply_initial_from_before(
+                row,
+                before_home_sot=before_home_sot,
+                before_away_sot=before_away_sot,
+                before_advice=before_advice,
+            )
+        _seed_initial_snapshot(
+            row,
+            home_sot=predicted_home_sot,
+            away_sot=predicted_away_sot,
+            total_sot=predicted_total_sot,
+            suggested_pick=suggested_pick,
+            line_value=line_resolved,
+        )
         db.add(row)
         return "created"
 
@@ -385,11 +498,20 @@ class TrackedBettingPickService:
         lineup_fetched_at: datetime | None,
         raw_prediction_payload: dict[str, Any] | None,
         force: bool = False,
+        before_home_sot: float | None = None,
+        before_away_sot: float | None = None,
+        before_advice: dict[str, Any] | None = None,
     ) -> dict[str, int]:
         totals = round(float(home_sot) + float(away_sot), 2)
         created = updated = skipped = 0
         match = advice.get("match_total") if isinstance(advice.get("match_total"), dict) else {}
         conf = match.get("confidence_label")
+        if before_advice is None and before_home_sot is not None and before_away_sot is not None:
+            before_advice = build_fixture_betting_advice(
+                float(before_home_sot),
+                float(before_away_sot),
+                model_version=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+            )
 
         for pick_type, key in (
             (PICK_TYPE_CAUTIOUS, "cautious_pick"),
@@ -416,6 +538,9 @@ class TrackedBettingPickService:
                 raw_prediction_payload=raw_prediction_payload,
                 raw_betting_advice_payload=advice,
                 force=force,
+                before_home_sot=before_home_sot if pick_type == PICK_TYPE_CAUTIOUS else None,
+                before_away_sot=before_away_sot if pick_type == PICK_TYPE_CAUTIOUS else None,
+                before_advice=before_advice if pick_type == PICK_TYPE_CAUTIOUS else None,
             )
             if action == "created":
                 created += 1
@@ -424,3 +549,87 @@ class TrackedBettingPickService:
             else:
                 skipped += 1
         return {"created": created, "updated": updated, "skipped": skipped}
+
+    def sync_official_from_v20(
+        self,
+        db: Session,
+        fixture_id: int,
+        *,
+        before_snapshot: dict[str, Any] | None = None,
+        lineup_confirmed: bool = False,
+        lineup_fetched_at: datetime | None = None,
+        advice_context: Any | None = None,
+        force: bool = False,
+    ) -> dict[str, int]:
+        """Aggiorna pick monitorate da predizioni v2.0 correnti (post refresh formazioni)."""
+        from app.services.sot_betting_advice_service import AdviceContext
+
+        fx = db.get(Fixture, int(fixture_id))
+        if fx is None:
+            return {"created": 0, "updated": 0, "skipped": 0}
+
+        mv = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+        home_row = db.scalar(
+            select(TeamSotPrediction).where(
+                TeamSotPrediction.fixture_id == int(fixture_id),
+                TeamSotPrediction.team_id == int(fx.home_team_id),
+                TeamSotPrediction.model_version == mv,
+            ),
+        )
+        away_row = db.scalar(
+            select(TeamSotPrediction).where(
+                TeamSotPrediction.fixture_id == int(fixture_id),
+                TeamSotPrediction.team_id == int(fx.away_team_id),
+                TeamSotPrediction.model_version == mv,
+            ),
+        )
+        if home_row is None or away_row is None or home_row.predicted_sot is None or away_row.predicted_sot is None:
+            return {"created": 0, "updated": 0, "skipped": 0}
+
+        home_sot = round(float(home_row.predicted_sot), 2)
+        away_sot = round(float(away_row.predicted_sot), 2)
+        raw_pred: dict[str, Any] = {}
+        if isinstance(home_row.raw_json, dict):
+            raw_pred["home"] = home_row.raw_json
+        if isinstance(away_row.raw_json, dict):
+            raw_pred["away"] = away_row.raw_json
+
+        before_h = before_a = None
+        before_adv = None
+        if before_snapshot and before_snapshot.get("v20_available"):
+            bh = before_snapshot.get("predicted_home_sot")
+            ba = before_snapshot.get("predicted_away_sot")
+            if bh is not None and ba is not None:
+                before_h = float(bh)
+                before_a = float(ba)
+                ctx = advice_context if isinstance(advice_context, AdviceContext) else AdviceContext()
+                before_adv = build_fixture_betting_advice(
+                    before_h,
+                    before_a,
+                    model_version=mv,
+                    context=ctx,
+                )
+
+        ctx = advice_context
+        if ctx is None:
+            ctx = AdviceContext()
+        advice = build_fixture_betting_advice(
+            home_sot,
+            away_sot,
+            model_version=mv,
+            context=ctx,
+        )
+        return self.persist_from_betting_advice(
+            db,
+            fixture_id=int(fixture_id),
+            home_sot=home_sot,
+            away_sot=away_sot,
+            advice=advice,
+            lineup_confirmed=lineup_confirmed,
+            lineup_fetched_at=lineup_fetched_at,
+            raw_prediction_payload=raw_pred,
+            force=force,
+            before_home_sot=before_h,
+            before_away_sot=before_a,
+            before_advice=before_adv,
+        )

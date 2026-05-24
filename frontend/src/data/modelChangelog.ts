@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.13.0',
+    date: '2026-05-19',
+    title: 'Monitoraggio doppia previsione SOT',
+    type: 'minor',
+    summary:
+      'Rifatta la dashboard Monitoraggio Giocate per confrontare previsione iniziale, previsione post formazioni ufficiali, scommesse proposte ed esiti reali.',
+    highlights: [
+      'Nuova tabella monitoraggio in stile dashboard scommessa.',
+      'Confronto tra SOT iniziali e SOT post formazioni ufficiali.',
+      'Doppia valutazione esito: pronostico iniziale e pronostico aggiornato.',
+      'Tiri in porta reali aggiornabili live da API-Sports.',
+      'Partite live evidenziate con riga bold e bollino LIVE.',
+      'Quote predisposte ma non inventate se non disponibili.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.12.3',
     date: '2026-05-19',
     title: 'Refresh automatico Monitoraggio Giocate',

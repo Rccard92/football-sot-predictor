@@ -14,9 +14,6 @@ from sqlalchemy.orm import Session
 from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES
 from app.models import Fixture, Team, TrackedBettingPick
 from app.models.tracked_betting_pick import (
-    SOURCE_AUTO_PRE_MATCH,
-    SOURCE_BACKFILL_ROUND,
-    SOURCE_MANUAL,
     STATUS_LIVE,
     STATUS_LOST,
     STATUS_PENDING,
@@ -27,7 +24,7 @@ from app.models.tracked_betting_pick import (
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.fixture_sot_statistics import extract_sot_from_statistics_response
 from app.services.ingestion_service import IngestionService
-from app.services.tracked_betting_pick_service import formation_snapshot_label
+from app.services.tracked_monitoring_dashboard_service import build_dashboard_payload
 
 logger = logging.getLogger(__name__)
 
@@ -118,46 +115,6 @@ def _sot_display_and_reason(
     if is_finished:
         return "N/D", "SOT finali non disponibili da API-Sports"
     return "—", None
-
-
-def _origin_label(p: TrackedBettingPick) -> str:
-    if p.is_backfilled or p.source == SOURCE_BACKFILL_ROUND:
-        return "Ricostruita"
-    if p.source == SOURCE_AUTO_PRE_MATCH:
-        return "Auto pre-match"
-    if p.source == SOURCE_MANUAL:
-        return "Manuale"
-    return p.source
-
-
-def _compute_summary(picks: list[TrackedBettingPick]) -> dict[str, Any]:
-    pending = live = won = lost = unavailable = void = 0
-    for p in picks:
-        st = p.status
-        if st == STATUS_PENDING:
-            pending += 1
-        elif st == STATUS_LIVE:
-            live += 1
-        elif st == STATUS_WON:
-            won += 1
-        elif st == STATUS_LOST:
-            lost += 1
-        elif st == STATUS_UNAVAILABLE:
-            unavailable += 1
-        elif st == STATUS_VOID:
-            void += 1
-    concluded = won + lost
-    win_rate = round(won / concluded, 4) if concluded > 0 else None
-    return {
-        "total": len(picks),
-        "pending": pending,
-        "live": live,
-        "won": won,
-        "lost": lost,
-        "unavailable": unavailable,
-        "void": void,
-        "win_rate": win_rate,
-    }
 
 
 def _fixture_status_for_pick(pick: TrackedBettingPick, fx: Fixture | None) -> str:
@@ -281,76 +238,13 @@ class TrackedPickResultsRefreshService:
             team_ids.add(int(f.away_team_id))
         teams = {int(t.id): t for t in db.scalars(select(Team).where(Team.id.in_(list(team_ids)))).all()} if team_ids else {}
 
-        rows_out: list[dict[str, Any]] = []
-        for p in picks:
-            fx = fixtures.get(int(p.fixture_id))
-            if not fx:
-                continue
-            ht = teams.get(int(fx.home_team_id))
-            at = teams.get(int(fx.away_team_id))
-            pick_type_label = "Cauta" if p.pick_type == "cautious" else "Statistica"
-            fixture_status = p.fixture_status or fx.status
-            live_hint = _live_over_hint(p.result_total_sot, p.line_value)
-            sot_display, sot_unavailable_reason = _sot_display_and_reason(
-                fixture_status=fixture_status,
-                pick_status=p.status,
-                result_home_sot=p.result_home_sot,
-                result_away_sot=p.result_away_sot,
-                result_total_sot=p.result_total_sot,
-            )
-            is_live = _is_live_fixture(p.status, fixture_status)
-            is_finished = (fixture_status or "").strip().upper() in FINISHED_STATUSES
-            final_hint_label = (
-                _final_hint_label(p.result_total_sot, p.line_value) if is_finished and p.result_total_sot is not None else None
-            )
-            rows_out.append(
-                {
-                    "id": int(p.id),
-                    "fixture_id": int(p.fixture_id),
-                    "kickoff_at": fx.kickoff_at.isoformat() if fx.kickoff_at else None,
-                    "match_name": f"{ht.name if ht else 'Casa'} – {at.name if at else 'Trasferta'}",
-                    "home_team": {"id": int(fx.home_team_id), "name": ht.name if ht else "", "logo_url": ht.logo_url if ht else None},
-                    "away_team": {"id": int(fx.away_team_id), "name": at.name if at else "", "logo_url": at.logo_url if at else None},
-                    "suggested_pick": p.suggested_pick,
-                    "pick_type": p.pick_type,
-                    "pick_type_label": pick_type_label,
-                    "source": p.source,
-                    "origin_label": _origin_label(p),
-                    "is_backfilled": bool(p.is_backfilled),
-                    "prediction_source": p.prediction_source,
-                    "backfill_warning": p.backfill_warning,
-                    "formation_label": formation_snapshot_label(
-                        bool(p.lineup_confirmed),
-                        lineup_fetched_at=p.lineup_fetched_at,
-                    ),
-                    "lineup_confirmed": bool(p.lineup_confirmed),
-                    "predicted_total_sot": p.predicted_total_sot,
-                    "line_value": p.line_value,
-                    "fixture_status": fixture_status,
-                    "elapsed": p.elapsed,
-                    "score_home": p.score_home if p.score_home is not None else fx.goals_home,
-                    "score_away": p.score_away if p.score_away is not None else fx.goals_away,
-                    "result_home_sot": p.result_home_sot,
-                    "result_away_sot": p.result_away_sot,
-                    "result_total_sot": p.result_total_sot,
-                    "status": p.status,
-                    "confidence_label": p.confidence_label,
-                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-                    "auto_generated_at": p.auto_generated_at.isoformat() if p.auto_generated_at else None,
-                    "is_live_fixture": is_live,
-                    "sot_display": sot_display,
-                    "sot_unavailable_reason": sot_unavailable_reason,
-                    "final_hint_label": final_hint_label,
-                    **live_hint,
-                },
-            )
-        return {
-            "status": "success",
-            "season": season_year,
-            "picks": rows_out,
-            "count": len(rows_out),
-            "summary": _compute_summary(picks),
-        }
+        return build_dashboard_payload(
+            db,
+            picks,
+            fixtures,
+            teams,
+            season_year=season_year,
+        )
 
     def refresh_results(
         self,

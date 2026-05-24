@@ -4,44 +4,37 @@ import {
   getTrackedBettingPicks,
   postCreateTrackedPicksFromRound,
   postRefreshTrackedPickResults,
-  type StatsDebugEntry,
   type TrackedBettingPickRow,
   type TrackedBettingPicksSummary,
 } from '../lib/api'
 import { formatKickoffReport } from '../utils/sportApiLineupMeta'
 import {
+  formatOdd,
   formatSotDisplay,
+  formatSotTotal,
   isLiveFixture,
   LIVE_MONITOR_REFRESH_MS,
-  showMonitoringStatsDebug,
+  outcomeClass,
 } from '../utils/monitoring'
 
 const AUTO_REFRESH_COOLDOWN_MS = 120_000
 
 type RefreshScope = 'all' | 'live' | 'unfinished' | 'unfinished_or_recent'
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'In attesa',
-  live: 'Live',
-  won: 'Vinta',
-  lost: 'Persa',
-  void: 'Void',
-  unavailable: 'N/D',
-}
-
-function statusClass(status: string): string {
-  if (status === 'won') return 'border-emerald-200 bg-emerald-50 text-emerald-900'
-  if (status === 'lost') return 'border-rose-200 bg-rose-50 text-rose-900'
-  if (status === 'live') return 'border-sky-200 bg-sky-50 text-sky-900'
-  return 'border-slate-200 bg-slate-100 text-slate-700'
-}
-
-function liveScore(p: TrackedBettingPickRow): string {
-  if (p.score_home != null && p.score_away != null) {
-    return `${p.score_home}–${p.score_away}`
-  }
-  return '—'
-}
+const TABLE_HEADERS = [
+  'Data evento',
+  'Partita',
+  'Tiri in porta iniziali',
+  'Tiri in porta post ufficiali',
+  'Scommessa iniziale',
+  'Quota iniziale',
+  'Scommessa post ufficiali',
+  'Quota post ufficiali',
+  'Tiri in porta reali',
+  'Esito iniziale',
+  'Esito post ufficiali',
+  'Stato partita',
+] as const
 
 function sortByKickoffAsc(rows: TrackedBettingPickRow[]): TrackedBettingPickRow[] {
   return [...rows].sort((a, b) => {
@@ -61,23 +54,20 @@ function formatLastRefreshed(iso: string | null): string {
   }
 }
 
+function formatWinRate(rate: number | null | undefined): string {
+  if (rate == null) return '—'
+  return `${(rate * 100).toFixed(1)}%`
+}
+
 function SummaryCards({ summary }: { summary: TrackedBettingPicksSummary | null }) {
   if (!summary) return null
-  const winRateLabel =
-    summary.win_rate != null
-      ? `${(summary.win_rate * 100).toFixed(1)}%`
-      : 'Win rate non disponibile.'
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
       {[
         ['Monitorate', summary.total],
-        ['In attesa', summary.pending],
         ['Live', summary.live],
-        ['Vinte', summary.won],
-        ['Perse', summary.lost],
-        ['N/D', summary.unavailable],
-        ['Void', summary.void],
-        ['Win rate', winRateLabel],
+        ['Win rate iniziale', formatWinRate(summary.initial_win_rate)],
+        ['Win rate post ufficiali', formatWinRate(summary.official_win_rate)],
       ].map(([label, val]) => (
         <div key={String(label)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
@@ -88,80 +78,41 @@ function SummaryCards({ summary }: { summary: TrackedBettingPicksSummary | null 
   )
 }
 
-function PickBadges({ p }: { p: TrackedBettingPickRow }) {
-  return (
-    <span className="mt-1 flex flex-wrap gap-1">
-      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-        {p.pick_type_label}
-      </span>
-      {p.source === 'auto_pre_match' ? (
-        <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-900">
-          Auto pre-match
-        </span>
-      ) : p.is_backfilled ? (
-        <span
-          className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900"
-          title={p.backfill_warning ?? undefined}
-        >
-          {p.origin_label}
-        </span>
-      ) : null}
-      {p.lineup_confirmed ? (
-        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900">
-          Formazione ufficiale
-        </span>
-      ) : p.formation_label ? (
-        <span
-          className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-900"
-          title={p.formation_label}
-        >
-          Probabile pre-match
-        </span>
-      ) : null}
-    </span>
-  )
-}
+function DashboardRow({ p }: { p: TrackedBettingPickRow }) {
+  const live = isLiveFixture(p)
+  const sot = formatSotDisplay(p)
+  const rowClass = live
+    ? 'border-b border-slate-100 bg-sky-50/60 font-semibold hover:bg-sky-50/80'
+    : 'border-b border-slate-100 hover:bg-slate-50/50'
 
-function SotStatsDebugPanel({ entry, fixtureStatus }: { entry: StatsDebugEntry; fixtureStatus: string | null }) {
   return (
-    <details className="mt-1 text-[10px] text-slate-600">
-      <summary className="cursor-pointer text-indigo-700 hover:underline">Debug stats</summary>
-      <div className="mt-1 max-w-md space-y-0.5 rounded border border-slate-200 bg-slate-50 p-2 font-mono">
-        <p>api_fixture_id: {entry.api_fixture_id}</p>
-        <p>status: {fixtureStatus ?? entry.fixture_status ?? '—'}</p>
-        <p>statistics_found: {String(entry.statistics_found ?? false)}</p>
-        <p>
-          metriche: home={entry.metric_label_home ?? '—'} · away={entry.metric_label_away ?? '—'}
-        </p>
-        {entry.metric_labels_seen?.length ? (
-          <p className="break-all">labels: {entry.metric_labels_seen.join(', ')}</p>
-        ) : null}
-        {entry.extraction_error ? <p>error: {entry.extraction_error}</p> : null}
-        {entry.raw_statistics_sample ? (
-          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all text-[9px]">
-            {entry.raw_statistics_sample}
-          </pre>
-        ) : null}
-      </div>
-    </details>
-  )
-}
-
-function SotCell({
-  p,
-  statsDebug,
-}: {
-  p: TrackedBettingPickRow
-  statsDebug?: StatsDebugEntry
-}) {
-  const { main, hint, title } = formatSotDisplay(p)
-  const showDebug = showMonitoringStatsDebug() && statsDebug
-  return (
-    <div title={title}>
-      <div className="tabular-nums text-xs">{main}</div>
-      {hint ? <div className="text-[10px] text-sky-700">{hint}</div> : null}
-      {showDebug ? <SotStatsDebugPanel entry={statsDebug} fixtureStatus={p.fixture_status} /> : null}
-    </div>
+    <tr className={rowClass}>
+      <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-xs">
+        {p.kickoff_at ? formatKickoffReport(p.kickoff_at) : '—'}
+      </td>
+      <td className="px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span>{p.match_name}</span>
+          {live ? (
+            <span className="rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+              LIVE
+            </span>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-3 py-2.5 tabular-nums text-sm">{formatSotTotal(p.initial_predicted_total_sot)}</td>
+      <td className="px-3 py-2.5 tabular-nums text-sm">{formatSotTotal(p.official_predicted_total_sot)}</td>
+      <td className="px-3 py-2.5 text-sm">{p.initial_suggested_pick ?? '—'}</td>
+      <td className="px-3 py-2.5 tabular-nums text-sm">{formatOdd(p.initial_odd)}</td>
+      <td className="px-3 py-2.5 text-sm">{p.official_suggested_pick ?? '—'}</td>
+      <td className="px-3 py-2.5 tabular-nums text-sm">{formatOdd(p.official_odd)}</td>
+      <td className="px-3 py-2.5 tabular-nums text-xs" title={sot.title}>
+        {sot.main}
+      </td>
+      <td className={`px-3 py-2.5 text-sm ${outcomeClass(p.initial_outcome)}`}>{p.initial_outcome}</td>
+      <td className={`px-3 py-2.5 text-sm ${outcomeClass(p.official_outcome)}`}>{p.official_outcome}</td>
+      <td className="px-3 py-2.5 text-sm tabular-nums">{p.fixture_status_label}</td>
+    </tr>
   )
 }
 
@@ -176,7 +127,6 @@ export function BetMonitoring() {
   const [lastResultsRefreshAt, setLastResultsRefreshAt] = useState<string | null>(null)
   const [autoRefreshStatus, setAutoRefreshStatus] = useState<string | null>(null)
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null)
-  const [statsDebugByPickId, setStatsDebugByPickId] = useState<Record<number, StatsDebugEntry>>({})
   const refreshBusyRef = useRef(false)
   const lastAutoRefreshAtRef = useRef(0)
   const initialRefreshDoneRef = useRef(false)
@@ -200,10 +150,7 @@ export function BetMonitoring() {
   }, [load])
 
   const runRefreshResults = useCallback(
-    async (
-      scope: RefreshScope = 'all',
-      opts?: { force?: boolean; isAuto?: boolean },
-    ) => {
+    async (scope: RefreshScope = 'all', opts?: { force?: boolean; isAuto?: boolean }) => {
       if (refreshBusyRef.current) return
       const isManualAll = scope === 'all' && !opts?.isAuto
       refreshBusyRef.current = true
@@ -226,15 +173,6 @@ export function BetMonitoring() {
         }
         if (opts?.isAuto) {
           lastAutoRefreshAtRef.current = Date.now()
-        }
-        if (out.stats_debug?.length) {
-          setStatsDebugByPickId((prev) => {
-            const next = { ...prev }
-            for (const d of out.stats_debug!) {
-              next[d.pick_id] = d
-            }
-            return next
-          })
         }
         if (isManualAll) {
           setActionMsg(
@@ -337,8 +275,8 @@ export function BetMonitoring() {
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-slate-900">Monitoraggio Giocate</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            Pronostici definitivi (auto ~30 min pre-match) o ricostruiti dal turno. Risultati live e finali da
-            API-Sports.
+            Confronto tra previsione iniziale (probabili), previsione post formazioni ufficiali, scommesse proposte ed
+            esiti sui tiri in porta reali da API-Sports.
           </p>
           {lastResultsRefreshAt ? (
             <p className="mt-1 text-xs text-slate-500">
@@ -353,7 +291,6 @@ export function BetMonitoring() {
             disabled={createBusy}
             onClick={() => void runCreateFromRound(hasPicks)}
             className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
-            title="Usa le predizioni già salvate per il turno corrente (incluse partite terminate)"
           >
             {createBusy
               ? 'Creazione…'
@@ -365,11 +302,6 @@ export function BetMonitoring() {
             type="button"
             disabled={refreshBusy || !hasPicks}
             onClick={() => void runRefreshResults('all', { force: true })}
-            title={
-              hasPicks
-                ? 'Recupera score e SOT da API-Sports'
-                : 'Crea prima le pick monitorate dal turno'
-            }
             className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-900 hover:bg-indigo-50 disabled:opacity-50"
           >
             {refreshBusy ? 'Aggiornamento…' : 'Aggiorna risultati'}
@@ -377,9 +309,7 @@ export function BetMonitoring() {
         </div>
       </div>
 
-      {autoRefreshStatus ? (
-        <p className="text-sm text-indigo-700">{autoRefreshStatus}</p>
-      ) : null}
+      {autoRefreshStatus ? <p className="text-sm text-indigo-700">{autoRefreshStatus}</p> : null}
       {refreshWarning ? <p className="text-sm text-amber-700">{refreshWarning}</p> : null}
       {actionMsg ? <p className="text-sm text-slate-700">{actionMsg}</p> : null}
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
@@ -391,128 +321,29 @@ export function BetMonitoring() {
       ) : !hasPicks ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
           <p>
-            Nessuna giocata tracciata. Puoi crearle dal turno corrente usando le predizioni già disponibili,
-            oppure attendere il job pre-match automatico.
-          </p>
-          <p className="mt-3 text-[11px] text-slate-500">
-            «Aggiorna risultati» funziona solo dopo che esistono pick monitorate nel database.
+            Nessuna giocata tracciata. Puoi crearle dal turno corrente usando le predizioni già disponibili, oppure
+            attendere il job pre-match automatico.
           </p>
         </div>
       ) : (
-        <>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-full text-left text-sm text-slate-800">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-3">Data/Ora</th>
-                  <th className="px-4 py-3">Match</th>
-                  <th className="px-4 py-3">Pick</th>
-                  <th className="px-4 py-3">Previsti</th>
-                  <th className="px-4 py-3">SOT live/finali</th>
-                  <th className="px-4 py-3">Risultato</th>
-                  <th className="px-4 py-3">Stato partita</th>
-                  <th className="px-4 py-3">Esito</th>
-                  <th className="px-4 py-3">Aggiornato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((p) => {
-                  const live = isLiveFixture(p)
-                  return (
-                    <tr
-                      key={p.id}
-                      className={`border-b border-slate-100 ${
-                        live ? 'bg-sky-50/60 font-semibold hover:bg-sky-50/80' : 'hover:bg-slate-50/50'
-                      }`}
-                    >
-                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-xs">
-                        {p.kickoff_at ? formatKickoffReport(p.kickoff_at) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>{p.match_name}</span>
-                          {live ? (
-                            <span className="rounded bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                              LIVE
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <div>{p.suggested_pick ?? '—'}</div>
-                        <PickBadges p={p} />
-                      </td>
-                      <td className="px-4 py-3 tabular-nums font-semibold text-sm">
-                        {p.predicted_total_sot != null ? p.predicted_total_sot.toFixed(2) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <SotCell p={p} statsDebug={statsDebugByPickId[p.id]} />
-                      </td>
-                      <td className={`px-4 py-3 tabular-nums text-sm ${live ? 'text-sky-900' : ''}`}>
-                        {liveScore(p)}
-                      </td>
-                      <td className={`px-4 py-3 text-sm ${live ? 'text-sky-900' : ''}`}>
-                        <span className="font-medium">{p.fixture_status ?? '—'}</span>
-                        {p.elapsed != null ? (
-                          <span className={live ? 'text-sky-800' : 'text-slate-500'}> · {p.elapsed}&apos;</span>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(p.status)}`}
-                        >
-                          {STATUS_LABELS[p.status] ?? p.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
-                        {p.updated_at ? formatKickoffReport(p.updated_at) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="space-y-3 md:hidden">
-            {rows.map((p) => {
-              const live = isLiveFixture(p)
-              const sot = formatSotDisplay(p)
-              return (
-                <article
-                  key={p.id}
-                  className={`rounded-xl border p-3 shadow-sm ${
-                    live ? 'border-sky-200 bg-sky-50/60' : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  <p className="text-xs text-slate-500">{p.kickoff_at ? formatKickoffReport(p.kickoff_at) : ''}</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-slate-900">{p.match_name}</p>
-                    {live ? (
-                      <span className="rounded bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold text-white">LIVE</span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm">{p.suggested_pick}</p>
-                  <PickBadges p={p} />
-                  <p className="mt-2 text-xs text-slate-600">
-                    Previsti {p.predicted_total_sot?.toFixed(2) ?? '—'}
-                  </p>
-                  <p className={`mt-1 text-xs ${live ? 'font-semibold text-sky-900' : 'text-slate-500'}`}>
-                    {p.fixture_status} {liveScore(p)} · {sot.main}
-                  </p>
-                  {sot.hint ? <p className="text-[10px] text-sky-700">{sot.hint}</p> : null}
-                  {showMonitoringStatsDebug() && statsDebugByPickId[p.id] ? (
-                    <SotStatsDebugPanel entry={statsDebugByPickId[p.id]} fixtureStatus={p.fixture_status} />
-                  ) : null}
-                  <span
-                    className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-xs ${statusClass(p.status)}`}
-                  >
-                    {STATUS_LABELS[p.status] ?? p.status}
-                  </span>
-                </article>
-              )
-            })}
-          </div>
-        </>
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-[1100px] w-full text-left text-sm text-slate-800">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {TABLE_HEADERS.map((h) => (
+                  <th key={h} className="whitespace-nowrap px-3 py-3">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p) => (
+                <DashboardRow key={p.id} p={p} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

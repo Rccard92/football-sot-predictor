@@ -251,6 +251,18 @@ class SportApiRoundRefreshService:
                         elif ddir == "FLAT":
                             flat_count += 1
 
+                    from app.services.tracked_betting_pick_service import TrackedBettingPickService
+
+                    lu = lineup_row_for_fixture(db, fid)
+                    pick_stats = TrackedBettingPickService().sync_official_from_v20(
+                        db,
+                        fid,
+                        before_snapshot=before_snapshot,
+                        lineup_confirmed=bool(lu.confirmed) if lu else False,
+                        lineup_fetched_at=lu.fetched_at if lu else None,
+                    )
+                    row["monitoring_picks"] = pick_stats
+
             except Exception as exc:  # noqa: BLE001
                 logger.exception("refresh fixture %s", fid)
                 row["status"] = "error"

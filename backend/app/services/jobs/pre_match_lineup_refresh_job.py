@@ -356,6 +356,8 @@ class PreMatchOfficialLineupRefreshJob:
                     model_version=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
                     context=advice_ctx,
                 )
+                before_h = before_snapshot.get("predicted_home_sot") if before_snapshot.get("v20_available") else None
+                before_a = before_snapshot.get("predicted_away_sot") if before_snapshot.get("v20_available") else None
                 pick_stats = pick_svc.persist_from_betting_advice(
                     db,
                     fixture_id=fid,
@@ -366,6 +368,8 @@ class PreMatchOfficialLineupRefreshJob:
                     lineup_fetched_at=fetched_at,
                     raw_prediction_payload=raw_pred,
                     force=force,
+                    before_home_sot=float(before_h) if before_h is not None else None,
+                    before_away_sot=float(before_a) if before_a is not None else None,
                 )
                 picks_created += pick_stats["created"]
                 picks_updated += pick_stats["updated"]
