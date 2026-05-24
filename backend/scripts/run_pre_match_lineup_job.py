@@ -2,6 +2,8 @@
 """
 Railway Cron: trigger job formazioni ufficiali pre-match.
 
+Root Directory Railway: backend
+
 Variabili d'ambiente obbligatorie:
   BACKEND_URL  — base URL del backend (es. https://xxx.up.railway.app)
   CRON_SECRET  — stesso valore di ADMIN_CRON_SECRET sul backend
