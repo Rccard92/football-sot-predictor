@@ -170,6 +170,12 @@ def _resolve_initial(
     db: Session,
     fx: Fixture,
 ) -> tuple[float | None, str | None, float | None]:
+    _ = db, fx
+    ih, ia, it = _totals_from_impact_delta(impact, prefix="before")
+    if it is not None:
+        pick_s, line = _cautious_from_totals(ih, ia)
+        return it, pick_s, line
+
     if pick.initial_predicted_total_sot is not None:
         total = _round2(pick.initial_predicted_total_sot)
         pick_s = pick.initial_suggested_pick
@@ -180,39 +186,44 @@ def _resolve_initial(
             pick_s, line = _cautious_from_totals(h, a)
         return total, pick_s, line
 
-    ih, ia, it = _totals_from_impact_delta(impact, prefix="before")
-    if it is not None:
-        pick_s, line = _cautious_from_totals(ih, ia)
-        if pick.initial_suggested_pick:
-            pick_s = pick.initial_suggested_pick
-            line = pick.initial_line_value or line
-        return it, pick_s, line
+    if not pick.lineup_confirmed:
+        total = _round2(pick.predicted_total_sot)
+        if total is not None:
+            pick_s = pick.suggested_pick
+            line = pick.line_value
+            if pick_s is None:
+                pick_s, line = _cautious_from_totals(pick.predicted_home_sot, pick.predicted_away_sot)
+            return total, pick_s, line
 
-    ih, ia, it = _load_v20_totals(db, int(fx.id), int(fx.home_team_id), int(fx.away_team_id))
-    if it is not None:
-        pick_s, line = _cautious_from_totals(ih, ia)
-        return it, pick_s, line
-
-    total = _round2(pick.predicted_total_sot)
-    pick_s = pick.suggested_pick
-    line = pick.line_value
-    return total, pick_s, line
+    return None, None, None
 
 
 def _resolve_official(
     pick: TrackedBettingPick,
     impact: dict[str, Any] | None,
 ) -> tuple[float | None, str | None, float | None]:
-    total = _round2(pick.predicted_total_sot)
+    oh, oa, ot = _totals_from_impact_delta(impact, prefix="after")
+    total_pick = _round2(pick.predicted_total_sot)
     pick_s = pick.suggested_pick
     line = pick.line_value
 
-    if total is not None:
+    if ot is not None:
+        use_impact_after = True
+        if total_pick is not None:
+            if pick.lineup_confirmed and abs(float(total_pick) - float(ot)) < 0.02:
+                use_impact_after = False
+            elif float(total_pick) > float(ot):
+                use_impact_after = False
+        if use_impact_after:
+            if pick_s is None:
+                pick_s, line = _cautious_from_totals(oh, oa)
+            return ot, pick_s, line
+
+    if total_pick is not None:
         if pick_s is None:
             pick_s, line = _cautious_from_totals(pick.predicted_home_sot, pick.predicted_away_sot)
-        return total, pick_s, line
+        return total_pick, pick_s, line
 
-    oh, oa, ot = _totals_from_impact_delta(impact, prefix="after")
     if ot is not None:
         if pick_s is None:
             pick_s, line = _cautious_from_totals(oh, oa)
@@ -258,12 +269,21 @@ def build_dashboard_row(
         line_value=official_line,
     )
 
+    def _team_payload(team: Team | None, team_id: int, fallback: str) -> dict[str, Any]:
+        return {
+            "id": int(team.id) if team else int(team_id),
+            "name": team.name if team else fallback,
+            "logo_url": team.logo_url if team else None,
+        }
+
     return {
         "id": int(pick.id),
         "fixture_id": int(pick.fixture_id),
         "kickoff_at": fx.kickoff_at.isoformat() if fx.kickoff_at else None,
         "home_team_name": home_name,
         "away_team_name": away_name,
+        "home_team": _team_payload(ht, int(fx.home_team_id), home_name),
+        "away_team": _team_payload(at, int(fx.away_team_id), away_name),
         "match_name": f"{home_name} - {away_name}",
         "initial_predicted_total_sot": initial_total,
         "official_predicted_total_sot": official_total,

@@ -606,6 +606,8 @@ export type TrackedBettingPickRow = {
   match_name: string
   home_team_name: string
   away_team_name: string
+  home_team: UpcomingMatchTeam
+  away_team: UpcomingMatchTeam
   initial_predicted_total_sot: number | null
   official_predicted_total_sot: number | null
   initial_suggested_pick: string | null

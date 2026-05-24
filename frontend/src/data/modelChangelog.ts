@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.13.2',
+    date: '2026-05-19',
+    title: 'Restyling monitoraggio giocate',
+    type: 'patch',
+    summary:
+      'Migliorata la resa grafica della tabella Monitoraggio Giocate, corretto il mapping tra previsione iniziale e previsione post formazioni ufficiali, e rimossa la scrollbar orizzontale.',
+    highlights: [
+      'Reintrodotti i loghi squadra nella colonna partita.',
+      'Tabella monitoraggio resa più gradevole e leggibile.',
+      'Corretto il mapping iniziale vs post ufficiali.',
+      'Rimossa la scrollbar orizzontale su desktop.',
+      'Nessuna modifica al modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.13.1',
     date: '2026-05-19',
     title: 'Fix circular import monitoraggio',

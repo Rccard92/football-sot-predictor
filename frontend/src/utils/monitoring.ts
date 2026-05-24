@@ -57,6 +57,27 @@ export function outcomeClass(outcome: string): string {
   return 'text-slate-700'
 }
 
+/** Pillola compatta per colonna esito. */
+export function outcomeBadgeClass(outcome: string): string {
+  const base = 'inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold leading-tight'
+  if (outcome === 'Vinta live') {
+    return `${base} bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200`
+  }
+  if (outcome === 'Vinta') {
+    return `${base} bg-emerald-100 text-emerald-900`
+  }
+  if (outcome === 'Persa') {
+    return `${base} bg-rose-100 text-rose-900`
+  }
+  if (outcome === 'Live') {
+    return `${base} bg-sky-100 text-sky-900`
+  }
+  if (outcome === 'In attesa') {
+    return `${base} bg-slate-100 text-slate-700`
+  }
+  return `${base} bg-slate-100 text-slate-600`
+}
+
 export function showMonitoringStatsDebug(): boolean {
   if (import.meta.env.DEV) return true
   const secret = import.meta.env.VITE_ADMIN_CRON_SECRET as string | undefined

@@ -6,6 +6,7 @@ import {
   postRefreshTrackedPickResults,
   type TrackedBettingPickRow,
   type TrackedBettingPicksSummary,
+  type UpcomingMatchTeam,
 } from '../lib/api'
 import { formatKickoffReport } from '../utils/sportApiLineupMeta'
 import {
@@ -14,7 +15,7 @@ import {
   formatSotTotal,
   isLiveFixture,
   LIVE_MONITOR_REFRESH_MS,
-  outcomeClass,
+  outcomeBadgeClass,
 } from '../utils/monitoring'
 
 const AUTO_REFRESH_COOLDOWN_MS = 120_000
@@ -35,6 +36,9 @@ const TABLE_HEADERS = [
   'Esito post ufficiali',
   'Stato partita',
 ] as const
+
+/** Larghezze colonna (%): full width senza scroll orizzontale. */
+const COL_WIDTHS = ['8%', '16%', '7%', '7%', '9%', '5%', '9%', '5%', '8%', '7%', '7%', '7%'] as const
 
 function sortByKickoffAsc(rows: TrackedBettingPickRow[]): TrackedBettingPickRow[] {
   return [...rows].sort((a, b) => {
@@ -59,59 +63,107 @@ function formatWinRate(rate: number | null | undefined): string {
   return `${(rate * 100).toFixed(1)}%`
 }
 
+function TeamLogo({ team }: { team: UpcomingMatchTeam }) {
+  if (team.logo_url) {
+    return <img src={team.logo_url} alt="" className="h-5 w-5 shrink-0 object-contain" />
+  }
+  return <span className="inline-block h-5 w-5 shrink-0 rounded-full bg-slate-200/80" aria-hidden />
+}
+
+function MatchTeamsCell({ p, live }: { p: TrackedBettingPickRow; live: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <TeamLogo team={p.home_team} />
+      <span className={live ? 'font-semibold text-slate-900' : 'font-medium text-slate-900'}>
+        {p.home_team.name}
+      </span>
+      <span className="text-slate-400">–</span>
+      <TeamLogo team={p.away_team} />
+      <span className={live ? 'font-semibold text-slate-900' : 'font-medium text-slate-900'}>
+        {p.away_team.name}
+      </span>
+      {live ? (
+        <span className="rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+          LIVE
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+function OutcomeCell({ outcome }: { outcome: string }) {
+  return <span className={outcomeBadgeClass(outcome)}>{outcome}</span>
+}
+
 function SummaryCards({ summary }: { summary: TrackedBettingPicksSummary | null }) {
   if (!summary) return null
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {[
         ['Monitorate', summary.total],
         ['Live', summary.live],
         ['Win rate iniziale', formatWinRate(summary.initial_win_rate)],
         ['Win rate post ufficiali', formatWinRate(summary.official_win_rate)],
       ].map(([label, val]) => (
-        <div key={String(label)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
-          <p className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">{val}</p>
+        <div
+          key={String(label)}
+          className="rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-4 py-3 shadow-sm"
+        >
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{val}</p>
         </div>
       ))}
     </div>
   )
 }
 
-function DashboardRow({ p }: { p: TrackedBettingPickRow }) {
+function DashboardRow({ p, index }: { p: TrackedBettingPickRow; index: number }) {
   const live = isLiveFixture(p)
   const sot = formatSotDisplay(p)
   const rowClass = live
-    ? 'border-b border-slate-100 bg-sky-50/60 font-semibold hover:bg-sky-50/80'
-    : 'border-b border-slate-100 hover:bg-slate-50/50'
+    ? 'bg-sky-50/70 font-semibold ring-1 ring-inset ring-sky-200/50 hover:bg-sky-50/90'
+    : index % 2 === 0
+      ? 'bg-white hover:bg-slate-50/80'
+      : 'bg-slate-50/40 hover:bg-slate-50/70'
 
   return (
-    <tr className={rowClass}>
-      <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-xs">
+    <tr className={`border-b border-slate-100/90 transition-colors ${rowClass}`}>
+      <td className="px-2 py-2.5 text-[11px] tabular-nums text-slate-600">
         {p.kickoff_at ? formatKickoffReport(p.kickoff_at) : '—'}
       </td>
-      <td className="px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span>{p.match_name}</span>
-          {live ? (
-            <span className="rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-              LIVE
-            </span>
-          ) : null}
-        </div>
+      <td className="px-2 py-2.5 align-middle">
+        <MatchTeamsCell p={p} live={live} />
       </td>
-      <td className="px-3 py-2.5 tabular-nums text-sm">{formatSotTotal(p.initial_predicted_total_sot)}</td>
-      <td className="px-3 py-2.5 tabular-nums text-sm">{formatSotTotal(p.official_predicted_total_sot)}</td>
-      <td className="px-3 py-2.5 text-sm">{p.initial_suggested_pick ?? '—'}</td>
-      <td className="px-3 py-2.5 tabular-nums text-sm">{formatOdd(p.initial_odd)}</td>
-      <td className="px-3 py-2.5 text-sm">{p.official_suggested_pick ?? '—'}</td>
-      <td className="px-3 py-2.5 tabular-nums text-sm">{formatOdd(p.official_odd)}</td>
-      <td className="px-3 py-2.5 tabular-nums text-xs" title={sot.title}>
+      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-slate-800">
+        {formatSotTotal(p.initial_predicted_total_sot)}
+      </td>
+      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-slate-800">
+        {formatSotTotal(p.official_predicted_total_sot)}
+      </td>
+      <td className="px-2 py-2.5 text-[11px] leading-snug text-slate-800 break-words">
+        {p.initial_suggested_pick ?? '—'}
+      </td>
+      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-slate-600">
+        {formatOdd(p.initial_odd)}
+      </td>
+      <td className="px-2 py-2.5 text-[11px] leading-snug text-slate-800 break-words">
+        {p.official_suggested_pick ?? '—'}
+      </td>
+      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-slate-600">
+        {formatOdd(p.official_odd)}
+      </td>
+      <td className="px-2 py-2.5 text-right text-[11px] tabular-nums text-slate-800" title={sot.title}>
         {sot.main}
       </td>
-      <td className={`px-3 py-2.5 text-sm ${outcomeClass(p.initial_outcome)}`}>{p.initial_outcome}</td>
-      <td className={`px-3 py-2.5 text-sm ${outcomeClass(p.official_outcome)}`}>{p.official_outcome}</td>
-      <td className="px-3 py-2.5 text-sm tabular-nums">{p.fixture_status_label}</td>
+      <td className="px-2 py-2.5 text-center">
+        <OutcomeCell outcome={p.initial_outcome} />
+      </td>
+      <td className="px-2 py-2.5 text-center">
+        <OutcomeCell outcome={p.official_outcome} />
+      </td>
+      <td className="px-2 py-2.5 text-center text-[11px] font-medium tabular-nums text-slate-700">
+        {p.fixture_status_label}
+      </td>
     </tr>
   )
 }
@@ -270,10 +322,10 @@ export function BetMonitoring() {
   const hasLiveRows = rows.some(isLiveFixture)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-slate-900">Monitoraggio Giocate</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Monitoraggio Giocate</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
             Confronto tra previsione iniziale (probabili), previsione post formazioni ufficiali, scommesse proposte ed
             esiti sui tiri in porta reali da API-Sports.
@@ -290,7 +342,7 @@ export function BetMonitoring() {
             type="button"
             disabled={createBusy}
             onClick={() => void runCreateFromRound(hasPicks)}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 shadow-sm hover:bg-emerald-100 disabled:opacity-50"
           >
             {createBusy
               ? 'Creazione…'
@@ -302,7 +354,7 @@ export function BetMonitoring() {
             type="button"
             disabled={refreshBusy || !hasPicks}
             onClick={() => void runRefreshResults('all', { force: true })}
-            className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-900 hover:bg-indigo-50 disabled:opacity-50"
+            className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 shadow-sm hover:bg-indigo-50 disabled:opacity-50"
           >
             {refreshBusy ? 'Aggiornamento…' : 'Aggiorna risultati'}
           </button>
@@ -319,27 +371,35 @@ export function BetMonitoring() {
       {loading ? (
         <p className="text-sm text-slate-500">Caricamento…</p>
       ) : !hasPicks ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
           <p>
             Nessuna giocata tracciata. Puoi crearle dal turno corrente usando le predizioni già disponibili, oppure
             attendere il job pre-match automatico.
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-[1100px] w-full text-left text-sm text-slate-800">
+        <div className="w-full overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-md">
+          <table className="w-full table-fixed border-collapse text-left text-sm text-slate-800">
+            <colgroup>
+              {COL_WIDTHS.map((w, i) => (
+                <col key={TABLE_HEADERS[i]} style={{ width: w }} />
+              ))}
+            </colgroup>
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-slate-200 bg-slate-100">
                 {TABLE_HEADERS.map((h) => (
-                  <th key={h} className="whitespace-nowrap px-3 py-3">
-                    {h}
+                  <th
+                    key={h}
+                    className="px-2 py-3 text-[10px] font-bold uppercase leading-tight tracking-wider text-slate-600"
+                  >
+                    <span className="block whitespace-normal">{h}</span>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((p) => (
-                <DashboardRow key={p.id} p={p} />
+              {rows.map((p, index) => (
+                <DashboardRow key={p.id} p={p} index={index} />
               ))}
             </tbody>
           </table>
