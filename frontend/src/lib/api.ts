@@ -1970,6 +1970,39 @@ export async function getUpcomingActive(
   return requestJson<UpcomingActiveResponse>(path)
 }
 
+/** Report rapido Prossima giornata (payload leggero, solo DB). */
+export async function getNextRoundQuickReport(
+  season: number,
+  opts?: { limit?: number; onlyNextRound?: boolean; modelVersion?: string | null },
+): Promise<UpcomingActiveResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/next-round/quick-report${q ? `?${q}` : ''}`
+  return requestJson<UpcomingActiveResponse>(path)
+}
+
+export type UpcomingFixtureDetailResponse = {
+  status: string
+  season: number
+  match: UpcomingActiveMatchRow
+  model_limitations?: ModelLimitations
+}
+
+export async function getUpcomingFixtureDetail(
+  season: number,
+  fixtureId: number,
+  opts?: { modelVersion?: string | null },
+): Promise<UpcomingFixtureDetailResponse> {
+  const p = new URLSearchParams()
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
+  const path = `/api/predictions/sot/serie-a/${season}/upcoming-fixture/${fixtureId}/detail${q ? `?${q}` : ''}`
+  return requestJson<UpcomingFixtureDetailResponse>(path)
+}
+
 export async function buildUpcomingSotFeatures(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminPostJson<unknown>(`/api/features/sot/serie-a/${season}/build-upcoming`, {}, opts)
 }

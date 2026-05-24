@@ -145,12 +145,54 @@ class LineupRefreshImpactOrchestrator:
         return delta
 
     @staticmethod
+    def _impact_row_to_public_delta(row: FixtureLineupRefreshImpact) -> dict[str, Any]:
+        svc = LineupRefreshImpactService()
+        before = row.before_payload if isinstance(row.before_payload, dict) else {}
+        after = row.after_payload if isinstance(row.after_payload, dict) else {}
+        delta = svc.to_public_delta(
+            {
+                "direction_total": row.direction_total,
+                "delta_total_sot": row.delta_total_sot,
+                "direction_home": row.direction_home,
+                "delta_home_sot": row.delta_home_sot,
+                "direction_away": row.direction_away,
+                "delta_away_sot": row.delta_away_sot,
+                "main_reason": row.main_reason,
+                "reasons": row.reasons,
+                "before_total_sot": before.get("predicted_total_sot"),
+                "after_total_sot": after.get("predicted_total_sot"),
+                "before_home_sot": before.get("predicted_home_sot"),
+                "after_home_sot": after.get("predicted_home_sot"),
+                "before_away_sot": before.get("predicted_away_sot"),
+                "after_away_sot": after.get("predicted_away_sot"),
+            },
+        )
+        delta["has_comparison"] = True
+        delta["created_at"] = row.created_at.isoformat() if row.created_at else None
+        delta["before_payload"] = before
+        delta["after_payload"] = after
+        return delta
+
+    @staticmethod
     def load_latest_impact_by_fixture_ids(
         db: Session,
         fixture_ids: list[int],
         *,
         model_id: str = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     ) -> dict[int, dict[str, Any]]:
+        snaps = LineupRefreshImpactOrchestrator.load_impact_snapshots_by_fixture_ids(
+            db, fixture_ids, model_id=model_id
+        )
+        return {fid: s["latest"] for fid, s in snaps.items() if s.get("latest")}
+
+    @staticmethod
+    def load_impact_snapshots_by_fixture_ids(
+        db: Session,
+        fixture_ids: list[int],
+        *,
+        model_id: str = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    ) -> dict[int, dict[str, dict[str, Any] | None]]:
+        """Per ogni fixture: primo impact (before iniziale) e ultimo (after ufficiale)."""
         if not fixture_ids:
             return {}
         from sqlalchemy import select
@@ -164,38 +206,24 @@ class LineupRefreshImpactOrchestrator:
                 )
                 .order_by(
                     FixtureLineupRefreshImpact.fixture_id,
-                    FixtureLineupRefreshImpact.created_at.desc(),
+                    FixtureLineupRefreshImpact.created_at.asc(),
                 ),
             ).all(),
         )
-        latest: dict[int, FixtureLineupRefreshImpact] = {}
+        first_row: dict[int, FixtureLineupRefreshImpact] = {}
+        latest_row: dict[int, FixtureLineupRefreshImpact] = {}
         for r in rows:
             fid = int(r.fixture_id)
-            if fid not in latest:
-                latest[fid] = r
+            if fid not in first_row:
+                first_row[fid] = r
+            latest_row[fid] = r
 
-        svc = LineupRefreshImpactService()
-        out: dict[int, dict[str, Any]] = {}
-        for fid, row in latest.items():
-            delta = svc.to_public_delta(
-                {
-                    "direction_total": row.direction_total,
-                    "delta_total_sot": row.delta_total_sot,
-                    "direction_home": row.direction_home,
-                    "delta_home_sot": row.delta_home_sot,
-                    "direction_away": row.direction_away,
-                    "delta_away_sot": row.delta_away_sot,
-                    "main_reason": row.main_reason,
-                    "reasons": row.reasons,
-                    "before_total_sot": (row.before_payload or {}).get("predicted_total_sot"),
-                    "after_total_sot": (row.after_payload or {}).get("predicted_total_sot"),
-                    "before_home_sot": (row.before_payload or {}).get("predicted_home_sot"),
-                    "after_home_sot": (row.after_payload or {}).get("predicted_home_sot"),
-                    "before_away_sot": (row.before_payload or {}).get("predicted_away_sot"),
-                    "after_away_sot": (row.after_payload or {}).get("predicted_away_sot"),
-                },
-            )
-            delta["has_comparison"] = True
-            delta["created_at"] = row.created_at.isoformat() if row.created_at else None
-            out[fid] = delta
+        out: dict[int, dict[str, dict[str, Any] | None]] = {}
+        for fid in set(first_row) | set(latest_row):
+            fr = first_row.get(fid)
+            lr = latest_row.get(fid)
+            out[fid] = {
+                "first": LineupRefreshImpactOrchestrator._impact_row_to_public_delta(fr) if fr else None,
+                "latest": LineupRefreshImpactOrchestrator._impact_row_to_public_delta(lr) if lr else None,
+            }
         return out

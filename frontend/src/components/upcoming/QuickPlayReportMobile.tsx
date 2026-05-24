@@ -11,7 +11,15 @@ import {
 import { LineupRefreshImpactBadge } from './LineupRefreshImpactBadge'
 import { formatNum } from './format'
 
-export function QuickPlayReportMobile({ matches }: { matches: UpcomingActiveMatchRow[] }) {
+export function QuickPlayReportMobile({
+  matches,
+  onOpenDetail,
+  selectedFixtureId,
+}: {
+  matches: UpcomingActiveMatchRow[]
+  onOpenDetail?: (fixtureId: number) => void
+  selectedFixtureId?: number | null
+}) {
   return (
     <div className="space-y-3 md:hidden">
       {matches.map((m) => {
@@ -74,12 +82,22 @@ export function QuickPlayReportMobile({ matches }: { matches: UpcomingActiveMatc
                 {formLabel ?? '—'}
               </span>
             </div>
-            <a
-              href={`#match-${m.fixture_id}`}
-              className="mt-2 inline-block text-[11px] font-medium text-indigo-800 underline"
-            >
-              Dettaglio
-            </a>
+            {onOpenDetail ? (
+              <button
+                type="button"
+                onClick={() => onOpenDetail(m.fixture_id)}
+                className="mt-2 text-[11px] font-medium text-indigo-800 underline"
+              >
+                {selectedFixtureId === m.fixture_id ? 'Dettaglio ▾' : 'Dettaglio'}
+              </button>
+            ) : (
+              <a
+                href={`#match-${m.fixture_id}`}
+                className="mt-2 inline-block text-[11px] font-medium text-indigo-800 underline"
+              >
+                Dettaglio
+              </a>
+            )}
           </article>
         )
       })}

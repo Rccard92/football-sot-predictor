@@ -12,7 +12,7 @@ from app.core.constants import (
     FINISHED_STATUSES,
     SCHEDULED_STATUSES,
 )
-from app.models import Fixture, Team, TeamSotPrediction, TrackedBettingPick
+from app.models import Fixture, Team, TrackedBettingPick
 from app.models.tracked_betting_pick import (
     PICK_TYPE_CAUTIOUS,
     SOURCE_AUTO_PRE_MATCH,
@@ -20,83 +20,20 @@ from app.models.tracked_betting_pick import (
     SOURCE_MANUAL,
     STATUS_LIVE,
 )
-from app.services.sot_betting_advice_service import build_fixture_betting_advice
 from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
 from app.services.ingestion_service import IngestionService
-from app.services.tracked_betting_pick_service import MARKET_MATCH_TOTAL, parse_line_value_from_pick
+from app.services.tracked_betting_pick_service import MARKET_MATCH_TOTAL
 from app.services.tracked_monitoring_constants import (
     LIVE_STATUSES,
     is_live_fixture,
     sot_display_and_reason,
 )
+from app.services.tracked_monitoring_snapshot_resolver import (
+    resolve_initial_snapshot,
+    resolve_official_snapshot,
+)
 
 SOURCE_PRIORITY = (SOURCE_AUTO_PRE_MATCH, SOURCE_BACKFILL_ROUND, SOURCE_MANUAL)
-
-
-def _round2(v: float | None) -> float | None:
-    if v is None:
-        return None
-    return round(float(v), 2)
-
-
-def _cautious_from_totals(home_sot: float | None, away_sot: float | None) -> tuple[str | None, float | None]:
-    if home_sot is None or away_sot is None:
-        return None, None
-    advice = build_fixture_betting_advice(
-        float(home_sot),
-        float(away_sot),
-        model_version=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
-    )
-    match = advice.get("match_total") if isinstance(advice.get("match_total"), dict) else {}
-    pick = match.get("cautious_pick")
-    line = match.get("cautious_line")
-    if pick is None:
-        return None, None
-    line_f = float(line) if line is not None else parse_line_value_from_pick(str(pick))
-    return str(pick), line_f
-
-
-def _totals_from_impact_delta(impact: dict[str, Any] | None, *, prefix: str) -> tuple[float | None, float | None, float | None]:
-    if not impact:
-        return None, None, None
-    h = impact.get(f"{prefix}_home_sot")
-    a = impact.get(f"{prefix}_away_sot")
-    t = impact.get(f"{prefix}_total_sot")
-    if t is None and h is not None and a is not None:
-        t = round(float(h) + float(a), 2)
-    return (
-        _round2(float(h) if h is not None else None),
-        _round2(float(a) if a is not None else None),
-        _round2(float(t) if t is not None else None),
-    )
-
-
-def _load_v20_totals(
-    db: Session,
-    fixture_id: int,
-    home_team_id: int,
-    away_team_id: int,
-) -> tuple[float | None, float | None, float | None]:
-    mv = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
-    home_row = db.scalar(
-        select(TeamSotPrediction).where(
-            TeamSotPrediction.fixture_id == int(fixture_id),
-            TeamSotPrediction.team_id == int(home_team_id),
-            TeamSotPrediction.model_version == mv,
-        ),
-    )
-    away_row = db.scalar(
-        select(TeamSotPrediction).where(
-            TeamSotPrediction.fixture_id == int(fixture_id),
-            TeamSotPrediction.team_id == int(away_team_id),
-            TeamSotPrediction.model_version == mv,
-        ),
-    )
-    if home_row is None or away_row is None or home_row.predicted_sot is None or away_row.predicted_sot is None:
-        return None, None, None
-    h = round(float(home_row.predicted_sot), 2)
-    a = round(float(away_row.predicted_sot), 2)
-    return h, a, round(h + a, 2)
 
 
 def format_fixture_status_label(fixture_status: str | None, elapsed: int | None) -> str:
@@ -164,72 +101,44 @@ def select_dashboard_pick(picks: list[TrackedBettingPick]) -> TrackedBettingPick
     return cautious[0]
 
 
-def _resolve_initial(
+def _official_with_stale_guard(
     pick: TrackedBettingPick,
-    impact: dict[str, Any] | None,
+    latest_impact: dict[str, Any] | None,
     db: Session,
     fx: Fixture,
-) -> tuple[float | None, str | None, float | None]:
-    _ = db, fx
-    ih, ia, it = _totals_from_impact_delta(impact, prefix="before")
-    if it is not None:
-        pick_s, line = _cautious_from_totals(ih, ia)
-        return it, pick_s, line
+) -> Any:
+    """Se pick.predicted è stale rispetto all'ultimo after, preferisce impact after."""
+    from app.services.tracked_monitoring_snapshot_resolver import (
+        ResolvedSnapshot,
+        _approx_eq,
+        _cautious_from_totals,
+        _pick_line_coherent,
+        _round2,
+        _totals_from_delta_dict,
+    )
 
-    if pick.initial_predicted_total_sot is not None:
-        total = _round2(pick.initial_predicted_total_sot)
-        pick_s = pick.initial_suggested_pick
-        line = pick.initial_line_value
-        if pick_s is None and total is not None:
-            h = pick.initial_predicted_home_sot
-            a = pick.initial_predicted_away_sot
-            pick_s, line = _cautious_from_totals(h, a)
-        return total, pick_s, line
+    snap = resolve_official_snapshot(pick, latest_impact=latest_impact, db=db, fx=fx)
+    if snap.total is None or not pick.lineup_confirmed or not latest_impact:
+        return snap
 
-    if not pick.lineup_confirmed:
-        total = _round2(pick.predicted_total_sot)
-        if total is not None:
-            pick_s = pick.suggested_pick
-            line = pick.line_value
-            if pick_s is None:
-                pick_s, line = _cautious_from_totals(pick.predicted_home_sot, pick.predicted_away_sot)
-            return total, pick_s, line
+    _, _, after_t = _totals_from_delta_dict(latest_impact, prefix="after")
+    if after_t is None:
+        return snap
 
-    return None, None, None
-
-
-def _resolve_official(
-    pick: TrackedBettingPick,
-    impact: dict[str, Any] | None,
-) -> tuple[float | None, str | None, float | None]:
-    oh, oa, ot = _totals_from_impact_delta(impact, prefix="after")
-    total_pick = _round2(pick.predicted_total_sot)
-    pick_s = pick.suggested_pick
-    line = pick.line_value
-
-    if ot is not None:
-        use_impact_after = True
-        if total_pick is not None:
-            if pick.lineup_confirmed and abs(float(total_pick) - float(ot)) < 0.02:
-                use_impact_after = False
-            elif float(total_pick) > float(ot):
-                use_impact_after = False
-        if use_impact_after:
-            if pick_s is None:
-                pick_s, line = _cautious_from_totals(oh, oa)
-            return ot, pick_s, line
-
-    if total_pick is not None:
-        if pick_s is None:
-            pick_s, line = _cautious_from_totals(pick.predicted_home_sot, pick.predicted_away_sot)
-        return total_pick, pick_s, line
-
-    if ot is not None:
-        if pick_s is None:
-            pick_s, line = _cautious_from_totals(oh, oa)
-        return ot, pick_s, line
-
-    return None, pick_s, line
+    if snap.source == "pick_predicted_total" and not _approx_eq(snap.total, after_t):
+        oh, oa, _ = _totals_from_delta_dict(latest_impact, prefix="after")
+        ps, ln = _pick_line_coherent(after_t, pick.suggested_pick, pick.line_value, oh, oa)
+        if ps is None:
+            ps, ln = _cautious_from_totals(oh, oa)
+        return ResolvedSnapshot(
+            total=_round2(after_t),
+            home=oh,
+            away=oa,
+            suggested_pick=ps,
+            line_value=ln,
+            source="latest_impact_after_stale_pick_guard",
+        )
+    return snap
 
 
 def build_dashboard_row(
@@ -237,15 +146,25 @@ def build_dashboard_row(
     fx: Fixture,
     ht: Team | None,
     at: Team | None,
-    impact: dict[str, Any] | None,
+    impact_snapshots: dict[str, dict[str, Any] | None] | None,
     db: Session,
 ) -> dict[str, Any]:
     fixture_status = (pick.fixture_status or fx.status or "").strip()
     home_name = ht.name if ht else "Casa"
     away_name = at.name if at else "Trasferta"
 
-    initial_total, initial_pick, initial_line = _resolve_initial(pick, impact, db, fx)
-    official_total, official_pick, official_line = _resolve_official(pick, impact)
+    first_impact = (impact_snapshots or {}).get("first")
+    latest_impact = (impact_snapshots or {}).get("latest")
+
+    official_snap = _official_with_stale_guard(pick, latest_impact, db, fx)
+    initial_snap = resolve_initial_snapshot(
+        pick,
+        first_impact=first_impact,
+        latest_impact=latest_impact,
+        db=db,
+        fx=fx,
+        official_total_hint=official_snap.total,
+    )
 
     sot_display, sot_unavailable_reason = sot_display_and_reason(
         fixture_status=fixture_status,
@@ -260,13 +179,13 @@ def build_dashboard_row(
         fixture_status=fixture_status,
         pick_status=pick.status,
         result_total_sot=pick.result_total_sot,
-        line_value=initial_line,
+        line_value=initial_snap.line_value,
     )
     official_outcome = compute_prognosis_outcome(
         fixture_status=fixture_status,
         pick_status=pick.status,
         result_total_sot=pick.result_total_sot,
-        line_value=official_line,
+        line_value=official_snap.line_value,
     )
 
     def _team_payload(team: Team | None, team_id: int, fallback: str) -> dict[str, Any]:
@@ -285,14 +204,17 @@ def build_dashboard_row(
         "home_team": _team_payload(ht, int(fx.home_team_id), home_name),
         "away_team": _team_payload(at, int(fx.away_team_id), away_name),
         "match_name": f"{home_name} - {away_name}",
-        "initial_predicted_total_sot": initial_total,
-        "official_predicted_total_sot": official_total,
-        "initial_suggested_pick": initial_pick,
-        "initial_line_value": initial_line,
+        "initial_predicted_total_sot": initial_snap.total,
+        "official_predicted_total_sot": official_snap.total,
+        "initial_suggested_pick": initial_snap.suggested_pick,
+        "initial_line_value": initial_snap.line_value,
         "initial_odd": pick.initial_odd,
-        "official_suggested_pick": official_pick,
-        "official_line_value": official_line,
+        "official_suggested_pick": official_snap.suggested_pick,
+        "official_line_value": official_snap.line_value,
         "official_odd": pick.official_odd,
+        "initial_reconstruction_source": initial_snap.source,
+        "official_reconstruction_source": official_snap.source,
+        "initial_reconstruction_note": initial_snap.reconstruction_note,
         "result_home_sot": pick.result_home_sot,
         "result_away_sot": pick.result_away_sot,
         "result_total_sot": pick.result_total_sot,
@@ -350,7 +272,7 @@ def build_dashboard_payload(
         by_fixture.setdefault(int(p.fixture_id), []).append(p)
 
     fx_ids = list(by_fixture.keys())
-    impacts = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(
+    impact_snaps = LineupRefreshImpactOrchestrator.load_impact_snapshots_by_fixture_ids(
         db,
         fx_ids,
         model_id=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
@@ -373,7 +295,7 @@ def build_dashboard_payload(
         ht = teams.get(int(fx.home_team_id))
         at = teams.get(int(fx.away_team_id))
         rows_out.append(
-            build_dashboard_row(pick, fx, ht, at, impacts.get(fid), db),
+            build_dashboard_row(pick, fx, ht, at, impact_snaps.get(fid), db),
         )
 
     return {

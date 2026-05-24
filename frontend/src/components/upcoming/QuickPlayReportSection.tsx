@@ -20,10 +20,14 @@ export function QuickPlayReportSection({
   matches,
   modelVersion,
   onRefreshComplete,
+  onOpenDetail,
+  selectedFixtureId,
 }: {
   matches: UpcomingActiveMatchRow[]
   modelVersion: string | null
   onRefreshComplete: () => void | Promise<void>
+  onOpenDetail?: (fixtureId: number) => void
+  selectedFixtureId?: number | null
 }) {
   const [refreshBusy, setRefreshBusy] = useState(false)
   const [refreshResult, setRefreshResult] = useState<SportApiRoundRefreshSummary | null>(null)
@@ -143,8 +147,16 @@ export function QuickPlayReportSection({
       </div>
 
       <div className="p-2 md:p-4">
-        <QuickPlayReportTable matches={displayMatches} />
-        <QuickPlayReportMobile matches={displayMatches} />
+        <QuickPlayReportTable
+          matches={displayMatches}
+          onOpenDetail={onOpenDetail}
+          selectedFixtureId={selectedFixtureId}
+        />
+        <QuickPlayReportMobile
+          matches={displayMatches}
+          onOpenDetail={onOpenDetail}
+          selectedFixtureId={selectedFixtureId}
+        />
       </div>
     </section>
   )

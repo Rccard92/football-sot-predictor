@@ -42,6 +42,10 @@ from app.services.predictions_v04.offensive_core_sot_service import SotPredictio
 from app.services.predictions_v10.baseline_v1_sot_service import SotPredictionV10BaselineSotService
 from app.services.predictions_v11.baseline_v1_1_sot_service import SotPredictionV11BaselineSotService
 from app.services.predictions_v20.baseline_v2_0_lineup_impact_service import SotPredictionV20LineupImpactService
+from app.services.next_round_quick_report_service import (
+    build_next_round_quick_report_payload,
+    build_upcoming_fixture_detail_payload,
+)
 from app.services.prediction_readiness import (
     build_model_status_payload,
     build_upcoming_active_payload,
@@ -150,6 +154,42 @@ def sot_predictions_serie_a_upcoming_active(
         season,
         limit=limit,
         only_next_round=only_next_round,
+        model_version=model_version,
+    )
+    return JSONResponse(status_code=code, content=jsonable_encoder(payload))
+
+
+@router.get("/serie-a/{season}/next-round/quick-report", response_model=None)
+def sot_predictions_serie_a_next_round_quick_report(
+    season: int,
+    db: Session = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+    only_next_round: bool = Query(default=True),
+    model_version: str | None = Query(default=None),
+):
+    """Report rapido Prossima giornata: solo dati tabella, nessun breakdown pesante."""
+    payload, code = build_next_round_quick_report_payload(
+        db,
+        season,
+        limit=limit,
+        only_next_round=only_next_round,
+        model_version=model_version,
+    )
+    return JSONResponse(status_code=code, content=jsonable_encoder(payload))
+
+
+@router.get("/serie-a/{season}/upcoming-fixture/{fixture_id}/detail", response_model=None)
+def sot_predictions_serie_a_upcoming_fixture_detail(
+    season: int,
+    fixture_id: int,
+    db: Session = Depends(get_db),
+    model_version: str | None = Query(default=None),
+):
+    """Dettaglio singola partita upcoming (on-demand)."""
+    payload, code = build_upcoming_fixture_detail_payload(
+        db,
+        season,
+        fixture_id,
         model_version=model_version,
     )
     return JSONResponse(status_code=code, content=jsonable_encoder(payload))

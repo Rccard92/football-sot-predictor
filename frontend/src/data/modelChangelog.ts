@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.14.0',
+    date: '2026-05-19',
+    title: 'Ottimizzazione Prossima giornata e fix monitoraggio iniziale',
+    type: 'minor',
+    summary:
+      'Ottimizzata la tab Prossima giornata con caricamento leggero e corretto il confronto tra previsione iniziale e post ufficiali nel Monitoraggio Giocate.',
+    highlights: [
+      'Corretta ricostruzione previsione iniziale vs post ufficiali.',
+      'Sistemato esito iniziale su casi come Bologna–Inter.',
+      'Prossima giornata resa più veloce con endpoint leggero.',
+      'Dettagli partita caricati on-demand.',
+      'Evitati ricalcoli e payload pesanti all’apertura pagina.',
+      'Nessuna modifica al modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.13.2',
     date: '2026-05-19',
     title: 'Restyling monitoraggio giocate',

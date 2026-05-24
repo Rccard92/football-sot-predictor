@@ -68,7 +68,15 @@ function CautCell({ market }: { market: QuickPlayMarket | undefined }) {
   )
 }
 
-export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatchRow[] }) {
+export function QuickPlayReportTable({
+  matches,
+  onOpenDetail,
+  selectedFixtureId,
+}: {
+  matches: UpcomingActiveMatchRow[]
+  onOpenDetail?: (fixtureId: number) => void
+  selectedFixtureId?: number | null
+}) {
   return (
     <div className="hidden overflow-x-auto md:block">
       <table className="min-w-full text-left text-[11px] text-slate-800">
@@ -154,12 +162,26 @@ export function QuickPlayReportTable({ matches }: { matches: UpcomingActiveMatch
                   </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <a
-                    href={`#match-${m.fixture_id}`}
-                    className="font-medium text-indigo-800 underline hover:text-indigo-950"
-                  >
-                    Dettaglio
-                  </a>
+                  {onOpenDetail ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetail(m.fixture_id)}
+                      className={`font-medium underline ${
+                        selectedFixtureId === m.fixture_id
+                          ? 'text-indigo-950'
+                          : 'text-indigo-800 hover:text-indigo-950'
+                      }`}
+                    >
+                      {selectedFixtureId === m.fixture_id ? 'Dettaglio ▾' : 'Dettaglio'}
+                    </button>
+                  ) : (
+                    <a
+                      href={`#match-${m.fixture_id}`}
+                      className="font-medium text-indigo-800 underline hover:text-indigo-950"
+                    >
+                      Dettaglio
+                    </a>
+                  )}
                 </td>
               </tr>
             )
