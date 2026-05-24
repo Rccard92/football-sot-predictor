@@ -22,11 +22,12 @@ from app.models.tracked_betting_pick import (
 )
 from app.services.sot_betting_advice_service import build_fixture_betting_advice
 from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
+from app.services.ingestion_service import IngestionService
 from app.services.tracked_betting_pick_service import MARKET_MATCH_TOTAL, parse_line_value_from_pick
-from app.services.tracked_pick_results_refresh_service import (
+from app.services.tracked_monitoring_constants import (
     LIVE_STATUSES,
-    _is_live_fixture,
-    _sot_display_and_reason,
+    is_live_fixture,
+    sot_display_and_reason,
 )
 
 SOURCE_PRIORITY = (SOURCE_AUTO_PRE_MATCH, SOURCE_BACKFILL_ROUND, SOURCE_MANUAL)
@@ -235,14 +236,14 @@ def build_dashboard_row(
     initial_total, initial_pick, initial_line = _resolve_initial(pick, impact, db, fx)
     official_total, official_pick, official_line = _resolve_official(pick, impact)
 
-    sot_display, sot_unavailable_reason = _sot_display_and_reason(
+    sot_display, sot_unavailable_reason = sot_display_and_reason(
         fixture_status=fixture_status,
         pick_status=pick.status,
         result_home_sot=pick.result_home_sot,
         result_away_sot=pick.result_away_sot,
         result_total_sot=pick.result_total_sot,
     )
-    is_live = _is_live_fixture(pick.status, fixture_status)
+    is_live = is_live_fixture(pick.status, fixture_status)
 
     initial_outcome = compute_prognosis_outcome(
         fixture_status=fixture_status,
@@ -362,3 +363,39 @@ def build_dashboard_payload(
         "count": len(rows_out),
         "summary": compute_dashboard_summary(rows_out),
     }
+
+
+def list_tracked_dashboard_payload(db: Session, season_year: int) -> dict[str, Any]:
+    """Carica pick della stagione e costruisce payload dashboard (nessuna dipendenza da refresh service)."""
+    ingest = IngestionService()
+    season_row = ingest._serie_a_season_row(db, season_year)  # noqa: SLF001
+    picks = list(
+        db.scalars(
+            select(TrackedBettingPick)
+            .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
+            .where(Fixture.season_id == season_row.id)
+            .order_by(Fixture.kickoff_at.asc(), TrackedBettingPick.id.asc()),
+        ).all(),
+    )
+    fx_ids = list({int(p.fixture_id) for p in picks})
+    fixtures = (
+        {int(f.id): f for f in db.scalars(select(Fixture).where(Fixture.id.in_(fx_ids))).all()}
+        if fx_ids
+        else {}
+    )
+    team_ids: set[int] = set()
+    for f in fixtures.values():
+        team_ids.add(int(f.home_team_id))
+        team_ids.add(int(f.away_team_id))
+    teams = (
+        {int(t.id): t for t in db.scalars(select(Team).where(Team.id.in_(list(team_ids)))).all()}
+        if team_ids
+        else {}
+    )
+    return build_dashboard_payload(
+        db,
+        picks,
+        fixtures,
+        teams,
+        season_year=season_year,
+    )

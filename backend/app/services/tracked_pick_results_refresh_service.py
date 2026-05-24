@@ -24,12 +24,9 @@ from app.models.tracked_betting_pick import (
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.fixture_sot_statistics import extract_sot_from_statistics_response
 from app.services.ingestion_service import IngestionService
-from app.services.tracked_monitoring_dashboard_service import build_dashboard_payload
+from app.services.tracked_monitoring_constants import LIVE_STATUSES, VOID_STATUSES
 
 logger = logging.getLogger(__name__)
-
-LIVE_STATUSES = frozenset({"1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INT"})
-VOID_STATUSES = frozenset({"CANC", "ABD", "AWD", "WO"})
 RefreshScope = Literal["all", "live", "unfinished", "unfinished_or_recent"]
 
 STALE_LIVE_KICKOFF_HOURS = 3
@@ -77,44 +74,6 @@ def _final_hint_label(total_sot: float | None, line_value: float | None) -> str 
     if float(total_sot) > float(line_value):
         return "Linea superata"
     return "Linea non superata"
-
-
-def _is_live_fixture(pick_status: str, fixture_status: str | None) -> bool:
-    fs = (fixture_status or "").strip().upper()
-    return pick_status == STATUS_LIVE or fs in LIVE_STATUSES
-
-
-def _sot_display_and_reason(
-    *,
-    fixture_status: str | None,
-    pick_status: str,
-    result_home_sot: float | None,
-    result_away_sot: float | None,
-    result_total_sot: float | None,
-) -> tuple[str, str | None]:
-    fs = (fixture_status or "").strip().upper()
-    is_live = _is_live_fixture(pick_status, fs)
-    is_finished = fs in FINISHED_STATUSES
-    is_scheduled = fs in SCHEDULED_STATUSES or fs in ("", "NS", "TBD", "PST")
-
-    if is_scheduled and not is_live:
-        return "—", None
-
-    if result_total_sot is not None:
-        h = int(result_home_sot) if result_home_sot is not None else "—"
-        a = int(result_away_sot) if result_away_sot is not None else "—"
-        total = result_total_sot
-        total_str = str(int(total)) if total == int(total) else f"{total:.1f}"
-        return f"{h} + {a} = {total_str}", None
-
-    if is_live:
-        return (
-            "SOT non disponibili",
-            "API-Sports non ha restituito i tiri in porta per questo aggiornamento.",
-        )
-    if is_finished:
-        return "N/D", "SOT finali non disponibili da API-Sports"
-    return "—", None
 
 
 def _fixture_status_for_pick(pick: TrackedBettingPick, fx: Fixture | None) -> str:
@@ -218,33 +177,6 @@ def _pick_in_scope(
 class TrackedPickResultsRefreshService:
     def __init__(self, client: ApiFootballClient | None = None) -> None:
         self._client = client or ApiFootballClient()
-
-    def list_tracked_payload(self, db: Session, season_year: int) -> dict[str, Any]:
-        ingest = IngestionService()
-        season_row = ingest._serie_a_season_row(db, season_year)  # noqa: SLF001
-        picks = list(
-            db.scalars(
-                select(TrackedBettingPick)
-                .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
-                .where(Fixture.season_id == season_row.id)
-                .order_by(Fixture.kickoff_at.asc(), TrackedBettingPick.id.asc()),
-            ).all(),
-        )
-        fx_ids = list({int(p.fixture_id) for p in picks})
-        fixtures = {int(f.id): f for f in db.scalars(select(Fixture).where(Fixture.id.in_(fx_ids))).all()} if fx_ids else {}
-        team_ids = set()
-        for f in fixtures.values():
-            team_ids.add(int(f.home_team_id))
-            team_ids.add(int(f.away_team_id))
-        teams = {int(t.id): t for t in db.scalars(select(Team).where(Team.id.in_(list(team_ids)))).all()} if team_ids else {}
-
-        return build_dashboard_payload(
-            db,
-            picks,
-            fixtures,
-            teams,
-            season_year=season_year,
-        )
 
     def refresh_results(
         self,

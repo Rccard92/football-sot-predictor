@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.13.1',
+    date: '2026-05-19',
+    title: 'Fix circular import monitoraggio',
+    type: 'patch',
+    summary:
+      'Risolto un circular import nei servizi di Monitoraggio Giocate che impediva l’avvio del backend.',
+    highlights: [
+      'Spostate costanti stato partita in un modulo condiviso.',
+      'Rimossa dipendenza circolare tra refresh risultati e dashboard monitoraggio.',
+      'Backend di nuovo avviabile su Railway.',
+      'Nessuna modifica a formule, modelli o prediction engine.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.13.0',
     date: '2026-05-19',
     title: 'Monitoraggio doppia previsione SOT',

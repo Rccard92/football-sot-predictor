@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from app.services.tracked_monitoring_constants import sot_display_and_reason
 from app.services.tracked_pick_results_refresh_service import (
     _final_hint_label,
     _live_over_hint,
     _pick_in_scope,
     _resolve_pick_outcome,
     _should_refresh_pick,
-    _sot_display_and_reason,
 )
 from app.models.tracked_betting_pick import STATUS_LIVE, STATUS_LOST, STATUS_PENDING, STATUS_WON
 
@@ -41,7 +41,7 @@ def test_final_hint_label():
 
 
 def test_sot_display_live_and_ft():
-    live_txt, live_reason = _sot_display_and_reason(
+    live_txt, live_reason = sot_display_and_reason(
         fixture_status="1H",
         pick_status=STATUS_LIVE,
         result_home_sot=None,
@@ -51,7 +51,7 @@ def test_sot_display_live_and_ft():
     assert live_txt == "SOT non disponibili"
     assert live_reason
 
-    ft_txt, _ = _sot_display_and_reason(
+    ft_txt, _ = sot_display_and_reason(
         fixture_status="FT",
         pick_status=STATUS_WON,
         result_home_sot=4.0,
