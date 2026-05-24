@@ -105,6 +105,38 @@ export function MatchCard({
             ))}
           </p>
         ) : null}
+        {match.referee_summary ? (
+          <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2 text-xs text-slate-800">
+            <p className="font-medium text-amber-950">Arbitro</p>
+            {!match.referee_summary.available ? (
+              <p className="mt-1 text-slate-600">
+                {match.referee_summary.message ?? 'Arbitro non ancora disponibile'}
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 font-semibold text-slate-900">{match.referee_summary.referee_name}</p>
+                {match.referee_summary.profile_available ? (
+                  <p className="mt-1 text-slate-600">
+                    Media gialli {match.referee_summary.avg_yellow_cards?.toFixed(1) ?? '—'} · rossi{' '}
+                    {match.referee_summary.avg_red_cards?.toFixed(2) ?? '—'} · severità{' '}
+                    <span className="capitalize">{match.referee_summary.severity_label ?? '—'}</span>
+                    {match.referee_summary.matches_count != null ? (
+                      <span className="text-slate-500">
+                        {' '}
+                        ({match.referee_summary.matches_count} partite, campione{' '}
+                        {match.referee_summary.sample_quality})
+                      </span>
+                    ) : null}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-slate-500">
+                    {match.referee_summary.message ?? 'Profilo severità non in cache'}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="border-b border-slate-100 px-5 py-5 sm:px-6">

@@ -32,6 +32,7 @@ import {
   type SemanticGroupSection,
 } from '../utils/catalogFieldLabels'
 import { deduplicateCatalogFields } from '../utils/deduplicateCatalogFields'
+import { RefereeDiscoveryPanel } from '../components/admin/RefereeDiscoveryPanel'
 
 export function ApiDataCatalog() {
   const [catalog, setCatalog] = useState<ModelRelevantCatalogResponse | null>(null)
@@ -230,6 +231,8 @@ export function ApiDataCatalog() {
           chiamata al provider al caricamento della pagina.
         </p>
       </header>
+
+      <RefereeDiscoveryPanel />
 
       <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
         <p className="font-medium">Catalogo model-relevant</p>

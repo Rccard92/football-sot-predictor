@@ -325,11 +325,15 @@ def build_upcoming_fixture_detail_payload(
             },
             404,
         )
+    from app.services.referee_severity_service import build_referee_summary_for_fixture
+
+    referee_summary = build_referee_summary_for_fixture(db, int(fixture_id))
     return (
         {
             "status": "success",
             "season": int(season),
-            "match": match,
+            "match": {**match, "referee_summary": referee_summary},
+            "referee_summary": referee_summary,
             "model_limitations": payload.get("model_limitations"),
         },
         200,

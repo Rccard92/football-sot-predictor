@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.15.0',
+    date: '2026-05-19',
+    title: 'Discovery arbitri e severità',
+    type: 'minor',
+    summary:
+      'Integrata la discovery degli arbitri da API-Sports con profilo severità (media cartellini) e visualizzazione read-only in Prossima giornata.',
+    highlights: [
+      'Sync arbitro per singola fixture da API-Sports (Catalogo dati).',
+      'Calcolo profilo severità (permissivo / medio / severo) da cartellini DB o API.',
+      'Cache profilo per lega e stagione in database.',
+      'Blocco arbitro read-only nel dettaglio partita Prossima giornata.',
+      'Nessuna modifica al modello SOT v2.0 né al betting advice.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.14.2',
     date: '2026-05-19',
     title: 'Fix esecuzione cron e job Admin',

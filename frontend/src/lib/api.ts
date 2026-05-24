@@ -690,6 +690,59 @@ export type TrackedPicksRefreshResultsSummary = {
   stats_debug?: StatsDebugEntry[]
 }
 
+export type RefereeSyncFixtureResponse = {
+  status: string
+  fixture_id?: number
+  api_fixture_id?: number
+  match?: string
+  referee?: string | null
+  referee_id?: number
+  saved?: boolean
+  reason?: string
+  message?: string
+}
+
+export type RefereeProfileResponse = {
+  status: string
+  referee_name?: string
+  referee_id?: number | null
+  league_id?: number
+  season?: number
+  matches_count?: number
+  total_yellow_cards?: number
+  total_red_cards?: number
+  avg_yellow_cards?: number | null
+  avg_red_cards?: number | null
+  severity_label?: string | null
+  sample_quality?: string | null
+  message?: string
+  saved?: boolean
+  fixtures_used?: unknown[]
+}
+
+export async function postRefereeSyncFixture(
+  body: { fixture_id: number } | { api_fixture_id: number },
+  opts?: AdminRequestOpts,
+): Promise<RefereeSyncFixtureResponse> {
+  return adminPostJson<RefereeSyncFixtureResponse>('/api/admin/referees/sync-fixture', body, opts)
+}
+
+export async function postRefereeProfile(
+  body: {
+    referee_name?: string
+    league_id?: number
+    season?: number
+    fixture_id?: number
+    max_matches?: number
+  },
+  opts?: AdminRequestOpts,
+): Promise<RefereeProfileResponse> {
+  return adminPostJson<RefereeProfileResponse>('/api/admin/referees/profile', body, {
+    timeoutMs: 300_000,
+    ...opts,
+  })
+}
+
 /** Job pre-match da Admin UI: stessa chiamata degli altri endpoint admin (senza CRON_SECRET nel frontend). */
 export async function postPreMatchOfficialLineupRefreshJob(
   body: { force?: boolean; minutes_before?: number; window_minutes?: number; season?: number } = {},
@@ -1764,6 +1817,19 @@ export type UpcomingActiveMatchRow = {
     cautious_same_as_statistical?: boolean
     model_label?: string | null
   } | null
+  referee_summary?: RefereeSummary | null
+}
+
+export type RefereeSummary = {
+  available: boolean
+  referee_name?: string
+  profile_available?: boolean
+  avg_yellow_cards?: number | null
+  avg_red_cards?: number | null
+  severity_label?: string | null
+  sample_quality?: string | null
+  matches_count?: number
+  message?: string
 }
 
 export type UpcomingActiveResponse = {

@@ -75,3 +75,8 @@ class Fixture(Base, TimestampMixin):
         back_populates="fixture",
         cascade="all, delete-orphan",
     )
+    fixture_referees = relationship(
+        "FixtureReferee",
+        back_populates="fixture",
+        cascade="all, delete-orphan",
+    )

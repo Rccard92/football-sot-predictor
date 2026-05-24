@@ -5,6 +5,7 @@ from app.routes import (
     admin_betting_picks,
     admin_bookmakers,
     admin_jobs,
+    admin_referees,
     admin_debug_player_db,
     admin_data_health,
     admin_debug_api_football_catalog,
@@ -50,6 +51,7 @@ api_router.include_router(admin_refresh.router)
 api_router.include_router(admin_data_health.router)
 api_router.include_router(admin_sportapi.router)
 api_router.include_router(admin_jobs.router)
+api_router.include_router(admin_referees.router)
 api_router.include_router(admin_betting_picks.router)
 api_router.include_router(admin_bookmakers.router)
 api_router.include_router(betting_picks.router)

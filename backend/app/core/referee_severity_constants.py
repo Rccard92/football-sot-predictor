@@ -1,0 +1,11 @@
+"""Soglie profilo severità arbitro (modificabili senza toccare il modello SOT)."""
+
+SEVERITY_YELLOW_PERMISSIVE_MAX = 3.5
+SEVERITY_YELLOW_MEDIUM_MAX = 5.0
+RED_INCIDENCE_NOTE_THRESHOLD = 0.30
+SAMPLE_LOW_MAX = 4
+SAMPLE_HIGH_MIN = 15
+
+SEVERITY_PERMISSIVE = "permissivo"
+SEVERITY_MEDIUM = "medio"
+SEVERITY_SEVERE = "severo"

@@ -20,6 +20,9 @@ from app.models.player_season_profile import PlayerSeasonProfile
 from app.models.player_team_season import PlayerTeamSeason
 from app.models.player_provider_mapping import PlayerProviderMapping
 from app.models.player_sot_profile import PlayerSotProfile
+from app.models.referee import Referee
+from app.models.fixture_referee import FixtureReferee
+from app.models.referee_season_profile import RefereeSeasonProfile
 from app.models.prediction_backtest import PredictionBacktest
 from app.models.season import Season
 from app.models.standing import StandingEntry, StandingsSnapshot
@@ -57,6 +60,9 @@ __all__ = [
     "PlayerTeamSeason",
     "PlayerProviderMapping",
     "PlayerSotProfile",
+    "Referee",
+    "FixtureReferee",
+    "RefereeSeasonProfile",
     "PredictionBacktest",
     "Season",
     "StandingEntry",
