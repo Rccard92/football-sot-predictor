@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import Header, HTTPException
 
 from app.core.config import get_settings
+
+
+def resolve_cron_secret() -> str:
+    """CRON_SECRET principale; fallback ADMIN_CRON_SECRET per retrocompatibilità."""
+    settings = get_settings()
+    from_settings = (settings.cron_secret or "").strip()
+    if from_settings:
+        return from_settings
+    return (os.getenv("CRON_SECRET") or os.getenv("ADMIN_CRON_SECRET") or "").strip()
 
 
 def require_admin_cron_secret(
@@ -12,13 +23,13 @@ def require_admin_cron_secret(
     authorization: str | None = Header(default=None),
 ) -> None:
     settings = get_settings()
-    expected = (settings.admin_cron_secret or "").strip()
+    expected = resolve_cron_secret()
     if not expected:
         if settings.app_env == "development":
             return
         raise HTTPException(
             status_code=503,
-            detail="ADMIN_CRON_SECRET non configurato sul server",
+            detail="CRON_SECRET non configurato sul server",
         )
     token = (x_admin_cron_secret or "").strip()
     if not token and authorization:

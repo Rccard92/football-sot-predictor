@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.14.1',
+    date: '2026-05-19',
+    title: 'Fix configurazione job pre-match',
+    type: 'patch',
+    summary:
+      'Allineata la configurazione del secret per il job pre-match e mantenuto il pulsante Admin come esecuzione manuale di fallback.',
+    highlights: [
+      'CRON_SECRET come variabile principale sul backend (fallback ADMIN_CRON_SECRET).',
+      'Header X-Admin-Cron-Secret invariato per cron Railway e Admin.',
+      'Pulsante «Esegui job ora» per test e forzatura manuale.',
+      'Testi Admin aggiornati.',
+      'Nessuna modifica al modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.14.0',
     date: '2026-05-19',
     title: 'Ottimizzazione Prossima giornata e fix monitoraggio iniziale',

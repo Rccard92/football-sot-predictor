@@ -28,7 +28,13 @@ export function PreMatchJobPanel() {
       )
       setLast(out)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      let msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('ADMIN_CRON_SECRET non configurato')) {
+        msg = 'CRON_SECRET non configurato sul server. Aggiungilo nelle variabili Railway del backend.'
+      } else if (msg.includes('CRON_SECRET non configurato')) {
+        msg = 'CRON_SECRET non configurato sul server. Aggiungilo nelle variabili Railway del backend.'
+      }
+      setError(msg)
     } finally {
       setBusy(false)
     }
@@ -40,12 +46,9 @@ export function PreMatchJobPanel() {
     <section className="rounded-xl border border-violet-200 bg-violet-50/40 p-4">
       <h3 className="text-sm font-semibold text-violet-950">Job formazioni ufficiali pre-match</h3>
       <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
-        Aggiorna automaticamente le formazioni delle partite che iniziano tra circa 30 minuti e sincronizza le
-        pick nel Monitoraggio Giocate. Su Railway configura un cron ogni 5 minuti su{' '}
-        <code className="rounded bg-white/80 px-1 text-[10px]">
-          POST /api/admin/jobs/pre-match-official-lineups/run
-        </code>{' '}
-        con header <code className="rounded bg-white/80 px-1 text-[10px]">X-Admin-Cron-Secret</code>.
+        Aggiorna le formazioni delle partite vicine al kickoff e sincronizza Prossima giornata e Monitoraggio
+        Giocate. Il cron Railway lo esegue automaticamente ogni 5 minuti; questo pulsante serve per test o
+        forzatura manuale.
       </p>
       <button
         type="button"

@@ -691,9 +691,12 @@ export type TrackedPicksRefreshResultsSummary = {
 }
 
 function adminCronHeaders(): Record<string, string> {
-  const secret = import.meta.env.VITE_ADMIN_CRON_SECRET as string | undefined
-  if (!secret?.trim()) return {}
-  return { 'X-Admin-Cron-Secret': secret.trim() }
+  const secret = (
+    (import.meta.env.VITE_CRON_SECRET as string | undefined) ||
+    (import.meta.env.VITE_ADMIN_CRON_SECRET as string | undefined)
+  )?.trim()
+  if (!secret) return {}
+  return { 'X-Admin-Cron-Secret': secret }
 }
 
 export async function postPreMatchOfficialLineupRefreshJob(

@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from dotenv import load_dotenv
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -36,11 +37,19 @@ class Settings(BaseSettings):
     use_sportapi_lineups_in_model: bool = False
     use_sportapi_lineup_impact_in_model: bool = False
 
-    # Job pre-match (cron Railway)
-    admin_cron_secret: str = ""
+    # Job pre-match (cron Railway + pulsante Admin)
+    cron_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("CRON_SECRET", "ADMIN_CRON_SECRET"),
+    )
     prematch_refresh_minutes_before: int = 30
     prematch_refresh_window_minutes: int = 10
     prematch_refresh_skip_recent_minutes: int = 8
+
+    @property
+    def admin_cron_secret(self) -> str:
+        """Retrocompatibilità: stesso valore di cron_secret."""
+        return self.cron_secret
 
     @property
     def cors_origins_list(self) -> list[str]:

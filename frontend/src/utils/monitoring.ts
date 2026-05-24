@@ -80,6 +80,9 @@ export function outcomeBadgeClass(outcome: string): string {
 
 export function showMonitoringStatsDebug(): boolean {
   if (import.meta.env.DEV) return true
-  const secret = import.meta.env.VITE_ADMIN_CRON_SECRET as string | undefined
-  return Boolean(secret?.trim())
+  const secret = (
+    (import.meta.env.VITE_CRON_SECRET as string | undefined) ||
+    (import.meta.env.VITE_ADMIN_CRON_SECRET as string | undefined)
+  )?.trim()
+  return Boolean(secret)
 }
