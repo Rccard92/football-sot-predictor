@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.core.admin_auth import require_admin_cron_secret
+from app.core.admin_auth import require_pre_match_job_access
 from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
 from app.services.jobs.pre_match_lineup_refresh_job import PreMatchOfficialLineupRefreshJob
@@ -61,7 +61,7 @@ def _run_pre_match_job(body: PreMatchJobBody | None, db: Session) -> dict[str, A
 @router.post(
     "/pre-match-official-lineups/run",
     response_model=None,
-    dependencies=[Depends(require_admin_cron_secret)],
+    dependencies=[Depends(require_pre_match_job_access)],
 )
 def run_pre_match_official_lineups(
     body: PreMatchJobBody | None = None,
@@ -73,7 +73,7 @@ def run_pre_match_official_lineups(
 @router.post(
     "/pre-match-lineup-refresh/run",
     response_model=None,
-    dependencies=[Depends(require_admin_cron_secret)],
+    dependencies=[Depends(require_pre_match_job_access)],
 )
 def run_pre_match_lineup_refresh(
     body: PreMatchJobBody | None = None,

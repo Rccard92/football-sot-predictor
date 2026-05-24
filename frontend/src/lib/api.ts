@@ -690,48 +690,16 @@ export type TrackedPicksRefreshResultsSummary = {
   stats_debug?: StatsDebugEntry[]
 }
 
-function adminCronHeaders(): Record<string, string> {
-  const secret = (
-    (import.meta.env.VITE_CRON_SECRET as string | undefined) ||
-    (import.meta.env.VITE_ADMIN_CRON_SECRET as string | undefined)
-  )?.trim()
-  if (!secret) return {}
-  return { 'X-Admin-Cron-Secret': secret }
-}
-
+/** Job pre-match da Admin UI: stessa chiamata degli altri endpoint admin (senza CRON_SECRET nel frontend). */
 export async function postPreMatchOfficialLineupRefreshJob(
   body: { force?: boolean; minutes_before?: number; window_minutes?: number; season?: number } = {},
   opts?: AdminRequestOpts,
 ): Promise<PreMatchJobSummary> {
-  const base = getApiBase()
-  const p = '/api/admin/jobs/pre-match-official-lineups/run'
-  let cancelTimeout: (() => void) | undefined
-  let signal: AbortSignal | undefined = opts?.signal
-  if (opts?.timeoutMs != null && opts.timeoutMs > 0) {
-    const x = createLinkedTimeoutSignal(opts.timeoutMs, opts.signal)
-    signal = x.signal
-    cancelTimeout = x.cancel
-  }
-  try {
-    const res = await fetch(`${base}${p}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...adminCronHeaders() },
-      body: JSON.stringify(body),
-      signal,
-    })
-    const ct = res.headers.get('content-type') ?? ''
-    const parsed = ct.includes('application/json') ? await res.json() : await res.text()
-    if (!res.ok) {
-      const msg =
-        parsed && typeof parsed === 'object' && 'detail' in (parsed as object)
-          ? String((parsed as { detail: unknown }).detail)
-          : `HTTP ${res.status}`
-      throw new AdminHttpError(res.status, msg, parsed)
-    }
-    return parsed as PreMatchJobSummary
-  } finally {
-    cancelTimeout?.()
-  }
+  return adminPostJson<PreMatchJobSummary>(
+    '/api/admin/jobs/pre-match-official-lineups/run',
+    body,
+    { timeoutMs: 600_000, ...opts },
+  )
 }
 
 /** @deprecated Usare postPreMatchOfficialLineupRefreshJob */

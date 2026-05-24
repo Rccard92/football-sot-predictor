@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.14.2',
+    date: '2026-05-19',
+    title: 'Fix esecuzione cron e job Admin',
+    type: 'patch',
+    summary:
+      'Corretta la normalizzazione dell’URL backend nello script cron e separata l’autorizzazione cron da quella manuale Admin.',
+    highlights: [
+      'BACKEND_URL senza https:// normalizzato automaticamente nello script cron.',
+      'Pulsante Admin senza CRON_SECRET nel frontend.',
+      'Cron esterno continua a usare X-Admin-Cron-Secret.',
+      'Nessuna modifica al modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.14.1',
     date: '2026-05-19',
     title: 'Fix configurazione job pre-match',

@@ -48,6 +48,7 @@ def main() -> int:
         return 1
 
     url = f"{backend_url}{JOB_PATH}"
+    print(f"BACKEND_URL originale: {raw_backend_url or '(vuoto)'}")
     print(f"BACKEND_URL normalizzato: {backend_url}")
     print(f"endpoint: {url}")
     body = json.dumps(
