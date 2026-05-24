@@ -704,20 +704,70 @@ export type RefereeSyncFixtureResponse = {
 
 export type RefereeProfileResponse = {
   status: string
+  profile_label?: string
   referee_name?: string
   referee_id?: number | null
   league_id?: number
   season?: number
   matches_count?: number
+  last_matches_count?: number
   total_yellow_cards?: number
   total_red_cards?: number
   avg_yellow_cards?: number | null
   avg_red_cards?: number | null
   severity_label?: string | null
   sample_quality?: string | null
+  data_source?: 'db_only' | 'api_sports_fetched' | 'mixed'
+  coverage_note?: string
+  fixtures_scanned?: number
+  fixtures_with_same_referee?: number
+  fixtures_with_card_data?: number
+  missing_card_data_count?: number
+  match_warning?: string
   message?: string
   saved?: boolean
   fixtures_used?: unknown[]
+}
+
+export type RefereeImportSeasonResponse = {
+  status: string
+  referee_name?: string
+  referee_id?: number
+  league_id?: number
+  season?: number
+  fixtures_scanned?: number
+  referee_matches_found?: number
+  fixtures_imported?: number
+  card_data_found?: number
+  api_fetches_used?: number
+  match_warning?: string
+  message?: string
+  errors?: { api_fixture_id?: string; error?: string }[]
+}
+
+export type RefereeContextBlock = {
+  available: boolean
+  label?: string
+  message?: string
+  matches_count?: number
+  avg_yellow_cards?: number | null
+  avg_red_cards?: number | null
+  avg_yellow_team?: number | null
+  avg_red_team?: number | null
+  severity_label?: string | null
+  sample_quality?: string | null
+  data_source?: string
+}
+
+export type RefereeMatchContextResponse = {
+  status: string
+  fixture?: string
+  fixture_id?: number
+  referee?: string
+  message?: string
+  home_team_context?: RefereeContextBlock
+  away_team_context?: RefereeContextBlock
+  direct_h2h_context?: RefereeContextBlock
 }
 
 export async function postRefereeSyncFixture(
@@ -741,6 +791,31 @@ export async function postRefereeProfile(
     timeoutMs: 300_000,
     ...opts,
   })
+}
+
+export async function postRefereeImportSeasonHistory(
+  body: { referee_name: string; league_id?: number; season: number },
+  opts?: AdminRequestOpts,
+): Promise<RefereeImportSeasonResponse> {
+  return adminPostJson<RefereeImportSeasonResponse>(
+    '/api/admin/referees/import-season-history',
+    body,
+    { timeoutMs: 600_000, ...opts },
+  )
+}
+
+export async function postRefereeRecentHistory(
+  body: { referee_name: string; limit?: number },
+  opts?: AdminRequestOpts,
+): Promise<RefereeProfileResponse> {
+  return adminPostJson<RefereeProfileResponse>('/api/admin/referees/recent-history', body, opts)
+}
+
+export async function postRefereeMatchContext(
+  body: { fixture_id: number },
+  opts?: AdminRequestOpts,
+): Promise<RefereeMatchContextResponse> {
+  return adminPostJson<RefereeMatchContextResponse>('/api/admin/referees/match-context', body, opts)
 }
 
 /** Job pre-match da Admin UI: stessa chiamata degli altri endpoint admin (senza CRON_SECRET nel frontend). */
@@ -1830,6 +1905,19 @@ export type RefereeSummary = {
   sample_quality?: string | null
   matches_count?: number
   message?: string
+  season_profile?: {
+    label?: string
+    matches_count?: number
+    avg_yellow_cards?: number | null
+    avg_red_cards?: number | null
+    severity_label?: string | null
+    sample_quality?: string | null
+    data_source?: string
+    coverage_note?: string
+  }
+  home_team_context?: RefereeContextBlock
+  away_team_context?: RefereeContextBlock
+  direct_h2h_context?: RefereeContextBlock
 }
 
 export type UpcomingActiveResponse = {

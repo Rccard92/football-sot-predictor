@@ -107,7 +107,7 @@ export function MatchCard({
         ) : null}
         {match.referee_summary ? (
           <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2 text-xs text-slate-800">
-            <p className="font-medium text-amber-950">Arbitro</p>
+            <p className="font-medium text-amber-950">Arbitro e severità</p>
             {!match.referee_summary.available ? (
               <p className="mt-1 text-slate-600">
                 {match.referee_summary.message ?? 'Arbitro non ancora disponibile'}
@@ -115,7 +115,20 @@ export function MatchCard({
             ) : (
               <>
                 <p className="mt-1 font-semibold text-slate-900">{match.referee_summary.referee_name}</p>
-                {match.referee_summary.profile_available ? (
+                {match.referee_summary.season_profile ? (
+                  <p className="mt-1 text-slate-600">
+                    {match.referee_summary.season_profile.label}:{' '}
+                    {match.referee_summary.season_profile.matches_count ?? '—'} partite,{' '}
+                    {match.referee_summary.season_profile.avg_yellow_cards?.toFixed(1) ?? '—'} gialli,{' '}
+                    {match.referee_summary.season_profile.avg_red_cards?.toFixed(2) ?? '—'} rossi
+                    {match.referee_summary.season_profile.severity_label ? (
+                      <span className="capitalize">
+                        {' '}
+                        · {match.referee_summary.season_profile.severity_label}
+                      </span>
+                    ) : null}
+                  </p>
+                ) : match.referee_summary.profile_available ? (
                   <p className="mt-1 text-slate-600">
                     Media gialli {match.referee_summary.avg_yellow_cards?.toFixed(1) ?? '—'} · rossi{' '}
                     {match.referee_summary.avg_red_cards?.toFixed(2) ?? '—'} · severità{' '}
@@ -133,6 +146,31 @@ export function MatchCard({
                     {match.referee_summary.message ?? 'Profilo severità non in cache'}
                   </p>
                 )}
+                {match.referee_summary.home_team_context?.available &&
+                (match.referee_summary.home_team_context.matches_count ?? 0) > 0 ? (
+                  <p className="mt-1 text-[10px] text-slate-600">
+                    {match.home_team.name} con arbitro: {match.referee_summary.home_team_context.matches_count}{' '}
+                    partite, {match.referee_summary.home_team_context.avg_yellow_cards?.toFixed(1)} gialli/partita
+                  </p>
+                ) : null}
+                {match.referee_summary.away_team_context?.available &&
+                (match.referee_summary.away_team_context.matches_count ?? 0) > 0 ? (
+                  <p className="mt-1 text-[10px] text-slate-600">
+                    {match.away_team.name} con arbitro: {match.referee_summary.away_team_context.matches_count}{' '}
+                    partite, {match.referee_summary.away_team_context.avg_yellow_cards?.toFixed(1)} gialli/partita
+                  </p>
+                ) : null}
+                {match.referee_summary.direct_h2h_context?.available &&
+                (match.referee_summary.direct_h2h_context.matches_count ?? 0) > 0 ? (
+                  <p className="mt-1 text-[10px] text-slate-600">
+                    Precedenti diretti: {match.referee_summary.direct_h2h_context.matches_count} partite
+                  </p>
+                ) : null}
+                {match.referee_summary.season_profile?.coverage_note ? (
+                  <p className="mt-1 text-[10px] text-amber-800">
+                    {match.referee_summary.season_profile.coverage_note}
+                  </p>
+                ) : null}
               </>
             )}
           </div>

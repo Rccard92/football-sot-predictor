@@ -7,11 +7,12 @@ from app.core.referee_severity_constants import (
     SEVERITY_PERMISSIVE,
     SEVERITY_SEVERE,
 )
-from app.models.referee_season_profile import SAMPLE_QUALITY_HIGH, SAMPLE_QUALITY_LOW
 from app.services.referee_severity_service import (
+    _resolve_data_source,
     classify_severity,
     sample_quality_from_count,
 )
+from app.models.referee_fixture_card_summary import CARD_SOURCE_DB_TEAM_STATS, CARD_SOURCE_EVENTS
 
 
 def test_classify_severity_permissive():
@@ -35,6 +36,12 @@ def test_classify_severity_red_note():
 
 
 def test_sample_quality_thresholds():
-    assert sample_quality_from_count(3) == SAMPLE_QUALITY_LOW
+    assert sample_quality_from_count(3) == "low"
     assert sample_quality_from_count(10) == "medium"
-    assert sample_quality_from_count(15) == SAMPLE_QUALITY_HIGH
+    assert sample_quality_from_count(15) == "high"
+
+
+def test_resolve_data_source():
+    assert _resolve_data_source({CARD_SOURCE_DB_TEAM_STATS}) == "db_only"
+    assert _resolve_data_source({CARD_SOURCE_EVENTS}) == "api_sports_fetched"
+    assert _resolve_data_source({CARD_SOURCE_DB_TEAM_STATS, CARD_SOURCE_EVENTS}) == "mixed"

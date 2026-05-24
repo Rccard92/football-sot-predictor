@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.16.0',
+    date: '2026-05-19',
+    title: 'Profilo arbitro avanzato',
+    type: 'minor',
+    summary:
+      'Potenziata la discovery arbitri con profili per stagione, storico recente e precedenti con le squadre del match.',
+    highlights: [
+      'Chiarita la fonte dati del profilo severità (DB, API o mista).',
+      'Aggiunto import storico arbitro per stagione (click manuale).',
+      'Aggiunta analisi arbitro con squadra casa/trasferta e precedenti diretti.',
+      'Migliorata normalizzazione nomi arbitro (iniziali e ordine).',
+      'Cartellini da events API con fallback statistics.',
+      'Nessun impatto sul modello SOT v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.15.0',
     date: '2026-05-19',
     title: 'Discovery arbitri e severità',

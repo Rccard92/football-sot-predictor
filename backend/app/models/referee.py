@@ -29,3 +29,4 @@ class Referee(Base, TimestampMixin):
 
     fixture_assignments = relationship("FixtureReferee", back_populates="referee")
     season_profiles = relationship("RefereeSeasonProfile", back_populates="referee")
+    fixture_card_summaries = relationship("RefereeFixtureCardSummary", back_populates="referee")

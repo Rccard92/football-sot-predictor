@@ -1,0 +1,23 @@
+[
+  {
+    "time": {"elapsed": 12},
+    "team": {"id": 10, "name": "Inter"},
+    "player": {"name": "Player A"},
+    "type": "Yellow Card",
+    "detail": "Foul"
+  },
+  {
+    "time": {"elapsed": 45},
+    "team": {"id": 20, "name": "Milan"},
+    "player": {"name": "Player B"},
+    "type": "Yellow Card",
+    "detail": "Foul"
+  },
+  {
+    "time": {"elapsed": 78},
+    "team": {"id": 10, "name": "Inter"},
+    "player": {"name": "Player C"},
+    "type": "Red Card",
+    "detail": "Violent Conduct"
+  }
+]
