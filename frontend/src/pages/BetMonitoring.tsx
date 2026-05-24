@@ -16,6 +16,10 @@ import {
   showMonitoringStatsDebug,
 } from '../utils/monitoring'
 
+const AUTO_REFRESH_COOLDOWN_MS = 120_000
+
+type RefreshScope = 'all' | 'live' | 'unfinished' | 'unfinished_or_recent'
+
 const STATUS_LABELS: Record<string, string> = {
   pending: 'In attesa',
   live: 'Live',
@@ -170,8 +174,12 @@ export function BetMonitoring() {
   const [createBusy, setCreateBusy] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [lastResultsRefreshAt, setLastResultsRefreshAt] = useState<string | null>(null)
+  const [autoRefreshStatus, setAutoRefreshStatus] = useState<string | null>(null)
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null)
   const [statsDebugByPickId, setStatsDebugByPickId] = useState<Record<number, StatsDebugEntry>>({})
   const refreshBusyRef = useRef(false)
+  const lastAutoRefreshAtRef = useRef(0)
+  const initialRefreshDoneRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -192,15 +200,32 @@ export function BetMonitoring() {
   }, [load])
 
   const runRefreshResults = useCallback(
-    async (scope: 'all' | 'live' | 'unfinished' = 'all') => {
+    async (
+      scope: RefreshScope = 'all',
+      opts?: { force?: boolean; isAuto?: boolean },
+    ) => {
       if (refreshBusyRef.current) return
+      const isManualAll = scope === 'all' && !opts?.isAuto
       refreshBusyRef.current = true
       setRefreshBusy(true)
-      if (scope === 'all') setActionMsg(null)
+      if (isManualAll) {
+        setActionMsg(null)
+        setRefreshWarning(null)
+      }
+      if (opts?.isAuto) {
+        setAutoRefreshStatus('Aggiornamento risultati in corso…')
+      }
       try {
-        const out = await postRefreshTrackedPickResults(DEFAULT_SEASON, { scope }, { timeoutMs: 300_000 })
+        const out = await postRefreshTrackedPickResults(
+          DEFAULT_SEASON,
+          { scope, force: opts?.force },
+          { timeoutMs: 300_000 },
+        )
         if (out.last_refreshed_at) {
           setLastResultsRefreshAt(out.last_refreshed_at)
+        }
+        if (opts?.isAuto) {
+          lastAutoRefreshAtRef.current = Date.now()
         }
         if (out.stats_debug?.length) {
           setStatsDebugByPickId((prev) => {
@@ -211,24 +236,59 @@ export function BetMonitoring() {
             return next
           })
         }
-        if (scope === 'all') {
+        if (isManualAll) {
           setActionMsg(
             `Aggiornate ${out.picks_updated} giocate su ${out.picks_checked} controllate` +
               (out.errors?.length ? ` · ${out.errors.length} errori` : ''),
           )
+        } else if (opts?.isAuto && out.errors?.length) {
+          setRefreshWarning(
+            `Aggiornamento automatico: ${out.errors.length} errori (alcune giocate potrebbero non essere aggiornate).`,
+          )
         }
         await load()
       } catch (e) {
-        if (scope === 'all') {
+        if (isManualAll) {
           setActionMsg(e instanceof Error ? e.message : String(e))
+        } else if (opts?.isAuto) {
+          setRefreshWarning(e instanceof Error ? e.message : String(e))
         }
       } finally {
         refreshBusyRef.current = false
         setRefreshBusy(false)
+        if (opts?.isAuto) {
+          setAutoRefreshStatus(null)
+        }
       }
     },
     [load],
   )
+
+  const runAutoRefreshIfAllowed = useCallback(() => {
+    if (refreshBusyRef.current) return
+    const now = Date.now()
+    if (now - lastAutoRefreshAtRef.current < AUTO_REFRESH_COOLDOWN_MS) return
+    void runRefreshResults('unfinished_or_recent', { isAuto: true })
+  }, [runRefreshResults])
+
+  useEffect(() => {
+    if (initialRefreshDoneRef.current) return
+    initialRefreshDoneRef.current = true
+    void runAutoRefreshIfAllowed()
+  }, [runAutoRefreshIfAllowed])
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      const lastAt = lastResultsRefreshAt
+        ? new Date(lastResultsRefreshAt).getTime()
+        : lastAutoRefreshAtRef.current
+      if (Date.now() - lastAt < AUTO_REFRESH_COOLDOWN_MS) return
+      runAutoRefreshIfAllowed()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [lastResultsRefreshAt, runAutoRefreshIfAllowed])
 
   useEffect(() => {
     const hasLive = rows.some(isLiveFixture)
@@ -237,7 +297,7 @@ export function BetMonitoring() {
     }
     const id = window.setInterval(() => {
       if (document.visibilityState === 'hidden' || refreshBusyRef.current) return
-      void runRefreshResults('live')
+      void runRefreshResults('live', { isAuto: true })
     }, LIVE_MONITOR_REFRESH_MS)
     return () => window.clearInterval(id)
   }, [rows, runRefreshResults])
@@ -283,7 +343,7 @@ export function BetMonitoring() {
           {lastResultsRefreshAt ? (
             <p className="mt-1 text-xs text-slate-500">
               Ultimo aggiornamento risultati: {formatLastRefreshed(lastResultsRefreshAt)}
-              {hasLiveRows ? ' · auto-refresh ogni 5 min (partite live)' : ''}
+              {hasLiveRows ? ' · auto-refresh ogni 5 min per partite live' : ''}
             </p>
           ) : null}
         </div>
@@ -304,7 +364,7 @@ export function BetMonitoring() {
           <button
             type="button"
             disabled={refreshBusy || !hasPicks}
-            onClick={() => void runRefreshResults('all')}
+            onClick={() => void runRefreshResults('all', { force: true })}
             title={
               hasPicks
                 ? 'Recupera score e SOT da API-Sports'
@@ -317,6 +377,10 @@ export function BetMonitoring() {
         </div>
       </div>
 
+      {autoRefreshStatus ? (
+        <p className="text-sm text-indigo-700">{autoRefreshStatus}</p>
+      ) : null}
+      {refreshWarning ? <p className="text-sm text-amber-700">{refreshWarning}</p> : null}
       {actionMsg ? <p className="text-sm text-slate-700">{actionMsg}</p> : null}
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
 

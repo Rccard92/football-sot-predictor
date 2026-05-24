@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from sqlalchemy import select
@@ -33,7 +33,12 @@ logger = logging.getLogger(__name__)
 
 LIVE_STATUSES = frozenset({"1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INT"})
 VOID_STATUSES = frozenset({"CANC", "ABD", "AWD", "WO"})
-RefreshScope = Literal["all", "live", "unfinished"]
+RefreshScope = Literal["all", "live", "unfinished", "unfinished_or_recent"]
+
+STALE_LIVE_KICKOFF_HOURS = 3
+STALE_LIVE_UPDATED_MINUTES = 30
+RECENT_FT_SKIP_MINUTES = 30
+RECENT_KICKOFF_HOURS = 48
 
 
 def _resolve_pick_outcome(total_sot: float | None, line_value: float | None) -> str | None:
@@ -155,15 +160,102 @@ def _compute_summary(picks: list[TrackedBettingPick]) -> dict[str, Any]:
     }
 
 
-def _pick_in_scope(pick: TrackedBettingPick, fx: Fixture | None, scope: RefreshScope) -> bool:
+def _fixture_status_for_pick(pick: TrackedBettingPick, fx: Fixture | None) -> str:
+    return (pick.fixture_status or (fx.status if fx else "") or "").strip().upper()
+
+
+def _kickoff_utc(fx: Fixture | None) -> datetime | None:
+    if fx is None or fx.kickoff_at is None:
+        return None
+    ko = fx.kickoff_at
+    if ko.tzinfo is None:
+        return ko.replace(tzinfo=timezone.utc)
+    return ko.astimezone(timezone.utc)
+
+
+def _is_stale_live(pick: TrackedBettingPick, fx: Fixture | None, now: datetime) -> bool:
+    fs = _fixture_status_for_pick(pick, fx)
+    if pick.status != STATUS_LIVE and fs not in LIVE_STATUSES:
+        return False
+    ko = _kickoff_utc(fx)
+    if ko is not None and ko < now - timedelta(hours=STALE_LIVE_KICKOFF_HOURS):
+        return True
+    updated = pick.updated_at
+    if updated is not None:
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        else:
+            updated = updated.astimezone(timezone.utc)
+        if updated < now - timedelta(minutes=STALE_LIVE_UPDATED_MINUTES):
+            return True
+    return False
+
+
+def _is_recent_ft_closed(pick: TrackedBettingPick, fx: Fixture | None, now: datetime) -> bool:
+    if pick.status not in (STATUS_WON, STATUS_LOST):
+        return False
+    fs = _fixture_status_for_pick(pick, fx)
+    if fs not in FINISHED_STATUSES:
+        return False
+    updated = pick.updated_at
+    if updated is None:
+        return False
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    else:
+        updated = updated.astimezone(timezone.utc)
+    return updated >= now - timedelta(minutes=RECENT_FT_SKIP_MINUTES)
+
+
+def _should_refresh_pick(
+    pick: TrackedBettingPick,
+    fx: Fixture | None,
+    scope: RefreshScope,
+    *,
+    force: bool = False,
+    now: datetime | None = None,
+) -> bool:
     if scope == "all":
         return True
-    fs = (pick.fixture_status or (fx.status if fx else "") or "").strip().upper()
+    now = now or datetime.now(timezone.utc)
+    fs = _fixture_status_for_pick(pick, fx)
+
+    if not force and scope == "unfinished_or_recent" and _is_recent_ft_closed(pick, fx, now):
+        return False
+
     if scope == "live":
         return pick.status == STATUS_LIVE or fs in LIVE_STATUSES
+
     if scope == "unfinished":
         return fs not in FINISHED_STATUSES
+
+    if scope == "unfinished_or_recent":
+        if _is_stale_live(pick, fx, now):
+            return True
+        if pick.status in (STATUS_PENDING, STATUS_LIVE, STATUS_UNAVAILABLE):
+            return True
+        if fs not in FINISHED_STATUSES:
+            return True
+        ko = _kickoff_utc(fx)
+        if ko is not None and ko >= now - timedelta(hours=RECENT_KICKOFF_HOURS):
+            if fs not in FINISHED_STATUSES:
+                return True
+            if pick.status in (STATUS_PENDING, STATUS_LIVE) and ko < now:
+                return True
+        return False
+
     return True
+
+
+def _pick_in_scope(
+    pick: TrackedBettingPick,
+    fx: Fixture | None,
+    scope: RefreshScope,
+    *,
+    force: bool = False,
+    now: datetime | None = None,
+) -> bool:
+    return _should_refresh_pick(pick, fx, scope, force=force, now=now)
 
 
 class TrackedPickResultsRefreshService:
@@ -266,6 +358,7 @@ class TrackedPickResultsRefreshService:
         season_year: int,
         *,
         scope: RefreshScope = "all",
+        force: bool = False,
     ) -> dict[str, Any]:
         ingest = IngestionService()
         season_row = ingest._serie_a_season_row(db, season_year)  # noqa: SLF001
@@ -295,7 +388,12 @@ class TrackedPickResultsRefreshService:
             else {}
         )
 
-        picks = [p for p in all_picks if _pick_in_scope(p, fixtures_map.get(int(p.fixture_id)), scope)]
+        now = datetime.now(timezone.utc)
+        picks = [
+            p
+            for p in all_picks
+            if _pick_in_scope(p, fixtures_map.get(int(p.fixture_id)), scope, force=force, now=now)
+        ]
         updated = 0
         errors: list[dict[str, Any]] = []
         stats_debug: list[dict[str, Any]] = []
@@ -408,6 +506,7 @@ class TrackedPickResultsRefreshService:
             "status": "success",
             "season": season_year,
             "scope": scope,
+            "force": force,
             "last_refreshed_at": last_refreshed_at,
             "picks_checked": len(picks),
             "picks_updated": updated,

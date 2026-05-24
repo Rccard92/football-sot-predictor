@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.12.3',
+    date: '2026-05-19',
+    title: 'Refresh automatico Monitoraggio Giocate',
+    type: 'patch',
+    summary:
+      'All’apertura di Monitoraggio Giocate i risultati si aggiornano automaticamente da API-Sports per partite non concluse o con dati live obsoleti.',
+    highlights: [
+      'Refresh automatico all’apertura della pagina (scope unfinished_or_recent).',
+      'Riconciliazione partite ancora “live” nel DB dopo ore dal kickoff.',
+      'Cooldown 2 minuti per evitare refresh ripetuti (Strict Mode / cambio tab).',
+      'Pulsante «Aggiorna risultati» con force per aggiornare tutto.',
+      'Auto-refresh ogni 5 min solo per partite realmente live.',
+      'Nessuna modifica a modelli v2.0, betting advice o SportAPI formazioni.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.12.2',
     date: '2026-05-19',
     title: 'Sidebar fissa durante lo scroll',

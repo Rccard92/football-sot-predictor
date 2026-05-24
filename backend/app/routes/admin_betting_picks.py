@@ -63,7 +63,12 @@ def refresh_tracked_pick_results(
     _require_api_football_key()
     scope = body.scope
     try:
-        out = TrackedPickResultsRefreshService().refresh_results(db, int(season), scope=scope)
+        out = TrackedPickResultsRefreshService().refresh_results(
+            db,
+            int(season),
+            scope=scope,
+            force=bool(body.force),
+        )
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("refresh tracked results DB error")
         raise HTTPException(status_code=503, detail="Database error") from exc

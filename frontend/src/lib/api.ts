@@ -688,7 +688,8 @@ export type StatsDebugEntry = {
 export type TrackedPicksRefreshResultsSummary = {
   status: string
   season: number
-  scope?: 'all' | 'live' | 'unfinished'
+  scope?: 'all' | 'live' | 'unfinished' | 'unfinished_or_recent'
+  force?: boolean
   last_refreshed_at?: string
   picks_checked: number
   picks_updated: number
@@ -752,7 +753,7 @@ export async function getTrackedBettingPicks(season: number): Promise<TrackedBet
 
 export async function postRefreshTrackedPickResults(
   season: number,
-  body?: { scope?: 'all' | 'live' | 'unfinished' },
+  body?: { scope?: 'all' | 'live' | 'unfinished' | 'unfinished_or_recent'; force?: boolean },
   opts?: AdminRequestOpts,
 ): Promise<TrackedPicksRefreshResultsSummary> {
   return adminPostJson<TrackedPicksRefreshResultsSummary>(

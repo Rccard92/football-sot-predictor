@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.services.tracked_pick_results_refresh_service import (
@@ -9,6 +10,7 @@ from app.services.tracked_pick_results_refresh_service import (
     _live_over_hint,
     _pick_in_scope,
     _resolve_pick_outcome,
+    _should_refresh_pick,
     _sot_display_and_reason,
 )
 from app.models.tracked_betting_pick import STATUS_LIVE, STATUS_LOST, STATUS_PENDING, STATUS_WON
@@ -69,3 +71,39 @@ def test_pick_in_scope_live():
     assert _pick_in_scope(pick_ft, SimpleNamespace(status="FT"), "unfinished") is False
     pick_live_status = SimpleNamespace(status=STATUS_LIVE, fixture_status="NS")
     assert _pick_in_scope(pick_live_status, SimpleNamespace(status="NS"), "live") is True
+
+
+def test_unfinished_or_recent_stale_live():
+    now = datetime(2026, 5, 19, 20, 0, tzinfo=timezone.utc)
+    pick = SimpleNamespace(
+        status=STATUS_LIVE,
+        fixture_status="1H",
+        updated_at=now - timedelta(hours=1),
+    )
+    fx = SimpleNamespace(
+        status="1H",
+        kickoff_at=now - timedelta(hours=4),
+    )
+    assert _should_refresh_pick(pick, fx, "unfinished_or_recent", now=now) is True
+
+
+def test_unfinished_or_recent_skips_recent_ft_without_force():
+    now = datetime(2026, 5, 19, 20, 0, tzinfo=timezone.utc)
+    pick = SimpleNamespace(
+        status=STATUS_WON,
+        fixture_status="FT",
+        updated_at=now - timedelta(minutes=10),
+    )
+    fx = SimpleNamespace(status="FT", kickoff_at=now - timedelta(days=2))
+    assert _should_refresh_pick(pick, fx, "unfinished_or_recent", now=now) is False
+
+
+def test_unfinished_or_recent_force_includes_recent_ft():
+    now = datetime(2026, 5, 19, 20, 0, tzinfo=timezone.utc)
+    pick = SimpleNamespace(
+        status=STATUS_WON,
+        fixture_status="FT",
+        updated_at=now - timedelta(minutes=10),
+    )
+    fx = SimpleNamespace(status="FT", kickoff_at=now - timedelta(days=2))
+    assert _should_refresh_pick(pick, fx, "all", force=True, now=now) is True
