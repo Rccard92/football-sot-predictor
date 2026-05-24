@@ -24,8 +24,20 @@ JOB_PATH = "/api/admin/jobs/pre-match-official-lineups/run"
 REQUEST_TIMEOUT_SEC = 120
 
 
+def normalize_backend_url(raw: str) -> str:
+    """Rimuove slash finale e aggiunge https:// se manca il protocollo."""
+    url = raw.strip().rstrip("/")
+    if not url:
+        return ""
+    lower = url.lower()
+    if not (lower.startswith("http://") or lower.startswith("https://")):
+        url = f"https://{url}"
+    return url.rstrip("/")
+
+
 def main() -> int:
-    backend_url = (os.environ.get("BACKEND_URL") or "").strip().rstrip("/")
+    raw_backend_url = (os.environ.get("BACKEND_URL") or "").strip()
+    backend_url = normalize_backend_url(raw_backend_url)
     cron_secret = (os.environ.get("CRON_SECRET") or "").strip()
 
     if not backend_url:
@@ -36,6 +48,8 @@ def main() -> int:
         return 1
 
     url = f"{backend_url}{JOB_PATH}"
+    print(f"BACKEND_URL normalizzato: {backend_url}")
+    print(f"endpoint: {url}")
     body = json.dumps(
         {
             "minutes_before": 30,
