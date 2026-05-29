@@ -7,8 +7,13 @@ import {
   ingestCompetitionPlayerStats,
   ingestCompetitionTeamStats,
   refreshCompetitionNextRound,
-} from '../lib/api'
-import { useCompetition } from '../contexts/CompetitionContext'
+} from '../../lib/api'
+import { useCompetition } from '../../contexts/CompetitionContext'
+
+type IngestionAction = {
+  label: string
+  fn: () => Promise<Record<string, unknown>>
+}
 
 export function CompetitionsAdminPanel() {
   const { selectedCompetition, selectedCompetitionId, refreshCompetitions } = useCompetition()
@@ -131,19 +136,27 @@ export function CompetitionsAdminPanel() {
 
       {selectedCompetitionId != null ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          {[
-            ['Bootstrap', () => bootstrapCompetition(selectedCompetitionId, dryRun)],
-            ['Team stats', () => ingestCompetitionTeamStats(selectedCompetitionId, dryRun)],
-            ['Player stats', () => ingestCompetitionPlayerStats(selectedCompetitionId, dryRun)],
-            ['Profili giocatori', () => buildCompetitionPlayerProfiles(selectedCompetitionId, dryRun)],
-            ['Prossima giornata', () => refreshCompetitionNextRound(selectedCompetitionId, dryRun)],
-          ].map(([label, fn]) => (
+          {(
+            [
+              { label: 'Bootstrap', fn: () => bootstrapCompetition(selectedCompetitionId, dryRun) },
+              { label: 'Team stats', fn: () => ingestCompetitionTeamStats(selectedCompetitionId, dryRun) },
+              { label: 'Player stats', fn: () => ingestCompetitionPlayerStats(selectedCompetitionId, dryRun) },
+              {
+                label: 'Profili giocatori',
+                fn: () => buildCompetitionPlayerProfiles(selectedCompetitionId, dryRun),
+              },
+              {
+                label: 'Prossima giornata',
+                fn: () => refreshCompetitionNextRound(selectedCompetitionId, dryRun),
+              },
+            ] satisfies IngestionAction[]
+          ).map(({ label, fn }) => (
             <button
-              key={String(label)}
+              key={label}
               type="button"
               className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm text-indigo-900 disabled:opacity-50"
               disabled={!!busy}
-              onClick={() => void run(String(label), fn as () => Promise<Record<string, unknown>>)}
+              onClick={() => void run(label, fn)}
             >
               {label}
             </button>

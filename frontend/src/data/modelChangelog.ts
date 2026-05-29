@@ -12,6 +12,20 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.1',
+    date: '2026-05-29',
+    title: 'Fix build pannello campionati',
+    type: 'patch',
+    summary:
+      'Corretto il build frontend del nuovo pannello Competitions Admin sistemando import e valori renderizzati.',
+    highlights: [
+      'Import corretti verso lib/api e CompetitionContext.',
+      'Fix tipo ReactNode sui pulsanti ingestion.',
+      'Nessun impatto su backend o modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.0',
     date: '2026-05-29',
     title: 'Architettura multi-campionato',
