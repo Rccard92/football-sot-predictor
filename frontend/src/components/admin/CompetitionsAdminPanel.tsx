@@ -9,6 +9,7 @@ import {
   ingestCompetitionTeamStats,
   refreshCompetitionNextRound,
   DEFAULT_SEASON,
+  type CompetitionDiscoverCandidate,
 } from '../../lib/api'
 import { useCompetition } from '../../contexts/CompetitionContext'
 
@@ -17,11 +18,80 @@ type IngestionAction = {
   fn: () => Promise<Record<string, unknown>>
 }
 
-type DiscoverCandidate = {
-  provider_league_id: number
-  name: string
-  country: string | null
-  season: number
+function DiscoverCandidateCard({
+  candidate,
+  selected,
+  onSelect,
+}: {
+  candidate: CompetitionDiscoverCandidate
+  selected: boolean
+  onSelect: () => void
+}) {
+  return (
+    <div
+      className={`rounded-lg border px-3 py-2 text-sm ${
+        selected ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white'
+      }`}
+    >
+      <div className="flex flex-wrap items-start gap-3">
+        {candidate.logo ? (
+          <img
+            src={candidate.logo}
+            alt=""
+            className="h-8 w-8 rounded object-contain"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-slate-900">{candidate.name}</p>
+          <p className="text-xs text-slate-600">
+            id {candidate.provider_league_id} · {candidate.country ?? '?'} · {candidate.season}
+            {candidate.season_current ? ' · current' : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-800 hover:bg-slate-50"
+          onClick={onSelect}
+        >
+          Seleziona candidato
+        </button>
+      </div>
+      <details className="mt-2">
+        <summary className="cursor-pointer text-xs text-slate-500">Raw payload</summary>
+        <pre className="mt-1 max-h-40 overflow-auto rounded bg-slate-50 p-2 text-[10px]">
+          {JSON.stringify(candidate.raw_payload ?? candidate, null, 2)}
+        </pre>
+      </details>
+    </div>
+  )
+}
+
+function DiscoverCandidateList({
+  title,
+  candidates,
+  selectedCandidateId,
+  onSelect,
+}: {
+  title: string
+  candidates: CompetitionDiscoverCandidate[]
+  selectedCandidateId: number | null
+  onSelect: (id: number) => void
+}) {
+  if (candidates.length === 0) return null
+
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      {candidates.map((candidate) => (
+        <DiscoverCandidateCard
+          key={candidate.provider_league_id}
+          candidate={candidate}
+          selected={selectedCandidateId === candidate.provider_league_id}
+          onSelect={() => onSelect(candidate.provider_league_id)}
+        />
+      ))}
+    </div>
+  )
 }
 
 export function CompetitionsAdminPanel() {
@@ -34,16 +104,21 @@ export function CompetitionsAdminPanel() {
   const [country, setCountry] = useState('Brazil')
   const [nameQuery, setNameQuery] = useState('Serie A')
   const [season, setSeason] = useState(2026)
-  const [candidates, setCandidates] = useState<DiscoverCandidate[]>([])
+  const [candidates, setCandidates] = useState<CompetitionDiscoverCandidate[]>([])
+  const [otherCandidates, setOtherCandidates] = useState<CompetitionDiscoverCandidate[]>([])
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null)
   const [discoverMessage, setDiscoverMessage] = useState<string | null>(null)
+  const [apiQuery, setApiQuery] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [log, setLog] = useState<string | null>(null)
   const [dryRun, setDryRun] = useState(true)
 
   const selectedCandidate = useMemo(
-    () => candidates.find((c) => c.provider_league_id === selectedCandidateId) ?? null,
-    [candidates, selectedCandidateId],
+    () =>
+      [...candidates, ...otherCandidates].find(
+        (c) => c.provider_league_id === selectedCandidateId,
+      ) ?? null,
+    [candidates, otherCandidates, selectedCandidateId],
   )
 
   const run = async (label: string, fn: () => Promise<Record<string, unknown>>) => {
@@ -114,6 +189,7 @@ export function CompetitionsAdminPanel() {
               className="mt-1 w-full rounded border border-slate-200 px-2 py-1"
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
+              placeholder="Serie A, Brasileirão…"
             />
           </label>
           <label className="text-sm">
@@ -135,11 +211,12 @@ export function CompetitionsAdminPanel() {
             onClick={() =>
               void run('discover', async () => {
                 const res = await discoverCompetitions({ country, name_query: nameQuery, season })
-                const list = (res.candidates ?? []) as DiscoverCandidate[]
-                setCandidates(list)
-                setSelectedCandidateId(list[0]?.provider_league_id ?? null)
+                setCandidates(res.candidates ?? [])
+                setOtherCandidates(res.other_candidates ?? [])
+                setSelectedCandidateId(null)
                 setDiscoverMessage(res.message ?? null)
-                return res as Record<string, unknown>
+                setApiQuery(res.api_query ?? null)
+                return res as unknown as Record<string, unknown>
               })
             }
           >
@@ -179,33 +256,31 @@ export function CompetitionsAdminPanel() {
           <p className="mt-2 text-xs text-amber-700">
             Prima esegui Discovery API-Sports e seleziona una lega candidata.
           </p>
+        ) : (
+          <p className="mt-2 text-xs text-indigo-700">
+            Candidato selezionato: {selectedCandidate.name} (id {selectedCandidate.provider_league_id})
+          </p>
+        )}
+
+        {apiQuery ? (
+          <p className="mt-2 text-xs text-slate-500">Query API: GET /leagues?{apiQuery}</p>
         ) : null}
 
         {discoverMessage ? <p className="mt-2 text-xs text-slate-600">{discoverMessage}</p> : null}
 
-        {candidates.length > 0 ? (
-          <div className="mt-3 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Leghe candidate
-            </p>
-            {candidates.map((c) => (
-              <label
-                key={c.provider_league_id}
-                className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              >
-                <input
-                  type="radio"
-                  name="discover-candidate"
-                  checked={selectedCandidateId === c.provider_league_id}
-                  onChange={() => setSelectedCandidateId(c.provider_league_id)}
-                />
-                <span>
-                  {c.name} · {c.country ?? '?'} · id {c.provider_league_id} · {c.season}
-                </span>
-              </label>
-            ))}
-          </div>
-        ) : null}
+        <DiscoverCandidateList
+          title="Candidati principali"
+          candidates={candidates}
+          selectedCandidateId={selectedCandidateId}
+          onSelect={setSelectedCandidateId}
+        />
+
+        <DiscoverCandidateList
+          title="Altri risultati del paese"
+          candidates={otherCandidates}
+          selectedCandidateId={selectedCandidateId}
+          onSelect={setSelectedCandidateId}
+        />
       </div>
 
       {selectedCompetitionId != null ? (

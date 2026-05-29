@@ -10,6 +10,13 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import Competition, League, Season
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.competition_discover_helpers import (
+    NO_MATCH_MESSAGE,
+    build_leagues_query_params,
+    filter_discover_candidates,
+    format_api_query,
+    parse_league_response_items,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,44 +99,39 @@ class CompetitionService:
         season: int,
     ) -> dict[str, Any]:
         _ = db
+        params = build_leagues_query_params(country, name_query, season)
+        api_query = format_api_query(params)
+
         try:
-            body = self._client.get(
-                "leagues",
-                {"country": country.strip(), "search": name_query.strip()},
-            )
+            body = self._client.get("leagues", params)
         except ApiFootballError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-        candidates: list[dict[str, Any]] = []
-        for item in body.get("response") or []:
-            lg = item.get("league") or {}
-            seasons = item.get("seasons") or []
-            has_season = any(isinstance(s, dict) and s.get("year") == season for s in seasons)
-            if not has_season:
-                continue
-            country_name = (item.get("country") or {}).get("name")
-            candidates.append(
-                {
-                    "provider_league_id": int(lg["id"]),
-                    "name": str(lg.get("name") or ""),
-                    "country": country_name,
-                    "season": season,
-                    "logo": lg.get("logo"),
-                    "raw_payload": item,
-                }
-            )
+        all_candidates = parse_league_response_items(list(body.get("response") or []), season)
+        candidates, other_candidates = filter_discover_candidates(
+            all_candidates,
+            country=country,
+            name_query=name_query,
+        )
 
         ambiguous = len(candidates) > 1
         message = None
-        if not candidates:
-            message = f"Nessuna lega trovata per country={country!r}, search={name_query!r}, season={season}"
+        if not all_candidates:
+            message = (
+                f"Nessuna lega trovata per country={country.strip()!r}, "
+                f"name_query={name_query.strip()!r}, season={season}"
+            )
+        elif not candidates and other_candidates:
+            message = NO_MATCH_MESSAGE
         elif ambiguous:
             message = "Più leghe candidate: selezionare manualmente prima di creare la competition"
 
         return {
             "candidates": candidates,
+            "other_candidates": other_candidates,
             "ambiguous": ambiguous,
             "message": message,
+            "api_query": api_query,
         }
 
     def create(self, db: Session, data: dict[str, Any]) -> Competition:

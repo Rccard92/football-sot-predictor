@@ -117,10 +117,10 @@ class ApiFootballClient:
         return merged
 
     def get_league(self, country: str, search: str, season: int) -> list[dict[str, Any]]:
-        return self.get_all_pages(
-            "leagues",
-            {"country": country, "search": search, "season": season},
-        )
+        from app.services.competition_discover_helpers import build_leagues_query_params
+
+        params = build_leagues_query_params(country, search, season)
+        return self.get_all_pages("leagues", params)
 
     def get_teams(self, league_id: int, season: int) -> list[dict[str, Any]]:
         """GET /teams (singola richiesta; l'API non accetta paginazione `page`)."""

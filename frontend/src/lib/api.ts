@@ -85,12 +85,30 @@ export async function getCompetitionDataHealth(competitionId: number): Promise<R
   return adminGetJson<Record<string, unknown>>(`/api/admin/data-health/competitions/${competitionId}`)
 }
 
+export type CompetitionDiscoverCandidate = {
+  provider_league_id: number
+  name: string
+  country: string | null
+  season: number
+  logo?: string | null
+  season_current?: boolean | null
+  raw_payload?: Record<string, unknown> | null
+}
+
+export type CompetitionDiscoverResponse = {
+  candidates: CompetitionDiscoverCandidate[]
+  other_candidates?: CompetitionDiscoverCandidate[]
+  ambiguous: boolean
+  message?: string | null
+  api_query?: string | null
+}
+
 export async function discoverCompetitions(body: {
   country: string
   name_query: string
   season: number
-}): Promise<{ candidates: Array<Record<string, unknown>>; ambiguous: boolean; message?: string }> {
-  return adminPostJson('/api/admin/competitions/discover', body)
+}): Promise<CompetitionDiscoverResponse> {
+  return adminPostJson<CompetitionDiscoverResponse>('/api/admin/competitions/discover', body)
 }
 
 export async function createCompetition(body: Record<string, unknown>): Promise<CompetitionSummary> {

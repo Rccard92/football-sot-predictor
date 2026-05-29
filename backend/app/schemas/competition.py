@@ -23,8 +23,8 @@ class CompetitionRead(BaseModel):
 
 
 class CompetitionDiscoverBody(BaseModel):
-    country: str
-    name_query: str
+    country: str = ""
+    name_query: str = ""
     season: int
 
 
@@ -34,13 +34,16 @@ class CompetitionDiscoverCandidate(BaseModel):
     country: str | None = None
     season: int
     logo: str | None = None
+    season_current: bool | None = None
     raw_payload: dict | None = None
 
 
 class CompetitionDiscoverResponse(BaseModel):
     candidates: list[CompetitionDiscoverCandidate]
+    other_candidates: list[CompetitionDiscoverCandidate] = []
     ambiguous: bool
     message: str | None = None
+    api_query: str | None = None
 
 
 class CompetitionCreateBody(BaseModel):

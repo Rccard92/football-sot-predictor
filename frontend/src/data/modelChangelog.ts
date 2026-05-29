@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.3',
+    date: '2026-05-29',
+    title: 'Fix discovery API-Sports campionati',
+    type: 'patch',
+    summary:
+      'Corretta la discovery leagues evitando l\'uso combinato di country e search e aggiungendo filtro locale per Brasileirão.',
+    highlights: [
+      'Rimossa combinazione non valida country + search.',
+      'Discovery Brasileirão basata su country + season.',
+      'Filtro locale per nome lega.',
+      'Mostrati candidati selezionabili prima della creazione.',
+      'Nessun impatto sul modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.2',
     date: '2026-05-29',
     title: 'Fix selettore campionato e backfill Serie A',
