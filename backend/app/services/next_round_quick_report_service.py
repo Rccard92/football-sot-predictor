@@ -376,6 +376,104 @@ def build_next_round_quick_report_payload(
     return payload, 200
 
 
+def _build_fixture_detail_response(
+    db: Session,
+    *,
+    payload: dict[str, Any],
+    code: int,
+    fixture_id: int,
+    season: int,
+    competition_id: int | None = None,
+    competition_name: str | None = None,
+) -> tuple[dict[str, Any], int]:
+    if code != 200:
+        return payload, code
+    matches = payload.get("matches") or []
+    match = next((m for m in matches if int(m.get("fixture_id", 0)) == int(fixture_id)), None)
+    if match is None:
+        err: dict[str, Any] = {
+            "status": "error",
+            "code": "prediction_not_found",
+            "message": f"Fixture {fixture_id}: prediction o dettaglio non disponibile.",
+            "fixture_id": int(fixture_id),
+            "step": "prediction_load",
+        }
+        if competition_id is not None:
+            err["competition_id"] = int(competition_id)
+        return err, 404
+
+    from app.services.referee_severity_service import build_referee_summary_for_fixture
+
+    referee_summary = build_referee_summary_for_fixture(db, int(fixture_id))
+    body: dict[str, Any] = {
+        "status": "success",
+        "season": int(season),
+        "match": {**match, "referee_summary": referee_summary},
+        "referee_summary": referee_summary,
+        "model_limitations": payload.get("model_limitations"),
+    }
+    if competition_id is not None:
+        body["competition_id"] = int(competition_id)
+        body["competition_name"] = competition_name
+    return body, 200
+
+
+def build_upcoming_fixture_detail_for_competition(
+    db: Session,
+    comp: Competition,
+    fixture_id: int,
+    *,
+    model_version: str | None = None,
+) -> tuple[dict[str, Any], int]:
+    """Dettaglio fixture scoped per competition (multi-campionato)."""
+    from app.services.prediction_readiness import build_upcoming_active_payload
+
+    fx = db.get(Fixture, int(fixture_id))
+    if fx is None:
+        return (
+            {
+                "status": "error",
+                "code": "fixture_not_found",
+                "message": f"Fixture {fixture_id} non trovata.",
+                "competition_id": int(comp.id),
+                "fixture_id": int(fixture_id),
+                "step": "fixture_validation",
+            },
+            404,
+        )
+    if int(fx.competition_id or 0) != int(comp.id):
+        return (
+            {
+                "status": "error",
+                "code": "fixture_competition_mismatch",
+                "message": f"Fixture {fixture_id} non appartiene alla competition {comp.id}.",
+                "competition_id": int(comp.id),
+                "fixture_id": int(fixture_id),
+                "step": "fixture_validation",
+            },
+            404,
+        )
+
+    payload, code = build_upcoming_active_payload(
+        db,
+        int(comp.season),
+        competition_id=int(comp.id),
+        fixture_ids=[int(fixture_id)],
+        limit=1,
+        only_next_round=False,
+        model_version=model_version,
+    )
+    return _build_fixture_detail_response(
+        db,
+        payload=payload,
+        code=code,
+        fixture_id=int(fixture_id),
+        season=int(comp.season),
+        competition_id=int(comp.id),
+        competition_name=comp.name,
+    )
+
+
 def build_upcoming_fixture_detail_payload(
     db: Session,
     season: int,
@@ -383,7 +481,7 @@ def build_upcoming_fixture_detail_payload(
     *,
     model_version: str | None = None,
 ) -> tuple[dict[str, Any], int]:
-    """Dettaglio completo di una fixture (stesso contratto riga upcoming-active)."""
+    """Dettaglio completo di una fixture (legacy Serie A per season)."""
     from app.services.prediction_readiness import build_upcoming_active_payload
 
     payload, code = build_upcoming_active_payload(
@@ -393,28 +491,10 @@ def build_upcoming_fixture_detail_payload(
         only_next_round=False,
         model_version=model_version,
     )
-    if code != 200:
-        return payload, code
-    matches = payload.get("matches") or []
-    match = next((m for m in matches if int(m.get("fixture_id", 0)) == int(fixture_id)), None)
-    if match is None:
-        return (
-            {
-                "status": "error",
-                "message": f"Fixture {fixture_id} non trovata tra le partite upcoming della stagione.",
-            },
-            404,
-        )
-    from app.services.referee_severity_service import build_referee_summary_for_fixture
-
-    referee_summary = build_referee_summary_for_fixture(db, int(fixture_id))
-    return (
-        {
-            "status": "success",
-            "season": int(season),
-            "match": {**match, "referee_summary": referee_summary},
-            "referee_summary": referee_summary,
-            "model_limitations": payload.get("model_limitations"),
-        },
-        200,
+    return _build_fixture_detail_response(
+        db,
+        payload=payload,
+        code=code,
+        fixture_id=int(fixture_id),
+        season=int(season),
     )

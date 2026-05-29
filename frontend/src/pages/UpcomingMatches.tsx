@@ -7,6 +7,7 @@ import {
   getNextRoundQuickReport,
   getNextRoundQuickReportForCompetition,
   getUpcomingFixtureDetail,
+  getUpcomingFixtureDetailForCompetition,
   resolveModelStatus,
   type ModelLimitations,
   type ModelStatusResponse,
@@ -130,7 +131,17 @@ export function UpcomingMatches() {
       setDetailError(null)
       const mv = selectedModel || status?.recommended_model_version || status?.active_model_version
       try {
-        const res = await getUpcomingFixtureDetail(season, fixtureId, { modelVersion: mv })
+        const res =
+          selectedCompetitionId != null
+            ? await getUpcomingFixtureDetailForCompetition(selectedCompetitionId, fixtureId, {
+                modelVersion: mv,
+              })
+            : await getUpcomingFixtureDetail(season, fixtureId, { modelVersion: mv })
+        if (res.status === 'error' || !res.match) {
+          setDetailError(res.message ?? 'Dettaglio partita non disponibile.')
+          setDetailMatch(null)
+          return
+        }
         setDetailMatch(res.match)
       } catch (e) {
         setDetailError(e instanceof Error ? e.message : String(e))
@@ -139,7 +150,7 @@ export function UpcomingMatches() {
         setDetailLoading(false)
       }
     },
-    [selectedModel, status],
+    [selectedCompetitionId, season, selectedModel, status],
   )
 
   const openDetail = useCallback(

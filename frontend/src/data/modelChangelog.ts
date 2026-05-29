@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.12',
+    date: '2026-05-29',
+    title: 'Fix audit dettaglio multi-campionato',
+    type: 'patch',
+    summary:
+      'Corretto il dettaglio/audit partita per usare endpoint scoped per competition_id invece degli endpoint legacy Serie A.',
+    highlights: [
+      'Nuovo endpoint dettaglio prediction multi-campionato.',
+      'Fix apertura audit Brasileirão.',
+      'Rimossa chiamata errata a /serie-a/2026.',
+      'Supporto lineups SportAPI nel dettaglio Brasileirão.',
+      'Guardrail anti-mixing tra Serie A e Brasileirão.',
+      'Nessuna modifica alla formula v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.11',
     date: '2026-05-29',
     title: 'Fix stato formazioni SportAPI (Prossima giornata)',

@@ -2438,8 +2438,27 @@ export async function getNextRoundQuickReport(
 export type UpcomingFixtureDetailResponse = {
   status: string
   season: number
-  match: UpcomingActiveMatchRow
+  competition_id?: number
+  competition_name?: string
+  code?: string
+  step?: string
+  message?: string
+  fixture_id?: number
+  match?: UpcomingActiveMatchRow
   model_limitations?: ModelLimitations
+  referee_summary?: unknown
+}
+
+export async function getUpcomingFixtureDetailForCompetition(
+  competitionId: number,
+  fixtureId: number,
+  opts?: { modelVersion?: string | null },
+): Promise<UpcomingFixtureDetailResponse> {
+  const p = new URLSearchParams()
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
+  const path = `/api/competitions/${competitionId}/predictions/sot/upcoming-fixture/${fixtureId}/detail${q ? `?${q}` : ''}`
+  return requestJson<UpcomingFixtureDetailResponse>(path)
 }
 
 export async function getUpcomingFixtureDetail(

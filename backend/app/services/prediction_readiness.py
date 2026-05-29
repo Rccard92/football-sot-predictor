@@ -26,6 +26,7 @@ from app.core.constants import (
 )
 from app.services.sot_model_registry import get_model_display, user_visible_model_versions
 from app.models import (
+    Competition,
     Fixture,
     FixtureLineup,
     FixtureProviderMapping,
@@ -541,34 +542,104 @@ def build_upcoming_active_payload(
     limit: int = 20,
     only_next_round: bool = True,
     model_version: str | None = None,
+    competition_id: int | None = None,
+    fixture_ids: list[int] | None = None,
 ) -> tuple[dict[str, Any], int]:
     """
     Stesso contratto della GET upcoming-active (corpo JSON). Ritorna (dict, http_status).
+    Con competition_id: contesto multi-campionato (no _season_row legacy Serie A).
     """
     preferred = preferred_model_versions()
+    competition_name: str | None = None
 
-    svc = SotPredictionService()
     try:
-        _league, season_row = svc._season_row(db, season)  # type: ignore[attr-defined]
+        if competition_id is not None:
+            comp = db.get(Competition, int(competition_id))
+            if comp is None:
+                return (
+                    {
+                        "status": "error",
+                        "code": "competition_not_found",
+                        "message": f"Competition {competition_id} non trovata.",
+                        "competition_id": int(competition_id),
+                        "step": "load_competition",
+                    },
+                    404,
+                )
+            season = int(comp.season)
+            competition_name = comp.name
+            from app.services.next_round_selection import select_next_round_fixtures
+
+            raw_upcoming = list(
+                db.scalars(
+                    select(Fixture)
+                    .where(Fixture.competition_id == comp.id)
+                    .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+                ).all()
+            )
+            raw_upcoming = [f for f in raw_upcoming if (f.status or "").upper() not in FINISHED_STATUSES]
+            if fixture_ids:
+                wanted = {int(x) for x in fixture_ids}
+                raw_upcoming = [f for f in raw_upcoming if int(f.id) in wanted]
+            apply_next_round = only_next_round and not fixture_ids
+            selection = select_next_round_fixtures(
+                raw_upcoming,
+                limit=max(1, min(limit, 100)),
+                only_next_round=apply_next_round,
+            )
+            upcoming = selection.fixtures
+        else:
+            svc = SotPredictionService()
+            _league, season_row = svc._season_row(db, season)  # type: ignore[attr-defined]
+            feat_svc = SotFeatureService()
+            raw_upcoming = feat_svc.list_upcoming_fixtures_for_season(db, season_row.id)
+            upcoming = [f for f in raw_upcoming if (f.status or "").upper() not in FINISHED_STATUSES]
+            upcoming.sort(key=lambda f: (f.kickoff_at, f.id))
+            if only_next_round and upcoming:
+                r0 = _fixture_round_display(upcoming[0]) or upcoming[0].round
+                if r0:
+                    upcoming = [f for f in upcoming if (_fixture_round_display(f) or f.round) == r0]
+                else:
+                    d0 = upcoming[0].kickoff_at.date()
+                    upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
+            upcoming = upcoming[: max(1, min(limit, 100))]
+            if fixture_ids:
+                wanted = {int(x) for x in fixture_ids}
+                upcoming = [f for f in upcoming if int(f.id) in wanted]
     except (OperationalError, ProgrammingError) as exc:
         logger.warning("upcoming-active: DB error (%s)", exc.__class__.__name__, exc_info=True)
-        return ({"status": "error", "message": "Database error", "details": _safe_details(exc)}, 503)
+        err: dict[str, Any] = {
+            "status": "error",
+            "code": "database_error",
+            "message": "Database error",
+            "details": _safe_details(exc),
+            "step": "load_fixtures",
+        }
+        if competition_id is not None:
+            err["competition_id"] = int(competition_id)
+        return (err, 503)
+    except ValueError as exc:
+        logger.warning("upcoming-active: lookup fallito (%s)", exc)
+        err = {
+            "status": "error",
+            "code": "season_lookup_failed",
+            "message": str(exc),
+            "step": "season_lookup",
+        }
+        if competition_id is not None:
+            err["competition_id"] = int(competition_id)
+        return (err, 404)
     except Exception as exc:  # noqa: BLE001
-        logger.exception("upcoming-active: errore inatteso (season lookup)")
-        return ({"status": "error", "message": "Errore inatteso", "details": _safe_details(exc)}, 500)
-
-    feat_svc = SotFeatureService()
-    raw_upcoming = feat_svc.list_upcoming_fixtures_for_season(db, season_row.id)
-    upcoming = [f for f in raw_upcoming if (f.status or "").upper() not in FINISHED_STATUSES]
-    upcoming.sort(key=lambda f: (f.kickoff_at, f.id))
-    if only_next_round and upcoming:
-        r0 = _fixture_round_display(upcoming[0]) or upcoming[0].round
-        if r0:
-            upcoming = [f for f in upcoming if (_fixture_round_display(f) or f.round) == r0]
-        else:
-            d0 = upcoming[0].kickoff_at.date()
-            upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
-    upcoming = upcoming[: max(1, min(limit, 100))]
+        logger.exception("upcoming-active: errore inatteso (fixture load)")
+        err = {
+            "status": "error",
+            "message": "Errore inatteso",
+            "details": _safe_details(exc),
+            "step": "load_fixtures",
+        }
+        if competition_id is not None:
+            err["competition_id"] = int(competition_id)
+        return (err, 500)
 
     def has_any_upcoming(mv: str) -> bool:
         if not upcoming:
@@ -797,7 +868,7 @@ def build_upcoming_active_payload(
         )
 
     round_label = _fixture_round_display(upcoming[0]) if upcoming else None
-    payload = {
+    payload: dict[str, Any] = {
         "season": int(season),
         "model_version_used": requested if model_version else recommended,
         "recommended_model_version": recommended,
@@ -808,6 +879,9 @@ def build_upcoming_active_payload(
         "model_limitations": default_model_limitations_dict(),
         "warnings": warnings,
     }
+    if competition_id is not None:
+        payload["competition_id"] = int(competition_id)
+        payload["competition_name"] = competition_name
     return payload, 200
 
 
