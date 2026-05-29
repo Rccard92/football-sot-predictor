@@ -84,7 +84,20 @@ def _v20_raw_full() -> dict:
             "opponent_defensive_weakness_factor": 1.05,
             "defensive_weakness_factor": 1.0,
             "excluded_players": [],
+            "player_mapping_quality": {
+                "starters_total": 11,
+                "starters_mapped": 10,
+                "starters_auto_safe": 9,
+                "starters_review": 1,
+                "starters_no_match": 1,
+                "average_match_score": 91.2,
+                "mapped_with_stats": 9,
+                "mapped_with_shooting_impact": 7,
+                "mapping_confidence": 82,
+                "mapping_quality_label": "good",
+            },
         },
+        "player_mapping_confidence": 82,
         "pre_match_readiness": {
             "sportapi_mapping": "ok",
             "lineup_freshness": "ok",
@@ -173,3 +186,58 @@ def test_v20_countable_roles_match_v11_plus_lineup():
     specs = manifest_for_model(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
     countable = [s for s in specs if is_countable_role(s.application_role)]
     assert len(countable) >= 40
+
+
+def test_v20_trace_player_mapping_confidence_available():
+    raw = _v20_raw_full()
+    trace = build_applied_variable_trace_side(
+        BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+        raw,
+        team_id=1,
+        team_name="Test",
+        audit_map={},
+        hours_to_kickoff=12.0,
+        prediction_confidence=None,
+    )
+    row = next(r for r in trace if r["trace_key"] == "v20_quality_player_mapping_confidence")
+    assert row["status"] == "available"
+    assert row["value"] == 82
+    assert row["unit"] == "punteggio"
+    assert "Mapping giocatori buono" in str(row.get("notes") or "")
+
+
+def test_v20_enrich_raw_for_trace_fills_mapping_confidence():
+    from app.services.sportapi.lineup_player_profile_lookup import enrich_v20_raw_for_trace
+
+    raw = {
+        "base_v1_1_sot": 5.0,
+        "sportapi_lineups_available": True,
+        "lineup_impact_side": {},
+    }
+    lineup_impact = {
+        "home": {
+            "player_mapping_quality": {
+                "starters_total": 11,
+                "starters_mapped": 10,
+                "starters_auto_safe": 9,
+                "mapping_confidence": 82,
+                "mapping_quality_label": "good",
+            },
+            "player_layer_usage": {"offensive_factor": 0.98, "final_factor": 0.98},
+        }
+    }
+    enriched = enrich_v20_raw_for_trace(raw, lineup_impact, is_home=True)
+    assert enriched["player_mapping_confidence"] == 82
+    assert enriched["lineup_impact_side"]["player_mapping_quality"]["mapping_confidence"] == 82
+    trace = build_applied_variable_trace_side(
+        BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+        enriched,
+        team_id=1,
+        team_name="Test",
+        audit_map={},
+        hours_to_kickoff=12.0,
+        prediction_confidence=None,
+    )
+    row = next(r for r in trace if r["trace_key"] == "v20_quality_player_mapping_confidence")
+    assert row["status"] == "available"
+    assert row["value"] == 82

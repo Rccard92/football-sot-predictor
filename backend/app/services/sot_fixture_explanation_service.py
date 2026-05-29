@@ -34,6 +34,7 @@ from app.services.model_applied_variable_trace import (
     compute_hours_to_kickoff,
     validate_model_trace,
 )
+from app.services.sportapi.lineup_player_profile_lookup import enrich_v20_raw_for_trace
 from app.services.predictions_v10.offensive_production_blend import offensive_inputs_as_map
 from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER, COMPONENT_LABEL_PLAYER
 from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG, COMPONENT_LABEL_XG
@@ -2554,9 +2555,18 @@ def _build_fixture_sot_explanation_body(
     conf_h = int(row_home.confidence_score) if row_home and row_home.confidence_score is not None else None
     conf_a = int(row_away.confidence_score) if row_away and row_away.confidence_score is not None else None
 
+    lineup_impact: dict[str, Any] | None = None
+    trace_raw_home = raw_home if isinstance(raw_home, dict) else {}
+    trace_raw_away = raw_away if isinstance(raw_away, dict) else {}
+    if active_mv == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
+        lineup_impact = _lineup_impact_for_explanation(db, fx, home, away, active_mv)
+        if lineup_impact:
+            trace_raw_home = enrich_v20_raw_for_trace(trace_raw_home, lineup_impact, is_home=True)
+            trace_raw_away = enrich_v20_raw_for_trace(trace_raw_away, lineup_impact, is_home=False)
+
     trace_home = build_applied_variable_trace_side(
         active_mv,
-        raw_home if isinstance(raw_home, dict) else {},
+        trace_raw_home,
         team_id=int(fx.home_team_id),
         team_name=home.name,
         audit_map=audit_map,
@@ -2565,7 +2575,7 @@ def _build_fixture_sot_explanation_body(
     )
     trace_away = build_applied_variable_trace_side(
         active_mv,
-        raw_away if isinstance(raw_away, dict) else {},
+        trace_raw_away,
         team_id=int(fx.away_team_id),
         team_name=away.name,
         audit_map=audit_map,
@@ -2604,6 +2614,9 @@ def _build_fixture_sot_explanation_body(
         )
         if rh_home or rh_away:
             remediation_hints = {"home": rh_home, "away": rh_away}
+
+    if lineup_impact is None:
+        lineup_impact = _lineup_impact_for_explanation(db, fx, home, away, active_mv)
 
     return {
         "status": "ok",
@@ -2661,7 +2674,7 @@ def _build_fixture_sot_explanation_body(
             ),
         },
         "sportapi_lineups": (sportapi_lineups := _sportapi_lineups_for_explanation(db, fx, home, away)),
-        "lineup_impact_simulation": (lineup_impact := _lineup_impact_for_explanation(db, fx, home, away, active_mv)),
+        "lineup_impact_simulation": lineup_impact,
         "betting_advice": _betting_advice_for_explanation(
             ph,
             pa,

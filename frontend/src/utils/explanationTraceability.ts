@@ -24,6 +24,7 @@ export type TraceabilityDerivedMetrics = {
   extraInTraceCount: number
   statusLabel: TraceabilityStatusLabel
   traceAlignedWithManifest: boolean
+  qualityOnlyMissing: boolean
 }
 
 function valueIsPresent(v: unknown): boolean {
@@ -114,6 +115,13 @@ export function deriveTraceabilityForSide(
   const notInTraceCount = fc.missing_trace_keys?.length ?? 0
   const extraInTraceCount = fc.extra_trace_keys?.length ?? 0
 
+  const missingRows = trace.filter(traceRowIsMissingData)
+  const qualityOnlyMissing =
+    formulaFinalCount > 0 &&
+    missingRows.length > 0 &&
+    missingRows.every(traceRowIsQualityControl) &&
+    missingRows.length === missingDataRowCount
+
   const traceAlignedWithManifest =
     manifestDeclared === fc.debug_trace_count &&
     tracedCount === fc.debug_trace_count &&
@@ -142,6 +150,7 @@ export function deriveTraceabilityForSide(
     extraInTraceCount,
     statusLabel,
     traceAlignedWithManifest,
+    qualityOnlyMissing,
   }
 }
 

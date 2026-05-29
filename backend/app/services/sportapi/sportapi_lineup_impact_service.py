@@ -17,6 +17,7 @@ from app.services.sportapi.lineup_player_profile_lookup import (
     MockSotProfile,
     build_lineup_player_mapping_debug,
     compute_lineup_mapping_stats,
+    enrich_lineup_impact_with_mapping_quality,
     load_fixture_profiles,
 )
 from app.services.sportapi.sportapi_defensive_weakness_logic import (
@@ -331,7 +332,7 @@ class LineupImpactSimulationService:
         home_sa = sportapi_lineups.get("home") or {}
         away_sa = sportapi_lineups.get("away") or {}
 
-        return {
+        impact_payload: dict[str, Any] = {
             "status": "ok" if sportapi_lineups.get("available") else "no_lineups",
             "fixture_id": int(fx.id),
             "simulation_only": True,
@@ -359,6 +360,11 @@ class LineupImpactSimulationService:
             },
             "note": "Simulazione audit; non modifica team_sot_predictions.",
         }
+        return enrich_lineup_impact_with_mapping_quality(
+            impact_payload,
+            sportapi_lineups,
+            matching.get("matches") or [],
+        )
 
     def _base_expected_sot(
         self,

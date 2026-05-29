@@ -526,32 +526,221 @@ def compute_lineup_mapping_stats(
     sportapi_lineups: dict[str, Any],
     matches: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    starter_ids: set[int] = set()
-    for side_key in ("home", "away"):
-        side = sportapi_lineups.get(side_key) or {}
-        for p in side.get("starters") or []:
-            starter_ids.add(int(p["provider_player_id"]))
-
-    matched_auto = 0
-    matched_any = 0
-    for m in matches:
-        spid = int(m.get("sportapi_player_id") or 0)
-        if spid not in starter_ids:
-            continue
-        rec = str(m.get("recommendation") or "")
-        if rec in ("AUTO_SAFE", "REVIEW") and m.get("api_sports_player_id"):
-            matched_any += 1
-        if rec == "AUTO_SAFE" and m.get("api_sports_player_id"):
-            matched_auto += 1
-
-    total = len(starter_ids)
+    home_q = compute_player_mapping_quality_for_side("home", sportapi_lineups, matches)
+    away_q = compute_player_mapping_quality_for_side("away", sportapi_lineups, matches)
+    total = int(home_q.get("starters_total") or 0) + int(away_q.get("starters_total") or 0)
+    matched_auto = int(home_q.get("starters_auto_safe") or 0) + int(away_q.get("starters_auto_safe") or 0)
+    matched_any = int(home_q.get("starters_mapped") or 0) + int(away_q.get("starters_mapped") or 0)
     rate = round(matched_auto / total, 4) if total else 0.0
     return {
         "starters_total": total,
         "starters_matched_auto_safe": matched_auto,
         "starters_matched_any": matched_any,
         "mapping_rate": rate,
+        "by_side": {"home": home_q, "away": away_q},
     }
+
+
+def _mapping_quality_label(confidence: float, starters_auto_safe: int, starters_total: int) -> str:
+    if starters_total <= 0:
+        return "weak"
+    if confidence >= 80 or starters_auto_safe >= 8:
+        return "good"
+    if confidence >= 55 or starters_auto_safe >= 5:
+        return "partial"
+    return "weak"
+
+
+def compute_player_mapping_quality_for_side(
+    side_key: str,
+    sportapi_lineups: dict[str, Any],
+    matches: list[dict[str, Any]],
+) -> dict[str, Any]:
+    side = sportapi_lineups.get(side_key) or {}
+    starter_ids: list[int] = []
+    for p in side.get("starters") or []:
+        starter_ids.append(int(p["provider_player_id"]))
+
+    match_by_spid = {int(m["sportapi_player_id"]): m for m in matches if m.get("sportapi_player_id") is not None}
+
+    starters_total = len(starter_ids)
+    starters_mapped = 0
+    starters_auto_safe = 0
+    starters_review = 0
+    starters_no_match = 0
+    scores: list[float] = []
+    mapped_with_stats = 0
+    mapped_with_shooting_impact = 0
+
+    for spid in starter_ids:
+        m = match_by_spid.get(spid)
+        if not m or m.get("api_sports_player_id") is None:
+            starters_no_match += 1
+            continue
+        rec = str(m.get("recommendation") or "NO_MATCH")
+        score = float(m.get("confidence_score") or 0)
+        if rec in ("AUTO_SAFE", "REVIEW"):
+            starters_mapped += 1
+            if score > 0:
+                scores.append(score)
+        if rec == "AUTO_SAFE":
+            starters_auto_safe += 1
+        elif rec == "REVIEW":
+            starters_review += 1
+        else:
+            starters_no_match += 1
+            continue
+
+        if m.get("shots_on_per90") is not None or m.get("team_sot_share") is not None:
+            mapped_with_stats += 1
+        if m.get("shooting_impact_score") is not None:
+            mapped_with_shooting_impact += 1
+
+    avg_score = round(sum(scores) / len(scores), 1) if scores else 0.0
+    if starters_total > 0:
+        mapped_pct = starters_mapped / starters_total
+        auto_pct = starters_auto_safe / starters_total
+        stats_pct = mapped_with_stats / starters_total
+        confidence = round(
+            30.0 * mapped_pct + 30.0 * auto_pct + 25.0 * (avg_score / 100.0) + 15.0 * stats_pct,
+            1,
+        )
+    else:
+        confidence = 0.0
+
+    label = _mapping_quality_label(confidence, starters_auto_safe, starters_total)
+    return {
+        "side": side_key,
+        "starters_total": starters_total,
+        "starters_mapped": starters_mapped,
+        "starters_auto_safe": starters_auto_safe,
+        "starters_review": starters_review,
+        "starters_no_match": starters_no_match,
+        "average_match_score": avg_score,
+        "mapped_with_stats": mapped_with_stats,
+        "mapped_with_shooting_impact": mapped_with_shooting_impact,
+        "mapping_confidence": confidence,
+        "mapping_quality_label": label,
+    }
+
+
+def mapping_quality_message_it(quality: dict[str, Any] | None) -> str:
+    if not quality:
+        return "Mapping giocatori non disponibile per questa formazione."
+    label = str(quality.get("mapping_quality_label") or "weak")
+    mapped = int(quality.get("starters_mapped") or 0)
+    total = int(quality.get("starters_total") or 0)
+    if total <= 0:
+        return "Nessun titolare SportAPI disponibile per calcolare il mapping."
+    if label == "good":
+        return f"Mapping giocatori buono: {mapped}/{total} titolari collegati ai profili statistici."
+    if label == "partial":
+        return f"Mapping parziale: {mapped}/{total} titolari collegati ai profili statistici."
+    return "Mapping debole: pochi giocatori della formazione hanno profili utilizzabili."
+
+
+def build_player_layer_usage(side_data: dict[str, Any], *, mapping_quality: dict[str, Any] | None = None) -> dict[str, Any]:
+    top = side_data.get("top_sot_players") or []
+    offensive = float(side_data.get("offensive_lineup_factor") or side_data.get("factor") or 1.0)
+    def_weak = float(side_data.get("defensive_weakness_factor") or 1.0)
+    opp_def = float(side_data.get("opponent_defensive_weakness_factor") or 1.0)
+    final_factor = round(offensive * opp_def, 4)
+    net_loss = float(side_data.get("net_lineup_loss_share") or side_data.get("net_missing_sot_share") or 0.0)
+    replacement = float(side_data.get("replacement_credit_share") or 0.0)
+    gross = float(side_data.get("gross_penalty_share") or 0.0)
+
+    in_lineup = sum(1 for p in top if str(p.get("status")) == "STARTER")
+    missing_top = sum(1 for p in top if str(p.get("status")) in ("MISSING", "OUT_OF_LINEUP", "BENCH"))
+    unavailable_impact = sum(
+        1 for p in top if str(p.get("status")) == "MISSING" and float(p.get("penalty_share") or 0) > 0
+    )
+
+    mq = mapping_quality or {}
+    profiles_used = int(mq.get("mapped_with_stats") or mq.get("starters_mapped") or 0)
+
+    impact_explanation: str | None = None
+    if profiles_used > 0 and abs(offensive - 1.0) < 0.02 and abs(final_factor - 1.0) < 0.02:
+        if net_loss < 0.03:
+            impact_explanation = "Formazione coerente con la forza media attesa"
+        else:
+            impact_explanation = "Player profiles disponibili ma nessuna variazione numerica rilevante"
+    elif profiles_used == 0 and offensive == 1.0:
+        impact_explanation = "Profili giocatori non collegati alla formazione"
+
+    return {
+        "offensive_factor": round(offensive, 4),
+        "defensive_weakness_factor": round(def_weak, 4),
+        "opponent_defensive_weakness_factor": round(opp_def, 4),
+        "final_factor": final_factor,
+        "lineup_player_profiles_used": profiles_used,
+        "top_shooters_in_lineup": in_lineup,
+        "top_shooters_missing": missing_top,
+        "unavailable_players_with_impact": unavailable_impact,
+        "replacement_credit": round(replacement, 4),
+        "net_loss": round(net_loss, 4),
+        "gross_penalty": round(gross, 4),
+        "impact_explanation": impact_explanation,
+    }
+
+
+def enrich_lineup_impact_with_mapping_quality(
+    impact: dict[str, Any],
+    sportapi_lineups: dict[str, Any],
+    matches: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Arricchisce home/away con player_mapping_quality e player_layer_usage."""
+    out = dict(impact)
+    by_side: dict[str, dict[str, Any]] = {}
+    for side_key in ("home", "away"):
+        quality = compute_player_mapping_quality_for_side(side_key, sportapi_lineups, matches)
+        side_blob = dict(out.get(side_key) or {})
+        side_blob["player_mapping_quality"] = quality
+        side_blob["player_layer_usage"] = build_player_layer_usage(side_blob, mapping_quality=quality)
+        out[side_key] = side_blob
+        by_side[side_key] = quality
+    out["player_mapping_quality_by_side"] = by_side
+    stats = compute_lineup_mapping_stats(sportapi_lineups, matches)
+    out["lineup_mapping_stats"] = stats
+    return out
+
+def enrich_v20_raw_for_trace(
+    raw: dict[str, Any] | None,
+    lineup_impact: dict[str, Any] | None,
+    *,
+    is_home: bool,
+) -> dict[str, Any]:
+    """Merge qualità mapping e player layer usage nel raw prima del trace (audit live)."""
+    out = dict(raw or {})
+    side_key = "home" if is_home else "away"
+    side = (lineup_impact or {}).get(side_key) or {}
+    side_quality = side.get("player_mapping_quality") or {}
+    side_usage = side.get("player_layer_usage") or build_player_layer_usage(side, mapping_quality=side_quality or None)
+
+    lis = dict(out.get("lineup_impact_side") or {})
+    if side_quality:
+        lis["player_mapping_quality"] = side_quality
+    if side_usage:
+        lis["player_layer_usage"] = side_usage
+    out["lineup_impact_side"] = lis
+
+    conf = side_quality.get("mapping_confidence")
+    if conf is not None:
+        out["player_mapping_confidence"] = conf
+    if side_usage:
+        out["player_layer_usage"] = side_usage
+
+    readiness = dict(out.get("pre_match_readiness") or {})
+    if conf is not None:
+        readiness["player_mapping_confidence"] = conf
+    label = str(side_quality.get("mapping_quality_label") or "")
+    if label == "good":
+        readiness["player_mapping"] = "ok"
+    elif label == "partial":
+        readiness["player_mapping"] = "partial"
+    elif side_quality:
+        readiness["player_mapping"] = "missing" if not side_quality.get("starters_mapped") else "partial"
+    out["pre_match_readiness"] = readiness
+    return out
 
 
 def build_lineup_player_mapping_debug(

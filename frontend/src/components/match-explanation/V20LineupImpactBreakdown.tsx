@@ -1,4 +1,9 @@
-import type { LineupImpactSideSimulation } from '../../types/lineupImpact'
+import { useState } from 'react'
+import type {
+  LineupImpactSideSimulation,
+  PlayerMappingQuality,
+  PlayerLayerUsage,
+} from '../../types/lineupImpact'
 import type { ExplanationFixture, SideSummary } from '../../types/sotExplanation'
 import { V20_MODEL } from '../../lib/modelVersions'
 
@@ -27,6 +32,107 @@ function statusLabel(status: string): string {
     UNMAPPED: 'Non mappato',
   }
   return map[status] ?? status
+}
+
+function mappingQualityMessage(q: PlayerMappingQuality | undefined): string | null {
+  if (!q) return null
+  const mapped = q.starters_mapped ?? 0
+  const total = q.starters_total ?? 0
+  if (total <= 0) return 'Nessun titolare SportAPI disponibile per calcolare il mapping.'
+  const label = q.mapping_quality_label ?? 'weak'
+  if (label === 'good') {
+    return `Mapping giocatori buono: ${mapped}/${total} titolari collegati ai profili statistici.`
+  }
+  if (label === 'partial') {
+    return `Mapping parziale: ${mapped}/${total} titolari collegati ai profili statistici.`
+  }
+  return 'Mapping debole: pochi giocatori della formazione hanno profili utilizzabili.'
+}
+
+function mappingBannerClass(label: string | undefined): string {
+  if (label === 'good') return 'border-emerald-200 bg-emerald-50 text-emerald-950'
+  if (label === 'partial') return 'border-amber-200 bg-amber-50 text-amber-950'
+  return 'border-rose-200 bg-rose-50 text-rose-950'
+}
+
+function MappingQualityBanner({
+  teamName,
+  side,
+}: {
+  teamName: string
+  side: LineupImpactSideSimulation | undefined
+}) {
+  const q = side?.player_mapping_quality
+  const msg = mappingQualityMessage(q)
+  if (!msg) return null
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${mappingBannerClass(q?.mapping_quality_label)}`}>
+      <p className="font-semibold">{teamName}</p>
+      <p className="mt-0.5">{msg}</p>
+      {q?.mapping_confidence != null ? (
+        <p className="mt-1 tabular-nums text-[10px] opacity-90">
+          Confidence mapping: {q.mapping_confidence.toFixed(1)}/100
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function PlayerLayerUsageSection({
+  teamName,
+  side,
+}: {
+  teamName: string
+  side: LineupImpactSideSimulation | undefined
+}) {
+  const [open, setOpen] = useState(false)
+  const usage: PlayerLayerUsage | undefined = side?.player_layer_usage
+  if (!usage) return null
+
+  const rows: { label: string; value: string }[] = [
+    { label: 'offensive_factor', value: fmtNum(usage.offensive_factor) },
+    { label: 'defensive_weakness_factor', value: fmtNum(usage.defensive_weakness_factor) },
+    { label: 'opponent_defensive_weakness_factor', value: fmtNum(usage.opponent_defensive_weakness_factor) },
+    { label: 'final_factor', value: fmtNum(usage.final_factor) },
+    { label: 'lineup_player_profiles_used', value: String(usage.lineup_player_profiles_used ?? '—') },
+    { label: 'top_shooters_in_lineup', value: String(usage.top_shooters_in_lineup ?? '—') },
+    { label: 'top_shooters_missing', value: String(usage.top_shooters_missing ?? '—') },
+    { label: 'unavailable_players_with_impact', value: String(usage.unavailable_players_with_impact ?? '—') },
+    { label: 'replacement_credit', value: fmtNum(usage.replacement_credit) },
+    { label: 'net_loss', value: fmtNum(usage.net_loss) },
+  ]
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-3 py-2 text-left text-[11px] font-semibold text-slate-900 hover:bg-slate-50"
+      >
+        <span>{teamName} — Uso player layer nella formula</span>
+        <span className="text-slate-500">{open ? '▾' : '▸'}</span>
+      </button>
+      {open ? (
+        <div className="border-t border-slate-100 px-3 py-2">
+          {usage.impact_explanation ? (
+            <p className="mb-2 text-[10px] italic text-slate-600">{usage.impact_explanation}</p>
+          ) : null}
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[10px] text-slate-800">
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.label} className="border-b border-slate-50">
+                    <td className="py-1 pr-3 font-mono text-slate-600">{r.label}</td>
+                    <td className="py-1 tabular-nums font-medium">{r.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function TopPlayersTable({
@@ -170,6 +276,16 @@ export function V20LineupImpactBreakdown({
             <span className="font-semibold text-slate-900">Trasferta:</span> v2 = base v1.1 ({fmtNum(awayBase)}) × offensive (
             {fmtNum(awayOff)}) × debolezza dif. avversario ({fmtNum(awayOppDef)}) = {fmtNum(awayV2)}
           </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <MappingQualityBanner teamName={homeSummary.team_name} side={homeLi} />
+          <MappingQualityBanner teamName={awaySummary.team_name} side={awayLi} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <PlayerLayerUsageSection teamName={homeSummary.team_name} side={homeLi} />
+          <PlayerLayerUsageSection teamName={awaySummary.team_name} side={awayLi} />
         </div>
 
         <p className="text-[11px] text-slate-600">

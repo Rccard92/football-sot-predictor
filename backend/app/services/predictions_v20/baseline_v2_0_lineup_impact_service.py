@@ -22,6 +22,10 @@ from app.services.sot_model_registry import get_model_display
 from app.services.sportapi.sportapi_lineup_impact_service import LineupImpactSimulationService
 
 
+def _side_key_for_team(fx: Fixture, team_id: int) -> str:
+    return "home" if int(team_id) == int(fx.home_team_id) else "away"
+
+
 class SotPredictionV20LineupImpactService:
     model_version = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     base_model_version = BASELINE_SOT_MODEL_VERSION_V11_SOT
@@ -65,16 +69,38 @@ class SotPredictionV20LineupImpactService:
         *,
         home_hint: str,
         away_hint: str,
-    ) -> dict[str, str]:
+        side_key: str = "home",
+    ) -> dict[str, Any]:
         li_avail = bool(impact.get("sportapi_lineups_available"))
         mapping_ok = "ok" if li_avail else "missing"
         home_roster = str((impact.get("home") or {}).get("roster_sync_hint") or "missing")
         away_roster = str((impact.get("away") or {}).get("roster_sync_hint") or "missing")
         roster = "ok" if home_roster == "ok" and away_roster == "ok" else ("missing" if home_roster == "missing" and away_roster == "missing" else "partial")
-        pm = impact.get("player_matching_summary") or {}
-        mapped = int(pm.get("AUTO_SAFE") or 0) + int(pm.get("REVIEW") or 0)
-        total_m = int(pm.get("total") or 0)
-        player_mapping = "ok" if total_m > 0 and mapped >= total_m * 0.5 else ("partial" if mapped else "missing")
+
+        side_quality = (impact.get(side_key) or {}).get("player_mapping_quality") or {}
+        conf = side_quality.get("mapping_confidence")
+        label = str(side_quality.get("mapping_quality_label") or "")
+        if label == "good":
+            player_mapping = "ok"
+        elif label == "partial":
+            player_mapping = "partial"
+        elif side_quality.get("starters_mapped"):
+            player_mapping = "partial"
+        else:
+            stats = impact.get("lineup_mapping_stats") or {}
+            by_side = stats.get("by_side") if isinstance(stats.get("by_side"), dict) else {}
+            side_stats = by_side.get(side_key) if isinstance(by_side, dict) else {}
+            mapped = int(side_stats.get("starters_mapped") or 0)
+            total = int(side_stats.get("starters_total") or 0)
+            if total > 0 and mapped >= total * 0.5:
+                player_mapping = "ok"
+            elif mapped:
+                player_mapping = "partial"
+            else:
+                pm = impact.get("player_matching_summary") or {}
+                mapped_all = int(pm.get("AUTO_SAFE") or 0) + int(pm.get("REVIEW") or 0)
+                player_mapping = "partial" if mapped_all else "missing"
+
         status = str(impact.get("status") or "")
         model_v20 = "ready" if status == "ok" and li_avail else ("partial" if li_avail else "fallback_v11")
         return {
@@ -82,6 +108,7 @@ class SotPredictionV20LineupImpactService:
             "lineup_freshness": "ok" if li_avail else "missing",
             "roster_sync": roster,
             "player_mapping": player_mapping,
+            "player_mapping_confidence": conf,
             "model_v20": model_v20,
         }
 
@@ -185,7 +212,16 @@ class SotPredictionV20LineupImpactService:
                 impact,
                 home_hint=str(home_side.get("roster_sync_hint") or "missing"),
                 away_hint=str(away_side.get("roster_sync_hint") or "missing"),
+                side_key=_side_key_for_team(fx, team_id),
             )
+
+            side_quality = side_data.get("player_mapping_quality") or {}
+            player_layer_usage = side_data.get("player_layer_usage") or {}
+            lineup_side_blob = {
+                **dict(side_data),
+                "player_mapping_quality": side_quality,
+                "player_layer_usage": player_layer_usage,
+            }
 
             team_row = db.get(Team, team_id)
             display = get_model_display(self.model_version)
@@ -206,7 +242,9 @@ class SotPredictionV20LineupImpactService:
                 "predicted_sot": adjusted,
                 "sportapi_lineups_available": bool(impact.get("sportapi_lineups_available")),
                 "sportapi_lineup_confirmed": impact.get("confirmed"),
-                "lineup_impact_side": dict(side_data),
+                "lineup_impact_side": lineup_side_blob,
+                "player_mapping_confidence": side_quality.get("mapping_confidence"),
+                "player_layer_usage": player_layer_usage,
                 "pre_match_readiness": readiness,
                 "lineup_impact_home": home_side,
                 "lineup_impact_away": away_side,

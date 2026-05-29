@@ -1069,10 +1069,38 @@ def _row_for_spec(
             return base
 
         if r == "v20:quality:player_mapping_confidence":
-            pm = readiness.get("player_mapping") or "missing"
-            base["value"] = pm
-            base["unit"] = "stato"
-            base["status"] = "available" if pm == "ok" else ("fallback" if pm == "partial" else "missing")
+            from app.services.sportapi.lineup_player_profile_lookup import mapping_quality_message_it
+
+            quality = side_blob.get("player_mapping_quality") if isinstance(side_blob.get("player_mapping_quality"), dict) else {}
+            conf = quality.get("mapping_confidence")
+            if conf is None:
+                conf = raw.get("player_mapping_confidence")
+            if conf is None and isinstance(readiness.get("player_mapping_confidence"), (int, float)):
+                conf = readiness.get("player_mapping_confidence")
+
+            if conf is not None:
+                base["value"] = round(float(conf), 1)
+                base["unit"] = "punteggio"
+                base["status"] = "available"
+                msg = mapping_quality_message_it(quality if quality else None)
+                breakdown = (
+                    f"auto_safe={quality.get('starters_auto_safe')}/{quality.get('starters_total')}, "
+                    f"avg_score={quality.get('average_match_score')}, "
+                    f"with_stats={quality.get('mapped_with_stats')}"
+                    if quality
+                    else None
+                )
+                base["notes"] = f"{msg}" + (f" ({breakdown})" if breakdown else "")
+            elif bool(raw.get("sportapi_lineups_available")):
+                base["value"] = None
+                base["unit"] = "punteggio"
+                base["status"] = "fallback"
+                base["notes"] = "Lineups presenti ma confidence mapping non calcolata."
+            else:
+                base["value"] = None
+                base["unit"] = "punteggio"
+                base["status"] = "missing"
+                base["notes"] = "Lineups SportAPI assenti: mapping non calcolabile."
             return base
 
         if r == "v20:quality:lineup_impact_confidence":

@@ -2,6 +2,7 @@
 
 from app.services.sportapi.lineup_player_profile_lookup import (
     compute_lineup_mapping_stats,
+    compute_player_mapping_quality_for_side,
     score_profile_match,
 )
 from app.services.sportapi.sportapi_lineup_impact_logic import compute_impact_confidence
@@ -100,3 +101,40 @@ def test_confidence_good_mapping_no_profile_warning():
     assert not any("non ancora generati" in r for r in reasons)
     assert not any("player_sot_profiles" in r for r in reasons)
     assert label in ("alta", "media")
+
+
+def test_compute_player_mapping_quality_for_side_nine_auto_safe():
+    lineups = {
+        "home": {
+            "starters": [{"provider_player_id": i} for i in range(1, 12)],
+        },
+        "away": {"starters": []},
+    }
+    matches = []
+    for i in range(1, 10):
+        matches.append(
+            {
+                "sportapi_player_id": i,
+                "recommendation": "AUTO_SAFE",
+                "api_sports_player_id": 100 + i,
+                "confidence_score": 92,
+                "shots_on_per90": 0.5,
+            }
+        )
+    matches.append(
+        {
+            "sportapi_player_id": 10,
+            "recommendation": "REVIEW",
+            "api_sports_player_id": 110,
+            "confidence_score": 75,
+            "shots_on_per90": 0.3,
+        }
+    )
+    matches.append({"sportapi_player_id": 11, "recommendation": "NO_MATCH"})
+
+    quality = compute_player_mapping_quality_for_side("home", lineups, matches)
+    assert quality["starters_total"] == 11
+    assert quality["starters_auto_safe"] == 9
+    assert quality["starters_mapped"] == 10
+    assert quality["mapping_confidence"] > 70
+    assert quality["mapping_quality_label"] in ("good", "partial")

@@ -57,6 +57,35 @@ export type LineupPlayerMappingDebugRow = {
   reason?: string | null
 }
 
+export type PlayerMappingQuality = {
+  side?: string
+  starters_total?: number
+  starters_mapped?: number
+  starters_auto_safe?: number
+  starters_review?: number
+  starters_no_match?: number
+  average_match_score?: number
+  mapped_with_stats?: number
+  mapped_with_shooting_impact?: number
+  mapping_confidence?: number
+  mapping_quality_label?: 'good' | 'partial' | 'weak' | string
+}
+
+export type PlayerLayerUsage = {
+  offensive_factor?: number
+  defensive_weakness_factor?: number
+  opponent_defensive_weakness_factor?: number
+  final_factor?: number
+  lineup_player_profiles_used?: number
+  top_shooters_in_lineup?: number
+  top_shooters_missing?: number
+  unavailable_players_with_impact?: number
+  replacement_credit?: number
+  net_loss?: number
+  gross_penalty?: number
+  impact_explanation?: string | null
+}
+
 export type LineupMappingStats = {
   starters_total?: number
   starters_matched_auto_safe?: number
@@ -151,6 +180,8 @@ export type LineupImpactSideSimulation = {
   missing_players_mapped?: unknown[]
   missing_players_unmapped?: unknown[]
   explanation_bullets?: string[]
+  player_mapping_quality?: PlayerMappingQuality
+  player_layer_usage?: PlayerLayerUsage
 }
 
 export type LineupImpactSimulationPayload = {

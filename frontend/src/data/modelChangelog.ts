@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.15',
+    date: '2026-05-29',
+    title: 'Completata tracciabilità qualità mapping giocatori',
+    type: 'patch',
+    summary:
+      'Valorizzata la variabile trace v20_quality_player_mapping_confidence con punteggio numerico 0-100 per lato, arricchito audit v2.0 live e migliorata diagnostica UI sul player layer.',
+    highlights: [
+      'Score mapping confidence per titolari casa/trasferta.',
+      'Trace audit arricchito con qualità mapping live.',
+      'Sezione «Uso player layer nella formula» in audit v2.0.',
+      'Messaggi qualità mapping in Forza giocatori.',
+      'Stato trace più chiaro se mancano solo dati qualità.',
+      'Nessuna modifica alla formula v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.14',
     date: '2026-05-29',
     title: 'Fix mapping giocatori lineup multi-campionato',

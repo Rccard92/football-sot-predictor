@@ -82,6 +82,11 @@ export function FrameworkConsistencyCard({
             </div>
           </dl>
           <p className="mt-2 text-xs font-semibold text-slate-900">Stato: {m.statusLabel}</p>
+          {m.statusLabel === 'OK con avvisi' && m.qualityOnlyMissing ? (
+            <p className="mt-2 text-[11px] leading-relaxed text-amber-950">
+              La previsione numerica è calcolata. Mancano solo dati di qualità/diagnostica.
+            </p>
+          ) : null}
           {d.missing_data_keys?.length ? (
             <div className="mt-2">
               <p className="text-[11px] font-medium text-amber-900">Dati mancanti:</p>
