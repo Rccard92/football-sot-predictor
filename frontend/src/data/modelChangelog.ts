@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.13',
+    date: '2026-05-29',
+    title: 'Fix collegamenti audit multi-campionato',
+    type: 'patch',
+    summary:
+      'Corretti i collegamenti tra Prossima giornata e Spiegazione previsione partita per rispettare sempre il campionato attivo.',
+    highlights: [
+      'Dettaglio partita ora passa competition_id e fixture_id.',
+      'Audit usa endpoint competition-scoped.',
+      'Dropdown Partita filtrato per campionato attivo.',
+      'Rimossi fallback silenziosi alla Serie A.',
+      'Guardrail anti-mixing tra Serie A e Brasileirão.',
+      'Nessuna modifica alla formula v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.12',
     date: '2026-05-29',
     title: 'Fix audit dettaglio multi-campionato',

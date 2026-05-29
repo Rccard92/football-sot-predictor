@@ -3,6 +3,7 @@
 import type { FixtureLineupsResponse } from '../types/fixtureLineups'
 import type { SportApiFixtureDebugResponse, SportApiLineupsStoredResponse } from '../types/sportapi'
 import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
+import type { SotFixtureExplanationResponse } from '../types/sotExplanation'
 
 export const DEFAULT_SEASON = Number(import.meta.env.VITE_DEFAULT_SEASON) || 2025
 
@@ -2459,6 +2460,76 @@ export async function getUpcomingFixtureDetailForCompetition(
   const q = p.toString()
   const path = `/api/competitions/${competitionId}/predictions/sot/upcoming-fixture/${fixtureId}/detail${q ? `?${q}` : ''}`
   return requestJson<UpcomingFixtureDetailResponse>(path)
+}
+
+export type CompetitionAuditFixtureRow = {
+  fixture_id: number
+  api_fixture_id?: number
+  match_name?: string
+  kickoff?: string | null
+  kickoff_at?: string | null
+  round?: string | null
+  status?: string | null
+  status_short?: string | null
+  has_prediction?: boolean
+  competition_id?: number
+  home_team: { id: number; name: string; logo_url?: string | null }
+  away_team: { id: number; name: string; logo_url?: string | null }
+}
+
+export type CompetitionAuditFixturesResponse = {
+  status?: string
+  code?: string
+  message?: string
+  step?: string
+  competition_id: number
+  competition_name?: string
+  season?: number
+  scope?: string
+  fixtures: CompetitionAuditFixtureRow[]
+}
+
+export function buildMatchAuditUrl(opts: {
+  competitionId: number
+  fixtureId: number
+  modelVersion?: string | null
+}): string {
+  const p = new URLSearchParams()
+  p.set('competition_id', String(opts.competitionId))
+  p.set('fixture_id', String(opts.fixtureId))
+  if (opts.modelVersion) p.set('model_version', opts.modelVersion)
+  return `/match-variable-audit?${p.toString()}`
+}
+
+export async function getCompetitionAuditFixtures(
+  competitionId: number,
+  opts?: {
+    scope?: 'next_round' | 'upcoming' | 'all_with_predictions'
+    modelVersion?: string | null
+    limit?: number
+  },
+): Promise<CompetitionAuditFixturesResponse> {
+  const p = new URLSearchParams()
+  if (opts?.scope) p.set('scope', opts.scope)
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  const q = p.toString()
+  return requestJson<CompetitionAuditFixturesResponse>(
+    `/api/competitions/${competitionId}/predictions/sot/fixtures${q ? `?${q}` : ''}`,
+  )
+}
+
+export async function getCompetitionFixtureExplanation(
+  competitionId: number,
+  fixtureId: number,
+  opts?: { modelVersion?: string | null },
+): Promise<SotFixtureExplanationResponse & { competition_id?: number; competition_name?: string }> {
+  const p = new URLSearchParams()
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
+  return requestJson(
+    `/api/competitions/${competitionId}/predictions/sot/fixture/${fixtureId}/explanation${q ? `?${q}` : ''}`,
+  )
 }
 
 export async function getUpcomingFixtureDetail(

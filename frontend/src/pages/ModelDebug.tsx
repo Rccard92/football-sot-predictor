@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { DEFAULT_SEASON } from '../lib/api'
+import { DEFAULT_SEASON, buildMatchAuditUrl } from '../lib/api'
+import { useCompetition } from '../contexts/CompetitionContext'
 import { formatFetchError } from '../utils/formatFetchError'
 
 type FixturesListItem = {
@@ -78,6 +79,7 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 export function ModelDebug() {
   const qs = useQuery()
+  const { selectedCompetitionId } = useCompetition()
   const fixtureIdFromQS = Number(qs.get('fixture_id') || '')
 
   const [fixtures, setFixtures] = useState<FixturesListItem[]>([])
@@ -185,9 +187,12 @@ export function ModelDebug() {
                 </option>
               ))}
             </select>
-            {fixtureId ? (
+            {fixtureId && selectedCompetitionId != null ? (
               <Link
-                to={`/match-variable-audit?fixture_id=${fixtureId}`}
+                to={buildMatchAuditUrl({
+                  competitionId: selectedCompetitionId,
+                  fixtureId,
+                })}
                 className="mt-2 inline-block text-sm font-medium text-slate-700 underline"
               >
                 Apri spiegazione previsione (audit fixture)

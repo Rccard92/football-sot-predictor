@@ -200,6 +200,11 @@ export function UpcomingMatches() {
     (w) => !/disponibili per tutto il turno/i.test(w),
   )
 
+  const auditListUrl =
+    selectedCompetitionId != null
+      ? `/match-variable-audit?competition_id=${selectedCompetitionId}`
+      : '/match-variable-audit'
+
   const limitationsResolved: ModelLimitations = data?.model_limitations ?? {
     lineups_considered: false,
     injuries_considered: false,
@@ -325,7 +330,7 @@ export function UpcomingMatches() {
             ) : null}
             <p className="text-xs text-slate-500">
               Dettagli tecnici in{' '}
-              <Link to="/match-variable-audit" className="font-medium text-slate-700 underline">
+              <Link to={auditListUrl} className="font-medium text-slate-700 underline">
                 Audit Variabili
               </Link>{' '}
               e in{' '}

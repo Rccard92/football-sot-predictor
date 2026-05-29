@@ -2,6 +2,8 @@ import type {
   ModelLimitations,
   UpcomingActiveMatchRow,
 } from '../../lib/api'
+import { buildMatchAuditUrl } from '../../lib/api'
+import { useCompetition } from '../../contexts/CompetitionContext'
 import { V20_MODEL, labelForModelVersion } from '../../lib/modelVersions'
 import { LineupRefreshImpactDetail } from './LineupRefreshImpactDetail'
 import { formatKickoff, formatNum, formatSignedNum } from './format'
@@ -37,6 +39,15 @@ export function MatchCard({
   const readiness =
     (home?.pre_match_readiness as Record<string, string> | undefined) ??
     (away?.pre_match_readiness as Record<string, string> | undefined)
+  const { selectedCompetitionId } = useCompetition()
+  const auditUrl =
+    selectedCompetitionId != null
+      ? buildMatchAuditUrl({
+          competitionId: selectedCompetitionId,
+          fixtureId: match.fixture_id,
+          modelVersion: match.model_version_used,
+        })
+      : null
 
   return (
     <article
@@ -254,18 +265,18 @@ export function MatchCard({
 
         <p className="mt-3 text-xs text-slate-600">
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Link
-              to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
-              className="font-medium text-slate-700 underline"
-            >
-              {match.betting_advice_compact ? 'Vedi consiglio completo' : 'Vedi consiglio giocata'}
-            </Link>
-            <Link
-              to={`/match-variable-audit?fixture_id=${match.fixture_id}`}
-              className="font-medium text-slate-500 underline"
-            >
-              Audit variabili
-            </Link>
+            {auditUrl ? (
+              <>
+                <Link to={auditUrl} className="font-medium text-slate-700 underline">
+                  {match.betting_advice_compact ? 'Vedi consiglio completo' : 'Vedi consiglio giocata'}
+                </Link>
+                <Link to={auditUrl} className="font-medium text-slate-500 underline">
+                  Audit variabili
+                </Link>
+              </>
+            ) : (
+              <span className="text-slate-500">Seleziona un campionato per aprire l&apos;audit.</span>
+            )}
             {match.api_fixture_id ? (
               <Link
                 to={`/admin?sportapi_fixture=${match.api_fixture_id}`}

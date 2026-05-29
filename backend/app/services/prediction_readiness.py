@@ -885,6 +885,231 @@ def build_upcoming_active_payload(
     return payload, 200
 
 
+def _validate_fixture_for_competition(
+    db: Session,
+    comp: Competition,
+    fixture_id: int,
+) -> tuple[Fixture | None, dict[str, Any] | None, int | None]:
+    fx = db.get(Fixture, int(fixture_id))
+    if fx is None:
+        return None, {
+            "status": "error",
+            "code": "fixture_not_found",
+            "message": f"Fixture {fixture_id} non trovata.",
+            "competition_id": int(comp.id),
+            "fixture_id": int(fixture_id),
+            "step": "fixture_validation",
+        }, 404
+    if int(fx.competition_id or 0) != int(comp.id):
+        return None, {
+            "status": "error",
+            "code": "fixture_competition_mismatch",
+            "message": f"Fixture {fixture_id} non appartiene alla competition {comp.id}.",
+            "competition_id": int(comp.id),
+            "fixture_id": int(fixture_id),
+            "step": "fixture_validation",
+        }, 404
+    return fx, None, None
+
+
+def build_competition_audit_fixtures_list(
+    db: Session,
+    comp: Competition,
+    *,
+    scope: str = "next_round",
+    model_version: str | None = None,
+    limit: int = 40,
+) -> tuple[dict[str, Any], int]:
+    """Lista fixture per dropdown audit/spiegazione, scoped per competition."""
+    from app.services.next_round_selection import select_next_round_fixtures
+
+    if scope not in ("next_round", "upcoming", "all_with_predictions"):
+        return (
+            {
+                "status": "error",
+                "code": "invalid_scope",
+                "message": "scope deve essere next_round, upcoming o all_with_predictions.",
+                "competition_id": int(comp.id),
+                "step": "validate_scope",
+            },
+            400,
+        )
+
+    try:
+        raw_rows = list(
+            db.scalars(
+                select(Fixture)
+                .where(Fixture.competition_id == comp.id)
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+            ).all()
+        )
+        if scope == "upcoming":
+            rows = [f for f in raw_rows if (f.status or "").upper() not in FINISHED_STATUSES]
+        elif scope == "all_with_predictions":
+            pred_fx_ids = set(
+                int(x)
+                for x in db.scalars(
+                    select(TeamSotPrediction.fixture_id)
+                    .join(Fixture, Fixture.id == TeamSotPrediction.fixture_id)
+                    .where(
+                        Fixture.competition_id == comp.id,
+                        TeamSotPrediction.predicted_sot.isnot(None),
+                        *(
+                            [TeamSotPrediction.model_version == str(model_version)]
+                            if model_version
+                            else []
+                        ),
+                    )
+                    .distinct()
+                ).all()
+            )
+            rows = [f for f in raw_rows if int(f.id) in pred_fx_ids]
+        else:
+            upcoming = [f for f in raw_rows if (f.status or "").upper() not in FINISHED_STATUSES]
+            selection = select_next_round_fixtures(
+                upcoming,
+                limit=max(1, min(limit, 200)),
+                only_next_round=True,
+            )
+            rows = selection.fixtures
+
+        rows = rows[: max(1, min(limit, 200))]
+        fx_ids = [int(f.id) for f in rows]
+        pred_counts: dict[int, int] = {}
+        if fx_ids:
+            pred_q = (
+                select(TeamSotPrediction.fixture_id, func.count())
+                .where(
+                    TeamSotPrediction.fixture_id.in_(fx_ids),
+                    TeamSotPrediction.predicted_sot.isnot(None),
+                )
+                .group_by(TeamSotPrediction.fixture_id)
+            )
+            if model_version:
+                pred_q = pred_q.where(TeamSotPrediction.model_version == str(model_version))
+            pred_counts = {int(fid): int(cnt) for fid, cnt in db.execute(pred_q).all()}
+
+        fixtures_payload: list[dict[str, Any]] = []
+        for f in rows:
+            home = db.get(Team, f.home_team_id)
+            away = db.get(Team, f.away_team_id)
+            home_name = home.name if home else ""
+            away_name = away.name if away else ""
+            kickoff_iso = f.kickoff_at.isoformat() if f.kickoff_at else None
+            fixtures_payload.append(
+                {
+                    "fixture_id": int(f.id),
+                    "api_fixture_id": int(f.api_fixture_id),
+                    "match_name": f"{home_name} – {away_name}".strip(" –"),
+                    "kickoff": kickoff_iso,
+                    "kickoff_at": kickoff_iso,
+                    "round": f.round,
+                    "status": f.status,
+                    "status_short": f.status,
+                    "has_prediction": pred_counts.get(int(f.id), 0) >= 2,
+                    "competition_id": int(comp.id),
+                    "home_team": {
+                        "id": int(f.home_team_id),
+                        "name": home_name,
+                        "logo_url": home.logo_url if home else None,
+                    },
+                    "away_team": {
+                        "id": int(f.away_team_id),
+                        "name": away_name,
+                        "logo_url": away.logo_url if away else None,
+                    },
+                }
+            )
+
+        return (
+            {
+                "competition_id": int(comp.id),
+                "competition_name": comp.name,
+                "season": int(comp.season),
+                "scope": scope,
+                "fixtures": fixtures_payload,
+            },
+            200,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("audit fixtures list: DB error competition=%s", comp.id, exc_info=True)
+        return (
+            {
+                "status": "error",
+                "code": "database_error",
+                "message": "Database error",
+                "competition_id": int(comp.id),
+                "step": "load_fixtures",
+                "details": _safe_details(exc),
+            },
+            503,
+        )
+
+
+def build_competition_fixture_explanation(
+    db: Session,
+    comp: Competition,
+    fixture_id: int,
+    *,
+    model_version: str | None = None,
+) -> tuple[dict[str, Any], int]:
+    """Spiegazione audit fixture con guardrail competition_id."""
+    from app.services.sot_fixture_explanation_service import build_fixture_sot_explanation
+
+    _fx, err, code = _validate_fixture_for_competition(db, comp, fixture_id)
+    if err is not None:
+        return err, int(code or 404)
+
+    try:
+        payload = build_fixture_sot_explanation(db, int(fixture_id), model_version=model_version)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning(
+            "competition fixture explanation: DB error competition=%s fixture=%s",
+            comp.id,
+            fixture_id,
+            exc_info=True,
+        )
+        return (
+            {
+                "status": "error",
+                "code": "database_error",
+                "message": "Errore database durante la lettura della spiegazione.",
+                "competition_id": int(comp.id),
+                "fixture_id": int(fixture_id),
+                "step": "build_explanation",
+                "details": _safe_details(exc),
+            },
+            503,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "competition fixture explanation: errore inatteso competition=%s fixture=%s",
+            comp.id,
+            fixture_id,
+        )
+        return (
+            {
+                "status": "error",
+                "code": "unexpected_error",
+                "message": "Errore durante la costruzione della spiegazione.",
+                "competition_id": int(comp.id),
+                "fixture_id": int(fixture_id),
+                "step": "build_explanation",
+                "details": _safe_details(exc),
+            },
+            422,
+        )
+
+    if isinstance(payload, dict):
+        payload.setdefault("competition_id", int(comp.id))
+        payload.setdefault("competition_name", comp.name)
+        if payload.get("status") == "error":
+            return payload, 422
+        if payload.get("status") == "missing":
+            return payload, 404
+    return payload, 200
+
+
 def upcoming_summary_from_payload(up: dict[str, Any]) -> dict[str, Any]:
     """Sintesi per pipeline admin / dashboard."""
     if up.get("status") == "error":

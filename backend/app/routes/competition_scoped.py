@@ -14,7 +14,12 @@ from app.services.next_round_quick_report_service import (
     build_next_round_quick_report_for_competition,
     build_upcoming_fixture_detail_for_competition,
 )
-from app.services.prediction_readiness import build_model_status_for_competition, _safe_details
+from app.services.prediction_readiness import (
+    build_competition_audit_fixtures_list,
+    build_competition_fixture_explanation,
+    build_model_status_for_competition,
+    _safe_details,
+)
 from app.services.tracked_monitoring_dashboard_service import list_tracked_dashboard_for_competition
 
 logger = logging.getLogger(__name__)
@@ -129,4 +134,71 @@ def competition_upcoming_fixture_detail(
                 }
             ),
         )
+    return JSONResponse(status_code=code, content=jsonable_encoder(payload))
+
+
+@router.get("/{competition_id}/predictions/sot/fixtures")
+def competition_audit_fixtures_list(
+    competition_id: int,
+    db: Session = Depends(get_db),
+    scope: str = Query("next_round"),
+    model_version: str | None = Query(None),
+    limit: int = Query(40, ge=1, le=200),
+):
+    """Lista fixture per dropdown audit/spiegazione, scoped per competition."""
+    try:
+        comp = CompetitionService().get_by_id_or_raise(db, competition_id)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "code": "competition_not_found",
+                    "message": str(exc.detail),
+                    "competition_id": int(competition_id),
+                    "step": "load_competition",
+                }
+            ),
+        )
+    payload, code = build_competition_audit_fixtures_list(
+        db,
+        comp,
+        scope=scope,
+        model_version=model_version,
+        limit=limit,
+    )
+    return JSONResponse(status_code=code, content=jsonable_encoder(payload))
+
+
+@router.get("/{competition_id}/predictions/sot/fixture/{fixture_id}/explanation")
+def competition_fixture_explanation(
+    competition_id: int,
+    fixture_id: int,
+    db: Session = Depends(get_db),
+    model_version: str | None = Query(None),
+):
+    """Spiegazione audit fixture scoped per competition."""
+    try:
+        comp = CompetitionService().get_by_id_or_raise(db, competition_id)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "code": "competition_not_found",
+                    "message": str(exc.detail),
+                    "competition_id": int(competition_id),
+                    "fixture_id": int(fixture_id),
+                    "step": "load_competition",
+                }
+            ),
+        )
+    payload, code = build_competition_fixture_explanation(
+        db,
+        comp,
+        int(fixture_id),
+        model_version=model_version,
+    )
     return JSONResponse(status_code=code, content=jsonable_encoder(payload))
