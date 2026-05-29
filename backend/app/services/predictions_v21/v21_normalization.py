@@ -32,10 +32,13 @@ class V21MicroResult:
     warning: str | None = None
 
     def to_trace_input(self) -> dict:
+        raw_r = round(float(self.raw_value), 2) if self.raw_value is not None else None
+        norm_r = round(float(self.normalized_value), 2)
         return {
-            "value": self.raw_value,
-            "raw_value": self.raw_value,
-            "normalized_value": self.normalized_value,
+            "value": raw_r,
+            "raw_value": raw_r,
+            "normalized_value": norm_r,
+            "micro_weight": self.micro_weight,
             "status": self.status,
             "source_path": self.source_path,
             "sample_count": self.sample_count,

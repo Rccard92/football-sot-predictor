@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.3',
+    date: '2026-05-29',
+    title: 'Fix trace e pesi audit v2.1',
+    type: 'patch',
+    summary:
+      'Corretta la visualizzazione dei pesi macro/micro e completate fonti e formattazione dell’albero componenti v2.1.',
+    highlights: [
+      'Corretto peso 1600% → 16%.',
+      'Aggiunti pesi micro-variabili nel trace.',
+      'Aggiunte fonti/source_path nel trace.',
+      'Arrotondati valori a 2 decimali.',
+      'Nessuna modifica alla formula v2.0.',
+      'Nessuna modifica ai pesi v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.2',
     date: '2026-05-29',
     title: 'Engine autonomo v2.1',

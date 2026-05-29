@@ -10,6 +10,12 @@ import {
   traceRowMatchesFilter,
   type TraceFilter,
 } from '../../utils/explanationTraceability'
+import {
+  formatAuditNumber,
+  formatTraceWeight,
+  formatV21ManifestWeight,
+  type WeightScale,
+} from '../../utils/v21Display'
 
 function statusBorderClass(label: string): string {
   if (label === 'OK') return 'border-emerald-200 bg-emerald-50/40'
@@ -124,20 +130,36 @@ export function FrameworkConsistencyCard({
   )
 }
 
-export function ComponentTreeView({ nodes, teamName }: { nodes: ComponentTreeNode[]; teamName: string }) {
+export function ComponentTreeView({
+  nodes,
+  teamName,
+  weightScale = 'fraction',
+}: {
+  nodes: ComponentTreeNode[]
+  teamName: string
+  weightScale?: WeightScale
+}) {
   if (!nodes.length) return <p className="text-xs text-slate-500">Nessun componente.</p>
   return (
     <div className="space-y-2 text-xs text-slate-800">
       <p className="font-semibold text-slate-900">{teamName}</p>
       <ul className="space-y-1 border-l border-slate-200 pl-3">
-        {nodes.map((n) => (
+        {nodes.map((n) => {
+          const nodeScale: WeightScale =
+            n.weight_scale === 'manifest_points' ? 'manifest_points' : weightScale
+          const manifestDisplay = nodeScale === 'manifest_points'
+          return (
           <li key={String(n.component_key)} className="leading-relaxed">
             <span className="font-medium">{n.component_label ?? n.component_key}</span>
             {n.value != null ? (
               <span className="ml-1 tabular-nums text-slate-600">
-                · val {n.value}
-                {n.weight != null ? ` · peso ${Math.round(Number(n.weight) * 100)}%` : ''}
-                {n.contribution != null ? ` · contr. ${n.contribution}` : ''}
+                · {manifestDisplay ? 'indice' : 'val'} {formatAuditNumber(n.value)}
+                {n.weight != null
+                  ? ` · peso ${formatV21ManifestWeight(n.weight, nodeScale)}`
+                  : ''}
+                {n.contribution != null
+                  ? ` · ${manifestDisplay ? 'contributo pesato' : 'contr.'} ${formatAuditNumber(n.contribution)}`
+                  : ''}
               </span>
             ) : null}
             {n.variables?.length ? (
@@ -160,17 +182,32 @@ export function ComponentTreeView({ nodes, teamName }: { nodes: ComponentTreeNod
                       {n.variables.map((v) => (
                         <tr key={v.key} className="border-b border-slate-50">
                           <td className="px-1.5 py-1">{v.label}</td>
-                          <td className="px-1.5 py-1 tabular-nums">{v.raw_value ?? v.value ?? '—'}</td>
-                          <td className="px-1.5 py-1 tabular-nums">{v.normalized_value ?? v.value ?? '—'}</td>
                           <td className="px-1.5 py-1 tabular-nums">
-                            {v.internal_weight != null
-                              ? `${Math.round(Number(v.internal_weight) * 100)}%`
-                              : v.weight_internal != null
-                                ? `${Math.round(Number(v.weight_internal) * 100)}%`
+                            {v.raw_value != null ? formatAuditNumber(v.raw_value) : v.value != null ? formatAuditNumber(v.value) : '—'}
+                          </td>
+                          <td className="px-1.5 py-1 tabular-nums">
+                            {v.normalized_value != null
+                              ? formatAuditNumber(v.normalized_value)
+                              : v.value != null
+                                ? formatAuditNumber(v.value)
                                 : '—'}
                           </td>
                           <td className="px-1.5 py-1 tabular-nums">
-                            {v.internal_contribution ?? v.contribution ?? '—'}
+                            {v.internal_weight != null || v.weight_internal != null
+                              ? formatV21ManifestWeight(
+                                  v.internal_weight ?? v.weight_internal,
+                                  nodeScale,
+                                )
+                              : '—'}
+                          </td>
+                          <td className="px-1.5 py-1 tabular-nums">
+                            {typeof v.internal_contribution === 'number'
+                              ? formatAuditNumber(v.internal_contribution)
+                              : typeof v.contribution === 'string'
+                                ? v.contribution
+                                : v.contribution != null
+                                  ? formatAuditNumber(v.contribution)
+                                  : '—'}
                           </td>
                           <td className="px-1.5 py-1 font-mono text-[9px] text-slate-500">{v.data_source ?? '—'}</td>
                           <td className="px-1.5 py-1 tabular-nums">{v.matches_count ?? '—'}</td>
@@ -184,14 +221,15 @@ export function ComponentTreeView({ nodes, teamName }: { nodes: ComponentTreeNod
                 <ul className="mt-1 space-y-0.5 border-l border-slate-100 pl-2 text-[11px] text-slate-600">
                   {n.variables.map((v) => (
                     <li key={v.key}>
-                      {v.label}: <span className="tabular-nums">{v.value ?? '—'}</span>
+                      {v.label}: <span className="tabular-nums">{v.value != null ? formatAuditNumber(v.value) : '—'}</span>
                     </li>
                   ))}
                 </ul>
               )
             ) : null}
           </li>
-        ))}
+          )
+        })}
       </ul>
     </div>
   )
@@ -279,9 +317,9 @@ export function AppliedVariableTraceTable({ rows }: { rows: AppliedVariableTrace
                   <td className="px-2 py-1.5 font-medium text-slate-900">{r.label}</td>
                   <td className="px-2 py-1.5">{roleLabel(r.application_role)}</td>
                   <td className="px-2 py-1.5 font-mono text-[9px] text-slate-500">{r.parent_component ?? '—'}</td>
-                  <td className="px-2 py-1.5 tabular-nums">{r.value != null ? String(r.value) : '—'}</td>
-                  <td className="px-2 py-1.5 tabular-nums">{r.weight != null ? String(r.weight) : '—'}</td>
-                  <td className="px-2 py-1.5 tabular-nums">{r.contribution != null ? String(r.contribution) : '—'}</td>
+                  <td className="px-2 py-1.5 tabular-nums">{r.value != null ? formatAuditNumber(r.value) : '—'}</td>
+                  <td className="px-2 py-1.5 tabular-nums">{formatTraceWeight(r.weight, r.unit)}</td>
+                  <td className="px-2 py-1.5 tabular-nums">{r.contribution != null ? formatAuditNumber(r.contribution) : '—'}</td>
                   <td className="px-2 py-1.5">{r.status ?? '—'}</td>
                 </tr>
               ))

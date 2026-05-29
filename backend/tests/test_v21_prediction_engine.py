@@ -175,3 +175,37 @@ def test_normalize_with_baseline():
     )
     assert r.normalized_value == clamp_micro_norm(5.0 / 4.0)
     assert r.status == "available"
+
+
+def test_predictive_macro_weights_sum_to_96():
+    total = sum(m.macro_weight for m in V21_MANIFEST_DEFINITIONS if not m.is_quality_only)
+    assert total == 96
+
+
+def test_weighted_multiplier_scale_invariant():
+    """Pesi manifest (16,14,...) equivalenti a frazioni (0.16,0.14,...)."""
+    indices = [1.07, 1.02, 0.98]
+    int_weights = [16, 14, 10]
+    frac_weights = [0.16, 0.14, 0.10]
+
+    def _mult(weights: list[float]) -> float:
+        wsum = sum(weights)
+        return sum(i * w for i, w in zip(indices, weights)) / wsum
+
+    assert round(_mult([float(w) for w in int_weights]), 4) == round(_mult(frac_weights), 4)
+
+
+def test_to_trace_input_includes_micro_weight_and_rounds():
+    r = normalize_v21_micro_variable(
+        key="avg_sot_for",
+        label="SOT",
+        micro_weight=25,
+        source_path="team_stats.season_avg_sot_for",
+        raw_value=4.6875,
+        baseline=4.0,
+        sample_count=20,
+    )
+    blob = r.to_trace_input()
+    assert blob["micro_weight"] == 25
+    assert blob["raw_value"] == 4.69
+    assert blob["normalized_value"] == round(clamp_micro_norm(4.6875 / 4.0), 2)

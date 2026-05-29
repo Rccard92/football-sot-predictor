@@ -850,6 +850,42 @@ def _build_formula_breakdown_v11(raw: dict[str, Any], stored: float) -> dict[str
     }
 
 
+def _resolve_v21_source_display(m: dict[str, Any]) -> str:
+    path = str(m.get("source_path") or "").strip()
+    status = str(m.get("status") or "").strip()
+    if path:
+        return path
+    if status == "not_tracked_yet":
+        return "not_tracked_yet"
+    if status == "missing":
+        return "missing_source"
+    if status:
+        return status
+    return "missing_source"
+
+
+def _map_v21_micro_variable(m: dict[str, Any], *, macro_key: str, macro_label: str) -> dict[str, Any]:
+    raw_v = m.get("raw_value")
+    norm_v = m.get("normalized_value")
+    micro_w = m.get("micro_weight")
+    return {
+        "key": m.get("key"),
+        "label": m.get("label"),
+        "macro_key": macro_key,
+        "macro_label": macro_label,
+        "raw_value": _round2(_safe_float(raw_v)) if raw_v is not None else None,
+        "normalized_value": _round2(_safe_float(norm_v)) if norm_v is not None else (_round2(1.0) if raw_v is None else None),
+        "weight_internal": micro_w,
+        "internal_weight": micro_w,
+        "data_source": _resolve_v21_source_display(m),
+        "matches_count": m.get("sample_count"),
+        "status": m.get("status"),
+        "fallback_used": bool(m.get("fallback_used")),
+        "contribution": m.get("contribution"),
+        "warning": m.get("warning"),
+    }
+
+
 def _components_v21(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
     macroareas = raw.get("macroareas") if isinstance(raw.get("macroareas"), list) else []
     components = raw.get("components") if isinstance(raw.get("components"), dict) else {}
@@ -895,29 +931,20 @@ def _components_v21(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
         comp = components.get(key) if isinstance(components.get(key), dict) else {}
         macro_index = _round2(_safe_float(ma.get("macro_index") or comp.get("macro_index")))
         macro_w = _safe_float(ma.get("macro_weight"))
+        macro_label = str(ma.get("label") or key)
         micro_vars: list[dict[str, Any]] = []
         for m in ma.get("micros") or []:
             if not isinstance(m, dict):
                 continue
-            micro_vars.append(
-                {
-                    "key": m.get("key"),
-                    "label": m.get("label"),
-                    "raw_value": m.get("raw_value"),
-                    "normalized_value": m.get("normalized_value"),
-                    "status": m.get("status"),
-                    "fallback_used": m.get("fallback_used"),
-                    "contribution": m.get("contribution"),
-                    "warning": m.get("warning"),
-                },
-            )
+            micro_vars.append(_map_v21_micro_variable(m, macro_key=key, macro_label=macro_label))
         status = str(ma.get("status") or comp.get("status") or "available")
         out.append(
             {
                 "id": f"v21_macro_{key}",
-                "label": str(ma.get("label") or key),
+                "label": macro_label,
                 "value": macro_index,
                 "weight": macro_w,
+                "weight_scale": "manifest_points",
                 "contribution": _round2(_safe_float(ma.get("macro_contribution_to_multiplier"))),
                 "direction": "aumenta" if macro_index and macro_index > 1.0 else "riduce" if macro_index and macro_index < 1.0 else "neutro",
                 "data_status": "ok" if status == "available" else "fallback" if status == "partial" else "missing",
@@ -2351,6 +2378,7 @@ def _build_component_tree_side(components: list[dict[str, Any]]) -> list[dict[st
                 "component_label": c.get("label"),
                 "value": c.get("value"),
                 "weight": c.get("weight"),
+                "weight_scale": c.get("weight_scale"),
                 "contribution": c.get("contribution"),
                 "data_status": c.get("data_status"),
                 "notes": c.get("notes"),

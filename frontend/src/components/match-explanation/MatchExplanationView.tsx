@@ -19,7 +19,8 @@ import { PlayerDbProfilesSection } from './PlayerDbProfilesSection'
 import { PredictionModelSummary } from './PredictionModelSummary'
 import { SotBettingAdviceCard } from './SotBettingAdviceCard'
 import { V20LineupImpactBreakdown } from './V20LineupImpactBreakdown'
-import { V20_MODEL } from '../../lib/modelVersions'
+import { V20_MODEL, V21_MODEL } from '../../lib/modelVersions'
+import type { WeightScale } from '../../utils/v21Display'
 
 function fmtDate(iso: string) {
   try {
@@ -288,6 +289,11 @@ export function MatchExplanationView({
     return data.prediction_formula_breakdown?.away?.components_table?.length ?? undefined
   }, [data.prediction_formula_breakdown?.away])
 
+  const componentTreeWeightScale: WeightScale = useMemo(
+    () => (data.active_model_version === V21_MODEL ? 'manifest_points' : 'fraction'),
+    [data.active_model_version],
+  )
+
   if (!fx || !summary) return null
 
   return (
@@ -390,9 +396,17 @@ export function MatchExplanationView({
       {data.component_tree?.home?.length || data.component_tree?.away?.length ? (
         <SectionCard title="Albero componenti">
           <div className="space-y-6">
-            <ComponentTreeView nodes={data.component_tree?.home ?? []} teamName={fx.home_team.name} />
+            <ComponentTreeView
+              nodes={data.component_tree?.home ?? []}
+              teamName={fx.home_team.name}
+              weightScale={componentTreeWeightScale}
+            />
             <div className="border-t border-slate-100" />
-            <ComponentTreeView nodes={data.component_tree?.away ?? []} teamName={fx.away_team.name} />
+            <ComponentTreeView
+              nodes={data.component_tree?.away ?? []}
+              teamName={fx.away_team.name}
+              weightScale={componentTreeWeightScale}
+            />
           </div>
         </SectionCard>
       ) : null}

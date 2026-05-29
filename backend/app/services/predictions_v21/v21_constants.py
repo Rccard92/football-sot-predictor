@@ -32,3 +32,18 @@ PREDICTIVE_MACRO_KEYS: tuple[str, ...] = (
 )
 
 QUALITY_MACRO_KEY = "model_quality_controls"
+
+WEIGHT_SCALE_MANIFEST_POINTS = "manifest_points"
+
+
+def format_weight_pct(macro_weight: int | float | None) -> str:
+    """16 (punti manifest) → '16%'."""
+    if macro_weight is None:
+        return "—"
+    w = float(macro_weight)
+    if w <= 0:
+        return "0%"
+    if w <= 1.0:
+        return f"{round(w * 100, 2):g}%"
+    rounded = round(w, 2)
+    return f"{int(rounded) if rounded == int(rounded) else rounded}%"

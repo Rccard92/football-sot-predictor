@@ -177,6 +177,7 @@ export type ComponentTreeNode = {
   component_label: string | null
   value: number | null
   weight: number | null
+  weight_scale?: 'fraction' | 'manifest_points'
   contribution: number | null
   data_status?: string
   notes?: string | null

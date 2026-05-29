@@ -60,9 +60,11 @@ def build_v21_trace(
                     {
                         "key": m.key,
                         "label": m.label,
+                        "macro_key": mr.key,
+                        "macro_label": mr.label,
                         "micro_weight": m.micro_weight,
-                        "raw_value": m.raw_value,
-                        "normalized_value": m.normalized_value,
+                        "raw_value": round(float(m.raw_value), 2) if m.raw_value is not None else None,
+                        "normalized_value": round(float(m.normalized_value), 2),
                         "source_path": m.source_path,
                         "sample_count": m.sample_count,
                         "status": m.status,
