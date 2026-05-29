@@ -337,6 +337,7 @@ class CompetitionIngestionService:
         *,
         dry_run: bool = False,
         model_version: str | None = None,
+        generate_mode: str = "default",
     ) -> dict[str, Any]:
         if not competition_id:
             return {
@@ -413,9 +414,16 @@ class CompetitionIngestionService:
 
         lineups_ready = sportapi_lineup_rows_count > 0 and sportapi_mappings_count > 0
         requested_mv = str(model_version).strip() if model_version else None
-        v21_only = requested_mv == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
+        mode = str(generate_mode or "default").strip()
+        v21_only = mode == "v21_only" or requested_mv == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
+        comparison_mode = mode == "v20_v21_comparison"
         model_versions_requested = [BASELINE_SOT_MODEL_VERSION_V11_SOT]
-        if v21_only:
+        if comparison_mode:
+            model_versions_requested = [
+                BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+                BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+            ]
+        elif v21_only:
             model_versions_requested = [BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS]
         elif lineups_ready:
             model_versions_requested.append(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
@@ -499,10 +507,57 @@ class CompetitionIngestionService:
 
         fixture_ids = [int(f.id) for f in upcoming]
         warnings: list[str] = list(selection.warnings)
-        if not lineups_ready and not v21_only:
+        if not lineups_ready and not v21_only and not comparison_mode:
             warnings.append(
                 "Lineups non disponibili: prediction generata senza impatto formazioni."
             )
+
+        if comparison_mode:
+            from app.services.predictions_v20.baseline_v2_0_lineup_impact_service import (
+                SotPredictionV20LineupImpactService,
+            )
+            from app.services.predictions_v21.baseline_v2_1_weighted_components_service import (
+                SotPredictionV21WeightedComponentsService,
+            )
+
+            v20 = SotPredictionV20LineupImpactService()
+            v21 = SotPredictionV21WeightedComponentsService()
+            v20_result = v20.generate_for_competition(db, comp.id, fixture_ids=fixture_ids)
+            v21_result = v21.generate_for_competition(db, comp.id, fixture_ids=fixture_ids)
+            v20_n = int(v20_result.get("predictions_created_or_updated") or v20_result.get("predictions_ok") or 0)
+            v21_n = int(v21_result.get("predictions_created_or_updated") or 0)
+            warnings.extend(v20_result.get("warnings") or [])
+            warnings.extend(v21_result.get("warnings") or [])
+            overall_status = "ok"
+            if v20_n == 0 and v21_n == 0:
+                overall_status = "error"
+            elif v20_n == 0 or v21_n == 0:
+                overall_status = "partial_success"
+            return {
+                "status": overall_status,
+                "competition_id": comp.id,
+                "competition_key": comp.key,
+                "competition_name": comp.name,
+                "season": comp.season,
+                "round": round_label,
+                "generate_mode": "v20_v21_comparison",
+                "future_fixtures_count": future_fixtures_count,
+                "next_round_fixtures": len(upcoming),
+                "fixture_ids_processed": fixture_ids,
+                "model_versions_requested": model_versions_requested,
+                "comparison_ready": v20_n > 0 and v21_n > 0,
+                "warnings": warnings,
+                "v20": {
+                    "model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+                    "predictions_created_or_updated": v20_n,
+                    **{k: v for k, v in v20_result.items() if k not in ("predictions_created_or_updated",)},
+                },
+                "v21": {
+                    "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+                    "predictions_created_or_updated": v21_n,
+                    **{k: v for k, v in v21_result.items() if k not in ("predictions_created_or_updated",)},
+                },
+            }
 
         if v21_only:
             from app.services.predictions_v21.baseline_v2_1_weighted_components_service import (

@@ -220,11 +220,87 @@ export async function buildCompetitionPlayerProfiles(
 export async function refreshCompetitionNextRound(
   competitionId: number,
   dryRun = false,
-  opts?: { modelVersion?: string },
+  opts?: { modelVersion?: string; generateMode?: 'default' | 'v21_only' | 'v20_v21_comparison' },
 ): Promise<Record<string, unknown>> {
   const body: Record<string, unknown> = { dry_run: dryRun }
   if (opts?.modelVersion) body.model_version = opts.modelVersion
+  if (opts?.generateMode) body.generate_mode = opts.generateMode
   return adminPostJson(`/api/admin/competitions/${competitionId}/refresh/next-round`, body)
+}
+
+export type ModelComparisonSide = {
+  model_version?: string
+  predicted_total_sot?: number | null
+  home_sot?: number | null
+  away_sot?: number | null
+  statistical_pick?: string | null
+  cautious_pick?: string | null
+  statistical_margin?: number | null
+  cautious_margin?: number | null
+  statistical_risk?: string | null
+  confidence_label?: string | null
+}
+
+export type ModelComparisonDelta = {
+  total_sot?: number | null
+  home_sot?: number | null
+  away_sot?: number | null
+  direction?: 'up' | 'down' | 'stable' | string | null
+  pick_changed?: boolean
+  confidence_changed?: boolean
+}
+
+export type ModelComparisonRow = {
+  fixture_id: number
+  api_fixture_id?: number
+  kickoff_at?: string | null
+  round?: string | null
+  status_short?: string | null
+  home_team: { id: number; name: string; logo_url?: string | null }
+  away_team: { id: number; name: string; logo_url?: string | null }
+  v20?: ModelComparisonSide | null
+  v21?: ModelComparisonSide | null
+  delta?: ModelComparisonDelta | null
+  lineup_status?: string | null
+}
+
+export type ModelComparisonResponse = {
+  status?: string
+  message?: string
+  competition_id?: number
+  competition_name?: string
+  competition_key?: string
+  season?: number
+  round?: string | null
+  base_model?: { model_version: string; label: string; response_key?: string }
+  compare_model?: { model_version: string; label: string; response_key?: string }
+  matches_count?: number
+  rows: ModelComparisonRow[]
+  missing?: {
+    base_model_missing_predictions?: number
+    compare_model_missing_predictions?: number
+  }
+  warnings?: string[]
+}
+
+export async function getNextRoundModelComparison(
+  competitionId: number,
+  opts?: {
+    limit?: number
+    onlyNextRound?: boolean
+    baseModel?: string
+    compareModel?: string
+  },
+): Promise<ModelComparisonResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  if (opts?.baseModel) p.set('base_model', opts.baseModel)
+  if (opts?.compareModel) p.set('compare_model', opts.compareModel)
+  const q = p.toString()
+  return requestJson<ModelComparisonResponse>(
+    `/api/competitions/${competitionId}/next-round/model-comparison${q ? `?${q}` : ''}`,
+  )
 }
 
 /** Generazione previsioni v2.1 Weighted Components (engine autonomo). */

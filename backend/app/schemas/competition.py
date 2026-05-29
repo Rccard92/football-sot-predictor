@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -76,6 +78,7 @@ class CompetitionPatchBody(BaseModel):
 class IngestDryRunBody(BaseModel):
     dry_run: bool = False
     model_version: str | None = None
+    generate_mode: Literal["default", "v21_only", "v20_v21_comparison"] = "default"
 
 
 class SportApiLineupsIngestBody(BaseModel):

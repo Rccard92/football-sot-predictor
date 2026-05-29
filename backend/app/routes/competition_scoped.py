@@ -8,8 +8,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+)
 from app.core.database import get_db
 from app.services.competition_service import CompetitionService
+from app.services.next_round_model_comparison_service import (
+    build_next_round_model_comparison_for_competition,
+)
 from app.services.next_round_quick_report_service import (
     build_next_round_quick_report_for_competition,
     build_upcoming_fixture_detail_for_competition,
@@ -38,6 +45,27 @@ def competition_model_status(
         db,
         comp,
         selected_model_version=model_version,
+    )
+    return JSONResponse(status_code=code, content=jsonable_encoder(payload))
+
+
+@router.get("/{competition_id}/next-round/model-comparison")
+def competition_next_round_model_comparison(
+    competition_id: int,
+    base_model: str = Query(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT),
+    compare_model: str = Query(BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS),
+    limit: int = Query(20, ge=1, le=100),
+    only_next_round: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    comp = CompetitionService().get_by_id_or_raise(db, competition_id)
+    payload, code = build_next_round_model_comparison_for_competition(
+        db,
+        comp,
+        base_model=base_model,
+        compare_model=compare_model,
+        limit=limit,
+        only_next_round=only_next_round,
     )
     return JSONResponse(status_code=code, content=jsonable_encoder(payload))
 

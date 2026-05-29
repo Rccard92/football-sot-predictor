@@ -6,6 +6,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES
+from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+)
 from app.models import (
     Fixture,
     FixtureLineup,
@@ -209,6 +213,16 @@ def build_competition_data_health(
     )
     missing_mappings_next_round = max(next_round_fixture_count - next_round_mappings_count, 0)
 
+    expected_per_model = 2 * next_round_fixture_count if next_round_fixture_count > 0 else 0
+    base_nr = int(next_round_pred_by_model.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT, 0))
+    compare_nr = int(next_round_pred_by_model.get(BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS, 0))
+    model_comparison_available = (
+        next_round_fixture_count > 0
+        and expected_per_model > 0
+        and base_nr >= expected_per_model
+        and compare_nr >= expected_per_model
+    )
+
     sportapi_rows = list(
         db.scalars(
             select(FixtureProviderLineup).where(
@@ -234,6 +248,15 @@ def build_competition_data_health(
         "predictions_count": predictions_count,
         "predictions_by_model": predictions_by_model,
         "predictions_by_model_detail": predictions_by_model_detail,
+        "model_comparison_available": model_comparison_available,
+        "model_comparison_next_round": {
+            "base_model": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+            "compare_model": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+            "base_next_round_count": base_nr,
+            "compare_next_round_count": compare_nr,
+            "expected_per_model": expected_per_model,
+            "next_round_fixture_count": next_round_fixture_count,
+        },
         "selected_model_version": selected_model_version,
         "selected_model_next_round_predictions_count": selected_next_round_count,
         "lineup_rows_count": lineups_count,

@@ -96,22 +96,44 @@ export function DataHealth() {
 
       {modelDetails.length > 0 ? (
         <section className="rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-indigo-900">Prediction per modello</h2>
-          <ul className="mt-3 space-y-2 text-sm text-slate-700">
-            {modelDetails.map((m) => (
-              <li key={m.model_version} className="flex flex-wrap gap-x-3 gap-y-1">
-                <span className="font-medium text-slate-900">
-                  {m.label ?? labelForModelVersion(m.model_version)}:
-                </span>
-                <span>{m.predictions_count ?? 0} totali</span>
-                <span>· next round: {m.next_round_predictions_count ?? 0}</span>
-                <span>· readiness: {m.readiness ?? '—'}</span>
-                {m.last_generated_at ? (
-                  <span className="text-xs text-slate-500">· ultimo refresh: {m.last_generated_at}</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-indigo-900">Prediction per modello</h2>
+            {data?.model_comparison_available != null ? (
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                  data.model_comparison_available
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : 'border-slate-200 bg-slate-50 text-slate-600'
+                }`}
+              >
+                Confronto disponibile: {data.model_comparison_available ? 'sì' : 'no'}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-left text-sm text-slate-700">
+              <thead>
+                <tr className="border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="py-2 pr-4">Modello</th>
+                  <th className="py-2 pr-4">Totale</th>
+                  <th className="py-2 pr-4">Prossimo turno</th>
+                  <th className="py-2">Readiness</th>
+                </tr>
+              </thead>
+              <tbody>
+                {modelDetails.map((m) => (
+                  <tr key={m.model_version} className="border-b border-slate-100">
+                    <td className="py-2 pr-4 font-medium text-slate-900">
+                      {m.label ?? labelForModelVersion(m.model_version)}
+                    </td>
+                    <td className="py-2 pr-4 tabular-nums">{m.predictions_count ?? 0}</td>
+                    <td className="py-2 pr-4 tabular-nums">{m.next_round_predictions_count ?? 0}</td>
+                    <td className="py-2">{m.readiness ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       ) : null}
 

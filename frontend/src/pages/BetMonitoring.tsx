@@ -13,6 +13,7 @@ import {
 import { ContextBanner } from '../components/ContextBanner'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { useModelSelection } from '../contexts/ModelSelectionContext'
+import { labelForModelVersion } from '../lib/modelVersions'
 import { formatKickoffReport } from '../utils/sportApiLineupMeta'
 import {
   formatOdd,
@@ -138,6 +139,11 @@ function DashboardRow({ p, index }: { p: TrackedBettingPickRow; index: number })
       </td>
       <td className="px-2 py-2.5 align-middle">
         <MatchTeamsCell p={p} live={live} />
+        {(p.model_version || p.model_id) ? (
+          <p className="mt-1 text-[10px] font-medium text-indigo-800">
+            Modello pick: {labelForModelVersion(String(p.model_version ?? p.model_id))}
+          </p>
+        ) : null}
       </td>
       <td className="px-2 py-2.5 text-right text-sm tabular-nums text-slate-800">
         {formatSotTotal(p.initial_predicted_total_sot)}

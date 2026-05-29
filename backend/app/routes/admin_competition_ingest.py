@@ -163,6 +163,12 @@ def ingest_competition_sportapi_lineups(
     return jsonable_encoder(result)
 
 
+def _ingest_generate_mode(body: IngestDryRunBody | None) -> str:
+    if body is None:
+        return "default"
+    return str(body.generate_mode or "default")
+
+
 @router.post("/{competition_id}/refresh/next-round")
 def refresh_competition_next_round(
     competition_id: int,
@@ -176,6 +182,7 @@ def refresh_competition_next_round(
             competition_id,
             dry_run=_ingest_body(body),
             model_version=_ingest_model_version(body),
+            generate_mode=_ingest_generate_mode(body),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception(

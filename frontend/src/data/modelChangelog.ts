@@ -12,6 +12,24 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.6',
+    date: '2026-05-29',
+    title: 'Confronto modelli v2.0 vs v2.1',
+    type: 'patch',
+    summary:
+      'Aggiunto confronto diretto tra v2.0 e v2.1 nella Prossima giornata, con differenze SOT, pick suggerite e accesso agli audit separati.',
+    highlights: [
+      'Nuovo endpoint confronto modelli prossimo turno.',
+      'Tabella confronto v2.0 vs v2.1.',
+      'Delta SOT e badge variazione.',
+      'Evidenza se la pick cambia tra i modelli.',
+      'Audit separato per v2.0 e v2.1.',
+      'Data Health più chiara per prediction per modello.',
+      'Nessuna modifica alle formule.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.5',
     date: '2026-05-29',
     title: 'Fix stato modello e quick-report v2.1',

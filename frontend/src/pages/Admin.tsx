@@ -427,6 +427,17 @@ export function Admin() {
         }),
     },
     {
+      id: 'gen-comparison',
+      label: 'Genera confronto v2.0 / v2.1',
+      description:
+        'Genera prediction v2.0 e v2.1 sul prossimo turno del campionato selezionato (senza altri campionati).',
+      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
+      run: () =>
+        refreshCompetitionNextRound(requireCompetition(), false, {
+          generateMode: 'v20_v21_comparison',
+        }),
+    },
+    {
       id: 'gen-v21',
       label: 'Genera previsioni v2.1 Weighted Components',
       description: `Engine autonomo macro/micro. Modello: ${V21_MODEL}.`,

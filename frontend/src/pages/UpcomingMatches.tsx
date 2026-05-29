@@ -2,8 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { Link } from 'react-router-dom'
 import {
   getModelStatusForCompetition,
+  getNextRoundModelComparison,
   getNextRoundQuickReportForCompetition,
   getUpcomingFixtureDetailForCompetition,
+  type ModelComparisonResponse,
   type ModelLimitations,
   type ModelStatusResponse,
   type UpcomingActiveMatchRow,
@@ -12,6 +14,7 @@ import {
 import { ContextBanner } from '../components/ContextBanner'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { useModelSelection } from '../contexts/ModelSelectionContext'
+import { ModelComparisonSection } from '../components/upcoming/ModelComparisonSection'
 import { QuickPlayReportSection } from '../components/upcoming'
 import {
   filterVersionsForUi,
@@ -48,6 +51,7 @@ export function UpcomingMatches() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<ModelStatusResponse | null>(null)
   const [data, setData] = useState<UpcomingActiveResponse | null>(null)
+  const [comparisonData, setComparisonData] = useState<ModelComparisonResponse | null>(null)
 
   const [selectedFixtureId, setSelectedFixtureId] = useState<number | null>(null)
   const [detailMatch, setDetailMatch] = useState<UpcomingActiveMatchRow | null>(null)
@@ -62,25 +66,34 @@ export function UpcomingMatches() {
       setLoading(false)
       setData(null)
       setStatus(null)
+      setComparisonData(null)
       setError('Seleziona un campionato per visualizzare la prossima giornata.')
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const s = await getModelStatusForCompetition(selectedCompetitionId, {
-        modelVersion: selectedModelVersion,
-      })
+      const [s, res, comparison] = await Promise.all([
+        getModelStatusForCompetition(selectedCompetitionId, {
+          modelVersion: selectedModelVersion,
+        }),
+        getNextRoundQuickReportForCompetition(selectedCompetitionId, {
+          limit: 20,
+          onlyNextRound: true,
+          modelVersion: selectedModelVersion,
+        }),
+        getNextRoundModelComparison(selectedCompetitionId, {
+          limit: 20,
+          onlyNextRound: true,
+        }),
+      ])
       setStatus(s)
-      const res = await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
-        limit: 20,
-        onlyNextRound: true,
-        modelVersion: selectedModelVersion,
-      })
       setData(res)
+      setComparisonData(comparison)
     } catch (e) {
       setData(null)
       setStatus(null)
+      setComparisonData(null)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
@@ -350,6 +363,13 @@ export function UpcomingMatches() {
         </div>
       ) : (
         <div className="space-y-6">
+          {selectedCompetitionId != null ? (
+            <ModelComparisonSection
+              data={comparisonData}
+              competitionId={selectedCompetitionId}
+              loading={loading}
+            />
+          ) : null}
           <p className="text-sm text-slate-600">
             {data.round ? (
               <>
