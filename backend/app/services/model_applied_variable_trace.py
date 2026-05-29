@@ -1204,8 +1204,18 @@ def _row_for_spec(
             base["unit"] = "peso micro"
             base["value"] = _r2(_sf(val)) if val is not None else None
             base["notes"] = f"source_path={source_path}" if source_path else None
+            inp_status = str(inp.get("status") or "") if isinstance(inp, dict) else ""
             if val is not None:
-                base["status"] = str(inp.get("status") or "available")
+                base["status"] = inp_status or "available"
+            elif inp_status in (
+                "missing",
+                "available_derived",
+                "fallback_partial",
+                "partial",
+                "fallback",
+                "fallback_historical_profiles",
+            ):
+                base["status"] = inp_status
             else:
                 base["status"] = "not_tracked_yet"
             return base

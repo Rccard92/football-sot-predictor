@@ -137,6 +137,45 @@ export function DataHealth() {
         </section>
       ) : null}
 
+      {data?.v21_variable_coverage != null ? (
+        <section className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-violet-900">Copertura variabili v2.1 (prossimo turno)</h2>
+          <p className="mt-1 text-xs text-slate-600">
+            xG nel feed:{' '}
+            {(data.xg_feed as { xg_feed_available?: boolean } | undefined)?.xg_feed_available ? 'sì' : 'no'}
+          </p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-left text-xs text-slate-700">
+              <thead>
+                <tr className="border-b border-slate-200 text-[10px] font-semibold uppercase text-slate-500">
+                  <th className="py-2 pr-3">Macroarea</th>
+                  <th className="py-2 pr-3">Tot</th>
+                  <th className="py-2 pr-3">Disp.</th>
+                  <th className="py-2 pr-3">Deriv.</th>
+                  <th className="py-2 pr-3">Missing</th>
+                  <th className="py-2">N/T</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(
+                  ((data.v21_variable_coverage as { by_macro?: Record<string, Record<string, number>> })
+                    ?.by_macro ?? {}) as Record<string, Record<string, number>>,
+                ).map(([key, bucket]) => (
+                  <tr key={key} className="border-b border-slate-100">
+                    <td className="py-2 pr-3 font-medium">{key}</td>
+                    <td className="py-2 pr-3 tabular-nums">{bucket.total ?? 0}</td>
+                    <td className="py-2 pr-3 tabular-nums">{bucket.available ?? 0}</td>
+                    <td className="py-2 pr-3 tabular-nums">{bucket.available_derived ?? 0}</td>
+                    <td className="py-2 pr-3 tabular-nums">{bucket.missing ?? 0}</td>
+                    <td className="py-2 tabular-nums">{bucket.not_tracked_yet ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error}</div>
       ) : null}

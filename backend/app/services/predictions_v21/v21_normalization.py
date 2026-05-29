@@ -9,12 +9,25 @@ from app.services.predictions_v21.v21_constants import MICRO_NORM_MAX, MICRO_NOR
 
 V21MicroStatus = Literal[
     "available",
+    "available_derived",
     "missing",
     "not_tracked_yet",
     "fallback",
+    "fallback_partial",
     "fallback_historical_profiles",
     "partial",
 ]
+
+
+def micro_status_counts_available(status: V21MicroStatus) -> bool:
+    """True se la micro contribuisce alla copertura dati (non missing/not_tracked)."""
+    return status in (
+        "available",
+        "available_derived",
+        "partial",
+        "fallback_historical_profiles",
+        "fallback_partial",
+    )
 
 
 @dataclass

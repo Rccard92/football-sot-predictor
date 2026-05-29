@@ -60,6 +60,8 @@ class LineupProfileEntry:
     shots_on_target_per90: float | None
     shots_total_per90: float | None
     team_sot_share_pct: float | None
+    team_shots_share_pct: float | None
+    shots_total: float | None
     shooting_impact_score: float | None
     reliability_score: int | None
     total_minutes: float | None
@@ -72,6 +74,12 @@ class LineupProfileEntry:
 def _share_pct_from_profile(p: PlayerSeasonProfile) -> float | None:
     if p.team_sot_share is not None:
         return round(float(p.team_sot_share) * 100.0, 4)
+    return None
+
+
+def _shots_share_pct_from_profile(p: PlayerSeasonProfile) -> float | None:
+    if p.team_shots_share is not None:
+        return round(float(p.team_shots_share) * 100.0, 4)
     return None
 
 
@@ -95,6 +103,7 @@ def _pack_entry(
     profile_key = int(legacy_id) if legacy_id is not None else api_id
     sot90 = _float_or_none(profile.shots_on_per90)
     share_pct = _share_pct_from_profile(profile)
+    shots_share_pct = _shots_share_pct_from_profile(profile)
     name = registry.name
     mock_player = MockPlayer(
         id=profile_key,
@@ -118,6 +127,8 @@ def _pack_entry(
         shots_on_target_per90=sot90,
         shots_total_per90=_float_or_none(profile.shots_total_per90),
         team_sot_share_pct=share_pct,
+        team_shots_share_pct=shots_share_pct,
+        shots_total=_float_or_none(profile.shots_total),
         shooting_impact_score=_float_or_none(profile.shooting_impact_score),
         reliability_score=int(profile.reliability_score) if profile.reliability_score is not None else None,
         total_minutes=_float_or_none(profile.minutes_total),
@@ -224,6 +235,8 @@ def _load_legacy_sot_profiles(
                 shots_on_target_per90=mock_profile.shots_on_target_per90,
                 shots_total_per90=None,
                 team_sot_share_pct=mock_profile.team_sot_share_pct,
+                team_shots_share_pct=None,
+                shots_total=None,
                 shooting_impact_score=None,
                 reliability_score=None,
                 total_minutes=mock_profile.total_minutes,

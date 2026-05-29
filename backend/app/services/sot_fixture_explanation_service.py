@@ -2820,6 +2820,15 @@ def _build_fixture_sot_explanation_body(
     if lineup_impact is None:
         lineup_impact = _lineup_impact_for_explanation(db, fx, home, away, active_mv)
 
+    variable_coverage = None
+    if active_mv == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
+        from app.services.predictions_v21.v21_variable_coverage import build_v21_variable_coverage_from_raw
+
+        variable_coverage = {
+            "home": build_v21_variable_coverage_from_raw(raw_home if isinstance(raw_home, dict) else None),
+            "away": build_v21_variable_coverage_from_raw(raw_away if isinstance(raw_away, dict) else None),
+        }
+
     return {
         "status": "ok",
         "fixture": _fixture_payload(fx, home, away),
@@ -2844,6 +2853,7 @@ def _build_fixture_sot_explanation_body(
             "home": _build_component_tree_side(comp_home),
             "away": _build_component_tree_side(comp_away),
         },
+        "variable_coverage": variable_coverage,
         "applied_variable_trace": {"home": trace_home, "away": trace_away},
         "not_applied_variables": {
             "items": [],

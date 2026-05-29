@@ -74,9 +74,16 @@ def build_v21_quality_summary(
 
     total = len(all_micros)
     missing = sum(1 for m in all_micros if m.status in ("missing", "not_tracked_yet"))
-    fallback = sum(1 for m in all_micros if m.fallback_used or m.status == "fallback_historical_profiles")
+    fallback = sum(
+        1
+        for m in all_micros
+        if m.fallback_used
+        or m.status in ("fallback_historical_profiles", "fallback_partial", "fallback")
+    )
     not_tracked = sum(1 for m in all_micros if m.status == "not_tracked_yet")
-    available = sum(1 for m in all_micros if m.status == "available")
+    available = sum(
+        1 for m in all_micros if m.status in ("available", "available_derived")
+    )
 
     sample_map: dict[str, int | None] = {}
     fallbacks_used: list[str] = []

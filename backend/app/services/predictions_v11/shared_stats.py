@@ -38,7 +38,7 @@ def expected_goals_from_team_stat(st: Any) -> tuple[float | None, str]:
             if not isinstance(block, dict):
                 continue
             t = str(block.get("type") or "").lower()
-            if "expected" in t and "goal" in t:
+            if t in ("xg", "expected goals", "expected_goals") or ("expected" in t and "goal" in t):
                 val = block.get("value") or block.get("Value")
                 try:
                     if val is not None:

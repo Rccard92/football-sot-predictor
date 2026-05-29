@@ -23,6 +23,8 @@ from app.models import (
 )
 from app.services.competition_service import CompetitionService
 from app.services.next_round_selection import select_next_round_fixtures
+from app.services.predictions_v21.v21_variable_coverage import aggregate_v21_coverage_from_predictions
+from app.services.predictions_v21.v21_xg_coverage import xg_coverage_summary
 from app.services.sot_model_registry import label_for_model, user_visible_model_versions
 
 
@@ -235,6 +237,21 @@ def build_competition_data_health(
 
     lineup_coverage_pct = round(100.0 * lineups_count / max(finished_count * 2, 1), 1)
 
+    xg_feed = xg_coverage_summary(db, int(comp.id))
+    v21_variable_coverage = None
+    if next_round_ids:
+        v21_rows = db.scalars(
+            select(TeamSotPrediction).where(
+                TeamSotPrediction.competition_id == comp.id,
+                TeamSotPrediction.fixture_id.in_(next_round_ids),
+                TeamSotPrediction.model_version == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+                TeamSotPrediction.predicted_sot.isnot(None),
+            ),
+        ).all()
+        raw_payloads = [r.raw_json for r in v21_rows if isinstance(r.raw_json, dict)]
+        if raw_payloads:
+            v21_variable_coverage = aggregate_v21_coverage_from_predictions(raw_payloads)
+
     return {
         "competition_id": comp.id,
         "competition_key": comp.key,
@@ -274,6 +291,8 @@ def build_competition_data_health(
         "next_round_lineup_coverage_pct": next_round_lineup_coverage_pct,
         "missing_mappings_next_round": missing_mappings_next_round,
         "tracked_picks_count": picks_count,
+        "xg_feed": xg_feed,
+        "v21_variable_coverage": v21_variable_coverage,
         "last_ingestion": {
             "source": last_ingestion.source if last_ingestion else None,
             "status": last_ingestion.status if last_ingestion else None,

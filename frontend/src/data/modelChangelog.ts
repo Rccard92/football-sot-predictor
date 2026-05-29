@@ -12,6 +12,25 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.8',
+    date: '2026-05-29',
+    title: 'Completamento variabili derivate v2.1',
+    type: 'patch',
+    summary:
+      'Recuperate e derivate nuove micro-variabili della v2.1 dove i dati erano già disponibili, migliorando copertura e diagnostica del modello.',
+    highlights: [
+      'Passaggi riusciti derivati da passaggi totali e precisione.',
+      'Aggiunta quota tiri top player.',
+      'Migliorata assenza top shooter.',
+      'Aggiunto cambio modulo vs media.',
+      'Aggiunto turnover offensivo/difensivo dove possibile.',
+      'Aggiunta assenza titolare vs panchinaro.',
+      'xG mantenuto missing se non disponibile nel feed.',
+      'Nessuna modifica a formule e pesi.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.7',
     date: '2026-05-29',
     title: 'Fix render stato formazione confronto modelli',

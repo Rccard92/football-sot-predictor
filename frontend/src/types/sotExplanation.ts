@@ -58,6 +58,7 @@ export type ExplanationVariable = {
   sample_matches?: ExplanationSampleRow[]
   sample_matches_note?: string | null
   status?: string
+  warning?: string | null
   parent_component_id?: string
   raw_value?: number | null
   normalized_value?: number | null
@@ -275,6 +276,10 @@ export type SotFixtureExplanationResponse = {
     away: FinalFormulaSide | null
   }
   component_tree?: { home: ComponentTreeNode[]; away: ComponentTreeNode[] }
+  variable_coverage?: {
+    home?: Record<string, unknown>
+    away?: Record<string, unknown>
+  }
   applied_variable_trace?: { home: AppliedVariableTraceRow[]; away: AppliedVariableTraceRow[] }
   not_applied_variables?: { items: unknown[]; note?: string | null }
   variables_used?: { home: ExplanationVariable[]; away: ExplanationVariable[] }

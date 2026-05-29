@@ -12,7 +12,7 @@ from app.services.predictions_v21.v21_constants import (
     PREDICTIVE_MACRO_KEYS,
 )
 from app.services.predictions_v21.v21_manifest_definitions import V21MacroAreaSpec
-from app.services.predictions_v21.v21_normalization import V21MicroResult
+from app.services.predictions_v21.v21_normalization import V21MicroResult, micro_status_counts_available
 
 
 @dataclass
@@ -29,7 +29,7 @@ class V21MacroResult:
     is_quality_only: bool = False
 
     def to_components_blob(self) -> dict:
-        available = sum(1 for m in self.micros if m.status == "available")
+        available = sum(1 for m in self.micros if micro_status_counts_available(m.status))
         total = len(self.micros)
         return {
             "value": round(self.macro_index, 4),
@@ -71,7 +71,7 @@ def aggregate_v21_macro_score(
     macro_index = weighted / float(weight_sum)
     macro_index = max(MACRO_INDEX_MIN, min(MACRO_INDEX_MAX, macro_index))
 
-    available_n = sum(1 for mr in micro_results if mr.status == "available")
+    available_n = sum(1 for mr in micro_results if micro_status_counts_available(mr.status))
     coverage_pct = 100.0 * available_n / max(len(micro_results), 1)
 
     warnings: list[str] = []

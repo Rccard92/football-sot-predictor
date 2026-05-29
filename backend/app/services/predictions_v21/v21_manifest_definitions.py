@@ -165,7 +165,7 @@ V21_MANIFEST_DEFINITIONS: tuple[V21MacroAreaSpec, ...] = (
         micros=(
             _micro("avg_possession", "Possesso palla medio", 15, "team_stats.season_avg_possession"),
             _micro("total_passes", "Passaggi totali", 5, "team_stats.season_avg_passes"),
-            _micro("passes_completed", "Passaggi riusciti", 5, "team_stats.season_avg_passes_completed"),
+            _micro("passes_completed", "Passaggi riusciti", 5, "derived.passes_total_x_pass_accuracy"),
             _micro("pass_accuracy", "Precisione passaggi", 15, "team_stats.season_pass_accuracy"),
             _micro("territorial_control", "Controllo territoriale", 25, "team_stats.territorial_control_index"),
             _micro("estimated_pace", "Ritmo stimato della squadra", 35, "team_stats.estimated_pace"),

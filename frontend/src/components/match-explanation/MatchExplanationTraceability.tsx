@@ -174,6 +174,7 @@ export function ComponentTreeView({
                         <th className="px-1.5 py-1 font-medium">Peso</th>
                         <th className="px-1.5 py-1 font-medium">Contr.</th>
                         <th className="px-1.5 py-1 font-medium">Fonte</th>
+                        <th className="px-1.5 py-1 font-medium">Stato</th>
                         <th className="px-1.5 py-1 font-medium">N</th>
                         <th className="px-1.5 py-1 font-medium">FB</th>
                       </tr>
@@ -210,6 +211,14 @@ export function ComponentTreeView({
                                   : '—'}
                           </td>
                           <td className="px-1.5 py-1 font-mono text-[9px] text-slate-500">{v.data_source ?? '—'}</td>
+                          <td className="px-1.5 py-1 text-[9px]">
+                            {v.status ?? '—'}
+                            {v.warning ? (
+                              <span className="ml-1 text-amber-800" title={v.warning}>
+                                ⚠
+                              </span>
+                            ) : null}
+                          </td>
                           <td className="px-1.5 py-1 tabular-nums">{v.matches_count ?? '—'}</td>
                           <td className="px-1.5 py-1">{v.fallback_used ? 'sì' : 'no'}</td>
                         </tr>

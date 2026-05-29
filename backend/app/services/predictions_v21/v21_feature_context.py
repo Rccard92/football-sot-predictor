@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Competition, Fixture, Team
+from app.models.fixture_lineup_refresh_impact import FixtureLineupRefreshImpact
 from app.services.predictions_v10.v10_prior_context import V10PriorContext, build_prior_context
 from app.services.predictions_v11.opponent_stats_agg import agg_conceded_by_opponent, agg_xg_conceded_by_opponent
 from app.services.predictions_v11.shared_stats import agg_for_team
@@ -17,6 +18,9 @@ from app.services.predictions_v11.split_fixtures import (
     team_split_fixtures,
 )
 from app.services.predictions_v21.v21_constants import RECENT_FORM_MATCHES
+from app.services.predictions_v21.v21_lineup_history import build_lineup_history
+from app.services.predictions_v21.v21_lineup_impact_helpers import missing_ids_from_refresh_payload
+from app.services.predictions_v21.v21_xg_coverage import XG_MISSING_WARNING
 from app.services.sportapi.lineup_player_profile_lookup import LineupProfileEntry, load_team_profile_rows
 from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
 
@@ -30,6 +34,8 @@ def _agg_pace_for_team(
     poss_sum = poss_n = 0
     pass_sum = pass_n = 0
     acc_sum = acc_n = 0
+    completed_sum = completed_n = 0
+    derived_completed_sum = derived_n = 0
     for f in fixtures:
         st = stats_map.get((int(f.id), int(team_id)))
         if st is None:
@@ -40,9 +46,17 @@ def _agg_pace_for_team(
         if st.total_passes is not None:
             pass_sum += int(st.total_passes)
             pass_n += 1
+        if st.accurate_passes is not None:
+            completed_sum += int(st.accurate_passes)
+            completed_n += 1
         if st.accurate_passes is not None and st.total_passes and int(st.total_passes) > 0:
             acc_sum += 100.0 * float(st.accurate_passes) / float(st.total_passes)
             acc_n += 1
+        elif st.pass_accuracy_pct is not None and st.total_passes and int(st.total_passes) > 0:
+            acc_sum += float(st.pass_accuracy_pct)
+            acc_n += 1
+            derived_completed_sum += float(st.total_passes) * float(st.pass_accuracy_pct) / 100.0
+            derived_n += 1
         elif st.total_passes and st.accurate_passes is not None:
             pass
 
@@ -52,6 +66,16 @@ def _agg_pace_for_team(
     poss = mean_i(poss_sum, poss_n)
     passes = mean_i(pass_sum, pass_n)
     pass_acc = mean_i(acc_sum, acc_n)
+    passes_completed = mean_i(completed_sum, completed_n)
+    passes_completed_derived = mean_i(derived_completed_sum, derived_n)
+    passes_completed_source = "column"
+    if passes_completed is None and passes_completed_derived is not None:
+        passes_completed = passes_completed_derived
+        passes_completed_source = "derived"
+    elif passes_completed is None and passes is not None and pass_acc is not None:
+        passes_completed = float(passes) * float(pass_acc) / 100.0
+        passes_completed_source = "derived"
+        passes_completed_derived = passes_completed
     territorial = None
     if poss is not None and passes is not None:
         territorial = (poss / 100.0) * (passes / max(passes, 1.0))
@@ -64,7 +88,9 @@ def _agg_pace_for_team(
         "possession_n": poss_n,
         "passes_mean": passes,
         "passes_n": pass_n,
-        "passes_completed_mean": None,
+        "passes_completed_mean": passes_completed,
+        "passes_completed_n": completed_n or derived_n or pass_n,
+        "passes_completed_source": passes_completed_source,
         "pass_accuracy_mean": pass_acc,
         "pass_accuracy_n": acc_n,
         "territorial_control_index": territorial,
@@ -101,6 +127,8 @@ class V21SideContext:
     sportapi_opponent_side: dict[str, Any]
     profile_entries: list[LineupProfileEntry]
     lineup_profiles_mode: str
+    lineup_history: dict[str, Any]
+    refresh_snapshot_missing_api_ids: set[int] | None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -210,7 +238,27 @@ def build_v21_side_context(
                 warnings.append(f"Profili giocatori non caricati: {exc}")
 
     if not league_xg_available:
-        warnings.append("xG non disponibile per questa competition")
+        warnings.append(XG_MISSING_WARNING)
+
+    lineup_history = build_lineup_history(
+        db,
+        team_id=int(team_id),
+        prior_fixtures=prior.team_prior_fixtures,
+    )
+
+    side_key = "home" if is_home else "away"
+    refresh_snapshot_missing_api_ids: set[int] | None = None
+    refresh_row = db.scalars(
+        select(FixtureLineupRefreshImpact)
+        .where(FixtureLineupRefreshImpact.fixture_id == int(fixture.id))
+        .order_by(FixtureLineupRefreshImpact.created_at.desc())
+        .limit(1),
+    ).first()
+    if refresh_row is not None and isinstance(refresh_row.before_payload, dict):
+        refresh_snapshot_missing_api_ids = missing_ids_from_refresh_payload(
+            refresh_row.before_payload,
+            side=side_key,
+        )
 
     return V21SideContext(
         fixture=fixture,
@@ -233,5 +281,7 @@ def build_v21_side_context(
         sportapi_opponent_side=sportapi_opponent_side,
         profile_entries=profile_entries,
         lineup_profiles_mode=lineup_profiles_mode,
+        lineup_history=lineup_history,
+        refresh_snapshot_missing_api_ids=refresh_snapshot_missing_api_ids,
         warnings=warnings,
     )
