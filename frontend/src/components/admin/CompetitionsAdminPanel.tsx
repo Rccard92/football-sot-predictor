@@ -19,6 +19,7 @@ import { useCompetition } from '../../contexts/CompetitionContext'
 
 type IngestionAction = {
   label: string
+  description: string
   fn: () => Promise<Record<string, unknown>>
 }
 
@@ -376,32 +377,52 @@ export function CompetitionsAdminPanel() {
       </div>
 
       {selectedCompetitionId != null ? (
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-          {(
-            [
-              { label: 'Bootstrap', fn: () => bootstrapCompetition(selectedCompetitionId, dryRun) },
-              { label: 'Team stats', fn: () => ingestCompetitionTeamStats(selectedCompetitionId, dryRun) },
-              { label: 'Player stats', fn: () => ingestCompetitionPlayerStats(selectedCompetitionId, dryRun) },
-              {
-                label: 'Profili giocatori',
-                fn: () => buildCompetitionPlayerProfiles(selectedCompetitionId, dryRun),
-              },
-              {
-                label: 'Prossima giornata',
-                fn: () => refreshCompetitionNextRound(selectedCompetitionId, dryRun),
-              },
-            ] satisfies IngestionAction[]
-          ).map(({ label, fn }) => (
-            <button
-              key={label}
-              type="button"
-              className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm text-indigo-900 disabled:opacity-50"
-              disabled={!!busy}
-              onClick={() => void run(label, fn)}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Import per campionato selezionato
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(
+              [
+                {
+                  label: 'Bootstrap',
+                  description: 'Importa squadre e calendario',
+                  fn: () => bootstrapCompetition(selectedCompetitionId, dryRun),
+                },
+                {
+                  label: 'Team stats',
+                  description: 'Importa statistiche squadra delle partite finite',
+                  fn: () => ingestCompetitionTeamStats(selectedCompetitionId, dryRun),
+                },
+                {
+                  label: 'Player stats',
+                  description: 'Importa statistiche giocatori delle partite finite',
+                  fn: () => ingestCompetitionPlayerStats(selectedCompetitionId, dryRun),
+                },
+                {
+                  label: 'Profili giocatori',
+                  description: 'Calcola profili stagionali dai player stats già importati',
+                  fn: () => buildCompetitionPlayerProfiles(selectedCompetitionId, dryRun),
+                },
+                {
+                  label: 'Prossima giornata',
+                  description: 'Genera report/predizioni per fixture future',
+                  fn: () => refreshCompetitionNextRound(selectedCompetitionId, dryRun),
+                },
+              ] satisfies IngestionAction[]
+            ).map(({ label, description, fn }) => (
+              <button
+                key={label}
+                type="button"
+                className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-sm text-indigo-900 disabled:opacity-50"
+                disabled={!!busy}
+                onClick={() => void run(label, fn)}
+              >
+                <span className="block font-medium">{label}</span>
+                <span className="mt-0.5 block text-xs font-normal text-indigo-700/90">{description}</span>
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 

@@ -11,7 +11,9 @@ from app.main import app
 from app.models.competition import Competition
 from app.services.competition_ingestion_service import CompetitionIngestionService
 from app.services.league_season_api_helpers import (
+    BOOTSTRAP_HEAVY_WARNING,
     SeasonNotAvailableError,
+    estimate_bootstrap_api_calls,
     extract_available_seasons,
     normalize_season_year,
     parse_league_pick,
@@ -79,6 +81,76 @@ def test_bootstrap_dry_run_raises_season_not_available():
     mock_client.get_teams.assert_not_called()
 
 
+def test_estimate_bootstrap_api_calls_dry_run():
+    count, breakdown = estimate_bootstrap_api_calls(dry_run=True, league_season_cached=False)
+    assert count == 3
+    assert breakdown == [
+        "GET /leagues (validazione season)",
+        "GET /teams",
+        "GET /fixtures",
+    ]
+
+
+def test_estimate_bootstrap_api_calls_real_run_uncached():
+    count, breakdown = estimate_bootstrap_api_calls(dry_run=False, league_season_cached=False)
+    assert count == 5
+    assert "GET /fixtures" in breakdown[-1]
+
+
+def test_estimate_bootstrap_api_calls_real_run_cached():
+    count, _ = estimate_bootstrap_api_calls(dry_run=False, league_season_cached=True)
+    assert count == 4
+
+
+def _finished_fixture(api_id: int) -> dict:
+    return {
+        "fixture": {"id": api_id, "status": {"short": "FT"}},
+        "teams": {},
+        "league": {},
+    }
+
+
+def test_bootstrap_dry_run_estimate_ignores_finished_count():
+    comp = MagicMock(spec=Competition)
+    comp.id = 2
+    comp.key = "brasileirao_serie_a_2026"
+    comp.name = "Brasileirão Série A"
+    comp.provider_league_id = 71
+    comp.season = 2026
+    comp.league_id = None
+    comp.season_id = None
+
+    mock_client = MagicMock()
+    mock_client.get.return_value = {
+        "response": [
+            {
+                "league": {"id": 71, "name": "Serie A"},
+                "country": {"name": "Brazil"},
+                "seasons": [{"year": 2026, "current": True}],
+            }
+        ]
+    }
+    mock_client.get_teams.return_value = [{"team": {"id": i}} for i in range(20)]
+    mock_client.get_fixtures.return_value = [
+        _finished_fixture(i) for i in range(167)
+    ] + [{"fixture": {"id": i, "status": {"short": "NS"}}, "teams": {}, "league": {}} for i in range(213)]
+
+    svc = CompetitionIngestionService(client=mock_client)
+    svc._comp_svc = MagicMock()
+    svc._comp_svc.get_by_id_or_raise.return_value = comp
+
+    result = svc.bootstrap(MagicMock(), 2, dry_run=True)
+
+    assert result["teams_found"] == 20
+    assert result["fixtures_found"] == 380
+    assert result["finished_fixtures"] == 167
+    assert result["future_fixtures"] == 213
+    assert result["estimated_api_calls"] == 3
+    assert result["bootstrap_scope"] == "base"
+    assert "GET /teams" in result["api_calls_breakdown"]
+    assert BOOTSTRAP_HEAVY_WARNING not in result.get("warnings", [])
+
+
 def test_bootstrap_dry_run_success_without_db_writes():
     comp = MagicMock(spec=Competition)
     comp.id = 2
@@ -112,6 +184,7 @@ def test_bootstrap_dry_run_success_without_db_writes():
     assert result["status"] == "dry_run"
     assert result["teams_found"] == 1
     assert result["available_seasons"] == [2025]
+    assert result["estimated_api_calls"] == 3
     db.commit.assert_not_called()
 
 

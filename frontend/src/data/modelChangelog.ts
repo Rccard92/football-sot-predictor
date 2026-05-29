@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.5',
+    date: '2026-05-29',
+    title: 'Bootstrap base leggero multi-campionato',
+    type: 'patch',
+    summary:
+      'Corretta la stima delle chiamate API del bootstrap base e chiarito in Admin cosa importa ogni pulsante.',
+    highlights: [
+      'Bootstrap importa solo squadre e calendario.',
+      'Stima API realistica (circa 3 chiamate in dry-run).',
+      'Team stats e player stats restano su pulsanti separati.',
+      'Descrizioni chiare sui pulsanti Admin Campionati.',
+      'Nessun impatto sul modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.4',
     date: '2026-05-29',
     title: 'Fix bootstrap Brasileirão e validazione stagione',

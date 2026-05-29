@@ -13,8 +13,10 @@ from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.competition_service import CompetitionService
 from app.services.ingestion_service import IngestionService
 from app.services.league_season_api_helpers import (
+    BOOTSTRAP_HEAVY_WARNING,
     LeaguePickInfo,
     SeasonNotAvailableError,
+    estimate_bootstrap_api_calls,
     parse_league_pick,
     season_not_available_payload,
 )
@@ -172,7 +174,11 @@ class CompetitionIngestionService:
             in FINISHED_STATUSES
         ]
         upcoming = [f for f in fixture_items if f not in finished]
-        estimate_api_calls = 2 + len(finished) * 3
+        league_season_cached = comp.league_id is not None and comp.season_id is not None
+        estimate_api_calls, api_calls_breakdown = estimate_bootstrap_api_calls(
+            dry_run=dry_run,
+            league_season_cached=league_season_cached,
+        )
 
         preview: dict[str, Any] = {
             "competition_id": comp.id,
@@ -186,8 +192,13 @@ class CompetitionIngestionService:
             "future_fixtures": len(upcoming),
             "upcoming_fixtures": len(upcoming),
             "estimated_api_calls": estimate_api_calls,
+            "api_calls_breakdown": api_calls_breakdown,
+            "bootstrap_scope": "base",
             "dry_run": dry_run,
+            "warnings": [],
         }
+        if estimate_api_calls > 20:
+            preview["warnings"].append(BOOTSTRAP_HEAVY_WARNING)
 
         if dry_run:
             preview["status"] = "dry_run"

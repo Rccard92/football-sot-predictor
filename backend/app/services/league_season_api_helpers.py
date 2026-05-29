@@ -150,3 +150,30 @@ class SeasonNotAvailableError(Exception):
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
         super().__init__(payload.get("message") or "season_not_available")
+
+
+BOOTSTRAP_HEAVY_WARNING = (
+    "Bootstrap troppo pesante: verifica che non stia includendo statistiche o player stats."
+)
+
+
+def estimate_bootstrap_api_calls(
+    *,
+    dry_run: bool,
+    league_season_cached: bool,
+) -> tuple[int, list[str]]:
+    breakdown: list[str] = ["GET /leagues (validazione season)"]
+    if dry_run:
+        breakdown.extend(["GET /teams", "GET /fixtures"])
+    else:
+        if not league_season_cached:
+            breakdown.append("GET /leagues (ensure league/season)")
+        breakdown.extend(
+            [
+                "GET /leagues (sync league)",
+                "GET /leagues (sync season)",
+                "GET /teams",
+                "GET /fixtures",
+            ]
+        )
+    return len(breakdown), breakdown
