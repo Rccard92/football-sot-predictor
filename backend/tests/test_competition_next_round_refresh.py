@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from app.core.constants import (
-    BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     fixture_eligible_for_upcoming_sot,
 )
 from app.main import app
@@ -184,14 +184,15 @@ def test_model_status_fallback_when_no_predictions_but_data_ready():
 
     db = MagicMock()
     db.scalars.return_value.all.return_value = [1, 2, 3]
-    db.scalar.side_effect = [0, 334, 597, 0, 0]
+    db.scalar.side_effect = [0, 334, 597, 0, 0, 3, 0, 0]
 
     payload, code = build_model_status_for_competition(db, comp)
 
     assert code == 200
     assert payload["status"] == "fallback_ready"
-    assert payload["active_model_version"] == BASELINE_SOT_MODEL_VERSION_V11_SOT
-    assert payload["recommended_model_version"] == BASELINE_SOT_MODEL_VERSION_V11_SOT
+    assert payload["active_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    assert payload["recommended_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    assert payload["operating_mode"] == "degraded_fallback"
     assert any("v2.0 senza lineups" in w for w in payload["warnings"])
 
 

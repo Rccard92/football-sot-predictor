@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.8',
+    date: '2026-05-29',
+    title: 'Modello v2.0 globale multi-campionato',
+    type: 'patch',
+    summary:
+      'Il modello v2.0 resta globale e condiviso tra campionati; cambia solo il dataset in base al competition_id.',
+    highlights: [
+      'Service v2.0 unico per tutte le competition.',
+      'Registry globale baseline_v2_0_lineup_impact.',
+      'Model-status con modalità completa e fallback degraded.',
+      'Nessun modello v2.0 duplicato per campionato.',
+      'Formula e pesi v2.0 invariati.',
+      'UI Prossime partite e Admin mostrano modello globale e input disponibili.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.7',
     date: '2026-05-29',
     title: 'Fix selezione prossimo turno Brasileirão',

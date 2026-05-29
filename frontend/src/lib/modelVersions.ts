@@ -38,6 +38,26 @@ export const V11_MODEL = 'baseline_v1_1_sot' as const
 export const V10_MODEL = 'baseline_v1_0_sot' as const
 export const V04_MODEL = 'baseline_v0_4_offensive_core_sot' as const
 
+export type OperatingMode = 'complete' | 'degraded_fallback' | 'not_ready'
+
+export function labelForOperatingMode(mode: string | undefined | null): string {
+  if (mode === 'complete') return 'Completa'
+  if (mode === 'degraded_fallback') return 'Fallback (senza lineups)'
+  if (mode === 'not_ready') return 'Non pronto'
+  return '—'
+}
+
+export function formatInputsAvailable(inputs?: Record<string, boolean> | null): string {
+  if (!inputs) return '—'
+  const parts: string[] = []
+  if (inputs.team_stats) parts.push('team stats')
+  if (inputs.player_profiles) parts.push('profili giocatori')
+  if (inputs.lineups) parts.push('lineups')
+  if (inputs.sportapi_mappings) parts.push('mapping SportAPI')
+  if (inputs.v11_base_ready) parts.push('base v1.1')
+  return parts.length ? parts.join(', ') : 'nessuno'
+}
+
 export function labelForModelVersion(slug: string): string {
   return MODEL_VERSION_LABELS[slug] ?? slug
 }

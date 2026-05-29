@@ -20,7 +20,9 @@ import {
   V11_MODEL,
   V20_MODEL,
   filterVersionsForUi,
+  formatInputsAvailable,
   labelForModelVersion,
+  labelForOperatingMode,
   stageBadgeForModel,
   stageDescriptionForModel,
 } from '../lib/modelVersions'
@@ -193,6 +195,28 @@ export function UpcomingMatches() {
 
         <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-700 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
+            <p className="font-semibold text-slate-900">
+              Modello globale:{' '}
+              <span className="font-normal text-slate-800">
+                {status?.global_model_label ?? labelForModelVersion(V20_MODEL)}
+              </span>
+              {status?.operating_mode ? (
+                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                  {labelForOperatingMode(status.operating_mode)}
+                </span>
+              ) : null}
+            </p>
+            {status?.competition_name ? (
+              <p className="text-xs text-slate-600">
+                Campionato: <span className="font-medium text-slate-900">{status.competition_name}</span>
+              </p>
+            ) : null}
+            {status?.inputs_available ? (
+              <p className="text-xs text-slate-600">
+                Input disponibili:{' '}
+                <span className="font-medium text-slate-800">{formatInputsAvailable(status.inputs_available)}</span>
+              </p>
+            ) : null}
             <p className="font-semibold text-slate-900">
               Modello attivo:{' '}
               <span className="font-normal text-slate-800">{status?.active_model_version ?? '—'}</span>

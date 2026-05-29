@@ -24,7 +24,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
-from app.services.sot_model_registry import user_visible_model_versions
+from app.services.sot_model_registry import get_model_display, user_visible_model_versions
 from app.models import (
     Fixture,
     FixtureLineup,
@@ -37,6 +37,11 @@ from app.models import (
     TeamSotPrediction,
 )
 from app.services.ingestion_service import IngestionService
+from app.services.model_operating_context import (
+    attach_global_v20_fields,
+    build_v20_operating_context,
+    operating_mode_message,
+)
 from app.services.model_version_preference import (
     build_v10_coherence_warnings,
     build_v11_coherence_warnings,
@@ -301,6 +306,16 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
         "available_model_versions": available_list,
         "warnings": warnings,
     }
+    display = get_model_display(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
+    payload["global_model_version"] = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    payload["global_model_label"] = display.label if display else BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    v20_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
+    if v20_row and v20_row.get("is_available_for_upcoming"):
+        payload["operating_mode"] = "complete"
+    elif v20_row:
+        payload["operating_mode"] = "degraded_fallback"
+    else:
+        payload["operating_mode"] = "not_ready"
     v11_payload_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V11_SOT)
     if isinstance(v11_payload_row, dict):
         mfs = v11_payload_row.get("missing_fields_summary")
@@ -321,11 +336,18 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         and str(getattr(comp, "country", "") or "").strip().lower() == "italy"
     )
     if is_legacy_serie_a:
-        return build_model_status_payload(db, int(comp.season))
+        payload, code = build_model_status_payload(db, int(comp.season))
+        if code == 200 and isinstance(payload, dict):
+            ctx = build_v20_operating_context(db, comp)
+            payload = attach_global_v20_fields(payload, ctx)
+            payload["competition_id"] = int(comp.id)
+            payload["competition_key"] = getattr(comp, "key", None)
+        return payload, code
 
     competition_id = int(comp.id)
     season = int(comp.season)
     warnings: list[str] = []
+    v20_ctx = build_v20_operating_context(db, comp)
 
     try:
         upcoming_fixture_ids = list(
@@ -358,57 +380,31 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
 
     if int(predictions_total or 0) == 0 and upcoming_fixtures_total == 0:
         return (
-            {
-                "status": "not_initialized",
-                "message": "Modello non ancora inizializzato",
-                "competition_id": competition_id,
-                "competition_key": getattr(comp, "key", None),
-                "season": season,
-                "upcoming_fixtures_total": 0,
-                "available_model_versions": [],
-                "warnings": [
-                    "Nessuna fixture o prediction per questa competition. Eseguire bootstrap e generazione."
-                ],
-            },
+            attach_global_v20_fields(
+                {
+                    "status": "not_initialized",
+                    "message": "Modello non ancora inizializzato",
+                    "competition_id": competition_id,
+                    "competition_key": getattr(comp, "key", None),
+                    "season": season,
+                    "upcoming_fixtures_total": 0,
+                    "available_model_versions": [],
+                    "active_model_version": None,
+                    "recommended_model_version": None,
+                    "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                    "warnings": [
+                        "Nessuna fixture o prediction per questa competition. Eseguire bootstrap e generazione."
+                    ],
+                },
+                v20_ctx,
+            ),
             200,
         )
 
     if int(predictions_total or 0) == 0:
-        team_stats_count = int(
-            db.scalar(
-                select(func.count())
-                .select_from(FixtureTeamStat)
-                .where(FixtureTeamStat.competition_id == competition_id)
-            )
-            or 0
-        )
-        profiles_count = int(
-            db.scalar(
-                select(func.count())
-                .select_from(PlayerSeasonProfile)
-                .where(PlayerSeasonProfile.competition_id == competition_id)
-            )
-            or 0
-        )
-        lineups_count = int(
-            db.scalar(
-                select(func.count())
-                .select_from(FixtureLineup)
-                .where(FixtureLineup.competition_id == competition_id)
-            )
-            or 0
-        )
-        mappings_count = int(
-            db.scalar(
-                select(func.count())
-                .select_from(FixtureProviderMapping)
-                .where(FixtureProviderMapping.competition_id == competition_id)
-            )
-            or 0
-        )
-        lineups_ready = lineups_count > 0 and mappings_count > 0
+        lineups_ready = bool(v20_ctx.get("lineups_ready"))
 
-        if upcoming_fixtures_total > 0 and (team_stats_count > 0 or profiles_count > 0):
+        if upcoming_fixtures_total > 0 and v20_ctx["inputs_available"].get("v11_base_ready"):
             if not lineups_ready:
                 warnings.append("v2.0 senza lineups")
                 warnings.append(
@@ -434,41 +430,46 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                     "generated_at": None,
                 },
             ]
-            message = (
-                "Modello attivo: baseline_v1_1_sot fallback"
-                if not lineups_ready
-                else "Modello attivo: baseline_v1_1_sot"
-            )
+            mode = str(v20_ctx.get("operating_mode") or "not_ready")
+            message = operating_mode_message(mode)
             return (
-                {
-                    "status": "fallback_ready",
-                    "message": message,
-                    "competition_id": competition_id,
-                    "competition_key": getattr(comp, "key", None),
-                    "season": season,
-                    "upcoming_fixtures_total": upcoming_fixtures_total,
-                    "active_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
-                    "recommended_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
-                    "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
-                    "available_model_versions": available_versions,
-                    "lineups_ready": lineups_ready,
-                    "warnings": warnings,
-                },
+                attach_global_v20_fields(
+                    {
+                        "status": "fallback_ready",
+                        "message": message,
+                        "competition_id": competition_id,
+                        "competition_key": getattr(comp, "key", None),
+                        "season": season,
+                        "upcoming_fixtures_total": upcoming_fixtures_total,
+                        "active_model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+                        "recommended_model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+                        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                        "available_model_versions": available_versions,
+                        "warnings": warnings,
+                    },
+                    v20_ctx,
+                ),
                 200,
             )
 
         warnings.append("Nessuna prediction trovata per questa competition.")
         return (
-            {
-                "status": "not_initialized",
-                "message": "Modello non ancora inizializzato",
-                "competition_id": competition_id,
-                "competition_key": getattr(comp, "key", None),
-                "season": season,
-                "upcoming_fixtures_total": upcoming_fixtures_total,
-                "available_model_versions": [],
-                "warnings": warnings,
-            },
+            attach_global_v20_fields(
+                {
+                    "status": "not_initialized",
+                    "message": "Modello non ancora inizializzato",
+                    "competition_id": competition_id,
+                    "competition_key": getattr(comp, "key", None),
+                    "season": season,
+                    "upcoming_fixtures_total": upcoming_fixtures_total,
+                    "available_model_versions": [],
+                    "active_model_version": None,
+                    "recommended_model_version": None,
+                    "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                    "warnings": warnings,
+                },
+                v20_ctx,
+            ),
             200,
         )
 
@@ -523,7 +524,14 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         "available_model_versions": available_list,
         "warnings": warnings,
     }
-    return payload, 200
+    v20_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
+    if v20_row and v20_row.get("is_available_for_upcoming") and v20_ctx.get("lineups_ready"):
+        payload["operating_mode"] = "complete"
+    elif v20_row and v20_row.get("is_available_for_upcoming"):
+        payload["operating_mode"] = "degraded_fallback"
+    else:
+        payload["operating_mode"] = v20_ctx.get("operating_mode", "not_ready")
+    return attach_global_v20_fields(payload, v20_ctx), 200
 
 
 def build_upcoming_active_payload(

@@ -1,4 +1,8 @@
-"""v2.0: base v1.1 × offensive lineup factor × opponent defensive weakness (DB only)."""
+"""v2.0: base v1.1 × offensive lineup factor × opponent defensive weakness (DB only).
+
+Unico servizio globale condiviso tra campionati: `model_version` resta sempre
+`baseline_v2_0_lineup_impact`; `competition_id` filtra solo il dataset in input.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ class SotPredictionV20LineupImpactService:
     base_model_version = BASELINE_SOT_MODEL_VERSION_V11_SOT
 
     def _season_row(self, db: Session, season_year: int):
+        # Legacy Serie A route only; multi-competition uses competition_id-scoped fixtures.
         from sqlalchemy import select
 
         from app.core.config import get_settings
@@ -334,6 +339,16 @@ class SotPredictionV20LineupImpactService:
             )
         upcoming = [f for f in fixtures if (f.status or "").upper() not in FINISHED_STATUSES][:limit]
 
+        if competition_id is not None:
+            for fx in upcoming:
+                if fx.competition_id is None or int(fx.competition_id) != int(competition_id):
+                    return {
+                        "status": "error",
+                        "failed_step": "guardrail_competition_id",
+                        "message": f"Fixture {int(fx.id)} non appartiene a competition_id={competition_id}",
+                        "partial_result": {"upcoming_fixtures": 0, "predictions_ok": 0, "errors": []},
+                    }
+
         if not upcoming:
             return {
                 "status": "error",
@@ -397,4 +412,13 @@ class SotPredictionV20LineupImpactService:
             fixture_ids=fixture_ids,
         )
         result["competition_id"] = comp.id
+        display = get_model_display(self.model_version)
+        result["global_model_label"] = display.label if display else self.model_version
+        from app.services.model_operating_context import build_v20_operating_context
+
+        ctx = build_v20_operating_context(db, comp)
+        result["operating_mode"] = ctx.get("operating_mode")
+        result["inputs_available"] = ctx.get("inputs_available")
+        if ctx.get("operating_mode") == "degraded_fallback":
+            result["mode"] = "degraded_fallback"
         return result

@@ -1940,11 +1940,37 @@ export type ModelStatusVersionRow = {
   missing_fields_summary?: Record<string, number>
 }
 
+export type ModelInputsAvailable = {
+  team_stats?: boolean
+  player_profiles?: boolean
+  lineups?: boolean
+  sportapi_mappings?: boolean
+  v11_base_ready?: boolean
+  upcoming_fixtures?: boolean
+}
+
+export type V20OperatingContext = {
+  global_model_version?: string
+  global_model_label?: string
+  competition_id?: number
+  competition_name?: string
+  operating_mode?: string
+  lineups_ready?: boolean
+  inputs_available?: ModelInputsAvailable
+}
+
 export type ModelStatusResponse = {
   status?: string
   season: number
   competition_id?: number
   competition_key?: string
+  competition_name?: string
+  global_model_version?: string
+  global_model_label?: string
+  operating_mode?: string
+  inputs_available?: ModelInputsAvailable
+  v20_operating_context?: V20OperatingContext
+  lineups_ready?: boolean
   active_model_version: string | null
   recommended_model_version?: string | null
   stable_model_version?: string | null

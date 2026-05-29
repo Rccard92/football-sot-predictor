@@ -44,7 +44,16 @@ import { PreMatchJobPanel } from '../components/admin/PreMatchJobPanel'
 import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
 import { useCompetition } from '../contexts/CompetitionContext'
-import { V04_MODEL, V10_MODEL, V11_MODEL, V20_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
+import {
+  V04_MODEL,
+  V10_MODEL,
+  V11_MODEL,
+  V20_MODEL,
+  filterVersionsForUi,
+  formatInputsAvailable,
+  labelForModelVersion,
+  labelForOperatingMode,
+} from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
 
@@ -586,6 +595,29 @@ export function Admin() {
           <div className="rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Stato modello attivo</h2>
             <dl className="mt-2 space-y-1 text-xs text-slate-700">
+              <div>
+                <dt className="text-slate-500">Modello globale</dt>
+                <dd className="font-semibold text-indigo-900">
+                  {modelStatus?.global_model_label ?? labelForModelVersion(V20_MODEL)}
+                  {modelStatus?.operating_mode ? (
+                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-700">
+                      {labelForOperatingMode(modelStatus.operating_mode)}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+              {modelStatus?.competition_name ? (
+                <div>
+                  <dt className="text-slate-500">Campionato</dt>
+                  <dd>{modelStatus.competition_name}</dd>
+                </div>
+              ) : null}
+              {modelStatus?.inputs_available ? (
+                <div>
+                  <dt className="text-slate-500">Input disponibili</dt>
+                  <dd>{formatInputsAvailable(modelStatus.inputs_available)}</dd>
+                </div>
+              ) : null}
               <div>
                 <dt className="text-slate-500">Raccomandato</dt>
                 <dd className="font-mono text-[11px] font-semibold text-indigo-900">
