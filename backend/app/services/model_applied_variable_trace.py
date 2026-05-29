@@ -1179,11 +1179,20 @@ def _row_for_spec(
             w = macro_weights.get(macro_key)
             comp = components.get(macro_key) if isinstance(components.get(macro_key), dict) else {}
             val = comp.get("value")
+            if val is None:
+                val = comp.get("macro_index")
             base["weight"] = w
             base["unit"] = "peso macro"
-            base["value"] = _r2(_sf(val)) if val is not None else None
+            macro_status = str(comp.get("status") or "")
             if val is not None:
-                base["status"] = str(comp.get("status") or "available")
+                base["value"] = _r2(_sf(val))
+                base["status"] = macro_status or "available"
+            elif macro_status == "degraded_feed_unavailable":
+                base["value"] = 1.0
+                base["status"] = "degraded_feed_unavailable"
+                warns = comp.get("warnings") if isinstance(comp.get("warnings"), list) else []
+                if warns:
+                    base["notes"] = str(warns[0])
             elif engine_status == "experimental_not_ready":
                 base["status"] = "not_tracked_yet"
                 base["notes"] = "Engine v2.1 in preparazione."
@@ -1199,15 +1208,20 @@ def _row_for_spec(
             comp = components.get(macro_key) if isinstance(components.get(macro_key), dict) else {}
             inputs = comp.get("inputs") if isinstance(comp.get("inputs"), dict) else {}
             inp = inputs.get(micro_key) if isinstance(inputs.get(micro_key), dict) else {}
-            val = inp.get("value") if isinstance(inp, dict) else None
+            raw_val = inp.get("raw_value") if isinstance(inp, dict) else None
+            if raw_val is None:
+                raw_val = inp.get("value") if isinstance(inp, dict) else None
+            norm_val = inp.get("normalized_value") if isinstance(inp, dict) else None
             base["weight"] = micro_w
             base["unit"] = "peso micro"
-            base["value"] = _r2(_sf(val)) if val is not None else None
             base["notes"] = f"source_path={source_path}" if source_path else None
             inp_status = str(inp.get("status") or "") if isinstance(inp, dict) else ""
-            if val is not None:
+            if raw_val is not None:
+                base["value"] = _r2(_sf(raw_val))
                 base["status"] = inp_status or "available"
             elif inp_status in (
+                "feed_unavailable",
+                "missing_dependency",
                 "missing",
                 "available_derived",
                 "fallback_partial",
@@ -1216,6 +1230,10 @@ def _row_for_spec(
                 "fallback_historical_profiles",
             ):
                 base["status"] = inp_status
+                if norm_val is not None:
+                    base["value"] = _r2(_sf(norm_val))
+                if inp.get("warning"):
+                    base["notes"] = str(inp.get("warning"))
             else:
                 base["status"] = "not_tracked_yet"
             return base

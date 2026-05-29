@@ -15,11 +15,13 @@ def _empty_bucket() -> dict[str, int]:
         "available": 0,
         "available_derived": 0,
         "missing": 0,
+        "missing_dependency": 0,
         "not_tracked_yet": 0,
         "fallback_partial": 0,
         "partial": 0,
         "fallback": 0,
         "fallback_historical_profiles": 0,
+        "feed_unavailable": 0,
     }
 
 

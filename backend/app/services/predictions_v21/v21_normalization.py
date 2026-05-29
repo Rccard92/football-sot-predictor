@@ -11,12 +11,31 @@ V21MicroStatus = Literal[
     "available",
     "available_derived",
     "missing",
+    "missing_dependency",
     "not_tracked_yet",
     "fallback",
     "fallback_partial",
     "fallback_historical_profiles",
     "partial",
+    "feed_unavailable",
 ]
+
+V21MacroStatus = Literal[
+    "available",
+    "partial",
+    "missing",
+    "degraded_feed_unavailable",
+]
+
+FALLBACK_NEUTRAL_STATUSES: frozenset[V21MicroStatus] = frozenset(
+    {
+        "fallback",
+        "fallback_partial",
+        "fallback_historical_profiles",
+        "feed_unavailable",
+        "missing_dependency",
+    }
+)
 
 
 def micro_status_counts_available(status: V21MicroStatus) -> bool:

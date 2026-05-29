@@ -9,11 +9,12 @@ from app.services.predictions_v21.v21_feature_context import V21SideContext
 from app.services.predictions_v21.v21_lineup_history import lineup_history_sufficient
 from app.services.predictions_v21.v21_lineup_impact_helpers import (
     important_returns_score,
+    injuries_top_shooter_absence_score,
     missing_api_ids,
     missing_name_set,
+    player_layer_top_shooter_absence_score,
     starter_api_ids,
     starter_vs_bench_absence_score,
-    top_shooter_absence_score,
 )
 from app.services.predictions_v21.v21_manifest_definitions import V21MacroAreaSpec, V21MicroSpec
 from app.services.predictions_v21.v21_xg_coverage import XG_MISSING_WARNING
@@ -29,7 +30,12 @@ from app.services.sportapi.sportapi_lineup_present import to_display_role
 def _top_shooters(ctx: V21SideContext) -> list:
     entries = sorted(
         ctx.profile_entries,
-        key=lambda e: float(e.shots_on_target_per90 or 0.0),
+        key=lambda e: (
+            float(e.shots_on_target_per90 or 0.0),
+            float(e.team_sot_share_pct or 0.0),
+            float(e.shooting_impact_score or 0.0),
+            float(e.reliability_score or 0.0),
+        ),
         reverse=True,
     )
     return entries[:TOP_SHOOTERS_COUNT]
@@ -172,7 +178,13 @@ def _collect_recent_form(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroRe
 def _collect_chance_quality(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroResult:
     kw = dict(key=micro.key, label=micro.label, micro_weight=micro.micro_weight, source_path=micro.source_path)
     if not ctx.league_xg_available:
-        return neutral_micro(**kw, status="missing", warning=XG_MISSING_WARNING)
+        return neutral_micro(
+            **kw,
+            status="feed_unavailable",
+            source_path="feed_unavailable.xg",
+            fallback_used=True,
+            warning=XG_MISSING_WARNING,
+        )
 
     lb = ctx.league_baselines
     team_xg = ctx.team_agg.get("xg_mean")
@@ -266,9 +278,31 @@ def _collect_player_layer(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroR
         present = 1.0 if top_name and top_name in starters else 0.0 if ctx.sportapi_audit.get("available") else None
         return normalize_v21_micro_variable(**kw, raw_value=present, baseline=1.0, sample_count=1 if present is not None else None, status="available" if present is not None else "missing")
     if micro.key == "player_layer_top_shooter_absence":
-        score = top_shooter_absence_score(ctx, tops)
+        if not tops:
+            return neutral_micro(
+                **kw,
+                status="missing_dependency",
+                source_path="lineup_impact.player_layer_top_shooter_absence",
+                fallback_used=True,
+                warning="Assenza top shooter: profili giocatori non disponibili.",
+            )
+        if not ctx.sportapi_audit.get("available") and ctx.lineup_profiles_mode != "fallback_historical_profiles":
+            return neutral_micro(
+                **kw,
+                status="missing_dependency",
+                source_path="lineup_impact.player_layer_top_shooter_absence",
+                fallback_used=True,
+                warning="Assenza top shooter: lineups non disponibili.",
+            )
+        score = player_layer_top_shooter_absence_score(ctx, tops)
         if score is None:
-            return neutral_micro(**kw, status="missing", warning="Assenza top shooter non calcolabile")
+            return neutral_micro(
+                **kw,
+                status="missing_dependency",
+                source_path="lineup_impact.player_layer_top_shooter_absence",
+                fallback_used=True,
+                warning="Assenza top shooter non calcolabile: dipendenze mancanti.",
+            )
         return normalize_v21_micro_variable(
             **kw,
             raw_value=score,
@@ -276,7 +310,7 @@ def _collect_player_layer(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroR
             sample_count=len(tops),
             status="available",
             invert=True,
-            source_path="lineup_impact.top_shooter_absence",
+            source_path="lineup_impact.player_layer_top_shooter_absence",
         )
     return neutral_micro(**kw, status="not_tracked_yet")
 
@@ -402,9 +436,23 @@ def _collect_injuries(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroResul
             source_path="lineup_impact.starter_vs_bench_absence",
         )
     if micro.key == "injuries_top_shooter_absence":
-        score = top_shooter_absence_score(ctx, tops)
+        if not tops:
+            return neutral_micro(
+                **kw,
+                status="missing_dependency",
+                source_path="lineup_impact.injuries_top_shooter_absence",
+                fallback_used=True,
+                warning="Assenza top shooter per infortuni: profili non disponibili.",
+            )
+        score = injuries_top_shooter_absence_score(ctx, tops)
         if score is None:
-            return neutral_micro(**kw, status="missing", warning="Assenza top shooter non calcolabile")
+            return neutral_micro(
+                **kw,
+                status="missing_dependency",
+                source_path="lineup_impact.injuries_top_shooter_absence",
+                fallback_used=True,
+                warning="Assenza top shooter per infortuni non calcolabile.",
+            )
         return normalize_v21_micro_variable(
             **kw,
             raw_value=score,
@@ -412,7 +460,7 @@ def _collect_injuries(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroResul
             sample_count=len(tops),
             status="available" if ctx.sportapi_audit.get("available") else "partial",
             invert=True,
-            source_path="lineup_impact.top_shooter_absence",
+            source_path="lineup_impact.injuries_top_shooter_absence",
         )
     if micro.key == "key_defender_absence_opp":
         opp_mp = ctx.sportapi_opponent_side.get("missing_players") or {}

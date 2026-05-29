@@ -36,6 +36,14 @@ from app.services.model_applied_variable_trace import (
     validate_model_trace,
 )
 from app.services.sportapi.lineup_player_profile_lookup import enrich_v20_raw_for_trace
+from app.services.predictions_v21.v21_audit_enrichment import build_v21_coverage_summary_from_raw, enrich_v21_raw_for_audit
+from app.services.predictions_v21.v21_constants import (
+    ANCHOR_OPP_SOT_CONCEDED_WEIGHT,
+    ANCHOR_TEAM_SOT_WEIGHT,
+    PREDICTIVE_MACRO_KEYS,
+    QUALITY_MACRO_KEY,
+)
+from app.services.predictions_v21.v21_manifest_definitions import V21_MANIFEST_DEFINITIONS
 from app.services.predictions_v10.offensive_production_blend import offensive_inputs_as_map
 from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER, COMPONENT_LABEL_PLAYER
 from app.services.predictions_v11.xg_feature_sources import COMPONENT_KEY_XG, COMPONENT_LABEL_XG
@@ -969,12 +977,132 @@ def _components_v21(raw: dict[str, Any], predicted: float) -> list[dict[str, Any
     return out
 
 
+def _v21_macro_label(key: str) -> str:
+    for m in V21_MANIFEST_DEFINITIONS:
+        if m.key == key:
+            return m.label
+    return key
+
+
 def _build_formula_breakdown_v21(raw: dict[str, Any], stored: float) -> dict[str, Any]:
     anchor = _safe_float(raw.get("base_anchor_sot"))
     mult = _safe_float(raw.get("final_multiplier"))
     if anchor is None or mult is None:
         return {}
     product = round(float(anchor) * float(mult), 4)
+
+    anchor_bd = raw.get("anchor_breakdown") if isinstance(raw.get("anchor_breakdown"), dict) else {}
+    team_sot = _safe_float(anchor_bd.get("team_sot_avg"))
+    opp_sot = _safe_float(anchor_bd.get("opponent_sot_conceded_avg"))
+
+    components = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+    weight_sum = sum(
+        float((components.get(k) or {}).get("macro_weight") or 0)
+        for k in PREDICTIVE_MACRO_KEYS
+        if isinstance(components.get(k), dict)
+    )
+    if weight_sum <= 0:
+        weight_sum = sum(
+            float(m.macro_weight)
+            for m in V21_MANIFEST_DEFINITIONS
+            if m.key in PREDICTIVE_MACRO_KEYS and not m.is_quality_only
+        )
+
+    macro_rows: list[dict[str, Any]] = []
+    macro_terms: list[dict[str, Any]] = []
+    for mk in PREDICTIVE_MACRO_KEYS:
+        comp = components.get(mk) if isinstance(components.get(mk), dict) else {}
+        macro_index = _safe_float(comp.get("macro_index") or comp.get("value"))
+        macro_weight = _safe_float(comp.get("macro_weight"))
+        if macro_weight is None:
+            for m in V21_MANIFEST_DEFINITIONS:
+                if m.key == mk:
+                    macro_weight = float(m.macro_weight)
+                    break
+        if macro_index is None:
+            macro_index = 1.0
+        if macro_weight is None:
+            macro_weight = 0.0
+        weighted_contrib = (
+            round(float(macro_index) * float(macro_weight) / float(weight_sum), 4) if weight_sum > 0 else 0.0
+        )
+        warnings = comp.get("warnings") if isinstance(comp.get("warnings"), list) else []
+        status = str(comp.get("status") or "available")
+        label = _v21_macro_label(mk)
+        row = {
+            "componente": label,
+            "macro_key": mk,
+            "valore_componente": _round2(macro_index),
+            "peso": _round2(macro_weight),
+            "calcolo_contributo": f"({_round2(macro_index)} × {_round2(macro_weight)}) / {_round2(weight_sum)}",
+            "contributo_finale": _round2(weighted_contrib),
+            "status": status,
+            "warning": "; ".join(str(w) for w in warnings[:2]) if warnings else None,
+        }
+        macro_rows.append(row)
+        macro_terms.append(
+            {
+                "id": f"v21_macro_{mk}",
+                "label": label,
+                "symbol": mk,
+                "value": _round2(macro_index),
+                "weight": _round2(macro_weight),
+                "contribution": _round2(weighted_contrib),
+                "calc_expression": row["calcolo_contributo"],
+                "status": status,
+            },
+        )
+
+    quality_comp = components.get(QUALITY_MACRO_KEY) if isinstance(components.get(QUALITY_MACRO_KEY), dict) else {}
+    quality_row = {
+        "componente": _v21_macro_label(QUALITY_MACRO_KEY),
+        "macro_key": QUALITY_MACRO_KEY,
+        "valore_componente": _round2(_safe_float(quality_comp.get("macro_index") or quality_comp.get("value"))),
+        "peso": _round2(_safe_float(quality_comp.get("macro_weight"))),
+        "calcolo_contributo": "Solo confidence/diagnostica — non nel moltiplicatore SOT",
+        "contributo_finale": None,
+        "status": str(quality_comp.get("status") or "available"),
+        "warning": None,
+        "direct_formula_impact": False,
+    }
+
+    anchor_terms: list[dict[str, Any]] = []
+    if team_sot is not None and opp_sot is not None:
+        anchor_expr = (
+            f"{ANCHOR_TEAM_SOT_WEIGHT:g} × {_round2(team_sot)} + "
+            f"{ANCHOR_OPP_SOT_CONCEDED_WEIGHT:g} × {_round2(opp_sot)} = {_round2(anchor)}"
+        )
+    elif team_sot is not None:
+        anchor_expr = f"{ANCHOR_TEAM_SOT_WEIGHT:g} × {_round2(team_sot)} = {_round2(anchor)}"
+    elif opp_sot is not None:
+        anchor_expr = f"{ANCHOR_OPP_SOT_CONCEDED_WEIGHT:g} × {_round2(opp_sot)} = {_round2(anchor)}"
+    else:
+        anchor_expr = f"base_anchor_sot = {_round2(anchor)}"
+
+    anchor_breakdown_table = [
+        {
+            "componente": "Media SOT fatti squadra",
+            "valore_componente": _round2(team_sot) if team_sot is not None else None,
+            "peso": ANCHOR_TEAM_SOT_WEIGHT,
+            "calcolo_contributo": f"× {ANCHOR_TEAM_SOT_WEIGHT:g}",
+            "contributo_finale": _round2(team_sot * ANCHOR_TEAM_SOT_WEIGHT) if team_sot is not None else None,
+        },
+        {
+            "componente": "Media SOT concessi avversario",
+            "valore_componente": _round2(opp_sot) if opp_sot is not None else None,
+            "peso": ANCHOR_OPP_SOT_CONCEDED_WEIGHT,
+            "calcolo_contributo": f"× {ANCHOR_OPP_SOT_CONCEDED_WEIGHT:g}",
+            "contributo_finale": _round2(opp_sot * ANCHOR_OPP_SOT_CONCEDED_WEIGHT) if opp_sot is not None else None,
+        },
+        {
+            "componente": "Base anchor SOT",
+            "valore_componente": _round2(anchor),
+            "peso": None,
+            "calcolo_contributo": anchor_expr,
+            "contributo_finale": _round2(anchor),
+        },
+    ]
+
     terms = [
         {
             "id": "v21_term_base_anchor",
@@ -983,17 +1111,18 @@ def _build_formula_breakdown_v21(raw: dict[str, Any], stored: float) -> dict[str
             "value": _round2(anchor),
             "weight": None,
             "contribution": _round2(anchor),
-            "calc_expression": f"{_round2(anchor)}",
+            "calc_expression": anchor_expr,
             "status": "available",
         },
+        *macro_terms,
         {
             "id": "v21_term_multiplier",
             "label": "Moltiplicatore macro",
             "symbol": "weighted_macro_multiplier",
             "value": _round2(mult),
-            "weight": None,
+            "weight": _round2(weight_sum),
             "contribution": _round2(mult),
-            "calc_expression": f"× {_round2(mult)}",
+            "calc_expression": f"Σ(macro_index × macro_weight) / {_round2(weight_sum)} = {_round2(mult)}",
             "status": "available",
         },
         {
@@ -1007,10 +1136,46 @@ def _build_formula_breakdown_v21(raw: dict[str, Any], stored: float) -> dict[str
             "status": "available",
         },
     ]
+
+    components_table = [
+        {
+            "componente": "Base anchor SOT",
+            "valore_componente": _round2(anchor),
+            "peso": None,
+            "calcolo_contributo": anchor_expr,
+            "contributo_finale": _round2(anchor),
+            "status": "available",
+        },
+        {
+            "componente": "Moltiplicatore macro",
+            "valore_componente": _round2(mult),
+            "peso": _round2(weight_sum),
+            "calcolo_contributo": f"Σ(macro_index × macro_weight) / {_round2(weight_sum)}",
+            "contributo_finale": _round2(mult),
+            "status": "available",
+        },
+        *macro_rows,
+        {
+            "componente": "SOT attesi v2.1",
+            "valore_componente": _round2(stored),
+            "peso": None,
+            "calcolo_contributo": f"{_round2(anchor)} × {_round2(mult)}",
+            "contributo_finale": _round2(stored),
+            "status": "available",
+        },
+    ]
+
     quality = raw.get("quality") if isinstance(raw.get("quality"), dict) else {}
     fq_status = str(quality.get("formula_quality_status") or raw.get("engine_status") or "partial")
     fq_warn = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
     sum_c, delta, _warn, wmsg = _checksum_block(product, stored)
+    v21_coverage_summary = build_v21_coverage_summary_from_raw(raw)
+
+    macro_multiplier_formula = (
+        f"weighted_macro_multiplier = Σ(macro_index × macro_weight) / Σ(macro_weight) "
+        f"= {_round2(mult)}"
+    )
+
     return {
         "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
         "stored_predicted_sot": _round2(stored),
@@ -1019,18 +1184,16 @@ def _build_formula_breakdown_v21(raw: dict[str, Any], stored: float) -> dict[str
         "formula_quality_status": fq_status,
         "formula_quality_warnings": fq_warn,
         "formula_symbolic": "expected_sot_v21 = base_anchor_sot × weighted_macro_multiplier",
-        "formula_numeric": f"expected_sot_v21 = {_round2(anchor)} × {_round2(mult)} = {_round2(product)}",
-        "components_table": [
-            {
-                "componente": t["label"],
-                "valore_componente": t["value"],
-                "peso": t.get("weight"),
-                "calcolo_contributo": t["calc_expression"],
-                "contributo_finale": t["contribution"],
-                "status": t.get("status"),
-            }
-            for t in terms
-        ],
+        "formula_numeric": (
+            f"base_anchor_sot = {anchor_expr}\n"
+            f"{macro_multiplier_formula}\n"
+            f"expected_sot_v21 = {_round2(anchor)} × {_round2(mult)} = {_round2(product)}"
+        ),
+        "components_table": components_table,
+        "anchor_breakdown_table": anchor_breakdown_table,
+        "macro_areas_table": macro_rows,
+        "quality_macro_table": [quality_row] if quality_comp else [],
+        "v21_coverage_summary": v21_coverage_summary,
         "sum_contributions": sum_c,
         "delta_vs_stored": delta,
         "checksum_warning": wmsg,
@@ -2416,6 +2579,45 @@ def _build_final_formula_side(fb: dict[str, Any] | None) -> dict[str, Any] | Non
     }
 
 
+def _categorize_trace_missing(trace: list[dict[str, Any]]) -> dict[str, list[str]]:
+    missing_real: list[str] = []
+    feed_unavailable: list[str] = []
+    not_tracked_yet: list[str] = []
+    fallback_neutral: list[str] = []
+
+    for r in trace:
+        if not isinstance(r, dict):
+            continue
+        key = str(r.get("key") or "")
+        if not key:
+            continue
+        status = str(r.get("status") or "")
+        if status == "missing":
+            missing_real.append(key)
+        elif status == "feed_unavailable":
+            feed_unavailable.append(key)
+        elif status == "not_tracked_yet":
+            not_tracked_yet.append(key)
+        elif status in (
+            "fallback",
+            "fallback_partial",
+            "fallback_historical_profiles",
+            "missing_dependency",
+            "degraded_feed_unavailable",
+        ):
+            val = r.get("value")
+            if val is None or abs(float(val) - 1.0) < 0.001:
+                fallback_neutral.append(key)
+            elif status == "degraded_feed_unavailable":
+                fallback_neutral.append(key)
+    return {
+        "missing_real": missing_real,
+        "feed_unavailable": feed_unavailable,
+        "not_tracked_yet": not_tracked_yet,
+        "fallback_neutral": fallback_neutral,
+    }
+
+
 def _framework_consistency_side(
     *,
     active_mv: str,
@@ -2434,7 +2636,8 @@ def _framework_consistency_side(
         stored_predicted_sot=float(predicted) if predicted is not None else None,
         sum_contributions=float(sum_contributions) if sum_contributions is not None else None,
     )
-    missing_data = [str(r.get("key")) for r in trace if isinstance(r, dict) and r.get("status") == "missing" and r.get("key")]
+    categories = _categorize_trace_missing(trace)
+    missing_data = categories["missing_real"]
     return {
         "framework_applied_count": fw_applied,
         "debug_trace_count": dbg_n,
@@ -2442,6 +2645,7 @@ def _framework_consistency_side(
         "missing_trace_keys": val.get("missing_trace_keys") or [],
         "extra_trace_keys": val.get("extra_trace_keys") or [],
         "missing_data_keys": missing_data,
+        "missing_data_categories": categories,
         "validation_warnings": val.get("warnings") or [],
     }
 
@@ -2565,6 +2769,14 @@ def _build_fixture_sot_explanation_body(
     raw_home = raw_by.get((active_mv, "home"))
     raw_away = raw_by.get((active_mv, "away"))
 
+    audit_raw_home = raw_home if isinstance(raw_home, dict) else {}
+    audit_raw_away = raw_away if isinstance(raw_away, dict) else {}
+    if active_mv == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
+        if isinstance(raw_home, dict):
+            audit_raw_home = enrich_v21_raw_for_audit(raw_home, db, fx.competition_id, fx.id)
+        if isinstance(raw_away, dict):
+            audit_raw_away = enrich_v21_raw_for_audit(raw_away, db, fx.competition_id, fx.id)
+
     ah = actual_by.get((active_mv, "home"))
     aa = actual_by.get((active_mv, "away"))
     played = _finished(fx.status)
@@ -2641,8 +2853,8 @@ def _build_fixture_sot_explanation_body(
     _enrich_components_with_internal_formula(active_mv, raw_home or {}, comp_home)
     _enrich_components_with_internal_formula(active_mv, raw_away or {}, comp_away)
 
-    fb_home = _build_prediction_formula_breakdown_side(active_mv, raw_home, float(ph) if ph is not None else None)
-    fb_away = _build_prediction_formula_breakdown_side(active_mv, raw_away, float(pa) if pa is not None else None)
+    fb_home = _build_prediction_formula_breakdown_side(active_mv, audit_raw_home, float(ph) if ph is not None else None)
+    fb_away = _build_prediction_formula_breakdown_side(active_mv, audit_raw_away, float(pa) if pa is not None else None)
     try:
         model_comparison = _build_model_comparison_section(
             preds,
@@ -2758,8 +2970,8 @@ def _build_fixture_sot_explanation_body(
     conf_a = int(row_away.confidence_score) if row_away and row_away.confidence_score is not None else None
 
     lineup_impact: dict[str, Any] | None = None
-    trace_raw_home = raw_home if isinstance(raw_home, dict) else {}
-    trace_raw_away = raw_away if isinstance(raw_away, dict) else {}
+    trace_raw_home = audit_raw_home if isinstance(audit_raw_home, dict) else {}
+    trace_raw_away = audit_raw_away if isinstance(audit_raw_away, dict) else {}
     if active_mv == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
         lineup_impact = _lineup_impact_for_explanation(db, fx, home, away, active_mv)
         if lineup_impact:
@@ -2791,14 +3003,14 @@ def _build_fixture_sot_explanation_body(
     fw_cons_home = _framework_consistency_side(
         active_mv=active_mv,
         trace=trace_home,
-        raw=raw_home if isinstance(raw_home, dict) else None,
+        raw=audit_raw_home if isinstance(audit_raw_home, dict) else None,
         predicted=float(ph) if ph is not None else None,
         sum_contributions=sum_c_home,
     )
     fw_cons_away = _framework_consistency_side(
         active_mv=active_mv,
         trace=trace_away,
-        raw=raw_away if isinstance(raw_away, dict) else None,
+        raw=audit_raw_away if isinstance(audit_raw_away, dict) else None,
         predicted=float(pa) if pa is not None else None,
         sum_contributions=sum_c_away,
     )
@@ -2825,8 +3037,8 @@ def _build_fixture_sot_explanation_body(
         from app.services.predictions_v21.v21_variable_coverage import build_v21_variable_coverage_from_raw
 
         variable_coverage = {
-            "home": build_v21_variable_coverage_from_raw(raw_home if isinstance(raw_home, dict) else None),
-            "away": build_v21_variable_coverage_from_raw(raw_away if isinstance(raw_away, dict) else None),
+            "home": build_v21_variable_coverage_from_raw(audit_raw_home if isinstance(audit_raw_home, dict) else None),
+            "away": build_v21_variable_coverage_from_raw(audit_raw_away if isinstance(audit_raw_away, dict) else None),
         }
 
     return {
@@ -2844,6 +3056,8 @@ def _build_fixture_sot_explanation_body(
             "formula_label": (
                 "v2.0: base_v1_1 × offensive_lineup_factor × opponent_defensive_weakness"
                 if active_mv == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+                else "v2.1: base_anchor_sot × weighted_macro_multiplier (9 macroaree predittive)"
+                if active_mv == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
                 else "expected_sot: mix pesato (v0.1/v0.3/v0.4) o somma additiva (v0.2) — vedi terms"
             ),
             "home": _build_final_formula_side(fb_home if isinstance(fb_home, dict) else None),

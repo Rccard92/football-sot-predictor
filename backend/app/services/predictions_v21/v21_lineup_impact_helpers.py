@@ -28,11 +28,33 @@ def squad_api_ids(ctx: V21SideContext) -> set[int]:
     return ids
 
 
+def bench_api_ids(ctx: V21SideContext) -> set[int]:
+    ids: set[int] = set()
+    for p in ctx.sportapi_side.get("substitutes") or []:
+        if isinstance(p, dict) and p.get("provider_player_id") is not None:
+            ids.add(int(p["provider_player_id"]))
+    return ids
+
+
 def missing_api_ids(ctx: V21SideContext) -> set[int]:
     ids: set[int] = set()
     mp = ctx.sportapi_side.get("missing_players") or {}
     if isinstance(mp, dict):
         for grp in mp.values():
+            if isinstance(grp, list):
+                for p in grp:
+                    if isinstance(p, dict) and p.get("provider_player_id") is not None:
+                        ids.add(int(p["provider_player_id"]))
+    return ids
+
+
+def injury_unavailable_api_ids(ctx: V21SideContext) -> set[int]:
+    """Solo infortunati, squalificati o indisponibili (non assenza generica da lineup)."""
+    ids: set[int] = set()
+    mp = ctx.sportapi_side.get("missing_players") or {}
+    if isinstance(mp, dict):
+        for grp_key in ("injured", "suspended", "other", "unavailable"):
+            grp = mp.get(grp_key) or []
             if isinstance(grp, list):
                 for p in grp:
                     if isinstance(p, dict) and p.get("provider_player_id") is not None:
@@ -54,17 +76,47 @@ def missing_name_set(ctx: V21SideContext) -> set[str]:
     return names
 
 
+def injury_unavailable_name_set(ctx: V21SideContext) -> set[str]:
+    names: set[str] = set()
+    mp = ctx.sportapi_side.get("missing_players") or {}
+    if isinstance(mp, dict):
+        for grp_key in ("injured", "suspended", "other", "unavailable"):
+            grp = mp.get(grp_key) or []
+            if isinstance(grp, list):
+                for p in grp:
+                    if isinstance(p, dict):
+                        n = _player_name(p)
+                        if n:
+                            names.add(n)
+    return names
+
+
 def profile_by_api_id(ctx: V21SideContext) -> dict[int, Any]:
     return {int(e.api_player_id): e for e in ctx.profile_entries}
 
 
-def top_shooter_absence_score(ctx: V21SideContext, tops: list) -> float | None:
+def _shooter_impact_weight(entry: Any, max_sot: float) -> float:
+    sot = float(entry.shots_on_target_per90 or 0.0)
+    share = float(entry.team_sot_share_pct or 0.0) / 100.0
+    impact = float(entry.shooting_impact_score or 1.0)
+    reliability = float(entry.reliability_score or 70.0) / 100.0
+    base = sot / max_sot if max_sot > 0 else 0.0
+    return base * (0.5 + 0.3 * share + 0.1 * impact + 0.1 * reliability)
+
+
+def player_layer_top_shooter_absence_score(ctx: V21SideContext, tops: list) -> float | None:
+    """Assenza offensiva top shooter non presenti in formazione (titolari/panchina/missing)."""
     if not tops:
         return None
+    lineups_ok = bool(ctx.sportapi_audit.get("available"))
+    if not lineups_ok and not ctx.profile_entries:
+        return None
+
     missing_ids = missing_api_ids(ctx)
     missing_names = missing_name_set(ctx)
     starters = starter_api_ids(ctx)
-    lineups_ok = bool(ctx.sportapi_audit.get("available"))
+    bench = bench_api_ids(ctx)
+    squad = squad_api_ids(ctx)
 
     max_sot = max((float(e.shots_on_target_per90 or 0.0) for e in tops), default=0.0)
     if max_sot <= 0:
@@ -74,13 +126,43 @@ def top_shooter_absence_score(ctx: V21SideContext, tops: list) -> float | None:
     for entry in tops:
         api_id = int(entry.api_player_id)
         name = entry.name.strip().lower()
-        absent = api_id in missing_ids or name in missing_names
-        if not absent and lineups_ok and starters and api_id not in starters:
+        absent = False
+        if api_id in missing_ids or name in missing_names:
             absent = True
+        elif lineups_ok and squad:
+            if api_id not in starters and api_id not in bench:
+                absent = True
         if absent:
-            weight = float(entry.shots_on_target_per90 or 0.0) / max_sot
-            score += weight
+            score += _shooter_impact_weight(entry, max_sot)
     return min(1.0, round(score, 4))
+
+
+def injuries_top_shooter_absence_score(ctx: V21SideContext, tops: list) -> float | None:
+    """Assenza top shooter per infortunio/squalifica/indisponibilità."""
+    if not tops:
+        return None
+
+    injury_ids = injury_unavailable_api_ids(ctx)
+    injury_names = injury_unavailable_name_set(ctx)
+    if not injury_ids and not injury_names:
+        return 0.0
+
+    max_sot = max((float(e.shots_on_target_per90 or 0.0) for e in tops), default=0.0)
+    if max_sot <= 0:
+        return 0.0
+
+    score = 0.0
+    for entry in tops:
+        api_id = int(entry.api_player_id)
+        name = entry.name.strip().lower()
+        if api_id in injury_ids or name in injury_names:
+            score += _shooter_impact_weight(entry, max_sot)
+    return min(1.0, round(score, 4))
+
+
+def top_shooter_absence_score(ctx: V21SideContext, tops: list) -> float | None:
+    """Compat: delega al player layer (legacy)."""
+    return player_layer_top_shooter_absence_score(ctx, tops)
 
 
 def starter_vs_bench_absence_score(ctx: V21SideContext) -> float | None:

@@ -115,6 +115,21 @@ export type FormulaComponentTableRow = {
   fallback_used?: boolean
   fallback_reason?: string | null
   status?: string | null
+  macro_key?: string | null
+  warning?: string | null
+  direct_formula_impact?: boolean
+}
+
+export type V21CoverageSummary = {
+  predictive_macros_used?: string
+  micro_available?: number
+  micro_fallback_neutral?: number
+  micro_feed_unavailable?: number
+  micro_not_tracked_yet?: number
+  micro_missing_real?: number
+  micro_total?: number
+  quality_macro_present?: boolean
+  quality_macro_note?: string
 }
 
 export type PredictionFormulaBreakdownSide = {
@@ -127,10 +142,21 @@ export type PredictionFormulaBreakdownSide = {
   formula_symbolic: string
   formula_numeric: string
   components_table: FormulaComponentTableRow[]
+  anchor_breakdown_table?: FormulaComponentTableRow[]
+  macro_areas_table?: FormulaComponentTableRow[]
+  quality_macro_table?: FormulaComponentTableRow[]
+  v21_coverage_summary?: V21CoverageSummary
   sum_contributions: number | null
   delta_vs_stored: number | null
   checksum_warning: string | null
   flags: FormulaFlags
+}
+
+export type MissingDataCategories = {
+  missing_real?: string[]
+  feed_unavailable?: string[]
+  not_tracked_yet?: string[]
+  fallback_neutral?: string[]
 }
 
 export type FrameworkConsistencySide = {
@@ -140,6 +166,7 @@ export type FrameworkConsistencySide = {
   missing_trace_keys: string[]
   extra_trace_keys: string[]
   missing_data_keys: string[]
+  missing_data_categories?: MissingDataCategories
   validation_warnings: string[]
 }
 

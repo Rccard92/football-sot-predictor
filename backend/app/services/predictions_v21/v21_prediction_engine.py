@@ -38,6 +38,8 @@ def build_v21_trace(
     macro_results: list[V21MacroResult],
     quality: V21QualitySummary,
     anchor_warnings: list[str],
+    team_sot_avg: float | None = None,
+    opponent_sot_conceded_avg: float | None = None,
 ) -> dict[str, Any]:
     components: dict[str, Any] = {}
     macroareas_audit: list[dict[str, Any]] = []
@@ -79,6 +81,17 @@ def build_v21_trace(
 
     all_warnings = list(quality.warnings) + anchor_warnings
 
+    anchor_breakdown: dict[str, Any] | None = None
+    if team_sot_avg is not None or opponent_sot_conceded_avg is not None:
+        anchor_breakdown = {
+            "team_sot_avg": round(float(team_sot_avg), 4) if team_sot_avg is not None else None,
+            "opponent_sot_conceded_avg": round(float(opponent_sot_conceded_avg), 4)
+            if opponent_sot_conceded_avg is not None
+            else None,
+            "team_weight": 0.55,
+            "opponent_weight": 0.45,
+        }
+
     return {
         "engine_status": V21_ENGINE_STATUS_READY,
         "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
@@ -87,6 +100,7 @@ def build_v21_trace(
         "base_anchor_sot": base_anchor_sot,
         "final_multiplier": final_multiplier,
         "predicted_sot": expected_sot,
+        "anchor_breakdown": anchor_breakdown,
         "confidence_score": quality.confidence_score,
         "components": components,
         "macroareas": macroareas_audit,
@@ -142,6 +156,8 @@ def build_v21_side_prediction(
         macro_results=macro_results,
         quality=quality,
         anchor_warnings=anchor_warnings,
+        team_sot_avg=ctx.team_agg.get("sot_mean"),
+        opponent_sot_conceded_avg=ctx.opp_conceded_agg.get("sot_mean"),
     )
 
     engine_status = V21_ENGINE_STATUS_READY

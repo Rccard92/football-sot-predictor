@@ -336,8 +336,12 @@ export function MatchExplanationView({
 
       {data.framework_consistency ? (
         <SectionCard
-          title="Tracciabilità variabili modello"
-          subtitle="Allineamento tra voci del manifest, righe del trace applicato e ruoli (formula, contesto, qualità). I conteggi qui sono la fonte di riferimento per il registro tabellare sotto."
+          title={data.active_model_version === V21_MODEL ? 'Audit v2.1 — tracciabilità macro weighted' : 'Tracciabilità variabili modello'}
+          subtitle={
+            data.active_model_version === V21_MODEL
+              ? 'Macroaree v2.1, micro-variabili, classificazione dati mancanti e allineamento trace.'
+              : 'Allineamento tra voci del manifest, righe del trace applicato e ruoli (formula, contesto, qualità). I conteggi qui sono la fonte di riferimento per il registro tabellare sotto.'
+          }
         >
           <p className="mb-3 text-[11px] text-slate-600">
             Modello attivo:{' '}
@@ -346,6 +350,47 @@ export function MatchExplanationView({
             </span>
           </p>
           <FrameworkConsistencyCard fc={data.framework_consistency} traceHome={traceHome} traceAway={traceAway} />
+        </SectionCard>
+      ) : null}
+
+      {data.active_model_version === V21_MODEL && data.variable_coverage ? (
+        <SectionCard title="Copertura variabili v2.1" subtitle="Rollup micro per macroarea (casa e trasferta).">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {(['home', 'away'] as const).map((side) => {
+              const sideLabel = side === 'home' ? fx.home_team.name : fx.away_team.name
+              const cov = data.variable_coverage?.[side] as
+                | { by_macro?: Record<string, Record<string, number>>; totals?: Record<string, number> }
+                | undefined
+              const totals = cov?.totals
+              return (
+                <div key={side} className="rounded-lg border border-slate-100 p-3 text-[11px]">
+                  <p className="font-semibold text-slate-900">{sideLabel}</p>
+                  {totals ? (
+                    <dl className="mt-2 grid grid-cols-2 gap-1 text-slate-700">
+                      <div>
+                        <dt className="text-slate-500">Totale micro</dt>
+                        <dd className="font-mono font-semibold">{totals.total ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Disponibili</dt>
+                        <dd className="font-mono font-semibold">{totals.available ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Feed unavailable</dt>
+                        <dd className="font-mono font-semibold">{totals.feed_unavailable ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Missing dependency</dt>
+                        <dd className="font-mono font-semibold">{totals.missing_dependency ?? 0}</dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <p className="mt-2 text-slate-500">Copertura non disponibile.</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </SectionCard>
       ) : null}
 
@@ -375,7 +420,13 @@ export function MatchExplanationView({
       ) : null}
 
       {data.prediction_formula_breakdown?.home || data.prediction_formula_breakdown?.away ? (
-        <SectionCard title="Formula finale della previsione">
+        <SectionCard
+          title={
+            data.active_model_version === V21_MODEL
+              ? 'Formula finale v2.1 — base anchor × macro multiplier'
+              : 'Formula finale della previsione'
+          }
+        >
           <div className="space-y-6">
             <PredictionFinalFormulaSection
               teamName={fx.home_team.name}

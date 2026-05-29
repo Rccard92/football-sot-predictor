@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from app.services.predictions_v21.v21_feature_collectors import _collect_pace_control, _collect_player_layer
+from app.services.predictions_v21.v21_feature_collectors import _collect_chance_quality, _collect_pace_control, _collect_player_layer
 from app.services.predictions_v21.v21_feature_context import _agg_pace_for_team
 from app.services.predictions_v21.v21_lineup_history import build_lineup_history, lineup_history_sufficient
 from app.services.predictions_v21.v21_lineup_impact_helpers import top_shooter_absence_score
@@ -143,6 +143,16 @@ def test_lineup_history_sufficient():
 
 def test_xg_missing_warning_constant():
     assert "feed" in XG_MISSING_WARNING.lower()
+
+
+def test_xg_micro_status_feed_unavailable():
+    from types import SimpleNamespace
+
+    micro = _micro_spec("chance_quality", "xg_produced")
+    ctx = _ctx(league_xg_available=False)
+    result = _collect_chance_quality(ctx, micro)
+    assert result.status == "feed_unavailable"
+    assert result.source_path == "feed_unavailable.xg"
 
 
 def test_variable_coverage_rollup():

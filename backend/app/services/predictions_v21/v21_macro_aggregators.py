@@ -79,8 +79,29 @@ def aggregate_v21_macro_score(
         if mr.warning:
             warnings.append(mr.warning)
 
+    xg_micro_keys = frozenset(
+        {
+            "xg_produced",
+            "xg_conceded_by_opponent",
+            "xg_delta_vs_league",
+            "opp_xg_conceded_delta",
+            "xg_prudent_adjustment",
+        }
+    )
     if available_n == 0:
-        status = "missing"
+        all_feed_unavail = micro_results and all(mr.status == "feed_unavailable" for mr in micro_results)
+        all_xg_missing = (
+            macro_spec.key == "chance_quality"
+            and micro_results
+            and all(mr.key in xg_micro_keys for mr in micro_results)
+            and all(mr.status in ("feed_unavailable", "missing") for mr in micro_results)
+        )
+        if macro_spec.key == "chance_quality" and (all_feed_unavail or all_xg_missing):
+            status = "degraded_feed_unavailable"
+            warnings = ["Macroarea neutralizzata: dati xG non disponibili nel feed."]
+            coverage_pct = 0.0
+        else:
+            status = "missing"
     elif available_n < len(micro_results):
         status = "partial"
     else:

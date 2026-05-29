@@ -26,6 +26,36 @@ function statusBorderClass(label: string): string {
   return 'border-slate-200 bg-slate-50/40'
 }
 
+function MissingCategoryList({
+  title,
+  keys,
+  tone,
+}: {
+  title: string
+  keys: string[] | undefined
+  tone: 'amber' | 'slate' | 'violet' | 'sky'
+}) {
+  if (!keys?.length) return null
+  const toneMap = {
+    amber: 'text-amber-900',
+    slate: 'text-slate-800',
+    violet: 'text-violet-900',
+    sky: 'text-sky-900',
+  }
+  return (
+    <div className="mt-2">
+      <p className={`text-[11px] font-medium ${toneMap[tone]}`}>{title}</p>
+      <ul className="mt-1 list-inside list-disc text-[11px] text-slate-800">
+        {keys.map((k) => (
+          <li key={k} className="font-mono">
+            {k}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export function FrameworkConsistencyCard({
   fc,
   traceHome,
@@ -93,7 +123,30 @@ export function FrameworkConsistencyCard({
               La previsione numerica è calcolata. Mancano solo dati di qualità/diagnostica.
             </p>
           ) : null}
-          {d.missing_data_keys?.length ? (
+          {d.missing_data_categories ? (
+            <>
+              <MissingCategoryList
+                title="Dati mancanti reali"
+                keys={d.missing_data_categories.missing_real}
+                tone="amber"
+              />
+              <MissingCategoryList
+                title="Dati non disponibili dal feed"
+                keys={d.missing_data_categories.feed_unavailable}
+                tone="sky"
+              />
+              <MissingCategoryList
+                title="Dati ancora da implementare"
+                keys={d.missing_data_categories.not_tracked_yet}
+                tone="violet"
+              />
+              <MissingCategoryList
+                title="Fallback neutro applicato"
+                keys={d.missing_data_categories.fallback_neutral}
+                tone="slate"
+              />
+            </>
+          ) : d.missing_data_keys?.length ? (
             <div className="mt-2">
               <p className="text-[11px] font-medium text-amber-900">Dati mancanti:</p>
               <ul className="mt-1 list-inside list-disc text-[11px] text-amber-950">

@@ -126,7 +126,7 @@ V21_MANIFEST_DEFINITIONS: tuple[V21MacroAreaSpec, ...] = (
             _micro("offensive_avg_rating", "Rating medio giocatori offensivi", 7, "player_season_profiles.offensive_avg_rating"),
             _micro("top_profile_reliability", "Affidabilità profili top player", 6, "player_season_profiles.top_profile_reliability"),
             _micro("top_shooter_presence", "Presenza dei top shooter", 8, "lineup_impact.top_shooter_presence"),
-            _micro("player_layer_top_shooter_absence", "Assenza dei top shooter", 18, "lineup_impact.top_shooter_absence"),
+            _micro("player_layer_top_shooter_absence", "Assenza dei top shooter", 18, "lineup_impact.player_layer_top_shooter_absence"),
         ),
     ),
     V21MacroAreaSpec(
@@ -153,7 +153,7 @@ V21_MANIFEST_DEFINITIONS: tuple[V21MacroAreaSpec, ...] = (
             _micro("unavailable", "Indisponibili", 5, "sportapi_lineups.unavailable_players"),
             _micro("absent_player_weight", "Peso del giocatore assente", 17, "lineup_impact.absent_player_weight"),
             _micro("starter_vs_bench_absence", "Assenza titolare vs panchinaro", 14, "lineup_impact.starter_vs_bench_absence"),
-            _micro("injuries_top_shooter_absence", "Assenza top shooter", 16, "lineup_impact.top_shooter_absence"),
+            _micro("injuries_top_shooter_absence", "Assenza top shooter", 16, "lineup_impact.injuries_top_shooter_absence"),
             _micro("key_defender_absence_opp", "Assenza difensore chiave avversario", 14, "lineup_impact.opponent_key_defender_absence"),
             _micro("important_returns", "Rientri importanti", 10, "sportapi_lineups.important_returns"),
         ),

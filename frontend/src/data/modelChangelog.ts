@@ -12,6 +12,24 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.10',
+    date: '2026-05-29',
+    title: 'Audit formula finale v2.1 esteso',
+    type: 'patch',
+    summary:
+      'Migliorata la formula finale della v2.1 con breakdown macroaree, classificazione dei dati mancanti e gestione esplicita dei dati xG non disponibili.',
+    highlights: [
+      'Formula finale v2.1 estesa con base anchor e macro multiplier.',
+      'Macroaree mostrate nella formula finale.',
+      'xG classificato come feed_unavailable se non presente.',
+      'Qualità occasioni neutralizzata con warning se xG assente.',
+      'Calcolata assenza top shooter nel player layer.',
+      'Migliorata distinzione tra missing, fallback e dati non disponibili.',
+      'Nessuna modifica a formule o pesi.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.9',
     date: '2026-05-29',
     title: 'Fix circular import v2.1',
