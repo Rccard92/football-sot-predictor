@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
+  AdminHttpError,
   backfillSerieACompetition,
   bootstrapCompetition,
   buildCompetitionPlayerProfiles,
@@ -7,9 +8,12 @@ import {
   discoverCompetitions,
   ingestCompetitionPlayerStats,
   ingestCompetitionTeamStats,
+  isSeasonNotAvailableError,
+  patchCompetition,
   refreshCompetitionNextRound,
   DEFAULT_SEASON,
   type CompetitionDiscoverCandidate,
+  type SeasonNotAvailableErrorBody,
 } from '../../lib/api'
 import { useCompetition } from '../../contexts/CompetitionContext'
 
@@ -20,13 +24,18 @@ type IngestionAction = {
 
 function DiscoverCandidateCard({
   candidate,
+  requestedSeason,
   selected,
   onSelect,
 }: {
   candidate: CompetitionDiscoverCandidate
+  requestedSeason: number
   selected: boolean
   onSelect: () => void
 }) {
+  const seasons = candidate.available_seasons ?? []
+  const seasonOk = candidate.requested_season_available ?? false
+
   return (
     <div
       className={`rounded-lg border px-3 py-2 text-sm ${
@@ -35,17 +44,19 @@ function DiscoverCandidateCard({
     >
       <div className="flex flex-wrap items-start gap-3">
         {candidate.logo ? (
-          <img
-            src={candidate.logo}
-            alt=""
-            className="h-8 w-8 rounded object-contain"
-          />
+          <img src={candidate.logo} alt="" className="h-8 w-8 rounded object-contain" />
         ) : null}
         <div className="min-w-0 flex-1">
           <p className="font-medium text-slate-900">{candidate.name}</p>
           <p className="text-xs text-slate-600">
-            id {candidate.provider_league_id} · {candidate.country ?? '?'} · {candidate.season}
-            {candidate.season_current ? ' · current' : ''}
+            id {candidate.provider_league_id} · {candidate.country ?? '?'} · richiesta {requestedSeason}
+          </p>
+          <p className="text-xs text-slate-600">
+            Stagioni API: {seasons.length ? seasons.join(', ') : '—'}
+            {candidate.current_season ? ` · current ${candidate.current_season}` : ''}
+          </p>
+          <p className={`text-xs ${seasonOk ? 'text-emerald-700' : 'text-amber-700'}`}>
+            Stagione {requestedSeason}: {seasonOk ? 'disponibile' : 'non disponibile'}
           </p>
         </div>
         <button
@@ -56,6 +67,12 @@ function DiscoverCandidateCard({
           Seleziona candidato
         </button>
       </div>
+      {!seasonOk ? (
+        <p className="mt-2 text-xs text-amber-700">
+          La lega esiste, ma la stagione {requestedSeason} non risulta disponibile nella risposta
+          API-Sports.
+        </p>
+      ) : null}
       <details className="mt-2">
         <summary className="cursor-pointer text-xs text-slate-500">Raw payload</summary>
         <pre className="mt-1 max-h-40 overflow-auto rounded bg-slate-50 p-2 text-[10px]">
@@ -69,11 +86,13 @@ function DiscoverCandidateCard({
 function DiscoverCandidateList({
   title,
   candidates,
+  requestedSeason,
   selectedCandidateId,
   onSelect,
 }: {
   title: string
   candidates: CompetitionDiscoverCandidate[]
+  requestedSeason: number
   selectedCandidateId: number | null
   onSelect: (id: number) => void
 }) {
@@ -86,6 +105,7 @@ function DiscoverCandidateList({
         <DiscoverCandidateCard
           key={candidate.provider_league_id}
           candidate={candidate}
+          requestedSeason={requestedSeason}
           selected={selectedCandidateId === candidate.provider_league_id}
           onSelect={() => onSelect(candidate.provider_league_id)}
         />
@@ -109,6 +129,8 @@ export function CompetitionsAdminPanel() {
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null)
   const [discoverMessage, setDiscoverMessage] = useState<string | null>(null)
   const [apiQuery, setApiQuery] = useState<string | null>(null)
+  const [seasonError, setSeasonError] = useState<SeasonNotAvailableErrorBody | null>(null)
+  const [patchSeason, setPatchSeason] = useState<number | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [log, setLog] = useState<string | null>(null)
   const [dryRun, setDryRun] = useState(true)
@@ -121,15 +143,29 @@ export function CompetitionsAdminPanel() {
     [candidates, otherCandidates, selectedCandidateId],
   )
 
+  const canCreateFromDiscovery =
+    selectedCandidate != null && (selectedCandidate.requested_season_available ?? false)
+
   const run = async (label: string, fn: () => Promise<Record<string, unknown>>) => {
     setBusy(label)
     setLog(null)
+    setSeasonError(null)
     try {
       const res = await fn()
       setLog(JSON.stringify(res, null, 2))
       return res
     } catch (e) {
-      setLog(e instanceof Error ? e.message : String(e))
+      if (e instanceof AdminHttpError && e.status === 422 && isSeasonNotAvailableError(e.body)) {
+        setSeasonError(e.body)
+        setPatchSeason(e.body.available_seasons[0] ?? null)
+        setLog(JSON.stringify(e.body, null, 2))
+        return null
+      }
+      if (e instanceof AdminHttpError) {
+        setLog(JSON.stringify(e.body ?? { message: e.message }, null, 2))
+      } else {
+        setLog(e instanceof Error ? e.message : String(e))
+      }
       return null
     } finally {
       setBusy(null)
@@ -171,6 +207,55 @@ export function CompetitionsAdminPanel() {
           Backfill Serie A esistente
         </button>
       </div>
+
+      {seasonError ? (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <h3 className="text-sm font-semibold text-amber-900">Stagione non disponibile</h3>
+          <p className="mt-1 text-sm text-amber-800">{seasonError.message}</p>
+          <p className="mt-1 text-sm text-amber-800">
+            Stagioni disponibili:{' '}
+            {seasonError.available_seasons.length
+              ? seasonError.available_seasons.join(', ')
+              : 'nessuna'}
+          </p>
+          <p className="mt-1 text-xs text-amber-700">
+            La competition Brasileirão è stata creata ma va aggiornata con una stagione disponibile.
+          </p>
+          {seasonError.available_seasons.length > 0 && selectedCompetitionId != null ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <select
+                className="rounded border border-amber-300 px-2 py-1 text-sm"
+                value={patchSeason ?? ''}
+                onChange={(e) => setPatchSeason(Number(e.target.value))}
+              >
+                {seasonError.available_seasons.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+                disabled={!!busy || patchSeason == null}
+                onClick={() =>
+                  void run('patch-season', async () => {
+                    const updated = await patchCompetition(selectedCompetitionId, {
+                      season: patchSeason ?? undefined,
+                      status: 'pending_season',
+                    })
+                    await refreshCompetitions()
+                    setSeasonError(null)
+                    return updated as unknown as Record<string, unknown>
+                  })
+                }
+              >
+                Aggiorna competition a stagione disponibile
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-6 border-t border-slate-200 pt-4">
         <h3 className="text-sm font-semibold text-slate-900">Discovery Brasileirão</h3>
@@ -225,11 +310,16 @@ export function CompetitionsAdminPanel() {
           <button
             type="button"
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-50"
-            disabled={!!busy || selectedCandidate == null}
+            disabled={!!busy || !canCreateFromDiscovery}
             onClick={() =>
               void run('create', async () => {
                 if (selectedCandidate == null) {
                   throw new Error('Prima esegui Discovery API-Sports e seleziona una lega candidata.')
+                }
+                if (!selectedCandidate.requested_season_available) {
+                  throw new Error(
+                    'La stagione richiesta non è disponibile su API-Sports. Seleziona una stagione disponibile.',
+                  )
                 }
                 const c = await createCompetition({
                   key: `brasileirao_serie_a_${season}`,
@@ -271,6 +361,7 @@ export function CompetitionsAdminPanel() {
         <DiscoverCandidateList
           title="Candidati principali"
           candidates={candidates}
+          requestedSeason={season}
           selectedCandidateId={selectedCandidateId}
           onSelect={setSelectedCandidateId}
         />
@@ -278,6 +369,7 @@ export function CompetitionsAdminPanel() {
         <DiscoverCandidateList
           title="Altri risultati del paese"
           candidates={otherCandidates}
+          requestedSeason={season}
           selectedCandidateId={selectedCandidateId}
           onSelect={setSelectedCandidateId}
         />

@@ -20,8 +20,10 @@ import {
   getTeamShotStatsSummary,
   getPlayerMatchDbSummary,
   getModelStatusWithOpts,
+  getNextRoundQuickReportForCompetition,
   getPlayerSotProfilesSummary,
   getUpcomingActiveWithOpts,
+  isLegacySerieACompetition,
   postGenerateV04OffensiveCoreSotUpcoming,
   postGenerateV10SotUpcoming,
   postGenerateV11SotUpcoming,
@@ -29,6 +31,7 @@ import {
   postRefreshNextRoundSportApiLineups,
   postSyncNextRoundApiSquadsBatch,
   postRefreshUpcomingV04Pipeline,
+  resolveModelStatus,
   runBuildSotFeatures,
   runGenerateSotPredictions,
   runSotBacktest,
@@ -40,6 +43,7 @@ import {
 import { PreMatchJobPanel } from '../components/admin/PreMatchJobPanel'
 import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
+import { useCompetition } from '../contexts/CompetitionContext'
 import { V04_MODEL, V10_MODEL, V11_MODEL, V20_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
@@ -180,6 +184,7 @@ function ActionButton({
 }
 
 export function Admin() {
+  const { selectedCompetition, selectedCompetitionId } = useCompetition()
   const [searchParams] = useSearchParams()
   const sportapiFixtureRef = searchParams.get('sportapi_fixture') ?? undefined
   const sportapiSectionRef = useRef<HTMLDivElement | null>(null)
@@ -193,20 +198,37 @@ export function Admin() {
   const loadCards = useCallback(async () => {
     setCardsError(null)
     try {
-      const s = await getModelStatusWithOpts(SEASON)
+      const s =
+        (await resolveModelStatus(selectedCompetition, SEASON)) ??
+        ({
+          status: 'not_initialized',
+          season: SEASON,
+          active_model_version: null,
+          available_model_versions: [],
+          warnings: ['Nessun campionato selezionato.'],
+          message: 'Modello non ancora inizializzato',
+        } satisfies ModelStatusResponse)
       setModelStatus(s)
       const mv = s.recommended_model_version || s.active_model_version || V11_MODEL
-      const u = await getUpcomingActiveWithOpts(
-        SEASON,
-        { limit: 20, onlyNextRound: true, modelVersion: mv },
-      )
+      const u =
+        selectedCompetitionId != null && !isLegacySerieACompetition(selectedCompetition)
+          ? await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
+              limit: 20,
+              onlyNextRound: true,
+              modelVersion: mv,
+            })
+          : await getUpcomingActiveWithOpts(SEASON, {
+              limit: 20,
+              onlyNextRound: true,
+              modelVersion: mv,
+            })
       setUpcomingActive(u)
     } catch (e) {
       setModelStatus(null)
       setUpcomingActive(null)
       setCardsError(e instanceof Error ? e.message : String(e))
     }
-  }, [])
+  }, [selectedCompetition, selectedCompetitionId])
 
   useEffect(() => {
     void loadCards()

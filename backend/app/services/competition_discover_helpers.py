@@ -5,6 +5,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from app.services.league_season_api_helpers import (
+    extract_available_seasons,
+    extract_current_season,
+    extract_season_meta,
+)
+
 BRAZIL_SERIE_A_ALIASES = (
     "serie a",
     "brazil serie a",
@@ -17,6 +23,10 @@ BRAZIL_SERIE_A_ALIASES = (
 
 NO_MATCH_MESSAGE = (
     "Nessuna lega compatibile trovata. Prova a lasciare vuoto Nome lega oppure cerca Brasileirão."
+)
+
+SEASON_UNAVAILABLE_MESSAGE = (
+    "La lega esiste, ma la stagione {season} non risulta disponibile nella risposta API-Sports."
 )
 
 
@@ -57,20 +67,9 @@ def parse_league_response_items(items: list[Any], season: int) -> list[dict[str,
         if not isinstance(lg, dict) or lg.get("id") is None:
             continue
 
-        seasons = item.get("seasons") or []
-        season_current: bool | None = None
-        has_season = False
-        for season_row in seasons:
-            if not isinstance(season_row, dict):
-                continue
-            if season_row.get("year") == season:
-                has_season = True
-                current = season_row.get("current")
-                season_current = bool(current) if current is not None else None
-                break
-        if not has_season:
-            continue
-
+        available_seasons = extract_available_seasons(item)
+        meta = extract_season_meta(item, season)
+        season_current = meta.get("current")
         country_name = (item.get("country") or {}).get("name")
         candidates.append(
             {
@@ -79,7 +78,10 @@ def parse_league_response_items(items: list[Any], season: int) -> list[dict[str,
                 "country": country_name,
                 "season": season,
                 "logo": lg.get("logo"),
-                "season_current": season_current,
+                "season_current": season_current if meta.get("found") else None,
+                "available_seasons": available_seasons,
+                "requested_season_available": bool(meta.get("found")),
+                "current_season": extract_current_season(item),
                 "raw_payload": item,
             }
         )
@@ -145,3 +147,7 @@ def filter_discover_candidates(
         return primary, []
 
     return [], scoped
+
+
+def season_unavailable_message(season: int) -> str:
+    return SEASON_UNAVAILABLE_MESSAGE.format(season=season)

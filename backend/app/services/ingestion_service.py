@@ -209,11 +209,13 @@ class IngestionService:
         picked: dict[str, Any],
         season: int,
     ) -> None:
+        from app.services.league_season_api_helpers import normalize_season_year
+
         settings = get_settings()
         seasons = picked.get("seasons") or []
         season_entry: dict[str, Any] | None = None
         for s in seasons:
-            if isinstance(s, dict) and s.get("year") == season:
+            if isinstance(s, dict) and normalize_season_year(s.get("year")) == int(season):
                 season_entry = s
                 break
         if season_entry is None and seasons and isinstance(seasons[0], dict):

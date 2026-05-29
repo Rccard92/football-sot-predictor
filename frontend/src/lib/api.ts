@@ -92,6 +92,9 @@ export type CompetitionDiscoverCandidate = {
   season: number
   logo?: string | null
   season_current?: boolean | null
+  available_seasons?: number[]
+  requested_season_available?: boolean
+  current_season?: number | null
   raw_payload?: Record<string, unknown> | null
 }
 
@@ -113,6 +116,42 @@ export async function discoverCompetitions(body: {
 
 export async function createCompetition(body: Record<string, unknown>): Promise<CompetitionSummary> {
   return adminPostJson<CompetitionSummary>('/api/admin/competitions', body)
+}
+
+export async function patchCompetition(
+  competitionId: number,
+  body: { season?: number; status?: string },
+): Promise<CompetitionSummary> {
+  return adminPatchJson<CompetitionSummary>(`/api/admin/competitions/${competitionId}`, body)
+}
+
+export type SeasonNotAvailableErrorBody = {
+  status: 'error'
+  code: 'season_not_available'
+  message: string
+  competition_id: number
+  competition_key?: string
+  provider_league_id: number
+  requested_season: number
+  available_seasons: number[]
+  league_name?: string | null
+  country?: string | null
+  suggestion?: string
+}
+
+export function isSeasonNotAvailableError(body: unknown): body is SeasonNotAvailableErrorBody {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    (body as SeasonNotAvailableErrorBody).code === 'season_not_available'
+  )
+}
+
+export const SERIE_A_PROVIDER_LEAGUE_ID = 135
+
+export function isLegacySerieACompetition(comp: CompetitionSummary | null | undefined): boolean {
+  if (!comp) return false
+  return comp.provider_league_id === SERIE_A_PROVIDER_LEAGUE_ID && comp.country === 'Italy'
 }
 
 export async function bootstrapCompetition(
@@ -1479,6 +1518,28 @@ export async function getModelStatusWithOpts(season: number, opts?: AdminRequest
   )
 }
 
+export async function getModelStatusForCompetition(
+  competitionId: number,
+  opts?: AdminRequestOpts,
+): Promise<ModelStatusResponse> {
+  return requestJsonWithOpts<ModelStatusResponse>(
+    `/api/competitions/${competitionId}/model-status`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 60_000 },
+  )
+}
+
+export async function resolveModelStatus(
+  comp: CompetitionSummary | null | undefined,
+  fallbackSeason: number,
+  opts?: AdminRequestOpts,
+): Promise<ModelStatusResponse | null> {
+  if (!comp) return null
+  if (isLegacySerieACompetition(comp)) {
+    return getModelStatusWithOpts(comp.season ?? fallbackSeason, opts)
+  }
+  return getModelStatusForCompetition(comp.id, opts)
+}
+
 export async function getUpcomingActiveWithOpts(
   season: number,
   query: { limit?: number; onlyNextRound?: boolean; modelVersion?: string | null },
@@ -1882,6 +1943,8 @@ export type ModelStatusVersionRow = {
 export type ModelStatusResponse = {
   status?: string
   season: number
+  competition_id?: number
+  competition_key?: string
   active_model_version: string | null
   recommended_model_version?: string | null
   stable_model_version?: string | null

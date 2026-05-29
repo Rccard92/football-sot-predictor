@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -11,6 +12,7 @@ from app.core.database import get_db
 from app.schemas.competition import IngestDryRunBody
 from app.services.competition_ingestion_service import CompetitionIngestionService
 from app.services.competition_service import CompetitionService
+from app.services.league_season_api_helpers import SeasonNotAvailableError
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,11 @@ def bootstrap_competition(
     _require_api_football_key()
     CompetitionService().get_by_id_or_raise(db, competition_id)
     svc = CompetitionIngestionService()
-    return jsonable_encoder(svc.bootstrap(db, competition_id, dry_run=_ingest_body(body)))
+    try:
+        result = svc.bootstrap(db, competition_id, dry_run=_ingest_body(body))
+    except SeasonNotAvailableError as exc:
+        return JSONResponse(status_code=422, content=jsonable_encoder(exc.payload))
+    return jsonable_encoder(result)
 
 
 @router.post("/{competition_id}/ingest/standings")

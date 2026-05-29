@@ -16,6 +16,7 @@ from app.services.competition_discover_helpers import (
     filter_discover_candidates,
     format_api_query,
     parse_league_response_items,
+    season_unavailable_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,8 @@ class CompetitionService:
             message = NO_MATCH_MESSAGE
         elif ambiguous:
             message = "Più leghe candidate: selezionare manualmente prima di creare la competition"
+        elif candidates and not all(c.get("requested_season_available") for c in candidates):
+            message = season_unavailable_message(season)
 
         return {
             "candidates": candidates,
@@ -182,6 +185,13 @@ class CompetitionService:
         for field in ("is_active", "is_primary", "pre_match_cron_enabled", "status", "timezone"):
             if field in data and data[field] is not None:
                 setattr(row, field, data[field])
+        if "season" in data and data["season"] is not None:
+            new_season = int(data["season"])
+            if new_season != row.season:
+                row.season = new_season
+                row.season_id = None
+                if data.get("status") is None:
+                    row.status = "pending_season"
         db.add(row)
         db.commit()
         db.refresh(row)

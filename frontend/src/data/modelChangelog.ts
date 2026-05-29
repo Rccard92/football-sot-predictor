@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.4',
+    date: '2026-05-29',
+    title: 'Fix bootstrap Brasileirão e validazione stagione',
+    type: 'patch',
+    summary:
+      'Gestita correttamente la validazione delle stagioni API-Sports per le competition multi-campionato ed eliminato il 500 sul bootstrap dry-run.',
+    highlights: [
+      'Gestione controllata della stagione non disponibile.',
+      'Mostrate stagioni disponibili dalla discovery API-Sports.',
+      'Migliorato parsing seasons API-Sports.',
+      'Migliorato messaggio frontend al posto di Failed to fetch.',
+      'Evitate chiamate legacy serie-a/2026 quando è selezionato Brasileirão.',
+      'Nessun impatto sul modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.3',
     date: '2026-05-29',
     title: 'Fix discovery API-Sports campionati',

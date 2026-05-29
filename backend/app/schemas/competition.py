@@ -35,6 +35,9 @@ class CompetitionDiscoverCandidate(BaseModel):
     season: int
     logo: str | None = None
     season_current: bool | None = None
+    available_seasons: list[int] = []
+    requested_season_available: bool = False
+    current_season: int | None = None
     raw_payload: dict | None = None
 
 
@@ -67,6 +70,7 @@ class CompetitionPatchBody(BaseModel):
     pre_match_cron_enabled: bool | None = None
     status: str | None = None
     timezone: str | None = None
+    season: int | None = None
 
 
 class IngestDryRunBody(BaseModel):

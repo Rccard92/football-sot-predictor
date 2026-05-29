@@ -4,10 +4,10 @@ import {
   DEFAULT_SEASON,
   buildUpcomingSotFeatures,
   generateUpcomingSotPredictions,
-  getModelStatus,
   getNextRoundQuickReport,
   getNextRoundQuickReportForCompetition,
   getUpcomingFixtureDetail,
+  resolveModelStatus,
   type ModelLimitations,
   type ModelStatusResponse,
   type UpcomingActiveMatchRow,
@@ -61,7 +61,16 @@ export function UpcomingMatches() {
     setLoading(true)
     setError(null)
     try {
-      const s = await getModelStatus(season)
+      const s =
+        (await resolveModelStatus(selectedCompetition, season)) ??
+        ({
+          status: 'not_initialized',
+          season,
+          active_model_version: null,
+          available_model_versions: [],
+          warnings: ['Nessun campionato selezionato.'],
+          message: 'Modello non ancora inizializzato',
+        } satisfies ModelStatusResponse)
       setStatus(s)
       const recommended = s.recommended_model_version || s.active_model_version || null
       if (!didInitModel.current) {
@@ -90,7 +99,7 @@ export function UpcomingMatches() {
     } finally {
       setLoading(false)
     }
-  }, [selectedModel, season, selectedCompetitionId])
+  }, [selectedModel, season, selectedCompetitionId, selectedCompetition])
 
   useEffect(() => {
     void load()

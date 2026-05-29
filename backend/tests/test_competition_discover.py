@@ -49,6 +49,22 @@ def test_parse_league_response_items_extracts_season_current():
     assert len(parsed) == 1
     assert parsed[0]["provider_league_id"] == 71
     assert parsed[0]["season_current"] is True
+    assert parsed[0]["available_seasons"] == [2026]
+    assert parsed[0]["requested_season_available"] is True
+
+
+def test_parse_league_response_items_keeps_candidate_without_requested_season():
+    items = [
+        {
+            "league": {"id": 71, "name": "Serie A", "logo": "https://example/logo.png"},
+            "country": {"name": "Brazil"},
+            "seasons": [{"year": 2025, "current": True}],
+        }
+    ]
+    parsed = parse_league_response_items(items, 2026)
+    assert len(parsed) == 1
+    assert parsed[0]["requested_season_available"] is False
+    assert parsed[0]["available_seasons"] == [2025]
 
 
 def test_filter_discover_candidates_serie_a_aliases():

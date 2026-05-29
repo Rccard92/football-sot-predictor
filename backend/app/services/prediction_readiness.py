@@ -303,6 +303,136 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
     return payload, 200
 
 
+def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str, Any], int]:
+    """Model-status scoped per competition. Serie A IT delega al payload legacy."""
+    settings = get_settings()
+    is_legacy_serie_a = (
+        int(getattr(comp, "provider_league_id", 0)) == int(settings.default_league_id)
+        and str(getattr(comp, "country", "") or "").strip().lower() == "italy"
+    )
+    if is_legacy_serie_a:
+        return build_model_status_payload(db, int(comp.season))
+
+    competition_id = int(comp.id)
+    season = int(comp.season)
+    warnings: list[str] = []
+
+    try:
+        upcoming_fixture_ids = list(
+            db.scalars(
+                select(Fixture.id).where(
+                    Fixture.competition_id == competition_id,
+                    ~Fixture.status.in_(FINISHED_STATUSES),
+                )
+            ).all()
+        )
+        upcoming_fixtures_total = len(upcoming_fixture_ids)
+        predictions_total = db.scalar(
+            select(func.count())
+            .select_from(TeamSotPrediction)
+            .join(Fixture, Fixture.id == TeamSotPrediction.fixture_id)
+            .where(Fixture.competition_id == competition_id)
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("model-status competition=%s: errore DB", competition_id)
+        return (
+            {
+                "status": "error",
+                "message": "Errore durante il caricamento dello stato modelli SOT.",
+                "competition_id": competition_id,
+                "details": _safe_details(exc),
+                "season": season,
+            },
+            503,
+        )
+
+    if int(predictions_total or 0) == 0 and upcoming_fixtures_total == 0:
+        return (
+            {
+                "status": "not_initialized",
+                "message": "Modello non ancora inizializzato",
+                "competition_id": competition_id,
+                "competition_key": getattr(comp, "key", None),
+                "season": season,
+                "upcoming_fixtures_total": 0,
+                "available_model_versions": [],
+                "warnings": [
+                    "Nessuna fixture o prediction per questa competition. Eseguire bootstrap e generazione."
+                ],
+            },
+            200,
+        )
+
+    if int(predictions_total or 0) == 0:
+        warnings.append("Nessuna prediction trovata per questa competition.")
+        return (
+            {
+                "status": "not_initialized",
+                "message": "Modello non ancora inizializzato",
+                "competition_id": competition_id,
+                "competition_key": getattr(comp, "key", None),
+                "season": season,
+                "upcoming_fixtures_total": upcoming_fixtures_total,
+                "available_model_versions": [],
+                "warnings": warnings,
+            },
+            200,
+        )
+
+    is_upcoming_fixture = ~Fixture.status.in_(FINISHED_STATUSES)
+    agg = (
+        db.execute(
+            select(
+                TeamSotPrediction.model_version.label("model_version"),
+                func.count(TeamSotPrediction.id).label("predictions_total"),
+                func.sum(case((is_upcoming_fixture, 1), else_=0)).label("upcoming_predictions"),
+                func.max(TeamSotPrediction.updated_at).label("generated_at"),
+            )
+            .select_from(TeamSotPrediction)
+            .join(Fixture, Fixture.id == TeamSotPrediction.fixture_id)
+            .where(Fixture.competition_id == competition_id)
+            .group_by(TeamSotPrediction.model_version)
+        )
+        .mappings()
+        .all()
+    )
+
+    by_version: dict[str, dict[str, Any]] = {}
+    for r in agg:
+        mv = str(r.get("model_version"))
+        up_n = int(r.get("upcoming_predictions") or 0)
+        by_version[mv] = {
+            "model_version": mv,
+            "predictions_total": int(r.get("predictions_total") or 0),
+            "upcoming_predictions": up_n,
+            "generated_at": r.get("generated_at"),
+            "is_available_for_upcoming": bool(up_n > 0),
+        }
+
+    visible = user_visible_model_versions()
+    available_list = [by_version[k] for k in visible if k in by_version]
+    recommended = resolve_recommended_model_version(
+        db,
+        upcoming_fixture_ids=upcoming_fixture_ids,
+        by_version=by_version,
+        upcoming_fixtures_total=int(upcoming_fixtures_total),
+    )
+
+    payload: dict[str, Any] = {
+        "status": "success",
+        "competition_id": competition_id,
+        "competition_key": getattr(comp, "key", None),
+        "season": season,
+        "active_model_version": recommended,
+        "recommended_model_version": recommended,
+        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        "upcoming_fixtures_total": int(upcoming_fixtures_total),
+        "available_model_versions": available_list,
+        "warnings": warnings,
+    }
+    return payload, 200
+
+
 def build_upcoming_active_payload(
     db: Session,
     season: int,
