@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     default_league_id: int = 135
     default_season: int = 2025
+    default_competition_key: str = "serie_a_italy_2025"
     # Fallback numerico quando non c'è media lega (<3 partite o nessuna partita precedente in lega)
     sot_feature_fallback_baseline: float | None = 3.0
 

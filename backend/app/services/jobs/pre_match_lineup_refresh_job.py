@@ -15,7 +15,7 @@ from app.core.constants import (
     FINISHED_STATUSES,
     LIVE_STATUSES,
 )
-from app.models import Fixture, IngestionRun, League, Season, Team, TeamSotPrediction
+from app.models import Competition, Fixture, IngestionRun, League, Season, Team, TeamSotPrediction
 from app.services.ingestion_service import IngestionService
 from app.services.predictions_v20.baseline_v2_0_lineup_impact_service import (
     SotPredictionV20LineupImpactService,
@@ -424,6 +424,113 @@ class PreMatchOfficialLineupRefreshJob:
             meta_merge=summary,
         )
         return summary
+
+    def fixtures_in_kickoff_window_for_competition(
+        self,
+        db: Session,
+        comp: Competition,
+        *,
+        minutes_before: int,
+        window_minutes: int,
+        force: bool = False,
+    ) -> tuple[list[Fixture], list[Fixture]]:
+        _ = force
+        now = _utcnow()
+        half = max(1, int(window_minutes) // 2)
+        start = now + timedelta(minutes=int(minutes_before) - half)
+        end = now + timedelta(minutes=int(minutes_before) + half)
+        rows = list(
+            db.scalars(
+                select(Fixture).where(
+                    Fixture.competition_id == comp.id,
+                    Fixture.kickoff_at >= start,
+                    Fixture.kickoff_at <= end,
+                    Fixture.status.notin_(list(FINISHED_STATUSES)),
+                ),
+            ).all(),
+        )
+        in_window = [f for f in rows if f.api_fixture_id]
+        eligible: list[Fixture] = []
+        for f in in_window:
+            st = (f.status or "").strip().upper()
+            if st in LIVE_STATUSES:
+                continue
+            ko = f.kickoff_at
+            if ko is not None:
+                if ko.tzinfo is None:
+                    ko = ko.replace(tzinfo=timezone.utc)
+                if ko < now:
+                    continue
+            eligible.append(f)
+        return in_window, eligible
+
+    def run_all_enabled(
+        self,
+        db: Session,
+        *,
+        force: bool = False,
+        minutes_before: int | None = None,
+        window_minutes: int | None = None,
+        competition_id: int | None = None,
+    ) -> dict[str, Any]:
+        if competition_id is not None:
+            comp = db.get(Competition, competition_id)
+            if comp is None:
+                return {"status": "error", "message": f"Competition {competition_id} non trovata"}
+            result = self.run(
+                db,
+                comp.season,
+                force=force,
+                minutes_before=minutes_before,
+                window_minutes=window_minutes,
+            )
+            result["competition_id"] = comp.id
+            result["competition_name"] = comp.name
+            logger.info(
+                "pre-match job competition_id=%s name=%s refreshed=%s",
+                comp.id,
+                comp.name,
+                result.get("refreshed"),
+            )
+            return result
+
+        comps = list(
+            db.scalars(
+                select(Competition).where(
+                    Competition.is_active.is_(True),
+                    Competition.pre_match_cron_enabled.is_(True),
+                )
+            ).all()
+        )
+        if not comps:
+            settings = get_settings()
+            return self.run(
+                db,
+                settings.default_season,
+                force=force,
+                minutes_before=minutes_before,
+                window_minutes=window_minutes,
+            )
+
+        summaries: list[dict[str, Any]] = []
+        for comp in comps:
+            out = self.run(
+                db,
+                comp.season,
+                force=force,
+                minutes_before=minutes_before,
+                window_minutes=window_minutes,
+            )
+            out["competition_id"] = comp.id
+            out["competition_name"] = comp.name
+            logger.info(
+                "pre-match job competition_id=%s name=%s refreshed=%s",
+                comp.id,
+                comp.name,
+                out.get("refreshed"),
+            )
+            summaries.append(out)
+        return {"status": "ok", "competitions_processed": len(summaries), "results": summaries}
 
 
 # Backward compatibility

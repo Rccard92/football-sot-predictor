@@ -8,13 +8,14 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.fixture_lineup_player import FixtureLineupPlayer
 
 
-class FixtureLineup(Base, TimestampMixin):
+class FixtureLineup(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "fixture_lineups"
     __table_args__ = (
         UniqueConstraint(

@@ -8,12 +8,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 PROVIDER_SPORTAPI = "sportapi"
 
 
-class FixtureProviderMapping(Base, TimestampMixin):
+class FixtureProviderMapping(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "fixture_provider_mappings"
     __table_args__ = (
         UniqueConstraint("fixture_id", "provider_name", name="uq_fixture_provider_mappings_fixture_provider"),

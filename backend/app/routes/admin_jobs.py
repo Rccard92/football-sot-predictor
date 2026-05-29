@@ -30,6 +30,7 @@ class PreMatchJobBody(BaseModel):
     minutes_before: int | None = Field(default=None, ge=5, le=120)
     window_minutes: int | None = Field(default=None, ge=2, le=60)
     season: int | None = None
+    competition_id: int | None = None
 
 
 def _run_pre_match_job(body: PreMatchJobBody | None, db: Session) -> dict[str, Any]:
@@ -39,14 +40,30 @@ def _run_pre_match_job(body: PreMatchJobBody | None, db: Session) -> dict[str, A
             detail="SportAPI disabilitata: imposta SPORTAPI_ENABLED=true e SPORTAPI_RAPIDAPI_KEY",
         )
     settings = get_settings()
-    season = int((body.season if body and body.season is not None else None) or settings.default_season)
     force = bool(body.force) if body else False
     minutes_before = body.minutes_before if body else None
     window_minutes = body.window_minutes if body else None
+    competition_id = body.competition_id if body else None
     try:
-        return PreMatchOfficialLineupRefreshJob().run(
+        if competition_id is not None:
+            return PreMatchOfficialLineupRefreshJob().run_all_enabled(
+                db,
+                force=force,
+                minutes_before=minutes_before,
+                window_minutes=window_minutes,
+                competition_id=competition_id,
+            )
+        if body is not None and body.season is not None:
+            season = int(body.season)
+            return PreMatchOfficialLineupRefreshJob().run(
+                db,
+                season,
+                force=force,
+                minutes_before=minutes_before,
+                window_minutes=window_minutes,
+            )
+        return PreMatchOfficialLineupRefreshJob().run_all_enabled(
             db,
-            season,
             force=force,
             minutes_before=minutes_before,
             window_minutes=window_minutes,

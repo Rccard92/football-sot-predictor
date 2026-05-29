@@ -18,7 +18,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
-from app.models import Fixture, Team, TeamSotPrediction
+from app.models import Competition, Fixture, Team, TeamSotPrediction
 from app.services.model_version_preference import (
     preferred_model_versions,
     resolve_recommended_model_version,
@@ -77,6 +77,54 @@ def _load_upcoming_fixtures(
     upcoming = upcoming[: max(1, min(limit, 100))]
     round_label = _fixture_round_display(upcoming[0]) if upcoming else None
     return season_row, upcoming, round_label
+
+
+def _load_upcoming_fixtures_for_competition(
+    db: Session,
+    comp: Competition,
+    *,
+    limit: int,
+    only_next_round: bool,
+) -> tuple[Competition, list[Fixture], str | None]:
+    raw_upcoming = list(
+        db.scalars(
+            select(Fixture)
+            .where(Fixture.competition_id == comp.id)
+            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+        ).all()
+    )
+    upcoming = [f for f in raw_upcoming if (f.status or "").upper() not in FINISHED_STATUSES]
+    if only_next_round and upcoming:
+        r0 = _fixture_round_display(upcoming[0]) or upcoming[0].round
+        if r0:
+            upcoming = [f for f in upcoming if (_fixture_round_display(f) or f.round) == r0]
+        else:
+            d0 = upcoming[0].kickoff_at.date()
+            upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
+    upcoming = upcoming[: max(1, min(limit, 100))]
+    round_label = _fixture_round_display(upcoming[0]) if upcoming else None
+    return comp, upcoming, round_label
+
+
+def build_next_round_quick_report_for_competition(
+    db: Session,
+    comp: Competition,
+    *,
+    limit: int = 20,
+    only_next_round: bool = True,
+    model_version: str | None = None,
+) -> dict[str, Any]:
+    payload, code = build_next_round_quick_report_payload(
+        db,
+        comp.season,
+        limit=limit,
+        only_next_round=only_next_round,
+        model_version=model_version,
+        competition_id=comp.id,
+        competition_name=comp.name,
+    )
+    _ = code
+    return payload
 
 
 def _load_prediction_context(
@@ -173,12 +221,23 @@ def build_next_round_quick_report_payload(
     limit: int = 20,
     only_next_round: bool = True,
     model_version: str | None = None,
+    competition_id: int | None = None,
+    competition_name: str | None = None,
 ) -> tuple[dict[str, Any], int]:
     t0 = time.perf_counter()
     try:
-        _season_row, upcoming, round_label = _load_upcoming_fixtures(
-            db, season, limit=limit, only_next_round=only_next_round
-        )
+        if competition_id is not None:
+            comp = db.get(Competition, competition_id)
+            if comp is None:
+                return ({"status": "error", "message": "Competition non trovata"}, 404)
+            _ctx, upcoming, round_label = _load_upcoming_fixtures_for_competition(
+                db, comp, limit=limit, only_next_round=only_next_round
+            )
+            competition_name = competition_name or comp.name
+        else:
+            _season_row, upcoming, round_label = _load_upcoming_fixtures(
+                db, season, limit=limit, only_next_round=only_next_round
+            )
     except (OperationalError, ProgrammingError) as exc:
         logger.warning("quick-report: DB error (%s)", exc.__class__.__name__, exc_info=True)
         return ({"status": "error", "message": "Database error", "details": _safe_details(exc)}, 503)
@@ -276,6 +335,8 @@ def build_next_round_quick_report_payload(
 
     payload = {
         "season": int(season),
+        "competition_id": competition_id,
+        "competition_name": competition_name,
         "model_version_used": mv_default,
         "recommended_model_version": recommended,
         "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,

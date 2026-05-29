@@ -10,12 +10,13 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 
 PROVIDER_API_SPORTS = "api_sports"
 PROVIDER_SPORTAPI = "sportapi"
 
 
-class OddsDiscoverySnapshot(Base):
+class OddsDiscoverySnapshot(Base, CompetitionScopedMixin):
     __tablename__ = "odds_discovery_snapshots"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

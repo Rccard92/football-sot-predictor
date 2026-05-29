@@ -12,6 +12,25 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.0',
+    date: '2026-05-29',
+    title: 'Architettura multi-campionato',
+    type: 'major',
+    summary:
+      'Introdotta l\'architettura multi-campionato per gestire Serie A, Brasileirão e futuri campionati come compartimenti stagni.',
+    highlights: [
+      'Aggiunta entità Competition.',
+      'Isolamento dati per campionato.',
+      'Backfill Serie A esistente.',
+      'Primi endpoint multi-campionato.',
+      'Preparazione import Brasileirão Série A.',
+      'Frontend con selettore campionato attivo.',
+      'Guardrail per evitare mixing dati tra leghe.',
+      'Formula v2.0 invariata.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.16.0',
     date: '2026-05-19',
     title: 'Profilo arbitro avanzato',

@@ -1,5 +1,6 @@
 import { NAV_MAIN, NAV_TECH } from '../config/navItems'
 import { useSidebarLayout } from '../contexts/SidebarLayoutContext'
+import { CompetitionSelector } from './CompetitionSelector'
 import { NavLinks } from './nav/NavLinks'
 
 function ChevronIcon({ collapsed }: { collapsed: boolean }) {
@@ -34,14 +35,15 @@ export function Sidebar() {
       >
         {!collapsed ? (
           <>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Serie A</p>
-            <p className="mt-1 text-base font-semibold text-slate-900">SOT Predictor</p>
-            <p className="mt-0.5 text-xs text-slate-500">2025/26 · MVP</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">SOT Predictor</p>
+            <div className="mt-3">
+              <CompetitionSelector />
+            </div>
           </>
         ) : (
-          <p className="text-[10px] font-bold leading-tight text-slate-900" title="SOT Predictor">
-            SOT
-          </p>
+          <div className="flex justify-center">
+            <CompetitionSelector collapsed />
+          </div>
         )}
       </div>
 

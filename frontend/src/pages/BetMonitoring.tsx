@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_SEASON,
   getTrackedBettingPicks,
+  getTrackedBettingPicksForCompetition,
   postCreateTrackedPicksFromRound,
   postRefreshTrackedPickResults,
   type TrackedBettingPickRow,
   type TrackedBettingPicksSummary,
   type UpcomingMatchTeam,
 } from '../lib/api'
+import { CompetitionBadge } from '../components/CompetitionSelector'
+import { useCompetition } from '../contexts/CompetitionContext'
 import { formatKickoffReport } from '../utils/sportApiLineupMeta'
 import {
   formatOdd,
@@ -169,6 +172,8 @@ function DashboardRow({ p, index }: { p: TrackedBettingPickRow; index: number })
 }
 
 export function BetMonitoring() {
+  const { selectedCompetition, selectedCompetitionId } = useCompetition()
+  const season = selectedCompetition?.season ?? DEFAULT_SEASON
   const [rows, setRows] = useState<TrackedBettingPickRow[]>([])
   const [summary, setSummary] = useState<TrackedBettingPicksSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -187,7 +192,10 @@ export function BetMonitoring() {
     setLoading(true)
     setError(null)
     try {
-      const data = await getTrackedBettingPicks(DEFAULT_SEASON)
+      const data =
+        selectedCompetitionId != null
+          ? await getTrackedBettingPicksForCompetition(selectedCompetitionId)
+          : await getTrackedBettingPicks(season)
       setRows(sortByKickoffAsc(data.picks ?? []))
       setSummary(data.summary ?? null)
     } catch (e) {
@@ -195,7 +203,7 @@ export function BetMonitoring() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [season, selectedCompetitionId])
 
   useEffect(() => {
     void load()
@@ -216,7 +224,7 @@ export function BetMonitoring() {
       }
       try {
         const out = await postRefreshTrackedPickResults(
-          DEFAULT_SEASON,
+          season,
           { scope, force: opts?.force },
           { timeoutMs: 300_000 },
         )
@@ -297,7 +305,7 @@ export function BetMonitoring() {
     setActionMsg(null)
     try {
       const out = await postCreateTrackedPicksFromRound(
-        DEFAULT_SEASON,
+        season,
         {
           round: 'current',
           model_id: 'baseline_v2_0_lineup_impact',
@@ -325,7 +333,10 @@ export function BetMonitoring() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Monitoraggio Giocate</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">
+            Monitoraggio Giocate{selectedCompetition ? ` — ${selectedCompetition.name}` : ''}
+          </h1>
+          <CompetitionBadge />
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
             Confronto tra previsione iniziale (probabili), previsione post formazioni ufficiali, scommesse proposte ed
             esiti sui tiri in porta reali da API-Sports.

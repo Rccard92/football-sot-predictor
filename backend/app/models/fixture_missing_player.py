@@ -8,10 +8,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 
-class FixtureMissingPlayer(Base, TimestampMixin):
+class FixtureMissingPlayer(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "fixture_missing_players"
     __table_args__ = (
         UniqueConstraint(

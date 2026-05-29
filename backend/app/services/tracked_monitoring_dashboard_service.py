@@ -12,7 +12,7 @@ from app.core.constants import (
     FINISHED_STATUSES,
     SCHEDULED_STATUSES,
 )
-from app.models import Fixture, Team, TrackedBettingPick
+from app.models import Competition, Fixture, Team, TrackedBettingPick
 from app.models.tracked_betting_pick import (
     PICK_TYPE_CAUTIOUS,
     SOURCE_AUTO_PRE_MATCH,
@@ -305,6 +305,43 @@ def build_dashboard_payload(
         "count": len(rows_out),
         "summary": compute_dashboard_summary(rows_out),
     }
+
+
+def list_tracked_dashboard_for_competition(db: Session, comp: Competition) -> dict[str, Any]:
+    """Carica pick del campionato selezionato."""
+    picks = list(
+        db.scalars(
+            select(TrackedBettingPick)
+            .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
+            .where(Fixture.competition_id == comp.id)
+            .order_by(Fixture.kickoff_at.asc(), TrackedBettingPick.id.asc()),
+        ).all(),
+    )
+    fx_ids = list({int(p.fixture_id) for p in picks})
+    fixtures = (
+        {int(f.id): f for f in db.scalars(select(Fixture).where(Fixture.id.in_(fx_ids))).all()}
+        if fx_ids
+        else {}
+    )
+    team_ids: set[int] = set()
+    for f in fixtures.values():
+        team_ids.add(int(f.home_team_id))
+        team_ids.add(int(f.away_team_id))
+    teams = (
+        {int(t.id): t for t in db.scalars(select(Team).where(Team.id.in_(list(team_ids)))).all()}
+        if team_ids
+        else {}
+    )
+    result = build_dashboard_payload(
+        db,
+        picks,
+        fixtures,
+        teams,
+        season_year=comp.season,
+    )
+    result["competition_id"] = comp.id
+    result["competition_name"] = comp.name
+    return result
 
 
 def list_tracked_dashboard_payload(db: Session, season_year: int) -> dict[str, Any]:

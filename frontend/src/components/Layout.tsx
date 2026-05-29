@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom'
+import { CompetitionProvider } from '../contexts/CompetitionContext'
 import { SidebarLayoutProvider } from '../contexts/SidebarLayoutContext'
 import { MobileNavDrawer } from './MobileNavDrawer'
 import { MobileTopBar } from './MobileTopBar'
@@ -6,7 +7,8 @@ import { Sidebar } from './Sidebar'
 
 export function Layout() {
   return (
-    <SidebarLayoutProvider>
+    <CompetitionProvider>
+      <SidebarLayoutProvider>
       <div className="flex min-h-screen overflow-x-hidden bg-[#F6F7F9] md:h-screen md:overflow-hidden">
         <Sidebar />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
@@ -20,5 +22,6 @@ export function Layout() {
         </div>
       </div>
     </SidebarLayoutProvider>
+    </CompetitionProvider>
   )
 }

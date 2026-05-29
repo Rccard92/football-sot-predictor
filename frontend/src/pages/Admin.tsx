@@ -38,6 +38,7 @@ import {
 } from '../lib/api'
 
 import { PreMatchJobPanel } from '../components/admin/PreMatchJobPanel'
+import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
 import { V04_MODEL, V10_MODEL, V11_MODEL, V20_MODEL, filterVersionsForUi, labelForModelVersion } from '../lib/modelVersions'
 
@@ -550,6 +551,8 @@ export function Admin() {
           </p>
           <p className="mt-1 text-xs text-slate-500">Stagione {SEASON}</p>
         </header>
+
+        <CompetitionsAdminPanel />
 
         {cardsError ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">

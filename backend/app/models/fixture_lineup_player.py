@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from app.models.player_registry import PlayerRegistry
 
 
-class FixtureLineupPlayer(Base, TimestampMixin):
+class FixtureLineupPlayer(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "fixture_lineup_players"
     __table_args__ = (
         UniqueConstraint(

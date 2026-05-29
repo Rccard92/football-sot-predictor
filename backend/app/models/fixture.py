@@ -6,10 +6,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 
-class Fixture(Base, TimestampMixin):
+class Fixture(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "fixtures"
     __table_args__ = (UniqueConstraint("api_fixture_id", name="uq_fixtures_api_fixture_id"),)
 

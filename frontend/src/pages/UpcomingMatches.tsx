@@ -6,12 +6,15 @@ import {
   generateUpcomingSotPredictions,
   getModelStatus,
   getNextRoundQuickReport,
+  getNextRoundQuickReportForCompetition,
   getUpcomingFixtureDetail,
   type ModelLimitations,
   type ModelStatusResponse,
   type UpcomingActiveMatchRow,
   type UpcomingActiveResponse,
 } from '../lib/api'
+import { CompetitionBadge } from '../components/CompetitionSelector'
+import { useCompetition } from '../contexts/CompetitionContext'
 import { QuickPlayReportSection } from '../components/upcoming'
 import {
   V11_MODEL,
@@ -27,8 +30,6 @@ const MatchCard = lazy(async () => {
   return { default: m.MatchCard }
 })
 
-const SEASON = DEFAULT_SEASON
-
 function ReportSkeleton() {
   return (
     <div className="space-y-3 rounded-2xl border border-indigo-200/80 bg-white p-4 shadow-sm">
@@ -39,6 +40,8 @@ function ReportSkeleton() {
 }
 
 export function UpcomingMatches() {
+  const { selectedCompetition, selectedCompetitionId } = useCompetition()
+  const season = selectedCompetition?.season ?? DEFAULT_SEASON
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<ModelStatusResponse | null>(null)
@@ -58,7 +61,7 @@ export function UpcomingMatches() {
     setLoading(true)
     setError(null)
     try {
-      const s = await getModelStatus(SEASON)
+      const s = await getModelStatus(season)
       setStatus(s)
       const recommended = s.recommended_model_version || s.active_model_version || null
       if (!didInitModel.current) {
@@ -67,11 +70,18 @@ export function UpcomingMatches() {
         didInitModel.current = true
       }
       const mv = selectedModel || recommended
-      const res = await getNextRoundQuickReport(SEASON, {
-        limit: 20,
-        onlyNextRound: true,
-        modelVersion: mv,
-      })
+      const res =
+        selectedCompetitionId != null
+          ? await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
+              limit: 20,
+              onlyNextRound: true,
+              modelVersion: mv,
+            })
+          : await getNextRoundQuickReport(season, {
+              limit: 20,
+              onlyNextRound: true,
+              modelVersion: mv,
+            })
       setData(res)
     } catch (e) {
       setData(null)
@@ -80,7 +90,7 @@ export function UpcomingMatches() {
     } finally {
       setLoading(false)
     }
-  }, [selectedModel])
+  }, [selectedModel, season, selectedCompetitionId])
 
   useEffect(() => {
     void load()
@@ -108,7 +118,7 @@ export function UpcomingMatches() {
       setDetailError(null)
       const mv = selectedModel || status?.recommended_model_version || status?.active_model_version
       try {
-        const res = await getUpcomingFixtureDetail(SEASON, fixtureId, { modelVersion: mv })
+        const res = await getUpcomingFixtureDetail(season, fixtureId, { modelVersion: mv })
         setDetailMatch(res.match)
       } catch (e) {
         setDetailError(e instanceof Error ? e.message : String(e))
@@ -162,7 +172,10 @@ export function UpcomingMatches() {
     <div className="space-y-8 pb-8">
       <header className="space-y-3 pt-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Prossima giornata</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Prossima giornata{selectedCompetition ? ` — ${selectedCompetition.name}` : ''}
+          </h1>
+          <CompetitionBadge />
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
             Previsioni SOT per le prossime partite. Con <strong>v2.0</strong> vedi anche il confronto rispetto alla base{' '}
             <strong>v1.1</strong>.
@@ -294,7 +307,7 @@ export function UpcomingMatches() {
                     setBuildBusy(true)
                     setActionMsg(null)
                     try {
-                      await buildUpcomingSotFeatures(SEASON)
+                      await buildUpcomingSotFeatures(season)
                       setActionMsg('Dati aggiornati per le partite future.')
                       await load()
                     } catch (e) {
@@ -314,7 +327,7 @@ export function UpcomingMatches() {
                     setPredBusy(true)
                     setActionMsg(null)
                     try {
-                      await generateUpcomingSotPredictions(SEASON)
+                      await generateUpcomingSotPredictions(season)
                       setActionMsg('Previsioni future generate.')
                       await load()
                     } catch (e) {

@@ -40,14 +40,36 @@ def _kickoff_past(fixture: Fixture, now: datetime) -> bool:
     return ko < now
 
 
-def build_serie_a_player_season_profiles(db: Session, season_year: int) -> dict[str, Any]:
-    logger.info("player_season_profiles build start season=%s", season_year)
+def build_serie_a_player_season_profiles(
+    db: Session,
+    season_year: int,
+    *,
+    competition_id: int | None = None,
+    league_id_override: int | None = None,
+) -> dict[str, Any]:
+    logger.info(
+        "player_season_profiles build start season=%s competition_id=%s",
+        season_year,
+        competition_id,
+    )
     ing = IngestionService()
     warnings: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
 
     try:
-        season_row = ing._serie_a_season_row(db, season_year)
+        if league_id_override is not None:
+            from app.models import Season
+
+            season_row = db.scalar(
+                select(Season).where(
+                    Season.league_id == league_id_override,
+                    Season.year == season_year,
+                )
+            )
+            if season_row is None:
+                raise ValueError(f"Stagione {season_year} non trovata per league_id={league_id_override}")
+        else:
+            season_row = ing._serie_a_season_row(db, season_year)
     except ValueError as exc:
         return {
             "status": "error",
@@ -78,6 +100,11 @@ def build_serie_a_player_season_profiles(db: Session, season_year: int) -> dict[
             PlayerMatchStat.season == year,
             PlayerMatchStat.league_id == league_id,
             Fixture.status.in_(FINISHED_STATUSES),
+            *(
+                [PlayerMatchStat.competition_id == competition_id]
+                if competition_id is not None
+                else []
+            ),
         ),
     ).all()
 
@@ -221,6 +248,7 @@ def build_serie_a_player_season_profiles(db: Session, season_year: int) -> dict[
             common = dict(
                 season=year,
                 league_id=league_id,
+                competition_id=competition_id,
                 team_id=agg.team_id,
                 api_team_id=api_team_id,
                 player_id=agg.player_id,
@@ -363,3 +391,22 @@ def _top_players_sample(
             },
         )
     return sample
+
+
+def build_player_season_profiles_for_competition(db: Session, competition_id: int) -> dict[str, Any]:
+    from app.models import Competition
+
+    comp = db.get(Competition, competition_id)
+    if comp is None:
+        return {"status": "error", "message": f"Competition {competition_id} non trovata"}
+    if comp.league_id is None:
+        return {"status": "error", "message": "Competition senza league_id: eseguire bootstrap"}
+    result = build_serie_a_player_season_profiles(
+        db,
+        comp.season,
+        competition_id=comp.id,
+        league_id_override=comp.league_id,
+    )
+    result["competition_id"] = comp.id
+    result["competition_key"] = comp.key
+    return result

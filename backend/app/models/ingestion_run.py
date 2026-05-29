@@ -6,10 +6,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 
-class IngestionRun(Base, TimestampMixin):
+class IngestionRun(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "ingestion_runs"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

@@ -44,27 +44,40 @@ def ingest_serie_a_player_match_stats(
     *,
     force: bool = False,
     client: ApiFootballClient | None = None,
+    competition_id: int | None = None,
+    season_id_override: int | None = None,
 ) -> dict[str, Any]:
     """
     Importa statistiche giocatore per partite finite Serie A.
     Idempotente su player_match_stats (UPSERT per fixture_id + api_team_id + api_player_id).
     """
-    logger.info("player_match_stats ingestion start season=%s force=%s", season_year, force)
+    logger.info(
+        "player_match_stats ingestion start season=%s force=%s competition_id=%s",
+        season_year,
+        force,
+        competition_id,
+    )
     ing = IngestionService()
-    season_row = ing._serie_a_season_row(db, season_year)
+    if season_id_override is not None:
+        from app.models import Season
+
+        season_row = db.get(Season, season_id_override)
+        if season_row is None:
+            return {"status": "error", "message": f"Season id={season_id_override} non trovata"}
+    else:
+        season_row = ing._serie_a_season_row(db, season_year)
     year = int(season_row.year)
     league_id = int(season_row.league_id)
     api = client or ApiFootballClient()
 
     now = _utc_now()
-    fixtures = db.scalars(
-        select(Fixture)
-        .where(
-            Fixture.season_id == season_row.id,
-            Fixture.status.in_(FINISHED_STATUSES),
-        )
-        .order_by(Fixture.kickoff_at.asc()),
-    ).all()
+    fixture_q = select(Fixture).where(
+        Fixture.season_id == season_row.id,
+        Fixture.status.in_(FINISHED_STATUSES),
+    )
+    if competition_id is not None:
+        fixture_q = fixture_q.where(Fixture.competition_id == competition_id)
+    fixtures = db.scalars(fixture_q.order_by(Fixture.kickoff_at.asc())).all()
 
     eligible: list[Fixture] = [f for f in fixtures if _kickoff_past(f, now)]
     fixtures_completed = len(eligible)
@@ -201,6 +214,7 @@ def ingest_serie_a_player_match_stats(
                             PlayerTeamSeason(
                                 season=year,
                                 league_id=league_id,
+                                competition_id=competition_id or fx.competition_id,
                                 team_id=internal_team_id,
                                 api_team_id=api_team_id,
                                 player_id=reg.id,
@@ -230,6 +244,7 @@ def ingest_serie_a_player_match_stats(
                         api_fixture_id=int(fx.api_fixture_id),
                         season=year,
                         league_id=league_id,
+                        competition_id=competition_id or fx.competition_id,
                         team_id=internal_team_id,
                         api_team_id=api_team_id,
                         player_id=reg.id,
@@ -309,3 +324,29 @@ def ingest_serie_a_player_match_stats(
         api_calls,
     )
     return out
+
+
+def ingest_competition_player_match_stats(
+    db: Session,
+    competition_id: int,
+    *,
+    force: bool = False,
+    client: ApiFootballClient | None = None,
+) -> dict[str, Any]:
+    from app.models import Competition
+
+    comp = db.get(Competition, competition_id)
+    if comp is None:
+        return {"status": "error", "message": f"Competition {competition_id} non trovata"}
+    if comp.season_id is None:
+        return {"status": "error", "message": "Competition senza season_id: eseguire bootstrap"}
+    result = ingest_serie_a_player_match_stats(
+        db,
+        comp.season,
+        force=force,
+        client=client,
+        competition_id=comp.id,
+        season_id_override=comp.season_id,
+    )
+    result["competition_id"] = comp.id
+    return result

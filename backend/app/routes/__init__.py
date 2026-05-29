@@ -4,6 +4,8 @@ from app.routes import (
     admin,
     admin_betting_picks,
     admin_bookmakers,
+    admin_competition_ingest,
+    admin_competitions,
     admin_jobs,
     admin_referees,
     admin_debug_player_db,
@@ -20,6 +22,8 @@ from app.routes import (
     admin_sportapi,
     betting_picks,
     backtest,
+    competition_scoped,
+    competitions,
     data_catalog,
     debug_sot,
     dashboard,
@@ -54,6 +58,10 @@ api_router.include_router(admin_jobs.router)
 api_router.include_router(admin_referees.router)
 api_router.include_router(admin_betting_picks.router)
 api_router.include_router(admin_bookmakers.router)
+api_router.include_router(admin_competitions.router)
+api_router.include_router(admin_competition_ingest.router)
+api_router.include_router(competitions.router)
+api_router.include_router(competition_scoped.router)
 api_router.include_router(betting_picks.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(dashboard.router)

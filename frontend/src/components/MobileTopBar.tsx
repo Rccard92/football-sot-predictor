@@ -1,4 +1,5 @@
 import { useSidebarLayout } from '../contexts/SidebarLayoutContext'
+import { useCompetition } from '../contexts/CompetitionContext'
 
 function MenuIcon() {
   return (
@@ -22,6 +23,7 @@ function MenuIcon() {
 
 export function MobileTopBar() {
   const { mobileOpen, openMobile } = useSidebarLayout()
+  const { selectedCompetition } = useCompetition()
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-slate-200/80 bg-slate-50/95 px-4 backdrop-blur md:hidden">
@@ -38,7 +40,9 @@ export function MobileTopBar() {
       </button>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-slate-900">SOT Predictor</p>
-        <p className="truncate text-[10px] text-slate-500">Serie A 2025/26</p>
+        <p className="truncate text-[10px] text-slate-500">
+          {selectedCompetition ? `${selectedCompetition.name} ${selectedCompetition.season}` : 'Campionato…'}
+        </p>
       </div>
     </header>
   )

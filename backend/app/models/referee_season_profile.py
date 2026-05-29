@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 SAMPLE_QUALITY_LOW = "low"
@@ -17,7 +18,7 @@ SAMPLE_QUALITY_MEDIUM = "medium"
 SAMPLE_QUALITY_HIGH = "high"
 
 
-class RefereeSeasonProfile(Base, TimestampMixin):
+class RefereeSeasonProfile(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "referee_season_profiles"
     __table_args__ = (
         UniqueConstraint(

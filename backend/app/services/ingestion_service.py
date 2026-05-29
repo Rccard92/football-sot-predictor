@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import (
+    Competition,
     Fixture,
     FixtureLineup,
     FixturePlayerStat,
@@ -96,7 +97,14 @@ class IngestionService:
     def __init__(self, client: ApiFootballClient | None = None) -> None:
         self._client = client or ApiFootballClient()
 
-    def _begin_run(self, db: Session, source: str, meta: dict[str, Any] | None = None) -> IngestionRun:
+    def _begin_run(
+        self,
+        db: Session,
+        source: str,
+        meta: dict[str, Any] | None = None,
+        *,
+        competition_id: int | None = None,
+    ) -> IngestionRun:
         run = IngestionRun(
             source=source,
             status="running",
@@ -105,6 +113,7 @@ class IngestionService:
             meta=meta,
             started_at=_utcnow(),
             completed_at=None,
+            competition_id=competition_id,
         )
         db.add(run)
         db.commit()
@@ -408,6 +417,8 @@ class IngestionService:
         league: League,
         season_row: Season,
         item: dict[str, Any],
+        *,
+        competition_id: int | None = None,
     ) -> bool:
         fx = item.get("fixture") or {}
         teams = item.get("teams") or {}
@@ -458,6 +469,7 @@ class IngestionService:
                 api_fixture_id=api_fixture_id,
                 league_id=league.id,
                 season_id=season_row.id,
+                competition_id=competition_id,
                 home_team_id=home_team.id,
                 away_team_id=away_team.id,
                 round=round_str,
@@ -477,6 +489,8 @@ class IngestionService:
         else:
             row.league_id = league.id
             row.season_id = season_row.id
+            if competition_id is not None:
+                row.competition_id = competition_id
             row.home_team_id = home_team.id
             row.away_team_id = away_team.id
             row.round = round_str
@@ -1784,3 +1798,337 @@ class IngestionService:
                 "fixtures_imported": fixtures_imported,
             },
         }
+
+    # --- Multi-competition scoped methods ---
+
+    def _competition_league_season(
+        self, db: Session, comp: Competition
+    ) -> tuple[League, Season]:
+        if comp.league_id is None or comp.season_id is None:
+            raise ValueError(
+                f"Competition {comp.key} non collegata a league/season: eseguire bootstrap"
+            )
+        league = db.get(League, comp.league_id)
+        season_row = db.get(Season, comp.season_id)
+        if league is None or season_row is None:
+            raise ValueError(f"League/season mancanti per competition {comp.key}")
+        return league, season_row
+
+    def _fetch_leagues_for_competition(self, comp: Competition, season: int) -> dict[str, Any]:
+        body = self._client.get("leagues", {"id": comp.provider_league_id, "season": season})
+        items = list(body.get("response") or [])
+        if not items:
+            raise ApiFootballError("Nessuna lega nella risposta API")
+        return items[0]
+
+    def bootstrap_sync_league_for_competition(self, db: Session, comp: Competition) -> IngestionRun:
+        run = self._begin_run(
+            db,
+            "competition_bootstrap",
+            meta={"step": "sync_league", "competition_id": comp.id, "key": comp.key},
+            competition_id=comp.id,
+        )
+        try:
+            picked = self._fetch_leagues_for_competition(comp, comp.season)
+            league = self._upsert_league_from_picked(db, picked)
+            comp.league_id = league.id
+            db.add(comp)
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=1)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_league_for_competition failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def bootstrap_sync_season_for_competition(self, db: Session, comp: Competition) -> IngestionRun:
+        run = self._begin_run(
+            db,
+            "competition_bootstrap",
+            meta={"step": "sync_season", "competition_id": comp.id},
+            competition_id=comp.id,
+        )
+        try:
+            league = db.get(League, comp.league_id) if comp.league_id else None
+            if league is None:
+                raise ValueError("league mancante")
+            picked = self._fetch_leagues_for_competition(comp, comp.season)
+            self._upsert_season_from_picked(db, league, picked, comp.season)
+            season_row = db.scalar(
+                select(Season).where(Season.league_id == league.id, Season.year == comp.season)
+            )
+            if season_row:
+                comp.season_id = season_row.id
+                db.add(comp)
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=1)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_season_for_competition failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def bootstrap_sync_teams_for_competition(self, db: Session, comp: Competition) -> IngestionRun:
+        run = self._begin_run(
+            db,
+            "competition_bootstrap",
+            meta={"step": "sync_teams", "competition_id": comp.id},
+            competition_id=comp.id,
+        )
+        try:
+            items = self._client.get_teams(comp.provider_league_id, comp.season)
+            n = 0
+            for item in items:
+                self._upsert_team_from_api_item(db, item)
+                n += 1
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=n)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_teams_for_competition failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def bootstrap_sync_fixtures_for_competition(self, db: Session, comp: Competition) -> IngestionRun:
+        run = self._begin_run(
+            db,
+            "competition_bootstrap",
+            meta={"step": "sync_fixtures", "competition_id": comp.id},
+            competition_id=comp.id,
+        )
+        try:
+            league, season_row = self._competition_league_season(db, comp)
+            items = self._client.get_fixtures(comp.provider_league_id, comp.season, status=None)
+            n = 0
+            for item in items:
+                if self._upsert_fixture_from_api_item(
+                    db, league, season_row, item, competition_id=comp.id
+                ):
+                    n += 1
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=n)
+        except Exception as exc:
+            logger.exception("bootstrap_sync_fixtures_for_competition failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def ingest_standings_for_competition(self, db: Session, comp: Competition) -> IngestionRun:
+        run = self._begin_run(
+            db,
+            "competition_standings",
+            meta={"competition_id": comp.id},
+            competition_id=comp.id,
+        )
+        try:
+            league, season_row = self._competition_league_season(db, comp)
+            payload = self._client.get_standings(comp.provider_league_id, comp.season)
+            if not payload:
+                raise ValueError("standings_response_empty")
+            snapshot = StandingsSnapshot(
+                season_id=season_row.id,
+                league_id=league.id,
+                competition_id=comp.id,
+                snapshot_at=_utcnow(),
+                raw_json={"response": payload},
+            )
+            db.add(snapshot)
+            db.flush()
+            processed = 0
+            first = payload[0] if payload else {}
+            league_block = (first or {}).get("league") or {}
+            standings_groups = league_block.get("standings") or []
+            if not standings_groups:
+                raise ValueError("standings_groups_empty")
+            for group in standings_groups:
+                for entry in group or []:
+                    team_block = entry.get("team") or {}
+                    team_api_id = team_block.get("id")
+                    if team_api_id is None:
+                        continue
+                    team = db.scalar(select(Team).where(Team.api_team_id == int(team_api_id)))
+                    if team is None:
+                        continue
+                    all_block = entry.get("all") or {}
+                    goals_block = all_block.get("goals") or {}
+                    row = StandingEntry(
+                        snapshot_id=snapshot.id,
+                        season_id=season_row.id,
+                        league_id=league.id,
+                        competition_id=comp.id,
+                        team_id=team.id,
+                        rank=_parse_int(entry.get("rank")),
+                        points=_parse_int(entry.get("points")),
+                        goals_diff=_parse_int(entry.get("goalsDiff")),
+                        played=_parse_int(all_block.get("played")),
+                        win=_parse_int(all_block.get("win")),
+                        draw=_parse_int(all_block.get("draw")),
+                        lose=_parse_int(all_block.get("lose")),
+                        goals_for=_parse_int(goals_block.get("for")),
+                        goals_against=_parse_int(goals_block.get("against")),
+                        form=str(entry.get("form"))[:64] if entry.get("form") is not None else None,
+                        status=str(entry.get("status"))[:64] if entry.get("status") is not None else None,
+                        description=(
+                            str(entry.get("description"))[:255]
+                            if entry.get("description") is not None
+                            else None
+                        ),
+                        raw_json=entry,
+                    )
+                    db.add(row)
+                    processed += 1
+            if processed <= 0:
+                raise ValueError("standings_entries_not_found")
+            db.commit()
+            return self._finish_run(db, run, success=True, records_processed=processed)
+        except Exception as exc:
+            logger.exception("ingest_standings_for_competition failed")
+            db.rollback()
+            return self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+
+    def sync_team_stats_for_competition(self, db: Session, comp: Competition) -> dict[str, Any]:
+        summary: dict[str, Any] = {
+            "status": "pending",
+            "competition_id": comp.id,
+            "fixtures_completed": 0,
+            "fixtures_processed": 0,
+            "fixtures_with_stats": 0,
+            "team_stats_rows_created_or_updated": 0,
+            "missing_stats": [],
+            "errors": [],
+        }
+        run = self._begin_run(
+            db,
+            "competition_team_stats",
+            meta={"competition_id": comp.id},
+            competition_id=comp.id,
+        )
+        try:
+            fixtures_list = db.scalars(
+                select(Fixture)
+                .where(
+                    Fixture.competition_id == comp.id,
+                    Fixture.status.in_(FINISHED_STATUSES),
+                )
+                .order_by(Fixture.id.asc()),
+            ).all()
+            summary["fixtures_completed"] = len(fixtures_list)
+            rows_updated = 0
+            for f in fixtures_list:
+                try:
+                    stats_payload = self._client.get_fixture_statistics(int(f.api_fixture_id))
+                except ApiFootballError as exc:
+                    summary["errors"].append({"fixture_id": f.id, "message": str(exc)})
+                    summary["fixtures_processed"] += 1
+                    continue
+                if not stats_payload:
+                    summary["missing_stats"].append({"fixture_id": f.id})
+                    summary["fixtures_processed"] += 1
+                    continue
+                for block in stats_payload:
+                    team_block = block.get("team") or {}
+                    try:
+                        team_api = int(team_block["id"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    team = db.scalar(select(Team).where(Team.api_team_id == team_api))
+                    if team is None:
+                        continue
+                    side = "home" if int(f.home_team_id) == int(team.id) else "away"
+                    parsed = statistics_list_to_fields(block.get("statistics") or [])
+                    row = db.scalar(
+                        select(FixtureTeamStat).where(
+                            FixtureTeamStat.fixture_id == f.id,
+                            FixtureTeamStat.team_id == team.id,
+                        )
+                    )
+                    if row is None:
+                        row = FixtureTeamStat(
+                            fixture_id=f.id,
+                            team_id=team.id,
+                            side=side,
+                            competition_id=comp.id,
+                            raw_json=block,
+                        )
+                        db.add(row)
+                    else:
+                        row.side = side
+                        row.competition_id = comp.id
+                        row.raw_json = block
+                    apply_parsed_to_row(row, parsed)
+                    backfill_shot_columns_from_raw_json_if_null(row)
+                    rows_updated += 1
+                summary["fixtures_with_stats"] += 1
+                summary["fixtures_processed"] += 1
+            db.commit()
+            summary["team_stats_rows_created_or_updated"] = rows_updated
+            summary["status"] = "ok"
+            self._finish_run(db, run, success=True, records_processed=rows_updated)
+            return summary
+        except Exception as exc:
+            logger.exception("sync_team_stats_for_competition failed")
+            db.rollback()
+            summary["status"] = "error"
+            summary["message"] = str(exc)
+            self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+            return summary
+
+    def ingest_lineups_for_competition(
+        self,
+        db: Session,
+        comp: Competition,
+        *,
+        fixture_id: int | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        from app.services.lineups.lineup_parsing import block_has_official_lineup
+        from app.services.lineups.lineup_persist import upsert_lineup_from_api_block
+
+        _ = force
+        run = self._begin_run(
+            db,
+            "competition_lineups",
+            meta={"competition_id": comp.id},
+            competition_id=comp.id,
+        )
+        processed = 0
+        try:
+            _league, season_row = self._competition_league_season(db, comp)
+            q = select(Fixture).where(
+                Fixture.competition_id == comp.id,
+                Fixture.status.in_(FINISHED_STATUSES),
+            )
+            if fixture_id is not None:
+                q = q.where(Fixture.id == fixture_id)
+            fixtures = db.scalars(q).all()
+            for f in fixtures:
+                try:
+                    blocks = self._client.get_fixture_lineups(int(f.api_fixture_id))
+                except Exception as exc:
+                    logger.warning("lineups comp=%s fixture=%s err=%s", comp.id, f.id, exc)
+                    continue
+                for block in blocks:
+                    if not isinstance(block, dict) or not block_has_official_lineup(block):
+                        continue
+                    team_block = block.get("team") or {}
+                    try:
+                        team_api = int(team_block["id"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    team = db.scalar(select(Team).where(Team.api_team_id == team_api))
+                    if team is None:
+                        continue
+                    _row, _pn = upsert_lineup_from_api_block(
+                        db,
+                        fixture=f,
+                        season_row=season_row,
+                        team=team,
+                        block=block,
+                    )
+                    if _row is not None:
+                        _row.competition_id = comp.id
+                        processed += 1
+            db.commit()
+            self._finish_run(db, run, success=True, records_processed=processed)
+            return {"status": "ok", "records_processed": processed, "competition_id": comp.id}
+        except Exception as exc:
+            logger.exception("ingest_lineups_for_competition failed")
+            db.rollback()
+            self._finish_run(db, run, success=False, records_processed=0, error=str(exc))
+            return {"status": "error", "message": str(exc), "competition_id": comp.id}

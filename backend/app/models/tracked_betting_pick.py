@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 SOURCE_MANUAL = "manual"
@@ -36,7 +37,7 @@ STATUS_VOID = "void"
 STATUS_UNAVAILABLE = "unavailable"
 
 
-class TrackedBettingPick(Base, TimestampMixin):
+class TrackedBettingPick(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "tracked_betting_picks"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

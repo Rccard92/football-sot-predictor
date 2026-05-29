@@ -8,10 +8,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 
-class StandingsSnapshot(Base, TimestampMixin):
+class StandingsSnapshot(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "standings_snapshots"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -37,7 +38,7 @@ class StandingsSnapshot(Base, TimestampMixin):
     )
 
 
-class StandingEntry(Base, TimestampMixin):
+class StandingEntry(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "standing_entries"
     __table_args__ = (UniqueConstraint("snapshot_id", "team_id", name="uq_standing_entries_snapshot_team"),)
 

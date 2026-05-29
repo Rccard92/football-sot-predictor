@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
     from app.models.fixture_missing_player import FixtureMissingPlayer
 
 
-class FixtureProviderLineup(Base, TimestampMixin):
+class FixtureProviderLineup(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "fixture_provider_lineups"
     __table_args__ = (
         UniqueConstraint("fixture_id", "provider_name", name="uq_fixture_provider_lineups_fixture_provider"),

@@ -284,9 +284,19 @@ class SotPredictionV20LineupImpactService:
             "results": results,
         }
 
-    def generate_for_upcoming_season(self, db: Session, season_year: int, *, limit: int = 200) -> dict[str, Any]:
+    def generate_for_upcoming_season(
+        self,
+        db: Session,
+        season_year: int,
+        *,
+        limit: int = 200,
+        competition_id: int | None = None,
+    ) -> dict[str, Any]:
         try:
-            _league, season = self._season_row(db, season_year)
+            if competition_id is None:
+                _league, season = self._season_row(db, season_year)
+            else:
+                season = None
         except Exception as exc:
             return {
                 "status": "error",
@@ -295,11 +305,20 @@ class SotPredictionV20LineupImpactService:
                 "partial_result": {"upcoming_fixtures": 0, "predictions_ok": 0, "errors": []},
             }
 
-        fixtures = list(
-            db.scalars(
-                select(Fixture).where(Fixture.season_id == season.id).order_by(Fixture.kickoff_at.asc()),
-            ).all(),
-        )
+        if competition_id is not None:
+            fixtures = list(
+                db.scalars(
+                    select(Fixture)
+                    .where(Fixture.competition_id == competition_id)
+                    .order_by(Fixture.kickoff_at.asc()),
+                ).all(),
+            )
+        else:
+            fixtures = list(
+                db.scalars(
+                    select(Fixture).where(Fixture.season_id == season.id).order_by(Fixture.kickoff_at.asc()),
+                ).all(),
+            )
         upcoming = [f for f in fixtures if (f.status or "").upper() not in FINISHED_STATUSES][:limit]
 
         if not upcoming:
@@ -343,3 +362,15 @@ class SotPredictionV20LineupImpactService:
             "predictions_ok": ok_total,
             "errors": errors,
         }
+
+    def generate_for_competition(self, db: Session, competition_id: int, *, limit: int = 200) -> dict[str, Any]:
+        from app.models import Competition
+
+        comp = db.get(Competition, competition_id)
+        if comp is None:
+            return {"status": "error", "message": f"Competition {competition_id} non trovata"}
+        result = self.generate_for_upcoming_season(
+            db, comp.season, limit=limit, competition_id=comp.id
+        )
+        result["competition_id"] = comp.id
+        return result

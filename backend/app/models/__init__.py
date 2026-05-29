@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
 from app.models.fixture_lineup_player import FixtureLineupPlayer
@@ -40,6 +41,7 @@ from app.models.sportapi_odds_provider import SportApiOddsProvider
 
 __all__ = [
     "Base",
+    "Competition",
     "Fixture",
     "FixtureLineup",
     "FixtureLineupPlayer",

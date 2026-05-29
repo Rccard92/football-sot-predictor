@@ -10,10 +10,11 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.competition_scoped import CompetitionScopedMixin
 from app.models.mixins import TimestampMixin
 
 
-class PlayerTeamSeason(Base, TimestampMixin):
+class PlayerTeamSeason(Base, TimestampMixin, CompetitionScopedMixin):
     __tablename__ = "player_team_seasons"
     __table_args__ = (
         UniqueConstraint(

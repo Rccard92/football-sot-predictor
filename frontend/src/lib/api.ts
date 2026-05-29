@@ -6,6 +6,110 @@ import type { FixturePlayerProfilesResponse } from '../types/playerDbProfiles'
 
 export const DEFAULT_SEASON = Number(import.meta.env.VITE_DEFAULT_SEASON) || 2025
 
+export type CompetitionSummary = {
+  id: number
+  key: string
+  name: string
+  country: string | null
+  provider: string
+  provider_league_id: number
+  season: number
+  timezone: string | null
+  is_active: boolean
+  is_primary: boolean
+  pre_match_cron_enabled: boolean
+  status: string | null
+  league_id: number | null
+  season_id: number | null
+}
+
+export async function getCompetitions(): Promise<CompetitionSummary[]> {
+  return requestJson<CompetitionSummary[]>('/api/competitions')
+}
+
+export async function getDefaultCompetition(): Promise<CompetitionSummary | null> {
+  const res = await requestJson<{ competition: CompetitionSummary | null }>('/api/competitions/default')
+  return res.competition
+}
+
+export async function getNextRoundQuickReportForCompetition(
+  competitionId: number,
+  opts?: { limit?: number; onlyNextRound?: boolean; modelVersion?: string | null },
+): Promise<UpcomingActiveResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.onlyNextRound != null) p.set('only_next_round', String(opts.onlyNextRound))
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
+  return requestJson<UpcomingActiveResponse>(
+    `/api/competitions/${competitionId}/next-round/quick-report${q ? `?${q}` : ''}`,
+  )
+}
+
+export async function getTrackedBettingPicksForCompetition(
+  competitionId: number,
+): Promise<TrackedBettingPicksResponse> {
+  return requestJson<TrackedBettingPicksResponse>(
+    `/api/competitions/${competitionId}/betting-picks/tracked`,
+  )
+}
+
+export async function getCompetitionDataHealth(competitionId: number): Promise<Record<string, unknown>> {
+  return adminGetJson<Record<string, unknown>>(`/api/admin/data-health/competitions/${competitionId}`)
+}
+
+export async function discoverCompetitions(body: {
+  country: string
+  name_query: string
+  season: number
+}): Promise<{ candidates: Array<Record<string, unknown>>; ambiguous: boolean; message?: string }> {
+  return adminPostJson('/api/admin/competitions/discover', body)
+}
+
+export async function createCompetition(body: Record<string, unknown>): Promise<CompetitionSummary> {
+  return adminPostJson<CompetitionSummary>('/api/admin/competitions', body)
+}
+
+export async function bootstrapCompetition(
+  competitionId: number,
+  dryRun = false,
+): Promise<Record<string, unknown>> {
+  return adminPostJson(`/api/admin/competitions/${competitionId}/ingest/bootstrap`, { dry_run: dryRun })
+}
+
+export async function ingestCompetitionTeamStats(
+  competitionId: number,
+  dryRun = false,
+): Promise<Record<string, unknown>> {
+  return adminPostJson(`/api/admin/competitions/${competitionId}/ingest/team-stats`, { dry_run: dryRun })
+}
+
+export async function ingestCompetitionPlayerStats(
+  competitionId: number,
+  dryRun = false,
+): Promise<Record<string, unknown>> {
+  return adminPostJson(`/api/admin/competitions/${competitionId}/ingest/player-match-stats`, {
+    dry_run: dryRun,
+  })
+}
+
+export async function buildCompetitionPlayerProfiles(
+  competitionId: number,
+  dryRun = false,
+): Promise<Record<string, unknown>> {
+  return adminPostJson(
+    `/api/admin/competitions/${competitionId}/features/player-season-profiles/build`,
+    { dry_run: dryRun },
+  )
+}
+
+export async function refreshCompetitionNextRound(
+  competitionId: number,
+  dryRun = false,
+): Promise<Record<string, unknown>> {
+  return adminPostJson(`/api/admin/competitions/${competitionId}/refresh/next-round`, { dry_run: dryRun })
+}
+
 export type LeagueDashboardBlock = {
   id: number
   api_league_id: number
