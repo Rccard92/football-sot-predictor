@@ -4,8 +4,6 @@ import {
   postCompetitionSportApiLineupsIngest,
   postRefreshNextRoundSportApiLineups,
   type LineupRefreshImpactPayload,
-  type SportApiCompetitionLineupsIngestSummary,
-  type SportApiRoundRefreshSummary,
   type UpcomingActiveMatchRow,
 } from '../../lib/api'
 import { useCompetition } from '../../contexts/CompetitionContext'
@@ -16,6 +14,16 @@ import {
   mergeMatchesWithImpacts,
   reportUsesV20Predictions,
 } from './quickPlayImpactMerge'
+import {
+  getRowDelta,
+  getRowDirection,
+  getRowMatchName,
+  getRowReason,
+  isCompetitionLineupsSummary,
+  isRoundRefreshRow,
+  isRoundRefreshSummary,
+  type RefreshSummary,
+} from './quickPlayRefreshTypes'
 import { QuickPlayReportMobile } from './QuickPlayReportMobile'
 import { QuickPlayReportTable } from './QuickPlayReportTable'
 
@@ -34,9 +42,7 @@ export function QuickPlayReportSection({
 }) {
   const { selectedCompetitionId } = useCompetition()
   const [refreshBusy, setRefreshBusy] = useState(false)
-  const [refreshResult, setRefreshResult] = useState<
-    SportApiRoundRefreshSummary | SportApiCompetitionLineupsIngestSummary | null
-  >(null)
+  const [refreshResult, setRefreshResult] = useState<RefreshSummary | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [impactOverrides, setImpactOverrides] = useState<Record<number, LineupRefreshImpactPayload>>({})
 
@@ -69,11 +75,11 @@ export function QuickPlayReportSection({
               timeoutMs: 600_000,
             })
       setRefreshResult(out)
-      const merged = impactsFromRefreshResults(
-        (out.results ?? []) as SportApiRoundRefreshSummary['results'],
-      )
-      if (Object.keys(merged).length) {
-        setImpactOverrides((prev) => ({ ...prev, ...merged }))
+      if (isRoundRefreshSummary(out)) {
+        const merged = impactsFromRefreshResults(out.results)
+        if (Object.keys(merged).length) {
+          setImpactOverrides((prev) => ({ ...prev, ...merged }))
+        }
       }
       await onRefreshComplete()
     } catch (e) {
@@ -95,21 +101,26 @@ export function QuickPlayReportSection({
 
   if (!matches.length) return null
 
+  const roundSummary = isRoundRefreshSummary(refreshResult) ? refreshResult : null
+  const ingestSummary = isCompetitionLineupsSummary(refreshResult) ? refreshResult : null
+
   const errors = (refreshResult?.results ?? []).filter(
     (r) => r.status === 'error' || r.status === 'lineups_failed' || r.status === 'mapping_failed',
   )
 
-  const impactRows = (refreshResult?.results ?? []).filter((r) => r.direction_total)
+  const impactRows = roundSummary
+    ? (roundSummary.results ?? []).filter(isRoundRefreshRow).filter((r) => r.direction_total)
+    : []
 
-  const formationsUpdated =
-    'lineups_imported' in (refreshResult ?? {})
-      ? (refreshResult as SportApiCompetitionLineupsIngestSummary).lineups_imported
-      : (refreshResult as SportApiRoundRefreshSummary | null)?.updated ?? 0
+  const ingestRows = ingestSummary?.results ?? []
 
-  const fixturesChecked =
-    'fixtures_checked' in (refreshResult ?? {})
-      ? (refreshResult as SportApiCompetitionLineupsIngestSummary).fixtures_checked
-      : (refreshResult as SportApiRoundRefreshSummary | null)?.total_fixtures ?? 0
+  const fixturesChecked = roundSummary
+    ? roundSummary.total_fixtures
+    : (ingestSummary?.fixtures_checked ?? 0)
+
+  const formationsUpdated = roundSummary
+    ? roundSummary.updated
+    : (ingestSummary?.lineups_imported ?? 0)
 
   const partialLineupWarning =
     lineupStatusCounts.withLineup > 0 && lineupStatusCounts.withoutLineup > 0
@@ -143,17 +154,34 @@ export function QuickPlayReportSection({
         {refreshError ? <p className="mt-2 text-[11px] text-rose-700">{refreshError}</p> : null}
         {refreshResult ? (
           <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-[11px] text-emerald-950">
-            <p className="font-semibold">Aggiornamento completato</p>
+            <p className="font-semibold">
+              {ingestSummary ? 'Import lineups completato' : 'Aggiornamento completato'}
+            </p>
             <ul className="mt-1 list-inside list-disc">
               <li>{fixturesChecked} partite controllate</li>
               <li>{formationsUpdated} formazioni aggiornate</li>
-              {refreshResult.up_count != null ? (
+              {roundSummary && roundSummary.up_count != null ? (
                 <li>
-                  {refreshResult.up_count} pronostici saliti · {refreshResult.down_count ?? 0} scesi ·{' '}
-                  {refreshResult.flat_count ?? 0} stabili
+                  {roundSummary.up_count} pronostici saliti · {roundSummary.down_count ?? 0} scesi ·{' '}
+                  {roundSummary.flat_count ?? 0} stabili
                 </li>
               ) : null}
+              {ingestSummary ? (
+                <>
+                  <li>{ingestSummary.mappings_found} mapping trovati</li>
+                  <li>{ingestSummary.mappings_uncertain} mapping incerti</li>
+                  <li>{ingestSummary.missing_players_imported} indisponibili importati</li>
+                  <li>{ingestSummary.predictions_regenerated} prediction ricalcolate</li>
+                </>
+              ) : null}
             </ul>
+            {ingestSummary?.warnings?.length ? (
+              <ul className="mt-2 list-inside list-disc text-amber-900">
+                {ingestSummary.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
             {impactRows.length > 0 ? (
               <details className="mt-2 border-t border-emerald-200/80 pt-2">
                 <summary className="cursor-pointer text-[10px] font-medium text-emerald-950">
@@ -162,8 +190,25 @@ export function QuickPlayReportSection({
                 <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-[10px]">
                   {impactRows.map((r) => (
                     <li key={r.fixture_id}>
-                      <span className="font-medium">{r.match_name ?? `Fixture ${r.fixture_id}`}</span>:{' '}
-                      {formatImpactLine(r.direction_total, r.delta_total_sot, r.main_reason)}
+                      <span className="font-medium">{getRowMatchName(r)}</span>:{' '}
+                      {formatImpactLine(getRowDirection(r), getRowDelta(r), getRowReason(r))}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {ingestSummary && ingestRows.length > 0 ? (
+              <details className="mt-2 border-t border-emerald-200/80 pt-2">
+                <summary className="cursor-pointer text-[10px] font-medium text-emerald-950">
+                  Dettagli fixture ({ingestRows.length})
+                </summary>
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-[10px]">
+                  {ingestRows.map((r) => (
+                    <li key={r.fixture_id}>
+                      <span className="font-medium">{getRowMatchName(r)}</span>
+                      {r.status ? ` — ${r.status}` : ''}
+                      {r.confidence != null ? ` (conf. ${r.confidence})` : ''}
+                      {getRowReason(r) ? ` — ${getRowReason(r)}` : ''}
                     </li>
                   ))}
                 </ul>

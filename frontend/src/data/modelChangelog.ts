@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.10',
+    date: '2026-05-29',
+    title: 'Fix build report lineups multi-campionato',
+    type: 'patch',
+    summary:
+      'Corretto il componente QuickPlayReportSection per gestire sia il refresh formazioni turno sia il nuovo import lineups multi-campionato.',
+    highlights: [
+      'Aggiunte type guard frontend.',
+      'Evitato accesso a campi non presenti nelle nuove response.',
+      'Mantenuta UI variazioni SOT per i refresh esistenti.',
+      'Aggiunto supporto alla response lineups import.',
+      'Nessuna modifica al modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.9',
     date: '2026-05-29',
     title: 'Lineups SportAPI multi-campionato',
