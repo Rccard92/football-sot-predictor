@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.11',
+    date: '2026-05-29',
+    title: 'Fix stato formazioni SportAPI (Prossima giornata)',
+    type: 'patch',
+    summary:
+      'Corretto il warning errato sulle lineups quando SportAPI copre il turno (es. Brasileirão 10/10). Badge probabili vs ufficiali, model box e messaggio impatto FLAT più chiaro.',
+    highlights: [
+      'Quick-report usa FixtureProviderLineup SportAPI, non solo API-Football.',
+      'Badge «Probabili aggiornate» al posto di «Aggiornata» per confirmed=false.',
+      'Info verde coverage 100% e Data Health con confirmed/probable.',
+      'Model box: «lineups SportAPI» e nota formazioni probabili.',
+      'Impatto FLAT: «Nessuna variazione rilevante dopo aggiornamento formazioni.»',
+      'Nessuna modifica alla formula v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.10',
     date: '2026-05-29',
     title: 'Fix build report lineups multi-campionato',

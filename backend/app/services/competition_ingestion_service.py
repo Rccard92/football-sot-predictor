@@ -16,6 +16,7 @@ from app.models import (
     Competition,
     Fixture,
     FixtureLineup,
+    FixtureProviderLineup,
     FixtureProviderMapping,
     FixtureTeamStat,
     League,
@@ -379,6 +380,14 @@ class CompetitionIngestionService:
             )
             or 0
         )
+        sportapi_lineup_rows_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureProviderLineup)
+                .where(FixtureProviderLineup.competition_id == comp.id)
+            )
+            or 0
+        )
 
         all_fixtures = list(
             db.scalars(
@@ -400,7 +409,7 @@ class CompetitionIngestionService:
             selection.as_log_dict(competition_id=comp.id),
         )
 
-        lineups_ready = lineup_rows_count > 0 and sportapi_mappings_count > 0
+        lineups_ready = sportapi_lineup_rows_count > 0 and sportapi_mappings_count > 0
         model_versions_requested = [BASELINE_SOT_MODEL_VERSION_V11_SOT]
         if lineups_ready:
             model_versions_requested.append(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)

@@ -52,10 +52,30 @@ export function formatInputsAvailable(inputs?: Record<string, boolean> | null): 
   const parts: string[] = []
   if (inputs.team_stats) parts.push('team stats')
   if (inputs.player_profiles) parts.push('profili giocatori')
-  if (inputs.lineups) parts.push('lineups')
+  if (inputs.lineups) parts.push('lineups SportAPI')
   if (inputs.sportapi_mappings) parts.push('mapping SportAPI')
   if (inputs.v11_base_ready) parts.push('base v1.1')
   return parts.length ? parts.join(', ') : 'nessuno'
+}
+
+export function formatModelStatusFootnote(ctx?: {
+  lineups_probable_only?: boolean
+  next_round_lineup_coverage_pct?: number
+  lineups_ready?: boolean
+  operating_mode?: string
+} | null): string | null {
+  if (!ctx) return null
+  if (ctx.lineups_probable_only) {
+    return 'Formazioni probabili, non ufficiali.'
+  }
+  const cov = ctx.next_round_lineup_coverage_pct
+  if (ctx.lineups_ready && cov != null && cov >= 100) {
+    return 'Formazioni SportAPI disponibili per tutto il prossimo turno.'
+  }
+  if (ctx.operating_mode === 'degraded_fallback' || ctx.lineups_ready === false) {
+    return 'Lineups mancanti.'
+  }
+  return null
 }
 
 export function labelForModelVersion(slug: string): string {

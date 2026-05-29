@@ -3,6 +3,7 @@ import {
   IMPACT_DIRECTION_NOTE,
   formatImpactDelta,
   impactBadgeClass,
+  isFlatNoChange,
 } from '../../utils/lineupRefreshImpactDisplay'
 
 export function LineupRefreshImpactBadge({
@@ -27,18 +28,23 @@ export function LineupRefreshImpactBadge({
 
   const dir = impact.direction_total
   const delta = impact.delta_total_sot
-  const title = [formatImpactDelta(dir, delta), impact.main_reason, IMPACT_DIRECTION_NOTE]
+  const flatNoChange = isFlatNoChange(dir, delta)
+  const title = [
+    formatImpactDelta(dir, delta),
+    flatNoChange ? null : impact.main_reason,
+    IMPACT_DIRECTION_NOTE,
+  ]
     .filter(Boolean)
     .join('\n')
 
   return (
     <div className={compact ? 'space-y-0.5' : 'space-y-1'} title={title}>
       <span
-        className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums ${impactBadgeClass(dir)}`}
+        className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums ${flatNoChange ? 'border-slate-200 bg-slate-50 text-slate-700' : impactBadgeClass(dir)}`}
       >
         {formatImpactDelta(dir, delta)}
       </span>
-      {showReason && impact.main_reason ? (
+      {showReason && impact.main_reason && !flatNoChange ? (
         <p className="max-w-[14rem] text-[10px] leading-snug text-slate-600">{impact.main_reason}</p>
       ) : null}
     </div>

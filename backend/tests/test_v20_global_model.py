@@ -43,6 +43,7 @@ def _mock_db_for_context(
 ) -> MagicMock:
     db = MagicMock()
     db.scalar.side_effect = [334, 597, 0, sportapi_lineups, mappings, 3, 0, 0]
+    db.scalars.return_value.all.return_value = []
     return db
 
 

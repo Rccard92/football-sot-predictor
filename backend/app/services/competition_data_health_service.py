@@ -150,6 +150,16 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
     )
     missing_mappings_next_round = max(next_round_fixture_count - next_round_mappings_count, 0)
 
+    sportapi_rows = list(
+        db.scalars(
+            select(FixtureProviderLineup).where(
+                FixtureProviderLineup.competition_id == comp.id,
+            )
+        ).all()
+    )
+    confirmed_lineups_count = sum(1 for r in sportapi_rows if bool(r.confirmed))
+    probable_lineups_count = len(sportapi_rows) - confirmed_lineups_count
+
     lineup_coverage_pct = round(100.0 * lineups_count / max(finished_count * 2, 1), 1)
 
     return {
@@ -164,12 +174,17 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         "team_stats_count": team_stats_count,
         "predictions_count": predictions_count,
         "lineup_rows_count": lineups_count,
+        "lineups_api_football_count": lineups_count,
         "sportapi_lineup_rows_count": sportapi_lineups_count,
+        "lineups_sportapi_count": sportapi_lineups_count,
+        "confirmed_lineups_count": confirmed_lineups_count,
+        "probable_lineups_count": probable_lineups_count,
         "lineup_coverage_pct": lineup_coverage_pct,
         "sportapi_mappings_count": mappings_count,
         "missing_mappings": max(finished_count - mappings_count, 0),
         "next_round_fixture_count": next_round_fixture_count,
         "next_round_lineups_count": next_round_lineups_count,
+        "next_round_sportapi_lineups_count": next_round_lineups_count,
         "next_round_lineup_coverage_pct": next_round_lineup_coverage_pct,
         "missing_mappings_next_round": missing_mappings_next_round,
         "tracked_picks_count": picks_count,

@@ -4,6 +4,7 @@ import {
   IMPACT_DIRECTION_NOTE,
   formatImpactDelta,
   impactBadgeClass,
+  isFlatNoChange,
 } from '../../utils/lineupRefreshImpactDisplay'
 
 function SideRow({
@@ -47,10 +48,24 @@ export function LineupRefreshImpactDetail({ impact }: { impact?: LineupRefreshIm
   }
 
   const reasons = (impact.reasons ?? []).slice(0, 5)
+  const flatNoChange = isFlatNoChange(impact.direction_total, impact.delta_total_sot)
+  const hasUnmappedNote =
+    Boolean(
+      impact.main_reason &&
+        /indisponibil/i.test(impact.main_reason) &&
+        /non mappat/i.test(impact.main_reason),
+    ) ||
+    reasons.some((r) => r.text && /non mappat/i.test(r.text) && r.estimated_sot_impact == null)
 
   return (
     <div className="space-y-3">
-      <p className="text-[10px] text-slate-500">{IMPACT_DIRECTION_NOTE}</p>
+      {flatNoChange ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-700">
+          {formatImpactDelta(impact.direction_total, impact.delta_total_sot)}
+        </p>
+      ) : (
+        <p className="text-[10px] text-slate-500">{IMPACT_DIRECTION_NOTE}</p>
+      )}
       <SideRow
         label="Casa"
         before={impact.before_home_sot}
@@ -83,6 +98,11 @@ export function LineupRefreshImpactDetail({ impact }: { impact?: LineupRefreshIm
         </div>
       ) : impact.main_reason ? (
         <p className="text-[11px] text-slate-700">{impact.main_reason}</p>
+      ) : null}
+      {hasUnmappedNote ? (
+        <p className="text-[10px] text-slate-500">
+          Nota: alcuni indisponibili non mappati non hanno impatto quantificato nel modello.
+        </p>
       ) : null}
     </div>
   )

@@ -145,6 +145,7 @@ def test_model_operating_context_lineups_ready_uses_sportapi_tables():
     comp = _comp(2)
     db = MagicMock()
     db.scalar.side_effect = [334, 597, 0, 5, 3, 380, 0, 0]
+    db.scalars.return_value.all.return_value = []
 
     ctx = build_v20_operating_context(db, comp)
 

@@ -216,7 +216,9 @@ def build_next_round_quick_report_payload(
     competition_name: str | None = None,
 ) -> tuple[dict[str, Any], int]:
     t0 = time.perf_counter()
-    lineup_warning: str | None = None
+    lineup_coverage: dict[str, Any] | None = None
+    info_messages: list[str] = []
+    api_football_lineups_count = 0
     try:
         if competition_id is not None:
             comp = db.get(Competition, competition_id)
@@ -226,7 +228,7 @@ def build_next_round_quick_report_payload(
                 db, comp, limit=limit, only_next_round=only_next_round
             )
             competition_name = competition_name or comp.name
-            lineups_count = int(
+            api_football_lineups_count = int(
                 db.scalar(
                     select(func.count())
                     .select_from(FixtureLineup)
@@ -234,10 +236,6 @@ def build_next_round_quick_report_payload(
                 )
                 or 0
             )
-            if lineups_count == 0:
-                lineup_warning = (
-                    "Lineups non disponibili: prediction generate senza impatto formazioni."
-                )
         else:
             _season_row, upcoming, round_label = _load_upcoming_fixtures(
                 db, season, limit=limit, only_next_round=only_next_round
@@ -252,8 +250,24 @@ def build_next_round_quick_report_payload(
     preferred = preferred_model_versions()
     requested = model_version or BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     warnings: list[str] = []
-    if lineup_warning:
-        warnings.append(lineup_warning)
+
+    from app.services.sportapi.sportapi_lineup_status import (
+        build_lineup_coverage_messages,
+        formation_status_from_lineup,
+        load_lineups_by_fixture_ids,
+        next_round_sportapi_lineup_stats,
+    )
+
+    fx_ids_early = [int(f.id) for f in upcoming]
+    if competition_id is not None:
+        lineup_coverage = next_round_sportapi_lineup_stats(db, fx_ids_early)
+        cov_warnings, cov_info = build_lineup_coverage_messages(
+            coverage=lineup_coverage,
+            api_football_lineups_count=api_football_lineups_count,
+        )
+        warnings.extend(cov_warnings)
+        info_messages.extend(cov_info)
+
     if model_version is not None and requested not in preferred:
         warnings.append(f"Model version richiesta non riconosciuta: {requested}.")
 
@@ -261,14 +275,10 @@ def build_next_round_quick_report_payload(
     warnings.extend(_w)
     mv_default = model_version or recommended or requested
 
-    fx_ids = [int(f.id) for f in upcoming]
+    fx_ids = fx_ids_early
     team_ids = list({int(f.home_team_id) for f in upcoming} | {int(f.away_team_id) for f in upcoming})
     teams = {t.id: t for t in db.scalars(select(Team).where(Team.id.in_(team_ids))).all()} if team_ids else {}
 
-    from app.services.sportapi.sportapi_lineup_status import (
-        formation_status_from_lineup,
-        load_lineups_by_fixture_ids,
-    )
     from app.services.sot_betting_advice_service import (
         advice_context_from_upcoming_lineup,
         build_upcoming_report_markets,
@@ -351,7 +361,10 @@ def build_next_round_quick_report_payload(
         "matches": matches,
         "model_limitations": default_model_limitations_dict(),
         "warnings": warnings,
+        "info": info_messages,
     }
+    if lineup_coverage is not None:
+        payload["lineup_coverage"] = lineup_coverage
     if _PERF_LOG:
         elapsed_ms = (time.perf_counter() - t0) * 1000
         logger.info(

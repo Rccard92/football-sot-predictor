@@ -21,6 +21,7 @@ import {
   V20_MODEL,
   filterVersionsForUi,
   formatInputsAvailable,
+  formatModelStatusFootnote,
   labelForModelVersion,
   labelForOperatingMode,
   stageBadgeForModel,
@@ -171,6 +172,23 @@ export function UpcomingMatches() {
   const isRecommendedView =
     Boolean(recommendedModel && modelInView && recommendedModel === modelInView)
 
+  const modelStatusFootnote = formatModelStatusFootnote(
+    status?.v20_operating_context ?? {
+      lineups_probable_only: status?.lineups_probable_only,
+      next_round_lineup_coverage_pct: status?.next_round_lineup_coverage_pct,
+      lineups_ready: status?.lineups_ready,
+      operating_mode: status?.operating_mode,
+    },
+  )
+
+  const reportInfo = [
+    ...(data?.info ?? []),
+    ...(data?.warnings ?? []).filter((w) => /disponibili per tutto il turno/i.test(w)),
+  ]
+  const reportWarnings = (data?.warnings ?? []).filter(
+    (w) => !/disponibili per tutto il turno/i.test(w),
+  )
+
   const limitationsResolved: ModelLimitations = data?.model_limitations ?? {
     lineups_considered: false,
     injuries_considered: false,
@@ -216,6 +234,9 @@ export function UpcomingMatches() {
                 Input disponibili:{' '}
                 <span className="font-medium text-slate-800">{formatInputsAvailable(status.inputs_available)}</span>
               </p>
+            ) : null}
+            {modelStatusFootnote ? (
+              <p className="text-xs text-slate-600">{modelStatusFootnote}</p>
             ) : null}
             <p className="font-semibold text-slate-900">
               Modello attivo:{' '}
@@ -281,6 +302,16 @@ export function UpcomingMatches() {
                 Prossimo turno: <span className="font-medium text-slate-900">{data.round}</span>
               </p>
             ) : null}
+            {data?.lineup_coverage?.next_round_fixture_count ? (
+              <p>
+                Coverage formazioni:{' '}
+                <span className="font-medium text-slate-900">
+                  {data.lineup_coverage.next_round_sportapi_lineups_count ?? 0}/
+                  {data.lineup_coverage.next_round_fixture_count} (
+                  {data.lineup_coverage.next_round_coverage_pct ?? 0}%)
+                </span>
+              </p>
+            ) : null}
             <p className="text-xs text-slate-500">
               Dettagli tecnici in{' '}
               <Link to="/match-variable-audit" className="font-medium text-slate-700 underline">
@@ -296,11 +327,22 @@ export function UpcomingMatches() {
         </div>
       </header>
 
-      {!loading && !error && data?.warnings?.length ? (
+      {!loading && !error && reportInfo.length ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-950 shadow-sm">
+          <p className="font-medium">Stato formazioni</p>
+          <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+            {reportInfo.map((msg, i) => (
+              <li key={i}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {!loading && !error && reportWarnings.length ? (
         <details className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 shadow-sm">
           <summary className="cursor-pointer select-none font-medium">Warning modello (tecnico)</summary>
           <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
-            {data.warnings.map((w, i) => (
+            {reportWarnings.map((w, i) => (
               <li key={i}>{w}</li>
             ))}
           </ul>

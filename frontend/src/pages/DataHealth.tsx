@@ -44,6 +44,8 @@ export function DataHealth() {
         { label: 'Predictions', value: data.predictions_count as number },
         { label: 'Lineups API-Football', value: data.lineup_rows_count as number },
         { label: 'Lineups SportAPI', value: data.sportapi_lineup_rows_count as number },
+        { label: 'Formazioni ufficiali (SportAPI)', value: data.confirmed_lineups_count as number },
+        { label: 'Formazioni probabili (SportAPI)', value: data.probable_lineups_count as number },
         { label: 'Mapping SportAPI', value: data.sportapi_mappings_count as number },
         { label: 'Coverage lineups (finite)', value: `${data.lineup_coverage_pct ?? '—'}%` },
         {
@@ -52,7 +54,7 @@ export function DataHealth() {
         },
         {
           label: 'Prossimo turno — lineups SportAPI',
-          value: data.next_round_lineups_count as number,
+          value: (data.next_round_sportapi_lineups_count ?? data.next_round_lineups_count) as number,
         },
         {
           label: 'Prossimo turno — coverage lineups',

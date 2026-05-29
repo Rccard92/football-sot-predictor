@@ -2017,6 +2017,14 @@ export type ModelInputsAvailable = {
   upcoming_fixtures?: boolean
 }
 
+export type LineupCoverageSummary = {
+  next_round_fixture_count?: number
+  next_round_sportapi_lineups_count?: number
+  next_round_coverage_pct?: number
+  confirmed_lineups_count?: number
+  probable_lineups_count?: number
+}
+
 export type V20OperatingContext = {
   global_model_version?: string
   global_model_label?: string
@@ -2024,6 +2032,10 @@ export type V20OperatingContext = {
   competition_name?: string
   operating_mode?: string
   lineups_ready?: boolean
+  lineups_probable_only?: boolean
+  confirmed_lineups_count?: number
+  probable_lineups_count?: number
+  next_round_lineup_coverage_pct?: number
   inputs_available?: ModelInputsAvailable
 }
 
@@ -2039,6 +2051,10 @@ export type ModelStatusResponse = {
   inputs_available?: ModelInputsAvailable
   v20_operating_context?: V20OperatingContext
   lineups_ready?: boolean
+  lineups_probable_only?: boolean
+  confirmed_lineups_count?: number
+  probable_lineups_count?: number
+  next_round_lineup_coverage_pct?: number
   active_model_version: string | null
   recommended_model_version?: string | null
   stable_model_version?: string | null
@@ -2228,6 +2244,8 @@ export type RefereeSummary = {
 
 export type UpcomingActiveResponse = {
   season: number
+  competition_id?: number
+  competition_name?: string
   model_version_used: string
   recommended_model_version: string
   stable_model_version?: string | null
@@ -2236,6 +2254,8 @@ export type UpcomingActiveResponse = {
   matches: UpcomingActiveMatchRow[]
   model_limitations: ModelLimitations
   warnings: string[]
+  info?: string[]
+  lineup_coverage?: LineupCoverageSummary
 }
 
 export type UpcomingV02SidePrediction = {

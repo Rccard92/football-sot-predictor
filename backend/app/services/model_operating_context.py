@@ -22,6 +22,11 @@ from app.models import (
     TeamSotPrediction,
 )
 from app.services.sot_model_registry import get_model_display
+from app.services.sportapi.sportapi_lineup_status import (
+    competition_sportapi_lineup_confirmed_counts,
+    next_round_sportapi_lineup_stats,
+)
+from app.services.next_round_selection import select_next_round_fixtures
 
 OperatingMode = str  # complete | degraded_fallback | not_ready
 
@@ -127,9 +132,29 @@ def build_v20_operating_context(db: Session, comp: Any) -> dict[str, Any]:
     """
     competition_id = int(comp.id)
     counts = _competition_input_counts(db, competition_id)
+    sportapi_confirmed = competition_sportapi_lineup_confirmed_counts(db, competition_id)
+    counts["confirmed_lineups_count"] = sportapi_confirmed["confirmed_lineups_count"]
+    counts["probable_lineups_count"] = sportapi_confirmed["probable_lineups_count"]
+
+    all_upcoming = list(
+        db.scalars(
+            select(Fixture).where(
+                Fixture.competition_id == competition_id,
+                ~Fixture.status.in_(FINISHED_STATUSES),
+            )
+        ).all()
+    )
+    next_round_sel = select_next_round_fixtures(all_upcoming, limit=100, only_next_round=True)
+    next_round_ids = [int(fx.id) for fx in next_round_sel.fixtures]
+    next_round_stats = next_round_sportapi_lineup_stats(db, next_round_ids)
+    next_round_lineup_coverage_pct = float(next_round_stats.get("next_round_coverage_pct") or 0.0)
+
     lineups_ready = (
         counts["sportapi_mappings_count"] > 0 and counts["sportapi_lineup_rows_count"] > 0
     )
+    sportapi_total = int(sportapi_confirmed["sportapi_lineup_rows_count"])
+    confirmed_n = int(sportapi_confirmed["confirmed_lineups_count"])
+    lineups_probable_only = sportapi_total > 0 and confirmed_n == 0
     v11_base_ready = counts["team_stats_count"] > 0 or counts["player_profiles_count"] > 0
     operating_mode = resolve_operating_mode(
         lineups_ready=lineups_ready,
@@ -155,6 +180,10 @@ def build_v20_operating_context(db: Session, comp: Any) -> dict[str, Any]:
         "competition_key": getattr(comp, "key", None),
         "operating_mode": operating_mode,
         "lineups_ready": lineups_ready,
+        "lineups_probable_only": lineups_probable_only,
+        "confirmed_lineups_count": confirmed_n,
+        "probable_lineups_count": int(sportapi_confirmed["probable_lineups_count"]),
+        "next_round_lineup_coverage_pct": next_round_lineup_coverage_pct,
         "inputs_available": inputs_available,
         "counts": counts,
     }
@@ -170,6 +199,10 @@ def attach_global_v20_fields(payload: dict[str, Any], ctx: dict[str, Any]) -> di
     merged["inputs_available"] = ctx["inputs_available"]
     merged["v20_operating_context"] = ctx
     merged["lineups_ready"] = ctx["lineups_ready"]
+    merged["lineups_probable_only"] = ctx.get("lineups_probable_only")
+    merged["confirmed_lineups_count"] = ctx.get("confirmed_lineups_count")
+    merged["probable_lineups_count"] = ctx.get("probable_lineups_count")
+    merged["next_round_lineup_coverage_pct"] = ctx.get("next_round_lineup_coverage_pct")
     return merged
 
 
