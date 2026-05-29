@@ -11,12 +11,29 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models import Fixture, FixtureTeamStat, Team
+from app.models import Competition, Fixture, FixtureTeamStat, Team
 from app.services.ingestion_service import IngestionService
+from app.services.predictions_v21.v21_xg_coverage import xg_coverage_detailed_report
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/debug", tags=["admin-debug-expected-goals"])
+
+
+@router.get("/competitions/{competition_id}/xg-coverage", response_model=None)
+def expected_goals_coverage_by_competition(
+    competition_id: int,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    comp = db.get(Competition, int(competition_id))
+    if comp is None:
+        raise HTTPException(status_code=404, detail="Competition non trovata.")
+    try:
+        report = xg_coverage_detailed_report(db, int(competition_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("xg-coverage report error: %s", exc.__class__.__name__, exc_info=True)
+        raise HTTPException(status_code=503, detail="Errore generazione report xG") from exc
+    return {"status": "success", **report}
 
 
 @router.get("/serie-a/{season}/expected-goals-summary", response_model=None)

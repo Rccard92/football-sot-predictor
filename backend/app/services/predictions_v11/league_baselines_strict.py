@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES
 from app.models import Fixture, FixtureTeamStat
-from app.services.predictions_v11.shared_stats import blocked_shots_from_team_stat, shots_off_goal_from_team_stat
+from app.services.predictions_v11.shared_stats import blocked_shots_from_team_stat, expected_goals_from_team_stat, shots_off_goal_from_team_stat
 from app.services.sot_feature_math import fixture_key_before
 
 REQUIRED_LEAGUE_OFFENSIVE_KEYS: tuple[str, ...] = (
@@ -197,6 +197,10 @@ def compute_league_v11_baselines_strict(
             accuracy_vals.append(float(st.shots_on_target) / float(st.total_shots))
         if st.expected_goals is not None:
             xg_for_vals.append(float(st.expected_goals))
+        else:
+            xg_for, _ = expected_goals_from_team_stat(st)
+            if xg_for is not None:
+                xg_for_vals.append(float(xg_for))
 
     for f in eligible:
         hid, aid = int(f.home_team_id), int(f.away_team_id)
@@ -207,6 +211,10 @@ def compute_league_v11_baselines_strict(
                 sot_conceded_vals.append(float(away_st.shots_on_target))
             if away_st.expected_goals is not None:
                 xg_conceded_vals.append(float(away_st.expected_goals))
+            else:
+                xg_c, _ = expected_goals_from_team_stat(away_st)
+                if xg_c is not None:
+                    xg_conceded_vals.append(float(xg_c))
             if away_st.total_shots is not None:
                 shots_conceded_vals.append(float(away_st.total_shots))
             if away_st.shots_inside_box is not None:
@@ -220,6 +228,10 @@ def compute_league_v11_baselines_strict(
                 sot_conceded_vals.append(float(home_st.shots_on_target))
             if home_st.expected_goals is not None:
                 xg_conceded_vals.append(float(home_st.expected_goals))
+            else:
+                xg_c, _ = expected_goals_from_team_stat(home_st)
+                if xg_c is not None:
+                    xg_conceded_vals.append(float(xg_c))
             if home_st.total_shots is not None:
                 shots_conceded_vals.append(float(home_st.total_shots))
             if home_st.shots_inside_box is not None:

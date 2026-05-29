@@ -24,10 +24,29 @@ FEED_UNAVAILABLE_SOURCE = "feed_unavailable.xg"
 CHANCE_QUALITY_MACRO_WARNING = "Macroarea neutralizzata: dati xG non disponibili nel feed."
 
 
+def _components_have_real_xg(raw: dict[str, Any]) -> bool:
+    components = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+    cq = components.get("chance_quality") if isinstance(components.get("chance_quality"), dict) else {}
+    inputs = cq.get("inputs") if isinstance(cq.get("inputs"), dict) else {}
+    for key in XG_MICRO_KEYS:
+        inp = inputs.get(key)
+        if not isinstance(inp, dict):
+            continue
+        if inp.get("raw_value") is not None:
+            return True
+        if inp.get("value") is not None and str(inp.get("status") or "") in (
+            "available",
+            "available_derived",
+            "partial",
+        ):
+            return True
+    return False
+
+
 def _is_xg_feed_unavailable(raw: dict[str, Any], db: Session | None, competition_id: int | None) -> bool:
-    warnings = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
-    if any(XG_MISSING_WARNING in str(w) for w in warnings):
-        return True
+    """True solo se verificato assenza xG nel feed — non basarsi su warning storici nel raw."""
+    if _components_have_real_xg(raw):
+        return False
     if db is not None and competition_id is not None:
         return not competition_has_xg_in_team_stats(db, int(competition_id))
     components = raw.get("components") if isinstance(raw.get("components"), dict) else {}
@@ -40,10 +59,7 @@ def _is_xg_feed_unavailable(raw: dict[str, Any], db: Session | None, competition
         return False
     return all(
         str(inp.get("status") or "") in ("missing", "feed_unavailable")
-        and (
-            XG_MISSING_WARNING in str(inp.get("warning") or "")
-            or inp.get("raw_value") is None
-        )
+        and inp.get("raw_value") is None
         for inp in xg_inputs
     )
 
@@ -59,9 +75,6 @@ def _patch_micro_input(inp: dict[str, Any], *, feed_unavailable: bool) -> dict[s
         out["fallback_used"] = True
         out["contribution"] = "neutra"
         out["warning"] = XG_MISSING_WARNING
-    elif str(out.get("status") or "") == "missing" and out.get("normalized_value") == 1.0:
-        if out.get("fallback_used"):
-            out["status"] = "feed_unavailable" if "xG" in str(out.get("warning") or "") else out.get("status")
     return out
 
 
@@ -74,7 +87,10 @@ def _patch_macro_component(comp: dict[str, Any], *, macro_key: str, feed_unavail
             patched_inputs[mk] = inp
             continue
         is_xg = mk in XG_MICRO_KEYS
-        patched_inputs[mk] = _patch_micro_input(inp, feed_unavailable=feed_unavailable and is_xg)
+        if feed_unavailable and is_xg:
+            patched_inputs[mk] = _patch_micro_input(inp, feed_unavailable=True)
+        else:
+            patched_inputs[mk] = dict(inp)
 
     out["inputs"] = patched_inputs
 
@@ -156,7 +172,7 @@ def enrich_v21_raw_for_audit(
     if macroareas:
         out["macroareas"] = _patch_macroareas(macroareas, feed_unavailable=feed_unavailable)
 
-    _ = fixture_id  # riservato per anchor_breakdown futuro
+    _ = fixture_id
     return out
 
 

@@ -131,8 +131,12 @@ def apply_parsed_to_row(row: Any, parsed: dict[str, Any], *, set_legacy_shots: b
 
 
 def backfill_shot_columns_from_raw_json_if_null(row: Any) -> None:
-    """Se bloccati / off-goal sono ancora null dopo il parse, ripete il mapping solo sul raw_json."""
-    if getattr(row, "blocked_shots", None) is not None and getattr(row, "shots_off_goal", None) is not None:
+    """Se bloccati / off-goal / expected_goals sono null dopo il parse, ripete il mapping sul raw_json."""
+    needs_xg = getattr(row, "expected_goals", None) is None
+    needs_shots = (
+        getattr(row, "blocked_shots", None) is None or getattr(row, "shots_off_goal", None) is None
+    )
+    if not needs_xg and not needs_shots:
         return
     raw = getattr(row, "raw_json", None)
     if not isinstance(raw, dict):
@@ -142,3 +146,5 @@ def backfill_shot_columns_from_raw_json_if_null(row: Any) -> None:
         row.blocked_shots = parsed["blocked_shots"]
     if getattr(row, "shots_off_goal", None) is None and "shots_off_goal" in parsed:
         row.shots_off_goal = parsed["shots_off_goal"]
+    if getattr(row, "expected_goals", None) is None and "expected_goals" in parsed:
+        row.expected_goals = parsed["expected_goals"]

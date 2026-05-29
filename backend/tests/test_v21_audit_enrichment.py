@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from app.services.predictions_v21.v21_audit_enrichment import enrich_v21_raw_for_audit
 from app.services.predictions_v21.v21_feature_collectors import _collect_chance_quality
 from app.services.predictions_v21.v21_lineup_impact_helpers import (
@@ -101,7 +103,11 @@ def test_enrich_v21_raw_reclassifies_xg_missing():
             },
         },
     }
-    enriched = enrich_v21_raw_for_audit(raw, db=None, competition_id=None)
+    with patch(
+        "app.services.predictions_v21.v21_audit_enrichment.competition_has_xg_in_team_stats",
+        return_value=False,
+    ):
+        enriched = enrich_v21_raw_for_audit(raw, db=MagicMock(), competition_id=71)
     cq = enriched["components"]["chance_quality"]
     assert cq["status"] == "degraded_feed_unavailable"
     assert enriched["components"]["chance_quality"]["inputs"]["xg_produced"]["status"] == "feed_unavailable"

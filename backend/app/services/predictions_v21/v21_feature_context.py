@@ -20,7 +20,7 @@ from app.services.predictions_v11.split_fixtures import (
 from app.services.predictions_v21.v21_constants import RECENT_FORM_MATCHES
 from app.services.predictions_v21.v21_lineup_history import build_lineup_history
 from app.services.predictions_v21.v21_payload_helpers import missing_ids_from_refresh_payload
-from app.services.predictions_v21.v21_xg_coverage import XG_MISSING_WARNING
+from app.services.predictions_v21.v21_xg_coverage import XG_MISSING_WARNING, resolve_league_xg_available
 from app.services.sportapi.lineup_player_profile_lookup import LineupProfileEntry, load_team_profile_rows
 from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
 
@@ -197,7 +197,13 @@ def build_v21_side_context(
     )
 
     league_baselines: dict[str, float | None] = dict(prior.league_baselines or {})
-    league_xg_available = league_baselines.get("league_avg_xg_for") is not None
+    league_xg_available = resolve_league_xg_available(
+        db,
+        competition_id=competition_id if competition_id is not None else fixture.competition_id,
+        league_baselines=league_baselines,
+        team_agg=team_agg,
+        opp_conceded_agg=opp_conceded_agg,
+    )
 
     home_team = db.get(Team, int(fixture.home_team_id))
     away_team = db.get(Team, int(fixture.away_team_id))
