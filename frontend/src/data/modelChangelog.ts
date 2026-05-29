@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.7',
+    date: '2026-05-29',
+    title: 'Fix selezione prossimo turno Brasileirão',
+    type: 'patch',
+    summary:
+      'Corretta la selezione della prossima giornata multi-campionato usando le fixture future ordinate per data e fallback automatico quando il round iniziale è vuoto.',
+    highlights: [
+      'Fix next round Brasileirão.',
+      'Selezione basata su prima fixture futura.',
+      'Fallback se il round scelto non contiene partite future.',
+      'Supporto prediction senza lineups.',
+      'Nessun mixing con Serie A.',
+      'Nessuna modifica al modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.6',
     date: '2026-05-29',
     title: 'Fix Prossima giornata multi-campionato',

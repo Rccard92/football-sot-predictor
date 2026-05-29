@@ -16,7 +16,6 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
-    FINISHED_STATUSES,
 )
 from app.models import Competition, Fixture, FixtureLineup, Team, TeamSotPrediction
 from app.services.model_version_preference import (
@@ -27,8 +26,9 @@ from app.services.prediction_readiness import (
     _safe_details,
     default_model_limitations_dict,
 )
+from app.services.next_round_selection import select_next_round_fixtures
 from app.services.sot_feature_service import SotFeatureService
-from app.services.sot_prediction_service import SotPredictionService, _fixture_round_display
+from app.services.sot_prediction_service import SotPredictionService
 
 logger = logging.getLogger(__name__)
 
@@ -65,17 +65,13 @@ def _load_upcoming_fixtures(
     _league, season_row = svc._season_row(db, season)  # type: ignore[attr-defined]
     feat_svc = SotFeatureService()
     raw_upcoming = feat_svc.list_upcoming_fixtures_for_season(db, season_row.id)
-    upcoming = [f for f in raw_upcoming if (f.status or "").upper() not in FINISHED_STATUSES]
-    upcoming.sort(key=lambda f: (f.kickoff_at, f.id))
-    if only_next_round and upcoming:
-        r0 = _fixture_round_display(upcoming[0]) or upcoming[0].round
-        if r0:
-            upcoming = [f for f in upcoming if (_fixture_round_display(f) or f.round) == r0]
-        else:
-            d0 = upcoming[0].kickoff_at.date()
-            upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
-    upcoming = upcoming[: max(1, min(limit, 100))]
-    round_label = _fixture_round_display(upcoming[0]) if upcoming else None
+    selection = select_next_round_fixtures(
+        list(raw_upcoming),
+        limit=limit,
+        only_next_round=only_next_round,
+    )
+    upcoming = selection.fixtures
+    round_label = selection.final_round
     return season_row, upcoming, round_label
 
 
@@ -93,17 +89,12 @@ def _load_upcoming_fixtures_for_competition(
             .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
         ).all()
     )
-    upcoming = [f for f in raw_upcoming if (f.status or "").upper() not in FINISHED_STATUSES]
-    if only_next_round and upcoming:
-        r0 = _fixture_round_display(upcoming[0]) or upcoming[0].round
-        if r0:
-            upcoming = [f for f in upcoming if (_fixture_round_display(f) or f.round) == r0]
-        else:
-            d0 = upcoming[0].kickoff_at.date()
-            upcoming = [f for f in upcoming if f.kickoff_at.date() == d0]
-    upcoming = upcoming[: max(1, min(limit, 100))]
-    round_label = _fixture_round_display(upcoming[0]) if upcoming else None
-    return comp, upcoming, round_label
+    selection = select_next_round_fixtures(
+        raw_upcoming,
+        limit=limit,
+        only_next_round=only_next_round,
+    )
+    return comp, selection.fixtures, selection.final_round
 
 
 def build_next_round_quick_report_for_competition(

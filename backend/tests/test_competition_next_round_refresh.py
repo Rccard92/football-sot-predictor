@@ -20,6 +20,18 @@ from app.services.prediction_readiness import build_model_status_for_competition
 client = TestClient(app)
 
 
+def _future_fx(fx_id: int = 101) -> MagicMock:
+    future = datetime.now(timezone.utc) + timedelta(days=2)
+    fx = MagicMock(spec=Fixture)
+    fx.id = fx_id
+    fx.status = "NS"
+    fx.kickoff_at = future
+    fx.competition_id = 2
+    fx.round = "Regular Season - 18"
+    fx.raw_json = None
+    return fx
+
+
 def test_fixture_eligible_for_upcoming_sot_accepts_status_and_kickoff():
     future = datetime.now(timezone.utc) + timedelta(days=3)
     assert fixture_eligible_for_upcoming_sot("NS", future) is True
@@ -35,7 +47,7 @@ def test_fixture_eligible_does_not_crash_with_fixture_fields():
     assert fixture_eligible_for_upcoming_sot(fx.status, fx.kickoff_at) is True
 
 
-def test_refresh_next_round_dry_run_uses_correct_filter():
+def test_refresh_next_round_dry_run_uses_future_selection():
     comp = MagicMock(spec=Competition)
     comp.id = 2
     comp.key = "brasileirao"
@@ -43,35 +55,26 @@ def test_refresh_next_round_dry_run_uses_correct_filter():
     comp.provider_league_id = 71
     comp.season = 2026
 
-    future = datetime.now(timezone.utc) + timedelta(days=2)
-    fx1 = MagicMock(spec=Fixture)
-    fx1.id = 101
-    fx1.status = "NS"
-    fx1.kickoff_at = future
-    fx1.competition_id = 2
-    fx1.round = "Regular Season - 18"
+    fx1 = _future_fx()
 
     db = MagicMock()
     svc = CompetitionIngestionService()
     svc._comp_svc = MagicMock()
     svc._comp_svc.get_by_id_or_raise.return_value = comp
 
-    with patch(
-        "app.services.next_round_quick_report_service._load_upcoming_fixtures_for_competition",
-        return_value=(comp, [fx1], "Regular Season - 18"),
-    ) as mock_load:
-        db.scalar.return_value = 0
-        db.scalars.return_value.all.return_value = [fx1]
-        result = svc.refresh_next_round(db, 2, dry_run=True)
+    db.scalar.return_value = 0
+    db.scalars.return_value.all.return_value = [fx1]
+    result = svc.refresh_next_round(db, 2, dry_run=True)
 
-    mock_load.assert_called_once()
     assert result["status"] == "dry_run"
     assert result["competition_id"] == 2
     assert result["next_round_fixtures"] == 1
     assert result["future_fixtures_count"] == 1
+    assert result["round"] == "Regular Season - 18"
+    assert "selection" in result
 
 
-def test_refresh_next_round_returns_error_when_no_upcoming():
+def test_refresh_next_round_returns_error_when_no_future_fixtures():
     comp = MagicMock(spec=Competition)
     comp.id = 2
     comp.key = "brasileirao"
@@ -84,16 +87,12 @@ def test_refresh_next_round_returns_error_when_no_upcoming():
     svc._comp_svc = MagicMock()
     svc._comp_svc.get_by_id_or_raise.return_value = comp
 
-    with patch(
-        "app.services.next_round_quick_report_service._load_upcoming_fixtures_for_competition",
-        return_value=(comp, [], None),
-    ):
-        db.scalar.return_value = 0
-        db.scalars.return_value.all.return_value = []
-        result = svc.refresh_next_round(db, 2, dry_run=False)
+    db.scalar.return_value = 0
+    db.scalars.return_value.all.return_value = []
+    result = svc.refresh_next_round(db, 2, dry_run=False)
 
     assert result["status"] == "error"
-    assert result["code"] == "no_upcoming_fixtures"
+    assert result["code"] == "no_future_fixtures"
     assert result["step"] == "select_next_round"
 
 
@@ -105,12 +104,7 @@ def test_refresh_next_round_generates_v11_and_v20_with_warnings():
     comp.provider_league_id = 71
     comp.season = 2026
 
-    future = datetime.now(timezone.utc) + timedelta(days=2)
-    fx1 = MagicMock(spec=Fixture)
-    fx1.id = 101
-    fx1.status = "NS"
-    fx1.kickoff_at = future
-    fx1.competition_id = 2
+    fx1 = _future_fx()
 
     db = MagicMock()
     svc = CompetitionIngestionService()
@@ -126,9 +120,6 @@ def test_refresh_next_round_generates_v11_and_v20_with_warnings():
     v20_out = {"status": "success", "predictions_ok": 2}
 
     with patch(
-        "app.services.next_round_quick_report_service._load_upcoming_fixtures_for_competition",
-        return_value=(comp, [fx1], "Regular Season - 18"),
-    ), patch(
         "app.services.predictions_v11.baseline_v1_1_sot_service.SotPredictionV11BaselineSotService.generate_for_competition",
         return_value=v11_out,
     ) as mock_v11, patch(
@@ -143,8 +134,45 @@ def test_refresh_next_round_generates_v11_and_v20_with_warnings():
     mock_v20.assert_called_once_with(db, 2, fixture_ids=[101])
     assert result["status"] == "ok"
     assert result["predictions_created_or_updated"] == 2
-    assert "Lineups non disponibili" in result["warnings"][0]
+    assert any("Lineups non disponibili" in w for w in result["warnings"])
     assert result["v20"]["mode"] == "degraded_fallback"
+
+
+def test_refresh_next_round_skips_stale_round4_when_future_round18_exists():
+    comp = MagicMock(spec=Competition)
+    comp.id = 2
+    comp.key = "brasileirao"
+    comp.name = "Brasileirão Série A"
+    comp.provider_league_id = 71
+    comp.season = 2026
+
+    past = datetime.now(timezone.utc) - timedelta(days=90)
+    future = datetime.now(timezone.utc) + timedelta(days=5)
+
+    stale = MagicMock(spec=Fixture)
+    stale.id = 1
+    stale.status = "PST"
+    stale.kickoff_at = past
+    stale.competition_id = 2
+    stale.round = "Regular Season - 4"
+    stale.raw_json = None
+
+    future_fx = _future_fx(200)
+    future_fx.kickoff_at = future
+
+    db = MagicMock()
+    svc = CompetitionIngestionService()
+    svc._comp_svc = MagicMock()
+    svc._comp_svc.get_by_id_or_raise.return_value = comp
+
+    db.scalar.return_value = 0
+    db.scalars.return_value.all.return_value = [stale, future_fx]
+    result = svc.refresh_next_round(db, 2, dry_run=True)
+
+    assert result["status"] == "dry_run"
+    assert result["future_fixtures_count"] == 1
+    assert result["next_round_fixtures"] == 1
+    assert result["round"] == "Regular Season - 18"
 
 
 def test_model_status_fallback_when_no_predictions_but_data_ready():
@@ -171,7 +199,7 @@ def test_refresh_route_returns_422_on_service_error():
     with patch("app.routes.admin_competition_ingest.CompetitionIngestionService") as mock_cls:
         mock_cls.return_value.refresh_next_round.return_value = {
             "status": "error",
-            "code": "no_upcoming_fixtures",
+            "code": "no_future_fixtures",
             "message": "Nessuna partita futura",
             "competition_id": 2,
             "step": "select_next_round",

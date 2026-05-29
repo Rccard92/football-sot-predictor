@@ -11,7 +11,6 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
-    fixture_eligible_for_upcoming_sot,
 )
 from app.models import (
     Competition,
@@ -381,27 +380,25 @@ class CompetitionIngestionService:
             or 0
         )
 
-        all_future = db.scalars(
-            select(Fixture)
-            .where(Fixture.competition_id == comp.id)
-            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
-        ).all()
-        future_fixtures_count = sum(
-            1
-            for f in all_future
-            if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)
+        all_fixtures = list(
+            db.scalars(
+                select(Fixture)
+                .where(Fixture.competition_id == comp.id)
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+            ).all()
         )
 
-        from app.services.next_round_quick_report_service import _load_upcoming_fixtures_for_competition
+        from app.services.next_round_selection import select_next_round_fixtures
 
-        _, next_round_raw, round_label = _load_upcoming_fixtures_for_competition(
-            db, comp, limit=100, only_next_round=True
+        selection = select_next_round_fixtures(all_fixtures, limit=100, only_next_round=True)
+        upcoming = selection.fixtures
+        round_label = selection.final_round
+        future_fixtures_count = selection.future_fixtures_count
+
+        logger.info(
+            "COMPETITION_NEXT_ROUND_SELECTION %s",
+            selection.as_log_dict(competition_id=comp.id),
         )
-        upcoming = [
-            f
-            for f in next_round_raw
-            if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)
-        ]
 
         lineups_ready = lineup_rows_count > 0 and sportapi_mappings_count > 0
         model_versions_requested = [BASELINE_SOT_MODEL_VERSION_V11_SOT]
@@ -432,6 +429,7 @@ class CompetitionIngestionService:
         )
 
         if dry_run:
+            dry_warnings = list(selection.warnings)
             return {
                 "status": "dry_run",
                 "competition_id": comp.id,
@@ -446,17 +444,20 @@ class CompetitionIngestionService:
                 "lineup_rows_count": lineup_rows_count,
                 "sportapi_mappings_count": sportapi_mappings_count,
                 "model_versions_requested": model_versions_requested,
+                "selection": selection.as_log_dict(competition_id=comp.id),
+                "warnings": dry_warnings,
             }
 
         if not upcoming:
             return {
                 "status": "error",
-                "code": "no_upcoming_fixtures",
-                "message": "Nessuna partita futura trovata per il prossimo turno di questa competition.",
+                "code": selection.error_code or "no_future_fixtures",
+                "message": "Nessuna partita futura trovata per questa competition.",
                 "competition_id": comp.id,
                 "step": "select_next_round",
                 "details": f"future_fixtures_count={future_fixtures_count}, round={round_label}",
                 "future_fixtures_count": future_fixtures_count,
+                "selection": selection.as_log_dict(competition_id=comp.id),
             }
 
         for fx in upcoming:
@@ -482,7 +483,7 @@ class CompetitionIngestionService:
                 }
 
         fixture_ids = [int(f.id) for f in upcoming]
-        warnings: list[str] = []
+        warnings: list[str] = list(selection.warnings)
         if not lineups_ready:
             warnings.append(
                 "Lineups non disponibili: prediction generata senza impatto formazioni."
@@ -545,6 +546,7 @@ class CompetitionIngestionService:
             "active_model_fallback": BASELINE_SOT_MODEL_VERSION_V11_SOT
             if not lineups_ready
             else None,
+            "selection": selection.as_log_dict(competition_id=comp.id),
             "warnings": warnings,
             "v11": v11_result,
             "v20": v20_result,
