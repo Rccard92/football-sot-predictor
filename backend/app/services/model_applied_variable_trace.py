@@ -11,6 +11,7 @@ from typing import Any
 from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V04_OFFENSIVE_CORE_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
 )
 from app.services.model_applied_variable_manifest import (
     AppliedVariableSpec,
@@ -1158,6 +1159,67 @@ def _row_for_spec(
             if li_status == "fallback_v11_only":
                 base["notes"] = "Fallback controllato: risultato equivalente a v1.1."
                 base["fallback_used"] = True
+            return base
+
+    if r.startswith("v21:"):
+        from app.services.predictions_v21.v21_manifest_lookup import (
+            v21_macro_weight_by_key,
+            v21_micro_meta_by_key,
+        )
+
+        parts = r.split(":")
+        kind = parts[1] if len(parts) > 1 else ""
+        engine_status = str(raw.get("engine_status") or raw.get("status") or "")
+        components = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+        quality = raw.get("quality") if isinstance(raw.get("quality"), dict) else {}
+
+        if kind == "macro" and len(parts) >= 3:
+            macro_key = parts[2]
+            macro_weights = v21_macro_weight_by_key()
+            w = macro_weights.get(macro_key)
+            comp = components.get(macro_key) if isinstance(components.get(macro_key), dict) else {}
+            val = comp.get("value")
+            base["weight"] = w
+            base["unit"] = "peso macro"
+            base["value"] = _r2(_sf(val)) if val is not None else None
+            if val is not None:
+                base["status"] = str(comp.get("status") or "available")
+            elif engine_status == "experimental_not_ready":
+                base["status"] = "not_tracked_yet"
+                base["notes"] = "Engine v2.1 in preparazione."
+            else:
+                base["status"] = "not_tracked_yet"
+            return base
+
+        if kind == "micro" and len(parts) >= 4:
+            macro_key, micro_key = parts[2], parts[3]
+            meta = v21_micro_meta_by_key().get((macro_key, micro_key), {})
+            source_path = str(meta.get("source_path") or "")
+            micro_w = meta.get("micro_weight")
+            comp = components.get(macro_key) if isinstance(components.get(macro_key), dict) else {}
+            inputs = comp.get("inputs") if isinstance(comp.get("inputs"), dict) else {}
+            inp = inputs.get(micro_key) if isinstance(inputs.get(micro_key), dict) else {}
+            val = inp.get("value") if isinstance(inp, dict) else None
+            base["weight"] = micro_w
+            base["unit"] = "peso micro"
+            base["value"] = _r2(_sf(val)) if val is not None else None
+            base["notes"] = f"source_path={source_path}" if source_path else None
+            if val is not None:
+                base["status"] = str(inp.get("status") or "available")
+            else:
+                base["status"] = "not_tracked_yet"
+            return base
+
+        if kind == "quality" and len(parts) >= 4:
+            macro_key, micro_key = parts[2], parts[3]
+            meta = v21_micro_meta_by_key().get((macro_key, micro_key), {})
+            source_path = str(meta.get("source_path") or "")
+            qval = quality.get(micro_key)
+            base["value"] = qval
+            base["unit"] = "diagnostica"
+            base["notes"] = f"source_path={source_path}" if source_path else None
+            base["status"] = "available" if qval is not None else "not_tracked_yet"
+            base["direct_formula_impact"] = False
             return base
 
     base["status"] = "missing"

@@ -12,6 +12,24 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.0',
+    date: '2026-05-29',
+    title: 'Nuovo registry modello v2.1',
+    type: 'minor',
+    summary:
+      'Creato il nuovo registry autonomo v2.1 SOT Weighted Components, basato su 10 macroaree e micro-variabili pesate secondo il nuovo schema.',
+    highlights: [
+      'Aggiunto model_version baseline_v2_1_weighted_components.',
+      'Creato manifest autonomo v2.1.',
+      'Inserite 10 macroaree con pesi totali.',
+      'Inserite micro-variabili e pesi nuovi.',
+      'Macroarea qualità modello gestita come confidence/warning, non come contributo diretto ai SOT.',
+      'v2.0 lasciata invariata.',
+      'v1.1 nascosta dal selettore frontend.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.15',
     date: '2026-05-29',
     title: 'Completata tracciabilità qualità mapping giocatori',

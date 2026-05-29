@@ -22,6 +22,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
     FINISHED_STATUSES,
 )
 from app.models import Fixture, Season, Team, TeamSotPrediction
@@ -2347,6 +2348,19 @@ def _build_fixture_sot_explanation_body(
     if active_mv is None:
         active_mv = _active_model_version_from_preds(preds)
     if active_mv is None:
+        from app.services.predictions_v21.baseline_v2_1_weighted_components_service import (
+            V21_ENGINE_NOT_READY_MESSAGE,
+        )
+
+        requested = str(model_version).strip() if model_version else ""
+        if requested == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
+            return {
+                "status": "experimental_not_ready",
+                "message": V21_ENGINE_NOT_READY_MESSAGE,
+                "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+                "fixture_id": int(fx.id),
+                "fixture": _fixture_payload(fx, home, away),
+            }
         return {
             "status": "missing",
             "message": "Nessuna previsione SOT salvata per questa fixture.",

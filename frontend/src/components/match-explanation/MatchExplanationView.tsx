@@ -168,6 +168,7 @@ function VariableTable({ vars }: { vars: ExplanationVariable[] }) {
 }
 
 const MODEL_COMPARE_ORDER: string[] = [
+  'baseline_v2_1_weighted_components',
   'baseline_v2_0_lineup_impact',
   'baseline_v1_1_sot',
   'baseline_v1_0_sot',

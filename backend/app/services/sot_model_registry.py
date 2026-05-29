@@ -13,6 +13,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
 )
 
 
@@ -25,9 +26,23 @@ class ModelDisplayInfo:
     description: str
     is_stable: bool = False
     visible_in_ui: bool = True
+    model_family: str = "sot_prediction"
+    registry_status: str = "stable"
 
 
 MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS: ModelDisplayInfo(
+        model_id=BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+        label="v2.1 SOT Weighted Components",
+        short_label="v2.1",
+        stage_badge="Weighted Components",
+        description=(
+            "Modello SOT sperimentale con 10 macroaree e micro-variabili pesate "
+            "(schema PDF Variabili progetto Tiri in porta). Globale multi-campionato."
+        ),
+        is_stable=False,
+        registry_status="experimental",
+    ),
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT: ModelDisplayInfo(
         model_id=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
         label="v2.0 SOT Lineup Impact",
@@ -48,6 +63,7 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
             "forma recente, xG e player layer (6 termini)."
         ),
         is_stable=True,
+        visible_in_ui=False,
     ),
     BASELINE_SOT_MODEL_VERSION_V10_SOT: ModelDisplayInfo(
         model_id=BASELINE_SOT_MODEL_VERSION_V10_SOT,
@@ -100,8 +116,8 @@ MODEL_REGISTRY: dict[str, ModelDisplayInfo] = {
 }
 
 USER_VISIBLE_MODEL_VERSIONS: tuple[str, ...] = (
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
-    BASELINE_SOT_MODEL_VERSION_V11_SOT,
 )
 
 LEGACY_MODEL_VERSIONS: frozenset[str] = frozenset(

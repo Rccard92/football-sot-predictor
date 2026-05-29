@@ -1,7 +1,7 @@
 import type { SportApiLineupsAuditPayload } from './sportapi'
 import type { LineupImpactSimulationPayload } from './lineupImpact'
 
-export type ExplanationStatus = 'ok' | 'missing' | 'error'
+export type ExplanationStatus = 'ok' | 'missing' | 'error' | 'experimental_not_ready'
 
 export type ExplanationFixtureTeam = { id: number; name: string; logo_url?: string | null }
 

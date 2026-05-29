@@ -2001,6 +2001,11 @@ export type ModelStatusVersionRow = {
   max_expected_sot: number | null
   generated_at: string | null
   is_available_for_upcoming: boolean
+  engine_status?: string
+  is_experimental?: boolean
+  model_label?: string
+  registry_status?: string
+  degraded?: boolean
   xg_applied_count?: number
   xg_fallback_count?: number
   valid_predictions?: number

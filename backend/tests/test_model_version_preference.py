@@ -15,12 +15,15 @@ from app.services.model_version_preference import (
 )
 
 
-def test_preferred_model_versions_ui_v20_v11() -> None:
-    from app.core.constants import BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+def test_preferred_model_versions_ui_v21_v20() -> None:
+    from app.core.constants import (
+        BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+        BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+    )
 
     versions = preferred_model_versions()
-    assert versions[0] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
-    assert versions[1] == BASELINE_SOT_MODEL_VERSION_V11_SOT
+    assert versions[0] == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
+    assert versions[1] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     assert len(versions) == 2
 
 

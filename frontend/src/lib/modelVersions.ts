@@ -1,7 +1,7 @@
 /** Versioni modello visibili in UI principale (ordine display). */
 export const UI_MODEL_VERSION_SLUGS = [
+  'baseline_v2_1_weighted_components',
   'baseline_v2_0_lineup_impact',
-  'baseline_v1_1_sot',
 ] as const
 
 export type UiModelVersionSlug = (typeof UI_MODEL_VERSION_SLUGS)[number]
@@ -12,26 +12,33 @@ export const LEGACY_MODEL_VERSIONS = new Set<string>([
   'baseline_v0_2_player_adjusted',
   'baseline_v0_3_core_sot',
   'baseline_v1_0_sot',
+  'baseline_v1_1_sot',
   'baseline_v0_4_offensive_core_sot',
 ])
 
 export const MODEL_VERSION_LABELS: Record<string, string> = {
+  baseline_v2_1_weighted_components: 'v2.1 SOT Weighted Components',
   baseline_v2_0_lineup_impact: 'v2.0 SOT Lineup Impact',
   baseline_v1_1_sot: 'v1.1 SOT',
 }
 
 export const MODEL_STAGE_BADGES: Record<string, string> = {
+  baseline_v2_1_weighted_components: 'Weighted Components',
   baseline_v2_0_lineup_impact: 'Lineup Impact',
   baseline_v1_1_sot: 'stabile',
 }
 
 export const MODEL_STAGE_DESCRIPTIONS: Record<string, string> = {
+  baseline_v2_1_weighted_components:
+    'Modello sperimentale con 10 macroaree e micro-variabili pesate (schema PDF). Engine numerico in preparazione.',
   baseline_v2_0_lineup_impact:
     'Impatto formazioni, indisponibili, sostituti e filtro rosa attuale su base v1.1.',
   baseline_v1_1_sot:
     'Produzione offensiva, difensiva, split casa/trasferta, forma recente, xG e player layer (6 termini).',
 }
 
+export const V21_MODEL = 'baseline_v2_1_weighted_components' as const
+export const V21_ENGINE_NOT_READY = 'experimental_not_ready' as const
 export const V20_MODEL = 'baseline_v2_0_lineup_impact' as const
 export const V11_MODEL = 'baseline_v1_1_sot' as const
 /** Solo azioni admin legacy — non in dropdown UI principale */
@@ -98,8 +105,20 @@ export function filterVersionsForUi<T extends { model_version: string }>(rows: T
   return rows.filter((r) => isUiModelVersion(r.model_version))
 }
 
+export function isV21ExperimentalRow(row: {
+  model_version?: string
+  engine_status?: string
+  is_experimental?: boolean
+}): boolean {
+  return (
+    row.model_version === V21_MODEL ||
+    row.engine_status === V21_ENGINE_NOT_READY ||
+    row.is_experimental === true
+  )
+}
+
 export const MODEL_OPTIONS_AUDIT: { value: string; label: string }[] = [
   { value: '', label: 'Automatico (consigliato dal server)' },
+  { value: V21_MODEL, label: MODEL_VERSION_LABELS[V21_MODEL] },
   { value: V20_MODEL, label: MODEL_VERSION_LABELS[V20_MODEL] },
-  { value: V11_MODEL, label: MODEL_VERSION_LABELS[V11_MODEL] },
 ]

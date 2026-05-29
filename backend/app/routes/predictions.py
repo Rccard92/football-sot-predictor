@@ -42,6 +42,9 @@ from app.services.predictions_v04.offensive_core_sot_service import SotPredictio
 from app.services.predictions_v10.baseline_v1_sot_service import SotPredictionV10BaselineSotService
 from app.services.predictions_v11.baseline_v1_1_sot_service import SotPredictionV11BaselineSotService
 from app.services.predictions_v20.baseline_v2_0_lineup_impact_service import SotPredictionV20LineupImpactService
+from app.services.predictions_v21.baseline_v2_1_weighted_components_service import (
+    SotPredictionV21WeightedComponentsService,
+)
 from app.services.next_round_quick_report_service import (
     build_next_round_quick_report_payload,
     build_upcoming_fixture_detail_payload,
@@ -737,6 +740,21 @@ def regenerate_fixture_v20_lineup_impact(
     if summary.get("status") == "error":
         return JSONResponse(status_code=409, content=jsonable_encoder(summary))
     return jsonable_encoder(summary)
+
+
+@router.post("/serie-a/{season}/generate-v21-weighted-components", response_model=None)
+def generate_serie_a_predictions_v21_weighted_components(
+    season: int,
+    db: Session = Depends(get_db),
+    fixture_id: int | None = Query(default=None),
+):
+    _ = season
+    svc = SotPredictionV21WeightedComponentsService()
+    if fixture_id is not None:
+        summary = svc.generate_for_fixture(db, int(fixture_id))
+    else:
+        summary = svc.generate_for_upcoming_season(db, int(season))
+    return JSONResponse(status_code=501, content=jsonable_encoder(summary))
 
 
 @router.get("/serie-a/{season}/upcoming-v04-offensive-core-sot", response_model=None)

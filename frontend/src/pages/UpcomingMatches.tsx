@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DEFAULT_SEASON,
@@ -18,11 +18,12 @@ import { CompetitionBadge } from '../components/CompetitionSelector'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { QuickPlayReportSection } from '../components/upcoming'
 import {
-  V11_MODEL,
   V20_MODEL,
+  V21_MODEL,
   filterVersionsForUi,
   formatInputsAvailable,
   formatModelStatusFootnote,
+  isV21ExperimentalRow,
   labelForModelVersion,
   labelForOperatingMode,
   stageBadgeForModel,
@@ -192,6 +193,12 @@ export function UpcomingMatches() {
     },
   )
 
+  const v21SelectedExperimental = useMemo(() => {
+    const rows = status?.available_model_versions ?? []
+    const row = rows.find((r) => r.model_version === (modelInView ?? ''))
+    return modelInView === V21_MODEL || (row != null && isV21ExperimentalRow(row))
+  }, [modelInView, status?.available_model_versions])
+
   const reportInfo = [
     ...(data?.info ?? []),
     ...(data?.warnings ?? []).filter((w) => /disponibili per tutto il turno/i.test(w)),
@@ -260,18 +267,20 @@ export function UpcomingMatches() {
               {isRecommendedView && recommendedModel === activeModel ? (
                 <span className="ml-2 text-[11px] font-medium text-emerald-700">(raccomandato)</span>
               ) : null}
-              {modelInView === V20_MODEL || modelInView === V11_MODEL ? (
+              {modelInView === V20_MODEL || modelInView === V21_MODEL ? (
                 <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
                   Stage: {stageBadgeForModel(modelInView)}
+                  {modelInView === V21_MODEL ? ' · Sperimentale' : ''}
                 </span>
               ) : null}
             </p>
-            {modelInView === V20_MODEL || modelInView === V11_MODEL ? (
+            {modelInView === V20_MODEL || modelInView === V21_MODEL ? (
               <p className="text-xs text-slate-600">{stageDescriptionForModel(modelInView)}</p>
             ) : null}
-            {status?.stable_model_version && modelInView === V11_MODEL ? (
-              <p className="text-xs text-slate-500">
-                Modello stabile: {labelForModelVersion(status.stable_model_version)}
+            {v21SelectedExperimental ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                Modello v2.1 registrato, engine di calcolo in preparazione. Nessuna previsione numerica v2.1
+                disponibile in questo step.
               </p>
             ) : null}
             {recommendedModel && recommendedModel !== activeModel ? (
@@ -298,14 +307,15 @@ export function UpcomingMatches() {
                     const rec = status?.recommended_model_version
                     if (a.model_version === rec) return -1
                     if (b.model_version === rec) return 1
-                    if (a.model_version === V11_MODEL) return -1
-                    if (b.model_version === V11_MODEL) return 1
+                    if (a.model_version === V21_MODEL) return -1
+                    if (b.model_version === V21_MODEL) return 1
                     return a.model_version.localeCompare(b.model_version)
                   })
                   .map((v) => (
                     <option key={v.model_version} value={v.model_version}>
                       {labelForModelVersion(v.model_version)}
                       {v.model_version === status?.recommended_model_version ? ' (consigliato)' : ''}
+                      {isV21ExperimentalRow(v) ? ' (sperimentale)' : ''}
                       {v.is_available_for_upcoming ? '' : ' (no upcoming)'}
                     </option>
                   ))}

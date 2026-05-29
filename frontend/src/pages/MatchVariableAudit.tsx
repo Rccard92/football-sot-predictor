@@ -253,6 +253,16 @@ export function MatchVariableAudit() {
           {data.message ?? 'Dati insufficienti per questa fixture.'}
         </div>
       ) : null}
+
+      {!loading && data?.status === 'experimental_not_ready' ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold text-amber-950">Modello v2.1 — engine in preparazione</p>
+          <p className="mt-1">
+            {data.message ??
+              'Modello v2.1 registrato, engine di calcolo in preparazione. Nessun fallback su v2.0.'}
+          </p>
+        </div>
+      ) : null}
     </div>
   )
 }

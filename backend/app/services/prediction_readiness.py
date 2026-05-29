@@ -24,6 +24,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
+from app.services.predictions_v21.v21_model_status import ensure_v21_in_available_list
 from app.services.sot_model_registry import get_model_display, user_visible_model_versions
 from app.models import (
     Competition,
@@ -258,14 +259,14 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
             "recommended_model_version": None,
             "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
             "upcoming_fixtures_total": int(upcoming_fixtures_total),
-            "available_model_versions": [],
+            "available_model_versions": ensure_v21_in_available_list([]),
             "warnings": warnings,
         }
         return payload, 200
 
     visible = user_visible_model_versions()
     preferred_present = [by_version[k] for k in visible if k in by_version]
-    available_list = preferred_present
+    available_list = ensure_v21_in_available_list(preferred_present)
 
     recommended = resolve_recommended_model_version(
         db,
@@ -389,7 +390,7 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                     "competition_key": getattr(comp, "key", None),
                     "season": season,
                     "upcoming_fixtures_total": 0,
-                    "available_model_versions": [],
+                    "available_model_versions": ensure_v21_in_available_list([]),
                     "active_model_version": None,
                     "recommended_model_version": None,
                     "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
@@ -415,6 +416,7 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                 warnings.append("Nessuna prediction trovata per questa competition.")
 
             available_versions: list[dict[str, Any]] = [
+                ensure_v21_in_available_list([])[0],
                 {
                     "model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
                     "predictions_total": 0,
@@ -463,7 +465,7 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                     "competition_key": getattr(comp, "key", None),
                     "season": season,
                     "upcoming_fixtures_total": upcoming_fixtures_total,
-                    "available_model_versions": [],
+                    "available_model_versions": ensure_v21_in_available_list([]),
                     "active_model_version": None,
                     "recommended_model_version": None,
                     "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
@@ -505,7 +507,7 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         }
 
     visible = user_visible_model_versions()
-    available_list = [by_version[k] for k in visible if k in by_version]
+    available_list = ensure_v21_in_available_list([by_version[k] for k in visible if k in by_version])
     recommended = resolve_recommended_model_version(
         db,
         upcoming_fixture_ids=upcoming_fixture_ids,

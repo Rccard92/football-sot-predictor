@@ -47,7 +47,6 @@ import { useCompetition } from '../contexts/CompetitionContext'
 import {
   V04_MODEL,
   V10_MODEL,
-  V11_MODEL,
   V20_MODEL,
   filterVersionsForUi,
   formatInputsAvailable,
@@ -218,7 +217,7 @@ export function Admin() {
           message: 'Modello non ancora inizializzato',
         } satisfies ModelStatusResponse)
       setModelStatus(s)
-      const mv = s.recommended_model_version || s.active_model_version || V11_MODEL
+      const mv = s.recommended_model_version || s.active_model_version || V20_MODEL
       const u =
         selectedCompetitionId != null && !isLegacySerieACompetition(selectedCompetition)
           ? await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
@@ -412,6 +411,16 @@ export function Admin() {
       run: () => postGenerateV11SotUpcoming(SEASON),
     },
     {
+      id: 'gen-v21',
+      label: 'Genera previsioni v2.1 Weighted Components',
+      description: 'Engine numerico v2.1 in preparazione — endpoint restituisce experimental_not_ready.',
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v21-weighted-components`,
+      run: async () => ({
+        status: 'experimental_not_ready',
+        message: 'Modello v2.1 registrato, engine di calcolo in preparazione',
+      }),
+    },
+    {
       id: 'gen-v20',
       label: 'Genera previsioni v2.0 Lineup Impact',
       description: `Richiede v1.1 e lineups SportAPI. Modello: ${V20_MODEL}.`,
@@ -461,7 +470,7 @@ export function Admin() {
       label: 'Verifica prossima giornata attiva',
       endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/upcoming-active`,
       run: async () => {
-        const mv = modelStatus?.recommended_model_version || modelStatus?.active_model_version || V11_MODEL
+        const mv = modelStatus?.recommended_model_version || modelStatus?.active_model_version || V20_MODEL
         const u = await getUpcomingActiveWithOpts(SEASON, {
           limit: 20,
           onlyNextRound: true,
@@ -701,7 +710,7 @@ export function Admin() {
                   endpoint: `GET …/upcoming-active`,
                   run: async () => {
                     const mv =
-                      modelStatus?.recommended_model_version || modelStatus?.active_model_version || V11_MODEL
+                      modelStatus?.recommended_model_version || modelStatus?.active_model_version || V20_MODEL
                     const u = await getUpcomingActiveWithOpts(SEASON, {
                       limit: 20,
                       onlyNextRound: true,
