@@ -19,7 +19,7 @@ from app.services.predictions_v11.split_fixtures import (
 )
 from app.services.predictions_v21.v21_constants import RECENT_FORM_MATCHES
 from app.services.predictions_v21.v21_lineup_history import build_lineup_history
-from app.services.predictions_v21.v21_lineup_impact_helpers import missing_ids_from_refresh_payload
+from app.services.predictions_v21.v21_payload_helpers import missing_ids_from_refresh_payload
 from app.services.predictions_v21.v21_xg_coverage import XG_MISSING_WARNING
 from app.services.sportapi.lineup_player_profile_lookup import LineupProfileEntry, load_team_profile_rows
 from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit

@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.9',
+    date: '2026-05-29',
+    title: 'Fix circular import v2.1',
+    type: 'patch',
+    summary:
+      "Rimosso un circular import tra feature context e lineup impact helpers della v2.1 che impediva l'avvio del backend.",
+    highlights: [
+      'Spezzato import circolare V21SideContext.',
+      'Spostati helper puri in modulo neutro se necessario.',
+      'Backend Railway torna ad avviarsi.',
+      'Nessuna modifica a formule o pesi.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.8',
     date: '2026-05-29',
     title: 'Completamento variabili derivate v2.1',
