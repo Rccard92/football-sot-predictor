@@ -24,7 +24,7 @@ from app.models import (
 from app.services.competition_service import CompetitionService
 from app.services.next_round_selection import select_next_round_fixtures
 from app.services.predictions_v21.v21_variable_coverage import aggregate_v21_coverage_from_predictions
-from app.services.predictions_v21.v21_xg_coverage import xg_coverage_summary
+from app.services.predictions_v21.v21_xg_coverage import xg_coverage_detailed_report
 from app.services.sot_model_registry import label_for_model, user_visible_model_versions
 
 
@@ -237,7 +237,16 @@ def build_competition_data_health(
 
     lineup_coverage_pct = round(100.0 * lineups_count / max(finished_count * 2, 1), 1)
 
-    xg_feed = xg_coverage_summary(db, int(comp.id))
+    xg_report = xg_coverage_detailed_report(db, int(comp.id))
+    xg_feed = {
+        "xg_feed_available": xg_report.get("xg_feed_available"),
+        "rows_with_effective_xg": xg_report.get("rows_with_effective_xg"),
+        "rows_total_sampled": xg_report.get("rows_total_sampled"),
+        "effective_coverage_pct": xg_report.get("effective_coverage_pct"),
+        "league_baseline_xg_for": xg_report.get("league_baseline_xg_for"),
+        "verdict": xg_report.get("verdict"),
+        "source_path": "fixture_team_stats.expected_goals",
+    }
     v21_variable_coverage = None
     if next_round_ids:
         v21_rows = db.scalars(

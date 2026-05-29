@@ -137,6 +137,47 @@ export function DataHealth() {
         </section>
       ) : null}
 
+      {data?.xg_feed != null ? (
+        <section className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-emerald-900">Copertura xG</h2>
+          <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {(
+              [
+                {
+                  label: 'xG feed available',
+                  value: (data.xg_feed as { xg_feed_available?: boolean }).xg_feed_available ? 'sì' : 'no',
+                },
+                {
+                  label: 'Righe con xG effettivo',
+                  value: (data.xg_feed as { rows_with_effective_xg?: number }).rows_with_effective_xg,
+                },
+                {
+                  label: 'Copertura effettiva',
+                  value: `${(data.xg_feed as { effective_coverage_pct?: number }).effective_coverage_pct ?? '—'}%`,
+                },
+                {
+                  label: 'Baseline xG lega (for)',
+                  value: (data.xg_feed as { league_baseline_xg_for?: number }).league_baseline_xg_for,
+                },
+                {
+                  label: 'Verdict',
+                  value: (data.xg_feed as { verdict?: string }).verdict,
+                },
+                {
+                  label: 'Source path',
+                  value: (data.xg_feed as { source_path?: string }).source_path,
+                },
+              ] as HealthRow[]
+            ).map((r) => (
+              <div key={r.label} className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2">
+                <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{r.label}</dt>
+                <dd className="mt-0.5 text-sm font-medium text-slate-900">{formatValue(r.value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
       {data?.v21_variable_coverage != null ? (
         <section className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-violet-900">Copertura variabili v2.1 (prossimo turno)</h2>

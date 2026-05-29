@@ -21,6 +21,10 @@ from app.services.predictions_v21.v21_constants import RECENT_FORM_MATCHES
 from app.services.predictions_v21.v21_lineup_history import build_lineup_history
 from app.services.predictions_v21.v21_payload_helpers import missing_ids_from_refresh_payload
 from app.services.predictions_v21.v21_xg_coverage import XG_MISSING_WARNING, resolve_league_xg_available
+from app.services.predictions_v21.v21_xg_league_features import (
+    build_xg_leakage_trace,
+    compute_v21_xg_league_baselines,
+)
 from app.services.sportapi.lineup_player_profile_lookup import LineupProfileEntry, load_team_profile_rows
 from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
 
@@ -122,6 +126,7 @@ class V21SideContext:
     team_pace_agg: dict[str, Any]
     league_baselines: dict[str, float | None]
     league_xg_available: bool
+    xg_leakage_trace: dict[str, Any] = field(default_factory=dict)
     sportapi_audit: dict[str, Any]
     sportapi_side: dict[str, Any]
     sportapi_opponent_side: dict[str, Any]
@@ -197,9 +202,28 @@ def build_v21_side_context(
     )
 
     league_baselines: dict[str, float | None] = dict(prior.league_baselines or {})
+    scope_comp = competition_id if competition_id is not None else fixture.competition_id
+    if scope_comp is not None:
+        xg_lb = compute_v21_xg_league_baselines(
+            db,
+            season_id=prior.season_id,
+            cutoff_kickoff=prior.cutoff_kickoff,
+            cutoff_fixture_id=prior.cutoff_fixture_id,
+            competition_id=int(scope_comp),
+        )
+        league_baselines["league_avg_xg_for"] = xg_lb.get("league_avg_xg_for")
+        league_baselines["league_avg_xg_conceded"] = xg_lb.get("league_avg_xg_conceded")
+
+    xg_leakage_trace = build_xg_leakage_trace(
+        team_fixtures=prior.team_prior_fixtures,
+        opp_fixtures=prior.opponent_prior_fixtures,
+        team_sample_count=team_agg.get("xg_n"),
+        opp_sample_count=opp_conceded_agg.get("xg_n"),
+    )
+
     league_xg_available = resolve_league_xg_available(
         db,
-        competition_id=competition_id if competition_id is not None else fixture.competition_id,
+        competition_id=scope_comp,
         league_baselines=league_baselines,
         team_agg=team_agg,
         opp_conceded_agg=opp_conceded_agg,
@@ -220,7 +244,6 @@ def build_v21_side_context(
     profile_entries: list[LineupProfileEntry] = []
     lineup_profiles_mode = "not_available"
     warnings: list[str] = []
-    scope_comp = competition_id if competition_id is not None else fixture.competition_id
     team_row = db.get(Team, int(team_id))
     if scope_comp is not None and team_row is not None:
         comp = db.get(Competition, int(scope_comp))
@@ -282,6 +305,7 @@ def build_v21_side_context(
         team_pace_agg=team_pace_agg,
         league_baselines=league_baselines,
         league_xg_available=league_xg_available,
+        xg_leakage_trace=xg_leakage_trace,
         sportapi_audit=sportapi_audit,
         sportapi_side=sportapi_side,
         sportapi_opponent_side=sportapi_opponent_side,

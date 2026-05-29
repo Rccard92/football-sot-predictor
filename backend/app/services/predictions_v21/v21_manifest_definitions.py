@@ -106,11 +106,11 @@ V21_MANIFEST_DEFINITIONS: tuple[V21MacroAreaSpec, ...] = (
         label="Qualità occasioni",
         macro_weight=17,
         micros=(
-            _micro("xg_produced", "xG prodotti", 30, "team_stats.season_avg_xg_for"),
-            _micro("xg_conceded_by_opponent", "xG concessi dall'avversario", 30, "opponent_stats.season_avg_xg_conceded"),
-            _micro("xg_delta_vs_league", "Delta xG squadra vs media lega", 15, "team_stats.xg_delta_vs_league_avg"),
-            _micro("opp_xg_conceded_delta", "Delta xG concesso avversario vs media lega", 15, "opponent_stats.xg_conceded_delta_vs_league"),
-            _micro("xg_prudent_adjustment", "xG adjustment prudente", 10, "team_stats.xg_prudent_adjustment_signal"),
+            _micro("xg_produced", "xG prodotti", 30, "fixture_team_stats.expected_goals"),
+            _micro("xg_conceded_by_opponent", "xG concessi dall'avversario", 30, "opponent_fixture_team_stats.expected_goals_against"),
+            _micro("xg_delta_vs_league", "Delta xG squadra vs media lega", 15, "derived.team_xg_for_vs_league_avg"),
+            _micro("opp_xg_conceded_delta", "Delta xG concesso avversario vs media lega", 15, "derived.opponent_xg_conceded_vs_league_avg"),
+            _micro("xg_prudent_adjustment", "xG adjustment prudente", 10, "derived.xg_prudent_adjustment_signal"),
         ),
     ),
     V21MacroAreaSpec(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from app.services.predictions_v21.v21_constants import TOP_SHOOTERS_COUNT
+from app.services.predictions_v21.v21_constants import TOP_SHOOTERS_COUNT, XG_PRUDENT_ADJ_MAX, XG_PRUDENT_ADJ_MIN
 from app.services.predictions_v21.v21_feature_context import V21SideContext
 from app.services.predictions_v21.v21_lineup_history import lineup_history_sufficient
 from app.services.predictions_v21.v21_lineup_impact_helpers import (
@@ -176,12 +176,16 @@ def _collect_recent_form(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroRe
 
 
 def _collect_chance_quality(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroResult:
-    kw = dict(key=micro.key, label=micro.label, micro_weight=micro.micro_weight, source_path=micro.source_path)
+    kw = dict(key=micro.key, label=micro.label, micro_weight=micro.micro_weight)
+    xg_trace = ctx.xg_leakage_trace or {}
+    trace_latest = xg_trace.get("latest_fixture_used_at")
+    trace_leakage = xg_trace.get("leakage_guard")
+
     if not ctx.league_xg_available:
         return neutral_micro(
             **kw,
-            status="feed_unavailable",
             source_path="feed_unavailable.xg",
+            status="feed_unavailable",
             fallback_used=True,
             warning=XG_MISSING_WARNING,
         )
@@ -189,28 +193,71 @@ def _collect_chance_quality(ctx: V21SideContext, micro: V21MicroSpec) -> V21Micr
     lb = ctx.league_baselines
     team_xg = ctx.team_agg.get("xg_mean")
     opp_xg = ctx.opp_conceded_agg.get("xg_mean")
+    league_xg_for = lb.get("league_avg_xg_for")
+    league_xg_conceded = lb.get("league_avg_xg_conceded")
 
     if micro.key == "xg_produced":
-        return normalize_v21_micro_variable(**kw, raw_value=team_xg, baseline=lb.get("league_avg_xg_for"), sample_count=ctx.team_agg.get("xg_n"))
+        return normalize_v21_micro_variable(
+            **kw,
+            source_path="fixture_team_stats.expected_goals",
+            raw_value=team_xg,
+            baseline=league_xg_for,
+            sample_count=ctx.team_agg.get("xg_n"),
+            latest_fixture_used_at=trace_latest,
+            leakage_guard=trace_leakage,
+        )
     if micro.key == "xg_conceded_by_opponent":
-        return normalize_v21_micro_variable(**kw, raw_value=opp_xg, baseline=lb.get("league_avg_xg_conceded"), sample_count=ctx.opp_conceded_agg.get("xg_n"))
+        return normalize_v21_micro_variable(
+            **kw,
+            source_path="opponent_fixture_team_stats.expected_goals_against",
+            raw_value=opp_xg,
+            baseline=league_xg_conceded,
+            sample_count=ctx.opp_conceded_agg.get("xg_n"),
+            latest_fixture_used_at=trace_latest,
+            leakage_guard=trace_leakage,
+        )
     if micro.key == "xg_delta_vs_league":
-        if team_xg is None or lb.get("league_avg_xg_for") is None:
-            return neutral_micro(**kw, status="missing", warning="Delta xG squadra non calcolabile")
-        delta = float(team_xg) - float(lb["league_avg_xg_for"])
-        return normalize_v21_micro_variable(**kw, raw_value=delta + float(lb["league_avg_xg_for"]), baseline=lb.get("league_avg_xg_for"), sample_count=ctx.team_agg.get("xg_n"))
+        if team_xg is None or league_xg_for is None or float(league_xg_for) <= 0:
+            return neutral_micro(**kw, source_path="derived.team_xg_for_vs_league_avg", status="missing", warning="Delta xG squadra non calcolabile")
+        ratio = float(team_xg) / float(league_xg_for)
+        return normalize_ratio_direct(
+            **kw,
+            source_path="derived.team_xg_for_vs_league_avg",
+            ratio=ratio,
+            sample_count=ctx.team_agg.get("xg_n"),
+            latest_fixture_used_at=trace_latest,
+            leakage_guard=trace_leakage,
+        )
     if micro.key == "opp_xg_conceded_delta":
-        if opp_xg is None or lb.get("league_avg_xg_conceded") is None:
-            return neutral_micro(**kw, status="missing", warning="Delta xG avversario non calcolabile")
-        delta = float(opp_xg) - float(lb["league_avg_xg_conceded"])
-        return normalize_v21_micro_variable(**kw, raw_value=delta + float(lb["league_avg_xg_conceded"]), baseline=lb.get("league_avg_xg_conceded"), sample_count=ctx.opp_conceded_agg.get("xg_n"))
+        if opp_xg is None or league_xg_for is None or float(league_xg_for) <= 0:
+            return neutral_micro(**kw, source_path="derived.opponent_xg_conceded_vs_league_avg", status="missing", warning="Delta xG avversario non calcolabile")
+        ratio = float(opp_xg) / float(league_xg_for)
+        return normalize_ratio_direct(
+            **kw,
+            source_path="derived.opponent_xg_conceded_vs_league_avg",
+            ratio=ratio,
+            sample_count=ctx.opp_conceded_agg.get("xg_n"),
+            latest_fixture_used_at=trace_latest,
+            leakage_guard=trace_leakage,
+        )
     if micro.key == "xg_prudent_adjustment":
-        if team_xg is None or opp_xg is None:
-            return neutral_micro(**kw, status="missing")
-        signal = (float(team_xg) + float(opp_xg)) / 2.0
-        base = lb.get("league_avg_xg_for")
-        return normalize_v21_micro_variable(**kw, raw_value=signal, baseline=base, sample_count=min(ctx.team_agg.get("xg_n") or 0, ctx.opp_conceded_agg.get("xg_n") or 0) or None)
-    return neutral_micro(**kw, status="not_tracked_yet")
+        if team_xg is None or opp_xg is None or league_xg_for is None or float(league_xg_for) <= 0:
+            return neutral_micro(**kw, source_path="derived.xg_prudent_adjustment_signal", status="missing")
+        xg_for_ratio = float(team_xg) / float(league_xg_for)
+        opp_conceded_ratio = float(opp_xg) / float(league_xg_for)
+        signal = (xg_for_ratio + opp_conceded_ratio) / 2.0
+        sample_n = min(ctx.team_agg.get("xg_n") or 0, ctx.opp_conceded_agg.get("xg_n") or 0) or None
+        return normalize_ratio_direct(
+            **kw,
+            source_path="derived.xg_prudent_adjustment_signal",
+            ratio=signal,
+            sample_count=sample_n,
+            norm_min=XG_PRUDENT_ADJ_MIN,
+            norm_max=XG_PRUDENT_ADJ_MAX,
+            latest_fixture_used_at=trace_latest,
+            leakage_guard=trace_leakage,
+        )
+    return neutral_micro(**kw, source_path=micro.source_path, status="not_tracked_yet")
 
 
 def _collect_player_layer(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroResult:

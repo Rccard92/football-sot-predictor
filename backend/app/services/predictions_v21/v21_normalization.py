@@ -62,11 +62,13 @@ class V21MicroResult:
     fallback_used: bool
     contribution: str
     warning: str | None = None
+    latest_fixture_used_at: str | None = None
+    leakage_guard: bool | None = None
 
     def to_trace_input(self) -> dict:
         raw_r = round(float(self.raw_value), 2) if self.raw_value is not None else None
         norm_r = round(float(self.normalized_value), 2)
-        return {
+        out = {
             "value": raw_r,
             "raw_value": raw_r,
             "normalized_value": norm_r,
@@ -78,10 +80,15 @@ class V21MicroResult:
             "contribution": self.contribution,
             "warning": self.warning,
         }
+        if self.latest_fixture_used_at is not None:
+            out["latest_fixture_used_at"] = self.latest_fixture_used_at
+        if self.leakage_guard is not None:
+            out["leakage_guard"] = self.leakage_guard
+        return out
 
 
-def clamp_micro_norm(value: float) -> float:
-    return max(MICRO_NORM_MIN, min(MICRO_NORM_MAX, float(value)))
+def clamp_micro_norm(value: float, *, norm_min: float = MICRO_NORM_MIN, norm_max: float = MICRO_NORM_MAX) -> float:
+    return max(norm_min, min(norm_max, float(value)))
 
 
 def neutral_micro(
@@ -122,6 +129,8 @@ def normalize_v21_micro_variable(
     fallback_used: bool = False,
     warning: str | None = None,
     invert: bool = False,
+    latest_fixture_used_at: str | None = None,
+    leakage_guard: bool | None = None,
 ) -> V21MicroResult:
     if raw_value is None:
         return neutral_micro(
@@ -164,6 +173,8 @@ def normalize_v21_micro_variable(
         fallback_used=fallback_used,
         contribution=contrib,
         warning=eff_warning,
+        latest_fixture_used_at=latest_fixture_used_at,
+        leakage_guard=leakage_guard,
     )
 
 
@@ -178,6 +189,10 @@ def normalize_ratio_direct(
     status: V21MicroStatus = "available",
     fallback_used: bool = False,
     warning: str | None = None,
+    norm_min: float = MICRO_NORM_MIN,
+    norm_max: float = MICRO_NORM_MAX,
+    latest_fixture_used_at: str | None = None,
+    leakage_guard: bool | None = None,
 ) -> V21MicroResult:
     """Normalizza un rapporto già calcolato (es. trend recente vs stagione)."""
     if ratio is None:
@@ -190,7 +205,7 @@ def normalize_ratio_direct(
             warning=warning,
             fallback_used=fallback_used,
         )
-    norm = clamp_micro_norm(float(ratio))
+    norm = clamp_micro_norm(float(ratio), norm_min=norm_min, norm_max=norm_max)
     if norm > 1.02:
         contrib = "positiva"
     elif norm < 0.98:
@@ -209,4 +224,6 @@ def normalize_ratio_direct(
         fallback_used=fallback_used,
         contribution=contrib,
         warning=warning,
+        latest_fixture_used_at=latest_fixture_used_at,
+        leakage_guard=leakage_guard,
     )

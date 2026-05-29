@@ -86,11 +86,12 @@ def test_collect_chance_quality_uses_real_xg_when_available():
         league_baselines={"league_avg_xg_for": 1.3, "league_avg_xg_conceded": 1.2},
         team_agg={"xg_mean": 1.5, "xg_n": 8},
         opp_conceded_agg={"xg_mean": 1.1, "xg_n": 8},
+        xg_leakage_trace={"latest_fixture_used_at": "2026-05-20T18:00:00", "leakage_guard": True},
     )
     result = _collect_chance_quality(ctx, micro)
     assert result.status == "available"
     assert result.raw_value == 1.5
-    assert result.source_path == micro.source_path
+    assert result.source_path == "fixture_team_stats.expected_goals"
 
 
 def test_enrich_does_not_reclassify_when_components_have_real_xg():
@@ -123,6 +124,43 @@ def test_enrich_does_not_reclassify_when_components_have_real_xg():
     cq = enriched["components"]["chance_quality"]
     assert cq["inputs"]["xg_produced"]["status"] == "available"
     assert cq["status"] != "degraded_feed_unavailable"
+
+
+def test_collect_chance_quality_all_micros_with_league_baselines():
+    ctx = SimpleNamespace(
+        league_xg_available=True,
+        league_baselines={"league_avg_xg_for": 1.3, "league_avg_xg_conceded": 1.2},
+        team_agg={"xg_mean": 1.5, "xg_n": 8},
+        opp_conceded_agg={"xg_mean": 1.1, "xg_n": 8},
+        xg_leakage_trace={"latest_fixture_used_at": "2026-05-20T18:00:00", "leakage_guard": True},
+    )
+    for key in (
+        "xg_produced",
+        "xg_conceded_by_opponent",
+        "xg_delta_vs_league",
+        "opp_xg_conceded_delta",
+        "xg_prudent_adjustment",
+    ):
+        micro = _chance_quality_micro(key)
+        result = _collect_chance_quality(ctx, micro)
+        assert result.status == "available", key
+        assert result.to_trace_input().get("leakage_guard") is True
+
+
+def test_resolve_league_xg_coherent_with_feed_available():
+    db = MagicMock()
+    with patch(
+        "app.services.predictions_v21.v21_xg_coverage.competition_has_xg_in_team_stats",
+        return_value=True,
+    ):
+        available = resolve_league_xg_available(
+            db,
+            competition_id=2,
+            league_baselines={"league_avg_xg_for": 1.2128},
+            team_agg={"xg_n": 5, "xg_mean": 1.3},
+            opp_conceded_agg={"xg_n": 5, "xg_mean": 1.2},
+        )
+    assert available is True
 
 
 def test_enrich_reclassifies_only_when_feed_verified_absent():

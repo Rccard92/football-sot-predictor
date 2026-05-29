@@ -12,6 +12,25 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.12',
+    date: '2026-05-29',
+    title: 'Collegamento xG reali alla v2.1',
+    type: 'patch',
+    summary:
+      'Collegata la macroarea Qualità occasioni della v2.1 agli expected_goals reali presenti in fixture_team_stats.',
+    highlights: [
+      'xG prodotti da fixture_team_stats.expected_goals.',
+      'xG concessi derivati dagli expected_goals avversari.',
+      'Delta xG vs media lega.',
+      'xG adjustment prudente.',
+      'Macroarea Qualità occasioni ora available quando il feed xG è presente.',
+      'Aggiunta protezione anti data leakage.',
+      'Nessun proxy xG.',
+      'Nessuna modifica ai pesi.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.10',
     date: '2026-05-29',
     title: 'Audit formula finale v2.1 esteso',
