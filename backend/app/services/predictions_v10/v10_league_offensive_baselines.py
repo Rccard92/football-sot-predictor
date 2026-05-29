@@ -31,13 +31,17 @@ def compute_league_offensive_baselines(
     season_id: int,
     cutoff_kickoff: datetime,
     cutoff_fixture_id: int,
+    competition_id: int | None = None,
 ) -> dict[str, float | None]:
     """Medie lega su tutte le righe team-stats delle partite finite prima del cutoff."""
+    clauses = [
+        Fixture.season_id == int(season_id),
+        Fixture.status.in_(FINISHED_STATUSES),
+    ]
+    if competition_id is not None:
+        clauses.append(Fixture.competition_id == int(competition_id))
     fixtures = db.scalars(
-        select(Fixture).where(
-            Fixture.season_id == int(season_id),
-            Fixture.status.in_(FINISHED_STATUSES),
-        ),
+        select(Fixture).where(*clauses),
     ).all()
     eligible = [
         f

@@ -41,6 +41,47 @@ def _share_frac(profile: PlayerSotProfile | None) -> float:
 
 
 class LineupImpactSimulationService:
+    def _neutral_lineup_impact_fallback(
+        self,
+        fx: Fixture,
+        *,
+        home_name: str,
+        away_name: str,
+        sportapi_lineups: dict[str, Any],
+    ) -> dict[str, Any]:
+        neutral_side = {
+            "offensive_lineup_factor": 1.0,
+            "opponent_defensive_weakness_factor": 1.0,
+            "defensive_weakness_factor": 1.0,
+            "factor": 1.0,
+            "roster_sync_hint": "missing",
+        }
+        return {
+            "status": "no_lineups",
+            "fixture_id": int(fx.id),
+            "simulation_only": True,
+            "used_in_model": get_settings().use_sportapi_lineup_impact_in_model,
+            "profiles_missing": True,
+            "sportapi_lineups_available": False,
+            "sportapi_fetched_at": sportapi_lineups.get("fetched_at"),
+            "starters_count_home": 0,
+            "starters_count_away": 0,
+            "confirmed": False,
+            "confidence_label": "bassa",
+            "confidence_reasons": ["Lineups non disponibili"],
+            "roster_filter_active": False,
+            "home": dict(neutral_side),
+            "away": dict(neutral_side),
+            "player_matching_summary": {},
+            "sportapi_player_matching": [],
+            "explanation_bullets": [],
+            "defensive_opponent_factor": {
+                "home_opponent_factor": 1.0,
+                "away_opponent_factor": 1.0,
+            },
+            "note": "Fallback neutro: nessuna lineup/mapping disponibile.",
+        }
+
     def simulate_for_fixture(
         self,
         db: Session,
@@ -59,11 +100,21 @@ class LineupImpactSimulationService:
         away = db.get(Team, int(fx.away_team_id))
         hn = home_team_name or (home.name if home else "Casa")
         an = away_team_name or (away.name if away else "Trasferta")
-        season = db.get(Season, int(fx.season_id))
-        season_year = int(season.year) if season else 0
-        league_id = int(season.league_id) if season else int(fx.league_id)
 
         sportapi_lineups = build_sportapi_lineups_audit(db, int(fx.id), home_team_name=hn, away_team_name=an)
+        lineups_available = bool(sportapi_lineups.get("available"))
+
+        if fx.season_id is None and not lineups_available:
+            return self._neutral_lineup_impact_fallback(
+                fx,
+                home_name=hn,
+                away_name=an,
+                sportapi_lineups=sportapi_lineups,
+            )
+
+        season = db.get(Season, int(fx.season_id)) if fx.season_id is not None else None
+        season_year = int(season.year) if season else 0
+        league_id = int(season.league_id) if season else int(fx.league_id or 0)
 
         match_svc = SportApiPlayerMatchingService()
         sportapi_players = match_svc.collect_sportapi_players_from_lineups(sportapi_lineups)
@@ -81,12 +132,14 @@ class LineupImpactSimulationService:
         if confirmed is None:
             confirmed = False
 
-        profiles_by_player_id = self._profiles_for_teams(
-            db,
-            int(fx.season_id),
-            int(fx.home_team_id),
-            int(fx.away_team_id),
-        )
+        profiles_by_player_id: dict[int, tuple[Player, PlayerSotProfile]] = {}
+        if fx.season_id is not None:
+            profiles_by_player_id = self._profiles_for_teams(
+                db,
+                int(fx.season_id),
+                int(fx.home_team_id),
+                int(fx.away_team_id),
+            )
         profiles_missing = len(profiles_by_player_id) == 0
 
         roster_resolver = ActiveRosterResolver(db)

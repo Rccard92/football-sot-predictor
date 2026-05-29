@@ -261,6 +261,9 @@ class SotPredictionV20LineupImpactService:
                 )
                 db.add(existing)
 
+            if fx.competition_id is not None:
+                existing.competition_id = int(fx.competition_id)
+
             existing.predicted_sot = adjusted
             existing.raw_json = merged_raw
             existing.explanation = " ".join(explanation_parts)
@@ -291,6 +294,7 @@ class SotPredictionV20LineupImpactService:
         *,
         limit: int = 200,
         competition_id: int | None = None,
+        fixture_ids: list[int] | None = None,
     ) -> dict[str, Any]:
         try:
             if competition_id is None:
@@ -305,7 +309,16 @@ class SotPredictionV20LineupImpactService:
                 "partial_result": {"upcoming_fixtures": 0, "predictions_ok": 0, "errors": []},
             }
 
-        if competition_id is not None:
+        if fixture_ids:
+            q = (
+                select(Fixture)
+                .where(Fixture.id.in_([int(x) for x in fixture_ids]))
+                .order_by(Fixture.kickoff_at.asc())
+            )
+            if competition_id is not None:
+                q = q.where(Fixture.competition_id == competition_id)
+            fixtures = list(db.scalars(q).all())
+        elif competition_id is not None:
             fixtures = list(
                 db.scalars(
                     select(Fixture)
@@ -363,14 +376,25 @@ class SotPredictionV20LineupImpactService:
             "errors": errors,
         }
 
-    def generate_for_competition(self, db: Session, competition_id: int, *, limit: int = 200) -> dict[str, Any]:
+    def generate_for_competition(
+        self,
+        db: Session,
+        competition_id: int,
+        *,
+        limit: int = 200,
+        fixture_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
         from app.models import Competition
 
         comp = db.get(Competition, competition_id)
         if comp is None:
             return {"status": "error", "message": f"Competition {competition_id} non trovata"}
         result = self.generate_for_upcoming_season(
-            db, comp.season, limit=limit, competition_id=comp.id
+            db,
+            comp.season,
+            limit=limit,
+            competition_id=comp.id,
+            fixture_ids=fixture_ids,
         )
         result["competition_id"] = comp.id
         return result

@@ -18,7 +18,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
-from app.models import Competition, Fixture, Team, TeamSotPrediction
+from app.models import Competition, Fixture, FixtureLineup, Team, TeamSotPrediction
 from app.services.model_version_preference import (
     preferred_model_versions,
     resolve_recommended_model_version,
@@ -225,6 +225,7 @@ def build_next_round_quick_report_payload(
     competition_name: str | None = None,
 ) -> tuple[dict[str, Any], int]:
     t0 = time.perf_counter()
+    lineup_warning: str | None = None
     try:
         if competition_id is not None:
             comp = db.get(Competition, competition_id)
@@ -234,6 +235,18 @@ def build_next_round_quick_report_payload(
                 db, comp, limit=limit, only_next_round=only_next_round
             )
             competition_name = competition_name or comp.name
+            lineups_count = int(
+                db.scalar(
+                    select(func.count())
+                    .select_from(FixtureLineup)
+                    .where(FixtureLineup.competition_id == comp.id)
+                )
+                or 0
+            )
+            if lineups_count == 0:
+                lineup_warning = (
+                    "Lineups non disponibili: prediction generate senza impatto formazioni."
+                )
         else:
             _season_row, upcoming, round_label = _load_upcoming_fixtures(
                 db, season, limit=limit, only_next_round=only_next_round
@@ -248,6 +261,8 @@ def build_next_round_quick_report_payload(
     preferred = preferred_model_versions()
     requested = model_version or BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     warnings: list[str] = []
+    if lineup_warning:
+        warnings.append(lineup_warning)
     if model_version is not None and requested not in preferred:
         warnings.append(f"Model version richiesta non riconosciuta: {requested}.")
 

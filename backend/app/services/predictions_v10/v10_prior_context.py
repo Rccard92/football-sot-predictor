@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES
-from app.models import Fixture, FixtureTeamStat
+from app.models import Competition, Fixture, FixtureTeamStat, League, Season
 from app.services.predictions_v10.v10_league_offensive_baselines import compute_league_offensive_baselines
 from app.services.sot_feature_math import PriorMatch, fixture_key_before, league_avg_sot_from_prior_fixtures
 
@@ -35,6 +35,31 @@ class V10PriorContext:
     league_baselines: dict[str, float | None]
 
 
+def _resolve_fixture_season_id(db: Session, fixture: Fixture) -> int:
+    if fixture.season_id is not None:
+        return int(fixture.season_id)
+    if fixture.competition_id is None:
+        raise ValueError("fixture_missing_season_id_and_competition_id")
+    comp = db.get(Competition, int(fixture.competition_id))
+    if comp is None:
+        raise ValueError(f"competition_not_found:{fixture.competition_id}")
+    if comp.season_id is not None:
+        return int(comp.season_id)
+    league_id = comp.league_id
+    if league_id is None and comp.provider_league_id is not None:
+        league = db.scalar(select(League).where(League.api_league_id == int(comp.provider_league_id)))
+        if league is not None:
+            league_id = int(league.id)
+    if league_id is None:
+        raise ValueError("competition_league_not_resolved")
+    season = db.scalar(
+        select(Season).where(Season.league_id == int(league_id), Season.year == int(comp.season)),
+    )
+    if season is None:
+        raise ValueError(f"season_not_found_for_competition:{comp.id}")
+    return int(season.id)
+
+
 def _prior_fixtures_for_team(
     db: Session,
     *,
@@ -42,14 +67,18 @@ def _prior_fixtures_for_team(
     cutoff_kickoff: datetime,
     cutoff_fixture_id: int,
     team_id: int,
+    competition_id: int | None = None,
 ) -> list[Fixture]:
+    clauses = [
+        Fixture.season_id == season_id,
+        Fixture.status.in_(FINISHED_STATUSES),
+        (Fixture.home_team_id == team_id) | (Fixture.away_team_id == team_id),
+    ]
+    if competition_id is not None:
+        clauses.append(Fixture.competition_id == int(competition_id))
     q = (
         select(Fixture)
-        .where(
-            Fixture.season_id == season_id,
-            Fixture.status.in_(FINISHED_STATUSES),
-            (Fixture.home_team_id == team_id) | (Fixture.away_team_id == team_id),
-        )
+        .where(*clauses)
         .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
     )
     xs = db.scalars(q).all()
@@ -108,11 +137,14 @@ def build_prior_context(
     *,
     team_id: int,
     opponent_id: int,
+    competition_id: int | None = None,
 ) -> V10PriorContext:
-    season_id = int(fixture.season_id)
+    scope_competition_id = competition_id if competition_id is not None else fixture.competition_id
+    season_id = _resolve_fixture_season_id(db, fixture)
     cutoff_kickoff = fixture.kickoff_at
     cutoff_fixture_id = int(fixture.id)
     is_home = int(fixture.home_team_id) == int(team_id)
+    comp_filter = int(scope_competition_id) if scope_competition_id is not None else None
 
     team_prior_fx = _prior_fixtures_for_team(
         db,
@@ -120,6 +152,7 @@ def build_prior_context(
         cutoff_kickoff=cutoff_kickoff,
         cutoff_fixture_id=cutoff_fixture_id,
         team_id=int(team_id),
+        competition_id=comp_filter,
     )
     opp_prior_fx = _prior_fixtures_for_team(
         db,
@@ -127,6 +160,7 @@ def build_prior_context(
         cutoff_kickoff=cutoff_kickoff,
         cutoff_fixture_id=cutoff_fixture_id,
         team_id=int(opponent_id),
+        competition_id=comp_filter,
     )
     all_ids = list({int(f.id) for f in team_prior_fx + opp_prior_fx})
     stats_map = _team_stats_map(db, all_ids)
@@ -135,6 +169,7 @@ def build_prior_context(
         season_id=season_id,
         cutoff_kickoff=cutoff_kickoff,
         cutoff_fixture_id=cutoff_fixture_id,
+        competition_id=comp_filter,
     )
 
     return V10PriorContext(

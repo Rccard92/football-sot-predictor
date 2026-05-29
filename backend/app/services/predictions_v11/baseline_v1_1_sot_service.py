@@ -50,6 +50,7 @@ class SotPredictionV11BaselineSotService:
         *,
         limit: int = 200,
         competition_id: int | None = None,
+        fixture_ids: list[int] | None = None,
     ) -> dict[str, Any]:
         try:
             if competition_id is not None:
@@ -73,7 +74,16 @@ class SotPredictionV11BaselineSotService:
                 },
             }
 
-        if competition_id is not None:
+        if fixture_ids:
+            q = (
+                select(Fixture)
+                .where(Fixture.id.in_([int(x) for x in fixture_ids]))
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+            )
+            if competition_id is not None:
+                q = q.where(Fixture.competition_id == competition_id)
+            fixtures = db.scalars(q).all()
+        elif competition_id is not None:
             fixtures = db.scalars(
                 select(Fixture)
                 .where(Fixture.competition_id == competition_id)
@@ -116,6 +126,15 @@ class SotPredictionV11BaselineSotService:
         errors: list[dict[str, Any]] = []
 
         for fx in upcoming:
+            if competition_id is not None and fx.competition_id != int(competition_id):
+                errors.append(
+                    {
+                        "fixture_id": int(fx.id),
+                        "error": "guardrail_competition_id",
+                        "message": f"Fixture competition_id={fx.competition_id} != {competition_id}",
+                    },
+                )
+                continue
             opp_by_team = {
                 int(fx.home_team_id): int(fx.away_team_id),
                 int(fx.away_team_id): int(fx.home_team_id),
@@ -127,6 +146,7 @@ class SotPredictionV11BaselineSotService:
                         fx,
                         team_id=int(team_id),
                         opponent_id=int(opp_by_team[int(team_id)]),
+                        competition_id=competition_id,
                     )
                     result = compute_v11_side(db, ctx, ctx.team_prior_fixtures)
                 except Exception as exc:  # noqa: BLE001
@@ -209,6 +229,11 @@ class SotPredictionV11BaselineSotService:
                     )
                     db.add(existing)
 
+                if fx.competition_id is not None:
+                    existing.competition_id = int(fx.competition_id)
+                elif competition_id is not None:
+                    existing.competition_id = int(competition_id)
+
                 existing.raw_json = merged
                 existing.explanation = (
                     "v1.1 stage 6: 25% produzione offensiva + 22% resistenza difensiva avversaria "
@@ -277,14 +302,25 @@ class SotPredictionV11BaselineSotService:
             "errors": errors,
         }
 
-    def generate_for_competition(self, db: Session, competition_id: int, *, limit: int = 200) -> dict[str, Any]:
+    def generate_for_competition(
+        self,
+        db: Session,
+        competition_id: int,
+        *,
+        limit: int = 200,
+        fixture_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
         from app.models import Competition
 
         comp = db.get(Competition, competition_id)
         if comp is None:
             return {"status": "error", "message": f"Competition {competition_id} non trovata"}
         result = self.generate_for_upcoming_season(
-            db, comp.season, limit=limit, competition_id=comp.id
+            db,
+            comp.season,
+            limit=limit,
+            competition_id=comp.id,
+            fixture_ids=fixture_ids,
         )
         result["competition_id"] = comp.id
         return result

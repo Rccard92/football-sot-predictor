@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.6',
+    date: '2026-05-29',
+    title: 'Fix Prossima giornata multi-campionato',
+    type: 'patch',
+    summary:
+      'Corretto il refresh della prossima giornata per campionati diversi dalla Serie A, con fallback quando lineups e mapping SportAPI non sono ancora disponibili.',
+    highlights: [
+      'Fix endpoint refresh next-round per competition_id.',
+      'Generazione prediction Brasileirão senza lineups.',
+      'Fallback modello quando v2.0 completo non è disponibile.',
+      'Guardrail anti-mixing su team stats e player profiles.',
+      'Migliorata diagnostica errori frontend/backend.',
+      'Nessuna modifica alla formula v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.5',
     date: '2026-05-29',
     title: 'Bootstrap base leggero multi-campionato',

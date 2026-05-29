@@ -25,7 +25,17 @@ from app.core.constants import (
     FINISHED_STATUSES,
 )
 from app.services.sot_model_registry import user_visible_model_versions
-from app.models import Fixture, League, Season, Team, TeamSotPrediction
+from app.models import (
+    Fixture,
+    FixtureLineup,
+    FixtureProviderMapping,
+    FixtureTeamStat,
+    League,
+    PlayerSeasonProfile,
+    Season,
+    Team,
+    TeamSotPrediction,
+)
 from app.services.ingestion_service import IngestionService
 from app.services.model_version_preference import (
     build_v10_coherence_warnings,
@@ -364,6 +374,89 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         )
 
     if int(predictions_total or 0) == 0:
+        team_stats_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureTeamStat)
+                .where(FixtureTeamStat.competition_id == competition_id)
+            )
+            or 0
+        )
+        profiles_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(PlayerSeasonProfile)
+                .where(PlayerSeasonProfile.competition_id == competition_id)
+            )
+            or 0
+        )
+        lineups_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureLineup)
+                .where(FixtureLineup.competition_id == competition_id)
+            )
+            or 0
+        )
+        mappings_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureProviderMapping)
+                .where(FixtureProviderMapping.competition_id == competition_id)
+            )
+            or 0
+        )
+        lineups_ready = lineups_count > 0 and mappings_count > 0
+
+        if upcoming_fixtures_total > 0 and (team_stats_count > 0 or profiles_count > 0):
+            if not lineups_ready:
+                warnings.append("v2.0 senza lineups")
+                warnings.append(
+                    "Lineups o mapping SportAPI non ancora disponibili per questa competition."
+                )
+            else:
+                warnings.append("Nessuna prediction trovata per questa competition.")
+
+            available_versions: list[dict[str, Any]] = [
+                {
+                    "model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                    "predictions_total": 0,
+                    "upcoming_predictions": 0,
+                    "is_available_for_upcoming": False,
+                    "generated_at": None,
+                },
+                {
+                    "model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+                    "predictions_total": 0,
+                    "upcoming_predictions": 0,
+                    "is_available_for_upcoming": False,
+                    "degraded": not lineups_ready,
+                    "generated_at": None,
+                },
+            ]
+            message = (
+                "Modello attivo: baseline_v1_1_sot fallback"
+                if not lineups_ready
+                else "Modello attivo: baseline_v1_1_sot"
+            )
+            return (
+                {
+                    "status": "fallback_ready",
+                    "message": message,
+                    "competition_id": competition_id,
+                    "competition_key": getattr(comp, "key", None),
+                    "season": season,
+                    "upcoming_fixtures_total": upcoming_fixtures_total,
+                    "active_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                    "recommended_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                    "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                    "available_model_versions": available_versions,
+                    "lineups_ready": lineups_ready,
+                    "warnings": warnings,
+                },
+                200,
+            )
+
         warnings.append("Nessuna prediction trovata per questa competition.")
         return (
             {

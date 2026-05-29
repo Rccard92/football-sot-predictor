@@ -7,8 +7,22 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.constants import FINISHED_STATUSES, fixture_eligible_for_upcoming_sot
-from app.models import Competition, Fixture, League, Season
+from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    FINISHED_STATUSES,
+    fixture_eligible_for_upcoming_sot,
+)
+from app.models import (
+    Competition,
+    Fixture,
+    FixtureLineup,
+    FixtureProviderMapping,
+    FixtureTeamStat,
+    League,
+    PlayerSeasonProfile,
+    Season,
+)
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.competition_service import CompetitionService
 from app.services.ingestion_service import IngestionService
@@ -322,22 +336,157 @@ class CompetitionIngestionService:
         *,
         dry_run: bool = False,
     ) -> dict[str, Any]:
+        if not competition_id:
+            return {
+                "status": "error",
+                "code": "invalid_competition_id",
+                "message": "competition_id mancante o non valido",
+                "competition_id": competition_id,
+                "step": "validate_competition",
+                "details": "competition_id richiesto",
+            }
+
         comp = self._competition(db, competition_id)
+
+        team_stats_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureTeamStat)
+                .where(FixtureTeamStat.competition_id == comp.id)
+            )
+            or 0
+        )
+        player_profiles_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(PlayerSeasonProfile)
+                .where(PlayerSeasonProfile.competition_id == comp.id)
+            )
+            or 0
+        )
+        lineup_rows_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureLineup)
+                .where(FixtureLineup.competition_id == comp.id)
+            )
+            or 0
+        )
+        sportapi_mappings_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureProviderMapping)
+                .where(FixtureProviderMapping.competition_id == comp.id)
+            )
+            or 0
+        )
+
+        all_future = db.scalars(
+            select(Fixture)
+            .where(Fixture.competition_id == comp.id)
+            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+        ).all()
+        future_fixtures_count = sum(
+            1
+            for f in all_future
+            if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)
+        )
+
+        from app.services.next_round_quick_report_service import _load_upcoming_fixtures_for_competition
+
+        _, next_round_raw, round_label = _load_upcoming_fixtures_for_competition(
+            db, comp, limit=100, only_next_round=True
+        )
         upcoming = [
             f
-            for f in db.scalars(
-                select(Fixture)
-                .where(Fixture.competition_id == comp.id)
-                .order_by(Fixture.kickoff_at.asc())
-            ).all()
-            if fixture_eligible_for_upcoming_sot(f)
+            for f in next_round_raw
+            if fixture_eligible_for_upcoming_sot(f.status, f.kickoff_at)
         ]
+
+        lineups_ready = lineup_rows_count > 0 and sportapi_mappings_count > 0
+        model_versions_requested = [BASELINE_SOT_MODEL_VERSION_V11_SOT]
+        if lineups_ready:
+            model_versions_requested.append(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
+        else:
+            model_versions_requested.append(
+                f"{BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT} (degraded/fallback)"
+            )
+
+        logger.info(
+            "COMPETITION_NEXT_ROUND_REFRESH_START competition_id=%s competition_key=%s "
+            "provider_league_id=%s season=%s model_versions=%s future_fixtures_count=%s "
+            "next_round_fixtures=%s team_stats_count=%s player_profiles_count=%s "
+            "lineup_rows_count=%s sportapi_mappings_count=%s round=%s",
+            comp.id,
+            comp.key,
+            comp.provider_league_id,
+            comp.season,
+            model_versions_requested,
+            future_fixtures_count,
+            len(upcoming),
+            team_stats_count,
+            player_profiles_count,
+            lineup_rows_count,
+            sportapi_mappings_count,
+            round_label,
+        )
+
         if dry_run:
             return {
                 "status": "dry_run",
                 "competition_id": comp.id,
-                "upcoming_fixtures": len(upcoming),
+                "competition_key": comp.key,
+                "competition_name": comp.name,
+                "season": comp.season,
+                "round": round_label,
+                "future_fixtures_count": future_fixtures_count,
+                "next_round_fixtures": len(upcoming),
+                "team_stats_count": team_stats_count,
+                "player_profiles_count": player_profiles_count,
+                "lineup_rows_count": lineup_rows_count,
+                "sportapi_mappings_count": sportapi_mappings_count,
+                "model_versions_requested": model_versions_requested,
             }
+
+        if not upcoming:
+            return {
+                "status": "error",
+                "code": "no_upcoming_fixtures",
+                "message": "Nessuna partita futura trovata per il prossimo turno di questa competition.",
+                "competition_id": comp.id,
+                "step": "select_next_round",
+                "details": f"future_fixtures_count={future_fixtures_count}, round={round_label}",
+                "future_fixtures_count": future_fixtures_count,
+            }
+
+        for fx in upcoming:
+            if fx.competition_id is None:
+                return {
+                    "status": "error",
+                    "code": "guardrail_competition_id",
+                    "message": "Fixture senza competition_id: refresh interrotto.",
+                    "competition_id": comp.id,
+                    "step": "guardrail_competition_id",
+                    "fixture_id": int(fx.id),
+                    "details": "competition_id obbligatorio su ogni fixture",
+                }
+            if int(fx.competition_id) != int(comp.id):
+                return {
+                    "status": "error",
+                    "code": "guardrail_competition_id",
+                    "message": "Fixture appartiene a un'altra competition.",
+                    "competition_id": comp.id,
+                    "step": "guardrail_competition_id",
+                    "fixture_id": int(fx.id),
+                    "details": f"fixture.competition_id={fx.competition_id}",
+                }
+
+        fixture_ids = [int(f.id) for f in upcoming]
+        warnings: list[str] = []
+        if not lineups_ready:
+            warnings.append(
+                "Lineups non disponibili: prediction generata senza impatto formazioni."
+            )
 
         from app.services.predictions_v11.baseline_v1_1_sot_service import (
             SotPredictionV11BaselineSotService,
@@ -348,12 +497,55 @@ class CompetitionIngestionService:
 
         v11 = SotPredictionV11BaselineSotService()
         v20 = SotPredictionV20LineupImpactService()
-        v11_result = v11.generate_for_competition(db, comp.id)
-        v20_result = v20.generate_for_competition(db, comp.id)
+        v11_result = v11.generate_for_competition(db, comp.id, fixture_ids=fixture_ids)
+        if v11_result.get("status") == "error":
+            return {
+                "status": "error",
+                "code": "v11_generation_failed",
+                "message": str(v11_result.get("message") or "Generazione v1.1 fallita"),
+                "competition_id": comp.id,
+                "step": str(v11_result.get("failed_step") or "v11_generate"),
+                "details": v11_result.get("details"),
+                "v11": v11_result,
+                "warnings": warnings,
+            }
+
+        v20_result = v20.generate_for_competition(db, comp.id, fixture_ids=fixture_ids)
+        if not lineups_ready:
+            v20_result["mode"] = "degraded_fallback"
+            v20_result["lineups_available"] = False
+
+        predictions_created = int(v11_result.get("predictions_created_or_updated") or 0)
+        predictions_ok_v20 = int((v20_result or {}).get("predictions_ok") or 0)
+
+        overall_status = "ok"
+        if predictions_created == 0:
+            overall_status = "error"
+        elif v11_result.get("status") != "success" or int(v11_result.get("incomplete_predictions") or 0) > 0:
+            overall_status = "partial_success"
+
         return {
-            "status": "ok",
+            "status": overall_status,
             "competition_id": comp.id,
-            "upcoming_fixtures": len(upcoming),
+            "competition_key": comp.key,
+            "competition_name": comp.name,
+            "season": comp.season,
+            "round": round_label,
+            "future_fixtures_count": future_fixtures_count,
+            "next_round_fixtures": len(upcoming),
+            "fixture_ids_processed": fixture_ids,
+            "predictions_created_or_updated": predictions_created,
+            "predictions_ok_v20": predictions_ok_v20,
+            "team_stats_count": team_stats_count,
+            "player_profiles_count": player_profiles_count,
+            "lineup_rows_count": lineup_rows_count,
+            "sportapi_mappings_count": sportapi_mappings_count,
+            "lineups_ready": lineups_ready,
+            "model_versions_requested": model_versions_requested,
+            "active_model_fallback": BASELINE_SOT_MODEL_VERSION_V11_SOT
+            if not lineups_ready
+            else None,
+            "warnings": warnings,
             "v11": v11_result,
             "v20": v20_result,
         }

@@ -147,13 +147,23 @@ export function CompetitionsAdminPanel() {
   const canCreateFromDiscovery =
     selectedCandidate != null && (selectedCandidate.requested_season_available ?? false)
 
+  const formatActionResult = (res: Record<string, unknown> | null) => {
+    if (!res) return null
+    if (res.status === 'error') {
+      const step = typeof res.step === 'string' ? res.step : '—'
+      const message = typeof res.message === 'string' ? res.message : 'Errore sconosciuto'
+      return `[${step}] ${message}\n\n${JSON.stringify(res, null, 2)}`
+    }
+    return JSON.stringify(res, null, 2)
+  }
+
   const run = async (label: string, fn: () => Promise<Record<string, unknown>>) => {
     setBusy(label)
     setLog(null)
     setSeasonError(null)
     try {
       const res = await fn()
-      setLog(JSON.stringify(res, null, 2))
+      setLog(formatActionResult(res))
       return res
     } catch (e) {
       if (e instanceof AdminHttpError && e.status === 422 && isSeasonNotAvailableError(e.body)) {
@@ -163,7 +173,11 @@ export function CompetitionsAdminPanel() {
         return null
       }
       if (e instanceof AdminHttpError) {
-        setLog(JSON.stringify(e.body ?? { message: e.message }, null, 2))
+        const body =
+          e.body && typeof e.body === 'object'
+            ? (e.body as Record<string, unknown>)
+            : { message: e.message }
+        setLog(formatActionResult(body))
       } else {
         setLog(e instanceof Error ? e.message : String(e))
       }

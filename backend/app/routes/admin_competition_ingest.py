@@ -122,6 +122,27 @@ def refresh_competition_next_round(
     db: Session = Depends(get_db),
 ):
     svc = CompetitionIngestionService()
-    return jsonable_encoder(
-        svc.refresh_next_round(db, competition_id, dry_run=_ingest_body(body))
-    )
+    try:
+        result = svc.refresh_next_round(db, competition_id, dry_run=_ingest_body(body))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "refresh next-round competition_id=%s: errore inatteso",
+            competition_id,
+        )
+        return JSONResponse(
+            status_code=422,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "code": "unexpected_error",
+                    "message": "Errore inatteso durante il refresh della prossima giornata.",
+                    "competition_id": competition_id,
+                    "step": "refresh_next_round",
+                    "details": str(exc)[:500],
+                },
+            ),
+        )
+
+    if result.get("status") == "error":
+        return JSONResponse(status_code=422, content=jsonable_encoder(result))
+    return jsonable_encoder(result)
