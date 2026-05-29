@@ -15,12 +15,17 @@ import {
 
 const STORAGE_KEY = 'sot_selected_competition_id'
 
+const EMPTY_MESSAGE_DEFAULT =
+  'Nessun campionato configurato. Vai in Admin e fai Backfill Serie A.'
+
 type CompetitionContextValue = {
   competitions: CompetitionSummary[]
   selectedCompetition: CompetitionSummary | null
   selectedCompetitionId: number | null
   loading: boolean
   error: string | null
+  emptyMessage: string | null
+  isConfigured: boolean
   setSelectedCompetitionId: (id: number) => void
   refreshCompetitions: () => Promise<void>
 }
@@ -37,21 +42,47 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [emptyMessage, setEmptyMessage] = useState<string | null>(null)
 
   const refreshCompetitions = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setEmptyMessage(null)
     try {
-      const [list, def] = await Promise.all([getCompetitions(), getDefaultCompetition()])
+      const list = await getCompetitions()
       setCompetitions(list)
-      setSelectedCompetitionIdState((prev) => {
-        if (prev != null && list.some((c) => c.id === prev)) return prev
-        const fallback = def?.id ?? list[0]?.id ?? null
-        if (fallback != null) localStorage.setItem(STORAGE_KEY, String(fallback))
-        return fallback
-      })
+
+      if (list.length === 0) {
+        const defRes = await getDefaultCompetition()
+        setEmptyMessage(defRes.message ?? EMPTY_MESSAGE_DEFAULT)
+        setSelectedCompetitionIdState(null)
+        localStorage.removeItem(STORAGE_KEY)
+        return
+      }
+
+      const storedRaw = localStorage.getItem(STORAGE_KEY)
+      const storedId = storedRaw ? Number(storedRaw) : null
+      const storedValid =
+        storedId != null && Number.isFinite(storedId) && list.some((c) => c.id === storedId)
+
+      if (storedValid) {
+        setSelectedCompetitionIdState(storedId)
+        return
+      }
+
+      const defRes = await getDefaultCompetition()
+      const fallback = defRes.competition?.id ?? list[0]?.id ?? null
+      if (fallback != null) {
+        setSelectedCompetitionIdState(fallback)
+        localStorage.setItem(STORAGE_KEY, String(fallback))
+      } else {
+        setSelectedCompetitionIdState(null)
+        setEmptyMessage(defRes.message ?? EMPTY_MESSAGE_DEFAULT)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+      setCompetitions([])
+      setEmptyMessage(EMPTY_MESSAGE_DEFAULT)
     } finally {
       setLoading(false)
     }
@@ -64,12 +95,15 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
   const setSelectedCompetitionId = useCallback((id: number) => {
     setSelectedCompetitionIdState(id)
     localStorage.setItem(STORAGE_KEY, String(id))
+    setEmptyMessage(null)
   }, [])
 
   const selectedCompetition = useMemo(
     () => competitions.find((c) => c.id === selectedCompetitionId) ?? null,
     [competitions, selectedCompetitionId],
   )
+
+  const isConfigured = competitions.length > 0
 
   const value = useMemo(
     () => ({
@@ -78,6 +112,8 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
       selectedCompetitionId,
       loading,
       error,
+      emptyMessage,
+      isConfigured,
       setSelectedCompetitionId,
       refreshCompetitions,
     }),
@@ -87,6 +123,8 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
       selectedCompetitionId,
       loading,
       error,
+      emptyMessage,
+      isConfigured,
       setSelectedCompetitionId,
       refreshCompetitions,
     ],

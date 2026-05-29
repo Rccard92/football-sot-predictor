@@ -18,13 +18,28 @@ def list_competitions(db: Session = Depends(get_db)):
     return jsonable_encoder([CompetitionRead.model_validate(r).model_dump() for r in rows])
 
 
+DEFAULT_COMPETITION_MISSING_MESSAGE = (
+    "Nessuna competition configurata. Esegui backfill Serie A."
+)
+
+
 @router.get("/default")
 def get_default_competition(db: Session = Depends(get_db)):
     svc = CompetitionService()
     row = svc.get_default(db)
     if row is None:
-        return jsonable_encoder({"competition": None})
-    return jsonable_encoder({"competition": CompetitionRead.model_validate(row).model_dump()})
+        return jsonable_encoder(
+            {
+                "competition": None,
+                "message": DEFAULT_COMPETITION_MISSING_MESSAGE,
+            }
+        )
+    return jsonable_encoder(
+        {
+            "competition": CompetitionRead.model_validate(row).model_dump(),
+            "message": None,
+        }
+    )
 
 
 @router.get("/{competition_id}")

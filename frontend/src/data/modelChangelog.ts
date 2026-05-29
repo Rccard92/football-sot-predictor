@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.2',
+    date: '2026-05-29',
+    title: 'Fix selettore campionato e backfill Serie A',
+    type: 'patch',
+    summary:
+      'Sistemato il caricamento dei campionati attivi e aggiunto backfill esplicito della Serie A esistente.',
+    highlights: [
+      'Aggiunto endpoint lista competitions.',
+      'Aggiunto default competition.',
+      'Aggiunto pulsante Backfill Serie A esistente.',
+      'Sistemato dropdown Campionato attivo vuoto.',
+      'Nessun import Brasileirão automatico.',
+      'Nessuna modifica al modello v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.1',
     date: '2026-05-29',
     title: 'Fix build pannello campionati',

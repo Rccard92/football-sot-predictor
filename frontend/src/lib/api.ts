@@ -23,13 +23,40 @@ export type CompetitionSummary = {
   season_id: number | null
 }
 
+export type CompetitionDefaultResponse = {
+  competition: CompetitionSummary | null
+  message?: string | null
+}
+
+export type CompetitionBackfillSummary = {
+  status: string
+  competition_id: number
+  competition_key: string
+  fixtures_updated: number
+  player_profiles_updated: number
+  tracked_picks_updated: number
+  predictions_updated: number
+  team_stats_updated: number
+  standings_updated: number
+  warnings: string[]
+  updated_by_table?: Record<string, number>
+}
+
 export async function getCompetitions(): Promise<CompetitionSummary[]> {
   return requestJson<CompetitionSummary[]>('/api/competitions')
 }
 
-export async function getDefaultCompetition(): Promise<CompetitionSummary | null> {
-  const res = await requestJson<{ competition: CompetitionSummary | null }>('/api/competitions/default')
-  return res.competition
+export async function getDefaultCompetition(): Promise<CompetitionDefaultResponse> {
+  return requestJson<CompetitionDefaultResponse>('/api/competitions/default')
+}
+
+export async function backfillSerieACompetition(
+  season = DEFAULT_SEASON,
+): Promise<CompetitionBackfillSummary> {
+  return adminPostJson<CompetitionBackfillSummary>(
+    `/api/admin/competitions/backfill/serie-a/${season}`,
+    {},
+  )
 }
 
 export async function getNextRoundQuickReportForCompetition(

@@ -208,8 +208,36 @@ class CompetitionBackfillService:
         _ = fixture_ids_subq
         log["competition_id"] = comp_id
         log["competition_key"] = competition.key
+
+        warnings: list[str] = []
+        if league_id is None:
+            warnings.append(
+                "Lega Serie A non trovata nel DB: eseguire bootstrap Serie A prima del backfill completo."
+            )
+        if competition.season_id is None:
+            warnings.append(
+                f"Stagione {season_year} non trovata nel DB: collegare season_id dopo bootstrap."
+            )
+
+        standings_updated = int(log.get("standings_snapshots", 0)) + int(
+            log.get("standing_entries", 0)
+        )
+
+        summary = {
+            "status": "ok",
+            "competition_id": comp_id,
+            "competition_key": competition.key,
+            "fixtures_updated": int(log.get("fixtures", 0)),
+            "player_profiles_updated": int(log.get("player_season_profiles", 0)),
+            "tracked_picks_updated": int(log.get("tracked_betting_picks", 0)),
+            "predictions_updated": int(log.get("team_sot_predictions", 0)),
+            "team_stats_updated": int(log.get("fixture_team_stats", 0)),
+            "standings_updated": standings_updated,
+            "warnings": warnings,
+            "updated_by_table": log,
+        }
         logger.info("Backfill Serie A competition_id=%s: %s", comp_id, log)
-        return {"competition_id": comp_id, "competition_key": competition.key, "updated_by_table": log}
+        return summary
 
     def _backfill_fixtures(
         self,
