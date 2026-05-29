@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.1',
+    date: '2026-05-29',
+    title: 'Fix manifest v2.1 duplicate key',
+    type: 'patch',
+    summary:
+      'Corretta una collisione di key nel manifest v2.1 tra Player layer e Infortuni / indisponibili.',
+    highlights: [
+      'Rinominata key duplicata top_shooter_absence.',
+      'Mantenute entrambe le micro-variabili del PDF.',
+      'Migliorata validazione duplicate key.',
+      'Avvio backend resiliente se manifest v2.1 invalido.',
+      'Nessuna modifica alla v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.0',
     date: '2026-05-29',
     title: 'Nuovo registry modello v2.1',

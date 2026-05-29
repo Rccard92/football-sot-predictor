@@ -24,6 +24,7 @@ import {
   formatInputsAvailable,
   formatModelStatusFootnote,
   isV21ExperimentalRow,
+  isV21ManifestInvalidRow,
   labelForModelVersion,
   labelForOperatingMode,
   stageBadgeForModel,
@@ -199,6 +200,12 @@ export function UpcomingMatches() {
     return modelInView === V21_MODEL || (row != null && isV21ExperimentalRow(row))
   }, [modelInView, status?.available_model_versions])
 
+  const v21ManifestInvalid = useMemo(() => {
+    const rows = status?.available_model_versions ?? []
+    const row = rows.find((r) => r.model_version === (modelInView ?? ''))
+    return modelInView === V21_MODEL && row != null && isV21ManifestInvalidRow(row)
+  }, [modelInView, status?.available_model_versions])
+
   const reportInfo = [
     ...(data?.info ?? []),
     ...(data?.warnings ?? []).filter((w) => /disponibili per tutto il turno/i.test(w)),
@@ -277,7 +284,13 @@ export function UpcomingMatches() {
             {modelInView === V20_MODEL || modelInView === V21_MODEL ? (
               <p className="text-xs text-slate-600">{stageDescriptionForModel(modelInView)}</p>
             ) : null}
-            {v21SelectedExperimental ? (
+            {v21ManifestInvalid ? (
+              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-relaxed text-rose-950">
+                Manifest v2.1 non valido: il modello sperimentale è temporaneamente disabilitato. v2.0 e il
+                resto dell&apos;app restano operativi.
+              </p>
+            ) : null}
+            {v21SelectedExperimental && !v21ManifestInvalid ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
                 Modello v2.1 registrato, engine di calcolo in preparazione. Nessuna previsione numerica v2.1
                 disponibile in questo step.

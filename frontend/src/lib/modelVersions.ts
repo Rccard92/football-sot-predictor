@@ -39,6 +39,7 @@ export const MODEL_STAGE_DESCRIPTIONS: Record<string, string> = {
 
 export const V21_MODEL = 'baseline_v2_1_weighted_components' as const
 export const V21_ENGINE_NOT_READY = 'experimental_not_ready' as const
+export const V21_MANIFEST_INVALID = 'manifest_invalid' as const
 export const V20_MODEL = 'baseline_v2_0_lineup_impact' as const
 export const V11_MODEL = 'baseline_v1_1_sot' as const
 /** Solo azioni admin legacy — non in dropdown UI principale */
@@ -113,8 +114,16 @@ export function isV21ExperimentalRow(row: {
   return (
     row.model_version === V21_MODEL ||
     row.engine_status === V21_ENGINE_NOT_READY ||
+    row.engine_status === V21_MANIFEST_INVALID ||
     row.is_experimental === true
   )
+}
+
+export function isV21ManifestInvalidRow(row: {
+  model_version?: string
+  engine_status?: string
+}): boolean {
+  return row.model_version === V21_MODEL && row.engine_status === V21_MANIFEST_INVALID
 }
 
 export const MODEL_OPTIONS_AUDIT: { value: string; label: string }[] = [

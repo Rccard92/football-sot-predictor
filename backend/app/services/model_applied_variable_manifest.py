@@ -5,6 +5,7 @@ Solo metadati: nessun calcolo predittivo.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -56,6 +57,9 @@ class AppliedVariableSpec:
     resolver: str = ""
 
 
+logger = logging.getLogger(__name__)
+
+
 def is_countable_role(role: str) -> bool:
     return role in COUNTABLE_APPLICATION_ROLES
 
@@ -74,6 +78,9 @@ def manifest_for_model(model_version: str) -> list[AppliedVariableSpec]:
     if model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
         return list(_MANIFEST_V20)
     if model_version == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
+        if not v21_manifest_valid():
+            logger.warning("Manifest v2.1 non valido: %s", v21_manifest_error())
+            return []
         return list(_MANIFEST_V21)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         return _MANIFEST_V02
@@ -979,7 +986,25 @@ _MANIFEST_V20: list[AppliedVariableSpec] = list(_MANIFEST_V11) + list(_MANIFEST_
 
 from app.services.predictions_v21.v21_manifest_builder import build_v21_manifest
 
-_MANIFEST_V21: list[AppliedVariableSpec] = build_v21_manifest()
+_V21_MANIFEST_VALID: bool = True
+_V21_MANIFEST_ERROR: str | None = None
+_MANIFEST_V21: list[AppliedVariableSpec] = []
+
+try:
+    _MANIFEST_V21 = build_v21_manifest()
+except ValueError as exc:
+    logger.critical("Manifest v2.1 invalido — v2.1 disabilitato, v2.0 invariata: %s", exc)
+    _V21_MANIFEST_VALID = False
+    _V21_MANIFEST_ERROR = str(exc)
+    _MANIFEST_V21 = []
+
+
+def v21_manifest_valid() -> bool:
+    return _V21_MANIFEST_VALID
+
+
+def v21_manifest_error() -> str | None:
+    return _V21_MANIFEST_ERROR
 
 
 # --- v0.4: 6 termini formula + input offensivi + qualità ---

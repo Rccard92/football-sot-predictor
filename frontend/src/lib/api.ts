@@ -2005,6 +2005,7 @@ export type ModelStatusVersionRow = {
   is_experimental?: boolean
   model_label?: string
   registry_status?: string
+  manifest_error?: string | null
   degraded?: boolean
   xg_applied_count?: number
   xg_fallback_count?: number
