@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.13',
+    date: '2026-05-29',
+    title: 'Fix dataclass V21SideContext',
+    type: 'patch',
+    summary:
+      "Corretto l'ordine/default dei campi nella dataclass V21SideContext che impediva l'avvio del backend.",
+    highlights: [
+      'Risolto TypeError sportapi_audit dopo xg_leakage_trace.',
+      'Backend Uvicorn torna ad avviarsi.',
+      'Nessuna modifica a formule o pesi.',
+      'Nessuna modifica alla logica xG, salvo typing/default.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.12',
     date: '2026-05-29',
     title: 'Collegamento xG reali alla v2.1',

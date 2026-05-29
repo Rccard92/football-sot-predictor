@@ -126,7 +126,6 @@ class V21SideContext:
     team_pace_agg: dict[str, Any]
     league_baselines: dict[str, float | None]
     league_xg_available: bool
-    xg_leakage_trace: dict[str, Any] = field(default_factory=dict)
     sportapi_audit: dict[str, Any]
     sportapi_side: dict[str, Any]
     sportapi_opponent_side: dict[str, Any]
@@ -134,6 +133,7 @@ class V21SideContext:
     lineup_profiles_mode: str
     lineup_history: dict[str, Any]
     refresh_snapshot_missing_api_ids: set[int] | None
+    xg_leakage_trace: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
 
