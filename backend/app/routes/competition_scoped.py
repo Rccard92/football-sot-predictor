@@ -28,9 +28,17 @@ router = APIRouter(prefix="/competitions", tags=["competitions-scoped"])
 
 
 @router.get("/{competition_id}/model-status")
-def competition_model_status(competition_id: int, db: Session = Depends(get_db)):
+def competition_model_status(
+    competition_id: int,
+    model_version: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
     comp = CompetitionService().get_by_id_or_raise(db, competition_id)
-    payload, code = build_model_status_for_competition(db, comp)
+    payload, code = build_model_status_for_competition(
+        db,
+        comp,
+        selected_model_version=model_version,
+    )
     return JSONResponse(status_code=code, content=jsonable_encoder(payload))
 
 

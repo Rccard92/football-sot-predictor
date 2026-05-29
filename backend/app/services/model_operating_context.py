@@ -189,13 +189,35 @@ def build_v20_operating_context(db: Session, comp: Any) -> dict[str, Any]:
     }
 
 
-def attach_global_v20_fields(payload: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
-    """Merge campi globali v2.0 nel payload model-status."""
+def _model_label(model_version: str | None) -> str | None:
+    if not model_version:
+        return None
+    display = get_model_display(str(model_version))
+    return display.label if display else str(model_version)
+
+
+def attach_model_selection_context(
+    payload: dict[str, Any],
+    ctx: dict[str, Any],
+    *,
+    selected_model_version: str | None = None,
+    recommended_model_version: str | None = None,
+) -> dict[str, Any]:
+    """Merge contesto operativo e campi modello selezionato/raccomandato."""
     merged = dict(payload)
-    merged["global_model_version"] = ctx["global_model_version"]
-    merged["global_model_label"] = ctx["global_model_label"]
+    recommended = recommended_model_version or merged.get("recommended_model_version")
+    selected = selected_model_version or merged.get("selected_model_version")
+    active = selected or recommended or merged.get("active_model_version")
+
+    merged["recommended_model_version"] = recommended
+    merged["recommended_model_label"] = _model_label(recommended)
+    if selected:
+        merged["selected_model_version"] = selected
+        merged["selected_model_label"] = _model_label(selected)
+    merged["active_model_version"] = active
+
     merged["competition_name"] = ctx.get("competition_name")
-    merged["operating_mode"] = ctx["operating_mode"]
+    merged["operating_mode"] = merged.get("operating_mode") or ctx["operating_mode"]
     merged["inputs_available"] = ctx["inputs_available"]
     merged["v20_operating_context"] = ctx
     merged["lineups_ready"] = ctx["lineups_ready"]
@@ -203,7 +225,20 @@ def attach_global_v20_fields(payload: dict[str, Any], ctx: dict[str, Any]) -> di
     merged["confirmed_lineups_count"] = ctx.get("confirmed_lineups_count")
     merged["probable_lineups_count"] = ctx.get("probable_lineups_count")
     merged["next_round_lineup_coverage_pct"] = ctx.get("next_round_lineup_coverage_pct")
+    merged.pop("global_model_version", None)
+    merged.pop("global_model_label", None)
     return merged
+
+
+def attach_global_v20_fields(payload: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Compat legacy: delega ad attach_model_selection_context."""
+    recommended = payload.get("recommended_model_version")
+    return attach_model_selection_context(
+        payload,
+        ctx,
+        selected_model_version=payload.get("selected_model_version"),
+        recommended_model_version=recommended,
+    )
 
 
 def operating_mode_message(mode: OperatingMode) -> str:

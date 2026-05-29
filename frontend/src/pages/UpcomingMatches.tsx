@@ -23,6 +23,7 @@ import {
   labelForOperatingMode,
   stageBadgeForModel,
   stageDescriptionForModel,
+  V20_MODEL,
   V21_MODEL,
 } from '../lib/modelVersions'
 
@@ -67,7 +68,9 @@ export function UpcomingMatches() {
     setLoading(true)
     setError(null)
     try {
-      const s = await getModelStatusForCompetition(selectedCompetitionId)
+      const s = await getModelStatusForCompetition(selectedCompetitionId, {
+        modelVersion: selectedModelVersion,
+      })
       setStatus(s)
       const res = await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
         limit: 20,
@@ -199,11 +202,10 @@ export function UpcomingMatches() {
       : '/match-variable-audit'
 
   const limitationsResolved: ModelLimitations = data?.model_limitations ?? {
-    lineups_considered: false,
-    injuries_considered: false,
+    lineups_considered: selectedModelVersion === V21_MODEL || selectedModelVersion === V20_MODEL,
+    injuries_considered: selectedModelVersion === V21_MODEL || selectedModelVersion === V20_MODEL,
     odds_automatically_imported: false,
-    note:
-      'Questa versione baseline usa solo statistiche squadra storiche. Formazioni, assenze e quote bookmaker automatiche non sono ancora considerate.',
+    note: stageDescriptionForModel(selectedModelVersion),
   }
 
   const selectedModelStatusRow = status?.available_model_versions?.find(
@@ -241,10 +243,16 @@ export function UpcomingMatches() {
                   </span>
                 ) : null}
               </p>
-              {status?.operating_mode ? (
+              {selectedModelVersion === V20_MODEL && status?.operating_mode ? (
                 <p>
                   Modalità v2.0:{' '}
                   <span className="font-medium">{labelForOperatingMode(status.operating_mode)}</span>
+                </p>
+              ) : null}
+              {selectedModelStatusRow?.readiness ? (
+                <p>
+                  Readiness {labelForModelVersion(selectedModelVersion)}:{' '}
+                  <span className="font-medium">{selectedModelStatusRow.readiness}</span>
                 </p>
               ) : null}
               {modelStatusFootnote ? <p>{modelStatusFootnote}</p> : null}

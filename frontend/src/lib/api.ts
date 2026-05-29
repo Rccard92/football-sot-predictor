@@ -1640,10 +1640,13 @@ export async function getModelStatusWithOpts(season: number, opts?: AdminRequest
 
 export async function getModelStatusForCompetition(
   competitionId: number,
-  opts?: AdminRequestOpts,
+  opts?: AdminRequestOpts & { modelVersion?: string | null },
 ): Promise<ModelStatusResponse> {
+  const p = new URLSearchParams()
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
   return requestJsonWithOpts<ModelStatusResponse>(
-    `/api/competitions/${competitionId}/model-status`,
+    `/api/competitions/${competitionId}/model-status${q ? `?${q}` : ''}`,
     { ...opts, timeoutMs: opts?.timeoutMs ?? 60_000 },
   )
 }
@@ -2103,14 +2106,25 @@ export type V20OperatingContext = {
   inputs_available?: ModelInputsAvailable
 }
 
+export type LegacyModelRow = {
+  model_version: string
+  legacy_hidden?: boolean
+  label?: string
+}
+
 export type ModelStatusResponse = {
   status?: string
   season: number
   competition_id?: number
   competition_key?: string
   competition_name?: string
+  /** @deprecated Usare selected_model_version / recommended_model_version */
   global_model_version?: string
+  /** @deprecated Usare selected_model_label / recommended_model_label */
   global_model_label?: string
+  selected_model_version?: string | null
+  selected_model_label?: string | null
+  recommended_model_label?: string | null
   operating_mode?: string
   inputs_available?: ModelInputsAvailable
   v20_operating_context?: V20OperatingContext
@@ -2122,8 +2136,10 @@ export type ModelStatusResponse = {
   active_model_version: string | null
   recommended_model_version?: string | null
   stable_model_version?: string | null
+  legacy_models?: LegacyModelRow[]
   upcoming_fixtures_total?: number
   available_model_versions: ModelStatusVersionRow[]
+  available_models?: ModelStatusVersionRow[]
   warnings: string[]
   /** Presente quando ci sono conteggi su feature mancanti per predizioni v1.1 incomplete. */
   v11_diagnostic_hints?: {
@@ -2205,6 +2221,7 @@ export type LineupRefreshImpactDelta = {
 
 export type LineupRefreshImpactPayload = LineupRefreshImpactDelta & {
   has_comparison: boolean
+  model_version?: string | null
   created_at?: string | null
 }
 

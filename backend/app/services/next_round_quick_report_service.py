@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session, load_only
 
 from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION,
-    BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
 )
+from app.core.model_limitations import model_limitations_for_version
 from app.models import Competition, Fixture, FixtureLineup, Team, TeamSotPrediction
 from app.services.model_version_preference import (
     missing_prediction_payload,
@@ -25,10 +25,7 @@ from app.services.model_version_preference import (
     resolve_recommended_model_version,
     resolve_requested_model_version,
 )
-from app.services.prediction_readiness import (
-    _safe_details,
-    default_model_limitations_dict,
-)
+from app.services.prediction_readiness import _safe_details
 from app.services.next_round_selection import select_next_round_fixtures
 from app.services.sot_feature_service import SotFeatureService
 from app.services.sot_prediction_service import SotPredictionService
@@ -38,23 +35,31 @@ logger = logging.getLogger(__name__)
 _PERF_LOG = os.environ.get("SOT_PERF_LOG", "").strip().lower() in ("1", "true", "yes")
 
 
-def _slim_lineup_refresh_impact(impact: dict[str, Any] | None) -> dict[str, Any]:
+def _slim_lineup_refresh_impact(
+    impact: dict[str, Any] | None,
+    *,
+    model_version: str | None = None,
+) -> dict[str, Any]:
     if not impact:
-        return {"has_comparison": False}
-    keys = (
-        "has_comparison",
-        "direction_total",
-        "delta_total_sot",
-        "direction_home",
-        "delta_home_sot",
-        "direction_away",
-        "delta_away_sot",
-        "main_reason",
-        "before_total_sot",
-        "after_total_sot",
-        "created_at",
-    )
-    return {k: impact.get(k) for k in keys if k in impact or k == "has_comparison"}
+        out: dict[str, Any] = {"has_comparison": False}
+    else:
+        keys = (
+            "has_comparison",
+            "direction_total",
+            "delta_total_sot",
+            "direction_home",
+            "delta_home_sot",
+            "direction_away",
+            "delta_away_sot",
+            "main_reason",
+            "before_total_sot",
+            "after_total_sot",
+            "created_at",
+        )
+        out = {k: impact.get(k) for k in keys if k in impact or k == "has_comparison"}
+    if model_version:
+        out["model_version"] = model_version
+    return out
 
 
 def _load_upcoming_fixtures(
@@ -297,7 +302,16 @@ def build_next_round_quick_report_payload(
     from app.services.tracked_betting_pick_service import TrackedBettingPickService
 
     lineups_by_fx = load_lineups_by_fixture_ids(db, fx_ids)
-    impacts_by_fx = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(db, fx_ids)
+    impact_models = {requested} if explicit_model else set(preferred)
+    impacts_by_fx_model: dict[tuple[int, str], dict[str, Any]] = {}
+    for impact_model in impact_models:
+        loaded = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(
+            db,
+            fx_ids,
+            model_id=impact_model,
+        )
+        for fid, delta in loaded.items():
+            impacts_by_fx_model[(int(fid), str(impact_model))] = delta
     pick_svc = TrackedBettingPickService()
     open_by_fx = pick_svc.load_open_picks_by_fixture_ids(db, fx_ids)
 
@@ -328,8 +342,9 @@ def build_next_round_quick_report_payload(
             model_version=mv_used,
             context=advice_ctx,
         )
-        impact_full = impacts_by_fx.get(int(fx.id))
-        impact_slim = _slim_lineup_refresh_impact(impact_full)
+        impact_full = impacts_by_fx_model.get((int(fx.id), mv_used))
+        impact_slim = _slim_lineup_refresh_impact(impact_full, model_version=mv_used)
+        has_comparison = bool(impact_slim.get("has_comparison"))
 
         open_rows = open_by_fx.get(int(fx.id)) or []
         monitored = len(open_rows) > 0
@@ -354,8 +369,8 @@ def build_next_round_quick_report_payload(
                 "model_version_used": mv_used,
                 "predicted_total_sot": total_exp,
                 "total_expected_sot": total_exp,
-                "variation_delta": impact_slim.get("delta_total_sot"),
-                "variation_reason": impact_slim.get("main_reason"),
+                "variation_delta": impact_slim.get("delta_total_sot") if has_comparison else None,
+                "variation_reason": impact_slim.get("main_reason") if has_comparison else None,
                 "lineup_refresh_impact": impact_slim,
                 "markets": markets,
                 "lineup_status": lineup_status,
@@ -365,6 +380,9 @@ def build_next_round_quick_report_payload(
             },
         )
 
+    limitations_mv = mv_default if explicit_model else (mv_default or recommended or requested)
+    limitations = model_limitations_for_version(str(limitations_mv), lineup_coverage=lineup_coverage)
+
     if explicit_model and upcoming and not matches:
         payload = missing_prediction_payload(
             requested,
@@ -372,11 +390,11 @@ def build_next_round_quick_report_payload(
             competition_id=competition_id,
             competition_name=competition_name,
             recommended_model_version=recommended,
-            stable_model_version=BASELINE_SOT_MODEL_VERSION_V11_SOT,
+            stable_model_version=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
             round=round_label,
             matches_count=0,
             matches=[],
-            model_limitations=default_model_limitations_dict(),
+            model_limitations=limitations,
             warnings=warnings,
             info=info_messages,
             comparison_with_v20=None,
@@ -391,11 +409,11 @@ def build_next_round_quick_report_payload(
         "competition_name": competition_name,
         "model_version_used": mv_default,
         "recommended_model_version": recommended,
-        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
         "round": round_label,
         "matches_count": len(matches),
         "matches": matches,
-        "model_limitations": default_model_limitations_dict(),
+        "model_limitations": limitations,
         "warnings": warnings,
         "info": info_messages,
         "comparison_with_v20": None,

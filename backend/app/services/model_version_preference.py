@@ -228,6 +228,44 @@ def v20_meets_recommend_criteria(
     return True
 
 
+def _model_ready_for_next_round(
+    row: dict[str, Any] | None,
+    *,
+    next_round_fixtures_total: int,
+) -> bool:
+    if not row or next_round_fixtures_total <= 0:
+        return False
+    nr = int(row.get("next_round_predictions_count") or 0)
+    if nr < 2 * next_round_fixtures_total:
+        return False
+    if row.get("engine_status") == "manifest_invalid":
+        return False
+    if row.get("is_available_for_upcoming") is False:
+        return False
+    return True
+
+
+def resolve_recommended_model_version_for_next_round(
+    *,
+    by_version: dict[str, dict[str, Any]],
+    next_round_fixtures_total: int,
+) -> str | None:
+    """Raccomanda v2.1 o v2.0 in base alla readiness sul prossimo turno."""
+    from app.services.model_applied_variable_manifest import v21_manifest_valid
+
+    v21_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS)
+    if v21_manifest_valid() and _model_ready_for_next_round(
+        v21_row,
+        next_round_fixtures_total=next_round_fixtures_total,
+    ):
+        return BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
+
+    v20_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
+    if _model_ready_for_next_round(v20_row, next_round_fixtures_total=next_round_fixtures_total):
+        return BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    return None
+
+
 def resolve_recommended_model_version(
     db: Session,
     *,

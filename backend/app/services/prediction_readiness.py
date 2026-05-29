@@ -24,8 +24,8 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     FINISHED_STATUSES,
 )
-from app.services.predictions_v21.v21_model_status import ensure_v21_in_available_list
-from app.services.sot_model_registry import get_model_display, user_visible_model_versions
+from app.services.predictions_v21.v21_model_status import ensure_user_visible_models_in_list
+from app.services.sot_model_registry import get_model_display, is_user_visible_model, user_visible_model_versions
 from app.models import (
     Competition,
     Fixture,
@@ -40,7 +40,7 @@ from app.models import (
 )
 from app.services.ingestion_service import IngestionService
 from app.services.model_operating_context import (
-    attach_global_v20_fields,
+    attach_model_selection_context,
     build_v20_operating_context,
     operating_mode_message,
 )
@@ -53,13 +53,14 @@ from app.services.model_version_preference import (
     pick_fixture_model_version_strict,
     preferred_model_versions,
     resolve_recommended_model_version,
+    resolve_recommended_model_version_for_next_round,
     resolve_requested_model_version,
 )
 from app.services.sot_feature_service import SotFeatureService
+from app.core.model_limitations import model_limitations_for_version
 from app.services.sot_prediction_service import (  # type: ignore[attr-defined]
     SotPredictionService,
     _fixture_round_display,
-    default_model_limitations_dict,
 )
 
 logger = logging.getLogger(__name__)
@@ -262,14 +263,14 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
             "recommended_model_version": None,
             "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
             "upcoming_fixtures_total": int(upcoming_fixtures_total),
-            "available_model_versions": ensure_v21_in_available_list([]),
+            "available_model_versions": ensure_user_visible_models_in_list([]),
             "warnings": warnings,
         }
         return payload, 200
 
     visible = user_visible_model_versions()
     preferred_present = [by_version[k] for k in visible if k in by_version]
-    available_list = ensure_v21_in_available_list(preferred_present)
+    available_list = ensure_user_visible_models_in_list(preferred_present)
 
     recommended = resolve_recommended_model_version(
         db,
@@ -333,18 +334,64 @@ def build_model_status_payload(db: Session, season: int) -> tuple[dict[str, Any]
     return payload, 200
 
 
-def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str, Any], int]:
+def _legacy_models_payload() -> list[dict[str, Any]]:
+    display = get_model_display(BASELINE_SOT_MODEL_VERSION_V11_SOT)
+    return [
+        {
+            "model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+            "legacy_hidden": True,
+            "label": display.label if display else BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        },
+    ]
+
+
+def _validate_selected_model_version(selected_model_version: str | None) -> str | None:
+    if not selected_model_version or not str(selected_model_version).strip():
+        return None
+    mv, _explicit = resolve_requested_model_version(str(selected_model_version).strip())
+    if is_user_visible_model(mv):
+        return mv
+    return None
+
+
+def _finish_competition_model_status(
+    payload: dict[str, Any],
+    v20_ctx: dict[str, Any],
+    *,
+    selected_model_version: str | None = None,
+) -> dict[str, Any]:
+    payload.setdefault("legacy_models", _legacy_models_payload())
+    payload["stable_model_version"] = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    return attach_model_selection_context(
+        payload,
+        v20_ctx,
+        selected_model_version=selected_model_version,
+        recommended_model_version=payload.get("recommended_model_version"),
+    )
+
+
+def build_model_status_for_competition(
+    db: Session,
+    comp: Any,
+    *,
+    selected_model_version: str | None = None,
+) -> tuple[dict[str, Any], int]:
     """Model-status scoped per competition. Serie A IT delega al payload legacy."""
     settings = get_settings()
     is_legacy_serie_a = (
         int(getattr(comp, "provider_league_id", 0)) == int(settings.default_league_id)
         and str(getattr(comp, "country", "") or "").strip().lower() == "italy"
     )
+    validated_selected = _validate_selected_model_version(selected_model_version)
     if is_legacy_serie_a:
         payload, code = build_model_status_payload(db, int(comp.season))
         if code == 200 and isinstance(payload, dict):
             ctx = build_v20_operating_context(db, comp)
-            payload = attach_global_v20_fields(payload, ctx)
+            payload = _finish_competition_model_status(
+                payload,
+                ctx,
+                selected_model_version=validated_selected,
+            )
             payload["competition_id"] = int(comp.id)
             payload["competition_key"] = getattr(comp, "key", None)
         return payload, code
@@ -385,7 +432,7 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
 
     if int(predictions_total or 0) == 0 and upcoming_fixtures_total == 0:
         return (
-            attach_global_v20_fields(
+            _finish_competition_model_status(
                 {
                     "status": "not_initialized",
                     "message": "Modello non ancora inizializzato",
@@ -393,15 +440,16 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                     "competition_key": getattr(comp, "key", None),
                     "season": season,
                     "upcoming_fixtures_total": 0,
-                    "available_model_versions": ensure_v21_in_available_list([]),
+                    "available_model_versions": ensure_user_visible_models_in_list([]),
+                    "available_models": ensure_user_visible_models_in_list([]),
                     "active_model_version": None,
                     "recommended_model_version": None,
-                    "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
                     "warnings": [
                         "Nessuna fixture o prediction per questa competition. Eseguire bootstrap e generazione."
                     ],
                 },
                 v20_ctx,
+                selected_model_version=validated_selected,
             ),
             200,
         )
@@ -418,28 +466,23 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
             else:
                 warnings.append("Nessuna prediction trovata per questa competition.")
 
-            available_versions: list[dict[str, Any]] = [
-                ensure_v21_in_available_list([])[0],
-                {
-                    "model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
-                    "predictions_total": 0,
-                    "upcoming_predictions": 0,
-                    "is_available_for_upcoming": False,
-                    "generated_at": None,
-                },
-                {
-                    "model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
-                    "predictions_total": 0,
-                    "upcoming_predictions": 0,
-                    "is_available_for_upcoming": False,
-                    "degraded": not lineups_ready,
-                    "generated_at": None,
-                },
-            ]
+            available_versions: list[dict[str, Any]] = ensure_user_visible_models_in_list(
+                [
+                    {
+                        "model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+                        "predictions_total": 0,
+                        "upcoming_predictions": 0,
+                        "is_available_for_upcoming": False,
+                        "degraded": not lineups_ready,
+                        "generated_at": None,
+                        "readiness": "missing",
+                    },
+                ],
+            )
             mode = str(v20_ctx.get("operating_mode") or "not_ready")
             message = operating_mode_message(mode)
             return (
-                attach_global_v20_fields(
+                _finish_competition_model_status(
                     {
                         "status": "fallback_ready",
                         "message": message,
@@ -449,18 +492,19 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                         "upcoming_fixtures_total": upcoming_fixtures_total,
                         "active_model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
                         "recommended_model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
-                        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
                         "available_model_versions": available_versions,
+                        "available_models": available_versions,
                         "warnings": warnings,
                     },
                     v20_ctx,
+                    selected_model_version=validated_selected,
                 ),
                 200,
             )
 
         warnings.append("Nessuna prediction trovata per questa competition.")
         return (
-            attach_global_v20_fields(
+            _finish_competition_model_status(
                 {
                     "status": "not_initialized",
                     "message": "Modello non ancora inizializzato",
@@ -468,13 +512,14 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                     "competition_key": getattr(comp, "key", None),
                     "season": season,
                     "upcoming_fixtures_total": upcoming_fixtures_total,
-                    "available_model_versions": ensure_v21_in_available_list([]),
+                    "available_model_versions": ensure_user_visible_models_in_list([]),
+                    "available_models": ensure_user_visible_models_in_list([]),
                     "active_model_version": None,
                     "recommended_model_version": None,
-                    "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
                     "warnings": warnings,
                 },
                 v20_ctx,
+                selected_model_version=validated_selected,
             ),
             200,
         )
@@ -556,7 +601,7 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
                 row["readiness"] = "missing"
 
     visible = user_visible_model_versions()
-    available_list = ensure_v21_in_available_list([by_version[k] for k in visible if k in by_version])
+    available_list = ensure_user_visible_models_in_list([by_version[k] for k in visible if k in by_version])
     for row in available_list:
         mv = str(row.get("model_version") or "")
         info = get_model_display(mv)
@@ -566,11 +611,9 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         row.setdefault("last_generated_at", row.get("last_generated_at") or row.get("generated_at"))
         row.setdefault("status", row.get("readiness", "missing" if not row.get("is_available_for_upcoming") else "ready"))
         row.setdefault("readiness", row.get("readiness", row["status"]))
-    recommended = resolve_recommended_model_version(
-        db,
-        upcoming_fixture_ids=upcoming_fixture_ids,
+    recommended = resolve_recommended_model_version_for_next_round(
         by_version=by_version,
-        upcoming_fixtures_total=int(upcoming_fixtures_total),
+        next_round_fixtures_total=int(next_round_total),
     )
 
     payload: dict[str, Any] = {
@@ -580,7 +623,6 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         "season": season,
         "active_model_version": recommended,
         "recommended_model_version": recommended,
-        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
         "upcoming_fixtures_total": int(upcoming_fixtures_total),
         "available_model_versions": available_list,
         "available_models": available_list,
@@ -593,7 +635,11 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         payload["operating_mode"] = "degraded_fallback"
     else:
         payload["operating_mode"] = v20_ctx.get("operating_mode", "not_ready")
-    return attach_global_v20_fields(payload, v20_ctx), 200
+    return _finish_competition_model_status(
+        payload,
+        v20_ctx,
+        selected_model_version=validated_selected,
+    ), 200
 
 
 def build_upcoming_active_payload(
@@ -802,7 +848,16 @@ def build_upcoming_active_payload(
 
     from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
 
-    impacts_by_fx = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(db, fx_ids)
+    impact_models = {requested} if explicit_model else set(preferred)
+    impacts_by_fx_model: dict[tuple[int, str], dict[str, Any]] = {}
+    for impact_model in impact_models:
+        loaded = LineupRefreshImpactOrchestrator.load_latest_impact_by_fixture_ids(
+            db,
+            fx_ids,
+            model_id=impact_model,
+        )
+        for fid, delta in loaded.items():
+            impacts_by_fx_model[(int(fid), str(impact_model))] = delta
 
     from app.services.tracked_betting_pick_service import TrackedBettingPickService
 
@@ -927,8 +982,8 @@ def build_upcoming_active_payload(
                 "betting_advice_compact": betting_compact,
                 "markets": markets,
                 "lineup_status": lineup_status,
-                "lineup_refresh_impact": impacts_by_fx.get(int(fx.id))
-                or {"has_comparison": False},
+                "lineup_refresh_impact": impacts_by_fx_model.get((int(fx.id), mv_used))
+                or {"has_comparison": False, "model_version": mv_used},
                 "tracked_pick_badge": tracked_badge,
                 "tracked_pick_summary": tracked_summary,
                 "tracked_pick_badges": tracked_pick_badges,
@@ -938,17 +993,18 @@ def build_upcoming_active_payload(
 
     round_label = _fixture_round_display(upcoming[0]) if upcoming else None
     mv_used_top = requested if explicit_model else (model_version or recommended)
+    limitations = model_limitations_for_version(str(mv_used_top or requested))
     if explicit_model and upcoming and not matches:
         payload = missing_prediction_payload(
             requested,
             season=int(season),
             model_version_used=requested,
             recommended_model_version=recommended,
-            stable_model_version=BASELINE_SOT_MODEL_VERSION_V11_SOT,
+            stable_model_version=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
             round=round_label,
             matches_count=0,
             matches=[],
-            model_limitations=default_model_limitations_dict(),
+            model_limitations=limitations,
             warnings=warnings,
         )
         if competition_id is not None:
@@ -960,11 +1016,11 @@ def build_upcoming_active_payload(
         "season": int(season),
         "model_version_used": mv_used_top,
         "recommended_model_version": recommended,
-        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
+        "stable_model_version": BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
         "round": round_label,
         "matches_count": len(matches),
         "matches": matches,
-        "model_limitations": default_model_limitations_dict(),
+        "model_limitations": limitations,
         "warnings": warnings,
     }
     if competition_id is not None:

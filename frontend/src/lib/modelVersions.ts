@@ -134,6 +134,28 @@ export function isV21ManifestInvalidRow(row: {
   return row.model_version === V21_MODEL && row.engine_status === V21_MANIFEST_INVALID
 }
 
+export function resolveDisplayedModelFromStatus(
+  status: {
+    selected_model_version?: string | null
+    selected_model_label?: string | null
+    recommended_model_version?: string | null
+    recommended_model_label?: string | null
+    active_model_version?: string | null
+  } | null | undefined,
+  selectedModelVersion: string,
+): { version: string; label: string } {
+  const version =
+    status?.selected_model_version ??
+    status?.active_model_version ??
+    status?.recommended_model_version ??
+    selectedModelVersion
+  const label =
+    (status?.selected_model_version === version ? status?.selected_model_label : null) ??
+    (status?.recommended_model_version === version ? status?.recommended_model_label : null) ??
+    labelForModelVersion(version)
+  return { version, label }
+}
+
 export const MODEL_OPTIONS_AUDIT: { value: string; label: string }[] = [
   { value: V21_MODEL, label: MODEL_VERSION_LABELS[V21_MODEL] },
   { value: V20_MODEL, label: MODEL_VERSION_LABELS[V20_MODEL] },

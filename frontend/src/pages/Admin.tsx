@@ -53,6 +53,7 @@ import {
   formatInputsAvailable,
   labelForModelVersion,
   labelForOperatingMode,
+  resolveDisplayedModelFromStatus,
 } from '../lib/modelVersions'
 
 const SEASON = DEFAULT_SEASON
@@ -214,7 +215,9 @@ export function Admin() {
         setCardsError('Seleziona un campionato per lo stato modello.')
         return
       }
-      const s = await getModelStatusForCompetition(selectedCompetitionId)
+      const s = await getModelStatusForCompetition(selectedCompetitionId, {
+        modelVersion: selectedModelVersion,
+      })
       setModelStatus(s)
       const u = await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
         limit: 20,
@@ -632,10 +635,10 @@ export function Admin() {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Stato modello attivo</h2>
             <dl className="mt-2 space-y-1 text-xs text-slate-700">
               <div>
-                <dt className="text-slate-500">Modello globale</dt>
+                <dt className="text-slate-500">Modello selezionato</dt>
                 <dd className="font-semibold text-indigo-900">
-                  {modelStatus?.global_model_label ?? labelForModelVersion(V20_MODEL)}
-                  {modelStatus?.operating_mode ? (
+                  {resolveDisplayedModelFromStatus(modelStatus, selectedModelVersion).label}
+                  {selectedModelVersion === V20_MODEL && modelStatus?.operating_mode ? (
                     <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-normal text-slate-700">
                       {labelForOperatingMode(modelStatus.operating_mode)}
                     </span>

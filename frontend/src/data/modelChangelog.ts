@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.5',
+    date: '2026-05-29',
+    title: 'Fix stato modello e quick-report v2.1',
+    type: 'patch',
+    summary:
+      'Ripuliti model-status e quick-report per mostrare correttamente il modello selezionato e rimuovere riferimenti fuorvianti a v2.0/v1.1.',
+    highlights: [
+      'recommended_model_version valorizzato correttamente.',
+      'Rimossi riferimenti global_model v2.0 quando è selezionata v2.1.',
+      'Corretto testo model_limitations per v2.1.',
+      'lineup_refresh_impact filtrato per model_version.',
+      'Nessuna modifica alle formule.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.4',
     date: '2026-05-29',
     title: 'Integrazione frontend/backend v2.1',

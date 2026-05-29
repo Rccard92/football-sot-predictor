@@ -95,7 +95,7 @@ def test_model_status_fallback_ready_uses_global_v20():
     assert payload["active_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     assert payload["recommended_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     assert payload["operating_mode"] == "degraded_fallback"
-    assert payload["global_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    assert payload["v20_operating_context"]["global_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     assert any("v2.0 senza lineups" in w for w in payload["warnings"])
 
 
