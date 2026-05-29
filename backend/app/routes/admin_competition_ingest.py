@@ -7,11 +7,12 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
-from app.schemas.competition import IngestDryRunBody
+from app.schemas.competition import IngestDryRunBody, SportApiLineupsIngestBody
 from app.services.competition_ingestion_service import CompetitionIngestionService
 from app.services.competition_service import CompetitionService
+from app.services.competition_sportapi_lineup_service import CompetitionSportApiLineupService
 from app.services.league_season_api_helpers import SeasonNotAvailableError
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,44 @@ def ingest_competition_lineups(
             db, competition_id, dry_run=_ingest_body(body), fixture_id=fixture_id, force=force
         )
     )
+
+
+def _require_sportapi() -> None:
+    if not sportapi_configured():
+        raise HTTPException(status_code=400, detail="SportAPI non configurata sul server")
+
+
+@router.post("/{competition_id}/ingest/sportapi-lineups")
+def ingest_competition_sportapi_lineups(
+    competition_id: int,
+    body: SportApiLineupsIngestBody | None = None,
+    db: Session = Depends(get_db),
+):
+    _require_sportapi()
+    CompetitionService().get_by_id_or_raise(db, competition_id)
+    opts = body or SportApiLineupsIngestBody()
+    scope = str(opts.scope or "next_round")
+    if scope not in ("next_round", "upcoming_limit", "fixture_ids"):
+        raise HTTPException(status_code=422, detail=f"scope non supportato: {scope}")
+    svc = CompetitionSportApiLineupService()
+    result = svc.ingest(
+        db,
+        competition_id,
+        scope=scope,  # type: ignore[arg-type]
+        dry_run=bool(opts.dry_run),
+        force=bool(opts.force),
+        regenerate_v20=bool(opts.regenerate_v20),
+        upcoming_limit=int(opts.upcoming_limit),
+        fixture_ids=opts.fixture_ids,
+    )
+    if result.get("status") == "error" and result.get("code") in (
+        "no_future_fixtures",
+        "fixture_competition_mismatch",
+        "fixture_ids_required",
+        "sportapi_disabled",
+    ):
+        return JSONResponse(status_code=422, content=jsonable_encoder(result))
+    return jsonable_encoder(result)
 
 
 @router.post("/{competition_id}/refresh/next-round")

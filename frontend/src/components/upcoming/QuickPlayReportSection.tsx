@@ -1,11 +1,14 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
   DEFAULT_SEASON,
+  postCompetitionSportApiLineupsIngest,
   postRefreshNextRoundSportApiLineups,
   type LineupRefreshImpactPayload,
+  type SportApiCompetitionLineupsIngestSummary,
   type SportApiRoundRefreshSummary,
   type UpcomingActiveMatchRow,
 } from '../../lib/api'
+import { useCompetition } from '../../contexts/CompetitionContext'
 import { V20_MODEL } from '../../lib/modelVersions'
 import { formatImpactLine } from '../../utils/lineupRefreshImpactDisplay'
 import {
@@ -29,8 +32,11 @@ export function QuickPlayReportSection({
   onOpenDetail?: (fixtureId: number) => void
   selectedFixtureId?: number | null
 }) {
+  const { selectedCompetitionId } = useCompetition()
   const [refreshBusy, setRefreshBusy] = useState(false)
-  const [refreshResult, setRefreshResult] = useState<SportApiRoundRefreshSummary | null>(null)
+  const [refreshResult, setRefreshResult] = useState<
+    SportApiRoundRefreshSummary | SportApiCompetitionLineupsIngestSummary | null
+  >(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [impactOverrides, setImpactOverrides] = useState<Record<number, LineupRefreshImpactPayload>>({})
 
@@ -50,12 +56,22 @@ export function QuickPlayReportSection({
     setRefreshResult(null)
     try {
       const regenerateV20 = reportUsesV20Predictions(matches, modelVersion, V20_MODEL)
-      const out = await postRefreshNextRoundSportApiLineups(DEFAULT_SEASON, {
-        regenerateV20,
-        timeoutMs: 600_000,
-      })
+      const out =
+        selectedCompetitionId != null
+          ? await postCompetitionSportApiLineupsIngest(selectedCompetitionId, {
+              scope: 'next_round',
+              dryRun: false,
+              regenerateV20,
+              timeoutMs: 600_000,
+            })
+          : await postRefreshNextRoundSportApiLineups(DEFAULT_SEASON, {
+              regenerateV20,
+              timeoutMs: 600_000,
+            })
       setRefreshResult(out)
-      const merged = impactsFromRefreshResults(out.results)
+      const merged = impactsFromRefreshResults(
+        (out.results ?? []) as SportApiRoundRefreshSummary['results'],
+      )
       if (Object.keys(merged).length) {
         setImpactOverrides((prev) => ({ ...prev, ...merged }))
       }
@@ -65,7 +81,17 @@ export function QuickPlayReportSection({
     } finally {
       setRefreshBusy(false)
     }
-  }, [matches, modelVersion, onRefreshComplete])
+  }, [matches, modelVersion, onRefreshComplete, selectedCompetitionId])
+
+  const lineupStatusCounts = useMemo(() => {
+    let withLineup = 0
+    let withoutLineup = 0
+    for (const m of matches) {
+      if (m.lineup_status?.has_lineup) withLineup += 1
+      else withoutLineup += 1
+    }
+    return { withLineup, withoutLineup }
+  }, [matches])
 
   if (!matches.length) return null
 
@@ -75,7 +101,20 @@ export function QuickPlayReportSection({
 
   const impactRows = (refreshResult?.results ?? []).filter((r) => r.direction_total)
 
-  const formationsUpdated = refreshResult?.updated ?? 0
+  const formationsUpdated =
+    'lineups_imported' in (refreshResult ?? {})
+      ? (refreshResult as SportApiCompetitionLineupsIngestSummary).lineups_imported
+      : (refreshResult as SportApiRoundRefreshSummary | null)?.updated ?? 0
+
+  const fixturesChecked =
+    'fixtures_checked' in (refreshResult ?? {})
+      ? (refreshResult as SportApiCompetitionLineupsIngestSummary).fixtures_checked
+      : (refreshResult as SportApiRoundRefreshSummary | null)?.total_fixtures ?? 0
+
+  const partialLineupWarning =
+    lineupStatusCounts.withLineup > 0 && lineupStatusCounts.withoutLineup > 0
+      ? `Formazioni parziali: ${lineupStatusCounts.withLineup} partite con lineup, ${lineupStatusCounts.withoutLineup} senza.`
+      : null
 
   return (
     <section className="overflow-hidden rounded-2xl border border-indigo-200/80 bg-white shadow-sm">
@@ -98,12 +137,15 @@ export function QuickPlayReportSection({
         <p className="mt-1 text-[10px] text-slate-500">
           Richiama le probabili formazioni e gli indisponibili per tutte le partite del prossimo turno.
         </p>
+        {partialLineupWarning ? (
+          <p className="mt-2 text-[11px] text-amber-800">{partialLineupWarning}</p>
+        ) : null}
         {refreshError ? <p className="mt-2 text-[11px] text-rose-700">{refreshError}</p> : null}
         {refreshResult ? (
           <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-[11px] text-emerald-950">
             <p className="font-semibold">Aggiornamento completato</p>
             <ul className="mt-1 list-inside list-disc">
-              <li>{refreshResult.total_fixtures} partite controllate</li>
+              <li>{fixturesChecked} partite controllate</li>
               <li>{formationsUpdated} formazioni aggiornate</li>
               {refreshResult.up_count != null ? (
                 <li>

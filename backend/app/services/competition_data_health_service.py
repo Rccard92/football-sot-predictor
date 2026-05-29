@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES
 from app.models import (
-    Competition,
     Fixture,
     FixtureLineup,
+    FixtureProviderLineup,
     FixtureProviderMapping,
     FixtureTeamStat,
     IngestionRun,
@@ -18,6 +18,7 @@ from app.models import (
     TrackedBettingPick,
 )
 from app.services.competition_service import CompetitionService
+from app.services.next_round_selection import select_next_round_fixtures
 
 
 def build_competition_data_health(db: Session, competition_id: int) -> dict[str, Any]:
@@ -66,11 +67,11 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         )
         or 0
     )
-    mappings_count = int(
+    sportapi_lineups_count = int(
         db.scalar(
             select(func.count())
-            .select_from(FixtureProviderMapping)
-            .where(FixtureProviderMapping.competition_id == comp.id)
+            .select_from(FixtureProviderLineup)
+            .where(FixtureProviderLineup.competition_id == comp.id)
         )
         or 0
     )
@@ -96,6 +97,59 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         .order_by(IngestionRun.started_at.desc().nulls_last(), IngestionRun.id.desc())
     )
 
+    mappings_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(FixtureProviderMapping)
+            .where(FixtureProviderMapping.competition_id == comp.id)
+        )
+        or 0
+    )
+
+    all_upcoming = list(
+        db.scalars(
+            select(Fixture).where(
+                Fixture.competition_id == comp.id,
+                ~Fixture.status.in_(FINISHED_STATUSES),
+            )
+        ).all()
+    )
+    next_round_sel = select_next_round_fixtures(all_upcoming, limit=100, only_next_round=True)
+    next_round_ids = [int(fx.id) for fx in next_round_sel.fixtures]
+    next_round_fixture_count = len(next_round_ids)
+
+    next_round_mappings_count = 0
+    next_round_lineups_count = 0
+    if next_round_ids:
+        next_round_mappings_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureProviderMapping)
+                .where(
+                    FixtureProviderMapping.competition_id == comp.id,
+                    FixtureProviderMapping.fixture_id.in_(next_round_ids),
+                )
+            )
+            or 0
+        )
+        next_round_lineups_count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureProviderLineup)
+                .where(
+                    FixtureProviderLineup.competition_id == comp.id,
+                    FixtureProviderLineup.fixture_id.in_(next_round_ids),
+                )
+            )
+            or 0
+        )
+
+    next_round_lineup_coverage_pct = round(
+        100.0 * next_round_lineups_count / max(next_round_fixture_count, 1),
+        1,
+    )
+    missing_mappings_next_round = max(next_round_fixture_count - next_round_mappings_count, 0)
+
     lineup_coverage_pct = round(100.0 * lineups_count / max(finished_count * 2, 1), 1)
 
     return {
@@ -110,9 +164,14 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         "team_stats_count": team_stats_count,
         "predictions_count": predictions_count,
         "lineup_rows_count": lineups_count,
+        "sportapi_lineup_rows_count": sportapi_lineups_count,
         "lineup_coverage_pct": lineup_coverage_pct,
         "sportapi_mappings_count": mappings_count,
         "missing_mappings": max(finished_count - mappings_count, 0),
+        "next_round_fixture_count": next_round_fixture_count,
+        "next_round_lineups_count": next_round_lineups_count,
+        "next_round_lineup_coverage_pct": next_round_lineup_coverage_pct,
+        "missing_mappings_next_round": missing_mappings_next_round,
         "tracked_picks_count": picks_count,
         "last_ingestion": {
             "source": last_ingestion.source if last_ingestion else None,

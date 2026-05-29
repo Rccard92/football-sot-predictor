@@ -75,3 +75,12 @@ class CompetitionPatchBody(BaseModel):
 
 class IngestDryRunBody(BaseModel):
     dry_run: bool = False
+
+
+class SportApiLineupsIngestBody(BaseModel):
+    scope: str = "next_round"
+    dry_run: bool = True
+    force: bool = False
+    regenerate_v20: bool = True
+    upcoming_limit: int = 20
+    fixture_ids: list[int] | None = None

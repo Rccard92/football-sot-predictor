@@ -15,7 +15,7 @@ from app.services.sot_model_registry import get_model_display
 
 def _scalar_side_effect_for_brasile_fallback(*, upcoming_in_ctx: int = 3) -> list[int]:
     """predictions_total=0, poi counts da build_v20_operating_context."""
-    return [0, 334, 597, 0, 0, upcoming_in_ctx, 0, 0]
+    return [0, 334, 597, 0, 0, 0, upcoming_in_ctx, 0, 0]
 
 
 def _comp(comp_id: int, *, name: str | None = None) -> MagicMock:
@@ -38,9 +38,11 @@ def test_single_global_model_version_constant():
         assert ctx["global_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
 
 
-def _mock_db_for_context(comp_id: int, *, lineups: int = 0, mappings: int = 0) -> MagicMock:
+def _mock_db_for_context(
+    comp_id: int, *, sportapi_lineups: int = 0, mappings: int = 0
+) -> MagicMock:
     db = MagicMock()
-    db.scalar.side_effect = [334, 597, lineups, mappings, 3, 0, 0]
+    db.scalar.side_effect = [334, 597, 0, sportapi_lineups, mappings, 3, 0, 0]
     return db
 
 
@@ -61,7 +63,7 @@ def test_no_per_competition_v20_service_modules():
 
 def test_build_v20_operating_context_degraded_without_lineups():
     comp = _comp(2)
-    db = _mock_db_for_context(2, lineups=0, mappings=0)
+    db = _mock_db_for_context(2, sportapi_lineups=0, mappings=0)
     ctx = build_v20_operating_context(db, comp)
     assert ctx["global_model_version"] == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
     assert ctx["operating_mode"] == "degraded_fallback"

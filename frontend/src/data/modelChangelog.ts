@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.9',
+    date: '2026-05-29',
+    title: 'Lineups SportAPI multi-campionato',
+    type: 'patch',
+    summary:
+      'Aggiunto import delle probabili/ufficiali formazioni SportAPI per il campionato selezionato, iniziando dal prossimo turno.',
+    highlights: [
+      'Mapping API-Sports fixture → SportAPI event per competition_id.',
+      'Import lineups e missingPlayers scoped per campionato.',
+      'Dry-run sicuro prima del salvataggio.',
+      'Ricalcolo v2.0 dopo import formazioni.',
+      'Guardrail anti-mixing tra Serie A e Brasileirão.',
+      'Nessuna modifica alla formula v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.8',
     date: '2026-05-29',
     title: 'Modello v2.0 globale multi-campionato',

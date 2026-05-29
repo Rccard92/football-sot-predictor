@@ -194,6 +194,74 @@ export async function refreshCompetitionNextRound(
   return adminPostJson(`/api/admin/competitions/${competitionId}/refresh/next-round`, { dry_run: dryRun })
 }
 
+export type SportApiCompetitionLineupsIngestOpts = {
+  scope?: 'next_round' | 'upcoming_limit' | 'fixture_ids'
+  dryRun?: boolean
+  force?: boolean
+  regenerateV20?: boolean
+  upcomingLimit?: number
+  fixtureIds?: number[]
+  timeoutMs?: number
+}
+
+export type SportApiCompetitionLineupsResultRow = {
+  fixture_id: number
+  api_fixture_id?: number
+  match_api_sports?: string
+  kickoff?: string
+  recommendation?: string
+  would_save?: boolean
+  sportapi_event_id?: number | null
+  confidence?: number | null
+  reason?: string | null
+  status?: string
+  error?: string | null
+  lineups_ok?: boolean
+  v20_regenerated?: boolean
+}
+
+export type SportApiCompetitionLineupsIngestSummary = {
+  status: string
+  message?: string
+  competition_id: number
+  competition_name?: string
+  scope?: string
+  round?: string | null
+  dry_run?: boolean
+  fixtures_checked: number
+  mappings_found: number
+  mappings_uncertain: number
+  mappings_saved: number
+  lineups_would_fetch: number
+  lineups_imported: number
+  missing_players_imported: number
+  predictions_regenerated: number
+  estimated_api_calls: number
+  skipped_recent?: number
+  failed?: number
+  warnings?: string[]
+  results?: SportApiCompetitionLineupsResultRow[]
+}
+
+export async function postCompetitionSportApiLineupsIngest(
+  competitionId: number,
+  opts: SportApiCompetitionLineupsIngestOpts = {},
+): Promise<SportApiCompetitionLineupsIngestSummary> {
+  const body = {
+    scope: opts.scope ?? 'next_round',
+    dry_run: opts.dryRun ?? true,
+    force: opts.force ?? false,
+    regenerate_v20: opts.regenerateV20 ?? true,
+    upcoming_limit: opts.upcomingLimit ?? 20,
+    fixture_ids: opts.fixtureIds ?? null,
+  }
+  return adminPostJson<SportApiCompetitionLineupsIngestSummary>(
+    `/api/admin/competitions/${competitionId}/ingest/sportapi-lineups`,
+    body,
+    { timeoutMs: opts.timeoutMs ?? 600_000 },
+  )
+}
+
 export type LeagueDashboardBlock = {
   id: number
   api_league_id: number

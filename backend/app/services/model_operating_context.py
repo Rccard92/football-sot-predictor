@@ -15,6 +15,7 @@ from app.core.constants import (
 from app.models import (
     Fixture,
     FixtureLineup,
+    FixtureProviderLineup,
     FixtureProviderMapping,
     FixtureTeamStat,
     PlayerSeasonProfile,
@@ -49,6 +50,14 @@ def _competition_input_counts(db: Session, competition_id: int) -> dict[str, int
                 select(func.count())
                 .select_from(FixtureLineup)
                 .where(FixtureLineup.competition_id == cid)
+            )
+            or 0
+        ),
+        "sportapi_lineup_rows_count": int(
+            db.scalar(
+                select(func.count())
+                .select_from(FixtureProviderLineup)
+                .where(FixtureProviderLineup.competition_id == cid)
             )
             or 0
         ),
@@ -118,7 +127,9 @@ def build_v20_operating_context(db: Session, comp: Any) -> dict[str, Any]:
     """
     competition_id = int(comp.id)
     counts = _competition_input_counts(db, competition_id)
-    lineups_ready = counts["lineup_rows_count"] > 0 and counts["sportapi_mappings_count"] > 0
+    lineups_ready = (
+        counts["sportapi_mappings_count"] > 0 and counts["sportapi_lineup_rows_count"] > 0
+    )
     v11_base_ready = counts["team_stats_count"] > 0 or counts["player_profiles_count"] > 0
     operating_mode = resolve_operating_mode(
         lineups_ready=lineups_ready,
@@ -130,7 +141,7 @@ def build_v20_operating_context(db: Session, comp: Any) -> dict[str, Any]:
     inputs_available = {
         "team_stats": counts["team_stats_count"] > 0,
         "player_profiles": counts["player_profiles_count"] > 0,
-        "lineups": counts["lineup_rows_count"] > 0,
+        "lineups": counts["sportapi_lineup_rows_count"] > 0,
         "sportapi_mappings": counts["sportapi_mappings_count"] > 0,
         "v11_base_ready": v11_base_ready,
         "upcoming_fixtures": counts["upcoming_fixtures_count"] > 0,

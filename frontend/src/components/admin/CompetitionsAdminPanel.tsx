@@ -10,6 +10,7 @@ import {
   ingestCompetitionTeamStats,
   isSeasonNotAvailableError,
   patchCompetition,
+  postCompetitionSportApiLineupsIngest,
   refreshCompetitionNextRound,
   DEFAULT_SEASON,
   type CompetitionDiscoverCandidate,
@@ -135,6 +136,7 @@ export function CompetitionsAdminPanel() {
   const [busy, setBusy] = useState<string | null>(null)
   const [log, setLog] = useState<string | null>(null)
   const [dryRun, setDryRun] = useState(true)
+  const [forceSportApi, setForceSportApi] = useState(false)
 
   const selectedCandidate = useMemo(
     () =>
@@ -355,6 +357,16 @@ export function CompetitionsAdminPanel() {
             <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
             Dry-run import
           </label>
+          {selectedCompetitionId != null ? (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={forceSportApi}
+                onChange={(e) => setForceSportApi(e.target.checked)}
+              />
+              Force refresh lineups SportAPI
+            </label>
+          ) : null}
         </div>
 
         {selectedCandidate == null ? (
@@ -422,6 +434,27 @@ export function CompetitionsAdminPanel() {
                   label: 'Prossima giornata',
                   description: 'Genera report/predizioni per fixture future',
                   fn: () => refreshCompetitionNextRound(selectedCompetitionId, dryRun),
+                },
+                {
+                  label: 'Lineups SportAPI',
+                  description:
+                    'Importa probabili/ufficiali formazioni e indisponibili per il prossimo turno del campionato selezionato.',
+                  fn: async () => {
+                    const n = 10
+                    const est = n * 2
+                    const msg = dryRun
+                      ? `Eseguire dry-run mapping SportAPI per il prossimo turno?\n\nChiamate stimate: circa ${est}.\n\nNessun dato verrà salvato.`
+                      : `Importare formazioni SportAPI per il prossimo turno?\n\nChiamate stimate: circa ${est} (mapping + lineups).\n\nLe formazioni recenti (<10 min) verranno saltate${forceSportApi ? ' salvo force attivo' : ''}.`
+                    if (!window.confirm(msg)) {
+                      return { status: 'cancelled' }
+                    }
+                    return postCompetitionSportApiLineupsIngest(selectedCompetitionId, {
+                      scope: 'next_round',
+                      dryRun,
+                      force: forceSportApi,
+                      regenerateV20: !dryRun,
+                    }) as unknown as Record<string, unknown>
+                  },
                 },
               ] satisfies IngestionAction[]
             ).map(({ label, description, fn }) => (

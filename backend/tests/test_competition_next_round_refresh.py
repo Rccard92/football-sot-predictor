@@ -184,7 +184,7 @@ def test_model_status_fallback_when_no_predictions_but_data_ready():
 
     db = MagicMock()
     db.scalars.return_value.all.return_value = [1, 2, 3]
-    db.scalar.side_effect = [0, 334, 597, 0, 0, 3, 0, 0]
+    db.scalar.side_effect = [0, 334, 597, 0, 0, 0, 3, 0, 0]
 
     payload, code = build_model_status_for_competition(db, comp)
 

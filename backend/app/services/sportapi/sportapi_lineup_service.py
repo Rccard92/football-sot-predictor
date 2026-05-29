@@ -70,11 +70,24 @@ class SportApiLineupService:
         confidence_score: float | None,
         matched_by: str | None,
         raw_payload: dict[str, Any] | None,
+        expected_competition_id: int | None = None,
     ) -> dict[str, Any]:
         fx, err = resolve_fixture_or_error(db, int(fixture_id))
         if fx is None:
             return err or {"status": "error", "message": FIXTURE_NOT_FOUND_MSG, "input_id": int(fixture_id)}
         internal_id = int(fx.id)
+
+        fx_comp_id = getattr(fx, "competition_id", None)
+        if expected_competition_id is not None and int(fx_comp_id or 0) != int(expected_competition_id):
+            return {
+                "status": "error",
+                "message": (
+                    f"Fixture {internal_id} appartiene a competition_id={fx_comp_id}, "
+                    f"atteso {expected_competition_id}"
+                ),
+                "fixture_id": internal_id,
+                "input_id": int(fixture_id),
+            }
 
         row = db.scalar(
             select(FixtureProviderMapping).where(
@@ -115,6 +128,8 @@ class SportApiLineupService:
         row.provider_home_team_id = hi
         row.provider_away_team_id = ai
         row.match_date = match_date
+        if fx_comp_id is not None:
+            row.competition_id = int(fx_comp_id)
 
         db.commit()
         db.refresh(row)
@@ -188,6 +203,8 @@ class SportApiLineupService:
         lineup_row.away_formation = away_formation
         lineup_row.fetched_at = now
         lineup_row.raw_payload = raw if isinstance(raw, dict) else {"data": raw}
+        if fx.competition_id is not None:
+            lineup_row.competition_id = int(fx.competition_id)
         db.flush()
 
         db.execute(
@@ -240,26 +257,28 @@ class SportApiLineupService:
                 if pid is None:
                     continue
                 miss_raw = m if isinstance(m, dict) else {}
-                db.add(
-                    FixtureMissingPlayer(
-                        fixture_id=internal_id,
-                        provider_lineup_id=int(lineup_row.id),
-                        provider_name=PROVIDER_SPORTAPI,
-                        provider_player_id=pid,
-                        provider_team_id=_int_or_none(team_id),
-                        team_side=side_key,
-                        player_name=player_display_name(miss_raw)[:255],
-                        position=str(miss_raw.get("position") or "")[:32] or None,
-                        jersey_number=_int_or_none(miss_raw.get("jerseyNumber")),
-                        reason=str(miss_raw.get("reason") or miss_raw.get("type") or "")[:64] or None,
-                        description=str(miss_raw.get("description") or "")[:512] or None,
-                        external_type=str(miss_raw.get("externalType") or miss_raw.get("external_type") or "")[:64] or None,
-                        expected_end_date=_parse_expected_end(
-                            miss_raw.get("expectedEndDate") or miss_raw.get("expected_end_date"),
-                        ),
-                        raw_payload=_payload_with_index(miss_raw, mi),
+                miss_row = FixtureMissingPlayer(
+                    fixture_id=internal_id,
+                    provider_lineup_id=int(lineup_row.id),
+                    provider_name=PROVIDER_SPORTAPI,
+                    provider_player_id=pid,
+                    provider_team_id=_int_or_none(team_id),
+                    team_side=side_key,
+                    player_name=player_display_name(miss_raw)[:255],
+                    position=str(miss_raw.get("position") or "")[:32] or None,
+                    jersey_number=_int_or_none(miss_raw.get("jerseyNumber")),
+                    reason=str(miss_raw.get("reason") or miss_raw.get("type") or "")[:64] or None,
+                    description=str(miss_raw.get("description") or "")[:512] or None,
+                    external_type=str(miss_raw.get("externalType") or miss_raw.get("external_type") or "")[:64]
+                    or None,
+                    expected_end_date=_parse_expected_end(
+                        miss_raw.get("expectedEndDate") or miss_raw.get("expected_end_date"),
                     ),
+                    raw_payload=_payload_with_index(miss_raw, mi),
                 )
+                if fx.competition_id is not None:
+                    miss_row.competition_id = int(fx.competition_id)
+                db.add(miss_row)
                 n_missing += 1
 
         db.commit()
