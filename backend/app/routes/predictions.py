@@ -747,14 +747,16 @@ def generate_serie_a_predictions_v21_weighted_components(
     season: int,
     db: Session = Depends(get_db),
     fixture_id: int | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
 ):
-    _ = season
     svc = SotPredictionV21WeightedComponentsService()
     if fixture_id is not None:
-        summary = svc.generate_for_fixture(db, int(fixture_id))
+        summary = svc.generate_for_fixture(db, int(fixture_id), competition_id=competition_id)
     else:
-        summary = svc.generate_for_upcoming_season(db, int(season))
-    return JSONResponse(status_code=501, content=jsonable_encoder(summary))
+        summary = svc.generate_for_upcoming_season(db, int(season), competition_id=competition_id)
+    if summary.get("status") == "error":
+        return JSONResponse(status_code=409, content=jsonable_encoder(summary))
+    return jsonable_encoder(summary)
 
 
 @router.get("/serie-a/{season}/upcoming-v04-offensive-core-sot", response_model=None)

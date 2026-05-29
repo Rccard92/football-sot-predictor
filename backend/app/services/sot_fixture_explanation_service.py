@@ -850,6 +850,167 @@ def _build_formula_breakdown_v11(raw: dict[str, Any], stored: float) -> dict[str
     }
 
 
+def _components_v21(raw: dict[str, Any], predicted: float) -> list[dict[str, Any]]:
+    macroareas = raw.get("macroareas") if isinstance(raw.get("macroareas"), list) else []
+    components = raw.get("components") if isinstance(raw.get("components"), dict) else {}
+    out: list[dict[str, Any]] = []
+
+    anchor = _safe_float(raw.get("base_anchor_sot"))
+    mult = _safe_float(raw.get("final_multiplier"))
+    if anchor is not None:
+        out.append(
+            {
+                "id": "v21_base_anchor",
+                "label": "Base anchor SOT",
+                "value": _round2(anchor),
+                "weight": None,
+                "contribution": _round2(anchor),
+                "direction": "neutro",
+                "data_status": "ok",
+                "notes": "55% media SOT fatti squadra + 45% media SOT concessi avversario.",
+                "variables": [],
+            },
+        )
+    if mult is not None:
+        out.append(
+            {
+                "id": "v21_final_multiplier",
+                "label": "Moltiplicatore macro pesato",
+                "value": _round2(mult),
+                "weight": None,
+                "contribution": _round2(mult),
+                "direction": "aumenta" if mult > 1.0 else "riduce" if mult < 1.0 else "neutro",
+                "data_status": "ok",
+                "notes": "Media pesata macroaree 1-9 (macro 10 esclusa).",
+                "variables": [],
+            },
+        )
+
+    for ma in macroareas:
+        if not isinstance(ma, dict):
+            continue
+        key = str(ma.get("key") or "")
+        if key == "model_quality_controls":
+            continue
+        comp = components.get(key) if isinstance(components.get(key), dict) else {}
+        macro_index = _round2(_safe_float(ma.get("macro_index") or comp.get("macro_index")))
+        macro_w = _safe_float(ma.get("macro_weight"))
+        micro_vars: list[dict[str, Any]] = []
+        for m in ma.get("micros") or []:
+            if not isinstance(m, dict):
+                continue
+            micro_vars.append(
+                {
+                    "key": m.get("key"),
+                    "label": m.get("label"),
+                    "raw_value": m.get("raw_value"),
+                    "normalized_value": m.get("normalized_value"),
+                    "status": m.get("status"),
+                    "fallback_used": m.get("fallback_used"),
+                    "contribution": m.get("contribution"),
+                    "warning": m.get("warning"),
+                },
+            )
+        status = str(ma.get("status") or comp.get("status") or "available")
+        out.append(
+            {
+                "id": f"v21_macro_{key}",
+                "label": str(ma.get("label") or key),
+                "value": macro_index,
+                "weight": macro_w,
+                "contribution": _round2(_safe_float(ma.get("macro_contribution_to_multiplier"))),
+                "direction": "aumenta" if macro_index and macro_index > 1.0 else "riduce" if macro_index and macro_index < 1.0 else "neutro",
+                "data_status": "ok" if status == "available" else "fallback" if status == "partial" else "missing",
+                "notes": "; ".join((ma.get("warnings") or [])[:2]) if isinstance(ma.get("warnings"), list) else None,
+                "variables": micro_vars,
+            },
+        )
+
+    out.append(
+        {
+            "id": "v21_expected_sot",
+            "label": "SOT attesi v2.1",
+            "value": _round2(predicted),
+            "weight": None,
+            "contribution": _round2(predicted),
+            "direction": "neutro",
+            "data_status": "ok",
+            "notes": "base_anchor_sot × weighted_macro_multiplier",
+            "variables": [],
+        },
+    )
+    return out
+
+
+def _build_formula_breakdown_v21(raw: dict[str, Any], stored: float) -> dict[str, Any]:
+    anchor = _safe_float(raw.get("base_anchor_sot"))
+    mult = _safe_float(raw.get("final_multiplier"))
+    if anchor is None or mult is None:
+        return {}
+    product = round(float(anchor) * float(mult), 4)
+    terms = [
+        {
+            "id": "v21_term_base_anchor",
+            "label": "Base anchor SOT",
+            "symbol": "base_anchor_sot",
+            "value": _round2(anchor),
+            "weight": None,
+            "contribution": _round2(anchor),
+            "calc_expression": f"{_round2(anchor)}",
+            "status": "available",
+        },
+        {
+            "id": "v21_term_multiplier",
+            "label": "Moltiplicatore macro",
+            "symbol": "weighted_macro_multiplier",
+            "value": _round2(mult),
+            "weight": None,
+            "contribution": _round2(mult),
+            "calc_expression": f"× {_round2(mult)}",
+            "status": "available",
+        },
+        {
+            "id": "v21_term_expected",
+            "label": "SOT attesi v2.1",
+            "symbol": "expected_sot_v21",
+            "value": _round2(stored),
+            "weight": None,
+            "contribution": _round2(stored),
+            "calc_expression": f"= {_round2(product)}",
+            "status": "available",
+        },
+    ]
+    quality = raw.get("quality") if isinstance(raw.get("quality"), dict) else {}
+    fq_status = str(quality.get("formula_quality_status") or raw.get("engine_status") or "partial")
+    fq_warn = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
+    sum_c, delta, _warn, wmsg = _checksum_block(product, stored)
+    return {
+        "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+        "stored_predicted_sot": _round2(stored),
+        "terms": terms,
+        "formula_terms_count": len(terms),
+        "formula_quality_status": fq_status,
+        "formula_quality_warnings": fq_warn,
+        "formula_symbolic": "expected_sot_v21 = base_anchor_sot × weighted_macro_multiplier",
+        "formula_numeric": f"expected_sot_v21 = {_round2(anchor)} × {_round2(mult)} = {_round2(product)}",
+        "components_table": [
+            {
+                "componente": t["label"],
+                "valore_componente": t["value"],
+                "peso": t.get("weight"),
+                "calcolo_contributo": t["calc_expression"],
+                "contributo_finale": t["contribution"],
+                "status": t.get("status"),
+            }
+            for t in terms
+        ],
+        "sum_contributions": sum_c,
+        "delta_vs_stored": delta,
+        "checksum_warning": wmsg,
+        "flags": {"cap_applied": True, "fallbacks_used": quality.get("fallbacks_used") or []},
+    }
+
+
 def _build_formula_breakdown_v20(raw: dict[str, Any], stored: float) -> dict[str, Any]:
     formula = raw.get("formula") if isinstance(raw.get("formula"), dict) else {}
     if str(formula.get("type") or "") != "lineup_impact_multiplicative":
@@ -1287,6 +1448,8 @@ def _build_side_components(model_version: str, raw: dict[str, Any] | None, predi
         return _components_v11(raw, predicted)
     if model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
         return _components_v20(raw, predicted)
+    if model_version == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
+        return _components_v21(raw, predicted)
     if model_version == BASELINE_SOT_MODEL_VERSION_V10_SOT:
         return _components_v10(raw, predicted)
     if model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
@@ -1769,6 +1932,8 @@ def _build_prediction_formula_breakdown_side(
         out = _build_formula_breakdown_v11(raw, st)
     elif model_version == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
         out = _build_formula_breakdown_v20(raw, st)
+    elif model_version == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
+        out = _build_formula_breakdown_v21(raw, st)
     elif model_version in (BASELINE_SOT_MODEL_VERSION_V02, BASELINE_SOT_MODEL_VERSION_V02_PLAYER_ADJUSTED):
         out = _build_formula_breakdown_v02(raw, st)
     else:
@@ -2348,15 +2513,11 @@ def _build_fixture_sot_explanation_body(
     if active_mv is None:
         active_mv = _active_model_version_from_preds(preds)
     if active_mv is None:
-        from app.services.predictions_v21.baseline_v2_1_weighted_components_service import (
-            V21_ENGINE_NOT_READY_MESSAGE,
-        )
-
         requested = str(model_version).strip() if model_version else ""
         if requested == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
             return {
-                "status": "experimental_not_ready",
-                "message": V21_ENGINE_NOT_READY_MESSAGE,
+                "status": "missing",
+                "message": "Nessuna previsione v2.1 salvata per questa fixture. Generare con model_version=baseline_v2_1_weighted_components.",
                 "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
                 "fixture_id": int(fx.id),
                 "fixture": _fixture_payload(fx, home, away),

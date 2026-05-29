@@ -24,6 +24,7 @@ import {
   formatInputsAvailable,
   formatModelStatusFootnote,
   isV21ExperimentalRow,
+  isV21EngineNotReadyRow,
   isV21ManifestInvalidRow,
   labelForModelVersion,
   labelForOperatingMode,
@@ -194,10 +195,10 @@ export function UpcomingMatches() {
     },
   )
 
-  const v21SelectedExperimental = useMemo(() => {
+  const v21EngineNotReady = useMemo(() => {
     const rows = status?.available_model_versions ?? []
     const row = rows.find((r) => r.model_version === (modelInView ?? ''))
-    return modelInView === V21_MODEL || (row != null && isV21ExperimentalRow(row))
+    return modelInView === V21_MODEL && row != null && isV21EngineNotReadyRow(row)
   }, [modelInView, status?.available_model_versions])
 
   const v21ManifestInvalid = useMemo(() => {
@@ -290,7 +291,7 @@ export function UpcomingMatches() {
                 resto dell&apos;app restano operativi.
               </p>
             ) : null}
-            {v21SelectedExperimental && !v21ManifestInvalid ? (
+            {v21EngineNotReady && !v21ManifestInvalid ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
                 Modello v2.1 registrato, engine di calcolo in preparazione. Nessuna previsione numerica v2.1
                 disponibile in questo step.

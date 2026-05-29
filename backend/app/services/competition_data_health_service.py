@@ -59,6 +59,12 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         )
         or 0
     )
+    pred_by_model_rows = db.execute(
+        select(TeamSotPrediction.model_version, func.count())
+        .where(TeamSotPrediction.competition_id == comp.id)
+        .group_by(TeamSotPrediction.model_version)
+    ).all()
+    predictions_by_model = {str(mv): int(cnt) for mv, cnt in pred_by_model_rows}
     lineups_count = int(
         db.scalar(
             select(func.count())
@@ -173,6 +179,7 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         "player_profiles_count": profiles_count,
         "team_stats_count": team_stats_count,
         "predictions_count": predictions_count,
+        "predictions_by_model": predictions_by_model,
         "lineup_rows_count": lineups_count,
         "lineups_api_football_count": lineups_count,
         "sportapi_lineup_rows_count": sportapi_lineups_count,

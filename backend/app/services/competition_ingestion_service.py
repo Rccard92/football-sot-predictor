@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
     FINISHED_STATUSES,
 )
 from app.models import (
@@ -335,6 +336,7 @@ class CompetitionIngestionService:
         competition_id: int,
         *,
         dry_run: bool = False,
+        model_version: str | None = None,
     ) -> dict[str, Any]:
         if not competition_id:
             return {
@@ -410,8 +412,12 @@ class CompetitionIngestionService:
         )
 
         lineups_ready = sportapi_lineup_rows_count > 0 and sportapi_mappings_count > 0
+        requested_mv = str(model_version).strip() if model_version else None
+        v21_only = requested_mv == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
         model_versions_requested = [BASELINE_SOT_MODEL_VERSION_V11_SOT]
-        if lineups_ready:
+        if v21_only:
+            model_versions_requested = [BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS]
+        elif lineups_ready:
             model_versions_requested.append(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
         else:
             model_versions_requested.append(
@@ -493,10 +499,37 @@ class CompetitionIngestionService:
 
         fixture_ids = [int(f.id) for f in upcoming]
         warnings: list[str] = list(selection.warnings)
-        if not lineups_ready:
+        if not lineups_ready and not v21_only:
             warnings.append(
                 "Lineups non disponibili: prediction generata senza impatto formazioni."
             )
+
+        if v21_only:
+            from app.services.predictions_v21.baseline_v2_1_weighted_components_service import (
+                SotPredictionV21WeightedComponentsService,
+            )
+
+            v21 = SotPredictionV21WeightedComponentsService()
+            v21_result = v21.generate_for_competition(db, comp.id, fixture_ids=fixture_ids)
+            predictions_created = int(v21_result.get("predictions_created_or_updated") or 0)
+            overall_status = v21_result.get("status") or ("ok" if predictions_created > 0 else "error")
+            warnings.extend(v21_result.get("warnings") or [])
+            return {
+                "status": overall_status,
+                "competition_id": comp.id,
+                "competition_key": comp.key,
+                "competition_name": comp.name,
+                "season": comp.season,
+                "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+                "fixtures_processed": int(v21_result.get("fixtures_processed") or len(upcoming)),
+                "predictions_created_or_updated": predictions_created,
+                "round": round_label,
+                "future_fixtures_count": future_fixtures_count,
+                "next_round_fixtures": len(upcoming),
+                "fixture_ids_processed": fixture_ids,
+                "warnings": warnings,
+                "v21": v21_result,
+            }
 
         from app.services.predictions_v11.baseline_v1_1_sot_service import (
             SotPredictionV11BaselineSotService,

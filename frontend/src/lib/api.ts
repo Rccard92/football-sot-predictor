@@ -191,8 +191,28 @@ export async function buildCompetitionPlayerProfiles(
 export async function refreshCompetitionNextRound(
   competitionId: number,
   dryRun = false,
+  opts?: { modelVersion?: string },
 ): Promise<Record<string, unknown>> {
-  return adminPostJson(`/api/admin/competitions/${competitionId}/refresh/next-round`, { dry_run: dryRun })
+  const body: Record<string, unknown> = { dry_run: dryRun }
+  if (opts?.modelVersion) body.model_version = opts.modelVersion
+  return adminPostJson(`/api/admin/competitions/${competitionId}/refresh/next-round`, body)
+}
+
+/** Generazione previsioni v2.1 Weighted Components (engine autonomo). */
+export async function postGenerateV21WeightedComponents(
+  season: number,
+  opts?: AdminRequestOpts & { fixtureId?: number; competitionId?: number },
+): Promise<unknown> {
+  const timeoutMs = opts?.timeoutMs ?? 300_000
+  const p = new URLSearchParams()
+  if (opts?.fixtureId != null) p.set('fixture_id', String(opts.fixtureId))
+  if (opts?.competitionId != null) p.set('competition_id', String(opts.competitionId))
+  const q = p.toString()
+  return requestPostJsonWithOpts<unknown>(
+    `/api/predictions/sot/serie-a/${season}/generate-v21-weighted-components${q ? `?${q}` : ''}`,
+    {},
+    { ...opts, timeoutMs },
+  )
 }
 
 export type SportApiCompetitionLineupsIngestOpts = {

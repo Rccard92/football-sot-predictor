@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.2',
+    date: '2026-05-29',
+    title: 'Engine autonomo v2.1',
+    type: 'minor',
+    summary:
+      'Implementato il motore di calcolo autonomo v2.1 SOT Weighted Components basato su macroaree e micro-variabili pesate.',
+    highlights: [
+      'Aggiunto engine indipendente v2.1.',
+      'Calcolo basato su base_anchor_sot e macro-moltiplicatori.',
+      'Macroarea qualità usata per confidence/warning, non per SOT diretto.',
+      'Trace v2.1 completo per macro e micro-variabili.',
+      'Prediction v2.1 salvate separatamente dalla v2.0.',
+      'Nessuna modifica alla v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.1',
     date: '2026-05-29',
     title: 'Fix manifest v2.1 duplicate key',

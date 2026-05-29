@@ -29,6 +29,13 @@ def _ingest_body(body: IngestDryRunBody | None) -> bool:
     return bool(body.dry_run) if body else False
 
 
+def _ingest_model_version(body: IngestDryRunBody | None) -> str | None:
+    if body is None or body.model_version is None:
+        return None
+    mv = str(body.model_version).strip()
+    return mv or None
+
+
 @router.post("/{competition_id}/ingest/bootstrap")
 def bootstrap_competition(
     competition_id: int,
@@ -162,7 +169,12 @@ def refresh_competition_next_round(
 ):
     svc = CompetitionIngestionService()
     try:
-        result = svc.refresh_next_round(db, competition_id, dry_run=_ingest_body(body))
+        result = svc.refresh_next_round(
+            db,
+            competition_id,
+            dry_run=_ingest_body(body),
+            model_version=_ingest_model_version(body),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "refresh next-round competition_id=%s: errore inatteso",

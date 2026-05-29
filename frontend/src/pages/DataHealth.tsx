@@ -42,6 +42,12 @@ export function DataHealth() {
         { label: 'Team stats', value: data.team_stats_count as number },
         { label: 'Profili giocatori', value: data.player_profiles_count as number },
         { label: 'Predictions', value: data.predictions_count as number },
+        ...(data.predictions_by_model && typeof data.predictions_by_model === 'object'
+          ? Object.entries(data.predictions_by_model as Record<string, number>).map(([mv, cnt]) => ({
+              label: `Predictions — ${mv}`,
+              value: cnt,
+            }))
+          : []),
         { label: 'Lineups API-Football', value: data.lineup_rows_count as number },
         { label: 'Lineups SportAPI', value: data.sportapi_lineup_rows_count as number },
         { label: 'Formazioni ufficiali (SportAPI)', value: data.confirmed_lineups_count as number },

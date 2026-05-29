@@ -28,6 +28,8 @@ import {
   postGenerateV10SotUpcoming,
   postGenerateV11SotUpcoming,
   postGenerateV20LineupImpactUpcoming,
+  postGenerateV21WeightedComponents,
+  refreshCompetitionNextRound,
   postRefreshNextRoundSportApiLineups,
   postSyncNextRoundApiSquadsBatch,
   postRefreshUpcomingV04Pipeline,
@@ -48,6 +50,7 @@ import {
   V04_MODEL,
   V10_MODEL,
   V20_MODEL,
+  V21_MODEL,
   filterVersionsForUi,
   formatInputsAvailable,
   labelForModelVersion,
@@ -413,12 +416,16 @@ export function Admin() {
     {
       id: 'gen-v21',
       label: 'Genera previsioni v2.1 Weighted Components',
-      description: 'Engine numerico v2.1 in preparazione — endpoint restituisce experimental_not_ready.',
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v21-weighted-components`,
-      run: async () => ({
-        status: 'experimental_not_ready',
-        message: 'Modello v2.1 registrato, engine di calcolo in preparazione',
-      }),
+      description: `Engine autonomo macro/micro. Modello: ${V21_MODEL}.`,
+      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round (model_version=v2.1)`,
+      run: async () => {
+        if (selectedCompetitionId != null) {
+          return refreshCompetitionNextRound(selectedCompetitionId, false, {
+            modelVersion: V21_MODEL,
+          })
+        }
+        return postGenerateV21WeightedComponents(SEASON, { competitionId: selectedCompetitionId ?? undefined })
+      },
     },
     {
       id: 'gen-v20',

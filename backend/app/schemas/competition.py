@@ -75,6 +75,7 @@ class CompetitionPatchBody(BaseModel):
 
 class IngestDryRunBody(BaseModel):
     dry_run: bool = False
+    model_version: str | None = None
 
 
 class SportApiLineupsIngestBody(BaseModel):

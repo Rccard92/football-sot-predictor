@@ -38,7 +38,7 @@ def synthetic_v21_model_status_row() -> dict[str, Any]:
         "min_expected_sot": None,
         "max_expected_sot": None,
         "generated_at": None,
-        "is_available_for_upcoming": False,
+        "is_available_for_upcoming": True,
         "engine_status": SotPredictionV21WeightedComponentsService.engine_status,
         "is_experimental": True,
         "model_label": display.label if display else BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
