@@ -70,8 +70,20 @@ function profileForStarter(
 ): PlayerDbProfileRow | undefined {
   const m = matchBySportApiId(matching, starter.provider_player_id)
   const apiId = m?.api_sports_player_id ?? m?.player_id
-  if (apiId == null) return undefined
-  return profilesByApiId.get(Number(apiId))
+  if (apiId != null) {
+    const byId = profilesByApiId.get(Number(apiId))
+    if (byId) return byId
+  }
+  if (m?.recommendation === 'AUTO_SAFE' || m?.recommendation === 'REVIEW') {
+    const name = (starter.short_name || starter.player_name || '').toLowerCase().trim()
+    if (name) {
+      for (const p of profilesByApiId.values()) {
+        const pn = p.name.toLowerCase()
+        if (pn.includes(name) || name.includes(pn)) return p
+      }
+    }
+  }
+  return undefined
 }
 
 function countUnmappedStarters(
@@ -81,7 +93,7 @@ function countUnmappedStarters(
   let n = 0
   for (const s of starters) {
     const m = matchBySportApiId(matching, s.provider_player_id)
-    if (!m || m.recommendation !== 'AUTO_SAFE') n += 1
+    if (!m || m.recommendation === 'NO_MATCH' || !m.api_sports_player_id) n += 1
   }
   return n
 }

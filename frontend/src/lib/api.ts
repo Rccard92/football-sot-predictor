@@ -2532,6 +2532,37 @@ export async function getCompetitionFixtureExplanation(
   )
 }
 
+export type LineupPlayerMappingDebugResponse = {
+  status: string
+  competition_id?: number | null
+  fixture_id: number
+  home_team?: string
+  away_team?: string
+  lineup_players_count?: number
+  player_profiles_count?: number
+  profiles_available_home?: number
+  profiles_available_away?: number
+  matched_players?: number
+  unmatched_players?: number
+  mapping_rate?: number
+  lineup_mapping_stats?: {
+    starters_total?: number
+    starters_matched_auto_safe?: number
+    starters_matched_any?: number
+    mapping_rate?: number
+  }
+  rows?: import('../types/lineupImpact').LineupPlayerMappingDebugRow[]
+}
+
+export async function getLineupPlayerMappingDebug(
+  competitionId: number,
+  fixtureId: number,
+): Promise<LineupPlayerMappingDebugResponse> {
+  return requestJson(
+    `/api/competitions/${competitionId}/fixtures/${fixtureId}/lineup-player-mapping-debug`,
+  )
+}
+
 export async function getUpcomingFixtureDetail(
   season: number,
   fixtureId: number,

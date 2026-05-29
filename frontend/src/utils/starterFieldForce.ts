@@ -21,6 +21,9 @@ export type StarterFieldForceRow = {
   shooting_impact: number | null
   defensive_impact: number | null
   reliability: number | null
+  match_score: number | null
+  match_status: string | null
+  mapping_reason: string | null
   tactical_line_index: number
   original_index: number
   sort_impact: number
@@ -28,6 +31,11 @@ export type StarterFieldForceRow = {
 
 function matchRow(matching: SportApiPlayerMatchRow[] | undefined, providerId: number) {
   return matching?.find((m) => m.sportapi_player_id === providerId)
+}
+
+function isMappedMatch(m: SportApiPlayerMatchRow | undefined): boolean {
+  if (!m?.api_sports_player_id) return false
+  return m.recommendation === 'AUTO_SAFE' || m.recommendation === 'REVIEW'
 }
 
 function impactForStarter(
@@ -58,6 +66,27 @@ function defensiveImpact(
   return d?.defensive_importance ?? null
 }
 
+function profileForStarter(
+  s: SportApiLineupPlayer,
+  matching: SportApiPlayerMatchRow[] | undefined,
+  profilesByApiId: Map<number, PlayerDbProfileRow>,
+): PlayerDbProfileRow | undefined {
+  const m = matchRow(matching, s.provider_player_id)
+  const apiId = m?.api_sports_player_id ?? m?.player_id
+  if (apiId != null) {
+    const byId = profilesByApiId.get(Number(apiId))
+    if (byId) return byId
+  }
+  const name = (s.short_name || s.player_name || '').toLowerCase().trim()
+  if (!name) return undefined
+  for (const p of profilesByApiId.values()) {
+    if (p.name.toLowerCase().includes(name) || name.includes(p.name.toLowerCase())) {
+      return p
+    }
+  }
+  return undefined
+}
+
 export function buildStarterFieldRows(
   formation: string | null | undefined,
   starters: SportApiLineupPlayer[],
@@ -71,30 +100,35 @@ export function buildStarterFieldRows(
   const rows: StarterFieldForceRow[] = ordered.map((s) => {
     const role = tacticalRoleForPlayer(layout, s.provider_player_id)
     const m = matchRow(matching, s.provider_player_id)
-    const apiId = m?.api_sports_player_id ?? m?.player_id
-    const prof = apiId != null ? profilesByApiId.get(Number(apiId)) : undefined
+    const prof = profileForStarter(s, matching, profilesByApiId)
     const imp = impactForStarter(lineupSide, s.provider_player_id)
 
     let status = imp.status
     let statusNote = imp.status_note
-    if (!m || m.recommendation !== 'AUTO_SAFE') {
+    let mappingReason = m?.match_reason ?? m?.reason ?? null
+
+    if (!isMappedMatch(m)) {
       status = 'UNMAPPED'
-      statusNote = statusNote ?? 'Mapping API-Sports assente o da revisionare'
+      statusNote = statusNote ?? mappingReason ?? 'Mapping profilo assente o sotto soglia'
+    } else if (m?.recommendation === 'REVIEW') {
+      statusNote = statusNote ?? 'Mapping da revisionare (score 75–89)'
     } else if (status === 'STARTER' && !imp.status_note) {
       statusNote = 'In formazione'
     }
 
     const sot =
       imp.sot_per_90 ??
+      (m?.shots_on_per90 != null ? Number(m.shots_on_per90) : null) ??
       (prof?.shots_on_per90 != null ? Number(prof.shots_on_per90) : null)
     const shots =
-      prof?.shots_on_per90 != null
-        ? Number(prof.shots_on_per90)
-        : prof?.shots_total_per90 != null
-          ? Number(prof.shots_total_per90)
+      prof?.shots_total_per90 != null
+        ? Number(prof.shots_total_per90)
+        : prof?.shots_on_per90 != null
+          ? Number(prof.shots_on_per90)
           : null
     const sharePct =
       imp.share_pct ??
+      (m?.team_sot_share != null ? Math.round(m.team_sot_share * 1000) / 10 : null) ??
       (prof?.team_sot_share != null ? Math.round(prof.team_sot_share * 1000) / 10 : null)
 
     const defImp = defensiveImpact(lineupSide, matching, s.provider_player_id)
@@ -108,9 +142,13 @@ export function buildStarterFieldRows(
       sot_per_90: sot,
       shots_per_90: shots,
       team_sot_share_pct: sharePct,
-      shooting_impact: prof?.shooting_impact_score ?? null,
+      shooting_impact:
+        m?.shooting_impact_score ?? prof?.shooting_impact_score ?? null,
       defensive_impact: defImp,
-      reliability: prof?.reliability_score ?? null,
+      reliability: m?.reliability_score ?? prof?.reliability_score ?? null,
+      match_score: m?.confidence_score ?? null,
+      match_status: m?.recommendation ?? null,
+      mapping_reason: mappingReason,
       tactical_line_index: tacticalLineIndexForLayout(layout, s.provider_player_id),
       original_index: s.original_index ?? 0,
       sort_impact: Math.max(prof?.shooting_impact_score ?? 0, (defImp ?? 0) * 100),

@@ -202,3 +202,38 @@ def competition_fixture_explanation(
         model_version=model_version,
     )
     return JSONResponse(status_code=code, content=jsonable_encoder(payload))
+
+
+@router.get("/{competition_id}/fixtures/{fixture_id}/lineup-player-mapping-debug")
+def competition_lineup_player_mapping_debug(
+    competition_id: int,
+    fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Debug mapping giocatori SportAPI ↔ player_season_profiles per singola fixture."""
+    from app.services.prediction_readiness import _validate_fixture_for_competition
+    from app.services.sportapi.lineup_player_profile_lookup import build_lineup_player_mapping_debug
+
+    try:
+        comp = CompetitionService().get_by_id_or_raise(db, competition_id)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "code": "competition_not_found",
+                    "message": str(exc.detail),
+                    "competition_id": int(competition_id),
+                    "fixture_id": int(fixture_id),
+                }
+            ),
+        )
+
+    fx, err, code = _validate_fixture_for_competition(db, comp, int(fixture_id))
+    if err is not None:
+        return JSONResponse(status_code=code or 404, content=jsonable_encoder(err))
+
+    payload = build_lineup_player_mapping_debug(db, fx)
+    payload["status"] = "success"
+    return jsonable_encoder(payload)

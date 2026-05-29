@@ -1,4 +1,4 @@
-"""Matching giocatori SportAPI ↔ API-Football (preview audit; no auto-save sotto 90)."""
+"""Matching giocatori SportAPI ↔ profili player_season_profiles (preview audit; no auto-save sotto 90)."""
 
 from __future__ import annotations
 
@@ -7,37 +7,17 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Fixture, Player, PlayerProviderMapping, PlayerSotProfile, Season
+from app.models import Fixture, PlayerProviderMapping, Team
 from app.models.fixture_provider_mapping import FixtureProviderMapping, PROVIDER_SPORTAPI
+from app.services.sportapi.lineup_player_profile_lookup import (
+    _recommendation,
+    find_best_profile_match,
+    load_fixture_profiles,
+    team_roster_for_matching,
+)
 from app.services.sportapi.sportapi_player_name_normalize import player_names_match
 
 MatchRecommendation = Literal["AUTO_SAFE", "REVIEW", "NO_MATCH"]
-
-
-def _recommendation(score: float) -> MatchRecommendation:
-    if score >= 90:
-        return "AUTO_SAFE"
-    if score >= 75:
-        return "REVIEW"
-    return "NO_MATCH"
-
-
-def _roles_compatible(sportapi_pos: str | None, api_name: str | None) -> bool:
-    sp = (sportapi_pos or "").strip().upper()[:1]
-    if not sp:
-        return True
-    # API-Football position in profile often in fixture stats; loose check
-    return True
-
-
-def _birth_compatible(sportapi_raw: dict[str, Any] | None, player_raw: dict[str, Any] | None) -> bool:
-    if not isinstance(sportapi_raw, dict) or not isinstance(player_raw, dict):
-        return False
-    sp = sportapi_raw.get("dateOfBirth") or sportapi_raw.get("date_of_birth")
-    pp = player_raw.get("birth") or player_raw.get("dateOfBirth")
-    if sp is None or pp is None:
-        return False
-    return str(sp)[:10] == str(pp)[:10]
 
 
 def score_player_match(
@@ -88,20 +68,11 @@ def score_player_match(
     else:
         breakdown["jersey"] = 0
 
-    if _roles_compatible(sportapi_position, None):
-        if sportapi_position:
-            breakdown["role"] = 10
-            total += 10
-        else:
-            breakdown["role"] = 0
-    else:
-        breakdown["role"] = 0
-
-    if _birth_compatible(sportapi_raw, candidate_raw):
-        breakdown["birth_date"] = 10
+    if sportapi_position:
+        breakdown["role"] = 10
         total += 10
     else:
-        breakdown["birth_date"] = 0
+        breakdown["role"] = 0
 
     return round(total, 2), breakdown
 
@@ -119,8 +90,9 @@ class SportApiPlayerMatchingService:
         if fx is None:
             return {"status": "error", "message": "Fixture non trovata", "matches": []}
 
-        season_row = db.get(Season, int(fx.season_id))
+        season_row = fx.season
         season_year = int(season_row.year) if season_row else None
+        competition_id = int(fx.competition_id) if fx.competition_id is not None else None
 
         mapping = db.scalar(
             select(FixtureProviderMapping).where(
@@ -131,8 +103,28 @@ class SportApiPlayerMatchingService:
         sportapi_home_team_id = mapping.provider_home_team_id if mapping else None
         sportapi_away_team_id = mapping.provider_away_team_id if mapping else None
 
-        roster_home = self._team_roster(db, int(fx.home_team_id), int(fx.season_id), int(fx.league_id))
-        roster_away = self._team_roster(db, int(fx.away_team_id), int(fx.season_id), int(fx.league_id))
+        home = db.get(Team, int(fx.home_team_id))
+        away = db.get(Team, int(fx.away_team_id))
+
+        _, _, team_entries = load_fixture_profiles(db, fx, home=home, away=away)
+        home_entries = team_entries.get("home") or []
+        away_entries = team_entries.get("away") or []
+
+        roster_home = team_roster_for_matching(
+            db,
+            fx,
+            team_id=int(fx.home_team_id),
+            api_team_id=int(home.api_team_id) if home else 0,
+            team_entries=home_entries,
+        )
+        roster_away = team_roster_for_matching(
+            db,
+            fx,
+            team_id=int(fx.away_team_id),
+            api_team_id=int(away.api_team_id) if away else 0,
+            team_entries=away_entries,
+        )
+        competition_roster = roster_home + roster_away if competition_id is not None else None
 
         players_in = sportapi_players or []
         matches: list[dict[str, Any]] = []
@@ -149,6 +141,7 @@ class SportApiPlayerMatchingService:
                 int(sp["provider_player_id"]),
                 sportapi_team_id,
                 season_year,
+                roster=roster,
             )
             if cached:
                 m = cached
@@ -156,9 +149,11 @@ class SportApiPlayerMatchingService:
                 m = self._best_match_for_sportapi_player(
                     sp,
                     roster=roster,
+                    competition_roster=competition_roster,
                     team_id=team_id,
                     fixture=fx,
                     sportapi_team_id=sportapi_team_id,
+                    competition_id=competition_id,
                 )
             rec = m["recommendation"]
             counts[rec] = counts.get(rec, 0) + 1
@@ -167,67 +162,12 @@ class SportApiPlayerMatchingService:
         return {
             "status": "ok",
             "fixture_id": int(fx.id),
+            "competition_id": competition_id,
             "season_year": season_year,
             "matches": matches,
             "summary": counts,
             "note": "Mapping sotto 90 non salvato automaticamente; simulazione audit only.",
         }
-
-    def _team_roster(
-        self,
-        db: Session,
-        team_id: int,
-        season_id: int,
-        league_id: int,
-    ) -> list[dict[str, Any]]:
-        rows = db.execute(
-            select(PlayerSotProfile, Player)
-            .join(Player, Player.id == PlayerSotProfile.player_id)
-            .where(
-                PlayerSotProfile.team_id == int(team_id),
-                PlayerSotProfile.season_id == int(season_id),
-            ),
-        ).all()
-        out: list[dict[str, Any]] = []
-        for pr, pl in rows:
-            out.append(
-                {
-                    "player_id": int(pl.id),
-                    "api_player_id": int(pl.api_player_id),
-                    "name": pl.name,
-                    "team_id": int(pr.team_id),
-                    "season_id": int(pr.season_id),
-                    "league_id": int(league_id),
-                    "shots_on_target_per90": pr.shots_on_target_per90,
-                    "team_sot_share_pct": pr.team_sot_share_pct,
-                    "total_minutes": pr.total_minutes,
-                    "raw_json": pl.raw_json if isinstance(pl.raw_json, dict) else None,
-                    "jersey_number": None,
-                },
-            )
-        if not out:
-            players = list(
-                db.scalars(
-                    select(Player).where(Player.team_id == int(team_id)),
-                ).all(),
-            )
-            for pl in players:
-                out.append(
-                    {
-                        "player_id": int(pl.id),
-                        "api_player_id": int(pl.api_player_id),
-                        "name": pl.name,
-                        "team_id": int(team_id),
-                        "season_id": int(season_id),
-                        "league_id": int(league_id),
-                        "shots_on_target_per90": None,
-                        "team_sot_share_pct": None,
-                        "total_minutes": None,
-                        "raw_json": pl.raw_json if isinstance(pl.raw_json, dict) else None,
-                        "jersey_number": None,
-                    },
-                )
-        return out
 
     def _lookup_cached_mapping(
         self,
@@ -235,6 +175,8 @@ class SportApiPlayerMatchingService:
         sportapi_player_id: int,
         sportapi_team_id: int | None,
         season: int | None,
+        *,
+        roster: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         stmt = select(PlayerProviderMapping).where(
             PlayerProviderMapping.sportapi_player_id == int(sportapi_player_id),
@@ -248,17 +190,30 @@ class SportApiPlayerMatchingService:
         if row is None or row.api_sports_player_id is None:
             return None
         score = float(row.confidence_score or 0)
+        api_id = int(row.api_sports_player_id)
+        cand = next((c for c in (roster or []) if int(c.get("api_player_id") or 0) == api_id), None)
         return {
             "sportapi_player_id": int(sportapi_player_id),
             "sportapi_player_name": row.player_name_sportapi,
-            "api_sports_player_id": int(row.api_sports_player_id),
-            "api_sports_player_name": row.player_name_api_sports,
-            "player_id": None,
+            "api_sports_player_id": api_id,
+            "api_sports_player_name": row.player_name_api_sports or (cand["name"] if cand else None),
+            "player_id": int(cand["player_id"]) if cand else None,
+            "player_profile_id": cand.get("player_profile_id") if cand else None,
+            "matched_profile_name": row.player_name_api_sports or (cand["name"] if cand else None),
             "confidence_score": score,
             "recommendation": _recommendation(score),
             "matched_by": row.matched_by or "cached_mapping",
             "score_breakdown": {"cached": True},
             "from_db_mapping": True,
+            "match_reason": "mapping salvato in DB",
+            "shots_on_per90": cand.get("shots_on_target_per90") if cand else None,
+            "team_sot_share": (
+                float(cand["team_sot_share_pct"]) / 100.0
+                if cand and cand.get("team_sot_share_pct") is not None
+                else None
+            ),
+            "shooting_impact_score": cand.get("shooting_impact_score") if cand else None,
+            "reliability_score": cand.get("reliability_score") if cand else None,
         }
 
     def _best_match_for_sportapi_player(
@@ -266,44 +221,31 @@ class SportApiPlayerMatchingService:
         sp: dict[str, Any],
         *,
         roster: list[dict[str, Any]],
+        competition_roster: list[dict[str, Any]] | None,
         team_id: int,
         fixture: Fixture,
         sportapi_team_id: int | None,
+        competition_id: int | None,
     ) -> dict[str, Any]:
         sportapi_pid = int(sp["provider_player_id"])
         sportapi_name = str(sp.get("player_name") or "")
         sportapi_short = sp.get("short_name")
         sportapi_pos = sp.get("position")
         sportapi_jersey = sp.get("jersey_number")
-        raw = sp.get("_raw_payload") if isinstance(sp.get("_raw_payload"), dict) else None
 
-        best_score = 0.0
-        best: dict[str, Any] | None = None
-        best_breakdown: dict[str, Any] = {}
-
-        for cand in roster:
-            score, breakdown = score_player_match(
-                sportapi_name=sportapi_name,
-                sportapi_short=str(sportapi_short) if sportapi_short else None,
-                sportapi_position=str(sportapi_pos) if sportapi_pos else None,
-                sportapi_jersey=int(sportapi_jersey) if sportapi_jersey is not None else None,
-                sportapi_raw=raw,
-                candidate_name=cand["name"],
-                candidate_team_id=int(cand["team_id"]),
-                expected_team_id=int(team_id),
-                season_id=int(cand["season_id"]),
-                fixture_season_id=int(fixture.season_id),
-                fixture_league_id=int(fixture.league_id),
-                league_id=int(cand["league_id"]),
-                candidate_jersey=cand.get("jersey_number"),
-                candidate_raw=cand.get("raw_json"),
-            )
-            if score > best_score:
-                best_score = score
-                best = cand
-                best_breakdown = breakdown
+        best, best_score, best_breakdown, best_reason = find_best_profile_match(
+            sp,
+            team_roster=roster,
+            competition_roster=competition_roster,
+            team_id=int(team_id),
+            competition_id=competition_id,
+        )
 
         rec = _recommendation(best_score)
+        share = None
+        if best and best.get("team_sot_share_pct") is not None:
+            share = float(best["team_sot_share_pct"]) / 100.0
+
         return {
             "sportapi_player_id": sportapi_pid,
             "sportapi_player_name": sportapi_name,
@@ -315,11 +257,19 @@ class SportApiPlayerMatchingService:
             "api_sports_player_id": int(best["api_player_id"]) if best else None,
             "api_sports_player_name": best["name"] if best else None,
             "player_id": int(best["player_id"]) if best else None,
+            "player_profile_id": best.get("player_profile_id") if best else None,
+            "matched_profile_name": best["name"] if best else None,
             "confidence_score": best_score if best else 0.0,
             "recommendation": rec,
             "matched_by": "auto_name_team" if rec == "AUTO_SAFE" else "auto_preview",
             "score_breakdown": best_breakdown,
             "from_db_mapping": False,
+            "match_reason": best_reason if best else "nessun profilo candidato nella squadra",
+            "reason": best_reason if best else "nessun profilo candidato nella squadra",
+            "shots_on_per90": best.get("shots_on_target_per90") if best else None,
+            "team_sot_share": share,
+            "shooting_impact_score": best.get("shooting_impact_score") if best else None,
+            "reliability_score": best.get("reliability_score") if best else None,
         }
 
     def collect_sportapi_players_from_lineups(self, sportapi_lineups: dict[str, Any]) -> list[dict[str, Any]]:
@@ -328,13 +278,13 @@ class SportApiPlayerMatchingService:
         for side_key in ("home", "away"):
             side = sportapi_lineups.get(side_key) or {}
             for p in side.get("starters") or []:
-                out.append({**p, "team_side": side_key, "is_missing": False})
+                out.append({**p, "team_side": side_key, "is_missing": False, "_lineup_role": "starter"})
             for p in side.get("substitutes") or []:
-                out.append({**p, "team_side": side_key, "is_missing": False})
+                out.append({**p, "team_side": side_key, "is_missing": False, "_lineup_role": "bench"})
             mp = side.get("missing_players") or {}
             for group in ("injured", "suspended", "other"):
                 for m in mp.get(group) or []:
-                    out.append({**m, "team_side": side_key, "is_missing": True})
+                    out.append({**m, "team_side": side_key, "is_missing": True, "_lineup_role": "indisponibile"})
         return out
 
     def confirm_player_mapping(

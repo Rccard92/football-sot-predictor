@@ -396,7 +396,7 @@ export function MatchExplanationView({
         </SectionCard>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-2 xl:items-start xl:gap-6">
+      <div className="flex flex-col gap-5">
         <SportApiLineupsCard
           data={data.sportapi_lineups}
           apiFixtureId={fx.api_fixture_id}

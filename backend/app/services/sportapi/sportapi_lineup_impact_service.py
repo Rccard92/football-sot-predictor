@@ -10,8 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.constants import FINISHED_STATUSES
-from app.models import Fixture, FixturePlayerStat, Player, PlayerSotProfile, PlayerTeamSeason, Season, Team, TeamSotPrediction
+from app.models import Fixture, FixturePlayerStat, Player, PlayerTeamSeason, Season, Team, TeamSotPrediction
 from app.services.player_data.active_roster_resolver import ActiveRosterResolver
+from app.services.sportapi.lineup_player_profile_lookup import (
+    MockPlayer,
+    MockSotProfile,
+    build_lineup_player_mapping_debug,
+    compute_lineup_mapping_stats,
+    load_fixture_profiles,
+)
 from app.services.sportapi.sportapi_defensive_weakness_logic import (
     DEFENSIVE_TOP_N,
     compute_defensive_weakness_side,
@@ -34,7 +41,7 @@ from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups
 from app.services.sportapi.sportapi_player_matching_service import SportApiPlayerMatchingService
 
 
-def _share_frac(profile: PlayerSotProfile | None) -> float:
+def _share_frac(profile: MockSotProfile | None) -> float:
     if profile is None or profile.team_sot_share_pct is None:
         return 0.0
     return float(profile.team_sot_share_pct) / 100.0
@@ -132,15 +139,16 @@ class LineupImpactSimulationService:
         if confirmed is None:
             confirmed = False
 
-        profiles_by_player_id: dict[int, tuple[Player, PlayerSotProfile]] = {}
-        if fx.season_id is not None:
-            profiles_by_player_id = self._profiles_for_teams(
+        profiles_by_player_id: dict[int, tuple[MockPlayer, MockSotProfile]] = {}
+        player_profiles_count = 0
+        if fx.season_id is not None or lineups_available:
+            profiles_by_player_id, player_profiles_count, _team_entries = load_fixture_profiles(
                 db,
-                int(fx.season_id),
-                int(fx.home_team_id),
-                int(fx.away_team_id),
+                fx,
+                home=home,
+                away=away,
             )
-        profiles_missing = len(profiles_by_player_id) == 0
+        profiles_missing = player_profiles_count == 0
 
         roster_resolver = ActiveRosterResolver(db)
         home_ctx = roster_resolver.load_team_context(
@@ -300,6 +308,8 @@ class LineupImpactSimulationService:
             confirmed=bool(confirmed),
             top_players=all_top,
             profiles_missing=profiles_missing,
+            player_profiles_count=player_profiles_count,
+            lineup_mapping_stats=compute_lineup_mapping_stats(sportapi_lineups, matching.get("matches") or []),
             roster_sync_hints=[home_hint, away_hint],
             excluded_count=len(home_excluded) + len(away_excluded),
             roster_unknown_in_top=sum(
@@ -310,6 +320,14 @@ class LineupImpactSimulationService:
             ),
         )
 
+        mapping_debug = build_lineup_player_mapping_debug(
+            db,
+            fx,
+            sportapi_lineups=sportapi_lineups,
+            matches=matching.get("matches") or [],
+        )
+        lineup_mapping_stats = mapping_debug.get("lineup_mapping_stats") or {}
+
         home_sa = sportapi_lineups.get("home") or {}
         away_sa = sportapi_lineups.get("away") or {}
 
@@ -319,6 +337,9 @@ class LineupImpactSimulationService:
             "simulation_only": True,
             "used_in_model": settings.use_sportapi_lineup_impact_in_model,
             "profiles_missing": profiles_missing,
+            "player_profiles_count": player_profiles_count,
+            "lineup_mapping_stats": lineup_mapping_stats,
+            "player_mapping_debug_rows": mapping_debug.get("rows") or [],
             "sportapi_lineups_available": bool(sportapi_lineups.get("available")),
             "sportapi_fetched_at": sportapi_lineups.get("fetched_at"),
             "starters_count_home": len(home_sa.get("starters") or []),
@@ -361,26 +382,9 @@ class LineupImpactSimulationService:
         ba = float(away.predicted_sot) if away and away.predicted_sot is not None else None
         return bh, ba
 
-    def _profiles_for_teams(
-        self,
-        db: Session,
-        season_id: int,
-        home_team_id: int,
-        away_team_id: int,
-    ) -> dict[int, tuple[Player, PlayerSotProfile]]:
-        rows = db.execute(
-            select(PlayerSotProfile, Player)
-            .join(Player, Player.id == PlayerSotProfile.player_id)
-            .where(
-                PlayerSotProfile.season_id == int(season_id),
-                PlayerSotProfile.team_id.in_([int(home_team_id), int(away_team_id)]),
-            ),
-        ).all()
-        return {int(pl.id): (pl, pr) for pr, pl in rows}
-
     def _resolve_top5_for_team(
         self,
-        profiles: dict[int, tuple[Player, PlayerSotProfile]],
+        profiles: dict[int, tuple[MockPlayer, MockSotProfile]],
         team_id: int,
         resolver: ActiveRosterResolver,
         ctx: Any,
@@ -474,6 +478,7 @@ class LineupImpactSimulationService:
         rows = db.execute(
             select(
                 FixturePlayerStat.player_id,
+                Player.api_player_id,
                 func.sum(FixturePlayerStat.minutes).label("total_minutes"),
                 func.count(FixturePlayerStat.id).label("appearances"),
                 func.sum(
@@ -487,12 +492,13 @@ class LineupImpactSimulationService:
                 func.max(FixturePlayerStat.position).label("position"),
             )
             .join(Fixture, Fixture.id == FixturePlayerStat.fixture_id)
+            .join(Player, Player.id == FixturePlayerStat.player_id)
             .where(
                 FixturePlayerStat.team_id == int(team_id),
                 Fixture.season_id == int(season_id),
                 Fixture.status.in_(FINISHED_STATUSES),
             )
-            .group_by(FixturePlayerStat.player_id),
+            .group_by(FixturePlayerStat.player_id, Player.api_player_id),
         ).all()
 
         out: dict[int, dict[str, Any]] = {}
@@ -503,7 +509,7 @@ class LineupImpactSimulationService:
             blocks = int(row.tackles_blocks or 0)
             duels = int(row.duels_won or 0)
             has_def_stats = tackles + interceptions + blocks + duels > 0
-            out[pid] = {
+            payload = {
                 "total_minutes": int(row.total_minutes or 0),
                 "appearances": int(row.appearances or 0),
                 "starts": int(row.starts or 0),
@@ -515,6 +521,8 @@ class LineupImpactSimulationService:
                 "position": row.position,
                 "stats_source": "full" if has_def_stats else "minutes_role_only",
             }
+            out[pid] = payload
+            out[int(row.api_player_id)] = payload
         return out
 
     def _pts_positions(
@@ -548,7 +556,7 @@ class LineupImpactSimulationService:
         team_name: str,
         confirmed: bool,
         match_by_sportapi_id: dict[int, dict[str, Any]],
-        profiles_by_player_id: dict[int, tuple[Player, PlayerSotProfile]],
+        profiles_by_player_id: dict[int, tuple[MockPlayer, MockSotProfile]],
         roster_resolver: ActiveRosterResolver,
         roster_ctx: Any,
         season_year: int,
@@ -747,7 +755,7 @@ class LineupImpactSimulationService:
         base_sot: float | None,
         confirmed: bool,
         match_by_sportapi_id: dict[int, dict[str, Any]],
-        profiles_by_player_id: dict[int, tuple[Player, PlayerSotProfile]],
+        profiles_by_player_id: dict[int, tuple[MockPlayer, MockSotProfile]],
         top5_flags: dict[int, bool],
         top5_meta: dict[int, dict[str, Any]],
         team_name: str,

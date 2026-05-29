@@ -191,6 +191,8 @@ def compute_impact_confidence(
     confirmed: bool,
     top_players: list[dict[str, Any]],
     profiles_missing: bool,
+    player_profiles_count: int = 0,
+    lineup_mapping_stats: dict[str, Any] | None = None,
     roster_sync_hints: list[str] | None = None,
     excluded_count: int = 0,
     roster_unknown_in_top: int = 0,
@@ -199,12 +201,30 @@ def compute_impact_confidence(
     score = 100
     reasons: list[str] = []
 
+    mapping = lineup_mapping_stats or {}
+    starters_total = int(mapping.get("starters_total") or 0)
+    starters_matched = int(mapping.get("starters_matched_auto_safe") or 0)
+
     if not confirmed:
         score -= 15
         reasons.append("Formazione probabile, non ufficiale")
-    if profiles_missing:
+
+    if profiles_missing or player_profiles_count == 0:
         score -= 25
-        reasons.append("Profili player_sot_profiles assenti per la stagione")
+        reasons.append("Profili giocatori non ancora generati per questo campionato.")
+    elif starters_total > 0 and starters_matched == 0:
+        score -= 20
+        reasons.append("Profili presenti, ma giocatori della formazione non mappati ai profili statistici.")
+    elif starters_total > 0 and starters_matched < starters_total:
+        if starters_matched >= 8:
+            score -= 5
+        else:
+            score -= 12
+        reasons.append(
+            f"Mapping parziale: {starters_matched}/{starters_total} titolari collegati ai profili statistici.",
+        )
+        if starters_matched < 8:
+            reasons.append(f"Confidence ridotta: {starters_matched}/11 titolari mappati ai profili SOT.")
 
     hints = roster_sync_hints or []
     if any(h == "missing" for h in hints):

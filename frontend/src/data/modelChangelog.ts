@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.14',
+    date: '2026-05-29',
+    title: 'Fix mapping giocatori lineup multi-campionato',
+    type: 'patch',
+    summary:
+      'Corretto il collegamento tra giocatori SportAPI e profili statistici player_season_profiles nei campionati multi-competition.',
+    highlights: [
+      'Layout audit lineups/impact reso verticale.',
+      'Migliorato lookup profili giocatore per competition_id.',
+      'Aggiunta diagnostica mapping giocatori.',
+      'Corretti warning fuorvianti sui profili assenti.',
+      'Migliorata tabella Forza giocatori in campo.',
+      'Nessuna modifica alla formula v2.0.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '3.0.13',
     date: '2026-05-29',
     title: 'Fix collegamenti audit multi-campionato',

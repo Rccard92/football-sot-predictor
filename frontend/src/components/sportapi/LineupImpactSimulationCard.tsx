@@ -9,6 +9,25 @@ import type {
   PlayerLineupStatus,
 } from '../../types/lineupImpact'
 import { SportApiPlayerMatchingPanel } from './SportApiPlayerMatchingPanel'
+import { LineupPlayerMappingDebugPanel } from './LineupPlayerMappingDebugPanel'
+
+function profileMappingWarning(data: LineupImpactSimulationPayload): string | null {
+  const count = data.player_profiles_count ?? 0
+  const stats = data.lineup_mapping_stats
+  const matched = stats?.starters_matched_auto_safe ?? 0
+  const total = stats?.starters_total ?? 0
+
+  if (count === 0 || data.profiles_missing) {
+    return 'Profili giocatori non ancora generati per questo campionato.'
+  }
+  if (total > 0 && matched === 0) {
+    return 'Profili presenti, ma giocatori della formazione non mappati ai profili statistici.'
+  }
+  if (total > 0 && matched < total) {
+    return `Mapping parziale: ${matched}/${total} titolari collegati ai profili statistici.`
+  }
+  return null
+}
 
 function statusLabelIT(status: PlayerLineupStatus): string {
   switch (status) {
@@ -334,10 +353,8 @@ export function LineupImpactSimulationCard({
             </span>
           )}
         </div>
-        {data.profiles_missing ? (
-          <p className="mt-1 text-[11px] text-amber-800">
-            Profili player_sot_profiles assenti per questa stagione — eseguire build profili da Admin.
-          </p>
+        {profileMappingWarning(data) ? (
+          <p className="mt-1 text-[11px] text-amber-800">{profileMappingWarning(data)}</p>
         ) : null}
         {effectiveFixtureId != null ? (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -391,16 +408,21 @@ export function LineupImpactSimulationCard({
           </>
         )}
 
-        {showMatching && (data.sportapi_player_matching?.length ?? 0) > 0 ? (
+        {(data.player_mapping_debug_rows?.length ?? 0) > 0 ||
+        (showMatching && (data.sportapi_player_matching?.length ?? 0) > 0) ? (
           <details className="rounded-xl border border-slate-100">
             <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-50">
               Dettagli tecnici mapping giocatori
               <span className="mt-0.5 block text-[10px] font-normal text-slate-500">
-                Mostra come i giocatori SportAPI sono stati collegati ai profili API-Sports.
+                Collegamento giocatori SportAPI ↔ profili statistici player_season_profiles.
               </span>
             </summary>
             <div className="border-t border-slate-100 px-3 py-2">
-              <SportApiPlayerMatchingPanel matches={data.sportapi_player_matching!} compact />
+              {(data.player_mapping_debug_rows?.length ?? 0) > 0 ? (
+                <LineupPlayerMappingDebugPanel rows={data.player_mapping_debug_rows!} />
+              ) : (
+                <SportApiPlayerMatchingPanel matches={data.sportapi_player_matching!} compact />
+              )}
             </div>
           </details>
         ) : null}

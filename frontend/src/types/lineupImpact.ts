@@ -24,11 +24,44 @@ export type SportApiPlayerMatchRow = {
   api_sports_player_id?: number | null
   api_sports_player_name?: string | null
   player_id?: number | null
+  player_profile_id?: string | null
+  matched_profile_name?: string | null
   confidence_score: number
   recommendation: MatchRecommendation
   matched_by?: string | null
   score_breakdown?: Record<string, number | boolean>
   from_db_mapping?: boolean
+  match_reason?: string | null
+  reason?: string | null
+  shots_on_per90?: number | null
+  team_sot_share?: number | null
+  shooting_impact_score?: number | null
+  reliability_score?: number | null
+}
+
+export type LineupPlayerMappingDebugRow = {
+  sportapi_player_name?: string
+  team_name?: string
+  team_side?: string
+  role?: string | null
+  lineup_status?: string
+  matched_profile_name?: string | null
+  player_profile_id?: string | null
+  api_sports_player_id?: number | null
+  match_score?: number | null
+  match_status?: MatchRecommendation | string
+  shots_on_per90?: number | null
+  team_sot_share?: number | null
+  shooting_impact_score?: number | null
+  reliability_score?: number | null
+  reason?: string | null
+}
+
+export type LineupMappingStats = {
+  starters_total?: number
+  starters_matched_auto_safe?: number
+  starters_matched_any?: number
+  mapping_rate?: number
 }
 
 export type LineupImpactTopPlayer = {
@@ -127,6 +160,9 @@ export type LineupImpactSimulationPayload = {
   used_in_model: boolean
   roster_filter_active?: boolean
   profiles_missing?: boolean
+  player_profiles_count?: number
+  lineup_mapping_stats?: LineupMappingStats
+  player_mapping_debug_rows?: LineupPlayerMappingDebugRow[]
   sportapi_lineups_available?: boolean
   confirmed?: boolean | null
   confidence_label?: 'alta' | 'media' | 'bassa'

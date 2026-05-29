@@ -65,8 +65,8 @@ export function SportApiPlayerMatchingPanel({
         </table>
       </div>
       <p className="text-[10px] text-slate-500">
-        Mapping con score &lt; 90 non salvato automaticamente. Statistiche SOT da API-Football (
-        player_sot_profiles).
+        Mapping con score &lt; 90 non salvato automaticamente. Statistiche SOT da player_season_profiles
+        (profili campionato).
       </p>
     </div>
   )

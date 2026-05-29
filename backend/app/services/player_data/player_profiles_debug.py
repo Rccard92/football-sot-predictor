@@ -84,12 +84,15 @@ def _load_team_profiles(
     team_id: int | None,
     team_name: str,
     limit: int,
+    competition_id: int | None = None,
 ) -> dict[str, Any]:
-    base_filter = (
+    base_filter: list = [
         PlayerSeasonProfile.season == season,
         PlayerSeasonProfile.league_id == league_id,
         PlayerSeasonProfile.api_team_id == api_team_id,
-    )
+    ]
+    if competition_id is not None:
+        base_filter.append(PlayerSeasonProfile.competition_id == int(competition_id))
 
     profiles_total = int(
         db.scalar(
@@ -187,6 +190,8 @@ def build_fixture_player_profiles_debug(
     home_team: Team = fx.home_team
     away_team: Team = fx.away_team
 
+    comp_id = int(fx.competition_id) if fx.competition_id is not None else None
+
     home_payload = _load_team_profiles(
         db,
         season=year,
@@ -195,6 +200,7 @@ def build_fixture_player_profiles_debug(
         team_id=int(home_team.id),
         team_name=home_team.name,
         limit=limit,
+        competition_id=comp_id,
     )
     away_payload = _load_team_profiles(
         db,
@@ -204,6 +210,7 @@ def build_fixture_player_profiles_debug(
         team_id=int(away_team.id),
         team_name=away_team.name,
         limit=limit,
+        competition_id=comp_id,
     )
 
     return {
