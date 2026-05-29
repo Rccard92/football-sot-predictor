@@ -261,7 +261,7 @@ export type ModelComparisonRow = {
   v20?: ModelComparisonSide | null
   v21?: ModelComparisonSide | null
   delta?: ModelComparisonDelta | null
-  lineup_status?: string | null
+  lineup_status?: LineupStatusPayload | string | null
 }
 
 export type ModelComparisonResponse = {

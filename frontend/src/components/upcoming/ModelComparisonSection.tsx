@@ -5,11 +5,10 @@ import { V20_MODEL, V21_MODEL, labelForModelVersion } from '../../lib/modelVersi
 import { formatKickoffReport } from '../../utils/sportApiLineupMeta'
 import {
   confidenceBadgeClass,
-  formationBadgeClass,
-  formationStatusTooltip,
   pickShortLabel,
 } from '../../utils/bettingAdviceDisplay'
 import { deltaBadgeClass, deltaBadgeLabel, pickShortFromLabel } from '../../utils/modelComparisonDisplay'
+import { FormationStatusBadge } from '../../utils/lineupStatusDisplay'
 import { formatNum } from './format'
 
 function TeamMatchRow({ row }: { row: ModelComparisonRow }) {
@@ -57,7 +56,6 @@ function ComparisonRowDesktop({
   baseLabel: string
   compareLabel: string
 }) {
-  const formLabel = row.lineup_status ?? '—'
   const delta = row.delta
   return (
     <tr className="border-b border-slate-100 hover:bg-slate-50/50">
@@ -107,12 +105,7 @@ function ComparisonRowDesktop({
         )}
       </td>
       <td className="py-2 pr-3 align-top">
-        <span
-          title={formationStatusTooltip(formLabel)}
-          className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${formationBadgeClass(formLabel)}`}
-        >
-          {formLabel}
-        </span>
+        <FormationStatusBadge status={row.lineup_status} />
       </td>
       <td className="py-2 align-top">
         <div className="flex flex-wrap gap-1.5 text-[10px]">
@@ -196,6 +189,7 @@ function ComparisonCardMobile({
             {row.v21.confidence_label}
           </span>
         ) : null}
+        <FormationStatusBadge status={row.lineup_status} />
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <Link

@@ -3,11 +3,10 @@ import { formatKickoffReport } from '../../utils/sportApiLineupMeta'
 import {
   AFFIDABILITA_HELP,
   confidenceBadgeClass,
-  formationBadgeClass,
-  formationStatusTooltip,
   pickShortLabel,
   riskBadgeClass,
 } from '../../utils/bettingAdviceDisplay'
+import { FormationStatusBadge } from '../../utils/lineupStatusDisplay'
 import { LineupRefreshImpactBadge } from './LineupRefreshImpactBadge'
 import { formatNum, formatSignedNum } from './format'
 
@@ -104,8 +103,6 @@ export function QuickPlayReportTable({
         <tbody>
           {matches.map((m) => {
             const market = m.markets?.[0]
-            const formLabel = m.lineup_status?.label
-            const formTip = formationStatusTooltip(formLabel)
             return (
               <tr key={m.fixture_id} className="border-b border-slate-100 hover:bg-slate-50/50">
                 <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatKickoffReport(m.kickoff_at)}</td>
@@ -154,12 +151,7 @@ export function QuickPlayReportTable({
                   </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <span
-                    title={formTip || undefined}
-                    className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${formationBadgeClass(formLabel)}`}
-                  >
-                    {formLabel ?? '—'}
-                  </span>
+                  <FormationStatusBadge status={m.lineup_status} />
                 </td>
                 <td className="px-3 py-2.5">
                   {onOpenDetail ? (

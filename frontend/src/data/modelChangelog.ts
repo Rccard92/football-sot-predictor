@@ -12,6 +12,21 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.7',
+    date: '2026-05-29',
+    title: 'Fix render stato formazione confronto modelli',
+    type: 'patch',
+    summary:
+      "Corretto un errore frontend causato dal rendering diretto dell'oggetto lineup_status nella tabella confronto v2.0 vs v2.1.",
+    highlights: [
+      'Corretto React error #31.',
+      'lineup_status ora viene renderizzato come badge/testo.',
+      'Evitata pagina bianca in Prossima giornata.',
+      'Nessuna modifica a backend o formule.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.6',
     date: '2026-05-29',
     title: 'Confronto modelli v2.0 vs v2.1',
