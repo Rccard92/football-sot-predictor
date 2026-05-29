@@ -3,14 +3,16 @@ import {
   DEFAULT_SEASON,
   getTrackedBettingPicks,
   getTrackedBettingPicksForCompetition,
+  postCreateTrackedPicksFromCompetitionRound,
   postCreateTrackedPicksFromRound,
   postRefreshTrackedPickResults,
   type TrackedBettingPickRow,
   type TrackedBettingPicksSummary,
   type UpcomingMatchTeam,
 } from '../lib/api'
-import { CompetitionBadge } from '../components/CompetitionSelector'
+import { ContextBanner } from '../components/ContextBanner'
 import { useCompetition } from '../contexts/CompetitionContext'
+import { useModelSelection } from '../contexts/ModelSelectionContext'
 import { formatKickoffReport } from '../utils/sportApiLineupMeta'
 import {
   formatOdd,
@@ -173,6 +175,7 @@ function DashboardRow({ p, index }: { p: TrackedBettingPickRow; index: number })
 
 export function BetMonitoring() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
+  const { selectedModelVersion, selectedModelLabel } = useModelSelection()
   const season = selectedCompetition?.season ?? DEFAULT_SEASON
   const [rows, setRows] = useState<TrackedBettingPickRow[]>([])
   const [summary, setSummary] = useState<TrackedBettingPicksSummary | null>(null)
@@ -194,16 +197,29 @@ export function BetMonitoring() {
     try {
       const data =
         selectedCompetitionId != null
-          ? await getTrackedBettingPicksForCompetition(selectedCompetitionId)
+          ? await getTrackedBettingPicksForCompetition(selectedCompetitionId, {
+              modelVersion: selectedModelVersion,
+            })
           : await getTrackedBettingPicks(season)
-      setRows(sortByKickoffAsc(data.picks ?? []))
+      const allPicks = data.picks ?? []
+      const filtered =
+        selectedCompetitionId != null
+          ? allPicks.filter(
+              (p) =>
+                !p.model_version ||
+                !p.model_id ||
+                p.model_version === selectedModelVersion ||
+                p.model_id === selectedModelVersion,
+            )
+          : allPicks
+      setRows(sortByKickoffAsc(filtered))
       setSummary(data.summary ?? null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [season, selectedCompetitionId])
+  }, [season, selectedCompetitionId, selectedModelVersion])
 
   useEffect(() => {
     void load()
@@ -304,16 +320,28 @@ export function BetMonitoring() {
     setCreateBusy(true)
     setActionMsg(null)
     try {
-      const out = await postCreateTrackedPicksFromRound(
-        season,
-        {
-          round: 'current',
-          model_id: 'baseline_v2_0_lineup_impact',
-          pick_type: 'cautious',
-          force,
-        },
-        { timeoutMs: 120_000 },
-      )
+      const out =
+        selectedCompetitionId != null
+          ? await postCreateTrackedPicksFromCompetitionRound(
+              selectedCompetitionId,
+              {
+                round: 'current',
+                model_id: selectedModelVersion,
+                pick_type: 'cautious',
+                force,
+              },
+              { timeoutMs: 120_000 },
+            )
+          : await postCreateTrackedPicksFromRound(
+              season,
+              {
+                round: 'current',
+                model_id: selectedModelVersion,
+                pick_type: 'cautious',
+                force,
+              },
+              { timeoutMs: 120_000 },
+            )
       setActionMsg(
         `Turno: create ${out.created}, aggiornate ${out.updated}, saltate ${out.skipped} su ${out.fixtures_total} partite` +
           (out.errors?.length ? ` · ${out.errors.length} errori` : ''),
@@ -336,8 +364,11 @@ export function BetMonitoring() {
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
             Monitoraggio Giocate{selectedCompetition ? ` — ${selectedCompetition.name}` : ''}
           </h1>
-          <CompetitionBadge />
-          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+          <p className="mt-1 text-sm font-medium text-indigo-900">
+            Modello: {selectedModelLabel}
+          </p>
+          <ContextBanner showModelSelector={false} />
+          <p className="mt-2 max-w-2xl text-sm text-slate-600">
             Confronto tra previsione iniziale (probabili), previsione post formazioni ufficiali, scommesse proposte ed
             esiti sui tiri in porta reali da API-Sports.
           </p>

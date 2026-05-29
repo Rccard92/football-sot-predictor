@@ -135,7 +135,6 @@ export function isV21ManifestInvalidRow(row: {
 }
 
 export const MODEL_OPTIONS_AUDIT: { value: string; label: string }[] = [
-  { value: '', label: 'Automatico (consigliato dal server)' },
   { value: V21_MODEL, label: MODEL_VERSION_LABELS[V21_MODEL] },
   { value: V20_MODEL, label: MODEL_VERSION_LABELS[V20_MODEL] },
 ]

@@ -2533,23 +2533,22 @@ def _build_fixture_sot_explanation_body(
         actual_by[(mv, side)] = int(r.actual_sot) if r.actual_sot is not None else None
 
     active_mv: str | None = None
-    if model_version:
-        mvq = str(model_version).strip()
-        pr = preds.get(mvq) or {}
+    explicit_mv = str(model_version).strip() if model_version else ""
+    if explicit_mv:
+        pr = preds.get(explicit_mv) or {}
         if pr.get("home") is not None and pr.get("away") is not None:
-            active_mv = mvq
-    if active_mv is None:
+            active_mv = explicit_mv
+        else:
+            from app.services.model_version_preference import missing_prediction_payload
+
+            return missing_prediction_payload(
+                explicit_mv,
+                fixture_id=int(fx.id),
+                fixture=_fixture_payload(fx, home, away),
+            )
+    else:
         active_mv = _active_model_version_from_preds(preds)
     if active_mv is None:
-        requested = str(model_version).strip() if model_version else ""
-        if requested == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
-            return {
-                "status": "missing",
-                "message": "Nessuna previsione v2.1 salvata per questa fixture. Generare con model_version=baseline_v2_1_weighted_components.",
-                "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
-                "fixture_id": int(fx.id),
-                "fixture": _fixture_payload(fx, home, away),
-            }
         return {
             "status": "missing",
             "message": "Nessuna previsione SOT salvata per questa fixture.",

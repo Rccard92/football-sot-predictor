@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -58,9 +58,15 @@ def admin_serie_a_lineups_health(season: int, db: Session = Depends(get_db)):
 
 
 @router.get("/competitions/{competition_id}", response_model=None)
-def admin_competition_data_health(competition_id: int, db: Session = Depends(get_db)):
+def admin_competition_data_health(
+    competition_id: int,
+    db: Session = Depends(get_db),
+    model_version: str | None = Query(None),
+):
     try:
-        return jsonable_encoder(build_competition_data_health(db, competition_id))
+        return jsonable_encoder(
+            build_competition_data_health(db, competition_id, selected_model_version=model_version)
+        )
     except (OperationalError, ProgrammingError) as exc:
         logger.warning("data-health competition: DB error (%s)", exc.__class__.__name__, exc_info=True)
         return JSONResponse(

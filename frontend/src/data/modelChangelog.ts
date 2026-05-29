@@ -12,6 +12,24 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.4',
+    date: '2026-05-29',
+    title: 'Integrazione frontend/backend v2.1',
+    type: 'patch',
+    summary:
+      'Collegata la v2.1 a Prossima giornata, Admin, Audit, Data Health e Monitoraggio Giocate con gestione esplicita del model_version.',
+    highlights: [
+      'Prossima giornata ora legge prediction per model_version selezionato.',
+      'Admin genera prediction per il modello selezionato.',
+      'Audit usa competition_id + fixture_id + model_version.',
+      'Monitoraggio Giocate preparato per distinguere v2.0 e v2.1.',
+      'Rimosso fallback silenzioso alla v2.0.',
+      'Migliorata Data Health per modello.',
+      'Nessuna modifica alle formule v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.3',
     date: '2026-05-29',
     title: 'Fix trace e pesi audit v2.1',

@@ -19,8 +19,9 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V10_SOT,
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
 )
-from app.services.sot_model_registry import user_visible_model_versions
+from app.services.sot_model_registry import is_user_visible_model, user_visible_model_versions
 from app.services.sportapi.sportapi_lineup_present import build_sportapi_lineups_audit
 from app.services.sot_feature_registry import V11_MODEL_STAGE
 from app.models import TeamSotPrediction
@@ -41,6 +42,55 @@ MODEL_VERSION_PREFERENCE_ORDER: tuple[str, ...] = (
 
 def preferred_model_versions() -> list[str]:
     return list(user_visible_model_versions())
+
+
+def missing_prediction_payload(model_version: str, **extra: Any) -> dict[str, Any]:
+    """Payload standard quando il modello richiesto non ha prediction."""
+    out: dict[str, Any] = {
+        "status": "missing_prediction",
+        "message": "Prediction non generata per il modello selezionato.",
+        "model_version": str(model_version),
+    }
+    out.update(extra)
+    return out
+
+
+def resolve_requested_model_version(
+    requested: str | None,
+    *,
+    default: str = BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+) -> tuple[str, bool]:
+    """Ritorna (versione_risolta, esplicita). Valida solo modelli UI se espliciti."""
+    if requested is None or not str(requested).strip():
+        return default, False
+    mv = str(requested).strip()
+    if is_user_visible_model(mv):
+        return mv, True
+    return mv, True
+
+
+def pick_fixture_model_version_strict(
+    fx_id: int,
+    home_team_id: int,
+    away_team_id: int,
+    requested: str,
+    pred_map: dict[tuple[int, int, str], Any],
+    *,
+    allow_fallback: bool,
+    fallback_order: list[str],
+) -> str | None:
+    """Se allow_fallback=False, controlla solo requested."""
+    versions = [requested] if not allow_fallback else [requested] + [x for x in fallback_order if x != requested]
+    for mv in versions:
+        ph = pred_map.get((int(fx_id), int(home_team_id), mv))
+        pa = pred_map.get((int(fx_id), int(away_team_id), mv))
+        if ph is None or pa is None:
+            continue
+        ph_val = ph.predicted_sot if hasattr(ph, "predicted_sot") else ph.get("predicted_sot")
+        pa_val = pa.predicted_sot if hasattr(pa, "predicted_sot") else pa.get("predicted_sot")
+        if ph_val is not None and pa_val is not None:
+            return mv
+    return None
 
 
 def all_model_versions_preference_order() -> list[str]:
@@ -185,6 +235,11 @@ def resolve_recommended_model_version(
     by_version: dict[str, dict[str, Any]],
     upcoming_fixtures_total: int,
 ) -> str | None:
+    v21_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS)
+    if v21_row and v21_row.get("is_available_for_upcoming"):
+        up = int(v21_row.get("upcoming_predictions") or 0)
+        if upcoming_fixtures_total > 0 and up >= 2 * upcoming_fixtures_total:
+            return BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
     if v20_meets_recommend_criteria(
         db,
         upcoming_fixture_ids=upcoming_fixture_ids,

@@ -135,6 +135,7 @@ class TrackedPickRoundBackfillService:
         *,
         model_id: str,
         pick_type: str,
+        strict_model: bool = False,
     ) -> tuple[float | None, float | None, dict[str, Any], str | None, str | None, bool]:
         """Ritorna home, away, raw_pred, prediction_source, backfill_warning, is_backfilled."""
         pick_svc = TrackedBettingPickService()
@@ -172,6 +173,9 @@ class TrackedPickRoundBackfillService:
             pred_src = src or PREDICTION_SOURCE_RECONSTRUCTED
             return h, a, raw, pred_src, warn, is_bf
 
+        if strict_model:
+            return None, None, {}, None, None, True
+
         if model_id != BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
             h, a, raw, src = self._load_sot_predictions(
                 db,
@@ -207,6 +211,7 @@ class TrackedPickRoundBackfillService:
         limit: int = 50,
     ) -> dict[str, Any]:
         _ = round_key
+        strict_model = model_id is not None
         mid = model_id or BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
         if pick_type not in (PICK_TYPE_CAUTIOUS, PICK_TYPE_STATISTICAL):
             pick_type = PICK_TYPE_CAUTIOUS
@@ -239,6 +244,7 @@ class TrackedPickRoundBackfillService:
                     fx,
                     model_id=mid,
                     pick_type=pick_type,
+                    strict_model=strict_model,
                 )
                 if home_sot is None or away_sot is None:
                     errors.append(
@@ -311,6 +317,166 @@ class TrackedPickRoundBackfillService:
             "status": "success",
             "season": season_year,
             "model_id": mid,
+            "model_version": mid,
+            "pick_type": pick_type,
+            "fixtures_total": len(fixtures),
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "warnings": warnings,
+        }
+
+    def current_round_fixtures_for_competition(
+        self, db: Session, competition_id: int, *, limit: int = 50
+    ) -> list[Fixture]:
+        from app.services.next_round_selection import select_next_round_fixtures
+
+        all_rows = list(
+            db.scalars(
+                select(Fixture)
+                .where(Fixture.competition_id == int(competition_id))
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+            ).all(),
+        )
+        upcoming = [f for f in all_rows if (f.status or "").upper() not in FINISHED_STATUSES]
+        selection = select_next_round_fixtures(upcoming, limit=limit, only_next_round=True)
+        return selection.fixtures
+
+    def create_from_competition(
+        self,
+        db: Session,
+        competition_id: int,
+        *,
+        round_key: str = "current",
+        model_id: str | None = None,
+        pick_type: str = PICK_TYPE_CAUTIOUS,
+        force: bool = False,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        from app.models import Competition
+
+        comp = db.get(Competition, int(competition_id))
+        if comp is None:
+            return {
+                "status": "error",
+                "message": f"Competition {competition_id} non trovata.",
+                "competition_id": int(competition_id),
+            }
+        _ = round_key
+        strict_model = model_id is not None
+        mid = model_id or BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+        if pick_type not in (PICK_TYPE_CAUTIOUS, PICK_TYPE_STATISTICAL):
+            pick_type = PICK_TYPE_CAUTIOUS
+
+        fixtures = self.current_round_fixtures_for_competition(db, int(competition_id), limit=limit)
+        if not fixtures:
+            return {
+                "status": "success",
+                "competition_id": int(competition_id),
+                "competition_key": comp.key,
+                "season": int(comp.season),
+                "model_id": mid,
+                "model_version": mid,
+                "fixtures_total": 0,
+                "created": 0,
+                "updated": 0,
+                "skipped": 0,
+                "errors": [],
+                "warnings": ["Nessuna fixture nel turno corrente."],
+            }
+
+        pick_svc = TrackedBettingPickService()
+        created = updated = skipped = 0
+        errors: list[dict[str, Any]] = []
+        warnings: list[str] = []
+
+        for fx in fixtures:
+            fid = int(fx.id)
+            home_t = db.get(Team, int(fx.home_team_id))
+            away_t = db.get(Team, int(fx.away_team_id))
+            try:
+                home_sot, away_sot, raw_pred, pred_src, bf_warn, is_bf = self._resolve_prediction(
+                    db,
+                    fx,
+                    model_id=mid,
+                    pick_type=pick_type,
+                    strict_model=strict_model,
+                )
+                if home_sot is None or away_sot is None:
+                    errors.append(
+                        {
+                            "fixture_id": fid,
+                            "match": f"{home_t.name if home_t else '?'} – {away_t.name if away_t else '?'}",
+                            "error": f"Predizioni {mid} non disponibili",
+                        },
+                    )
+                    continue
+
+                lu = lineup_row_for_fixture(db, fid)
+                lineup_status = formation_status_from_lineup(lu)
+                advice_ctx = advice_context_from_upcoming_lineup(lineup_status)
+                advice = build_fixture_betting_advice(
+                    home_sot,
+                    away_sot,
+                    model_version=mid,
+                    context=advice_ctx,
+                    home_team_name=home_t.name if home_t else None,
+                    away_team_name=away_t.name if away_t else None,
+                )
+                match = advice.get("match_total") if isinstance(advice.get("match_total"), dict) else {}
+                key = "cautious_pick" if pick_type == PICK_TYPE_CAUTIOUS else "statistical_pick"
+                suggested = match.get(key)
+                if not suggested:
+                    errors.append({"fixture_id": fid, "error": f"Nessun {key} nel betting advice"})
+                    continue
+
+                line_ln = (
+                    match.get("cautious_line")
+                    if pick_type == PICK_TYPE_CAUTIOUS
+                    else match.get("statistical_line")
+                )
+                if bf_warn and bf_warn not in warnings:
+                    warnings.append(bf_warn)
+
+                action = pick_svc.upsert_backfill_round(
+                    db,
+                    fixture_id=fid,
+                    model_id=mid,
+                    pick_type=pick_type,
+                    suggested_pick=str(suggested),
+                    line_value=float(line_ln) if line_ln is not None else None,
+                    predicted_home_sot=round(float(home_sot), 2),
+                    predicted_away_sot=round(float(away_sot), 2),
+                    predicted_total_sot=round(float(home_sot) + float(away_sot), 2),
+                    confidence_label=match.get("confidence_label"),
+                    lineup_confirmed=bool(lu.confirmed) if lu else False,
+                    lineup_fetched_at=lu.fetched_at if lu else None,
+                    raw_prediction_payload=raw_pred,
+                    raw_betting_advice_payload=advice,
+                    is_backfilled=is_bf,
+                    prediction_source=pred_src,
+                    backfill_warning=bf_warn,
+                    force=force,
+                )
+                if action == "created":
+                    created += 1
+                elif action == "updated":
+                    updated += 1
+                else:
+                    skipped += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("backfill competition=%s fixture %s", competition_id, fid)
+                errors.append({"fixture_id": fid, "error": str(exc)[:200]})
+
+        db.commit()
+        return {
+            "status": "success",
+            "competition_id": int(competition_id),
+            "competition_key": comp.key,
+            "season": int(comp.season),
+            "model_id": mid,
+            "model_version": mid,
             "pick_type": pick_type,
             "fixtures_total": len(fixtures),
             "created": created,

@@ -3,10 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   AdminHttpError,
   DEFAULT_SEASON,
-  adminBootstrapSerieA,
   adminIngestLineups,
-  adminIngestPlayerMatchStats,
-  buildPlayerSeasonProfiles,
   adminIngestPlayerStats,
   adminIngestStandings,
   adminIngestTeamStats,
@@ -15,25 +12,24 @@ import {
   buildPlayerSotProfiles,
   buildUpcomingSotFeatures,
   generateUpcomingSotPredictions,
-  getDataHealth,
   getIngestionRuns,
   getTeamShotStatsSummary,
   getPlayerMatchDbSummary,
-  getModelStatusWithOpts,
   getNextRoundQuickReportForCompetition,
   getPlayerSotProfilesSummary,
-  getUpcomingActiveWithOpts,
-  isLegacySerieACompetition,
   postGenerateV04OffensiveCoreSotUpcoming,
   postGenerateV10SotUpcoming,
   postGenerateV11SotUpcoming,
-  postGenerateV20LineupImpactUpcoming,
-  postGenerateV21WeightedComponents,
+  bootstrapCompetition,
+  buildCompetitionPlayerProfiles,
+  getCompetitionDataHealth,
+  getModelStatusForCompetition,
+  ingestCompetitionPlayerStats,
+  ingestCompetitionTeamStats,
   refreshCompetitionNextRound,
   postRefreshNextRoundSportApiLineups,
   postSyncNextRoundApiSquadsBatch,
   postRefreshUpcomingV04Pipeline,
-  resolveModelStatus,
   runBuildSotFeatures,
   runGenerateSotPredictions,
   runSotBacktest,
@@ -44,8 +40,10 @@ import {
 
 import { PreMatchJobPanel } from '../components/admin/PreMatchJobPanel'
 import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
+import { ContextBanner } from '../components/ContextBanner'
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
 import { useCompetition } from '../contexts/CompetitionContext'
+import { useModelSelection } from '../contexts/ModelSelectionContext'
 import {
   V04_MODEL,
   V10_MODEL,
@@ -195,7 +193,8 @@ function ActionButton({
 }
 
 export function Admin() {
-  const { selectedCompetition, selectedCompetitionId } = useCompetition()
+  const { selectedCompetitionId } = useCompetition()
+  const { selectedModelVersion, selectedModelLabel } = useModelSelection()
   const [searchParams] = useSearchParams()
   const sportapiFixtureRef = searchParams.get('sportapi_fixture') ?? undefined
   const sportapiSectionRef = useRef<HTMLDivElement | null>(null)
@@ -209,37 +208,26 @@ export function Admin() {
   const loadCards = useCallback(async () => {
     setCardsError(null)
     try {
-      const s =
-        (await resolveModelStatus(selectedCompetition, SEASON)) ??
-        ({
-          status: 'not_initialized',
-          season: SEASON,
-          active_model_version: null,
-          available_model_versions: [],
-          warnings: ['Nessun campionato selezionato.'],
-          message: 'Modello non ancora inizializzato',
-        } satisfies ModelStatusResponse)
+      if (selectedCompetitionId == null) {
+        setModelStatus(null)
+        setUpcomingActive(null)
+        setCardsError('Seleziona un campionato per lo stato modello.')
+        return
+      }
+      const s = await getModelStatusForCompetition(selectedCompetitionId)
       setModelStatus(s)
-      const mv = s.recommended_model_version || s.active_model_version || V20_MODEL
-      const u =
-        selectedCompetitionId != null && !isLegacySerieACompetition(selectedCompetition)
-          ? await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
-              limit: 20,
-              onlyNextRound: true,
-              modelVersion: mv,
-            })
-          : await getUpcomingActiveWithOpts(SEASON, {
-              limit: 20,
-              onlyNextRound: true,
-              modelVersion: mv,
-            })
+      const u = await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
+        limit: 20,
+        onlyNextRound: true,
+        modelVersion: selectedModelVersion,
+      })
       setUpcomingActive(u)
     } catch (e) {
       setModelStatus(null)
       setUpcomingActive(null)
       setCardsError(e instanceof Error ? e.message : String(e))
     }
-  }, [selectedCompetition, selectedCompetitionId])
+  }, [selectedCompetitionId, selectedModelVersion])
 
   useEffect(() => {
     void loadCards()
@@ -274,10 +262,29 @@ export function Admin() {
           message: pickMessage(data, 'Operazione completata.'),
           body: data,
         })
-        if (['refresh-v04-pipeline', 'gen-v04', 'gen-v10', 'gen-v11', 'refresh-cards'].includes(action.id)) {
+        if (
+          [
+            'refresh-v04-pipeline',
+            'gen-v04',
+            'gen-v10',
+            'gen-v11',
+            'gen-v20',
+            'gen-v21',
+            'refresh-next-round',
+            'refresh-cards',
+          ].includes(action.id)
+        ) {
           void loadCards()
         }
-        if (action.id === 'refresh-v04-pipeline' || action.id === 'gen-v04' || action.id === 'gen-v10' || action.id === 'gen-v11') {
+        if (
+          action.id === 'refresh-v04-pipeline' ||
+          action.id === 'gen-v04' ||
+          action.id === 'gen-v10' ||
+          action.id === 'gen-v11' ||
+          action.id === 'gen-v20' ||
+          action.id === 'gen-v21' ||
+          action.id === 'refresh-next-round'
+        ) {
           try {
             sessionStorage.setItem('sot_admin_refresh_upcoming', String(Date.now()))
           } catch {
@@ -327,13 +334,20 @@ export function Admin() {
     [loadCards, modelStatus],
   )
 
+  const requireCompetition = () => {
+    if (selectedCompetitionId == null) {
+      throw new Error('Seleziona un campionato in alto prima di eseguire questa azione.')
+    }
+    return selectedCompetitionId
+  }
+
   const section1: AdminAction[] = [
     {
       id: 'bootstrap',
       label: 'Aggiorna calendario e squadre',
-      description: 'Bootstrap Serie A (lega, squadre, calendario) da API-Football.',
-      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/bootstrap`,
-      run: () => adminBootstrapSerieA(SEASON),
+      description: 'Bootstrap campionato selezionato da API-Football.',
+      endpoint: `POST /api/admin/competitions/{id}/ingest/bootstrap`,
+      run: () => bootstrapCompetition(requireCompetition(), false),
     },
     {
       id: 'official-lineups',
@@ -347,21 +361,21 @@ export function Admin() {
       id: 'player-match-stats',
       label: 'Aggiorna statistiche giocatori',
       description: 'Importa fixtures/players per le partite finite e salva player_match_stats.',
-      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/player-match-stats`,
-      run: () => adminIngestPlayerMatchStats(SEASON),
+      endpoint: `POST /api/admin/competitions/{id}/ingest/player-match-stats`,
+      run: () => ingestCompetitionPlayerStats(requireCompetition(), false),
     },
     {
       id: 'player-season-profiles',
       label: 'Calcola profili giocatori',
       description: 'Aggrega player_match_stats e aggiorna player_season_profiles.',
-      endpoint: `POST /api/admin/features/player-season-profiles/serie-a/${SEASON}/build`,
-      run: () => buildPlayerSeasonProfiles(SEASON),
+      endpoint: `POST /api/admin/competitions/{id}/features/player-season-profiles/build`,
+      run: () => buildCompetitionPlayerProfiles(requireCompetition(), false),
     },
     {
       id: 'team-stats',
       label: 'Aggiorna statistiche squadra partite finite',
-      endpoint: `POST /api/admin/ingest/serie-a/${SEASON}/team-stats`,
-      run: () => adminIngestTeamStats(SEASON),
+      endpoint: `POST /api/admin/competitions/{id}/ingest/team-stats`,
+      run: () => ingestCompetitionTeamStats(requireCompetition(), false),
     },
     {
       id: 'standings',
@@ -400,39 +414,34 @@ export function Admin() {
 
   const section2: AdminAction[] = [
     {
-      id: 'gen-v04',
-      label: 'Genera previsioni v0.4 prossima giornata',
-      description: `Modello: ${V04_MODEL}`,
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v04-offensive-core-sot`,
-      run: () => postGenerateV04OffensiveCoreSotUpcoming(SEASON),
-    },
-    {
-      id: 'gen-v11',
-      label: 'Genera modello v1.1 SOT',
-      description: 'Stage 1: Produzione offensiva composita — solo dati reali (nessun fallback).',
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v11-sot`,
-      run: () => postGenerateV11SotUpcoming(SEASON),
+      id: 'refresh-next-round',
+      label: 'Prossima giornata (modello selezionato)',
+      description: `Genera prediction per ${selectedModelLabel}.`,
+      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
+      run: () =>
+        refreshCompetitionNextRound(requireCompetition(), false, {
+          modelVersion: selectedModelVersion,
+        }),
     },
     {
       id: 'gen-v21',
       label: 'Genera previsioni v2.1 Weighted Components',
       description: `Engine autonomo macro/micro. Modello: ${V21_MODEL}.`,
-      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round (model_version=v2.1)`,
-      run: async () => {
-        if (selectedCompetitionId != null) {
-          return refreshCompetitionNextRound(selectedCompetitionId, false, {
-            modelVersion: V21_MODEL,
-          })
-        }
-        return postGenerateV21WeightedComponents(SEASON, { competitionId: selectedCompetitionId ?? undefined })
-      },
+      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
+      run: () =>
+        refreshCompetitionNextRound(requireCompetition(), false, {
+          modelVersion: V21_MODEL,
+        }),
     },
     {
       id: 'gen-v20',
       label: 'Genera previsioni v2.0 Lineup Impact',
       description: `Richiede v1.1 e lineups SportAPI. Modello: ${V20_MODEL}.`,
-      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v20-lineup-impact`,
-      run: () => postGenerateV20LineupImpactUpcoming(SEASON),
+      endpoint: `POST /api/admin/competitions/{id}/refresh/next-round`,
+      run: () =>
+        refreshCompetitionNextRound(requireCompetition(), false, {
+          modelVersion: V20_MODEL,
+        }),
     },
     {
       id: 'sportapi-lineups-batch',
@@ -465,9 +474,9 @@ export function Admin() {
     {
       id: 'verify-model',
       label: 'Verifica stato modello',
-      endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/model-status`,
+      endpoint: `GET /api/competitions/{id}/model-status`,
       run: async () => {
-        const s = await getModelStatusWithOpts(SEASON)
+        const s = await getModelStatusForCompetition(requireCompetition())
         setModelStatus(s)
         return s
       },
@@ -475,13 +484,12 @@ export function Admin() {
     {
       id: 'verify-upcoming',
       label: 'Verifica prossima giornata attiva',
-      endpoint: `GET /api/predictions/sot/serie-a/${SEASON}/upcoming-active`,
+      endpoint: `GET /api/competitions/{id}/next-round/quick-report`,
       run: async () => {
-        const mv = modelStatus?.recommended_model_version || modelStatus?.active_model_version || V20_MODEL
-        const u = await getUpcomingActiveWithOpts(SEASON, {
+        const u = await getNextRoundQuickReportForCompetition(requireCompetition(), {
           limit: 20,
           onlyNextRound: true,
-          modelVersion: mv,
+          modelVersion: selectedModelVersion,
         })
         setUpcomingActive(u)
         return u
@@ -513,8 +521,9 @@ export function Admin() {
     {
       id: 'data-health',
       label: 'Controlla copertura dati',
-      endpoint: `GET /api/admin/data-health/serie-a/${SEASON}`,
-      run: () => getDataHealth(SEASON),
+      endpoint: `GET /api/admin/data-health/competitions/{id}`,
+      run: () =>
+        getCompetitionDataHealth(requireCompetition(), { modelVersion: selectedModelVersion }),
     },
     {
       id: 'team-shot-stats-summary',
@@ -533,6 +542,18 @@ export function Admin() {
   ]
 
   const legacyActions: AdminAction[] = [
+    {
+      id: 'gen-v04',
+      label: 'Legacy: Genera previsioni v0.4',
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v04-offensive-core-sot`,
+      run: () => postGenerateV04OffensiveCoreSotUpcoming(SEASON),
+    },
+    {
+      id: 'gen-v11',
+      label: 'Legacy: Genera modello v1.1 SOT',
+      endpoint: `POST /api/predictions/sot/serie-a/${SEASON}/generate-v11-sot`,
+      run: () => postGenerateV11SotUpcoming(SEASON),
+    },
     {
       id: 'legacy-post-matchday',
       label: 'Legacy: pipeline post-giornata v0.1 (+ backtest)',
@@ -593,10 +614,9 @@ export function Admin() {
         <header className="pt-4">
           <h1 className="text-2xl font-semibold text-slate-900">Admin / Strumenti tecnici</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Operazioni su dati Serie A e modello v0.4. Ogni pulsante ha timeout lato client; solo il pulsante cliccato
-            mostra «In corso…».
+            Operazioni sul campionato e modello selezionati. Ogni pulsante ha timeout lato client.
           </p>
-          <p className="mt-1 text-xs text-slate-500">Stagione {SEASON}</p>
+          <ContextBanner showModelSelector={false} />
         </header>
 
         <CompetitionsAdminPanel />
@@ -716,12 +736,10 @@ export function Admin() {
                   label: '',
                   endpoint: `GET …/upcoming-active`,
                   run: async () => {
-                    const mv =
-                      modelStatus?.recommended_model_version || modelStatus?.active_model_version || V20_MODEL
-                    const u = await getUpcomingActiveWithOpts(SEASON, {
+                    const u = await getNextRoundQuickReportForCompetition(requireCompetition(), {
                       limit: 20,
                       onlyNextRound: true,
-                      modelVersion: mv,
+                      modelVersion: selectedModelVersion,
                     })
                     setUpcomingActive(u)
                     return u

@@ -5,11 +5,13 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
 from app.schemas.competition import IngestDryRunBody, SportApiLineupsIngestBody
+from app.schemas.tracked_betting_picks import CreateTrackedPicksFromRoundBody
 from app.services.competition_ingestion_service import CompetitionIngestionService
 from app.services.competition_service import CompetitionService
 from app.services.competition_sportapi_lineup_service import CompetitionSportApiLineupService
@@ -197,3 +199,27 @@ def refresh_competition_next_round(
     if result.get("status") == "error":
         return JSONResponse(status_code=422, content=jsonable_encoder(result))
     return jsonable_encoder(result)
+
+
+@router.post("/{competition_id}/betting-picks/create-from-round")
+def create_competition_tracked_picks_from_round(
+    competition_id: int,
+    body: CreateTrackedPicksFromRoundBody,
+    db: Session = Depends(get_db),
+):
+    from app.services.tracked_pick_round_backfill_service import TrackedPickRoundBackfillService
+
+    try:
+        out = TrackedPickRoundBackfillService().create_from_competition(
+            db,
+            int(competition_id),
+            round_key=body.round,
+            model_id=body.model_id,
+            pick_type=body.pick_type,
+            force=bool(body.force),
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("create tracked picks competition=%s DB error", competition_id)
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)

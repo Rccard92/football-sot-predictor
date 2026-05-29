@@ -227,6 +227,8 @@ def build_dashboard_row(
         "official_outcome": official_outcome,
         "is_live_fixture": is_live,
         "status": pick.status,
+        "model_id": str(pick.model_id),
+        "model_version": str(pick.model_id),
     }
 
 
@@ -272,11 +274,7 @@ def build_dashboard_payload(
         by_fixture.setdefault(int(p.fixture_id), []).append(p)
 
     fx_ids = list(by_fixture.keys())
-    impact_snaps = LineupRefreshImpactOrchestrator.load_impact_snapshots_by_fixture_ids(
-        db,
-        fx_ids,
-        model_id=BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
-    )
+    impact_snaps: dict[int, Any] = {}
 
     rows_out: list[dict[str, Any]] = []
     for fid in sorted(
@@ -292,6 +290,11 @@ def build_dashboard_payload(
         pick = select_dashboard_pick(by_fixture[fid])
         if pick is None:
             continue
+        impact_snaps = LineupRefreshImpactOrchestrator.load_impact_snapshots_by_fixture_ids(
+            db,
+            [fid],
+            model_id=str(pick.model_id),
+        )
         ht = teams.get(int(fx.home_team_id))
         at = teams.get(int(fx.away_team_id))
         rows_out.append(
@@ -307,16 +310,22 @@ def build_dashboard_payload(
     }
 
 
-def list_tracked_dashboard_for_competition(db: Session, comp: Competition) -> dict[str, Any]:
+def list_tracked_dashboard_for_competition(
+    db: Session,
+    comp: Competition,
+    *,
+    model_version: str | None = None,
+) -> dict[str, Any]:
     """Carica pick del campionato selezionato."""
-    picks = list(
-        db.scalars(
-            select(TrackedBettingPick)
-            .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
-            .where(Fixture.competition_id == comp.id)
-            .order_by(Fixture.kickoff_at.asc(), TrackedBettingPick.id.asc()),
-        ).all(),
+    q = (
+        select(TrackedBettingPick)
+        .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
+        .where(Fixture.competition_id == comp.id)
+        .order_by(Fixture.kickoff_at.asc(), TrackedBettingPick.id.asc())
     )
+    if model_version:
+        q = q.where(TrackedBettingPick.model_id == str(model_version))
+    picks = list(db.scalars(q).all())
     fx_ids = list({int(p.fixture_id) for p in picks})
     fixtures = (
         {int(f.id): f for f in db.scalars(select(Fixture).where(Fixture.id.in_(fx_ids))).all()}
@@ -341,6 +350,8 @@ def list_tracked_dashboard_for_competition(db: Session, comp: Competition) -> di
     )
     result["competition_id"] = comp.id
     result["competition_name"] = comp.name
+    if model_version:
+        result["model_version"] = str(model_version)
     return result
 
 

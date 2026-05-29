@@ -49,8 +49,11 @@ from app.services.model_version_preference import (
     build_v11_coherence_warnings,
     enrich_v10_model_status_row,
     enrich_v11_model_status_row,
+    missing_prediction_payload,
+    pick_fixture_model_version_strict,
     preferred_model_versions,
     resolve_recommended_model_version,
+    resolve_requested_model_version,
 )
 from app.services.sot_feature_service import SotFeatureService
 from app.services.sot_prediction_service import (  # type: ignore[attr-defined]
@@ -498,16 +501,71 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
     for r in agg:
         mv = str(r.get("model_version"))
         up_n = int(r.get("upcoming_predictions") or 0)
+        gen_at = r.get("generated_at")
         by_version[mv] = {
             "model_version": mv,
             "predictions_total": int(r.get("predictions_total") or 0),
+            "predictions_count": int(r.get("predictions_total") or 0),
             "upcoming_predictions": up_n,
-            "generated_at": r.get("generated_at"),
+            "generated_at": gen_at.isoformat() if gen_at else None,
+            "last_generated_at": gen_at.isoformat() if gen_at else None,
             "is_available_for_upcoming": bool(up_n > 0),
         }
 
+    upcoming_rows = (
+        db.scalars(
+            select(Fixture).where(
+                Fixture.competition_id == competition_id,
+                ~Fixture.status.in_(FINISHED_STATUSES),
+            )
+        ).all()
+        if upcoming_fixture_ids
+        else []
+    )
+    from app.services.next_round_selection import select_next_round_fixtures
+
+    next_round_sel = select_next_round_fixtures(list(upcoming_rows), limit=100, only_next_round=True)
+    next_round_ids = [int(f.id) for f in next_round_sel.fixtures]
+    next_round_total = len(next_round_ids)
+    if next_round_ids:
+        nr_agg = (
+            db.execute(
+                select(
+                    TeamSotPrediction.model_version.label("model_version"),
+                    func.count(TeamSotPrediction.id).label("next_round_predictions"),
+                )
+                .select_from(TeamSotPrediction)
+                .where(
+                    TeamSotPrediction.fixture_id.in_(next_round_ids),
+                    TeamSotPrediction.predicted_sot.isnot(None),
+                )
+                .group_by(TeamSotPrediction.model_version)
+            )
+            .mappings()
+            .all()
+        )
+        for r in nr_agg:
+            mv = str(r.get("model_version"))
+            nr_n = int(r.get("next_round_predictions") or 0)
+            row = by_version.setdefault(mv, {"model_version": mv, "predictions_total": 0, "upcoming_predictions": 0})
+            row["next_round_predictions_count"] = nr_n
+            if next_round_total > 0:
+                expected = 2 * next_round_total
+                row["readiness"] = "ready" if nr_n >= expected else ("partial" if nr_n > 0 else "missing")
+            else:
+                row["readiness"] = "missing"
+
     visible = user_visible_model_versions()
     available_list = ensure_v21_in_available_list([by_version[k] for k in visible if k in by_version])
+    for row in available_list:
+        mv = str(row.get("model_version") or "")
+        info = get_model_display(mv)
+        row.setdefault("label", info.label if info else mv)
+        row.setdefault("predictions_count", row.get("predictions_total", 0))
+        row.setdefault("next_round_predictions_count", row.get("next_round_predictions_count", 0))
+        row.setdefault("last_generated_at", row.get("last_generated_at") or row.get("generated_at"))
+        row.setdefault("status", row.get("readiness", "missing" if not row.get("is_available_for_upcoming") else "ready"))
+        row.setdefault("readiness", row.get("readiness", row["status"]))
     recommended = resolve_recommended_model_version(
         db,
         upcoming_fixture_ids=upcoming_fixture_ids,
@@ -525,6 +583,7 @@ def build_model_status_for_competition(db: Session, comp: Any) -> tuple[dict[str
         "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
         "upcoming_fixtures_total": int(upcoming_fixtures_total),
         "available_model_versions": available_list,
+        "available_models": available_list,
         "warnings": warnings,
     }
     v20_row = by_version.get(BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT)
@@ -690,16 +749,16 @@ def build_upcoming_active_payload(
     )
     if recommended is None:
         recommended = next((mv for mv in preferred if has_any_upcoming(mv)), BASELINE_SOT_MODEL_VERSION)
-    requested = model_version or recommended
+    requested, explicit_model = resolve_requested_model_version(model_version, default=recommended)
     warnings: list[str] = []
-    if model_version is not None and requested not in preferred:
-        warnings.append(f"Model version richiesta non riconosciuta: {requested}. Uso fallback per fixture.")
+    if explicit_model and requested not in preferred:
+        warnings.append(f"Model version richiesta non riconosciuta: {requested}.")
 
     fx_ids = [int(f.id) for f in upcoming]
     team_ids = list({int(f.home_team_id) for f in upcoming} | {int(f.away_team_id) for f in upcoming})
     teams = {t.id: t for t in db.scalars(select(Team).where(Team.id.in_(team_ids))).all()} if team_ids else {}
 
-    versions_to_load = list(dict.fromkeys([requested] + preferred))
+    versions_to_load = [requested] if explicit_model else list(dict.fromkeys([requested] + preferred))
     preds = db.scalars(
         select(TeamSotPrediction).where(
             TeamSotPrediction.fixture_id.in_(fx_ids) if fx_ids else False,
@@ -711,12 +770,15 @@ def build_upcoming_active_payload(
     }
 
     def pick_match_version(fx: Fixture) -> str | None:
-        for mv in [requested] + [x for x in preferred if x != requested]:
-            ph = pred_map.get((int(fx.id), int(fx.home_team_id), mv))
-            pa = pred_map.get((int(fx.id), int(fx.away_team_id), mv))
-            if ph and ph.predicted_sot is not None and pa and pa.predicted_sot is not None:
-                return mv
-        return None
+        return pick_fixture_model_version_strict(
+            int(fx.id),
+            int(fx.home_team_id),
+            int(fx.away_team_id),
+            requested,
+            pred_map,
+            allow_fallback=not explicit_model,
+            fallback_order=preferred,
+        )
 
     def baseline_v01(fx: Fixture, team_id: int) -> float | None:
         row = pred_map.get((int(fx.id), int(team_id), BASELINE_SOT_MODEL_VERSION))
@@ -752,7 +814,12 @@ def build_upcoming_active_payload(
     for fx in upcoming:
         mv_used = pick_match_version(fx)
         if mv_used is None:
-            warnings.append(f"Fixture {int(fx.id)}: nessuna prediction disponibile per nessuna model_version.")
+            if explicit_model:
+                warnings.append(f"Fixture {int(fx.id)}: prediction assente per {requested}.")
+            else:
+                warnings.append(f"Fixture {int(fx.id)}: nessuna prediction disponibile per nessuna model_version.")
+            if explicit_model:
+                continue
             mv_used = requested
 
         def side(team_id: int) -> dict[str, Any] | None:
@@ -870,9 +937,28 @@ def build_upcoming_active_payload(
         )
 
     round_label = _fixture_round_display(upcoming[0]) if upcoming else None
+    mv_used_top = requested if explicit_model else (model_version or recommended)
+    if explicit_model and upcoming and not matches:
+        payload = missing_prediction_payload(
+            requested,
+            season=int(season),
+            model_version_used=requested,
+            recommended_model_version=recommended,
+            stable_model_version=BASELINE_SOT_MODEL_VERSION_V11_SOT,
+            round=round_label,
+            matches_count=0,
+            matches=[],
+            model_limitations=default_model_limitations_dict(),
+            warnings=warnings,
+        )
+        if competition_id is not None:
+            payload["competition_id"] = int(competition_id)
+            payload["competition_name"] = competition_name
+        return payload, 200
+
     payload: dict[str, Any] = {
         "season": int(season),
-        "model_version_used": requested if model_version else recommended,
+        "model_version_used": mv_used_top,
         "recommended_model_version": recommended,
         "stable_model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
         "round": round_label,
@@ -998,6 +1084,9 @@ def build_competition_audit_fixtures_list(
             home_name = home.name if home else ""
             away_name = away.name if away else ""
             kickoff_iso = f.kickoff_at.isoformat() if f.kickoff_at else None
+            has_pred = pred_counts.get(int(f.id), 0) >= 2
+            if model_version and not has_pred:
+                continue
             fixtures_payload.append(
                 {
                     "fixture_id": int(f.id),
@@ -1008,7 +1097,7 @@ def build_competition_audit_fixtures_list(
                     "round": f.round,
                     "status": f.status,
                     "status_short": f.status,
-                    "has_prediction": pred_counts.get(int(f.id), 0) >= 2,
+                    "has_prediction": has_pred,
                     "competition_id": int(comp.id),
                     "home_team": {
                         "id": int(f.home_team_id),
@@ -1029,6 +1118,7 @@ def build_competition_audit_fixtures_list(
                 "competition_name": comp.name,
                 "season": int(comp.season),
                 "scope": scope,
+                "model_version": model_version,
                 "fixtures": fixtures_payload,
             },
             200,
@@ -1108,6 +1198,15 @@ def build_competition_fixture_explanation(
         if payload.get("status") == "error":
             return payload, 422
         if payload.get("status") == "missing":
+            mv = str(model_version or payload.get("model_version") or "")
+            return missing_prediction_payload(
+                mv or "unknown",
+                competition_id=int(comp.id),
+                competition_name=comp.name,
+                fixture_id=int(fixture_id),
+                fixture=payload.get("fixture"),
+            ), 404
+        if payload.get("status") == "missing_prediction":
             return payload, 404
     return payload, 200
 

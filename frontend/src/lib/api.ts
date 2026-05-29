@@ -76,14 +76,43 @@ export async function getNextRoundQuickReportForCompetition(
 
 export async function getTrackedBettingPicksForCompetition(
   competitionId: number,
+  opts?: { modelVersion?: string },
 ): Promise<TrackedBettingPicksResponse> {
+  const p = new URLSearchParams()
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
   return requestJson<TrackedBettingPicksResponse>(
-    `/api/competitions/${competitionId}/betting-picks/tracked`,
+    `/api/competitions/${competitionId}/betting-picks/tracked${q ? `?${q}` : ''}`,
   )
 }
 
-export async function getCompetitionDataHealth(competitionId: number): Promise<Record<string, unknown>> {
-  return adminGetJson<Record<string, unknown>>(`/api/admin/data-health/competitions/${competitionId}`)
+export async function getCompetitionDataHealth(
+  competitionId: number,
+  opts?: { modelVersion?: string },
+): Promise<Record<string, unknown>> {
+  const p = new URLSearchParams()
+  if (opts?.modelVersion) p.set('model_version', opts.modelVersion)
+  const q = p.toString()
+  return adminGetJson<Record<string, unknown>>(
+    `/api/admin/data-health/competitions/${competitionId}${q ? `?${q}` : ''}`,
+  )
+}
+
+export async function postCreateTrackedPicksFromCompetitionRound(
+  competitionId: number,
+  body?: {
+    round?: string
+    model_id?: string
+    pick_type?: string
+    force?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<CreateTrackedPicksFromRoundSummary> {
+  return adminPostJson<CreateTrackedPicksFromRoundSummary>(
+    `/api/admin/competitions/${competitionId}/betting-picks/create-from-round`,
+    body ?? {},
+    opts,
+  )
 }
 
 export type CompetitionDiscoverCandidate = {
@@ -903,6 +932,8 @@ export type TrackedBettingPickRow = {
   fixture_status_label: string
   initial_outcome: string
   official_outcome: string
+  model_id?: string
+  model_version?: string
   is_live_fixture?: boolean
   status?: string
 }
@@ -2014,8 +2045,14 @@ export type UpcomingMatchesResponse = {
 
 export type ModelStatusVersionRow = {
   model_version: string
+  label?: string
   predictions_total: number
+  predictions_count?: number
   upcoming_predictions: number
+  next_round_predictions_count?: number
+  readiness?: string
+  status?: string
+  last_generated_at?: string | null
   avg_expected_sot: number | null
   min_expected_sot: number | null
   max_expected_sot: number | null
@@ -2270,6 +2307,9 @@ export type RefereeSummary = {
 }
 
 export type UpcomingActiveResponse = {
+  status?: string
+  message?: string
+  model_version?: string
   season: number
   competition_id?: number
   competition_name?: string

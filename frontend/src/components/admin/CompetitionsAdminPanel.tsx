@@ -17,6 +17,7 @@ import {
   type SeasonNotAvailableErrorBody,
 } from '../../lib/api'
 import { useCompetition } from '../../contexts/CompetitionContext'
+import { useModelSelection } from '../../contexts/ModelSelectionContext'
 
 type IngestionAction = {
   label: string
@@ -123,6 +124,7 @@ export function CompetitionsAdminPanel() {
     refreshCompetitions,
     setSelectedCompetitionId,
   } = useCompetition()
+  const { selectedModelVersion } = useModelSelection()
   const [country, setCountry] = useState('Brazil')
   const [nameQuery, setNameQuery] = useState('Serie A')
   const [season, setSeason] = useState(2026)
@@ -433,7 +435,10 @@ export function CompetitionsAdminPanel() {
                 {
                   label: 'Prossima giornata',
                   description: 'Genera report/predizioni per fixture future',
-                  fn: () => refreshCompetitionNextRound(selectedCompetitionId, dryRun),
+                  fn: () =>
+                    refreshCompetitionNextRound(selectedCompetitionId, dryRun, {
+                      modelVersion: selectedModelVersion,
+                    }),
                 },
                 {
                   label: 'Lineups SportAPI',

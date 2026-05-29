@@ -19,9 +19,15 @@ from app.models import (
 )
 from app.services.competition_service import CompetitionService
 from app.services.next_round_selection import select_next_round_fixtures
+from app.services.sot_model_registry import label_for_model, user_visible_model_versions
 
 
-def build_competition_data_health(db: Session, competition_id: int) -> dict[str, Any]:
+def build_competition_data_health(
+    db: Session,
+    competition_id: int,
+    *,
+    selected_model_version: str | None = None,
+) -> dict[str, Any]:
     comp = CompetitionService().get_by_id_or_raise(db, competition_id)
 
     fixture_count = int(
@@ -59,12 +65,71 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         )
         or 0
     )
+
+    all_upcoming = list(
+        db.scalars(
+            select(Fixture).where(
+                Fixture.competition_id == comp.id,
+                ~Fixture.status.in_(FINISHED_STATUSES),
+            )
+        ).all()
+    )
+    next_round_sel = select_next_round_fixtures(all_upcoming, limit=100, only_next_round=True)
+    next_round_ids = [int(fx.id) for fx in next_round_sel.fixtures]
+    next_round_fixture_count = len(next_round_ids)
+
     pred_by_model_rows = db.execute(
         select(TeamSotPrediction.model_version, func.count())
         .where(TeamSotPrediction.competition_id == comp.id)
         .group_by(TeamSotPrediction.model_version)
     ).all()
     predictions_by_model = {str(mv): int(cnt) for mv, cnt in pred_by_model_rows}
+
+    next_round_pred_by_model: dict[str, int] = {}
+    last_gen_by_model: dict[str, str | None] = {}
+    predictions_by_model_detail: list[dict[str, Any]] = []
+    if next_round_ids:
+        nr_rows = db.execute(
+            select(
+                TeamSotPrediction.model_version,
+                func.count(),
+                func.max(TeamSotPrediction.updated_at),
+            )
+            .where(
+                TeamSotPrediction.competition_id == comp.id,
+                TeamSotPrediction.fixture_id.in_(next_round_ids),
+                TeamSotPrediction.predicted_sot.isnot(None),
+            )
+            .group_by(TeamSotPrediction.model_version)
+        ).all()
+        for mv, cnt, gen_at in nr_rows:
+            next_round_pred_by_model[str(mv)] = int(cnt or 0)
+            last_gen_by_model[str(mv)] = gen_at.isoformat() if gen_at else None
+
+    for mv in user_visible_model_versions():
+        total = int(predictions_by_model.get(mv, 0))
+        nr_cnt = int(next_round_pred_by_model.get(mv, 0))
+        if next_round_fixture_count > 0:
+            expected = 2 * next_round_fixture_count
+            readiness = "ready" if nr_cnt >= expected else ("partial" if nr_cnt > 0 else "missing")
+        else:
+            readiness = "ready" if total > 0 else "missing"
+        predictions_by_model_detail.append(
+            {
+                "model_version": mv,
+                "label": label_for_model(mv),
+                "predictions_count": total,
+                "next_round_predictions_count": nr_cnt,
+                "last_generated_at": last_gen_by_model.get(mv),
+                "readiness": readiness,
+            }
+        )
+
+    selected_next_round_count = (
+        int(next_round_pred_by_model.get(str(selected_model_version), 0))
+        if selected_model_version
+        else None
+    )
     lineups_count = int(
         db.scalar(
             select(func.count())
@@ -111,18 +176,6 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         )
         or 0
     )
-
-    all_upcoming = list(
-        db.scalars(
-            select(Fixture).where(
-                Fixture.competition_id == comp.id,
-                ~Fixture.status.in_(FINISHED_STATUSES),
-            )
-        ).all()
-    )
-    next_round_sel = select_next_round_fixtures(all_upcoming, limit=100, only_next_round=True)
-    next_round_ids = [int(fx.id) for fx in next_round_sel.fixtures]
-    next_round_fixture_count = len(next_round_ids)
 
     next_round_mappings_count = 0
     next_round_lineups_count = 0
@@ -180,6 +233,9 @@ def build_competition_data_health(db: Session, competition_id: int) -> dict[str,
         "team_stats_count": team_stats_count,
         "predictions_count": predictions_count,
         "predictions_by_model": predictions_by_model,
+        "predictions_by_model_detail": predictions_by_model_detail,
+        "selected_model_version": selected_model_version,
+        "selected_model_next_round_predictions_count": selected_next_round_count,
         "lineup_rows_count": lineups_count,
         "lineups_api_football_count": lineups_count,
         "sportapi_lineup_rows_count": sportapi_lineups_count,

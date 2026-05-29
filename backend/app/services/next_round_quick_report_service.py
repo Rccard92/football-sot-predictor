@@ -19,8 +19,11 @@ from app.core.constants import (
 )
 from app.models import Competition, Fixture, FixtureLineup, Team, TeamSotPrediction
 from app.services.model_version_preference import (
+    missing_prediction_payload,
+    pick_fixture_model_version_strict,
     preferred_model_versions,
     resolve_recommended_model_version,
+    resolve_requested_model_version,
 )
 from app.services.prediction_readiness import (
     _safe_details,
@@ -122,6 +125,8 @@ def _load_prediction_context(
     db: Session,
     upcoming: list[Fixture],
     requested: str,
+    *,
+    strict_model: bool = False,
 ) -> tuple[
     dict[tuple[int, int, str], TeamSotPrediction],
     str | None,
@@ -176,7 +181,7 @@ def _load_prediction_context(
     if recommended is None:
         recommended = next((mv for mv in preferred if has_any_upcoming(mv)), BASELINE_SOT_MODEL_VERSION)
 
-    versions_to_load = list(dict.fromkeys([requested] + preferred))
+    versions_to_load = [requested] if strict_model else list(dict.fromkeys([requested] + preferred))
     preds = db.scalars(
         select(TeamSotPrediction)
         .options(
@@ -195,12 +200,15 @@ def _load_prediction_context(
     pred_map = {(int(p.fixture_id), int(p.team_id), str(p.model_version)): p for p in preds}
 
     def pick_match_version(fx: Fixture) -> str | None:
-        for mv in [requested] + [x for x in preferred if x != requested]:
-            ph = pred_map.get((int(fx.id), int(fx.home_team_id), mv))
-            pa = pred_map.get((int(fx.id), int(fx.away_team_id), mv))
-            if ph and ph.predicted_sot is not None and pa and pa.predicted_sot is not None:
-                return mv
-        return None
+        return pick_fixture_model_version_strict(
+            int(fx.id),
+            int(fx.home_team_id),
+            int(fx.away_team_id),
+            requested,
+            pred_map,
+            allow_fallback=not strict_model,
+            fallback_order=preferred,
+        )
 
     return pred_map, recommended, warnings, pick_match_version
 
@@ -248,7 +256,7 @@ def build_next_round_quick_report_payload(
         return ({"status": "error", "message": "Errore inatteso", "details": _safe_details(exc)}, 500)
 
     preferred = preferred_model_versions()
-    requested = model_version or BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+    requested, explicit_model = resolve_requested_model_version(model_version)
     warnings: list[str] = []
 
     from app.services.sportapi.sportapi_lineup_status import (
@@ -268,12 +276,14 @@ def build_next_round_quick_report_payload(
         warnings.extend(cov_warnings)
         info_messages.extend(cov_info)
 
-    if model_version is not None and requested not in preferred:
+    if explicit_model and requested not in preferred:
         warnings.append(f"Model version richiesta non riconosciuta: {requested}.")
 
-    pred_map, recommended, _w, pick_match_version = _load_prediction_context(db, upcoming, requested)
+    pred_map, recommended, _w, pick_match_version = _load_prediction_context(
+        db, upcoming, requested, strict_model=explicit_model
+    )
     warnings.extend(_w)
-    mv_default = model_version or recommended or requested
+    mv_default = requested if explicit_model else (model_version or recommended or requested)
 
     fx_ids = fx_ids_early
     team_ids = list({int(f.home_team_id) for f in upcoming} | {int(f.away_team_id) for f in upcoming})
@@ -293,7 +303,13 @@ def build_next_round_quick_report_payload(
 
     matches: list[dict[str, Any]] = []
     for fx in upcoming:
-        mv_used = pick_match_version(fx) or mv_default
+        mv_used = pick_match_version(fx)
+        if mv_used is None:
+            if explicit_model:
+                warnings.append(f"Fixture {int(fx.id)}: prediction assente per {requested}.")
+            else:
+                warnings.append(f"Fixture {int(fx.id)}: prediction incompleta.")
+            continue
         ph = pred_map.get((int(fx.id), int(fx.home_team_id), mv_used))
         pa = pred_map.get((int(fx.id), int(fx.away_team_id), mv_used))
         if ph is None or pa is None or ph.predicted_sot is None or pa.predicted_sot is None:
@@ -349,6 +365,26 @@ def build_next_round_quick_report_payload(
             },
         )
 
+    if explicit_model and upcoming and not matches:
+        payload = missing_prediction_payload(
+            requested,
+            season=int(season),
+            competition_id=competition_id,
+            competition_name=competition_name,
+            recommended_model_version=recommended,
+            stable_model_version=BASELINE_SOT_MODEL_VERSION_V11_SOT,
+            round=round_label,
+            matches_count=0,
+            matches=[],
+            model_limitations=default_model_limitations_dict(),
+            warnings=warnings,
+            info=info_messages,
+            comparison_with_v20=None,
+        )
+        if lineup_coverage is not None:
+            payload["lineup_coverage"] = lineup_coverage
+        return payload, 200
+
     payload = {
         "season": int(season),
         "competition_id": competition_id,
@@ -362,6 +398,7 @@ def build_next_round_quick_report_payload(
         "model_limitations": default_model_limitations_dict(),
         "warnings": warnings,
         "info": info_messages,
+        "comparison_with_v20": None,
     }
     if lineup_coverage is not None:
         payload["lineup_coverage"] = lineup_coverage
@@ -391,13 +428,21 @@ def _build_fixture_detail_response(
     matches = payload.get("matches") or []
     match = next((m for m in matches if int(m.get("fixture_id", 0)) == int(fixture_id)), None)
     if match is None:
-        err: dict[str, Any] = {
-            "status": "error",
-            "code": "prediction_not_found",
-            "message": f"Fixture {fixture_id}: prediction o dettaglio non disponibile.",
-            "fixture_id": int(fixture_id),
-            "step": "prediction_load",
-        }
+        req_mv = payload.get("model_version_used")
+        if isinstance(req_mv, str) and req_mv.strip():
+            err = missing_prediction_payload(
+                req_mv.strip(),
+                fixture_id=int(fixture_id),
+                step="prediction_load",
+            )
+        else:
+            err = {
+                "status": "error",
+                "code": "prediction_not_found",
+                "message": f"Fixture {fixture_id}: prediction o dettaglio non disponibile.",
+                "fixture_id": int(fixture_id),
+                "step": "prediction_load",
+            }
         if competition_id is not None:
             err["competition_id"] = int(competition_id)
         return err, 404

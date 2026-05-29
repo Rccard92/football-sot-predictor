@@ -57,9 +57,12 @@ def competition_next_round_quick_report(
 def competition_tracked_betting_picks(
     competition_id: int,
     db: Session = Depends(get_db),
+    model_version: str | None = Query(None),
 ):
     comp = CompetitionService().get_by_id_or_raise(db, competition_id)
-    return jsonable_encoder(list_tracked_dashboard_for_competition(db, comp))
+    return jsonable_encoder(
+        list_tracked_dashboard_for_competition(db, comp, model_version=model_version)
+    )
 
 
 @router.get("/{competition_id}/predictions/sot/upcoming-fixture/{fixture_id}/detail")

@@ -1,35 +1,29 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  DEFAULT_SEASON,
-  buildUpcomingSotFeatures,
-  generateUpcomingSotPredictions,
-  getNextRoundQuickReport,
+  getModelStatusForCompetition,
   getNextRoundQuickReportForCompetition,
-  getUpcomingFixtureDetail,
   getUpcomingFixtureDetailForCompetition,
-  resolveModelStatus,
   type ModelLimitations,
   type ModelStatusResponse,
   type UpcomingActiveMatchRow,
   type UpcomingActiveResponse,
 } from '../lib/api'
-import { CompetitionBadge } from '../components/CompetitionSelector'
+import { ContextBanner } from '../components/ContextBanner'
 import { useCompetition } from '../contexts/CompetitionContext'
+import { useModelSelection } from '../contexts/ModelSelectionContext'
 import { QuickPlayReportSection } from '../components/upcoming'
 import {
-  V20_MODEL,
-  V21_MODEL,
   filterVersionsForUi,
   formatInputsAvailable,
   formatModelStatusFootnote,
-  isV21ExperimentalRow,
   isV21EngineNotReadyRow,
   isV21ManifestInvalidRow,
   labelForModelVersion,
   labelForOperatingMode,
   stageBadgeForModel,
   stageDescriptionForModel,
+  V21_MODEL,
 } from '../lib/modelVersions'
 
 const MatchCard = lazy(async () => {
@@ -48,56 +42,38 @@ function ReportSkeleton() {
 
 export function UpcomingMatches() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
-  const season = selectedCompetition?.season ?? DEFAULT_SEASON
+  const { selectedModelVersion, selectedModelLabel } = useModelSelection()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<ModelStatusResponse | null>(null)
   const [data, setData] = useState<UpcomingActiveResponse | null>(null)
-  const [buildBusy, setBuildBusy] = useState(false)
-  const [predBusy, setPredBusy] = useState(false)
-  const [actionMsg, setActionMsg] = useState<string | null>(null)
-  const [selectedModel, setSelectedModel] = useState<string | null>(null)
-  const didInitModel = useRef(false)
 
   const [selectedFixtureId, setSelectedFixtureId] = useState<number | null>(null)
   const [detailMatch, setDetailMatch] = useState<UpcomingActiveMatchRow | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
+  const missingPrediction =
+    data?.status === 'missing_prediction' || (data?.matches_count === 0 && data?.model_version_used != null)
+
   const load = useCallback(async () => {
+    if (selectedCompetitionId == null) {
+      setLoading(false)
+      setData(null)
+      setStatus(null)
+      setError('Seleziona un campionato per visualizzare la prossima giornata.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
-      const s =
-        (await resolveModelStatus(selectedCompetition, season)) ??
-        ({
-          status: 'not_initialized',
-          season,
-          active_model_version: null,
-          available_model_versions: [],
-          warnings: ['Nessun campionato selezionato.'],
-          message: 'Modello non ancora inizializzato',
-        } satisfies ModelStatusResponse)
+      const s = await getModelStatusForCompetition(selectedCompetitionId)
       setStatus(s)
-      const recommended = s.recommended_model_version || s.active_model_version || null
-      if (!didInitModel.current) {
-        if (s.recommended_model_version) setSelectedModel(s.recommended_model_version)
-        else if (s.active_model_version) setSelectedModel(s.active_model_version)
-        didInitModel.current = true
-      }
-      const mv = selectedModel || recommended
-      const res =
-        selectedCompetitionId != null
-          ? await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
-              limit: 20,
-              onlyNextRound: true,
-              modelVersion: mv,
-            })
-          : await getNextRoundQuickReport(season, {
-              limit: 20,
-              onlyNextRound: true,
-              modelVersion: mv,
-            })
+      const res = await getNextRoundQuickReportForCompetition(selectedCompetitionId, {
+        limit: 20,
+        onlyNextRound: true,
+        modelVersion: selectedModelVersion,
+      })
       setData(res)
     } catch (e) {
       setData(null)
@@ -106,7 +82,7 @@ export function UpcomingMatches() {
     } finally {
       setLoading(false)
     }
-  }, [selectedModel, season, selectedCompetitionId, selectedCompetition])
+  }, [selectedCompetitionId, selectedModelVersion])
 
   useEffect(() => {
     void load()
@@ -130,16 +106,21 @@ export function UpcomingMatches() {
 
   const loadDetail = useCallback(
     async (fixtureId: number) => {
+      if (selectedCompetitionId == null) return
       setDetailLoading(true)
       setDetailError(null)
-      const mv = selectedModel || status?.recommended_model_version || status?.active_model_version
       try {
-        const res =
-          selectedCompetitionId != null
-            ? await getUpcomingFixtureDetailForCompetition(selectedCompetitionId, fixtureId, {
-                modelVersion: mv,
-              })
-            : await getUpcomingFixtureDetail(season, fixtureId, { modelVersion: mv })
+        const res = await getUpcomingFixtureDetailForCompetition(selectedCompetitionId, fixtureId, {
+          modelVersion: selectedModelVersion,
+        })
+        if (res.status === 'missing_prediction') {
+          setDetailError(
+            res.message ??
+              `Prediction ${labelForModelVersion(selectedModelVersion)} non disponibile per questa partita.`,
+          )
+          setDetailMatch(null)
+          return
+        }
         if (res.status === 'error' || !res.match) {
           setDetailError(res.message ?? 'Dettaglio partita non disponibile.')
           setDetailMatch(null)
@@ -153,7 +134,7 @@ export function UpcomingMatches() {
         setDetailLoading(false)
       }
     },
-    [selectedCompetitionId, season, selectedModel, status],
+    [selectedCompetitionId, selectedModelVersion],
   )
 
   const openDetail = useCallback(
@@ -172,19 +153,16 @@ export function UpcomingMatches() {
   )
 
   const hasPredictions =
-    data?.matches?.some(
+    !missingPrediction &&
+    (data?.matches?.some(
       (m) =>
         Boolean(m.home_prediction && m.away_prediction) ||
         m.total_expected_sot != null ||
         (m.markets?.[0]?.predicted_value != null),
-    ) ?? false
+    ) ??
+      false)
 
-  const activeModel = status?.active_model_version ?? null
-  const recommendedModel = status?.recommended_model_version ?? null
-  const modelInView = selectedModel ?? null
-  const isDifferentFromActive = Boolean(activeModel && modelInView && activeModel !== modelInView)
-  const isRecommendedView =
-    Boolean(recommendedModel && modelInView && recommendedModel === modelInView)
+  const modelInView = selectedModelVersion
 
   const modelStatusFootnote = formatModelStatusFootnote(
     status?.v20_operating_context ?? {
@@ -197,13 +175,13 @@ export function UpcomingMatches() {
 
   const v21EngineNotReady = useMemo(() => {
     const rows = status?.available_model_versions ?? []
-    const row = rows.find((r) => r.model_version === (modelInView ?? ''))
+    const row = rows.find((r) => r.model_version === modelInView)
     return modelInView === V21_MODEL && row != null && isV21EngineNotReadyRow(row)
   }, [modelInView, status?.available_model_versions])
 
   const v21ManifestInvalid = useMemo(() => {
     const rows = status?.available_model_versions ?? []
-    const row = rows.find((r) => r.model_version === (modelInView ?? ''))
+    const row = rows.find((r) => r.model_version === modelInView)
     return modelInView === V21_MODEL && row != null && isV21ManifestInvalidRow(row)
   }, [modelInView, status?.available_model_versions])
 
@@ -217,7 +195,7 @@ export function UpcomingMatches() {
 
   const auditListUrl =
     selectedCompetitionId != null
-      ? `/match-variable-audit?competition_id=${selectedCompetitionId}`
+      ? `/match-variable-audit?competition_id=${selectedCompetitionId}&model_version=${encodeURIComponent(selectedModelVersion)}`
       : '/match-variable-audit'
 
   const limitationsResolved: ModelLimitations = data?.model_limitations ?? {
@@ -228,6 +206,10 @@ export function UpcomingMatches() {
       'Questa versione baseline usa solo statistiche squadra storiche. Formazioni, assenze e quote bookmaker automatiche non sono ancora considerate.',
   }
 
+  const selectedModelStatusRow = status?.available_model_versions?.find(
+    (r) => r.model_version === selectedModelVersion,
+  )
+
   return (
     <div className="space-y-8 pb-8">
       <header className="space-y-3 pt-4">
@@ -235,135 +217,71 @@ export function UpcomingMatches() {
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
             Prossima giornata{selectedCompetition ? ` — ${selectedCompetition.name}` : ''}
           </h1>
-          <CompetitionBadge />
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Previsioni SOT per le prossime partite. Con <strong>v2.0</strong> vedi anche il confronto rispetto alla base{' '}
-            <strong>v1.1</strong>.
+            Previsioni SOT per le prossime partite del modello selezionato. Nessun fallback automatico ad altre
+            versioni.
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-700 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="font-semibold text-slate-900">
-              Modello globale:{' '}
-              <span className="font-normal text-slate-800">
-                {status?.global_model_label ?? labelForModelVersion(V20_MODEL)}
-              </span>
+        <ContextBanner
+          extra={
+            <>
+              {data?.round ? (
+                <p>
+                  Prossimo turno: <span className="font-medium text-slate-900">{data.round}</span>
+                </p>
+              ) : null}
+              <p>
+                Prediction trovate:{' '}
+                <span className="font-medium text-slate-900">{data?.matches_count ?? 0}</span>
+                {selectedModelStatusRow?.next_round_predictions_count != null ? (
+                  <span className="text-slate-500">
+                    {' '}
+                    (next round DB: {selectedModelStatusRow.next_round_predictions_count})
+                  </span>
+                ) : null}
+              </p>
               {status?.operating_mode ? (
-                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                  {labelForOperatingMode(status.operating_mode)}
-                </span>
+                <p>
+                  Modalità v2.0:{' '}
+                  <span className="font-medium">{labelForOperatingMode(status.operating_mode)}</span>
+                </p>
               ) : null}
+              {modelStatusFootnote ? <p>{modelStatusFootnote}</p> : null}
+            </>
+          }
+        />
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-700 shadow-sm">
+          <p className="font-semibold text-slate-900">
+            Modello in uso: <span className="font-normal">{selectedModelLabel}</span>
+            <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
+              Stage: {stageBadgeForModel(modelInView)}
+              {modelInView === V21_MODEL ? ' · Sperimentale' : ''}
+            </span>
+          </p>
+          <p className="mt-1 text-slate-600">{stageDescriptionForModel(modelInView)}</p>
+          {status?.inputs_available ? (
+            <p className="mt-1 text-slate-600">
+              Input disponibili: {formatInputsAvailable(status.inputs_available)}
             </p>
-            {status?.competition_name ? (
-              <p className="text-xs text-slate-600">
-                Campionato: <span className="font-medium text-slate-900">{status.competition_name}</span>
-              </p>
-            ) : null}
-            {status?.inputs_available ? (
-              <p className="text-xs text-slate-600">
-                Input disponibili:{' '}
-                <span className="font-medium text-slate-800">{formatInputsAvailable(status.inputs_available)}</span>
-              </p>
-            ) : null}
-            {modelStatusFootnote ? (
-              <p className="text-xs text-slate-600">{modelStatusFootnote}</p>
-            ) : null}
-            <p className="font-semibold text-slate-900">
-              Modello attivo:{' '}
-              <span className="font-normal text-slate-800">{status?.active_model_version ?? '—'}</span>
-              {isRecommendedView && recommendedModel === activeModel ? (
-                <span className="ml-2 text-[11px] font-medium text-emerald-700">(raccomandato)</span>
-              ) : null}
-              {modelInView === V20_MODEL || modelInView === V21_MODEL ? (
-                <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-800">
-                  Stage: {stageBadgeForModel(modelInView)}
-                  {modelInView === V21_MODEL ? ' · Sperimentale' : ''}
-                </span>
-              ) : null}
+          ) : null}
+          {v21ManifestInvalid ? (
+            <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-950">
+              Manifest v2.1 non valido: il modello sperimentale è temporaneamente disabilitato.
             </p>
-            {modelInView === V20_MODEL || modelInView === V21_MODEL ? (
-              <p className="text-xs text-slate-600">{stageDescriptionForModel(modelInView)}</p>
-            ) : null}
-            {v21ManifestInvalid ? (
-              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-relaxed text-rose-950">
-                Manifest v2.1 non valido: il modello sperimentale è temporaneamente disabilitato. v2.0 e il
-                resto dell&apos;app restano operativi.
-              </p>
-            ) : null}
-            {v21EngineNotReady && !v21ManifestInvalid ? (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-                Modello v2.1 registrato, engine di calcolo in preparazione. Nessuna previsione numerica v2.1
-                disponibile in questo step.
-              </p>
-            ) : null}
-            {recommendedModel && recommendedModel !== activeModel ? (
-              <p className="text-xs text-slate-600">
-                Modello raccomandato: <span className="font-medium text-slate-900">{recommendedModel}</span>
-              </p>
-            ) : null}
-            {isDifferentFromActive ? (
-              <p className="text-xs text-slate-600">
-                Modello in vista: <span className="font-medium text-slate-900">{modelInView}</span>
-              </p>
-            ) : null}
-            <div className="pt-2">
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Seleziona modello
-              </label>
-              <select
-                value={selectedModel ?? status?.recommended_model_version ?? ''}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm"
-              >
-                {filterVersionsForUi(status?.available_model_versions ?? [])
-                  .sort((a, b) => {
-                    const rec = status?.recommended_model_version
-                    if (a.model_version === rec) return -1
-                    if (b.model_version === rec) return 1
-                    if (a.model_version === V21_MODEL) return -1
-                    if (b.model_version === V21_MODEL) return 1
-                    return a.model_version.localeCompare(b.model_version)
-                  })
-                  .map((v) => (
-                    <option key={v.model_version} value={v.model_version}>
-                      {labelForModelVersion(v.model_version)}
-                      {v.model_version === status?.recommended_model_version ? ' (consigliato)' : ''}
-                      {isV21ExperimentalRow(v) ? ' (sperimentale)' : ''}
-                      {v.is_available_for_upcoming ? '' : ' (no upcoming)'}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          </div>
-          <div className="space-y-2 text-xs text-slate-600">
-            {data?.round ? (
-              <p>
-                Prossimo turno: <span className="font-medium text-slate-900">{data.round}</span>
-              </p>
-            ) : null}
-            {data?.lineup_coverage?.next_round_fixture_count ? (
-              <p>
-                Coverage formazioni:{' '}
-                <span className="font-medium text-slate-900">
-                  {data.lineup_coverage.next_round_sportapi_lineups_count ?? 0}/
-                  {data.lineup_coverage.next_round_fixture_count} (
-                  {data.lineup_coverage.next_round_coverage_pct ?? 0}%)
-                </span>
-              </p>
-            ) : null}
-            <p className="text-xs text-slate-500">
-              Dettagli tecnici in{' '}
-              <Link to={auditListUrl} className="font-medium text-slate-700 underline">
-                Audit Variabili
-              </Link>{' '}
-              e in{' '}
-              <Link to="/match-analysis-framework" className="font-medium text-slate-700 underline">
-                Framework Analisi
-              </Link>
-              .
+          ) : null}
+          {v21EngineNotReady && !v21ManifestInvalid ? (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+              Engine v2.1 non pronto per questo campionato.
             </p>
-          </div>
+          ) : null}
+          <p className="mt-2 text-xs text-slate-500">
+            Versioni in DB:{' '}
+            {filterVersionsForUi(status?.available_model_versions ?? [])
+              .map((v) => labelForModelVersion(v.model_version))
+              .join(', ') || '—'}
+          </p>
         </div>
       </header>
 
@@ -397,67 +315,30 @@ export function UpcomingMatches() {
         <div className="space-y-4">
           <ReportSkeleton />
         </div>
-      ) : !data?.matches.length ? (
+      ) : missingPrediction ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-6 shadow-sm">
+          <p className="font-medium text-amber-950">
+            Prediction non ancora generate per questo modello.
+          </p>
+          <p className="mt-2 text-sm text-amber-900">
+            Vai in Admin e rigenera Prossima giornata per{' '}
+            <strong>{selectedModelLabel}</strong>
+            {selectedCompetition ? ` (${selectedCompetition.name})` : ''}.
+          </p>
+          <p className="mt-2 text-xs text-amber-800">
+            {data?.message ?? 'Nessuna prediction per il model_version selezionato.'}
+          </p>
+        </div>
+      ) : !data?.matches?.length ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <p className="text-slate-700">Nessuna partita futura trovata nel calendario.</p>
         </div>
       ) : !hasPredictions ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-6 shadow-sm">
-          <p className="font-medium text-amber-950">Genera previsioni per le prossime partite</p>
+          <p className="font-medium text-amber-950">Prediction incomplete per il modello selezionato</p>
           <p className="mt-2 text-sm text-amber-900">
-            Non ci sono ancora previsioni sui tiri in porta per le partite programmate. Costruisci prima le
-            informazioni statistiche sulle partite future, poi genera le previsioni.
+            Ci sono partite nel turno ma mancano prediction per {selectedModelLabel}. Rigenera da Admin.
           </p>
-          <details className="mt-4 rounded-2xl border border-amber-200 bg-white/40">
-            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-amber-950 marker:hidden [&::-webkit-details-marker]:hidden">
-              Strumenti tecnici (build/generate)
-            </summary>
-            <div className="border-t border-amber-200 px-4 py-4">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={buildBusy || predBusy}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                  onClick={async () => {
-                    setBuildBusy(true)
-                    setActionMsg(null)
-                    try {
-                      await buildUpcomingSotFeatures(season)
-                      setActionMsg('Dati aggiornati per le partite future.')
-                      await load()
-                    } catch (e) {
-                      setActionMsg(e instanceof Error ? e.message : String(e))
-                    } finally {
-                      setBuildBusy(false)
-                    }
-                  }}
-                >
-                  {buildBusy ? 'Caricamento…' : 'Costruisci dati partite future'}
-                </button>
-                <button
-                  type="button"
-                  disabled={buildBusy || predBusy}
-                  className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
-                  onClick={async () => {
-                    setPredBusy(true)
-                    setActionMsg(null)
-                    try {
-                      await generateUpcomingSotPredictions(season)
-                      setActionMsg('Previsioni future generate.')
-                      await load()
-                    } catch (e) {
-                      setActionMsg(e instanceof Error ? e.message : String(e))
-                    } finally {
-                      setPredBusy(false)
-                    }
-                  }}
-                >
-                  {predBusy ? 'Caricamento…' : 'Genera previsioni future'}
-                </button>
-              </div>
-            </div>
-          </details>
-          {actionMsg ? <p className="mt-3 text-sm text-slate-800">{actionMsg}</p> : null}
         </div>
       ) : (
         <div className="space-y-6">
@@ -468,7 +349,7 @@ export function UpcomingMatches() {
                 <span className="text-slate-400"> · </span>
               </>
             ) : null}
-            {data.matches_count} partite
+            {data.matches_count} partite · modello {selectedModelLabel}
           </p>
           <QuickPlayReportSection
             matches={data.matches}
@@ -483,9 +364,7 @@ export function UpcomingMatches() {
             selectedFixtureId={selectedFixtureId}
           />
 
-          {detailLoading ? (
-            <p className="text-sm text-slate-600">Carico dettagli partita…</p>
-          ) : null}
+          {detailLoading ? <p className="text-sm text-slate-600">Carico dettagli partita…</p> : null}
           {detailError ? (
             <div className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900">
               {detailError}
@@ -504,6 +383,11 @@ export function UpcomingMatches() {
           <section className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-600 shadow-sm">
             <p className="font-semibold text-slate-900">Nota modello</p>
             <p className="mt-1">{limitationsResolved.note}</p>
+            <p className="mt-2">
+              <Link to={auditListUrl} className="font-medium text-slate-700 underline">
+                Audit variabili
+              </Link>
+            </p>
           </section>
         </div>
       )}
