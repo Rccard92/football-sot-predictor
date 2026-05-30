@@ -144,6 +144,8 @@ class SotV21PointInTimePreviewService:
             ),
             home_trace=_side_trace(home_side),
             away_trace=_side_trace(away_side),
+            home_prior_matches_count=int(ctx.home_prior_matches_count),
+            away_prior_matches_count=int(ctx.away_prior_matches_count),
             warnings=warnings,
             fallback_variables=fallbacks,
             feature_snapshot_json=feature_snapshot,

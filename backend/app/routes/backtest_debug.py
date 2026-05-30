@@ -1,4 +1,4 @@
-"""Debug read-only Backtest Engine (Step C.1 + D + E)."""
+"""Debug read-only Backtest Engine (Step C.1 + D + E + F)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
+from app.services.backtest.sot_v21_mini_run_preview_service import SotV21MiniRunPreviewService
 from app.services.backtest.sot_v21_preview_service import SotV21PointInTimePreviewService
 from app.services.backtest_health_service import BacktestHealthService
+from app.schemas.backtest_sot_v21_mini_run import SotV21MiniRunRequest
 
 logger = logging.getLogger(__name__)
 
@@ -104,5 +106,30 @@ def backtest_debug_sot_v21_preview(
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("GET backtest sot-v21-preview: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.post("/sot-v21-mini-run")
+def backtest_debug_sot_v21_mini_run(
+    body: SotV21MiniRunRequest,
+    db: Session = Depends(get_db),
+):
+    svc = SotV21MiniRunPreviewService()
+    try:
+        payload = svc.run_preview(
+            db,
+            competition_id=body.competition_id,
+            mode=body.mode,
+            limit=body.limit,
+            offset=body.offset,
+            round_contains=body.round_contains,
+            fixture_ids=body.fixture_ids,
+            include_trace=body.include_trace,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST backtest sot-v21-mini-run: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)

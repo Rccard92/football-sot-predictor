@@ -540,7 +540,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | **C** | API base: create / list / detail run | No — **completato** |
 | **D** | `PointInTimeContext` SOT preview/debug | Sì (preview read-only) |
 | **E** | Preview SOT v2.1 PIT singola fixture | Sì (preview read-only) |
-| **F** | Metriche numeriche (MAE, RMSE, bias, breakdown) | No |
+| **F** | Mini-run preview SOT v2.1 PIT (metriche aggregate read-only) | No — **completato** |
 | **G** | Picks Over/Under → `backtest_picks` | No |
 | **H** | Confronto v2.0 vs v2.1 (due run, stesso market) | No |
 | **I** | Frontend Backtest Dashboard | No |
@@ -741,7 +741,45 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 - Nessun full backtest, nessun cambio status run
 - Nessuna modifica formule/pesi ufficiali v2.1
 
-**Step successivo:** mini-run persistita o dry-run multi-fixture (Step F+).
+**Step successivo:** mini-run multi-fixture con metriche aggregate (Step F).
+
+---
+
+## 19. Step F — Mini-run preview SOT v2.1 point-in-time
+
+**Completato (preview multi-fixture).** Applica la preview Step E a un gruppo limitato di fixture storiche e calcola metriche aggregate in memoria, senza persistenza.
+
+| Endpoint | Metodo | Descrizione |
+|----------|--------|-------------|
+| `/api/backtest/debug/sot-v21-mini-run` | POST | Mini-run read-only su N fixture + MAE/RMSE/bias + breakdown |
+
+| Artefatto | Path |
+|-----------|------|
+| Mini-run service | `backend/app/services/backtest/sot_v21_mini_run_preview_service.py` |
+| Schemas mini-run | `backend/app/schemas/backtest_sot_v21_mini_run.py` |
+| Fixture selection | `BacktestFixtureDebugService.select_fixtures_for_mini_run()` |
+| Test | `backend/tests/test_backtest_sot_v21_mini_run.py` |
+| Admin UI | sezione "Mini-run preview v2.1 PIT" in `BacktestDebugPanel.tsx` |
+| Changelog | `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-f`) |
+
+**Cosa fa:**
+- Seleziona fixture finite con team stats (`competition_id` obbligatorio; `fixture_ids` espliciti o query con `limit`/`offset`/`round_contains`, max 50)
+- Per ogni fixture chiama `SotV21PointInTimePreviewService.build_preview()` (Step E)
+- Calcola summary: MAE home/away/total, RMSE, bias, avg predicted/actual, over/under/exact_near/high_error counts
+- Breakdown per campione storico: `early_low_sample` (<5), `medium_sample` (5–14), `stable_sample` (≥15 prior matches)
+- Breakdown per totale SOT reale: `low_total` (≤6), `medium_total` (7–10), `high_total` (≥11)
+- Worst/best top 5 per `total_abs_error`; `failed_fixtures` per errori singola fixture (status `partial_ok`)
+- Opzionale `include_trace=true` (trace su max 10 fixture)
+
+**Cosa NON fa:**
+- Nessuna riga in `backtest_predictions`, `backtest_picks`, `backtest_run_metrics`
+- Nessuna creazione/modifica/completamento `backtest_runs`
+- Nessuna chiamata API esterne; nessun uso di `team_sot_predictions` o actuals come input
+- Nessuna modifica v2.0/v2.1 runtime, formule o pesi ufficiali
+
+**Read-only:** `preview_only=true`, `db_writes=false`. Dopo mini-run, Health Backtest deve restare con predictions/picks/metrics = 0.
+
+**Step successivo:** run persistita su `backtest_runs` con scrittura `backtest_predictions` (Step G+).
 
 ---
 
@@ -759,6 +797,8 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | SotV21PointInTimePreviewService (Step E) | `backend/app/services/backtest/sot_v21_preview_service.py` |
 | SOT v2.1 PIT macro builder (Step E) | `backend/app/services/backtest/sot_v21_pit_macro_builder.py` |
 | Schemas preview Step E | `backend/app/schemas/backtest_sot_v21_preview.py` |
+| SotV21MiniRunPreviewService (Step F) | `backend/app/services/backtest/sot_v21_mini_run_preview_service.py` |
+| Schemas mini-run Step F | `backend/app/schemas/backtest_sot_v21_mini_run.py` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
 | Modelli Backtest (Step B) | `backend/app/models/backtest.py` |

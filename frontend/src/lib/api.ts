@@ -2400,6 +2400,128 @@ export async function getBacktestSotV21Preview(params: {
   return requestJson<SotV21PreviewResponse>(`/api/backtest/debug/sot-v21-preview?${q.toString()}`)
 }
 
+// --- Backtest Engine Step F (SOT v2.1 PIT mini-run) ---
+
+export type SotV21MiniRunBucketStats = {
+  fixtures_count: number
+  total_mae?: number | null
+  total_bias?: number | null
+  avg_predicted_total_sot?: number | null
+  avg_actual_total_sot?: number | null
+}
+
+export type SotV21MiniRunFixtureResult = {
+  fixture_id: number
+  round?: string | null
+  kickoff_at: string
+  home_team: string
+  away_team: string
+  predicted_home_sot?: number | null
+  predicted_away_sot?: number | null
+  predicted_total_sot?: number | null
+  actual_home_sot?: number | null
+  actual_away_sot?: number | null
+  actual_total_sot?: number | null
+  home_error?: number | null
+  away_error?: number | null
+  total_error?: number | null
+  total_abs_error?: number | null
+  leakage_guard: boolean
+  actuals_used_as_input: boolean
+  latest_fixture_used_at?: string | null
+  cutoff_time: string
+  home_prior_matches_count: number
+  away_prior_matches_count: number
+  warnings: string[]
+  home_trace?: SotV21PreviewResponse['home_trace'] | null
+  away_trace?: SotV21PreviewResponse['away_trace'] | null
+}
+
+export type SotV21MiniRunCaseBrief = {
+  fixture_id: number
+  kickoff_at: string
+  round?: string | null
+  home_team: string
+  away_team: string
+  predicted_home_sot?: number | null
+  predicted_away_sot?: number | null
+  predicted_total_sot?: number | null
+  actual_home_sot?: number | null
+  actual_away_sot?: number | null
+  actual_total_sot?: number | null
+  total_error?: number | null
+  total_abs_error?: number | null
+  home_prior_matches_count: number
+  away_prior_matches_count: number
+  warnings_count: number
+}
+
+export type SotV21MiniRunResponse = {
+  status: string
+  preview_only: boolean
+  market_key: string
+  algorithm_version: string
+  competition_id: number
+  competition_name: string
+  mode: string
+  selection: {
+    limit: number
+    offset: number
+    round_contains?: string | null
+    fixture_ids?: number[] | null
+    order_by: string
+  }
+  summary: {
+    fixtures_requested: number
+    fixtures_processed: number
+    fixtures_failed: number
+    total_mae?: number | null
+    home_mae?: number | null
+    away_mae?: number | null
+    total_rmse?: number | null
+    total_bias?: number | null
+    home_bias?: number | null
+    away_bias?: number | null
+    avg_predicted_total_sot?: number | null
+    avg_actual_total_sot?: number | null
+    overestimated_count: number
+    underestimated_count: number
+    exact_or_near_count: number
+    high_error_count: number
+  }
+  sample_breakdown: {
+    early_low_sample: SotV21MiniRunBucketStats
+    medium_sample: SotV21MiniRunBucketStats
+    stable_sample: SotV21MiniRunBucketStats
+  }
+  actual_total_breakdown: {
+    low_total: SotV21MiniRunBucketStats
+    medium_total: SotV21MiniRunBucketStats
+    high_total: SotV21MiniRunBucketStats
+  }
+  worst_cases: SotV21MiniRunCaseBrief[]
+  best_cases: SotV21MiniRunCaseBrief[]
+  results: SotV21MiniRunFixtureResult[]
+  failed_fixtures: { fixture_id: number; error_code: string; message: string }[]
+  db_writes: boolean
+}
+
+export type SotV21MiniRunRequest = {
+  competition_id: number
+  mode?: string
+  limit?: number
+  offset?: number
+  round_contains?: string | null
+  fixture_ids?: number[] | null
+  include_trace?: boolean
+}
+
+export async function postBacktestSotV21MiniRun(
+  body: SotV21MiniRunRequest,
+): Promise<SotV21MiniRunResponse> {
+  return requestPostJson<SotV21MiniRunResponse>('/api/backtest/debug/sot-v21-mini-run', body)
+}
+
 /** Allineato a `UpcomingSotCalculationBreakdown` (backend). */
 export type UpcomingCalculationBreakdown = {
   season_avg_sot_for: number

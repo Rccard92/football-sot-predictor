@@ -4,6 +4,38 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-f
+
+**Titolo:** Mini-run preview SOT v2.1 point-in-time
+
+**Descrizione:** Aggiunta mini-run read-only per applicare la preview SOT v2.1 PIT a più fixture e calcolare metriche aggregate senza persistere prediction, picks o metriche.
+
+**Highlights:**
+
+- Endpoint debug `POST /api/backtest/debug/sot-v21-mini-run`.
+- MAE, RMSE e bias aggregati.
+- Breakdown per sample storico (early/medium/stable).
+- Breakdown per totale SOT reale (low/medium/high).
+- Worst/best cases.
+- UI Debug Backtest aggiornata.
+- Nessun salvataggio DB.
+- Nessuna modifica a v2.0/v2.1 runtime.
+
+**File toccati:**
+
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/app/services/backtest/backtest_fixture_debug_service.py`
+- `backend/app/schemas/backtest_sot_v21_preview.py` (prior counts additivi)
+- `backend/app/services/backtest/sot_v21_preview_service.py` (prior counts additivi)
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_backtest_sot_v21_mini_run.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-e
 
 **Titolo:** Preview SOT v2.1 point-in-time

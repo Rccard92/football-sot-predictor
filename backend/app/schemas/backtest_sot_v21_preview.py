@@ -65,6 +65,8 @@ class SotV21PreviewResponse(BaseModel):
     errors: SotV21PreviewErrors
     home_trace: SotV21PreviewSideTrace
     away_trace: SotV21PreviewSideTrace
+    home_prior_matches_count: int = 0
+    away_prior_matches_count: int = 0
     warnings: list[str] = Field(default_factory=list)
     fallback_variables: list[str] = Field(default_factory=list)
     feature_snapshot_json: dict[str, Any] = Field(default_factory=dict)

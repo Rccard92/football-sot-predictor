@@ -1,8 +1,10 @@
-"""Lista fixture candidate per debug PointInTimeContext (Step D)."""
+"""Lista fixture candidate per debug PointInTimeContext (Step D + F)."""
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from dataclasses import dataclass
+
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.backtest.errors import raise_backtest_http
@@ -15,7 +17,71 @@ from app.schemas.backtest_point_in_time import (
 )
 
 
+@dataclass(frozen=True)
+class MiniRunFixtureSelection:
+    items: list[BacktestFixtureCandidate]
+    order_by: str
+    fixtures_requested: int
+
+
 class BacktestFixtureDebugService:
+    def _require_competition(self, db: Session, competition_id: int) -> Competition:
+        comp = db.get(Competition, int(competition_id))
+        if comp is None:
+            raise_backtest_http(404, "competition_not_found", f"Competition {competition_id} not found")
+        return comp
+
+    def _fixture_to_candidate(self, db: Session, fixture: Fixture) -> BacktestFixtureCandidate:
+        home = db.get(Team, int(fixture.home_team_id))
+        away = db.get(Team, int(fixture.away_team_id))
+        stats = db.scalars(
+            select(FixtureTeamStat).where(FixtureTeamStat.fixture_id == int(fixture.id)),
+        ).all()
+        has_stats = len(stats) >= 1
+        home_sot = None
+        away_sot = None
+        for st in stats:
+            if int(st.team_id) == int(fixture.home_team_id) and st.shots_on_target is not None:
+                home_sot = int(st.shots_on_target)
+            if int(st.team_id) == int(fixture.away_team_id) and st.shots_on_target is not None:
+                away_sot = int(st.shots_on_target)
+        actual_total = None
+        if home_sot is not None and away_sot is not None:
+            actual_total = home_sot + away_sot
+        return BacktestFixtureCandidate(
+            fixture_id=int(fixture.id),
+            kickoff_at=fixture.kickoff_at,
+            round=fixture.round,
+            status=fixture.status,
+            home_team=BacktestFixtureTeamBrief(
+                id=int(fixture.home_team_id),
+                name=home.name if home else str(fixture.home_team_id),
+            ),
+            away_team=BacktestFixtureTeamBrief(
+                id=int(fixture.away_team_id),
+                name=away.name if away else str(fixture.away_team_id),
+            ),
+            has_team_stats=has_stats,
+            actual_total_sot=actual_total,
+        )
+
+    def _both_teams_sot_stats_clause(self):
+        home_stat = exists(
+            select(1).where(
+                FixtureTeamStat.fixture_id == Fixture.id,
+                FixtureTeamStat.team_id == Fixture.home_team_id,
+                FixtureTeamStat.shots_on_target.isnot(None),
+            ),
+        )
+        away_stat = exists(
+            select(1).where(
+                FixtureTeamStat.fixture_id == Fixture.id,
+                FixtureTeamStat.team_id == Fixture.away_team_id,
+                FixtureTeamStat.shots_on_target.isnot(None),
+            ),
+        )
+        return home_stat, away_stat
+
     def list_candidate_fixtures(
         self,
         db: Session,
@@ -27,9 +93,7 @@ class BacktestFixtureDebugService:
         offset: int = 0,
         round_contains: str | None = None,
     ) -> BacktestFixtureListResponse:
-        comp = db.get(Competition, int(competition_id))
-        if comp is None:
-            raise_backtest_http(404, "competition_not_found", f"Competition {competition_id} not found")
+        comp = self._require_competition(db, competition_id)
 
         clauses = [Fixture.competition_id == int(competition_id)]
         if season_year is not None:
@@ -62,44 +126,63 @@ class BacktestFixtureDebugService:
 
         items: list[BacktestFixtureCandidate] = []
         for f in rows:
-            home = db.get(Team, int(f.home_team_id))
-            away = db.get(Team, int(f.away_team_id))
-            stats = db.scalars(
-                select(FixtureTeamStat).where(FixtureTeamStat.fixture_id == int(f.id)),
-            ).all()
-            has_stats = len(stats) >= 1
-            home_sot = None
-            away_sot = None
-            for st in stats:
-                if int(st.team_id) == int(f.home_team_id) and st.shots_on_target is not None:
-                    home_sot = int(st.shots_on_target)
-                if int(st.team_id) == int(f.away_team_id) and st.shots_on_target is not None:
-                    away_sot = int(st.shots_on_target)
-            actual_total = None
-            if home_sot is not None and away_sot is not None:
-                actual_total = home_sot + away_sot
-            items.append(
-                BacktestFixtureCandidate(
-                    fixture_id=int(f.id),
-                    kickoff_at=f.kickoff_at,
-                    round=f.round,
-                    status=f.status,
-                    home_team=BacktestFixtureTeamBrief(
-                        id=int(f.home_team_id),
-                        name=home.name if home else str(f.home_team_id),
-                    ),
-                    away_team=BacktestFixtureTeamBrief(
-                        id=int(f.away_team_id),
-                        name=away.name if away else str(f.away_team_id),
-                    ),
-                    has_team_stats=has_stats,
-                    actual_total_sot=actual_total,
-                ),
-            )
+            items.append(self._fixture_to_candidate(db, f))
 
         return BacktestFixtureListResponse(
             items=items,
             total=total,
             limit=limit,
             offset=offset,
+        )
+
+    def select_fixtures_for_mini_run(
+        self,
+        db: Session,
+        *,
+        competition_id: int,
+        limit: int = 20,
+        offset: int = 0,
+        round_contains: str | None = None,
+        fixture_ids: list[int] | None = None,
+        order_by: str = "kickoff_at asc",
+    ) -> MiniRunFixtureSelection:
+        self._require_competition(db, competition_id)
+
+        clauses = [Fixture.competition_id == int(competition_id)]
+        clauses.append(Fixture.status.in_(FINISHED_STATUSES))
+        home_stat, away_stat = self._both_teams_sot_stats_clause()
+        clauses.extend([home_stat, away_stat])
+
+        if fixture_ids:
+            unique_ids = list(dict.fromkeys(int(i) for i in fixture_ids))
+            if len(unique_ids) > 50:
+                raise_backtest_http(
+                    422,
+                    "fixture_ids_limit_exceeded",
+                    "fixture_ids supports at most 50 fixtures per mini-run.",
+                )
+            clauses.append(Fixture.id.in_(unique_ids))
+            rows = db.scalars(
+                select(Fixture)
+                .where(*clauses)
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+            ).all()
+        else:
+            if round_contains and round_contains.strip():
+                clauses.append(Fixture.round.ilike(f"%{round_contains.strip()}%"))
+            safe_limit = max(1, min(int(limit), 50))
+            safe_offset = max(0, int(offset))
+            rows = db.scalars(
+                select(Fixture)
+                .where(*clauses)
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+                .offset(safe_offset)
+                .limit(safe_limit),
+            ).all()
+
+        items = [self._fixture_to_candidate(db, f) for f in rows]
+        return MiniRunFixtureSelection(
+            items=items,
+            order_by=order_by,
+            fixtures_requested=len(unique_ids) if fixture_ids else max(1, min(int(limit), 50)),
         )

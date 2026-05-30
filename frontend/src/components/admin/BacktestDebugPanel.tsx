@@ -10,9 +10,11 @@ import {
   getBacktestSotV21Preview,
   listBacktestDebugFixtures,
   listBacktestRuns,
+  postBacktestSotV21MiniRun,
   type BacktestFixtureCandidate,
   type BacktestRunRow,
   type PointInTimeContextResponse,
+  type SotV21MiniRunResponse,
   type SotV21PreviewResponse,
 } from '../../lib/api'
 import { useCompetition } from '../../contexts/CompetitionContext'
@@ -60,6 +62,11 @@ function parseManualFixtureId(raw: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+function fmtMetric(value: number | null | undefined, digits = 2): string {
+  if (value == null || Number.isNaN(value)) return '—'
+  return value.toFixed(digits)
+}
+
 export function BacktestDebugPanel() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
   const { selectedModelVersion } = useModelSelection()
@@ -85,6 +92,13 @@ export function BacktestDebugPanel() {
   const [pitJson, setPitJson] = useState<PointInTimeContextResponse | null>(null)
   const [pitPreviewJson, setPitPreviewJson] = useState<SotV21PreviewResponse | null>(null)
   const [pitLeakageCritical, setPitLeakageCritical] = useState(false)
+
+  const [miniRunLimit, setMiniRunLimit] = useState(20)
+  const [miniRunOffset, setMiniRunOffset] = useState(0)
+  const [miniRunRoundContains, setMiniRunRoundContains] = useState('')
+  const [miniRunIncludeTrace, setMiniRunIncludeTrace] = useState(false)
+  const [miniRunOutcome, setMiniRunOutcome] = useState<Outcome | null>(null)
+  const [miniRunJson, setMiniRunJson] = useState<SotV21MiniRunResponse | null>(null)
 
   const needsCompetition = selectedCompetitionId == null
 
@@ -419,6 +433,38 @@ export function BacktestDebugPanel() {
       setLoadingId(null)
     }
   }, [pitMode, resolvePreviewFixtureId, selectedCompetitionId])
+
+  const runMiniRunPreview = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    setLoadingId('mini-run')
+    try {
+      const data = await postBacktestSotV21MiniRun({
+        competition_id: selectedCompetitionId,
+        mode: 'pre_lineup',
+        limit: miniRunLimit,
+        offset: miniRunOffset,
+        round_contains: miniRunRoundContains.trim() || null,
+        include_trace: miniRunIncludeTrace,
+      })
+      setMiniRunJson(data)
+      const kind: OutcomeKind =
+        data.status === 'ok' || data.status === 'partial_ok' ? 'ok' : 'error'
+      setMiniRunOutcome({
+        kind,
+        httpStatus: 200,
+        message: `Mini-run ${data.status} — ${data.summary.fixtures_processed} processate, ${data.summary.fixtures_failed} fallite, MAE ${fmtMetric(data.summary.total_mae)}`,
+      })
+    } catch (e) {
+      setMiniRunJson(null)
+      setMiniRunOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Mini-run preview v2.1 PIT'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [miniRunIncludeTrace, miniRunLimit, miniRunOffset, miniRunRoundContains, selectedCompetitionId])
 
   const applyRoundFilter = useCallback(() => {
     const applied = roundFilter.trim()
@@ -888,6 +934,254 @@ export function BacktestDebugPanel() {
           <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-900 p-3 text-xs text-slate-100">
             {JSON.stringify(pitJson, null, 2)}
           </pre>
+        ) : null}
+      </div>
+
+      <div className="mt-6 border-t border-slate-200 pt-6">
+        <h3 className="text-sm font-semibold text-slate-800">Mini-run preview v2.1 PIT (Step F)</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Esegue la preview point-in-time su più fixture e calcola metriche aggregate. Non salva
+          prediction, picks o metriche.
+        </p>
+        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Questa mini-run è read-only: non crea backtest_predictions, non crea picks e non aggiorna
+          run. Dopo la mini-run controlla Health Backtest: predictions/picks/metrics devono restare a
+          0.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Limit
+            <select
+              value={miniRunLimit}
+              onChange={(e) => setMiniRunLimit(Number(e.target.value))}
+              className="rounded border border-slate-200 px-2 py-1"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Offset
+            <input
+              type="number"
+              min={0}
+              value={miniRunOffset}
+              onChange={(e) => setMiniRunOffset(Math.max(0, Number(e.target.value) || 0))}
+              className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Round contains
+            <input
+              type="text"
+              value={miniRunRoundContains}
+              onChange={(e) => setMiniRunRoundContains(e.target.value)}
+              placeholder="Regular Season - 15"
+              className="w-48 rounded border border-slate-200 px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={miniRunIncludeTrace}
+              onChange={(e) => setMiniRunIncludeTrace(e.target.checked)}
+            />
+            Include trace (max 10)
+          </label>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runMiniRunPreview()}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            {loadingId === 'mini-run' ? '…' : 'Esegui mini-run preview'}
+          </button>
+        </div>
+
+        {miniRunOutcome ? (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(miniRunOutcome.kind)}`}>
+            <div className="font-semibold">
+              {outcomeLabel(miniRunOutcome.kind)}
+              {miniRunOutcome.httpStatus != null ? ` — HTTP ${miniRunOutcome.httpStatus}` : ''}
+            </div>
+            <div className="mt-1">{miniRunOutcome.message}</div>
+          </div>
+        ) : null}
+
+        {miniRunJson ? (
+          <>
+            <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 text-sm text-slate-800">
+              <div className="font-medium text-indigo-900">Sintesi mini-run</div>
+              <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                <div>
+                  <span className="font-medium">Processate / fallite:</span>{' '}
+                  {miniRunJson.summary.fixtures_processed} / {miniRunJson.summary.fixtures_failed}
+                </div>
+                <div>
+                  <span className="font-medium">total_mae:</span> {fmtMetric(miniRunJson.summary.total_mae)}
+                </div>
+                <div>
+                  <span className="font-medium">total_rmse:</span> {fmtMetric(miniRunJson.summary.total_rmse)}
+                </div>
+                <div>
+                  <span className="font-medium">total_bias:</span> {fmtMetric(miniRunJson.summary.total_bias)}
+                </div>
+                <div>
+                  <span className="font-medium">avg pred / actual:</span>{' '}
+                  {fmtMetric(miniRunJson.summary.avg_predicted_total_sot)} /{' '}
+                  {fmtMetric(miniRunJson.summary.avg_actual_total_sot)}
+                </div>
+                <div>
+                  <span className="font-medium">over / under / high error:</span>{' '}
+                  {miniRunJson.summary.overestimated_count} / {miniRunJson.summary.underestimated_count} /{' '}
+                  {miniRunJson.summary.high_error_count}
+                </div>
+                <div>
+                  <span className="font-medium">db_writes:</span> {String(miniRunJson.db_writes)}
+                </div>
+                <div>
+                  <span className="font-medium">order_by:</span> {miniRunJson.selection.order_by}
+                </div>
+              </div>
+            </div>
+
+            {miniRunJson.results.length > 0 ? (
+              <div className="mt-4 overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Results per fixture</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">ID</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">Pred tot</th>
+                      <th className="px-2 py-1">Actual tot</th>
+                      <th className="px-2 py-1">Abs err</th>
+                      <th className="px-2 py-1">Prior H/A</th>
+                      <th className="px-2 py-1">Leakage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {miniRunJson.results.map((row) => (
+                      <tr key={row.fixture_id} className="border-b border-slate-100">
+                        <td className="px-2 py-1 font-mono">{row.fixture_id}</td>
+                        <td className="px-2 py-1">
+                          {row.home_team} vs {row.away_team}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(row.predicted_total_sot, 4)}</td>
+                        <td className="px-2 py-1">{row.actual_total_sot ?? '—'}</td>
+                        <td className="px-2 py-1">{fmtMetric(row.total_abs_error, 4)}</td>
+                        <td className="px-2 py-1">
+                          {row.home_prior_matches_count}/{row.away_prior_matches_count}
+                        </td>
+                        <td className="px-2 py-1">{row.leakage_guard ? 'true' : 'false'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            {miniRunJson.worst_cases.length > 0 ? (
+              <div className="mt-4 overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Worst cases</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">ID</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">Pred / Actual</th>
+                      <th className="px-2 py-1">Abs err</th>
+                      <th className="px-2 py-1">Prior min</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {miniRunJson.worst_cases.map((row) => (
+                      <tr key={`worst-${row.fixture_id}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1 font-mono">{row.fixture_id}</td>
+                        <td className="px-2 py-1">
+                          {row.home_team} vs {row.away_team}
+                        </td>
+                        <td className="px-2 py-1">
+                          {fmtMetric(row.predicted_total_sot, 2)} / {row.actual_total_sot ?? '—'}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(row.total_abs_error, 4)}</td>
+                        <td className="px-2 py-1">
+                          {Math.min(row.home_prior_matches_count, row.away_prior_matches_count)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown sample</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">N</th>
+                      <th className="px-2 py-1">MAE</th>
+                      <th className="px-2 py-1">Bias</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(
+                      [
+                        ['early_low_sample', miniRunJson.sample_breakdown.early_low_sample],
+                        ['medium_sample', miniRunJson.sample_breakdown.medium_sample],
+                        ['stable_sample', miniRunJson.sample_breakdown.stable_sample],
+                      ] as const
+                    ).map(([key, bucket]) => (
+                      <tr key={key} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{key}</td>
+                        <td className="px-2 py-1">{bucket.fixtures_count}</td>
+                        <td className="px-2 py-1">{fmtMetric(bucket.total_mae)}</td>
+                        <td className="px-2 py-1">{fmtMetric(bucket.total_bias)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown actual total</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">N</th>
+                      <th className="px-2 py-1">MAE</th>
+                      <th className="px-2 py-1">Bias</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(
+                      [
+                        ['low_total', miniRunJson.actual_total_breakdown.low_total],
+                        ['medium_total', miniRunJson.actual_total_breakdown.medium_total],
+                        ['high_total', miniRunJson.actual_total_breakdown.high_total],
+                      ] as const
+                    ).map(([key, bucket]) => (
+                      <tr key={key} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{key}</td>
+                        <td className="px-2 py-1">{bucket.fixtures_count}</td>
+                        <td className="px-2 py-1">{fmtMetric(bucket.total_mae)}</td>
+                        <td className="px-2 py-1">{fmtMetric(bucket.total_bias)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <pre className="mt-4 max-h-80 overflow-auto rounded-lg border border-indigo-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(miniRunJson, null, 2)}
+            </pre>
+          </>
         ) : null}
       </div>
     </div>
