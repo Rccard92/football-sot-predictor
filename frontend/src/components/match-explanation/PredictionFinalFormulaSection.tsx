@@ -1,5 +1,14 @@
-import type { InternalFormulaBlock, PredictionFormulaBreakdownSide, V21CoverageSummary } from '../../types/sotExplanation'
+﻿import type { InternalFormulaBlock, PredictionFormulaBreakdownSide, V21CoverageSummary } from '../../types/sotExplanation'
 import { V21_MODEL } from '../../lib/modelVersions'
+import {
+  V21AnchorExplainSection,
+  V21FinalSummary,
+  V21FormulaOverviewBox,
+  V21MacroAreasTable,
+  V21MacroMultiplierIntro,
+  V21TechnicalFormulaSection,
+  V21VariableTypesLegend,
+} from './V21FormulaExplanationPanels'
 
 function Badge({
   children,
@@ -172,6 +181,46 @@ function FormulaTable({
   )
 }
 
+function FormulaStoredSummary({
+  formula,
+  cardPredicted,
+  cardMismatch,
+}: {
+  formula: PredictionFormulaBreakdownSide
+  cardPredicted: number | null
+  cardMismatch: boolean
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-800">
+      <p>
+        <span className="font-semibold">Somma contributi (display):</span>{' '}
+        <span className="tabular-nums">{formula.sum_contributions ?? '—'}</span>
+      </p>
+      <p className="mt-1">
+        <span className="font-semibold">Valore previsto salvato:</span>{' '}
+        <span className="tabular-nums text-base font-semibold text-slate-900">
+          {formula.stored_predicted_sot ?? '—'}
+        </span>
+      </p>
+      {formula.delta_vs_stored != null ? (
+        <p className="mt-1 text-slate-600">
+          Differenza (somma − salvato): <span className="tabular-nums">{formula.delta_vs_stored}</span>
+        </p>
+      ) : null}
+      {formula.checksum_warning ? (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
+          {formula.checksum_warning}
+        </p>
+      ) : null}
+      {cardMismatch ? (
+        <p className="mt-2 text-[11px] text-rose-700">
+          Attenzione: la card mostra {cardPredicted} ma il breakdown usa {formula.stored_predicted_sot} dal salvataggio.
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 export function PredictionFinalFormulaSection({
   teamName,
   formula,
@@ -217,11 +266,44 @@ export function PredictionFinalFormulaSection({
         </div>
       </div>
 
-      {isV21 && v21Summary ? (
-        <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
-          <p className="mb-2 text-[11px] font-semibold text-indigo-950">Copertura componenti v2.1</p>
-          <V21CoverageSummaryPanel summary={v21Summary} />
-        </div>
+      {isV21 ? (
+        <>
+          {v21Summary ? (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+              <p className="mb-2 text-[11px] font-semibold text-indigo-950">Copertura componenti v2.1</p>
+              <V21CoverageSummaryPanel summary={v21Summary} />
+            </div>
+          ) : null}
+
+          <V21FormulaOverviewBox formula={formula} />
+          <V21VariableTypesLegend />
+
+          {formula.anchor_breakdown_table?.length ? (
+            <div className="space-y-2">
+              <V21AnchorExplainSection formula={formula} />
+              <FormulaTable rows={formula.anchor_breakdown_table} />
+            </div>
+          ) : null}
+
+          {formula.macro_areas_table?.length ? (
+            <div className="space-y-2">
+              <V21MacroMultiplierIntro formula={formula} />
+              <V21MacroAreasTable rows={formula.macro_areas_table} />
+            </div>
+          ) : null}
+
+          {formula.quality_macro_table?.length ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-900">
+                Controlli qualità / confidence (non nel moltiplicatore SOT)
+              </p>
+              <FormulaTable rows={formula.quality_macro_table} showStatus />
+            </div>
+          ) : null}
+
+          <V21FinalSummary formula={formula} />
+          <V21TechnicalFormulaSection formula={formula} />
+        </>
       ) : (
         <>
           <p className="text-[11px] text-slate-700">
@@ -234,66 +316,19 @@ export function PredictionFinalFormulaSection({
               tabella formula qui sotto ({numericComponentsUsed}).
             </p>
           ) : null}
+
+          <pre className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-900">
+            {formula.formula_symbolic}
+          </pre>
+          <pre className="whitespace-pre-wrap rounded-lg border border-slate-100 bg-white p-3 font-mono text-[11px] leading-relaxed text-slate-900">
+            {formula.formula_numeric}
+          </pre>
+
+          <FormulaTable rows={formula.components_table} />
         </>
       )}
 
-      <pre className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-900">
-        {formula.formula_symbolic}
-      </pre>
-      <pre className="whitespace-pre-wrap rounded-lg border border-slate-100 bg-white p-3 font-mono text-[11px] leading-relaxed text-slate-900">
-        {formula.formula_numeric}
-      </pre>
-
-      {isV21 && formula.anchor_breakdown_table?.length ? (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-slate-900">Base anchor SOT</p>
-          <FormulaTable rows={formula.anchor_breakdown_table} />
-        </div>
-      ) : null}
-
-      {isV21 && formula.macro_areas_table?.length ? (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-slate-900">Macroaree predittive (moltiplicatore)</p>
-          <FormulaTable rows={formula.macro_areas_table} showStatus />
-        </div>
-      ) : null}
-
-      {isV21 && formula.quality_macro_table?.length ? (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-slate-900">Controlli qualità / confidence (non nel moltiplicatore SOT)</p>
-          <FormulaTable rows={formula.quality_macro_table} showStatus />
-        </div>
-      ) : null}
-
-      {!isV21 ? <FormulaTable rows={formula.components_table} /> : null}
-
-      <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-800">
-        <p>
-          <span className="font-semibold">Somma contributi (display):</span>{' '}
-          <span className="tabular-nums">{formula.sum_contributions ?? '—'}</span>
-        </p>
-        <p className="mt-1">
-          <span className="font-semibold">Valore previsto salvato:</span>{' '}
-          <span className="tabular-nums text-base font-semibold text-slate-900">
-            {formula.stored_predicted_sot ?? '—'}
-          </span>
-        </p>
-        {formula.delta_vs_stored != null ? (
-          <p className="mt-1 text-slate-600">
-            Differenza (somma − salvato): <span className="tabular-nums">{formula.delta_vs_stored}</span>
-          </p>
-        ) : null}
-        {formula.checksum_warning ? (
-          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
-            {formula.checksum_warning}
-          </p>
-        ) : null}
-        {cardMismatch ? (
-          <p className="mt-2 text-[11px] text-rose-700">
-            Attenzione: la card mostra {cardPredicted} ma il breakdown usa {formula.stored_predicted_sot} dal salvataggio.
-          </p>
-        ) : null}
-      </div>
+      <FormulaStoredSummary formula={formula} cardPredicted={cardPredicted} cardMismatch={cardMismatch} />
     </div>
   )
 }

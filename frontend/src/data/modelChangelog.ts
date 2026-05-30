@@ -1,4 +1,4 @@
-export type ChangelogType = 'major' | 'minor' | 'patch'
+﻿export type ChangelogType = 'major' | 'minor' | 'patch'
 
 export type ChangelogEntry = {
   version: string
@@ -11,6 +11,23 @@ export type ChangelogEntry = {
 }
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.1.17',
+    date: '2026-05-30',
+    title: 'Spiegazione semplificata formula v2.1',
+    type: 'patch',
+    summary:
+      'Migliorata la leggibilità dell'audit v2.1 con spiegazione semplice della base SOT, del moltiplicatore macro e della previsione finale.',
+    highlights: [
+      'Nuovo box Come nasce questa previsione.',
+      'Spiegazione della Base Anchor SOT.',
+      'Distinzione tra dati diretti, derivati e variabili composite.',
+      'Macroaree con effetto Spinge su / Neutra / Frena.',
+      'Formula tecnica mantenuta ma resa secondaria.',
+      'Nessuna modifica a formule o pesi.',
+    ],
+    visible_to_user: true,
+  },
   {
     version: '2.1.16',
     date: '2026-05-30',
