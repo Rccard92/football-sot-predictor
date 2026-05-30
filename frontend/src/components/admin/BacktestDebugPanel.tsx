@@ -5,9 +5,13 @@ import {
   getBacktestDebugHealth,
   getBacktestErrorCode,
   getBacktestErrorMessage,
+  getBacktestPointInTimeContext,
   getBacktestRun,
+  listBacktestDebugFixtures,
   listBacktestRuns,
+  type BacktestFixtureCandidate,
   type BacktestRunRow,
+  type PointInTimeContextResponse,
 } from '../../lib/api'
 import { useCompetition } from '../../contexts/CompetitionContext'
 import { useModelSelection } from '../../contexts/ModelSelectionContext'
@@ -60,6 +64,13 @@ export function BacktestDebugPanel() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
   const [lastCreatedRunId, setLastCreatedRunId] = useState<number | null>(null)
   const [detailZeroHint, setDetailZeroHint] = useState<string | null>(null)
+
+  const [pitFixtures, setPitFixtures] = useState<BacktestFixtureCandidate[]>([])
+  const [selectedFixtureId, setSelectedFixtureId] = useState<number | null>(null)
+  const [pitMode, setPitMode] = useState<'pre_lineup' | 'post_lineup'>('pre_lineup')
+  const [pitOutcome, setPitOutcome] = useState<Outcome | null>(null)
+  const [pitJson, setPitJson] = useState<PointInTimeContextResponse | null>(null)
+  const [pitLeakageCritical, setPitLeakageCritical] = useState(false)
 
   const needsCompetition = selectedCompetitionId == null
 
@@ -250,6 +261,66 @@ export function BacktestDebugPanel() {
     }
   }, [selectedCompetition?.season, selectedCompetitionId])
 
+  const runListFixtures = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    setLoadingId('pit-fixtures')
+    setPitOutcome(null)
+    setPitJson(null)
+    setPitLeakageCritical(false)
+    try {
+      const data = await listBacktestDebugFixtures({
+        competition_id: selectedCompetitionId,
+        season_year: selectedCompetition?.season,
+        limit: 20,
+      })
+      setPitFixtures(data.items)
+      if (data.items.length > 0 && selectedFixtureId == null) {
+        setSelectedFixtureId(data.items[0].fixture_id)
+      }
+      setPitOutcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `${data.items.length} fixture storiche (totale ${data.total})`,
+      })
+    } catch (e) {
+      setPitOutcome({ kind: 'error', httpStatus: null, message: formatNetworkError(e, 'Lista fixture') })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [selectedCompetition?.season, selectedCompetitionId, selectedFixtureId])
+
+  const runPreviewContext = useCallback(async () => {
+    if (selectedCompetitionId == null || selectedFixtureId == null) return
+    setLoadingId('pit-preview')
+    setPitLeakageCritical(false)
+    try {
+      const data = await getBacktestPointInTimeContext({
+        competition_id: selectedCompetitionId,
+        fixture_id: selectedFixtureId,
+        mode: pitMode,
+      })
+      setPitJson(data)
+      const latest = data.latest_fixture_used_at
+      const cutoff = data.cutoff_time
+      const leakageBad =
+        latest != null && cutoff != null && new Date(latest).getTime() >= new Date(cutoff).getTime()
+      setPitLeakageCritical(leakageBad)
+      const kind: OutcomeKind = leakageBad ? 'error' : 'ok'
+      setPitOutcome({
+        kind,
+        httpStatus: 200,
+        message: leakageBad
+          ? 'Context caricato ma possibile leakage rilevato (latest >= cutoff).'
+          : `Context OK — leakage_guard=${data.leakage_guard}, prior lega=${data.league_prior_matches_count}`,
+      })
+    } catch (e) {
+      setPitJson(null)
+      setPitOutcome({ kind: 'error', httpStatus: null, message: formatNetworkError(e, 'Preview context') })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [pitMode, selectedCompetitionId, selectedFixtureId])
+
   const buttons: {
     id: string
     label: string
@@ -376,6 +447,141 @@ export function BacktestDebugPanel() {
           </table>
         </div>
       ) : null}
+
+      <div className="mt-6 border-t border-slate-200 pt-6">
+        <h3 className="text-sm font-semibold text-slate-800">Point-in-time context (Step D)</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Preview read-only del contesto SOT as-of prima del kickoff. Nessuna prediction generata.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runListFixtures()}
+            className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+          >
+            {loadingId === 'pit-fixtures' ? '…' : 'Lista fixture storiche'}
+          </button>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Mode
+            <select
+              value={pitMode}
+              onChange={(e) => setPitMode(e.target.value as 'pre_lineup' | 'post_lineup')}
+              className="rounded border border-slate-200 px-2 py-1"
+            >
+              <option value="pre_lineup">pre_lineup</option>
+              <option value="post_lineup">post_lineup</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition || selectedFixtureId == null}
+            onClick={() => void runPreviewContext()}
+            className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+          >
+            {loadingId === 'pit-preview' ? '…' : 'Preview context'}
+          </button>
+        </div>
+
+        {pitFixtures.length > 0 ? (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-600">
+                  <th className="px-2 py-1">ID</th>
+                  <th className="px-2 py-1">Kickoff</th>
+                  <th className="px-2 py-1">Match</th>
+                  <th className="px-2 py-1">SOT tot</th>
+                  <th className="px-2 py-1">Stats</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pitFixtures.map((f) => (
+                  <tr
+                    key={f.fixture_id}
+                    className={`cursor-pointer border-b border-slate-100 hover:bg-teal-50 ${
+                      selectedFixtureId === f.fixture_id ? 'bg-teal-100/60' : ''
+                    }`}
+                    onClick={() => setSelectedFixtureId(f.fixture_id)}
+                  >
+                    <td className="px-2 py-1 font-mono">{f.fixture_id}</td>
+                    <td className="px-2 py-1 text-xs">
+                      {new Date(f.kickoff_at).toLocaleString('it-IT')}
+                    </td>
+                    <td className="px-2 py-1">
+                      {f.home_team.name} vs {f.away_team.name}
+                    </td>
+                    <td className="px-2 py-1">{f.actual_total_sot ?? '—'}</td>
+                    <td className="px-2 py-1">{f.has_team_stats ? 'sì' : 'no'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {pitOutcome ? (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(pitOutcome.kind)}`}>
+            <div className="font-semibold">
+              {outcomeLabel(pitOutcome.kind)}
+              {pitOutcome.httpStatus != null ? ` — HTTP ${pitOutcome.httpStatus}` : ''}
+            </div>
+            <div className="mt-1">{pitOutcome.message}</div>
+          </div>
+        ) : null}
+
+        {pitLeakageCritical ? (
+          <p className="mt-3 rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-900">
+            Possibile leakage: latest_fixture_used_at &gt;= cutoff_time
+          </p>
+        ) : null}
+
+        {pitJson ? (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+            <div className="grid gap-1 sm:grid-cols-2">
+              <div>
+                <span className="font-medium">Fixture:</span> #{pitJson.fixture_id}{' '}
+                {pitJson.home_team_name} vs {pitJson.away_team_name}
+              </div>
+              <div>
+                <span className="font-medium">Cutoff:</span>{' '}
+                {new Date(pitJson.cutoff_time).toLocaleString('it-IT')}
+              </div>
+              <div>
+                <span className="font-medium">Latest prior:</span>{' '}
+                {pitJson.latest_fixture_used_at
+                  ? new Date(pitJson.latest_fixture_used_at).toLocaleString('it-IT')
+                  : '—'}
+              </div>
+              <div>
+                <span className="font-medium">Prior counts:</span> home={pitJson.home_prior_matches_count},
+                away={pitJson.away_prior_matches_count}, lega={pitJson.league_prior_matches_count}
+              </div>
+              <div>
+                <span className="font-medium">leakage_guard:</span>{' '}
+                {pitJson.leakage_guard ? 'true' : 'false'}
+              </div>
+              <div>
+                <span className="font-medium">actual_total_sot:</span>{' '}
+                {pitJson.actuals_for_scoring.actual_total_sot ?? '—'} (actuals_used_as_input=
+                {String(pitJson.actuals_used_as_input)})
+              </div>
+            </div>
+            {pitJson.warnings.length > 0 ? (
+              <p className="mt-2 text-xs text-amber-800">
+                Warnings: {pitJson.warnings.join(', ')}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {pitJson ? (
+          <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-900 p-3 text-xs text-slate-100">
+            {JSON.stringify(pitJson, null, 2)}
+          </pre>
+        ) : null}
+      </div>
     </div>
   )
 }

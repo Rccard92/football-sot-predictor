@@ -4,6 +4,34 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-d
+
+**Titolo:** PointInTimeContext SOT preview
+
+**Descrizione:** Aggiunto il primo builder read-only del contesto point-in-time per il mercato SOT, con endpoint e pannello debug per verificare dati disponibili prima del kickoff.
+
+**Highlights:**
+
+- Context SOT filtrato per `cutoff_time` (`fixture_key_before`, `FINISHED_STATUSES`).
+- Calcolo medie SOT/xG solo su fixture precedenti (home/away + lega).
+- League baselines point-in-time (riuso `compute_v21_xg_league_baselines`).
+- Actuals separati dagli input (`actuals_used_as_input=false`).
+- Preview da Admin Debug Backtest (lista fixture + Preview context).
+- Nessuna prediction generata, nessuna modifica v2.0/v2.1.
+
+**File toccati:**
+
+- `backend/app/services/backtest/point_in_time_context_service.py`
+- `backend/app/services/backtest/backtest_fixture_debug_service.py`
+- `backend/app/schemas/backtest_point_in_time.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_backtest_point_in_time_context.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-c1
 
 **Titolo:** Debug Backtest Panel (Admin)

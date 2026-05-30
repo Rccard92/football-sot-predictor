@@ -2211,6 +2211,123 @@ export async function getBacktestRun(runId: number): Promise<BacktestRunDetail> 
   return requestJson<BacktestRunDetail>(`/api/backtest/runs/${runId}`)
 }
 
+// --- Backtest Engine Step D (PointInTimeContext) ---
+
+export type BacktestFixtureCandidate = {
+  fixture_id: number
+  kickoff_at: string
+  round?: string | null
+  status: string
+  home_team: { id: number; name: string }
+  away_team: { id: number; name: string }
+  has_team_stats: boolean
+  actual_total_sot?: number | null
+}
+
+export type BacktestFixtureListResponse = {
+  items: BacktestFixtureCandidate[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type TeamPointInTimeStats = {
+  team_id: number
+  team_name: string
+  avg_sot_for?: number | null
+  avg_sot_against?: number | null
+  avg_total_shots_for?: number | null
+  avg_total_shots_against?: number | null
+  avg_xg_for?: number | null
+  avg_xg_against?: number | null
+  sample_count: number
+  latest_fixture_used_at?: string | null
+  last5?: {
+    last5_avg_sot_for?: number | null
+    last5_avg_sot_against?: number | null
+    last5_avg_xg_for?: number | null
+    last5_avg_xg_against?: number | null
+    last5_count: number
+    status: string
+  }
+}
+
+export type PointInTimeContextResponse = {
+  competition_id: number
+  competition_key: string
+  competition_name: string
+  fixture_id: number
+  fixture_kickoff_at: string
+  fixture_round?: string | null
+  fixture_status: string
+  home_team_id: number
+  home_team_name: string
+  away_team_id: number
+  away_team_name: string
+  mode: string
+  market_key: string
+  cutoff_time: string
+  leakage_guard: boolean
+  latest_fixture_used_at?: string | null
+  prior_fixtures_count: number
+  home_prior_matches_count: number
+  away_prior_matches_count: number
+  league_prior_matches_count: number
+  home_team_stats: TeamPointInTimeStats
+  away_team_stats: TeamPointInTimeStats
+  league_baselines: {
+    league_avg_sot_for?: number | null
+    league_avg_sot_against?: number | null
+    league_avg_total_shots?: number | null
+    league_avg_xg_for?: number | null
+    league_avg_xg_conceded?: number | null
+    sample_count: number
+    latest_fixture_used_at?: string | null
+  }
+  actuals_for_scoring: {
+    actual_home_sot?: number | null
+    actual_away_sot?: number | null
+    actual_total_sot?: number | null
+    final_score?: string | null
+    fixture_status?: string | null
+  }
+  actuals_used_as_input: boolean
+  warnings: string[]
+  feature_snapshot_json: Record<string, unknown>
+}
+
+export async function listBacktestDebugFixtures(params: {
+  competition_id: number
+  season_year?: number
+  status?: string
+  limit?: number
+  offset?: number
+}): Promise<BacktestFixtureListResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  if (params.season_year != null) q.set('season_year', String(params.season_year))
+  if (params.status) q.set('status', params.status)
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return requestJson<BacktestFixtureListResponse>(`/api/backtest/debug/fixtures?${q.toString()}`)
+}
+
+export async function getBacktestPointInTimeContext(params: {
+  competition_id: number
+  fixture_id: number
+  market_key?: string
+  mode?: string
+}): Promise<PointInTimeContextResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  q.set('fixture_id', String(params.fixture_id))
+  if (params.market_key) q.set('market_key', params.market_key)
+  if (params.mode) q.set('mode', params.mode)
+  return requestJson<PointInTimeContextResponse>(
+    `/api/backtest/debug/point-in-time-context?${q.toString()}`,
+  )
+}
+
 /** Allineato a `UpcomingSotCalculationBreakdown` (backend). */
 export type UpcomingCalculationBreakdown = {
   season_avg_sot_for: number

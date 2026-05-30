@@ -538,7 +538,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | **A.1** | Revisione anti-leakage + campi schema (questo documento) | No — **completato** |
 | **B** | Migration tabelle `backtest_*` (4 tabelle + costanti) | No — **completato** |
 | **C** | API base: create / list / detail run | No — **completato** |
-| **D** | `PointInTimeContext` per mercato SOT | No |
+| **D** | `PointInTimeContext` SOT preview/debug | Sì (preview read-only) |
 | **E** | Backtest tecnico SOT v2.1 `pre_lineup` (stagione conclusa) | No (adapter) |
 | **F** | Metriche numeriche (MAE, RMSE, bias, breakdown) | No |
 | **G** | Picks Over/Under → `backtest_picks` | No |
@@ -664,6 +664,44 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 ---
 
+## 17. Step D — PointInTimeContext SOT preview/debug
+
+**Completato (preview).** Builder read-only del contesto point-in-time per mercato SOT, con endpoint debug e sezione Admin. Nessun engine runtime, nessuna prediction persistita.
+
+| Endpoint | Metodo | Descrizione |
+|----------|--------|-------------|
+| `/api/backtest/debug/point-in-time-context` | GET | Context SOT as-of prima del kickoff (`competition_id`, `fixture_id`, `mode`, `market_key`) |
+| `/api/backtest/debug/fixtures` | GET | Lista fixture storiche candidate per debug PIT |
+
+| Artefatto | Path |
+|-----------|------|
+| PointInTimeContextService | `backend/app/services/backtest/point_in_time_context_service.py` |
+| BacktestFixtureDebugService | `backend/app/services/backtest/backtest_fixture_debug_service.py` |
+| Schemas PIT | `backend/app/schemas/backtest_point_in_time.py` |
+| Test | `backend/tests/test_backtest_point_in_time_context.py` |
+| Admin UI (sezione PIT) | `frontend/src/components/admin/BacktestDebugPanel.tsx` |
+| Changelog | `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-d`) |
+
+**Cosa calcola:**
+- Cutoff = `fixture.kickoff_at`; solo fixture prior con `fixture_key_before()` e `FINISHED_STATUSES`
+- Medie squadra SOT/xG/tiri (for/against) da prior home/away (casa+trasferta)
+- Baseline lega point-in-time (via `compute_v21_xg_league_baselines` + `compute_league_offensive_baselines`)
+- Forma last5 per squadra
+- Diagnostica player match stats prior (conteggi, no profili rolling v2.1)
+- Diagnostica lineups per `pre_lineup` / `post_lineup`
+- `actuals_for_scoring` separati — **`actuals_used_as_input = false`**
+- `feature_snapshot_json` in response (non persistito in `backtest_predictions`)
+
+**Cosa NON fa Step D:**
+- Nessuna chiamata a v2.0/v2.1, nessun `SotMarketAdapter`
+- Nessuna riga in `backtest_predictions`, `backtest_picks`, `backtest_run_metrics`
+- Nessun cambio status `backtest_runs`
+- Nessuna modifica formule, pesi, Prossima giornata, Audit, Monitoraggio
+
+**Building block riusati (non modificati):** `build_prior_context`, `compute_v21_xg_league_baselines`, `fixture_key_before`.
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -672,6 +710,9 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | Health debug (Step C.1) | `backend/app/routes/backtest_debug.py` |
 | BacktestHealthService (Step C.1) | `backend/app/services/backtest_health_service.py` |
 | BacktestDebugPanel (Step C.1) | `frontend/src/components/admin/BacktestDebugPanel.tsx` |
+| PointInTimeContextService (Step D) | `backend/app/services/backtest/point_in_time_context_service.py` |
+| BacktestFixtureDebugService (Step D) | `backend/app/services/backtest/backtest_fixture_debug_service.py` |
+| Schemas PIT (Step D) | `backend/app/schemas/backtest_point_in_time.py` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
 | Modelli Backtest (Step B) | `backend/app/models/backtest.py` |
