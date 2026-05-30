@@ -17,7 +17,7 @@ export const MODEL_CHANGELOG: ChangelogEntry[] = [
     title: 'Spiegazione semplificata formula v2.1',
     type: 'patch',
     summary:
-      'Migliorata la leggibilità dell'audit v2.1 con spiegazione semplice della base SOT, del moltiplicatore macro e della previsione finale.',
+      "Migliorata la leggibilità dell'audit v2.1 con spiegazione semplice della base SOT, del moltiplicatore macro e della previsione finale.",
     highlights: [
       'Nuovo box Come nasce questa previsione.',
       'Spiegazione della Base Anchor SOT.',
