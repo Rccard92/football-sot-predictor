@@ -29,6 +29,7 @@ export const MODEL_CHANGELOG: ChangelogEntry[] = [
     visible_to_user: true,
   },
   {
+    version: '2.1.14',
     date: '2026-05-30',
     title: 'Replica procedura xG v1.1 nella v2.1',
     type: 'patch',
