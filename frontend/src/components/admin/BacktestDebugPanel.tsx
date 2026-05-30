@@ -53,6 +53,11 @@ function outcomeLabel(kind: OutcomeKind): string {
   return 'Errore'
 }
 
+function parseManualFixtureId(raw: string): number | null {
+  const n = parseInt(raw.trim(), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export function BacktestDebugPanel() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
   const { selectedModelVersion } = useModelSelection()
@@ -67,12 +72,30 @@ export function BacktestDebugPanel() {
 
   const [pitFixtures, setPitFixtures] = useState<BacktestFixtureCandidate[]>([])
   const [selectedFixtureId, setSelectedFixtureId] = useState<number | null>(null)
+  const [manualFixtureId, setManualFixtureId] = useState('')
+  const [pitOffset, setPitOffset] = useState(0)
+  const [pitLimit, setPitLimit] = useState(20)
+  const [pitTotal, setPitTotal] = useState(0)
+  const [roundFilter, setRoundFilter] = useState('')
+  const [roundFilterApplied, setRoundFilterApplied] = useState('')
   const [pitMode, setPitMode] = useState<'pre_lineup' | 'post_lineup'>('pre_lineup')
   const [pitOutcome, setPitOutcome] = useState<Outcome | null>(null)
   const [pitJson, setPitJson] = useState<PointInTimeContextResponse | null>(null)
   const [pitLeakageCritical, setPitLeakageCritical] = useState(false)
 
   const needsCompetition = selectedCompetitionId == null
+
+  const resolvePreviewFixtureId = useCallback((): number | null => {
+    const manual = parseManualFixtureId(manualFixtureId)
+    if (manual != null) return manual
+    return selectedFixtureId
+  }, [manualFixtureId, selectedFixtureId])
+
+  const previewFixtureRow = useCallback((): BacktestFixtureCandidate | null => {
+    const id = resolvePreviewFixtureId()
+    if (id == null) return null
+    return pitFixtures.find((f) => f.fixture_id === id) ?? null
+  }, [pitFixtures, resolvePreviewFixtureId])
 
   const setResult = (kind: OutcomeKind, httpStatus: number | null, message: string, json: unknown) => {
     setOutcome({ kind, httpStatus, message })
@@ -101,6 +124,19 @@ export function BacktestDebugPanel() {
   useEffect(() => {
     void runHealth()
   }, [runHealth])
+
+  useEffect(() => {
+    setPitOffset(0)
+    setPitTotal(0)
+    setPitFixtures([])
+    setSelectedFixtureId(null)
+    setManualFixtureId('')
+    setRoundFilter('')
+    setRoundFilterApplied('')
+    setPitJson(null)
+    setPitOutcome(null)
+    setPitLeakageCritical(false)
+  }, [selectedCompetitionId])
 
   const runCreate = useCallback(async () => {
     if (selectedCompetitionId == null) return
@@ -261,42 +297,65 @@ export function BacktestDebugPanel() {
     }
   }, [selectedCompetition?.season, selectedCompetitionId])
 
-  const runListFixtures = useCallback(async () => {
-    if (selectedCompetitionId == null) return
-    setLoadingId('pit-fixtures')
-    setPitOutcome(null)
-    setPitJson(null)
-    setPitLeakageCritical(false)
-    try {
-      const data = await listBacktestDebugFixtures({
-        competition_id: selectedCompetitionId,
-        season_year: selectedCompetition?.season,
-        limit: 20,
-      })
-      setPitFixtures(data.items)
-      if (data.items.length > 0 && selectedFixtureId == null) {
-        setSelectedFixtureId(data.items[0].fixture_id)
+  const runListFixtures = useCallback(
+    async (overrideOffset?: number, overrideLimit?: number, overrideRoundContains?: string) => {
+      if (selectedCompetitionId == null) return
+      const limit = overrideLimit ?? pitLimit
+      const offset = overrideOffset ?? pitOffset
+      const roundContains =
+        overrideRoundContains !== undefined ? overrideRoundContains : roundFilterApplied
+      setLoadingId('pit-fixtures')
+      setPitJson(null)
+      setPitLeakageCritical(false)
+      try {
+        const data = await listBacktestDebugFixtures({
+          competition_id: selectedCompetitionId,
+          season_year: selectedCompetition?.season,
+          limit,
+          offset,
+          round_contains: roundContains.trim() || undefined,
+        })
+        setPitFixtures(data.items)
+        setPitTotal(data.total)
+        setPitOffset(data.offset)
+        setPitLimit(data.limit)
+        if (data.items.length > 0 && selectedFixtureId == null && parseManualFixtureId(manualFixtureId) == null) {
+          setSelectedFixtureId(data.items[0].fixture_id)
+        }
+        const from = data.total === 0 ? 0 : data.offset + 1
+        const to = data.offset + data.items.length
+        const filterNote = roundContains.trim() ? ` — filtro round "${roundContains.trim()}"` : ''
+        setPitOutcome({
+          kind: 'ok',
+          httpStatus: 200,
+          message: `Mostrate ${from}–${to} di ${data.total}${filterNote}`,
+        })
+      } catch (e) {
+        setPitOutcome({ kind: 'error', httpStatus: null, message: formatNetworkError(e, 'Lista fixture') })
+      } finally {
+        setLoadingId(null)
       }
-      setPitOutcome({
-        kind: 'ok',
-        httpStatus: 200,
-        message: `${data.items.length} fixture storiche (totale ${data.total})`,
-      })
-    } catch (e) {
-      setPitOutcome({ kind: 'error', httpStatus: null, message: formatNetworkError(e, 'Lista fixture') })
-    } finally {
-      setLoadingId(null)
-    }
-  }, [selectedCompetition?.season, selectedCompetitionId, selectedFixtureId])
+    },
+    [
+      manualFixtureId,
+      pitLimit,
+      pitOffset,
+      roundFilterApplied,
+      selectedCompetition?.season,
+      selectedCompetitionId,
+      selectedFixtureId,
+    ],
+  )
 
   const runPreviewContext = useCallback(async () => {
-    if (selectedCompetitionId == null || selectedFixtureId == null) return
+    const fixtureId = resolvePreviewFixtureId()
+    if (selectedCompetitionId == null || fixtureId == null) return
     setLoadingId('pit-preview')
     setPitLeakageCritical(false)
     try {
       const data = await getBacktestPointInTimeContext({
         competition_id: selectedCompetitionId,
-        fixture_id: selectedFixtureId,
+        fixture_id: fixtureId,
         mode: pitMode,
       })
       setPitJson(data)
@@ -319,7 +378,21 @@ export function BacktestDebugPanel() {
     } finally {
       setLoadingId(null)
     }
-  }, [pitMode, selectedCompetitionId, selectedFixtureId])
+  }, [pitMode, resolvePreviewFixtureId, selectedCompetitionId])
+
+  const applyRoundFilter = useCallback(() => {
+    const applied = roundFilter.trim()
+    setRoundFilterApplied(applied)
+    setPitOffset(0)
+    void runListFixtures(0, undefined, applied)
+  }, [roundFilter, runListFixtures])
+
+  const pitShownFrom = pitTotal === 0 ? 0 : pitOffset + 1
+  const pitShownTo = pitOffset + pitFixtures.length
+  const pitHasPrev = pitOffset > 0
+  const pitHasNext = pitOffset + pitLimit < pitTotal
+  const activePreviewId = resolvePreviewFixtureId()
+  const activePreviewRow = previewFixtureRow()
 
   const buttons: {
     id: string
@@ -454,15 +527,63 @@ export function BacktestDebugPanel() {
           Preview read-only del contesto SOT as-of prima del kickoff. Nessuna prediction generata.
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-end gap-2">
           <button
             type="button"
             disabled={loadingId !== null || needsCompetition}
-            onClick={() => void runListFixtures()}
+            onClick={() => void runListFixtures(pitOffset)}
             className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
           >
             {loadingId === 'pit-fixtures' ? '…' : 'Lista fixture storiche'}
           </button>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Limit
+            <select
+              value={pitLimit}
+              disabled={loadingId !== null}
+              onChange={(e) => {
+                const next = Number(e.target.value)
+                setPitLimit(next)
+                setPitOffset(0)
+                if (pitFixtures.length > 0 || pitTotal > 0) {
+                  void runListFixtures(0, next)
+                }
+              }}
+              className="rounded border border-slate-200 px-2 py-1 text-sm text-slate-800"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Round contiene
+            <input
+              type="text"
+              value={roundFilter}
+              onChange={(e) => setRoundFilter(e.target.value)}
+              placeholder="Regular Season - 20"
+              className="min-w-[12rem] rounded border border-slate-200 px-2 py-1 text-sm text-slate-800"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => applyRoundFilter()}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Applica filtro
+          </button>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Fixture ID manuale
+            <input
+              type="text"
+              value={manualFixtureId}
+              onChange={(e) => setManualFixtureId(e.target.value)}
+              placeholder="12345"
+              className="w-28 rounded border border-slate-200 px-2 py-1 font-mono text-sm text-slate-800"
+            />
+          </label>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             Mode
             <select
@@ -476,13 +597,52 @@ export function BacktestDebugPanel() {
           </label>
           <button
             type="button"
-            disabled={loadingId !== null || needsCompetition || selectedFixtureId == null}
+            disabled={loadingId !== null || needsCompetition || activePreviewId == null}
             onClick={() => void runPreviewContext()}
             className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
           >
             {loadingId === 'pit-preview' ? '…' : 'Preview context'}
           </button>
         </div>
+
+        {activePreviewId != null ? (
+          <div className="mt-3 rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2 text-sm text-slate-800">
+            <div className="font-medium text-teal-900">Fixture per preview</div>
+            <div className="mt-1 grid gap-1 sm:grid-cols-2">
+              <div>
+                <span className="font-medium">fixture_id:</span> {activePreviewId}
+                {parseManualFixtureId(manualFixtureId) != null ? ' (manuale)' : ''}
+              </div>
+              {activePreviewRow ? (
+                <>
+                  <div>
+                    <span className="font-medium">Match:</span> {activePreviewRow.home_team.name} vs{' '}
+                    {activePreviewRow.away_team.name}
+                  </div>
+                  <div>
+                    <span className="font-medium">Kickoff:</span>{' '}
+                    {new Date(activePreviewRow.kickoff_at).toLocaleString('it-IT')}
+                  </div>
+                  <div>
+                    <span className="font-medium">Round:</span> {activePreviewRow.round ?? '—'}
+                  </div>
+                  <div>
+                    <span className="font-medium">actual_total_sot:</span>{' '}
+                    {activePreviewRow.actual_total_sot ?? '—'}
+                  </div>
+                  <div>
+                    <span className="font-medium">has_team_stats:</span>{' '}
+                    {activePreviewRow.has_team_stats ? 'sì' : 'no'}
+                  </div>
+                </>
+              ) : (
+                <div className="text-amber-800 sm:col-span-2">
+                  Non in pagina corrente — usa Preview context per i dettagli completi.
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {pitFixtures.length > 0 ? (
           <div className="mt-3 overflow-x-auto">
@@ -491,6 +651,7 @@ export function BacktestDebugPanel() {
                 <tr className="border-b border-slate-200 text-slate-600">
                   <th className="px-2 py-1">ID</th>
                   <th className="px-2 py-1">Kickoff</th>
+                  <th className="px-2 py-1">Round</th>
                   <th className="px-2 py-1">Match</th>
                   <th className="px-2 py-1">SOT tot</th>
                   <th className="px-2 py-1">Stats</th>
@@ -501,14 +662,20 @@ export function BacktestDebugPanel() {
                   <tr
                     key={f.fixture_id}
                     className={`cursor-pointer border-b border-slate-100 hover:bg-teal-50 ${
-                      selectedFixtureId === f.fixture_id ? 'bg-teal-100/60' : ''
+                      selectedFixtureId === f.fixture_id && parseManualFixtureId(manualFixtureId) == null
+                        ? 'bg-teal-100/60'
+                        : ''
                     }`}
-                    onClick={() => setSelectedFixtureId(f.fixture_id)}
+                    onClick={() => {
+                      setSelectedFixtureId(f.fixture_id)
+                      setManualFixtureId('')
+                    }}
                   >
                     <td className="px-2 py-1 font-mono">{f.fixture_id}</td>
                     <td className="px-2 py-1 text-xs">
                       {new Date(f.kickoff_at).toLocaleString('it-IT')}
                     </td>
+                    <td className="px-2 py-1 text-xs">{f.round ?? '—'}</td>
                     <td className="px-2 py-1">
                       {f.home_team.name} vs {f.away_team.name}
                     </td>
@@ -518,6 +685,30 @@ export function BacktestDebugPanel() {
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : null}
+
+        {pitTotal > 0 ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+            <span>
+              Mostrate {pitShownFrom}–{pitShownTo} di {pitTotal}
+            </span>
+            <button
+              type="button"
+              disabled={loadingId !== null || !pitHasPrev}
+              onClick={() => void runListFixtures(Math.max(0, pitOffset - pitLimit))}
+              className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Pagina precedente
+            </button>
+            <button
+              type="button"
+              disabled={loadingId !== null || !pitHasNext}
+              onClick={() => void runListFixtures(pitOffset + pitLimit)}
+              className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Pagina successiva
+            </button>
           </div>
         ) : null}
 

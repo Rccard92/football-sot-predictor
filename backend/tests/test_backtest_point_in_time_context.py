@@ -199,3 +199,25 @@ def test_backtest_debug_fixtures_list(mock_svc_cls):
     assert body["total"] == 1
     assert body["items"][0]["fixture_id"] == 100
     assert body["items"][0]["has_team_stats"] is True
+
+
+@patch("app.routes.backtest_debug.BacktestFixtureDebugService")
+def test_backtest_debug_fixtures_round_filter(mock_svc_cls):
+    from app.schemas.backtest_point_in_time import BacktestFixtureListResponse
+
+    mock_svc_cls.return_value.list_candidate_fixtures.return_value = BacktestFixtureListResponse(
+        items=[],
+        total=0,
+        limit=20,
+        offset=0,
+    )
+
+    response = client.get(
+        "/api/backtest/debug/fixtures",
+        params={"competition_id": 2, "round_contains": "Regular Season - 20"},
+    )
+
+    assert response.status_code == 200
+    mock_svc_cls.return_value.list_candidate_fixtures.assert_called_once()
+    call_kwargs = mock_svc_cls.return_value.list_candidate_fixtures.call_args.kwargs
+    assert call_kwargs["round_contains"] == "Regular Season - 20"

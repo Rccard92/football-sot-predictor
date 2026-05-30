@@ -4,6 +4,31 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-d-ui-fixture-selector
+
+**Titolo:** Fixture selector PIT — paginazione e ID manuale
+
+**Descrizione:** Miglioramento UI-only del pannello Debug Backtest per esplorare fixture storiche su tutta la stagione (early/mid/late) senza modificare il motore PointInTimeContext.
+
+**Highlights:**
+
+- Paginazione offset/limit con prev/next e "Mostrate X–Y di Z".
+- Filtro `round_contains` su GET `/api/backtest/debug/fixtures`.
+- Input fixture_id manuale per Preview context.
+- Reset PIT al cambio campionato.
+- Nessuna prediction, nessun backtest runtime, v2.0/v2.1 invariati.
+
+**File toccati:**
+
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `frontend/src/lib/api.ts`
+- `backend/app/services/backtest/backtest_fixture_debug_service.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_backtest_point_in_time_context.py`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-d
 
 **Titolo:** PointInTimeContext SOT preview

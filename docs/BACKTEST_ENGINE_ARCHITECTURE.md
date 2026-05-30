@@ -700,6 +700,13 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 **Building block riusati (non modificati):** `build_prior_context`, `compute_v21_xg_league_baselines`, `fixture_key_before`.
 
+**Pannello debug fixture selector (Step D UI):**
+- Paginazione fixture storiche: `offset` / `limit` (10/20/50), pulsanti prev/next, indicazione "Mostrate X–Y di Z"
+- Filtro opzionale `round_contains` (es. `Regular Season - 5` / `- 20` / `- 36`) per test early/mid/late season
+- Input **fixture_id manuale** per Preview context fuori dalla pagina corrente
+- Reset automatico stato PIT al cambio `competition_id` (lista non ricaricata finché l'utente non clicca)
+- Card sintesi fixture selezionata (match, kickoff, round, SOT, has_team_stats)
+
 ---
 
 ## Riferimenti codice

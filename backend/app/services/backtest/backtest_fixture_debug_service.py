@@ -25,6 +25,7 @@ class BacktestFixtureDebugService:
         status: str = "finished",
         limit: int = 20,
         offset: int = 0,
+        round_contains: str | None = None,
     ) -> BacktestFixtureListResponse:
         comp = db.get(Competition, int(competition_id))
         if comp is None:
@@ -45,6 +46,8 @@ class BacktestFixtureDebugService:
                     clauses.append(Fixture.season_id == int(season_row.id))
         if status == "finished":
             clauses.append(Fixture.status.in_(FINISHED_STATUSES))
+        if round_contains and round_contains.strip():
+            clauses.append(Fixture.round.ilike(f"%{round_contains.strip()}%"))
 
         total = int(
             db.scalar(select(func.count()).select_from(Fixture).where(*clauses)) or 0,

@@ -2302,6 +2302,7 @@ export async function listBacktestDebugFixtures(params: {
   status?: string
   limit?: number
   offset?: number
+  round_contains?: string
 }): Promise<BacktestFixtureListResponse> {
   const q = new URLSearchParams()
   q.set('competition_id', String(params.competition_id))
@@ -2309,6 +2310,7 @@ export async function listBacktestDebugFixtures(params: {
   if (params.status) q.set('status', params.status)
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
+  if (params.round_contains) q.set('round_contains', params.round_contains)
   return requestJson<BacktestFixtureListResponse>(`/api/backtest/debug/fixtures?${q.toString()}`)
 }
 

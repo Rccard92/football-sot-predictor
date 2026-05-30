@@ -37,6 +37,7 @@ def backtest_debug_fixtures(
     status: str = Query(default="finished"),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    round_contains: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
     svc = BacktestFixtureDebugService()
@@ -48,6 +49,7 @@ def backtest_debug_fixtures(
             status=status,
             limit=limit,
             offset=offset,
+            round_contains=round_contains,
         )
     except HTTPException:
         raise
