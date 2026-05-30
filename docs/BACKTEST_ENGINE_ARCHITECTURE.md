@@ -537,7 +537,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | **A** | Design architettura (doc + registry stub) | No — **completato** |
 | **A.1** | Revisione anti-leakage + campi schema (questo documento) | No — **completato** |
 | **B** | Migration tabelle `backtest_*` (4 tabelle + costanti) | No — **completato** |
-| **C** | API base: create / list / detail run | No |
+| **C** | API base: create / list / detail run | No — **completato** |
 | **D** | `PointInTimeContext` per mercato SOT | No |
 | **E** | Backtest tecnico SOT v2.1 `pre_lineup` (stagione conclusa) | No (adapter) |
 | **F** | Metriche numeriche (MAE, RMSE, bias, breakdown) | No |
@@ -555,8 +555,8 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 - `team_sot_predictions`, quick report, audit, monitoraggio (comportamento)
 - Route `/backtest/sot/*` esistenti
 - Nessun algoritmo corners / cartellini / gol implementato
-- **Nessun runtime backtest** collegato (Step B = solo DB foundation)
-- Modelli SOT v2.0/v2.1 **non** modificati in Step B
+- **Nessun runtime backtest** collegato (Step B = DB foundation; Step C = CRUD run pending)
+- Modelli SOT v2.0/v2.1 **non** modificati in Step B/C
 
 ---
 
@@ -585,9 +585,44 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 - Nessun backtest eseguito
 - Nessun `PointInTimeContext`
 - Nessun adapter v2.0/v2.1
-- Nessun endpoint operativo `/api/backtest/runs`
+- Nessun endpoint operativo `/api/backtest/runs` (Step B)
 - Nessuna modifica a `prediction_backtests` legacy, `team_sot_predictions`, `tracked_betting_picks`
 - Nessuna modifica a Prossima giornata, Audit, Monitoraggio giocate, quick report, model comparison
+
+---
+
+## 15. Step C — API base run management
+
+**Completato.** Endpoint additivi per gestione run in stato `pending`. Nessun motore di calcolo collegato.
+
+| Endpoint | Metodo | Descrizione |
+|----------|--------|-------------|
+| `/api/backtest/runs` | POST | Crea run `pending` (validazione market/algorithm via registry) |
+| `/api/backtest/runs` | GET | Lista run con filtri e paginazione |
+| `/api/backtest/runs/{run_id}` | GET | Dettaglio run + conteggi predictions/picks/metrics |
+
+| Artefatto | Path |
+|-----------|------|
+| Router | `backend/app/routes/backtest_runs.py` |
+| Service | `backend/app/services/backtest_run_service.py` |
+| Schemas | `backend/app/schemas/backtest_runs.py` |
+| Errori HTTP | `backend/app/backtest/errors.py` |
+| Git commit env | `backend/app/backtest/git_info.py` |
+| Test | `backend/tests/test_backtest_runs_api.py` |
+| Changelog | `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-c`) |
+
+**Cosa fanno:**
+- Validano `competition_id`, `market_key` (solo `active`), `algorithm_version` coerente col market
+- Calcolano `algorithm_config_hash` deterministico (SHA-256 su payload JSON ordinato)
+- Persistono run con `status=pending`, `summary_json=null`, `error_json=null`
+
+**Cosa NON fanno:**
+- Nessuna elaborazione fixture
+- Nessuna prediction, pick o metrica generata (`predictions_count/picks_count/metrics_count = 0` su run nuova)
+- Nessun collegamento a v2.0/v2.1 runtime, `PointInTimeContext`, adapter SOT
+- Market `planned` (corners, cards, …) rifiutati con 422 `market_not_active`
+
+**Route legacy intatte:** `/api/backtest/sot/serie-a/*` (SotBacktestService) non modificate.
 
 ---
 
@@ -595,6 +630,9 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 | Area | Path |
 |------|------|
+| API Backtest Runs (Step C) | `backend/app/routes/backtest_runs.py` |
+| BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
+| Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
 | Modelli Backtest (Step B) | `backend/app/models/backtest.py` |
 | Costanti Backtest (Step B) | `backend/app/backtest/constants.py` |
 | Market Registry (stub) | `backend/app/markets/registry.py` |

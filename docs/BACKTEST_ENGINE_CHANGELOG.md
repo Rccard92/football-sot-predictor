@@ -4,6 +4,35 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-c
+
+**Titolo:** API base Backtest Runs
+
+**Descrizione:** Aggiunti endpoint generici per creare, listare e leggere run di backtest multi-mercato, senza avviare ancora il motore di calcolo.
+
+**Highlights:**
+
+- `POST /api/backtest/runs` — crea run in stato `pending`.
+- `GET /api/backtest/runs` — lista con filtri e paginazione.
+- `GET /api/backtest/runs/{id}` — dettaglio con conteggi predictions/picks/metrics.
+- Validazione `market_key` e `algorithm_version` via registry (solo market `active`).
+- Calcolo `algorithm_config_hash` deterministico.
+- Nessuna prediction/pick/metrica generata.
+- Nessuna modifica a v2.0/v2.1.
+
+**File toccati:**
+
+- `backend/app/routes/backtest_runs.py`
+- `backend/app/services/backtest_run_service.py`
+- `backend/app/schemas/backtest_runs.py`
+- `backend/app/backtest/errors.py`
+- `backend/app/backtest/git_info.py`
+- `backend/app/routes/__init__.py`
+- `backend/tests/test_backtest_runs_api.py`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-b
 
 **Titolo:** DB foundation Backtest Engine

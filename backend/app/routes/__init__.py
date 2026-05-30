@@ -22,6 +22,7 @@ from app.routes import (
     admin_sportapi,
     betting_picks,
     backtest,
+    backtest_runs,
     competition_scoped,
     competitions,
     data_catalog,
@@ -68,6 +69,7 @@ api_router.include_router(dashboard.router)
 api_router.include_router(features.router)
 api_router.include_router(predictions.router)
 api_router.include_router(backtest.router)
+api_router.include_router(backtest_runs.router)
 api_router.include_router(player_sot_profiles.router)
 api_router.include_router(h2h.router)
 api_router.include_router(standings.router)
