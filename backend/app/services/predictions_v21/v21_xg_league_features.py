@@ -73,6 +73,8 @@ def compute_v21_xg_league_baselines(
         return {
             "league_avg_xg_for": None,
             "league_avg_xg_conceded": None,
+            "league_avg_sot_for": None,
+            "league_avg_sot_conceded": None,
             "sample_fixtures": 0,
             "sample_team_stat_rows": 0,
             "latest_fixture_used_at": None,
@@ -89,11 +91,15 @@ def compute_v21_xg_league_baselines(
 
     xg_for_vals: list[float] = []
     xg_conceded_vals: list[float] = []
+    sot_for_vals: list[float] = []
+    sot_conceded_vals: list[float] = []
 
     for st in stats:
         xg_for, _ = expected_goals_from_team_stat(st)
         if xg_for is not None:
             xg_for_vals.append(float(xg_for))
+        if st.shots_on_target is not None:
+            sot_for_vals.append(float(st.shots_on_target))
 
     for f in eligible:
         hid, aid = int(f.home_team_id), int(f.away_team_id)
@@ -106,11 +112,17 @@ def compute_v21_xg_league_baselines(
             xg_c_home, _ = expected_goals_from_team_stat(home_st)
             if xg_c_home is not None:
                 xg_conceded_vals.append(float(xg_c_home))
+            if away_st.shots_on_target is not None:
+                sot_conceded_vals.append(float(away_st.shots_on_target))
+            if home_st.shots_on_target is not None:
+                sot_conceded_vals.append(float(home_st.shots_on_target))
 
     latest = latest_prior_kickoff(eligible)
     return {
         "league_avg_xg_for": _mean(xg_for_vals),
         "league_avg_xg_conceded": _mean(xg_conceded_vals),
+        "league_avg_sot_for": _mean(sot_for_vals),
+        "league_avg_sot_conceded": _mean(sot_conceded_vals),
         "sample_fixtures": len(eligible),
         "sample_team_stat_rows": len(xg_for_vals),
         "latest_fixture_used_at": latest.isoformat() if latest is not None else None,

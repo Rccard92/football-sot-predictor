@@ -2,15 +2,72 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.services.fixture_team_stats_mapping import backfill_shot_columns_from_raw_json_if_null
+from app.services.predictions_common.xg_strict_helpers import build_strict_xg_snapshot
 from app.services.predictions_v11.shared_stats import expected_goals_from_team_stat
 from app.services.predictions_v21.v21_audit_enrichment import enrich_v21_raw_for_audit
 from app.services.predictions_v21.v21_feature_collectors import _collect_chance_quality
 from app.services.predictions_v21.v21_manifest_definitions import V21_MANIFEST_DEFINITIONS
 from app.services.predictions_v21.v21_xg_coverage import resolve_league_xg_available
+
+
+def _team_stat(**kwargs) -> SimpleNamespace:
+    base = dict(
+        expected_goals=1.2,
+        raw_json=None,
+        shots_on_target=4,
+        total_shots=12,
+        shots_inside_box=6,
+        shots_outside_box=3,
+        blocked_shots=2,
+        shots_off_goal=5,
+        ball_possession_pct=None,
+        total_passes=None,
+        accurate_passes=None,
+        pass_accuracy_pct=None,
+    )
+    base.update(kwargs)
+    return SimpleNamespace(**base)
+
+
+def _strict_ctx(*, team_xg=1.5, opp_xg=1.1, league_for=1.3, league_conc=1.2):
+    team_fixtures = []
+    opp_fixtures = []
+    stats_map = {}
+    ko = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    for i in range(8):
+        fid = i + 1
+        team_fixtures.append(SimpleNamespace(id=fid, home_team_id=1, away_team_id=99, kickoff_at=ko, goals_home=1, goals_away=0))
+        stats_map[(fid, 1)] = _team_stat(expected_goals=team_xg)
+        ofid = 100 + i
+        opp_fixtures.append(SimpleNamespace(id=ofid, home_team_id=88, away_team_id=2, kickoff_at=ko, goals_home=0, goals_away=1))
+        stats_map[(ofid, 88)] = _team_stat(expected_goals=opp_xg)
+    league_baselines = {
+        "league_avg_xg_for": league_for,
+        "league_avg_xg_conceded": league_conc,
+        "league_avg_sot_for": 4.0,
+        "league_avg_sot_conceded": 4.0,
+    }
+    strict_xg = build_strict_xg_snapshot(
+        prior_fixtures=team_fixtures,
+        opponent_prior_fixtures=opp_fixtures,
+        stats_map=stats_map,
+        team_id=1,
+        opponent_id=2,
+        league_baselines=league_baselines,
+    )
+    return SimpleNamespace(
+        league_xg_available=True,
+        league_baselines=league_baselines,
+        team_agg={"xg_mean": team_xg, "xg_n": 8},
+        opp_conceded_agg={"xg_mean": opp_xg, "xg_n": 8},
+        strict_xg=strict_xg,
+        xg_leakage_trace={"latest_fixture_used_at": "2026-05-20T18:00:00", "leakage_guard": True},
+    )
 
 
 def _chance_quality_micro(key: str):
@@ -81,17 +138,11 @@ def test_resolve_league_xg_available_from_competition_feed():
 
 def test_collect_chance_quality_uses_real_xg_when_available():
     micro = _chance_quality_micro("xg_produced")
-    ctx = SimpleNamespace(
-        league_xg_available=True,
-        league_baselines={"league_avg_xg_for": 1.3, "league_avg_xg_conceded": 1.2},
-        team_agg={"xg_mean": 1.5, "xg_n": 8},
-        opp_conceded_agg={"xg_mean": 1.1, "xg_n": 8},
-        xg_leakage_trace={"latest_fixture_used_at": "2026-05-20T18:00:00", "leakage_guard": True},
-    )
+    ctx = _strict_ctx()
     result = _collect_chance_quality(ctx, micro)
     assert result.status == "available"
     assert result.raw_value == 1.5
-    assert result.source_path == "fixture_team_stats.expected_goals"
+    assert "fixture_team_stats.expected_goals" in result.source_path
 
 
 def test_enrich_does_not_reclassify_when_components_have_real_xg():
@@ -127,13 +178,7 @@ def test_enrich_does_not_reclassify_when_components_have_real_xg():
 
 
 def test_collect_chance_quality_all_micros_with_league_baselines():
-    ctx = SimpleNamespace(
-        league_xg_available=True,
-        league_baselines={"league_avg_xg_for": 1.3, "league_avg_xg_conceded": 1.2},
-        team_agg={"xg_mean": 1.5, "xg_n": 8},
-        opp_conceded_agg={"xg_mean": 1.1, "xg_n": 8},
-        xg_leakage_trace={"latest_fixture_used_at": "2026-05-20T18:00:00", "leakage_guard": True},
-    )
+    ctx = _strict_ctx()
     for key in (
         "xg_produced",
         "xg_conceded_by_opponent",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from app.services.predictions_common.xg_strict_helpers import V21_XG_SOURCE_PATHS, v21_norm_from_strict_snapshot
 from app.services.predictions_v21.v21_constants import TOP_SHOOTERS_COUNT, XG_PRUDENT_ADJ_MAX, XG_PRUDENT_ADJ_MIN
 from app.services.predictions_v21.v21_feature_context import V21SideContext
 from app.services.predictions_v21.v21_lineup_history import lineup_history_sufficient
@@ -20,6 +21,7 @@ from app.services.predictions_v21.v21_manifest_definitions import V21MacroAreaSp
 from app.services.predictions_v21.v21_xg_coverage import XG_MISSING_WARNING
 from app.services.predictions_v21.v21_normalization import (
     V21MicroResult,
+    clamp_micro_norm,
     neutral_micro,
     normalize_ratio_direct,
     normalize_v21_micro_variable,
@@ -177,11 +179,13 @@ def _collect_recent_form(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroRe
 
 def _collect_chance_quality(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroResult:
     kw = dict(key=micro.key, label=micro.label, micro_weight=micro.micro_weight)
-    xg_trace = ctx.xg_leakage_trace or {}
-    trace_latest = xg_trace.get("latest_fixture_used_at")
-    trace_leakage = xg_trace.get("leakage_guard")
+    snap = ctx.strict_xg
+    trace_latest = (ctx.xg_leakage_trace or {}).get("latest_fixture_used_at") or (
+        snap.latest_fixture_used_at if snap else None
+    )
+    trace_leakage = True
 
-    if not ctx.league_xg_available:
+    if snap is None or not ctx.league_xg_available:
         return neutral_micro(
             **kw,
             source_path="feed_unavailable.xg",
@@ -190,74 +194,80 @@ def _collect_chance_quality(ctx: V21SideContext, micro: V21MicroSpec) -> V21Micr
             warning=XG_MISSING_WARNING,
         )
 
-    lb = ctx.league_baselines
-    team_xg = ctx.team_agg.get("xg_mean")
-    opp_xg = ctx.opp_conceded_agg.get("xg_mean")
-    league_xg_for = lb.get("league_avg_xg_for")
-    league_xg_conceded = lb.get("league_avg_xg_conceded")
+    if snap.status in ("missing_required_xg_league_baseline", "missing_required_data"):
+        return neutral_micro(
+            **kw,
+            source_path=V21_XG_SOURCE_PATHS.get(micro.key, micro.source_path),
+            status="missing",
+            warning="; ".join(snap.warnings) if snap.warnings else "Dati xG strict non disponibili",
+        )
 
-    if micro.key == "xg_produced":
-        return normalize_v21_micro_variable(
+    low_sample = snap.status == "insufficient_xg_sample"
+    eff_status = "partial_low_sample" if low_sample else "available"
+    eff_warning = snap.warnings[0] if low_sample and snap.warnings else None
+    sample_use = min(snap.team_xg_n, snap.opp_xg_n) or None
+    source_path = V21_XG_SOURCE_PATHS.get(micro.key, micro.source_path)
+
+    raw_map = {
+        "xg_produced": snap.avg_xg_for,
+        "xg_conceded_by_opponent": snap.opponent_avg_xg_conceded,
+        "xg_delta_vs_league": snap.team_xg_delta_vs_league,
+        "opp_xg_conceded_delta": snap.opponent_xg_conceded_delta_vs_league,
+        "xg_prudent_adjustment": snap.xg_adjustment_pct,
+    }
+    raw_value = raw_map.get(micro.key)
+    if raw_value is None:
+        return neutral_micro(
             **kw,
-            source_path="fixture_team_stats.expected_goals",
-            raw_value=team_xg,
-            baseline=league_xg_for,
-            sample_count=ctx.team_agg.get("xg_n"),
-            latest_fixture_used_at=trace_latest,
-            leakage_guard=trace_leakage,
+            source_path=source_path,
+            status="missing",
+            warning=f"Dato non disponibile per {micro.label}",
         )
-    if micro.key == "xg_conceded_by_opponent":
-        return normalize_v21_micro_variable(
+
+    ratio = v21_norm_from_strict_snapshot(snap, micro.key)
+    if ratio is None:
+        return neutral_micro(
             **kw,
-            source_path="opponent_fixture_team_stats.expected_goals_against",
-            raw_value=opp_xg,
-            baseline=league_xg_conceded,
-            sample_count=ctx.opp_conceded_agg.get("xg_n"),
-            latest_fixture_used_at=trace_latest,
-            leakage_guard=trace_leakage,
+            source_path=source_path,
+            status="missing",
+            warning=f"Normalizzazione xG non calcolabile per {micro.label}",
         )
-    if micro.key == "xg_delta_vs_league":
-        if team_xg is None or league_xg_for is None or float(league_xg_for) <= 0:
-            return neutral_micro(**kw, source_path="derived.team_xg_for_vs_league_avg", status="missing", warning="Delta xG squadra non calcolabile")
-        ratio = float(team_xg) / float(league_xg_for)
-        return normalize_ratio_direct(
-            **kw,
-            source_path="derived.team_xg_for_vs_league_avg",
-            ratio=ratio,
-            sample_count=ctx.team_agg.get("xg_n"),
-            latest_fixture_used_at=trace_latest,
-            leakage_guard=trace_leakage,
-        )
-    if micro.key == "opp_xg_conceded_delta":
-        if opp_xg is None or league_xg_for is None or float(league_xg_for) <= 0:
-            return neutral_micro(**kw, source_path="derived.opponent_xg_conceded_vs_league_avg", status="missing", warning="Delta xG avversario non calcolabile")
-        ratio = float(opp_xg) / float(league_xg_for)
-        return normalize_ratio_direct(
-            **kw,
-            source_path="derived.opponent_xg_conceded_vs_league_avg",
-            ratio=ratio,
-            sample_count=ctx.opp_conceded_agg.get("xg_n"),
-            latest_fixture_used_at=trace_latest,
-            leakage_guard=trace_leakage,
-        )
+
     if micro.key == "xg_prudent_adjustment":
-        if team_xg is None or opp_xg is None or league_xg_for is None or float(league_xg_for) <= 0:
-            return neutral_micro(**kw, source_path="derived.xg_prudent_adjustment_signal", status="missing")
-        xg_for_ratio = float(team_xg) / float(league_xg_for)
-        opp_conceded_ratio = float(opp_xg) / float(league_xg_for)
-        signal = (xg_for_ratio + opp_conceded_ratio) / 2.0
-        sample_n = min(ctx.team_agg.get("xg_n") or 0, ctx.opp_conceded_agg.get("xg_n") or 0) or None
-        return normalize_ratio_direct(
-            **kw,
-            source_path="derived.xg_prudent_adjustment_signal",
-            ratio=signal,
-            sample_count=sample_n,
-            norm_min=XG_PRUDENT_ADJ_MIN,
-            norm_max=XG_PRUDENT_ADJ_MAX,
-            latest_fixture_used_at=trace_latest,
-            leakage_guard=trace_leakage,
-        )
-    return neutral_micro(**kw, source_path=micro.source_path, status="not_tracked_yet")
+        norm = clamp_micro_norm(float(ratio), norm_min=XG_PRUDENT_ADJ_MIN, norm_max=XG_PRUDENT_ADJ_MAX)
+    else:
+        norm = clamp_micro_norm(float(ratio))
+
+    if norm > 1.02:
+        contrib = "positiva"
+    elif norm < 0.98:
+        contrib = "negativa"
+    else:
+        contrib = "neutra"
+
+    sample_count = sample_use
+    if micro.key == "xg_produced":
+        sample_count = snap.team_xg_n or sample_use
+    elif micro.key == "xg_conceded_by_opponent":
+        sample_count = snap.opp_xg_n or sample_use
+    elif micro.key in ("xg_delta_vs_league", "opp_xg_conceded_delta", "xg_prudent_adjustment"):
+        sample_count = sample_use
+
+    return V21MicroResult(
+        key=micro.key,
+        label=micro.label,
+        micro_weight=micro.micro_weight,
+        source_path=source_path,
+        raw_value=round(float(raw_value), 4),
+        normalized_value=round(norm, 4),
+        status=eff_status,
+        sample_count=sample_count,
+        fallback_used=False,
+        contribution=contrib,
+        warning=eff_warning,
+        latest_fixture_used_at=trace_latest,
+        leakage_guard=trace_leakage,
+    )
 
 
 def _collect_player_layer(ctx: V21SideContext, micro: V21MicroSpec) -> V21MicroResult:

@@ -15,13 +15,14 @@ XG_MISSING_WARNING = "xG non disponibile nel feed importato."
 
 def competition_has_xg_in_team_stats(db: Session, competition_id: int) -> bool:
     """True se almeno una riga fixture_team_stats ha xG valorizzato per il campionato."""
-    rows = db.scalars(
+    row = db.scalars(
         select(FixtureTeamStat)
         .join(Fixture, Fixture.id == FixtureTeamStat.fixture_id)
         .where(Fixture.competition_id == int(competition_id))
-        .limit(500),
+        .order_by(Fixture.kickoff_at.desc(), Fixture.id.desc())
+        .limit(200),
     ).all()
-    for st in rows:
+    for st in row:
         xg, _ = expected_goals_from_team_stat(st)
         if xg is not None:
             return True

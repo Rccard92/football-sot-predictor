@@ -17,6 +17,7 @@ from app.services.predictions_v11.split_fixtures import (
     opponent_split_fixtures,
     team_split_fixtures,
 )
+from app.services.predictions_common.xg_strict_helpers import StrictXgSnapshot, build_strict_xg_snapshot
 from app.services.predictions_v21.v21_constants import RECENT_FORM_MATCHES
 from app.services.predictions_v21.v21_lineup_history import build_lineup_history
 from app.services.predictions_v21.v21_payload_helpers import missing_ids_from_refresh_payload
@@ -134,6 +135,7 @@ class V21SideContext:
     lineup_history: dict[str, Any]
     refresh_snapshot_missing_api_ids: set[int] | None
     xg_leakage_trace: dict[str, Any] = field(default_factory=dict)
+    strict_xg: StrictXgSnapshot | None = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -213,15 +215,30 @@ def build_v21_side_context(
         )
         league_baselines["league_avg_xg_for"] = xg_lb.get("league_avg_xg_for")
         league_baselines["league_avg_xg_conceded"] = xg_lb.get("league_avg_xg_conceded")
+        league_baselines["league_avg_sot_for"] = xg_lb.get("league_avg_sot_for")
+        league_baselines["league_avg_sot_conceded"] = xg_lb.get("league_avg_sot_conceded")
+
+    strict_xg = build_strict_xg_snapshot(
+        prior_fixtures=prior.team_prior_fixtures,
+        opponent_prior_fixtures=prior.opponent_prior_fixtures,
+        stats_map=stats_map,
+        team_id=int(team_id),
+        opponent_id=int(opponent_id),
+        league_baselines=league_baselines,
+        cutoff_kickoff=prior.cutoff_kickoff,
+        cutoff_fixture_id=prior.cutoff_fixture_id,
+    )
 
     xg_leakage_trace = build_xg_leakage_trace(
         team_fixtures=prior.team_prior_fixtures,
         opp_fixtures=prior.opponent_prior_fixtures,
-        team_sample_count=team_agg.get("xg_n"),
-        opp_sample_count=opp_conceded_agg.get("xg_n"),
+        team_sample_count=strict_xg.team_xg_n or team_agg.get("xg_n"),
+        opp_sample_count=strict_xg.opp_xg_n or opp_conceded_agg.get("xg_n"),
     )
+    if strict_xg.latest_fixture_used_at:
+        xg_leakage_trace["latest_fixture_used_at"] = strict_xg.latest_fixture_used_at
 
-    league_xg_available = resolve_league_xg_available(
+    league_xg_available = strict_xg.status in ("ok", "insufficient_xg_sample") or resolve_league_xg_available(
         db,
         competition_id=scope_comp,
         league_baselines=league_baselines,
@@ -268,6 +285,8 @@ def build_v21_side_context(
 
     if not league_xg_available:
         warnings.append(XG_MISSING_WARNING)
+    elif strict_xg.warnings:
+        warnings.extend(strict_xg.warnings)
 
     lineup_history = build_lineup_history(
         db,
@@ -306,6 +325,7 @@ def build_v21_side_context(
         league_baselines=league_baselines,
         league_xg_available=league_xg_available,
         xg_leakage_trace=xg_leakage_trace,
+        strict_xg=strict_xg,
         sportapi_audit=sportapi_audit,
         sportapi_side=sportapi_side,
         sportapi_opponent_side=sportapi_opponent_side,

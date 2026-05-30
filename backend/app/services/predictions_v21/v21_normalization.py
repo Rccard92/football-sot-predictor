@@ -17,6 +17,7 @@ V21MicroStatus = Literal[
     "fallback_partial",
     "fallback_historical_profiles",
     "partial",
+    "partial_low_sample",
     "feed_unavailable",
 ]
 
@@ -44,6 +45,7 @@ def micro_status_counts_available(status: V21MicroStatus) -> bool:
         "available",
         "available_derived",
         "partial",
+        "partial_low_sample",
         "fallback_historical_profiles",
         "fallback_partial",
     )

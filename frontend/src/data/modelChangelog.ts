@@ -12,6 +12,25 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.14',
+    date: '2026-05-30',
+    title: 'Replica procedura xG v1.1 nella v2.1',
+    type: 'patch',
+    summary:
+      'Collegata la macroarea Qualità occasioni della v2.1 alla stessa procedura strict xG usata dalla base v1.1, usando expected_goals reali da fixture_team_stats.',
+    highlights: [
+      'xG prodotti da fixture_team_stats.expected_goals.',
+      "xG concessi dall'avversario calcolati come expected_goals degli avversari contro la squadra avversaria.",
+      'Delta xG vs media lega replicato dalla base v1.1.',
+      'xG adjustment prudente replicato dalla base v1.1.',
+      'Aggiunto guardrail anti data leakage.',
+      'Nessun proxy xG.',
+      'Nessuna modifica a v2.0.',
+      'Nessuna modifica ai pesi v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.13',
     date: '2026-05-29',
     title: 'Fix dataclass V21SideContext',
