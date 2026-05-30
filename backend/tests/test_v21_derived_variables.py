@@ -128,6 +128,21 @@ def test_collect_top_shots_share():
     assert result.raw_value == 20.0
 
 
+def test_collect_player_layer_top_shooter_absence_no_duplicate_kw():
+    ctx = _ctx(
+        sportapi_side={
+            "starters": [{"provider_player_id": 2, "player_name": "B"}],
+            "missing_players": {},
+            "formation": "4-3-3",
+        },
+    )
+    micro = _micro_spec("player_layer", "player_layer_top_shooter_absence")
+    result = _collect_player_layer(ctx, micro)
+    assert result.status == "available"
+    assert result.source_path == "lineup_impact.player_layer_top_shooter_absence"
+    assert result.raw_value is not None
+
+
 def test_top_shooter_absence_weighted():
     ctx = _ctx()
     tops = ctx.profile_entries

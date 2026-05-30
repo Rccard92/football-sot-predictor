@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.16',
+    date: '2026-05-30',
+    title: 'Fix duplicate source_path nel Player layer v2.1',
+    type: 'patch',
+    summary:
+      'Corretto un errore nel collector Player layer v2.1 che passava source_path due volte a normalize_v21_micro_variable, bloccando la generazione reale del prossimo turno.',
+    highlights: [
+      'Risolto TypeError duplicate source_path.',
+      'Refresh next-round v2.1 non fallisce più nel Player layer.',
+      'Permessa la rigenerazione dei trace v2.1 aggiornati.',
+      'Nessuna modifica a v2.0.',
+      'Nessuna modifica ai pesi v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.15',
     date: '2026-05-30',
     title: 'Fix refresh next-round v2.1 e debug errori',
