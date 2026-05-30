@@ -7,11 +7,13 @@ import {
   getBacktestErrorMessage,
   getBacktestPointInTimeContext,
   getBacktestRun,
+  getBacktestSotV21Preview,
   listBacktestDebugFixtures,
   listBacktestRuns,
   type BacktestFixtureCandidate,
   type BacktestRunRow,
   type PointInTimeContextResponse,
+  type SotV21PreviewResponse,
 } from '../../lib/api'
 import { useCompetition } from '../../contexts/CompetitionContext'
 import { useModelSelection } from '../../contexts/ModelSelectionContext'
@@ -81,6 +83,7 @@ export function BacktestDebugPanel() {
   const [pitMode, setPitMode] = useState<'pre_lineup' | 'post_lineup'>('pre_lineup')
   const [pitOutcome, setPitOutcome] = useState<Outcome | null>(null)
   const [pitJson, setPitJson] = useState<PointInTimeContextResponse | null>(null)
+  const [pitPreviewJson, setPitPreviewJson] = useState<SotV21PreviewResponse | null>(null)
   const [pitLeakageCritical, setPitLeakageCritical] = useState(false)
 
   const needsCompetition = selectedCompetitionId == null
@@ -134,6 +137,7 @@ export function BacktestDebugPanel() {
     setRoundFilter('')
     setRoundFilterApplied('')
     setPitJson(null)
+    setPitPreviewJson(null)
     setPitOutcome(null)
     setPitLeakageCritical(false)
   }, [selectedCompetitionId])
@@ -380,6 +384,42 @@ export function BacktestDebugPanel() {
     }
   }, [pitMode, resolvePreviewFixtureId, selectedCompetitionId])
 
+  const runPreviewPrediction = useCallback(async () => {
+    const fixtureId = resolvePreviewFixtureId()
+    if (selectedCompetitionId == null || fixtureId == null || pitMode !== 'pre_lineup') return
+    setLoadingId('pit-prediction')
+    try {
+      const data = await getBacktestSotV21Preview({
+        competition_id: selectedCompetitionId,
+        fixture_id: fixtureId,
+        mode: 'pre_lineup',
+      })
+      setPitPreviewJson(data)
+      const latest = data.latest_fixture_used_at
+      const cutoff = data.cutoff_time
+      const leakageBad =
+        latest != null && cutoff != null && new Date(latest).getTime() >= new Date(cutoff).getTime()
+      setPitLeakageCritical(leakageBad)
+      const kind: OutcomeKind = leakageBad ? 'error' : 'ok'
+      setPitOutcome({
+        kind,
+        httpStatus: 200,
+        message: leakageBad
+          ? 'Preview prediction OK ma possibile leakage (latest >= cutoff).'
+          : `Preview v2.1 PIT — totale ${data.prediction.total_predicted_sot ?? '—'}, errore abs ${data.errors.total_abs_error ?? '—'}`,
+      })
+    } catch (e) {
+      setPitPreviewJson(null)
+      setPitOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Preview prediction v2.1 PIT'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [pitMode, resolvePreviewFixtureId, selectedCompetitionId])
+
   const applyRoundFilter = useCallback(() => {
     const applied = roundFilter.trim()
     setRoundFilterApplied(applied)
@@ -603,7 +643,25 @@ export function BacktestDebugPanel() {
           >
             {loadingId === 'pit-preview' ? '…' : 'Preview context'}
           </button>
+          <button
+            type="button"
+            disabled={
+              loadingId !== null ||
+              needsCompetition ||
+              activePreviewId == null ||
+              pitMode !== 'pre_lineup'
+            }
+            onClick={() => void runPreviewPrediction()}
+            className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+          >
+            {loadingId === 'pit-prediction' ? '…' : 'Preview prediction v2.1 PIT'}
+          </button>
         </div>
+
+        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          Preview tecnica point-in-time. Non è ancora una run backtest salvata. Serve per verificare
+          che il calcolo su singola fixture usi solo dati precedenti al kickoff.
+        </p>
 
         {activePreviewId != null ? (
           <div className="mt-3 rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2 text-sm text-slate-800">
@@ -726,6 +784,65 @@ export function BacktestDebugPanel() {
           <p className="mt-3 rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-900">
             Possibile leakage: latest_fixture_used_at &gt;= cutoff_time
           </p>
+        ) : null}
+
+        {pitPreviewJson ? (
+          <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3 text-sm text-slate-800">
+            <div className="font-medium text-violet-900">Preview prediction v2.1 PIT</div>
+            <div className="mt-1 grid gap-1 sm:grid-cols-2">
+              <div>
+                <span className="font-medium">Match:</span> {pitPreviewJson.fixture.home_team} vs{' '}
+                {pitPreviewJson.fixture.away_team}
+              </div>
+              <div>
+                <span className="font-medium">Cutoff:</span>{' '}
+                {new Date(pitPreviewJson.cutoff_time).toLocaleString('it-IT')}
+              </div>
+              <div>
+                <span className="font-medium">Predetto home SOT:</span>{' '}
+                {pitPreviewJson.prediction.home_predicted_sot ?? '—'}
+              </div>
+              <div>
+                <span className="font-medium">Predetto away SOT:</span>{' '}
+                {pitPreviewJson.prediction.away_predicted_sot ?? '—'}
+              </div>
+              <div>
+                <span className="font-medium">Predetto totale SOT:</span>{' '}
+                {pitPreviewJson.prediction.total_predicted_sot ?? '—'}
+              </div>
+              <div>
+                <span className="font-medium">Reale totale SOT:</span>{' '}
+                {pitPreviewJson.actuals_for_scoring.actual_total_sot ?? '—'}
+              </div>
+              <div>
+                <span className="font-medium">Errore totale (abs):</span>{' '}
+                {pitPreviewJson.errors.total_abs_error ?? '—'}
+              </div>
+              <div>
+                <span className="font-medium">leakage_guard:</span>{' '}
+                {pitPreviewJson.leakage_guard ? 'true' : 'false'}
+              </div>
+              <div>
+                <span className="font-medium">actuals_used_as_input:</span>{' '}
+                {String(pitPreviewJson.actuals_used_as_input)}
+              </div>
+              <div>
+                <span className="font-medium">Fallback macro:</span>{' '}
+                {pitPreviewJson.fallback_variables.length}
+              </div>
+            </div>
+            {pitPreviewJson.warnings.length > 0 ? (
+              <p className="mt-2 text-xs text-amber-800">
+                Warnings: {pitPreviewJson.warnings.join(', ')}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {pitPreviewJson ? (
+          <pre className="max-h-80 overflow-auto rounded-lg border border-violet-200 bg-slate-900 p-3 text-xs text-slate-100">
+            {JSON.stringify(pitPreviewJson, null, 2)}
+          </pre>
         ) : null}
 
         {pitJson ? (

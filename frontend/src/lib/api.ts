@@ -2330,6 +2330,76 @@ export async function getBacktestPointInTimeContext(params: {
   )
 }
 
+// --- Backtest Engine Step E (SOT v2.1 PIT preview) ---
+
+export type SotV21PreviewResponse = {
+  status: string
+  market_key: string
+  algorithm_version: string
+  mode: string
+  competition_id: number
+  fixture_id: number
+  fixture: {
+    home_team: string
+    away_team: string
+    kickoff_at: string
+    round?: string | null
+  }
+  leakage_guard: boolean
+  cutoff_time: string
+  latest_fixture_used_at?: string | null
+  actuals_used_as_input: boolean
+  prediction: {
+    home_predicted_sot?: number | null
+    away_predicted_sot?: number | null
+    total_predicted_sot?: number | null
+  }
+  actuals_for_scoring: {
+    actual_home_sot?: number | null
+    actual_away_sot?: number | null
+    actual_total_sot?: number | null
+    final_score?: string | null
+    fixture_status?: string | null
+  }
+  errors: {
+    home_error?: number | null
+    away_error?: number | null
+    total_error?: number | null
+    home_abs_error?: number | null
+    away_abs_error?: number | null
+    total_abs_error?: number | null
+  }
+  home_trace: {
+    base_anchor_sot: Record<string, unknown>
+    weighted_macro_multiplier: number
+    expected_sot_v21_pit?: number | null
+    macros: {
+      key: string
+      label: string
+      macro_weight: number
+      macro_index: number
+      status: string
+      warnings: string[]
+    }[]
+  }
+  away_trace: SotV21PreviewResponse['home_trace']
+  warnings: string[]
+  fallback_variables: string[]
+  feature_snapshot_json: Record<string, unknown>
+}
+
+export async function getBacktestSotV21Preview(params: {
+  competition_id: number
+  fixture_id: number
+  mode?: string
+}): Promise<SotV21PreviewResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  q.set('fixture_id', String(params.fixture_id))
+  if (params.mode) q.set('mode', params.mode)
+  return requestJson<SotV21PreviewResponse>(`/api/backtest/debug/sot-v21-preview?${q.toString()}`)
+}
+
 /** Allineato a `UpcomingSotCalculationBreakdown` (backend). */
 export type UpcomingCalculationBreakdown = {
   season_avg_sot_for: number

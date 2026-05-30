@@ -1,4 +1,4 @@
-"""Debug read-only Backtest Engine (Step C.1 + D)."""
+"""Debug read-only Backtest Engine (Step C.1 + D + E)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
+from app.services.backtest.sot_v21_preview_service import SotV21PointInTimePreviewService
 from app.services.backtest_health_service import BacktestHealthService
 
 logger = logging.getLogger(__name__)
@@ -80,5 +81,28 @@ def backtest_debug_point_in_time_context(
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("GET backtest point-in-time context: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/sot-v21-preview")
+def backtest_debug_sot_v21_preview(
+    competition_id: int = Query(...),
+    fixture_id: int = Query(...),
+    mode: str = Query(default="pre_lineup"),
+    db: Session = Depends(get_db),
+):
+    svc = SotV21PointInTimePreviewService()
+    try:
+        payload = svc.build_preview(
+            db,
+            competition_id=competition_id,
+            fixture_id=fixture_id,
+            mode=mode,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET backtest sot-v21-preview: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)

@@ -539,7 +539,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | **B** | Migration tabelle `backtest_*` (4 tabelle + costanti) | No — **completato** |
 | **C** | API base: create / list / detail run | No — **completato** |
 | **D** | `PointInTimeContext` SOT preview/debug | Sì (preview read-only) |
-| **E** | Backtest tecnico SOT v2.1 `pre_lineup` (stagione conclusa) | No (adapter) |
+| **E** | Preview SOT v2.1 PIT singola fixture | Sì (preview read-only) |
 | **F** | Metriche numeriche (MAE, RMSE, bias, breakdown) | No |
 | **G** | Picks Over/Under → `backtest_picks` | No |
 | **H** | Confronto v2.0 vs v2.1 (due run, stesso market) | No |
@@ -709,6 +709,42 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 ---
 
+## 18. Step E — SOT v2.1 point-in-time preview (singola fixture)
+
+**Completato (preview).** Calcolo read-only di una previsione SOT v2.1-compatible su singola fixture storica, usando solo `PointInTimeContext` come fonte dati.
+
+| Endpoint | Metodo | Descrizione |
+|----------|--------|-------------|
+| `/api/backtest/debug/sot-v21-preview` | GET | Preview prediction home/away/total + trace macro + errori scoring |
+
+| Artefatto | Path |
+|-----------|------|
+| Preview service | `backend/app/services/backtest/sot_v21_preview_service.py` |
+| Macro builder PIT | `backend/app/services/backtest/sot_v21_pit_macro_builder.py` |
+| Schemas preview | `backend/app/schemas/backtest_sot_v21_preview.py` |
+| Test | `backend/tests/test_backtest_sot_v21_preview.py` |
+| Admin UI | pulsante "Preview prediction v2.1 PIT" in `BacktestDebugPanel.tsx` |
+| Changelog | `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-e`) |
+
+**Cosa fa:**
+- Chiama `PointInTimeContextService.build_sot_context()` (Step D)
+- Calcola `base_anchor_sot = 0.55×avg_sot_for + 0.45×opponent_avg_sot_against`
+- Calcola macro indices da stats PIT (offensive, defensive, form, xG, pace) con pesi manifest v2.1 (96 punti predittivi)
+- Macro non ancora PIT-complete → index 1.00 + warning esplicito (player, lineups, injuries, split)
+- `expected_sot = base_anchor × weighted_macro_multiplier`
+- Actuals solo per errori scoring; **`actuals_used_as_input = false`**
+- Solo `mode=pre_lineup`
+
+**Cosa NON fa:**
+- Nessuna chiamata a `baseline_v2_1_weighted_components_service` / `v21_prediction_engine`
+- Nessuna riga in `backtest_predictions`, `backtest_picks`, `backtest_run_metrics`
+- Nessun full backtest, nessun cambio status run
+- Nessuna modifica formule/pesi ufficiali v2.1
+
+**Step successivo:** mini-run persistita o dry-run multi-fixture (Step F+).
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -720,6 +756,9 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | PointInTimeContextService (Step D) | `backend/app/services/backtest/point_in_time_context_service.py` |
 | BacktestFixtureDebugService (Step D) | `backend/app/services/backtest/backtest_fixture_debug_service.py` |
 | Schemas PIT (Step D) | `backend/app/schemas/backtest_point_in_time.py` |
+| SotV21PointInTimePreviewService (Step E) | `backend/app/services/backtest/sot_v21_preview_service.py` |
+| SOT v2.1 PIT macro builder (Step E) | `backend/app/services/backtest/sot_v21_pit_macro_builder.py` |
+| Schemas preview Step E | `backend/app/schemas/backtest_sot_v21_preview.py` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
 | Modelli Backtest (Step B) | `backend/app/models/backtest.py` |

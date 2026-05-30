@@ -4,6 +4,34 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-e
+
+**Titolo:** Preview SOT v2.1 point-in-time
+
+**Descrizione:** Aggiunta preview read-only per calcolare una previsione SOT v2.1 point-in-time su singola fixture storica, usando solo dati precedenti al kickoff.
+
+**Highlights:**
+
+- Endpoint `GET /api/backtest/debug/sot-v21-preview`.
+- Calcolo base anchor SOT point-in-time (0.55/0.45).
+- Moltiplicatore macro v2.1 preview da PointInTimeContext.
+- Actuals separati dagli input; errori home/away/totale.
+- Pulsante Admin "Preview prediction v2.1 PIT".
+- Nessuna prediction persistita; v2.0/v2.1 runtime invariati.
+
+**File toccati:**
+
+- `backend/app/schemas/backtest_sot_v21_preview.py`
+- `backend/app/services/backtest/sot_v21_pit_macro_builder.py`
+- `backend/app/services/backtest/sot_v21_preview_service.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_backtest_sot_v21_preview.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-d-ui-fixture-selector
 
 **Titolo:** Fixture selector PIT — paginazione e ID manuale
