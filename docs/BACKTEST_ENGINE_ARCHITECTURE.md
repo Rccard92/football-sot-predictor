@@ -150,14 +150,16 @@ class AlgorithmSpec:
 
 ---
 
-## 5. Schema tabelle proposte
+## 5. Schema tabelle (implementato Step B)
 
-Nessuna migration in Step A / A.1. DDL di riferimento per **Step B**.
+Migration Alembic: `backend/alembic/versions/20260605120000_create_backtest_tables.py`  
+Modelli SQLAlchemy: `backend/app/models/backtest.py`  
+Costanti: `backend/app/backtest/constants.py`
 
 ### 5.1 `backtest_runs`
 
 ```sql
--- Proposta Step B (commento, non applicata)
+-- Implementato Step B (migration 20260605120000)
 CREATE TABLE backtest_runs (
     id BIGSERIAL PRIMARY KEY,
     competition_id BIGINT NOT NULL REFERENCES competitions(id),
@@ -534,7 +536,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 |------|-------------|---------------------|
 | **A** | Design architettura (doc + registry stub) | No — **completato** |
 | **A.1** | Revisione anti-leakage + campi schema (questo documento) | No — **completato** |
-| **B** | Migration tabelle `backtest_*` (4 tabelle + enum status) | No |
+| **B** | Migration tabelle `backtest_*` (4 tabelle + costanti) | No — **completato** |
 | **C** | API base: create / list / detail run | No |
 | **D** | `PointInTimeContext` per mercato SOT | No |
 | **E** | Backtest tecnico SOT v2.1 `pre_lineup` (stagione conclusa) | No (adapter) |
@@ -553,8 +555,39 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 - `team_sot_predictions`, quick report, audit, monitoraggio (comportamento)
 - Route `/backtest/sot/*` esistenti
 - Nessun algoritmo corners / cartellini / gol implementato
-- **Nessuna migration Alembic** fino a Step B
-- Backend runtime e frontend **non** modificati in Step A / A.1
+- **Nessun runtime backtest** collegato (Step B = solo DB foundation)
+- Modelli SOT v2.0/v2.1 **non** modificati in Step B
+
+---
+
+## 14. Step B — DB foundation
+
+**Completato.** Deliverable additivi, nessun breaking change.
+
+| Artefatto | Path |
+|-----------|------|
+| Migration Alembic | `backend/alembic/versions/20260605120000_create_backtest_tables.py` |
+| Modelli SQLAlchemy | `backend/app/models/backtest.py` (`BacktestRun`, `BacktestPrediction`, `BacktestPick`, `BacktestRunMetric`) |
+| Costanti | `backend/app/backtest/constants.py` |
+| Registry stub (Step A) | `backend/app/markets/registry.py`, `backend/app/algorithms/registry.py` |
+| Test import | `backend/tests/test_backtest_models_import.py` |
+| Changelog tecnico | `docs/BACKTEST_ENGINE_CHANGELOG.md` |
+
+**Tabelle create:** `backtest_runs`, `backtest_predictions`, `backtest_picks`, `backtest_run_metrics`.
+
+**Constraint principali:**
+- `uq_backtest_predictions_run_fixture_scope` — unique su `(backtest_run_id, fixture_id, prediction_scope)`
+- `uq_backtest_picks_run_fixture_scope_bet` — unique su `(backtest_run_id, fixture_id, prediction_scope, bet_type, line_value, pick_side)`
+- `uq_backtest_run_metrics_run_key` — unique su `(backtest_run_id, metric_key)`
+- Indice composito non-unique su `backtest_runs(competition_id, market_key, algorithm_version)` (no unique composito per `season_year` nullable)
+
+**Esplicitamente NON incluso in Step B:**
+- Nessun backtest eseguito
+- Nessun `PointInTimeContext`
+- Nessun adapter v2.0/v2.1
+- Nessun endpoint operativo `/api/backtest/runs`
+- Nessuna modifica a `prediction_backtests` legacy, `team_sot_predictions`, `tracked_betting_picks`
+- Nessuna modifica a Prossima giornata, Audit, Monitoraggio giocate, quick report, model comparison
 
 ---
 
@@ -562,6 +595,8 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 | Area | Path |
 |------|------|
+| Modelli Backtest (Step B) | `backend/app/models/backtest.py` |
+| Costanti Backtest (Step B) | `backend/app/backtest/constants.py` |
 | Market Registry (stub) | `backend/app/markets/registry.py` |
 | Algorithm Registry (stub) | `backend/app/algorithms/registry.py` |
 | Backtest attuale | `backend/app/services/sot_backtest_service.py` |
