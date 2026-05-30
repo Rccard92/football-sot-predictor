@@ -268,6 +268,50 @@ def test_compute_v21_xg_league_baselines_scoped_competition(mock_select):
     assert out["sample_fixtures"] == 1
 
 
+@patch("app.services.predictions_v21.v21_xg_league_features.select")
+def test_compute_v21_xg_league_baselines_fallback_without_season_id(mock_select):
+    db = MagicMock()
+    comp1_fx = SimpleNamespace(
+        id=1,
+        home_team_id=10,
+        away_team_id=20,
+        kickoff_at=datetime(2026, 5, 10, tzinfo=timezone.utc),
+        competition_id=1,
+        season_id=None,
+        status="FT",
+    )
+    db.scalars.return_value.all.side_effect = [
+        [],
+        [comp1_fx],
+        [
+            SimpleNamespace(
+                fixture_id=1,
+                team_id=10,
+                expected_goals=1.4,
+                raw_json=None,
+                shots_on_target=5.0,
+            ),
+            SimpleNamespace(
+                fixture_id=1,
+                team_id=20,
+                expected_goals=1.1,
+                raw_json=None,
+                shots_on_target=4.0,
+            ),
+        ],
+    ]
+    out = compute_v21_xg_league_baselines(
+        db,
+        season_id=99,
+        cutoff_kickoff=datetime(2026, 5, 25, tzinfo=timezone.utc),
+        cutoff_fixture_id=99,
+        competition_id=1,
+    )
+    assert out["league_avg_xg_for"] == 1.25
+    assert out["sample_fixtures"] == 1
+    assert out.get("season_id_fallback_used") is True
+
+
 def test_resolve_league_xg_available_when_baseline_present():
     db = MagicMock()
     available = resolve_league_xg_available(

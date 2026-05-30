@@ -4,11 +4,14 @@ Contesto partite precedenti per resolver v1.0 (anti data-leakage).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.core.constants import FINISHED_STATUSES
 from app.models import Competition, Fixture, FixtureTeamStat, League, Season
@@ -68,21 +71,38 @@ def _prior_fixtures_for_team(
     cutoff_fixture_id: int,
     team_id: int,
     competition_id: int | None = None,
+    competition_scoped_only: bool = False,
 ) -> list[Fixture]:
-    clauses = [
-        Fixture.season_id == season_id,
-        Fixture.status.in_(FINISHED_STATUSES),
-        (Fixture.home_team_id == team_id) | (Fixture.away_team_id == team_id),
-    ]
-    if competition_id is not None:
-        clauses.append(Fixture.competition_id == int(competition_id))
-    q = (
-        select(Fixture)
-        .where(*clauses)
-        .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
-    )
-    xs = db.scalars(q).all()
-    return [f for f in xs if fixture_key_before(f.kickoff_at, f.id, cutoff_kickoff, cutoff_fixture_id)]
+    def _query(*, use_season_filter: bool) -> list[Fixture]:
+        clauses = [
+            Fixture.status.in_(FINISHED_STATUSES),
+            (Fixture.home_team_id == team_id) | (Fixture.away_team_id == team_id),
+        ]
+        if use_season_filter:
+            clauses.insert(0, Fixture.season_id == season_id)
+        if competition_id is not None:
+            clauses.append(Fixture.competition_id == int(competition_id))
+        q = (
+            select(Fixture)
+            .where(*clauses)
+            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
+        )
+        xs = db.scalars(q).all()
+        return [f for f in xs if fixture_key_before(f.kickoff_at, f.id, cutoff_kickoff, cutoff_fixture_id)]
+
+    if competition_scoped_only and competition_id is not None:
+        return _query(use_season_filter=False)
+
+    filtered = _query(use_season_filter=True)
+    if not filtered and competition_id is not None:
+        logger.warning(
+            "prior_fixtures season_id fallback competition_id=%s season_id=%s team_id=%s",
+            int(competition_id),
+            int(season_id),
+            int(team_id),
+        )
+        return _query(use_season_filter=False)
+    return filtered
 
 
 def _team_stats_map(db: Session, fixture_ids: list[int]) -> dict[tuple[int, int], FixtureTeamStat]:
@@ -138,6 +158,7 @@ def build_prior_context(
     team_id: int,
     opponent_id: int,
     competition_id: int | None = None,
+    competition_scoped_only: bool = False,
 ) -> V10PriorContext:
     scope_competition_id = competition_id if competition_id is not None else fixture.competition_id
     season_id = _resolve_fixture_season_id(db, fixture)
@@ -145,6 +166,7 @@ def build_prior_context(
     cutoff_fixture_id = int(fixture.id)
     is_home = int(fixture.home_team_id) == int(team_id)
     comp_filter = int(scope_competition_id) if scope_competition_id is not None else None
+    scoped_only = bool(competition_scoped_only and comp_filter is not None)
 
     team_prior_fx = _prior_fixtures_for_team(
         db,
@@ -153,6 +175,7 @@ def build_prior_context(
         cutoff_fixture_id=cutoff_fixture_id,
         team_id=int(team_id),
         competition_id=comp_filter,
+        competition_scoped_only=scoped_only,
     )
     opp_prior_fx = _prior_fixtures_for_team(
         db,
@@ -161,6 +184,7 @@ def build_prior_context(
         cutoff_fixture_id=cutoff_fixture_id,
         team_id=int(opponent_id),
         competition_id=comp_filter,
+        competition_scoped_only=scoped_only,
     )
     all_ids = list({int(f.id) for f in team_prior_fx + opp_prior_fx})
     stats_map = _team_stats_map(db, all_ids)

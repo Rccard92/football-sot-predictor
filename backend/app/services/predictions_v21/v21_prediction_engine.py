@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -26,6 +27,8 @@ from app.services.predictions_v21.v21_macro_aggregators import (
 from app.services.predictions_v21.v21_manifest_definitions import V21MacroAreaSpec, V21_MANIFEST_DEFINITIONS
 from app.services.predictions_v21.v21_manifest_validation import validate_v21_manifest
 from app.services.predictions_v21.v21_quality_summary import V21QualitySummary, build_v21_quality_summary
+
+logger = logging.getLogger(__name__)
 
 
 def build_v21_trace(
@@ -213,13 +216,39 @@ def build_v21_prediction_for_fixture(
         (int(fx.home_team_id), int(fx.away_team_id), "home"),
         (int(fx.away_team_id), int(fx.home_team_id), "away"),
     ):
-        ctx = build_v21_side_context(
-            db,
-            fx,
-            team_id=team_id,
-            opponent_id=opp_id,
-            competition_id=int(competition_id),
-        )
+        try:
+            logger.debug(
+                "V21 step=build_v21_context fixture_id=%s side=%s team_id=%s opponent_id=%s competition_id=%s",
+                int(fixture_id),
+                side,
+                team_id,
+                opp_id,
+                int(competition_id),
+            )
+            ctx = build_v21_side_context(
+                db,
+                fx,
+                team_id=team_id,
+                opponent_id=opp_id,
+                competition_id=int(competition_id),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "V21 step=build_v21_context failed fixture_id=%s side=%s team_id=%s",
+                int(fixture_id),
+                side,
+                team_id,
+            )
+            return {
+                "status": "error",
+                "message": str(exc)[:500],
+                "failed_step": "build_v21_context",
+                "error_type": type(exc).__name__,
+                "fixture_id": int(fixture_id),
+                "competition_id": int(competition_id),
+                "side": side,
+                "team_id": team_id,
+            }
         side_result = build_v21_side_prediction(db, ctx, side=side, manifest_macros=manifest_macros)
         sides.append(side_result)
         warnings.extend(side_result.get("warnings") or [])

@@ -12,7 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
-    version: '2.1.14',
+    version: '2.1.15',
+    date: '2026-05-30',
+    title: 'Fix refresh next-round v2.1 e debug errori',
+    type: 'patch',
+    summary:
+      'Corretto il refresh della prossima giornata v2.1 e aggiunti dettagli diagnostici per errori 422 durante la generazione prediction.',
+    highlights: [
+      'Aggiunto logging per fixture/model_version.',
+      'Response 422 ora espone step, fixture e motivo.',
+      'Verificata integrazione xG strict nel refresh v2.1.',
+      'Evitato fallimento opaco del prossimo turno.',
+      'Nessuna modifica a v2.0.',
+      'Nessuna modifica ai pesi v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     date: '2026-05-30',
     title: 'Replica procedura xG v1.1 nella v2.1',
     type: 'patch',

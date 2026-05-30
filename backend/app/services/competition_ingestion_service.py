@@ -41,6 +41,88 @@ from app.services.player_data.player_match_stats_ingestion import ingest_competi
 logger = logging.getLogger(__name__)
 
 
+def _lineup_counts_payload(
+    *,
+    api_football_lineup_rows_count: int,
+    sportapi_lineup_rows_count: int,
+    sportapi_mappings_count: int,
+) -> dict[str, Any]:
+    return {
+        "api_football_lineup_rows_count": api_football_lineup_rows_count,
+        "sportapi_lineup_rows_count": sportapi_lineup_rows_count,
+        "sportapi_mappings_count": sportapi_mappings_count,
+        "lineups_required_for_v21": False,
+    }
+
+
+def _build_v21_refresh_response(
+    *,
+    comp: Competition,
+    round_label: str | None,
+    future_fixtures_count: int,
+    upcoming_count: int,
+    fixture_ids: list[int],
+    v21_result: dict[str, Any],
+    warnings: list[str],
+    lineup_payload: dict[str, Any],
+) -> dict[str, Any]:
+    predictions_created = int(v21_result.get("predictions_created_or_updated") or 0)
+    errors = list(v21_result.get("errors") or [])
+    v21_status = str(v21_result.get("status") or "")
+    first_error = errors[0] if errors else None
+
+    if predictions_created == 0:
+        overall_status = "error"
+        code = str(v21_result.get("code") or "v21_all_fixtures_failed")
+        if v21_result.get("message") == "no_upcoming_fixtures":
+            code = "v21_no_upcoming_fixtures"
+        message = "Generazione v2.1 fallita: nessuna prediction salvata."
+        if first_error:
+            message = f"Generazione v2.1 fallita su fixture {first_error.get('fixture_id')}: {first_error.get('error')}"
+    elif v21_status == "partial" or errors:
+        overall_status = "partial_error"
+        code = "v21_partial_failures"
+        message = (
+            f"Generazione v2.1 parziale: {predictions_created} prediction salvate, "
+            f"{len(v21_result.get('fixtures_failed') or [])} fixture fallite."
+        )
+    else:
+        overall_status = "ok"
+        code = None
+        message = None
+
+    payload: dict[str, Any] = {
+        "status": overall_status,
+        "competition_id": comp.id,
+        "competition_key": comp.key,
+        "competition_name": comp.name,
+        "season": comp.season,
+        "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+        "fixtures_processed": int(v21_result.get("fixtures_processed") or upcoming_count),
+        "predictions_created_or_updated": predictions_created,
+        "round": round_label,
+        "future_fixtures_count": future_fixtures_count,
+        "next_round_fixtures": upcoming_count,
+        "fixture_ids_processed": fixture_ids,
+        "fixtures_succeeded": v21_result.get("fixtures_succeeded") or [],
+        "fixtures_failed": v21_result.get("fixtures_failed") or [],
+        "failed_step": "v21_generate",
+        "warnings": warnings,
+        "errors": errors,
+        "v21": v21_result,
+        **lineup_payload,
+    }
+    if code:
+        payload["code"] = code
+    if message:
+        payload["message"] = message
+    if first_error:
+        payload["failed_fixture_id"] = first_error.get("fixture_id")
+        payload["error_type"] = first_error.get("error_type")
+        payload["details"] = first_error.get("details") or first_error.get("error")
+    return payload
+
+
 @dataclass
 class LeagueSeasonValidation:
     pick: LeaguePickInfo
@@ -375,6 +457,7 @@ class CompetitionIngestionService:
             )
             or 0
         )
+        api_football_lineup_rows_count = lineup_rows_count
         sportapi_mappings_count = int(
             db.scalar(
                 select(func.count())
@@ -432,11 +515,18 @@ class CompetitionIngestionService:
                 f"{BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT} (degraded/fallback)"
             )
 
+        lineup_payload = _lineup_counts_payload(
+            api_football_lineup_rows_count=api_football_lineup_rows_count,
+            sportapi_lineup_rows_count=sportapi_lineup_rows_count,
+            sportapi_mappings_count=sportapi_mappings_count,
+        )
+
         logger.info(
             "COMPETITION_NEXT_ROUND_REFRESH_START competition_id=%s competition_key=%s "
             "provider_league_id=%s season=%s model_versions=%s future_fixtures_count=%s "
             "next_round_fixtures=%s team_stats_count=%s player_profiles_count=%s "
-            "lineup_rows_count=%s sportapi_mappings_count=%s round=%s",
+            "api_football_lineup_rows_count=%s sportapi_lineup_rows_count=%s "
+            "sportapi_mappings_count=%s lineups_required_for_v21=false round=%s",
             comp.id,
             comp.key,
             comp.provider_league_id,
@@ -446,7 +536,8 @@ class CompetitionIngestionService:
             len(upcoming),
             team_stats_count,
             player_profiles_count,
-            lineup_rows_count,
+            api_football_lineup_rows_count,
+            sportapi_lineup_rows_count,
             sportapi_mappings_count,
             round_label,
         )
@@ -464,11 +555,11 @@ class CompetitionIngestionService:
                 "next_round_fixtures": len(upcoming),
                 "team_stats_count": team_stats_count,
                 "player_profiles_count": player_profiles_count,
-                "lineup_rows_count": lineup_rows_count,
-                "sportapi_mappings_count": sportapi_mappings_count,
+                "lineup_rows_count": api_football_lineup_rows_count,
                 "model_versions_requested": model_versions_requested,
                 "selection": selection.as_log_dict(competition_id=comp.id),
                 "warnings": dry_warnings,
+                **lineup_payload,
             }
 
         if not upcoming:
@@ -566,25 +657,30 @@ class CompetitionIngestionService:
 
             v21 = SotPredictionV21WeightedComponentsService()
             v21_result = v21.generate_for_competition(db, comp.id, fixture_ids=fixture_ids)
-            predictions_created = int(v21_result.get("predictions_created_or_updated") or 0)
-            overall_status = v21_result.get("status") or ("ok" if predictions_created > 0 else "error")
             warnings.extend(v21_result.get("warnings") or [])
-            return {
-                "status": overall_status,
-                "competition_id": comp.id,
-                "competition_key": comp.key,
-                "competition_name": comp.name,
-                "season": comp.season,
-                "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
-                "fixtures_processed": int(v21_result.get("fixtures_processed") or len(upcoming)),
-                "predictions_created_or_updated": predictions_created,
-                "round": round_label,
-                "future_fixtures_count": future_fixtures_count,
-                "next_round_fixtures": len(upcoming),
-                "fixture_ids_processed": fixture_ids,
-                "warnings": warnings,
-                "v21": v21_result,
-            }
+            errors = v21_result.get("errors") or []
+            first_error = errors[0] if errors else None
+            logger.info(
+                "COMPETITION_NEXT_ROUND_V21_DONE competition_id=%s competition_key=%s status=%s "
+                "predictions_created_or_updated=%s fixtures_processed=%s errors_count=%s first_error=%s",
+                comp.id,
+                comp.key,
+                v21_result.get("status"),
+                v21_result.get("predictions_created_or_updated"),
+                v21_result.get("fixtures_processed"),
+                len(errors),
+                first_error,
+            )
+            return _build_v21_refresh_response(
+                comp=comp,
+                round_label=round_label,
+                future_fixtures_count=future_fixtures_count,
+                upcoming_count=len(upcoming),
+                fixture_ids=fixture_ids,
+                v21_result=v21_result,
+                warnings=warnings,
+                lineup_payload=lineup_payload,
+            )
 
         from app.services.predictions_v11.baseline_v1_1_sot_service import (
             SotPredictionV11BaselineSotService,

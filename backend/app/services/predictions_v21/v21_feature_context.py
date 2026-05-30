@@ -147,12 +147,14 @@ def build_v21_side_context(
     opponent_id: int,
     competition_id: int | None,
 ) -> V21SideContext:
+    scope_comp = competition_id if competition_id is not None else fixture.competition_id
     prior = build_prior_context(
         db,
         fixture,
         team_id=int(team_id),
         opponent_id=int(opponent_id),
         competition_id=competition_id,
+        competition_scoped_only=scope_comp is not None,
     )
     is_home = int(fixture.home_team_id) == int(team_id)
     stats_map = prior.stats_map
@@ -265,23 +267,28 @@ def build_v21_side_context(
     if scope_comp is not None and team_row is not None:
         comp = db.get(Competition, int(scope_comp))
         if comp is not None:
-            league_id = int(comp.league_id) if comp.league_id is not None else int(comp.provider_league_id)
-            try:
-                profile_entries = load_team_profile_rows(
-                    db,
-                    competition_id=int(scope_comp),
-                    season=int(comp.season),
-                    league_id=league_id,
-                    api_team_id=int(team_row.api_team_id),
-                    team_id=int(team_id),
-                )
-                if profile_entries:
-                    if sportapi_audit.get("available"):
-                        lineup_profiles_mode = "lineup_and_profiles"
-                    else:
-                        lineup_profiles_mode = "fallback_historical_profiles"
-            except Exception as exc:  # noqa: BLE001
-                warnings.append(f"Profili giocatori non caricati: {exc}")
+            league_id = comp.league_id
+            if league_id is None and comp.provider_league_id is not None:
+                league_id = int(comp.provider_league_id)
+            if league_id is None:
+                warnings.append("Profili giocatori non caricati: league_id/provider_league_id assenti sulla competition")
+            else:
+                try:
+                    profile_entries = load_team_profile_rows(
+                        db,
+                        competition_id=int(scope_comp),
+                        season=int(comp.season),
+                        league_id=int(league_id),
+                        api_team_id=int(team_row.api_team_id),
+                        team_id=int(team_id),
+                    )
+                    if profile_entries:
+                        if sportapi_audit.get("available"):
+                            lineup_profiles_mode = "lineup_and_profiles"
+                        else:
+                            lineup_profiles_mode = "fallback_historical_profiles"
+                except Exception as exc:  # noqa: BLE001
+                    warnings.append(f"Profili giocatori non caricati: {exc}")
 
     if not league_xg_available:
         warnings.append(XG_MISSING_WARNING)

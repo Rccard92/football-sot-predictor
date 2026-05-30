@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import select
@@ -14,7 +15,40 @@ from app.services.predictions_v21.v21_constants import V21_ENGINE_STATUS_READY
 from app.services.predictions_v21.v21_prediction_engine import build_v21_prediction_for_fixture
 from app.services.sot_model_registry import get_model_display
 
+logger = logging.getLogger(__name__)
+
 V21_ENGINE_NOT_READY_MESSAGE = "Modello v2.1 registrato, engine di calcolo in preparazione"
+
+
+def _fixture_log_fields(fx: Fixture) -> dict[str, Any]:
+    return {
+        "fixture_id": int(fx.id),
+        "home_team_id": int(fx.home_team_id),
+        "away_team_id": int(fx.away_team_id),
+        "kickoff_at": fx.kickoff_at.isoformat() if fx.kickoff_at else None,
+        "round": fx.round,
+        "competition_id": int(fx.competition_id) if fx.competition_id is not None else None,
+    }
+
+
+def _error_entry(
+    fx: Fixture,
+    *,
+    error: str,
+    failed_step: str,
+    error_type: str | None = None,
+    details: Any = None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        **_fixture_log_fields(fx),
+        "error": error,
+        "failed_step": failed_step,
+    }
+    if error_type:
+        entry["error_type"] = error_type
+    if details is not None:
+        entry["details"] = details
+    return entry
 
 
 class SotPredictionV21WeightedComponentsService:
@@ -74,13 +108,37 @@ class SotPredictionV21WeightedComponentsService:
     def generate_for_fixture(self, db: Session, fixture_id: int, *, competition_id: int | None = None) -> dict[str, Any]:
         fx = db.get(Fixture, int(fixture_id))
         if fx is None:
-            return {"status": "error", "message": "fixture_not_found", "fixture_id": int(fixture_id)}
+            return {
+                "status": "error",
+                "message": "fixture_not_found",
+                "failed_step": "build_prediction_v21",
+                "fixture_id": int(fixture_id),
+            }
         comp_id = competition_id if competition_id is not None else fx.competition_id
         if comp_id is None:
-            return {"status": "error", "message": "competition_id_required", "fixture_id": int(fixture_id)}
+            return {
+                "status": "error",
+                "message": "competition_id_required",
+                "failed_step": "build_prediction_v21",
+                "fixture_id": int(fixture_id),
+            }
+
+        logger.info(
+            "V21_FIXTURE_START step=build_prediction_v21 model_version=%s %s",
+            self.model_version,
+            _fixture_log_fields(fx),
+        )
 
         result = build_v21_prediction_for_fixture(db, competition_id=int(comp_id), fixture_id=int(fixture_id))
         if result.get("status") == "error":
+            result.setdefault("failed_step", "build_prediction_v21")
+            logger.error(
+                "V21_FIXTURE_FAILED step=build_prediction_v21 model_version=%s fixture_id=%s message=%s details=%s",
+                self.model_version,
+                int(fixture_id),
+                result.get("message"),
+                result.get("details"),
+            )
             return result
 
         saved = 0
@@ -96,9 +154,27 @@ class SotPredictionV21WeightedComponentsService:
             db.commit()
         except Exception as exc:  # noqa: BLE001
             db.rollback()
-            return {"status": "error", "message": "persist_failed", "details": str(exc), "fixture_id": int(fixture_id)}
+            logger.exception(
+                "V21_FIXTURE_FAILED step=save_prediction model_version=%s fixture_id=%s",
+                self.model_version,
+                int(fixture_id),
+            )
+            return {
+                "status": "error",
+                "message": "persist_failed",
+                "failed_step": "save_prediction",
+                "error_type": type(exc).__name__,
+                "details": str(exc),
+                "fixture_id": int(fixture_id),
+            }
 
         display = get_model_display(self.model_version)
+        logger.info(
+            "V21_FIXTURE_DONE step=save_prediction model_version=%s fixture_id=%s predictions_saved=%s",
+            self.model_version,
+            int(fixture_id),
+            saved,
+        )
         return {
             "status": result.get("status") or "ok",
             "model_version": self.model_version,
@@ -142,27 +218,64 @@ class SotPredictionV21WeightedComponentsService:
         if not upcoming:
             return {
                 "status": "error",
+                "code": "v21_no_upcoming_fixtures",
                 "message": "no_upcoming_fixtures",
+                "failed_step": "select_upcoming",
                 "competition_id": int(competition_id),
                 "predictions_created_or_updated": 0,
+                "fixtures_failed": [],
+                "fixtures_succeeded": [],
+                "errors": [],
             }
 
         processed = 0
         saved_total = 0
         warnings: list[str] = []
         errors: list[dict[str, Any]] = []
+        fixtures_succeeded: list[int] = []
+        fixtures_failed: list[int] = []
 
         for fx in upcoming:
+            logger.info(
+                "V21_FIXTURE_START step=select_upcoming model_version=%s competition_id=%s %s",
+                self.model_version,
+                int(competition_id),
+                _fixture_log_fields(fx),
+            )
             try:
                 out = self.generate_for_fixture(db, int(fx.id), competition_id=int(competition_id))
             except Exception as exc:  # noqa: BLE001
-                errors.append({"fixture_id": int(fx.id), "error": str(exc)[:300]})
+                logger.exception(
+                    "V21_FIXTURE_FAILED step=build_prediction_v21 model_version=%s competition_id=%s fixture_id=%s",
+                    self.model_version,
+                    int(competition_id),
+                    int(fx.id),
+                )
+                errors.append(
+                    _error_entry(
+                        fx,
+                        error=str(exc)[:500],
+                        failed_step="build_prediction_v21",
+                        error_type=type(exc).__name__,
+                    ),
+                )
+                fixtures_failed.append(int(fx.id))
                 continue
             if out.get("status") == "error":
-                errors.append({"fixture_id": int(fx.id), "error": out.get("message"), "details": out.get("details")})
+                errors.append(
+                    _error_entry(
+                        fx,
+                        error=str(out.get("message") or "unknown_error"),
+                        failed_step=str(out.get("failed_step") or "build_prediction_v21"),
+                        error_type=out.get("error_type"),
+                        details=out.get("details"),
+                    ),
+                )
+                fixtures_failed.append(int(fx.id))
                 continue
             processed += 1
             saved_total += int(out.get("predictions_saved") or 0)
+            fixtures_succeeded.append(int(fx.id))
             warnings.extend(out.get("warnings") or [])
 
         display = get_model_display(self.model_version)
@@ -170,14 +283,23 @@ class SotPredictionV21WeightedComponentsService:
         if saved_total > 0 and errors:
             status = "partial"
 
+        code = None
+        if status == "error":
+            code = "v21_all_fixtures_failed" if errors else "v21_no_predictions_saved"
+        elif status == "partial":
+            code = "v21_partial_failures"
+
         return {
             "status": status,
+            "code": code,
             "competition_id": int(competition_id),
             "model_version": self.model_version,
             "model_label": display.label if display else self.model_version,
             "season_year": season_year,
             "fixtures_processed": processed,
             "predictions_created_or_updated": saved_total,
+            "fixtures_succeeded": fixtures_succeeded,
+            "fixtures_failed": fixtures_failed,
             "warnings": warnings[:50],
             "errors": errors,
         }
@@ -193,6 +315,7 @@ class SotPredictionV21WeightedComponentsService:
         if competition_id is None:
             return {
                 "status": "error",
+                "code": "competition_id_required_for_v21",
                 "message": "competition_id_required_for_v21",
                 "season_year": int(season_year),
             }

@@ -175,14 +175,24 @@ def refresh_competition_next_round(
     body: IngestDryRunBody | None = None,
     db: Session = Depends(get_db),
 ):
+    dry_run = _ingest_body(body)
+    model_version = _ingest_model_version(body)
+    generate_mode = _ingest_generate_mode(body)
+    logger.info(
+        "refresh next-round request competition_id=%s dry_run=%s model_version=%s generate_mode=%s",
+        competition_id,
+        dry_run,
+        model_version,
+        generate_mode,
+    )
     svc = CompetitionIngestionService()
     try:
         result = svc.refresh_next_round(
             db,
             competition_id,
-            dry_run=_ingest_body(body),
-            model_version=_ingest_model_version(body),
-            generate_mode=_ingest_generate_mode(body),
+            dry_run=dry_run,
+            model_version=model_version,
+            generate_mode=generate_mode,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception(
@@ -206,9 +216,6 @@ def refresh_competition_next_round(
     if result.get("status") == "error":
         return JSONResponse(status_code=422, content=jsonable_encoder(result))
     return jsonable_encoder(result)
-
-
-@router.post("/{competition_id}/betting-picks/create-from-round")
 def create_competition_tracked_picks_from_round(
     competition_id: int,
     body: CreateTrackedPicksFromRoundBody,
