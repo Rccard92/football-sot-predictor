@@ -626,11 +626,52 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 ---
 
+## 16. Step C.1 — Debug Backtest Panel (Admin)
+
+**Completato.** Pannello Admin read-only + CRUD run pending per test UI e validazione registry. Nessun engine runtime.
+
+| Endpoint | Metodo | Descrizione |
+|----------|--------|-------------|
+| `/api/backtest/debug/health` | GET | Health registry, tabelle `backtest_*`, conteggi righe |
+| `/api/backtest/runs` | POST/GET | (Step C) usati dal pannello per creare/listare run |
+| `/api/backtest/runs/{run_id}` | GET | (Step C) dettaglio run selezionata |
+
+| Artefatto | Path |
+|-----------|------|
+| Health service | `backend/app/services/backtest_health_service.py` |
+| Router debug | `backend/app/routes/backtest_debug.py` |
+| Test health | `backend/tests/test_backtest_debug_health.py` |
+| Client API frontend | `frontend/src/lib/api.ts` (sezione Backtest Engine) |
+| Pannello Admin | `frontend/src/components/admin/BacktestDebugPanel.tsx` |
+| Integrazione Admin | `frontend/src/pages/Admin.tsx` (Section "Debug Backtest") |
+| Changelog | `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-c1`) |
+
+**Pulsanti pannello (6):**
+
+| Pulsante | Azione | Esito atteso |
+|----------|--------|--------------|
+| Health Backtest | GET health | `status=ok` (o `degraded` su SQLite senza migration) |
+| Crea run debug v2.1 | POST run SOT + v2.1 | HTTP 200, `status=pending`; messaggio esplicito: nessun backtest eseguito |
+| Lista ultime run | GET lista filtrata per `competition_id` | Popola tabella ultime 10 run |
+| Leggi ultima run | GET dettaglio | Run selezionata / ultima creata / prima in lista; conteggi 0 evidenziati |
+| Test market planned | POST corners | 422 `market_not_active` → badge "Test OK" |
+| Test algorithm errato | POST SOT + corners_v1_0 | 422 `invalid_algorithm_for_market` → badge "Test OK" |
+
+**Cosa NON fa Step C.1:**
+- Nessun DELETE run, nessun engine runtime, PointInTimeContext, adapter
+- Nessuna modifica v2.0/v2.1, formule, Monitoraggio, Audit, Prossima giornata
+- Nessun backtest reale: run restano `pending` con predictions/picks/metrics = 0
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
 |------|------|
 | API Backtest Runs (Step C) | `backend/app/routes/backtest_runs.py` |
+| Health debug (Step C.1) | `backend/app/routes/backtest_debug.py` |
+| BacktestHealthService (Step C.1) | `backend/app/services/backtest_health_service.py` |
+| BacktestDebugPanel (Step C.1) | `frontend/src/components/admin/BacktestDebugPanel.tsx` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
 | Modelli Backtest (Step B) | `backend/app/models/backtest.py` |

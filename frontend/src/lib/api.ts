@@ -2054,6 +2054,163 @@ export async function runSotBacktest(season: number, opts?: AdminRequestOpts): P
   return adminPostJson<unknown>(`/api/backtest/sot/serie-a/${season}/run`, {}, { timeoutMs: 300_000, ...opts })
 }
 
+// --- Backtest Engine (Step C / C.1) ---
+
+export type BacktestDebugHealthResponse = {
+  status: string
+  tables: Record<string, boolean>
+  runs_count: number
+  predictions_count: number
+  picks_count: number
+  metrics_count: number
+  markets: { market_key: string; status: string }[]
+  algorithms: { market_key: string; algorithm_version: string; status: string }[]
+  active_markets: string[]
+  planned_markets: string[]
+  active_algorithms: string[]
+}
+
+export type BacktestRunCreateBody = {
+  competition_id: number
+  season_year?: number | null
+  season_id?: number | null
+  market_key: string
+  algorithm_version: string
+  mode: string
+  fixture_scope: string
+  date_from?: string | null
+  date_to?: string | null
+  config_json?: Record<string, unknown> | null
+  model_manifest_version?: string | null
+}
+
+export type BacktestRunRow = {
+  id: number
+  competition_id: number
+  competition_name?: string | null
+  season_year?: number | null
+  market_key: string
+  algorithm_version: string
+  mode: string
+  fixture_scope: string
+  status: string
+  created_at: string
+  completed_at?: string | null
+  summary_json?: Record<string, unknown> | null
+}
+
+export type BacktestRunListResponse = {
+  items: BacktestRunRow[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type BacktestRunDetail = BacktestRunRow & {
+  season_id?: number | null
+  date_from?: string | null
+  date_to?: string | null
+  config_json?: Record<string, unknown>
+  summary_json?: Record<string, unknown> | null
+  error_json?: Record<string, unknown> | null
+  algorithm_config_hash?: string
+  model_manifest_version?: string | null
+  git_commit_sha?: string | null
+  predictions_count: number
+  picks_count: number
+  metrics_count: number
+}
+
+export type BacktestApiRawResponse = {
+  status: number
+  body: unknown
+}
+
+export function getBacktestErrorCode(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const o = body as Record<string, unknown>
+  const detail = o.detail
+  if (detail && typeof detail === 'object' && detail !== null) {
+    const code = (detail as Record<string, unknown>).code
+    if (typeof code === 'string') return code
+  }
+  return null
+}
+
+export function getBacktestErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const o = body as Record<string, unknown>
+  const detail = o.detail
+  if (detail && typeof detail === 'object' && detail !== null) {
+    const msg = (detail as Record<string, unknown>).message
+    if (typeof msg === 'string') return msg
+  }
+  if (typeof detail === 'string') return detail
+  return null
+}
+
+export async function fetchBacktestApiRaw(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: unknown,
+): Promise<BacktestApiRawResponse> {
+  const base = getApiBase()
+  const p = path.startsWith('/') ? path : `/${path}`
+  const init: RequestInit = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  }
+  if (method === 'POST') {
+    init.body = JSON.stringify(body ?? {})
+  }
+  const res = await fetch(`${base}${p}`, init)
+  const ct = res.headers.get('content-type') ?? ''
+  let parsed: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      parsed = await res.json()
+    } catch {
+      parsed = null
+    }
+  }
+  return { status: res.status, body: parsed }
+}
+
+export async function getBacktestDebugHealth(): Promise<BacktestDebugHealthResponse> {
+  return requestJson<BacktestDebugHealthResponse>('/api/backtest/debug/health')
+}
+
+export async function createBacktestRun(body: BacktestRunCreateBody): Promise<BacktestRunRow> {
+  return requestPostJson<BacktestRunRow>('/api/backtest/runs', body)
+}
+
+export async function listBacktestRuns(params?: {
+  competition_id?: number
+  season_year?: number
+  market_key?: string
+  algorithm_version?: string
+  mode?: string
+  status?: string
+  limit?: number
+  offset?: number
+}): Promise<BacktestRunListResponse> {
+  const q = new URLSearchParams()
+  if (params?.competition_id != null) q.set('competition_id', String(params.competition_id))
+  if (params?.season_year != null) q.set('season_year', String(params.season_year))
+  if (params?.market_key) q.set('market_key', params.market_key)
+  if (params?.algorithm_version) q.set('algorithm_version', params.algorithm_version)
+  if (params?.mode) q.set('mode', params.mode)
+  if (params?.status) q.set('status', params.status)
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  if (params?.offset != null) q.set('offset', String(params.offset))
+  const qs = q.toString()
+  return requestJson<BacktestRunListResponse>(`/api/backtest/runs${qs ? `?${qs}` : ''}`)
+}
+
+export async function getBacktestRun(runId: number): Promise<BacktestRunDetail> {
+  return requestJson<BacktestRunDetail>(`/api/backtest/runs/${runId}`)
+}
+
 /** Allineato a `UpcomingSotCalculationBreakdown` (backend). */
 export type UpcomingCalculationBreakdown = {
   season_avg_sot_for: number

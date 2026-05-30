@@ -42,6 +42,7 @@ import { PreMatchJobPanel } from '../components/admin/PreMatchJobPanel'
 import { CompetitionsAdminPanel } from '../components/admin/CompetitionsAdminPanel'
 import { ContextBanner } from '../components/ContextBanner'
 import { SportApiDebugPanel } from '../components/admin/SportApiDebugPanel'
+import { BacktestDebugPanel } from '../components/admin/BacktestDebugPanel'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { useModelSelection } from '../contexts/ModelSelectionContext'
 import {
@@ -803,6 +804,13 @@ export function Admin() {
               <ActionButton key={a.id} action={a} pendingId={pendingId} onRun={runAction} />
             ))}
           </div>
+        </Section>
+
+        <Section
+          title="Debug Backtest"
+          subtitle="Backtest Engine Step C.1: health, CRUD run pending e test validazione registry. Nessun engine runtime."
+        >
+          <BacktestDebugPanel />
         </Section>
 
         <Section

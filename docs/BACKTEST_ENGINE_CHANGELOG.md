@@ -4,6 +4,32 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-c1
+
+**Titolo:** Debug Backtest Panel (Admin)
+
+**Descrizione:** Pannello Admin con 6 pulsanti di test UI, endpoint health read-only e client API frontend per `/api/backtest/runs`. Nessun backtest runtime.
+
+**Highlights:**
+
+- `GET /api/backtest/debug/health` — registry markets/algorithms, stato tabelle, conteggi.
+- `BacktestDebugPanel` in Admin: health, crea run pending v2.1, lista, dettaglio, test 422 planned market / algoritmo errato.
+- Client `fetchBacktestApiRaw` per gestire 422 attesi senza throw.
+- Nessuna modifica v2.0/v2.1, Monitoraggio, Audit, Prossima giornata.
+
+**File toccati:**
+
+- `backend/app/services/backtest_health_service.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/app/routes/__init__.py`
+- `backend/tests/test_backtest_debug_health.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `frontend/src/pages/Admin.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-c
 
 **Titolo:** API base Backtest Runs
