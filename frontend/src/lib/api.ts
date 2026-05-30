@@ -1063,12 +1063,16 @@ export type StatsDebugEntry = {
 
 export type TrackedPicksRefreshResultsSummary = {
   status: string
-  season: number
+  season?: number
+  competition_id?: number
+  competition_key?: string
   scope?: 'all' | 'live' | 'unfinished' | 'unfinished_or_recent'
   force?: boolean
   last_refreshed_at?: string
-  picks_checked: number
-  picks_updated: number
+  picks_checked?: number
+  picks_updated?: number
+  tracked_checked?: number
+  updated?: number
   api_calls?: number
   errors: { pick_id?: number; error?: string }[]
   stats_debug?: StatsDebugEntry[]
@@ -1226,6 +1230,7 @@ export async function getTrackedBettingPicks(season: number): Promise<TrackedBet
   return requestJson<TrackedBettingPicksResponse>(`/api/betting-picks/serie-a/${season}/tracked`)
 }
 
+/** @deprecated Usare postRefreshTrackedPickResultsForCompetition con competition_id */
 export async function postRefreshTrackedPickResults(
   season: number,
   body?: { scope?: 'all' | 'live' | 'unfinished' | 'unfinished_or_recent'; force?: boolean },
@@ -1233,6 +1238,22 @@ export async function postRefreshTrackedPickResults(
 ): Promise<TrackedPicksRefreshResultsSummary> {
   return adminPostJson<TrackedPicksRefreshResultsSummary>(
     `/api/admin/betting-picks/serie-a/${season}/refresh-results`,
+    body ?? {},
+    opts,
+  )
+}
+
+export async function postRefreshTrackedPickResultsForCompetition(
+  competitionId: number,
+  body?: {
+    scope?: 'all' | 'live' | 'unfinished' | 'unfinished_or_recent'
+    force?: boolean
+    model_version?: string
+  },
+  opts?: AdminRequestOpts,
+): Promise<TrackedPicksRefreshResultsSummary> {
+  return adminPostJson<TrackedPicksRefreshResultsSummary>(
+    `/api/admin/competitions/${competitionId}/betting-picks/refresh-results`,
     body ?? {},
     opts,
   )

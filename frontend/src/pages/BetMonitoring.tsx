@@ -6,6 +6,7 @@ import {
   postCreateTrackedPicksFromCompetitionRound,
   postCreateTrackedPicksFromRound,
   postRefreshTrackedPickResults,
+  postRefreshTrackedPickResultsForCompetition,
   type TrackedBettingPickRow,
   type TrackedBettingPicksSummary,
   type UpcomingMatchTeam,
@@ -245,20 +246,33 @@ export function BetMonitoring() {
         setAutoRefreshStatus('Aggiornamento risultati in corso…')
       }
       try {
-        const out = await postRefreshTrackedPickResults(
-          season,
-          { scope, force: opts?.force },
-          { timeoutMs: 300_000 },
-        )
+        const out =
+          selectedCompetitionId != null
+            ? await postRefreshTrackedPickResultsForCompetition(
+                selectedCompetitionId,
+                {
+                  scope,
+                  force: opts?.force,
+                  model_version: selectedModelVersion,
+                },
+                { timeoutMs: 300_000 },
+              )
+            : await postRefreshTrackedPickResults(
+                season,
+                { scope, force: opts?.force },
+                { timeoutMs: 300_000 },
+              )
         if (out.last_refreshed_at) {
           setLastResultsRefreshAt(out.last_refreshed_at)
         }
         if (opts?.isAuto) {
           lastAutoRefreshAtRef.current = Date.now()
         }
+        const picksUpdated = out.picks_updated ?? out.updated ?? 0
+        const picksChecked = out.picks_checked ?? out.tracked_checked ?? 0
         if (isManualAll) {
           setActionMsg(
-            `Aggiornate ${out.picks_updated} giocate su ${out.picks_checked} controllate` +
+            `Aggiornate ${picksUpdated} giocate su ${picksChecked} controllate` +
               (out.errors?.length ? ` · ${out.errors.length} errori` : ''),
           )
         } else if (opts?.isAuto && out.errors?.length) {
@@ -281,7 +295,7 @@ export function BetMonitoring() {
         }
       }
     },
-    [load],
+    [load, season, selectedCompetitionId, selectedModelVersion],
   )
 
   const runAutoRefreshIfAllowed = useCallback(() => {

@@ -74,4 +74,6 @@ def refresh_tracked_pick_results(
         raise HTTPException(status_code=503, detail="Database error") from exc
     except ApiFootballError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return jsonable_encoder(out)

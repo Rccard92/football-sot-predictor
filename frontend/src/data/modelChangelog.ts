@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.18',
+    date: '2026-05-30',
+    title: 'Fix refresh risultati Monitoraggio multi-campionato',
+    type: 'patch',
+    summary:
+      "Rimosso l'uso dell'endpoint legacy Serie A nel refresh risultati del Monitoraggio Giocate, rendendo la chiamata basata su competition_id.",
+    highlights: [
+      'Monitoraggio Giocate usa endpoint competition-scoped.',
+      'Brasileirão non richiama più /serie-a/2026/refresh-results.',
+      'TrackedPickResultsRefreshService reso competition-aware.',
+      'Gestione errori JSON invece di 500 non gestiti.',
+      'Nessuna modifica a v2.0/v2.1.',
+      'Nessuna modifica alle tabelle backtest.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.17',
     date: '2026-05-30',
     title: 'Spiegazione semplificata formula v2.1',

@@ -22,6 +22,7 @@ from app.models.tracked_betting_pick import (
     STATUS_WON,
 )
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.competition_service import CompetitionService
 from app.services.fixture_sot_statistics import extract_sot_from_statistics_response
 from app.services.ingestion_service import IngestionService
 from app.services.tracked_monitoring_constants import LIVE_STATUSES, VOID_STATUSES
@@ -174,9 +175,78 @@ def _pick_in_scope(
     return _should_refresh_pick(pick, fx, scope, force=force, now=now)
 
 
+def _load_fixtures_and_teams(
+    db: Session,
+    all_picks: list[TrackedBettingPick],
+) -> tuple[dict[int, Fixture], dict[int, Team]]:
+    fixture_ids = list({int(p.fixture_id) for p in all_picks})
+    fixtures_map = (
+        {int(f.id): f for f in db.scalars(select(Fixture).where(Fixture.id.in_(fixture_ids))).all()}
+        if fixture_ids
+        else {}
+    )
+    team_ids: set[int] = set()
+    for fx in fixtures_map.values():
+        team_ids.add(int(fx.home_team_id))
+        team_ids.add(int(fx.away_team_id))
+    teams_map = (
+        {int(t.id): t for t in db.scalars(select(Team).where(Team.id.in_(list(team_ids)))).all()}
+        if team_ids
+        else {}
+    )
+    return fixtures_map, teams_map
+
+
 class TrackedPickResultsRefreshService:
     def __init__(self, client: ApiFootballClient | None = None) -> None:
         self._client = client or ApiFootballClient()
+
+    def refresh_results_for_competition(
+        self,
+        db: Session,
+        competition_id: int,
+        *,
+        scope: RefreshScope = "all",
+        force: bool = False,
+        model_version: str | None = None,
+    ) -> dict[str, Any]:
+        comp = CompetitionService().get_by_id_or_raise(db, int(competition_id))
+        q = (
+            select(TrackedBettingPick)
+            .join(Fixture, Fixture.id == TrackedBettingPick.fixture_id)
+            .where(
+                Fixture.competition_id == comp.id,
+                TrackedBettingPick.status != STATUS_VOID,
+            )
+        )
+        if model_version:
+            q = q.where(TrackedBettingPick.model_id == str(model_version))
+        all_picks = list(db.scalars(q).all())
+        fixtures_map, teams_map = _load_fixtures_and_teams(db, all_picks)
+
+        now = datetime.now(timezone.utc)
+        picks = [
+            p
+            for p in all_picks
+            if _pick_in_scope(p, fixtures_map.get(int(p.fixture_id)), scope, force=force, now=now)
+        ]
+        loop_result = self._refresh_picks_loop(db, picks, fixtures_map, teams_map)
+        return {
+            "status": "ok",
+            "competition_id": int(comp.id),
+            "competition_key": comp.key,
+            "season": comp.season,
+            "scope": scope,
+            "force": force,
+            "last_refreshed_at": loop_result["last_refreshed_at"],
+            "tracked_checked": len(picks),
+            "updated": loop_result["updated"],
+            "picks_checked": len(picks),
+            "picks_updated": loop_result["updated"],
+            "api_calls": loop_result["api_calls"],
+            "errors": loop_result["errors"],
+            "stats_debug": loop_result["stats_debug"],
+        }
 
     def refresh_results(
         self,
@@ -198,21 +268,7 @@ class TrackedPickResultsRefreshService:
                 ),
             ).all(),
         )
-        fixture_ids = list({int(p.fixture_id) for p in all_picks})
-        fixtures_map = (
-            {int(f.id): f for f in db.scalars(select(Fixture).where(Fixture.id.in_(fixture_ids))).all()}
-            if fixture_ids
-            else {}
-        )
-        team_ids: set[int] = set()
-        for fx in fixtures_map.values():
-            team_ids.add(int(fx.home_team_id))
-            team_ids.add(int(fx.away_team_id))
-        teams_map = (
-            {int(t.id): t for t in db.scalars(select(Team).where(Team.id.in_(list(team_ids)))).all()}
-            if team_ids
-            else {}
-        )
+        fixtures_map, teams_map = _load_fixtures_and_teams(db, all_picks)
 
         now = datetime.now(timezone.utc)
         picks = [
@@ -220,6 +276,27 @@ class TrackedPickResultsRefreshService:
             for p in all_picks
             if _pick_in_scope(p, fixtures_map.get(int(p.fixture_id)), scope, force=force, now=now)
         ]
+        loop_result = self._refresh_picks_loop(db, picks, fixtures_map, teams_map)
+        return {
+            "status": "success",
+            "season": season_year,
+            "scope": scope,
+            "force": force,
+            "last_refreshed_at": loop_result["last_refreshed_at"],
+            "picks_checked": len(picks),
+            "picks_updated": loop_result["updated"],
+            "api_calls": loop_result["api_calls"],
+            "errors": loop_result["errors"],
+            "stats_debug": loop_result["stats_debug"],
+        }
+
+    def _refresh_picks_loop(
+        self,
+        db: Session,
+        picks: list[TrackedBettingPick],
+        fixtures_map: dict[int, Fixture],
+        teams_map: dict[int, Team],
+    ) -> dict[str, Any]:
         updated = 0
         errors: list[dict[str, Any]] = []
         stats_debug: list[dict[str, Any]] = []
@@ -329,14 +406,9 @@ class TrackedPickResultsRefreshService:
 
         db.commit()
         return {
-            "status": "success",
-            "season": season_year,
-            "scope": scope,
-            "force": force,
-            "last_refreshed_at": last_refreshed_at,
-            "picks_checked": len(picks),
-            "picks_updated": updated,
+            "updated": updated,
             "api_calls": api_calls,
             "errors": errors,
             "stats_debug": stats_debug,
+            "last_refreshed_at": last_refreshed_at,
         }

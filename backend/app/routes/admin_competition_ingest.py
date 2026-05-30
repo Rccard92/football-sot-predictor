@@ -11,11 +11,14 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings, sportapi_configured
 from app.core.database import get_db
 from app.schemas.competition import IngestDryRunBody, SportApiLineupsIngestBody
-from app.schemas.tracked_betting_picks import CreateTrackedPicksFromRoundBody
+from app.schemas.tracked_betting_picks import CreateTrackedPicksFromRoundBody, RefreshTrackedPickResultsBody
+from app.services.api_football_client import ApiFootballError
 from app.services.competition_ingestion_service import CompetitionIngestionService
 from app.services.competition_service import CompetitionService
 from app.services.competition_sportapi_lineup_service import CompetitionSportApiLineupService
 from app.services.league_season_api_helpers import SeasonNotAvailableError
+from app.services.tracked_pick_results_refresh_service import TrackedPickResultsRefreshService
+from app.services.tracked_pick_round_backfill_service import TrackedPickRoundBackfillService
 
 logger = logging.getLogger(__name__)
 
@@ -216,13 +219,14 @@ def refresh_competition_next_round(
     if result.get("status") == "error":
         return JSONResponse(status_code=422, content=jsonable_encoder(result))
     return jsonable_encoder(result)
+
+
+@router.post("/{competition_id}/betting-picks/create-from-round")
 def create_competition_tracked_picks_from_round(
     competition_id: int,
     body: CreateTrackedPicksFromRoundBody,
     db: Session = Depends(get_db),
 ):
-    from app.services.tracked_pick_round_backfill_service import TrackedPickRoundBackfillService
-
     try:
         out = TrackedPickRoundBackfillService().create_from_competition(
             db,
@@ -236,4 +240,35 @@ def create_competition_tracked_picks_from_round(
         logger.exception("create tracked picks competition=%s DB error", competition_id)
         db.rollback()
         raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.post("/{competition_id}/betting-picks/refresh-results")
+def refresh_competition_tracked_pick_results(
+    competition_id: int,
+    body: RefreshTrackedPickResultsBody = RefreshTrackedPickResultsBody(),
+    db: Session = Depends(get_db),
+):
+    _require_api_football_key()
+    scope = body.scope
+    model_version = str(body.model_version).strip() if body.model_version else None
+    if model_version == "":
+        model_version = None
+    try:
+        out = TrackedPickResultsRefreshService().refresh_results_for_competition(
+            db,
+            int(competition_id),
+            scope=scope,
+            force=bool(body.force),
+            model_version=model_version,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("refresh tracked results competition=%s DB error", competition_id)
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except ApiFootballError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return jsonable_encoder(out)

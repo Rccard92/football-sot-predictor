@@ -20,3 +20,4 @@ class CreateTrackedPicksFromRoundBody(BaseModel):
 class RefreshTrackedPickResultsBody(BaseModel):
     scope: Literal["all", "live", "unfinished", "unfinished_or_recent"] = "all"
     force: bool = False
+    model_version: str | None = None
