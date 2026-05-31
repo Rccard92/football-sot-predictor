@@ -130,6 +130,25 @@ def test_sot_v21_preview_competition_mismatch(mock_svc_cls):
 
 
 @patch("app.routes.backtest_debug.SotV21PointInTimePreviewService")
+def test_sot_v21_preview_historical_official_xi_accepted(mock_svc_cls):
+    mock_preview = _MOCK_PREVIEW.model_copy(
+        update={
+            "mode": "historical_official_xi",
+            "warnings": ["historical_official_xi_mode_not_prelineup"],
+        },
+    )
+    mock_svc_cls.return_value.build_preview.return_value = mock_preview
+
+    response = client.get(
+        "/api/backtest/debug/sot-v21-preview",
+        params={"competition_id": 1, "fixture_id": 146, "mode": "historical_official_xi"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "historical_official_xi"
+
+
+@patch("app.routes.backtest_debug.SotV21PointInTimePreviewService")
 def test_sot_v21_preview_mode_not_supported(mock_svc_cls):
     from fastapi import HTTPException
 

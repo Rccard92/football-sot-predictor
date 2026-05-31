@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from statistics import mean
 from typing import Any
 
+from app.backtest.constants import BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
 from app.schemas.backtest_point_in_time import (
     LeaguePointInTimeBaselines,
     PointInTimeContextResponse,
@@ -227,6 +228,60 @@ def _compute_home_away_split_macro(
     return result, trace, fallback_key
 
 
+def _compute_player_layer_macro(
+    ctx: PointInTimeContextResponse,
+    *,
+    is_home: bool,
+    mode: str,
+) -> tuple[V21MacroResult, dict[str, Any], str | None]:
+    key = "player_layer"
+    source_paths = [
+        "fixture_lineups",
+        "fixture_player_stats",
+        "historical_official_xi",
+        "rolling_player_layer",
+    ]
+
+    if mode != BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+        r, t, fb = _neutral_macro(key, "player_layer_point_in_time_not_built_yet")
+        return r, t, fb
+
+    layer = ctx.home_player_layer if is_home else ctx.away_player_layer
+    if layer is None:
+        r, t, fb = _neutral_macro(key, "player_layer_point_in_time_not_built_yet")
+        return r, t, fb
+
+    macro_index = float(layer.player_layer_index)
+    status = layer.status
+    macro_warnings = list(layer.warnings)
+    if status == "available":
+        macro_warnings = [w for w in macro_warnings if w != "player_layer_point_in_time_not_built_yet"]
+
+    components: dict[str, Any] = {
+        "offensive_xi_strength_index": layer.offensive_xi_strength_index,
+        "top_shooter_presence_index": layer.top_shooter_presence_index,
+        "replacement_depth_index": layer.replacement_depth_index,
+        "starters_count": layer.starters_count,
+        "bench_count": layer.bench_count,
+        "mapping_coverage_pct": layer.mapping_coverage_pct,
+        "prior_stats_coverage_pct": layer.prior_stats_coverage_pct,
+        "formation": layer.formation,
+        "top_starters": layer.top_starters,
+    }
+
+    result, trace = _macro_from_index(
+        key,
+        macro_index,
+        status,
+        macro_warnings,
+        components=components,
+        source_paths=source_paths,
+    )
+    trace["mode"] = BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
+    fallback_key = None if status == "available" else "player_layer_partial_or_fallback"
+    return result, trace, fallback_key
+
+
 def build_pit_side_preview(
     *,
     team: TeamPointInTimeStats,
@@ -234,6 +289,7 @@ def build_pit_side_preview(
     league: LeaguePointInTimeBaselines,
     ctx: PointInTimeContextResponse,
     is_home: bool,
+    mode: str = "pre_lineup",
 ) -> PitSidePreviewResult:
     warnings: list[str] = []
     fallbacks: list[str] = []
@@ -329,8 +385,14 @@ def build_pit_side_preview(
     if split_fb:
         fallbacks.append(split_fb)
 
+    pl_r, pl_t, pl_fb = _compute_player_layer_macro(ctx, is_home=is_home, mode=mode)
+    macro_results.append(pl_r)
+    macro_traces.append(pl_t)
+    warnings.extend(pl_r.warnings)
+    if pl_fb:
+        fallbacks.append(pl_fb)
+
     for key, fb_key, fb_msg in (
-        ("player_layer", "player_layer_point_in_time_not_built_yet", "player_layer_point_in_time_not_built_yet"),
         ("injuries_unavailable", "injuries_point_in_time_not_built_yet", "injuries_point_in_time_not_built_yet"),
     ):
         r, t, fb = _neutral_macro(key, fb_msg)
@@ -340,7 +402,9 @@ def build_pit_side_preview(
         warnings.append(fb_msg)
 
     lineup_warning = "no_historical_probable_lineups"
-    if lineup_warning in ctx.warnings or not ctx.lineup_diagnostic.lineups_available:
+    if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+        r, t, fb = _neutral_macro("lineups", "lineups_point_in_time_limited")
+    elif lineup_warning in ctx.warnings or not ctx.lineup_diagnostic.lineups_available:
         r, t, fb = _neutral_macro("lineups", lineup_warning)
     else:
         r, t, fb = _neutral_macro("lineups", "lineups_point_in_time_limited")

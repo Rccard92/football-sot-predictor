@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.backtest.constants import BACKTEST_MODE_HISTORICAL_OFFICIAL_XI, BACKTEST_MODE_PRE_LINEUP
 from app.backtest.errors import raise_backtest_http
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
 from app.schemas.backtest_sot_v21_preview import (
@@ -17,6 +18,7 @@ from app.schemas.backtest_sot_v21_preview import (
     SotV21PreviewSideTrace,
 )
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
+from app.services.backtest.rolling_player_layer_service import RollingPlayerLayerService
 from app.services.backtest.sot_v21_pit_macro_builder import build_pit_side_preview
 
 
@@ -42,11 +44,11 @@ class SotV21PointInTimePreviewService:
         fixture_id: int,
         mode: str = "pre_lineup",
     ) -> SotV21PreviewResponse:
-        if mode != "pre_lineup":
+        if mode not in (BACKTEST_MODE_PRE_LINEUP, BACKTEST_MODE_HISTORICAL_OFFICIAL_XI):
             raise_backtest_http(
                 422,
                 "mode_not_supported_yet",
-                "SOT v2.1 PIT preview supports only pre_lineup in Step E.",
+                "SOT v2.1 PIT preview supports pre_lineup and historical_official_xi.",
                 mode=mode,
             )
 
@@ -58,12 +60,40 @@ class SotV21PointInTimePreviewService:
             market_key="shots_on_target",
         )
 
+        if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+            layer_svc = RollingPlayerLayerService()
+            home_layer = layer_svc.build_team_player_layer(
+                db,
+                competition_id=int(competition_id),
+                fixture_id=int(fixture_id),
+                team_id=int(ctx.home_team_id),
+                cutoff_time=ctx.cutoff_time,
+                side="home",
+                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
+            )
+            away_layer = layer_svc.build_team_player_layer(
+                db,
+                competition_id=int(competition_id),
+                fixture_id=int(fixture_id),
+                team_id=int(ctx.away_team_id),
+                cutoff_time=ctx.cutoff_time,
+                side="away",
+                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
+            )
+            ctx = ctx.model_copy(
+                update={
+                    "home_player_layer": home_layer,
+                    "away_player_layer": away_layer,
+                },
+            )
+
         home_side = build_pit_side_preview(
             team=ctx.home_team_stats,
             opponent=ctx.away_team_stats,
             league=ctx.league_baselines,
             ctx=ctx,
             is_home=True,
+            mode=mode,
         )
         away_side = build_pit_side_preview(
             team=ctx.away_team_stats,
@@ -71,6 +101,7 @@ class SotV21PointInTimePreviewService:
             league=ctx.league_baselines,
             ctx=ctx,
             is_home=False,
+            mode=mode,
         )
 
         home_pred = _round4(home_side.expected_sot)
@@ -85,6 +116,9 @@ class SotV21PointInTimePreviewService:
         total_err, total_abs = _error_pair(total_pred, actuals.actual_total_sot)
 
         warnings = list(dict.fromkeys(ctx.warnings + home_side.warnings + away_side.warnings))
+        if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+            warnings.insert(0, "historical_official_xi_mode_not_prelineup")
+            warnings = list(dict.fromkeys(warnings))
         fallbacks = list(
             dict.fromkeys(ctx.fallback_variables + home_side.fallback_variables + away_side.fallback_variables),
         )

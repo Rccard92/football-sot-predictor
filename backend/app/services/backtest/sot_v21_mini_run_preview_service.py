@@ -8,6 +8,7 @@ from typing import Iterable
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.backtest.constants import BACKTEST_MODE_HISTORICAL_OFFICIAL_XI, BACKTEST_MODE_PRE_LINEUP
 from app.backtest.errors import raise_backtest_http
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
 from app.models import Competition
@@ -17,6 +18,7 @@ from app.schemas.backtest_sot_v21_mini_run import (
     SotV21MiniRunCaseBrief,
     SotV21MiniRunFailedFixture,
     SotV21MiniRunFixtureResult,
+    SotV21MiniRunPlayerLayerSummary,
     SotV21MiniRunResponse,
     SotV21MiniRunSampleBreakdown,
     SotV21MiniRunSelection,
@@ -130,6 +132,72 @@ def _aggregate_split_summary(previews: list[SotV21PreviewResponse]) -> SotV21Min
         fallback_count=fallback,
         avg_home_split_index=_mean(home_indexes),
         avg_away_split_index=_mean(away_indexes),
+    )
+
+
+def _extract_player_layer_macro(side_trace) -> tuple[float | None, str | None]:
+    if side_trace is None:
+        return None, None
+    for macro in side_trace.macros:
+        if macro.key == "player_layer":
+            return macro.macro_index, macro.status
+    return None, None
+
+
+def _fixture_player_layer_bucket(home_status: str | None, away_status: str | None) -> str:
+    statuses = [s for s in (home_status, away_status) if s]
+    if not statuses:
+        return "fallback"
+    if "neutral_fallback" in statuses or "not_built_yet" in statuses:
+        return "fallback"
+    if "partial_low_sample" in statuses:
+        return "partial"
+    if all(s == "available" for s in statuses):
+        return "available"
+    return "fallback"
+
+
+def _aggregate_player_layer_summary(previews: list[SotV21PreviewResponse]) -> SotV21MiniRunPlayerLayerSummary:
+    available = partial = fallback = 0
+    home_indexes: list[float] = []
+    away_indexes: list[float] = []
+    mapping_pcts: list[float] = []
+    prior_pcts: list[float] = []
+
+    for preview in previews:
+        home_idx, home_status = _extract_player_layer_macro(preview.home_trace)
+        away_idx, away_status = _extract_player_layer_macro(preview.away_trace)
+        bucket = _fixture_player_layer_bucket(home_status, away_status)
+        if bucket == "available":
+            available += 1
+        elif bucket == "partial":
+            partial += 1
+        else:
+            fallback += 1
+        if home_idx is not None:
+            home_indexes.append(float(home_idx))
+        if away_idx is not None:
+            away_indexes.append(float(away_idx))
+
+        for macro in preview.home_trace.macros + preview.away_trace.macros:
+            if macro.key != "player_layer":
+                continue
+            if macro.components:
+                mp = macro.components.get("mapping_coverage_pct")
+                pp = macro.components.get("prior_stats_coverage_pct")
+                if mp is not None:
+                    mapping_pcts.append(float(mp))
+                if pp is not None:
+                    prior_pcts.append(float(pp))
+
+    return SotV21MiniRunPlayerLayerSummary(
+        available_count=available,
+        partial_count=partial,
+        fallback_count=fallback,
+        avg_home_player_layer_index=_mean(home_indexes),
+        avg_away_player_layer_index=_mean(away_indexes),
+        avg_mapping_coverage_pct=_mean(mapping_pcts),
+        avg_prior_stats_coverage_pct=_mean(prior_pcts),
     )
 
 
@@ -282,11 +350,11 @@ class SotV21MiniRunPreviewService:
         fixture_ids: list[int] | None = None,
         include_trace: bool = False,
     ) -> SotV21MiniRunResponse:
-        if mode != "pre_lineup":
+        if mode not in (BACKTEST_MODE_PRE_LINEUP, BACKTEST_MODE_HISTORICAL_OFFICIAL_XI):
             raise_backtest_http(
                 422,
                 "mode_not_supported_yet",
-                "La mini-run supporta solo pre_lineup in questa fase.",
+                "La mini-run supporta pre_lineup e historical_official_xi.",
                 mode=mode,
             )
 
@@ -381,6 +449,7 @@ class SotV21MiniRunPreviewService:
             ),
             summary=summary,
             split_summary=_aggregate_split_summary(preview_snapshots),
+            player_layer_summary=_aggregate_player_layer_summary(preview_snapshots),
             sample_breakdown=_compute_sample_breakdown(results),
             actual_total_breakdown=_compute_actual_total_breakdown(results),
             worst_cases=worst,

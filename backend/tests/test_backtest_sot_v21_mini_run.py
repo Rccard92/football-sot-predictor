@@ -16,6 +16,7 @@ from app.schemas.backtest_sot_v21_mini_run import (
     SotV21MiniRunCaseBrief,
     SotV21MiniRunFailedFixture,
     SotV21MiniRunFixtureResult,
+    SotV21MiniRunPlayerLayerSummary,
     SotV21MiniRunResponse,
     SotV21MiniRunSampleBreakdown,
     SotV21MiniRunSelection,
@@ -107,6 +108,13 @@ _MOCK_RESPONSE = SotV21MiniRunResponse(
         avg_home_split_index=1.08,
         avg_away_split_index=0.94,
     ),
+    player_layer_summary=SotV21MiniRunPlayerLayerSummary(
+        available_count=0,
+        partial_count=0,
+        fallback_count=1,
+        avg_home_player_layer_index=1.0,
+        avg_away_player_layer_index=1.0,
+    ),
     sample_breakdown=SotV21MiniRunSampleBreakdown(
         medium_sample=SotV21MiniRunBucketStats(
             fixtures_count=1,
@@ -186,6 +194,7 @@ def test_sot_v21_mini_run_success(mock_svc_cls):
     assert body["preview_only"] is True
     assert body["summary"]["fixtures_processed"] == 1
     assert body["split_summary"]["available_count"] == 1
+    assert body["player_layer_summary"]["fallback_count"] == 1
     assert body["results"][0]["leakage_guard"] is True
     assert body["results"][0]["actuals_used_as_input"] is False
     assert body["results"][0].get("home_trace") is None

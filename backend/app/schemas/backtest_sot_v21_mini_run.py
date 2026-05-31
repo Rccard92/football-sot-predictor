@@ -39,6 +39,16 @@ class SotV21MiniRunSplitSummary(BaseModel):
     avg_away_split_index: float | None = None
 
 
+class SotV21MiniRunPlayerLayerSummary(BaseModel):
+    available_count: int = 0
+    partial_count: int = 0
+    fallback_count: int = 0
+    avg_home_player_layer_index: float | None = None
+    avg_away_player_layer_index: float | None = None
+    avg_mapping_coverage_pct: float | None = None
+    avg_prior_stats_coverage_pct: float | None = None
+
+
 class SotV21MiniRunSummary(BaseModel):
     fixtures_requested: int = 0
     fixtures_processed: int = 0
@@ -141,6 +151,9 @@ class SotV21MiniRunResponse(BaseModel):
     selection: SotV21MiniRunSelection
     summary: SotV21MiniRunSummary
     split_summary: SotV21MiniRunSplitSummary = Field(default_factory=SotV21MiniRunSplitSummary)
+    player_layer_summary: SotV21MiniRunPlayerLayerSummary = Field(
+        default_factory=SotV21MiniRunPlayerLayerSummary,
+    )
     sample_breakdown: SotV21MiniRunSampleBreakdown = Field(default_factory=SotV21MiniRunSampleBreakdown)
     actual_total_breakdown: SotV21MiniRunActualTotalBreakdown = Field(
         default_factory=SotV21MiniRunActualTotalBreakdown,

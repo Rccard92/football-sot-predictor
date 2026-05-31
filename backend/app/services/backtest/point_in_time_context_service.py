@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.backtest.constants import BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
 from app.backtest.errors import raise_backtest_http
 from app.core.constants import FINISHED_STATUSES
 from app.models import (
@@ -29,6 +30,7 @@ from app.schemas.backtest_point_in_time import (
     TeamPointInTimeStats,
 )
 from app.services.backtest.pit_leakage import compute_leakage_guard, pit_strict_kickoff_before
+from app.services.backtest.pit_player_rolling_stats import load_sportapi_missing_by_side, resolve_side_lineup
 from app.services.backtest.pit_split_stats_builder import build_pit_split_stats
 from app.services.predictions_v10.v10_league_offensive_baselines import compute_league_offensive_baselines
 from app.services.predictions_v10.v10_prior_context import (
@@ -254,6 +256,35 @@ def _lineup_diagnostic(
             warnings,
         )
 
+    if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+        home_missing, away_missing = load_sportapi_missing_by_side(db, fixture_id)
+        home_cov, home_starters, _, _ = resolve_side_lineup(
+            db,
+            fixture=fixture,
+            team_id=int(fixture.home_team_id),
+            side="home",
+            missing_rows=home_missing,
+        )
+        away_cov, away_starters, _, _ = resolve_side_lineup(
+            db,
+            fixture=fixture,
+            team_id=int(fixture.away_team_id),
+            side="away",
+            missing_rows=away_missing,
+        )
+        has_xi = home_cov.has_official_xi or away_cov.has_official_xi
+        starters_count = len(home_starters) + len(away_starters)
+        warnings.extend(home_cov.warnings)
+        warnings.extend(away_cov.warnings)
+        return (
+            LineupDiagnostic(
+                lineup_mode="historical_official_xi",
+                lineups_available=has_xi,
+                lineups_count=starters_count,
+            ),
+            list(dict.fromkeys(warnings)),
+        )
+
     official_lineups = db.scalars(
         select(FixtureLineup).where(FixtureLineup.fixture_id == fixture_id),
     ).all()
@@ -339,8 +370,13 @@ class PointInTimeContextService:
                 f"PointInTimeContext preview supports only {SUPPORTED_MARKET} for now.",
                 market_key=market_key,
             )
-        if mode not in ("pre_lineup", "post_lineup"):
-            raise_backtest_http(422, "invalid_mode", "mode must be pre_lineup or post_lineup", mode=mode)
+        if mode not in ("pre_lineup", "post_lineup", BACKTEST_MODE_HISTORICAL_OFFICIAL_XI):
+            raise_backtest_http(
+                422,
+                "invalid_mode",
+                "mode must be pre_lineup, post_lineup or historical_official_xi",
+                mode=mode,
+            )
 
         comp = db.get(Competition, int(competition_id))
         if comp is None:
@@ -488,7 +524,8 @@ class PointInTimeContextService:
             warnings.append("home_last5_partial_low_sample")
         if away_stats.last5.status == "partial_low_sample":
             warnings.append("away_last5_partial_low_sample")
-        warnings.append("player_profiles_point_in_time_not_built_yet")
+        if mode != BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+            warnings.append("player_profiles_point_in_time_not_built_yet")
         if xg_lb.get("season_id_fallback_used"):
             fallbacks.append("xg_league_baselines_season_id_fallback")
         warnings.extend(lineup_warnings)

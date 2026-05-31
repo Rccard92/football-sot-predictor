@@ -4,6 +4,43 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-g2b
+
+**Titolo:** Rolling Player Layer Historical Official XI
+
+**Descrizione:** Implementato il rolling player layer point-in-time in modalità `historical_official_xi`: XI ufficiale storico + prior stats strict PIT alimentano la macro `player_layer` (peso 9) in preview e mini-run. `pre_lineup` invariato.
+
+**Highlights:**
+
+- Estrazione helper condivisi in `pit_player_rolling_stats.py` (G2A + G2B).
+- `RollingPlayerLayerService` con formule offensive XI, top shooter presence, replacement depth.
+- Branch mode esplicito nel macro builder PIT.
+- Preview/mini-run accettano `historical_official_xi`.
+- Aggregato mini-run `player_layer_summary`.
+- UI: select mode preview + mini-run, card player layer.
+- Regression `pre_lineup`: macro player_layer neutra.
+
+**File toccati:**
+
+- `backend/app/services/backtest/pit_player_rolling_stats.py` (nuovo)
+- `backend/app/services/backtest/rolling_player_layer_service.py` (nuovo)
+- `backend/app/services/backtest/historical_lineup_audit_service.py`
+- `backend/app/services/backtest/point_in_time_context_service.py`
+- `backend/app/services/backtest/sot_v21_pit_macro_builder.py`
+- `backend/app/services/backtest/sot_v21_preview_service.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/app/schemas/backtest_point_in_time.py`
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `backend/tests/test_rolling_player_layer.py` (nuovo)
+- `backend/tests/test_historical_lineup_audit.py`
+- `backend/tests/test_backtest_sot_v21_preview.py`
+- `backend/tests/test_backtest_sot_v21_mini_run.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-g2a
 
 **Titolo:** Historical Official XI Audit

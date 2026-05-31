@@ -54,6 +54,21 @@ class TeamPointInTimeStats(BaseModel):
     last5: TeamLast5Form = Field(default_factory=TeamLast5Form)
 
 
+class TeamPlayerLayerPointInTime(BaseModel):
+    status: str
+    formation: str | None = None
+    starters_count: int = 0
+    bench_count: int = 0
+    mapping_coverage_pct: float | None = None
+    prior_stats_coverage_pct: float | None = None
+    offensive_xi_strength_index: float = 1.0
+    top_shooter_presence_index: float = 1.0
+    replacement_depth_index: float = 1.0
+    player_layer_index: float = 1.0
+    top_starters: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class TeamSplitPointInTimeStats(BaseModel):
     team_id: int
     split_context: str
@@ -123,6 +138,8 @@ class PointInTimeContextResponse(BaseModel):
     away_team_stats: TeamPointInTimeStats
     home_split_stats: TeamSplitPointInTimeStats
     away_split_stats: TeamSplitPointInTimeStats
+    home_player_layer: TeamPlayerLayerPointInTime | None = None
+    away_player_layer: TeamPlayerLayerPointInTime | None = None
     league_baselines: LeaguePointInTimeBaselines
     home_player_stats: PlayerStatsDiagnostic
     away_player_stats: PlayerStatsDiagnostic

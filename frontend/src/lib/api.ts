@@ -2252,6 +2252,21 @@ export type TeamPointInTimeStats = {
   }
 }
 
+export type TeamPlayerLayerPointInTime = {
+  status: string
+  formation?: string | null
+  starters_count: number
+  bench_count: number
+  mapping_coverage_pct?: number | null
+  prior_stats_coverage_pct?: number | null
+  offensive_xi_strength_index: number
+  top_shooter_presence_index: number
+  replacement_depth_index: number
+  player_layer_index: number
+  top_starters: Record<string, unknown>[]
+  warnings: string[]
+}
+
 export type PointInTimeContextResponse = {
   competition_id: number
   competition_key: string
@@ -2275,6 +2290,8 @@ export type PointInTimeContextResponse = {
   league_prior_matches_count: number
   home_team_stats: TeamPointInTimeStats
   away_team_stats: TeamPointInTimeStats
+  home_player_layer?: TeamPlayerLayerPointInTime | null
+  away_player_layer?: TeamPlayerLayerPointInTime | null
   league_baselines: {
     league_avg_sot_for?: number | null
     league_avg_sot_against?: number | null
@@ -2499,6 +2516,15 @@ export type SotV21MiniRunResponse = {
     fallback_count: number
     avg_home_split_index?: number | null
     avg_away_split_index?: number | null
+  }
+  player_layer_summary?: {
+    available_count: number
+    partial_count: number
+    fallback_count: number
+    avg_home_player_layer_index?: number | null
+    avg_away_player_layer_index?: number | null
+    avg_mapping_coverage_pct?: number | null
+    avg_prior_stats_coverage_pct?: number | null
   }
   sample_breakdown: {
     early_low_sample: SotV21MiniRunBucketStats

@@ -94,6 +94,10 @@ function findSplitMacro(side: PitSideTrace | undefined) {
   return side?.macros?.find((m) => m.key === 'home_away_split')
 }
 
+function findPlayerLayerMacro(side: PitSideTrace | undefined) {
+  return side?.macros?.find((m) => m.key === 'player_layer')
+}
+
 function countNeutralMacros(side: PitSideTrace | undefined): number {
   return (
     side?.macros?.filter(
@@ -122,7 +126,7 @@ export function BacktestDebugPanel() {
   const [pitTotal, setPitTotal] = useState(0)
   const [roundFilter, setRoundFilter] = useState('')
   const [roundFilterApplied, setRoundFilterApplied] = useState('')
-  const [pitMode, setPitMode] = useState<'pre_lineup' | 'post_lineup'>('pre_lineup')
+  const [pitMode, setPitMode] = useState<'pre_lineup' | 'post_lineup' | 'historical_official_xi'>('pre_lineup')
   const [pitOutcome, setPitOutcome] = useState<Outcome | null>(null)
   const [pitJson, setPitJson] = useState<PointInTimeContextResponse | null>(null)
   const [pitPreviewJson, setPitPreviewJson] = useState<SotV21PreviewResponse | null>(null)
@@ -131,6 +135,7 @@ export function BacktestDebugPanel() {
   const [miniRunLimit, setMiniRunLimit] = useState(20)
   const [miniRunOffset, setMiniRunOffset] = useState(0)
   const [miniRunRoundNumber, setMiniRunRoundNumber] = useState('')
+  const [miniRunMode, setMiniRunMode] = useState<'pre_lineup' | 'historical_official_xi'>('pre_lineup')
   const [miniRunIncludeTrace, setMiniRunIncludeTrace] = useState(false)
   const [miniRunOutcome, setMiniRunOutcome] = useState<Outcome | null>(null)
   const [miniRunJson, setMiniRunJson] = useState<SotV21MiniRunResponse | null>(null)
@@ -437,13 +442,14 @@ export function BacktestDebugPanel() {
 
   const runPreviewPrediction = useCallback(async () => {
     const fixtureId = resolvePreviewFixtureId()
-    if (selectedCompetitionId == null || fixtureId == null || pitMode !== 'pre_lineup') return
+    if (selectedCompetitionId == null || fixtureId == null) return
+    if (pitMode === 'post_lineup') return
     setLoadingId('pit-prediction')
     try {
       const data = await getBacktestSotV21Preview({
         competition_id: selectedCompetitionId,
         fixture_id: fixtureId,
-        mode: 'pre_lineup',
+        mode: pitMode,
       })
       setPitPreviewJson(data)
       const leakageBad = isPitLeakageCritical(data)
@@ -474,7 +480,7 @@ export function BacktestDebugPanel() {
     try {
       const data = await postBacktestSotV21MiniRun({
         competition_id: selectedCompetitionId,
-        mode: 'pre_lineup',
+        mode: miniRunMode,
         limit: miniRunLimit,
         offset: miniRunOffset,
         round_number: parseMiniRunRoundNumber(miniRunRoundNumber),
@@ -498,7 +504,7 @@ export function BacktestDebugPanel() {
     } finally {
       setLoadingId(null)
     }
-  }, [miniRunIncludeTrace, miniRunLimit, miniRunOffset, miniRunRoundNumber, selectedCompetitionId])
+  }, [miniRunIncludeTrace, miniRunLimit, miniRunMode, miniRunOffset, miniRunRoundNumber, selectedCompetitionId])
 
   const runG2aFixtureAudit = useCallback(async () => {
     if (selectedCompetitionId == null) return
@@ -774,13 +780,21 @@ export function BacktestDebugPanel() {
             Mode
             <select
               value={pitMode}
-              onChange={(e) => setPitMode(e.target.value as 'pre_lineup' | 'post_lineup')}
+              onChange={(e) =>
+                setPitMode(e.target.value as 'pre_lineup' | 'post_lineup' | 'historical_official_xi')
+              }
               className="rounded border border-slate-200 px-2 py-1"
             >
               <option value="pre_lineup">pre_lineup</option>
               <option value="post_lineup">post_lineup</option>
+              <option value="historical_official_xi">historical_official_xi</option>
             </select>
           </label>
+          {pitMode === 'historical_official_xi' ? (
+            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+              Historical Official XI — usa XI ufficiale storica, non pre-lineup puro
+            </span>
+          ) : null}
           <button
             type="button"
             disabled={loadingId !== null || needsCompetition || activePreviewId == null}
@@ -795,7 +809,7 @@ export function BacktestDebugPanel() {
               loadingId !== null ||
               needsCompetition ||
               activePreviewId == null ||
-              pitMode !== 'pre_lineup'
+              pitMode === 'post_lineup'
             }
             onClick={() => void runPreviewPrediction()}
             className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
@@ -934,7 +948,14 @@ export function BacktestDebugPanel() {
 
         {pitPreviewJson ? (
           <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3 text-sm text-slate-800">
-            <div className="font-medium text-violet-900">Preview prediction v2.1 PIT</div>
+            <div className="font-medium text-violet-900">
+              Preview prediction v2.1 PIT
+              {pitPreviewJson.mode === 'historical_official_xi' ? (
+                <span className="ml-2 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900">
+                  historical_official_xi
+                </span>
+              ) : null}
+            </div>
             <div className="mt-1 grid gap-1 sm:grid-cols-2">
               <div>
                 <span className="font-medium">Match:</span> {pitPreviewJson.fixture.home_team} vs{' '}
@@ -988,6 +1009,15 @@ export function BacktestDebugPanel() {
                 {findSplitMacro(pitPreviewJson.away_trace)?.macro_index ?? '—'} (
                 {findSplitMacro(pitPreviewJson.away_trace)?.status ?? '—'})
               </div>
+              {pitPreviewJson.mode === 'historical_official_xi' ? (
+                <div className="sm:col-span-2">
+                  <span className="font-medium">Player layer:</span> casa{' '}
+                  {findPlayerLayerMacro(pitPreviewJson.home_trace)?.macro_index ?? '—'} (
+                  {findPlayerLayerMacro(pitPreviewJson.home_trace)?.status ?? '—'}), trasferta{' '}
+                  {findPlayerLayerMacro(pitPreviewJson.away_trace)?.macro_index ?? '—'} (
+                  {findPlayerLayerMacro(pitPreviewJson.away_trace)?.status ?? '—'})
+                </div>
+              ) : null}
             </div>
             {pitPreviewJson.warnings.length > 0 ? (
               <p className="mt-2 text-xs text-amber-800">
@@ -1096,6 +1126,19 @@ export function BacktestDebugPanel() {
             />
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-700">
+            Mode
+            <select
+              value={miniRunMode}
+              onChange={(e) =>
+                setMiniRunMode(e.target.value as 'pre_lineup' | 'historical_official_xi')
+              }
+              className="rounded border border-slate-200 px-2 py-1"
+            >
+              <option value="pre_lineup">pre_lineup</option>
+              <option value="historical_official_xi">historical_official_xi</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
               checked={miniRunIncludeTrace}
@@ -1112,6 +1155,13 @@ export function BacktestDebugPanel() {
             {loadingId === 'mini-run' ? '…' : 'Esegui mini-run preview'}
           </button>
         </div>
+
+        {miniRunMode === 'historical_official_xi' ? (
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Modalità Historical Official XI: la macro player_layer usa XI ufficiale storico e prior stats
+            giocatore strict PIT. pre_lineup resta neutro su player layer.
+          </p>
+        ) : null}
 
         <p className="mt-2 text-xs text-slate-600">
           Usa il numero esatto della giornata. Es. 3 seleziona solo Regular Season - 3, non la 13.
@@ -1184,6 +1234,36 @@ export function BacktestDebugPanel() {
                   <div>
                     <span className="font-medium">Media split trasferta:</span>{' '}
                     {fmtMetric(miniRunJson.split_summary.avg_away_split_index, 4)}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {miniRunJson.player_layer_summary ? (
+              <div className="mt-2 rounded-lg border border-violet-100 bg-white p-3 text-sm text-slate-800">
+                <div className="font-medium text-violet-800">Player layer storico (G2B)</div>
+                <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                  <div>
+                    <span className="font-medium">Disponibile / parziale / fallback:</span>{' '}
+                    {miniRunJson.player_layer_summary.available_count} /{' '}
+                    {miniRunJson.player_layer_summary.partial_count} /{' '}
+                    {miniRunJson.player_layer_summary.fallback_count}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media player layer casa:</span>{' '}
+                    {fmtMetric(miniRunJson.player_layer_summary.avg_home_player_layer_index, 4)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media player layer trasferta:</span>{' '}
+                    {fmtMetric(miniRunJson.player_layer_summary.avg_away_player_layer_index, 4)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media mapping coverage:</span>{' '}
+                    {fmtMetric(miniRunJson.player_layer_summary.avg_mapping_coverage_pct, 1)}%
+                  </div>
+                  <div>
+                    <span className="font-medium">Media prior stats coverage:</span>{' '}
+                    {fmtMetric(miniRunJson.player_layer_summary.avg_prior_stats_coverage_pct, 1)}%
                   </div>
                 </div>
               </div>

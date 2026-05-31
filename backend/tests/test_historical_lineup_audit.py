@@ -18,11 +18,8 @@ from app.schemas.backtest_historical_lineup_audit import (
     HistoricalLineupSideAudit,
     HistoricalLineupSideCoverage,
 )
-from app.services.backtest.historical_lineup_audit_service import (
-    HistoricalLineupAuditService,
-    _RawPlayerRow,
-    _timestamp_audit,
-)
+from app.services.backtest.historical_lineup_audit_service import HistoricalLineupAuditService
+from app.services.backtest.pit_player_rolling_stats import RawPlayerRow, build_player_prior_stats, timestamp_audit
 
 client = TestClient(app)
 
@@ -155,7 +152,7 @@ def test_historical_lineup_audit_fixture_competition_mismatch(mock_svc_cls):
 
 
 def test_timestamp_missing_does_not_block_audit():
-    ts, is_safe, status, warnings = _timestamp_audit(None)
+    ts, is_safe, status, warnings = timestamp_audit(None)
     assert status == "missing"
     assert is_safe is False
     assert ts is None
@@ -163,8 +160,7 @@ def test_timestamp_missing_does_not_block_audit():
 
 
 def test_player_prior_leakage_warning():
-    svc = HistoricalLineupAuditService()
-    row = _RawPlayerRow(
+    row = RawPlayerRow(
         player_name="Test Player",
         provider_player_id=None,
         api_player_id=999,
@@ -173,7 +169,7 @@ def test_player_prior_leakage_warning():
     )
     db = MagicMock()
     db.scalars.return_value.all.side_effect = [[], []]
-    player = svc._build_player_audit(
+    player = build_player_prior_stats(
         db,
         row=row,
         competition_id=1,

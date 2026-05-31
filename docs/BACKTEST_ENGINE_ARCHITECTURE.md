@@ -855,7 +855,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | Mode | Descrizione |
 |------|-------------|
 | `pre_lineup` | Preview PIT attuale — no XI ufficiale storica |
-| `historical_official_xi` | XI reale storico + stats player prior — **solo audit G2A per ora** |
+| `historical_official_xi` | XI reale storico + stats player prior — audit G2A e player layer G2B in preview PIT |
 
 **Regole:**
 
@@ -866,6 +866,46 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 - `db_writes=false`, nessuna prediction/pick/metrica
 
 **Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-g2a`).
+
+---
+
+## 22. Step G2B — Rolling Player Layer Historical Official XI
+
+**Obiettivo:** calcolare la macro predittiva **Player layer** (peso manifest **9**) in preview e mini-run PIT usando XI ufficiale storico + prior stats giocatore strict PIT, in modalità `historical_official_xi`. La modalità `pre_lineup` resta invariata (macro neutra, warning `player_layer_point_in_time_not_built_yet`).
+
+**Componenti:**
+
+| Modulo | Ruolo |
+|--------|-------|
+| `pit_player_rolling_stats.py` | Helper condivisi G2A/G2B: resolve lineup, mapping, prior stats |
+| `rolling_player_layer_service.py` | Formula prudenziale offensive XI / top shooter / bench depth |
+| `sot_v21_pit_macro_builder.py` | `_compute_player_layer_macro` con branch esplicito per mode |
+
+**Formula player_layer_index:**
+
+```
+0.55 * offensive_xi_strength_index
++ 0.30 * top_shooter_presence_index
++ 0.15 * replacement_depth_index
+cap 0.70–1.30
+```
+
+**Status qualità:** `available` | `partial_low_sample` | `neutral_fallback`
+
+**Endpoint invariati (mode esteso):**
+
+- `GET /api/backtest/debug/sot-v21-preview?mode=historical_official_xi`
+- `POST /api/backtest/debug/sot-v21-mini-run` con `mode: historical_official_xi`
+
+**Mini-run:** nuovo aggregato `player_layer_summary` (analogo a `split_summary` G1).
+
+**Regole:**
+
+- `db_writes=false`, `actuals_used_as_input=false`, `leakage_guard=true`
+- Prior stats: strict `kickoff_at < cutoff_time`
+- Nessuna modifica v2.0/v2.1 live runtime, manifest o persistenza `backtest_*`
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-g2b`).
 
 ---
 
@@ -887,6 +927,8 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | Schemas mini-run Step F | `backend/app/schemas/backtest_sot_v21_mini_run.py` |
 | Pit split stats builder (Step G1) | `backend/app/services/backtest/pit_split_stats_builder.py` |
 | HistoricalLineupAuditService (Step G2A) | `backend/app/services/backtest/historical_lineup_audit_service.py` |
+| Pit player rolling stats (Step G2B) | `backend/app/services/backtest/pit_player_rolling_stats.py` |
+| RollingPlayerLayerService (Step G2B) | `backend/app/services/backtest/rolling_player_layer_service.py` |
 | Schemas lineup audit G2A | `backend/app/schemas/backtest_historical_lineup_audit.py` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
