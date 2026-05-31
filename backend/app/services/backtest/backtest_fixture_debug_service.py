@@ -15,6 +15,7 @@ from app.schemas.backtest_point_in_time import (
     BacktestFixtureListResponse,
     BacktestFixtureTeamBrief,
 )
+from app.services.backtest.round_filter import fixture_matches_round_number
 
 
 @dataclass(frozen=True)
@@ -142,6 +143,7 @@ class BacktestFixtureDebugService:
         competition_id: int,
         limit: int = 20,
         offset: int = 0,
+        round_number: int | None = None,
         round_contains: str | None = None,
         fixture_ids: list[int] | None = None,
         order_by: str = "kickoff_at asc",
@@ -152,6 +154,9 @@ class BacktestFixtureDebugService:
         clauses.append(Fixture.status.in_(FINISHED_STATUSES))
         home_stat, away_stat = self._both_teams_sot_stats_clause()
         clauses.extend([home_stat, away_stat])
+
+        safe_limit = max(1, min(int(limit), 50))
+        safe_offset = max(0, int(offset))
 
         if fixture_ids:
             unique_ids = list(dict.fromkeys(int(i) for i in fixture_ids))
@@ -167,22 +172,25 @@ class BacktestFixtureDebugService:
                 .where(*clauses)
                 .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
             ).all()
+            fixtures_requested = len(unique_ids)
         else:
-            if round_contains and round_contains.strip():
+            if round_number is None and round_contains and round_contains.strip():
                 clauses.append(Fixture.round.ilike(f"%{round_contains.strip()}%"))
-            safe_limit = max(1, min(int(limit), 50))
-            safe_offset = max(0, int(offset))
             rows = db.scalars(
                 select(Fixture)
                 .where(*clauses)
-                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
-                .offset(safe_offset)
-                .limit(safe_limit),
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
             ).all()
+            if round_number is not None:
+                rows = [
+                    f for f in rows if fixture_matches_round_number(f.round, int(round_number))
+                ]
+            fixtures_requested = safe_limit
+            rows = rows[safe_offset : safe_offset + safe_limit]
 
         items = [self._fixture_to_candidate(db, f) for f in rows]
         return MiniRunFixtureSelection(
             items=items,
             order_by=order_by,
-            fixtures_requested=len(unique_ids) if fixture_ids else max(1, min(int(limit), 50)),
+            fixtures_requested=fixtures_requested if fixture_ids else fixtures_requested,
         )

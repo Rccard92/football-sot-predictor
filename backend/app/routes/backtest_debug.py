@@ -123,6 +123,7 @@ def backtest_debug_sot_v21_mini_run(
             mode=body.mode,
             limit=body.limit,
             offset=body.offset,
+            round_number=body.round_number,
             round_contains=body.round_contains,
             fixture_ids=body.fixture_ids,
             include_trace=body.include_trace,

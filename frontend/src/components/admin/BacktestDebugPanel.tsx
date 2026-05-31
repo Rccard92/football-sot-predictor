@@ -67,6 +67,11 @@ function fmtMetric(value: number | null | undefined, digits = 2): string {
   return value.toFixed(digits)
 }
 
+function parseMiniRunRoundNumber(raw: string): number | null {
+  const n = parseInt(raw.trim(), 10)
+  return Number.isFinite(n) && n >= 1 ? n : null
+}
+
 function isPitLeakageCritical(row: {
   leakage_guard: boolean
   latest_fixture_used_at?: string | null
@@ -107,7 +112,7 @@ export function BacktestDebugPanel() {
 
   const [miniRunLimit, setMiniRunLimit] = useState(20)
   const [miniRunOffset, setMiniRunOffset] = useState(0)
-  const [miniRunRoundContains, setMiniRunRoundContains] = useState('')
+  const [miniRunRoundNumber, setMiniRunRoundNumber] = useState('')
   const [miniRunIncludeTrace, setMiniRunIncludeTrace] = useState(false)
   const [miniRunOutcome, setMiniRunOutcome] = useState<Outcome | null>(null)
   const [miniRunJson, setMiniRunJson] = useState<SotV21MiniRunResponse | null>(null)
@@ -449,7 +454,7 @@ export function BacktestDebugPanel() {
         mode: 'pre_lineup',
         limit: miniRunLimit,
         offset: miniRunOffset,
-        round_contains: miniRunRoundContains.trim() || null,
+        round_number: parseMiniRunRoundNumber(miniRunRoundNumber),
         include_trace: miniRunIncludeTrace,
       })
       setMiniRunJson(data)
@@ -470,7 +475,7 @@ export function BacktestDebugPanel() {
     } finally {
       setLoadingId(null)
     }
-  }, [miniRunIncludeTrace, miniRunLimit, miniRunOffset, miniRunRoundContains, selectedCompetitionId])
+  }, [miniRunIncludeTrace, miniRunLimit, miniRunOffset, miniRunRoundNumber, selectedCompetitionId])
 
   const applyRoundFilter = useCallback(() => {
     const applied = roundFilter.trim()
@@ -979,13 +984,14 @@ export function BacktestDebugPanel() {
             />
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-700">
-            Round contains
+            Giornata esatta
             <input
-              type="text"
-              value={miniRunRoundContains}
-              onChange={(e) => setMiniRunRoundContains(e.target.value)}
-              placeholder="Regular Season - 15"
-              className="w-48 rounded border border-slate-200 px-2 py-1 text-sm"
+              type="number"
+              min={1}
+              value={miniRunRoundNumber}
+              onChange={(e) => setMiniRunRoundNumber(e.target.value)}
+              placeholder="3"
+              className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
             />
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -1005,6 +1011,10 @@ export function BacktestDebugPanel() {
             {loadingId === 'mini-run' ? '…' : 'Esegui mini-run preview'}
           </button>
         </div>
+
+        <p className="mt-2 text-xs text-slate-600">
+          Usa il numero esatto della giornata. Es. 3 seleziona solo Regular Season - 3, non la 13.
+        </p>
 
         {miniRunOutcome ? (
           <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(miniRunOutcome.kind)}`}>
@@ -1026,21 +1036,24 @@ export function BacktestDebugPanel() {
                   {miniRunJson.summary.fixtures_processed} / {miniRunJson.summary.fixtures_failed}
                 </div>
                 <div>
-                  <span className="font-medium">total_mae:</span> {fmtMetric(miniRunJson.summary.total_mae)}
+                  <span className="font-medium">MAE SOT totale partita:</span>{' '}
+                  {fmtMetric(miniRunJson.summary.total_mae)}
                 </div>
                 <div>
-                  <span className="font-medium">total_rmse:</span> {fmtMetric(miniRunJson.summary.total_rmse)}
+                  <span className="font-medium">RMSE SOT totale partita:</span>{' '}
+                  {fmtMetric(miniRunJson.summary.total_rmse)}
                 </div>
                 <div>
-                  <span className="font-medium">total_bias:</span> {fmtMetric(miniRunJson.summary.total_bias)}
+                  <span className="font-medium">Bias medio SOT totale partita:</span>{' '}
+                  {fmtMetric(miniRunJson.summary.total_bias)}
                 </div>
                 <div>
-                  <span className="font-medium">avg pred / actual:</span>{' '}
+                  <span className="font-medium">Media SOT totale previsto / reale:</span>{' '}
                   {fmtMetric(miniRunJson.summary.avg_predicted_total_sot)} /{' '}
                   {fmtMetric(miniRunJson.summary.avg_actual_total_sot)}
                 </div>
                 <div>
-                  <span className="font-medium">over / under / high error:</span>{' '}
+                  <span className="font-medium">Sovrastimate / sottostimate / errori alti:</span>{' '}
                   {miniRunJson.summary.overestimated_count} / {miniRunJson.summary.underestimated_count} /{' '}
                   {miniRunJson.summary.high_error_count}
                 </div>
@@ -1068,11 +1081,11 @@ export function BacktestDebugPanel() {
                     <tr>
                       <th className="px-2 py-1">ID</th>
                       <th className="px-2 py-1">Match</th>
-                      <th className="px-2 py-1">Pred tot</th>
-                      <th className="px-2 py-1">Actual tot</th>
-                      <th className="px-2 py-1">Abs err</th>
-                      <th className="px-2 py-1">Prior H/A</th>
-                      <th className="px-2 py-1">Leakage</th>
+                      <th className="px-2 py-1">SOT totale previsto</th>
+                      <th className="px-2 py-1">SOT totale reale</th>
+                      <th className="px-2 py-1">Errore assoluto totale</th>
+                      <th className="px-2 py-1">Storico casa/trasferta</th>
+                      <th className="px-2 py-1">Anti-leakage OK</th>
                     </tr>
                   </thead>
                   <tbody>

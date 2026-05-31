@@ -4,6 +4,34 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-f-fix-round-filter
+
+**Titolo:** Filtro giornata esatta e label mini-run
+
+**Descrizione:** Corretto il filtro round della mini-run PIT per usare il numero esatto della giornata ed evitare che "3" selezioni anche "13". Migliorate le label UI delle metriche SOT totale partita.
+
+**Highlights:**
+
+- Aggiunto `round_number` esatto.
+- La giornata 3 non include più la 13.
+- Label metriche rese più chiare (SOT totale partita = casa + trasferta).
+- Mini-run resta read-only.
+- Nessuna modifica a v2.0/v2.1 runtime.
+
+**File toccati:**
+
+- `backend/app/services/backtest/round_filter.py`
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `backend/app/services/backtest/backtest_fixture_debug_service.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_round_filter.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-f
 
 **Titolo:** Mini-run preview SOT v2.1 point-in-time

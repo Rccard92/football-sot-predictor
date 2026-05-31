@@ -2467,7 +2467,9 @@ export type SotV21MiniRunResponse = {
   selection: {
     limit: number
     offset: number
+    round_number?: number | null
     round_contains?: string | null
+    round_filter_mode?: string
     fixture_ids?: number[] | null
     order_by: string
   }
@@ -2511,6 +2513,7 @@ export type SotV21MiniRunRequest = {
   mode?: string
   limit?: number
   offset?: number
+  round_number?: number | null
   round_contains?: string | null
   fixture_ids?: number[] | null
   include_trace?: boolean

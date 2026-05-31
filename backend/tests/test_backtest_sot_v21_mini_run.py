@@ -75,7 +75,9 @@ _MOCK_RESPONSE = SotV21MiniRunResponse(
     selection=SotV21MiniRunSelection(
         limit=20,
         offset=0,
-        round_contains="Regular Season - 15",
+        round_number=15,
+        round_contains=None,
+        round_filter_mode="exact_round_number",
         fixture_ids=None,
         order_by="kickoff_at asc",
     ),
@@ -164,7 +166,7 @@ def test_sot_v21_mini_run_success(mock_svc_cls):
             "mode": "pre_lineup",
             "limit": 20,
             "offset": 0,
-            "round_contains": "Regular Season - 15",
+            "round_number": 15,
             "include_trace": False,
         },
     )

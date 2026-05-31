@@ -225,6 +225,7 @@ class SotV21MiniRunPreviewService:
         mode: str = "pre_lineup",
         limit: int = 20,
         offset: int = 0,
+        round_number: int | None = None,
         round_contains: str | None = None,
         fixture_ids: list[int] | None = None,
         include_trace: bool = False,
@@ -246,7 +247,8 @@ class SotV21MiniRunPreviewService:
             competition_id=int(competition_id),
             limit=int(limit),
             offset=int(offset),
-            round_contains=round_contains,
+            round_number=round_number,
+            round_contains=round_contains if round_number is None else None,
             fixture_ids=fixture_ids,
             order_by="kickoff_at asc",
         )
@@ -296,6 +298,16 @@ class SotV21MiniRunPreviewService:
         )
         worst, best = _worst_best_cases(results)
 
+        if round_number is not None:
+            round_filter_mode = "exact_round_number"
+            selection_round_contains = None
+        elif round_contains and round_contains.strip():
+            round_filter_mode = "text_contains"
+            selection_round_contains = round_contains
+        else:
+            round_filter_mode = "none"
+            selection_round_contains = None
+
         return SotV21MiniRunResponse(
             status=status,
             preview_only=True,
@@ -307,7 +319,9 @@ class SotV21MiniRunPreviewService:
             selection=SotV21MiniRunSelection(
                 limit=int(limit),
                 offset=int(offset),
-                round_contains=round_contains,
+                round_number=int(round_number) if round_number is not None else None,
+                round_contains=selection_round_contains,
+                round_filter_mode=round_filter_mode,
                 fixture_ids=fixture_ids,
                 order_by=selection.order_by,
             ),

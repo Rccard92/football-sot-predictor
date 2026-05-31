@@ -763,9 +763,12 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | Changelog | `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-f`) |
 
 **Cosa fa:**
-- Seleziona fixture finite con team stats (`competition_id` obbligatorio; `fixture_ids` espliciti o query con `limit`/`offset`/`round_contains`, max 50)
+- Seleziona fixture finite con team stats (`competition_id` obbligatorio; `fixture_ids` espliciti o query con `limit`/`offset`/`round_number`, max 50)
+- Filtro giornata esatto: `round_number` (es. `3` → solo `"Regular Season - 3"`, esclude `"Regular Season - 13"`)
+- `round_contains` resta filtro testuale legacy/avanzato (`ILIKE`); se `round_number` è valorizzato ha priorità
 - Per ogni fixture chiama `SotV21PointInTimePreviewService.build_preview()` (Step E)
 - Calcola summary: MAE home/away/total, RMSE, bias, avg predicted/actual, over/under/exact_near/high_error counts
+- Le metriche `total_*` (es. `total_mae`) misurano l'errore sul **SOT totale della singola partita** (SOT casa + SOT trasferta), poi aggregate su N fixture — non un "totalone" usato come input al modello
 - Breakdown per campione storico: `early_low_sample` (<5), `medium_sample` (5–14), `stable_sample` (≥15 prior matches)
 - Breakdown per totale SOT reale: `low_total` (≤6), `medium_total` (7–10), `high_total` (≥11)
 - Worst/best top 5 per `total_abs_error`; `failed_fixtures` per errori singola fixture (status `partial_ok`)

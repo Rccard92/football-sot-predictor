@@ -15,6 +15,7 @@ class SotV21MiniRunRequest(BaseModel):
     mode: str = "pre_lineup"
     limit: int = Field(default=20, ge=1, le=50)
     offset: int = Field(default=0, ge=0)
+    round_number: int | None = Field(default=None, ge=1)
     round_contains: str | None = None
     fixture_ids: list[int] | None = None
     include_trace: bool = False
@@ -23,7 +24,9 @@ class SotV21MiniRunRequest(BaseModel):
 class SotV21MiniRunSelection(BaseModel):
     limit: int
     offset: int
+    round_number: int | None = None
     round_contains: str | None = None
+    round_filter_mode: str = "none"
     fixture_ids: list[int] | None = None
     order_by: str = "kickoff_at asc"
 
