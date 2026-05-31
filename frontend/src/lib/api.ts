@@ -3943,7 +3943,126 @@ export type SportApiUnavailableDebugResponse = {
   }[]
   would_write_count: number
   skipped_missing_provider_player_id: number
+  suggested_next_step?: string | null
   warnings: string[]
+}
+
+export type SportApiFixtureMappingDebugResponse = {
+  status: string
+  dry_run: boolean
+  internal_fixture: {
+    fixture_id: number
+    competition_id: number
+    competition_name: string
+    round?: string | null
+    kickoff_at: string
+    home_team: string
+    away_team: string
+  }
+  existing_mapping: {
+    found: boolean
+    provider_fixture_id?: number | null
+    source?: string | null
+    confidence_score?: number | null
+    matched_by?: string | null
+  }
+  sportapi_candidates: {
+    provider_event_id: number
+    score: number
+    confidence: 'high' | 'medium' | 'low' | 'none'
+    home_team_name: string
+    away_team_name: string
+    start_timestamp?: number | null
+    round_number?: number | null
+    tournament_name?: string | null
+    breakdown: Record<string, unknown>
+  }[]
+  best_candidate?: {
+    provider_event_id: number
+    score: number
+    confidence: 'high' | 'medium' | 'low' | 'none'
+    home_team_name: string
+    away_team_name: string
+    start_timestamp?: number | null
+    round_number?: number | null
+    tournament_name?: string | null
+    breakdown: Record<string, unknown>
+  } | null
+  match_confidence: 'high' | 'medium' | 'low' | 'none'
+  ambiguous_high_matches: boolean
+  would_write_mapping: boolean
+  mapping_written: boolean
+  warnings: string[]
+  scheduled_events_count: number
+  api_calls: number
+}
+
+export async function getSportApiFixtureMappingDebug(
+  params: {
+    fixture_id: number
+    competition_id: number
+    dry_run?: boolean
+    force_refresh?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiFixtureMappingDebugResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  if (params.dry_run != null) q.set('dry_run', String(params.dry_run))
+  if (params.force_refresh != null) q.set('force_refresh', String(params.force_refresh))
+  return adminGetJson<SportApiFixtureMappingDebugResponse>(
+    `/api/admin/sportapi/debug/fixture/${params.fixture_id}/mapping?${q.toString()}`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 90_000 },
+  )
+}
+
+export type SportApiFixtureMappingBackfillResponse = {
+  status: string
+  dry_run: boolean
+  competition_id: number
+  competition_name: string
+  round_number?: number | null
+  fixtures_processed: number
+  existing_mappings: number
+  high_confidence_matches: number
+  medium_confidence_matches: number
+  low_confidence_matches: number
+  written_mappings: number
+  ambiguous_matches: number
+  fetch_errors: number
+  items: {
+    fixture_id: number
+    round?: string | null
+    home_team: string
+    away_team: string
+    existing_mapping: boolean
+    match_confidence: 'high' | 'medium' | 'low' | 'none'
+    ambiguous_high_matches: boolean
+    best_candidate?: SportApiFixtureMappingDebugResponse['best_candidate']
+    would_write_mapping: boolean
+    mapping_written: boolean
+    warnings: string[]
+  }[]
+  warnings: string[]
+}
+
+export async function postSportApiFixtureMappingBackfill(
+  competitionId: number,
+  body: {
+    round_number?: number | null
+    fixture_ids?: number[] | null
+    dry_run?: boolean
+    force_refresh?: boolean
+    limit?: number
+    offset?: number
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiFixtureMappingBackfillResponse> {
+  return adminPostJson<SportApiFixtureMappingBackfillResponse>(
+    `/api/admin/sportapi/competitions/${competitionId}/backfill-fixture-mappings`,
+    body,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
+  )
 }
 
 export async function getSportApiUnavailableDebug(

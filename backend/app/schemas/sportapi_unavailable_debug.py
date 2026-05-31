@@ -31,4 +31,5 @@ class SportApiUnavailableDebugResponse(BaseModel):
     sample_unavailable_players: list[SportApiUnavailablePlayerSample] = Field(default_factory=list)
     would_write_count: int = 0
     skipped_missing_provider_player_id: int = 0
+    suggested_next_step: str | None = None
     warnings: list[str] = Field(default_factory=list)

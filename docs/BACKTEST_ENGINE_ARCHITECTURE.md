@@ -1099,6 +1099,44 @@ Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 
 
 **Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-k2-sportapi-unavailable-backfill`).
 
+> **Nota K.3:** il debug unavailable (K.2) richiede un mapping in `fixture_provider_mappings` per fixture storiche. Usare Step K.3 prima del backfill unavailable.
+
+---
+
+## 28. Step K.3 — SportAPI fixture mapping
+
+**Problema:** K.2 si ferma su `mapping_missing` se la fixture storica non ha mai popolato `fixture_provider_mappings` (refresh SportAPI esistente mappa solo upcoming/non-finished).
+
+**Soluzione:** discovery via `scheduled-events/{date}` + scoring K.3 dedicato + salvataggio sicuro in `fixture_provider_mappings` tramite `confirm_mapping`.
+
+### Endpoint admin
+
+| Metodo | Path | Ruolo |
+|--------|------|--------|
+| GET | `/api/admin/sportapi/debug/fixture/{fixture_id}/mapping` | Debug discovery/scoring, `dry_run=true` default |
+| POST | `/api/admin/sportapi/competitions/{competition_id}/backfill-fixture-mappings` | Backfill mapping round/fixture finished |
+
+### Scoring K.3
+
+- Stesso giorno UTC kickoff **obbligatorio** (altrimenti score=0)
+- Home +35, Away +35, kickoff ≤15min +20, ≤120min +10, round +10
+- `high` ≥85, `medium` 70–84, `low` 50–69, `none` <50
+- ≥2 candidate high con delta <5 → `ambiguous_high_matches`, no write
+- Solo `high` + non ambiguo + `dry_run=false` → `confirm_mapping` con `matched_by=sportapi_fixture_discovery`
+
+### Selezione backfill
+
+Riutilo `BacktestFixtureDebugService.select_fixtures_for_mini_run` (finished + SOT stats, stesso criterio K.2).
+
+### Flusso operativo
+
+1. Debug mapping fixture (`dry_run=true`)
+2. Backfill mapping round (`dry_run=true` → `false` se high)
+3. Debug unavailable K.2 / backfill unavailable
+4. Audit JK.1
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-k3-sportapi-fixture-mapping`).
+
 ---
 
 ## Riferimenti codice
@@ -1131,7 +1169,11 @@ Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 
 | Schemas unavailable audit JK.1 | `backend/app/schemas/backtest_historical_unavailable_audit.py` |
 | SportApiUnavailableParser (Step K.2) | `backend/app/services/sportapi/sportapi_unavailable_parser.py` |
 | SportApiUnavailableBackfillService (Step K.2) | `backend/app/services/sportapi/sportapi_unavailable_backfill_service.py` |
-| Admin SportAPI routes (Step K.2) | `backend/app/routes/admin_sportapi.py` |
+| SportApiFixtureMappingDiscovery (Step K.3) | `backend/app/services/sportapi/sportapi_fixture_mapping_discovery.py` |
+| SportApiFixtureMappingScoring (Step K.3) | `backend/app/services/sportapi/sportapi_fixture_mapping_scoring.py` |
+| SportApiFixtureMappingDebugService (Step K.3) | `backend/app/services/sportapi/sportapi_fixture_mapping_debug_service.py` |
+| SportApiFixtureMappingBackfillService (Step K.3) | `backend/app/services/sportapi/sportapi_fixture_mapping_backfill_service.py` |
+| Admin SportAPI routes (Step K.2/K.3) | `backend/app/routes/admin_sportapi.py` |
 | SotPickEvaluationPreviewService (Step H) | `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` |
 | Pick play advice logic (Step H.1) | `backend/app/services/backtest/sot_pick_play_advice_logic.py` |
 | Pick evaluation logic (Step H) | `backend/app/services/backtest/sot_pick_evaluation_logic.py` |

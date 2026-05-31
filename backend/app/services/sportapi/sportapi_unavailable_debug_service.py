@@ -80,7 +80,16 @@ class SportApiUnavailableDebugService:
                 internal_fixture_id=internal_id,
                 source_fixture_id=internal_id,
                 mapping_status="mapping_missing",
-                warnings=["Mapping SportAPI non trovato per la fixture"],
+                suggested_next_step=(
+                    f"GET /api/admin/sportapi/debug/fixture/{internal_id}/mapping"
+                    f"?competition_id={competition_id}&dry_run=true"
+                    " oppure POST /api/admin/sportapi/competitions/"
+                    f"{competition_id}/backfill-fixture-mappings"
+                ),
+                warnings=[
+                    "Mapping SportAPI non trovato per la fixture",
+                    "Eseguire debug mapping (K.3) o backfill-fixture-mappings prima del debug unavailable",
+                ],
             )
 
         provider_event_id = int(mapping.provider_event_id)

@@ -11,11 +11,13 @@ import {
   getBacktestPointInTimeContext,
   getBacktestRun,
   getBacktestSotV21Preview,
+  getSportApiFixtureMappingDebug,
   getSportApiUnavailableDebug,
   listBacktestDebugFixtures,
   listBacktestRuns,
   postBacktestSotV21MiniRun,
   postBacktestSotPickEvaluation,
+  postSportApiFixtureMappingBackfill,
   postSportApiUnavailableBackfill,
   type BacktestFixtureCandidate,
   type BacktestRunRow,
@@ -23,6 +25,8 @@ import {
   type HistoricalLineupAuditRoundResponse,
   type HistoricalUnavailableAuditResponse,
   type PointInTimeContextResponse,
+  type SportApiFixtureMappingBackfillResponse,
+  type SportApiFixtureMappingDebugResponse,
   type SportApiUnavailableBackfillResponse,
   type SportApiUnavailableDebugResponse,
   type SotPickEvaluationResponse,
@@ -242,6 +246,13 @@ export function BacktestDebugPanel() {
   const [jk1Outcome, setJk1Outcome] = useState<Outcome | null>(null)
   const [jk1AuditJson, setJk1AuditJson] = useState<HistoricalUnavailableAuditResponse | null>(null)
 
+  const [k3RoundNumber, setK3RoundNumber] = useState('')
+  const [k3FixtureId, setK3FixtureId] = useState('')
+  const [k3DryRun, setK3DryRun] = useState(true)
+  const [k3ForceRefresh, setK3ForceRefresh] = useState(false)
+  const [k3Outcome, setK3Outcome] = useState<Outcome | null>(null)
+  const [k3DebugJson, setK3DebugJson] = useState<SportApiFixtureMappingDebugResponse | null>(null)
+  const [k3BackfillJson, setK3BackfillJson] = useState<SportApiFixtureMappingBackfillResponse | null>(null)
   const [k2RoundNumber, setK2RoundNumber] = useState('')
   const [k2FixtureId, setK2FixtureId] = useState('')
   const [k2DryRun, setK2DryRun] = useState(true)
@@ -803,6 +814,76 @@ export function BacktestDebugPanel() {
       setLoadingId(null)
     }
   }, [jk1Limit, jk1Offset, jk1RoundNumber, selectedCompetitionId])
+
+  const runK3FixtureDebug = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    const fixtureId = parseManualFixtureId(k3FixtureId) ?? resolvePreviewFixtureId()
+    if (fixtureId == null) {
+      setK3Outcome({ kind: 'error', httpStatus: null, message: 'Inserisci o seleziona un fixture_id.' })
+      return
+    }
+    setLoadingId('k3-debug')
+    try {
+      const data = await getSportApiFixtureMappingDebug({
+        fixture_id: fixtureId,
+        competition_id: selectedCompetitionId,
+        dry_run: k3DryRun,
+        force_refresh: k3ForceRefresh,
+      })
+      setK3DebugJson(data)
+      setK3BackfillJson(null)
+      setK3Outcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Debug mapping fixture ${fixtureId} — confidence=${data.match_confidence}, candidates=${data.sportapi_candidates.length}, would_write=${String(data.would_write_mapping)}, dry_run=${String(data.dry_run)}`,
+      })
+    } catch (e) {
+      setK3DebugJson(null)
+      setK3Outcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Debug SportAPI mapping'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [k3DryRun, k3FixtureId, k3ForceRefresh, resolvePreviewFixtureId, selectedCompetitionId])
+
+  const runK3Backfill = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    setLoadingId('k3-backfill')
+    try {
+      const roundNum = parseMiniRunRoundNumber(k3RoundNumber)
+      const fixtureId = parseManualFixtureId(k3FixtureId)
+      const data = await postSportApiFixtureMappingBackfill(
+        selectedCompetitionId,
+        {
+          round_number: roundNum ?? undefined,
+          fixture_ids: fixtureId != null ? [fixtureId] : undefined,
+          dry_run: k3DryRun,
+          force_refresh: k3ForceRefresh,
+          limit: 50,
+          offset: 0,
+        },
+      )
+      setK3BackfillJson(data)
+      setK3DebugJson(null)
+      setK3Outcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Backfill mapping — processed ${data.fixtures_processed}, high ${data.high_confidence_matches}, written ${data.written_mappings}, existing ${data.existing_mappings}, dry_run=${String(data.dry_run)}`,
+      })
+    } catch (e) {
+      setK3BackfillJson(null)
+      setK3Outcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Backfill SportAPI mapping'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [k3DryRun, k3FixtureId, k3ForceRefresh, k3RoundNumber, selectedCompetitionId])
 
   const runK2FixtureDebug = useCallback(async () => {
     if (selectedCompetitionId == null) return
@@ -2790,13 +2871,170 @@ export function BacktestDebugPanel() {
         ) : null}
       </div>
 
+      <div className="mt-8 rounded-xl border border-violet-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-800">
+          SportAPI fixture mapping (K.3)
+        </h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Prerequisito per K.2 su fixture storiche: scopre e salva mapping interno ↔ SportAPI in
+          fixture_provider_mappings. Flusso: mapping debug → backfill mapping dry-run → write → debug
+          unavailable (K.2).
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Giornata esatta
+            <input
+              type="number"
+              min={1}
+              className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k3RoundNumber}
+              onChange={(e) => setK3RoundNumber(e.target.value)}
+              placeholder="37"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Fixture ID (opzionale)
+            <input
+              type="number"
+              min={1}
+              className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k3FixtureId}
+              onChange={(e) => setK3FixtureId(e.target.value)}
+              placeholder="146"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={k3DryRun}
+              onChange={(e) => setK3DryRun(e.target.checked)}
+            />
+            Dry-run
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={k3ForceRefresh}
+              onChange={(e) => setK3ForceRefresh(e.target.checked)}
+            />
+            Force refresh
+          </label>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runK3FixtureDebug()}
+            className="rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingId === 'k3-debug' ? '…' : 'Debug mapping fixture'}
+          </button>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runK3Backfill()}
+            className="rounded-lg border border-violet-400 bg-violet-100 px-3 py-2 text-sm font-medium text-violet-950 hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingId === 'k3-backfill' ? '…' : 'Backfill mapping giornata'}
+          </button>
+        </div>
+
+        {k3Outcome ? (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(k3Outcome.kind)}`}>
+            <div className="font-semibold">
+              {outcomeLabel(k3Outcome.kind)}
+              {k3Outcome.httpStatus != null ? ` — HTTP ${k3Outcome.httpStatus}` : ''}
+            </div>
+            <div className="mt-1">{k3Outcome.message}</div>
+          </div>
+        ) : null}
+
+        {k3DebugJson ? (
+          <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3 text-sm text-slate-800">
+            <div className="font-medium text-violet-900">
+              Debug mapping fixture #{k3DebugJson.internal_fixture.fixture_id}
+            </div>
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              <div>
+                <span className="font-medium">Existing mapping:</span>{' '}
+                {k3DebugJson.existing_mapping.found
+                  ? `#${k3DebugJson.existing_mapping.provider_fixture_id}`
+                  : 'no'}
+              </div>
+              <div>
+                <span className="font-medium">Confidence:</span> {k3DebugJson.match_confidence}
+              </div>
+              <div>
+                <span className="font-medium">Candidates:</span>{' '}
+                {k3DebugJson.sportapi_candidates.length}
+              </div>
+              <div>
+                <span className="font-medium">Would write:</span>{' '}
+                {String(k3DebugJson.would_write_mapping)}
+              </div>
+              {k3DebugJson.best_candidate ? (
+                <div className="sm:col-span-2">
+                  <span className="font-medium">Best:</span> {k3DebugJson.best_candidate.home_team_name}{' '}
+                  vs {k3DebugJson.best_candidate.away_team_name} (score=
+                  {k3DebugJson.best_candidate.score}, id=
+                  {k3DebugJson.best_candidate.provider_event_id})
+                </div>
+              ) : null}
+            </div>
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-violet-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(k3DebugJson, null, 2)}
+            </pre>
+          </div>
+        ) : null}
+
+        {k3BackfillJson ? (
+          <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3 text-sm text-slate-800">
+            <div className="font-medium text-violet-900">
+              Backfill mapping round {k3BackfillJson.round_number ?? '—'} — processed{' '}
+              {k3BackfillJson.fixtures_processed}, written {k3BackfillJson.written_mappings}
+            </div>
+            {k3BackfillJson.items.length > 0 ? (
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Fixture</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">Confidence</th>
+                      <th className="px-2 py-1">Write</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {k3BackfillJson.items.map((row) => (
+                      <tr key={row.fixture_id} className="border-b border-slate-100">
+                        <td className="px-2 py-1">#{row.fixture_id}</td>
+                        <td className="px-2 py-1">
+                          {row.home_team} vs {row.away_team}
+                        </td>
+                        <td className="px-2 py-1">{row.match_confidence}</td>
+                        <td className="px-2 py-1">
+                          {k3BackfillJson.dry_run ? String(row.would_write_mapping) : String(row.mapping_written)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-violet-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(k3BackfillJson, null, 2)}
+            </pre>
+          </div>
+        ) : null}
+      </div>
+
       <div className="mt-8 rounded-xl border border-orange-200 bg-white p-4 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-800">
           SportAPI unavailable backfill (K.2)
         </h3>
         <p className="mt-1 text-xs text-slate-600">
-          Debug e backfill indisponibili storici SportAPI nella fixture target esatta. Scrive solo in
-          fixture_missing_players / provider lineups, non nelle tabelle backtest.
+          Debug e backfill indisponibili storici SportAPI nella fixture target esatta. Richiede mapping
+          K.3 in fixture_provider_mappings. Scrive solo in fixture_missing_players / provider lineups,
+          non nelle tabelle backtest.
         </p>
 
         <div className="mt-3 flex flex-wrap items-end gap-3">

@@ -14,6 +14,45 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-k3-sportapi-fixture-mapping
+
+**Titolo:** Mapping fixture storiche SportAPI
+
+**Descrizione:** Aggiunto discovery/scoring sicuro e backfill mapping interno ↔ SportAPI in `fixture_provider_mappings` per sbloccare K.2 su fixture finished senza mapping.
+
+**Highlights:**
+
+- Debug mapping fixture (`GET .../debug/fixture/{id}/mapping`).
+- Backfill mapping round/fixture finished (`POST .../backfill-fixture-mappings`).
+- Scoring K.3 dedicato: stesso giorno UTC obbligatorio, anti-ambiguità high.
+- Salvataggio solo confidence `high` via `confirm_mapping` (`matched_by=sportapi_fixture_discovery`).
+- K.2 unavailable: `suggested_next_step` se `mapping_missing`.
+- UI BacktestDebugPanel sezione K.3.
+- Nessun salvataggio tabelle backtest.
+
+**File toccati:**
+
+- `backend/app/services/sportapi/sportapi_fixture_mapping_discovery.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_fixture_mapping_scoring.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_fixture_mapping_debug_service.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_fixture_mapping_backfill_service.py` (nuovo)
+- `backend/app/schemas/sportapi_fixture_mapping_debug.py` (nuovo)
+- `backend/app/schemas/sportapi_fixture_mapping_backfill.py` (nuovo)
+- `backend/app/schemas/sportapi_unavailable_debug.py` (suggested_next_step)
+- `backend/app/services/sportapi/sportapi_unavailable_debug_service.py` (warning K.3)
+- `backend/app/routes/admin_sportapi.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `backend/tests/test_sportapi_fixture_mapping_scoring.py` (nuovo)
+- `backend/tests/test_sportapi_fixture_mapping_debug.py` (nuovo)
+- `backend/tests/test_sportapi_fixture_mapping_backfill.py` (nuovo)
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md` (§28)
+- `docs/BACKTEST_ENGINE_CHANGELOG.md` (questa entry)
+
+---
+
 ## backtest-step-k2-sportapi-unavailable-backfill
 
 **Titolo:** Import indisponibili storici SportAPI
