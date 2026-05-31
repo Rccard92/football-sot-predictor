@@ -2560,6 +2560,109 @@ export async function postBacktestSotV21MiniRun(
   return requestPostJson<SotV21MiniRunResponse>('/api/backtest/debug/sot-v21-mini-run', body)
 }
 
+// --- Backtest Engine Step H (Pick Evaluation preview) ---
+
+export type SotPickEvaluationRequest = {
+  competition_id: number
+  mode?: string
+  limit?: number
+  offset?: number
+  round_number?: number | null
+  round_contains?: string | null
+  fixture_ids?: number[] | null
+  lines?: number[]
+  min_edge?: number
+  include_no_pick?: boolean
+}
+
+export type SotPickRecommendedPick = {
+  side: string
+  line: number
+  edge: number
+  outcome?: string | null
+  confidence: string
+}
+
+export type SotPickEvaluationFixtureResult = {
+  fixture_id: number
+  match: string
+  round?: string | null
+  kickoff_at: string
+  predicted_total_sot?: number | null
+  actual_total_sot?: number | null
+  total_abs_error?: number | null
+  recommended_pick?: SotPickRecommendedPick | null
+  no_pick: boolean
+  sample_bucket?: string | null
+  actual_total_bucket?: string | null
+  warnings_count: number
+  leakage_guard: boolean
+}
+
+export type SotPickBreakdownStats = {
+  picks_count: number
+  wins: number
+  losses: number
+  hit_rate?: number | null
+  avg_edge?: number | null
+}
+
+export type SotPickEvaluationResponse = {
+  status: string
+  preview_only: boolean
+  db_writes: boolean
+  market_key: string
+  algorithm_version: string
+  mode: string
+  competition_id: number
+  competition_name: string
+  selection: {
+    limit: number
+    offset: number
+    round_number?: number | null
+    lines: number[]
+    min_edge: number
+    include_no_pick: boolean
+    order_by: string
+  }
+  summary: {
+    fixtures_processed: number
+    fixtures_failed: number
+    pick_opportunities: number
+    no_pick_count: number
+    wins: number
+    losses: number
+    hit_rate?: number | null
+    avg_edge?: number | null
+    avg_predicted_total_sot?: number | null
+    avg_actual_total_sot?: number | null
+    avg_total_abs_error?: number | null
+    over_picks_count: number
+    under_picks_count: number
+    over_wins: number
+    over_losses: number
+    under_wins: number
+    under_losses: number
+    break_even_odds_50_pct: number
+  }
+  breakdown_by_line: Array<SotPickBreakdownStats & { line: number }>
+  breakdown_by_side: Array<SotPickBreakdownStats & { side: string }>
+  breakdown_by_confidence: Array<SotPickBreakdownStats & { confidence: string }>
+  breakdown_by_sample_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  breakdown_by_actual_total_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  results: SotPickEvaluationFixtureResult[]
+  failed_fixtures: { fixture_id: number; error_code: string; message: string }[]
+}
+
+export async function postBacktestSotPickEvaluation(
+  body: SotPickEvaluationRequest,
+): Promise<SotPickEvaluationResponse> {
+  return requestPostJson<SotPickEvaluationResponse>(
+    '/api/backtest/debug/sot-pick-evaluation-preview',
+    body,
+  )
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

@@ -1,4 +1,4 @@
-"""Debug read-only Backtest Engine (Step C.1 + D + E + F + G2A)."""
+"""Debug read-only Backtest Engine (Step C.1 + D + E + F + G2A + G2B + H)."""
 
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ from app.core.database import get_db
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
 from app.services.backtest.historical_lineup_audit_service import HistoricalLineupAuditService
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
+from app.services.backtest.sot_pick_evaluation_preview_service import SotPickEvaluationPreviewService
 from app.services.backtest.sot_v21_mini_run_preview_service import SotV21MiniRunPreviewService
 from app.services.backtest.sot_v21_preview_service import SotV21PointInTimePreviewService
 from app.services.backtest_health_service import BacktestHealthService
+from app.schemas.backtest_sot_pick_evaluation import SotPickEvaluationRequest
 from app.schemas.backtest_sot_v21_mini_run import SotV21MiniRunRequest
 
 logger = logging.getLogger(__name__)
@@ -133,6 +135,34 @@ def backtest_debug_sot_v21_mini_run(
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("POST backtest sot-v21-mini-run: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.post("/sot-pick-evaluation-preview")
+def backtest_debug_sot_pick_evaluation_preview(
+    body: SotPickEvaluationRequest,
+    db: Session = Depends(get_db),
+):
+    svc = SotPickEvaluationPreviewService()
+    try:
+        payload = svc.run_pick_evaluation(
+            db,
+            competition_id=body.competition_id,
+            mode=body.mode,
+            limit=body.limit,
+            offset=body.offset,
+            round_number=body.round_number,
+            round_contains=body.round_contains,
+            fixture_ids=body.fixture_ids,
+            lines=body.lines,
+            min_edge=body.min_edge,
+            include_no_pick=body.include_no_pick,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST backtest sot-pick-evaluation-preview: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)
 

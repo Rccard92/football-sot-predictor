@@ -4,6 +4,35 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-h
+
+**Titolo:** Betting Pick Evaluation read-only
+
+**Descrizione:** Aggiunta valutazione read-only delle giocate Over/Under SOT proposte dal modello PIT, con esito WIN/LOSS rispetto ai SOT reali.
+
+**Highlights:**
+
+- Endpoint pick evaluation preview.
+- Recommended pick per fixture (max edge vs min_edge).
+- Supporto linee 5.5/6.5/7.5/8.5/9.5.
+- Min edge configurabile.
+- Hit rate e breakdown per linea, side, confidence, sample, actual total.
+- Nessun salvataggio DB.
+- Nessuna modifica a v2.0/v2.1 runtime.
+
+**File toccati:**
+
+- `backend/app/services/backtest/sot_pick_evaluation_logic.py` (nuovo)
+- `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` (nuovo)
+- `backend/app/schemas/backtest_sot_pick_evaluation.py` (nuovo)
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_sot_pick_evaluation.py` (nuovo)
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-g2b
 
 **Titolo:** Rolling Player Layer Historical Official XI

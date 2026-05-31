@@ -13,11 +13,13 @@ import {
   listBacktestDebugFixtures,
   listBacktestRuns,
   postBacktestSotV21MiniRun,
+  postBacktestSotPickEvaluation,
   type BacktestFixtureCandidate,
   type BacktestRunRow,
   type HistoricalLineupAuditFixtureResponse,
   type HistoricalLineupAuditRoundResponse,
   type PointInTimeContextResponse,
+  type SotPickEvaluationResponse,
   type SotV21MiniRunResponse,
   type SotV21PreviewResponse,
 } from '../../lib/api'
@@ -106,6 +108,20 @@ function countNeutralMacros(side: PitSideTrace | undefined): number {
   )
 }
 
+function pickOutcomeClass(outcome: string | null | undefined, noPick: boolean): string {
+  if (noPick || !outcome) return 'text-slate-500'
+  if (outcome === 'win') return 'font-semibold text-emerald-700'
+  if (outcome === 'loss') return 'font-semibold text-rose-700'
+  return 'text-slate-600'
+}
+
+function parseLinesInput(raw: string): number[] {
+  return raw
+    .split(',')
+    .map((s) => parseFloat(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0)
+}
+
 export function BacktestDebugPanel() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
   const { selectedModelVersion } = useModelSelection()
@@ -139,6 +155,18 @@ export function BacktestDebugPanel() {
   const [miniRunIncludeTrace, setMiniRunIncludeTrace] = useState(false)
   const [miniRunOutcome, setMiniRunOutcome] = useState<Outcome | null>(null)
   const [miniRunJson, setMiniRunJson] = useState<SotV21MiniRunResponse | null>(null)
+
+  const [pickEvalMode, setPickEvalMode] = useState<'pre_lineup' | 'historical_official_xi'>(
+    'historical_official_xi',
+  )
+  const [pickEvalLimit, setPickEvalLimit] = useState(20)
+  const [pickEvalOffset, setPickEvalOffset] = useState(0)
+  const [pickEvalRoundNumber, setPickEvalRoundNumber] = useState('')
+  const [pickEvalMinEdge, setPickEvalMinEdge] = useState('0.75')
+  const [pickEvalLines, setPickEvalLines] = useState('5.5,6.5,7.5,8.5,9.5')
+  const [pickEvalIncludeNoPick, setPickEvalIncludeNoPick] = useState(true)
+  const [pickEvalOutcome, setPickEvalOutcome] = useState<Outcome | null>(null)
+  const [pickEvalJson, setPickEvalJson] = useState<SotPickEvaluationResponse | null>(null)
 
   const [g2aRoundNumber, setG2aRoundNumber] = useState('')
   const [g2aOutcome, setG2aOutcome] = useState<Outcome | null>(null)
@@ -505,6 +533,67 @@ export function BacktestDebugPanel() {
       setLoadingId(null)
     }
   }, [miniRunIncludeTrace, miniRunLimit, miniRunMode, miniRunOffset, miniRunRoundNumber, selectedCompetitionId])
+
+  const runPickEvaluation = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    const lines = parseLinesInput(pickEvalLines)
+    if (lines.length === 0) {
+      setPickEvalOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: 'Inserisci almeno una linea valida (es. 5.5,6.5,7.5).',
+      })
+      return
+    }
+    const minEdge = parseFloat(pickEvalMinEdge)
+    if (!Number.isFinite(minEdge) || minEdge < 0) {
+      setPickEvalOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: 'Min edge non valido.',
+      })
+      return
+    }
+    setLoadingId('pick-eval')
+    try {
+      const data = await postBacktestSotPickEvaluation({
+        competition_id: selectedCompetitionId,
+        mode: pickEvalMode,
+        limit: pickEvalLimit,
+        offset: pickEvalOffset,
+        round_number: parseMiniRunRoundNumber(pickEvalRoundNumber),
+        lines,
+        min_edge: minEdge,
+        include_no_pick: pickEvalIncludeNoPick,
+      })
+      setPickEvalJson(data)
+      const kind: OutcomeKind =
+        data.status === 'ok' || data.status === 'partial_ok' ? 'ok' : 'error'
+      setPickEvalOutcome({
+        kind,
+        httpStatus: 200,
+        message: `Pick evaluation — ${data.summary.pick_opportunities} pick, hit rate ${fmtMetric(data.summary.hit_rate, 1)}%, db_writes=${String(data.db_writes)}`,
+      })
+    } catch (e) {
+      setPickEvalJson(null)
+      setPickEvalOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Pick evaluation preview'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [
+    pickEvalIncludeNoPick,
+    pickEvalLimit,
+    pickEvalLines,
+    pickEvalMinEdge,
+    pickEvalMode,
+    pickEvalOffset,
+    pickEvalRoundNumber,
+    selectedCompetitionId,
+  ])
 
   const runG2aFixtureAudit = useCallback(async () => {
     if (selectedCompetitionId == null) return
@@ -1422,6 +1511,305 @@ export function BacktestDebugPanel() {
 
             <pre className="mt-4 max-h-80 overflow-auto rounded-lg border border-indigo-200 bg-slate-900 p-3 text-xs text-slate-100">
               {JSON.stringify(miniRunJson, null, 2)}
+            </pre>
+          </>
+        ) : null}
+      </div>
+
+      <div className="mt-6 border-t border-slate-200 pt-6">
+        <h3 className="text-sm font-semibold text-slate-800">
+          Betting Pick Evaluation preview (Step H)
+        </h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Simula le giocate Over/Under SOT che il modello avrebbe proposto, confrontandole con il
+          reale. Read-only: non salva picks o metriche.
+        </p>
+        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Nessun ROI reale in questo step: non usiamo quote bookmaker. Solo edge vs linea e esito
+          WIN/LOSS.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Mode
+            <select
+              value={pickEvalMode}
+              onChange={(e) =>
+                setPickEvalMode(e.target.value as 'pre_lineup' | 'historical_official_xi')
+              }
+              className="rounded border border-slate-200 px-2 py-1"
+            >
+              <option value="pre_lineup">pre_lineup</option>
+              <option value="historical_official_xi">historical_official_xi</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Giornata esatta
+            <input
+              type="number"
+              min={1}
+              value={pickEvalRoundNumber}
+              onChange={(e) => setPickEvalRoundNumber(e.target.value)}
+              placeholder="36"
+              className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Limit
+            <select
+              value={pickEvalLimit}
+              onChange={(e) => setPickEvalLimit(Number(e.target.value))}
+              className="rounded border border-slate-200 px-2 py-1"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Offset
+            <input
+              type="number"
+              min={0}
+              value={pickEvalOffset}
+              onChange={(e) => setPickEvalOffset(Math.max(0, Number(e.target.value) || 0))}
+              className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            Min edge
+            <input
+              type="text"
+              value={pickEvalMinEdge}
+              onChange={(e) => setPickEvalMinEdge(e.target.value)}
+              className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Linee (comma-sep)
+            <input
+              type="text"
+              value={pickEvalLines}
+              onChange={(e) => setPickEvalLines(e.target.value)}
+              className="w-48 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={pickEvalIncludeNoPick}
+              onChange={(e) => setPickEvalIncludeNoPick(e.target.checked)}
+            />
+            Include no-pick
+          </label>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runPickEvaluation()}
+            className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {loadingId === 'pick-eval' ? '…' : 'Esegui pick evaluation'}
+          </button>
+        </div>
+
+        {pickEvalOutcome ? (
+          <div
+            className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(pickEvalOutcome.kind)}`}
+          >
+            <div className="font-semibold">
+              {outcomeLabel(pickEvalOutcome.kind)}
+              {pickEvalOutcome.httpStatus != null ? ` — HTTP ${pickEvalOutcome.httpStatus}` : ''}
+            </div>
+            <div className="mt-1">{pickEvalOutcome.message}</div>
+          </div>
+        ) : null}
+
+        {pickEvalJson ? (
+          <>
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm text-slate-800">
+              <div className="font-medium text-emerald-900">Sintesi pick evaluation</div>
+              <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                <div>
+                  <span className="font-medium">Fixture processate / fallite:</span>{' '}
+                  {pickEvalJson.summary.fixtures_processed} / {pickEvalJson.summary.fixtures_failed}
+                </div>
+                <div>
+                  <span className="font-medium">Pick proposti / no pick:</span>{' '}
+                  {pickEvalJson.summary.pick_opportunities} / {pickEvalJson.summary.no_pick_count}
+                </div>
+                <div>
+                  <span className="font-medium">Win / Loss / Hit rate:</span>{' '}
+                  {pickEvalJson.summary.wins} / {pickEvalJson.summary.losses} /{' '}
+                  {fmtMetric(pickEvalJson.summary.hit_rate, 1)}%
+                </div>
+                <div>
+                  <span className="font-medium">Over / Under pick:</span>{' '}
+                  {pickEvalJson.summary.over_picks_count} / {pickEvalJson.summary.under_picks_count}
+                </div>
+                <div>
+                  <span className="font-medium">Avg edge:</span>{' '}
+                  {fmtMetric(pickEvalJson.summary.avg_edge, 4)}
+                </div>
+                <div>
+                  <span className="font-medium">db_writes:</span> {String(pickEvalJson.db_writes)}
+                </div>
+              </div>
+            </div>
+
+            {pickEvalJson.results.length > 0 ? (
+              <div className="mt-4 overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Pick results</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Fixture</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">Pred tot</th>
+                      <th className="px-2 py-1">Actual tot</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">Linea</th>
+                      <th className="px-2 py-1">Edge</th>
+                      <th className="px-2 py-1">Confidence</th>
+                      <th className="px-2 py-1">Outcome</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.results.map((row) => {
+                      const pick = row.recommended_pick
+                      return (
+                        <tr key={row.fixture_id} className="border-b border-slate-100">
+                          <td className="px-2 py-1 font-mono">{row.fixture_id}</td>
+                          <td className="px-2 py-1">{row.match}</td>
+                          <td className="px-2 py-1">{fmtMetric(row.predicted_total_sot, 2)}</td>
+                          <td className="px-2 py-1">{row.actual_total_sot ?? '—'}</td>
+                          <td className="px-2 py-1">
+                            {pick ? pick.side.toUpperCase() : '—'}
+                          </td>
+                          <td className="px-2 py-1">{pick ? pick.line : '—'}</td>
+                          <td className="px-2 py-1">{pick ? fmtMetric(pick.edge, 4) : '—'}</td>
+                          <td className="px-2 py-1">{pick ? pick.confidence : '—'}</td>
+                          <td
+                            className={`px-2 py-1 uppercase ${pickOutcomeClass(pick?.outcome, row.no_pick)}`}
+                          >
+                            {row.no_pick ? 'NO PICK' : pick?.outcome ?? '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown per linea</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Linea</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                      <th className="px-2 py-1">Avg edge</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.breakdown_by_line.map((b) => (
+                      <tr key={b.line} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.line}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                        <td className="px-2 py-1">{fmtMetric(b.avg_edge, 4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown confidence</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Confidence</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.breakdown_by_confidence.map((b) => (
+                      <tr key={b.confidence} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.confidence}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown sample bucket</div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.breakdown_by_sample_bucket.map((b) => (
+                      <tr key={b.bucket} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.bucket}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Breakdown actual total bucket
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.breakdown_by_actual_total_bucket.map((b) => (
+                      <tr key={b.bucket} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.bucket}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <pre className="mt-4 max-h-80 overflow-auto rounded-lg border border-emerald-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(pickEvalJson, null, 2)}
             </pre>
           </>
         ) : null}

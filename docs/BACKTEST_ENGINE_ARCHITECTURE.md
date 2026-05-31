@@ -909,6 +909,40 @@ cap 0.70–1.30
 
 ---
 
+## 23. Step H — Betting Pick Evaluation read-only
+
+**Obiettivo:** valutare se le giocate Over/Under SOT proposte dal modello PIT avrebbero vinto o perso rispetto al reale — complemento alla mini-run (MAE/RMSE).
+
+**Differenza chiave:**
+
+| Mini-run (F) | Pick evaluation (H) |
+|--------------|----------------------|
+| Errore numerico (MAE, bias) | Esito scommessa WIN/LOSS |
+| Nessuna linea O/U | Linee 5.5–9.5 + min_edge |
+| Nessun recommended pick | Una pick per fixture (max \|edge\|) |
+
+**Logica:**
+
+- `edge_over = predicted_total - line`; `edge_under = line - predicted_total`
+- Pick candidata se `edge >= min_edge` (default 0.75)
+- Una sola `recommended_pick` per fixture (max \|edge\|)
+- Outcome: Over WIN se `actual > line`; Under WIN se `actual < line` (linee `.5`, no void)
+- Confidence: low/medium/high da edge, con cap per early_low_sample, warnings, player layer neutro
+- Hit rate = wins / (wins + losses) sulle pick proposte
+- **Nessun ROI reale** senza quote bookmaker; `break_even_odds_50_pct = 2.0` informativo
+
+**Endpoint:**
+
+- `POST /api/backtest/debug/sot-pick-evaluation-preview`
+
+**Mode supportati:** `pre_lineup`, `historical_official_xi`
+
+**Regole:** `db_writes=false`, fixture con `leakage_guard=false` o actual mancante → `failed_fixtures`. Step successivo: full-season pick evaluation o run persistita.
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-h`).
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -929,6 +963,9 @@ cap 0.70–1.30
 | HistoricalLineupAuditService (Step G2A) | `backend/app/services/backtest/historical_lineup_audit_service.py` |
 | Pit player rolling stats (Step G2B) | `backend/app/services/backtest/pit_player_rolling_stats.py` |
 | RollingPlayerLayerService (Step G2B) | `backend/app/services/backtest/rolling_player_layer_service.py` |
+| SotPickEvaluationPreviewService (Step H) | `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` |
+| Pick evaluation logic (Step H) | `backend/app/services/backtest/sot_pick_evaluation_logic.py` |
+| Schemas pick evaluation H | `backend/app/schemas/backtest_sot_pick_evaluation.py` |
 | Schemas lineup audit G2A | `backend/app/schemas/backtest_historical_lineup_audit.py` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
