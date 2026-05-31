@@ -14,15 +14,26 @@ from app.schemas.backtest_point_in_time import (
     TeamUnavailableAbsenceBrief,
     TeamUnavailableMacroPointInTime,
 )
-from app.services.backtest.pit_unavailable_dedup import dedupe_raw_unavailable_rows
-from app.services.backtest.historical_fixture_snapshot_service import side_unavailable_raw
-from app.services.backtest.pit_player_rolling_stats import build_player_prior_stats, round4
+from app.schemas.backtest_unavailable_macro_detail import (
+    UnavailableMacroPlayerDetail,
+    UnavailableMacroSideDetail,
+)
+from app.services.backtest.pit_player_rolling_stats import (
+    RawPlayerRow,
+    build_player_prior_stats,
+    load_normalized_unavailable_for_side,
+    round4,
+)
 
 UNAVAILABLE_MACRO_INDEX_MIN = 0.80
 UNAVAILABLE_MACRO_INDEX_MAX = 1.15
 
 _OFFENSIVE_ROLES = {"F", "A", "ATT", "FW", "ST", "CF", "LW", "RW", "AM", "CAM", "SS"}
 _DEFENDER_ROLES = {"D", "CB", "LB", "RB", "WB", "LWB", "RWB", "DF"}
+_GOALKEEPER_ROLES = {"G", "GK"}
+
+_UNMAPPED_STATUSES = frozenset({"no_provider_id", "no_internal_id", "ambiguous"})
+_MAPPED_STATUSES = frozenset({"matched", "matched_name_fallback", "no_prior_stats"})
 
 
 def _clamp_unavailable_index(value: float) -> float:
@@ -39,7 +50,7 @@ def _role_weight(position: str | None) -> float:
         return 0.70
     if pos in _DEFENDER_ROLES or pos.startswith("D"):
         return 0.35
-    if pos in ("G", "GK") or pos.startswith("G"):
+    if pos in _GOALKEEPER_ROLES or pos.startswith("G"):
         return 0.00
     return 0.70
 
@@ -56,6 +67,13 @@ def _is_offensive(position: str | None) -> bool:
         return False
     pos = position.upper().strip()
     return pos in _OFFENSIVE_ROLES or pos.startswith("F") or pos.startswith("A")
+
+
+def _is_goalkeeper(position: str | None) -> bool:
+    if not position:
+        return False
+    pos = position.upper().strip()
+    return pos in _GOALKEEPER_ROLES or pos.startswith("G")
 
 
 def _norm(value: float | None, baseline: float) -> float:
@@ -102,7 +120,126 @@ def compute_unavailable_macro_index(
     return _clamp_unavailable_index(raw)
 
 
+def classify_importance(
+    *,
+    mapping_status: str,
+    role: str | None,
+    score: float,
+    prior_matches_count: int,
+) -> tuple[bool, str]:
+    if mapping_status in _UNMAPPED_STATUSES:
+        if mapping_status == "ambiguous":
+            return False, "AMBIGUOUS_MAPPING"
+        return False, "UNMAPPED_PLAYER"
+    if prior_matches_count == 0 and mapping_status == "no_prior_stats":
+        return False, "NO_PRIOR_STATS"
+    if _is_goalkeeper(role):
+        return False, "DEFENSIVE_ONLY"
+    if _is_defender(role) and score <= 0.05:
+        return False, "DEFENSIVE_ONLY"
+    if not _is_offensive(role) and not role and score <= 0.05:
+        return False, "ROLE_UNKNOWN"
+    if score <= 0.05 and not _is_offensive(role):
+        return False, "LOW_IMPACT"
+    if _is_offensive(role) or score > 0.05:
+        return True, "OK"
+    return False, "LOW_IMPACT"
+
+
+def _absence_status(row: RawPlayerRow) -> str:
+    grp = (row.absence_group or "other").lower()
+    if grp == "injured":
+        return "injured"
+    if grp == "suspended":
+        return "suspended"
+    return grp
+
+
+def _is_mapped(mapping_status: str) -> bool:
+    return mapping_status in _MAPPED_STATUSES
+
+
+def _build_player_detail(
+    db: Session,
+    *,
+    row: RawPlayerRow,
+    side: str,
+    competition_id: int,
+    team_id: int,
+    cutoff_time: datetime,
+    baseline: float,
+) -> tuple[UnavailableMacroPlayerDetail, TeamUnavailableAbsenceBrief | None, float, bool]:
+    prior = build_player_prior_stats(
+        db,
+        row=row,
+        competition_id=int(competition_id),
+        team_id=int(team_id),
+        cutoff=cutoff_time,
+    )
+    score = offensive_absence_score(
+        prior.prior_sot_per90,
+        prior.prior_shots_per90,
+        prior.prior_team_sot_share,
+        baseline=baseline,
+        role=prior.role,
+    )
+    is_important, importance_reason = classify_importance(
+        mapping_status=prior.mapping_status,
+        role=prior.role,
+        score=score,
+        prior_matches_count=prior.prior_matches_count,
+    )
+    detail = UnavailableMacroPlayerDetail(
+        player_name=prior.player_name,
+        provider_player_id=prior.provider_player_id,
+        player_id=prior.internal_player_id,
+        api_player_id=prior.api_player_id,
+        mapping_status=prior.mapping_status,
+        status=_absence_status(row),
+        team_side=side,
+        role=prior.role,
+        prior_matches_count=prior.prior_matches_count,
+        prior_minutes=prior.prior_minutes,
+        prior_sot=prior.prior_shots_on,
+        prior_shots=prior.prior_shots_total,
+        prior_sot_per90=prior.prior_sot_per90,
+        prior_shots_per90=prior.prior_shots_per90,
+        team_sot_share=prior.prior_team_sot_share,
+        impact_score=round4(score),
+        is_important_absence=is_important,
+        importance_reason=importance_reason,
+    )
+    brief: TeamUnavailableAbsenceBrief | None = None
+    if is_important:
+        brief = TeamUnavailableAbsenceBrief(
+            player_name=prior.player_name,
+            role=prior.role,
+            absence_group=row.absence_group,
+            offensive_absence_score=round4(score),
+            prior_sot_per90=prior.prior_sot_per90,
+            prior_team_sot_share=prior.prior_team_sot_share,
+            mapping_status=prior.mapping_status,
+        )
+    penalty = score if is_important else 0.0
+    return detail, brief, penalty, _is_mapped(prior.mapping_status)
+
+
 class HistoricalUnavailableMacroService:
+    def _load_side_unavailable(
+        self,
+        db: Session,
+        *,
+        fixture_id: int,
+        competition_id: int,
+        side: str,
+    ) -> list[RawPlayerRow]:
+        return load_normalized_unavailable_for_side(
+            db,
+            fixture_id=int(fixture_id),
+            competition_id=int(competition_id),
+            side=side,
+        )
+
     def build_team_unavailable_macro(
         self,
         db: Session,
@@ -117,70 +254,75 @@ class HistoricalUnavailableMacroService:
     ) -> TeamUnavailableMacroPointInTime:
         del team_id
         side_snap = snapshot.home if side == "home" else snapshot.away
-        unavailable_raw = dedupe_raw_unavailable_rows(
-            side_unavailable_raw(side_snap),
-            fixture_id=int(snapshot.fixture_id),
+        fixture_id = int(snapshot.fixture_id)
+        unavailable_raw = self._load_side_unavailable(
+            db,
+            fixture_id=fixture_id,
+            competition_id=int(competition_id),
+            side=side,
         )
-        opponent_unavail = dedupe_raw_unavailable_rows(
-            side_unavailable_raw(opponent_side),
-            fixture_id=int(snapshot.fixture_id),
+        opponent_unavail = self._load_side_unavailable(
+            db,
+            fixture_id=fixture_id,
+            competition_id=int(competition_id),
+            side=opponent_side.side,
         )
 
         baseline = float(league_avg_sot_for or 1.0)
         warnings: list[str] = []
+        unavailable_source = "provider_missing" if unavailable_raw else "none"
+
+        injured_count = sum(1 for u in unavailable_raw if (u.absence_group or "") == "injured")
+        suspended_count = sum(1 for u in unavailable_raw if (u.absence_group or "") == "suspended")
 
         if not unavailable_raw:
+            empty_detail = UnavailableMacroSideDetail(
+                source_fixture_id=fixture_id,
+                records_count=0,
+            )
             return TeamUnavailableMacroPointInTime(
                 status="available",
                 unavailable_macro_index=1.0,
                 unavailable_count=0,
-                injured_count=len(side_snap.injured),
-                suspended_count=len(side_snap.suspended),
+                injured_count=injured_count,
+                suspended_count=suspended_count,
                 components={
                     "offensive_absence_penalty": 0.0,
                     "opponent_defensive_absence_boost": 0.0,
                 },
                 reason="no_unavailable_players_for_fixture",
-                source_fixture_id=int(snapshot.fixture_id),
-                unavailable_source=side_snap.unavailable_source,
+                source_fixture_id=fixture_id,
+                unavailable_source=unavailable_source,
+                unavailable_macro_detail=empty_detail,
             )
 
         important_absences: list[TeamUnavailableAbsenceBrief] = []
         top_shooter_absences: list[TeamUnavailableAbsenceBrief] = []
         key_defender_absences: list[TeamUnavailableAbsenceBrief] = []
+        player_details: list[UnavailableMacroPlayerDetail] = []
         offensive_penalties: list[float] = []
         unmapped = 0
+        mapped = 0
 
         for row in unavailable_raw:
-            prior = build_player_prior_stats(
+            detail, brief, penalty, is_mapped = _build_player_detail(
                 db,
                 row=row,
+                side=side,
                 competition_id=int(competition_id),
                 team_id=int(side_snap.team_id),
-                cutoff=cutoff_time,
-            )
-            score = offensive_absence_score(
-                prior.prior_sot_per90,
-                prior.prior_shots_per90,
-                prior.prior_team_sot_share,
+                cutoff_time=cutoff_time,
                 baseline=baseline,
-                role=prior.role,
             )
-            brief = TeamUnavailableAbsenceBrief(
-                player_name=prior.player_name,
-                role=prior.role,
-                absence_group=row.absence_group,
-                offensive_absence_score=round4(score),
-                prior_sot_per90=prior.prior_sot_per90,
-                prior_team_sot_share=prior.prior_team_sot_share,
-                mapping_status=prior.mapping_status,
-            )
-            if prior.mapping_status in ("no_provider_id", "unmatched"):
+            player_details.append(detail)
+            if is_mapped:
+                mapped += 1
+            else:
                 unmapped += 1
-            if _is_offensive(prior.role) or score > 0.05:
-                offensive_penalties.append(score)
+            if brief is not None:
+                offensive_penalties.append(penalty)
                 important_absences.append(brief)
-            if prior.prior_team_sot_share is not None and prior.prior_team_sot_share >= 0.15:
+            if detail.team_sot_share is not None and detail.team_sot_share >= 0.15 and brief is not None:
                 top_shooter_absences.append(brief)
 
         opponent_defensive_boost = 0.0
@@ -223,8 +365,6 @@ class HistoricalUnavailableMacroService:
 
         if unmapped > 0 and unmapped >= len(unavailable_raw):
             warnings.append("unavailable_players_mapping_incomplete")
-        if side_snap.unavailable_source == "none" and unavailable_raw:
-            warnings.append("unavailable_source_missing")
         if defender_proxy_limited:
             warnings.append("defensive_absence_proxy_limited")
 
@@ -236,12 +376,21 @@ class HistoricalUnavailableMacroService:
             macro_index = 1.0
             warnings.append("target_fixture_lineup_missing")
 
+        macro_detail = UnavailableMacroSideDetail(
+            source_fixture_id=fixture_id,
+            records_count=len(player_details),
+            mapped_count=mapped,
+            unmapped_count=unmapped,
+            important_absences_count=sum(1 for p in player_details if p.is_important_absence),
+            players=player_details,
+        )
+
         return TeamUnavailableMacroPointInTime(
             status=status,
             unavailable_macro_index=macro_index,
             unavailable_count=len(unavailable_raw),
-            injured_count=len(side_snap.injured),
-            suspended_count=len(side_snap.suspended),
+            injured_count=injured_count,
+            suspended_count=suspended_count,
             important_absences=important_absences[:5],
             top_shooter_absences=top_shooter_absences[:3],
             key_defender_absences=key_defender_absences[:3],
@@ -251,6 +400,7 @@ class HistoricalUnavailableMacroService:
             },
             warnings=warnings,
             fallback_variables=[] if status != "neutral_fallback" else ["historical_unavailable_macro"],
-            source_fixture_id=int(snapshot.fixture_id),
-            unavailable_source=side_snap.unavailable_source,
+            source_fixture_id=fixture_id,
+            unavailable_source=unavailable_source,
+            unavailable_macro_detail=macro_detail,
         )

@@ -64,7 +64,11 @@ class SotV21MiniRunUnavailableMacroSummary(BaseModel):
     partial_count: int = 0
     fallback_count: int = 0
     fixtures_with_unavailable: int = 0
+    total_unavailable_players: int = 0
+    fixtures_with_important_absences: int = 0
     important_absences_count: int = 0
+    mapped_unavailable_players: int = 0
+    unmapped_unavailable_players: int = 0
     avg_home_unavailable_index: float | None = None
     avg_away_unavailable_index: float | None = None
 

@@ -144,12 +144,38 @@ function formatUnavailableMacroSide(side: PitSideTrace | undefined): string {
         unavailable_count?: number
         important_absences?: { player_name?: string }[]
         reason?: string
+        unavailable_macro_detail?: {
+          records_count?: number
+          important_absences_count?: number
+        }
       }
     | undefined
-  const count = details?.unavailable_count ?? 0
-  const important = details?.important_absences?.length ?? 0
+  const macroDetail = details?.unavailable_macro_detail
+  const count =
+    macroDetail?.records_count ?? details?.unavailable_count ?? 0
+  const important =
+    macroDetail?.important_absences_count ??
+    details?.important_absences?.length ??
+    0
   const reason = details?.reason === 'no_unavailable_players_for_fixture' ? 'nessuno' : `${important} importanti`
   return `${macro.macro_index ?? '—'} (${macro.status ?? '—'}, indisp ${count}, ${reason})`
+}
+
+type UnavailableMacroPlayerDetailRow = {
+  player_name?: string
+  mapping_status?: string
+  importance_reason?: string
+  impact_score?: number | null
+  is_important_absence?: boolean
+  status?: string
+}
+
+function getUnavailableMacroPlayers(side: PitSideTrace | undefined): UnavailableMacroPlayerDetailRow[] {
+  const macro = findUnavailableMacro(side)
+  const detail = macro?.details as
+    | { unavailable_macro_detail?: { players?: UnavailableMacroPlayerDetailRow[] } }
+    | undefined
+  return detail?.unavailable_macro_detail?.players ?? []
 }
 
 function countNeutralMacros(side: PitSideTrace | undefined): number {
@@ -1492,6 +1518,45 @@ export function BacktestDebugPanel() {
                   {formatUnavailableMacroSide(pitPreviewJson.away_trace)}
                 </div>
               ) : null}
+              {pitPreviewJson.mode === 'historical_official_xi' &&
+              (getUnavailableMacroPlayers(pitPreviewJson.home_trace).length > 0 ||
+                getUnavailableMacroPlayers(pitPreviewJson.away_trace).length > 0) ? (
+                <div className="sm:col-span-2 mt-2 overflow-x-auto">
+                  <div className="font-medium text-violet-900">Dettaglio indisponibili (K trace)</div>
+                  <table className="mt-1 min-w-full text-left text-xs text-slate-700">
+                    <thead className="border-b border-slate-200 bg-slate-50">
+                      <tr>
+                        <th className="px-2 py-1">Giocatore</th>
+                        <th className="px-2 py-1">Side</th>
+                        <th className="px-2 py-1">Status</th>
+                        <th className="px-2 py-1">Mapping</th>
+                        <th className="px-2 py-1">Impact</th>
+                        <th className="px-2 py-1">Importante</th>
+                        <th className="px-2 py-1">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(['home', 'away'] as const).flatMap((sideKey) => {
+                        const sideTrace =
+                          sideKey === 'home'
+                            ? pitPreviewJson.home_trace
+                            : pitPreviewJson.away_trace
+                        return getUnavailableMacroPlayers(sideTrace).map((p, idx) => (
+                          <tr key={`${sideKey}-${p.player_name}-${idx}`} className="border-b border-slate-100">
+                            <td className="px-2 py-1">{p.player_name ?? '—'}</td>
+                            <td className="px-2 py-1">{sideKey}</td>
+                            <td className="px-2 py-1">{p.status ?? '—'}</td>
+                            <td className="px-2 py-1">{p.mapping_status ?? '—'}</td>
+                            <td className="px-2 py-1">{p.impact_score ?? '—'}</td>
+                            <td className="px-2 py-1">{p.is_important_absence ? 'sì' : 'no'}</td>
+                            <td className="px-2 py-1">{p.importance_reason ?? '—'}</td>
+                          </tr>
+                        ))
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
               {pitPreviewJson.mode === 'historical_official_xi' ? (
                 <div className="sm:col-span-2">
                   <span className="font-medium">source_fixture_id:</span> lineup H=
@@ -1845,19 +1910,29 @@ export function BacktestDebugPanel() {
                     {miniRunJson.unavailable_macro_summary.fallback_count}
                   </div>
                   <div>
-                    <span className="font-medium">Fixture con indisponibili:</span>{' '}
+                    <span className="font-medium">Fixture con indisponibili reali:</span>{' '}
                     {miniRunJson.unavailable_macro_summary.fixtures_with_unavailable}
                   </div>
                   <div>
-                    <span className="font-medium">Assenze importanti (tot):</span>{' '}
-                    {miniRunJson.unavailable_macro_summary.important_absences_count}
+                    <span className="font-medium">Totale indisponibili:</span>{' '}
+                    {miniRunJson.unavailable_macro_summary.total_unavailable_players ?? 0}
                   </div>
                   <div>
-                    <span className="font-medium">Media indisponibili casa:</span>{' '}
+                    <span className="font-medium">Mappati / non mappati:</span>{' '}
+                    {miniRunJson.unavailable_macro_summary.mapped_unavailable_players ?? 0} /{' '}
+                    {miniRunJson.unavailable_macro_summary.unmapped_unavailable_players ?? 0}
+                  </div>
+                  <div>
+                    <span className="font-medium">Assenze importanti (tot / fixture):</span>{' '}
+                    {miniRunJson.unavailable_macro_summary.important_absences_count} /{' '}
+                    {miniRunJson.unavailable_macro_summary.fixtures_with_important_absences ?? 0}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media indice casa:</span>{' '}
                     {fmtMetric(miniRunJson.unavailable_macro_summary.avg_home_unavailable_index, 4)}
                   </div>
                   <div>
-                    <span className="font-medium">Media indisponibili trasferta:</span>{' '}
+                    <span className="font-medium">Media indice trasferta:</span>{' '}
                     {fmtMetric(miniRunJson.unavailable_macro_summary.avg_away_unavailable_index, 4)}
                   </div>
                 </div>
@@ -2241,18 +2316,35 @@ export function BacktestDebugPanel() {
                   <span className="font-medium">db_writes:</span> {String(pickEvalJson.db_writes)}
                 </div>
                 {pickEvalMode === 'historical_official_xi' && pickEvalJson.results.length > 0 ? (
-                  <div className="sm:col-span-2">
-                    <span className="font-medium">Lineup macro (J):</span>{' '}
-                    {pickEvalJson.results.filter((r) => r.home_lineup_macro_status === 'available').length}{' '}
-                    fixture con macro available (casa), media index casa{' '}
-                    {fmtMetric(
-                      pickEvalJson.results.reduce(
-                        (acc, r) => acc + (r.home_lineup_macro_index ?? 0),
+                  <>
+                    <div className="sm:col-span-2">
+                      <span className="font-medium">Lineup macro (J):</span>{' '}
+                      {pickEvalJson.results.filter((r) => r.home_lineup_macro_status === 'available').length}{' '}
+                      fixture con macro available (casa), media index casa{' '}
+                      {fmtMetric(
+                        pickEvalJson.results.reduce(
+                          (acc, r) => acc + (r.home_lineup_macro_index ?? 0),
+                          0,
+                        ) / pickEvalJson.results.length,
+                        4,
+                      )}
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="font-medium">Indisponibili macro (K):</span> media index casa{' '}
+                      {fmtMetric(
+                        pickEvalJson.results.reduce(
+                          (acc, r) => acc + (r.home_unavailable_macro_index ?? 1),
+                          0,
+                        ) / pickEvalJson.results.length,
+                        4,
+                      )}
+                      , assenze importanti tot{' '}
+                      {pickEvalJson.results.reduce(
+                        (acc, r) => acc + (r.unavailable_important_absences_count ?? 0),
                         0,
-                      ) / pickEvalJson.results.length,
-                      4,
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  </>
                 ) : null}
               </div>
             </div>

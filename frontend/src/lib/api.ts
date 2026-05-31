@@ -2591,7 +2591,11 @@ export type SotV21MiniRunResponse = {
     partial_count: number
     fallback_count: number
     fixtures_with_unavailable: number
+    total_unavailable_players: number
+    fixtures_with_important_absences: number
     important_absences_count: number
+    mapped_unavailable_players: number
+    unmapped_unavailable_players: number
     avg_home_unavailable_index?: number | null
     avg_away_unavailable_index?: number | null
   }

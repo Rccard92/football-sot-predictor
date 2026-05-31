@@ -279,18 +279,20 @@ def _aggregate_lineup_macro_summary(previews: list[SotV21PreviewResponse]) -> So
     )
 
 
-def _extract_unavailable_macro(side_trace) -> tuple[float | None, str | None, int, bool]:
+def _extract_unavailable_macro(side_trace) -> tuple[float | None, str | None, int, bool, dict]:
     if side_trace is None:
-        return None, None, 0, False
+        return None, None, 0, False, {}
     for macro in side_trace.macros:
         if macro.key == "injuries_unavailable":
             details = macro.details or {}
-            absences = details.get("important_absences") or []
-            count = len(absences) if isinstance(absences, list) else 0
-            unavailable_count = int(details.get("unavailable_count") or 0)
-            has_unavail = unavailable_count > 0
-            return macro.macro_index, macro.status, count, has_unavail
-    return None, None, 0, False
+            macro_detail = details.get("unavailable_macro_detail") or {}
+            if not isinstance(macro_detail, dict):
+                macro_detail = {}
+            records_count = int(macro_detail.get("records_count") or 0)
+            important = int(macro_detail.get("important_absences_count") or 0)
+            has_unavail = records_count > 0
+            return macro.macro_index, macro.status, important, has_unavail, macro_detail
+    return None, None, 0, False, {}
 
 
 def _fixture_unavailable_macro_bucket(home_status: str | None, away_status: str | None) -> str:
@@ -313,13 +315,21 @@ def _aggregate_unavailable_macro_summary(
 ) -> SotV21MiniRunUnavailableMacroSummary:
     available = partial = fallback = 0
     fixtures_with_unavailable = 0
+    fixtures_with_important_absences = 0
     important_absences_count = 0
+    total_unavailable_players = 0
+    mapped_unavailable_players = 0
+    unmapped_unavailable_players = 0
     home_indexes: list[float] = []
     away_indexes: list[float] = []
 
     for preview in previews:
-        home_idx, home_status, home_abs, home_has = _extract_unavailable_macro(preview.home_trace)
-        away_idx, away_status, away_abs, away_has = _extract_unavailable_macro(preview.away_trace)
+        home_idx, home_status, home_abs, home_has, home_detail = _extract_unavailable_macro(
+            preview.home_trace,
+        )
+        away_idx, away_status, away_abs, away_has, away_detail = _extract_unavailable_macro(
+            preview.away_trace,
+        )
         bucket = _fixture_unavailable_macro_bucket(home_status, away_status)
         if bucket == "available":
             available += 1
@@ -327,9 +337,27 @@ def _aggregate_unavailable_macro_summary(
             partial += 1
         else:
             fallback += 1
+
+        home_records = int(home_detail.get("records_count") or 0)
+        away_records = int(away_detail.get("records_count") or 0)
+        fixture_records = home_records + away_records
+        fixture_important = int(home_detail.get("important_absences_count") or 0) + int(
+            away_detail.get("important_absences_count") or 0,
+        )
+
         if home_has or away_has:
             fixtures_with_unavailable += 1
-        important_absences_count += home_abs + away_abs
+        if fixture_important > 0:
+            fixtures_with_important_absences += 1
+        important_absences_count += fixture_important
+        total_unavailable_players += fixture_records
+        mapped_unavailable_players += int(home_detail.get("mapped_count") or 0) + int(
+            away_detail.get("mapped_count") or 0,
+        )
+        unmapped_unavailable_players += int(home_detail.get("unmapped_count") or 0) + int(
+            away_detail.get("unmapped_count") or 0,
+        )
+
         if home_idx is not None:
             home_indexes.append(float(home_idx))
         if away_idx is not None:
@@ -340,7 +368,11 @@ def _aggregate_unavailable_macro_summary(
         partial_count=partial,
         fallback_count=fallback,
         fixtures_with_unavailable=fixtures_with_unavailable,
+        total_unavailable_players=total_unavailable_players,
+        fixtures_with_important_absences=fixtures_with_important_absences,
         important_absences_count=important_absences_count,
+        mapped_unavailable_players=mapped_unavailable_players,
+        unmapped_unavailable_players=unmapped_unavailable_players,
         avg_home_unavailable_index=_mean(home_indexes),
         avg_away_unavailable_index=_mean(away_indexes),
     )

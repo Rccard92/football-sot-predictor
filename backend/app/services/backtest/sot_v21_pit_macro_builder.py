@@ -379,6 +379,8 @@ def _compute_historical_unavailable_macro(
         "top_shooter_absences": [a.model_dump() for a in unavail.top_shooter_absences],
         "key_defender_absences": [a.model_dump() for a in unavail.key_defender_absences],
     }
+    if unavail.unavailable_macro_detail is not None:
+        trace["details"]["unavailable_macro_detail"] = unavail.unavailable_macro_detail.model_dump()
     fallback_key = None if unavail.status in ("available", "partial_low_sample") else "historical_unavailable_macro_partial"
     return result, trace, fallback_key
 

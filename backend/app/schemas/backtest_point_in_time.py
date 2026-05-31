@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.backtest_unavailable_macro_detail import UnavailableMacroSideDetail
+
 from app.schemas.backtest_historical_fixture_snapshot import HistoricalFixtureOfficialSnapshot
 from app.schemas.backtest_point_in_time_historical_summary import PointInTimeHistoricalSummary
 
@@ -113,6 +115,7 @@ class TeamUnavailableMacroPointInTime(BaseModel):
     reason: str | None = None
     source_fixture_id: int | None = None
     unavailable_source: str = "none"
+    unavailable_macro_detail: UnavailableMacroSideDetail | None = None
 
 
 class TeamSplitPointInTimeStats(BaseModel):

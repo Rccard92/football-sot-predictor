@@ -102,8 +102,12 @@ def _unavailable_macro_index_and_absences(
     for macro in trace.macros:
         if macro.key == "injuries_unavailable":
             details = macro.details or {}
-            absences = details.get("important_absences") or []
-            count = len(absences) if isinstance(absences, list) else 0
+            macro_detail = details.get("unavailable_macro_detail") or {}
+            if isinstance(macro_detail, dict) and macro_detail.get("important_absences_count") is not None:
+                count = int(macro_detail.get("important_absences_count") or 0)
+            else:
+                absences = details.get("important_absences") or []
+                count = len(absences) if isinstance(absences, list) else 0
             return float(macro.macro_index), count
     return None, 0
 

@@ -79,8 +79,23 @@ def test_offensive_absence_score_role_weight():
     assert score_f > score_d
 
 
+@patch("app.services.backtest.historical_unavailable_macro_service.load_normalized_unavailable_for_side")
 @patch("app.services.backtest.historical_unavailable_macro_service.build_player_prior_stats")
-def test_unavailable_with_mapping_incomplete(mock_prior):
+def test_unavailable_with_mapping_incomplete(mock_prior, mock_load):
+    mock_load.return_value = [
+        __import__(
+            "app.services.backtest.pit_player_rolling_stats",
+            fromlist=["RawPlayerRow"],
+        ).RawPlayerRow(
+            player_name="Unknown",
+            provider_player_id=None,
+            api_player_id=None,
+            position="ST",
+            is_starter=False,
+            is_unavailable=True,
+            absence_group="injured",
+        ),
+    ]
     mock_prior.return_value = MagicMock(
         player_name="Unknown",
         role="ST",
@@ -89,16 +104,14 @@ def test_unavailable_with_mapping_incomplete(mock_prior):
         prior_team_sot_share=0.1,
         prior_minutes=900,
         prior_matches_count=10,
+        prior_shots_on=5,
+        prior_shots_total=10,
+        internal_player_id=None,
+        api_player_id=None,
+        provider_player_id=None,
         mapping_status="no_provider_id",
     )
-    unavailable = [
-        HistoricalSnapshotPlayerRow(
-            player_name="Unknown",
-            is_unavailable=True,
-            absence_group="injured",
-        ),
-    ]
-    snap = _snapshot(unavailable=unavailable, injured=unavailable)
+    snap = _snapshot()
     result = HistoricalUnavailableMacroService().build_team_unavailable_macro(
         MagicMock(),
         snapshot=snap,
@@ -111,4 +124,35 @@ def test_unavailable_with_mapping_incomplete(mock_prior):
     )
     assert result.unavailable_count == 1
     assert result.source_fixture_id == 146
+    assert result.unavailable_source == "provider_missing"
+    assert result.unavailable_macro_detail is not None
+    assert result.unavailable_macro_detail.records_count == 1
     assert "unavailable_players_mapping_incomplete" in result.warnings
+
+
+@patch("app.services.backtest.historical_unavailable_macro_service.load_normalized_unavailable_for_side")
+def test_macro_ignores_snapshot_raw_unavailable(mock_load):
+    from app.services.backtest.pit_player_rolling_stats import RawPlayerRow
+
+    mock_load.return_value = []
+    snap = _snapshot()
+    snap.home.unavailable = [
+        HistoricalSnapshotPlayerRow(
+            player_name="FromRaw",
+            is_unavailable=True,
+            absence_group="injured",
+        ),
+    ]
+    snap.home.unavailable_source = "provider_raw_payload"
+    result = HistoricalUnavailableMacroService().build_team_unavailable_macro(
+        MagicMock(),
+        snapshot=snap,
+        competition_id=1,
+        team_id=1,
+        cutoff_time=_CUTOFF,
+        side="home",
+        opponent_side=snap.away,
+    )
+    assert result.unavailable_count == 0
+    assert result.unavailable_source == "none"
+    assert result.reason == "no_unavailable_players_for_fixture"

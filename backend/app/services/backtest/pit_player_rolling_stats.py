@@ -23,7 +23,10 @@ from app.models import (
     PlayerProviderMapping,
 )
 from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI
-from app.services.backtest.pit_unavailable_dedup import dedupe_missing_player_rows
+from app.services.backtest.pit_unavailable_dedup import (
+    dedupe_missing_player_rows,
+    normalize_player_name_for_dedup,
+)
 from app.schemas.backtest_historical_lineup_audit import (
     HistoricalLineupPlayerMappingSummary,
     HistoricalLineupPlayerPriorStats,
@@ -85,6 +88,25 @@ def load_sportapi_missing_by_side(
     home = dedupe_missing_player_rows([m for m in missing if m.team_side == "home"])
     away = dedupe_missing_player_rows([m for m in missing if m.team_side == "away"])
     return home, away
+
+
+def load_normalized_unavailable_for_side(
+    db: Session,
+    *,
+    fixture_id: int,
+    competition_id: int | None,
+    side: str,
+) -> list[RawPlayerRow]:
+    """Indisponibili normalizzati SportAPI per lato (solo fixture_missing_players)."""
+    home_missing, away_missing = load_sportapi_missing_by_side(db, int(fixture_id))
+    rows = home_missing if side == "home" else away_missing
+    if competition_id is not None:
+        rows = [
+            m
+            for m in rows
+            if m.competition_id is None or int(m.competition_id) == int(competition_id)
+        ]
+    return missing_to_rows(rows)
 
 
 def missing_to_rows(missing_rows: list[FixtureMissingPlayer]) -> list[RawPlayerRow]:
@@ -310,6 +332,8 @@ def resolve_side_lineup(
 def resolve_player_ids(
     db: Session,
     row: RawPlayerRow,
+    *,
+    team_id: int | None = None,
 ) -> tuple[int | None, int | None, str, list[str]]:
     warnings: list[str] = []
     api_player_id = row.api_player_id
@@ -332,7 +356,7 @@ def resolve_player_ids(
             api_player_id = int(mappings[0].api_sports_player_id)
             status = "matched"
         else:
-            return int(row.provider_player_id), None, "no_internal_id", warnings
+            status = "no_internal_id"
 
     if api_player_id is not None:
         players = db.scalars(
@@ -343,10 +367,33 @@ def resolve_player_ids(
             warnings.append("ambiguous_internal_player_id")
         elif len(players) == 1:
             internal_id = int(players[0].id)
-            if status != "ambiguous":
+            if status not in ("ambiguous",):
                 status = "matched"
         elif status != "ambiguous":
             status = "no_internal_id"
+
+    if internal_id is None and team_id is not None and row.player_name:
+        norm_name = normalize_player_name_for_dedup(row.player_name)
+        if norm_name:
+            team_players = db.scalars(
+                select(Player).where(Player.team_id == int(team_id)),
+            ).all()
+            name_matches = [
+                p
+                for p in team_players
+                if normalize_player_name_for_dedup(p.name) == norm_name
+            ]
+            if len(name_matches) == 1:
+                internal_id = int(name_matches[0].id)
+                if name_matches[0].api_player_id is not None:
+                    api_player_id = int(name_matches[0].api_player_id)
+                status = "matched_name_fallback"
+            elif len(name_matches) > 1:
+                status = "ambiguous"
+                warnings.append("ambiguous_player_name_team_match")
+
+    if internal_id is None and status == "no_internal_id" and row.provider_player_id is not None:
+        return int(row.provider_player_id), None, status, warnings
 
     return row.provider_player_id, internal_id, status, warnings
 
@@ -462,7 +509,11 @@ def build_player_prior_stats(
     team_id: int,
     cutoff: datetime,
 ) -> HistoricalLineupPlayerPriorStats:
-    provider_id, internal_id, map_status, map_warnings = resolve_player_ids(db, row)
+    provider_id, internal_id, map_status, map_warnings = resolve_player_ids(
+        db,
+        row,
+        team_id=int(team_id),
+    )
     api_id = row.api_player_id
     if api_id is None and internal_id is not None:
         player = db.get(Player, int(internal_id))
@@ -480,9 +531,9 @@ def build_player_prior_stats(
 
     warnings = list(map_warnings)
     final_status = map_status
-    if map_status in ("matched", "ambiguous") and prior["prior_matches_count"] == 0:
+    if map_status in ("matched", "matched_name_fallback", "ambiguous") and prior["prior_matches_count"] == 0:
         final_status = "no_prior_stats"
-    elif map_status == "matched" and prior["prior_matches_count"] > 0:
+    elif map_status in ("matched", "matched_name_fallback") and prior["prior_matches_count"] > 0:
         final_status = "matched"
 
     latest = prior["latest_player_stat_fixture_used_at"]

@@ -20,6 +20,44 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-k5-unavailable-macro-trace
+
+**Titolo:** Macro K verificabile — conteggi normalizzati e trace dettagliato
+
+**Descrizione:** Corretto il mini-run che contava `fixtures_with_unavailable=10` quando solo una fixture aveva righe in `fixture_missing_players`. La macro K legge ora solo dati normalizzati SportAPI; trace per giocatore con mapping, impact e `importance_reason`.
+
+**Highlights:**
+
+- `HistoricalUnavailableMacroService` usa `load_normalized_unavailable_for_side` (no fallback raw snapshot).
+- Trace `unavailable_macro_detail` per side in preview/mini-run (`include_trace`).
+- Summary mini-run: `total_unavailable_players`, `mapped/unmapped`, `fixtures_with_important_absences`.
+- Fallback mapping prudente nome+team univoco in `resolve_player_ids`.
+- `classify_importance` con reason esplicito (UNMAPPED, NO_PRIOR_STATS, LOW_IMPACT, …).
+- UI BacktestDebugPanel: card K estesa + tabella trace preview.
+
+**File toccati:**
+
+- `backend/app/services/backtest/historical_unavailable_macro_service.py`
+- `backend/app/services/backtest/pit_player_rolling_stats.py`
+- `backend/app/services/backtest/sot_v21_pit_macro_builder.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/app/services/backtest/sot_pick_evaluation_preview_service.py`
+- `backend/app/schemas/backtest_unavailable_macro_detail.py` (nuovo)
+- `backend/app/schemas/backtest_point_in_time.py`
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `backend/tests/test_historical_unavailable_macro.py`
+- `backend/tests/test_unavailable_macro_summary.py` (nuovo)
+- `backend/tests/test_unavailable_importance.py` (nuovo)
+- `backend/tests/test_resolve_player_ids_name_fallback.py` (nuovo)
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+- `docs/BACKTEST_ENGINE_CHANGELOG.md`
+
+---
+
 ## backtest-step-k4-deduplicate-unavailable
 
 **Titolo:** Deduplica indisponibili SportAPI (audit JK.1 / macro K)

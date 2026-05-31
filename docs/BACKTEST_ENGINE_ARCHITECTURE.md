@@ -1088,9 +1088,12 @@ Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 
 
 ### Macro K e audit
 
-- `HistoricalFixtureSnapshotService` legge `fixture_missing_players` (SportAPI, deduplicato), poi fallback `raw_payload` provider, poi `fixture_lineups.raw_json` **solo se normalized_count=0**
+- **Macro K (mini-run/preview):** legge **solo** `fixture_missing_players` SportAPI via `load_normalized_unavailable_for_side` — nessun fallback raw payload/lineup per conteggi o penalità
+- **Snapshot (Lineup J / G2A):** mantiene fallback raw per copertura diagnostica; non alimenta la macro K
 - Audit JK.1: conteggi da `fixture_missing_players` quando presente; raw solo diagnostico o fallback
-- Persist backfill: dedupe input `(team_side, provider_player_id, status)` + upsert su chiave `(fixture_id, team_side, provider_player_id)`
+- Trace v21 `injuries_unavailable.details.unavailable_macro_detail`: per ogni giocatore mapping, prior stats, `impact_score`, `is_important_absence`, `importance_reason`
+- Mini-run summary: `fixtures_with_unavailable` = fixture con record normalizzati > 0; `total_unavailable_players`, `mapped/unmapped`, `fixtures_with_important_absences`
+- Persist backfill: dedupe input `(team_side, provider_player_id, status)` + upsert su chiave naturale
 
 ### Regole
 
