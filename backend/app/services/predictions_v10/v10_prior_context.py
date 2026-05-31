@@ -72,7 +72,13 @@ def _prior_fixtures_for_team(
     team_id: int,
     competition_id: int | None = None,
     competition_scoped_only: bool = False,
+    strict_kickoff_only: bool = False,
 ) -> list[Fixture]:
+    def _is_prior(f: Fixture) -> bool:
+        if strict_kickoff_only:
+            return f.kickoff_at < cutoff_kickoff
+        return fixture_key_before(f.kickoff_at, f.id, cutoff_kickoff, cutoff_fixture_id)
+
     def _query(*, use_season_filter: bool) -> list[Fixture]:
         clauses = [
             Fixture.status.in_(FINISHED_STATUSES),
@@ -88,7 +94,7 @@ def _prior_fixtures_for_team(
             .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc())
         )
         xs = db.scalars(q).all()
-        return [f for f in xs if fixture_key_before(f.kickoff_at, f.id, cutoff_kickoff, cutoff_fixture_id)]
+        return [f for f in xs if _is_prior(f)]
 
     if competition_scoped_only and competition_id is not None:
         return _query(use_season_filter=False)
@@ -159,6 +165,7 @@ def build_prior_context(
     opponent_id: int,
     competition_id: int | None = None,
     competition_scoped_only: bool = False,
+    strict_kickoff_only: bool = False,
 ) -> V10PriorContext:
     scope_competition_id = competition_id if competition_id is not None else fixture.competition_id
     season_id = _resolve_fixture_season_id(db, fixture)
@@ -176,6 +183,7 @@ def build_prior_context(
         team_id=int(team_id),
         competition_id=comp_filter,
         competition_scoped_only=scoped_only,
+        strict_kickoff_only=strict_kickoff_only,
     )
     opp_prior_fx = _prior_fixtures_for_team(
         db,
@@ -185,6 +193,7 @@ def build_prior_context(
         team_id=int(opponent_id),
         competition_id=comp_filter,
         competition_scoped_only=scoped_only,
+        strict_kickoff_only=strict_kickoff_only,
     )
     all_ids = list({int(f.id) for f in team_prior_fx + opp_prior_fx})
     stats_map = _team_stats_map(db, all_ids)
@@ -194,6 +203,7 @@ def build_prior_context(
         cutoff_kickoff=cutoff_kickoff,
         cutoff_fixture_id=cutoff_fixture_id,
         competition_id=comp_filter,
+        strict_kickoff_only=strict_kickoff_only,
     )
 
     return V10PriorContext(

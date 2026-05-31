@@ -32,6 +32,7 @@ def compute_league_offensive_baselines(
     cutoff_kickoff: datetime,
     cutoff_fixture_id: int,
     competition_id: int | None = None,
+    strict_kickoff_only: bool = False,
 ) -> dict[str, float | None]:
     """Medie lega su tutte le righe team-stats delle partite finite prima del cutoff."""
     clauses = [
@@ -43,11 +44,13 @@ def compute_league_offensive_baselines(
     fixtures = db.scalars(
         select(Fixture).where(*clauses),
     ).all()
-    eligible = [
-        f
-        for f in fixtures
-        if fixture_key_before(f.kickoff_at, int(f.id), cutoff_kickoff, cutoff_fixture_id)
-    ]
+
+    def _is_prior(f: Fixture) -> bool:
+        if strict_kickoff_only:
+            return f.kickoff_at < cutoff_kickoff
+        return fixture_key_before(f.kickoff_at, int(f.id), cutoff_kickoff, cutoff_fixture_id)
+
+    eligible = [f for f in fixtures if _is_prior(f)]
     if not eligible:
         return _empty_baselines_with_prudential()
 

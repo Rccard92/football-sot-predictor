@@ -67,6 +67,18 @@ function fmtMetric(value: number | null | undefined, digits = 2): string {
   return value.toFixed(digits)
 }
 
+function isPitLeakageCritical(row: {
+  leakage_guard: boolean
+  latest_fixture_used_at?: string | null
+  cutoff_time: string
+  warnings?: string[]
+}): boolean {
+  const latestBad =
+    row.latest_fixture_used_at != null &&
+    new Date(row.latest_fixture_used_at).getTime() >= new Date(row.cutoff_time).getTime()
+  return !row.leakage_guard || latestBad || (row.warnings?.includes('possible_leakage') ?? false)
+}
+
 export function BacktestDebugPanel() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
   const { selectedModelVersion } = useModelSelection()
@@ -377,17 +389,14 @@ export function BacktestDebugPanel() {
         mode: pitMode,
       })
       setPitJson(data)
-      const latest = data.latest_fixture_used_at
-      const cutoff = data.cutoff_time
-      const leakageBad =
-        latest != null && cutoff != null && new Date(latest).getTime() >= new Date(cutoff).getTime()
+      const leakageBad = isPitLeakageCritical(data)
       setPitLeakageCritical(leakageBad)
       const kind: OutcomeKind = leakageBad ? 'error' : 'ok'
       setPitOutcome({
         kind,
         httpStatus: 200,
         message: leakageBad
-          ? 'Context caricato ma possibile leakage rilevato (latest >= cutoff).'
+          ? 'Context caricato ma leakage critico (possible_leakage o latest >= cutoff).'
           : `Context OK — leakage_guard=${data.leakage_guard}, prior lega=${data.league_prior_matches_count}`,
       })
     } catch (e) {
@@ -409,17 +418,14 @@ export function BacktestDebugPanel() {
         mode: 'pre_lineup',
       })
       setPitPreviewJson(data)
-      const latest = data.latest_fixture_used_at
-      const cutoff = data.cutoff_time
-      const leakageBad =
-        latest != null && cutoff != null && new Date(latest).getTime() >= new Date(cutoff).getTime()
+      const leakageBad = isPitLeakageCritical(data)
       setPitLeakageCritical(leakageBad)
       const kind: OutcomeKind = leakageBad ? 'error' : 'ok'
       setPitOutcome({
         kind,
         httpStatus: 200,
         message: leakageBad
-          ? 'Preview prediction OK ma possibile leakage (latest >= cutoff).'
+          ? 'Preview prediction con leakage critico (possible_leakage o latest >= cutoff).'
           : `Preview v2.1 PIT — totale ${data.prediction.total_predicted_sot ?? '—'}, errore abs ${data.errors.total_abs_error ?? '—'}`,
       })
     } catch (e) {
@@ -1047,6 +1053,13 @@ export function BacktestDebugPanel() {
               </div>
             </div>
 
+            {miniRunJson.results.some(isPitLeakageCritical) ? (
+              <p className="mt-3 rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-900">
+                Leakage critico su una o più fixture: possible_leakage, leakage_guard=false o
+                latest_fixture_used_at &gt;= cutoff_time.
+              </p>
+            ) : null}
+
             {miniRunJson.results.length > 0 ? (
               <div className="mt-4 overflow-x-auto">
                 <div className="mb-1 text-sm font-medium text-slate-800">Results per fixture</div>
@@ -1063,11 +1076,21 @@ export function BacktestDebugPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {miniRunJson.results.map((row) => (
-                      <tr key={row.fixture_id} className="border-b border-slate-100">
+                    {miniRunJson.results.map((row) => {
+                      const leakageCritical = isPitLeakageCritical(row)
+                      return (
+                      <tr
+                        key={row.fixture_id}
+                        className={`border-b border-slate-100 ${leakageCritical ? 'bg-rose-50' : ''}`}
+                      >
                         <td className="px-2 py-1 font-mono">{row.fixture_id}</td>
                         <td className="px-2 py-1">
                           {row.home_team} vs {row.away_team}
+                          {leakageCritical ? (
+                            <span className="ml-1 rounded bg-rose-200 px-1 py-0.5 text-[10px] font-bold text-rose-900">
+                              LEAKAGE
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-2 py-1">{fmtMetric(row.predicted_total_sot, 4)}</td>
                         <td className="px-2 py-1">{row.actual_total_sot ?? '—'}</td>
@@ -1075,9 +1098,12 @@ export function BacktestDebugPanel() {
                         <td className="px-2 py-1">
                           {row.home_prior_matches_count}/{row.away_prior_matches_count}
                         </td>
-                        <td className="px-2 py-1">{row.leakage_guard ? 'true' : 'false'}</td>
+                        <td className={`px-2 py-1 ${leakageCritical ? 'font-semibold text-rose-800' : ''}`}>
+                          {row.leakage_guard ? 'true' : 'false'}
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

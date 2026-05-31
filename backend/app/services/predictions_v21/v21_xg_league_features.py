@@ -57,6 +57,7 @@ def _eligible_fixtures(
     cutoff_kickoff: datetime,
     cutoff_fixture_id: int,
     use_season_filter: bool,
+    strict_kickoff_only: bool = False,
 ) -> list[Fixture]:
     clauses = [
         Fixture.competition_id == int(competition_id),
@@ -65,11 +66,13 @@ def _eligible_fixtures(
     if use_season_filter:
         clauses.insert(0, Fixture.season_id == int(season_id))
     fixtures = db.scalars(select(Fixture).where(*clauses)).all()
-    return [
-        f
-        for f in fixtures
-        if fixture_key_before(f.kickoff_at, int(f.id), cutoff_kickoff, cutoff_fixture_id)
-    ]
+
+    def _is_prior(f: Fixture) -> bool:
+        if strict_kickoff_only:
+            return f.kickoff_at < cutoff_kickoff
+        return fixture_key_before(f.kickoff_at, int(f.id), cutoff_kickoff, cutoff_fixture_id)
+
+    return [f for f in fixtures if _is_prior(f)]
 
 
 def _compute_baselines_from_eligible(eligible: list[Fixture], db: Session) -> dict[str, Any]:
@@ -141,6 +144,7 @@ def compute_v21_xg_league_baselines(
     cutoff_kickoff: datetime,
     cutoff_fixture_id: int,
     competition_id: int,
+    strict_kickoff_only: bool = False,
 ) -> dict[str, Any]:
     """
     Medie lega xG for/conceded su fixture finite della competition prima del cutoff.
@@ -153,6 +157,7 @@ def compute_v21_xg_league_baselines(
         cutoff_kickoff=cutoff_kickoff,
         cutoff_fixture_id=cutoff_fixture_id,
         use_season_filter=True,
+        strict_kickoff_only=strict_kickoff_only,
     )
     season_id_fallback_used = False
     if not eligible:
@@ -170,6 +175,7 @@ def compute_v21_xg_league_baselines(
             cutoff_kickoff=cutoff_kickoff,
             cutoff_fixture_id=cutoff_fixture_id,
             use_season_filter=False,
+            strict_kickoff_only=strict_kickoff_only,
         )
     out = _compute_baselines_from_eligible(eligible, db)
     if season_id_fallback_used:

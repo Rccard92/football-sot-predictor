@@ -28,6 +28,7 @@ from app.schemas.backtest_point_in_time import (
     TeamLast5Form,
     TeamPointInTimeStats,
 )
+from app.services.backtest.pit_leakage import compute_leakage_guard, pit_strict_kickoff_before
 from app.services.predictions_v10.v10_league_offensive_baselines import compute_league_offensive_baselines
 from app.services.predictions_v10.v10_prior_context import (
     V10PriorContext,
@@ -39,7 +40,7 @@ from app.services.predictions_v21.v21_xg_league_features import (
     compute_v21_xg_league_baselines,
     latest_prior_kickoff,
 )
-from app.services.sot_feature_math import PriorMatch, fixture_key_before
+from app.services.sot_feature_math import PriorMatch
 
 SUPPORTED_MARKET = "shots_on_target"
 SOURCE_PATHS = [
@@ -83,7 +84,7 @@ def _league_prior_fixtures(
     prior = [
         f
         for f in fixtures
-        if fixture_key_before(f.kickoff_at, int(f.id), cutoff_kickoff, cutoff_fixture_id)
+        if pit_strict_kickoff_before(f.kickoff_at, cutoff_kickoff)
     ]
     return [f for f in prior if _fixture_has_team_stats(db, int(f.id))]
 
@@ -386,6 +387,7 @@ class PointInTimeContextService:
             opponent_id=int(fixture.away_team_id),
             competition_id=int(competition_id),
             competition_scoped_only=True,
+            strict_kickoff_only=True,
         )
         away_prior_ctx = build_prior_context(
             db,
@@ -394,6 +396,7 @@ class PointInTimeContextService:
             opponent_id=int(fixture.home_team_id),
             competition_id=int(competition_id),
             competition_scoped_only=True,
+            strict_kickoff_only=True,
         )
 
         home_stats = _team_stats_from_prior_ctx(
@@ -413,6 +416,7 @@ class PointInTimeContextService:
             cutoff_kickoff=cutoff,
             cutoff_fixture_id=cutoff_fixture_id,
             competition_id=int(competition_id),
+            strict_kickoff_only=True,
         )
         off_lb = compute_league_offensive_baselines(
             db,
@@ -420,6 +424,7 @@ class PointInTimeContextService:
             cutoff_kickoff=cutoff,
             cutoff_fixture_id=cutoff_fixture_id,
             competition_id=int(competition_id),
+            strict_kickoff_only=True,
         )
 
         xg_latest_raw = xg_lb.get("latest_fixture_used_at")
@@ -448,6 +453,14 @@ class PointInTimeContextService:
             + league_prior
         )
         latest_fixture_used_at = _latest_from_fixtures(all_used_fixtures)
+
+        leakage_guard = compute_leakage_guard(
+            cutoff,
+            latest_fixture_used_at,
+            xg_latest,
+            home_stats.latest_fixture_used_at,
+            away_stats.latest_fixture_used_at,
+        )
 
         warnings: list[str] = []
         missing: list[str] = []
@@ -480,7 +493,7 @@ class PointInTimeContextService:
             "xg_sample_count": xg_sample,
             "player_profiles_sample_count": player_sample,
             "lineup_mode": lineup_diag.lineup_mode,
-            "leakage_guard": True,
+            "leakage_guard": leakage_guard,
             "missing_variables": missing,
             "fallback_variables": fallbacks,
             "source_paths": SOURCE_PATHS,
@@ -501,7 +514,7 @@ class PointInTimeContextService:
             mode=mode,
             market_key=market_key,
             cutoff_time=cutoff,
-            leakage_guard=True,
+            leakage_guard=leakage_guard,
             latest_fixture_used_at=latest_fixture_used_at,
             prior_fixtures_count=len(league_prior),
             home_prior_matches_count=home_prior_ctx.team_prior_count,
