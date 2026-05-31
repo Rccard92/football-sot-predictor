@@ -4,6 +4,39 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-g1
+
+**Titolo:** Split casa/trasferta point-in-time
+
+**Descrizione:** Aggiunta ricostruzione point-in-time dello split casa/trasferta nella preview e mini-run SOT v2.1 PIT, usando solo fixture precedenti al kickoff.
+
+**Highlights:**
+
+- Calcolo home/away split nel PointInTimeContext.
+- Macro split non più neutra quando disponibile.
+- Status available / partial_low_sample / fallback.
+- Trace macro split con components.
+- Split summary nella mini-run.
+- Nessun salvataggio DB.
+- Nessuna modifica a v2.0/v2.1 live runtime.
+
+**File toccati:**
+
+- `backend/app/services/backtest/pit_split_stats_builder.py`
+- `backend/app/schemas/backtest_point_in_time.py`
+- `backend/app/services/backtest/point_in_time_context_service.py`
+- `backend/app/services/backtest/sot_v21_pit_macro_builder.py`
+- `backend/app/services/backtest/sot_v21_preview_service.py`
+- `backend/app/schemas/backtest_sot_v21_preview.py`
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/tests/test_pit_home_away_split.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-f-fix-round-filter
 
 **Titolo:** Filtro giornata esatta e label mini-run

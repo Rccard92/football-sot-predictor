@@ -786,6 +786,45 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 ---
 
+## 20. Step G1 — Split casa/trasferta point-in-time
+
+**Obiettivo:** ricostruire la macro predittiva `home_away_split` (peso v2.1 = **10**) nella preview singola e nella mini-run SOT v2.1 PIT, usando solo fixture **strict** anteriori al kickoff target.
+
+**Implementazione:**
+
+| Componente | Path |
+|------------|------|
+| Builder split PIT | `backend/app/services/backtest/pit_split_stats_builder.py` |
+| Estensione context | `PointInTimeContextResponse.home_split_stats` / `away_split_stats` |
+| Macro PIT | `backend/app/services/backtest/sot_v21_pit_macro_builder.py` (`_compute_home_away_split_macro`) |
+| Mini-run aggregato | `split_summary` in `SotV21MiniRunResponse` |
+
+**Formula prudenziale PIT (non live v2.1):**
+
+- HOME: `0.60 × (SOT for casa / SOT for overall) + 0.40 × (SOT against avversario in trasferta / SOT against overall avversario)`
+- AWAY: simmetrico con split trasferta e difesa avversario in casa
+- Cap indice: **0.70 – 1.30**; fallback neutro **1.00** se sample assente o ratio non calcolabile
+
+**Status qualità:**
+
+| Sample split (min team/opponent) | Status | Warning |
+|----------------------------------|--------|---------|
+| ≥ 5 | `available` | — |
+| 1–4 | `partial_low_sample` | `split_home_away_partial_low_sample` (+ `home_split_low_sample` / `away_split_low_sample` a livello context) |
+| 0 | `neutral_fallback` | `split_home_away_missing`, fallback `split_home_away` |
+
+**Invarianti:**
+
+- `kickoff_at < cutoff_time` (strict, no fixture target/contemporanee)
+- `actuals_used_as_input=false`, `db_writes=false`
+- Nessuna modifica v2.0, v2.1 live runtime, manifest o pesi ufficiali
+- Peso macro split invariato a **10**; totale predittivo **96**
+- Trace macro con `components` e `source_paths`
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-g1`).
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -802,6 +841,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | Schemas preview Step E | `backend/app/schemas/backtest_sot_v21_preview.py` |
 | SotV21MiniRunPreviewService (Step F) | `backend/app/services/backtest/sot_v21_mini_run_preview_service.py` |
 | Schemas mini-run Step F | `backend/app/schemas/backtest_sot_v21_mini_run.py` |
+| Pit split stats builder (Step G1) | `backend/app/services/backtest/pit_split_stats_builder.py` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
 | Modelli Backtest (Step B) | `backend/app/models/backtest.py` |

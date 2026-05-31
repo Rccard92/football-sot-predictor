@@ -19,6 +19,7 @@ from app.schemas.backtest_sot_v21_mini_run import (
     SotV21MiniRunResponse,
     SotV21MiniRunSampleBreakdown,
     SotV21MiniRunSelection,
+    SotV21MiniRunSplitSummary,
     SotV21MiniRunSummary,
 )
 from app.schemas.backtest_sot_v21_preview import (
@@ -99,6 +100,13 @@ _MOCK_RESPONSE = SotV21MiniRunResponse(
         exact_or_near_count=1,
         high_error_count=0,
     ),
+    split_summary=SotV21MiniRunSplitSummary(
+        available_count=1,
+        partial_count=0,
+        fallback_count=0,
+        avg_home_split_index=1.08,
+        avg_away_split_index=0.94,
+    ),
     sample_breakdown=SotV21MiniRunSampleBreakdown(
         medium_sample=SotV21MiniRunBucketStats(
             fixtures_count=1,
@@ -177,6 +185,7 @@ def test_sot_v21_mini_run_success(mock_svc_cls):
     assert body["db_writes"] is False
     assert body["preview_only"] is True
     assert body["summary"]["fixtures_processed"] == 1
+    assert body["split_summary"]["available_count"] == 1
     assert body["results"][0]["leakage_guard"] is True
     assert body["results"][0]["actuals_used_as_input"] is False
     assert body["results"][0].get("home_trace") is None
@@ -334,6 +343,7 @@ def test_sot_v21_mini_run_service_no_db_writes():
 
     assert result.db_writes is False
     assert result.summary.fixtures_processed == 1
+    assert result.split_summary is not None
     assert result.results[0].home_trace is None
     db.add.assert_not_called()
     db.commit.assert_not_called()

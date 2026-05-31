@@ -16,6 +16,7 @@ from app.schemas.backtest_point_in_time import (
     PointInTimeContextResponse,
     TeamLast5Form,
     TeamPointInTimeStats,
+    TeamSplitPointInTimeStats,
 )
 
 client = TestClient(app)
@@ -58,6 +59,24 @@ _MOCK_CONTEXT = PointInTimeContextResponse(
         avg_sot_for=4.8,
         avg_sot_against=3.9,
         sample_count=9,
+        latest_fixture_used_at=_LATEST,
+    ),
+    home_split_stats=TeamSplitPointInTimeStats(
+        team_id=10,
+        split_context="home",
+        matches_count=5,
+        avg_sot_for=5.5,
+        avg_sot_against=3.8,
+        status="available",
+        latest_fixture_used_at=_LATEST,
+    ),
+    away_split_stats=TeamSplitPointInTimeStats(
+        team_id=11,
+        split_context="away",
+        matches_count=4,
+        avg_sot_for=4.2,
+        avg_sot_against=4.0,
+        status="partial_low_sample",
         latest_fixture_used_at=_LATEST,
     ),
     league_baselines=LeaguePointInTimeBaselines(

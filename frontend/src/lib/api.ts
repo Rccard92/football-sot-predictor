@@ -2380,6 +2380,8 @@ export type SotV21PreviewResponse = {
       macro_index: number
       status: string
       warnings: string[]
+      components?: Record<string, unknown> | null
+      source_paths?: string[] | null
     }[]
   }
   away_trace: SotV21PreviewResponse['home_trace']
@@ -2490,6 +2492,13 @@ export type SotV21MiniRunResponse = {
     underestimated_count: number
     exact_or_near_count: number
     high_error_count: number
+  }
+  split_summary?: {
+    available_count: number
+    partial_count: number
+    fallback_count: number
+    avg_home_split_index?: number | null
+    avg_away_split_index?: number | null
   }
   sample_breakdown: {
     early_low_sample: SotV21MiniRunBucketStats

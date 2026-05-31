@@ -54,6 +54,20 @@ class TeamPointInTimeStats(BaseModel):
     last5: TeamLast5Form = Field(default_factory=TeamLast5Form)
 
 
+class TeamSplitPointInTimeStats(BaseModel):
+    team_id: int
+    split_context: str
+    matches_count: int = 0
+    avg_sot_for: float | None = None
+    avg_sot_against: float | None = None
+    avg_total_shots_for: float | None = None
+    avg_total_shots_against: float | None = None
+    avg_xg_for: float | None = None
+    avg_xg_against: float | None = None
+    latest_fixture_used_at: datetime | None = None
+    status: str = "neutral_fallback"
+
+
 class LeaguePointInTimeBaselines(BaseModel):
     league_avg_sot_for: float | None = None
     league_avg_sot_against: float | None = None
@@ -107,6 +121,8 @@ class PointInTimeContextResponse(BaseModel):
     league_prior_matches_count: int = 0
     home_team_stats: TeamPointInTimeStats
     away_team_stats: TeamPointInTimeStats
+    home_split_stats: TeamSplitPointInTimeStats
+    away_split_stats: TeamSplitPointInTimeStats
     league_baselines: LeaguePointInTimeBaselines
     home_player_stats: PlayerStatsDiagnostic
     away_player_stats: PlayerStatsDiagnostic

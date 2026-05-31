@@ -105,21 +105,25 @@ def _macro_from_index(
     macro_index: float,
     status: str,
     warnings: list[str],
+    *,
+    components: dict[str, Any] | None = None,
+    source_paths: list[str] | None = None,
 ) -> tuple[V21MacroResult, dict[str, Any]]:
     spec_weight = _MACRO_WEIGHTS[key]
     label = _MACRO_LABELS[key]
+    coverage = 100.0 if status == "available" else (50.0 if status == "partial_low_sample" else 0.0)
     result = V21MacroResult(
         key=key,
         label=label,
         macro_weight=spec_weight,
         macro_index=round(macro_index, 4),
         macro_contribution_to_multiplier=round(macro_index * spec_weight, 4),
-        coverage_pct=100.0 if status == "available" else 0.0,
+        coverage_pct=coverage,
         status=status,
         warnings=warnings,
         micros=[],
     )
-    trace = {
+    trace: dict[str, Any] = {
         "key": key,
         "label": label,
         "macro_weight": spec_weight,
@@ -127,7 +131,100 @@ def _macro_from_index(
         "status": status,
         "warnings": warnings,
     }
+    if components is not None:
+        trace["components"] = components
+    if source_paths is not None:
+        trace["source_paths"] = source_paths
     return result, trace
+
+
+def _split_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None or denominator <= 0:
+        return None
+    return float(numerator) / float(denominator)
+
+
+def _compute_home_away_split_macro(
+    ctx: PointInTimeContextResponse,
+    *,
+    is_home: bool,
+) -> tuple[V21MacroResult, dict[str, Any], str | None]:
+    """Macro split casa/trasferta PIT — formula prudenziale 60/40."""
+    key = "home_away_split"
+    source_paths = [
+        "fixture_team_stats.shots_on_target",
+        "fixtures.home_away_split",
+        "point_in_time_context.split_stats",
+    ]
+
+    if is_home:
+        team_split = ctx.home_split_stats
+        opponent_split = ctx.away_split_stats
+        team_overall = ctx.home_team_stats
+        opponent_overall = ctx.away_team_stats
+    else:
+        team_split = ctx.away_split_stats
+        opponent_split = ctx.home_split_stats
+        team_overall = ctx.away_team_stats
+        opponent_overall = ctx.home_team_stats
+
+    team_sample = int(team_split.matches_count)
+    opp_sample = int(opponent_split.matches_count)
+    sample_count = min(team_sample, opp_sample)
+
+    attack_ratio = _split_ratio(team_split.avg_sot_for, team_overall.avg_sot_for)
+    defense_ratio = _split_ratio(opponent_split.avg_sot_against, opponent_overall.avg_sot_against)
+
+    components: dict[str, Any] = {
+        "attack_split_ratio": round(attack_ratio, 4) if attack_ratio is not None else None,
+        "opponent_defense_split_ratio": round(defense_ratio, 4) if defense_ratio is not None else None,
+        "team_split_avg_sot_for": team_split.avg_sot_for,
+        "team_overall_avg_sot_for": team_overall.avg_sot_for,
+        "opponent_split_avg_sot_against": opponent_split.avg_sot_against,
+        "opponent_overall_avg_sot_against": opponent_overall.avg_sot_against,
+        "team_split_sample_count": team_sample,
+        "opponent_split_sample_count": opp_sample,
+        "sample_count": sample_count,
+    }
+
+    macro_warnings: list[str] = []
+    fallback_key: str | None = None
+
+    if sample_count == 0 or attack_ratio is None or defense_ratio is None:
+        macro_warnings.append("split_home_away_missing")
+        if sample_count == 0:
+            components["fallback_reason"] = "split_sample_missing"
+        else:
+            components["fallback_reason"] = "split_ratio_not_computable"
+        result, trace = _macro_from_index(
+            key,
+            1.0,
+            "neutral_fallback",
+            macro_warnings,
+            components=components,
+            source_paths=source_paths,
+        )
+        return result, trace, "split_home_away"
+
+    raw_index = 0.60 * attack_ratio + 0.40 * defense_ratio
+    macro_index = _clamp_index(raw_index)
+    components["raw_index"] = round(raw_index, 4)
+
+    if sample_count >= 5:
+        status = "available"
+    else:
+        status = "partial_low_sample"
+        macro_warnings.append("split_home_away_partial_low_sample")
+
+    result, trace = _macro_from_index(
+        key,
+        macro_index,
+        status,
+        macro_warnings,
+        components=components,
+        source_paths=source_paths,
+    )
+    return result, trace, fallback_key
 
 
 def build_pit_side_preview(
@@ -136,6 +233,7 @@ def build_pit_side_preview(
     opponent: TeamPointInTimeStats,
     league: LeaguePointInTimeBaselines,
     ctx: PointInTimeContextResponse,
+    is_home: bool,
 ) -> PitSidePreviewResult:
     warnings: list[str] = []
     fallbacks: list[str] = []
@@ -224,8 +322,14 @@ def build_pit_side_preview(
     macro_results.append(r)
     macro_traces.append(t)
 
+    split_r, split_t, split_fb = _compute_home_away_split_macro(ctx, is_home=is_home)
+    macro_results.append(split_r)
+    macro_traces.append(split_t)
+    warnings.extend(split_r.warnings)
+    if split_fb:
+        fallbacks.append(split_fb)
+
     for key, fb_key, fb_msg in (
-        ("home_away_split", "split_home_away_point_in_time_not_built_yet", "split_home_away_point_in_time_not_built_yet"),
         ("player_layer", "player_layer_point_in_time_not_built_yet", "player_layer_point_in_time_not_built_yet"),
         ("injuries_unavailable", "injuries_point_in_time_not_built_yet", "injuries_point_in_time_not_built_yet"),
     ):

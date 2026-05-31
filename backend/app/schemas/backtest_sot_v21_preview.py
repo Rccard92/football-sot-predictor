@@ -39,6 +39,8 @@ class SotV21PreviewMacroTrace(BaseModel):
     macro_index: float
     status: str
     warnings: list[str] = Field(default_factory=list)
+    components: dict[str, Any] | None = None
+    source_paths: list[str] | None = None
 
 
 class SotV21PreviewSideTrace(BaseModel):

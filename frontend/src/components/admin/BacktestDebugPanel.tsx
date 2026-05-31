@@ -84,6 +84,20 @@ function isPitLeakageCritical(row: {
   return !row.leakage_guard || latestBad || (row.warnings?.includes('possible_leakage') ?? false)
 }
 
+type PitSideTrace = SotV21PreviewResponse['home_trace']
+
+function findSplitMacro(side: PitSideTrace | undefined) {
+  return side?.macros?.find((m) => m.key === 'home_away_split')
+}
+
+function countNeutralMacros(side: PitSideTrace | undefined): number {
+  return (
+    side?.macros?.filter(
+      (m) => m.status === 'not_built_yet' || m.status === 'neutral_fallback',
+    ).length ?? 0
+  )
+}
+
 export function BacktestDebugPanel() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
   const { selectedModelVersion } = useModelSelection()
@@ -887,6 +901,18 @@ export function BacktestDebugPanel() {
                 <span className="font-medium">Fallback macro:</span>{' '}
                 {pitPreviewJson.fallback_variables.length}
               </div>
+              <div>
+                <span className="font-medium">Macro neutre:</span> casa{' '}
+                {countNeutralMacros(pitPreviewJson.home_trace)}, trasferta{' '}
+                {countNeutralMacros(pitPreviewJson.away_trace)}
+              </div>
+              <div className="sm:col-span-2">
+                <span className="font-medium">Split casa/trasferta:</span> casa{' '}
+                {findSplitMacro(pitPreviewJson.home_trace)?.macro_index ?? '—'} (
+                {findSplitMacro(pitPreviewJson.home_trace)?.status ?? '—'}), trasferta{' '}
+                {findSplitMacro(pitPreviewJson.away_trace)?.macro_index ?? '—'} (
+                {findSplitMacro(pitPreviewJson.away_trace)?.status ?? '—'})
+              </div>
             </div>
             {pitPreviewJson.warnings.length > 0 ? (
               <p className="mt-2 text-xs text-amber-800">
@@ -1065,6 +1091,28 @@ export function BacktestDebugPanel() {
                 </div>
               </div>
             </div>
+
+            {miniRunJson.split_summary ? (
+              <div className="mt-2 rounded-lg border border-indigo-100 bg-white p-3 text-sm text-slate-800">
+                <div className="font-medium text-indigo-800">Split casa/trasferta (G1)</div>
+                <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                  <div>
+                    <span className="font-medium">Disponibile / parziale / fallback:</span>{' '}
+                    {miniRunJson.split_summary.available_count} /{' '}
+                    {miniRunJson.split_summary.partial_count} /{' '}
+                    {miniRunJson.split_summary.fallback_count}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media split casa:</span>{' '}
+                    {fmtMetric(miniRunJson.split_summary.avg_home_split_index, 4)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media split trasferta:</span>{' '}
+                    {fmtMetric(miniRunJson.split_summary.avg_away_split_index, 4)}
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {miniRunJson.results.some(isPitLeakageCritical) ? (
               <p className="mt-3 rounded-lg border border-rose-300 bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-900">

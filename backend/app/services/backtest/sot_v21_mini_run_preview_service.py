@@ -20,6 +20,7 @@ from app.schemas.backtest_sot_v21_mini_run import (
     SotV21MiniRunResponse,
     SotV21MiniRunSampleBreakdown,
     SotV21MiniRunSelection,
+    SotV21MiniRunSplitSummary,
     SotV21MiniRunSummary,
 )
 from app.schemas.backtest_sot_v21_preview import SotV21PreviewResponse
@@ -78,6 +79,57 @@ def _compute_bucket_stats(results: list[SotV21MiniRunFixtureResult]) -> SotV21Mi
             r.predicted_total_sot for r in scored if r.predicted_total_sot is not None
         ),
         avg_actual_total_sot=_mean(r.actual_total_sot for r in scored if r.actual_total_sot is not None),
+    )
+
+
+def _extract_split_macro(side_trace) -> tuple[float | None, str | None]:
+    if side_trace is None:
+        return None, None
+    for macro in side_trace.macros:
+        if macro.key == "home_away_split":
+            return macro.macro_index, macro.status
+    return None, None
+
+
+def _fixture_split_bucket(home_status: str | None, away_status: str | None) -> str:
+    statuses = [s for s in (home_status, away_status) if s]
+    if not statuses:
+        return "fallback"
+    if "neutral_fallback" in statuses:
+        return "fallback"
+    if "partial_low_sample" in statuses:
+        return "partial"
+    if all(s == "available" for s in statuses):
+        return "available"
+    return "fallback"
+
+
+def _aggregate_split_summary(previews: list[SotV21PreviewResponse]) -> SotV21MiniRunSplitSummary:
+    available = partial = fallback = 0
+    home_indexes: list[float] = []
+    away_indexes: list[float] = []
+
+    for preview in previews:
+        home_idx, home_status = _extract_split_macro(preview.home_trace)
+        away_idx, away_status = _extract_split_macro(preview.away_trace)
+        bucket = _fixture_split_bucket(home_status, away_status)
+        if bucket == "available":
+            available += 1
+        elif bucket == "partial":
+            partial += 1
+        else:
+            fallback += 1
+        if home_idx is not None:
+            home_indexes.append(float(home_idx))
+        if away_idx is not None:
+            away_indexes.append(float(away_idx))
+
+    return SotV21MiniRunSplitSummary(
+        available_count=available,
+        partial_count=partial,
+        fallback_count=fallback,
+        avg_home_split_index=_mean(home_indexes),
+        avg_away_split_index=_mean(away_indexes),
     )
 
 
@@ -257,6 +309,7 @@ class SotV21MiniRunPreviewService:
         results: list[SotV21MiniRunFixtureResult] = []
         failed_fixtures: list[SotV21MiniRunFailedFixture] = []
         trace_included_count = 0
+        preview_snapshots: list[SotV21PreviewResponse] = []
 
         for candidate in selection.items:
             try:
@@ -277,6 +330,7 @@ class SotV21MiniRunPreviewService:
                 )
                 continue
 
+            preview_snapshots.append(preview)
             with_trace = include_trace and trace_included_count < 10
             result = _preview_to_result(preview, include_trace=with_trace)
             results.append(result)
@@ -326,6 +380,7 @@ class SotV21MiniRunPreviewService:
                 order_by=selection.order_by,
             ),
             summary=summary,
+            split_summary=_aggregate_split_summary(preview_snapshots),
             sample_breakdown=_compute_sample_breakdown(results),
             actual_total_breakdown=_compute_actual_total_breakdown(results),
             worst_cases=worst,

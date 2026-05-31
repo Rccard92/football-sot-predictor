@@ -29,6 +29,7 @@ from app.schemas.backtest_point_in_time import (
     TeamPointInTimeStats,
 )
 from app.services.backtest.pit_leakage import compute_leakage_guard, pit_strict_kickoff_before
+from app.services.backtest.pit_split_stats_builder import build_pit_split_stats
 from app.services.predictions_v10.v10_league_offensive_baselines import compute_league_offensive_baselines
 from app.services.predictions_v10.v10_prior_context import (
     V10PriorContext,
@@ -50,6 +51,7 @@ SOURCE_PATHS = [
     "fixture_player_stats.shots_on_target",
     "fixture_provider_lineups",
     "fixture_lineups",
+    "point_in_time_context.split_stats",
 ]
 
 
@@ -410,6 +412,13 @@ class PointInTimeContextService:
             team_name=away_name,
         )
 
+        home_split_stats, away_split_stats, split_fixtures, split_warnings = build_pit_split_stats(
+            home_prior_ctx,
+            away_prior_ctx,
+            home_team_id=int(fixture.home_team_id),
+            away_team_id=int(fixture.away_team_id),
+        )
+
         xg_lb = compute_v21_xg_league_baselines(
             db,
             season_id=season_id,
@@ -451,6 +460,7 @@ class PointInTimeContextService:
             home_prior_ctx.team_prior_fixtures
             + away_prior_ctx.team_prior_fixtures
             + league_prior
+            + split_fixtures
         )
         latest_fixture_used_at = _latest_from_fixtures(all_used_fixtures)
 
@@ -460,6 +470,8 @@ class PointInTimeContextService:
             xg_latest,
             home_stats.latest_fixture_used_at,
             away_stats.latest_fixture_used_at,
+            home_split_stats.latest_fixture_used_at,
+            away_split_stats.latest_fixture_used_at,
         )
 
         warnings: list[str] = []
@@ -480,6 +492,7 @@ class PointInTimeContextService:
         if xg_lb.get("season_id_fallback_used"):
             fallbacks.append("xg_league_baselines_season_id_fallback")
         warnings.extend(lineup_warnings)
+        warnings.extend(split_warnings)
         warnings.extend(_leakage_warnings(cutoff, latest_fixture_used_at))
 
         xg_sample = int(xg_lb.get("sample_team_stat_rows") or 0)
@@ -497,6 +510,10 @@ class PointInTimeContextService:
             "missing_variables": missing,
             "fallback_variables": fallbacks,
             "source_paths": SOURCE_PATHS,
+            "home_split_matches_count": home_split_stats.matches_count,
+            "away_split_matches_count": away_split_stats.matches_count,
+            "home_split_status": home_split_stats.status,
+            "away_split_status": away_split_stats.status,
         }
 
         return PointInTimeContextResponse(
@@ -522,6 +539,8 @@ class PointInTimeContextService:
             league_prior_matches_count=len(league_prior),
             home_team_stats=home_stats,
             away_team_stats=away_stats,
+            home_split_stats=home_split_stats,
+            away_split_stats=away_split_stats,
             league_baselines=league_baselines,
             home_player_stats=home_player,
             away_player_stats=away_player,

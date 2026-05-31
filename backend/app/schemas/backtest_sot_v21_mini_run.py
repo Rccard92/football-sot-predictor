@@ -31,6 +31,14 @@ class SotV21MiniRunSelection(BaseModel):
     order_by: str = "kickoff_at asc"
 
 
+class SotV21MiniRunSplitSummary(BaseModel):
+    available_count: int = 0
+    partial_count: int = 0
+    fallback_count: int = 0
+    avg_home_split_index: float | None = None
+    avg_away_split_index: float | None = None
+
+
 class SotV21MiniRunSummary(BaseModel):
     fixtures_requested: int = 0
     fixtures_processed: int = 0
@@ -132,6 +140,7 @@ class SotV21MiniRunResponse(BaseModel):
     mode: str = "pre_lineup"
     selection: SotV21MiniRunSelection
     summary: SotV21MiniRunSummary
+    split_summary: SotV21MiniRunSplitSummary = Field(default_factory=SotV21MiniRunSplitSummary)
     sample_breakdown: SotV21MiniRunSampleBreakdown = Field(default_factory=SotV21MiniRunSampleBreakdown)
     actual_total_breakdown: SotV21MiniRunActualTotalBreakdown = Field(
         default_factory=SotV21MiniRunActualTotalBreakdown,

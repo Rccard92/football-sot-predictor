@@ -63,12 +63,14 @@ class SotV21PointInTimePreviewService:
             opponent=ctx.away_team_stats,
             league=ctx.league_baselines,
             ctx=ctx,
+            is_home=True,
         )
         away_side = build_pit_side_preview(
             team=ctx.away_team_stats,
             opponent=ctx.home_team_stats,
             league=ctx.league_baselines,
             ctx=ctx,
+            is_home=False,
         )
 
         home_pred = _round4(home_side.expected_sot)
