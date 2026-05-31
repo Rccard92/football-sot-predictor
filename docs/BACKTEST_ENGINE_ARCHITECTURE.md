@@ -973,45 +973,47 @@ cap 0.70–1.30
 
 ---
 
-## 25. Step J — Historical Lineup Macro
+## 25. Step J/K — Historical Fixture Snapshot, Lineup e Indisponibili
 
-**Obiettivo:** valorizzare la macro predittiva **Lineups / formazioni** (peso manifest **5**, key `"lineups"`) in preview, mini-run e pick evaluation PIT usando XI ufficiale storica, modulo, continuità titolari e panchina — **solo** in modalità `historical_official_xi`. La modalità `pre_lineup` resta invariata (macro neutra, warning esistenti).
+**Regola fondamentale:** per ogni fixture target, **XI, panchina e indisponibili** provengono **solo** da quella fixture (`fixture_id` esatto). Le statistiche giocatore/squadra restano rolling point-in-time con `kickoff_at < cutoff_time` (mai la fixture target né fixture future).
+
+**Obiettivo:** valorizzare in `historical_official_xi` le macro **Lineups / formazioni** (key `"lineups"`, peso **5**) e **Infortuni / indisponibili** (key `"injuries_unavailable"`, peso **5**). `pre_lineup` invariato (macro neutre + warning esistenti).
 
 **Componenti:**
 
 | Modulo | Ruolo |
 |--------|-------|
-| `historical_lineup_macro_service.py` | Formula a 7 indici (presence, completeness, formation, continuity, change, offensive, bench) |
-| `pit_player_rolling_stats.py` | Helper `load_previous_official_lineups`, `count_xi_overlap` (strict `< cutoff`) |
-| `sot_v21_pit_macro_builder.py` | `_compute_historical_lineups_macro` con branch esplicito per mode |
-| `sot_v21_preview_service.py` | Costruisce `home_lineup_macro` / `away_lineup_macro`; cleanup warning probabili |
+| `historical_fixture_snapshot_service.py` | Snapshot unificato target: starters, bench, injured/suspended/unavailable |
+| `historical_lineup_macro_service.py` | Formula lineup a 7 indici; continuità XI da fixture **precedenti** strict PIT |
+| `historical_unavailable_macro_service.py` | Penalità assenze offensive + boost prudente difensori avversari assenti |
+| `rolling_player_layer_service.py` | Consuma lo stesso snapshot side (no query lineup duplicate) |
+| `sot_v21_preview_service.py` | Orchestrazione snapshot → layer + macro J/K |
+| `sot_v21_pit_macro_builder.py` | Trace con `source_fixture_id`, branch injuries in historical mode |
 
-**Formula lineup_macro_index:**
+**Formula lineup_macro_index:** (cap 0.85–1.15)
 
 ```
 0.15 * official_xi_presence + 0.15 * starter_completeness + 0.15 * formation_structure
 + 0.25 * xi_continuity + 0.15 * formation_change + 0.10 * offensive_starter + 0.05 * bench
-cap 0.85–1.15
+```
+
+**Formula unavailable_macro_index:** (cap 0.80–1.15)
+
+```
+1.00 - offensive_absence_penalty (cap 0.18) + opponent_defensive_absence_boost (cap 0.08)
 ```
 
 **Status qualità:** `available` | `partial_low_sample` | `neutral_fallback`
 
-**Endpoint invariati (mode esteso):**
+**Mini-run:** `lineup_macro_summary` + `unavailable_macro_summary`
 
-- `GET /api/backtest/debug/sot-v21-preview?mode=historical_official_xi`
-- `POST /api/backtest/debug/sot-v21-mini-run` con `mode: historical_official_xi`
-- `POST /api/backtest/debug/sot-pick-evaluation-preview` — campi `home_lineup_macro_*` / `away_lineup_macro_*` in trace fixture
+**Pick evaluation:** campi lineup/unavailable index + `unavailable_important_absences_count` (JSON; consiglio H.1 invariato)
 
-**Mini-run:** nuovo aggregato `lineup_macro_summary` (continuità XI media inclusa).
+**Warning cleanup in historical mode:** rimossi `lineups_point_in_time_*`, `no_historical_probable_lineups`, `injuries_point_in_time_not_built_yet` quando macro costruite. Warning specifici: `target_fixture_lineup_missing`, `unavailable_players_mapping_incomplete`, ecc.
 
-**Regole:**
+**Regole:** `db_writes=false`, nessun actual post-match in input macro, nessuna modifica v2.0/v2.1 live o persistenza `backtest_*`.
 
-- `db_writes=false`, `actuals_used_as_input=false`, `leakage_guard=true`
-- XI target e precedente: strict `kickoff_at < cutoff_time`
-- Nessuna modifica v2.0/v2.1 live runtime, manifest o persistenza `backtest_*`
-- Step H.1 consiglio giocata **non** usa lineup macro
-
-**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-j-historical-lineup-macro`).
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-jk-historical-lineup-unavailable`).
 
 ---
 
@@ -1036,6 +1038,8 @@ cap 0.85–1.15
 | Pit player rolling stats (Step G2B) | `backend/app/services/backtest/pit_player_rolling_stats.py` |
 | RollingPlayerLayerService (Step G2B) | `backend/app/services/backtest/rolling_player_layer_service.py` |
 | HistoricalLineupMacroService (Step J) | `backend/app/services/backtest/historical_lineup_macro_service.py` |
+| HistoricalFixtureSnapshotService (Step J/K) | `backend/app/services/backtest/historical_fixture_snapshot_service.py` |
+| HistoricalUnavailableMacroService (Step K) | `backend/app/services/backtest/historical_unavailable_macro_service.py` |
 | SotPickEvaluationPreviewService (Step H) | `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` |
 | Pick play advice logic (Step H.1) | `backend/app/services/backtest/sot_pick_play_advice_logic.py` |
 | Pick evaluation logic (Step H) | `backend/app/services/backtest/sot_pick_evaluation_logic.py` |

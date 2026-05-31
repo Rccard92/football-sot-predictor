@@ -17,7 +17,9 @@ from app.schemas.backtest_sot_v21_preview import (
     SotV21PreviewResponse,
     SotV21PreviewSideTrace,
 )
+from app.services.backtest.historical_fixture_snapshot_service import HistoricalFixtureSnapshotService
 from app.services.backtest.historical_lineup_macro_service import HistoricalLineupMacroService
+from app.services.backtest.historical_unavailable_macro_service import HistoricalUnavailableMacroService
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
 from app.services.backtest.rolling_player_layer_service import RollingPlayerLayerService
 from app.services.backtest.sot_v21_pit_macro_builder import build_pit_side_preview
@@ -62,50 +64,78 @@ class SotV21PointInTimePreviewService:
         )
 
         if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+            snapshot_svc = HistoricalFixtureSnapshotService()
             layer_svc = RollingPlayerLayerService()
             lineup_svc = HistoricalLineupMacroService()
-            home_layer = layer_svc.build_team_player_layer(
+            unavail_svc = HistoricalUnavailableMacroService()
+
+            snapshot = snapshot_svc.get_fixture_official_snapshot(
                 db,
                 competition_id=int(competition_id),
                 fixture_id=int(fixture_id),
+            )
+
+            home_layer = layer_svc.build_team_player_layer(
+                db,
+                competition_id=int(competition_id),
                 team_id=int(ctx.home_team_id),
                 cutoff_time=ctx.cutoff_time,
-                side="home",
+                side_snapshot=snapshot.home,
                 league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
             )
             away_layer = layer_svc.build_team_player_layer(
                 db,
                 competition_id=int(competition_id),
-                fixture_id=int(fixture_id),
                 team_id=int(ctx.away_team_id),
                 cutoff_time=ctx.cutoff_time,
-                side="away",
+                side_snapshot=snapshot.away,
                 league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
             )
             home_lineup_macro = lineup_svc.build_team_lineup_macro(
                 db,
+                snapshot=snapshot,
                 competition_id=int(competition_id),
-                fixture_id=int(fixture_id),
                 team_id=int(ctx.home_team_id),
-                opponent_team_id=int(ctx.away_team_id),
                 cutoff_time=ctx.cutoff_time,
                 side="home",
             )
             away_lineup_macro = lineup_svc.build_team_lineup_macro(
                 db,
+                snapshot=snapshot,
                 competition_id=int(competition_id),
-                fixture_id=int(fixture_id),
                 team_id=int(ctx.away_team_id),
-                opponent_team_id=int(ctx.home_team_id),
                 cutoff_time=ctx.cutoff_time,
                 side="away",
             )
+            home_unavailable_macro = unavail_svc.build_team_unavailable_macro(
+                db,
+                snapshot=snapshot,
+                competition_id=int(competition_id),
+                team_id=int(ctx.home_team_id),
+                cutoff_time=ctx.cutoff_time,
+                side="home",
+                opponent_side=snapshot.away,
+                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
+            )
+            away_unavailable_macro = unavail_svc.build_team_unavailable_macro(
+                db,
+                snapshot=snapshot,
+                competition_id=int(competition_id),
+                team_id=int(ctx.away_team_id),
+                cutoff_time=ctx.cutoff_time,
+                side="away",
+                opponent_side=snapshot.home,
+                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
+            )
             ctx = ctx.model_copy(
                 update={
+                    "fixture_snapshot": snapshot,
                     "home_player_layer": home_layer,
                     "away_player_layer": away_layer,
                     "home_lineup_macro": home_lineup_macro,
                     "away_lineup_macro": away_lineup_macro,
+                    "home_unavailable_macro": home_unavailable_macro,
+                    "away_unavailable_macro": away_unavailable_macro,
                 },
             )
 
@@ -139,6 +169,7 @@ class SotV21PointInTimePreviewService:
 
         warnings = list(dict.fromkeys(ctx.warnings + home_side.warnings + away_side.warnings))
         lineup_macro_active = False
+        unavailable_macro_active = False
         if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
             warnings.insert(0, "historical_official_xi_mode_not_prelineup")
             lineup_macro_active = (
@@ -147,6 +178,12 @@ class SotV21PointInTimePreviewService:
                 and ctx.home_lineup_macro.status != "neutral_fallback"
                 and ctx.away_lineup_macro.status != "neutral_fallback"
             )
+            unavailable_macro_active = (
+                ctx.home_unavailable_macro is not None
+                and ctx.away_unavailable_macro is not None
+                and ctx.home_unavailable_macro.status != "neutral_fallback"
+                and ctx.away_unavailable_macro.status != "neutral_fallback"
+            )
             if lineup_macro_active:
                 suppress = {
                     "no_historical_probable_lineups",
@@ -154,12 +191,28 @@ class SotV21PointInTimePreviewService:
                     "lineups_point_in_time_not_built_yet",
                 }
                 warnings = [w for w in warnings if w not in suppress]
+            if unavailable_macro_active or (
+                ctx.home_unavailable_macro is not None
+                and ctx.away_unavailable_macro is not None
+                and ctx.home_unavailable_macro.status == "available"
+                and ctx.away_unavailable_macro.status == "available"
+            ):
+                warnings = [w for w in warnings if w != "injuries_point_in_time_not_built_yet"]
             warnings = list(dict.fromkeys(warnings))
         fallbacks = list(
             dict.fromkeys(ctx.fallback_variables + home_side.fallback_variables + away_side.fallback_variables),
         )
         if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI and lineup_macro_active:
             fallbacks = [f for f in fallbacks if f != "lineups_point_in_time_neutral"]
+        if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI and (
+            unavailable_macro_active
+            or (
+                ctx.home_unavailable_macro is not None
+                and ctx.away_unavailable_macro is not None
+                and "available" in (ctx.home_unavailable_macro.status, ctx.away_unavailable_macro.status)
+            )
+        ):
+            fallbacks = [f for f in fallbacks if f != "injuries_point_in_time_not_built_yet"]
 
         neutral_macro_count = sum(
             1

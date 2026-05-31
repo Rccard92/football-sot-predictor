@@ -292,6 +292,7 @@ def _compute_historical_lineups_macro(
         "fixture_lineups",
         "fixture_lineups.formation",
         "fixture_lineups.starters",
+        "historical_fixture_snapshot",
         "point_in_time_context.previous_lineups",
     ]
     lineup = ctx.home_lineup_macro if is_home else ctx.away_lineup_macro
@@ -315,6 +316,7 @@ def _compute_historical_lineups_macro(
         source_paths=source_paths,
     )
     trace["mode"] = BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
+    trace["source_fixture_id"] = lineup.source_fixture_id or ctx.fixture_id
     trace["details"] = {
         "formation": lineup.formation,
         "starters_count": lineup.starters_count,
@@ -325,6 +327,59 @@ def _compute_historical_lineups_macro(
         "formation_changed_vs_common": lineup.formation_changed_vs_common,
     }
     fallback_key = None if lineup.status in ("available", "partial_low_sample") else "historical_lineup_macro_partial"
+    return result, trace, fallback_key
+
+
+def _compute_historical_unavailable_macro(
+    ctx: PointInTimeContextResponse,
+    *,
+    is_home: bool,
+) -> tuple[V21MacroResult, dict[str, Any], str | None]:
+    key = "injuries_unavailable"
+    source_paths = [
+        "fixture_lineups.unavailable",
+        "fixture_lineups.raw_json",
+        "fixture_missing_players",
+        "historical_fixture_snapshot",
+        "fixture_player_stats",
+    ]
+    unavail = ctx.home_unavailable_macro if is_home else ctx.away_unavailable_macro
+    if unavail is None:
+        r, t, fb = _neutral_macro(key, "historical_unavailable_macro_missing")
+        return r, t, "historical_unavailable_macro"
+
+    if unavail.status == "neutral_fallback":
+        r, t, fb = _neutral_macro(key, "historical_unavailable_macro_unavailable")
+        if unavail.fallback_variables:
+            fb = unavail.fallback_variables[0]
+        return r, t, fb
+
+    components: dict[str, Any] = dict(unavail.components)
+    macro_warnings = list(unavail.warnings)
+    if unavail.reason == "no_unavailable_players_for_fixture":
+        macro_warnings = [w for w in macro_warnings if w != "injuries_point_in_time_not_built_yet"]
+
+    result, trace = _macro_from_index(
+        key,
+        float(unavail.unavailable_macro_index),
+        unavail.status,
+        macro_warnings,
+        components=components,
+        source_paths=source_paths,
+    )
+    trace["mode"] = BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
+    trace["source_fixture_id"] = unavail.source_fixture_id or ctx.fixture_id
+    trace["details"] = {
+        "unavailable_count": unavail.unavailable_count,
+        "injured_count": unavail.injured_count,
+        "suspended_count": unavail.suspended_count,
+        "unavailable_source": unavail.unavailable_source,
+        "reason": unavail.reason,
+        "important_absences": [a.model_dump() for a in unavail.important_absences],
+        "top_shooter_absences": [a.model_dump() for a in unavail.top_shooter_absences],
+        "key_defender_absences": [a.model_dump() for a in unavail.key_defender_absences],
+    }
+    fallback_key = None if unavail.status in ("available", "partial_low_sample") else "historical_unavailable_macro_partial"
     return result, trace, fallback_key
 
 
@@ -438,14 +493,22 @@ def build_pit_side_preview(
     if pl_fb:
         fallbacks.append(pl_fb)
 
-    for key, fb_key, fb_msg in (
-        ("injuries_unavailable", "injuries_point_in_time_not_built_yet", "injuries_point_in_time_not_built_yet"),
-    ):
-        r, t, fb = _neutral_macro(key, fb_msg)
-        macro_results.append(r)
-        macro_traces.append(t)
-        fallbacks.append(fb_key)
-        warnings.append(fb_msg)
+    if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+        inj_r, inj_t, inj_fb = _compute_historical_unavailable_macro(ctx, is_home=is_home)
+        macro_results.append(inj_r)
+        macro_traces.append(inj_t)
+        warnings.extend(inj_r.warnings)
+        if inj_fb:
+            fallbacks.append(inj_fb)
+    else:
+        for key, fb_key, fb_msg in (
+            ("injuries_unavailable", "injuries_point_in_time_not_built_yet", "injuries_point_in_time_not_built_yet"),
+        ):
+            r, t, fb = _neutral_macro(key, fb_msg)
+            macro_results.append(r)
+            macro_traces.append(t)
+            fallbacks.append(fb_key)
+            warnings.append(fb_msg)
 
     lineup_warning = "no_historical_probable_lineups"
     if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:

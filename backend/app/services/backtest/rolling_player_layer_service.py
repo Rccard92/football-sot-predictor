@@ -7,14 +7,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models import Fixture, FixtureMissingPlayer
+from app.schemas.backtest_historical_fixture_snapshot import HistoricalFixtureSideSnapshot
 from app.schemas.backtest_historical_lineup_audit import HistoricalLineupPlayerPriorStats
 from app.schemas.backtest_point_in_time import TeamPlayerLayerPointInTime
+from app.services.backtest.historical_fixture_snapshot_service import (
+    side_bench_raw,
+    side_starters_raw,
+)
 from app.services.backtest.pit_player_rolling_stats import (
     build_mapping_summary,
     build_player_prior_stats,
-    load_sportapi_missing_by_side,
-    resolve_side_lineup,
     round4,
 )
 
@@ -87,28 +89,16 @@ class RollingPlayerLayerService:
         db: Session,
         *,
         competition_id: int,
-        fixture_id: int,
         team_id: int,
         cutoff_time: datetime,
-        side: str,
+        side_snapshot: HistoricalFixtureSideSnapshot,
         league_avg_sot_for: float | None = None,
     ) -> TeamPlayerLayerPointInTime:
-        fixture = db.get(Fixture, int(fixture_id))
-        if fixture is None:
-            return self._neutral_fallback(["fixture_not_found"])
+        coverage = side_snapshot.coverage
+        starters_raw = side_starters_raw(side_snapshot)
+        bench_raw = side_bench_raw(side_snapshot)
 
-        home_missing, away_missing = load_sportapi_missing_by_side(db, int(fixture_id))
-        missing_rows: list[FixtureMissingPlayer] = home_missing if side == "home" else away_missing
-
-        coverage, starters_raw, bench_raw, _unavailable_raw = resolve_side_lineup(
-            db,
-            fixture=fixture,
-            team_id=int(team_id),
-            side=side,
-            missing_rows=missing_rows,
-        )
-
-        if not coverage.has_official_xi or not starters_raw:
+        if side_snapshot.status == "missing" or not coverage.has_official_xi or not starters_raw:
             return self._neutral_fallback(["no_official_xi"])
 
         starters = [

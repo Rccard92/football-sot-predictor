@@ -5,6 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+from app.schemas.backtest_historical_fixture_snapshot import (
+    HistoricalFixtureOfficialSnapshot,
+    HistoricalFixtureSideSnapshot,
+)
 from app.schemas.backtest_historical_lineup_audit import HistoricalLineupSideCoverage
 from app.schemas.backtest_point_in_time import (
     ActualsForScoring,
@@ -16,6 +20,7 @@ from app.schemas.backtest_point_in_time import (
     TeamLineupMacroPointInTime,
     TeamPointInTimeStats,
     TeamSplitPointInTimeStats,
+    TeamUnavailableMacroPointInTime,
 )
 from app.services.backtest.historical_lineup_macro_service import (
     HistoricalLineupMacroService,
@@ -49,33 +54,40 @@ def test_compute_lineup_macro_index_with_continuity_boost():
     assert compute_lineup_macro_index(components) == 1.0075
 
 
-@patch("app.services.backtest.historical_lineup_macro_service.load_sportapi_missing_by_side")
-@patch("app.services.backtest.historical_lineup_macro_service.resolve_side_lineup")
-def test_absent_xi_returns_neutral_fallback(mock_resolve, mock_missing):
-    mock_missing.return_value = ([], [])
-    coverage = HistoricalLineupSideCoverage(
-        has_official_xi=False,
-        starters_count=0,
-        bench_count=0,
+@patch("app.services.backtest.historical_lineup_macro_service.load_previous_official_lineups", return_value=[])
+def test_absent_xi_returns_neutral_fallback(mock_prev):
+    del mock_prev
+    coverage = HistoricalLineupSideCoverage(has_official_xi=False, starters_count=0, bench_count=0)
+    side = HistoricalFixtureSideSnapshot(
+        team_id=1,
+        side="home",
+        status="missing",
+        coverage=coverage,
+        warnings=["target_fixture_lineup_missing"],
     )
-    mock_resolve.return_value = (coverage, [], [], [])
-
-    db = MagicMock()
-    db.get.return_value = MagicMock()
+    snapshot = HistoricalFixtureOfficialSnapshot(
+        fixture_id=146,
+        competition_id=1,
+        home_team_id=1,
+        away_team_id=2,
+        cutoff_time=_CUTOFF,
+        home=side,
+        away=side.model_copy(update={"team_id": 2, "side": "away"}),
+    )
 
     result = HistoricalLineupMacroService().build_team_lineup_macro(
-        db,
+        MagicMock(),
+        snapshot=snapshot,
         competition_id=1,
-        fixture_id=146,
         team_id=1,
-        opponent_team_id=2,
         cutoff_time=_CUTOFF,
         side="home",
     )
 
     assert result.status == "neutral_fallback"
     assert result.lineup_macro_index == 1.0
-    assert "historical_lineup_macro" in result.fallback_variables
+    assert "target_fixture_lineup_missing" in result.warnings
+    assert result.source_fixture_id == 146
 
 
 def _base_ctx(**updates) -> PointInTimeContextResponse:
@@ -178,8 +190,51 @@ def test_pre_lineup_lineups_macro_still_neutral():
     assert "no_historical_probable_lineups" in lineups.warnings
 
 
+def _sample_unavailable_macro(**updates) -> TeamUnavailableMacroPointInTime:
+    data = dict(
+        status="available",
+        unavailable_macro_index=1.0,
+        unavailable_count=0,
+        injured_count=0,
+        suspended_count=0,
+        components={"offensive_absence_penalty": 0.0, "opponent_defensive_absence_boost": 0.0},
+        reason="no_unavailable_players_for_fixture",
+        source_fixture_id=146,
+    )
+    data.update(updates)
+    return TeamUnavailableMacroPointInTime(**data)
+
+
+def test_historical_official_xi_unavailable_macro_available():
+    lineup = _sample_lineup_macro(source_fixture_id=146)
+    unavail = _sample_unavailable_macro()
+    ctx = _base_ctx(
+        mode="historical_official_xi",
+        lineup_diagnostic=LineupDiagnostic(lineup_mode="historical_official_xi", lineups_available=True),
+        home_lineup_macro=lineup,
+        away_lineup_macro=lineup,
+        home_unavailable_macro=unavail,
+        away_unavailable_macro=unavail,
+    )
+    team, opp, league = _team_opp_league()
+    result = build_pit_side_preview(
+        team=team,
+        opponent=opp,
+        league=league,
+        ctx=ctx,
+        is_home=True,
+        mode="historical_official_xi",
+    )
+    injuries = next(m for m in result.macro_results if m.key == "injuries_unavailable")
+    assert injuries.macro_index == 1.0
+    assert injuries.status == "available"
+    assert "injuries_point_in_time_not_built_yet" not in injuries.warnings
+    trace = next(t for t in result.macro_traces if t["key"] == "injuries_unavailable")
+    assert trace["source_fixture_id"] == 146
+
+
 def test_historical_official_xi_lineups_macro_available():
-    lineup = _sample_lineup_macro()
+    lineup = _sample_lineup_macro(source_fixture_id=146)
     ctx = _base_ctx(
         mode="historical_official_xi",
         lineup_diagnostic=LineupDiagnostic(lineup_mode="historical_official_xi", lineups_available=True),
@@ -202,3 +257,5 @@ def test_historical_official_xi_lineups_macro_available():
     assert "no_historical_probable_lineups" not in lineups.warnings
     assert "lineups_point_in_time_limited" not in lineups.warnings
     assert "lineups_point_in_time_neutral" not in result.fallback_variables
+    trace = next(t for t in result.macro_traces if t["key"] == "lineups")
+    assert trace.get("source_fixture_id") == 146

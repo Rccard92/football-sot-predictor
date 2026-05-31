@@ -19,6 +19,7 @@ from app.schemas.backtest_sot_v21_mini_run import (
     SotV21MiniRunFailedFixture,
     SotV21MiniRunFixtureResult,
     SotV21MiniRunLineupMacroSummary,
+    SotV21MiniRunUnavailableMacroSummary,
     SotV21MiniRunPlayerLayerSummary,
     SotV21MiniRunResponse,
     SotV21MiniRunSampleBreakdown,
@@ -278,6 +279,73 @@ def _aggregate_lineup_macro_summary(previews: list[SotV21PreviewResponse]) -> So
     )
 
 
+def _extract_unavailable_macro(side_trace) -> tuple[float | None, str | None, int, bool]:
+    if side_trace is None:
+        return None, None, 0, False
+    for macro in side_trace.macros:
+        if macro.key == "injuries_unavailable":
+            details = macro.details or {}
+            absences = details.get("important_absences") or []
+            count = len(absences) if isinstance(absences, list) else 0
+            unavailable_count = int(details.get("unavailable_count") or 0)
+            has_unavail = unavailable_count > 0
+            return macro.macro_index, macro.status, count, has_unavail
+    return None, None, 0, False
+
+
+def _fixture_unavailable_macro_bucket(home_status: str | None, away_status: str | None) -> str:
+    statuses = [s for s in (home_status, away_status) if s]
+    if not statuses:
+        return "fallback"
+    if "neutral_fallback" in statuses or "not_built_yet" in statuses:
+        return "fallback"
+    if "partial_low_sample" in statuses:
+        return "partial"
+    if all(s == "available" for s in statuses):
+        return "available"
+    if any(s in ("available", "partial_low_sample") for s in statuses):
+        return "partial"
+    return "fallback"
+
+
+def _aggregate_unavailable_macro_summary(
+    previews: list[SotV21PreviewResponse],
+) -> SotV21MiniRunUnavailableMacroSummary:
+    available = partial = fallback = 0
+    fixtures_with_unavailable = 0
+    important_absences_count = 0
+    home_indexes: list[float] = []
+    away_indexes: list[float] = []
+
+    for preview in previews:
+        home_idx, home_status, home_abs, home_has = _extract_unavailable_macro(preview.home_trace)
+        away_idx, away_status, away_abs, away_has = _extract_unavailable_macro(preview.away_trace)
+        bucket = _fixture_unavailable_macro_bucket(home_status, away_status)
+        if bucket == "available":
+            available += 1
+        elif bucket == "partial":
+            partial += 1
+        else:
+            fallback += 1
+        if home_has or away_has:
+            fixtures_with_unavailable += 1
+        important_absences_count += home_abs + away_abs
+        if home_idx is not None:
+            home_indexes.append(float(home_idx))
+        if away_idx is not None:
+            away_indexes.append(float(away_idx))
+
+    return SotV21MiniRunUnavailableMacroSummary(
+        available_count=available,
+        partial_count=partial,
+        fallback_count=fallback,
+        fixtures_with_unavailable=fixtures_with_unavailable,
+        important_absences_count=important_absences_count,
+        avg_home_unavailable_index=_mean(home_indexes),
+        avg_away_unavailable_index=_mean(away_indexes),
+    )
+
+
 def _compute_summary(results: list[SotV21MiniRunFixtureResult], *, requested: int, failed: int) -> SotV21MiniRunSummary:
     scored = [r for r in results if r.total_abs_error is not None]
     home_scored = [r for r in results if r.home_error is not None]
@@ -528,6 +596,7 @@ class SotV21MiniRunPreviewService:
             split_summary=_aggregate_split_summary(preview_snapshots),
             player_layer_summary=_aggregate_player_layer_summary(preview_snapshots),
             lineup_macro_summary=_aggregate_lineup_macro_summary(preview_snapshots),
+            unavailable_macro_summary=_aggregate_unavailable_macro_summary(preview_snapshots),
             sample_breakdown=_compute_sample_breakdown(results),
             actual_total_breakdown=_compute_actual_total_breakdown(results),
             worst_cases=worst,

@@ -43,6 +43,7 @@ class SotV21PreviewMacroTrace(BaseModel):
     source_paths: list[str] | None = None
     details: dict[str, Any] | None = None
     mode: str | None = None
+    source_fixture_id: int | None = None
 
 
 class SotV21PreviewSideTrace(BaseModel):

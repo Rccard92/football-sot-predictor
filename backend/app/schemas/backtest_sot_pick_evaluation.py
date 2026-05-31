@@ -105,6 +105,9 @@ class SotPickEvaluationFixtureResult(BaseModel):
     home_lineup_macro_index: float | None = None
     away_lineup_macro_status: str | None = None
     away_lineup_macro_index: float | None = None
+    home_unavailable_macro_index: float | None = None
+    away_unavailable_macro_index: float | None = None
+    unavailable_important_absences_count: int = 0
 
 
 class SotPickCalculatedSummary(BaseModel):

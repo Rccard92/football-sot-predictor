@@ -5,6 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+from app.schemas.backtest_historical_fixture_snapshot import (
+    HistoricalFixtureSideSnapshot,
+    HistoricalSnapshotPlayerRow,
+)
 from app.schemas.backtest_historical_lineup_audit import (
     HistoricalLineupPlayerPriorStats,
     HistoricalLineupSideCoverage,
@@ -127,14 +131,17 @@ def test_leakage_exclusion_neutral_fallback():
         bench_count=5,
         formation="4-3-3",
     )
-    starters_raw = [MagicMock()]
+    side_snapshot = HistoricalFixtureSideSnapshot(
+        team_id=1,
+        side="home",
+        status="available",
+        formation="4-3-3",
+        coverage=coverage,
+        starters=[
+            HistoricalSnapshotPlayerRow(player_name="Leaky", api_player_id=1, position="F", is_starter=True),
+        ],
+    )
     with patch(
-        "app.services.backtest.rolling_player_layer_service.load_sportapi_missing_by_side",
-        return_value=([], []),
-    ), patch(
-        "app.services.backtest.rolling_player_layer_service.resolve_side_lineup",
-        return_value=(coverage, starters_raw, [], []),
-    ), patch(
         "app.services.backtest.rolling_player_layer_service.build_player_prior_stats",
         return_value=_player(
             name="Leaky",
@@ -148,10 +155,9 @@ def test_leakage_exclusion_neutral_fallback():
         result = svc.build_team_player_layer(
             db,
             competition_id=1,
-            fixture_id=146,
             team_id=1,
             cutoff_time=_CUTOFF,
-            side="home",
+            side_snapshot=side_snapshot,
         )
     assert result.status == "neutral_fallback"
     assert result.player_layer_index == 1.0

@@ -94,6 +94,20 @@ def _lineups_macro_status_index(
     return None, None
 
 
+def _unavailable_macro_index_and_absences(
+    preview: SotV21PreviewResponse,
+    side: str,
+) -> tuple[float | None, int]:
+    trace = preview.home_trace if side == "home" else preview.away_trace
+    for macro in trace.macros:
+        if macro.key == "injuries_unavailable":
+            details = macro.details or {}
+            absences = details.get("important_absences") or []
+            count = len(absences) if isinstance(absences, list) else 0
+            return float(macro.macro_index), count
+    return None, 0
+
+
 def _to_play_advice_schema(advice: PlayAdviceResult) -> SotPickPlayAdvice:
     return SotPickPlayAdvice(
         play_advice=advice.play_advice,
@@ -211,6 +225,8 @@ def _evaluate_fixture(
 
     home_lineup_status, home_lineup_index = _lineups_macro_status_index(preview, "home")
     away_lineup_status, away_lineup_index = _lineups_macro_status_index(preview, "away")
+    home_unavail_index, home_absences = _unavailable_macro_index_and_absences(preview, "home")
+    away_unavail_index, away_absences = _unavailable_macro_index_and_absences(preview, "away")
 
     return SotPickEvaluationFixtureResult(
         fixture_id=int(preview.fixture_id),
@@ -235,6 +251,9 @@ def _evaluate_fixture(
         home_lineup_macro_index=_round4(home_lineup_index),
         away_lineup_macro_status=away_lineup_status,
         away_lineup_macro_index=_round4(away_lineup_index),
+        home_unavailable_macro_index=_round4(home_unavail_index),
+        away_unavailable_macro_index=_round4(away_unavail_index),
+        unavailable_important_absences_count=int(home_absences + away_absences),
     )
 
 

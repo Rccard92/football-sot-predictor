@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.backtest_historical_fixture_snapshot import HistoricalFixtureOfficialSnapshot
+
 
 class BacktestFixtureTeamBrief(BaseModel):
     id: int
@@ -82,6 +84,34 @@ class TeamLineupMacroPointInTime(BaseModel):
     components: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     fallback_variables: list[str] = Field(default_factory=list)
+    source_fixture_id: int | None = None
+
+
+class TeamUnavailableAbsenceBrief(BaseModel):
+    player_name: str
+    role: str | None = None
+    absence_group: str | None = None
+    offensive_absence_score: float | None = None
+    prior_sot_per90: float | None = None
+    prior_team_sot_share: float | None = None
+    mapping_status: str | None = None
+
+
+class TeamUnavailableMacroPointInTime(BaseModel):
+    status: str = "neutral_fallback"
+    unavailable_macro_index: float = 1.0
+    unavailable_count: int = 0
+    injured_count: int = 0
+    suspended_count: int = 0
+    important_absences: list[TeamUnavailableAbsenceBrief] = Field(default_factory=list)
+    top_shooter_absences: list[TeamUnavailableAbsenceBrief] = Field(default_factory=list)
+    key_defender_absences: list[TeamUnavailableAbsenceBrief] = Field(default_factory=list)
+    components: dict[str, float] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    fallback_variables: list[str] = Field(default_factory=list)
+    reason: str | None = None
+    source_fixture_id: int | None = None
+    unavailable_source: str = "none"
 
 
 class TeamSplitPointInTimeStats(BaseModel):
@@ -157,6 +187,9 @@ class PointInTimeContextResponse(BaseModel):
     away_player_layer: TeamPlayerLayerPointInTime | None = None
     home_lineup_macro: TeamLineupMacroPointInTime | None = None
     away_lineup_macro: TeamLineupMacroPointInTime | None = None
+    home_unavailable_macro: TeamUnavailableMacroPointInTime | None = None
+    away_unavailable_macro: TeamUnavailableMacroPointInTime | None = None
+    fixture_snapshot: HistoricalFixtureOfficialSnapshot | None = None
     league_baselines: LeaguePointInTimeBaselines
     home_player_stats: PlayerStatsDiagnostic
     away_player_stats: PlayerStatsDiagnostic

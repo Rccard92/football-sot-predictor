@@ -2409,6 +2409,7 @@ export type SotV21PreviewResponse = {
         formation_changed_vs_common?: boolean | null
       } | null
       mode?: string | null
+      source_fixture_id?: number | null
     }[]
   }
   away_trace: SotV21PreviewResponse['home_trace']
@@ -2545,6 +2546,15 @@ export type SotV21MiniRunResponse = {
     avg_home_xi_continuity_pct?: number | null
     avg_away_xi_continuity_pct?: number | null
   }
+  unavailable_macro_summary?: {
+    available_count: number
+    partial_count: number
+    fallback_count: number
+    fixtures_with_unavailable: number
+    important_absences_count: number
+    avg_home_unavailable_index?: number | null
+    avg_away_unavailable_index?: number | null
+  }
   sample_breakdown: {
     early_low_sample: SotV21MiniRunBucketStats
     medium_sample: SotV21MiniRunBucketStats
@@ -2641,6 +2651,9 @@ export type SotPickEvaluationFixtureResult = {
   home_lineup_macro_index?: number | null
   away_lineup_macro_status?: string | null
   away_lineup_macro_index?: number | null
+  home_unavailable_macro_index?: number | null
+  away_unavailable_macro_index?: number | null
+  unavailable_important_absences_count?: number
 }
 
 export type SotPickBreakdownStats = {

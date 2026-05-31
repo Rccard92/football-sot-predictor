@@ -59,6 +59,16 @@ class SotV21MiniRunLineupMacroSummary(BaseModel):
     avg_away_xi_continuity_pct: float | None = None
 
 
+class SotV21MiniRunUnavailableMacroSummary(BaseModel):
+    available_count: int = 0
+    partial_count: int = 0
+    fallback_count: int = 0
+    fixtures_with_unavailable: int = 0
+    important_absences_count: int = 0
+    avg_home_unavailable_index: float | None = None
+    avg_away_unavailable_index: float | None = None
+
+
 class SotV21MiniRunSummary(BaseModel):
     fixtures_requested: int = 0
     fixtures_processed: int = 0
@@ -166,6 +176,9 @@ class SotV21MiniRunResponse(BaseModel):
     )
     lineup_macro_summary: SotV21MiniRunLineupMacroSummary = Field(
         default_factory=SotV21MiniRunLineupMacroSummary,
+    )
+    unavailable_macro_summary: SotV21MiniRunUnavailableMacroSummary = Field(
+        default_factory=SotV21MiniRunUnavailableMacroSummary,
     )
     sample_breakdown: SotV21MiniRunSampleBreakdown = Field(default_factory=SotV21MiniRunSampleBreakdown)
     actual_total_breakdown: SotV21MiniRunActualTotalBreakdown = Field(

@@ -8,6 +8,50 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-jk-historical-lineup-unavailable
+
+**Titolo:** Lineup e indisponibili storici da fixture target esatta
+
+**Descrizione:** Aggiunte macro Lineups e Indisponibili in modalità `historical_official_xi`, usando XI, panchina e indisponibili della fixture target esatta e rolling player stats solo pre-kickoff.
+
+**Highlights:**
+
+- Snapshot storico unificato per fixture target (`HistoricalFixtureSnapshotService`).
+- Macro lineup storica (Step J) refactor su snapshot condiviso.
+- Macro indisponibili storica (Step K) con penalità offensive e boost difensivo avversario prudente.
+- `source_fixture_id` tracciato in preview trace.
+- Warning `not_built_yet` rimossi in `historical_official_xi` quando dati disponibili.
+- Nessun uso di formazioni precedenti/successive per la lineup target.
+- Mini-run `unavailable_macro_summary`; pick eval con index indisponibili.
+- Nessun salvataggio DB; `pre_lineup` invariato.
+
+**File toccati:**
+
+- `backend/app/services/backtest/historical_fixture_snapshot_service.py` (nuovo)
+- `backend/app/services/backtest/historical_unavailable_macro_service.py` (nuovo)
+- `backend/app/schemas/backtest_historical_fixture_snapshot.py` (nuovo)
+- `backend/app/services/backtest/historical_lineup_macro_service.py`
+- `backend/app/services/backtest/rolling_player_layer_service.py`
+- `backend/app/services/backtest/sot_v21_preview_service.py`
+- `backend/app/services/backtest/sot_v21_pit_macro_builder.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/app/services/backtest/sot_pick_evaluation_preview_service.py`
+- `backend/app/schemas/backtest_point_in_time.py`
+- `backend/app/schemas/backtest_sot_v21_preview.py`
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `backend/app/schemas/backtest_sot_pick_evaluation.py`
+- `backend/tests/test_historical_fixture_snapshot.py` (nuovo)
+- `backend/tests/test_historical_unavailable_macro.py` (nuovo)
+- `backend/tests/test_historical_lineup_macro.py`
+- `backend/tests/test_rolling_player_layer.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-j-historical-lineup-macro
 
 **Titolo:** Step J — Historical Lineup Macro (macro `lineups` peso 5)
