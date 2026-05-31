@@ -50,15 +50,26 @@ class SportApiUnavailablePersistService:
         force_refresh: bool = True,
     ) -> dict[str, Any]:
         fid = int(fixture_id)
-        persistable = [r for r in rows if r.persistable and r.provider_player_id is not None]
-        skipped = len(rows) - len(persistable)
+        raw_persistable = [r for r in rows if r.persistable and r.provider_player_id is not None]
+        skipped = len(rows) - len(raw_persistable)
+
+        seen_input: set[tuple[str, int, str]] = set()
+        persistable: list[NormalizedUnavailableRow] = []
+        input_duplicate_skipped = 0
+        for row in raw_persistable:
+            key = (str(row.team_side), int(row.provider_player_id), str(row.status))  # type: ignore[arg-type]
+            if key in seen_input:
+                input_duplicate_skipped += 1
+                continue
+            seen_input.add(key)
+            persistable.append(row)
 
         if dry_run:
             return {
                 "would_write_count": len(persistable),
                 "skipped_missing_provider_player_id": skipped,
                 "written_count": 0,
-                "skipped_duplicate_count": 0,
+                "skipped_duplicate_count": input_duplicate_skipped,
             }
 
         if force_refresh:
@@ -88,13 +99,6 @@ class SportApiUnavailablePersistService:
             key = (fid, row.team_side, int(row.provider_player_id))  # type: ignore[arg-type]
             ex = existing_by_key.get(key)
             if ex is not None and not force_refresh:
-                ex_status = str(ex.external_type or ex.reason or "")
-                ex_path = ""
-                if isinstance(ex.raw_payload, dict):
-                    ex_path = str(ex.raw_payload.get("_source_path") or "")
-                if ex_status == row.status and ex_path == row.source_path:
-                    skipped_duplicate += 1
-                    continue
                 ex.player_name = row.player_name[:255]
                 ex.position = row.position
                 ex.jersey_number = row.jersey_number
@@ -136,5 +140,5 @@ class SportApiUnavailablePersistService:
             "would_write_count": len(persistable),
             "skipped_missing_provider_player_id": skipped,
             "written_count": written,
-            "skipped_duplicate_count": skipped_duplicate,
+            "skipped_duplicate_count": skipped_duplicate + input_duplicate_skipped,
         }

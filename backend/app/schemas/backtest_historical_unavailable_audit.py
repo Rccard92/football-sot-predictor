@@ -23,6 +23,8 @@ class HistoricalUnavailableAuditFixtureSample(BaseModel):
     home_suspended_count: int = 0
     away_suspended_count: int = 0
     source_paths: list[str] = Field(default_factory=list)
+    source_paths_used_for_counts: list[str] = Field(default_factory=list)
+    source_paths_detected_diagnostic: list[str] = Field(default_factory=list)
     players: list[HistoricalUnavailableAuditPlayerSample] = Field(default_factory=list)
 
 
@@ -46,6 +48,8 @@ class HistoricalUnavailableAuditResponse(BaseModel):
         default_factory=list,
     )
     source_paths_found: list[str] = Field(default_factory=list)
+    source_paths_used_for_counts: list[str] = Field(default_factory=list)
+    source_paths_detected_diagnostic: list[str] = Field(default_factory=list)
     raw_json_keys_detected: list[str] = Field(default_factory=list)
     storage_checked: list[str] = Field(default_factory=list)
     verdict: str = "unavailable_not_found_in_current_storage"

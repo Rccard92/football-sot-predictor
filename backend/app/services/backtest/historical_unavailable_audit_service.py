@@ -15,6 +15,7 @@ from app.schemas.backtest_historical_unavailable_audit import (
     HistoricalUnavailableAuditResponse,
 )
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
+from app.services.backtest.pit_unavailable_dedup import dedupe_missing_player_rows
 from app.services.backtest.pit_unavailable_parsing import (
     detect_raw_json_unavailable_keys,
     parse_unavailable_from_payload,
@@ -40,7 +41,6 @@ class _SideUnavailableCounts:
     total: int = 0
     injured: int = 0
     suspended: int = 0
-    source_paths: set[str] = field(default_factory=set)
     players: list[HistoricalUnavailableAuditPlayerSample] = field(default_factory=list)
 
 
@@ -54,6 +54,8 @@ class _FixtureUnavailableScan:
     away: _SideUnavailableCounts = field(default_factory=_SideUnavailableCounts)
     raw_json_keys: set[str] = field(default_factory=set)
     has_missing_players_rows: bool = False
+    source_paths_used_for_counts: set[str] = field(default_factory=set)
+    source_paths_detected_diagnostic: set[str] = field(default_factory=set)
 
     @property
     def total_unavailable(self) -> int:
@@ -69,7 +71,7 @@ class _FixtureUnavailableScan:
 
     @property
     def source_paths(self) -> set[str]:
-        return self.home.source_paths | self.away.source_paths
+        return self.source_paths_used_for_counts | self.source_paths_detected_diagnostic
 
 
 class HistoricalUnavailableAuditService:
@@ -90,7 +92,6 @@ class HistoricalUnavailableAuditService:
                 external_type=row.external_type,
             )
             counts.total += 1
-            counts.source_paths.add("fixture_missing_players.sportapi")
             if grp == "injured":
                 counts.injured += 1
             elif grp == "suspended":
@@ -115,7 +116,7 @@ class HistoricalUnavailableAuditService:
         if not rows:
             return
         counts = scan.home if side == "home" else scan.away
-        counts.source_paths.add(source_path)
+        scan.source_paths_used_for_counts.add(source_path)
         for row in rows:
             counts.total += 1
             grp = row.absence_group or "other"
@@ -130,6 +131,83 @@ class HistoricalUnavailableAuditService:
                     side=side,
                 ),
             )
+
+    def _collect_raw_diagnostic(
+        self,
+        scan: _FixtureUnavailableScan,
+        *,
+        fixture: Fixture,
+        db: Session,
+    ) -> tuple[list[tuple[str, str, list]], list[tuple[str, str, list]]]:
+        """Raccoglie chiavi/path raw e payload parsabili (solo fallback conteggi)."""
+        provider_fallback: list[tuple[str, str, list]] = []
+        lineup_fallback: list[tuple[str, str, list]] = []
+
+        lineup_rows = db.scalars(
+            select(FixtureLineup).where(FixtureLineup.fixture_id == int(fixture.id)),
+        ).all()
+        for lineup_row in lineup_rows:
+            if not lineup_row.raw_json:
+                continue
+            scan.raw_json_keys.update(detect_raw_json_unavailable_keys(lineup_row.raw_json))
+            side = "home" if int(lineup_row.team_id) == int(fixture.home_team_id) else "away"
+            parsed = parse_unavailable_from_payload(lineup_row.raw_json)
+            if parsed:
+                scan.source_paths_detected_diagnostic.add("fixture_lineups.raw_json")
+                lineup_fallback.append((side, "fixture_lineups.raw_json", parsed))
+
+        provider_row = db.scalar(
+            select(FixtureProviderLineup).where(
+                FixtureProviderLineup.fixture_id == int(fixture.id),
+                FixtureProviderLineup.provider_name == PROVIDER_SPORTAPI,
+            ),
+        )
+        if provider_row and provider_row.raw_payload:
+            scan.raw_json_keys.update(detect_raw_json_unavailable_keys(provider_row.raw_payload))
+            mapping = db.scalar(
+                select(FixtureProviderMapping).where(
+                    FixtureProviderMapping.fixture_id == int(fixture.id),
+                    FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
+                ),
+            )
+            provider_event_id = (
+                int(provider_row.provider_event_id)
+                if provider_row.provider_event_id is not None
+                else int(mapping.provider_event_id) if mapping else 0
+            )
+            parsed_sportapi = parse_sportapi_unavailable_from_lineup_payload(
+                provider_row.raw_payload,
+                internal_fixture_id=int(fixture.id),
+                provider_event_id=provider_event_id,
+                home_team_id=int(fixture.home_team_id),
+                away_team_id=int(fixture.away_team_id),
+                provider_home_team_id=mapping.provider_home_team_id if mapping else None,
+                provider_away_team_id=mapping.provider_away_team_id if mapping else None,
+            )
+            scan.raw_json_keys.update(collect_detected_paths(parsed_sportapi))
+            for side in ("home", "away"):
+                side_rows = normalized_rows_to_raw_players(parsed_sportapi, team_side=side)
+                if side_rows:
+                    scan.source_paths_detected_diagnostic.add("fixture_provider_lineups.raw_payload")
+                    provider_fallback.append(
+                        (side, "fixture_provider_lineups.raw_payload", side_rows),
+                    )
+
+        return provider_fallback, lineup_fallback
+
+    def _apply_raw_fallback(
+        self,
+        scan: _FixtureUnavailableScan,
+        *,
+        provider_fallback: list[tuple[str, str, list]],
+        lineup_fallback: list[tuple[str, str, list]],
+    ) -> None:
+        if provider_fallback:
+            for side, path, rows in provider_fallback:
+                self._add_parsed_rows(scan, side=side, rows=rows, source_path=path)
+            return
+        for side, path, rows in lineup_fallback:
+            self._add_parsed_rows(scan, side=side, rows=rows, source_path=path)
 
     def _scan_fixture(
         self,
@@ -147,71 +225,40 @@ class HistoricalUnavailableAuditService:
             away_team=away_name,
         )
 
-        missing_rows = db.scalars(
-            select(FixtureMissingPlayer).where(FixtureMissingPlayer.fixture_id == fid),
-        ).all()
-        if missing_rows:
-            scan.has_missing_players_rows = True
-        self._add_missing_players(scan, missing_rows=list(missing_rows))
-
-        lineup_rows = db.scalars(
-            select(FixtureLineup).where(FixtureLineup.fixture_id == fid),
-        ).all()
-        for lineup_row in lineup_rows:
-            if lineup_row.raw_json:
-                scan.raw_json_keys.update(detect_raw_json_unavailable_keys(lineup_row.raw_json))
-                side = "home" if int(lineup_row.team_id) == int(fixture.home_team_id) else "away"
-                parsed = parse_unavailable_from_payload(lineup_row.raw_json)
-                self._add_parsed_rows(
-                    scan,
-                    side=side,
-                    rows=parsed,
-                    source_path="fixture_lineups.raw_json",
-                )
-
-        provider_row = db.scalar(
-            select(FixtureProviderLineup).where(
-                FixtureProviderLineup.fixture_id == fid,
-                FixtureProviderLineup.provider_name == PROVIDER_SPORTAPI,
-            ),
+        missing_query = select(FixtureMissingPlayer).where(
+            FixtureMissingPlayer.fixture_id == fid,
+            FixtureMissingPlayer.provider_name == PROVIDER_SPORTAPI,
         )
-        if provider_row and provider_row.raw_payload:
-            scan.raw_json_keys.update(detect_raw_json_unavailable_keys(provider_row.raw_payload))
-            mapping = db.scalar(
-                select(FixtureProviderMapping).where(
-                    FixtureProviderMapping.fixture_id == fid,
-                    FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
-                ),
+        if fixture.competition_id is not None:
+            missing_query = missing_query.where(
+                FixtureMissingPlayer.competition_id == int(fixture.competition_id),
             )
-            provider_event_id = (
-                int(provider_row.provider_event_id)
-                if provider_row.provider_event_id is not None
-                else int(mapping.provider_event_id) if mapping else 0
+        missing_rows = list(db.scalars(missing_query).all())
+        normalized_rows = dedupe_missing_player_rows(missing_rows)
+
+        provider_fallback, lineup_fallback = self._collect_raw_diagnostic(
+            scan,
+            fixture=fixture,
+            db=db,
+        )
+
+        if normalized_rows:
+            scan.has_missing_players_rows = True
+            scan.source_paths_used_for_counts.add("fixture_missing_players.sportapi")
+            self._add_missing_players(scan, missing_rows=normalized_rows)
+        else:
+            self._apply_raw_fallback(
+                scan,
+                provider_fallback=provider_fallback,
+                lineup_fallback=lineup_fallback,
             )
-            parsed_sportapi = parse_sportapi_unavailable_from_lineup_payload(
-                provider_row.raw_payload,
-                internal_fixture_id=fid,
-                provider_event_id=provider_event_id,
-                home_team_id=int(fixture.home_team_id),
-                away_team_id=int(fixture.away_team_id),
-                provider_home_team_id=mapping.provider_home_team_id if mapping else None,
-                provider_away_team_id=mapping.provider_away_team_id if mapping else None,
-            )
-            scan.raw_json_keys.update(collect_detected_paths(parsed_sportapi))
-            for side in ("home", "away"):
-                side_rows = normalized_rows_to_raw_players(parsed_sportapi, team_side=side)
-                if side_rows:
-                    self._add_parsed_rows(
-                        scan,
-                        side=side,
-                        rows=side_rows,
-                        source_path="fixture_provider_lineups.raw_payload",
-                    )
 
         return scan
 
     def _to_sample(self, scan: _FixtureUnavailableScan) -> HistoricalUnavailableAuditFixtureSample:
         players = scan.home.players + scan.away.players
+        used = sorted(scan.source_paths_used_for_counts)
+        diagnostic = sorted(scan.source_paths_detected_diagnostic)
         return HistoricalUnavailableAuditFixtureSample(
             fixture_id=scan.fixture_id,
             round=scan.round,
@@ -224,6 +271,8 @@ class HistoricalUnavailableAuditService:
             home_suspended_count=scan.home.suspended,
             away_suspended_count=scan.away.suspended,
             source_paths=sorted(scan.source_paths),
+            source_paths_used_for_counts=used,
+            source_paths_detected_diagnostic=diagnostic,
             players=players[:20],
         )
 
@@ -252,6 +301,8 @@ class HistoricalUnavailableAuditService:
 
         scans: list[_FixtureUnavailableScan] = []
         all_source_paths: set[str] = set()
+        all_used_paths: set[str] = set()
+        all_diagnostic_paths: set[str] = set()
         all_raw_keys: set[str] = set()
 
         for candidate in selection.items:
@@ -268,6 +319,8 @@ class HistoricalUnavailableAuditService:
             )
             scans.append(scan)
             all_source_paths.update(scan.source_paths)
+            all_used_paths.update(scan.source_paths_used_for_counts)
+            all_diagnostic_paths.update(scan.source_paths_detected_diagnostic)
             all_raw_keys.update(scan.raw_json_keys)
 
         fixtures_with_unavailable = sum(1 for s in scans if s.total_unavailable > 0)
@@ -307,6 +360,8 @@ class HistoricalUnavailableAuditService:
             total_suspended_players=total_suspended,
             sample_fixtures_with_unavailable=[self._to_sample(s) for s in samples],
             source_paths_found=sorted(all_source_paths),
+            source_paths_used_for_counts=sorted(all_used_paths),
+            source_paths_detected_diagnostic=sorted(all_diagnostic_paths),
             raw_json_keys_detected=sorted(all_raw_keys),
             storage_checked=list(_STORAGE_CHECKED),
             verdict=verdict,

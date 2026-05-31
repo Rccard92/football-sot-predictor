@@ -23,6 +23,7 @@ from app.models import (
     PlayerProviderMapping,
 )
 from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI
+from app.services.backtest.pit_unavailable_dedup import dedupe_missing_player_rows
 from app.schemas.backtest_historical_lineup_audit import (
     HistoricalLineupPlayerMappingSummary,
     HistoricalLineupPlayerPriorStats,
@@ -81,14 +82,14 @@ def load_sportapi_missing_by_side(
             ),
         ).all(),
     )
-    home = [m for m in missing if m.team_side == "home"]
-    away = [m for m in missing if m.team_side == "away"]
+    home = dedupe_missing_player_rows([m for m in missing if m.team_side == "home"])
+    away = dedupe_missing_player_rows([m for m in missing if m.team_side == "away"])
     return home, away
 
 
 def missing_to_rows(missing_rows: list[FixtureMissingPlayer]) -> list[RawPlayerRow]:
     rows: list[RawPlayerRow] = []
-    for m in missing_rows:
+    for m in dedupe_missing_player_rows(missing_rows):
         grp = classify_missing_group(
             reason=m.reason,
             description=m.description,

@@ -2979,9 +2979,13 @@ export type HistoricalUnavailableAuditResponse = {
     home_suspended_count: number
     away_suspended_count: number
     source_paths: string[]
+    source_paths_used_for_counts?: string[]
+    source_paths_detected_diagnostic?: string[]
     players: { player_name: string; absence_group: string; side: string }[]
   }[]
   source_paths_found: string[]
+  source_paths_used_for_counts?: string[]
+  source_paths_detected_diagnostic?: string[]
   raw_json_keys_detected: string[]
   storage_checked: string[]
   verdict: string

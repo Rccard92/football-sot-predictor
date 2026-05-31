@@ -3424,7 +3424,19 @@ export function BacktestDebugPanel() {
                   {jk1AuditJson.total_suspended_players})
                 </div>
                 <div>
-                  <span className="font-medium">Source paths:</span>{' '}
+                  <span className="font-medium">Used for counts:</span>{' '}
+                  {(jk1AuditJson.source_paths_used_for_counts ?? []).length > 0
+                    ? (jk1AuditJson.source_paths_used_for_counts ?? []).join(', ')
+                    : '—'}
+                </div>
+                <div>
+                  <span className="font-medium">Diagnostic only:</span>{' '}
+                  {(jk1AuditJson.source_paths_detected_diagnostic ?? []).length > 0
+                    ? (jk1AuditJson.source_paths_detected_diagnostic ?? []).join(', ')
+                    : '—'}
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="font-medium">All source paths:</span>{' '}
                   {jk1AuditJson.source_paths_found.length > 0
                     ? jk1AuditJson.source_paths_found.join(', ')
                     : '—'}
@@ -3450,7 +3462,8 @@ export function BacktestDebugPanel() {
                       <th className="px-2 py-1">Match</th>
                       <th className="px-2 py-1">H unavail</th>
                       <th className="px-2 py-1">A unavail</th>
-                      <th className="px-2 py-1">Source paths</th>
+                      <th className="px-2 py-1">Used paths</th>
+                      <th className="px-2 py-1">Diagnostic</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3462,7 +3475,12 @@ export function BacktestDebugPanel() {
                         </td>
                         <td className="px-2 py-1">{row.home_unavailable_count}</td>
                         <td className="px-2 py-1">{row.away_unavailable_count}</td>
-                        <td className="px-2 py-1">{row.source_paths.join(', ')}</td>
+                        <td className="px-2 py-1">
+                          {(row.source_paths_used_for_counts ?? row.source_paths).join(', ') || '—'}
+                        </td>
+                        <td className="px-2 py-1">
+                          {(row.source_paths_detected_diagnostic ?? []).join(', ') || '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

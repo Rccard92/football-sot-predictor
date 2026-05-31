@@ -231,6 +231,11 @@ class HistoricalFixtureSnapshotService:
 
         home = _build_side(int(fixture.home_team_id), "home", home_missing)
         away = _build_side(int(fixture.away_team_id), "away", away_missing)
+        if home.unavailable_source in ("provider_raw_payload", "raw_json") or away.unavailable_source in (
+            "provider_raw_payload",
+            "raw_json",
+        ):
+            global_warnings.append("unavailable_found_in_raw_not_normalized")
         if home.status == "missing":
             global_warnings.append("target_fixture_lineup_missing")
         if away.status == "missing":

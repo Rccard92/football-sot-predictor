@@ -49,11 +49,14 @@ _MOCK_FOUND = HistoricalUnavailableAuditResponse(
             away_team="Sassuolo",
             home_unavailable_count=2,
             away_unavailable_count=1,
-            source_paths=["fixture_missing_players"],
-            players=[],
+            source_paths=["fixture_missing_players.sportapi"],
+            source_paths_used_for_counts=["fixture_missing_players.sportapi"],
+            source_paths_detected_diagnostic=[],
         ),
     ],
-    source_paths_found=["fixture_missing_players"],
+    source_paths_found=["fixture_missing_players.sportapi"],
+    source_paths_used_for_counts=["fixture_missing_players.sportapi"],
+    source_paths_detected_diagnostic=[],
 )
 
 

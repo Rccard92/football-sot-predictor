@@ -18,6 +18,41 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-k4-deduplicate-unavailable
+
+**Titolo:** Deduplica indisponibili SportAPI (audit JK.1 / macro K)
+
+**Descrizione:** Corretto doppio conteggio audit quando coesistono righe normalizzate in `fixture_missing_players` e payload raw SportAPI. Introdotto dedupe condiviso per chiave giocatore e separazione path usati vs diagnostici.
+
+**Highlights:**
+
+- Helper `pit_unavailable_dedup.py`: dedupe per `(fixture_id, team_side, provider_player_id, absence_group)`.
+- Audit JK.1: conteggi solo da normalized se presente; raw in `source_paths_detected_diagnostic`.
+- Schema/UI: `source_paths_used_for_counts`, `source_paths_detected_diagnostic`.
+- Snapshot/macro K: dedupe su missing rows e unavailable raw; raw fallback solo se normalized=0.
+- Persist: dedupe input backfill + upsert robusto su chiave naturale.
+- Nessuna modifica formule/pesi v2.1; nessuna scrittura tabelle backtest.
+
+**File toccati:**
+
+- `backend/app/services/backtest/pit_unavailable_dedup.py` (nuovo)
+- `backend/app/services/backtest/historical_unavailable_audit_service.py`
+- `backend/app/services/backtest/pit_player_rolling_stats.py`
+- `backend/app/services/backtest/historical_fixture_snapshot_service.py`
+- `backend/app/services/backtest/historical_unavailable_macro_service.py`
+- `backend/app/services/sportapi/sportapi_unavailable_persist_service.py`
+- `backend/app/schemas/backtest_historical_unavailable_audit.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `backend/tests/test_unavailable_dedup.py` (nuovo)
+- `backend/tests/test_historical_unavailable_audit.py`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md` (§26/§27)
+- `docs/BACKTEST_ENGINE_CHANGELOG.md` (questa entry)
+
+---
+
 ## backtest-step-k4-bulk-sportapi-mapping-unavailable
 
 **Titolo:** Bulk mapping e indisponibili SportAPI

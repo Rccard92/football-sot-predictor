@@ -14,6 +14,7 @@ from app.schemas.backtest_point_in_time import (
     TeamUnavailableAbsenceBrief,
     TeamUnavailableMacroPointInTime,
 )
+from app.services.backtest.pit_unavailable_dedup import dedupe_raw_unavailable_rows
 from app.services.backtest.historical_fixture_snapshot_service import side_unavailable_raw
 from app.services.backtest.pit_player_rolling_stats import build_player_prior_stats, round4
 
@@ -116,8 +117,14 @@ class HistoricalUnavailableMacroService:
     ) -> TeamUnavailableMacroPointInTime:
         del team_id
         side_snap = snapshot.home if side == "home" else snapshot.away
-        unavailable_raw = side_unavailable_raw(side_snap)
-        opponent_unavail = side_unavailable_raw(opponent_side)
+        unavailable_raw = dedupe_raw_unavailable_rows(
+            side_unavailable_raw(side_snap),
+            fixture_id=int(snapshot.fixture_id),
+        )
+        opponent_unavail = dedupe_raw_unavailable_rows(
+            side_unavailable_raw(opponent_side),
+            fixture_id=int(snapshot.fixture_id),
+        )
 
         baseline = float(league_avg_sot_for or 1.0)
         warnings: list[str] = []

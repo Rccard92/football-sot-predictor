@@ -1048,19 +1048,20 @@ Invariante: fixture target 146/359 in `historical_official_xi` → tutti e 4 i c
 
 `GET /api/backtest/debug/historical-unavailable-audit` — `HistoricalUnavailableAuditService` scansiona per fixture:
 
-1. `fixture_missing_players` (classify injured/suspended)
-2. `fixture_lineups.raw_json` (parser condiviso `pit_unavailable_parsing.py`)
-3. `fixture_provider_lineups.raw_payload`
+1. **`fixture_missing_players` (SportAPI)** — fonte primaria per conteggi quando presente (con dedupe per chiave giocatore)
+2. `fixture_lineups.raw_json` e `fixture_provider_lineups.raw_payload` — **solo diagnostica** se esistono righe normalizzate; fallback conteggi solo se `normalized_count=0`
+
+Parser condiviso: `pit_unavailable_parsing.py`. Deduplica: `pit_unavailable_dedup.py` (chiave `fixture_id + team_side + provider_player_id + absence_group + sportapi`, fallback nome normalizzato).
 
 Solo fixture corrente, nessun fallback su fixture vicine.
 
 **Verdict:**
 
-- `unavailable_found_in_storage` se righe in `fixture_missing_players`
+- `unavailable_found_normalized` se righe in `fixture_missing_players` (SportAPI)
 - `unavailable_found_in_raw_not_normalized` se chiavi raw ma nessuna riga normalizzata
 - `unavailable_not_found_in_current_storage` se zero (non errore HTTP)
 
-Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 10, `raw_json_keys_detected`.
+Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 10, `raw_json_keys_detected`, `source_paths_used_for_counts`, `source_paths_detected_diagnostic`.
 
 **Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-jk1-validation-audit`).
 
@@ -1087,8 +1088,9 @@ Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 
 
 ### Macro K e audit
 
-- `HistoricalFixtureSnapshotService` legge `fixture_missing_players` (SportAPI), poi fallback `raw_payload` provider, poi `fixture_lineups.raw_json`
-- Audit JK.1: verdict aggiuntivo `unavailable_found_in_raw_not_normalized` se chiavi raw presenti ma nessuna riga in `fixture_missing_players`
+- `HistoricalFixtureSnapshotService` legge `fixture_missing_players` (SportAPI, deduplicato), poi fallback `raw_payload` provider, poi `fixture_lineups.raw_json` **solo se normalized_count=0**
+- Audit JK.1: conteggi da `fixture_missing_players` quando presente; raw solo diagnostico o fallback
+- Persist backfill: dedupe input `(team_side, provider_player_id, status)` + upsert su chiave `(fixture_id, team_side, provider_player_id)`
 
 ### Regole
 
