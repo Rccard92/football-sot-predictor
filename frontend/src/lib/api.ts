@@ -2534,6 +2534,159 @@ export async function postBacktestSotV21MiniRun(
   return requestPostJson<SotV21MiniRunResponse>('/api/backtest/debug/sot-v21-mini-run', body)
 }
 
+// --- Backtest Engine Step G2A (Historical Official XI Audit) ---
+
+export type HistoricalLineupPlayerPriorStats = {
+  player_name: string
+  provider_player_id?: number | null
+  internal_player_id?: number | null
+  api_player_id?: number | null
+  role?: string | null
+  is_starter: boolean
+  prior_minutes: number
+  prior_shots_total: number
+  prior_shots_on: number
+  prior_sot_per90?: number | null
+  prior_shots_per90?: number | null
+  prior_team_sot_share?: number | null
+  prior_matches_count: number
+  latest_player_stat_fixture_used_at?: string | null
+  mapping_status: string
+  warnings: string[]
+}
+
+export type HistoricalLineupSideAudit = {
+  team_id: number
+  team_name: string
+  coverage: {
+    has_official_xi: boolean
+    starters_count: number
+    bench_count: number
+    unavailable_count: number
+    injured_count: number
+    suspended_count: number
+    formation?: string | null
+    source_table?: string | null
+    source_provider?: string | null
+    source_timestamp?: string | null
+    is_timestamp_safe: boolean
+    source_timestamp_status: string
+    warnings: string[]
+  }
+  mapping: {
+    starters_with_provider_player_id: number
+    starters_with_internal_player_id: number
+    starters_matched_to_fixture_player_stats_prior: number
+    starters_missing_prior_stats: number
+    bench_with_provider_player_id: number
+    unavailable_with_provider_player_id: number
+    mapping_coverage_pct?: number | null
+    player_stats_prior_coverage_pct?: number | null
+  }
+  starters: HistoricalLineupPlayerPriorStats[]
+  bench: HistoricalLineupPlayerPriorStats[]
+  unavailable: HistoricalLineupPlayerPriorStats[]
+}
+
+export type HistoricalLineupAuditFixtureResponse = {
+  status: string
+  preview_only: boolean
+  db_writes: boolean
+  audit_mode: string
+  future_mode_hint: string
+  competition_id: number
+  competition_name: string
+  fixture_id: number
+  round?: string | null
+  kickoff_at: string
+  cutoff_time: string
+  fixture_status: string
+  home_team: string
+  away_team: string
+  home_team_id: number
+  away_team_id: number
+  home: HistoricalLineupSideAudit
+  away: HistoricalLineupSideAudit
+  warnings: string[]
+  feature_snapshot_json: Record<string, unknown>
+}
+
+export type HistoricalLineupAuditRoundFixtureBrief = {
+  fixture_id: number
+  match: string
+  round?: string | null
+  kickoff_at: string
+  home_has_official_xi: boolean
+  away_has_official_xi: boolean
+  home_starters_count: number
+  away_starters_count: number
+  home_mapping_coverage_pct?: number | null
+  away_mapping_coverage_pct?: number | null
+  home_prior_stats_coverage_pct?: number | null
+  away_prior_stats_coverage_pct?: number | null
+  unavailable_data_present: boolean
+  source_timestamp_status: string
+  warnings: string[]
+}
+
+export type HistoricalLineupAuditRoundResponse = {
+  status: string
+  preview_only: boolean
+  db_writes: boolean
+  audit_mode: string
+  future_mode_hint: string
+  competition_id: number
+  competition_name: string
+  round_number: number
+  limit: number
+  offset: number
+  summary: {
+    fixtures_processed: number
+    fixtures_with_official_xi_both_teams: number
+    fixtures_with_partial_lineup: number
+    fixtures_without_lineup: number
+    avg_starters_count_home?: number | null
+    avg_starters_count_away?: number | null
+    avg_mapping_coverage_pct?: number | null
+    avg_player_stats_prior_coverage_pct?: number | null
+    fixtures_with_unavailable_data: number
+    fixtures_with_injured_data: number
+    fixtures_with_suspended_data: number
+    timestamp_safe_count: number
+    timestamp_missing_count: number
+  }
+  fixtures: HistoricalLineupAuditRoundFixtureBrief[]
+  warnings: string[]
+}
+
+export async function getBacktestHistoricalLineupAuditFixture(params: {
+  competition_id: number
+  fixture_id: number
+}): Promise<HistoricalLineupAuditFixtureResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  q.set('fixture_id', String(params.fixture_id))
+  return requestJson<HistoricalLineupAuditFixtureResponse>(
+    `/api/backtest/debug/historical-lineup-audit/fixture?${q.toString()}`,
+  )
+}
+
+export async function getBacktestHistoricalLineupAuditRound(params: {
+  competition_id: number
+  round_number: number
+  limit?: number
+  offset?: number
+}): Promise<HistoricalLineupAuditRoundResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  q.set('round_number', String(params.round_number))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return requestJson<HistoricalLineupAuditRoundResponse>(
+    `/api/backtest/debug/historical-lineup-audit/round?${q.toString()}`,
+  )
+}
+
 /** Allineato a `UpcomingSotCalculationBreakdown` (backend). */
 export type UpcomingCalculationBreakdown = {
   season_avg_sot_for: number

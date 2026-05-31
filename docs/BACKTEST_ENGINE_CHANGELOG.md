@@ -4,6 +4,37 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-g2a
+
+**Titolo:** Historical Official XI Audit
+
+**Descrizione:** Aggiunto audit read-only per verificare copertura delle formazioni ufficiali storiche, mapping giocatori e statistiche player point-in-time prima di implementare il rolling player layer.
+
+**Highlights:**
+
+- Endpoint audit fixture.
+- Endpoint audit round.
+- Verifica copertura XI ufficiale.
+- Verifica mapping giocatori.
+- Calcolo diagnostico player prior stats.
+- Distinzione pre_lineup vs historical_official_xi.
+- Nessun salvataggio DB.
+- Nessuna modifica a v2.0/v2.1 runtime.
+
+**File toccati:**
+
+- `backend/app/services/backtest/historical_lineup_audit_service.py`
+- `backend/app/schemas/backtest_historical_lineup_audit.py`
+- `backend/app/services/backtest/backtest_fixture_debug_service.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/app/backtest/constants.py`
+- `backend/tests/test_historical_lineup_audit.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-g1
 
 **Titolo:** Split casa/trasferta point-in-time

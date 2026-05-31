@@ -194,3 +194,38 @@ class BacktestFixtureDebugService:
             order_by=order_by,
             fixtures_requested=fixtures_requested if fixture_ids else fixtures_requested,
         )
+
+    def select_fixtures_for_lineup_audit(
+        self,
+        db: Session,
+        *,
+        competition_id: int,
+        round_number: int,
+        limit: int = 20,
+        offset: int = 0,
+        order_by: str = "kickoff_at asc",
+    ) -> MiniRunFixtureSelection:
+        """Fixture finite per giornata esatta — audit lineup G2A (no requisito SOT)."""
+        self._require_competition(db, competition_id)
+
+        clauses = [
+            Fixture.competition_id == int(competition_id),
+            Fixture.status.in_(FINISHED_STATUSES),
+        ]
+        rows = db.scalars(
+            select(Fixture)
+            .where(*clauses)
+            .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+        ).all()
+        rows = [f for f in rows if fixture_matches_round_number(f.round, int(round_number))]
+
+        safe_limit = max(1, min(int(limit), 50))
+        safe_offset = max(0, int(offset))
+        sliced = rows[safe_offset : safe_offset + safe_limit]
+
+        items = [self._fixture_to_candidate(db, f) for f in sliced]
+        return MiniRunFixtureSelection(
+            items=items,
+            order_by=order_by,
+            fixtures_requested=safe_limit,
+        )

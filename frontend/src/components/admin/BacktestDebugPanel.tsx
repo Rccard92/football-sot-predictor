@@ -5,6 +5,8 @@ import {
   getBacktestDebugHealth,
   getBacktestErrorCode,
   getBacktestErrorMessage,
+  getBacktestHistoricalLineupAuditFixture,
+  getBacktestHistoricalLineupAuditRound,
   getBacktestPointInTimeContext,
   getBacktestRun,
   getBacktestSotV21Preview,
@@ -13,6 +15,8 @@ import {
   postBacktestSotV21MiniRun,
   type BacktestFixtureCandidate,
   type BacktestRunRow,
+  type HistoricalLineupAuditFixtureResponse,
+  type HistoricalLineupAuditRoundResponse,
   type PointInTimeContextResponse,
   type SotV21MiniRunResponse,
   type SotV21PreviewResponse,
@@ -130,6 +134,11 @@ export function BacktestDebugPanel() {
   const [miniRunIncludeTrace, setMiniRunIncludeTrace] = useState(false)
   const [miniRunOutcome, setMiniRunOutcome] = useState<Outcome | null>(null)
   const [miniRunJson, setMiniRunJson] = useState<SotV21MiniRunResponse | null>(null)
+
+  const [g2aRoundNumber, setG2aRoundNumber] = useState('')
+  const [g2aOutcome, setG2aOutcome] = useState<Outcome | null>(null)
+  const [g2aFixtureJson, setG2aFixtureJson] = useState<HistoricalLineupAuditFixtureResponse | null>(null)
+  const [g2aRoundJson, setG2aRoundJson] = useState<HistoricalLineupAuditRoundResponse | null>(null)
 
   const needsCompetition = selectedCompetitionId == null
 
@@ -490,6 +499,72 @@ export function BacktestDebugPanel() {
       setLoadingId(null)
     }
   }, [miniRunIncludeTrace, miniRunLimit, miniRunOffset, miniRunRoundNumber, selectedCompetitionId])
+
+  const runG2aFixtureAudit = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    const fixtureId = resolvePreviewFixtureId()
+    if (fixtureId == null) {
+      setG2aOutcome({ kind: 'error', httpStatus: null, message: 'Seleziona o inserisci un fixture_id.' })
+      return
+    }
+    setLoadingId('g2a-fixture')
+    try {
+      const data = await getBacktestHistoricalLineupAuditFixture({
+        competition_id: selectedCompetitionId,
+        fixture_id: fixtureId,
+      })
+      setG2aFixtureJson(data)
+      setG2aRoundJson(null)
+      setG2aOutcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Audit fixture ${fixtureId} — home XI ${data.home.coverage.starters_count}, away XI ${data.away.coverage.starters_count}, db_writes=${String(data.db_writes)}`,
+      })
+    } catch (e) {
+      setG2aFixtureJson(null)
+      setG2aOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Audit fixture G2A'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [resolvePreviewFixtureId, selectedCompetitionId])
+
+  const runG2aRoundAudit = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    const roundNum = parseMiniRunRoundNumber(g2aRoundNumber)
+    if (roundNum == null) {
+      setG2aOutcome({ kind: 'error', httpStatus: null, message: 'Inserisci una giornata esatta valida.' })
+      return
+    }
+    setLoadingId('g2a-round')
+    try {
+      const data = await getBacktestHistoricalLineupAuditRound({
+        competition_id: selectedCompetitionId,
+        round_number: roundNum,
+        limit: 20,
+        offset: 0,
+      })
+      setG2aRoundJson(data)
+      setG2aFixtureJson(null)
+      setG2aOutcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Audit giornata ${roundNum} — ${data.summary.fixtures_processed} fixture, XI entrambe ${data.summary.fixtures_with_official_xi_both_teams}, db_writes=${String(data.db_writes)}`,
+      })
+    } catch (e) {
+      setG2aRoundJson(null)
+      setG2aOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Audit giornata G2A'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [g2aRoundNumber, selectedCompetitionId])
 
   const applyRoundFilter = useCallback(() => {
     const applied = roundFilter.trim()
@@ -1267,6 +1342,193 @@ export function BacktestDebugPanel() {
 
             <pre className="mt-4 max-h-80 overflow-auto rounded-lg border border-indigo-200 bg-slate-900 p-3 text-xs text-slate-100">
               {JSON.stringify(miniRunJson, null, 2)}
+            </pre>
+          </>
+        ) : null}
+      </div>
+
+      <div className="mt-8 rounded-xl border border-teal-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-800">
+          Historical Official XI Audit (G2A)
+        </h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Controlla se per una fixture/giornata storica abbiamo formazioni ufficiali, panchina,
+          indisponibili e mapping giocatori sufficienti per costruire il player layer point-in-time.
+          Modalità futura: <span className="font-medium">historical_official_xi</span> (solo audit, non
+          prediction).
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Giornata esatta
+            <input
+              type="number"
+              min={1}
+              className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={g2aRoundNumber}
+              onChange={(e) => setG2aRoundNumber(e.target.value)}
+              placeholder="15"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Fixture ID manuale
+            <input
+              type="text"
+              className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={manualFixtureId}
+              onChange={(e) => setManualFixtureId(e.target.value)}
+              placeholder="146"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={needsCompetition || loadingId != null}
+            className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+            onClick={() => void runG2aRoundAudit()}
+          >
+            Audit giornata
+          </button>
+          <button
+            type="button"
+            disabled={needsCompetition || loadingId != null}
+            className="rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+            onClick={() => void runG2aFixtureAudit()}
+          >
+            Audit fixture
+          </button>
+        </div>
+
+        {g2aOutcome ? (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(g2aOutcome.kind)}`}>
+            <div className="font-semibold">
+              {outcomeLabel(g2aOutcome.kind)}
+              {g2aOutcome.httpStatus != null ? ` — HTTP ${g2aOutcome.httpStatus}` : ''}
+            </div>
+            <div className="mt-1">{g2aOutcome.message}</div>
+          </div>
+        ) : null}
+
+        {g2aRoundJson ? (
+          <>
+            <div className="mt-3 rounded-lg border border-teal-200 bg-teal-50/50 p-3 text-sm text-slate-800">
+              <div className="font-medium text-teal-900">Sintesi audit giornata {g2aRoundJson.round_number}</div>
+              <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                <div>
+                  <span className="font-medium">Fixture processate:</span>{' '}
+                  {g2aRoundJson.summary.fixtures_processed}
+                </div>
+                <div>
+                  <span className="font-medium">XI ufficiale entrambe:</span>{' '}
+                  {g2aRoundJson.summary.fixtures_with_official_xi_both_teams}
+                </div>
+                <div>
+                  <span className="font-medium">Parziali / senza lineup:</span>{' '}
+                  {g2aRoundJson.summary.fixtures_with_partial_lineup} /{' '}
+                  {g2aRoundJson.summary.fixtures_without_lineup}
+                </div>
+                <div>
+                  <span className="font-medium">Mapping medio titolari:</span>{' '}
+                  {fmtMetric(g2aRoundJson.summary.avg_mapping_coverage_pct)}%
+                </div>
+                <div>
+                  <span className="font-medium">Copertura stats prior media:</span>{' '}
+                  {fmtMetric(g2aRoundJson.summary.avg_player_stats_prior_coverage_pct)}%
+                </div>
+                <div>
+                  <span className="font-medium">Indisponibili / timestamp safe / missing:</span>{' '}
+                  {g2aRoundJson.summary.fixtures_with_unavailable_data} /{' '}
+                  {g2aRoundJson.summary.timestamp_safe_count} /{' '}
+                  {g2aRoundJson.summary.timestamp_missing_count}
+                </div>
+                <div>
+                  <span className="font-medium">db_writes:</span> {String(g2aRoundJson.db_writes)}
+                </div>
+              </div>
+            </div>
+            {g2aRoundJson.fixtures.length > 0 ? (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">ID</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">XI H</th>
+                      <th className="px-2 py-1">XI A</th>
+                      <th className="px-2 py-1">Map H%</th>
+                      <th className="px-2 py-1">Map A%</th>
+                      <th className="px-2 py-1">Prior H%</th>
+                      <th className="px-2 py-1">Prior A%</th>
+                      <th className="px-2 py-1">Indisp.</th>
+                      <th className="px-2 py-1">TS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {g2aRoundJson.fixtures.map((row) => (
+                      <tr key={row.fixture_id} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{row.fixture_id}</td>
+                        <td className="px-2 py-1">{row.match}</td>
+                        <td className="px-2 py-1">{row.home_has_official_xi ? row.home_starters_count : '—'}</td>
+                        <td className="px-2 py-1">{row.away_has_official_xi ? row.away_starters_count : '—'}</td>
+                        <td className="px-2 py-1">{fmtMetric(row.home_mapping_coverage_pct)}</td>
+                        <td className="px-2 py-1">{fmtMetric(row.away_mapping_coverage_pct)}</td>
+                        <td className="px-2 py-1">{fmtMetric(row.home_prior_stats_coverage_pct)}</td>
+                        <td className="px-2 py-1">{fmtMetric(row.away_prior_stats_coverage_pct)}</td>
+                        <td className="px-2 py-1">{row.unavailable_data_present ? 'sì' : 'no'}</td>
+                        <td className="px-2 py-1">{row.source_timestamp_status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-teal-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(g2aRoundJson, null, 2)}
+            </pre>
+          </>
+        ) : null}
+
+        {g2aFixtureJson ? (
+          <>
+            <div className="mt-3 rounded-lg border border-teal-200 bg-teal-50/50 p-3 text-sm text-slate-800">
+              <div className="font-medium text-teal-900">
+                Audit fixture #{g2aFixtureJson.fixture_id} — {g2aFixtureJson.home_team} vs{' '}
+                {g2aFixtureJson.away_team}
+              </div>
+              <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                <div>
+                  <span className="font-medium">Home XI:</span>{' '}
+                  {g2aFixtureJson.home.coverage.starters_count} titolari, mapping{' '}
+                  {fmtMetric(g2aFixtureJson.home.mapping.mapping_coverage_pct)}%, prior{' '}
+                  {fmtMetric(g2aFixtureJson.home.mapping.player_stats_prior_coverage_pct)}%
+                </div>
+                <div>
+                  <span className="font-medium">Away XI:</span>{' '}
+                  {g2aFixtureJson.away.coverage.starters_count} titolari, mapping{' '}
+                  {fmtMetric(g2aFixtureJson.away.mapping.mapping_coverage_pct)}%, prior{' '}
+                  {fmtMetric(g2aFixtureJson.away.mapping.player_stats_prior_coverage_pct)}%
+                </div>
+                <div>
+                  <span className="font-medium">Fonte home:</span>{' '}
+                  {g2aFixtureJson.home.coverage.source_table ?? '—'} (
+                  {g2aFixtureJson.home.coverage.source_timestamp_status})
+                </div>
+                <div>
+                  <span className="font-medium">Fonte away:</span>{' '}
+                  {g2aFixtureJson.away.coverage.source_table ?? '—'} (
+                  {g2aFixtureJson.away.coverage.source_timestamp_status})
+                </div>
+                <div>
+                  <span className="font-medium">db_writes:</span> {String(g2aFixtureJson.db_writes)}
+                </div>
+              </div>
+              {g2aFixtureJson.warnings.length > 0 ? (
+                <p className="mt-2 text-xs text-amber-800">
+                  Warnings: {g2aFixtureJson.warnings.join(', ')}
+                </p>
+              ) : null}
+            </div>
+            <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-teal-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(g2aFixtureJson, null, 2)}
             </pre>
           </>
         ) : null}

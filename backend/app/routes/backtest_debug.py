@@ -1,4 +1,4 @@
-"""Debug read-only Backtest Engine (Step C.1 + D + E + F)."""
+"""Debug read-only Backtest Engine (Step C.1 + D + E + F + G2A)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
+from app.services.backtest.historical_lineup_audit_service import HistoricalLineupAuditService
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
 from app.services.backtest.sot_v21_mini_run_preview_service import SotV21MiniRunPreviewService
 from app.services.backtest.sot_v21_preview_service import SotV21PointInTimePreviewService
@@ -132,5 +133,51 @@ def backtest_debug_sot_v21_mini_run(
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("POST backtest sot-v21-mini-run: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/historical-lineup-audit/fixture")
+def backtest_debug_historical_lineup_audit_fixture(
+    competition_id: int = Query(...),
+    fixture_id: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    svc = HistoricalLineupAuditService()
+    try:
+        payload = svc.audit_fixture(
+            db,
+            competition_id=competition_id,
+            fixture_id=fixture_id,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET historical-lineup-audit/fixture: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/historical-lineup-audit/round")
+def backtest_debug_historical_lineup_audit_round(
+    competition_id: int = Query(...),
+    round_number: int = Query(..., ge=1),
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    svc = HistoricalLineupAuditService()
+    try:
+        payload = svc.audit_round(
+            db,
+            competition_id=competition_id,
+            round_number=round_number,
+            limit=limit,
+            offset=offset,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET historical-lineup-audit/round: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)

@@ -825,6 +825,50 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 
 ---
 
+## 21. Step G2A — Historical Official XI Audit
+
+**Obiettivo:** audit read-only per verificare copertura formazioni ufficiali storiche, mapping giocatori e statistiche player prior strict PIT **prima** di implementare il rolling player layer.
+
+**Cosa controlla:**
+
+- XI ufficiale (titolari), panchina, indisponibili/infortunati/squalificati
+- Mapping `provider_player_id` ↔ `players.id` via `player_provider_mappings`
+- Rolling diagnostico stats giocatore da `fixture_player_stats` con `kickoff_at < cutoff_time`
+
+**Fonti DB (solo lettura):**
+
+| Fonte | Uso |
+|-------|-----|
+| `fixture_lineups` + `fixture_lineup_players` | XI ufficiale API-Football (priorità) |
+| `fixture_provider_lineups` + players (`confirmed=true`) | Fallback SportAPI ufficiale |
+| `fixture_missing_players` | Indisponibili SportAPI |
+| `player_provider_mappings` | Mapping cross-provider |
+| `fixture_player_stats` | Prior stats rolling PIT |
+
+**Endpoint:**
+
+- `GET /api/backtest/debug/historical-lineup-audit/fixture`
+- `GET /api/backtest/debug/historical-lineup-audit/round`
+
+**Modalità future (naming only, non prediction):**
+
+| Mode | Descrizione |
+|------|-------------|
+| `pre_lineup` | Preview PIT attuale — no XI ufficiale storica |
+| `historical_official_xi` | XI reale storico + stats player prior — **solo audit G2A per ora** |
+
+**Regole:**
+
+- `competition_id` obbligatorio
+- Player stats: strict `< cutoff`, no fixture target
+- Timestamp lineup mancante → warning, audit non bloccato
+- `latest_player_stat_fixture_used_at >= cutoff` → `possible_player_stats_leakage`
+- `db_writes=false`, nessuna prediction/pick/metrica
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-g2a`).
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -842,6 +886,8 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | SotV21MiniRunPreviewService (Step F) | `backend/app/services/backtest/sot_v21_mini_run_preview_service.py` |
 | Schemas mini-run Step F | `backend/app/schemas/backtest_sot_v21_mini_run.py` |
 | Pit split stats builder (Step G1) | `backend/app/services/backtest/pit_split_stats_builder.py` |
+| HistoricalLineupAuditService (Step G2A) | `backend/app/services/backtest/historical_lineup_audit_service.py` |
+| Schemas lineup audit G2A | `backend/app/schemas/backtest_historical_lineup_audit.py` |
 | BacktestRunService (Step C) | `backend/app/services/backtest_run_service.py` |
 | Schemas Backtest Runs (Step C) | `backend/app/schemas/backtest_runs.py` |
 | Modelli Backtest (Step B) | `backend/app/models/backtest.py` |
