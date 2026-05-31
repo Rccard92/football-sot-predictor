@@ -40,7 +40,7 @@ _MOCK_FOUND = HistoricalUnavailableAuditResponse(
     fixtures_with_unavailable=2,
     fixtures_with_injured=1,
     total_unavailable_players=3,
-    verdict="unavailable_found_in_storage",
+    verdict="unavailable_found_normalized",
     sample_fixtures_with_unavailable=[
         HistoricalUnavailableAuditFixtureSample(
             fixture_id=146,
@@ -94,7 +94,7 @@ def test_historical_unavailable_audit_raw_not_normalized_verdict():
     fixtures_with_missing_players = sum(1 for s in scans if s.has_missing_players_rows)
     any_missing_players_rows = fixtures_with_missing_players > 0
     if fixtures_with_missing_players > 0:
-        verdict = "unavailable_found_in_storage"
+        verdict = "unavailable_found_normalized"
     elif all_raw_keys and not any_missing_players_rows:
         verdict = "unavailable_found_in_raw_not_normalized"
     else:
@@ -114,7 +114,7 @@ def test_historical_unavailable_audit_found_verdict(mock_svc_cls):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["verdict"] == "unavailable_found_in_storage"
+    assert body["verdict"] == "unavailable_found_normalized"
     assert body["fixtures_with_unavailable"] == 2
     assert body["sample_fixtures_with_unavailable"][0]["fixture_id"] == 146
 

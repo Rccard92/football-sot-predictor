@@ -21,10 +21,18 @@ from app.services.sportapi.sportapi_player_matching_service import SportApiPlaye
 from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
 from app.schemas.sportapi_unavailable_backfill import SportApiUnavailableBackfillRequest
 from app.schemas.sportapi_fixture_mapping_backfill import SportApiFixtureMappingBackfillRequest
+from app.schemas.sportapi_fixture_mapping_season_backfill import SportApiFixtureMappingSeasonBackfillRequest
+from app.schemas.sportapi_unavailable_season_backfill import SportApiUnavailableSeasonBackfillRequest
 from app.services.sportapi.sportapi_unavailable_backfill_service import SportApiUnavailableBackfillService
 from app.services.sportapi.sportapi_unavailable_debug_service import SportApiUnavailableDebugService
 from app.services.sportapi.sportapi_fixture_mapping_backfill_service import SportApiFixtureMappingBackfillService
 from app.services.sportapi.sportapi_fixture_mapping_debug_service import SportApiFixtureMappingDebugService
+from app.services.sportapi.sportapi_fixture_mapping_season_backfill_service import (
+    SportApiFixtureMappingSeasonBackfillService,
+)
+from app.services.sportapi.sportapi_unavailable_season_backfill_service import (
+    SportApiUnavailableSeasonBackfillService,
+)
 from app.services.sportapi.sportapi_round_refresh_service import SportApiRoundRefreshService
 
 logger = logging.getLogger(__name__)
@@ -166,6 +174,35 @@ def sportapi_backfill_fixture_mappings(
     return jsonable_encoder(payload)
 
 
+@router.post("/competitions/{competition_id}/backfill-fixture-mappings-season", response_model=None)
+def sportapi_backfill_fixture_mappings_season(
+    competition_id: int,
+    body: SportApiFixtureMappingSeasonBackfillRequest,
+    db: Session = Depends(get_db),
+):
+    """Backfill mapping fixture SportAPI per stagione (Step K.4)."""
+    _require_sportapi_enabled()
+    try:
+        payload = SportApiFixtureMappingSeasonBackfillService().backfill_season(
+            db,
+            competition_id=int(competition_id),
+            dry_run=body.dry_run,
+            force_refresh=body.force_refresh,
+            only_finished=body.only_finished,
+            limit=body.limit,
+            offset=body.offset,
+            round_from=body.round_from,
+            round_to=body.round_to,
+            sleep_between_fixtures_s=body.sleep_between_fixtures_s,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi backfill fixture mappings season DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return jsonable_encoder(payload)
+
+
 @router.post("/competitions/{competition_id}/backfill-unavailable", response_model=None)
 def sportapi_backfill_unavailable(
     competition_id: int,
@@ -188,6 +225,35 @@ def sportapi_backfill_unavailable(
         )
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("sportapi backfill-unavailable DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return jsonable_encoder(payload)
+
+
+@router.post("/competitions/{competition_id}/backfill-unavailable-season", response_model=None)
+def sportapi_backfill_unavailable_season(
+    competition_id: int,
+    body: SportApiUnavailableSeasonBackfillRequest,
+    db: Session = Depends(get_db),
+):
+    """Backfill indisponibili SportAPI per stagione (Step K.4)."""
+    _require_sportapi_enabled()
+    try:
+        payload = SportApiUnavailableSeasonBackfillService().backfill_season(
+            db,
+            competition_id=int(competition_id),
+            dry_run=body.dry_run,
+            force_refresh=body.force_refresh,
+            only_finished=body.only_finished,
+            limit=body.limit,
+            offset=body.offset,
+            round_from=body.round_from,
+            round_to=body.round_to,
+            sleep_between_fixtures_s=body.sleep_between_fixtures_s,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi backfill unavailable season DB error")
         raise HTTPException(status_code=503, detail="Database error") from exc
     except SportApiDisabledError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

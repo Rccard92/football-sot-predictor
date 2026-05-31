@@ -30,6 +30,7 @@ class SportApiFixtureMappingBackfillItem(BaseModel):
     best_candidate: SportApiMappingCandidateBrief | None = None
     would_write_mapping: bool = False
     mapping_written: bool = False
+    error: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
 

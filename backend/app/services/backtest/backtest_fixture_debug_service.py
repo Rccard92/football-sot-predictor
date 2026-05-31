@@ -15,7 +15,7 @@ from app.schemas.backtest_point_in_time import (
     BacktestFixtureListResponse,
     BacktestFixtureTeamBrief,
 )
-from app.services.backtest.round_filter import fixture_matches_round_number
+from app.services.backtest.round_filter import extract_fixture_round_number, fixture_matches_round_number
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,13 @@ class MiniRunFixtureSelection:
     items: list[BacktestFixtureCandidate]
     order_by: str
     fixtures_requested: int
+
+
+@dataclass(frozen=True)
+class SeasonBackfillSelection:
+    items: list[BacktestFixtureCandidate]
+    total_candidates: int
+    order_by: str
 
 
 class BacktestFixtureDebugService:
@@ -228,4 +235,118 @@ class BacktestFixtureDebugService:
             items=items,
             order_by=order_by,
             fixtures_requested=safe_limit,
+        )
+
+    def _filter_by_round_range(
+        self,
+        fixtures: list[Fixture],
+        *,
+        round_from: int | None,
+        round_to: int | None,
+    ) -> list[Fixture]:
+        if round_from is None and round_to is None:
+            return fixtures
+        out: list[Fixture] = []
+        for f in fixtures:
+            rn = extract_fixture_round_number(f.round)
+            if rn is None:
+                continue
+            if round_from is not None and rn < int(round_from):
+                continue
+            if round_to is not None and rn > int(round_to):
+                continue
+            out.append(f)
+        return out
+
+    def select_fixtures_for_sportapi_season_backfill(
+        self,
+        db: Session,
+        *,
+        competition_id: int,
+        only_finished: bool = True,
+        round_from: int | None = None,
+        round_to: int | None = None,
+        limit: int = 400,
+        offset: int = 0,
+        require_sot_stats: bool = False,
+        order_by: str = "kickoff_at asc",
+    ) -> SeasonBackfillSelection:
+        """Fixture per backfill mapping SportAPI stagione (Step K.4)."""
+        self._require_competition(db, competition_id)
+
+        clauses = [Fixture.competition_id == int(competition_id)]
+        if only_finished:
+            clauses.append(Fixture.status.in_(FINISHED_STATUSES))
+        if require_sot_stats:
+            home_stat, away_stat = self._both_teams_sot_stats_clause()
+            clauses.extend([home_stat, away_stat])
+
+        rows = list(
+            db.scalars(
+                select(Fixture)
+                .where(*clauses)
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+            ).all(),
+        )
+        rows = self._filter_by_round_range(rows, round_from=round_from, round_to=round_to)
+        total = len(rows)
+
+        safe_limit = max(1, min(int(limit), 400))
+        safe_offset = max(0, int(offset))
+        sliced = rows[safe_offset : safe_offset + safe_limit]
+
+        items = [self._fixture_to_candidate(db, f) for f in sliced]
+        return SeasonBackfillSelection(
+            items=items,
+            total_candidates=total,
+            order_by=order_by,
+        )
+
+    def select_mapped_fixtures_for_sportapi_unavailable_season(
+        self,
+        db: Session,
+        *,
+        competition_id: int,
+        only_finished: bool = True,
+        round_from: int | None = None,
+        round_to: int | None = None,
+        limit: int = 400,
+        offset: int = 0,
+        order_by: str = "kickoff_at asc",
+    ) -> SeasonBackfillSelection:
+        """Fixture finished con mapping SportAPI per backfill unavailable stagione (Step K.4)."""
+        from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI, FixtureProviderMapping
+
+        self._require_competition(db, competition_id)
+
+        clauses = [
+            Fixture.competition_id == int(competition_id),
+            FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
+        ]
+        if only_finished:
+            clauses.append(Fixture.status.in_(FINISHED_STATUSES))
+
+        rows = list(
+            db.scalars(
+                select(Fixture)
+                .join(
+                    FixtureProviderMapping,
+                    FixtureProviderMapping.fixture_id == Fixture.id,
+                )
+                .where(*clauses)
+                .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+            ).all(),
+        )
+        rows = self._filter_by_round_range(rows, round_from=round_from, round_to=round_to)
+        total = len(rows)
+
+        safe_limit = max(1, min(int(limit), 400))
+        safe_offset = max(0, int(offset))
+        sliced = rows[safe_offset : safe_offset + safe_limit]
+
+        items = [self._fixture_to_candidate(db, f) for f in sliced]
+        return SeasonBackfillSelection(
+            items=items,
+            total_candidates=total,
+            order_by=order_by,
         )

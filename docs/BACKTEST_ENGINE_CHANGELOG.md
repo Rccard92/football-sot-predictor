@@ -16,6 +16,48 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-k4-bulk-sportapi-mapping-unavailable
+
+**Titolo:** Bulk mapping e indisponibili SportAPI
+
+**Descrizione:** Aggiunto flusso bulk per mappare fixture interne verso SportAPI e importare gli indisponibili storici missingPlayers in `fixture_missing_players`.
+
+**Highlights:**
+
+- Mapping fixture per giornata e stagione (`backfill-fixture-mappings-season`).
+- Import unavailable per giornata e stagione (`backfill-unavailable-season`).
+- Supporto dry-run/write, limit/offset, `api_calls`, `has_more`.
+- Strict skip unavailable se mapping assente (no auto-match default).
+- Parser missingPlayers home/away, upsert incrementale persist.
+- Audit JK.1 verdict `unavailable_found_normalized`.
+- UI BacktestDebugPanel K.3/K.4 con pulsanti stagione.
+- Nessuna scrittura tabelle backtest.
+
+**File toccati:**
+
+- `backend/app/services/backtest/backtest_fixture_debug_service.py` (selector stagione)
+- `backend/app/services/sportapi/sportapi_fixture_mapping_discovery.py` (cache scheduled-events)
+- `backend/app/services/sportapi/sportapi_fixture_mapping_season_backfill_service.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_unavailable_season_backfill_service.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_fixture_mapping_backfill_service.py` (would_write intent)
+- `backend/app/services/sportapi/sportapi_unavailable_backfill_service.py` (strict mapping)
+- `backend/app/services/sportapi/sportapi_unavailable_persist_service.py` (upsert)
+- `backend/app/services/backtest/historical_unavailable_audit_service.py` (verdict)
+- `backend/app/schemas/sportapi_fixture_mapping_season_backfill.py` (nuovo)
+- `backend/app/schemas/sportapi_unavailable_season_backfill.py` (nuovo)
+- `backend/app/schemas/sportapi_unavailable_backfill.py` (response fields)
+- `backend/app/routes/admin_sportapi.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `backend/tests/test_sportapi_fixture_mapping_season_backfill.py` (nuovo)
+- `backend/tests/test_sportapi_unavailable_backfill_strict.py` (nuovo)
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md` (§29)
+- `docs/BACKTEST_ENGINE_CHANGELOG.md` (questa entry)
+
+---
+
 ## backtest-step-k3-sportapi-fixture-mapping
 
 **Titolo:** Mapping fixture storiche SportAPI

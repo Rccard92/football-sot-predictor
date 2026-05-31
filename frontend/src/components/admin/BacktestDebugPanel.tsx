@@ -18,7 +18,9 @@ import {
   postBacktestSotV21MiniRun,
   postBacktestSotPickEvaluation,
   postSportApiFixtureMappingBackfill,
+  postSportApiFixtureMappingSeasonBackfill,
   postSportApiUnavailableBackfill,
+  postSportApiUnavailableSeasonBackfill,
   type BacktestFixtureCandidate,
   type BacktestRunRow,
   type HistoricalLineupAuditFixtureResponse,
@@ -27,8 +29,10 @@ import {
   type PointInTimeContextResponse,
   type SportApiFixtureMappingBackfillResponse,
   type SportApiFixtureMappingDebugResponse,
+  type SportApiFixtureMappingSeasonBackfillResponse,
   type SportApiUnavailableBackfillResponse,
   type SportApiUnavailableDebugResponse,
+  type SportApiUnavailableSeasonBackfillResponse,
   type SotPickEvaluationResponse,
   type SotV21MiniRunResponse,
   type SotV21PreviewResponse,
@@ -246,6 +250,8 @@ export function BacktestDebugPanel() {
   const [jk1Outcome, setJk1Outcome] = useState<Outcome | null>(null)
   const [jk1AuditJson, setJk1AuditJson] = useState<HistoricalUnavailableAuditResponse | null>(null)
 
+  const [k3Limit, setK3Limit] = useState(50)
+  const [k3Offset, setK3Offset] = useState(0)
   const [k3RoundNumber, setK3RoundNumber] = useState('')
   const [k3FixtureId, setK3FixtureId] = useState('')
   const [k3DryRun, setK3DryRun] = useState(true)
@@ -253,6 +259,10 @@ export function BacktestDebugPanel() {
   const [k3Outcome, setK3Outcome] = useState<Outcome | null>(null)
   const [k3DebugJson, setK3DebugJson] = useState<SportApiFixtureMappingDebugResponse | null>(null)
   const [k3BackfillJson, setK3BackfillJson] = useState<SportApiFixtureMappingBackfillResponse | null>(null)
+  const [k3SeasonBackfillJson, setK3SeasonBackfillJson] =
+    useState<SportApiFixtureMappingSeasonBackfillResponse | null>(null)
+  const [k2Limit, setK2Limit] = useState(50)
+  const [k2Offset, setK2Offset] = useState(0)
   const [k2RoundNumber, setK2RoundNumber] = useState('')
   const [k2FixtureId, setK2FixtureId] = useState('')
   const [k2DryRun, setK2DryRun] = useState(true)
@@ -260,6 +270,8 @@ export function BacktestDebugPanel() {
   const [k2Outcome, setK2Outcome] = useState<Outcome | null>(null)
   const [k2DebugJson, setK2DebugJson] = useState<SportApiUnavailableDebugResponse | null>(null)
   const [k2BackfillJson, setK2BackfillJson] = useState<SportApiUnavailableBackfillResponse | null>(null)
+  const [k2SeasonBackfillJson, setK2SeasonBackfillJson] =
+    useState<SportApiUnavailableSeasonBackfillResponse | null>(null)
 
   const needsCompetition = selectedCompetitionId == null
 
@@ -832,6 +844,7 @@ export function BacktestDebugPanel() {
       })
       setK3DebugJson(data)
       setK3BackfillJson(null)
+      setK3SeasonBackfillJson(null)
       setK3Outcome({
         kind: 'ok',
         httpStatus: 200,
@@ -862,11 +875,12 @@ export function BacktestDebugPanel() {
           fixture_ids: fixtureId != null ? [fixtureId] : undefined,
           dry_run: k3DryRun,
           force_refresh: k3ForceRefresh,
-          limit: 50,
-          offset: 0,
+          limit: k3Limit,
+          offset: k3Offset,
         },
       )
       setK3BackfillJson(data)
+      setK3SeasonBackfillJson(null)
       setK3DebugJson(null)
       setK3Outcome({
         kind: 'ok',
@@ -883,7 +897,38 @@ export function BacktestDebugPanel() {
     } finally {
       setLoadingId(null)
     }
-  }, [k3DryRun, k3FixtureId, k3ForceRefresh, k3RoundNumber, selectedCompetitionId])
+  }, [k3DryRun, k3FixtureId, k3ForceRefresh, k3Limit, k3Offset, k3RoundNumber, selectedCompetitionId])
+
+  const runK3SeasonBackfill = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    setLoadingId('k3-season-backfill')
+    try {
+      const data = await postSportApiFixtureMappingSeasonBackfill(selectedCompetitionId, {
+        dry_run: k3DryRun,
+        force_refresh: k3ForceRefresh,
+        only_finished: true,
+        limit: k3Limit,
+        offset: k3Offset,
+      })
+      setK3SeasonBackfillJson(data)
+      setK3BackfillJson(null)
+      setK3DebugJson(null)
+      setK3Outcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Backfill mapping stagione — processed ${data.fixtures_processed}/${data.total_candidates}, high ${data.high_confidence_matches}, written ${data.written_mappings}, api_calls ${data.api_calls}, has_more=${String(data.has_more)}, dry_run=${String(data.dry_run)}`,
+      })
+    } catch (e) {
+      setK3SeasonBackfillJson(null)
+      setK3Outcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Backfill mapping stagione'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [k3DryRun, k3ForceRefresh, k3Limit, k3Offset, selectedCompetitionId])
 
   const runK2FixtureDebug = useCallback(async () => {
     if (selectedCompetitionId == null) return
@@ -932,16 +977,17 @@ export function BacktestDebugPanel() {
           fixture_ids: fixtureId != null ? [fixtureId] : undefined,
           dry_run: k2DryRun,
           force_refresh: k2ForceRefresh,
-          limit: 50,
-          offset: 0,
+          limit: k2Limit,
+          offset: k2Offset,
         },
       )
       setK2BackfillJson(data)
+      setK2SeasonBackfillJson(null)
       setK2DebugJson(null)
       setK2Outcome({
         kind: 'ok',
         httpStatus: 200,
-        message: `Backfill — processed ${data.fixtures_processed}, found ${data.total_unavailable_found}, written ${data.total_written}, mapping_missing ${data.mapping_missing_count}, dry_run=${String(data.dry_run)}`,
+        message: `Backfill — processed ${data.fixtures_processed}, with_mapping ${data.fixtures_with_mapping}, mapping_missing ${data.fixtures_mapping_missing}, found ${data.total_unavailable_found}, written ${data.total_written}, dry_run=${String(data.dry_run)}`,
       })
     } catch (e) {
       setK2BackfillJson(null)
@@ -953,7 +999,38 @@ export function BacktestDebugPanel() {
     } finally {
       setLoadingId(null)
     }
-  }, [k2DryRun, k2FixtureId, k2ForceRefresh, k2RoundNumber, selectedCompetitionId])
+  }, [k2DryRun, k2FixtureId, k2ForceRefresh, k2Limit, k2Offset, k2RoundNumber, selectedCompetitionId])
+
+  const runK2SeasonBackfill = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    setLoadingId('k2-season-backfill')
+    try {
+      const data = await postSportApiUnavailableSeasonBackfill(selectedCompetitionId, {
+        dry_run: k2DryRun,
+        force_refresh: k2ForceRefresh,
+        only_finished: true,
+        limit: k2Limit,
+        offset: k2Offset,
+      })
+      setK2SeasonBackfillJson(data)
+      setK2BackfillJson(null)
+      setK2DebugJson(null)
+      setK2Outcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Backfill unavailable stagione — processed ${data.fixtures_processed}/${data.total_candidates}, found ${data.total_unavailable_found}, written ${data.total_written}, api_calls ${data.api_calls}, has_more=${String(data.has_more)}, dry_run=${String(data.dry_run)}`,
+      })
+    } catch (e) {
+      setK2SeasonBackfillJson(null)
+      setK2Outcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Backfill unavailable stagione'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [k2DryRun, k2ForceRefresh, k2Limit, k2Offset, selectedCompetitionId])
 
   const applyRoundFilter = useCallback(() => {
     const applied = roundFilter.trim()
@@ -2873,12 +2950,11 @@ export function BacktestDebugPanel() {
 
       <div className="mt-8 rounded-xl border border-violet-200 bg-white p-4 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-800">
-          SportAPI fixture mapping (K.3)
+          SportAPI fixture mapping (K.3 / K.4)
         </h3>
         <p className="mt-1 text-xs text-slate-600">
-          Prerequisito per K.2 su fixture storiche: scopre e salva mapping interno ↔ SportAPI in
-          fixture_provider_mappings. Flusso: mapping debug → backfill mapping dry-run → write → debug
-          unavailable (K.2).
+          Prerequisito per K.2 su fixture storiche. Flusso: mapping dry-run → mapping write → unavailable
+          dry-run → unavailable write → audit JK.1 → mini-run.
         </p>
 
         <div className="mt-3 flex flex-wrap items-end gap-3">
@@ -2890,7 +2966,7 @@ export function BacktestDebugPanel() {
               className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
               value={k3RoundNumber}
               onChange={(e) => setK3RoundNumber(e.target.value)}
-              placeholder="37"
+              placeholder="36"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-slate-600">
@@ -2901,7 +2977,28 @@ export function BacktestDebugPanel() {
               className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
               value={k3FixtureId}
               onChange={(e) => setK3FixtureId(e.target.value)}
-              placeholder="146"
+              placeholder="359"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Limit
+            <input
+              type="number"
+              min={1}
+              max={400}
+              className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k3Limit}
+              onChange={(e) => setK3Limit(Number(e.target.value) || 50)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Offset
+            <input
+              type="number"
+              min={0}
+              className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k3Offset}
+              onChange={(e) => setK3Offset(Number(e.target.value) || 0)}
             />
           </label>
           <label className="flex items-center gap-2 text-xs text-slate-700">
@@ -2935,6 +3032,14 @@ export function BacktestDebugPanel() {
             className="rounded-lg border border-violet-400 bg-violet-100 px-3 py-2 text-sm font-medium text-violet-950 hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loadingId === 'k3-backfill' ? '…' : 'Backfill mapping giornata'}
+          </button>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runK3SeasonBackfill()}
+            className="rounded-lg border border-violet-500 bg-violet-200 px-3 py-2 text-sm font-medium text-violet-950 hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingId === 'k3-season-backfill' ? '…' : 'Backfill mapping stagione'}
           </button>
         </div>
 
@@ -3000,7 +3105,8 @@ export function BacktestDebugPanel() {
                       <th className="px-2 py-1">Fixture</th>
                       <th className="px-2 py-1">Match</th>
                       <th className="px-2 py-1">Confidence</th>
-                      <th className="px-2 py-1">Write</th>
+                      <th className="px-2 py-1">would_write_mapping</th>
+                      <th className="px-2 py-1">mapping_written</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3011,9 +3117,8 @@ export function BacktestDebugPanel() {
                           {row.home_team} vs {row.away_team}
                         </td>
                         <td className="px-2 py-1">{row.match_confidence}</td>
-                        <td className="px-2 py-1">
-                          {k3BackfillJson.dry_run ? String(row.would_write_mapping) : String(row.mapping_written)}
-                        </td>
+                        <td className="px-2 py-1">{String(row.would_write_mapping)}</td>
+                        <td className="px-2 py-1">{String(row.mapping_written)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3025,16 +3130,28 @@ export function BacktestDebugPanel() {
             </pre>
           </div>
         ) : null}
+
+        {k3SeasonBackfillJson ? (
+          <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3 text-sm text-slate-800">
+            <div className="font-medium text-violet-900">
+              Backfill mapping stagione — processed {k3SeasonBackfillJson.fixtures_processed}/
+              {k3SeasonBackfillJson.total_candidates}, high {k3SeasonBackfillJson.high_confidence_matches},
+              written {k3SeasonBackfillJson.written_mappings}, api_calls {k3SeasonBackfillJson.api_calls}
+            </div>
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-violet-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(k3SeasonBackfillJson, null, 2)}
+            </pre>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-8 rounded-xl border border-orange-200 bg-white p-4 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-800">
-          SportAPI unavailable backfill (K.2)
+          SportAPI unavailable backfill (K.2 / K.4)
         </h3>
         <p className="mt-1 text-xs text-slate-600">
-          Debug e backfill indisponibili storici SportAPI nella fixture target esatta. Richiede mapping
-          K.3 in fixture_provider_mappings. Scrive solo in fixture_missing_players / provider lineups,
-          non nelle tabelle backtest.
+          Import bulk indisponibili missingPlayers da SportAPI. Richiede mapping K.3. Flusso completo:
+          mapping dry-run → write → unavailable dry-run → write → audit JK.1.
         </p>
 
         <div className="mt-3 flex flex-wrap items-end gap-3">
@@ -3046,7 +3163,7 @@ export function BacktestDebugPanel() {
               className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
               value={k2RoundNumber}
               onChange={(e) => setK2RoundNumber(e.target.value)}
-              placeholder="37"
+              placeholder="36"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-slate-600">
@@ -3057,7 +3174,28 @@ export function BacktestDebugPanel() {
               className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
               value={k2FixtureId}
               onChange={(e) => setK2FixtureId(e.target.value)}
-              placeholder="146"
+              placeholder="359"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Limit
+            <input
+              type="number"
+              min={1}
+              max={400}
+              className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k2Limit}
+              onChange={(e) => setK2Limit(Number(e.target.value) || 50)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Offset
+            <input
+              type="number"
+              min={0}
+              className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k2Offset}
+              onChange={(e) => setK2Offset(Number(e.target.value) || 0)}
             />
           </label>
           <label className="flex items-center gap-2 text-xs text-slate-700">
@@ -3091,6 +3229,14 @@ export function BacktestDebugPanel() {
             className="rounded-lg border border-orange-400 bg-orange-100 px-3 py-2 text-sm font-medium text-orange-950 hover:bg-orange-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loadingId === 'k2-backfill' ? '…' : 'Backfill indisponibili giornata'}
+          </button>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runK2SeasonBackfill()}
+            className="rounded-lg border border-orange-500 bg-orange-200 px-3 py-2 text-sm font-medium text-orange-950 hover:bg-orange-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingId === 'k2-season-backfill' ? '…' : 'Backfill indisponibili stagione'}
           </button>
         </div>
 
@@ -3141,7 +3287,9 @@ export function BacktestDebugPanel() {
           <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50/50 p-3 text-sm text-slate-800">
             <div className="font-medium text-orange-900">
               Backfill round {k2BackfillJson.round_number ?? '—'} — processed{' '}
-              {k2BackfillJson.fixtures_processed}, written {k2BackfillJson.total_written}
+              {k2BackfillJson.fixtures_processed}, with_mapping {k2BackfillJson.fixtures_with_mapping},
+              mapping_missing {k2BackfillJson.fixtures_mapping_missing}, written{' '}
+              {k2BackfillJson.total_written}
             </div>
             {k2BackfillJson.samples.length > 0 ? (
               <div className="mt-2 overflow-x-auto">
@@ -3175,6 +3323,20 @@ export function BacktestDebugPanel() {
             ) : null}
             <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-orange-200 bg-slate-900 p-3 text-xs text-slate-100">
               {JSON.stringify(k2BackfillJson, null, 2)}
+            </pre>
+          </div>
+        ) : null}
+
+        {k2SeasonBackfillJson ? (
+          <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50/50 p-3 text-sm text-slate-800">
+            <div className="font-medium text-orange-900">
+              Backfill unavailable stagione — processed {k2SeasonBackfillJson.fixtures_processed}/
+              {k2SeasonBackfillJson.total_candidates}, found {k2SeasonBackfillJson.total_unavailable_found},
+              written {k2SeasonBackfillJson.total_written}, paths:{' '}
+              {k2SeasonBackfillJson.source_paths_found.join(', ') || '—'}
+            </div>
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-orange-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(k2SeasonBackfillJson, null, 2)}
             </pre>
           </div>
         ) : null}

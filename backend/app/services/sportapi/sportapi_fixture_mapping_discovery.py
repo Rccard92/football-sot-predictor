@@ -29,6 +29,29 @@ logger = logging.getLogger(__name__)
 class SportApiFixtureMappingDiscovery:
     def __init__(self, client: SportApiClient | None = None) -> None:
         self._client = client or SportApiClient()
+        self._events_cache: dict[str, list[dict[str, Any]]] = {}
+
+    def fetch_scheduled_events_for_date(self, match_date: str) -> tuple[list[dict[str, Any]], int]:
+        """Carica eventi football per data (cache in-memory per batch stagione)."""
+        if match_date in self._events_cache:
+            return self._events_cache[match_date], 0
+
+        if not sportapi_configured():
+            return [], 0
+
+        try:
+            raw = self._client.get_scheduled_events(match_date)
+        except (SportApiDisabledError, SportApiError) as exc:
+            logger.warning("sportapi scheduled-events failed date=%s: %s", match_date, exc)
+            self._events_cache[match_date] = []
+            return [], 1
+
+        events = [e for e in extract_events_list(raw) if is_football_event(e)]
+        self._events_cache[match_date] = events
+        return events, 1
+
+    def clear_events_cache(self) -> None:
+        self._events_cache.clear()
 
     def discover_for_fixture(
         self,
@@ -36,6 +59,7 @@ class SportApiFixtureMappingDiscovery:
         *,
         fixture: Fixture,
         competition: Competition,
+        cached_events: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         home = db.get(Team, int(fixture.home_team_id))
         away = db.get(Team, int(fixture.away_team_id))
@@ -65,15 +89,12 @@ class SportApiFixtureMappingDiscovery:
                 "api_calls": 0,
             }
 
-        try:
-            raw = self._client.get_scheduled_events(match_date)
-        except SportApiDisabledError as exc:
-            return {"status": "disabled", "message": str(exc), "candidates": [], "api_calls": 0}
-        except SportApiError as exc:
-            logger.warning("sportapi scheduled-events failed date=%s: %s", match_date, exc)
-            return {"status": "error", "message": str(exc), "candidates": [], "api_calls": 1}
+        api_calls = 0
+        if cached_events is not None:
+            events = cached_events
+        else:
+            events, api_calls = self.fetch_scheduled_events_for_date(match_date)
 
-        events = [e for e in extract_events_list(raw) if is_football_event(e)]
         scored: list[ScoredMappingCandidate] = []
         for ev in events:
             eid = event_id(ev)
@@ -105,5 +126,5 @@ class SportApiFixtureMappingDiscovery:
             "ambiguous_high": ambiguous,
             "warnings": amb_warnings,
             "scheduled_events_count": len(events),
-            "api_calls": 1,
+            "api_calls": api_calls if cached_events is None else 0,
         }

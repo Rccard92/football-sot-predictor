@@ -1,18 +1,25 @@
-"""Backfill mapping fixture SportAPI per round/fixture finished (Step K.3)."""
+"""Backfill mapping fixture SportAPI per stagione (Step K.4)."""
 
 from __future__ import annotations
+
+import time
+from collections import defaultdict
+from datetime import timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Competition, Fixture, Team
 from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI, FixtureProviderMapping
-from app.schemas.sportapi_fixture_mapping_backfill import (
-    SportApiFixtureMappingBackfillItem,
-    SportApiFixtureMappingBackfillResponse,
+from app.schemas.sportapi_fixture_mapping_backfill import SportApiFixtureMappingBackfillItem
+from app.schemas.sportapi_fixture_mapping_season_backfill import (
+    SportApiFixtureMappingSeasonBackfillResponse,
 )
-from app.schemas.sportapi_fixture_mapping_debug import SportApiMappingCandidateBrief
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
+from app.services.sportapi.sportapi_fixture_mapping_backfill_service import (
+    MATCHED_BY,
+    _candidate_brief,
+)
 from app.services.sportapi.sportapi_fixture_mapping_discovery import SportApiFixtureMappingDiscovery
 from app.services.sportapi.sportapi_fixture_mapping_scoring import (
     ScoredMappingCandidate,
@@ -23,26 +30,7 @@ from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
 _SAMPLE_LIMIT = 10
 
 
-def _candidate_brief(c: ScoredMappingCandidate | None) -> SportApiMappingCandidateBrief | None:
-    if c is None:
-        return None
-    return SportApiMappingCandidateBrief(
-        provider_event_id=c.provider_event_id,
-        score=c.score,
-        confidence=c.confidence,
-        home_team_name=c.home_team_name,
-        away_team_name=c.away_team_name,
-        start_timestamp=c.start_timestamp,
-        round_number=c.round_number,
-        tournament_name=c.tournament_name,
-        breakdown=dict(c.breakdown),
-    )
-
-
-MATCHED_BY = "sportapi_fixture_discovery"
-
-
-class SportApiFixtureMappingBackfillService:
+class SportApiFixtureMappingSeasonBackfillService:
     def __init__(
         self,
         discovery: SportApiFixtureMappingDiscovery | None = None,
@@ -51,52 +39,62 @@ class SportApiFixtureMappingBackfillService:
         self._discovery = discovery or SportApiFixtureMappingDiscovery()
         self._lineup_svc = lineup_svc or SportApiLineupService()
 
-    def backfill(
+    def backfill_season(
         self,
         db: Session,
         *,
         competition_id: int,
-        round_number: int | None = None,
-        fixture_ids: list[int] | None = None,
         dry_run: bool = True,
         force_refresh: bool = False,
-        limit: int = 50,
+        only_finished: bool = True,
+        limit: int = 400,
         offset: int = 0,
-    ) -> SportApiFixtureMappingBackfillResponse:
+        round_from: int | None = None,
+        round_to: int | None = None,
+        sleep_between_fixtures_s: float | None = None,
+    ) -> SportApiFixtureMappingSeasonBackfillResponse:
         comp = db.get(Competition, int(competition_id))
         if comp is None:
-            return SportApiFixtureMappingBackfillResponse(
+            return SportApiFixtureMappingSeasonBackfillResponse(
                 status="error",
                 dry_run=bool(dry_run),
                 competition_id=int(competition_id),
                 competition_name="",
-                round_number=round_number,
                 warnings=[f"Competition {competition_id} not found"],
             )
 
-        if fixture_ids:
-            unique_ids = list(dict.fromkeys(int(x) for x in fixture_ids))
-            fixtures = list(
-                db.scalars(
-                    select(Fixture).where(
-                        Fixture.id.in_(unique_ids),
-                        Fixture.competition_id == int(competition_id),
-                    ),
-                ).all(),
-            )
-        else:
-            selection = BacktestFixtureDebugService().select_fixtures_for_mini_run(
-                db,
-                competition_id=int(competition_id),
-                limit=int(limit),
-                offset=int(offset),
-                round_number=round_number,
-            )
-            fixtures = [
-                db.get(Fixture, int(c.fixture_id))
-                for c in selection.items
-                if db.get(Fixture, int(c.fixture_id)) is not None
-            ]
+        selection = BacktestFixtureDebugService().select_fixtures_for_sportapi_season_backfill(
+            db,
+            competition_id=int(competition_id),
+            only_finished=only_finished,
+            round_from=round_from,
+            round_to=round_to,
+            limit=int(limit),
+            offset=int(offset),
+            require_sot_stats=False,
+        )
+        fixtures = [
+            db.get(Fixture, int(c.fixture_id))
+            for c in selection.items
+            if db.get(Fixture, int(c.fixture_id)) is not None
+        ]
+
+        by_date: dict[str, list[Fixture]] = defaultdict(list)
+        for fixture in fixtures:
+            if fixture is None or fixture.kickoff_at is None:
+                continue
+            kickoff = fixture.kickoff_at
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            match_date = kickoff.astimezone(timezone.utc).date().isoformat()
+            by_date[match_date].append(fixture)
+
+        api_calls = 0
+        events_by_date: dict[str, list] = {}
+        for match_date in by_date:
+            events, calls = self._discovery.fetch_scheduled_events_for_date(match_date)
+            events_by_date[match_date] = events
+            api_calls += calls
 
         existing_count = 0
         high_count = 0
@@ -111,6 +109,9 @@ class SportApiFixtureMappingBackfillService:
         for fixture in fixtures:
             if fixture is None:
                 continue
+            if sleep_between_fixtures_s and sleep_between_fixtures_s > 0:
+                time.sleep(float(sleep_between_fixtures_s))
+
             fid = int(fixture.id)
             home = db.get(Team, int(fixture.home_team_id))
             away = db.get(Team, int(fixture.away_team_id))
@@ -140,7 +141,32 @@ class SportApiFixtureMappingBackfillService:
                     )
                 continue
 
-            discovery = self._discovery.discover_for_fixture(db, fixture=fixture, competition=comp)
+            if fixture.kickoff_at is None:
+                fetch_errors += 1
+                if len(items) < _SAMPLE_LIMIT:
+                    items.append(
+                        SportApiFixtureMappingBackfillItem(
+                            fixture_id=fid,
+                            round=fixture.round,
+                            home_team=home_name,
+                            away_team=away_name,
+                            error="Fixture senza kickoff_at",
+                        ),
+                    )
+                continue
+
+            kickoff = fixture.kickoff_at
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            match_date = kickoff.astimezone(timezone.utc).date().isoformat()
+            cached = events_by_date.get(match_date, [])
+
+            discovery = self._discovery.discover_for_fixture(
+                db,
+                fixture=fixture,
+                competition=comp,
+                cached_events=cached,
+            )
             item_warnings = list(discovery.get("warnings") or [])
 
             if discovery.get("status") != "ok":
@@ -218,13 +244,16 @@ class SportApiFixtureMappingBackfillService:
                     ),
                 )
 
-        return SportApiFixtureMappingBackfillResponse(
+        has_more = (int(offset) + int(limit)) < int(selection.total_candidates)
+
+        return SportApiFixtureMappingSeasonBackfillResponse(
             status="ok",
             dry_run=bool(dry_run),
             competition_id=int(competition_id),
             competition_name=comp.name,
-            round_number=round_number,
             fixtures_processed=len([f for f in fixtures if f is not None]),
+            total_candidates=int(selection.total_candidates),
+            has_more=has_more,
             existing_mappings=existing_count,
             high_confidence_matches=high_count,
             medium_confidence_matches=medium_count,
@@ -232,6 +261,7 @@ class SportApiFixtureMappingBackfillService:
             written_mappings=written_count,
             ambiguous_matches=ambiguous_count,
             fetch_errors=fetch_errors,
-            items=items,
+            api_calls=api_calls,
+            items_sample=items,
             warnings=warnings,
         )

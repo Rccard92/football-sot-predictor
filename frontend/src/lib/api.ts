@@ -4041,8 +4041,29 @@ export type SportApiFixtureMappingBackfillResponse = {
     best_candidate?: SportApiFixtureMappingDebugResponse['best_candidate']
     would_write_mapping: boolean
     mapping_written: boolean
+    error?: string | null
     warnings: string[]
   }[]
+  warnings: string[]
+}
+
+export type SportApiFixtureMappingSeasonBackfillResponse = {
+  status: string
+  dry_run: boolean
+  competition_id: number
+  competition_name: string
+  fixtures_processed: number
+  total_candidates: number
+  has_more: boolean
+  existing_mappings: number
+  high_confidence_matches: number
+  medium_confidence_matches: number
+  low_confidence_matches: number
+  written_mappings: number
+  ambiguous_matches: number
+  fetch_errors: number
+  api_calls: number
+  items_sample: SportApiFixtureMappingBackfillResponse['items']
   warnings: string[]
 }
 
@@ -4062,6 +4083,27 @@ export async function postSportApiFixtureMappingBackfill(
     `/api/admin/sportapi/competitions/${competitionId}/backfill-fixture-mappings`,
     body,
     { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
+  )
+}
+
+export async function postSportApiFixtureMappingSeasonBackfill(
+  competitionId: number,
+  body: {
+    dry_run?: boolean
+    force_refresh?: boolean
+    only_finished?: boolean
+    limit?: number
+    offset?: number
+    round_from?: number | null
+    round_to?: number | null
+    sleep_between_fixtures_s?: number | null
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiFixtureMappingSeasonBackfillResponse> {
+  return adminPostJson<SportApiFixtureMappingSeasonBackfillResponse>(
+    `/api/admin/sportapi/competitions/${competitionId}/backfill-fixture-mappings-season`,
+    body,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 300_000 },
   )
 }
 
@@ -4091,9 +4133,12 @@ export type SportApiUnavailableBackfillResponse = {
   competition_name: string
   round_number?: number | null
   fixtures_processed: number
+  fixtures_with_mapping: number
+  fixtures_mapping_missing: number
   fixtures_with_unavailable_from_provider: number
   total_unavailable_found: number
   total_written: number
+  skipped_missing_provider_player_id: number
   mapping_missing_count: number
   fetch_errors: number
   samples: {
@@ -4107,7 +4152,29 @@ export type SportApiUnavailableBackfillResponse = {
     mapping_status: string
     data_source?: string | null
     detected_paths: string[]
+    skipped_reason?: string | null
   }[]
+  warnings: string[]
+}
+
+export type SportApiUnavailableSeasonBackfillResponse = {
+  status: string
+  dry_run: boolean
+  competition_id: number
+  competition_name: string
+  fixtures_processed: number
+  total_candidates: number
+  has_more: boolean
+  fixtures_with_mapping: number
+  fixtures_mapping_missing: number
+  fixtures_with_unavailable_from_provider: number
+  total_unavailable_found: number
+  total_written: number
+  skipped_missing_provider_player_id: number
+  fetch_errors: number
+  api_calls: number
+  source_paths_found: string[]
+  samples: SportApiUnavailableBackfillResponse['samples']
   warnings: string[]
 }
 
@@ -4128,6 +4195,27 @@ export async function postSportApiUnavailableBackfill(
     `/api/admin/sportapi/competitions/${competitionId}/backfill-unavailable`,
     body,
     { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
+  )
+}
+
+export async function postSportApiUnavailableSeasonBackfill(
+  competitionId: number,
+  body: {
+    dry_run?: boolean
+    force_refresh?: boolean
+    only_finished?: boolean
+    limit?: number
+    offset?: number
+    round_from?: number | null
+    round_to?: number | null
+    sleep_between_fixtures_s?: number | null
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiUnavailableSeasonBackfillResponse> {
+  return adminPostJson<SportApiUnavailableSeasonBackfillResponse>(
+    `/api/admin/sportapi/competitions/${competitionId}/backfill-unavailable-season`,
+    body,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 300_000 },
   )
 }
 

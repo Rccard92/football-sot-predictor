@@ -26,6 +26,7 @@ class SportApiUnavailableBackfillFixtureSample(BaseModel):
     mapping_status: str
     data_source: str | None = None
     detected_paths: list[str] = Field(default_factory=list)
+    skipped_reason: str | None = None
 
 
 class SportApiUnavailableBackfillResponse(BaseModel):
@@ -35,9 +36,12 @@ class SportApiUnavailableBackfillResponse(BaseModel):
     competition_name: str
     round_number: int | None = None
     fixtures_processed: int = 0
+    fixtures_with_mapping: int = 0
+    fixtures_mapping_missing: int = 0
     fixtures_with_unavailable_from_provider: int = 0
     total_unavailable_found: int = 0
     total_written: int = 0
+    skipped_missing_provider_player_id: int = 0
     mapping_missing_count: int = 0
     fetch_errors: int = 0
     samples: list[SportApiUnavailableBackfillFixtureSample] = Field(default_factory=list)

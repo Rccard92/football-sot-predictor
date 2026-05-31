@@ -1139,6 +1139,41 @@ Riutilo `BacktestFixtureDebugService.select_fixtures_for_mini_run` (finished + S
 
 ---
 
+## 29. Step K.4 — Bulk SportAPI mapping + unavailable import
+
+**Obiettivo:** estendere K.2/K.3 a backfill bulk per stagione con paginazione, dry-run obbligatorio e strict mapping→unavailable.
+
+### Endpoint admin
+
+| Metodo | Path | Ruolo |
+|--------|------|--------|
+| POST | `/api/admin/sportapi/competitions/{id}/backfill-fixture-mappings` | Giornata (finished + SOT, max 50) |
+| POST | `/api/admin/sportapi/competitions/{id}/backfill-fixture-mappings-season` | Stagione (finished, max 400/batch) |
+| POST | `/api/admin/sportapi/competitions/{id}/backfill-unavailable` | Giornata (richiede mapping esistente) |
+| POST | `/api/admin/sportapi/competitions/{id}/backfill-unavailable-season` | Stagione (solo fixture mappate) |
+
+### Flusso operativo
+
+1. Mapping dry-run (giornata o stagione)
+2. Mapping write (solo high confidence)
+3. Unavailable dry-run
+4. Unavailable write → `fixture_missing_players`
+5. Audit JK.1 (`verdict=unavailable_found_normalized`)
+6. Mini-run / pick evaluation (`historical_official_xi`, read-only backtest)
+
+### Regole
+
+- `source_fixture_id` = fixture interna target (mai fallback temporale)
+- Unavailable solo da `provider_event_id` mappato
+- Mapping high confidence only; medium/low skip
+- `scheduled-events` raggruppato per data UTC (cache per batch stagione)
+- Scritture solo su `fixture_provider_mappings` + `fixture_missing_players`
+- Nessuna scrittura tabelle `backtest_*`
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-k4-bulk-sportapi-mapping-unavailable`).
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -1173,7 +1208,9 @@ Riutilo `BacktestFixtureDebugService.select_fixtures_for_mini_run` (finished + S
 | SportApiFixtureMappingScoring (Step K.3) | `backend/app/services/sportapi/sportapi_fixture_mapping_scoring.py` |
 | SportApiFixtureMappingDebugService (Step K.3) | `backend/app/services/sportapi/sportapi_fixture_mapping_debug_service.py` |
 | SportApiFixtureMappingBackfillService (Step K.3) | `backend/app/services/sportapi/sportapi_fixture_mapping_backfill_service.py` |
-| Admin SportAPI routes (Step K.2/K.3) | `backend/app/routes/admin_sportapi.py` |
+| SportApiFixtureMappingSeasonBackfillService (Step K.4) | `backend/app/services/sportapi/sportapi_fixture_mapping_season_backfill_service.py` |
+| SportApiUnavailableSeasonBackfillService (Step K.4) | `backend/app/services/sportapi/sportapi_unavailable_season_backfill_service.py` |
+| Admin SportAPI routes (Step K.2/K.3/K.4) | `backend/app/routes/admin_sportapi.py` |
 | SotPickEvaluationPreviewService (Step H) | `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` |
 | Pick play advice logic (Step H.1) | `backend/app/services/backtest/sot_pick_play_advice_logic.py` |
 | Pick evaluation logic (Step H) | `backend/app/services/backtest/sot_pick_evaluation_logic.py` |

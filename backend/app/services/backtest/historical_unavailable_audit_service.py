@@ -90,7 +90,7 @@ class HistoricalUnavailableAuditService:
                 external_type=row.external_type,
             )
             counts.total += 1
-            counts.source_paths.add("fixture_missing_players")
+            counts.source_paths.add("fixture_missing_players.sportapi")
             if grp == "injured":
                 counts.injured += 1
             elif grp == "suspended":
@@ -286,7 +286,7 @@ class HistoricalUnavailableAuditService:
         )[:_SAMPLE_LIMIT]
 
         if fixtures_with_missing_players > 0:
-            verdict = "unavailable_found_in_storage"
+            verdict = "unavailable_found_normalized"
         elif all_raw_keys and not any_missing_players_rows:
             verdict = "unavailable_found_in_raw_not_normalized"
         else:
