@@ -6,6 +6,40 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-h1-advice-layer
+
+**Titolo:** Consiglio giocata pre-match per pick evaluation SOT
+
+**Descrizione:** Aggiunto livello di consiglio giocata indipendente dal risultato finale: il sistema mostra sempre linee aggressive/caute e outcome, ma indica se prima del match avrebbe consigliato o escluso la giocata.
+
+**Highlights:**
+
+- Linee aggressive/caute sempre visibili.
+- Consiglio GIOCA / NON GIOCARE / BORDERLINE.
+- Motivi sintetici e playability score.
+- `calculated_summary` separata da `advised_summary`.
+- Breakdown advised (line, confidence, sample bucket).
+- Linee default estese a 4.5, 10.5 e 11.5.
+- Nessun Under.
+- Nessun salvataggio DB.
+
+**File toccati:**
+
+- `backend/app/services/backtest/sot_pick_play_advice_logic.py` (nuovo)
+- `backend/app/services/backtest/sot_pick_evaluation_logic.py`
+- `backend/app/services/backtest/sot_pick_evaluation_preview_service.py`
+- `backend/app/schemas/backtest_sot_pick_evaluation.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_sot_pick_evaluation.py`
+- `backend/tests/test_sot_pick_play_advice.py` (nuovo)
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-h-over-only-aggressive-cautious
 
 **Titolo:** Step H — Over-only con strategia aggressiva + cauta

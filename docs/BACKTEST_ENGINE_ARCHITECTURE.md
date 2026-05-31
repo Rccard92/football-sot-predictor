@@ -918,7 +918,7 @@ cap 0.70–1.30
 | Mini-run (F) | Pick evaluation (H) |
 |--------------|----------------------|
 | Errore numerico (MAE, bias) | Esito scommessa WIN/LOSS |
-| Nessuna linea O/U | Linee 5.5–9.5 + soglia discesa cauta |
+| Nessuna linea O/U | Linee 4.5–11.5 + soglia discesa cauta |
 | Nessun pick | Due pick Over per fixture: **aggressiva** + **cauta** |
 
 **Logica (solo Over):**
@@ -944,6 +944,35 @@ cap 0.70–1.30
 
 ---
 
+## 24. Step H.1 — Consiglio giocata pre-match
+
+**Obiettivo:** aggiungere un livello di **eligibility / consiglio giocata** indipendente dall’outcome finale. Il sistema mostra sempre linee aggressive/caute calcolate e esiti WIN/LOSS, ma indica se **prima del match** avrebbe consigliato o escluso la giocata.
+
+**Separazione pre-match vs post-match:**
+
+| Pre-match (consiglio) | Post-match (validazione) |
+|-----------------------|---------------------------|
+| edge, confidence, sample_bucket, prior matches, warnings | actual_total_sot, outcome WIN/LOSS |
+| player layer / split fallback | actual_total_bucket (solo breakdown analitico) |
+| play_advice, playability_score | hit rate su pick consigliate |
+
+**Consiglio:** `GIOCA` / `NON GIOCARE` / `BORDERLINE` con motivi sintetici (`LOW_EDGE`, `EARLY_SAMPLE`, ecc.) e `playability_score` 0–100.
+
+**Parametri filtro (default):** min prior 10, min edge agg 0.25, min edge caut 1.00, max warnings 6, no early sample, no low confidence.
+
+**Summary:**
+
+- `calculated_summary` — tutte le linee calcolate (come Step H)
+- `advised_summary` — solo pick con consiglio giocabile; hit rate valuta outcome solo sulle consigliate
+
+**Linee default:** 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5
+
+**Regole:** `db_writes=false`, nessun Under, nessuna persistenza. Breakdown `*_by_actual_total_bucket` = analisi post-match, non usati nel consiglio.
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-h1-advice-layer`).
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -965,6 +994,7 @@ cap 0.70–1.30
 | Pit player rolling stats (Step G2B) | `backend/app/services/backtest/pit_player_rolling_stats.py` |
 | RollingPlayerLayerService (Step G2B) | `backend/app/services/backtest/rolling_player_layer_service.py` |
 | SotPickEvaluationPreviewService (Step H) | `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` |
+| Pick play advice logic (Step H.1) | `backend/app/services/backtest/sot_pick_play_advice_logic.py` |
 | Pick evaluation logic (Step H) | `backend/app/services/backtest/sot_pick_evaluation_logic.py` |
 | Schemas pick evaluation H | `backend/app/schemas/backtest_sot_pick_evaluation.py` |
 | Schemas lineup audit G2A | `backend/app/schemas/backtest_historical_lineup_audit.py` |

@@ -158,6 +158,7 @@ def backtest_debug_sot_pick_evaluation_preview(
             lines=body.lines,
             cautious_drop_threshold=body.cautious_drop_threshold,
             include_no_pick=body.include_no_pick,
+            play_advice_config=body.to_play_advice_config(),
         )
     except HTTPException:
         raise

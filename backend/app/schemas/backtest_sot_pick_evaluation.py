@@ -1,4 +1,4 @@
-"""Schemi API pick evaluation Over SOT read-only (Step H)."""
+"""Schemi API pick evaluation Over SOT read-only (Step H / H.1)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from app.services.backtest.sot_pick_evaluation_logic import (
     DEFAULT_CAUTIOUS_DROP_THRESHOLD,
     DEFAULT_PICK_LINES,
 )
+from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
 
 
 class SotPickEvaluationRequest(BaseModel):
@@ -24,6 +25,24 @@ class SotPickEvaluationRequest(BaseModel):
     lines: list[float] = Field(default_factory=lambda: list(DEFAULT_PICK_LINES))
     cautious_drop_threshold: float = Field(default=DEFAULT_CAUTIOUS_DROP_THRESHOLD, ge=0.0)
     include_no_pick: bool = True
+    min_prior_matches_for_play: int = Field(default=10, ge=0)
+    min_aggressive_edge_for_play: float = Field(default=0.25, ge=0.0)
+    min_cautious_edge_for_play: float = Field(default=1.00, ge=0.0)
+    max_warnings_for_play: int = Field(default=6, ge=0)
+    allow_early_low_sample: bool = False
+    allow_low_confidence: bool = False
+    include_borderline_as_playable: bool = False
+
+    def to_play_advice_config(self) -> PlayAdviceConfig:
+        return PlayAdviceConfig(
+            min_prior_matches_for_play=self.min_prior_matches_for_play,
+            min_aggressive_edge_for_play=self.min_aggressive_edge_for_play,
+            min_cautious_edge_for_play=self.min_cautious_edge_for_play,
+            max_warnings_for_play=self.max_warnings_for_play,
+            allow_early_low_sample=self.allow_early_low_sample,
+            allow_low_confidence=self.allow_low_confidence,
+            include_borderline_as_playable=self.include_borderline_as_playable,
+        )
 
 
 class SotPickEvaluationSelection(BaseModel):
@@ -37,6 +56,21 @@ class SotPickEvaluationSelection(BaseModel):
     cautious_drop_threshold: float
     include_no_pick: bool = True
     order_by: str = "kickoff_at asc"
+    min_prior_matches_for_play: int = 10
+    min_aggressive_edge_for_play: float = 0.25
+    min_cautious_edge_for_play: float = 1.00
+    max_warnings_for_play: int = 6
+    allow_early_low_sample: bool = False
+    allow_low_confidence: bool = False
+    include_borderline_as_playable: bool = False
+
+
+class SotPickPlayAdvice(BaseModel):
+    play_advice: str
+    play_advice_label: str
+    playability_score: int
+    advice_reasons: list[str] = Field(default_factory=list)
+    advice_summary: str = ""
 
 
 class SotPickOverPick(BaseModel):
@@ -45,6 +79,7 @@ class SotPickOverPick(BaseModel):
     edge: float
     outcome: str | None = None
     confidence: str
+    play_advice: SotPickPlayAdvice | None = None
 
 
 class SotPickEvaluationFixtureResult(BaseModel):
@@ -68,15 +103,15 @@ class SotPickEvaluationFixtureResult(BaseModel):
     away_prior_matches_count: int = 0
 
 
-class SotPickEvaluationSummary(BaseModel):
+class SotPickCalculatedSummary(BaseModel):
     fixtures_processed: int = 0
     fixtures_failed: int = 0
-    aggressive_picks_count: int = 0
+    aggressive_calculated_count: int = 0
     aggressive_no_pick_count: int = 0
     aggressive_wins: int = 0
     aggressive_losses: int = 0
     aggressive_hit_rate: float | None = None
-    cautious_picks_count: int = 0
+    cautious_calculated_count: int = 0
     cautious_no_pick_count: int = 0
     cautious_wins: int = 0
     cautious_losses: int = 0
@@ -85,6 +120,21 @@ class SotPickEvaluationSummary(BaseModel):
     avg_actual_total_sot: float | None = None
     avg_total_abs_error: float | None = None
     break_even_odds_50_pct: float = 2.0
+
+
+class SotPickAdvisedSummary(BaseModel):
+    aggressive_play_count: int = 0
+    aggressive_no_play_count: int = 0
+    aggressive_borderline_count: int = 0
+    aggressive_play_wins: int = 0
+    aggressive_play_losses: int = 0
+    aggressive_play_hit_rate: float | None = None
+    cautious_play_count: int = 0
+    cautious_no_play_count: int = 0
+    cautious_borderline_count: int = 0
+    cautious_play_wins: int = 0
+    cautious_play_losses: int = 0
+    cautious_play_hit_rate: float | None = None
 
 
 class SotPickBreakdownLineStats(BaseModel):
@@ -139,7 +189,8 @@ class SotPickEvaluationResponse(BaseModel):
     competition_id: int
     competition_name: str
     selection: SotPickEvaluationSelection
-    summary: SotPickEvaluationSummary
+    calculated_summary: SotPickCalculatedSummary
+    advised_summary: SotPickAdvisedSummary
     aggressive_by_line: list[SotPickBreakdownLineStats] = Field(default_factory=list)
     cautious_by_line: list[SotPickBreakdownLineStats] = Field(default_factory=list)
     aggressive_by_confidence: list[SotPickBreakdownConfidenceStats] = Field(default_factory=list)
@@ -150,6 +201,20 @@ class SotPickEvaluationResponse(BaseModel):
         default_factory=list,
     )
     cautious_by_actual_total_bucket: list[SotPickBreakdownActualTotalBucketStats] = Field(
+        default_factory=list,
+    )
+    advised_aggressive_by_line: list[SotPickBreakdownLineStats] = Field(default_factory=list)
+    advised_cautious_by_line: list[SotPickBreakdownLineStats] = Field(default_factory=list)
+    advised_aggressive_by_confidence: list[SotPickBreakdownConfidenceStats] = Field(
+        default_factory=list,
+    )
+    advised_cautious_by_confidence: list[SotPickBreakdownConfidenceStats] = Field(
+        default_factory=list,
+    )
+    advised_aggressive_by_sample_bucket: list[SotPickBreakdownSampleBucketStats] = Field(
+        default_factory=list,
+    )
+    advised_cautious_by_sample_bucket: list[SotPickBreakdownSampleBucketStats] = Field(
         default_factory=list,
     )
     results: list[SotPickEvaluationFixtureResult] = Field(default_factory=list)

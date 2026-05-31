@@ -115,6 +115,17 @@ function pickOutcomeClass(outcome: string | null | undefined, noPick: boolean): 
   return 'text-slate-600'
 }
 
+function adviceClass(label: string | null | undefined): string {
+  if (label === 'GIOCA') return 'font-semibold text-emerald-700'
+  if (label === 'BORDERLINE') return 'font-semibold text-amber-700'
+  return 'text-slate-500'
+}
+
+function formatAdviceReasons(reasons: string[] | undefined): string {
+  if (!reasons || reasons.length === 0) return '—'
+  return reasons.slice(0, 2).join(', ')
+}
+
 function parseLinesInput(raw: string): number[] {
   return raw
     .split(',')
@@ -163,8 +174,16 @@ export function BacktestDebugPanel() {
   const [pickEvalOffset, setPickEvalOffset] = useState(0)
   const [pickEvalRoundNumber, setPickEvalRoundNumber] = useState('')
   const [pickEvalCautiousThreshold, setPickEvalCautiousThreshold] = useState('0.75')
-  const [pickEvalLines, setPickEvalLines] = useState('5.5,6.5,7.5,8.5,9.5')
+  const [pickEvalLines, setPickEvalLines] = useState('4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5')
   const [pickEvalIncludeNoPick, setPickEvalIncludeNoPick] = useState(true)
+  const [pickEvalAdviceFiltersOpen, setPickEvalAdviceFiltersOpen] = useState(false)
+  const [pickEvalMinPriorMatches, setPickEvalMinPriorMatches] = useState('10')
+  const [pickEvalMinAggEdge, setPickEvalMinAggEdge] = useState('0.25')
+  const [pickEvalMinCautEdge, setPickEvalMinCautEdge] = useState('1.00')
+  const [pickEvalMaxWarnings, setPickEvalMaxWarnings] = useState('6')
+  const [pickEvalAllowEarlySample, setPickEvalAllowEarlySample] = useState(false)
+  const [pickEvalAllowLowConfidence, setPickEvalAllowLowConfidence] = useState(false)
+  const [pickEvalIncludeBorderline, setPickEvalIncludeBorderline] = useState(false)
   const [pickEvalOutcome, setPickEvalOutcome] = useState<Outcome | null>(null)
   const [pickEvalJson, setPickEvalJson] = useState<SotPickEvaluationResponse | null>(null)
 
@@ -554,6 +573,27 @@ export function BacktestDebugPanel() {
       })
       return
     }
+    const minPriorMatches = parseInt(pickEvalMinPriorMatches, 10)
+    const minAggEdge = parseFloat(pickEvalMinAggEdge)
+    const minCautEdge = parseFloat(pickEvalMinCautEdge)
+    const maxWarnings = parseInt(pickEvalMaxWarnings, 10)
+    if (
+      !Number.isFinite(minPriorMatches) ||
+      minPriorMatches < 0 ||
+      !Number.isFinite(minAggEdge) ||
+      minAggEdge < 0 ||
+      !Number.isFinite(minCautEdge) ||
+      minCautEdge < 0 ||
+      !Number.isFinite(maxWarnings) ||
+      maxWarnings < 0
+    ) {
+      setPickEvalOutcome({
+        kind: 'error',
+        httpStatus: null,
+        message: 'Filtri consiglio giocata non validi.',
+      })
+      return
+    }
     setLoadingId('pick-eval')
     try {
       const data = await postBacktestSotPickEvaluation({
@@ -565,14 +605,23 @@ export function BacktestDebugPanel() {
         lines,
         cautious_drop_threshold: cautiousThreshold,
         include_no_pick: pickEvalIncludeNoPick,
+        min_prior_matches_for_play: minPriorMatches,
+        min_aggressive_edge_for_play: minAggEdge,
+        min_cautious_edge_for_play: minCautEdge,
+        max_warnings_for_play: maxWarnings,
+        allow_early_low_sample: pickEvalAllowEarlySample,
+        allow_low_confidence: pickEvalAllowLowConfidence,
+        include_borderline_as_playable: pickEvalIncludeBorderline,
       })
       setPickEvalJson(data)
       const kind: OutcomeKind =
         data.status === 'ok' || data.status === 'partial_ok' ? 'ok' : 'error'
+      const calc = data.calculated_summary
+      const adv = data.advised_summary
       setPickEvalOutcome({
         kind,
         httpStatus: 200,
-        message: `Pick evaluation — agg ${data.summary.aggressive_picks_count} / caut ${data.summary.cautious_picks_count}, hit rate agg ${fmtMetric(data.summary.aggressive_hit_rate, 1)}% / caut ${fmtMetric(data.summary.cautious_hit_rate, 1)}%, db_writes=${String(data.db_writes)}`,
+        message: `Pick evaluation — calc agg ${calc.aggressive_calculated_count} / caut ${calc.cautious_calculated_count}, advised play agg ${adv.aggressive_play_count} / caut ${adv.cautious_play_count}, db_writes=${String(data.db_writes)}`,
       })
     } catch (e) {
       setPickEvalJson(null)
@@ -585,9 +634,16 @@ export function BacktestDebugPanel() {
       setLoadingId(null)
     }
   }, [
+    pickEvalAllowEarlySample,
+    pickEvalAllowLowConfidence,
+    pickEvalIncludeBorderline,
     pickEvalIncludeNoPick,
     pickEvalLimit,
     pickEvalLines,
+    pickEvalMaxWarnings,
+    pickEvalMinAggEdge,
+    pickEvalMinCautEdge,
+    pickEvalMinPriorMatches,
     pickEvalCautiousThreshold,
     pickEvalMode,
     pickEvalOffset,
@@ -1518,11 +1574,11 @@ export function BacktestDebugPanel() {
 
       <div className="mt-6 border-t border-slate-200 pt-6">
         <h3 className="text-sm font-semibold text-slate-800">
-          Betting Pick Evaluation preview (Step H)
+          Betting Pick Evaluation preview (Step H / H.1)
         </h3>
         <p className="mt-1 text-sm text-slate-600">
-          Simula le giocate Over SOT (aggressiva + cauta) che il modello avrebbe proposto,
-          confrontandole con il reale. Read-only: non salva picks o metriche.
+          Simula le giocate Over SOT (aggressiva + cauta), mostra sempre linee ed esiti, e indica se
+          prima del match avrebbe consigliato la giocata. Read-only: non salva picks o metriche.
         </p>
         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Nessun ROI reale in questo step: non usiamo quote bookmaker. Solo edge vs linea e esito
@@ -1612,6 +1668,81 @@ export function BacktestDebugPanel() {
           </button>
         </div>
 
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/80">
+          <button
+            type="button"
+            onClick={() => setPickEvalAdviceFiltersOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-800"
+          >
+            Filtri consiglio giocata
+            <span className="text-slate-500">{pickEvalAdviceFiltersOpen ? '▾' : '▸'}</span>
+          </button>
+          {pickEvalAdviceFiltersOpen ? (
+            <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 px-3 pb-3 pt-2">
+              <label className="flex flex-col gap-1 text-xs text-slate-600">
+                Min partite storiche
+                <input
+                  type="text"
+                  value={pickEvalMinPriorMatches}
+                  onChange={(e) => setPickEvalMinPriorMatches(e.target.value)}
+                  className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-600">
+                Min edge aggressiva
+                <input
+                  type="text"
+                  value={pickEvalMinAggEdge}
+                  onChange={(e) => setPickEvalMinAggEdge(e.target.value)}
+                  className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-600">
+                Min edge cauta
+                <input
+                  type="text"
+                  value={pickEvalMinCautEdge}
+                  onChange={(e) => setPickEvalMinCautEdge(e.target.value)}
+                  className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-600">
+                Max warning
+                <input
+                  type="text"
+                  value={pickEvalMaxWarnings}
+                  onChange={(e) => setPickEvalMaxWarnings(e.target.value)}
+                  className="w-16 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={pickEvalAllowEarlySample}
+                  onChange={(e) => setPickEvalAllowEarlySample(e.target.checked)}
+                />
+                Consenti early sample
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={pickEvalAllowLowConfidence}
+                  onChange={(e) => setPickEvalAllowLowConfidence(e.target.checked)}
+                />
+                Consenti low confidence
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={pickEvalIncludeBorderline}
+                  onChange={(e) => setPickEvalIncludeBorderline(e.target.checked)}
+                />
+                Conta borderline come giocabile
+              </label>
+            </div>
+          ) : null}
+        </div>
+
         {pickEvalOutcome ? (
           <div
             className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(pickEvalOutcome.kind)}`}
@@ -1627,34 +1758,67 @@ export function BacktestDebugPanel() {
         {pickEvalJson ? (
           <>
             <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm text-slate-800">
-              <div className="font-medium text-emerald-900">Sintesi pick evaluation</div>
+              <div className="font-medium text-emerald-900">Calculated summary (tutte le linee)</div>
               <div className="mt-1 grid gap-1 sm:grid-cols-3">
                 <div>
                   <span className="font-medium">Fixture processate / fallite:</span>{' '}
-                  {pickEvalJson.summary.fixtures_processed} / {pickEvalJson.summary.fixtures_failed}
+                  {pickEvalJson.calculated_summary.fixtures_processed} /{' '}
+                  {pickEvalJson.calculated_summary.fixtures_failed}
                 </div>
                 <div>
-                  <span className="font-medium">Aggressive pick / no pick:</span>{' '}
-                  {pickEvalJson.summary.aggressive_picks_count} /{' '}
-                  {pickEvalJson.summary.aggressive_no_pick_count}
+                  <span className="font-medium">Aggressive calc / no pick:</span>{' '}
+                  {pickEvalJson.calculated_summary.aggressive_calculated_count} /{' '}
+                  {pickEvalJson.calculated_summary.aggressive_no_pick_count}
                 </div>
                 <div>
                   <span className="font-medium">Aggressive W/L / Hit rate:</span>{' '}
-                  {pickEvalJson.summary.aggressive_wins} / {pickEvalJson.summary.aggressive_losses} /{' '}
-                  {fmtMetric(pickEvalJson.summary.aggressive_hit_rate, 1)}%
+                  {pickEvalJson.calculated_summary.aggressive_wins} /{' '}
+                  {pickEvalJson.calculated_summary.aggressive_losses} /{' '}
+                  {fmtMetric(pickEvalJson.calculated_summary.aggressive_hit_rate, 1)}%
                 </div>
                 <div>
-                  <span className="font-medium">Cautious pick / no pick:</span>{' '}
-                  {pickEvalJson.summary.cautious_picks_count} /{' '}
-                  {pickEvalJson.summary.cautious_no_pick_count}
+                  <span className="font-medium">Cautious calc / no pick:</span>{' '}
+                  {pickEvalJson.calculated_summary.cautious_calculated_count} /{' '}
+                  {pickEvalJson.calculated_summary.cautious_no_pick_count}
                 </div>
                 <div>
                   <span className="font-medium">Cautious W/L / Hit rate:</span>{' '}
-                  {pickEvalJson.summary.cautious_wins} / {pickEvalJson.summary.cautious_losses} /{' '}
-                  {fmtMetric(pickEvalJson.summary.cautious_hit_rate, 1)}%
+                  {pickEvalJson.calculated_summary.cautious_wins} /{' '}
+                  {pickEvalJson.calculated_summary.cautious_losses} /{' '}
+                  {fmtMetric(pickEvalJson.calculated_summary.cautious_hit_rate, 1)}%
                 </div>
                 <div>
                   <span className="font-medium">db_writes:</span> {String(pickEvalJson.db_writes)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3 text-sm text-slate-800">
+              <div className="font-medium text-blue-900">Advised summary (solo consigliate)</div>
+              <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                <div>
+                  <span className="font-medium">Aggressive play / no play / borderline:</span>{' '}
+                  {pickEvalJson.advised_summary.aggressive_play_count} /{' '}
+                  {pickEvalJson.advised_summary.aggressive_no_play_count} /{' '}
+                  {pickEvalJson.advised_summary.aggressive_borderline_count}
+                </div>
+                <div>
+                  <span className="font-medium">Aggressive play W/L / Hit rate:</span>{' '}
+                  {pickEvalJson.advised_summary.aggressive_play_wins} /{' '}
+                  {pickEvalJson.advised_summary.aggressive_play_losses} /{' '}
+                  {fmtMetric(pickEvalJson.advised_summary.aggressive_play_hit_rate, 1)}%
+                </div>
+                <div>
+                  <span className="font-medium">Cautious play / no play / borderline:</span>{' '}
+                  {pickEvalJson.advised_summary.cautious_play_count} /{' '}
+                  {pickEvalJson.advised_summary.cautious_no_play_count} /{' '}
+                  {pickEvalJson.advised_summary.cautious_borderline_count}
+                </div>
+                <div>
+                  <span className="font-medium">Cautious play W/L / Hit rate:</span>{' '}
+                  {pickEvalJson.advised_summary.cautious_play_wins} /{' '}
+                  {pickEvalJson.advised_summary.cautious_play_losses} /{' '}
+                  {fmtMetric(pickEvalJson.advised_summary.cautious_play_hit_rate, 1)}%
                 </div>
               </div>
             </div>
@@ -1671,9 +1835,13 @@ export function BacktestDebugPanel() {
                       <th className="px-2 py-1">Actual tot</th>
                       <th className="px-2 py-1">Agg linea</th>
                       <th className="px-2 py-1">Agg edge</th>
+                      <th className="px-2 py-1">Agg consiglio</th>
+                      <th className="px-2 py-1">Agg motivo</th>
                       <th className="px-2 py-1">Agg outcome</th>
                       <th className="px-2 py-1">Caut linea</th>
                       <th className="px-2 py-1">Caut edge</th>
+                      <th className="px-2 py-1">Caut consiglio</th>
+                      <th className="px-2 py-1">Caut motivo</th>
                       <th className="px-2 py-1">Caut outcome</th>
                     </tr>
                   </thead>
@@ -1694,6 +1862,16 @@ export function BacktestDebugPanel() {
                             {agg ? fmtMetric(agg.edge, 4) : '—'}
                           </td>
                           <td
+                            className={`px-2 py-1 ${adviceClass(agg?.play_advice?.play_advice_label)}`}
+                          >
+                            {row.no_aggressive_pick ? '—' : agg?.play_advice?.play_advice_label ?? '—'}
+                          </td>
+                          <td className="px-2 py-1 font-mono text-[10px]">
+                            {row.no_aggressive_pick
+                              ? '—'
+                              : formatAdviceReasons(agg?.play_advice?.advice_reasons)}
+                          </td>
+                          <td
                             className={`px-2 py-1 uppercase ${pickOutcomeClass(agg?.outcome, row.no_aggressive_pick)}`}
                           >
                             {row.no_aggressive_pick ? 'NO PICK' : agg?.outcome ?? '—'}
@@ -1703,6 +1881,16 @@ export function BacktestDebugPanel() {
                           </td>
                           <td className="px-2 py-1">
                             {caut ? fmtMetric(caut.edge, 4) : '—'}
+                          </td>
+                          <td
+                            className={`px-2 py-1 ${adviceClass(caut?.play_advice?.play_advice_label)}`}
+                          >
+                            {row.no_cautious_pick ? '—' : caut?.play_advice?.play_advice_label ?? '—'}
+                          </td>
+                          <td className="px-2 py-1 font-mono text-[10px]">
+                            {row.no_cautious_pick
+                              ? '—'
+                              : formatAdviceReasons(caut?.play_advice?.advice_reasons)}
                           </td>
                           <td
                             className={`px-2 py-1 uppercase ${pickOutcomeClass(caut?.outcome, row.no_cautious_pick)}`}
@@ -1886,7 +2074,169 @@ export function BacktestDebugPanel() {
               </div>
               <div className="overflow-x-auto">
                 <div className="mb-1 text-sm font-medium text-slate-800">
-                  Aggressive — breakdown actual total bucket
+                  Advised aggressive — breakdown per linea
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Linea</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.advised_aggressive_by_line.map((b) => (
+                      <tr key={`adv-agg-${b.line}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.line}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Advised cautious — breakdown per linea
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Linea</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.advised_cautious_by_line.map((b) => (
+                      <tr key={`adv-caut-${b.line}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.line}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Advised aggressive — breakdown confidence
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Confidence</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.advised_aggressive_by_confidence.map((b) => (
+                      <tr key={`adv-agg-conf-${b.confidence}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.confidence}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Advised cautious — breakdown confidence
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Confidence</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.advised_cautious_by_confidence.map((b) => (
+                      <tr key={`adv-caut-conf-${b.confidence}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.confidence}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Advised aggressive — breakdown sample bucket
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.advised_aggressive_by_sample_bucket.map((b) => (
+                      <tr key={`adv-agg-sample-${b.bucket}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.bucket}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Advised cautious — breakdown sample bucket
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.advised_cautious_by_sample_bucket.map((b) => (
+                      <tr key={`adv-caut-sample-${b.bucket}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.bucket}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Aggressive — breakdown actual total bucket (analisi post-match)
                 </div>
                 <table className="min-w-full text-left text-xs text-slate-700">
                   <thead className="border-b border-slate-200 bg-slate-50">
@@ -1913,7 +2263,7 @@ export function BacktestDebugPanel() {
               </div>
               <div className="overflow-x-auto">
                 <div className="mb-1 text-sm font-medium text-slate-800">
-                  Cautious — breakdown actual total bucket
+                  Cautious — breakdown actual total bucket (analisi post-match)
                 </div>
                 <table className="min-w-full text-left text-xs text-slate-700">
                   <thead className="border-b border-slate-200 bg-slate-50">

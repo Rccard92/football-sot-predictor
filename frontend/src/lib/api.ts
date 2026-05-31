@@ -2560,7 +2560,7 @@ export async function postBacktestSotV21MiniRun(
   return requestPostJson<SotV21MiniRunResponse>('/api/backtest/debug/sot-v21-mini-run', body)
 }
 
-// --- Backtest Engine Step H (Pick Evaluation preview — Over-only) ---
+// --- Backtest Engine Step H / H.1 (Pick Evaluation preview — Over-only + advice) ---
 
 export type SotPickEvaluationRequest = {
   competition_id: number
@@ -2573,6 +2573,21 @@ export type SotPickEvaluationRequest = {
   lines?: number[]
   cautious_drop_threshold?: number
   include_no_pick?: boolean
+  min_prior_matches_for_play?: number
+  min_aggressive_edge_for_play?: number
+  min_cautious_edge_for_play?: number
+  max_warnings_for_play?: number
+  allow_early_low_sample?: boolean
+  allow_low_confidence?: boolean
+  include_borderline_as_playable?: boolean
+}
+
+export type SotPickPlayAdvice = {
+  play_advice: string
+  play_advice_label: string
+  playability_score: number
+  advice_reasons: string[]
+  advice_summary: string
 }
 
 export type SotPickOverPick = {
@@ -2581,6 +2596,7 @@ export type SotPickOverPick = {
   edge: number
   outcome?: string | null
   confidence: string
+  play_advice?: SotPickPlayAdvice | null
 }
 
 export type SotPickEvaluationFixtureResult = {
@@ -2610,6 +2626,40 @@ export type SotPickBreakdownStats = {
   avg_edge?: number | null
 }
 
+export type SotPickCalculatedSummary = {
+  fixtures_processed: number
+  fixtures_failed: number
+  aggressive_calculated_count: number
+  aggressive_no_pick_count: number
+  aggressive_wins: number
+  aggressive_losses: number
+  aggressive_hit_rate?: number | null
+  cautious_calculated_count: number
+  cautious_no_pick_count: number
+  cautious_wins: number
+  cautious_losses: number
+  cautious_hit_rate?: number | null
+  avg_predicted_total_sot?: number | null
+  avg_actual_total_sot?: number | null
+  avg_total_abs_error?: number | null
+  break_even_odds_50_pct: number
+}
+
+export type SotPickAdvisedSummary = {
+  aggressive_play_count: number
+  aggressive_no_play_count: number
+  aggressive_borderline_count: number
+  aggressive_play_wins: number
+  aggressive_play_losses: number
+  aggressive_play_hit_rate?: number | null
+  cautious_play_count: number
+  cautious_no_play_count: number
+  cautious_borderline_count: number
+  cautious_play_wins: number
+  cautious_play_losses: number
+  cautious_play_hit_rate?: number | null
+}
+
 export type SotPickEvaluationResponse = {
   status: string
   preview_only: boolean
@@ -2627,25 +2677,16 @@ export type SotPickEvaluationResponse = {
     cautious_drop_threshold: number
     include_no_pick: boolean
     order_by: string
+    min_prior_matches_for_play: number
+    min_aggressive_edge_for_play: number
+    min_cautious_edge_for_play: number
+    max_warnings_for_play: number
+    allow_early_low_sample: boolean
+    allow_low_confidence: boolean
+    include_borderline_as_playable: boolean
   }
-  summary: {
-    fixtures_processed: number
-    fixtures_failed: number
-    aggressive_picks_count: number
-    aggressive_no_pick_count: number
-    aggressive_wins: number
-    aggressive_losses: number
-    aggressive_hit_rate?: number | null
-    cautious_picks_count: number
-    cautious_no_pick_count: number
-    cautious_wins: number
-    cautious_losses: number
-    cautious_hit_rate?: number | null
-    avg_predicted_total_sot?: number | null
-    avg_actual_total_sot?: number | null
-    avg_total_abs_error?: number | null
-    break_even_odds_50_pct: number
-  }
+  calculated_summary: SotPickCalculatedSummary
+  advised_summary: SotPickAdvisedSummary
   aggressive_by_line: Array<SotPickBreakdownStats & { line: number }>
   cautious_by_line: Array<SotPickBreakdownStats & { line: number }>
   aggressive_by_confidence: Array<SotPickBreakdownStats & { confidence: string }>
@@ -2654,6 +2695,12 @@ export type SotPickEvaluationResponse = {
   cautious_by_sample_bucket: Array<SotPickBreakdownStats & { bucket: string }>
   aggressive_by_actual_total_bucket: Array<SotPickBreakdownStats & { bucket: string }>
   cautious_by_actual_total_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  advised_aggressive_by_line: Array<SotPickBreakdownStats & { line: number }>
+  advised_cautious_by_line: Array<SotPickBreakdownStats & { line: number }>
+  advised_aggressive_by_confidence: Array<SotPickBreakdownStats & { confidence: string }>
+  advised_cautious_by_confidence: Array<SotPickBreakdownStats & { confidence: string }>
+  advised_aggressive_by_sample_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  advised_cautious_by_sample_bucket: Array<SotPickBreakdownStats & { bucket: string }>
   results: SotPickEvaluationFixtureResult[]
   failed_fixtures: { fixture_id: number; error_code: string; message: string }[]
 }

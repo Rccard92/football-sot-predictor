@@ -1,4 +1,4 @@
-"""Test pick evaluation Over-only SOT read-only (Step H)."""
+"""Test pick evaluation Over-only SOT read-only (Step H / H.1)."""
 
 from __future__ import annotations
 
@@ -11,9 +11,10 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.schemas.backtest_point_in_time import ActualsForScoring
 from app.schemas.backtest_sot_pick_evaluation import (
+    SotPickAdvisedSummary,
+    SotPickCalculatedSummary,
     SotPickEvaluationResponse,
     SotPickEvaluationSelection,
-    SotPickEvaluationSummary,
 )
 from app.schemas.backtest_sot_v21_preview import (
     SotV21PreviewErrors,
@@ -85,7 +86,7 @@ def test_lazio_inter_cautious_same_as_aggressive():
 
 def test_no_aggressive_pick_when_pred_below_min_line():
     aggressive, cautious, _ = evaluate_over_picks(
-        5.20, _LINES, None, cautious_drop_threshold=0.75, signals=_SIGNALS,
+        4.20, _LINES, None, cautious_drop_threshold=0.75, signals=_SIGNALS,
     )
     assert aggressive is None
     assert cautious is None
@@ -102,8 +103,8 @@ def test_no_under_in_output():
 
 
 def test_no_lower_cautious_line_available():
-    line, warnings = resolve_cautious_line(5.80, _LINES, cautious_drop_threshold=0.75)
-    assert resolve_aggressive_line(5.80, _LINES) == 5.5
+    line, warnings = resolve_cautious_line(4.80, _LINES, cautious_drop_threshold=0.75)
+    assert resolve_aggressive_line(4.80, _LINES) == 4.5
     assert line is None
     assert "no_lower_cautious_line_available" in warnings
 
@@ -146,23 +147,37 @@ _MOCK_RESPONSE = SotPickEvaluationResponse(
         limit=20,
         offset=0,
         round_number=15,
-        lines=[5.5, 6.5, 7.5, 8.5, 9.5],
+        lines=[4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5],
         cautious_drop_threshold=0.75,
         include_no_pick=True,
     ),
-    summary=SotPickEvaluationSummary(
+    calculated_summary=SotPickCalculatedSummary(
         fixtures_processed=10,
         fixtures_failed=0,
-        aggressive_picks_count=8,
+        aggressive_calculated_count=8,
         aggressive_no_pick_count=2,
         aggressive_wins=5,
         aggressive_losses=3,
         aggressive_hit_rate=62.5,
-        cautious_picks_count=7,
+        cautious_calculated_count=7,
         cautious_no_pick_count=3,
         cautious_wins=6,
         cautious_losses=1,
         cautious_hit_rate=85.71,
+    ),
+    advised_summary=SotPickAdvisedSummary(
+        aggressive_play_count=3,
+        aggressive_no_play_count=5,
+        aggressive_borderline_count=0,
+        aggressive_play_wins=2,
+        aggressive_play_losses=1,
+        aggressive_play_hit_rate=66.67,
+        cautious_play_count=4,
+        cautious_no_play_count=3,
+        cautious_borderline_count=0,
+        cautious_play_wins=4,
+        cautious_play_losses=0,
+        cautious_play_hit_rate=100.0,
     ),
 )
 
@@ -179,6 +194,7 @@ def test_pick_evaluation_success(mock_svc_cls):
             "round_number": 15,
             "limit": 20,
             "cautious_drop_threshold": 0.75,
+            "min_prior_matches_for_play": 10,
         },
     )
 
@@ -186,9 +202,9 @@ def test_pick_evaluation_success(mock_svc_cls):
     body = response.json()
     assert body["db_writes"] is False
     assert body["preview_only"] is True
-    assert body["summary"]["fixtures_processed"] == 10
-    assert body["summary"]["aggressive_picks_count"] == 8
-    assert body["summary"]["cautious_hit_rate"] == 85.71
+    assert body["calculated_summary"]["fixtures_processed"] == 10
+    assert body["calculated_summary"]["aggressive_calculated_count"] == 8
+    assert body["advised_summary"]["cautious_play_hit_rate"] == 100.0
 
 
 @patch("app.routes.backtest_debug.SotPickEvaluationPreviewService")
@@ -294,8 +310,12 @@ def test_pick_evaluation_service_no_db_writes():
     assert row.aggressive_pick is not None
     assert row.aggressive_pick.line == 8.5
     assert row.aggressive_pick.outcome == "win"
+    assert row.aggressive_pick.play_advice is not None
+    assert row.aggressive_pick.play_advice.play_advice == "no_play"
     assert row.cautious_pick is not None
     assert row.cautious_pick.line == 7.5
     assert row.cautious_pick.outcome == "win"
+    assert row.cautious_pick.play_advice is not None
+    assert row.cautious_pick.play_advice.play_advice == "play"
     db.add.assert_not_called()
     db.commit.assert_not_called()

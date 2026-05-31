@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-DEFAULT_PICK_LINES: list[float] = [5.5, 6.5, 7.5, 8.5, 9.5]
+DEFAULT_PICK_LINES: list[float] = [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]
 DEFAULT_CAUTIOUS_DROP_THRESHOLD = 0.75
 
 PickOutcome = Literal["win", "loss"]
