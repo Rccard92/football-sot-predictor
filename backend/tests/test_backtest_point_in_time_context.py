@@ -107,7 +107,7 @@ _MOCK_CONTEXT = PointInTimeContextResponse(
 
 @patch("app.routes.backtest_debug.PointInTimeContextService")
 def test_point_in_time_context_success(mock_svc_cls):
-    mock_svc_cls.return_value.build_sot_context.return_value = _MOCK_CONTEXT
+    mock_svc_cls.return_value.build_sot_context_with_historical.return_value = _MOCK_CONTEXT
 
     response = client.get(
         "/api/backtest/debug/point-in-time-context",
@@ -124,10 +124,47 @@ def test_point_in_time_context_success(mock_svc_cls):
 
 
 @patch("app.routes.backtest_debug.PointInTimeContextService")
+def test_point_in_time_context_historical_summary(mock_svc_cls):
+    from app.schemas.backtest_point_in_time_historical_summary import (
+        FixtureSnapshotSummaryBrief,
+        PointInTimeHistoricalSummary,
+    )
+
+    historical = PointInTimeHistoricalSummary(
+        source_fixture_id=146,
+        fixture_snapshot_summary=FixtureSnapshotSummaryBrief(
+            fixture_id=146,
+            home_status="available",
+            away_status="available",
+            home_starters_count=11,
+            away_starters_count=11,
+        ),
+        source_fixture_id_lineup_home=146,
+        source_fixture_id_lineup_away=146,
+        source_fixture_id_unavailable_home=146,
+        source_fixture_id_unavailable_away=146,
+    )
+    ctx = _MOCK_CONTEXT.model_copy(
+        update={"mode": "historical_official_xi", "historical_summary": historical},
+    )
+    mock_svc_cls.return_value.build_sot_context_with_historical.return_value = ctx
+
+    response = client.get(
+        "/api/backtest/debug/point-in-time-context",
+        params={"competition_id": 2, "fixture_id": 100, "mode": "historical_official_xi"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["historical_summary"] is not None
+    assert body["historical_summary"]["source_fixture_id"] == 146
+
+
+@patch("app.routes.backtest_debug.PointInTimeContextService")
 def test_point_in_time_context_fixture_not_found(mock_svc_cls):
     from fastapi import HTTPException
 
-    mock_svc_cls.return_value.build_sot_context.side_effect = HTTPException(
+    mock_svc_cls.return_value.build_sot_context_with_historical.side_effect = HTTPException(
         status_code=404,
         detail={"code": "fixture_not_found", "message": "Fixture 999 not found"},
     )
@@ -145,7 +182,7 @@ def test_point_in_time_context_fixture_not_found(mock_svc_cls):
 def test_point_in_time_context_competition_mismatch(mock_svc_cls):
     from fastapi import HTTPException
 
-    mock_svc_cls.return_value.build_sot_context.side_effect = HTTPException(
+    mock_svc_cls.return_value.build_sot_context_with_historical.side_effect = HTTPException(
         status_code=422,
         detail={
             "code": "fixture_competition_mismatch",
@@ -166,7 +203,7 @@ def test_point_in_time_context_competition_mismatch(mock_svc_cls):
 def test_point_in_time_context_market_not_supported(mock_svc_cls):
     from fastapi import HTTPException
 
-    mock_svc_cls.return_value.build_sot_context.side_effect = HTTPException(
+    mock_svc_cls.return_value.build_sot_context_with_historical.side_effect = HTTPException(
         status_code=422,
         detail={
             "code": "market_not_supported_for_context_yet",

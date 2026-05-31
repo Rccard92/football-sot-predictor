@@ -7,6 +7,7 @@ import {
   getBacktestErrorMessage,
   getBacktestHistoricalLineupAuditFixture,
   getBacktestHistoricalLineupAuditRound,
+  getBacktestHistoricalUnavailableAudit,
   getBacktestPointInTimeContext,
   getBacktestRun,
   getBacktestSotV21Preview,
@@ -18,6 +19,7 @@ import {
   type BacktestRunRow,
   type HistoricalLineupAuditFixtureResponse,
   type HistoricalLineupAuditRoundResponse,
+  type HistoricalUnavailableAuditResponse,
   type PointInTimeContextResponse,
   type SotPickEvaluationResponse,
   type SotV21MiniRunResponse,
@@ -229,6 +231,12 @@ export function BacktestDebugPanel() {
   const [g2aOutcome, setG2aOutcome] = useState<Outcome | null>(null)
   const [g2aFixtureJson, setG2aFixtureJson] = useState<HistoricalLineupAuditFixtureResponse | null>(null)
   const [g2aRoundJson, setG2aRoundJson] = useState<HistoricalLineupAuditRoundResponse | null>(null)
+
+  const [jk1RoundNumber, setJk1RoundNumber] = useState('')
+  const [jk1Limit, setJk1Limit] = useState(50)
+  const [jk1Offset, setJk1Offset] = useState(0)
+  const [jk1Outcome, setJk1Outcome] = useState<Outcome | null>(null)
+  const [jk1AuditJson, setJk1AuditJson] = useState<HistoricalUnavailableAuditResponse | null>(null)
 
   const needsCompetition = selectedCompetitionId == null
 
@@ -755,6 +763,35 @@ export function BacktestDebugPanel() {
     }
   }, [g2aRoundNumber, selectedCompetitionId])
 
+  const runJk1UnavailableAudit = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    setLoadingId('jk1-audit')
+    try {
+      const roundNum = parseMiniRunRoundNumber(jk1RoundNumber)
+      const data = await getBacktestHistoricalUnavailableAudit({
+        competition_id: selectedCompetitionId,
+        round_number: roundNum ?? undefined,
+        limit: jk1Limit,
+        offset: jk1Offset,
+      })
+      setJk1AuditJson(data)
+      setJk1Outcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Audit indisponibili — scanned ${data.fixtures_scanned}, with_unavailable ${data.fixtures_with_unavailable}, verdict=${data.verdict}, db_writes=${String(data.db_writes)}`,
+      })
+    } catch (e) {
+      setJk1AuditJson(null)
+      setJk1Outcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Audit indisponibili JK.1'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [jk1Limit, jk1Offset, jk1RoundNumber, selectedCompetitionId])
+
   const applyRoundFilter = useCallback(() => {
     const applied = roundFilter.trim()
     setRoundFilterApplied(applied)
@@ -1216,11 +1253,12 @@ export function BacktestDebugPanel() {
                 </div>
               ) : null}
               {pitPreviewJson.mode === 'historical_official_xi' ? (
-                <div className="sm:col-span-2 text-xs text-slate-600">
-                  XI e indisponibili letti dalla fixture target esatta (source_fixture_id=
-                  {findLineupsMacro(pitPreviewJson.home_trace)?.source_fixture_id ??
-                    pitPreviewJson.fixture_id}
-                  ).
+                <div className="sm:col-span-2">
+                  <span className="font-medium">source_fixture_id:</span> lineup H=
+                  {pitPreviewJson.source_fixture_id_lineup_home ?? pitPreviewJson.fixture_id}, A=
+                  {pitPreviewJson.source_fixture_id_lineup_away ?? pitPreviewJson.fixture_id}; unavail H=
+                  {pitPreviewJson.source_fixture_id_unavailable_home ?? pitPreviewJson.fixture_id}, A=
+                  {pitPreviewJson.source_fixture_id_unavailable_away ?? pitPreviewJson.fixture_id}
                 </div>
               ) : null}
             </div>
@@ -1274,6 +1312,58 @@ export function BacktestDebugPanel() {
                 Warnings: {pitJson.warnings.join(', ')}
               </p>
             ) : null}
+          </div>
+        ) : null}
+
+        {pitJson?.historical_summary ? (
+          <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 text-sm text-slate-800">
+            <div className="font-medium text-indigo-900">
+              Historical summary (JK.1) — fixture #{pitJson.historical_summary.source_fixture_id}
+            </div>
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              <div>
+                <span className="font-medium">Snapshot:</span> home{' '}
+                {pitJson.historical_summary.fixture_snapshot_summary.home_status} (
+                {pitJson.historical_summary.fixture_snapshot_summary.home_starters_count} XI), away{' '}
+                {pitJson.historical_summary.fixture_snapshot_summary.away_status} (
+                {pitJson.historical_summary.fixture_snapshot_summary.away_starters_count} XI)
+              </div>
+              <div>
+                <span className="font-medium">Indisponibili snapshot:</span> H=
+                {pitJson.historical_summary.fixture_snapshot_summary.home_unavailable_count} (
+                {pitJson.historical_summary.fixture_snapshot_summary.home_unavailable_source}), A=
+                {pitJson.historical_summary.fixture_snapshot_summary.away_unavailable_count} (
+                {pitJson.historical_summary.fixture_snapshot_summary.away_unavailable_source})
+              </div>
+              <div>
+                <span className="font-medium">Lineup macro:</span> H{' '}
+                {fmtMetric(pitJson.historical_summary.home_lineup_macro_index)} (
+                {pitJson.historical_summary.home_lineup_macro_status ?? '—'}), A{' '}
+                {fmtMetric(pitJson.historical_summary.away_lineup_macro_index)} (
+                {pitJson.historical_summary.away_lineup_macro_status ?? '—'})
+              </div>
+              <div>
+                <span className="font-medium">Unavailable macro:</span> H{' '}
+                {fmtMetric(pitJson.historical_summary.home_unavailable_macro_index)} (
+                {pitJson.historical_summary.home_unavailable_macro_status ?? '—'}), A{' '}
+                {fmtMetric(pitJson.historical_summary.away_unavailable_macro_index)} (
+                {pitJson.historical_summary.away_unavailable_macro_status ?? '—'})
+              </div>
+              <div>
+                <span className="font-medium">Player layer:</span> H{' '}
+                {fmtMetric(pitJson.historical_summary.home_player_layer_index)} (
+                {pitJson.historical_summary.home_player_layer_status ?? '—'}), A{' '}
+                {fmtMetric(pitJson.historical_summary.away_player_layer_index)} (
+                {pitJson.historical_summary.away_player_layer_status ?? '—'})
+              </div>
+              <div>
+                <span className="font-medium">source_fixture_id:</span> lineup H=
+                {pitJson.historical_summary.source_fixture_id_lineup_home}, A=
+                {pitJson.historical_summary.source_fixture_id_lineup_away}; unavail H=
+                {pitJson.historical_summary.source_fixture_id_unavailable_home}, A=
+                {pitJson.historical_summary.source_fixture_id_unavailable_away}
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -2613,6 +2703,140 @@ export function BacktestDebugPanel() {
             </div>
             <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-teal-200 bg-slate-900 p-3 text-xs text-slate-100">
               {JSON.stringify(g2aFixtureJson, null, 2)}
+            </pre>
+          </>
+        ) : null}
+      </div>
+
+      <div className="mt-8 rounded-xl border border-violet-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-800">
+          Historical unavailable audit (JK.1)
+        </h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Scansiona lo storage (fixture_missing_players, raw_json lineups, raw_payload provider) per
+          verificare se esistono indisponibili storici. Nessuna scrittura DB.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Giornata esatta (opzionale)
+            <input
+              type="number"
+              min={1}
+              className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={jk1RoundNumber}
+              onChange={(e) => setJk1RoundNumber(e.target.value)}
+              placeholder="15"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Limit
+            <select
+              value={jk1Limit}
+              onChange={(e) => setJk1Limit(Number(e.target.value))}
+              className="rounded border border-slate-300 px-2 py-1 text-sm"
+            >
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Offset
+            <input
+              type="number"
+              min={0}
+              className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={jk1Offset}
+              onChange={(e) => setJk1Offset(Number(e.target.value))}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runJk1UnavailableAudit()}
+            className="rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingId === 'jk1-audit' ? '…' : 'Audit indisponibili'}
+          </button>
+        </div>
+
+        {jk1Outcome ? (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(jk1Outcome.kind)}`}>
+            <div className="font-semibold">
+              {outcomeLabel(jk1Outcome.kind)}
+              {jk1Outcome.httpStatus != null ? ` — HTTP ${jk1Outcome.httpStatus}` : ''}
+            </div>
+            <div className="mt-1">{jk1Outcome.message}</div>
+          </div>
+        ) : null}
+
+        {jk1AuditJson ? (
+          <>
+            <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3 text-sm text-slate-800">
+              <div className="font-medium text-violet-900">Verdict: {jk1AuditJson.verdict}</div>
+              <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                <div>
+                  <span className="font-medium">Scanned:</span> {jk1AuditJson.fixtures_scanned}
+                </div>
+                <div>
+                  <span className="font-medium">With unavailable:</span>{' '}
+                  {jk1AuditJson.fixtures_with_unavailable}
+                </div>
+                <div>
+                  <span className="font-medium">Totali player:</span>{' '}
+                  {jk1AuditJson.total_unavailable_players} (injured{' '}
+                  {jk1AuditJson.total_injured_players}, suspended{' '}
+                  {jk1AuditJson.total_suspended_players})
+                </div>
+                <div>
+                  <span className="font-medium">Source paths:</span>{' '}
+                  {jk1AuditJson.source_paths_found.length > 0
+                    ? jk1AuditJson.source_paths_found.join(', ')
+                    : '—'}
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="font-medium">Storage checked:</span>{' '}
+                  {jk1AuditJson.storage_checked.join('; ')}
+                </div>
+                {jk1AuditJson.raw_json_keys_detected.length > 0 ? (
+                  <div className="sm:col-span-2">
+                    <span className="font-medium">raw_json keys:</span>{' '}
+                    {jk1AuditJson.raw_json_keys_detected.join(', ')}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {jk1AuditJson.sample_fixtures_with_unavailable.length > 0 ? (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Fixture</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">H unavail</th>
+                      <th className="px-2 py-1">A unavail</th>
+                      <th className="px-2 py-1">Source paths</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jk1AuditJson.sample_fixtures_with_unavailable.map((row) => (
+                      <tr key={row.fixture_id} className="border-b border-slate-100">
+                        <td className="px-2 py-1">#{row.fixture_id}</td>
+                        <td className="px-2 py-1">
+                          {row.home_team} vs {row.away_team}
+                        </td>
+                        <td className="px-2 py-1">{row.home_unavailable_count}</td>
+                        <td className="px-2 py-1">{row.away_unavailable_count}</td>
+                        <td className="px-2 py-1">{row.source_paths.join(', ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-violet-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(jk1AuditJson, null, 2)}
             </pre>
           </>
         ) : null}

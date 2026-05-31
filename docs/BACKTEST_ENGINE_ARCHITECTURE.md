@@ -1017,6 +1017,54 @@ cap 0.70–1.30
 
 ---
 
+## 26. Step JK.1 — Validation snapshot target e audit indisponibili
+
+**Scopo:** layer read-only di validazione per `historical_official_xi`: sintesi compatta nel PIT context, `source_fixture_id` esplicito su preview/mini-run/pick eval, audit indisponibili su storage fixture target. Nessuna modifica a formule, pesi o persistenza.
+
+### HistoricalPitExtensionsBuilder
+
+Builder condiviso (`historical_pit_extensions_builder.py`) usato da:
+
+- `PointInTimeContextService.build_sot_context_with_historical` — popola `fixture_snapshot`, macro lineup/unavailable/player layer e `historical_summary`
+- `SotV21PointInTimePreviewService` — elimina duplicazione del blocco historical
+
+`pre_lineup`: `historical_summary = null`, campi macro/snapshot restano `null`.
+
+### PointInTimeHistoricalSummary
+
+Campo `historical_summary` su `PointInTimeContextResponse`: status/index macro, conteggi snapshot, quattro `source_fixture_id_*`.
+
+### source_fixture_id esplicito
+
+Helper `extract_source_fixture_ids` da trace macro `lineups` e `injuries_unavailable`. Esposto top-level su:
+
+- `SotV21PreviewResponse`
+- `SotV21MiniRunFixtureResult` (sempre, anche senza trace)
+- `SotPickEvaluationFixtureResult`
+
+Invariante: fixture target 146/359 in `historical_official_xi` → tutti e 4 i campi = `fixture_id` target.
+
+### Audit indisponibili
+
+`GET /api/backtest/debug/historical-unavailable-audit` — `HistoricalUnavailableAuditService` scansiona per fixture:
+
+1. `fixture_missing_players` (classify injured/suspended)
+2. `fixture_lineups.raw_json` (parser condiviso `pit_unavailable_parsing.py`)
+3. `fixture_provider_lineups.raw_payload`
+
+Solo fixture corrente, nessun fallback su fixture vicine.
+
+**Verdict:**
+
+- `unavailable_found_in_storage` se `fixtures_with_unavailable > 0`
+- `unavailable_not_found_in_current_storage` se zero (non errore HTTP)
+
+Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 10, `raw_json_keys_detected`.
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-jk1-validation-audit`).
+
+---
+
 ## Riferimenti codice
 
 | Area | Path |
@@ -1040,6 +1088,11 @@ cap 0.70–1.30
 | HistoricalLineupMacroService (Step J) | `backend/app/services/backtest/historical_lineup_macro_service.py` |
 | HistoricalFixtureSnapshotService (Step J/K) | `backend/app/services/backtest/historical_fixture_snapshot_service.py` |
 | HistoricalUnavailableMacroService (Step K) | `backend/app/services/backtest/historical_unavailable_macro_service.py` |
+| HistoricalPitExtensionsBuilder (Step JK.1) | `backend/app/services/backtest/historical_pit_extensions_builder.py` |
+| HistoricalUnavailableAuditService (Step JK.1) | `backend/app/services/backtest/historical_unavailable_audit_service.py` |
+| pit_unavailable_parsing (Step JK.1) | `backend/app/services/backtest/pit_unavailable_parsing.py` |
+| Schemas historical summary JK.1 | `backend/app/schemas/backtest_point_in_time_historical_summary.py` |
+| Schemas unavailable audit JK.1 | `backend/app/schemas/backtest_historical_unavailable_audit.py` |
 | SotPickEvaluationPreviewService (Step H) | `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` |
 | Pick play advice logic (Step H.1) | `backend/app/services/backtest/sot_pick_play_advice_logic.py` |
 | Pick evaluation logic (Step H) | `backend/app/services/backtest/sot_pick_evaluation_logic.py` |

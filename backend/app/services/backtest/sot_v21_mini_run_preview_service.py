@@ -478,6 +478,10 @@ def _preview_to_result(
         warnings=list(preview.warnings),
         home_trace=preview.home_trace if include_trace else None,
         away_trace=preview.away_trace if include_trace else None,
+        source_fixture_id_lineup_home=preview.source_fixture_id_lineup_home,
+        source_fixture_id_lineup_away=preview.source_fixture_id_lineup_away,
+        source_fixture_id_unavailable_home=preview.source_fixture_id_unavailable_home,
+        source_fixture_id_unavailable_away=preview.source_fixture_id_unavailable_away,
     )
 
 

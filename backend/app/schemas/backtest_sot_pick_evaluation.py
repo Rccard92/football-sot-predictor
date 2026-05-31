@@ -108,6 +108,10 @@ class SotPickEvaluationFixtureResult(BaseModel):
     home_unavailable_macro_index: float | None = None
     away_unavailable_macro_index: float | None = None
     unavailable_important_absences_count: int = 0
+    source_fixture_id_lineup_home: int | None = None
+    source_fixture_id_lineup_away: int | None = None
+    source_fixture_id_unavailable_home: int | None = None
+    source_fixture_id_unavailable_away: int | None = None
 
 
 class SotPickCalculatedSummary(BaseModel):

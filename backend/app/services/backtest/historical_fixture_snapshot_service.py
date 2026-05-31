@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,6 +18,7 @@ from app.services.backtest.pit_player_rolling_stats import (
     load_sportapi_missing_by_side,
     resolve_side_lineup,
 )
+from app.services.backtest.pit_unavailable_parsing import parse_unavailable_from_payload
 
 
 def snapshot_row_to_raw(row: HistoricalSnapshotPlayerRow) -> RawPlayerRow:
@@ -74,42 +74,6 @@ def _split_unavailable_groups(
             other.append(snap)
     all_rows = injured + suspended + other
     return all_rows, injured, suspended
-
-
-def _parse_unavailable_from_raw_json(raw: Any) -> list[RawPlayerRow]:
-    """Parse injured/suspended/unavailable espliciti da raw JSON provider, solo fixture target."""
-    if not isinstance(raw, dict):
-        return []
-    rows: list[RawPlayerRow] = []
-    for key, group in (
-        ("injured", "injured"),
-        ("suspended", "suspended"),
-        ("unavailable", "other"),
-        ("missing", "other"),
-    ):
-        block = raw.get(key)
-        if not isinstance(block, list):
-            continue
-        for item in block:
-            if not isinstance(item, dict):
-                continue
-            name = item.get("name") or item.get("player_name") or item.get("player")
-            if isinstance(name, dict):
-                name = name.get("name")
-            pid = item.get("id") or item.get("player_id") or item.get("provider_player_id")
-            pos = item.get("position") or item.get("pos")
-            rows.append(
-                RawPlayerRow(
-                    player_name=str(name or pid or "?"),
-                    provider_player_id=int(pid) if pid is not None else None,
-                    api_player_id=None,
-                    position=str(pos) if pos is not None else None,
-                    is_starter=False,
-                    is_unavailable=True,
-                    absence_group=group,
-                ),
-            )
-    return rows
 
 
 class HistoricalFixtureSnapshotService:
@@ -181,7 +145,7 @@ class HistoricalFixtureSnapshotService:
                     ).limit(1),
                 )
                 if lineup_row and lineup_row.raw_json:
-                    parsed = _parse_unavailable_from_raw_json(lineup_row.raw_json)
+                    parsed = parse_unavailable_from_payload(lineup_row.raw_json)
                     if parsed:
                         unavailable = parsed
                         unavailable_source = "raw_json"

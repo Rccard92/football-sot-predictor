@@ -590,3 +590,30 @@ class PointInTimeContextService:
             warnings=warnings,
             feature_snapshot_json=feature_snapshot,
         )
+
+    def build_sot_context_with_historical(
+        self,
+        db: Session,
+        *,
+        competition_id: int,
+        fixture_id: int,
+        mode: str = "pre_lineup",
+        market_key: str = "shots_on_target",
+    ) -> PointInTimeContextResponse:
+        ctx = self.build_sot_context(
+            db,
+            competition_id=int(competition_id),
+            fixture_id=int(fixture_id),
+            mode=mode,
+            market_key=market_key,
+        )
+        if mode != BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
+            return ctx
+        from app.services.backtest.historical_pit_extensions_builder import HistoricalPitExtensionsBuilder
+
+        return HistoricalPitExtensionsBuilder().build_historical_extensions(
+            db,
+            competition_id=int(competition_id),
+            fixture_id=int(fixture_id),
+            ctx=ctx,
+        )

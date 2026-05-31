@@ -2311,6 +2311,38 @@ export type PointInTimeContextResponse = {
   actuals_used_as_input: boolean
   warnings: string[]
   feature_snapshot_json: Record<string, unknown>
+  historical_summary?: PointInTimeHistoricalSummary | null
+}
+
+export type PointInTimeHistoricalSummary = {
+  source_fixture_id: number
+  fixture_snapshot_summary: {
+    fixture_id: number
+    home_status: string
+    away_status: string
+    home_starters_count: number
+    away_starters_count: number
+    home_unavailable_count: number
+    away_unavailable_count: number
+    home_unavailable_source: string
+    away_unavailable_source: string
+  }
+  home_lineup_macro_status?: string | null
+  home_lineup_macro_index?: number | null
+  away_lineup_macro_status?: string | null
+  away_lineup_macro_index?: number | null
+  home_unavailable_macro_status?: string | null
+  home_unavailable_macro_index?: number | null
+  away_unavailable_macro_status?: string | null
+  away_unavailable_macro_index?: number | null
+  home_player_layer_status?: string | null
+  home_player_layer_index?: number | null
+  away_player_layer_status?: string | null
+  away_player_layer_index?: number | null
+  source_fixture_id_lineup_home?: number | null
+  source_fixture_id_lineup_away?: number | null
+  source_fixture_id_unavailable_home?: number | null
+  source_fixture_id_unavailable_away?: number | null
 }
 
 export async function listBacktestDebugFixtures(params: {
@@ -2416,6 +2448,10 @@ export type SotV21PreviewResponse = {
   warnings: string[]
   fallback_variables: string[]
   feature_snapshot_json: Record<string, unknown>
+  source_fixture_id_lineup_home?: number | null
+  source_fixture_id_lineup_away?: number | null
+  source_fixture_id_unavailable_home?: number | null
+  source_fixture_id_unavailable_away?: number | null
 }
 
 export async function getBacktestSotV21Preview(params: {
@@ -2465,6 +2501,10 @@ export type SotV21MiniRunFixtureResult = {
   warnings: string[]
   home_trace?: SotV21PreviewResponse['home_trace'] | null
   away_trace?: SotV21PreviewResponse['away_trace'] | null
+  source_fixture_id_lineup_home?: number | null
+  source_fixture_id_lineup_away?: number | null
+  source_fixture_id_unavailable_home?: number | null
+  source_fixture_id_unavailable_away?: number | null
 }
 
 export type SotV21MiniRunCaseBrief = {
@@ -2654,6 +2694,10 @@ export type SotPickEvaluationFixtureResult = {
   home_unavailable_macro_index?: number | null
   away_unavailable_macro_index?: number | null
   unavailable_important_absences_count?: number
+  source_fixture_id_lineup_home?: number | null
+  source_fixture_id_lineup_away?: number | null
+  source_fixture_id_unavailable_home?: number | null
+  source_fixture_id_unavailable_away?: number | null
 }
 
 export type SotPickBreakdownStats = {
@@ -2902,6 +2946,60 @@ export async function getBacktestHistoricalLineupAuditRound(params: {
   if (params.offset != null) q.set('offset', String(params.offset))
   return requestJson<HistoricalLineupAuditRoundResponse>(
     `/api/backtest/debug/historical-lineup-audit/round?${q.toString()}`,
+  )
+}
+
+// --- Backtest Engine Step JK.1 (Historical unavailable audit) ---
+
+export type HistoricalUnavailableAuditResponse = {
+  status: string
+  preview_only: boolean
+  db_writes: boolean
+  competition_id: number
+  competition_name: string
+  round_number?: number | null
+  limit: number
+  offset: number
+  fixtures_scanned: number
+  fixtures_with_unavailable: number
+  fixtures_with_injured: number
+  fixtures_with_suspended: number
+  total_unavailable_players: number
+  total_injured_players: number
+  total_suspended_players: number
+  sample_fixtures_with_unavailable: {
+    fixture_id: number
+    round?: string | null
+    home_team: string
+    away_team: string
+    home_unavailable_count: number
+    away_unavailable_count: number
+    home_injured_count: number
+    away_injured_count: number
+    home_suspended_count: number
+    away_suspended_count: number
+    source_paths: string[]
+    players: { player_name: string; absence_group: string; side: string }[]
+  }[]
+  source_paths_found: string[]
+  raw_json_keys_detected: string[]
+  storage_checked: string[]
+  verdict: string
+}
+
+export async function getBacktestHistoricalUnavailableAudit(params: {
+  competition_id: number
+  round_number?: number
+  limit?: number
+  offset?: number
+}): Promise<HistoricalUnavailableAuditResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  if (params.round_number != null) q.set('round_number', String(params.round_number))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  return requestJson<HistoricalUnavailableAuditResponse>(
+    `/api/backtest/debug/historical-unavailable-audit?${q.toString()}`,
   )
 }
 

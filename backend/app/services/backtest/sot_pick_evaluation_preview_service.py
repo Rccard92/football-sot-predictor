@@ -254,6 +254,10 @@ def _evaluate_fixture(
         home_unavailable_macro_index=_round4(home_unavail_index),
         away_unavailable_macro_index=_round4(away_unavail_index),
         unavailable_important_absences_count=int(home_absences + away_absences),
+        source_fixture_id_lineup_home=preview.source_fixture_id_lineup_home,
+        source_fixture_id_lineup_away=preview.source_fixture_id_lineup_away,
+        source_fixture_id_unavailable_home=preview.source_fixture_id_unavailable_home,
+        source_fixture_id_unavailable_away=preview.source_fixture_id_unavailable_away,
     )
 
 

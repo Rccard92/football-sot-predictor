@@ -10,6 +10,52 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-jk1-validation-audit
+
+**Titolo:** Step JK.1 — Validazione snapshot target e audit indisponibili
+
+**Descrizione:** Layer read-only di validazione per `historical_official_xi`: sintesi `historical_summary` nel PIT context, `source_fixture_id` esplicito su preview/mini-run/pick eval, audit indisponibili su storage fixture target. Nessuna modifica formule/pesi/persistenza.
+
+**Highlights:**
+
+- `HistoricalPitExtensionsBuilder` condiviso tra PIT context e preview.
+- `PointInTimeHistoricalSummary` su `GET point-in-time-context` in historical mode.
+- Quattro campi `source_fixture_id_*` top-level su preview, mini-run fixture result, pick eval.
+- `HistoricalUnavailableAuditService` + endpoint `GET historical-unavailable-audit`.
+- Parser condiviso `pit_unavailable_parsing.py` per snapshot e audit.
+- UI BacktestDebugPanel: card historical_summary, source_fixture_id, sezione audit JK.1.
+- Verdict zero indisponibili documentato (`unavailable_not_found_in_current_storage`).
+- `db_writes=false`, `pre_lineup` invariato.
+
+**File toccati:**
+
+- `backend/app/services/backtest/historical_pit_extensions_builder.py` (nuovo)
+- `backend/app/services/backtest/historical_source_fixture_ids.py` (nuovo)
+- `backend/app/services/backtest/historical_unavailable_audit_service.py` (nuovo)
+- `backend/app/services/backtest/pit_unavailable_parsing.py` (nuovo)
+- `backend/app/schemas/backtest_point_in_time_historical_summary.py` (nuovo)
+- `backend/app/schemas/backtest_historical_unavailable_audit.py` (nuovo)
+- `backend/app/services/backtest/point_in_time_context_service.py`
+- `backend/app/services/backtest/sot_v21_preview_service.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/app/services/backtest/sot_pick_evaluation_preview_service.py`
+- `backend/app/services/backtest/historical_fixture_snapshot_service.py`
+- `backend/app/schemas/backtest_point_in_time.py`
+- `backend/app/schemas/backtest_sot_v21_preview.py`
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `backend/app/schemas/backtest_sot_pick_evaluation.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_historical_pit_extensions.py` (nuovo)
+- `backend/tests/test_historical_unavailable_audit.py` (nuovo)
+- `backend/tests/test_backtest_point_in_time_context.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-jk-historical-lineup-unavailable
 
 **Titolo:** Lineup e indisponibili storici da fixture target esatta

@@ -133,6 +133,10 @@ class SotV21MiniRunFixtureResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     home_trace: SotV21PreviewSideTrace | None = None
     away_trace: SotV21PreviewSideTrace | None = None
+    source_fixture_id_lineup_home: int | None = None
+    source_fixture_id_lineup_away: int | None = None
+    source_fixture_id_unavailable_home: int | None = None
+    source_fixture_id_unavailable_away: int | None = None
 
 
 class SotV21MiniRunCaseBrief(BaseModel):

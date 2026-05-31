@@ -17,11 +17,9 @@ from app.schemas.backtest_sot_v21_preview import (
     SotV21PreviewResponse,
     SotV21PreviewSideTrace,
 )
-from app.services.backtest.historical_fixture_snapshot_service import HistoricalFixtureSnapshotService
-from app.services.backtest.historical_lineup_macro_service import HistoricalLineupMacroService
-from app.services.backtest.historical_unavailable_macro_service import HistoricalUnavailableMacroService
+from app.services.backtest.historical_pit_extensions_builder import HistoricalPitExtensionsBuilder
+from app.services.backtest.historical_source_fixture_ids import extract_source_fixture_ids
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
-from app.services.backtest.rolling_player_layer_service import RollingPlayerLayerService
 from app.services.backtest.sot_v21_pit_macro_builder import build_pit_side_preview
 
 
@@ -64,79 +62,11 @@ class SotV21PointInTimePreviewService:
         )
 
         if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
-            snapshot_svc = HistoricalFixtureSnapshotService()
-            layer_svc = RollingPlayerLayerService()
-            lineup_svc = HistoricalLineupMacroService()
-            unavail_svc = HistoricalUnavailableMacroService()
-
-            snapshot = snapshot_svc.get_fixture_official_snapshot(
+            ctx = HistoricalPitExtensionsBuilder().build_historical_extensions(
                 db,
                 competition_id=int(competition_id),
                 fixture_id=int(fixture_id),
-            )
-
-            home_layer = layer_svc.build_team_player_layer(
-                db,
-                competition_id=int(competition_id),
-                team_id=int(ctx.home_team_id),
-                cutoff_time=ctx.cutoff_time,
-                side_snapshot=snapshot.home,
-                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
-            )
-            away_layer = layer_svc.build_team_player_layer(
-                db,
-                competition_id=int(competition_id),
-                team_id=int(ctx.away_team_id),
-                cutoff_time=ctx.cutoff_time,
-                side_snapshot=snapshot.away,
-                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
-            )
-            home_lineup_macro = lineup_svc.build_team_lineup_macro(
-                db,
-                snapshot=snapshot,
-                competition_id=int(competition_id),
-                team_id=int(ctx.home_team_id),
-                cutoff_time=ctx.cutoff_time,
-                side="home",
-            )
-            away_lineup_macro = lineup_svc.build_team_lineup_macro(
-                db,
-                snapshot=snapshot,
-                competition_id=int(competition_id),
-                team_id=int(ctx.away_team_id),
-                cutoff_time=ctx.cutoff_time,
-                side="away",
-            )
-            home_unavailable_macro = unavail_svc.build_team_unavailable_macro(
-                db,
-                snapshot=snapshot,
-                competition_id=int(competition_id),
-                team_id=int(ctx.home_team_id),
-                cutoff_time=ctx.cutoff_time,
-                side="home",
-                opponent_side=snapshot.away,
-                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
-            )
-            away_unavailable_macro = unavail_svc.build_team_unavailable_macro(
-                db,
-                snapshot=snapshot,
-                competition_id=int(competition_id),
-                team_id=int(ctx.away_team_id),
-                cutoff_time=ctx.cutoff_time,
-                side="away",
-                opponent_side=snapshot.home,
-                league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
-            )
-            ctx = ctx.model_copy(
-                update={
-                    "fixture_snapshot": snapshot,
-                    "home_player_layer": home_layer,
-                    "away_player_layer": away_layer,
-                    "home_lineup_macro": home_lineup_macro,
-                    "away_lineup_macro": away_lineup_macro,
-                    "home_unavailable_macro": home_unavailable_macro,
-                    "away_unavailable_macro": away_unavailable_macro,
-                },
+                ctx=ctx,
             )
 
         home_side = build_pit_side_preview(
@@ -238,6 +168,14 @@ class SotV21PointInTimePreviewService:
                 macros=[SotV21PreviewMacroTrace(**m) for m in side.macro_traces],
             )
 
+        home_trace = _side_trace(home_side)
+        away_trace = _side_trace(away_side)
+        source_ids = extract_source_fixture_ids(
+            home_trace,
+            away_trace,
+            fallback_fixture_id=int(fixture_id),
+        )
+
         return SotV21PreviewResponse(
             status="ok",
             market_key="shots_on_target",
@@ -269,11 +207,12 @@ class SotV21PointInTimePreviewService:
                 away_abs_error=away_abs,
                 total_abs_error=total_abs,
             ),
-            home_trace=_side_trace(home_side),
-            away_trace=_side_trace(away_side),
+            home_trace=home_trace,
+            away_trace=away_trace,
             home_prior_matches_count=int(ctx.home_prior_matches_count),
             away_prior_matches_count=int(ctx.away_prior_matches_count),
             warnings=warnings,
             fallback_variables=fallbacks,
             feature_snapshot_json=feature_snapshot,
+            **source_ids,
         )

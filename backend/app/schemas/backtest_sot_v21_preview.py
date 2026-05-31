@@ -75,3 +75,7 @@ class SotV21PreviewResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     fallback_variables: list[str] = Field(default_factory=list)
     feature_snapshot_json: dict[str, Any] = Field(default_factory=dict)
+    source_fixture_id_lineup_home: int | None = None
+    source_fixture_id_lineup_away: int | None = None
+    source_fixture_id_unavailable_home: int | None = None
+    source_fixture_id_unavailable_away: int | None = None

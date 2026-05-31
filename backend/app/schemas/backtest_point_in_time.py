@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.schemas.backtest_historical_fixture_snapshot import HistoricalFixtureOfficialSnapshot
+from app.schemas.backtest_point_in_time_historical_summary import PointInTimeHistoricalSummary
 
 
 class BacktestFixtureTeamBrief(BaseModel):
@@ -190,6 +191,7 @@ class PointInTimeContextResponse(BaseModel):
     home_unavailable_macro: TeamUnavailableMacroPointInTime | None = None
     away_unavailable_macro: TeamUnavailableMacroPointInTime | None = None
     fixture_snapshot: HistoricalFixtureOfficialSnapshot | None = None
+    historical_summary: PointInTimeHistoricalSummary | None = None
     league_baselines: LeaguePointInTimeBaselines
     home_player_stats: PlayerStatsDiagnostic
     away_player_stats: PlayerStatsDiagnostic

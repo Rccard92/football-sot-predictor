@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
 from app.services.backtest.historical_lineup_audit_service import HistoricalLineupAuditService
+from app.services.backtest.historical_unavailable_audit_service import HistoricalUnavailableAuditService
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
 from app.services.backtest.sot_pick_evaluation_preview_service import SotPickEvaluationPreviewService
 from app.services.backtest.sot_v21_mini_run_preview_service import SotV21MiniRunPreviewService
@@ -75,7 +76,7 @@ def backtest_debug_point_in_time_context(
 ):
     svc = PointInTimeContextService()
     try:
-        payload = svc.build_sot_context(
+        payload = svc.build_sot_context_with_historical(
             db,
             competition_id=competition_id,
             fixture_id=fixture_id,
@@ -210,5 +211,30 @@ def backtest_debug_historical_lineup_audit_round(
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("GET historical-lineup-audit/round: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/historical-unavailable-audit")
+def backtest_debug_historical_unavailable_audit(
+    competition_id: int = Query(...),
+    round_number: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    svc = HistoricalUnavailableAuditService()
+    try:
+        payload = svc.audit(
+            db,
+            competition_id=competition_id,
+            round_number=round_number,
+            limit=limit,
+            offset=offset,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET historical-unavailable-audit: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)
