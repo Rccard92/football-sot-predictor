@@ -17,6 +17,7 @@ from app.schemas.backtest_sot_v21_preview import (
     SotV21PreviewResponse,
     SotV21PreviewSideTrace,
 )
+from app.services.backtest.historical_lineup_macro_service import HistoricalLineupMacroService
 from app.services.backtest.point_in_time_context_service import PointInTimeContextService
 from app.services.backtest.rolling_player_layer_service import RollingPlayerLayerService
 from app.services.backtest.sot_v21_pit_macro_builder import build_pit_side_preview
@@ -62,6 +63,7 @@ class SotV21PointInTimePreviewService:
 
         if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
             layer_svc = RollingPlayerLayerService()
+            lineup_svc = HistoricalLineupMacroService()
             home_layer = layer_svc.build_team_player_layer(
                 db,
                 competition_id=int(competition_id),
@@ -80,10 +82,30 @@ class SotV21PointInTimePreviewService:
                 side="away",
                 league_avg_sot_for=ctx.league_baselines.league_avg_sot_for,
             )
+            home_lineup_macro = lineup_svc.build_team_lineup_macro(
+                db,
+                competition_id=int(competition_id),
+                fixture_id=int(fixture_id),
+                team_id=int(ctx.home_team_id),
+                opponent_team_id=int(ctx.away_team_id),
+                cutoff_time=ctx.cutoff_time,
+                side="home",
+            )
+            away_lineup_macro = lineup_svc.build_team_lineup_macro(
+                db,
+                competition_id=int(competition_id),
+                fixture_id=int(fixture_id),
+                team_id=int(ctx.away_team_id),
+                opponent_team_id=int(ctx.home_team_id),
+                cutoff_time=ctx.cutoff_time,
+                side="away",
+            )
             ctx = ctx.model_copy(
                 update={
                     "home_player_layer": home_layer,
                     "away_player_layer": away_layer,
+                    "home_lineup_macro": home_lineup_macro,
+                    "away_lineup_macro": away_lineup_macro,
                 },
             )
 
@@ -116,12 +138,28 @@ class SotV21PointInTimePreviewService:
         total_err, total_abs = _error_pair(total_pred, actuals.actual_total_sot)
 
         warnings = list(dict.fromkeys(ctx.warnings + home_side.warnings + away_side.warnings))
+        lineup_macro_active = False
         if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
             warnings.insert(0, "historical_official_xi_mode_not_prelineup")
+            lineup_macro_active = (
+                ctx.home_lineup_macro is not None
+                and ctx.away_lineup_macro is not None
+                and ctx.home_lineup_macro.status != "neutral_fallback"
+                and ctx.away_lineup_macro.status != "neutral_fallback"
+            )
+            if lineup_macro_active:
+                suppress = {
+                    "no_historical_probable_lineups",
+                    "lineups_point_in_time_limited",
+                    "lineups_point_in_time_not_built_yet",
+                }
+                warnings = [w for w in warnings if w not in suppress]
             warnings = list(dict.fromkeys(warnings))
         fallbacks = list(
             dict.fromkeys(ctx.fallback_variables + home_side.fallback_variables + away_side.fallback_variables),
         )
+        if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI and lineup_macro_active:
+            fallbacks = [f for f in fallbacks if f != "lineups_point_in_time_neutral"]
 
         neutral_macro_count = sum(
             1

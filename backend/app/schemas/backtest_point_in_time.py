@@ -69,6 +69,21 @@ class TeamPlayerLayerPointInTime(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class TeamLineupMacroPointInTime(BaseModel):
+    status: str = "neutral_fallback"
+    lineup_macro_index: float = 1.0
+    formation: str | None = None
+    starters_count: int = 0
+    bench_count: int = 0
+    previous_xi_overlap_count: int | None = None
+    previous_xi_overlap_pct: float | None = None
+    formation_changed_vs_previous: bool | None = None
+    formation_changed_vs_common: bool | None = None
+    components: dict[str, float] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    fallback_variables: list[str] = Field(default_factory=list)
+
+
 class TeamSplitPointInTimeStats(BaseModel):
     team_id: int
     split_context: str
@@ -140,6 +155,8 @@ class PointInTimeContextResponse(BaseModel):
     away_split_stats: TeamSplitPointInTimeStats
     home_player_layer: TeamPlayerLayerPointInTime | None = None
     away_player_layer: TeamPlayerLayerPointInTime | None = None
+    home_lineup_macro: TeamLineupMacroPointInTime | None = None
+    away_lineup_macro: TeamLineupMacroPointInTime | None = None
     league_baselines: LeaguePointInTimeBaselines
     home_player_stats: PlayerStatsDiagnostic
     away_player_stats: PlayerStatsDiagnostic

@@ -533,3 +533,81 @@ def build_mapping_summary(
         mapping_coverage_pct=pct(starters_provider, len(starters)),
         player_stats_prior_coverage_pct=pct(starters_prior, len(starters)),
     )
+
+
+@dataclass(frozen=True)
+class PreviousLineupSnapshot:
+    fixture_id: int
+    kickoff_at: datetime
+    formation: str | None
+    starters: list[RawPlayerRow]
+
+
+def _starter_identity_keys(starters: list[RawPlayerRow]) -> set[str]:
+    keys: set[str] = set()
+    for row in starters:
+        if row.api_player_id is not None:
+            keys.add(f"api:{int(row.api_player_id)}")
+        elif row.provider_player_id is not None:
+            keys.add(f"prov:{int(row.provider_player_id)}")
+        elif row.player_name:
+            keys.add(f"name:{row.player_name.strip().lower()}")
+    return keys
+
+
+def count_xi_overlap(current: list[RawPlayerRow], previous: list[RawPlayerRow]) -> int:
+    current_keys = _starter_identity_keys(current)
+    previous_keys = _starter_identity_keys(previous)
+    return len(current_keys & previous_keys)
+
+
+def load_previous_official_lineups(
+    db: Session,
+    *,
+    team_id: int,
+    competition_id: int,
+    cutoff: datetime,
+    limit: int = 5,
+) -> list[PreviousLineupSnapshot]:
+    """Carica le ultime formazioni ufficiali del team prima del cutoff (strict PIT)."""
+    fixture_rows = db.scalars(
+        select(Fixture)
+        .join(
+            FixtureLineup,
+            (FixtureLineup.fixture_id == Fixture.id) & (FixtureLineup.team_id == int(team_id)),
+        )
+        .where(
+            Fixture.competition_id == int(competition_id),
+            Fixture.status.in_(FINISHED_STATUSES),
+            pit_strict_kickoff_before(Fixture.kickoff_at, cutoff),
+            or_(Fixture.home_team_id == int(team_id), Fixture.away_team_id == int(team_id)),
+            FixtureLineup.is_available.is_(True),
+        )
+        .order_by(Fixture.kickoff_at.desc())
+        .limit(int(limit)),
+    ).all()
+
+    out: list[PreviousLineupSnapshot] = []
+    for fixture in fixture_rows:
+        side = "home" if int(fixture.home_team_id) == int(team_id) else "away"
+        home_missing, away_missing = load_sportapi_missing_by_side(db, int(fixture.id))
+        missing_rows = home_missing if side == "home" else away_missing
+        coverage, starters, _bench, _unavail = resolve_side_lineup(
+            db,
+            fixture=fixture,
+            team_id=int(team_id),
+            side=side,
+            missing_rows=missing_rows,
+        )
+        if not coverage.has_official_xi or not starters:
+            continue
+        out.append(
+            PreviousLineupSnapshot(
+                fixture_id=int(fixture.id),
+                kickoff_at=fixture.kickoff_at,
+                formation=coverage.formation,
+                starters=starters,
+            ),
+        )
+    return out
+

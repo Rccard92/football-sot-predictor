@@ -101,6 +101,10 @@ class SotPickEvaluationFixtureResult(BaseModel):
     leakage_guard: bool = True
     home_prior_matches_count: int = 0
     away_prior_matches_count: int = 0
+    home_lineup_macro_status: str | None = None
+    home_lineup_macro_index: float | None = None
+    away_lineup_macro_status: str | None = None
+    away_lineup_macro_index: float | None = None
 
 
 class SotPickCalculatedSummary(BaseModel):

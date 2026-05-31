@@ -100,6 +100,24 @@ function findPlayerLayerMacro(side: PitSideTrace | undefined) {
   return side?.macros?.find((m) => m.key === 'player_layer')
 }
 
+function findLineupsMacro(side: PitSideTrace | undefined) {
+  return side?.macros?.find((m) => m.key === 'lineups')
+}
+
+function formatLineupMacroSide(side: PitSideTrace | undefined): string {
+  const macro = findLineupsMacro(side)
+  if (!macro) return '— (—)'
+  const details = macro.details
+  const overlap =
+    details?.previous_xi_overlap_pct != null
+      ? `${details.previous_xi_overlap_pct}%`
+      : details?.previous_xi_overlap_count != null
+        ? `${details.previous_xi_overlap_count}/11`
+        : '—'
+  const formation = details?.formation ?? '—'
+  return `${macro.macro_index ?? '—'} (${macro.status ?? '—'}, mod ${formation}, cont ${overlap})`
+}
+
 function countNeutralMacros(side: PitSideTrace | undefined): number {
   return (
     side?.macros?.filter(
@@ -1163,6 +1181,13 @@ export function BacktestDebugPanel() {
                   {findPlayerLayerMacro(pitPreviewJson.away_trace)?.status ?? '—'})
                 </div>
               ) : null}
+              {pitPreviewJson.mode === 'historical_official_xi' ? (
+                <div className="sm:col-span-2">
+                  <span className="font-medium">Lineups macro (J):</span> casa{' '}
+                  {formatLineupMacroSide(pitPreviewJson.home_trace)}, trasferta{' '}
+                  {formatLineupMacroSide(pitPreviewJson.away_trace)}
+                </div>
+              ) : null}
             </div>
             {pitPreviewJson.warnings.length > 0 ? (
               <p className="mt-2 text-xs text-amber-800">
@@ -1409,6 +1434,36 @@ export function BacktestDebugPanel() {
                   <div>
                     <span className="font-medium">Media prior stats coverage:</span>{' '}
                     {fmtMetric(miniRunJson.player_layer_summary.avg_prior_stats_coverage_pct, 1)}%
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {miniRunJson.lineup_macro_summary ? (
+              <div className="mt-2 rounded-lg border border-teal-100 bg-white p-3 text-sm text-slate-800">
+                <div className="font-medium text-teal-800">Lineups / formazioni storiche (J)</div>
+                <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                  <div>
+                    <span className="font-medium">Disponibile / parziale / fallback:</span>{' '}
+                    {miniRunJson.lineup_macro_summary.available_count} /{' '}
+                    {miniRunJson.lineup_macro_summary.partial_count} /{' '}
+                    {miniRunJson.lineup_macro_summary.fallback_count}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media lineup macro casa:</span>{' '}
+                    {fmtMetric(miniRunJson.lineup_macro_summary.avg_home_lineup_index, 4)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media lineup macro trasferta:</span>{' '}
+                    {fmtMetric(miniRunJson.lineup_macro_summary.avg_away_lineup_index, 4)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Media continuità XI casa:</span>{' '}
+                    {fmtMetric(miniRunJson.lineup_macro_summary.avg_home_xi_continuity_pct, 1)}%
+                  </div>
+                  <div>
+                    <span className="font-medium">Media continuità XI trasferta:</span>{' '}
+                    {fmtMetric(miniRunJson.lineup_macro_summary.avg_away_xi_continuity_pct, 1)}%
                   </div>
                 </div>
               </div>
@@ -1790,6 +1845,20 @@ export function BacktestDebugPanel() {
                 <div>
                   <span className="font-medium">db_writes:</span> {String(pickEvalJson.db_writes)}
                 </div>
+                {pickEvalMode === 'historical_official_xi' && pickEvalJson.results.length > 0 ? (
+                  <div className="sm:col-span-2">
+                    <span className="font-medium">Lineup macro (J):</span>{' '}
+                    {pickEvalJson.results.filter((r) => r.home_lineup_macro_status === 'available').length}{' '}
+                    fixture con macro available (casa), media index casa{' '}
+                    {fmtMetric(
+                      pickEvalJson.results.reduce(
+                        (acc, r) => acc + (r.home_lineup_macro_index ?? 0),
+                        0,
+                      ) / pickEvalJson.results.length,
+                      4,
+                    )}
+                  </div>
+                ) : null}
               </div>
             </div>
 

@@ -83,6 +83,17 @@ def _player_layer_status(preview: SotV21PreviewResponse, side: str) -> str | Non
     return None
 
 
+def _lineups_macro_status_index(
+    preview: SotV21PreviewResponse,
+    side: str,
+) -> tuple[str | None, float | None]:
+    trace = preview.home_trace if side == "home" else preview.away_trace
+    for macro in trace.macros:
+        if macro.key == "lineups":
+            return macro.status, float(macro.macro_index)
+    return None, None
+
+
 def _to_play_advice_schema(advice: PlayAdviceResult) -> SotPickPlayAdvice:
     return SotPickPlayAdvice(
         play_advice=advice.play_advice,
@@ -198,6 +209,9 @@ def _evaluate_fixture(
         play_advice_config,
     )
 
+    home_lineup_status, home_lineup_index = _lineups_macro_status_index(preview, "home")
+    away_lineup_status, away_lineup_index = _lineups_macro_status_index(preview, "away")
+
     return SotPickEvaluationFixtureResult(
         fixture_id=int(preview.fixture_id),
         match=f"{preview.fixture.home_team} vs {preview.fixture.away_team}",
@@ -217,6 +231,10 @@ def _evaluate_fixture(
         leakage_guard=preview.leakage_guard,
         home_prior_matches_count=int(preview.home_prior_matches_count),
         away_prior_matches_count=int(preview.away_prior_matches_count),
+        home_lineup_macro_status=home_lineup_status,
+        home_lineup_macro_index=_round4(home_lineup_index),
+        away_lineup_macro_status=away_lineup_status,
+        away_lineup_macro_index=_round4(away_lineup_index),
     )
 
 

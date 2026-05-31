@@ -41,6 +41,8 @@ class SotV21PreviewMacroTrace(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     components: dict[str, Any] | None = None
     source_paths: list[str] | None = None
+    details: dict[str, Any] | None = None
+    mode: str | None = None
 
 
 class SotV21PreviewSideTrace(BaseModel):

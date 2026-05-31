@@ -282,6 +282,52 @@ def _compute_player_layer_macro(
     return result, trace, fallback_key
 
 
+def _compute_historical_lineups_macro(
+    ctx: PointInTimeContextResponse,
+    *,
+    is_home: bool,
+) -> tuple[V21MacroResult, dict[str, Any], str | None]:
+    key = "lineups"
+    source_paths = [
+        "fixture_lineups",
+        "fixture_lineups.formation",
+        "fixture_lineups.starters",
+        "point_in_time_context.previous_lineups",
+    ]
+    lineup = ctx.home_lineup_macro if is_home else ctx.away_lineup_macro
+    if lineup is None:
+        r, t, fb = _neutral_macro(key, "historical_lineup_macro_missing")
+        return r, t, "historical_lineup_macro"
+
+    if lineup.status == "neutral_fallback":
+        r, t, fb = _neutral_macro(key, "historical_lineup_macro_unavailable")
+        if lineup.fallback_variables:
+            fb = lineup.fallback_variables[0]
+        return r, t, fb
+
+    components: dict[str, Any] = dict(lineup.components)
+    result, trace = _macro_from_index(
+        key,
+        float(lineup.lineup_macro_index),
+        lineup.status,
+        list(lineup.warnings),
+        components=components,
+        source_paths=source_paths,
+    )
+    trace["mode"] = BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
+    trace["details"] = {
+        "formation": lineup.formation,
+        "starters_count": lineup.starters_count,
+        "bench_count": lineup.bench_count,
+        "previous_xi_overlap_count": lineup.previous_xi_overlap_count,
+        "previous_xi_overlap_pct": lineup.previous_xi_overlap_pct,
+        "formation_changed_vs_previous": lineup.formation_changed_vs_previous,
+        "formation_changed_vs_common": lineup.formation_changed_vs_common,
+    }
+    fallback_key = None if lineup.status in ("available", "partial_low_sample") else "historical_lineup_macro_partial"
+    return result, trace, fallback_key
+
+
 def build_pit_side_preview(
     *,
     team: TeamPointInTimeStats,
@@ -403,15 +449,24 @@ def build_pit_side_preview(
 
     lineup_warning = "no_historical_probable_lineups"
     if mode == BACKTEST_MODE_HISTORICAL_OFFICIAL_XI:
-        r, t, fb = _neutral_macro("lineups", "lineups_point_in_time_limited")
+        r, t, fb = _compute_historical_lineups_macro(ctx, is_home=is_home)
+        macro_results.append(r)
+        macro_traces.append(t)
+        if fb:
+            fallbacks.append(fb)
+        warnings.extend(r.warnings)
     elif lineup_warning in ctx.warnings or not ctx.lineup_diagnostic.lineups_available:
         r, t, fb = _neutral_macro("lineups", lineup_warning)
+        macro_results.append(r)
+        macro_traces.append(t)
+        fallbacks.append("lineups_point_in_time_neutral")
+        warnings.append(fb)
     else:
         r, t, fb = _neutral_macro("lineups", "lineups_point_in_time_limited")
-    macro_results.append(r)
-    macro_traces.append(t)
-    fallbacks.append("lineups_point_in_time_neutral")
-    warnings.append(fb)
+        macro_results.append(r)
+        macro_traces.append(t)
+        fallbacks.append("lineups_point_in_time_neutral")
+        warnings.append(fb)
 
     predictive = [m for m in macro_results if m.key in PREDICTIVE_MACRO_KEYS]
     multiplier, _ = calculate_v21_weighted_macro_multiplier(predictive)

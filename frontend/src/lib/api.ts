@@ -2399,6 +2399,16 @@ export type SotV21PreviewResponse = {
       warnings: string[]
       components?: Record<string, unknown> | null
       source_paths?: string[] | null
+      details?: {
+        formation?: string | null
+        starters_count?: number
+        bench_count?: number
+        previous_xi_overlap_count?: number | null
+        previous_xi_overlap_pct?: number | null
+        formation_changed_vs_previous?: boolean | null
+        formation_changed_vs_common?: boolean | null
+      } | null
+      mode?: string | null
     }[]
   }
   away_trace: SotV21PreviewResponse['home_trace']
@@ -2526,6 +2536,15 @@ export type SotV21MiniRunResponse = {
     avg_mapping_coverage_pct?: number | null
     avg_prior_stats_coverage_pct?: number | null
   }
+  lineup_macro_summary?: {
+    available_count: number
+    partial_count: number
+    fallback_count: number
+    avg_home_lineup_index?: number | null
+    avg_away_lineup_index?: number | null
+    avg_home_xi_continuity_pct?: number | null
+    avg_away_xi_continuity_pct?: number | null
+  }
   sample_breakdown: {
     early_low_sample: SotV21MiniRunBucketStats
     medium_sample: SotV21MiniRunBucketStats
@@ -2616,6 +2635,12 @@ export type SotPickEvaluationFixtureResult = {
   actual_total_bucket?: string | null
   warnings_count: number
   leakage_guard: boolean
+  home_prior_matches_count?: number
+  away_prior_matches_count?: number
+  home_lineup_macro_status?: string | null
+  home_lineup_macro_index?: number | null
+  away_lineup_macro_status?: string | null
+  away_lineup_macro_index?: number | null
 }
 
 export type SotPickBreakdownStats = {

@@ -8,6 +8,40 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-j-historical-lineup-macro
+
+**Titolo:** Step J — Historical Lineup Macro (macro `lineups` peso 5)
+
+**Descrizione:** Valorizzazione read-only della macro `lineups` in modalità `historical_official_xi` da XI ufficiale storica, modulo, continuità titolari e panchina. `pre_lineup` invariato.
+
+**Highlights:**
+
+- `HistoricalLineupMacroService` con 7 componenti e cap 0.85–1.15.
+- Helper PIT-safe `load_previous_official_lineups` / `count_xi_overlap`.
+- Integrazione preview + pit macro builder + cleanup warning probabili.
+- Mini-run `lineup_macro_summary` e campi lineup su pick evaluation.
+- UI BacktestDebugPanel: preview, mini-run card J, riga compatta Step H.
+- Nessun impatto consiglio giocata H.1, runtime live o persistenza.
+
+**File toccati:**
+
+- `backend/app/services/backtest/historical_lineup_macro_service.py` (nuovo)
+- `backend/app/services/backtest/pit_player_rolling_stats.py`
+- `backend/app/services/backtest/sot_v21_pit_macro_builder.py`
+- `backend/app/services/backtest/sot_v21_preview_service.py`
+- `backend/app/services/backtest/sot_v21_mini_run_preview_service.py`
+- `backend/app/services/backtest/sot_pick_evaluation_preview_service.py`
+- `backend/app/schemas/backtest_point_in_time.py`
+- `backend/app/schemas/backtest_sot_v21_preview.py`
+- `backend/app/schemas/backtest_sot_v21_mini_run.py`
+- `backend/app/schemas/backtest_sot_pick_evaluation.py`
+- `backend/tests/test_historical_lineup_macro.py` (nuovo)
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-h1-advice-layer
 
 **Titolo:** Consiglio giocata pre-match per pick evaluation SOT
