@@ -1,8 +1,9 @@
-"""Pick evaluation read-only Over/Under SOT su prediction PIT (Step H)."""
+"""Pick evaluation read-only Over SOT su prediction PIT (Step H)."""
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Callable, Iterable
+from typing import TypeVar
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -16,29 +17,26 @@ from app.schemas.backtest_sot_pick_evaluation import (
     SotPickBreakdownConfidenceStats,
     SotPickBreakdownLineStats,
     SotPickBreakdownSampleBucketStats,
-    SotPickBreakdownSideStats,
     SotPickEvaluationFailedFixture,
     SotPickEvaluationFixtureResult,
     SotPickEvaluationResponse,
     SotPickEvaluationSelection,
     SotPickEvaluationSummary,
-    SotPickLineEvaluation,
-    SotPickRecommendedPick,
+    SotPickOverPick,
 )
 from app.schemas.backtest_sot_v21_preview import SotV21PreviewResponse
 from app.services.backtest.backtest_fixture_debug_service import BacktestFixtureDebugService
 from app.services.backtest.sot_pick_evaluation_logic import (
     ConfidenceSignals,
-    apply_confidence_caps,
-    collect_candidates,
-    compute_base_confidence,
-    compute_pick_outcome,
+    OverPickResult,
+    actual_total_bucket_key,
+    evaluate_over_picks,
     player_layer_is_neutral,
-    round4,
     sample_bucket_key,
-    select_recommended_pick,
 )
 from app.services.backtest.sot_v21_preview_service import SotV21PointInTimePreviewService
+
+T = TypeVar("T")
 
 
 def _round4(value: float | None) -> float | None:
@@ -76,63 +74,44 @@ def _player_layer_status(preview: SotV21PreviewResponse, side: str) -> str | Non
     return None
 
 
+def _to_over_pick(pick: OverPickResult | None) -> SotPickOverPick | None:
+    if pick is None:
+        return None
+    return SotPickOverPick(
+        side=pick.side,
+        line=pick.line,
+        edge=pick.edge,
+        outcome=pick.outcome,
+        confidence=pick.confidence,
+    )
+
+
 def _evaluate_fixture(
     preview: SotV21PreviewResponse,
     *,
     lines: list[float],
-    min_edge: float,
-    mode: str,
+    cautious_drop_threshold: float,
 ) -> SotPickEvaluationFixtureResult:
-    predicted = preview.prediction.total_predicted_sot
+    predicted = float(preview.prediction.total_predicted_sot)  # type: ignore[arg-type]
     actual = preview.actuals_for_scoring.actual_total_sot
-    total_abs_error = preview.errors.total_abs_error
+    home_pl = _player_layer_status(preview, "home")
+    away_pl = _player_layer_status(preview, "away")
+    signals = ConfidenceSignals(
+        min_prior_matches=min(
+            int(preview.home_prior_matches_count),
+            int(preview.away_prior_matches_count),
+        ),
+        warnings_count=len(preview.warnings),
+        player_layer_neutral=player_layer_is_neutral(home_pl, away_pl),
+    )
 
-    line_evals, candidates = collect_candidates(
-        float(predicted) if predicted is not None else 0.0,
+    aggressive, cautious, fixture_warnings = evaluate_over_picks(
+        predicted,
         lines,
-        min_edge,
-    ) if predicted is not None else ([], [])
-
-    all_line_evaluations = [
-        SotPickLineEvaluation(
-            line=ev.line,
-            edge_over=ev.edge_over,
-            edge_under=ev.edge_under,
-            over_meets_min_edge=ev.over_meets_min_edge,
-            under_meets_min_edge=ev.under_meets_min_edge,
-            over_candidate=ev.over_meets_min_edge,
-            under_candidate=ev.under_meets_min_edge,
-        )
-        for ev in line_evals
-    ]
-
-    recommended: SotPickRecommendedPick | None = None
-    selected = select_recommended_pick(candidates)
-    if selected is not None and actual is not None:
-        outcome = compute_pick_outcome(selected.side, selected.line, int(actual))
-        edge_abs = abs(selected.edge)
-        base_conf = compute_base_confidence(edge_abs)
-        home_pl = _player_layer_status(preview, "home")
-        away_pl = _player_layer_status(preview, "away")
-        confidence = apply_confidence_caps(
-            base_conf,
-            ConfidenceSignals(
-                mode=mode,
-                min_prior_matches=min(
-                    int(preview.home_prior_matches_count),
-                    int(preview.away_prior_matches_count),
-                ),
-                warnings_count=len(preview.warnings),
-                player_layer_neutral=player_layer_is_neutral(home_pl, away_pl),
-            ),
-        )
-        recommended = SotPickRecommendedPick(
-            side=selected.side,
-            line=selected.line,
-            edge=round4(selected.edge),
-            outcome=outcome,
-            confidence=confidence,
-        )
+        actual,
+        cautious_drop_threshold=cautious_drop_threshold,
+        signals=signals,
+    )
 
     return SotPickEvaluationFixtureResult(
         fixture_id=int(preview.fixture_id),
@@ -141,23 +120,17 @@ def _evaluate_fixture(
         kickoff_at=preview.fixture.kickoff_at,
         predicted_total_sot=_round4(predicted),
         actual_total_sot=actual,
-        total_abs_error=total_abs_error,
-        recommended_pick=recommended,
-        no_pick=recommended is None,
-        all_line_evaluations=all_line_evaluations,
+        total_abs_error=preview.errors.total_abs_error,
+        aggressive_pick=_to_over_pick(aggressive),
+        cautious_pick=_to_over_pick(cautious),
+        no_aggressive_pick=aggressive is None,
+        no_cautious_pick=cautious is None,
+        warnings=fixture_warnings,
         sample_bucket=sample_bucket_key(
             int(preview.home_prior_matches_count),
             int(preview.away_prior_matches_count),
         ),
-        actual_total_bucket=(
-            "low_total"
-            if actual is not None and actual <= 6
-            else "medium_total"
-            if actual is not None and actual <= 10
-            else "high_total"
-            if actual is not None
-            else None
-        ),
+        actual_total_bucket=actual_total_bucket_key(actual),
         warnings_count=len(preview.warnings),
         leakage_guard=preview.leakage_guard,
         home_prior_matches_count=int(preview.home_prior_matches_count),
@@ -165,27 +138,47 @@ def _evaluate_fixture(
     )
 
 
-def _compute_summary(results: list[SotPickEvaluationFixtureResult], *, failed: int) -> SotPickEvaluationSummary:
-    with_pick = [r for r in results if r.recommended_pick is not None]
-    no_pick = [r for r in results if r.no_pick]
-    wins = [r for r in with_pick if r.recommended_pick and r.recommended_pick.outcome == "win"]
-    losses = [r for r in with_pick if r.recommended_pick and r.recommended_pick.outcome == "loss"]
-    over_picks = [r for r in with_pick if r.recommended_pick and r.recommended_pick.side == "over"]
-    under_picks = [r for r in with_pick if r.recommended_pick and r.recommended_pick.side == "under"]
+def _strategy_stats(
+    results: list[SotPickEvaluationFixtureResult],
+    pick_getter: Callable[[SotPickEvaluationFixtureResult], SotPickOverPick | None],
+    no_pick_getter: Callable[[SotPickEvaluationFixtureResult], bool],
+) -> tuple[int, int, int, int, float | None]:
+    with_pick = [r for r in results if pick_getter(r) is not None]
+    wins = sum(1 for r in with_pick if pick_getter(r) and pick_getter(r).outcome == "win")
+    losses = sum(1 for r in with_pick if pick_getter(r) and pick_getter(r).outcome == "loss")
+    return (
+        len(with_pick),
+        sum(1 for r in results if no_pick_getter(r)),
+        wins,
+        losses,
+        _hit_rate(wins, losses),
+    )
 
+
+def _compute_summary(results: list[SotPickEvaluationFixtureResult], *, failed: int) -> SotPickEvaluationSummary:
+    agg_picks, agg_no, agg_w, agg_l, agg_hr = _strategy_stats(
+        results,
+        lambda r: r.aggressive_pick,
+        lambda r: r.no_aggressive_pick,
+    )
+    caut_picks, caut_no, caut_w, caut_l, caut_hr = _strategy_stats(
+        results,
+        lambda r: r.cautious_pick,
+        lambda r: r.no_cautious_pick,
+    )
     return SotPickEvaluationSummary(
         fixtures_processed=len(results),
         fixtures_failed=failed,
-        pick_opportunities=len(with_pick),
-        no_pick_count=len(no_pick),
-        wins=len(wins),
-        losses=len(losses),
-        hit_rate=_hit_rate(len(wins), len(losses)),
-        avg_edge=_mean(
-            abs(r.recommended_pick.edge)
-            for r in with_pick
-            if r.recommended_pick is not None
-        ),
+        aggressive_picks_count=agg_picks,
+        aggressive_no_pick_count=agg_no,
+        aggressive_wins=agg_w,
+        aggressive_losses=agg_l,
+        aggressive_hit_rate=agg_hr,
+        cautious_picks_count=caut_picks,
+        cautious_no_pick_count=caut_no,
+        cautious_wins=caut_w,
+        cautious_losses=caut_l,
+        cautious_hit_rate=caut_hr,
         avg_predicted_total_sot=_mean(
             r.predicted_total_sot for r in results if r.predicted_total_sot is not None
         ),
@@ -195,32 +188,19 @@ def _compute_summary(results: list[SotPickEvaluationFixtureResult], *, failed: i
         avg_total_abs_error=_mean(
             r.total_abs_error for r in results if r.total_abs_error is not None
         ),
-        over_picks_count=len(over_picks),
-        under_picks_count=len(under_picks),
-        over_wins=sum(
-            1 for r in over_picks if r.recommended_pick and r.recommended_pick.outcome == "win"
-        ),
-        over_losses=sum(
-            1 for r in over_picks if r.recommended_pick and r.recommended_pick.outcome == "loss"
-        ),
-        under_wins=sum(
-            1 for r in under_picks if r.recommended_pick and r.recommended_pick.outcome == "win"
-        ),
-        under_losses=sum(
-            1 for r in under_picks if r.recommended_pick and r.recommended_pick.outcome == "loss"
-        ),
     )
 
 
-def _breakdown_by_line(results: list[SotPickEvaluationFixtureResult], lines: list[float]) -> list[SotPickBreakdownLineStats]:
+def _breakdown_by_line(
+    results: list[SotPickEvaluationFixtureResult],
+    lines: list[float],
+    pick_getter: Callable[[SotPickEvaluationFixtureResult], SotPickOverPick | None],
+) -> list[SotPickBreakdownLineStats]:
     out: list[SotPickBreakdownLineStats] = []
     for line in lines:
-        picks = [
-            r for r in results
-            if r.recommended_pick is not None and r.recommended_pick.line == float(line)
-        ]
-        wins = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "win")
-        losses = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "loss")
+        picks = [r for r in results if pick_getter(r) is not None and pick_getter(r).line == float(line)]
+        wins = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "win")
+        losses = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "loss")
         out.append(
             SotPickBreakdownLineStats(
                 line=float(line),
@@ -228,51 +208,24 @@ def _breakdown_by_line(results: list[SotPickEvaluationFixtureResult], lines: lis
                 wins=wins,
                 losses=losses,
                 hit_rate=_hit_rate(wins, losses),
-                avg_edge=_mean(
-                    abs(r.recommended_pick.edge)
-                    for r in picks
-                    if r.recommended_pick is not None
-                ),
+                avg_edge=_mean(pick_getter(r).edge for r in picks if pick_getter(r) is not None),
             ),
         )
     return out
 
 
-def _breakdown_by_side(results: list[SotPickEvaluationFixtureResult]) -> list[SotPickBreakdownSideStats]:
-    out: list[SotPickBreakdownSideStats] = []
-    for side in ("over", "under"):
-        picks = [
-            r for r in results
-            if r.recommended_pick is not None and r.recommended_pick.side == side
-        ]
-        wins = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "win")
-        losses = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "loss")
-        out.append(
-            SotPickBreakdownSideStats(
-                side=side,
-                picks_count=len(picks),
-                wins=wins,
-                losses=losses,
-                hit_rate=_hit_rate(wins, losses),
-                avg_edge=_mean(
-                    abs(r.recommended_pick.edge)
-                    for r in picks
-                    if r.recommended_pick is not None
-                ),
-            ),
-        )
-    return out
-
-
-def _breakdown_by_confidence(results: list[SotPickEvaluationFixtureResult]) -> list[SotPickBreakdownConfidenceStats]:
+def _breakdown_by_confidence(
+    results: list[SotPickEvaluationFixtureResult],
+    pick_getter: Callable[[SotPickEvaluationFixtureResult], SotPickOverPick | None],
+) -> list[SotPickBreakdownConfidenceStats]:
     out: list[SotPickBreakdownConfidenceStats] = []
     for confidence in ("low", "medium", "high"):
         picks = [
             r for r in results
-            if r.recommended_pick is not None and r.recommended_pick.confidence == confidence
+            if pick_getter(r) is not None and pick_getter(r).confidence == confidence
         ]
-        wins = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "win")
-        losses = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "loss")
+        wins = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "win")
+        losses = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "loss")
         out.append(
             SotPickBreakdownConfidenceStats(
                 confidence=confidence,
@@ -280,26 +233,22 @@ def _breakdown_by_confidence(results: list[SotPickEvaluationFixtureResult]) -> l
                 wins=wins,
                 losses=losses,
                 hit_rate=_hit_rate(wins, losses),
-                avg_edge=_mean(
-                    abs(r.recommended_pick.edge)
-                    for r in picks
-                    if r.recommended_pick is not None
-                ),
+                avg_edge=_mean(pick_getter(r).edge for r in picks if pick_getter(r) is not None),
             ),
         )
     return out
 
 
-def _breakdown_by_sample_bucket(results: list[SotPickEvaluationFixtureResult]) -> list[SotPickBreakdownSampleBucketStats]:
+def _breakdown_by_sample_bucket(
+    results: list[SotPickEvaluationFixtureResult],
+    pick_getter: Callable[[SotPickEvaluationFixtureResult], SotPickOverPick | None],
+) -> list[SotPickBreakdownSampleBucketStats]:
     buckets = ("early_low_sample", "medium_sample", "stable_sample")
     out: list[SotPickBreakdownSampleBucketStats] = []
     for bucket in buckets:
-        picks = [
-            r for r in results
-            if r.recommended_pick is not None and r.sample_bucket == bucket
-        ]
-        wins = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "win")
-        losses = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "loss")
+        picks = [r for r in results if pick_getter(r) is not None and r.sample_bucket == bucket]
+        wins = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "win")
+        losses = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "loss")
         out.append(
             SotPickBreakdownSampleBucketStats(
                 bucket=bucket,
@@ -307,11 +256,7 @@ def _breakdown_by_sample_bucket(results: list[SotPickEvaluationFixtureResult]) -
                 wins=wins,
                 losses=losses,
                 hit_rate=_hit_rate(wins, losses),
-                avg_edge=_mean(
-                    abs(r.recommended_pick.edge)
-                    for r in picks
-                    if r.recommended_pick is not None
-                ),
+                avg_edge=_mean(pick_getter(r).edge for r in picks if pick_getter(r) is not None),
             ),
         )
     return out
@@ -319,16 +264,14 @@ def _breakdown_by_sample_bucket(results: list[SotPickEvaluationFixtureResult]) -
 
 def _breakdown_by_actual_total_bucket(
     results: list[SotPickEvaluationFixtureResult],
+    pick_getter: Callable[[SotPickEvaluationFixtureResult], SotPickOverPick | None],
 ) -> list[SotPickBreakdownActualTotalBucketStats]:
     buckets = ("low_total", "medium_total", "high_total")
     out: list[SotPickBreakdownActualTotalBucketStats] = []
     for bucket in buckets:
-        picks = [
-            r for r in results
-            if r.recommended_pick is not None and r.actual_total_bucket == bucket
-        ]
-        wins = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "win")
-        losses = sum(1 for r in picks if r.recommended_pick and r.recommended_pick.outcome == "loss")
+        picks = [r for r in results if pick_getter(r) is not None and r.actual_total_bucket == bucket]
+        wins = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "win")
+        losses = sum(1 for r in picks if pick_getter(r) and pick_getter(r).outcome == "loss")
         out.append(
             SotPickBreakdownActualTotalBucketStats(
                 bucket=bucket,
@@ -336,11 +279,7 @@ def _breakdown_by_actual_total_bucket(
                 wins=wins,
                 losses=losses,
                 hit_rate=_hit_rate(wins, losses),
-                avg_edge=_mean(
-                    abs(r.recommended_pick.edge)
-                    for r in picks
-                    if r.recommended_pick is not None
-                ),
+                avg_edge=_mean(pick_getter(r).edge for r in picks if pick_getter(r) is not None),
             ),
         )
     return out
@@ -359,7 +298,7 @@ class SotPickEvaluationPreviewService:
         round_contains: str | None = None,
         fixture_ids: list[int] | None = None,
         lines: list[float] | None = None,
-        min_edge: float = 0.75,
+        cautious_drop_threshold: float = 0.75,
         include_no_pick: bool = True,
     ) -> SotPickEvaluationResponse:
         if mode not in (BACKTEST_MODE_PRE_LINEUP, BACKTEST_MODE_HISTORICAL_OFFICIAL_XI):
@@ -440,16 +379,19 @@ class SotPickEvaluationPreviewService:
                 )
                 continue
 
-            row = _evaluate_fixture(
-                preview,
-                lines=eval_lines,
-                min_edge=float(min_edge),
-                mode=mode,
+            results.append(
+                _evaluate_fixture(
+                    preview,
+                    lines=eval_lines,
+                    cautious_drop_threshold=float(cautious_drop_threshold),
+                ),
             )
-            results.append(row)
 
         if not include_no_pick:
-            results = [r for r in results if r.recommended_pick is not None]
+            results = [
+                r for r in results
+                if not (r.no_aggressive_pick and r.no_cautious_pick)
+            ]
 
         failed_count = len(failed_fixtures)
         if len(results) == 0 and failed_count > 0:
@@ -469,6 +411,9 @@ class SotPickEvaluationPreviewService:
             round_filter_mode = "none"
             selection_round_contains = None
 
+        agg_getter = lambda r: r.aggressive_pick
+        caut_getter = lambda r: r.cautious_pick
+
         return SotPickEvaluationResponse(
             status=status,
             preview_only=True,
@@ -486,21 +431,25 @@ class SotPickEvaluationPreviewService:
                 round_filter_mode=round_filter_mode,
                 fixture_ids=fixture_ids,
                 lines=eval_lines,
-                min_edge=float(min_edge),
+                cautious_drop_threshold=float(cautious_drop_threshold),
                 include_no_pick=include_no_pick,
                 order_by=selection.order_by,
             ),
             summary=_compute_summary(results, failed=failed_count),
-            breakdown_by_line=_breakdown_by_line(results, eval_lines),
-            breakdown_by_side=_breakdown_by_side(results),
-            breakdown_by_confidence=_breakdown_by_confidence(results),
-            breakdown_by_sample_bucket=_breakdown_by_sample_bucket(results),
-            breakdown_by_actual_total_bucket=_breakdown_by_actual_total_bucket(results),
+            aggressive_by_line=_breakdown_by_line(results, eval_lines, agg_getter),
+            cautious_by_line=_breakdown_by_line(results, eval_lines, caut_getter),
+            aggressive_by_confidence=_breakdown_by_confidence(results, agg_getter),
+            cautious_by_confidence=_breakdown_by_confidence(results, caut_getter),
+            aggressive_by_sample_bucket=_breakdown_by_sample_bucket(results, agg_getter),
+            cautious_by_sample_bucket=_breakdown_by_sample_bucket(results, caut_getter),
+            aggressive_by_actual_total_bucket=_breakdown_by_actual_total_bucket(results, agg_getter),
+            cautious_by_actual_total_bucket=_breakdown_by_actual_total_bucket(results, caut_getter),
             results=results,
             failed_fixtures=failed_fixtures,
             feature_snapshot_json={
                 "preview_only": True,
                 "pick_evaluation": True,
                 "include_no_pick": include_no_pick,
+                "over_only": True,
             },
         )

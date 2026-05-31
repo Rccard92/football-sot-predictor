@@ -909,27 +909,28 @@ cap 0.70–1.30
 
 ---
 
-## 23. Step H — Betting Pick Evaluation read-only
+## 23. Step H — Betting Pick Evaluation read-only (Over-only)
 
-**Obiettivo:** valutare se le giocate Over/Under SOT proposte dal modello PIT avrebbero vinto o perso rispetto al reale — complemento alla mini-run (MAE/RMSE).
+**Obiettivo:** valutare se le giocate **Over SOT** proposte dal modello PIT avrebbero vinto o perso rispetto al reale — complemento alla mini-run (MAE/RMSE).
 
 **Differenza chiave:**
 
 | Mini-run (F) | Pick evaluation (H) |
 |--------------|----------------------|
 | Errore numerico (MAE, bias) | Esito scommessa WIN/LOSS |
-| Nessuna linea O/U | Linee 5.5–9.5 + min_edge |
-| Nessun recommended pick | Una pick per fixture (max \|edge\|) |
+| Nessuna linea O/U | Linee 5.5–9.5 + soglia discesa cauta |
+| Nessun pick | Due pick Over per fixture: **aggressiva** + **cauta** |
 
-**Logica:**
+**Logica (solo Over):**
 
-- `edge_over = predicted_total - line`; `edge_under = line - predicted_total`
-- Pick candidata se `edge >= min_edge` (default 0.75)
-- Una sola `recommended_pick` per fixture (max \|edge\|)
-- Outcome: Over WIN se `actual > line`; Under WIN se `actual < line` (linee `.5`, no void)
-- Confidence: low/medium/high da edge, con cap per early_low_sample, warnings, player layer neutro
-- Hit rate = wins / (wins + losses) sulle pick proposte
-- **Nessun ROI reale** senza quote bookmaker; `break_even_odds_50_pct = 2.0` informativo
+- **Linea aggressiva:** `max(line where line < predicted_total)` — es. pred 7.98 → Over 7.5
+- **Linea cauta:** se `aggressive_edge <= cautious_drop_threshold` (default 0.75), scende di una linea; altrimenti uguale all’aggressiva — es. pred 9.32 → agg 8.5, caut 8.5 (edge > 0.75)
+- Outcome: WIN se `actual > line`, altrimenti LOSS (linee `.5`, no void)
+- Confidence aggressiva: edge ≤0.25 low; ≤0.75 medium; >0.75 high
+- Confidence cauta: edge ≤0.75 medium; >0.75 high
+- Cap: prior min <5 o warnings ≥8 → max low; player layer fallback → max medium
+- Hit rate separato per strategia aggressive/cautious
+- **Nessun Under**, nessun `recommended_pick` unico, nessun ROI reale
 
 **Endpoint:**
 
@@ -939,7 +940,7 @@ cap 0.70–1.30
 
 **Regole:** `db_writes=false`, fixture con `leakage_guard=false` o actual mancante → `failed_fixtures`. Step successivo: full-season pick evaluation o run persistita.
 
-**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-h`).
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-h-over-only-aggressive-cautious`).
 
 ---
 

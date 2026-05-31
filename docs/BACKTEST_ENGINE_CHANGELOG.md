@@ -4,6 +4,34 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-h-over-only-aggressive-cautious
+
+**Titolo:** Step H — Over-only con strategia aggressiva + cauta
+
+**Descrizione:** Correzione Step H: valutazione read-only **solo Over SOT** con due pick per fixture (linea aggressiva = max linea sotto prediction; linea cauta = scende se edge aggressivo ≤ soglia). Rimossi Under, `recommended_pick` unico e `min_edge`.
+
+**Highlights:**
+
+- Due pick Over per fixture: `aggressive_pick` + `cautious_pick`.
+- `cautious_drop_threshold` (default 0.75) al posto di `min_edge`.
+- Summary e breakdown separati aggressive/cautious (8 liste breakdown).
+- Nessun salvataggio DB; invarianti PIT invariati.
+
+**File toccati:**
+
+- `backend/app/services/backtest/sot_pick_evaluation_logic.py`
+- `backend/app/services/backtest/sot_pick_evaluation_preview_service.py`
+- `backend/app/schemas/backtest_sot_pick_evaluation.py`
+- `backend/app/routes/backtest_debug.py`
+- `backend/tests/test_sot_pick_evaluation.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-h
 
 **Titolo:** Betting Pick Evaluation read-only

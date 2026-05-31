@@ -1,4 +1,4 @@
-"""Logica pura valutazione pick Over/Under SOT (Step H)."""
+"""Logica pura valutazione pick Over SOT — aggressiva + cauta (Step H)."""
 
 from __future__ import annotations
 
@@ -6,98 +6,153 @@ from dataclasses import dataclass
 from typing import Literal
 
 DEFAULT_PICK_LINES: list[float] = [5.5, 6.5, 7.5, 8.5, 9.5]
+DEFAULT_CAUTIOUS_DROP_THRESHOLD = 0.75
 
-PickSide = Literal["over", "under"]
 PickOutcome = Literal["win", "loss"]
 ConfidenceLevel = Literal["low", "medium", "high"]
 
 
 @dataclass(frozen=True)
-class PickCandidate:
-    side: PickSide
-    line: float
-    edge: float
-
-
-@dataclass(frozen=True)
-class LineEvaluationResult:
-    line: float
-    edge_over: float
-    edge_under: float
-    over_meets_min_edge: bool
-    under_meets_min_edge: bool
-
-
-@dataclass(frozen=True)
 class ConfidenceSignals:
-    mode: str
     min_prior_matches: int
     warnings_count: int
     player_layer_neutral: bool
+
+
+@dataclass(frozen=True)
+class OverPickResult:
+    side: str
+    line: float
+    edge: float
+    outcome: PickOutcome | None
+    confidence: ConfidenceLevel
 
 
 def round4(value: float) -> float:
     return round(float(value), 4)
 
 
-def evaluate_line(predicted_total: float, line: float, min_edge: float) -> LineEvaluationResult:
-    edge_over = round4(predicted_total - line)
-    edge_under = round4(line - predicted_total)
-    return LineEvaluationResult(
-        line=float(line),
-        edge_over=edge_over,
-        edge_under=edge_under,
-        over_meets_min_edge=edge_over >= min_edge,
-        under_meets_min_edge=edge_under >= min_edge,
-    )
+def sorted_lines(lines: list[float]) -> list[float]:
+    return sorted(float(line) for line in lines)
 
 
-def collect_candidates(
+def resolve_aggressive_line(predicted_total: float, lines: list[float]) -> float | None:
+    below = [line for line in sorted_lines(lines) if line < predicted_total]
+    if not below:
+        return None
+    return below[-1]
+
+
+def resolve_cautious_line(
     predicted_total: float,
     lines: list[float],
-    min_edge: float,
-) -> tuple[list[LineEvaluationResult], list[PickCandidate]]:
-    evaluations: list[LineEvaluationResult] = []
-    candidates: list[PickCandidate] = []
-    for line in lines:
-        ev = evaluate_line(predicted_total, float(line), min_edge)
-        evaluations.append(ev)
-        if ev.over_meets_min_edge:
-            candidates.append(PickCandidate(side="over", line=float(line), edge=ev.edge_over))
-        if ev.under_meets_min_edge:
-            candidates.append(PickCandidate(side="under", line=float(line), edge=ev.edge_under))
-    return evaluations, candidates
+    *,
+    cautious_drop_threshold: float = DEFAULT_CAUTIOUS_DROP_THRESHOLD,
+) -> tuple[float | None, list[str]]:
+    warnings: list[str] = []
+    aggressive_line = resolve_aggressive_line(predicted_total, lines)
+    if aggressive_line is None:
+        return None, warnings
+
+    aggressive_edge = predicted_total - aggressive_line
+    if aggressive_edge > cautious_drop_threshold:
+        return aggressive_line, warnings
+
+    ordered = sorted_lines(lines)
+    idx = ordered.index(aggressive_line)
+    if idx == 0:
+        warnings.append("no_lower_cautious_line_available")
+        return None, warnings
+    return ordered[idx - 1], warnings
 
 
-def select_recommended_pick(candidates: list[PickCandidate]) -> PickCandidate | None:
-    if not candidates:
-        return None
-    return max(candidates, key=lambda c: abs(c.edge))
+def compute_pick_outcome(line: float, actual_total: int) -> PickOutcome:
+    return "win" if actual_total > line else "loss"
 
 
-def compute_pick_outcome(side: PickSide, line: float, actual_total: int) -> PickOutcome:
-    if side == "over":
-        return "win" if actual_total > line else "loss"
-    return "win" if actual_total < line else "loss"
-
-
-def compute_base_confidence(edge_abs: float) -> ConfidenceLevel:
-    if edge_abs >= 2.0:
-        return "high"
-    if edge_abs >= 1.25:
+def compute_aggressive_confidence(edge: float) -> ConfidenceLevel:
+    if edge <= 0.25:
+        return "low"
+    if edge <= 0.75:
         return "medium"
-    return "low"
+    return "high"
+
+
+def compute_cautious_confidence(edge: float) -> ConfidenceLevel:
+    if edge <= 0.75:
+        return "medium"
+    return "high"
 
 
 def apply_confidence_caps(base: ConfidenceLevel, signals: ConfidenceSignals) -> ConfidenceLevel:
-    level = base
     if signals.min_prior_matches < 5 or signals.warnings_count >= 8:
         return "low"
-    if signals.player_layer_neutral and level == "high":
+    if signals.player_layer_neutral and base == "high":
         return "medium"
-    if signals.mode == "pre_lineup" and signals.player_layer_neutral and level == "high":
-        return "medium"
-    return level
+    return base
+
+
+def build_over_pick(
+    line: float,
+    predicted_total: float,
+    actual_total: int | None,
+    *,
+    confidence_kind: Literal["aggressive", "cautious"],
+    signals: ConfidenceSignals,
+) -> OverPickResult:
+    edge = round4(predicted_total - line)
+    if confidence_kind == "aggressive":
+        base = compute_aggressive_confidence(edge)
+    else:
+        base = compute_cautious_confidence(edge)
+    confidence = apply_confidence_caps(base, signals)
+    outcome = compute_pick_outcome(line, int(actual_total)) if actual_total is not None else None
+    return OverPickResult(
+        side="over",
+        line=float(line),
+        edge=edge,
+        outcome=outcome,
+        confidence=confidence,
+    )
+
+
+def evaluate_over_picks(
+    predicted_total: float,
+    lines: list[float],
+    actual_total: int | None,
+    *,
+    cautious_drop_threshold: float,
+    signals: ConfidenceSignals,
+) -> tuple[OverPickResult | None, OverPickResult | None, list[str]]:
+    fixture_warnings: list[str] = []
+    aggressive_line = resolve_aggressive_line(predicted_total, lines)
+    aggressive_pick: OverPickResult | None = None
+    if aggressive_line is not None:
+        aggressive_pick = build_over_pick(
+            aggressive_line,
+            predicted_total,
+            actual_total,
+            confidence_kind="aggressive",
+            signals=signals,
+        )
+
+    cautious_line, cautious_warnings = resolve_cautious_line(
+        predicted_total,
+        lines,
+        cautious_drop_threshold=cautious_drop_threshold,
+    )
+    fixture_warnings.extend(cautious_warnings)
+    cautious_pick: OverPickResult | None = None
+    if cautious_line is not None:
+        cautious_pick = build_over_pick(
+            cautious_line,
+            predicted_total,
+            actual_total,
+            confidence_kind="cautious",
+            signals=signals,
+        )
+
+    return aggressive_pick, cautious_pick, fixture_warnings
 
 
 def sample_bucket_key(home_prior: int, away_prior: int) -> str:

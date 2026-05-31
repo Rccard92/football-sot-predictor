@@ -2560,7 +2560,7 @@ export async function postBacktestSotV21MiniRun(
   return requestPostJson<SotV21MiniRunResponse>('/api/backtest/debug/sot-v21-mini-run', body)
 }
 
-// --- Backtest Engine Step H (Pick Evaluation preview) ---
+// --- Backtest Engine Step H (Pick Evaluation preview — Over-only) ---
 
 export type SotPickEvaluationRequest = {
   competition_id: number
@@ -2571,11 +2571,11 @@ export type SotPickEvaluationRequest = {
   round_contains?: string | null
   fixture_ids?: number[] | null
   lines?: number[]
-  min_edge?: number
+  cautious_drop_threshold?: number
   include_no_pick?: boolean
 }
 
-export type SotPickRecommendedPick = {
+export type SotPickOverPick = {
   side: string
   line: number
   edge: number
@@ -2591,8 +2591,11 @@ export type SotPickEvaluationFixtureResult = {
   predicted_total_sot?: number | null
   actual_total_sot?: number | null
   total_abs_error?: number | null
-  recommended_pick?: SotPickRecommendedPick | null
-  no_pick: boolean
+  aggressive_pick?: SotPickOverPick | null
+  cautious_pick?: SotPickOverPick | null
+  no_aggressive_pick: boolean
+  no_cautious_pick: boolean
+  warnings: string[]
   sample_bucket?: string | null
   actual_total_bucket?: string | null
   warnings_count: number
@@ -2621,35 +2624,36 @@ export type SotPickEvaluationResponse = {
     offset: number
     round_number?: number | null
     lines: number[]
-    min_edge: number
+    cautious_drop_threshold: number
     include_no_pick: boolean
     order_by: string
   }
   summary: {
     fixtures_processed: number
     fixtures_failed: number
-    pick_opportunities: number
-    no_pick_count: number
-    wins: number
-    losses: number
-    hit_rate?: number | null
-    avg_edge?: number | null
+    aggressive_picks_count: number
+    aggressive_no_pick_count: number
+    aggressive_wins: number
+    aggressive_losses: number
+    aggressive_hit_rate?: number | null
+    cautious_picks_count: number
+    cautious_no_pick_count: number
+    cautious_wins: number
+    cautious_losses: number
+    cautious_hit_rate?: number | null
     avg_predicted_total_sot?: number | null
     avg_actual_total_sot?: number | null
     avg_total_abs_error?: number | null
-    over_picks_count: number
-    under_picks_count: number
-    over_wins: number
-    over_losses: number
-    under_wins: number
-    under_losses: number
     break_even_odds_50_pct: number
   }
-  breakdown_by_line: Array<SotPickBreakdownStats & { line: number }>
-  breakdown_by_side: Array<SotPickBreakdownStats & { side: string }>
-  breakdown_by_confidence: Array<SotPickBreakdownStats & { confidence: string }>
-  breakdown_by_sample_bucket: Array<SotPickBreakdownStats & { bucket: string }>
-  breakdown_by_actual_total_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  aggressive_by_line: Array<SotPickBreakdownStats & { line: number }>
+  cautious_by_line: Array<SotPickBreakdownStats & { line: number }>
+  aggressive_by_confidence: Array<SotPickBreakdownStats & { confidence: string }>
+  cautious_by_confidence: Array<SotPickBreakdownStats & { confidence: string }>
+  aggressive_by_sample_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  cautious_by_sample_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  aggressive_by_actual_total_bucket: Array<SotPickBreakdownStats & { bucket: string }>
+  cautious_by_actual_total_bucket: Array<SotPickBreakdownStats & { bucket: string }>
   results: SotPickEvaluationFixtureResult[]
   failed_fixtures: { fixture_id: number; error_code: string; message: string }[]
 }

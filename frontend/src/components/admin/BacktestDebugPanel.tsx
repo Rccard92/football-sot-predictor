@@ -162,7 +162,7 @@ export function BacktestDebugPanel() {
   const [pickEvalLimit, setPickEvalLimit] = useState(20)
   const [pickEvalOffset, setPickEvalOffset] = useState(0)
   const [pickEvalRoundNumber, setPickEvalRoundNumber] = useState('')
-  const [pickEvalMinEdge, setPickEvalMinEdge] = useState('0.75')
+  const [pickEvalCautiousThreshold, setPickEvalCautiousThreshold] = useState('0.75')
   const [pickEvalLines, setPickEvalLines] = useState('5.5,6.5,7.5,8.5,9.5')
   const [pickEvalIncludeNoPick, setPickEvalIncludeNoPick] = useState(true)
   const [pickEvalOutcome, setPickEvalOutcome] = useState<Outcome | null>(null)
@@ -545,12 +545,12 @@ export function BacktestDebugPanel() {
       })
       return
     }
-    const minEdge = parseFloat(pickEvalMinEdge)
-    if (!Number.isFinite(minEdge) || minEdge < 0) {
+    const cautiousThreshold = parseFloat(pickEvalCautiousThreshold)
+    if (!Number.isFinite(cautiousThreshold) || cautiousThreshold < 0) {
       setPickEvalOutcome({
         kind: 'error',
         httpStatus: null,
-        message: 'Min edge non valido.',
+        message: 'Soglia discesa cauta non valida.',
       })
       return
     }
@@ -563,7 +563,7 @@ export function BacktestDebugPanel() {
         offset: pickEvalOffset,
         round_number: parseMiniRunRoundNumber(pickEvalRoundNumber),
         lines,
-        min_edge: minEdge,
+        cautious_drop_threshold: cautiousThreshold,
         include_no_pick: pickEvalIncludeNoPick,
       })
       setPickEvalJson(data)
@@ -572,7 +572,7 @@ export function BacktestDebugPanel() {
       setPickEvalOutcome({
         kind,
         httpStatus: 200,
-        message: `Pick evaluation — ${data.summary.pick_opportunities} pick, hit rate ${fmtMetric(data.summary.hit_rate, 1)}%, db_writes=${String(data.db_writes)}`,
+        message: `Pick evaluation — agg ${data.summary.aggressive_picks_count} / caut ${data.summary.cautious_picks_count}, hit rate agg ${fmtMetric(data.summary.aggressive_hit_rate, 1)}% / caut ${fmtMetric(data.summary.cautious_hit_rate, 1)}%, db_writes=${String(data.db_writes)}`,
       })
     } catch (e) {
       setPickEvalJson(null)
@@ -588,7 +588,7 @@ export function BacktestDebugPanel() {
     pickEvalIncludeNoPick,
     pickEvalLimit,
     pickEvalLines,
-    pickEvalMinEdge,
+    pickEvalCautiousThreshold,
     pickEvalMode,
     pickEvalOffset,
     pickEvalRoundNumber,
@@ -1521,8 +1521,8 @@ export function BacktestDebugPanel() {
           Betting Pick Evaluation preview (Step H)
         </h3>
         <p className="mt-1 text-sm text-slate-600">
-          Simula le giocate Over/Under SOT che il modello avrebbe proposto, confrontandole con il
-          reale. Read-only: non salva picks o metriche.
+          Simula le giocate Over SOT (aggressiva + cauta) che il modello avrebbe proposto,
+          confrontandole con il reale. Read-only: non salva picks o metriche.
         </p>
         <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Nessun ROI reale in questo step: non usiamo quote bookmaker. Solo edge vs linea e esito
@@ -1577,11 +1577,11 @@ export function BacktestDebugPanel() {
             />
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-700">
-            Min edge
+            Soglia discesa cauta
             <input
               type="text"
-              value={pickEvalMinEdge}
-              onChange={(e) => setPickEvalMinEdge(e.target.value)}
+              value={pickEvalCautiousThreshold}
+              onChange={(e) => setPickEvalCautiousThreshold(e.target.value)}
               className="w-20 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
             />
           </label>
@@ -1634,21 +1634,24 @@ export function BacktestDebugPanel() {
                   {pickEvalJson.summary.fixtures_processed} / {pickEvalJson.summary.fixtures_failed}
                 </div>
                 <div>
-                  <span className="font-medium">Pick proposti / no pick:</span>{' '}
-                  {pickEvalJson.summary.pick_opportunities} / {pickEvalJson.summary.no_pick_count}
+                  <span className="font-medium">Aggressive pick / no pick:</span>{' '}
+                  {pickEvalJson.summary.aggressive_picks_count} /{' '}
+                  {pickEvalJson.summary.aggressive_no_pick_count}
                 </div>
                 <div>
-                  <span className="font-medium">Win / Loss / Hit rate:</span>{' '}
-                  {pickEvalJson.summary.wins} / {pickEvalJson.summary.losses} /{' '}
-                  {fmtMetric(pickEvalJson.summary.hit_rate, 1)}%
+                  <span className="font-medium">Aggressive W/L / Hit rate:</span>{' '}
+                  {pickEvalJson.summary.aggressive_wins} / {pickEvalJson.summary.aggressive_losses} /{' '}
+                  {fmtMetric(pickEvalJson.summary.aggressive_hit_rate, 1)}%
                 </div>
                 <div>
-                  <span className="font-medium">Over / Under pick:</span>{' '}
-                  {pickEvalJson.summary.over_picks_count} / {pickEvalJson.summary.under_picks_count}
+                  <span className="font-medium">Cautious pick / no pick:</span>{' '}
+                  {pickEvalJson.summary.cautious_picks_count} /{' '}
+                  {pickEvalJson.summary.cautious_no_pick_count}
                 </div>
                 <div>
-                  <span className="font-medium">Avg edge:</span>{' '}
-                  {fmtMetric(pickEvalJson.summary.avg_edge, 4)}
+                  <span className="font-medium">Cautious W/L / Hit rate:</span>{' '}
+                  {pickEvalJson.summary.cautious_wins} / {pickEvalJson.summary.cautious_losses} /{' '}
+                  {fmtMetric(pickEvalJson.summary.cautious_hit_rate, 1)}%
                 </div>
                 <div>
                   <span className="font-medium">db_writes:</span> {String(pickEvalJson.db_writes)}
@@ -1666,16 +1669,18 @@ export function BacktestDebugPanel() {
                       <th className="px-2 py-1">Match</th>
                       <th className="px-2 py-1">Pred tot</th>
                       <th className="px-2 py-1">Actual tot</th>
-                      <th className="px-2 py-1">Pick</th>
-                      <th className="px-2 py-1">Linea</th>
-                      <th className="px-2 py-1">Edge</th>
-                      <th className="px-2 py-1">Confidence</th>
-                      <th className="px-2 py-1">Outcome</th>
+                      <th className="px-2 py-1">Agg linea</th>
+                      <th className="px-2 py-1">Agg edge</th>
+                      <th className="px-2 py-1">Agg outcome</th>
+                      <th className="px-2 py-1">Caut linea</th>
+                      <th className="px-2 py-1">Caut edge</th>
+                      <th className="px-2 py-1">Caut outcome</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pickEvalJson.results.map((row) => {
-                      const pick = row.recommended_pick
+                      const agg = row.aggressive_pick
+                      const caut = row.cautious_pick
                       return (
                         <tr key={row.fixture_id} className="border-b border-slate-100">
                           <td className="px-2 py-1 font-mono">{row.fixture_id}</td>
@@ -1683,15 +1688,26 @@ export function BacktestDebugPanel() {
                           <td className="px-2 py-1">{fmtMetric(row.predicted_total_sot, 2)}</td>
                           <td className="px-2 py-1">{row.actual_total_sot ?? '—'}</td>
                           <td className="px-2 py-1">
-                            {pick ? pick.side.toUpperCase() : '—'}
+                            {row.no_aggressive_pick ? '—' : agg?.line}
                           </td>
-                          <td className="px-2 py-1">{pick ? pick.line : '—'}</td>
-                          <td className="px-2 py-1">{pick ? fmtMetric(pick.edge, 4) : '—'}</td>
-                          <td className="px-2 py-1">{pick ? pick.confidence : '—'}</td>
+                          <td className="px-2 py-1">
+                            {agg ? fmtMetric(agg.edge, 4) : '—'}
+                          </td>
                           <td
-                            className={`px-2 py-1 uppercase ${pickOutcomeClass(pick?.outcome, row.no_pick)}`}
+                            className={`px-2 py-1 uppercase ${pickOutcomeClass(agg?.outcome, row.no_aggressive_pick)}`}
                           >
-                            {row.no_pick ? 'NO PICK' : pick?.outcome ?? '—'}
+                            {row.no_aggressive_pick ? 'NO PICK' : agg?.outcome ?? '—'}
+                          </td>
+                          <td className="px-2 py-1">
+                            {row.no_cautious_pick ? '—' : caut?.line}
+                          </td>
+                          <td className="px-2 py-1">
+                            {caut ? fmtMetric(caut.edge, 4) : '—'}
+                          </td>
+                          <td
+                            className={`px-2 py-1 uppercase ${pickOutcomeClass(caut?.outcome, row.no_cautious_pick)}`}
+                          >
+                            {row.no_cautious_pick ? 'NO PICK' : caut?.outcome ?? '—'}
                           </td>
                         </tr>
                       )
@@ -1703,7 +1719,9 @@ export function BacktestDebugPanel() {
 
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               <div className="overflow-x-auto">
-                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown per linea</div>
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Aggressive — breakdown per linea
+                </div>
                 <table className="min-w-full text-left text-xs text-slate-700">
                   <thead className="border-b border-slate-200 bg-slate-50">
                     <tr>
@@ -1715,8 +1733,8 @@ export function BacktestDebugPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pickEvalJson.breakdown_by_line.map((b) => (
-                      <tr key={b.line} className="border-b border-slate-100">
+                    {pickEvalJson.aggressive_by_line.map((b) => (
+                      <tr key={`agg-${b.line}`} className="border-b border-slate-100">
                         <td className="px-2 py-1">{b.line}</td>
                         <td className="px-2 py-1">{b.picks_count}</td>
                         <td className="px-2 py-1">
@@ -1730,7 +1748,38 @@ export function BacktestDebugPanel() {
                 </table>
               </div>
               <div className="overflow-x-auto">
-                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown confidence</div>
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Cautious — breakdown per linea
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Linea</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                      <th className="px-2 py-1">Avg edge</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.cautious_by_line.map((b) => (
+                      <tr key={`caut-${b.line}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.line}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                        <td className="px-2 py-1">{fmtMetric(b.avg_edge, 4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Aggressive — breakdown confidence
+                </div>
                 <table className="min-w-full text-left text-xs text-slate-700">
                   <thead className="border-b border-slate-200 bg-slate-50">
                     <tr>
@@ -1741,8 +1790,8 @@ export function BacktestDebugPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pickEvalJson.breakdown_by_confidence.map((b) => (
-                      <tr key={b.confidence} className="border-b border-slate-100">
+                    {pickEvalJson.aggressive_by_confidence.map((b) => (
+                      <tr key={`agg-conf-${b.confidence}`} className="border-b border-slate-100">
                         <td className="px-2 py-1">{b.confidence}</td>
                         <td className="px-2 py-1">{b.picks_count}</td>
                         <td className="px-2 py-1">
@@ -1755,7 +1804,36 @@ export function BacktestDebugPanel() {
                 </table>
               </div>
               <div className="overflow-x-auto">
-                <div className="mb-1 text-sm font-medium text-slate-800">Breakdown sample bucket</div>
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Cautious — breakdown confidence
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Confidence</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.cautious_by_confidence.map((b) => (
+                      <tr key={`caut-conf-${b.confidence}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.confidence}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Aggressive — breakdown sample bucket
+                </div>
                 <table className="min-w-full text-left text-xs text-slate-700">
                   <thead className="border-b border-slate-200 bg-slate-50">
                     <tr>
@@ -1766,8 +1844,8 @@ export function BacktestDebugPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pickEvalJson.breakdown_by_sample_bucket.map((b) => (
-                      <tr key={b.bucket} className="border-b border-slate-100">
+                    {pickEvalJson.aggressive_by_sample_bucket.map((b) => (
+                      <tr key={`agg-sample-${b.bucket}`} className="border-b border-slate-100">
                         <td className="px-2 py-1">{b.bucket}</td>
                         <td className="px-2 py-1">{b.picks_count}</td>
                         <td className="px-2 py-1">
@@ -1781,7 +1859,7 @@ export function BacktestDebugPanel() {
               </div>
               <div className="overflow-x-auto">
                 <div className="mb-1 text-sm font-medium text-slate-800">
-                  Breakdown actual total bucket
+                  Cautious — breakdown sample bucket
                 </div>
                 <table className="min-w-full text-left text-xs text-slate-700">
                   <thead className="border-b border-slate-200 bg-slate-50">
@@ -1793,8 +1871,62 @@ export function BacktestDebugPanel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pickEvalJson.breakdown_by_actual_total_bucket.map((b) => (
-                      <tr key={b.bucket} className="border-b border-slate-100">
+                    {pickEvalJson.cautious_by_sample_bucket.map((b) => (
+                      <tr key={`caut-sample-${b.bucket}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.bucket}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Aggressive — breakdown actual total bucket
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.aggressive_by_actual_total_bucket.map((b) => (
+                      <tr key={`agg-actual-${b.bucket}`} className="border-b border-slate-100">
+                        <td className="px-2 py-1">{b.bucket}</td>
+                        <td className="px-2 py-1">{b.picks_count}</td>
+                        <td className="px-2 py-1">
+                          {b.wins}/{b.losses}
+                        </td>
+                        <td className="px-2 py-1">{fmtMetric(b.hit_rate, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="mb-1 text-sm font-medium text-slate-800">
+                  Cautious — breakdown actual total bucket
+                </div>
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Bucket</th>
+                      <th className="px-2 py-1">Pick</th>
+                      <th className="px-2 py-1">W/L</th>
+                      <th className="px-2 py-1">Hit%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickEvalJson.cautious_by_actual_total_bucket.map((b) => (
+                      <tr key={`caut-actual-${b.bucket}`} className="border-b border-slate-100">
                         <td className="px-2 py-1">{b.bucket}</td>
                         <td className="px-2 py-1">{b.picks_count}</td>
                         <td className="px-2 py-1">
