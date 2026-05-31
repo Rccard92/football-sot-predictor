@@ -11,16 +11,20 @@ import {
   getBacktestPointInTimeContext,
   getBacktestRun,
   getBacktestSotV21Preview,
+  getSportApiUnavailableDebug,
   listBacktestDebugFixtures,
   listBacktestRuns,
   postBacktestSotV21MiniRun,
   postBacktestSotPickEvaluation,
+  postSportApiUnavailableBackfill,
   type BacktestFixtureCandidate,
   type BacktestRunRow,
   type HistoricalLineupAuditFixtureResponse,
   type HistoricalLineupAuditRoundResponse,
   type HistoricalUnavailableAuditResponse,
   type PointInTimeContextResponse,
+  type SportApiUnavailableBackfillResponse,
+  type SportApiUnavailableDebugResponse,
   type SotPickEvaluationResponse,
   type SotV21MiniRunResponse,
   type SotV21PreviewResponse,
@@ -237,6 +241,14 @@ export function BacktestDebugPanel() {
   const [jk1Offset, setJk1Offset] = useState(0)
   const [jk1Outcome, setJk1Outcome] = useState<Outcome | null>(null)
   const [jk1AuditJson, setJk1AuditJson] = useState<HistoricalUnavailableAuditResponse | null>(null)
+
+  const [k2RoundNumber, setK2RoundNumber] = useState('')
+  const [k2FixtureId, setK2FixtureId] = useState('')
+  const [k2DryRun, setK2DryRun] = useState(true)
+  const [k2ForceRefresh, setK2ForceRefresh] = useState(false)
+  const [k2Outcome, setK2Outcome] = useState<Outcome | null>(null)
+  const [k2DebugJson, setK2DebugJson] = useState<SportApiUnavailableDebugResponse | null>(null)
+  const [k2BackfillJson, setK2BackfillJson] = useState<SportApiUnavailableBackfillResponse | null>(null)
 
   const needsCompetition = selectedCompetitionId == null
 
@@ -791,6 +803,76 @@ export function BacktestDebugPanel() {
       setLoadingId(null)
     }
   }, [jk1Limit, jk1Offset, jk1RoundNumber, selectedCompetitionId])
+
+  const runK2FixtureDebug = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    const fixtureId = parseManualFixtureId(k2FixtureId) ?? resolvePreviewFixtureId()
+    if (fixtureId == null) {
+      setK2Outcome({ kind: 'error', httpStatus: null, message: 'Inserisci o seleziona un fixture_id.' })
+      return
+    }
+    setLoadingId('k2-debug')
+    try {
+      const data = await getSportApiUnavailableDebug({
+        fixture_id: fixtureId,
+        competition_id: selectedCompetitionId,
+        dry_run: k2DryRun,
+        force_refresh: k2ForceRefresh,
+      })
+      setK2DebugJson(data)
+      setK2BackfillJson(null)
+      setK2Outcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Debug fixture ${fixtureId} — found ${data.total_unavailable_found}, would_write ${data.would_write_count}, source=${data.source_fixture_id}, dry_run=${String(data.dry_run)}`,
+      })
+    } catch (e) {
+      setK2DebugJson(null)
+      setK2Outcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Debug SportAPI unavailable'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [k2DryRun, k2FixtureId, k2ForceRefresh, resolvePreviewFixtureId, selectedCompetitionId])
+
+  const runK2Backfill = useCallback(async () => {
+    if (selectedCompetitionId == null) return
+    setLoadingId('k2-backfill')
+    try {
+      const roundNum = parseMiniRunRoundNumber(k2RoundNumber)
+      const fixtureId = parseManualFixtureId(k2FixtureId)
+      const data = await postSportApiUnavailableBackfill(
+        selectedCompetitionId,
+        {
+          round_number: roundNum ?? undefined,
+          fixture_ids: fixtureId != null ? [fixtureId] : undefined,
+          dry_run: k2DryRun,
+          force_refresh: k2ForceRefresh,
+          limit: 50,
+          offset: 0,
+        },
+      )
+      setK2BackfillJson(data)
+      setK2DebugJson(null)
+      setK2Outcome({
+        kind: 'ok',
+        httpStatus: 200,
+        message: `Backfill — processed ${data.fixtures_processed}, found ${data.total_unavailable_found}, written ${data.total_written}, mapping_missing ${data.mapping_missing_count}, dry_run=${String(data.dry_run)}`,
+      })
+    } catch (e) {
+      setK2BackfillJson(null)
+      setK2Outcome({
+        kind: 'error',
+        httpStatus: null,
+        message: formatNetworkError(e, 'Backfill SportAPI unavailable'),
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }, [k2DryRun, k2FixtureId, k2ForceRefresh, k2RoundNumber, selectedCompetitionId])
 
   const applyRoundFilter = useCallback(() => {
     const applied = roundFilter.trim()
@@ -2705,6 +2787,158 @@ export function BacktestDebugPanel() {
               {JSON.stringify(g2aFixtureJson, null, 2)}
             </pre>
           </>
+        ) : null}
+      </div>
+
+      <div className="mt-8 rounded-xl border border-orange-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-800">
+          SportAPI unavailable backfill (K.2)
+        </h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Debug e backfill indisponibili storici SportAPI nella fixture target esatta. Scrive solo in
+          fixture_missing_players / provider lineups, non nelle tabelle backtest.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Giornata esatta
+            <input
+              type="number"
+              min={1}
+              className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k2RoundNumber}
+              onChange={(e) => setK2RoundNumber(e.target.value)}
+              placeholder="37"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Fixture ID (opzionale)
+            <input
+              type="number"
+              min={1}
+              className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+              value={k2FixtureId}
+              onChange={(e) => setK2FixtureId(e.target.value)}
+              placeholder="146"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={k2DryRun}
+              onChange={(e) => setK2DryRun(e.target.checked)}
+            />
+            Dry-run
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={k2ForceRefresh}
+              onChange={(e) => setK2ForceRefresh(e.target.checked)}
+            />
+            Force refresh
+          </label>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runK2FixtureDebug()}
+            className="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingId === 'k2-debug' ? '…' : 'Debug fixture SportAPI'}
+          </button>
+          <button
+            type="button"
+            disabled={loadingId !== null || needsCompetition}
+            onClick={() => void runK2Backfill()}
+            className="rounded-lg border border-orange-400 bg-orange-100 px-3 py-2 text-sm font-medium text-orange-950 hover:bg-orange-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingId === 'k2-backfill' ? '…' : 'Backfill indisponibili giornata'}
+          </button>
+        </div>
+
+        {k2Outcome ? (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${outcomeClass(k2Outcome.kind)}`}>
+            <div className="font-semibold">
+              {outcomeLabel(k2Outcome.kind)}
+              {k2Outcome.httpStatus != null ? ` — HTTP ${k2Outcome.httpStatus}` : ''}
+            </div>
+            <div className="mt-1">{k2Outcome.message}</div>
+          </div>
+        ) : null}
+
+        {k2DebugJson ? (
+          <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50/50 p-3 text-sm text-slate-800">
+            <div className="font-medium text-orange-900">
+              Debug fixture #{k2DebugJson.internal_fixture_id} — source_fixture_id=
+              {k2DebugJson.source_fixture_id}
+            </div>
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              <div>
+                <span className="font-medium">Found:</span> {k2DebugJson.total_unavailable_found} (H=
+                {k2DebugJson.home_unavailable_count}, A={k2DebugJson.away_unavailable_count})
+              </div>
+              <div>
+                <span className="font-medium">Would write:</span> {k2DebugJson.would_write_count}
+              </div>
+              <div>
+                <span className="font-medium">Mapping:</span> {k2DebugJson.mapping_status}
+              </div>
+              <div>
+                <span className="font-medium">Data source:</span> {k2DebugJson.data_source}
+              </div>
+              <div className="sm:col-span-2">
+                <span className="font-medium">Detected paths:</span>{' '}
+                {k2DebugJson.detected_paths.length > 0
+                  ? k2DebugJson.detected_paths.join(', ')
+                  : '—'}
+              </div>
+            </div>
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-orange-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(k2DebugJson, null, 2)}
+            </pre>
+          </div>
+        ) : null}
+
+        {k2BackfillJson ? (
+          <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50/50 p-3 text-sm text-slate-800">
+            <div className="font-medium text-orange-900">
+              Backfill round {k2BackfillJson.round_number ?? '—'} — processed{' '}
+              {k2BackfillJson.fixtures_processed}, written {k2BackfillJson.total_written}
+            </div>
+            {k2BackfillJson.samples.length > 0 ? (
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-full text-left text-xs text-slate-700">
+                  <thead className="border-b border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="px-2 py-1">Fixture</th>
+                      <th className="px-2 py-1">Match</th>
+                      <th className="px-2 py-1">Found</th>
+                      <th className="px-2 py-1">Write</th>
+                      <th className="px-2 py-1">Mapping</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {k2BackfillJson.samples.map((row) => (
+                      <tr key={row.fixture_id} className="border-b border-slate-100">
+                        <td className="px-2 py-1">#{row.fixture_id}</td>
+                        <td className="px-2 py-1">
+                          {row.home_team} vs {row.away_team}
+                        </td>
+                        <td className="px-2 py-1">{row.unavailable_found}</td>
+                        <td className="px-2 py-1">
+                          {k2BackfillJson.dry_run ? row.would_write : row.written}
+                        </td>
+                        <td className="px-2 py-1">{row.mapping_status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-orange-200 bg-slate-900 p-3 text-xs text-slate-100">
+              {JSON.stringify(k2BackfillJson, null, 2)}
+            </pre>
+          </div>
         ) : null}
       </div>
 

@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Fixture, FixtureLineup
+from app.models import Fixture, FixtureLineup, FixtureProviderLineup
+from app.models.fixture_provider_mapping import FixtureProviderMapping, PROVIDER_SPORTAPI
 from app.schemas.backtest_historical_fixture_snapshot import (
     HistoricalFixtureOfficialSnapshot,
     HistoricalFixtureSideSnapshot,
@@ -19,6 +20,10 @@ from app.services.backtest.pit_player_rolling_stats import (
     resolve_side_lineup,
 )
 from app.services.backtest.pit_unavailable_parsing import parse_unavailable_from_payload
+from app.services.sportapi.sportapi_unavailable_parser import (
+    normalized_rows_to_raw_players,
+    parse_sportapi_unavailable_from_lineup_payload,
+)
 
 
 def snapshot_row_to_raw(row: HistoricalSnapshotPlayerRow) -> RawPlayerRow:
@@ -136,6 +141,39 @@ class HistoricalFixtureSnapshotService:
                 missing_rows=missing_rows,
             )
             unavailable_source = "provider_missing" if unavailable else "none"
+
+            if not unavailable:
+                provider_row = db.scalar(
+                    select(FixtureProviderLineup).where(
+                        FixtureProviderLineup.fixture_id == int(fixture_id),
+                        FixtureProviderLineup.provider_name == PROVIDER_SPORTAPI,
+                    ),
+                )
+                if provider_row and provider_row.raw_payload:
+                    mapping = db.scalar(
+                        select(FixtureProviderMapping).where(
+                            FixtureProviderMapping.fixture_id == int(fixture_id),
+                            FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
+                        ),
+                    )
+                    provider_event_id = (
+                        int(provider_row.provider_event_id)
+                        if provider_row.provider_event_id is not None
+                        else int(mapping.provider_event_id) if mapping else 0
+                    )
+                    parsed_rows = parse_sportapi_unavailable_from_lineup_payload(
+                        provider_row.raw_payload,
+                        internal_fixture_id=int(fixture_id),
+                        provider_event_id=provider_event_id,
+                        home_team_id=int(fixture.home_team_id),
+                        away_team_id=int(fixture.away_team_id),
+                        provider_home_team_id=mapping.provider_home_team_id if mapping else None,
+                        provider_away_team_id=mapping.provider_away_team_id if mapping else None,
+                    )
+                    side_parsed = normalized_rows_to_raw_players(parsed_rows, team_side=side)
+                    if side_parsed:
+                        unavailable = side_parsed
+                        unavailable_source = "provider_raw_payload"
 
             if not unavailable and coverage.source_table == "fixture_lineups":
                 lineup_row = db.scalar(

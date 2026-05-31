@@ -3919,6 +3919,99 @@ export async function getSportApiFixtureDebug(
   )
 }
 
+export type SportApiUnavailableDebugResponse = {
+  status: string
+  dry_run: boolean
+  competition_id: number
+  internal_fixture_id: number
+  provider_fixture_id?: number | null
+  source_fixture_id: number
+  mapping_status: string
+  data_source: string
+  home_unavailable_count: number
+  away_unavailable_count: number
+  total_unavailable_found: number
+  detected_paths: string[]
+  raw_json_keys_detected: string[]
+  sample_unavailable_players: {
+    player_name: string
+    team_side: string
+    status: string
+    provider_player_id?: number | null
+    source_path: string
+    persistable: boolean
+  }[]
+  would_write_count: number
+  skipped_missing_provider_player_id: number
+  warnings: string[]
+}
+
+export async function getSportApiUnavailableDebug(
+  params: {
+    fixture_id: number
+    competition_id: number
+    dry_run?: boolean
+    force_refresh?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiUnavailableDebugResponse> {
+  const q = new URLSearchParams()
+  q.set('competition_id', String(params.competition_id))
+  if (params.dry_run != null) q.set('dry_run', String(params.dry_run))
+  if (params.force_refresh != null) q.set('force_refresh', String(params.force_refresh))
+  return adminGetJson<SportApiUnavailableDebugResponse>(
+    `/api/admin/sportapi/debug/fixture/${params.fixture_id}/lineup-unavailable?${q.toString()}`,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 90_000 },
+  )
+}
+
+export type SportApiUnavailableBackfillResponse = {
+  status: string
+  dry_run: boolean
+  competition_id: number
+  competition_name: string
+  round_number?: number | null
+  fixtures_processed: number
+  fixtures_with_unavailable_from_provider: number
+  total_unavailable_found: number
+  total_written: number
+  mapping_missing_count: number
+  fetch_errors: number
+  samples: {
+    fixture_id: number
+    round?: string | null
+    home_team: string
+    away_team: string
+    unavailable_found: number
+    would_write: number
+    written: number
+    mapping_status: string
+    data_source?: string | null
+    detected_paths: string[]
+  }[]
+  warnings: string[]
+}
+
+export async function postSportApiUnavailableBackfill(
+  competitionId: number,
+  body: {
+    round_number?: number | null
+    fixture_ids?: number[] | null
+    dry_run?: boolean
+    force_refresh?: boolean
+    limit?: number
+    offset?: number
+    auto_confirm_mapping?: boolean
+  },
+  opts?: AdminRequestOpts,
+): Promise<SportApiUnavailableBackfillResponse> {
+  return adminPostJson<SportApiUnavailableBackfillResponse>(
+    `/api/admin/sportapi/competitions/${competitionId}/backfill-unavailable`,
+    body,
+    { ...opts, timeoutMs: opts?.timeoutMs ?? 120_000 },
+  )
+}
+
 export async function confirmSportApiMapping(
   fixtureId: number,
   body: {

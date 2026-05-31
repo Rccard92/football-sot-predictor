@@ -19,6 +19,9 @@ from app.services.sportapi.sportapi_lineup_service import SportApiLineupService
 from app.services.sportapi.sportapi_matching_service import SportApiMatchingService
 from app.services.sportapi.sportapi_player_matching_service import SportApiPlayerMatchingService
 from app.services.sportapi.lineup_refresh_impact_orchestrator import LineupRefreshImpactOrchestrator
+from app.schemas.sportapi_unavailable_backfill import SportApiUnavailableBackfillRequest
+from app.services.sportapi.sportapi_unavailable_backfill_service import SportApiUnavailableBackfillService
+from app.services.sportapi.sportapi_unavailable_debug_service import SportApiUnavailableDebugService
 from app.services.sportapi.sportapi_round_refresh_service import SportApiRoundRefreshService
 
 logger = logging.getLogger(__name__)
@@ -75,6 +78,62 @@ def _refresh_next_round_lineups_handler(
         raise HTTPException(status_code=503, detail="Database error") from exc
     except SportApiDisabledError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/debug/fixture/{fixture_id}/lineup-unavailable", response_model=None)
+def sportapi_debug_fixture_lineup_unavailable(
+    fixture_id: int,
+    competition_id: int = Query(...),
+    dry_run: bool = Query(default=True),
+    force_refresh: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    """Debug indisponibili SportAPI per fixture target esatta (Step K.2)."""
+    _require_sportapi_enabled()
+    try:
+        payload = SportApiUnavailableDebugService().debug_fixture(
+            db,
+            fixture_id=int(fixture_id),
+            competition_id=int(competition_id),
+            dry_run=bool(dry_run),
+            force_refresh=bool(force_refresh),
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi debug lineup-unavailable DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload.status == "error" and payload.mapping_status == "fixture_not_found":
+        raise HTTPException(status_code=404, detail=payload.warnings[0] if payload.warnings else "Fixture not found")
+    return jsonable_encoder(payload)
+
+
+@router.post("/competitions/{competition_id}/backfill-unavailable", response_model=None)
+def sportapi_backfill_unavailable(
+    competition_id: int,
+    body: SportApiUnavailableBackfillRequest,
+    db: Session = Depends(get_db),
+):
+    """Backfill indisponibili storici SportAPI per round/fixture finished (Step K.2)."""
+    _require_sportapi_enabled()
+    try:
+        payload = SportApiUnavailableBackfillService().backfill(
+            db,
+            competition_id=int(competition_id),
+            round_number=body.round_number,
+            fixture_ids=body.fixture_ids,
+            dry_run=body.dry_run,
+            force_refresh=body.force_refresh,
+            limit=body.limit,
+            offset=body.offset,
+            auto_confirm_mapping=body.auto_confirm_mapping,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("sportapi backfill-unavailable DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except SportApiDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return jsonable_encoder(payload)
 
 
 @router.post("/serie-a/{season}/refresh-next-round-lineups", response_model=None)

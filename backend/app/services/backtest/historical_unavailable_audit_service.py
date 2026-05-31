@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Competition, Fixture, FixtureLineup, FixtureMissingPlayer, FixtureProviderLineup, Team
-from app.models.fixture_provider_mapping import PROVIDER_SPORTAPI
+from app.models.fixture_provider_mapping import FixtureProviderMapping, PROVIDER_SPORTAPI
 from app.schemas.backtest_historical_unavailable_audit import (
     HistoricalUnavailableAuditFixtureSample,
     HistoricalUnavailableAuditPlayerSample,
@@ -18,6 +18,11 @@ from app.services.backtest.backtest_fixture_debug_service import BacktestFixture
 from app.services.backtest.pit_unavailable_parsing import (
     detect_raw_json_unavailable_keys,
     parse_unavailable_from_payload,
+)
+from app.services.sportapi.sportapi_unavailable_parser import (
+    collect_detected_paths,
+    normalized_rows_to_raw_players,
+    parse_sportapi_unavailable_from_lineup_payload,
 )
 from app.services.sportapi.sportapi_lineup_present import classify_missing_group
 
@@ -48,6 +53,7 @@ class _FixtureUnavailableScan:
     home: _SideUnavailableCounts = field(default_factory=_SideUnavailableCounts)
     away: _SideUnavailableCounts = field(default_factory=_SideUnavailableCounts)
     raw_json_keys: set[str] = field(default_factory=set)
+    has_missing_players_rows: bool = False
 
     @property
     def total_unavailable(self) -> int:
@@ -144,6 +150,8 @@ class HistoricalUnavailableAuditService:
         missing_rows = db.scalars(
             select(FixtureMissingPlayer).where(FixtureMissingPlayer.fixture_id == fid),
         ).all()
+        if missing_rows:
+            scan.has_missing_players_rows = True
         self._add_missing_players(scan, missing_rows=list(missing_rows))
 
         lineup_rows = db.scalars(
@@ -169,24 +177,34 @@ class HistoricalUnavailableAuditService:
         )
         if provider_row and provider_row.raw_payload:
             scan.raw_json_keys.update(detect_raw_json_unavailable_keys(provider_row.raw_payload))
-            payload = provider_row.raw_payload
-            for side_key, side in (("home", "home"), ("away", "away")):
-                block = payload.get(side_key) if isinstance(payload, dict) else None
-                if isinstance(block, dict):
-                    parsed = parse_unavailable_from_payload(block)
+            mapping = db.scalar(
+                select(FixtureProviderMapping).where(
+                    FixtureProviderMapping.fixture_id == fid,
+                    FixtureProviderMapping.provider_name == PROVIDER_SPORTAPI,
+                ),
+            )
+            provider_event_id = (
+                int(provider_row.provider_event_id)
+                if provider_row.provider_event_id is not None
+                else int(mapping.provider_event_id) if mapping else 0
+            )
+            parsed_sportapi = parse_sportapi_unavailable_from_lineup_payload(
+                provider_row.raw_payload,
+                internal_fixture_id=fid,
+                provider_event_id=provider_event_id,
+                home_team_id=int(fixture.home_team_id),
+                away_team_id=int(fixture.away_team_id),
+                provider_home_team_id=mapping.provider_home_team_id if mapping else None,
+                provider_away_team_id=mapping.provider_away_team_id if mapping else None,
+            )
+            scan.raw_json_keys.update(collect_detected_paths(parsed_sportapi))
+            for side in ("home", "away"):
+                side_rows = normalized_rows_to_raw_players(parsed_sportapi, team_side=side)
+                if side_rows:
                     self._add_parsed_rows(
                         scan,
                         side=side,
-                        rows=parsed,
-                        source_path="fixture_provider_lineups.raw_payload",
-                    )
-            if isinstance(payload, dict):
-                top_parsed = parse_unavailable_from_payload(payload)
-                if top_parsed:
-                    self._add_parsed_rows(
-                        scan,
-                        side="home",
-                        rows=top_parsed,
+                        rows=side_rows,
                         source_path="fixture_provider_lineups.raw_payload",
                     )
 
@@ -253,8 +271,10 @@ class HistoricalUnavailableAuditService:
             all_raw_keys.update(scan.raw_json_keys)
 
         fixtures_with_unavailable = sum(1 for s in scans if s.total_unavailable > 0)
+        fixtures_with_missing_players = sum(1 for s in scans if s.has_missing_players_rows)
         fixtures_with_injured = sum(1 for s in scans if s.has_injured)
         fixtures_with_suspended = sum(1 for s in scans if s.has_suspended)
+        any_missing_players_rows = fixtures_with_missing_players > 0
         total_unavailable = sum(s.total_unavailable for s in scans)
         total_injured = sum(s.home.injured + s.away.injured for s in scans)
         total_suspended = sum(s.home.suspended + s.away.suspended for s in scans)
@@ -265,11 +285,12 @@ class HistoricalUnavailableAuditService:
             reverse=True,
         )[:_SAMPLE_LIMIT]
 
-        verdict = (
-            "unavailable_found_in_storage"
-            if fixtures_with_unavailable > 0
-            else "unavailable_not_found_in_current_storage"
-        )
+        if fixtures_with_missing_players > 0:
+            verdict = "unavailable_found_in_storage"
+        elif all_raw_keys and not any_missing_players_rows:
+            verdict = "unavailable_found_in_raw_not_normalized"
+        else:
+            verdict = "unavailable_not_found_in_current_storage"
 
         return HistoricalUnavailableAuditResponse(
             competition_id=int(competition_id),

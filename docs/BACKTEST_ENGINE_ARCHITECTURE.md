@@ -1056,12 +1056,48 @@ Solo fixture corrente, nessun fallback su fixture vicine.
 
 **Verdict:**
 
-- `unavailable_found_in_storage` se `fixtures_with_unavailable > 0`
+- `unavailable_found_in_storage` se righe in `fixture_missing_players`
+- `unavailable_found_in_raw_not_normalized` se chiavi raw ma nessuna riga normalizzata
 - `unavailable_not_found_in_current_storage` se zero (non errore HTTP)
 
 Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 10, `raw_json_keys_detected`.
 
 **Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-jk1-validation-audit`).
+
+---
+
+## 27. Step K.2 — SportAPI unavailable import/backfill
+
+**Problema:** SportAPI espone indisponibili storici nel payload `/lineups`, ma l’ingest esistente (`CompetitionSportApiLineupService`, refresh prossimo turno) opera solo su fixture **non** finished. Le fixture storiche (es. round 37) non venivano fetchate → `fixture_missing_players` vuoto → audit JK.1 con `unavailable_not_found_in_current_storage`.
+
+**Soluzione:** layer admin di debug/backfill per fixture target esatte + parser/persist condivisi integrati in `fetch_and_persist_lineups`.
+
+### Endpoint admin
+
+| Metodo | Path | Ruolo |
+|--------|------|--------|
+| GET | `/api/admin/sportapi/debug/fixture/{fixture_id}/lineup-unavailable` | Debug live/cached, `dry_run=true` default |
+| POST | `/api/admin/sportapi/competitions/{competition_id}/backfill-unavailable` | Backfill round/fixture finished |
+
+### Parser e persistenza
+
+- `sportapi_unavailable_parser.py` — multi-path (`missingPlayers`, `injured`, `suspended`, …), `source_fixture_id = fixture_id`
+- `sportapi_unavailable_persist_service.py` — scrive in `fixture_missing_players` (schema esistente, metadati in `raw_payload._source_path`)
+- `fetch_and_persist_lineups` refactorato per usare parser+persist condivisi
+
+### Macro K e audit
+
+- `HistoricalFixtureSnapshotService` legge `fixture_missing_players` (SportAPI), poi fallback `raw_payload` provider, poi `fixture_lineups.raw_json`
+- Audit JK.1: verdict aggiuntivo `unavailable_found_in_raw_not_normalized` se chiavi raw presenti ma nessuna riga in `fixture_missing_players`
+
+### Regole
+
+- Solo fixture target esatta (no fallback temporali)
+- `dry_run=true` prima del salvataggio
+- Nessuna scrittura tabelle `backtest_*`
+- Indisponibili usati solo in `historical_official_xi`, non in `pre_lineup`
+
+**Changelog:** `docs/BACKTEST_ENGINE_CHANGELOG.md` (entry `backtest-step-k2-sportapi-unavailable-backfill`).
 
 ---
 
@@ -1093,6 +1129,9 @@ Response: `db_writes=false`, `preview_only=true`, `storage_checked`, sample top 
 | pit_unavailable_parsing (Step JK.1) | `backend/app/services/backtest/pit_unavailable_parsing.py` |
 | Schemas historical summary JK.1 | `backend/app/schemas/backtest_point_in_time_historical_summary.py` |
 | Schemas unavailable audit JK.1 | `backend/app/schemas/backtest_historical_unavailable_audit.py` |
+| SportApiUnavailableParser (Step K.2) | `backend/app/services/sportapi/sportapi_unavailable_parser.py` |
+| SportApiUnavailableBackfillService (Step K.2) | `backend/app/services/sportapi/sportapi_unavailable_backfill_service.py` |
+| Admin SportAPI routes (Step K.2) | `backend/app/routes/admin_sportapi.py` |
 | SotPickEvaluationPreviewService (Step H) | `backend/app/services/backtest/sot_pick_evaluation_preview_service.py` |
 | Pick play advice logic (Step H.1) | `backend/app/services/backtest/sot_pick_play_advice_logic.py` |
 | Pick evaluation logic (Step H) | `backend/app/services/backtest/sot_pick_evaluation_logic.py` |

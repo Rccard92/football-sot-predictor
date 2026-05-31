@@ -12,6 +12,48 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-step-k2-sportapi-unavailable-backfill
+
+**Titolo:** Import indisponibili storici SportAPI
+
+**Descrizione:** Aggiunto debug/backfill degli indisponibili storici SportAPI e normalizzazione in `fixture_missing_players` per alimentare la macro Indisponibili storici.
+
+**Highlights:**
+
+- Debug fixture SportAPI unavailable (`GET .../lineup-unavailable`).
+- Backfill round/fixture finished (`POST .../backfill-unavailable`).
+- Parser robusto unavailable/injured/suspended multi-path.
+- Normalizzazione `fixture_missing_players` con `source_fixture_id` = fixture target.
+- Refactor `fetch_and_persist_lineups` su parser+persist condivisi.
+- Macro K e snapshot: fallback `provider_raw_payload`.
+- Audit JK.1: verdict `unavailable_found_in_raw_not_normalized`.
+- UI BacktestDebugPanel sezione K.2.
+- Nessun salvataggio tabelle backtest.
+
+**File toccati:**
+
+- `backend/app/services/sportapi/sportapi_unavailable_parser.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_unavailable_persist_service.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_unavailable_debug_service.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_unavailable_backfill_service.py` (nuovo)
+- `backend/app/schemas/sportapi_unavailable_debug.py` (nuovo)
+- `backend/app/schemas/sportapi_unavailable_backfill.py` (nuovo)
+- `backend/app/services/sportapi/sportapi_lineup_service.py`
+- `backend/app/services/backtest/historical_fixture_snapshot_service.py`
+- `backend/app/services/backtest/historical_unavailable_audit_service.py`
+- `backend/app/routes/admin_sportapi.py`
+- `backend/tests/test_sportapi_unavailable_parser.py` (nuovo)
+- `backend/tests/test_sportapi_unavailable_persist.py` (nuovo)
+- `backend/tests/test_sportapi_unavailable_backfill.py` (nuovo)
+- `backend/tests/test_historical_unavailable_audit.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/admin/BacktestDebugPanel.tsx`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+---
+
 ## backtest-step-jk1-validation-audit
 
 **Titolo:** Step JK.1 — Validazione snapshot target e audit indisponibili

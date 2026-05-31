@@ -25,12 +25,13 @@ from app.services.sportapi.sportapi_payload import (
     event_team_ids,
     event_tournament_info,
     lineups_block,
-    missing_from_side,
     player_display_name,
     player_id_from_row,
     players_from_side,
     side_block,
 )
+from app.services.sportapi.sportapi_unavailable_parser import parse_sportapi_unavailable_from_lineup_payload
+from app.services.sportapi.sportapi_unavailable_persist_service import SportApiUnavailablePersistService
 
 logger = logging.getLogger(__name__)
 
@@ -250,36 +251,26 @@ class SportApiLineupService:
                     ),
                 )
                 n_players += 1
-            for mi, m in enumerate(missing_from_side(side_data)):
-                pid = player_id_from_row(m)
-                if pid is None:
-                    pid = _int_or_none(m.get("id"))
-                if pid is None:
-                    continue
-                miss_raw = m if isinstance(m, dict) else {}
-                miss_row = FixtureMissingPlayer(
-                    fixture_id=internal_id,
-                    provider_lineup_id=int(lineup_row.id),
-                    provider_name=PROVIDER_SPORTAPI,
-                    provider_player_id=pid,
-                    provider_team_id=_int_or_none(team_id),
-                    team_side=side_key,
-                    player_name=player_display_name(miss_raw)[:255],
-                    position=str(miss_raw.get("position") or "")[:32] or None,
-                    jersey_number=_int_or_none(miss_raw.get("jerseyNumber")),
-                    reason=str(miss_raw.get("reason") or miss_raw.get("type") or "")[:64] or None,
-                    description=str(miss_raw.get("description") or "")[:512] or None,
-                    external_type=str(miss_raw.get("externalType") or miss_raw.get("external_type") or "")[:64]
-                    or None,
-                    expected_end_date=_parse_expected_end(
-                        miss_raw.get("expectedEndDate") or miss_raw.get("expected_end_date"),
-                    ),
-                    raw_payload=_payload_with_index(miss_raw, mi),
-                )
-                if fx.competition_id is not None:
-                    miss_row.competition_id = int(fx.competition_id)
-                db.add(miss_row)
-                n_missing += 1
+
+        unavailable_rows = parse_sportapi_unavailable_from_lineup_payload(
+            raw if isinstance(raw, dict) else {"data": raw},
+            internal_fixture_id=internal_id,
+            provider_event_id=event_id,
+            home_team_id=int(fx.home_team_id),
+            away_team_id=int(fx.away_team_id),
+            provider_home_team_id=_int_or_none(mapping.provider_home_team_id),
+            provider_away_team_id=_int_or_none(mapping.provider_away_team_id),
+        )
+        persist_result = SportApiUnavailablePersistService().persist_rows(
+            db,
+            rows=unavailable_rows,
+            fixture_id=internal_id,
+            competition_id=int(fx.competition_id) if fx.competition_id is not None else None,
+            provider_lineup_id=int(lineup_row.id),
+            dry_run=False,
+            force_refresh=False,
+        )
+        n_missing = int(persist_result.get("written_count") or 0)
 
         db.commit()
         return {

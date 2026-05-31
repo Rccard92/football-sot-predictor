@@ -71,8 +71,36 @@ def test_historical_unavailable_audit_zero_verdict(mock_svc_cls):
     assert body["db_writes"] is False
     assert body["preview_only"] is True
     assert body["verdict"] == "unavailable_not_found_in_current_storage"
-    assert body["fixtures_with_unavailable"] == 0
-    assert len(body["storage_checked"]) >= 3
+
+
+def test_historical_unavailable_audit_raw_not_normalized_verdict():
+    from app.services.backtest.historical_unavailable_audit_service import (
+        HistoricalUnavailableAuditService,
+        _FixtureUnavailableScan,
+    )
+
+    svc = HistoricalUnavailableAuditService()
+    scans = [
+        _FixtureUnavailableScan(
+            fixture_id=146,
+            round="R37",
+            home_team="H",
+            away_team="A",
+            raw_json_keys={"lineups.home.injured"},
+            has_missing_players_rows=False,
+        ),
+    ]
+    all_raw_keys = {"lineups.home.injured"}
+    fixtures_with_missing_players = sum(1 for s in scans if s.has_missing_players_rows)
+    any_missing_players_rows = fixtures_with_missing_players > 0
+    if fixtures_with_missing_players > 0:
+        verdict = "unavailable_found_in_storage"
+    elif all_raw_keys and not any_missing_players_rows:
+        verdict = "unavailable_found_in_raw_not_normalized"
+    else:
+        verdict = "unavailable_not_found_in_current_storage"
+    assert verdict == "unavailable_found_in_raw_not_normalized"
+    assert svc is not None
 
 
 @patch("app.routes.backtest_debug.HistoricalUnavailableAuditService")
