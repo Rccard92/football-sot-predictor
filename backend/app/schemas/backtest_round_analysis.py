@@ -141,6 +141,10 @@ class RoundAnalysisListItem(BaseModel):
     data_quality_badge: str | None = None
     data_quality_status: str | None = None
     accordion_summary: dict[str, str] | None = None
+    model_chips: dict[str, Any] | None = None
+    summary_source: Literal["persisted", "rebuilt_from_fixtures"] | None = None
+    completeness: Literal["ok", "stale", "empty"] | None = None
+    stale_message: str | None = None
     created_at: datetime
     completed_at: datetime | None = None
 
@@ -187,6 +191,9 @@ class RoundAnalysisDetailResponse(BaseModel):
     progress_pct: float
     data_quality_summary_json: dict[str, Any] | None = None
     model_summary_json: dict[str, Any] | None = None
+    summary_source: Literal["persisted", "rebuilt_from_fixtures"] | None = None
+    completeness: Literal["ok", "stale", "empty"] | None = None
+    stale_message: str | None = None
     error_json: dict[str, Any] | None = None
     first_recommended_round: int | None = None
     created_at: datetime

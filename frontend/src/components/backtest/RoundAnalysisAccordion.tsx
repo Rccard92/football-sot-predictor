@@ -3,9 +3,11 @@ import {
   deleteRoundAnalysis,
   getRoundAnalysisDetail,
   getRoundAnalyses,
+  postRoundAnalysisRecalculate,
   type RoundAnalysisDetail,
   type RoundAnalysisListItem,
   type RoundAnalysisOverviewRound,
+  type RoundOverviewModelChip,
 } from '../../lib/api'
 import { RoundAnalysisDeleteConfirm } from './RoundAnalysisDeleteConfirm'
 import {
@@ -22,6 +24,7 @@ type Props = {
   selectedId: number | null
   onSelect: (detail: RoundAnalysisDetail) => void
   onDeleted: (analysisId: number) => void
+  onReloadList?: () => void
   reloadToken: number
   overviewRounds?: RoundAnalysisOverviewRound[]
 }
@@ -32,17 +35,35 @@ const MODEL_CHIP_ORDER = [
   { key: 'baseline_v2_1_weighted_components', label: 'v2.1' },
 ] as const
 
-function roundChipsLine(round?: RoundAnalysisOverviewRound): string {
-  if (!round?.models) return ''
-  return MODEL_CHIP_ORDER.map(({ key, label }) => {
-    const chip = round.models[key]
-    if (!chip) return null
-    const c = chip.cautious_display?.replace(/^C\s*/, 'C ') ?? ''
-    const a = chip.aggressive_display?.replace(/^A\s*/, 'A ') ?? ''
-    return `${label} ${c} · ${a}`
-  })
-    .filter(Boolean)
-    .join(' · ')
+function chipsFromItem(
+  item: RoundAnalysisListItem,
+  overviewRound?: RoundAnalysisOverviewRound,
+): Record<string, RoundOverviewModelChip> | null {
+  if (overviewRound?.models && Object.keys(overviewRound.models).length > 0) {
+    return overviewRound.models
+  }
+  if (item.model_chips && Object.keys(item.model_chips).length > 0) {
+    return item.model_chips
+  }
+  return null
+}
+
+function completenessForItem(
+  item: RoundAnalysisListItem,
+  overviewRound?: RoundAnalysisOverviewRound,
+): 'ok' | 'stale' | 'empty' | null | undefined {
+  return overviewRound?.completeness ?? item.completeness
+}
+
+function staleMessageForItem(
+  item: RoundAnalysisListItem,
+  overviewRound?: RoundAnalysisOverviewRound,
+): string | null | undefined {
+  return (
+    overviewRound?.stale_message ??
+    item.stale_message ??
+    'Analisi creata con una versione precedente o risultati incompleti.'
+  )
 }
 
 function accordionModelLine(item: RoundAnalysisListItem): string {
@@ -61,6 +82,7 @@ export function RoundAnalysisAccordion({
   selectedId,
   onSelect,
   onDeleted,
+  onReloadList,
   reloadToken,
   overviewRounds,
 }: Props) {
@@ -70,6 +92,7 @@ export function RoundAnalysisAccordion({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<RoundAnalysisListItem | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [recalculatingId, setRecalculatingId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     if (competitionId == null) return
@@ -93,6 +116,22 @@ export function RoundAnalysisAccordion({
   const open = async (id: number) => {
     const detail = await getRoundAnalysisDetail(id)
     onSelect(detail)
+  }
+
+  const recalculate = async (item: RoundAnalysisListItem) => {
+    setRecalculatingId(item.id)
+    setErrorMessage(null)
+    try {
+      const { analysis } = await postRoundAnalysisRecalculate(item.id)
+      onSelect(analysis)
+      onReloadList?.()
+      setSuccessMessage(`Giornata ${item.round_number} ricalcolata (v${analysis.analysis_version}).`)
+      window.setTimeout(() => setSuccessMessage(null), 4000)
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRecalculatingId(null)
+    }
   }
 
   const confirmDelete = async () => {
@@ -135,7 +174,9 @@ export function RoundAnalysisAccordion({
           const overviewRound = overviewRounds?.find(
             (r) => r.analysis_id === item.id || r.round_number === item.round_number,
           )
-          const chipLine = roundChipsLine(overviewRound)
+          const chips = chipsFromItem(item, overviewRound)
+          const completeness = completenessForItem(item, overviewRound)
+          const isStale = completeness === 'stale' || completeness === 'empty'
           const motive = item.accordion_summary?.motive
           const isFailed = item.status === 'failed'
           return (
@@ -144,9 +185,11 @@ export function RoundAnalysisAccordion({
               className={`rounded-xl border ${
                 isFailed
                   ? 'border-rose-200 bg-rose-50/40'
-                  : active
-                    ? 'border-slate-400 bg-slate-50'
-                    : 'border-slate-200 bg-white'
+                  : isStale
+                    ? 'border-amber-200 bg-amber-50/30'
+                    : active
+                      ? 'border-slate-400 bg-slate-50'
+                      : 'border-slate-200 bg-white'
               }`}
             >
               <div className="flex w-full flex-col gap-1 px-4 py-3">
@@ -166,14 +209,33 @@ export function RoundAnalysisAccordion({
                     </div>
                   </button>
                   <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
-                    <span
-                      className={`rounded-full px-2 py-0.5 ${dataQualityBadgeClass(item.data_quality_badge)}`}
-                    >
-                      {item.data_quality_badge ?? '—'}
-                    </span>
+                    {isStale ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900">
+                        Da ricalcolare
+                      </span>
+                    ) : (
+                      <span
+                        className={`rounded-full px-2 py-0.5 ${dataQualityBadgeClass(item.data_quality_badge)}`}
+                      >
+                        {item.data_quality_badge ?? '—'}
+                      </span>
+                    )}
                     <span className="text-slate-600">
                       {item.status_label ?? statusLabelIt(item.status)}
                     </span>
+                    {isStale ? (
+                      <button
+                        type="button"
+                        disabled={recalculatingId === item.id}
+                        className="rounded-lg border border-amber-300 px-2 py-1 text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void recalculate(item)
+                        }}
+                      >
+                        {recalculatingId === item.id ? 'Ricalcolo…' : 'Ricalcola'}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="rounded-lg border border-rose-200 px-2 py-1 text-rose-800 hover:bg-rose-50"
@@ -192,10 +254,33 @@ export function RoundAnalysisAccordion({
                   className="w-full text-left"
                   onClick={() => void open(item.id)}
                 >
-                  {chipLine ? (
-                    <p className="text-xs font-medium text-slate-700">{chipLine}</p>
+                  {chips ? (
+                    <div className="flex flex-wrap gap-2">
+                      {MODEL_CHIP_ORDER.map(({ key, label }) => {
+                        const chip = chips[key]
+                        if (!chip) return null
+                        return (
+                          <span key={key} className="text-xs text-slate-700">
+                            <span className="font-medium">{label}</span>{' '}
+                            <span
+                              className={`rounded px-1 py-0.5 ${hitRateBadgeClass(chip.cautious_hit_rate)}`}
+                            >
+                              {chip.cautious_display}
+                            </span>{' '}
+                            <span
+                              className={`rounded px-1 py-0.5 ${hitRateBadgeClass(chip.aggressive_hit_rate)}`}
+                            >
+                              {chip.aggressive_display}
+                            </span>
+                          </span>
+                        )
+                      })}
+                    </div>
                   ) : modelLine ? (
                     <p className="text-xs text-slate-600">{modelLine}</p>
+                  ) : null}
+                  {isStale ? (
+                    <p className="mt-1 text-xs text-amber-800">{staleMessageForItem(item, overviewRound)}</p>
                   ) : null}
                   {motive ? (
                     <p className="text-xs text-amber-800">Motivo: {motive}</p>

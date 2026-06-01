@@ -558,7 +558,13 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 | Endpoint | Ruolo |
 |----------|--------|
 | `GET /api/backtest/round-analysis/overview` | Scorecard modelli, ranking, `rounds[]` con chip C/A |
-| `GET /api/backtest/round-analysis/overview/report-json` | Stesso payload + metadata export |
+| `GET /api/backtest/round-analysis/overview/report-json` | Export calibrazione v3 (`round_analysis_calibration_v3`) |
+| `GET /api/backtest/round-analysis/overview/report-csv` | Dataset piatto fixture×modello per analisi esterne |
+| `POST /api/backtest/round-analysis/{id}/recalculate` | Nuova versione analisi con config salvata |
+
+**Summary resolver:** se `model_summary_json` è vuoto/stale, chip e detail vengono **ricostruiti da fixture** (`round_analysis_summary_resolver.py`). Label legacy `play` normalizzate a `GIOCA`. Giornate incomplete mostrano badge «Da ricalcolare».
+
+**Export calibrazione v3:** metadata, `global_model_summary`, `fixtures[]` con modelli flat + `trace_summary_json` (macro v2.1, `leakage_guard`, `actuals_used_as_input=false`). Esclusi failed/stale/superseded dagli aggregati globali.
 
 **Selezione analisi:** `status IN (completed, completed_with_warnings)`; default `use_latest_version_per_round=true` (max `analysis_version` per `round_number`).
 

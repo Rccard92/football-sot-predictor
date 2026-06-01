@@ -6,6 +6,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import Response
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -113,6 +114,52 @@ def round_analysis_overview_report_json(
         logger.exception("GET round-analysis/overview/report-json: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)
+
+
+@router.get("/overview/report-csv")
+def round_analysis_overview_report_csv(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisOverviewService()
+    try:
+        csv_body = svc.get_overview_report_csv(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET round-analysis/overview/report-csv: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    filename = f"round-analysis-calibration-{competition_id}-{season_year}.csv"
+    return Response(
+        content=csv_body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{analysis_id}/recalculate")
+def round_analysis_recalculate(
+    analysis_id: int,
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisService()
+    try:
+        payload = svc.recalculate(db, analysis_id)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("POST round-analysis recalculate: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder({"analysis": payload})
 
 
 @router.delete("/{analysis_id}")

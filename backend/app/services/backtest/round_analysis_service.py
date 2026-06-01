@@ -13,6 +13,7 @@ from app.backtest.errors import raise_backtest_http
 from app.models import Competition, Fixture, FixtureTeamStat
 from app.models.backtest_round_analysis import BacktestRoundAnalysis, BacktestRoundFixtureResult
 from app.schemas.backtest_round_analysis import (
+    DEFAULT_ROUND_ANALYSIS_MODELS,
     RoundAnalysisAnalyzeRequest,
     RoundAnalysisDeleteResponse,
     RoundAnalysisDetailResponse,
@@ -26,7 +27,10 @@ from app.services.backtest.round_analysis_aggregator import RoundAnalysisAggrega
 from app.services.backtest.round_analysis_data_prep_service import RoundAnalysisDataPrepService
 from app.services.backtest.round_analysis_model_runner import RoundAnalysisModelRunner
 from app.services.backtest.round_analysis_preflight import preflight_round_history
-from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
+from app.services.backtest.round_analysis_summary_resolver import (
+    fixture_rows_from_orm,
+    resolve_round_display,
+)
 
 def _list_order_clauses(
     sort_by: str = "round_number",
@@ -371,9 +375,20 @@ class RoundAnalysisService:
             .limit(max(1, min(limit, 100))),
         ).all()
 
+        analysis_ids = [int(r.id) for r in rows]
+        fixtures_by_id = self._load_fixtures_by_analysis_ids(db, analysis_ids)
+
         items: list[RoundAnalysisListItem] = []
         for row in rows:
             meta = self._analysis_meta(row)
+            model_keys = self._model_keys_from_config(row)
+            fixture_rows = fixture_rows_from_orm(fixtures_by_id.get(int(row.id), []))
+            display = resolve_round_display(
+                status=str(row.status),
+                model_summary=row.model_summary_json,
+                rows=fixture_rows,
+                model_keys=model_keys,
+            )
             items.append(
                 RoundAnalysisListItem(
                     id=int(row.id),
@@ -393,6 +408,10 @@ class RoundAnalysisService:
                     data_quality_badge=meta["data_quality_badge"],
                     data_quality_status=meta["data_quality_status"],
                     accordion_summary=meta["accordion_summary"],
+                    model_chips=display["model_chips"],
+                    summary_source=display["summary_source"],
+                    completeness=display["completeness"],
+                    stale_message=display["stale_message"],
                     created_at=row.created_at,
                     completed_at=row.completed_at,
                 ),
@@ -413,6 +432,14 @@ class RoundAnalysisService:
 
         meta = self._analysis_meta(analysis)
         failed_models = self._count_failed_models(analysis)
+        model_keys = self._model_keys_from_config(analysis)
+        fixture_rows = fixture_rows_from_orm(fixtures)
+        display = resolve_round_display(
+            status=str(analysis.status),
+            model_summary=analysis.model_summary_json,
+            rows=fixture_rows,
+            model_keys=model_keys,
+        )
 
         return RoundAnalysisDetailResponse(
             id=int(analysis.id),
@@ -433,7 +460,10 @@ class RoundAnalysisService:
             failed_models_count=failed_models,
             progress_pct=float(analysis.progress_pct),
             data_quality_summary_json=analysis.data_quality_summary_json,
-            model_summary_json=analysis.model_summary_json,
+            model_summary_json=display["model_summary"],
+            summary_source=display["summary_source"],
+            completeness=display["completeness"],
+            stale_message=display["stale_message"],
             error_json=analysis.error_json,
             first_recommended_round=meta["first_recommended_round"],
             created_at=analysis.created_at,
@@ -456,6 +486,55 @@ class RoundAnalysisService:
                 for f in fixtures
             ],
         )
+
+    def recalculate(self, db: Session, analysis_id: int) -> RoundAnalysisDetailResponse:
+        analysis = db.get(BacktestRoundAnalysis, int(analysis_id))
+        if analysis is None:
+            raise_backtest_http(404, "analysis_not_found", "Analisi non trovata.")
+
+        cfg = dict(analysis.config_json or {})
+        request = RoundAnalysisAnalyzeRequest(
+            competition_id=int(analysis.competition_id),
+            season_year=int(analysis.season_year),
+            round_number=int(analysis.round_number),
+            mode=str(analysis.mode),
+            models=list(cfg.get("models") or DEFAULT_ROUND_ANALYSIS_MODELS),
+            lines=list(cfg.get("lines") or []),
+            cautious_drop_threshold=float(cfg.get("cautious_drop_threshold") or 0.75),
+            force_recalculate=True,
+        )
+        advice = cfg.get("advice_filters")
+        if isinstance(advice, dict) and advice:
+            from app.schemas.backtest_round_analysis import RoundAnalysisAdviceFilters
+
+            request = request.model_copy(
+                update={"advice_filters": RoundAnalysisAdviceFilters.model_validate(advice)},
+            )
+        return self.analyze(db, request)
+
+    def _load_fixtures_by_analysis_ids(
+        self,
+        db: Session,
+        analysis_ids: list[int],
+    ) -> dict[int, list[BacktestRoundFixtureResult]]:
+        if not analysis_ids:
+            return {}
+        rows = db.scalars(
+            select(BacktestRoundFixtureResult)
+            .where(BacktestRoundFixtureResult.analysis_id.in_(analysis_ids))
+            .order_by(BacktestRoundFixtureResult.id.asc()),
+        ).all()
+        out: dict[int, list[BacktestRoundFixtureResult]] = {}
+        for row in rows:
+            out.setdefault(int(row.analysis_id), []).append(row)
+        return out
+
+    def _model_keys_from_config(self, analysis: BacktestRoundAnalysis) -> list[str]:
+        cfg = dict(analysis.config_json or {})
+        keys = cfg.get("models")
+        if keys:
+            return [str(k) for k in keys]
+        return list(DEFAULT_ROUND_ANALYSIS_MODELS)
 
     def _analysis_meta(self, analysis: BacktestRoundAnalysis) -> dict[str, Any]:
         cfg = analysis.config_json if isinstance(analysis.config_json, dict) else {}

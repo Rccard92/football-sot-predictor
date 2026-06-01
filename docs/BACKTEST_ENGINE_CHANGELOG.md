@@ -22,6 +22,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-calibration-export-v3
+
+**Titolo:** Summary robusto accordion + export calibrazione v3.0
+
+**Descrizione:** Ricostruzione chip/summary da fixture quando JSON persistito è stale (giornate 9/10 pre-fix). Badge «Da ricalcolare», pulsante Ricalcola (`POST /recalculate`). Export JSON calibrazione (`round_analysis_calibration_v3`) con fixture granulari, macro v2.1, CSV piatto. Normalizzazione advice legacy `play` → GIOCA.
+
+**File toccati:** `round_analysis_summary_resolver.py`, `round_analysis_calibration_export.py`, service/list/overview routes, frontend accordion/overview, test, docs.
+
+---
+
 ## backtest-dashboard-model-scorecards
 
 **Titolo:** Dashboard affidabilità modelli Backtest (overview aggregato)

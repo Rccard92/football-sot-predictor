@@ -12,6 +12,7 @@ from app.services.backtest.round_analysis_mode_stats import (
     sample_status,
     trend_direction,
 )
+from app.services.backtest.round_analysis_summary_resolver import resolve_round_display
 from app.services.backtest.round_analysis_preflight import model_block_is_error, model_block_is_no_prediction
 
 
@@ -131,28 +132,6 @@ def summarize_model_from_fixtures(
     }
 
 
-def round_model_chips_from_summary(model_summary: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    chips: dict[str, dict[str, Any]] = {}
-    for key, block in (model_summary or {}).items():
-        if not isinstance(block, dict):
-            continue
-        cw = int(block.get("cautious_wins") or 0)
-        cl = int(block.get("cautious_losses") or 0)
-        aw = int(block.get("aggressive_wins") or 0)
-        al = int(block.get("aggressive_losses") or 0)
-        c_dec = cw + cl
-        a_dec = aw + al
-        chr_ = _hit_rate(cw, cl)
-        ahr = _hit_rate(aw, al)
-        chips[key] = {
-            "cautious_display": f"C {cw}/{c_dec} {chr_:.0f}%" if c_dec and chr_ is not None else "C —",
-            "aggressive_display": f"A {aw}/{a_dec} {ahr:.0f}%" if a_dec and ahr is not None else "A —",
-            "cautious_hit_rate": chr_,
-            "aggressive_hit_rate": ahr,
-        }
-    return chips
-
-
 def compute_ranking(models: dict[str, dict[str, Any]]) -> dict[str, Any]:
     items = list(models.values())
     if not items:
@@ -257,11 +236,22 @@ def build_overview_payload(
 
     rounds_out: list[dict[str, Any]] = []
     for analysis in sorted(analyses, key=lambda a: int(a.round_number), reverse=True):
-        ms = dict(analysis.model_summary_json or {})
+        rows = [
+            _fixture_row_dict_from_orm(r)
+            for r in fixtures_by_analysis_id.get(int(analysis.id), [])
+        ]
+        cfg = dict(analysis.config_json or {})
+        round_model_keys = list(cfg.get("models") or model_keys)
         dq = analysis.data_quality_summary_json if isinstance(
             analysis.data_quality_summary_json,
             dict,
         ) else {}
+        display = resolve_round_display(
+            status=str(analysis.status),
+            model_summary=analysis.model_summary_json,
+            rows=rows,
+            model_keys=round_model_keys,
+        )
         rounds_out.append(
             {
                 "analysis_id": int(analysis.id),
@@ -271,7 +261,10 @@ def build_overview_payload(
                 "total_fixtures": int(analysis.total_fixtures),
                 "processed_fixtures": int(analysis.processed_fixtures),
                 "data_quality_badge": dq.get("badge"),
-                "models": round_model_chips_from_summary(ms),
+                "models": display["model_chips"],
+                "summary_source": display["summary_source"],
+                "completeness": display["completeness"],
+                "stale_message": display["stale_message"],
             },
         )
 

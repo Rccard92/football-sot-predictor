@@ -126,4 +126,5 @@ def test_build_overview_latest_version_per_round():
     )
     assert payload["rounds_analyzed"] == 1
     assert payload["rounds"][0]["analysis_id"] == 2
-    assert payload["models"][V11]["reliability_score"] is not None
+    assert payload["rounds"][0]["completeness"] == "ok"
+    assert "—" not in payload["rounds"][0]["models"][V11]["cautious_display"]

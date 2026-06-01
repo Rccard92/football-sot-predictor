@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   getRoundAnalysisOverview,
+  getRoundAnalysisOverviewReportCsv,
   getRoundAnalysisOverviewReportJson,
   type RoundAnalysisOverview,
 } from '../../lib/api'
 import { ModelRankingBar } from './ModelRankingBar'
 import { ModelReliabilityScorecards } from './ModelReliabilityScorecards'
+
+const DOWNLOAD_TOOLTIP =
+  'Include tutte le giornate analizzate e i dettagli partita/modello utili alla calibrazione.'
 
 type Props = {
   competitionId: number | null
@@ -23,7 +27,8 @@ export function RoundAnalysisOverviewSection({
   const [overview, setOverview] = useState<RoundAnalysisOverview | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [downloading, setDownloading] = useState(false)
+  const [downloadingJson, setDownloadingJson] = useState(false)
+  const [downloadingCsv, setDownloadingCsv] = useState(false)
   const onLoadedRef = useRef(onOverviewLoaded)
   onLoadedRef.current = onOverviewLoaded
 
@@ -59,34 +64,60 @@ export function RoundAnalysisOverviewSection({
             Solo pick consigliate (Giocate) con esito · campione sulle giornate completate
           </p>
         </div>
-        <button
-          type="button"
-          disabled={downloading || !overview?.rounds_analyzed}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-          onClick={async () => {
-            if (competitionId == null) return
-            setDownloading(true)
-            try {
-              const payload = await getRoundAnalysisOverviewReportJson(
-                competitionId,
-                seasonYear,
-              )
-              const blob = new Blob([JSON.stringify(payload, null, 2)], {
-                type: 'application/json',
-              })
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = `round-analysis-overview-${competitionId}-${seasonYear}.json`
-              a.click()
-              URL.revokeObjectURL(url)
-            } finally {
-              setDownloading(false)
-            }
-          }}
-        >
-          {downloading ? 'Download…' : 'Scarica report aggregato'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            title={DOWNLOAD_TOOLTIP}
+            disabled={downloadingJson || !overview?.rounds_analyzed}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            onClick={async () => {
+              if (competitionId == null) return
+              setDownloadingJson(true)
+              try {
+                const payload = await getRoundAnalysisOverviewReportJson(
+                  competitionId,
+                  seasonYear,
+                )
+                const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                  type: 'application/json',
+                })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `round-analysis-calibration-${competitionId}-${seasonYear}.json`
+                a.click()
+                URL.revokeObjectURL(url)
+              } finally {
+                setDownloadingJson(false)
+              }
+            }}
+          >
+            {downloadingJson ? 'Download…' : 'Scarica report aggregato JSON'}
+          </button>
+          <button
+            type="button"
+            title={DOWNLOAD_TOOLTIP}
+            disabled={downloadingCsv || !overview?.rounds_analyzed}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            onClick={async () => {
+              if (competitionId == null) return
+              setDownloadingCsv(true)
+              try {
+                const blob = await getRoundAnalysisOverviewReportCsv(competitionId, seasonYear)
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `round-analysis-calibration-${competitionId}-${seasonYear}.csv`
+                a.click()
+                URL.revokeObjectURL(url)
+              } finally {
+                setDownloadingCsv(false)
+              }
+            }}
+          >
+            {downloadingCsv ? 'Download…' : 'Scarica dataset CSV'}
+          </button>
+        </div>
       </div>
       {loading ? <p className="text-sm text-slate-500">Caricamento overview…</p> : null}
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}

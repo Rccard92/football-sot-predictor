@@ -68,6 +68,9 @@ class RoundOverviewItem(BaseModel):
     processed_fixtures: int = 0
     data_quality_badge: str | None = None
     models: dict[str, RoundOverviewModelChip] = Field(default_factory=dict)
+    summary_source: Literal["persisted", "rebuilt_from_fixtures"] | None = None
+    completeness: Literal["ok", "stale", "empty"] | None = None
+    stale_message: str | None = None
 
 
 class RoundAnalysisOverviewResponse(BaseModel):

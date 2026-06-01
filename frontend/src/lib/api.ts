@@ -2948,11 +2948,21 @@ export type RoundAnalysisDetail = {
     total_fixtures?: number
   } | null
   model_summary_json?: Record<string, RoundAnalysisModelSummary> | null
+  summary_source?: 'persisted' | 'rebuilt_from_fixtures' | null
+  completeness?: 'ok' | 'stale' | 'empty' | null
+  stale_message?: string | null
   error_json?: Record<string, unknown> | null
   first_recommended_round?: number | null
   created_at: string
   completed_at?: string | null
   fixtures: RoundAnalysisFixtureRow[]
+}
+
+export type RoundOverviewModelChip = {
+  cautious_display: string
+  aggressive_display: string
+  cautious_hit_rate?: number | null
+  aggressive_hit_rate?: number | null
 }
 
 export type RoundAnalysisListItem = {
@@ -2973,6 +2983,10 @@ export type RoundAnalysisListItem = {
   data_quality_badge?: string | null
   data_quality_status?: string | null
   accordion_summary?: Record<string, string> | null
+  model_chips?: Record<string, RoundOverviewModelChip> | null
+  summary_source?: 'persisted' | 'rebuilt_from_fixtures' | null
+  completeness?: 'ok' | 'stale' | 'empty' | null
+  stale_message?: string | null
   created_at: string
   completed_at?: string | null
 }
@@ -3025,6 +3039,15 @@ export async function deleteRoundAnalysis(analysisId: number): Promise<RoundAnal
   )
 }
 
+export async function postRoundAnalysisRecalculate(
+  analysisId: number,
+): Promise<{ analysis: RoundAnalysisDetail }> {
+  return requestPostJson<{ analysis: RoundAnalysisDetail }>(
+    `/api/backtest/round-analysis/${analysisId}/recalculate`,
+    {},
+  )
+}
+
 export async function getRoundAnalysisReportJson(
   analysisId: number,
 ): Promise<Record<string, unknown>> {
@@ -3072,13 +3095,6 @@ export type RoundAnalysisModelOverviewStats = {
   advised_plays_total?: number
 }
 
-export type RoundOverviewModelChip = {
-  cautious_display: string
-  aggressive_display: string
-  cautious_hit_rate?: number | null
-  aggressive_hit_rate?: number | null
-}
-
 export type RoundAnalysisOverviewRound = {
   analysis_id: number
   round_number: number
@@ -3088,6 +3104,9 @@ export type RoundAnalysisOverviewRound = {
   processed_fixtures: number
   data_quality_badge?: string | null
   models: Record<string, RoundOverviewModelChip>
+  summary_source?: 'persisted' | 'rebuilt_from_fixtures' | null
+  completeness?: 'ok' | 'stale' | 'empty' | null
+  stale_message?: string | null
 }
 
 export type RoundAnalysisOverview = {
@@ -3145,6 +3164,28 @@ export async function getRoundAnalysisOverviewReportJson(
   return requestJson<Record<string, unknown>>(
     `/api/backtest/round-analysis/overview/report-json?${q.toString()}`,
   )
+}
+
+export async function getRoundAnalysisOverviewReportCsv(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): Promise<Blob> {
+  const q = new URLSearchParams({
+    competition_id: String(competitionId),
+    season_year: String(seasonYear),
+  })
+  if (opts?.useLatestVersionPerRound === false) {
+    q.set('use_latest_version_per_round', 'false')
+  }
+  if (opts?.includeAllVersions) {
+    q.set('include_all_versions', 'true')
+  }
+  const res = await fetch(`/api/backtest/round-analysis/overview/report-csv?${q.toString()}`)
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+  return res.blob()
 }
 
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---

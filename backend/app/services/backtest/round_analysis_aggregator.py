@@ -15,6 +15,7 @@ from app.services.backtest.player_layer_fixture_status import (
     merge_player_layer_into_data_quality_summary,
     summarize_player_layer_from_fixture_rows,
 )
+from app.services.backtest.round_analysis_mode_stats import advice_bucket
 from app.services.backtest.round_analysis_preflight import (
     RoundHistoryPreflight,
     accordion_summary_from_models,
@@ -178,8 +179,8 @@ class RoundAnalysisAggregator:
                 abs_errors.append(abs(err))
 
             if str(block.get("status") or "ok") == "ok":
-                agg_advice = str(block.get("aggressive_advice") or "").strip().upper()
-                caut_advice = str(block.get("cautious_advice") or "").strip().upper()
+                agg_advice = advice_bucket(str(block.get("aggressive_advice") or ""))
+                caut_advice = advice_bucket(str(block.get("cautious_advice") or ""))
                 agg_out = block.get("aggressive_outcome")
                 caut_out = block.get("cautious_outcome")
                 if agg_advice == "GIOCA" and agg_out in ("WIN", "LOSS"):

@@ -47,13 +47,25 @@ def test_get_overview_200(mock_get):
 @patch("app.routes.backtest_round_analysis.RoundAnalysisOverviewService.get_overview_report_json")
 def test_get_overview_report_json_200(mock_get):
     mock_get.return_value = {
-        "report_type": "round_analysis_overview",
-        "generated_at": "2025-01-01T00:00:00+00:00",
-        "overview": OVERVIEW_PAYLOAD,
+        "report_type": "round_analysis_calibration_v3",
+        "metadata": {"analyzed_rounds": 1},
+        "global_model_summary": {},
+        "fixtures": [],
     }
     r = client.get(
         "/api/backtest/round-analysis/overview/report-json",
         params={"competition_id": 1, "season_year": 2025},
     )
     assert r.status_code == 200
-    assert r.json()["report_type"] == "round_analysis_overview"
+    assert r.json()["report_type"] == "round_analysis_calibration_v3"
+
+
+@patch("app.routes.backtest_round_analysis.RoundAnalysisOverviewService.get_overview_report_csv")
+def test_get_overview_report_csv_200(mock_get):
+    mock_get.return_value = "round,fixture_id\n10,95\n"
+    r = client.get(
+        "/api/backtest/round-analysis/overview/report-csv",
+        params={"competition_id": 1, "season_year": 2025},
+    )
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("content-type", "")

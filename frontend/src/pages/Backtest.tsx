@@ -68,6 +68,7 @@ export function Backtest() {
         }}
         reloadToken={reloadToken}
         overviewRounds={overview?.rounds}
+        onReloadList={() => setReloadToken((t) => t + 1)}
       />
 
       {detail ? (

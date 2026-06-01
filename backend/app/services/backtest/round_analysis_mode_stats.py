@@ -5,6 +5,26 @@ from __future__ import annotations
 from typing import Any
 
 
+def is_advised_label(raw: str | None) -> bool:
+    if not raw:
+        return False
+    norm = str(raw).strip().upper()
+    return norm in {"GIOCA", "PLAY"}
+
+
+def advice_bucket(raw: str | None) -> str:
+    if not raw:
+        return ""
+    norm = str(raw).strip().upper()
+    if norm in {"GIOCA", "PLAY"}:
+        return "GIOCA"
+    if norm in {"NON GIOCARE", "NO_PLAY", "NO PLAY"}:
+        return "NON GIOCARE"
+    if norm == "BORDERLINE":
+        return "BORDERLINE"
+    return norm
+
+
 def _round1(value: float | None) -> float | None:
     if value is None:
         return None
@@ -28,7 +48,7 @@ def count_play_mode(block: dict[str, Any], mode: str) -> dict[str, Any]:
     """mode: 'aggressive' | 'cautious'."""
     advice_key = f"{mode}_advice"
     outcome_key = f"{mode}_outcome"
-    advice = str(block.get(advice_key) or "").strip().upper()
+    advice = advice_bucket(str(block.get(advice_key) or ""))
     outcome = block.get(outcome_key)
 
     calc_w = calc_l = 0
