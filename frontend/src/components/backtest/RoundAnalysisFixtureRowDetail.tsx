@@ -81,6 +81,18 @@ export function RoundAnalysisFixtureRowDetail({ fixture }: Props) {
                   status: block.model_status ?? block.status,
                   error_code: block.error_code,
                   error_message: block.error_message ?? block.message,
+                  prediction: {
+                    predicted_home_sot: block.predicted_home_sot,
+                    predicted_away_sot: block.predicted_away_sot,
+                    predicted_total_sot: block.predicted_total_sot,
+                  },
+                  formula_quality:
+                    (block as { formula_quality?: string }).formula_quality ??
+                    (block.trace_summary as { formula_quality?: string }).formula_quality,
+                  fallback_used:
+                    (block as { fallback_used?: string }).fallback_used ??
+                    (block.trace_summary as { fallback_used?: string }).fallback_used,
+                  warnings: block.warnings,
                   trace_summary: block.trace_summary
                     ? {
                         formula_inputs: (
@@ -89,6 +101,9 @@ export function RoundAnalysisFixtureRowDetail({ fixture }: Props) {
                         formula_outputs: (
                           block.trace_summary as { formula_outputs?: unknown }
                         ).formula_outputs,
+                        split_context: (
+                          block.trace_summary as { split_context?: unknown }
+                        ).split_context,
                         missing_fields: (
                           block.trace_summary as { missing_fields?: unknown }
                         ).missing_fields,

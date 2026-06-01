@@ -93,6 +93,12 @@ class SotV11RoundAnalysisAdapter:
         trace: dict[str, Any] = dict(meta.get("trace_summary") or {})
         trace.setdefault("home_prior_count", home_prior)
         trace.setdefault("away_prior_count", away_prior)
+        if meta.get("split_context"):
+            trace["split_context"] = meta["split_context"]
+        if meta.get("fallback_used"):
+            trace["fallback_used"] = meta["fallback_used"]
+        if raw.get("formula_quality"):
+            trace["formula_quality"] = raw["formula_quality"]
 
         if min_prior == 0:
             return RoundAnalysisModelResult(
@@ -128,6 +134,9 @@ class SotV11RoundAnalysisAdapter:
                 "predicted_away_sot": away_pred,
                 "predicted_total_sot": pred_patch.get("predicted_total_sot"),
                 "sample_bucket": raw.get("sample_bucket"),
+                "formula_quality": raw.get("formula_quality"),
+                "fallback_used": raw.get("fallback_used"),
+                "used_split": raw.get("used_split"),
                 "warnings": pred_patch.get("warnings"),
             }
             return RoundAnalysisModelResult(

@@ -536,6 +536,15 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 
 Il prior context **non** equivale alla predizione v1.1: l’engine Round Analysis è `compute_v11_side` invocato tramite `v11_round_analysis_engine.predict_v11_side_for_team`, con lo stesso `build_prior_context` di `SotPredictionV11BaselineSotService` (**senza** `competition_scoped_only` / `strict_kickoff_only`; quei flag restano solo sul PIT v2.1).
 
+### V1.1 fallback controllato in Round Analysis
+
+- **Split insufficiente non blocca** se `team_prior_count` / `opponent_prior_count` ≥ `V11_MIN_COMPLETED_MATCHES` (5) e off/def/recent/xG/player sono disponibili.
+- Round Analysis passa `allow_split_fallback=True` a `compute_v11_side`; il generate produzione resta strict (`allow_split_fallback=False`).
+- **Formula:** blend a 5 termini con pesi registry rinormalizzati (0.87 → 1.0); nessun peso inventato.
+- **Output:** `formula_quality=partial_low_sample`, warning `V11_SPLIT_SAMPLE_INSUFFICIENT_USED_GENERAL_BASE`, trace `split_context` (`used_split`, `fallback_used`, soglie da registry).
+- **Errore bloccante** solo se mancano prior generali, baseline lega, o altri componenti strict (`V11_INSUFFICIENT_GENERAL_SAMPLE`, ecc.).
+- **v2.0** dipende dalla base v1.1 con `predicted_total_sot`; nessun fallback su v2.1.
+
 - **Nessun fallback** da `TeamSotPrediction` né da v2.1: solo calcolo live.
 - **season_id:** `resolve_season_id_for_round_analysis` solo per trace e conteggio baseline lega; il contesto reale usa `home_ctx.season_id` dopo `build_prior_context`.
 - **Trace:** `formula_inputs` (`context_mode: production_v11`, prior, baseline eligible), `formula_outputs` (per lato: `expected_sot`, `formula_quality_status`, `failed_components`), `infer_v11_failure_code` → codici granulari (`V11_MISSING_XG_LEAGUE_BASELINE`, `V11_MISSING_PLAYER_LEAGUE_BASELINE`, …).

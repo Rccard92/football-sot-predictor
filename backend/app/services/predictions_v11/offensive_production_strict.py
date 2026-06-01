@@ -265,10 +265,16 @@ def _fail_result(
     )
 
 
+SPLIT_FALLBACK_REASON = "general_base_due_to_insufficient_split"
+SPLIT_FALLBACK_WARNING = "split_insufficient_used_general_base"
+
+
 def compute_v11_side(
     db: Session,
     ctx: V10PriorContext,
     prior_fixtures: list[Fixture],
+    *,
+    allow_split_fallback: bool = False,
 ) -> V11SideResult:
     """Stage 6: blend 6 componenti (offensiva, difensiva, split, recente, xG, player layer)."""
     sample_count = len(prior_fixtures)
@@ -364,15 +370,38 @@ def compute_v11_side(
                 formula_quality_status="insufficient_sample",
                 sample_count=def_sample,
             )
+    split_fallback = False
     if split_comp is None:
         all_missing.extend(split_miss)
         if split_status == "insufficient_split_sample":
-            return _fail_result(
-                missing=all_missing,
-                formula_quality_status="insufficient_split_sample",
-                sample_count=max(team_split_n, opp_split_n),
-            )
-        if split_status == "missing_required_league_split_baseline":
+            if allow_split_fallback:
+                if sample_count < V11_MIN_COMPLETED_MATCHES:
+                    return _fail_result(
+                        missing=all_missing,
+                        formula_quality_status="insufficient_sample",
+                        sample_count=sample_count,
+                    )
+                if (
+                    off_comp is not None
+                    and def_comp is not None
+                    and recent_comp is not None
+                    and xg_comp is not None
+                    and player_comp is not None
+                ):
+                    split_fallback = True
+                else:
+                    return _fail_result(
+                        missing=all_missing,
+                        formula_quality_status="insufficient_split_sample",
+                        sample_count=max(team_split_n, opp_split_n),
+                    )
+            else:
+                return _fail_result(
+                    missing=all_missing,
+                    formula_quality_status="insufficient_split_sample",
+                    sample_count=max(team_split_n, opp_split_n),
+                )
+        elif split_status == "missing_required_league_split_baseline":
             return _fail_result(
                 missing=all_missing,
                 formula_quality_status="missing_required_league_split_baseline",
@@ -442,7 +471,7 @@ def compute_v11_side(
     if (
         off_comp is None
         or def_comp is None
-        or split_comp is None
+        or (split_comp is None and not split_fallback)
         or recent_comp is None
         or xg_comp is None
         or player_comp is None
@@ -450,7 +479,7 @@ def compute_v11_side(
         fq = "missing_required_data"
         if off_status == "insufficient_sample" or def_status == "insufficient_sample":
             fq = "insufficient_sample"
-        elif split_status == "insufficient_split_sample":
+        elif split_status == "insufficient_split_sample" and not split_fallback:
             fq = "insufficient_split_sample"
         elif split_status == "missing_required_league_split_baseline":
             fq = "missing_required_league_split_baseline"
@@ -483,24 +512,169 @@ def compute_v11_side(
 
     off_val = float(off_comp["value"])
     def_val = float(def_comp["value"])
-    split_val = float(split_comp["value"])
     recent_val = float(recent_comp["value"])
     xg_val = float(xg_comp["value"])
     player_val = float(player_comp["value"])
-    off_contrib = round2(off_val * FORMULA_OFFENSIVE_WEIGHT) or 0.0
-    def_contrib = round2(def_val * FORMULA_DEFENSIVE_WEIGHT) or 0.0
-    split_contrib = round2(split_val * FORMULA_SPLIT_WEIGHT) or 0.0
-    recent_contrib = round2(recent_val * FORMULA_RECENT_WEIGHT) or 0.0
-    xg_contrib = round2(xg_val * FORMULA_XG_WEIGHT) or 0.0
-    player_contrib = round2(player_val * FORMULA_PLAYER_WEIGHT) or 0.0
-    expected_sot = round2(
-        off_val * FORMULA_OFFENSIVE_WEIGHT
-        + def_val * FORMULA_DEFENSIVE_WEIGHT
-        + split_val * FORMULA_SPLIT_WEIGHT
-        + recent_val * FORMULA_RECENT_WEIGHT
-        + xg_val * FORMULA_XG_WEIGHT
-        + player_val * FORMULA_PLAYER_WEIGHT,
-    ) or 0.0
+
+    if split_fallback:
+        weight_sum = (
+            FORMULA_OFFENSIVE_WEIGHT
+            + FORMULA_DEFENSIVE_WEIGHT
+            + FORMULA_RECENT_WEIGHT
+            + FORMULA_XG_WEIGHT
+            + FORMULA_PLAYER_WEIGHT
+        )
+        off_w = FORMULA_OFFENSIVE_WEIGHT / weight_sum
+        def_w = FORMULA_DEFENSIVE_WEIGHT / weight_sum
+        recent_w = FORMULA_RECENT_WEIGHT / weight_sum
+        xg_w = FORMULA_XG_WEIGHT / weight_sum
+        player_w = FORMULA_PLAYER_WEIGHT / weight_sum
+        off_contrib = round2(off_val * off_w) or 0.0
+        def_contrib = round2(def_val * def_w) or 0.0
+        recent_contrib = round2(recent_val * recent_w) or 0.0
+        xg_contrib = round2(xg_val * xg_w) or 0.0
+        player_contrib = round2(player_val * player_w) or 0.0
+        expected_sot = round2(
+            off_val * off_w
+            + def_val * def_w
+            + recent_val * recent_w
+            + xg_val * xg_w
+            + player_val * player_w,
+        ) or 0.0
+        split_comp_skipped: dict[str, Any] = {
+            "key": COMPONENT_KEY_SPLIT,
+            "label": COMPONENT_LABEL_SPLIT,
+            "value": None,
+            "status": "skipped_insufficient_sample",
+            "team_split_sample_count": team_split_n,
+            "opponent_split_sample_count": opp_split_n,
+        }
+        formula_terms = [
+            {
+                "key": COMPONENT_KEY_OFFENSIVE,
+                "label": COMPONENT_LABEL_OFFENSIVE,
+                "value": off_val,
+                "weight": off_w,
+                "contribution": off_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_DEFENSIVE,
+                "label": COMPONENT_LABEL_DEFENSIVE,
+                "value": def_val,
+                "weight": def_w,
+                "contribution": def_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_SPLIT,
+                "label": COMPONENT_LABEL_SPLIT,
+                "value": None,
+                "weight": 0.0,
+                "contribution": 0.0,
+                "status": "skipped_insufficient_sample",
+            },
+            {
+                "key": COMPONENT_KEY_RECENT,
+                "label": COMPONENT_LABEL_RECENT,
+                "value": recent_val,
+                "weight": recent_w,
+                "contribution": recent_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_XG,
+                "label": COMPONENT_LABEL_XG,
+                "value": xg_val,
+                "weight": xg_w,
+                "contribution": xg_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_PLAYER,
+                "label": COMPONENT_LABEL_PLAYER,
+                "value": player_val,
+                "weight": player_w,
+                "contribution": player_contrib,
+                "status": "available",
+                "mode": str((player_comp or {}).get("mode") or "historical_recent_profile"),
+            },
+        ]
+        fq_status = "partial_low_sample"
+        warnings = [SPLIT_FALLBACK_WARNING]
+        split_out = split_comp_skipped
+        terms_count = 5
+    else:
+        split_val = float(split_comp["value"])
+        off_contrib = round2(off_val * FORMULA_OFFENSIVE_WEIGHT) or 0.0
+        def_contrib = round2(def_val * FORMULA_DEFENSIVE_WEIGHT) or 0.0
+        split_contrib = round2(split_val * FORMULA_SPLIT_WEIGHT) or 0.0
+        recent_contrib = round2(recent_val * FORMULA_RECENT_WEIGHT) or 0.0
+        xg_contrib = round2(xg_val * FORMULA_XG_WEIGHT) or 0.0
+        player_contrib = round2(player_val * FORMULA_PLAYER_WEIGHT) or 0.0
+        expected_sot = round2(
+            off_val * FORMULA_OFFENSIVE_WEIGHT
+            + def_val * FORMULA_DEFENSIVE_WEIGHT
+            + split_val * FORMULA_SPLIT_WEIGHT
+            + recent_val * FORMULA_RECENT_WEIGHT
+            + xg_val * FORMULA_XG_WEIGHT
+            + player_val * FORMULA_PLAYER_WEIGHT,
+        ) or 0.0
+        formula_terms = [
+            {
+                "key": COMPONENT_KEY_OFFENSIVE,
+                "label": COMPONENT_LABEL_OFFENSIVE,
+                "value": off_val,
+                "weight": FORMULA_OFFENSIVE_WEIGHT,
+                "contribution": off_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_DEFENSIVE,
+                "label": COMPONENT_LABEL_DEFENSIVE,
+                "value": def_val,
+                "weight": FORMULA_DEFENSIVE_WEIGHT,
+                "contribution": def_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_SPLIT,
+                "label": COMPONENT_LABEL_SPLIT,
+                "value": split_val,
+                "weight": FORMULA_SPLIT_WEIGHT,
+                "contribution": split_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_RECENT,
+                "label": COMPONENT_LABEL_RECENT,
+                "value": recent_val,
+                "weight": FORMULA_RECENT_WEIGHT,
+                "contribution": recent_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_XG,
+                "label": COMPONENT_LABEL_XG,
+                "value": xg_val,
+                "weight": FORMULA_XG_WEIGHT,
+                "contribution": xg_contrib,
+                "status": "available",
+            },
+            {
+                "key": COMPONENT_KEY_PLAYER,
+                "label": COMPONENT_LABEL_PLAYER,
+                "value": player_val,
+                "weight": FORMULA_PLAYER_WEIGHT,
+                "contribution": player_contrib,
+                "status": "available",
+                "mode": str((player_comp or {}).get("mode") or "historical_recent_profile"),
+            },
+        ]
+        fq_status = "ok"
+        warnings = []
+        split_out = split_comp
+        terms_count = 6
 
     raw_json: dict[str, Any] = {
         "model_version": BASELINE_SOT_MODEL_VERSION_V11_SOT,
@@ -511,78 +685,29 @@ def compute_v11_side(
         "expected_sot": expected_sot,
         "formula": {
             "type": "weighted_components",
-            "terms_count": 6,
-            "terms": [
-                {
-                    "key": COMPONENT_KEY_OFFENSIVE,
-                    "label": COMPONENT_LABEL_OFFENSIVE,
-                    "value": off_val,
-                    "weight": FORMULA_OFFENSIVE_WEIGHT,
-                    "contribution": off_contrib,
-                    "status": "available",
-                },
-                {
-                    "key": COMPONENT_KEY_DEFENSIVE,
-                    "label": COMPONENT_LABEL_DEFENSIVE,
-                    "value": def_val,
-                    "weight": FORMULA_DEFENSIVE_WEIGHT,
-                    "contribution": def_contrib,
-                    "status": "available",
-                },
-                {
-                    "key": COMPONENT_KEY_SPLIT,
-                    "label": COMPONENT_LABEL_SPLIT,
-                    "value": split_val,
-                    "weight": FORMULA_SPLIT_WEIGHT,
-                    "contribution": split_contrib,
-                    "status": "available",
-                },
-                {
-                    "key": COMPONENT_KEY_RECENT,
-                    "label": COMPONENT_LABEL_RECENT,
-                    "value": recent_val,
-                    "weight": FORMULA_RECENT_WEIGHT,
-                    "contribution": recent_contrib,
-                    "status": "available",
-                },
-                {
-                    "key": COMPONENT_KEY_XG,
-                    "label": COMPONENT_LABEL_XG,
-                    "value": xg_val,
-                    "weight": FORMULA_XG_WEIGHT,
-                    "contribution": xg_contrib,
-                    "status": "available",
-                },
-                {
-                    "key": COMPONENT_KEY_PLAYER,
-                    "label": COMPONENT_LABEL_PLAYER,
-                    "value": player_val,
-                    "weight": FORMULA_PLAYER_WEIGHT,
-                    "contribution": player_contrib,
-                    "status": "available",
-                    "mode": str(
-                        (player_comp or {}).get("mode") or "historical_recent_profile",
-                    ),
-                },
-            ],
+            "terms_count": terms_count,
+            "terms": formula_terms,
             "final_sum": expected_sot,
+            "split_fallback": split_fallback,
         },
         "components": {
             COMPONENT_KEY_OFFENSIVE: off_comp,
             COMPONENT_KEY_DEFENSIVE: def_comp,
-            COMPONENT_KEY_SPLIT: split_comp,
+            COMPONENT_KEY_SPLIT: split_out,
             "recent_form_component": recent_comp,
             COMPONENT_KEY_XG: xg_comp,
             COMPONENT_KEY_PLAYER: player_comp,
         },
         COMPONENT_KEY_OFFENSIVE: off_comp,
         COMPONENT_KEY_DEFENSIVE: def_comp,
-        COMPONENT_KEY_SPLIT: split_comp,
+        COMPONENT_KEY_SPLIT: split_out,
         COMPONENT_KEY_RECENT: recent_comp,
         COMPONENT_KEY_XG: xg_comp,
         COMPONENT_KEY_PLAYER: player_comp,
-        "formula_quality_status": "ok",
-        "warnings": [],
+        "formula_quality_status": fq_status,
+        "warnings": warnings,
+        "used_split": not split_fallback,
+        "split_fallback_used": SPLIT_FALLBACK_REASON if split_fallback else None,
         "sample_count": sample_count,
         "opponent_sample_count": def_sample,
         "team_split_sample_count": team_split_n,
@@ -599,12 +724,12 @@ def compute_v11_side(
         expected_sot=expected_sot,
         component=off_comp,
         defensive_component=def_comp,
-        split_component=split_comp,
+        split_component=split_out,
         recent_component=recent_comp,
         xg_component=xg_comp,
         player_layer_component=player_comp,
         raw_json=raw_json,
         missing_required_fields=[],
-        formula_quality_status="ok",
+        formula_quality_status=fq_status,
         sample_count=sample_count,
     )

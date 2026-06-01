@@ -11,12 +11,17 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES
 from app.models import Competition, Fixture, League, Season
+from app.services.predictions_v10.v10_prior_context import V10PriorContext
+from app.services.predictions_v11.offensive_production_strict import SPLIT_FALLBACK_REASON
+from app.services.predictions_v11.split_fixtures import opponent_split_fixtures, team_split_fixtures
 from app.services.predictions_v11.v11_side_result import V11SideResult
 from app.services.sot_feature_math import fixture_key_before
+from app.services.sot_feature_registry import V11_MIN_COMPLETED_MATCHES, V11_MIN_SPLIT_MATCHES
 
 logger = logging.getLogger(__name__)
 
 WARN_HOME_AWAY_SPLIT_MISSING = "V11_HOME_AWAY_SPLIT_MISSING"
+WARN_SPLIT_SAMPLE_INSUFFICIENT_USED_GENERAL_BASE = "V11_SPLIT_SAMPLE_INSUFFICIENT_USED_GENERAL_BASE"
 
 
 def resolve_season_id_for_round_analysis(
@@ -98,7 +103,7 @@ _FQ_TO_ERROR: dict[str, str] = {
     "missing_required_league_split_baseline": "V11_MISSING_LEAGUE_SPLIT_BASELINE",
     "missing_required_recent_league_baseline": "V11_MISSING_RECENT_LEAGUE_BASELINE",
     "insufficient_player_profile_sample": "V11_INSUFFICIENT_PLAYER_PROFILE",
-    "insufficient_sample": "V11_INSUFFICIENT_SAMPLE",
+    "insufficient_sample": "V11_INSUFFICIENT_GENERAL_SAMPLE",
     "insufficient_split_sample": "V11_INSUFFICIENT_SPLIT_SAMPLE",
     "insufficient_recent_sample": "V11_INSUFFICIENT_RECENT_SAMPLE",
     "insufficient_xg_sample": "V11_INSUFFICIENT_XG_SAMPLE",
@@ -106,14 +111,71 @@ _FQ_TO_ERROR: dict[str, str] = {
 }
 
 
+_SKIP_STATUSES = frozenset(
+    {"available", "ok", "", "skipped_insufficient_sample"},
+)
+
+
 def _failed_components(res: V11SideResult) -> list[str]:
     comps = (res.raw_json or {}).get("components") if isinstance(res.raw_json, dict) else {}
     failed: list[str] = []
     if isinstance(comps, dict):
         for key, val in comps.items():
-            if isinstance(val, dict) and str(val.get("status") or "") not in ("available", "ok", ""):
+            if isinstance(val, dict) and str(val.get("status") or "") not in _SKIP_STATUSES:
                 failed.append(f"{key}:{val.get('status')}")
     return failed
+
+
+def _split_sample_counts(ctx: V10PriorContext) -> tuple[int, int]:
+    team_is_home = bool(ctx.is_home)
+    team_split = team_split_fixtures(
+        ctx.team_prior_fixtures,
+        int(ctx.team_id),
+        is_home_context=team_is_home,
+    )
+    opp_split = opponent_split_fixtures(
+        ctx.opponent_prior_fixtures,
+        int(ctx.opponent_id),
+        team_is_home=team_is_home,
+    )
+    return len(team_split), len(opp_split)
+
+
+def build_split_context(
+    *,
+    home_ctx: V10PriorContext,
+    away_ctx: V10PriorContext,
+    home_res: V11SideResult,
+    away_res: V11SideResult,
+) -> dict[str, Any]:
+    home_team_n, home_opp_n = _split_sample_counts(home_ctx)
+    away_team_n, away_opp_n = _split_sample_counts(away_ctx)
+    home_raw = home_res.raw_json or {}
+    away_raw = away_res.raw_json or {}
+    used_split = bool(home_raw.get("used_split", True)) and bool(away_raw.get("used_split", True))
+    fallback = home_raw.get("split_fallback_used") or away_raw.get("split_fallback_used")
+    return {
+        "home_prior": int(home_ctx.team_prior_count),
+        "away_prior": int(away_ctx.team_prior_count),
+        "home_split_prior": home_team_n,
+        "away_split_prior": away_team_n,
+        "home_opponent_split_prior": home_opp_n,
+        "away_opponent_split_prior": away_opp_n,
+        "min_general_prior_matches": V11_MIN_COMPLETED_MATCHES,
+        "min_split_prior_matches": V11_MIN_SPLIT_MATCHES,
+        "used_split": used_split,
+        "fallback_used": fallback,
+    }
+
+
+def detect_v11_split_fallback(home_res: V11SideResult, away_res: V11SideResult) -> str | None:
+    for res in (home_res, away_res):
+        raw = res.raw_json or {}
+        if raw.get("split_fallback_used"):
+            return str(raw["split_fallback_used"])
+        if str(res.formula_quality_status or "") == "partial_low_sample":
+            return SPLIT_FALLBACK_REASON
+    return None
 
 
 def _side_formula_output(res: V11SideResult) -> dict[str, Any]:
@@ -138,6 +200,8 @@ def infer_v11_failure_code(
         return "V11_LEAGUE_BASELINE_EMPTY"
     for res in (home_res, away_res):
         fq = str(res.formula_quality_status or "")
+        if fq == "partial_low_sample" and res.valid:
+            continue
         if fq in _FQ_TO_ERROR:
             return _FQ_TO_ERROR[fq]
     if not home_res.valid and not away_res.valid:
@@ -181,6 +245,9 @@ def build_v11_fixture_trace(
     total_pred: float | None,
     context_mode: str = "production_v11",
     inferred_error_code: str | None = None,
+    split_context: dict[str, Any] | None = None,
+    fallback_used: str | None = None,
+    formula_quality: str | None = None,
 ) -> dict[str, Any]:
     missing_fields: list[str] = []
     if home_pred is None:
@@ -224,6 +291,9 @@ def build_v11_fixture_trace(
         "home_side": _side_trace_summary("home", home_res),
         "away_side": _side_trace_summary("away", away_res),
         "inferred_error_code": inferred_error_code,
+        "split_context": split_context,
+        "fallback_used": fallback_used,
+        "formula_quality": formula_quality,
         "extracted_fields": {
             "home_predicted_sot": home_pred,
             "away_predicted_sot": away_pred,

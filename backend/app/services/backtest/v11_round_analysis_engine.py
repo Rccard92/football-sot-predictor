@@ -44,5 +44,10 @@ def predict_v11_side_for_team(
         opponent_id=opponent_id,
         competition_id=competition_id,
     )
-    result = compute_v11_side(db, ctx, ctx.team_prior_fixtures)
+    result = compute_v11_side(
+        db,
+        ctx,
+        ctx.team_prior_fixtures,
+        allow_split_fallback=True,
+    )
     return result, ctx

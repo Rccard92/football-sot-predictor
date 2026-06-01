@@ -9,6 +9,7 @@ from app.services.backtest.round_analysis_v11_context import (
     infer_v11_failure_code,
     resolve_season_id_for_round_analysis,
 )
+from app.services.predictions_v11.offensive_production_strict import SPLIT_FALLBACK_REASON
 from app.services.predictions_v11.v11_side_result import V11SideResult
 
 
@@ -64,3 +65,41 @@ def test_infer_v11_failure_code_none_when_total_ok():
         valid=True, expected_sot=4.0, component=None, formula_quality_status="ok", raw_json={},
     )
     assert infer_v11_failure_code(home, away, 9.0, league_baseline_eligible=90) is None
+
+
+def test_infer_v11_failure_code_none_when_partial_low_sample_with_total():
+    home = V11SideResult(
+        valid=True,
+        expected_sot=5.0,
+        component=None,
+        formula_quality_status="partial_low_sample",
+        raw_json={"split_fallback_used": SPLIT_FALLBACK_REASON},
+    )
+    away = V11SideResult(
+        valid=True,
+        expected_sot=4.0,
+        component=None,
+        formula_quality_status="partial_low_sample",
+        raw_json={"split_fallback_used": SPLIT_FALLBACK_REASON},
+    )
+    assert infer_v11_failure_code(home, away, 9.0, league_baseline_eligible=90) is None
+
+
+def test_infer_v11_general_sample_maps_to_insufficient_general():
+    home = V11SideResult(
+        valid=False,
+        expected_sot=None,
+        component=None,
+        formula_quality_status="insufficient_sample",
+        raw_json={},
+    )
+    away = V11SideResult(
+        valid=False,
+        expected_sot=None,
+        component=None,
+        formula_quality_status="insufficient_sample",
+        raw_json={},
+    )
+    assert infer_v11_failure_code(home, away, None, league_baseline_eligible=90) == (
+        "V11_INSUFFICIENT_GENERAL_SAMPLE"
+    )

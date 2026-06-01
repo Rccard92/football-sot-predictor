@@ -22,6 +22,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-i-v11-split-fallback
+
+**Titolo:** Fallback controllato v1.1 su campione split insufficiente
+
+**Descrizione:** Corretto `V11RoundAnalysisPreviewService` / `compute_v11_side` (flag `allow_split_fallback` solo Round Analysis): quando lo split casa/trasferta è insufficiente ma lo storico generale e gli altri 5 componenti strict sono disponibili, la v1.1 calcola con blend rinormalizzato (senza termine split), `formula_quality=partial_low_sample`, warning `V11_SPLIT_SAMPLE_INSUFFICIENT_USED_GENERAL_BASE`, invece di `no_prediction`. v2.0 riparte quando la base v1.1 ha `predicted_total_sot`. Nessun fallback su v2.1.
+
+**File toccati:** `offensive_production_strict.py`, `v11_round_analysis_engine.py`, `v11_round_analysis_preview.py`, `round_analysis_v11_context.py`, adapter v11, debug API, UI, test, docs.
+
+---
+
 ## backtest-step-i-fix-v11-real-engine
 
 **Titolo:** Collegamento motore v1.1 reale alla Round Analysis

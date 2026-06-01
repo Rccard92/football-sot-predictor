@@ -58,6 +58,45 @@ def test_v11_incomplete_prediction_error_code(mock_preview_cls):
 
 
 @patch("app.services.backtest.adapters.sot_v11_round_analysis_adapter.V11RoundAnalysisPreviewService")
+def test_v11_ok_with_partial_low_sample_split_fallback(mock_preview_cls):
+    mock_preview_cls.return_value.build_fixture_model.return_value = {
+        "predicted_home_sot": 4.5,
+        "predicted_away_sot": 5.0,
+        "predicted_total_sot": 9.5,
+        "sample_bucket": "medium_sample",
+        "formula_quality": "partial_low_sample",
+        "fallback_used": "general_base_due_to_insufficient_split",
+        "used_split": False,
+        "warnings": ["V11_SPLIT_SAMPLE_INSUFFICIENT_USED_GENERAL_BASE"],
+        "data_quality": {},
+        "_meta": {
+            "home_prior_count": 9,
+            "away_prior_count": 9,
+            "trace_summary": {"fixture_id": 95, "formula_quality": "partial_low_sample"},
+        },
+    }
+    adapter = SotV11RoundAnalysisAdapter()
+    with patch(
+        "app.services.backtest.adapters.sot_v11_round_analysis_adapter.apply_v11_style_picks",
+        return_value=({"predicted_total_sot": 9.5, "warnings": []}, {"aggressive_line": 8.5}),
+    ):
+        result = adapter.predict_fixture(
+            MagicMock(),
+            fixture=MagicMock(id=95),
+            competition_id=1,
+            mode="historical_official_xi",
+            lines=[8.5],
+            cautious_drop_threshold=0.75,
+            play_config=PlayAdviceConfig(),
+            data_quality={},
+            actual_total=10,
+        )
+    assert result.status == "ok"
+    assert result.error_code is None
+    assert result.prediction is not None
+
+
+@patch("app.services.backtest.adapters.sot_v11_round_analysis_adapter.V11RoundAnalysisPreviewService")
 def test_v11_ok_when_total_present_despite_incomplete_warning(mock_preview_cls):
     mock_preview_cls.return_value.build_fixture_model.return_value = {
         "predicted_home_sot": 4.0,

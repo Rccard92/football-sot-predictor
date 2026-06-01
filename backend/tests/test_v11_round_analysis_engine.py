@@ -41,7 +41,12 @@ def test_predict_v11_side_uses_production_context(mock_build, mock_compute):
     )
     assert "competition_scoped_only" not in mock_build.call_args.kwargs
     assert "strict_kickoff_only" not in mock_build.call_args.kwargs
-    mock_compute.assert_called_once_with(db, ctx, ctx.team_prior_fixtures)
+    mock_compute.assert_called_once_with(
+        db,
+        ctx,
+        ctx.team_prior_fixtures,
+        allow_split_fallback=True,
+    )
 
 
 @patch("app.services.backtest.v11_round_analysis_engine.build_prior_context")

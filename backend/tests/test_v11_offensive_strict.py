@@ -251,6 +251,64 @@ def test_valid_blend_six_terms():
     assert result.xg_component is not None
 
 
+def test_split_fallback_when_insufficient_split_sample():
+    from contextlib import ExitStack
+
+    team_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=10, away=90 + i) for i in range(1, 7)]
+    opp_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
+    ctx = _ctx(team_fixtures=team_fx, opponent_fixtures=opp_fx)
+    db = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
+                return_value=LEAGUE_V11_MOCK,
+            ),
+        )
+        stack.enter_context(
+            patch(
+                "app.services.predictions_v11.offensive_production_strict.compute_home_away_split_component",
+                return_value=(None, [], "insufficient_split_sample", 2, 2),
+            ),
+        )
+        for player_patch in _patch_v11_player(db):
+            stack.enter_context(player_patch)
+        result = compute_v11_side(db, ctx, team_fx, allow_split_fallback=True)
+    assert result.valid
+    assert result.expected_sot is not None
+    assert result.formula_quality_status == "partial_low_sample"
+    assert result.raw_json.get("split_fallback_used") is not None
+    assert result.raw_json.get("used_split") is False
+    assert result.raw_json["formula"]["terms_count"] == 5
+
+
+def test_split_fallback_disabled_strict_production():
+    from contextlib import ExitStack
+
+    team_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=10, away=90 + i) for i in range(1, 7)]
+    opp_fx = [_fx(i, datetime(2025, 1, i, tzinfo=timezone.utc), home=88 + i, away=20) for i in range(1, 7)]
+    ctx = _ctx(team_fixtures=team_fx, opponent_fixtures=opp_fx)
+    db = MagicMock()
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "app.services.predictions_v11.offensive_production_strict.compute_league_v11_baselines_strict",
+                return_value=LEAGUE_V11_MOCK,
+            ),
+        )
+        stack.enter_context(
+            patch(
+                "app.services.predictions_v11.offensive_production_strict.compute_home_away_split_component",
+                return_value=(None, [], "insufficient_split_sample", 2, 2),
+            ),
+        )
+        for player_patch in _patch_v11_player(db):
+            stack.enter_context(player_patch)
+        result = compute_v11_side(db, ctx, team_fx, allow_split_fallback=False)
+    assert not result.valid
+    assert result.formula_quality_status == "insufficient_split_sample"
+
+
 def test_league_baseline_missing_raises():
     from app.services.predictions_v11.league_baselines_strict import compute_league_offensive_baselines_strict
 
