@@ -11,6 +11,10 @@ from app.schemas.backtest_round_analysis import (
 )
 from app.services.backtest.round_analysis_data_prep_service import RoundAnalysisPrepResult
 from app.services.backtest.round_analysis_model_registry import ROUND_ANALYSIS_MODEL_REGISTRY
+from app.services.backtest.player_layer_fixture_status import (
+    merge_player_layer_into_data_quality_summary,
+    summarize_player_layer_from_fixture_rows,
+)
 from app.services.backtest.round_analysis_preflight import (
     RoundHistoryPreflight,
     accordion_summary_from_models,
@@ -79,18 +83,27 @@ class RoundAnalysisAggregator:
             insufficient_history=insufficient,
         )
 
+        pl_counts = summarize_player_layer_from_fixture_rows(fixture_results)
         summary = RoundAnalysisDataQualitySummary(
             badge=badge,  # type: ignore[arg-type]
             total_fixtures=total,
             fixtures_with_lineup=with_lineup,
             fixtures_with_unavailable=with_unavail,
             fixtures_missing_mapping=missing_map,
-            fixtures_player_layer_ok=0,
+            fixtures_player_layer_ok=pl_counts["fixtures_player_layer_ok"],
+            fixtures_player_layer_partial=pl_counts["fixtures_player_layer_partial"],
+            fixtures_player_layer_missing=pl_counts["fixtures_player_layer_missing"],
+            player_layer_sides_available=pl_counts["player_layer_sides_available"],
+            player_layer_sides_total=pl_counts["player_layer_sides_total"],
             fixtures_split_ok=0,
             warnings=warnings,
             details=details,
         )
         out = summary.model_dump()
+        if history_preflight and isinstance(out.get("details"), dict):
+            pf = dict((out["details"] or {}).get("preflight") or {})
+            pf["player_stats_available"] = pl_counts["fixtures_player_layer_ok"]
+            out["details"]["preflight"] = pf
         out["data_quality_status"] = (
             history_preflight.data_quality_status if history_preflight else badge.lower()
         )
@@ -165,17 +178,22 @@ class RoundAnalysisAggregator:
                 abs_errors.append(abs(err))
 
             if str(block.get("status") or "ok") == "ok":
-                if block.get("aggressive_outcome") == "WIN":
-                    agg_w += 1
-                elif block.get("aggressive_outcome") == "LOSS":
-                    agg_l += 1
-                if block.get("cautious_outcome") == "WIN":
-                    caut_w += 1
-                elif block.get("cautious_outcome") == "LOSS":
-                    caut_l += 1
-                for field in ("aggressive_advice", "cautious_advice"):
-                    if str(block.get(field) or "").strip().upper() == "GIOCA":
-                        advised += 1
+                agg_advice = str(block.get("aggressive_advice") or "").strip().upper()
+                caut_advice = str(block.get("cautious_advice") or "").strip().upper()
+                agg_out = block.get("aggressive_outcome")
+                caut_out = block.get("cautious_outcome")
+                if agg_advice == "GIOCA" and agg_out in ("WIN", "LOSS"):
+                    if agg_out == "WIN":
+                        agg_w += 1
+                    else:
+                        agg_l += 1
+                    advised += 1
+                if caut_advice == "GIOCA" and caut_out in ("WIN", "LOSS"):
+                    if caut_out == "WIN":
+                        caut_w += 1
+                    else:
+                        caut_l += 1
+                    advised += 1
 
         prevalent_error_code: str | None = None
         if error_codes:

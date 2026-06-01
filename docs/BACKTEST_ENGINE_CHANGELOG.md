@@ -22,6 +22,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-dashboard-model-scorecards
+
+**Titolo:** Dashboard affidabilità modelli Backtest (overview aggregato)
+
+**Descrizione:** Corretti conteggi player layer v2.1 da JSON persistiti (`player_layer_fixture_status`, `data_quality_summary` e report giornata). Nuovi endpoint `GET /api/backtest/round-analysis/overview` e `overview/report-json` (ultima versione per giornata, solo analisi completate). Metriche advised (solo GIOCA) vs calculated, `reliability_score`, trend ultime 5 giornate. UI: scorecard affidabilità, ranking provvisorio, chip C/A in accordion, filtri tabella, partite da rivedere.
+
+**File toccati:** `player_layer_fixture_status.py`, `round_analysis_overview_*.py`, `round_analysis_mode_stats.py`, aggregator/report, routes, frontend Backtest, test, docs.
+
+---
+
 ## backtest-step-i-json-report
 
 **Titolo:** Report JSON per analisi giornata Backtest

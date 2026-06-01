@@ -577,4 +577,5 @@ class RoundAnalysisService:
             "status": row.status,
             "actual_total_sot": row.actual_total_sot,
             "models_json": dict(row.models_json or {}),
+            "explanation_json": dict(row.explanation_json or {}),
         }

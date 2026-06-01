@@ -5,6 +5,7 @@ import {
   getRoundAnalyses,
   type RoundAnalysisDetail,
   type RoundAnalysisListItem,
+  type RoundAnalysisOverviewRound,
 } from '../../lib/api'
 import { RoundAnalysisDeleteConfirm } from './RoundAnalysisDeleteConfirm'
 import {
@@ -22,6 +23,26 @@ type Props = {
   onSelect: (detail: RoundAnalysisDetail) => void
   onDeleted: (analysisId: number) => void
   reloadToken: number
+  overviewRounds?: RoundAnalysisOverviewRound[]
+}
+
+const MODEL_CHIP_ORDER = [
+  { key: 'baseline_v1_1_sot', label: 'v1.1' },
+  { key: 'baseline_v2_0_lineup_impact', label: 'v2.0' },
+  { key: 'baseline_v2_1_weighted_components', label: 'v2.1' },
+] as const
+
+function roundChipsLine(round?: RoundAnalysisOverviewRound): string {
+  if (!round?.models) return ''
+  return MODEL_CHIP_ORDER.map(({ key, label }) => {
+    const chip = round.models[key]
+    if (!chip) return null
+    const c = chip.cautious_display?.replace(/^C\s*/, 'C ') ?? ''
+    const a = chip.aggressive_display?.replace(/^A\s*/, 'A ') ?? ''
+    return `${label} ${c} · ${a}`
+  })
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function accordionModelLine(item: RoundAnalysisListItem): string {
@@ -41,6 +62,7 @@ export function RoundAnalysisAccordion({
   onSelect,
   onDeleted,
   reloadToken,
+  overviewRounds,
 }: Props) {
   const [items, setItems] = useState<RoundAnalysisListItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -110,11 +132,22 @@ export function RoundAnalysisAccordion({
         {items.map((item) => {
           const active = selectedId === item.id
           const modelLine = accordionModelLine(item)
+          const overviewRound = overviewRounds?.find(
+            (r) => r.analysis_id === item.id || r.round_number === item.round_number,
+          )
+          const chipLine = roundChipsLine(overviewRound)
           const motive = item.accordion_summary?.motive
+          const isFailed = item.status === 'failed'
           return (
             <div
               key={item.id}
-              className={`rounded-xl border ${active ? 'border-slate-400 bg-slate-50' : 'border-slate-200 bg-white'}`}
+              className={`rounded-xl border ${
+                isFailed
+                  ? 'border-rose-200 bg-rose-50/40'
+                  : active
+                    ? 'border-slate-400 bg-slate-50'
+                    : 'border-slate-200 bg-white'
+              }`}
             >
               <div className="flex w-full flex-col gap-1 px-4 py-3">
                 <div className="flex w-full items-start justify-between gap-3">
@@ -159,7 +192,11 @@ export function RoundAnalysisAccordion({
                   className="w-full text-left"
                   onClick={() => void open(item.id)}
                 >
-                  {modelLine ? <p className="text-xs text-slate-600">{modelLine}</p> : null}
+                  {chipLine ? (
+                    <p className="text-xs font-medium text-slate-700">{chipLine}</p>
+                  ) : modelLine ? (
+                    <p className="text-xs text-slate-600">{modelLine}</p>
+                  ) : null}
                   {motive ? (
                     <p className="text-xs text-amber-800">Motivo: {motive}</p>
                   ) : item.status_reason ? (

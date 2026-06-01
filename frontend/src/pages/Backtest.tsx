@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { ContextBanner } from '../components/ContextBanner'
 import { RoundAnalysisAccordion, ModelSummaryBar } from '../components/backtest/RoundAnalysisAccordion'
+import { RoundAnalysisOverviewSection } from '../components/backtest/RoundAnalysisOverviewSection'
 import { RoundAnalysisDetailBox } from '../components/backtest/RoundAnalysisDetailBox'
 import { RoundAnalysisFixtureTable } from '../components/backtest/RoundAnalysisFixtureTable'
 import { RoundAnalysisForm } from '../components/backtest/RoundAnalysisForm'
 import { downloadRoundAnalysisReport } from '../components/backtest/roundAnalysisReportDownload'
 import { dataQualityBadgeClass, seasonLabelFromYear, statusLabelIt } from '../components/backtest/roundAnalysisUtils'
 import { useCompetition } from '../contexts/CompetitionContext'
-import { DEFAULT_SEASON, type RoundAnalysisDetail } from '../lib/api'
+import { DEFAULT_SEASON, type RoundAnalysisDetail, type RoundAnalysisOverview } from '../lib/api'
 
 export function Backtest() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
@@ -17,6 +18,7 @@ export function Backtest() {
   const [reloadToken, setReloadToken] = useState(0)
   const [recommendedRound, setRecommendedRound] = useState<number | null>(null)
   const [reportDownloading, setReportDownloading] = useState(false)
+  const [overview, setOverview] = useState<RoundAnalysisOverview | null>(null)
 
   const handleAnalyzed = (d: RoundAnalysisDetail) => {
     setDetail(d)
@@ -40,6 +42,13 @@ export function Backtest() {
         comparedModelsLabel="v1.1 · v2.0 · v2.1"
       />
 
+      <RoundAnalysisOverviewSection
+        competitionId={selectedCompetitionId}
+        seasonYear={seasonYear}
+        reloadToken={reloadToken}
+        onOverviewLoaded={setOverview}
+      />
+
       <RoundAnalysisForm
         competitionId={selectedCompetitionId}
         seasonYear={seasonYear}
@@ -58,6 +67,7 @@ export function Backtest() {
           if (detail?.id === analysisId) setDetail(null)
         }}
         reloadToken={reloadToken}
+        overviewRounds={overview?.rounds}
       />
 
       {detail ? (

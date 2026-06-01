@@ -551,6 +551,29 @@ Export audit **solo da dati già persistiti** (nessuna chiamata SportAPI, nessun
 
 **Log prior:** `prior_fixtures season_id fallback` è INFO (comportamento atteso competition-scoped), visibile nel report come qualità dato (`season_id_fallback_used` in trace v1.1), non come errore.
 
+### Backtest Dashboard Aggregates
+
+Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
+
+| Endpoint | Ruolo |
+|----------|--------|
+| `GET /api/backtest/round-analysis/overview` | Scorecard modelli, ranking, `rounds[]` con chip C/A |
+| `GET /api/backtest/round-analysis/overview/report-json` | Stesso payload + metadata export |
+
+**Selezione analisi:** `status IN (completed, completed_with_warnings)`; default `use_latest_version_per_round=true` (max `analysis_version` per `round_number`).
+
+**Player layer (v2.1):** classificazione fixture da `explanation_json` / `trace_summary.v21_audit` — `ok` (available/available), `partial` (XOR), `missing` (altro). Conteggi in `data_quality_summary` al save e ricalcolo in report/overview.
+
+**Metriche per modello:**
+
+- **Scorecard (advised):** hit rate solo su pick `GIOCA` con esito WIN/LOSS.
+- **Calculated:** tutte le linee con esito WIN/LOSS.
+- **Affidabilità:** `round(0.65 × hit_cauta + 0.35 × hit_aggressiva)` sulle advised.
+- **Campione:** provvisorio &lt;30, medio 30–99, solido ≥100 pick advised totali.
+- **Trend:** ultime 5 giornate, direzione ±2 pt su hit advised.
+
+**UI Backtest:** sezione «Affidabilità modelli» (scorecard + ranking), accordion con chip, mini-card giornata, filtri tabella, «Partite da rivedere».
+
 ### Round Analysis v1.1 adapter (motore produzione)
 
 Il prior context **non** equivale alla predizione v1.1: l’engine Round Analysis è `compute_v11_side` invocato tramite `v11_round_analysis_engine.predict_v11_side_for_team`, con lo stesso `build_prior_context` di `SotPredictionV11BaselineSotService` (**senza** `competition_scoped_only` / `strict_kickoff_only`; quei flag restano solo sul PIT v2.1).

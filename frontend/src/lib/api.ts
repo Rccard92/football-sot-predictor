@@ -3042,6 +3042,111 @@ export async function getRoundAnalysisFixtureReportJson(
   )
 }
 
+export type RoundAnalysisModePlayStats = {
+  plays: number
+  wins: number
+  losses: number
+  hit_rate?: number | null
+  display?: string
+  advised?: RoundAnalysisModePlayStats
+  calculated?: RoundAnalysisModePlayStats
+  advice_counts?: Record<string, number>
+}
+
+export type RoundAnalysisModelOverviewStats = {
+  model_key: string
+  label: string
+  fixtures_analyzed: number
+  rounds_count: number
+  aggressive: RoundAnalysisModePlayStats
+  cautious: RoundAnalysisModePlayStats
+  reliability_score?: number | null
+  sample_status: 'provvisorio' | 'medio' | 'solido'
+  trend_last_5_rounds?: {
+    hit_rate?: number | null
+    direction: 'up' | 'down' | 'flat'
+    rounds: number[]
+  }
+  mae?: number | null
+  bias?: number | null
+  advised_plays_total?: number
+}
+
+export type RoundOverviewModelChip = {
+  cautious_display: string
+  aggressive_display: string
+  cautious_hit_rate?: number | null
+  aggressive_hit_rate?: number | null
+}
+
+export type RoundAnalysisOverviewRound = {
+  analysis_id: number
+  round_number: number
+  analysis_version: number
+  status: string
+  total_fixtures: number
+  processed_fixtures: number
+  data_quality_badge?: string | null
+  models: Record<string, RoundOverviewModelChip>
+}
+
+export type RoundAnalysisOverview = {
+  competition_id: number
+  season_year: number
+  season_label: string
+  use_latest_version_per_round: boolean
+  rounds_analyzed: number
+  fixtures_analyzed: number
+  models: Record<string, RoundAnalysisModelOverviewStats>
+  rounds: RoundAnalysisOverviewRound[]
+  ranking: {
+    label?: string
+    best_cautious?: string
+    best_aggressive?: string
+    best_mae?: string
+    best_bias?: string
+    best_reliability?: string
+  }
+}
+
+export async function getRoundAnalysisOverview(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): Promise<RoundAnalysisOverview> {
+  const q = new URLSearchParams({
+    competition_id: String(competitionId),
+    season_year: String(seasonYear),
+  })
+  if (opts?.useLatestVersionPerRound === false) {
+    q.set('use_latest_version_per_round', 'false')
+  }
+  if (opts?.includeAllVersions) {
+    q.set('include_all_versions', 'true')
+  }
+  return requestJson<RoundAnalysisOverview>(`/api/backtest/round-analysis/overview?${q.toString()}`)
+}
+
+export async function getRoundAnalysisOverviewReportJson(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): Promise<Record<string, unknown>> {
+  const q = new URLSearchParams({
+    competition_id: String(competitionId),
+    season_year: String(seasonYear),
+  })
+  if (opts?.useLatestVersionPerRound === false) {
+    q.set('use_latest_version_per_round', 'false')
+  }
+  if (opts?.includeAllVersions) {
+    q.set('include_all_versions', 'true')
+  }
+  return requestJson<Record<string, unknown>>(
+    `/api/backtest/round-analysis/overview/report-json?${q.toString()}`,
+  )
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

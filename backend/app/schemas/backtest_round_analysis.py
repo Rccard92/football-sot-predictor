@@ -114,6 +114,10 @@ class RoundAnalysisDataQualitySummary(BaseModel):
     fixtures_with_unavailable: int = 0
     fixtures_missing_mapping: int = 0
     fixtures_player_layer_ok: int = 0
+    fixtures_player_layer_partial: int = 0
+    fixtures_player_layer_missing: int = 0
+    player_layer_sides_available: int = 0
+    player_layer_sides_total: int = 0
     fixtures_split_ok: int = 0
     warnings: list[str] = Field(default_factory=list)
     details: dict[str, Any] = Field(default_factory=dict)

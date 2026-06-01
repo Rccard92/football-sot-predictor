@@ -11,6 +11,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
 )
 from app.models import BacktestRoundAnalysis, BacktestRoundFixtureResult
+from app.services.backtest.player_layer_fixture_status import merge_player_layer_into_data_quality_summary
 from app.schemas.backtest_round_analysis import (
     DEFAULT_ROUND_ANALYSIS_MODELS,
     MODEL_LABELS,
@@ -230,6 +231,21 @@ def build_round_report(
     if ms:
         round_summary["models"] = ms
 
+    fixture_row_dicts = [
+        {
+            "status": row.status,
+            "models_json": dict(row.models_json or {}),
+            "explanation_json": dict(row.explanation_json or {}),
+        }
+        for row in fixture_rows
+    ]
+    dq_raw = analysis.data_quality_summary_json
+    dq_summary = (
+        merge_player_layer_into_data_quality_summary(dict(dq_raw), fixture_row_dicts)
+        if isinstance(dq_raw, dict)
+        else merge_player_layer_into_data_quality_summary({}, fixture_row_dicts)
+    )
+
     return {
         "report_type": "round_analysis",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -259,7 +275,7 @@ def build_round_report(
             "season_label": season_label,
         },
         "round_summary": round_summary,
-        "data_quality_summary": analysis.data_quality_summary_json,
+        "data_quality_summary": dq_summary,
         "model_summaries": ms,
         "fixtures": fixtures,
     }
