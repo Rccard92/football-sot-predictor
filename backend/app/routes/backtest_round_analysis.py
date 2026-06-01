@@ -20,6 +20,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backtest/round-analysis", tags=["backtest-round-analysis"])
 
+_CONFIG_ERROR_DETAIL = {
+    "status": "error",
+    "error_code": "ROUND_ANALYSIS_CONFIG_ERROR",
+    "error_message": "Configurazione analisi giornata non valida o incompleta.",
+}
+
+
+def _raise_config_error(exc: Exception) -> None:
+    logger.exception("Round analysis: errore configurazione")
+    raise HTTPException(status_code=500, detail=_CONFIG_ERROR_DETAIL) from exc
+
 
 @router.post("/analyze")
 def round_analysis_analyze(
@@ -31,6 +42,8 @@ def round_analysis_analyze(
         payload = svc.analyze(db, body)
     except HTTPException:
         raise
+    except (NameError, TypeError, AttributeError) as exc:
+        _raise_config_error(exc)
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("POST round-analysis/analyze: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
@@ -156,6 +169,8 @@ def round_analysis_recalculate(
         payload = svc.recalculate(db, analysis_id)
     except HTTPException:
         raise
+    except (NameError, TypeError, AttributeError) as exc:
+        _raise_config_error(exc)
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("POST round-analysis recalculate: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc

@@ -31,6 +31,7 @@ from app.services.backtest.round_analysis_summary_resolver import (
     fixture_rows_from_orm,
     resolve_round_display,
 )
+from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
 
 def _list_order_clauses(
     sort_by: str = "round_number",
