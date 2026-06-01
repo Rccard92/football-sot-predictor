@@ -117,11 +117,15 @@ export function RoundAnalysisCalibrationSimulatorSection({
     return Object.entries(simulator.strategies).map(([id, block]) => ({ id, block }))
   }, [simulator])
 
-  const selected = selectedStrategy && simulator?.strategies[selectedStrategy]
+  const selectedStrategyBlock = useMemo((): CalibrationSimulatorStrategyBlock | null => {
+    if (!simulator || !selectedStrategy) return null
+    return simulator.strategies[selectedStrategy] ?? null
+  }, [simulator, selectedStrategy])
 
   const sortedLosses = useMemo(() => {
-    if (!selected?.loss_diagnostics?.length) return []
-    const rows = [...selected.loss_diagnostics]
+    const diagnostics = selectedStrategyBlock?.loss_diagnostics ?? []
+    if (!diagnostics.length) return []
+    const rows = [...diagnostics]
     rows.sort((a, b) => {
       if (lossSort === 'gap') {
         const ga = Math.abs(a.prediction_gap_v21_minus_v11 ?? 0)
@@ -134,7 +138,7 @@ export function RoundAnalysisCalibrationSimulatorSection({
       return (a.round_number ?? 0) - (b.round_number ?? 0)
     })
     return rows
-  }, [selected, lossSort])
+  }, [selectedStrategyBlock, lossSort])
 
   if (competitionId == null) return null
 
@@ -296,10 +300,10 @@ export function RoundAnalysisCalibrationSimulatorSection({
             </div>
           ) : null}
 
-          {selected ? (
+          {selectedStrategyBlock ? (
             <>
               <p className="text-xs text-slate-600">
-                Strategia selezionata: <span className="font-medium">{selected.label}</span>
+                Strategia selezionata: <span className="font-medium">{selectedStrategyBlock.label}</span>
                 {selectedStrategy !== activeTab && activeTab !== 'strategies' ? (
                   <button
                     type="button"
@@ -323,7 +327,7 @@ export function RoundAnalysisCalibrationSimulatorSection({
                       </tr>
                     </thead>
                     <tbody>
-                      {Object.entries(selected.by_line).map(([ln, cell]) => (
+                      {Object.entries(selectedStrategyBlock.by_line).map(([ln, cell]) => (
                         <tr key={ln} className="border-b border-slate-100">
                           <td className="px-2 py-1">{ln}</td>
                           <td className="px-2 py-1">{cell.plays}</td>
@@ -352,7 +356,7 @@ export function RoundAnalysisCalibrationSimulatorSection({
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(selected.by_low_total_risk_v2 ?? {}).map(([bucket, cell]) => (
+                        {Object.entries(selectedStrategyBlock.by_low_total_risk_v2 ?? {}).map(([bucket, cell]) => (
                           <tr key={bucket} className="border-b border-slate-100">
                             <td className="px-2 py-1 font-medium">{bucket}</td>
                             <td className="px-2 py-1">{cell.picks}</td>
@@ -374,7 +378,7 @@ export function RoundAnalysisCalibrationSimulatorSection({
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(selected.by_sot_bucket).map(([bucket, cell]) => (
+                        {Object.entries(selectedStrategyBlock.by_sot_bucket).map(([bucket, cell]) => (
                           <tr key={bucket} className="border-b border-slate-100">
                             <td className="px-2 py-1">{bucket}</td>
                             <td className="px-2 py-1">{cell.picks}</td>
@@ -391,7 +395,7 @@ export function RoundAnalysisCalibrationSimulatorSection({
                 <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-sm font-semibold text-slate-900">
-                      Perdite ({selected.loss_diagnostics?.length ?? 0})
+                      Perdite ({selectedStrategyBlock.loss_diagnostics?.length ?? 0})
                     </h3>
                     <select
                       className="rounded border border-slate-200 px-2 py-1 text-xs"
@@ -403,6 +407,11 @@ export function RoundAnalysisCalibrationSimulatorSection({
                       <option value="risk">Ordina per risk_v2</option>
                     </select>
                   </div>
+                  {sortedLosses.length === 0 ? (
+                    <p className="text-xs text-slate-500">
+                      Nessuna perdita disponibile per questa strategia.
+                    </p>
+                  ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-xs">
                       <thead>
@@ -439,13 +448,14 @@ export function RoundAnalysisCalibrationSimulatorSection({
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </div>
               ) : null}
 
               {activeTab === 'reasons' ? (
                 <div className="rounded-lg border border-slate-200 bg-white p-4">
                   <h3 className="text-sm font-semibold text-slate-900">Reason codes</h3>
-                  {Object.keys(selected.by_reason_codes ?? {}).length === 0 ? (
+                  {Object.keys(selectedStrategyBlock.by_reason_codes ?? {}).length === 0 ? (
                     <p className="mt-2 text-xs text-slate-500">
                       Nessun reason code per questa strategia (principalmente hybrid).
                     </p>
@@ -458,7 +468,7 @@ export function RoundAnalysisCalibrationSimulatorSection({
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(selected.by_reason_codes ?? {})
+                        {Object.entries(selectedStrategyBlock.by_reason_codes ?? {})
                           .sort((a, b) => b[1] - a[1])
                           .map(([code, count]) => (
                             <tr key={code} className="border-b border-slate-100">
@@ -469,12 +479,12 @@ export function RoundAnalysisCalibrationSimulatorSection({
                       </tbody>
                     </table>
                   )}
-                  {selected.by_confidence_tier &&
-                  Object.keys(selected.by_confidence_tier).length > 0 ? (
+                  {selectedStrategyBlock.by_confidence_tier &&
+                  Object.keys(selectedStrategyBlock.by_confidence_tier).length > 0 ? (
                     <div className="mt-4">
                       <h4 className="text-xs font-semibold text-slate-800">Confidence tier</h4>
                       <div className="mt-1 flex flex-wrap gap-2">
-                        {Object.entries(selected.by_confidence_tier).map(([tier, cell]) => (
+                        {Object.entries(selectedStrategyBlock.by_confidence_tier).map(([tier, cell]) => (
                           <span
                             key={tier}
                             className="rounded border border-slate-200 px-2 py-1 text-xs"
@@ -485,13 +495,13 @@ export function RoundAnalysisCalibrationSimulatorSection({
                       </div>
                     </div>
                   ) : null}
-                  {selected.no_bet_audit && selected.no_bet_audit.length > 0 ? (
+                  {selectedStrategyBlock.no_bet_audit && selectedStrategyBlock.no_bet_audit.length > 0 ? (
                     <div className="mt-4">
                       <h4 className="text-xs font-semibold text-slate-800">
-                        No-bet audit (hybrid, top {selected.no_bet_audit.length})
+                        No-bet audit (hybrid, top {selectedStrategyBlock.no_bet_audit.length})
                       </h4>
                       <ul className="mt-1 max-h-40 overflow-y-auto text-xs text-slate-600">
-                        {selected.no_bet_audit.slice(0, 20).map((row, i) => (
+                        {selectedStrategyBlock.no_bet_audit.slice(0, 20).map((row, i) => (
                           <li key={i}>
                             {row.match} — {row.no_bet_reason}
                           </li>
@@ -506,10 +516,10 @@ export function RoundAnalysisCalibrationSimulatorSection({
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
                   <p className="text-xs text-slate-600">
                     Stabilità walk-forward (hit minimo tra segmenti):{' '}
-                    <span className="font-medium">{fmtPct(selected.walk_forward_stability)}</span>
+                    <span className="font-medium">{fmtPct(selectedStrategyBlock.walk_forward_stability)}</span>
                   </p>
                   <div className="grid gap-2 sm:grid-cols-3 text-xs">
-                    {Object.entries(selected.walk_forward).map(([seg, cell]) => (
+                    {Object.entries(selectedStrategyBlock.walk_forward).map(([seg, cell]) => (
                       <div key={seg} className="rounded border border-slate-100 p-2">
                         <div className="font-medium text-slate-700">{seg.replace(/_/g, ' ')}</div>
                         <div>
