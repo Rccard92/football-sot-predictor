@@ -580,6 +580,34 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **UI Backtest:** sezione «Affidabilità modelli» (scorecard + ranking), accordion con chip, mini-card giornata, filtri tabella, «Partite da rivedere».
 
+### Step V3.0-A — Backtest Diagnostics
+
+**Scopo:** diagnosticare errori dei modelli v1.1 / v2.0 / v2.1 su analisi già salvate e preparare la calibrazione del futuro modello **v3.0**. **Non** crea v3.0 e **non** modifica formule, pesi o output dei modelli esistenti.
+
+| Endpoint | Ruolo |
+|----------|--------|
+| `GET /api/backtest/round-analysis/diagnostics` | Payload diagnostico aggregato (JSON) |
+| `GET /api/backtest/round-analysis/diagnostics/report-json` | Export completo per analisi esterna / ChatGPT v3.0 |
+| `GET /api/backtest/round-analysis/overview/report-csv` | CSV fixture×modello (UTF-8 BOM, colonne estese v2.1) |
+
+**Selezione dati (default):** ultima versione completata per giornata; esclusi `failed` e analisi incomplete; solo fixture `status=ok` con `actual_total_sot` valorizzato.
+
+**Breakdown inclusi:**
+
+- **Fasce SOT reali:** low (≤6), medium (7–9), high (≥10) — MAE, bias, hit rate aggressive/cautious (calculated + advised).
+- **Linee:** 4.5–11.5 per modalità aggressive/cautious — calculated all vs advised only (GIOCA).
+- **Edge:** bucket low (&lt;0.50), medium (0.50–0.99), high (≥1.00) su edge persistito.
+- **Advice diagnostic:** GIOCA vs NON GIOCARE — hit consigliato, perdite evitate, vittorie perse.
+- **Macro v2.1:** bucket low/neutral/high per macro medie match; correlazione con bias e hit rate.
+- **Low total risk:** indice diagnostico `low_total_risk_score` (solo analisi, non usato nelle pick).
+- **Critical matches:** sovrastime/sottostime v2.1, perdite condivise, regressioni v1.1→v2.1, GIOCA cauta LOSS.
+
+**Implementazione:** `round_analysis_diagnostics_loader.py`, `round_analysis_diagnostics_aggregator.py`, `round_analysis_diagnostics_service.py`. Valutazione linee via `sot_pick_evaluation_logic` su totali **salvati** (no re-invocation motori).
+
+**UI Backtest:** sezione «Diagnostica modelli» con tab Overview, Fasce SOT, Linee, Edge, GIOCA/NON GIOCARE, Macro v2.1, Partite critiche.
+
+**Changelog:** `backtest-v30-diagnostics` in `docs/BACKTEST_ENGINE_CHANGELOG.md`.
+
 ### Round Analysis v1.1 adapter (motore produzione)
 
 Il prior context **non** equivale alla predizione v1.1: l’engine Round Analysis è `compute_v11_side` invocato tramite `v11_round_analysis_engine.predict_v11_side_for_team`, con lo stesso `build_prior_context` di `SotPredictionV11BaselineSotService` (**senza** `competition_scoped_only` / `strict_kickoff_only`; quei flag restano solo sul PIT v2.1).

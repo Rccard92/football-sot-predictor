@@ -141,5 +141,9 @@ def test_build_calibration_csv_header():
         return_value=report,
     ):
         csv_body = build_calibration_csv(MagicMock(), competition_id=1, season_year=2025)
-    assert "round,fixture_id,match,model" in csv_body.splitlines()[0]
+    header = csv_body.lstrip("\ufeff").splitlines()[0]
+    assert "round_number" in header
+    assert "model_key" in header
+    assert "predicted_total_sot" in header
+    assert "actual_bucket" in header
     assert "10,95" in csv_body

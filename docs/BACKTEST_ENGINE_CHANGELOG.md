@@ -22,6 +22,18 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-v30-diagnostics
+
+**Titolo:** Diagnostica avanzata per calibrazione modello v3.0
+
+**Descrizione:** Aggiunta diagnostica aggregata per identificare pattern di errore dei modelli e preparare il futuro modello v3.0 senza modificare le formule esistenti. Endpoint `GET /diagnostics` e `/diagnostics/report-json`; CSV overview esteso (fixture×modello, macro v2.1, bucket); fix download CSV frontend (`VITE_API_BASE_URL`). Breakdown fasce SOT, linee, edge, advice GIOCA/NON GIOCARE, macro v2.1, low total risk score, partite critiche. UI tab «Diagnostica modelli» in Backtest.
+
+**File toccati:** `round_analysis_diagnostics_*.py`, `round_analysis_calibration_export.py`, routes, frontend Backtest/diagnostics, test, docs.
+
+---
+
 ## backtest-calibration-export-v3
 
 **Titolo:** Summary robusto accordion + export calibrazione v3.0

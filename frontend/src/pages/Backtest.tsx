@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ContextBanner } from '../components/ContextBanner'
 import { RoundAnalysisAccordion, ModelSummaryBar } from '../components/backtest/RoundAnalysisAccordion'
 import { RoundAnalysisOverviewSection } from '../components/backtest/RoundAnalysisOverviewSection'
+import { RoundAnalysisDiagnosticsSection } from '../components/backtest/RoundAnalysisDiagnosticsSection'
 import { RoundAnalysisDetailBox } from '../components/backtest/RoundAnalysisDetailBox'
 import { RoundAnalysisFixtureTable } from '../components/backtest/RoundAnalysisFixtureTable'
 import { RoundAnalysisForm } from '../components/backtest/RoundAnalysisForm'
@@ -47,6 +48,12 @@ export function Backtest() {
         seasonYear={seasonYear}
         reloadToken={reloadToken}
         onOverviewLoaded={setOverview}
+      />
+
+      <RoundAnalysisDiagnosticsSection
+        competitionId={selectedCompetitionId}
+        seasonYear={seasonYear}
+        reloadToken={reloadToken}
       />
 
       <RoundAnalysisForm

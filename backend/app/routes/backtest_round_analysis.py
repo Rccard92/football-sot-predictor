@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.backtest_round_analysis import RoundAnalysisAnalyzeRequest
 from app.services.backtest.round_analysis_overview_service import RoundAnalysisOverviewService
+from app.services.backtest.round_analysis_diagnostics_service import RoundAnalysisDiagnosticsService
 from app.services.backtest.round_analysis_report_service import RoundAnalysisReportService
 from app.services.backtest.round_analysis_service import RoundAnalysisService
 
@@ -157,6 +158,56 @@ def round_analysis_overview_report_csv(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/diagnostics")
+def round_analysis_diagnostics(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisDiagnosticsService()
+    try:
+        payload = svc.get_diagnostics(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET round-analysis/diagnostics: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/diagnostics/report-json")
+def round_analysis_diagnostics_report_json(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisDiagnosticsService()
+    try:
+        payload = svc.get_diagnostics_report_json(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET round-analysis/diagnostics/report-json: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
 
 
 @router.post("/{analysis_id}/recalculate")

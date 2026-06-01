@@ -3181,11 +3181,151 @@ export async function getRoundAnalysisOverviewReportCsv(
   if (opts?.includeAllVersions) {
     q.set('include_all_versions', 'true')
   }
-  const res = await fetch(`/api/backtest/round-analysis/overview/report-csv?${q.toString()}`)
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/backtest/round-analysis/overview/report-csv?${q.toString()}`)
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`)
   }
+  const ct = res.headers.get('content-type') ?? ''
+  if (!ct.includes('text/csv')) {
+    throw new Error('Risposta non CSV: verifica VITE_API_BASE_URL e endpoint backend')
+  }
   return res.blob()
+}
+
+export type DiagnosticsHitStats = {
+  wins: number
+  losses: number
+  hit_rate?: number | null
+  plays?: number
+}
+
+export type DiagnosticsModelOverview = {
+  model_key: string
+  label: string
+  fixtures: number
+  mae?: number | null
+  bias?: number | null
+  cautious_advised: DiagnosticsHitStats & { display?: string }
+  aggressive_advised: DiagnosticsHitStats & { display?: string }
+  sot_buckets_summary?: Record<string, { hit_rate_cautious_advised?: number | null; mae?: number | null }>
+}
+
+export type DiagnosticsSotBucket = {
+  fixtures: number
+  avg_predicted_total?: number | null
+  avg_actual_total?: number | null
+  mae?: number | null
+  bias?: number | null
+  aggressive: DiagnosticsHitStats
+  cautious: DiagnosticsHitStats
+  advised_aggressive: DiagnosticsHitStats
+  advised_cautious: DiagnosticsHitStats
+}
+
+export type DiagnosticsModelBlock = {
+  overview: DiagnosticsModelOverview
+  sot_buckets: Record<string, DiagnosticsSotBucket>
+  lines: Record<string, Record<string, { line: number; calculated_all: DiagnosticsHitStats & { avg_edge?: number | null; avg_predicted_total?: number | null; avg_actual_total?: number | null }; advised_only: DiagnosticsHitStats }>>
+  edge_buckets: Record<string, Record<string, DiagnosticsHitStats>>
+  advice_diagnostic: Record<string, {
+    advised_play_wins: number
+    advised_play_losses: number
+    advised_play_hit_rate?: number | null
+    no_play_would_have_won: number
+    no_play_would_have_lost: number
+    avoided_losses: number
+    missed_wins: number
+  }>
+}
+
+export type RoundAnalysisDiagnostics = {
+  report_type: string
+  metadata: {
+    competition_id: number
+    competition_name?: string | null
+    season_year: number
+    season_label: string
+    generated_at: string
+    analyzed_rounds: number
+    analyzed_fixtures: number
+    analyzed_rows: number
+    filters_applied?: Record<string, boolean>
+  }
+  models: Record<string, DiagnosticsModelBlock>
+  v21_diagnostics: {
+    macro_buckets: Record<string, Record<string, {
+      fixtures: number
+      avg_predicted_total?: number | null
+      avg_actual_total?: number | null
+      mae?: number | null
+      bias?: number | null
+      aggressive_hit_rate?: number | null
+      cautious_hit_rate?: number | null
+    }>>
+    low_total_risk: Record<string, {
+      fixtures: number
+      actual_low_total_rate?: number | null
+      aggressive_hit_rate?: number | null
+      cautious_hit_rate?: number | null
+      avg_error?: number | null
+    }>
+  }
+  critical_matches: Array<{
+    category: string
+    round_number: number
+    analysis_id: number
+    fixture_id: number
+    match: string
+    actual_total_sot: number
+    error_delta?: number | null
+    v1_1: Record<string, unknown>
+    v2_0: Record<string, unknown>
+    v2_1: Record<string, unknown>
+    v21_macros?: Record<string, number | null | undefined>
+    warnings: string[]
+    fixture_report_url: string
+  }>
+}
+
+function diagnosticsQuery(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): URLSearchParams {
+  const q = new URLSearchParams({
+    competition_id: String(competitionId),
+    season_year: String(seasonYear),
+  })
+  if (opts?.useLatestVersionPerRound === false) {
+    q.set('use_latest_version_per_round', 'false')
+  }
+  if (opts?.includeAllVersions) {
+    q.set('include_all_versions', 'true')
+  }
+  return q
+}
+
+export async function getRoundAnalysisDiagnostics(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): Promise<RoundAnalysisDiagnostics> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  return requestJson<RoundAnalysisDiagnostics>(
+    `/api/backtest/round-analysis/diagnostics?${q.toString()}`,
+  )
+}
+
+export async function getRoundAnalysisDiagnosticsReportJson(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): Promise<RoundAnalysisDiagnostics> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  return requestJson<RoundAnalysisDiagnostics>(
+    `/api/backtest/round-analysis/diagnostics/report-json?${q.toString()}`,
+  )
 }
 
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
