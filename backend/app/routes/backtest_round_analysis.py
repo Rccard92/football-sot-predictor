@@ -40,6 +40,8 @@ def round_analysis_list(
     season_year: int = Query(...),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    sort_by: str = Query(default="round_number"),
+    sort_dir: str = Query(default="desc"),
     db: Session = Depends(get_db),
 ):
     svc = RoundAnalysisService()
@@ -50,11 +52,29 @@ def round_analysis_list(
             season_year=season_year,
             limit=limit,
             offset=offset,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
         )
     except HTTPException:
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("GET round-analysis: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.delete("/{analysis_id}")
+def round_analysis_delete(
+    analysis_id: int,
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisService()
+    try:
+        payload = svc.delete_analysis(db, analysis_id)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("DELETE round-analysis: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)
 

@@ -3,16 +3,27 @@ import { useCompetition } from '../contexts/CompetitionContext'
 import { useModelSelection } from '../contexts/ModelSelectionContext'
 import { labelForModelVersion } from '../lib/modelVersions'
 
-function competitionLabel(c: { name: string; season: number; country?: string | null }) {
-  return `${c.name} · ${c.country ?? '?'} · ${c.season}`
+function competitionLabel(
+  c: { name: string; season: number; country?: string | null },
+  seasonLabel?: string,
+) {
+  const season = seasonLabel ?? `${c.season}/${c.season + 1}`
+  return `${c.name} · ${c.country ?? '?'} · ${season}`
 }
 
 type ContextBannerProps = {
   showModelSelector?: boolean
+  seasonLabel?: string
+  comparedModelsLabel?: string
   extra?: ReactNode
 }
 
-export function ContextBanner({ showModelSelector = true, extra }: ContextBannerProps) {
+export function ContextBanner({
+  showModelSelector = true,
+  seasonLabel,
+  comparedModelsLabel,
+  extra,
+}: ContextBannerProps) {
   const { selectedCompetition } = useCompetition()
   const { selectedModelVersion, setSelectedModelVersion, uiModelOptions } = useModelSelection()
 
@@ -24,14 +35,24 @@ export function ContextBanner({ showModelSelector = true, extra }: ContextBanner
             Campionato attivo
           </p>
           <p className="mt-0.5 text-sm font-medium text-slate-900">
-            {selectedCompetition ? competitionLabel(selectedCompetition) : 'Nessun campionato selezionato'}
+            {selectedCompetition
+              ? competitionLabel(selectedCompetition, seasonLabel)
+              : 'Nessun campionato selezionato'}
           </p>
         </div>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Modello selezionato
-          </p>
-          {showModelSelector ? (
+        {comparedModelsLabel ? (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Modelli confrontati
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-slate-900">{comparedModelsLabel}</p>
+          </div>
+        ) : null}
+        {showModelSelector ? (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Modello selezionato
+            </p>
             <select
               value={selectedModelVersion}
               onChange={(e) => setSelectedModelVersion(e.target.value as typeof selectedModelVersion)}
@@ -43,12 +64,8 @@ export function ContextBanner({ showModelSelector = true, extra }: ContextBanner
                 </option>
               ))}
             </select>
-          ) : (
-            <p className="mt-0.5 text-sm font-medium text-slate-900">
-              {labelForModelVersion(selectedModelVersion)}
-            </p>
-          )}
-        </div>
+          </div>
+        ) : null}
       </div>
       {extra ? <div className="space-y-1 text-xs text-slate-600">{extra}</div> : null}
     </div>

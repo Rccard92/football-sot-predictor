@@ -22,6 +22,41 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-i-round-analysis-delete-sort
+
+**Titolo:** Eliminazione analisi giornata e ordinamento lista Backtest
+
+**Descrizione:** Endpoint `DELETE` per rimuovere un’analisi salvata (solo tabelle backtest; CASCADE su `backtest_round_fixture_results`). Lista giornate ordinata per default con `round_number`, `analysis_version` e `created_at` in ordine decrescente; parametri opzionali `sort_by` / `sort_dir`. UI con pulsante Elimina, modal di conferma e messaggio di successo.
+
+**Highlights:**
+
+- `RoundAnalysisService.delete_analysis`: conteggio fixture results, hard delete analisi, commit.
+- GET lista: query `sort_by` (`round_number` | `created_at`), `sort_dir` (`asc` | `desc`); tie-breaker `analysis_version` e `created_at`.
+- Frontend: `deleteRoundAnalysis`, `RoundAnalysisDeleteConfirm`, accordion con Elimina; `Backtest` azzera dettaglio se analisi eliminata.
+- Test: `test_round_analysis_delete_api.py`, `test_round_analysis_list_sort.py`.
+
+**File toccati:** `round_analysis_service.py`, `backtest_round_analysis.py` (routes + schemas), `api.ts`, `RoundAnalysisAccordion.tsx`, `RoundAnalysisDeleteConfirm.tsx`, `Backtest.tsx`, test, docs.
+
+---
+
+## backtest-step-i-round-analysis-ux-fixes
+
+**Titolo:** Migliorie UX Backtest e gestione storico insufficiente
+
+**Descrizione:** La pagina Backtest gestisce giornate con prior matches = 0 (es. giornata 1) senza `failed` tecnico e tabella vuota: status `completed_with_warnings`, celle modello `ND` / «Storico insuff.», preflight storico e banner stagione 2025/2026 senza selettore modello singolo.
+
+**Highlights:**
+
+- `round_analysis_preflight.py`: preflight storico, `build_no_prediction_block`, `first_recommended_round`.
+- Runner: isolamento errori per modello; v2.1 non lancia più su `total_predicted_sot` null.
+- Status: `completed` | `completed_with_warnings` | `failed` (failed solo errori tecnici / zero fixture).
+- UI: ContextBanner senza modello selezionato; accordion e tabella con ND; box «Dettaglio analisi».
+- API detail/list: `season_label`, `status_reason`, `accordion_summary`, `failed_models_count`.
+
+**File toccati:** `round_analysis_preflight.py`, `round_analysis_model_runner.py`, `round_analysis_service.py`, `round_analysis_aggregator.py`, `backtest_round_analysis.py` (schemas), componenti `frontend/src/components/backtest/*`, `Backtest.tsx`, `ContextBanner.tsx`, `api.ts`, test, docs.
+
+---
+
 ## backtest-step-i-round-analysis
 
 **Titolo:** Step I — Analisi giornata persistente (Backtest operativo)

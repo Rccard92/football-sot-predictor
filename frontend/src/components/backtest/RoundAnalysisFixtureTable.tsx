@@ -1,10 +1,34 @@
 import { Fragment, useState } from 'react'
 import type { RoundAnalysisFixtureRow } from '../../lib/api'
-import { MODEL_KEYS, pickCell } from './roundAnalysisUtils'
+import { MODEL_KEYS, ndBadgeClass, pickCell } from './roundAnalysisUtils'
 import { RoundAnalysisFixtureRowDetail } from './RoundAnalysisFixtureRowDetail'
 
 type Props = {
   fixtures: RoundAnalysisFixtureRow[]
+}
+
+function PickTd({
+  block,
+  kind,
+}: {
+  block: Parameters<typeof pickCell>[0]
+  kind: 'aggressive' | 'cautious'
+}) {
+  const cell = pickCell(block, kind)
+  return (
+    <td className="px-3 py-2 align-top">
+      {cell.isNd ? (
+        <div className="space-y-0.5">
+          <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${ndBadgeClass()}`}>
+            ND
+          </span>
+          {cell.sublabel ? <div className="text-[10px] text-slate-500">{cell.sublabel}</div> : null}
+        </div>
+      ) : (
+        <span>{cell.label}</span>
+      )}
+    </td>
+  )
 }
 
 export function RoundAnalysisFixtureTable({ fixtures }: Props) {
@@ -43,18 +67,18 @@ export function RoundAnalysisFixtureTable({ fixtures }: Props) {
                     {fx.home_team_name} – {fx.away_team_name}
                   </td>
                   <td className="px-3 py-2">{fx.actual_total_sot ?? '—'}</td>
-                  <td className="px-3 py-2">{pickCell(v11, 'aggressive').label}</td>
-                  <td className="px-3 py-2">{pickCell(v11, 'cautious').label}</td>
-                  <td className="px-3 py-2">{pickCell(v20, 'aggressive').label}</td>
-                  <td className="px-3 py-2">{pickCell(v20, 'cautious').label}</td>
-                  <td className="px-3 py-2">{pickCell(v21, 'aggressive').label}</td>
-                  <td className="px-3 py-2">{pickCell(v21, 'cautious').label}</td>
+                  <PickTd block={v11} kind="aggressive" />
+                  <PickTd block={v11} kind="cautious" />
+                  <PickTd block={v20} kind="aggressive" />
+                  <PickTd block={v20} kind="cautious" />
+                  <PickTd block={v21} kind="aggressive" />
+                  <PickTd block={v21} kind="cautious" />
                   <td className="px-3 py-2">
                     {dq ? `${dq.lineup ?? '—'} / ${dq.mapping ?? '—'}` : '—'}
                   </td>
                 </tr>
                 {expanded ? (
-                  <tr key={`${fx.id}-detail`}>
+                  <tr>
                     <td colSpan={9} className="bg-slate-50 px-3 py-3">
                       <RoundAnalysisFixtureRowDetail fixture={fx} />
                     </td>

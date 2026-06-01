@@ -14,16 +14,42 @@ export function dataQualityBadgeClass(badge: string | null | undefined): string 
   return 'bg-slate-100 text-slate-600'
 }
 
+export function ndBadgeClass(): string {
+  return 'bg-slate-100 text-slate-600'
+}
+
+export type PickCellDisplay = {
+  label: string
+  sublabel?: string
+  isNd: boolean
+}
+
 export function pickCell(
   block: RoundAnalysisModelBlock | undefined,
   kind: 'aggressive' | 'cautious',
-): { label: string; outcome?: string | null; advice?: string | null } {
-  if (!block) return { label: '—' }
+): PickCellDisplay {
+  if (!block) {
+    return { label: 'ND', sublabel: 'Storico insuff.', isNd: true }
+  }
+  if (block.status === 'no_prediction') {
+    const sub =
+      block.reason === 'INSUFFICIENT_HISTORY'
+        ? 'Storico insuff.'
+        : block.message?.slice(0, 40) || 'N/D'
+    return { label: 'ND', sublabel: sub, isNd: true }
+  }
+
   const line = kind === 'aggressive' ? block.aggressive_line : block.cautious_line
   const outcome = kind === 'aggressive' ? block.aggressive_outcome : block.cautious_outcome
   const advice = kind === 'aggressive' ? block.aggressive_advice : block.cautious_advice
-  if (line == null) return { label: advice || 'N/D', outcome, advice }
-  return { label: `${line} · ${outcome ?? '—'}`, outcome, advice }
+
+  if (line == null && block.predicted_total_sot == null) {
+    return { label: 'ND', sublabel: 'Storico insuff.', isNd: true }
+  }
+  if (line == null) {
+    return { label: advice || 'ND', sublabel: undefined, isNd: !advice }
+  }
+  return { label: `${line} · ${outcome ?? '—'}`, sublabel: undefined, isNd: false }
 }
 
 export const MODEL_KEYS = {
@@ -31,3 +57,20 @@ export const MODEL_KEYS = {
   v20: 'baseline_v2_0_lineup_impact',
   v21: 'baseline_v2_1_weighted_components',
 } as const
+
+export function seasonLabelFromYear(year: number): string {
+  return `${year}/${year + 1}`
+}
+
+export function statusLabelIt(status: string | undefined): string {
+  switch (status) {
+    case 'completed':
+      return 'Completata'
+    case 'completed_with_warnings':
+      return 'Completata con avvisi'
+    case 'failed':
+      return 'Fallita'
+    default:
+      return status ?? '—'
+  }
+}

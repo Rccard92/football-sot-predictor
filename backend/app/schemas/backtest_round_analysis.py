@@ -93,6 +93,13 @@ class RoundAnalysisModelSummary(BaseModel):
     avg_actual_total: float | None = None
     mae: float | None = None
     bias: float | None = None
+    predictions_available: int = 0
+    no_prediction_count: int = 0
+    display: str = "ND"
+
+
+def season_label_from_year(year: int) -> str:
+    return f"{int(year)}/{int(year) + 1}"
 
 
 class RoundAnalysisDataQualitySummary(BaseModel):
@@ -111,15 +118,20 @@ class RoundAnalysisListItem(BaseModel):
     id: int
     competition_id: int
     season_year: int
+    season_label: str
     round_number: int
     analysis_version: int
     status: str
+    status_label: str | None = None
+    status_reason: str | None = None
     mode: str
     total_fixtures: int
     processed_fixtures: int
     failed_fixtures: int
     progress_pct: float
     data_quality_badge: str | None = None
+    data_quality_status: str | None = None
+    accordion_summary: dict[str, str] | None = None
     created_at: datetime
     completed_at: datetime | None = None
 
@@ -150,18 +162,24 @@ class RoundAnalysisDetailResponse(BaseModel):
     id: int
     competition_id: int
     season_year: int
+    season_label: str
     round_number: int
     analysis_version: int
     status: str
+    status_label: str | None = None
+    status_reason: str | None = None
+    data_quality_status: str | None = None
     mode: str
     config_json: dict[str, Any]
     total_fixtures: int
     processed_fixtures: int
     failed_fixtures: int
+    failed_models_count: int = 0
     progress_pct: float
     data_quality_summary_json: dict[str, Any] | None = None
     model_summary_json: dict[str, Any] | None = None
     error_json: dict[str, Any] | None = None
+    first_recommended_round: int | None = None
     created_at: datetime
     completed_at: datetime | None = None
     fixtures: list[RoundAnalysisFixtureRow] = Field(default_factory=list)
@@ -175,3 +193,9 @@ class RoundAnalysisConflictResponse(BaseModel):
     code: str = "analysis_already_completed"
     message: str
     existing_analysis_id: int
+
+
+class RoundAnalysisDeleteResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    deleted_analysis_id: int
+    deleted_fixture_results: int

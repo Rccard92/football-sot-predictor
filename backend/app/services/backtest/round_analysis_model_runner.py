@@ -20,6 +20,11 @@ from app.services.backtest.round_analysis_pick_builder import (
     v11_confidence_signals,
     v21_advice_signals,
 )
+from app.services.backtest.round_analysis_preflight import (
+    REASON_INSUFFICIENT_HISTORY,
+    build_no_prediction_block,
+    insufficient_history_message,
+)
 from app.services.backtest.sot_pick_evaluation_logic import evaluate_over_picks, sample_bucket_key
 from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig, PlayAdviceSignals
 from app.services.backtest.sot_pick_evaluation_logic import player_layer_is_neutral
@@ -53,46 +58,56 @@ class RoundAnalysisModelRunner:
         explanation_json: dict[str, Any] = {}
 
         for model_key in models:
-            if model_key == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
-                block, expl = self._run_v21(
-                    db,
-                    fixture=fixture,
-                    competition_id=competition_id,
-                    mode=mode,
-                    lines=lines,
-                    cautious_drop_threshold=cautious_drop_threshold,
-                    play_config=play_config,
+            try:
+                if model_key == BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS:
+                    block, expl = self._run_v21(
+                        db,
+                        fixture=fixture,
+                        competition_id=competition_id,
+                        mode=mode,
+                        lines=lines,
+                        cautious_drop_threshold=cautious_drop_threshold,
+                        play_config=play_config,
+                        data_quality=data_quality,
+                        actual_total=actual_total,
+                    )
+                elif model_key == BASELINE_SOT_MODEL_VERSION_V11_SOT:
+                    block, expl = self._run_v11_v20_style(
+                        self._v11,
+                        fixture=fixture,
+                        db=db,
+                        competition_id=competition_id,
+                        model_key=model_key,
+                        lines=lines,
+                        cautious_drop_threshold=cautious_drop_threshold,
+                        play_config=play_config,
+                        data_quality=data_quality,
+                        actual_total=actual_total,
+                    )
+                elif model_key == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
+                    block, expl = self._run_v11_v20_style(
+                        self._v20,
+                        fixture=fixture,
+                        db=db,
+                        competition_id=competition_id,
+                        model_key=model_key,
+                        lines=lines,
+                        cautious_drop_threshold=cautious_drop_threshold,
+                        play_config=play_config,
+                        data_quality=data_quality,
+                        actual_total=actual_total,
+                    )
+                else:
+                    continue
+            except Exception as exc:  # noqa: BLE001
+                block = build_no_prediction_block(
+                    model_key,
+                    reason="MODEL_ERROR",
+                    message=str(exc)[:300],
                     data_quality=data_quality,
-                    actual_total=actual_total,
                 )
-            elif model_key == BASELINE_SOT_MODEL_VERSION_V11_SOT:
-                block, expl = self._run_v11_v20_style(
-                    self._v11,
-                    fixture=fixture,
-                    db=db,
-                    competition_id=competition_id,
-                    model_key=model_key,
-                    lines=lines,
-                    cautious_drop_threshold=cautious_drop_threshold,
-                    play_config=play_config,
-                    data_quality=data_quality,
-                    actual_total=actual_total,
-                )
-            elif model_key == BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT:
-                block, expl = self._run_v11_v20_style(
-                    self._v20,
-                    fixture=fixture,
-                    db=db,
-                    competition_id=competition_id,
-                    model_key=model_key,
-                    lines=lines,
-                    cautious_drop_threshold=cautious_drop_threshold,
-                    play_config=play_config,
-                    data_quality=data_quality,
-                    actual_total=actual_total,
-                )
-            else:
-                continue
+                expl = {}
+
             models_json[model_key] = block
             if expl:
                 explanation_json[model_key] = expl
@@ -118,17 +133,32 @@ class RoundAnalysisModelRunner:
             fixture_id=int(fixture.id),
             mode=mode or BACKTEST_MODE_HISTORICAL_OFFICIAL_XI,
         )
-        predicted = float(preview.prediction.total_predicted_sot)  # type: ignore[arg-type]
+        home_prior = int(preview.home_prior_matches_count)
+        away_prior = int(preview.away_prior_matches_count)
+        min_prior = min(home_prior, away_prior)
+
+        total_raw = preview.prediction.total_predicted_sot
+        if total_raw is None or min_prior == 0:
+            return (
+                build_no_prediction_block(
+                    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+                    reason=REASON_INSUFFICIENT_HISTORY,
+                    message=insufficient_history_message(min_prior, prior_home=home_prior, prior_away=away_prior),
+                    prior_home=home_prior,
+                    prior_away=away_prior,
+                    data_quality=data_quality,
+                ),
+                self._v21_explanation(preview),
+            )
+
+        predicted = float(total_raw)
         home_pred = preview.prediction.home_predicted_sot
         away_pred = preview.prediction.away_predicted_sot
 
-        bucket = sample_bucket_key(
-            int(preview.home_prior_matches_count),
-            int(preview.away_prior_matches_count),
-        )
+        bucket = sample_bucket_key(home_prior, away_prior)
         signals = v11_confidence_signals(
-            home_prior=int(preview.home_prior_matches_count),
-            away_prior=int(preview.away_prior_matches_count),
+            home_prior=home_prior,
+            away_prior=away_prior,
             warnings_count=len(preview.warnings),
             player_layer_neutral=player_layer_is_neutral(
                 _player_layer_status(preview, "home"),
@@ -166,6 +196,8 @@ class RoundAnalysisModelRunner:
         )
 
         block: dict[str, Any] = {
+            "model_version": BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+            "status": "ok",
             "label": MODEL_LABELS[BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS],
             "predicted_home_sot": home_pred,
             "predicted_away_sot": away_pred,
@@ -225,14 +257,27 @@ class RoundAnalysisModelRunner:
             data_quality=data_quality,
         )
         meta = dict(raw.pop("_meta", {}) or {})
+        home_prior = int(meta.get("home_prior_count") or 0)
+        away_prior = int(meta.get("away_prior_count") or 0)
+        min_prior = min(home_prior, away_prior)
         predicted = raw.get("predicted_total_sot")
-        if predicted is None:
-            block = {**raw, "model_key": model_key}
-            return block, {}
+
+        if predicted is None or min_prior == 0:
+            return (
+                build_no_prediction_block(
+                    model_key,
+                    reason=REASON_INSUFFICIENT_HISTORY,
+                    message=insufficient_history_message(min_prior, prior_home=home_prior, prior_away=away_prior),
+                    prior_home=home_prior,
+                    prior_away=away_prior,
+                    data_quality=data_quality,
+                ),
+                {},
+            )
 
         signals = v11_confidence_signals(
-            home_prior=int(meta.get("home_prior_count") or 0),
-            away_prior=int(meta.get("away_prior_count") or 0),
+            home_prior=home_prior,
+            away_prior=away_prior,
             warnings_count=len(raw.get("warnings") or []),
             player_layer_neutral=bool(meta.get("player_layer_neutral")),
         )
@@ -274,6 +319,8 @@ class RoundAnalysisModelRunner:
         )
 
         block = {
+            "model_version": model_key,
+            "status": "ok",
             **{k: v for k, v in raw.items() if k != "model_key"},
             **{k: v for k, v in picks.items() if k not in ("warnings",)},
             "warnings": list(dict.fromkeys(list(raw.get("warnings") or []) + list(picks.get("warnings") or []))),

@@ -1,17 +1,27 @@
 import { useState } from 'react'
 import { ContextBanner } from '../components/ContextBanner'
 import { RoundAnalysisAccordion, ModelSummaryBar } from '../components/backtest/RoundAnalysisAccordion'
+import { RoundAnalysisDetailBox } from '../components/backtest/RoundAnalysisDetailBox'
 import { RoundAnalysisFixtureTable } from '../components/backtest/RoundAnalysisFixtureTable'
 import { RoundAnalysisForm } from '../components/backtest/RoundAnalysisForm'
-import { dataQualityBadgeClass } from '../components/backtest/roundAnalysisUtils'
+import { dataQualityBadgeClass, seasonLabelFromYear, statusLabelIt } from '../components/backtest/roundAnalysisUtils'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { DEFAULT_SEASON, type RoundAnalysisDetail } from '../lib/api'
 
 export function Backtest() {
   const { selectedCompetition, selectedCompetitionId } = useCompetition()
   const seasonYear = selectedCompetition?.season ?? DEFAULT_SEASON
+  const seasonLabel = seasonLabelFromYear(seasonYear)
   const [detail, setDetail] = useState<RoundAnalysisDetail | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [recommendedRound, setRecommendedRound] = useState<number | null>(null)
+
+  const handleAnalyzed = (d: RoundAnalysisDetail) => {
+    setDetail(d)
+    if (d.first_recommended_round != null) {
+      setRecommendedRound(d.first_recommended_round)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -22,12 +32,18 @@ export function Backtest() {
         </p>
       </header>
 
-      <ContextBanner />
+      <ContextBanner
+        showModelSelector={false}
+        seasonLabel={seasonLabel}
+        comparedModelsLabel="v1.1 · v2.0 · v2.1"
+      />
 
       <RoundAnalysisForm
         competitionId={selectedCompetitionId}
         seasonYear={seasonYear}
-        onAnalyzed={setDetail}
+        seasonLabel={seasonLabel}
+        firstRecommendedRound={recommendedRound ?? detail?.first_recommended_round ?? null}
+        onAnalyzed={handleAnalyzed}
         onReloadList={() => setReloadToken((t) => t + 1)}
       />
 
@@ -35,7 +51,10 @@ export function Backtest() {
         competitionId={selectedCompetitionId}
         seasonYear={seasonYear}
         selectedId={detail?.id ?? null}
-        onSelect={setDetail}
+        onSelect={handleAnalyzed}
+        onDeleted={(analysisId) => {
+          if (detail?.id === analysisId) setDetail(null)
+        }}
         reloadToken={reloadToken}
       />
 
@@ -48,6 +67,9 @@ export function Backtest() {
                 versione {detail.analysis_version}
               </span>
             </h2>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+              {detail.status_label ?? statusLabelIt(detail.status)}
+            </span>
             <span
               className={`rounded-full px-2 py-0.5 text-xs ${dataQualityBadgeClass(
                 detail.data_quality_summary_json?.badge,
@@ -56,6 +78,8 @@ export function Backtest() {
               Qualità dati: {detail.data_quality_summary_json?.badge ?? '—'}
             </span>
           </div>
+
+          <RoundAnalysisDetailBox detail={detail} />
           <ModelSummaryBar summary={detail.model_summary_json} />
           <RoundAnalysisFixtureTable fixtures={detail.fixtures} />
         </section>

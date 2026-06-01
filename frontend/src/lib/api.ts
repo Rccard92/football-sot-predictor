@@ -736,6 +736,28 @@ async function requestPostJson<T>(path: string, body: unknown = {}): Promise<T> 
   return parsed as T
 }
 
+async function requestDeleteJson<T>(path: string): Promise<T> {
+  const base = getApiBase()
+  const p = path.startsWith('/') ? path : `/${path}`
+  const res = await fetch(`${base}${p}`, { method: 'DELETE' })
+
+  const ct = res.headers.get('content-type') ?? ''
+  let parsed: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      parsed = await res.json()
+    } catch {
+      parsed = null
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(parsed, res.statusText))
+  }
+
+  return parsed as T
+}
+
 /** Opzioni per richieste admin lunghe (timeout client + AbortSignal). */
 export type AdminRequestOpts = {
   signal?: AbortSignal
@@ -2825,6 +2847,10 @@ export type RoundAnalysisAnalyzeRequest = {
 }
 
 export type RoundAnalysisModelBlock = {
+  model_version?: string
+  status?: 'ok' | 'no_prediction' | string
+  reason?: string | null
+  message?: string | null
   label?: string
   predicted_home_sot?: number | null
   predicted_away_sot?: number | null
@@ -2875,23 +2901,34 @@ export type RoundAnalysisModelSummary = {
   avg_actual_total?: number | null
   mae?: number | null
   bias?: number | null
+  predictions_available?: number
+  no_prediction_count?: number
+  display?: string
 }
 
 export type RoundAnalysisDetail = {
   id: number
   competition_id: number
   season_year: number
+  season_label: string
   round_number: number
   analysis_version: number
   status: string
+  status_label?: string | null
+  status_reason?: string | null
+  data_quality_status?: string | null
   mode: string
   config_json: Record<string, unknown>
   total_fixtures: number
   processed_fixtures: number
   failed_fixtures: number
+  failed_models_count?: number
   progress_pct: number
   data_quality_summary_json?: {
     badge?: string
+    data_quality_status?: string
+    accordion_summary?: Record<string, string>
+    first_recommended_round?: number
     warnings?: string[]
     fixtures_with_lineup?: number
     fixtures_with_unavailable?: number
@@ -2900,6 +2937,7 @@ export type RoundAnalysisDetail = {
   } | null
   model_summary_json?: Record<string, RoundAnalysisModelSummary> | null
   error_json?: Record<string, unknown> | null
+  first_recommended_round?: number | null
   created_at: string
   completed_at?: string | null
   fixtures: RoundAnalysisFixtureRow[]
@@ -2909,15 +2947,20 @@ export type RoundAnalysisListItem = {
   id: number
   competition_id: number
   season_year: number
+  season_label: string
   round_number: number
   analysis_version: number
   status: string
+  status_label?: string | null
+  status_reason?: string | null
   mode: string
   total_fixtures: number
   processed_fixtures: number
   failed_fixtures: number
   progress_pct: number
   data_quality_badge?: string | null
+  data_quality_status?: string | null
+  accordion_summary?: Record<string, string> | null
   created_at: string
   completed_at?: string | null
 }
@@ -2938,10 +2981,16 @@ export async function postRoundAnalysisAnalyze(
   )
 }
 
+export type RoundAnalysisDeleteResponse = {
+  status: 'ok'
+  deleted_analysis_id: number
+  deleted_fixture_results: number
+}
+
 export async function getRoundAnalyses(
   competitionId: number,
   seasonYear: number,
-  opts?: { limit?: number; offset?: number },
+  opts?: { limit?: number; offset?: number; sortBy?: string; sortDir?: string },
 ): Promise<RoundAnalysisListResponse> {
   const q = new URLSearchParams({
     competition_id: String(competitionId),
@@ -2949,11 +2998,19 @@ export async function getRoundAnalyses(
   })
   if (opts?.limit != null) q.set('limit', String(opts.limit))
   if (opts?.offset != null) q.set('offset', String(opts.offset))
+  if (opts?.sortBy) q.set('sort_by', opts.sortBy)
+  if (opts?.sortDir) q.set('sort_dir', opts.sortDir)
   return requestJson<RoundAnalysisListResponse>(`/api/backtest/round-analysis?${q.toString()}`)
 }
 
 export async function getRoundAnalysisDetail(analysisId: number): Promise<RoundAnalysisDetail> {
   return requestJson<RoundAnalysisDetail>(`/api/backtest/round-analysis/${analysisId}`)
+}
+
+export async function deleteRoundAnalysis(analysisId: number): Promise<RoundAnalysisDeleteResponse> {
+  return requestDeleteJson<RoundAnalysisDeleteResponse>(
+    `/api/backtest/round-analysis/${analysisId}`,
+  )
 }
 
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---

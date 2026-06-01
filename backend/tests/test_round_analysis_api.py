@@ -19,15 +19,20 @@ def _detail() -> RoundAnalysisDetailResponse:
         id=1,
         competition_id=2,
         season_year=2025,
+        season_label="2025/2026",
         round_number=36,
         analysis_version=1,
         status="completed",
+        status_label="Completata",
         mode="historical_official_xi",
         config_json={},
         total_fixtures=10,
         processed_fixtures=10,
         failed_fixtures=0,
+        failed_models_count=0,
         progress_pct=100.0,
+        error_json=None,
+        first_recommended_round=3,
         created_at=now,
         completed_at=now,
         fixtures=[],
@@ -69,3 +74,16 @@ def test_detail_endpoint(mock_svc_cls):
     res = client.get("/api/backtest/round-analysis/1")
     assert res.status_code == 200
     assert res.json()["id"] == 1
+
+
+@patch("app.routes.backtest_round_analysis.RoundAnalysisService")
+def test_delete_endpoint_smoke(mock_svc_cls):
+    from app.schemas.backtest_round_analysis import RoundAnalysisDeleteResponse
+
+    mock_svc_cls.return_value.delete_analysis.return_value = RoundAnalysisDeleteResponse(
+        deleted_analysis_id=1,
+        deleted_fixture_results=5,
+    )
+    res = client.delete("/api/backtest/round-analysis/1")
+    assert res.status_code == 200
+    assert res.json()["deleted_analysis_id"] == 1

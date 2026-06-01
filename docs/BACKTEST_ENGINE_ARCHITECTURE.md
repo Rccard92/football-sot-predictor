@@ -508,7 +508,8 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 | Metodo | Path | Ruolo |
 |--------|------|--------|
 | POST | `/api/backtest/round-analysis/analyze` | Orchestrazione sync: prep dati + 3 modelli + persistenza |
-| GET | `/api/backtest/round-analysis` | Lista analisi per campionato/stagione |
+| GET | `/api/backtest/round-analysis` | Lista analisi per campionato/stagione (`sort_by`, `sort_dir`; default `round_number` desc + tie-breaker `analysis_version`, `created_at`) |
+| DELETE | `/api/backtest/round-analysis/{id}` | Elimina analisi e risultati fixture backtest (CASCADE); non tocca `fixtures` / mapping / indisponibili |
 | GET | `/api/backtest/round-analysis/{id}` | Dettaglio + fixture results |
 
 **Tabelle:** `backtest_round_analyses`, `backtest_round_fixture_results` (unique giornata+versione).
@@ -520,6 +521,16 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 **Rianalisi:** `force_recalculate=true` incrementa `analysis_version`; altrimenti 409 se analisi `completed` esiste.
 
 `BacktestDebugPanel` resta solo su `/admin`.
+
+**Storico insufficiente (giornate 1–2):** preflight calcola `min_prior_matches` per giornata; se insufficiente → `completed_with_warnings`, badge **Critico**, ogni modello in `models_json` con `status: no_prediction`, `reason: INSUFFICIENT_HISTORY`. Non si usa `failed` salvo crash tecnico o zero fixture processate.
+
+**Status analisi:** `completed` | `completed_with_warnings` | `failed` | stati transitori (`preparing_data`, `running`).
+
+**UI Backtest:** stagione mostrata come `2025/2026` (`season_label`); confronto fisso v1.1 · v2.0 · v2.1 (nessun «Modello selezionato»); celle tabella **ND** + «Storico insuff.»; accordion con riepilogo modelli e motivo; pulsante **Elimina** con conferma (solo righe backtest).
+
+**Ordinamento lista:** default API `round_number DESC`, `analysis_version DESC`, `created_at DESC`; il frontend non riordina client-side.
+
+**Eliminazione:** dopo DELETE si può rianalizzare la stessa giornata; `_latest_completed` (409) considera solo analisi con `status == "completed"`.
 
 ### Frontend legacy (dashboard run)
 

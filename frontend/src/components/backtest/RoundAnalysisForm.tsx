@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Card } from '../ui/Card'
-import { DEFAULT_SEASON, postRoundAnalysisAnalyze, type RoundAnalysisDetail } from '../../lib/api'
+import { postRoundAnalysisAnalyze, type RoundAnalysisDetail } from '../../lib/api'
 
 type Props = {
   competitionId: number | null
   seasonYear: number
+  seasonLabel: string
+  firstRecommendedRound: number | null
   onAnalyzed: (detail: RoundAnalysisDetail) => void
   onReloadList: () => void
 }
@@ -12,6 +14,8 @@ type Props = {
 export function RoundAnalysisForm({
   competitionId,
   seasonYear,
+  seasonLabel,
+  firstRecommendedRound,
   onAnalyzed,
   onReloadList,
 }: Props) {
@@ -69,13 +73,22 @@ export function RoundAnalysisForm({
               value={roundNumber}
               onChange={(e) => setRoundNumber(Number(e.target.value))}
             />
+            <span className="text-xs text-slate-500">
+              Le prime giornate possono avere storico insufficiente. Per risultati più affidabili,
+              analizza anche giornate dalla 3/4 in poi.
+            </span>
+            {firstRecommendedRound != null ? (
+              <span className="text-xs font-medium text-slate-700">
+                Prima giornata consigliata: {firstRecommendedRound}
+              </span>
+            ) : null}
           </label>
           <label className="flex flex-col gap-1">
             <span className="font-medium text-slate-800">Stagione</span>
             <input
-              type="number"
-              className="rounded-lg border border-slate-200 px-3 py-2"
-              value={seasonYear}
+              type="text"
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+              value={seasonLabel}
               readOnly
             />
           </label>
@@ -111,8 +124,7 @@ export function RoundAnalysisForm({
         </button>
         {showAdvanced ? (
           <p className="text-xs text-slate-500">
-            Modelli v1.1, v2.0 e v2.1 con linee Over predefinite e filtri consiglio standard (Step H).
-            Stagione predefinita: {DEFAULT_SEASON}.
+            Confronto automatico v1.1, v2.0 e v2.1 con linee Over e filtri consiglio standard.
           </p>
         ) : null}
 
