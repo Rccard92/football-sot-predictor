@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-v30-value-selector-refinement
+
+**Titolo:** Value selector v3.0-C — refinement simulatore calibrazione
+
+**Descrizione:** Estensione simulatore con 5 strategie value selector (`v3_safe_6_5_*`, consensus balanced, premium 7.5, hybrid con tier/reason_codes), indicatore diagnostico `low_total_risk_v2`, loss diagnostics arricchite per ogni LOSS, `strategy_verdict` e ranking aggiornato. UI simulatore a tab. Nessun modello ufficiale v3.0, nessuna modifica motori v1.1/v2.0/v2.1.
+
+**File toccati:** `round_analysis_low_total_risk_v2.py`, `round_analysis_value_selector_helpers.py`, `round_analysis_value_selector_strategies.py`, `round_analysis_calibration_simulator*.py`, frontend Backtest simulator, test, docs.
+
+---
+
 ## backtest-v30-calibration-simulator
 
 **Titolo:** Simulatore calibrazione v3.0 per strategie pick Backtest

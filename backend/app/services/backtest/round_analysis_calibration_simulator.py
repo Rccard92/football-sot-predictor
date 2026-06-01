@@ -9,13 +9,25 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
 )
 from app.services.backtest.round_analysis_diagnostics_aggregator import diagnostics_actual_total_bucket
-from app.services.backtest.round_analysis_mode_stats import advice_bucket, is_advised_label
-from app.services.backtest.sot_pick_evaluation_logic import compute_pick_outcome
+from app.services.backtest.round_analysis_value_selector_helpers import (
+    V11,
+    V21,
+    block_cautious_gioca,
+    build_loss_diagnostic,
+    cautious_line,
+    compute_strategy_verdict,
+    enrich_pick,
+    pick_from_block,
+)
+from app.services.backtest.round_analysis_value_selector_strategies import (
+    V3_STRATEGY_FN,
+    V3_STRATEGY_IDS,
+    V3_STRATEGY_LABELS,
+    get_hybrid_no_bet_audit,
+    reset_hybrid_audit,
+)
 
-V11 = BASELINE_SOT_MODEL_VERSION_V11_SOT
-V21 = BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
-
-STRATEGY_IDS = (
+LEGACY_STRATEGY_IDS = (
     "v1_1_cautious_advised",
     "v2_1_cautious_advised",
     "v2_1_cautious_line_6_5_only",
@@ -26,6 +38,8 @@ STRATEGY_IDS = (
     "conservative_selector_v30_candidate",
 )
 
+STRATEGY_IDS = LEGACY_STRATEGY_IDS + V3_STRATEGY_IDS
+
 STRATEGY_LABELS: dict[str, str] = {
     "v1_1_cautious_advised": "v1.1 cauta consigliata",
     "v2_1_cautious_advised": "v2.1 cauta consigliata",
@@ -35,6 +49,7 @@ STRATEGY_LABELS: dict[str, str] = {
     "consensus_v11_v21_cautious_min_line": "Consenso v1.1+v2.1 (linea min)",
     "consensus_v11_v21_cautious_v21_line": "Consenso v1.1+v2.1 (linea v2.1)",
     "conservative_selector_v30_candidate": "Selector conservativo v3.0 (candidato)",
+    **V3_STRATEGY_LABELS,
 }
 
 MAX_WARNINGS_CONSERVATIVE = 6
@@ -65,85 +80,6 @@ def _mean(vals: list[float]) -> float | None:
     return _round4(sum(vals) / len(vals))
 
 
-def _block_cautious_gioca(block: dict[str, Any] | None) -> bool:
-    if not isinstance(block, dict):
-        return False
-    return is_advised_label(str(block.get("cautious_advice") or ""))
-
-
-def _cautious_line(block: dict[str, Any] | None) -> float | None:
-    if not isinstance(block, dict):
-        return None
-    ln = block.get("cautious_line")
-    return float(ln) if ln is not None else None
-
-
-def _outcome_for_line(actual: int, line: float) -> str:
-    return "WIN" if compute_pick_outcome(line, actual) == "win" else "LOSS"
-
-
-def _pick_from_block(
-    fx: dict[str, Any],
-    block: dict[str, Any],
-    *,
-    model_key: str,
-    line: float | None = None,
-) -> dict[str, Any] | None:
-    if line is None:
-        line = _cautious_line(block)
-    if line is None:
-        return None
-    actual = int(fx["actual_total_sot"])
-    outcome = _outcome_for_line(actual, float(line))
-    pt = block.get("predicted_total_sot")
-    return {
-        "analysis_id": fx["analysis_id"],
-        "round_number": fx["round_number"],
-        "fixture_id": fx["fixture_id"],
-        "match": fx["match"],
-        "actual_total_sot": actual,
-        "predicted_total_sot": float(pt) if pt is not None else None,
-        "line": float(line),
-        "outcome": outcome,
-        "model_key": model_key,
-        "mode": "cautious",
-    }
-
-
-def _strategy_v11_cautious(fx: dict[str, Any]) -> dict[str, Any] | None:
-    block = fx["models"].get(V11)
-    if not _block_cautious_gioca(block):
-        return None
-    return _pick_from_block(fx, block, model_key=V11)
-
-
-def _strategy_v21_cautious(fx: dict[str, Any]) -> dict[str, Any] | None:
-    block = fx["models"].get(V21)
-    if not _block_cautious_gioca(block):
-        return None
-    return _pick_from_block(fx, block, model_key=V21)
-
-
-def _strategy_v21_line_65(fx: dict[str, Any]) -> dict[str, Any] | None:
-    block = fx["models"].get(V21)
-    if not _block_cautious_gioca(block):
-        return None
-    ln = _cautious_line(block)
-    if ln is None or float(ln) != 6.5:
-        return None
-    return _pick_from_block(fx, block, model_key=V21)
-
-
-def _strategy_v21_no_high_lines(fx: dict[str, Any]) -> dict[str, Any] | None:
-    block = fx["models"].get(V21)
-    if not _block_cautious_gioca(block):
-        return None
-    ln = _cautious_line(block)
-    if ln is None or float(ln) >= 8.5:
-        return None
-    return _pick_from_block(fx, block, model_key=V21, line=ln)
-
-
 def _overheat_veto(fx: dict[str, Any], line: float) -> bool:
     if float(line) < 7.5:
         return False
@@ -161,39 +97,70 @@ def _overheat_veto(fx: dict[str, Any], line: float) -> bool:
     return False
 
 
+def _strategy_v11_cautious(fx: dict[str, Any]) -> dict[str, Any] | None:
+    block = fx["models"].get(V11)
+    if not block_cautious_gioca(block):
+        return None
+    return pick_from_block(fx, block, model_key=V11)
+
+
+def _strategy_v21_cautious(fx: dict[str, Any]) -> dict[str, Any] | None:
+    block = fx["models"].get(V21)
+    if not block_cautious_gioca(block):
+        return None
+    return pick_from_block(fx, block, model_key=V21)
+
+
+def _strategy_v21_line_65(fx: dict[str, Any]) -> dict[str, Any] | None:
+    block = fx["models"].get(V21)
+    if not block_cautious_gioca(block):
+        return None
+    ln = cautious_line(block)
+    if ln is None or float(ln) != 6.5:
+        return None
+    return pick_from_block(fx, block, model_key=V21)
+
+
+def _strategy_v21_no_high_lines(fx: dict[str, Any]) -> dict[str, Any] | None:
+    block = fx["models"].get(V21)
+    if not block_cautious_gioca(block):
+        return None
+    ln = cautious_line(block)
+    if ln is None or float(ln) >= 8.5:
+        return None
+    return pick_from_block(fx, block, model_key=V21, line=ln)
+
+
 def _strategy_v21_overheat_veto(fx: dict[str, Any]) -> dict[str, Any] | None:
     block = fx["models"].get(V21)
-    if not _block_cautious_gioca(block):
+    if not block_cautious_gioca(block):
         return None
-    ln = _cautious_line(block)
+    ln = cautious_line(block)
     if ln is None or _overheat_veto(fx, float(ln)):
         return None
-    return _pick_from_block(fx, block, model_key=V21, line=ln)
+    return pick_from_block(fx, block, model_key=V21, line=ln)
 
 
 def _strategy_consensus(fx: dict[str, Any], *, use_v21_line: bool) -> dict[str, Any] | None:
     v11 = fx["models"].get(V11)
     v21 = fx["models"].get(V21)
-    if not _block_cautious_gioca(v11) or not _block_cautious_gioca(v21):
+    if not block_cautious_gioca(v11) or not block_cautious_gioca(v21):
         return None
-    ln11 = _cautious_line(v11)
-    ln21 = _cautious_line(v21)
+    ln11 = cautious_line(v11)
+    ln21 = cautious_line(v21)
     if ln11 is None or ln21 is None:
         return None
-    if use_v21_line:
-        line = float(ln21)
-    else:
-        line = min(float(ln11), float(ln21))
-    return _pick_from_block(fx, v21, model_key=V21, line=line)
+    line = float(ln21) if use_v21_line else min(float(ln11), float(ln21))
+    return pick_from_block(fx, v21, model_key=V21, line=line)
 
 
 def _strategy_conservative_v30(fx: dict[str, Any]) -> dict[str, Any] | None:
     block = fx["models"].get(V21)
     if not isinstance(block, dict):
         return None
-    if not _block_cautious_gioca(block):
+    if not block_cautious_gioca(block):
         return None
-    ln = _cautious_line(block)
+    ln = cautious_line(block)
     if ln is None or float(ln) >= 8.5:
         return None
     warnings = list(block.get("warnings") or [])
@@ -207,14 +174,12 @@ def _strategy_conservative_v30(fx: dict[str, Any]) -> dict[str, Any] | None:
         if unav is not None and float(unav) < 0.90:
             return None
     if float(ln) == 6.5:
-        return _pick_from_block(fx, block, model_key=V21, line=ln)
+        return pick_from_block(fx, block, model_key=V21, line=ln)
     if float(ln) == 7.5:
         wmm = macros.get("weighted_macro_multiplier_avg")
         cq = macros.get("chance_quality_avg")
         pace = macros.get("pace_control_avg")
-        if conf == "low":
-            return None
-        if split_st == "missing":
+        if conf == "low" or split_st == "missing":
             return None
         if wmm is None or not (0.95 <= float(wmm) <= 1.08):
             return None
@@ -222,7 +187,7 @@ def _strategy_conservative_v30(fx: dict[str, Any]) -> dict[str, Any] | None:
             return None
         if pace is not None and float(pace) > 1.15:
             return None
-        return _pick_from_block(fx, block, model_key=V21, line=ln)
+        return pick_from_block(fx, block, model_key=V21, line=ln)
     return None
 
 
@@ -235,6 +200,7 @@ STRATEGY_FN: dict[str, Callable[[dict[str, Any]], dict[str, Any] | None]] = {
     "consensus_v11_v21_cautious_min_line": lambda fx: _strategy_consensus(fx, use_v21_line=False),
     "consensus_v11_v21_cautious_v21_line": lambda fx: _strategy_consensus(fx, use_v21_line=True),
     "conservative_selector_v30_candidate": _strategy_conservative_v30,
+    **V3_STRATEGY_FN,
 }
 
 
@@ -242,10 +208,14 @@ def apply_strategy(strategy_id: str, fixtures: list[dict[str, Any]]) -> list[dic
     fn = STRATEGY_FN.get(strategy_id)
     if fn is None:
         return []
+    if strategy_id == "v3_hybrid_value_selector":
+        reset_hybrid_audit()
     picks: list[dict[str, Any]] = []
     for fx in fixtures:
         pick = fn(fx)
         if pick is not None:
+            if strategy_id not in V3_STRATEGY_IDS:
+                pick = enrich_pick(fx, pick, strategy_id)
             picks.append(pick)
     return picks
 
@@ -293,7 +263,7 @@ def _compare_baselines(
 def _breakdown_by_line(picks: list[dict[str, Any]]) -> dict[str, Any]:
     acc: dict[str, dict[str, int]] = {}
     for p in picks:
-        key = str(float(p["line"]))
+        key = str(float(p.get("selected_line", p["line"])))
         cell = acc.setdefault(key, {"wins": 0, "losses": 0})
         if p["outcome"] == "WIN":
             cell["wins"] += 1
@@ -313,6 +283,65 @@ def _breakdown_by_bucket(picks: list[dict[str, Any]], key_fn: Callable[[dict[str
         if bucket:
             acc.setdefault(bucket, []).append(p)
     return {k: _compact_summary(v) for k, v in acc.items()}
+
+
+def _breakdown_risk_v2(picks: list[dict[str, Any]]) -> dict[str, Any]:
+    acc: dict[str, dict[str, Any]] = {}
+    for p in picks:
+        bucket = p.get("low_total_risk_v2_bucket") or "unknown"
+        cell = acc.setdefault(
+            bucket,
+            {"picks": 0, "wins": 0, "losses": 0, "low_total_count": 0},
+        )
+        cell["picks"] += 1
+        if p["outcome"] == "WIN":
+            cell["wins"] += 1
+        else:
+            cell["losses"] += 1
+        if int(p["actual_total_sot"]) <= 6:
+            cell["low_total_count"] += 1
+    out: dict[str, Any] = {}
+    for bucket, cell in acc.items():
+        w, l = cell["wins"], cell["losses"]
+        fx_count = cell["picks"]
+        out[bucket] = {
+            "picks": fx_count,
+            "wins": w,
+            "losses": l,
+            "hit_rate": _hit_rate(w, l),
+            "actual_low_total_rate": _round1(100.0 * cell["low_total_count"] / fx_count) if fx_count else None,
+        }
+    return out
+
+
+def _breakdown_reason_codes(picks: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for p in picks:
+        for code in p.get("reason_codes") or []:
+            counts[str(code)] = counts.get(str(code), 0) + 1
+    return counts
+
+
+def _breakdown_confidence_tier(picks: list[dict[str, Any]]) -> dict[str, Any]:
+    acc: dict[str, list[dict[str, Any]]] = {}
+    for p in picks:
+        tier = p.get("confidence_tier")
+        if tier:
+            acc.setdefault(str(tier), []).append(p)
+    return {k: _compact_summary(v) for k, v in acc.items()}
+
+
+def _hit_rate_by_round(picks: list[dict[str, Any]]) -> dict[str, float | None]:
+    by_round = _breakdown_by_bucket(picks, lambda p: str(int(p["round_number"])))
+    return {rn: cell.get("hit_rate") for rn, cell in by_round.items()}
+
+
+def _picks_per_round(picks: list[dict[str, Any]]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for p in picks:
+        rn = str(int(p["round_number"]))
+        out[rn] = out.get(rn, 0) + 1
+    return out
 
 
 def _season_phase(round_number: int) -> str:
@@ -336,13 +365,34 @@ def _walk_forward(picks: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def _walk_forward_stability(walk_forward: dict[str, Any]) -> float | None:
+    rates = [
+        float(seg["hit_rate"])
+        for seg in walk_forward.values()
+        if isinstance(seg, dict) and seg.get("hit_rate") is not None and seg.get("picks", 0) > 0
+    ]
+    if not rates:
+        return None
+    return min(rates)
+
+
+def _filtered_vs_baseline(
+    picks: list[dict[str, Any]],
+    baseline_picks: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    pick_keys = {(int(p["analysis_id"]), int(p["fixture_id"])) for p in picks}
+    wins = [p for p in baseline_picks if p["outcome"] == "WIN" and (int(p["analysis_id"]), int(p["fixture_id"])) not in pick_keys]
+    losses = [p for p in baseline_picks if p["outcome"] == "LOSS" and (int(p["analysis_id"]), int(p["fixture_id"])) not in pick_keys]
+    return wins[:25], losses[:25]
+
+
 def summarize_strategy(
     strategy_id: str,
     picks: list[dict[str, Any]],
     *,
     baseline_v21: list[dict[str, Any]],
     baseline_v11: list[dict[str, Any]],
-    include_pick_lists: bool = False,
+    fixtures_by_key: dict[tuple[int, int], dict[str, Any]],
 ) -> dict[str, Any]:
     summary = _compact_summary(picks)
     v21_summary = _compact_summary(baseline_v21)
@@ -359,9 +409,21 @@ def summarize_strategy(
     if summary["hit_rate"] is not None and v11_summary["hit_rate"] is not None:
         vs_v11["delta_hit_rate"] = _round1(float(summary["hit_rate"]) - float(v11_summary["hit_rate"]))
 
+    walk_forward = _walk_forward(picks)
+    filtered_wins, filtered_losses = _filtered_vs_baseline(picks, baseline_v21)
+    loss_diagnostics: list[dict[str, Any]] = []
+    for p in picks:
+        if p["outcome"] != "LOSS":
+            continue
+        key = (int(p["analysis_id"]), int(p["fixture_id"]))
+        fx = fixtures_by_key.get(key)
+        if fx:
+            loss_diagnostics.append(build_loss_diagnostic(fx, p, strategy_id))
+
     result: dict[str, Any] = {
         "strategy_id": strategy_id,
         "label": STRATEGY_LABELS.get(strategy_id, strategy_id),
+        "strategy_verdict": compute_strategy_verdict(summary["picks"], summary["hit_rate"]),
         "summary": summary,
         "vs_v2_1_baseline": vs_v21,
         "vs_v1_1_baseline": vs_v11,
@@ -370,15 +432,21 @@ def summarize_strategy(
             picks,
             lambda p: diagnostics_actual_total_bucket(int(p["actual_total_sot"])),
         ),
+        "by_low_total_risk_v2": _breakdown_risk_v2(picks),
+        "by_confidence_tier": _breakdown_confidence_tier(picks),
+        "by_reason_codes": _breakdown_reason_codes(picks),
         "by_round": _breakdown_by_bucket(picks, lambda p: str(int(p["round_number"]))),
+        "picks_per_round": _picks_per_round(picks),
+        "hit_rate_by_round": _hit_rate_by_round(picks),
         "by_season_phase": _breakdown_by_bucket(picks, lambda p: _season_phase(int(p["round_number"]))),
-        "walk_forward": _walk_forward(picks),
+        "walk_forward": walk_forward,
+        "walk_forward_stability": _walk_forward_stability(walk_forward),
+        "loss_diagnostics": loss_diagnostics,
+        "filtered_wins_top": filtered_wins,
+        "filtered_losses_top": filtered_losses,
     }
-    if include_pick_lists:
-        wins = [p for p in picks if p["outcome"] == "WIN"]
-        losses = [p for p in picks if p["outcome"] == "LOSS"]
-        result["filtered_wins_top"] = wins[:20]
-        result["filtered_losses_top"] = losses[:20]
+    if strategy_id == "v3_hybrid_value_selector":
+        result["no_bet_audit"] = get_hybrid_no_bet_audit()[:50]
     return result
 
 
@@ -395,6 +463,7 @@ def build_simulator_payload(
     *,
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
+    fixtures_by_key = {(int(f["analysis_id"]), int(f["fixture_id"])): f for f in fixtures}
     baseline_v11 = apply_strategy("v1_1_cautious_advised", fixtures)
     baseline_v21 = apply_strategy("v2_1_cautious_advised", fixtures)
 
@@ -403,23 +472,32 @@ def build_simulator_payload(
 
     for sid in STRATEGY_IDS:
         picks = apply_strategy(sid, fixtures)
-        include_lists = sid == "conservative_selector_v30_candidate"
         block = summarize_strategy(
             sid,
             picks,
             baseline_v21=baseline_v21,
             baseline_v11=baseline_v11,
-            include_pick_lists=include_lists,
+            fixtures_by_key=fixtures_by_key,
         )
         strategies_out[sid] = block
         summaries_for_rank.append((sid, block["summary"]))
 
     eligible_hr = [(s, sm) for s, sm in summaries_for_rank if sm.get("picks", 0) >= 10 and sm.get("hit_rate") is not None]
     eligible_vol = [(s, sm) for s, sm in summaries_for_rank if sm.get("picks", 0) > 0]
+    eligible_volume_hr = [(s, sm) for s, sm in summaries_for_rank if sm.get("picks", 0) >= 60 and sm.get("hit_rate") is not None]
 
     best_hr = max(eligible_hr, key=lambda x: float(x[1]["hit_rate"] or 0))[0] if eligible_hr else None
     best_vol = max(eligible_vol, key=lambda x: int(x[1]["picks"]))[0] if eligible_vol else None
     best_bal = max(eligible_hr, key=lambda x: _balanced_score(x[1]))[0] if eligible_hr else None
+    best_hr_vol = max(eligible_volume_hr, key=lambda x: float(x[1]["hit_rate"] or 0))[0] if eligible_volume_hr else None
+    too_selective = next(
+        (s for s, sm in summaries_for_rank if sm.get("hit_rate") is not None and float(sm["hit_rate"]) >= 72 and sm.get("picks", 0) < 60),
+        None,
+    )
+    weakest = next(
+        (s for s, sm in summaries_for_rank if sm.get("hit_rate") is not None and float(sm["hit_rate"]) < 66 and sm.get("picks", 0) >= 10),
+        None,
+    )
 
     return {
         "report_type": "round_analysis_calibration_simulator_v30",
@@ -432,6 +510,9 @@ def build_simulator_payload(
             "best_hit_rate": best_hr,
             "best_volume": best_vol,
             "most_balanced": best_bal,
+            "best_hit_rate_sufficient_volume": best_hr_vol,
+            "too_selective": too_selective,
+            "weakest": weakest,
         },
         "strategies": strategies_out,
     }

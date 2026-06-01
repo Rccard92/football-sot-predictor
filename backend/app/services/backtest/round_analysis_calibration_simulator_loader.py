@@ -11,6 +11,10 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
 )
 from app.services.backtest.round_analysis_diagnostics_loader import load_diagnostics_flat_rows
+from app.services.backtest.round_analysis_low_total_risk_v2 import (
+    compute_low_total_risk_v2_score,
+    low_total_risk_v2_bucket,
+)
 from app.services.backtest.round_analysis_v21_trace_helpers import (
     extract_v21_macro_averages,
     extract_v21_split_status,
@@ -59,6 +63,9 @@ def load_simulator_fixtures(
         expl = entry.get("explanation_v21")
         entry["v21_macros"] = extract_v21_macro_averages(expl)
         entry["split_status"] = extract_v21_split_status(expl)
+        score = compute_low_total_risk_v2_score(entry)
+        entry["low_total_risk_v2_score"] = score
+        entry["low_total_risk_v2_bucket"] = low_total_risk_v2_bucket(score)
         fixtures.append(entry)
 
     fixtures.sort(key=lambda f: (int(f["round_number"]), int(f["fixture_id"])))

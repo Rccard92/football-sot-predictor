@@ -629,6 +629,28 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **Changelog:** `backtest-v30-calibration-simulator`.
 
+### Step V3.0-C — Value Selector Refinement
+
+**Scopo:** affinare il simulatore con **5 strategie value selector v3**, indicatore `low_total_risk_v2`, **loss diagnostics** arricchite, `strategy_verdict` e UI a tab — sempre **solo simulazione read-only**. **Non** registra `baseline_v3_0_sot_value_selector` né modifica motori/pesi/`models_json`.
+
+**Endpoint invariati** (payload esteso): `GET /calibration-simulator`, `/calibration-simulator/report-json`.
+
+**Nuovi moduli:**
+
+| Modulo | Ruolo |
+|--------|--------|
+| `round_analysis_low_total_risk_v2.py` | Score/bucket rischio low-total v2 (low / medium / high) |
+| `round_analysis_value_selector_helpers.py` | Context fixture, enrich pick, loss diagnostic, verdict |
+| `round_analysis_value_selector_strategies.py` | 5 strategie v3 + hybrid tier/reason_codes/no_bet_audit |
+
+**Strategie v3 aggiunte (13 totali con legacy):** `v3_safe_6_5_strict`, `v3_safe_6_5_balanced`, `v3_consensus_balanced_min_line`, `v3_premium_7_5_only`, `v3_hybrid_value_selector`.
+
+**Metriche estese per strategia:** `strategy_verdict`, `loss_diagnostics`, `by_low_total_risk_v2`, `by_confidence_tier`, `by_reason_codes`, `picks_per_round`, `hit_rate_by_round`, `walk_forward_stability`; ranking con `best_hit_rate_sufficient_volume`, `too_selective`, `weakest`.
+
+**UI Backtest:** tab Strategie | Linee | Low-total risk | Loss diagnostics | Reason codes | Walk-forward.
+
+**Changelog:** `backtest-v30-value-selector-refinement`.
+
 ### Round Analysis v1.1 adapter (motore produzione)
 
 Il prior context **non** equivale alla predizione v1.1: l’engine Round Analysis è `compute_v11_side` invocato tramite `v11_round_analysis_engine.predict_v11_side_for_team`, con lo stesso `build_prior_context` di `SotPredictionV11BaselineSotService` (**senza** `competition_scoped_only` / `strict_kickoff_only`; quei flag restano solo sul PIT v2.1).

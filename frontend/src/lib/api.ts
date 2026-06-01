@@ -3340,9 +3340,41 @@ export type CalibrationSimulatorSummary = {
   bias?: number | null
 }
 
+export type CalibrationSimulatorRiskV2Bucket = {
+  picks: number
+  wins: number
+  losses: number
+  hit_rate?: number | null
+  actual_low_total_rate?: number | null
+}
+
+export type CalibrationSimulatorLossDiagnostic = {
+  round_number?: number
+  fixture_id?: number
+  match?: string
+  actual_total_sot?: number
+  predicted_total_sot?: number | null
+  line?: number
+  selected_line?: number
+  strategy_id?: string
+  outcome?: string
+  v1_1_predicted_total?: number | null
+  v2_1_predicted_total?: number | null
+  prediction_gap_v21_minus_v11?: number | null
+  low_total_risk_score?: number | null
+  low_total_risk_v2_score?: number | null
+  low_total_risk_v2_bucket?: string | null
+  confidence?: string
+  confidence_tier?: string
+  reason_codes?: string[]
+  warnings?: string[]
+  v21_macros?: Record<string, number | null>
+}
+
 export type CalibrationSimulatorStrategyBlock = {
   strategy_id: string
   label: string
+  strategy_verdict?: string
   summary: CalibrationSimulatorSummary
   vs_v2_1_baseline: {
     avoided_losses: number
@@ -3356,8 +3388,17 @@ export type CalibrationSimulatorStrategyBlock = {
   }
   by_line: Record<string, { plays: number; wins: number; losses: number; hit_rate?: number | null }>
   by_sot_bucket: Record<string, CalibrationSimulatorSummary>
+  by_low_total_risk_v2?: Record<string, CalibrationSimulatorRiskV2Bucket>
+  by_confidence_tier?: Record<string, CalibrationSimulatorSummary>
+  by_reason_codes?: Record<string, number>
+  by_round?: Record<string, CalibrationSimulatorSummary>
+  picks_per_round?: Record<string, number>
+  hit_rate_by_round?: Record<string, number | null>
   by_season_phase: Record<string, CalibrationSimulatorSummary>
   walk_forward: Record<string, CalibrationSimulatorSummary>
+  walk_forward_stability?: number | null
+  loss_diagnostics?: CalibrationSimulatorLossDiagnostic[]
+  no_bet_audit?: Array<{ fixture_id?: number; match?: string; no_bet_reason?: string }>
   filtered_wins_top?: Array<Record<string, unknown>>
   filtered_losses_top?: Array<Record<string, unknown>>
 }
@@ -3380,6 +3421,9 @@ export type RoundAnalysisCalibrationSimulator = {
     best_hit_rate?: string | null
     best_volume?: string | null
     most_balanced?: string | null
+    best_hit_rate_sufficient_volume?: string | null
+    too_selective?: string | null
+    weakest?: string | null
   }
   strategies: Record<string, CalibrationSimulatorStrategyBlock>
 }

@@ -17,8 +17,20 @@ SIM_PAYLOAD = {
         "v1_1_cautious_advised": {"picks": 210, "hit_rate": 66.7},
         "v2_1_cautious_advised": {"picks": 194, "hit_rate": 63.9},
     },
-    "ranking": {"best_hit_rate": "v2_1_cautious_line_6_5_only"},
-    "strategies": {},
+    "ranking": {
+        "best_hit_rate": "v2_1_cautious_line_6_5_only",
+        "best_hit_rate_sufficient_volume": "v3_safe_6_5_balanced",
+        "too_selective": None,
+        "weakest": None,
+    },
+    "strategies": {
+        "v3_hybrid_value_selector": {
+            "strategy_verdict": "promising",
+            "loss_diagnostics": [],
+            "by_low_total_risk_v2": {},
+            "by_reason_codes": {},
+        },
+    },
 }
 
 
@@ -30,7 +42,12 @@ def test_calibration_simulator_200(mock_get):
         params={"competition_id": 1, "season_year": 2025},
     )
     assert r.status_code == 200
-    assert r.json()["report_type"] == "round_analysis_calibration_simulator_v30"
+    body = r.json()
+    assert body["report_type"] == "round_analysis_calibration_simulator_v30"
+    assert "best_hit_rate_sufficient_volume" in body["ranking"]
+    hybrid = body["strategies"]["v3_hybrid_value_selector"]
+    assert "strategy_verdict" in hybrid
+    assert "loss_diagnostics" in hybrid
 
 
 @patch("app.routes.backtest_round_analysis.RoundAnalysisCalibrationSimulatorService.get_simulator_report_json")

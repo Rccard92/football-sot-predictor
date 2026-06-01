@@ -11,6 +11,10 @@ from app.services.backtest.round_analysis_calibration_simulator import (
     apply_strategy,
     build_simulator_payload,
 )
+from app.services.backtest.round_analysis_low_total_risk_v2 import (
+    compute_low_total_risk_v2_score,
+    low_total_risk_v2_bucket,
+)
 
 V11 = BASELINE_SOT_MODEL_VERSION_V11_SOT
 V21 = BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
@@ -45,7 +49,7 @@ def _fx(
     round_number: int = 10,
     fixture_id: int = 1,
 ) -> dict:
-    return {
+    entry = {
         "analysis_id": 1,
         "round_number": round_number,
         "fixture_id": fixture_id,
@@ -59,6 +63,10 @@ def _fx(
         "split_status": split_status,
         "explanation_v21": {},
     }
+    score = compute_low_total_risk_v2_score(entry)
+    entry["low_total_risk_v2_score"] = score
+    entry["low_total_risk_v2_bucket"] = low_total_risk_v2_bucket(score)
+    return entry
 
 
 def test_v21_line_65_only():
@@ -124,8 +132,22 @@ def test_build_simulator_payload_ranking():
     payload = build_simulator_payload(fixtures, metadata={"analyzed_fixtures": len(fixtures)})
     assert payload["report_type"] == "round_analysis_calibration_simulator_v30"
     assert len(payload["strategies"]) == len(STRATEGY_IDS)
+    assert len(STRATEGY_IDS) == 13
     assert "best_hit_rate" in payload["ranking"]
+    assert "best_hit_rate_sufficient_volume" in payload["ranking"]
     assert payload["baselines"]["v2_1_cautious_advised"]["picks"] >= 0
+
+
+def test_summarize_includes_v3_fields():
+    fixtures = [_fx(actual=5, v21=_block(caut_line=6.5, predicted=8.0), fixture_id=1)]
+    payload = build_simulator_payload(fixtures, metadata={})
+    strat = payload["strategies"]["v2_1_cautious_advised"]
+    assert "strategy_verdict" in strat
+    assert "loss_diagnostics" in strat
+    assert "by_low_total_risk_v2" in strat
+    assert "walk_forward_stability" in strat
+    if strat["summary"]["losses"] > 0:
+        assert len(strat["loss_diagnostics"]) == strat["summary"]["losses"]
 
 
 def test_walk_forward_segments():
