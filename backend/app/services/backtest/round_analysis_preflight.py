@@ -28,6 +28,71 @@ def season_label_from_year(year: int) -> str:
     return f"{int(year)}/{int(year) + 1}"
 
 
+def _model_identity_fields(
+    model_key: str,
+    *,
+    model_version_requested: str | None = None,
+    model_version_used: str | None = None,
+    model_engine_name: str | None = None,
+    model_status: str,
+) -> dict[str, Any]:
+    requested = model_version_requested or model_key
+    used = model_version_used or model_key
+    return {
+        "model_version": used,
+        "model_version_requested": requested,
+        "model_version_used": used,
+        "model_engine_name": model_engine_name,
+        "model_status": model_status,
+        "label": MODEL_LABELS.get(model_key, model_key),
+    }
+
+
+def build_error_block(
+    model_key: str,
+    *,
+    error_code: str,
+    error_message: str,
+    model_version_requested: str | None = None,
+    model_version_used: str | None = None,
+    model_engine_name: str | None = None,
+    data_quality: dict[str, str] | None = None,
+    trace_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        **_model_identity_fields(
+            model_key,
+            model_version_requested=model_version_requested,
+            model_version_used=model_version_used,
+            model_engine_name=model_engine_name,
+            model_status="error",
+        ),
+        "status": "error",
+        "error_code": error_code,
+        "error_message": error_message,
+        "reason": error_code,
+        "message": error_message,
+        "predicted_home_sot": None,
+        "predicted_away_sot": None,
+        "predicted_total_sot": None,
+        "aggressive_line": None,
+        "aggressive_edge": None,
+        "aggressive_outcome": None,
+        "aggressive_advice": None,
+        "aggressive_reason": None,
+        "cautious_line": None,
+        "cautious_edge": None,
+        "cautious_outcome": None,
+        "cautious_advice": None,
+        "cautious_reason": None,
+        "confidence": None,
+        "sample_bucket": None,
+        "warnings": [error_code.lower()],
+        "data_quality": dict(data_quality or {}),
+        "trace_summary": trace_summary,
+    }
+
+
 def build_no_prediction_block(
     model_key: str,
     *,
@@ -36,6 +101,11 @@ def build_no_prediction_block(
     prior_home: int | None = None,
     prior_away: int | None = None,
     data_quality: dict[str, str] | None = None,
+    error_code: str | None = None,
+    model_version_requested: str | None = None,
+    model_version_used: str | None = None,
+    model_engine_name: str | None = None,
+    trace_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     min_prior = None
     if prior_home is not None and prior_away is not None:
@@ -46,12 +116,20 @@ def build_no_prediction_block(
         else:
             message = "Storico insufficiente prima della partita."
 
+    code = error_code or reason
     return {
-        "model_version": model_key,
-        "label": MODEL_LABELS.get(model_key, model_key),
+        **_model_identity_fields(
+            model_key,
+            model_version_requested=model_version_requested,
+            model_version_used=model_version_used,
+            model_engine_name=model_engine_name,
+            model_status="no_prediction",
+        ),
         "status": "no_prediction",
+        "error_code": code,
         "reason": reason,
         "message": message,
+        "error_message": message,
         "predicted_home_sot": None,
         "predicted_away_sot": None,
         "predicted_total_sot": None,
@@ -67,8 +145,9 @@ def build_no_prediction_block(
         "cautious_reason": None,
         "confidence": None,
         "sample_bucket": "early_low_sample" if (min_prior or 0) < 5 else None,
-        "warnings": [reason.lower()],
+        "warnings": [code.lower()],
         "data_quality": dict(data_quality or {}),
+        "trace_summary": trace_summary,
     }
 
 
@@ -242,6 +321,12 @@ def model_block_is_no_prediction(block: dict[str, Any] | None) -> bool:
     return str(block.get("status") or "") == "no_prediction"
 
 
+def model_block_is_error(block: dict[str, Any] | None) -> bool:
+    if not isinstance(block, dict):
+        return False
+    return str(block.get("status") or "") == "error"
+
+
 def accordion_summary_from_models(
     model_summary: dict[str, Any] | None,
     *,
@@ -253,13 +338,28 @@ def accordion_summary_from_models(
         BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS: "v2.1",
     }
     out: dict[str, str] = {}
+    any_predictions = False
     for key, short in labels.items():
         m = (model_summary or {}).get(key) if isinstance(model_summary, dict) else None
-        if isinstance(m, dict) and int(m.get("predictions_available") or 0) > 0:
-            out[short] = "OK"
+        if isinstance(m, dict):
+            display = str(m.get("display") or "ND")
+            if int(m.get("predictions_available") or 0) > 0:
+                any_predictions = True
+            out[short] = display if display in ("OK", "ND", "ERROR", "WARNINGS") else (
+                "OK" if int(m.get("predictions_available") or 0) > 0 else "ND"
+            )
         else:
             out[short] = "ND"
-    motive = "storico insufficiente" if insufficient_history else ""
-    if motive:
-        out["motive"] = motive
+
+    if insufficient_history and not any_predictions:
+        out["motive"] = "storico insufficiente (preflight giornata)"
+    elif isinstance(model_summary, dict):
+        codes: list[str] = []
+        for m in model_summary.values():
+            if isinstance(m, dict) and m.get("prevalent_error_code"):
+                codes.append(str(m["prevalent_error_code"]))
+        if codes and not any_predictions:
+            from collections import Counter
+
+            out["motive"] = Counter(codes).most_common(1)[0][0]
     return out

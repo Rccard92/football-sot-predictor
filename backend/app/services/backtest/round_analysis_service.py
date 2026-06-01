@@ -190,6 +190,7 @@ class RoundAnalysisService:
                         play_config=play_config,
                         data_quality=dq,
                         actual_total=cand.actual_total_sot,
+                        analysis_id=int(analysis.id),
                     )
                     home_sot, away_sot = self._actual_side_sots(db, fx)
                     row = BacktestRoundFixtureResult(

@@ -2848,10 +2848,17 @@ export type RoundAnalysisAnalyzeRequest = {
 
 export type RoundAnalysisModelBlock = {
   model_version?: string
-  status?: 'ok' | 'no_prediction' | string
+  model_version_requested?: string
+  model_version_used?: string
+  model_engine_name?: string
+  model_status?: 'ok' | 'no_prediction' | 'error' | string
+  status?: 'ok' | 'no_prediction' | 'error' | string
+  error_code?: string | null
+  error_message?: string | null
   reason?: string | null
   message?: string | null
   label?: string
+  trace_summary?: Record<string, unknown> | null
   predicted_home_sot?: number | null
   predicted_away_sot?: number | null
   predicted_total_sot?: number | null
@@ -2890,6 +2897,9 @@ export type RoundAnalysisModelSummary = {
   model_key: string
   label: string
   fixtures: number
+  fixtures_ok?: number
+  fixtures_nd?: number
+  fixtures_error?: number
   aggressive_wins: number
   aggressive_losses: number
   aggressive_hit_rate?: number | null
@@ -2904,6 +2914,8 @@ export type RoundAnalysisModelSummary = {
   predictions_available?: number
   no_prediction_count?: number
   display?: string
+  prevalent_error_code?: string | null
+  model_engine_name?: string | null
 }
 
 export type RoundAnalysisDetail = {

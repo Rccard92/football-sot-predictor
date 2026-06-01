@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from app.core.constants import BASELINE_SOT_MODEL_VERSION_V11_SOT
 from app.services.backtest.round_analysis_preflight import (
+    accordion_summary_from_models,
     build_no_prediction_block,
     preflight_round_history,
     season_label_from_year,
@@ -49,3 +51,15 @@ def test_preflight_insufficient_history_round_1(mock_first_round, mock_prior):
     assert result.insufficient_history is True
     assert result.min_prior_matches_home == 0
     assert result.data_quality_status == "critical"
+
+
+def test_accordion_no_global_motive_when_model_has_predictions():
+    model_summary = {
+        BASELINE_SOT_MODEL_VERSION_V11_SOT: {
+            "predictions_available": 5,
+            "display": "OK",
+        },
+    }
+    acc = accordion_summary_from_models(model_summary, insufficient_history=True)
+    assert acc.get("v1.1") == "OK"
+    assert "motive" not in acc

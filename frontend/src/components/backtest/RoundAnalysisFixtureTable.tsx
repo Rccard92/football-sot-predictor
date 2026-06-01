@@ -15,12 +15,13 @@ function PickTd({
   kind: 'aggressive' | 'cautious'
 }) {
   const cell = pickCell(block, kind)
+  const badge = cell.label === 'ERR' ? 'ERR' : 'ND'
   return (
-    <td className="px-3 py-2 align-top">
+    <td className="px-3 py-2 align-top" title={cell.title}>
       {cell.isNd ? (
         <div className="space-y-0.5">
           <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${ndBadgeClass()}`}>
-            ND
+            {badge}
           </span>
           {cell.sublabel ? <div className="text-[10px] text-slate-500">{cell.sublabel}</div> : null}
         </div>

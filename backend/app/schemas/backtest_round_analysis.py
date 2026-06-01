@@ -82,6 +82,9 @@ class RoundAnalysisModelSummary(BaseModel):
     model_key: str
     label: str
     fixtures: int = 0
+    fixtures_ok: int = 0
+    fixtures_nd: int = 0
+    fixtures_error: int = 0
     aggressive_wins: int = 0
     aggressive_losses: int = 0
     aggressive_hit_rate: float | None = None
@@ -96,6 +99,8 @@ class RoundAnalysisModelSummary(BaseModel):
     predictions_available: int = 0
     no_prediction_count: int = 0
     display: str = "ND"
+    prevalent_error_code: str | None = None
+    model_engine_name: str | None = None
 
 
 def season_label_from_year(year: int) -> str:

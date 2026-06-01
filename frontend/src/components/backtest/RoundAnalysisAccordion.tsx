@@ -7,7 +7,12 @@ import {
   type RoundAnalysisListItem,
 } from '../../lib/api'
 import { RoundAnalysisDeleteConfirm } from './RoundAnalysisDeleteConfirm'
-import { dataQualityBadgeClass, hitRateBadgeClass, statusLabelIt } from './roundAnalysisUtils'
+import {
+  dataQualityBadgeClass,
+  hitRateBadgeClass,
+  modelDisplayBadgeClass,
+  statusLabelIt,
+} from './roundAnalysisUtils'
 
 type Props = {
   competitionId: number | null
@@ -189,37 +194,52 @@ export function ModelSummaryBar({
   return (
     <div className="grid gap-3 md:grid-cols-3">
       {Object.values(summary).map((m) => {
-        const nd = (m.predictions_available ?? 0) === 0
+        const display = m.display ?? ((m.predictions_available ?? 0) > 0 ? 'OK' : 'ND')
+        const nd = display === 'ND' || display === 'ERROR'
+        const okCount = m.fixtures_ok ?? m.predictions_available ?? 0
+        const total = m.fixtures ?? 0
         return (
           <div key={m.model_key} className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
             <div className="font-semibold text-slate-900">
               {m.label}
-              {nd ? (
-                <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
-                  ND
-                </span>
-              ) : null}
+              <span
+                className={`ml-2 rounded px-1.5 py-0.5 text-xs ${modelDisplayBadgeClass(display)}`}
+              >
+                {display}
+              </span>
             </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {okCount}/{total} calcolate
+              {m.model_engine_name ? ` · ${m.model_engine_name}` : ''}
+            </p>
             <div className="mt-2 flex flex-wrap gap-2 text-xs">
               <span
                 className={`rounded-full px-2 py-0.5 ${
                   nd ? 'bg-slate-100 text-slate-600' : hitRateBadgeClass(m.aggressive_hit_rate)
                 }`}
               >
-                Agg {m.aggressive_hit_rate != null ? `${m.aggressive_hit_rate}%` : 'ND'}
+                Agg{' '}
+                {m.aggressive_hit_rate != null
+                  ? `${m.aggressive_wins ?? 0}/${(m.aggressive_wins ?? 0) + (m.aggressive_losses ?? 0)} · ${m.aggressive_hit_rate}%`
+                  : 'ND'}
               </span>
               <span
                 className={`rounded-full px-2 py-0.5 ${
                   nd ? 'bg-slate-100 text-slate-600' : hitRateBadgeClass(m.cautious_hit_rate)
                 }`}
               >
-                Cauta {m.cautious_hit_rate != null ? `${m.cautious_hit_rate}%` : 'ND'}
+                Cauta{' '}
+                {m.cautious_hit_rate != null
+                  ? `${m.cautious_wins ?? 0}/${(m.cautious_wins ?? 0) + (m.cautious_losses ?? 0)} · ${m.cautious_hit_rate}%`
+                  : 'ND'}
               </span>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              {nd
-                ? 'Storico insufficiente per questa giornata'
-                : `MAE ${m.mae ?? '—'} · Bias ${m.bias ?? '—'} · ${m.fixtures} partite`}
+              {nd && m.prevalent_error_code
+                ? `Motivo prevalente: ${m.prevalent_error_code}`
+                : nd
+                  ? 'Nessuna predizione su questa giornata'
+                  : `MAE ${m.mae ?? '—'} · Bias ${m.bias ?? '—'}`}
             </p>
           </div>
         )

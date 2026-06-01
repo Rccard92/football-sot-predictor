@@ -10,9 +10,11 @@ from app.schemas.backtest_round_analysis import (
     RoundAnalysisModelSummary,
 )
 from app.services.backtest.round_analysis_data_prep_service import RoundAnalysisPrepResult
+from app.services.backtest.round_analysis_model_registry import ROUND_ANALYSIS_MODEL_REGISTRY
 from app.services.backtest.round_analysis_preflight import (
     RoundHistoryPreflight,
     accordion_summary_from_models,
+    model_block_is_error,
     model_block_is_no_prediction,
 )
 
@@ -120,6 +122,10 @@ class RoundAnalysisAggregator:
         errors_signed: list[float] = []
         predictions_available = 0
         no_prediction_count = 0
+        fixtures_ok = fixtures_nd = fixtures_error = 0
+        error_codes: list[str] = []
+        model_engine_name: str | None = ROUND_ANALYSIS_MODEL_REGISTRY.get(model_key, {}).get("engine")
+        total_fixture_rows = len([r for r in fixture_results if r.get("status") == "ok"])
 
         for row in fixture_results:
             if row.get("status") != "ok":
@@ -127,11 +133,25 @@ class RoundAnalysisAggregator:
             block = (row.get("models_json") or {}).get(model_key)
             if not isinstance(block, dict):
                 no_prediction_count += 1
+                fixtures_nd += 1
+                continue
+            if block.get("model_engine_name"):
+                model_engine_name = str(block["model_engine_name"])
+            if model_block_is_error(block):
+                fixtures_error += 1
+                code = block.get("error_code")
+                if code:
+                    error_codes.append(str(code))
                 continue
             if model_block_is_no_prediction(block):
                 no_prediction_count += 1
+                fixtures_nd += 1
+                code = block.get("error_code") or block.get("reason")
+                if code:
+                    error_codes.append(str(code))
                 continue
 
+            fixtures_ok += 1
             predictions_available += 1
             pt = block.get("predicted_total_sot")
             at = row.get("actual_total_sot")
@@ -157,10 +177,28 @@ class RoundAnalysisAggregator:
                     if str(block.get(field) or "").strip().upper() == "GIOCA":
                         advised += 1
 
+        prevalent_error_code: str | None = None
+        if error_codes:
+            from collections import Counter
+
+            prevalent_error_code = Counter(error_codes).most_common(1)[0][0]
+
+        if fixtures_error > 0 and predictions_available == 0:
+            display = "ERROR"
+        elif predictions_available == 0:
+            display = "ND"
+        elif fixtures_nd > 0 or fixtures_error > 0:
+            display = "WARNINGS"
+        else:
+            display = "OK"
+
         return RoundAnalysisModelSummary(
             model_key=model_key,
             label=MODEL_LABELS.get(model_key, model_key),
-            fixtures=len([r for r in fixture_results if r.get("status") == "ok"]),
+            fixtures=total_fixture_rows,
+            fixtures_ok=fixtures_ok,
+            fixtures_nd=fixtures_nd,
+            fixtures_error=fixtures_error,
             aggressive_wins=agg_w,
             aggressive_losses=agg_l,
             aggressive_hit_rate=_hit_rate(agg_w, agg_l),
@@ -174,5 +212,7 @@ class RoundAnalysisAggregator:
             bias=_mean(errors_signed),
             predictions_available=predictions_available,
             no_prediction_count=no_prediction_count,
-            display="ND" if predictions_available == 0 else "OK",
+            display=display,
+            prevalent_error_code=prevalent_error_code,
+            model_engine_name=model_engine_name,
         )

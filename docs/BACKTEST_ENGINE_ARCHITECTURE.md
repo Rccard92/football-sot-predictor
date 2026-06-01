@@ -532,6 +532,24 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 
 **Eliminazione:** dopo DELETE si può rianalizzare la stessa giornata; `_latest_completed` (409) considera solo analisi con `status == "completed"`.
 
+### Round Analysis model isolation
+
+Ogni modello nel confronto giornata usa un **adapter dedicato** registrato in `ROUND_ANALYSIS_MODEL_REGISTRY`:
+
+| Chiave | Adapter | Engine |
+|--------|---------|--------|
+| `baseline_v1_1_sot` | `SotV11RoundAnalysisAdapter` | `V11RoundAnalysisPreviewService` |
+| `baseline_v2_0_lineup_impact` | `SotV20RoundAnalysisAdapter` | `V20RoundAnalysisPreviewService` (base v1.1 + lineup impact) |
+| `baseline_v2_1_weighted_components` | `SotV21RoundAnalysisAdapter` | `SotV21PointInTimePreviewService` (PIT, macro K) |
+
+**Regole:**
+
+- Nessun fallback silenzioso da v1.1/v2.0 a v2.1.
+- Ogni blocco in `models_json` include `model_version_requested`, `model_version_used`, `model_engine_name`, `error_code` (se ND/error).
+- Se `model_version_used != model_version_requested` → `status=error`, `error_code=MODEL_VERSION_MISMATCH`.
+- Preflight storico giornata **informativo**; ogni modello decide autonomamente per fixture.
+- Log strutturato: `ROUND_ANALYSIS_MODEL_RUN` (analysis_id, fixture_id, requested, used, engine, status, error_code).
+
 ### Frontend legacy (dashboard run)
 
 Route proposta: `/backtest-dashboard` (non sostituisce `/dashboard` legacy).

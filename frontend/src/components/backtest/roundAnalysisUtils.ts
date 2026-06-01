@@ -14,6 +14,13 @@ export function dataQualityBadgeClass(badge: string | null | undefined): string 
   return 'bg-slate-100 text-slate-600'
 }
 
+export function modelDisplayBadgeClass(display: string | undefined): string {
+  if (display === 'OK') return 'bg-emerald-100 text-emerald-800'
+  if (display === 'WARNINGS') return 'bg-amber-100 text-amber-900'
+  if (display === 'ERROR') return 'bg-rose-100 text-rose-800'
+  return 'bg-slate-100 text-slate-600'
+}
+
 export function ndBadgeClass(): string {
   return 'bg-slate-100 text-slate-600'
 }
@@ -22,6 +29,24 @@ export type PickCellDisplay = {
   label: string
   sublabel?: string
   isNd: boolean
+  title?: string
+}
+
+function ndSublabel(block: RoundAnalysisModelBlock): { sublabel: string; title?: string } {
+  const code = block.error_code || block.reason
+  if (code && code !== 'INSUFFICIENT_HISTORY') {
+    return {
+      sublabel: code.length > 22 ? `${code.slice(0, 22)}…` : code,
+      title: block.error_message || block.message || code,
+    }
+  }
+  if (block.reason === 'INSUFFICIENT_HISTORY' || block.error_code === 'V11_INSUFFICIENT_PRIOR_MATCHES') {
+    return { sublabel: 'Storico insuff.', title: block.error_message || block.message || undefined }
+  }
+  return {
+    sublabel: block.error_code || block.message?.slice(0, 40) || 'N/D',
+    title: block.error_message || block.message || undefined,
+  }
 }
 
 export function pickCell(
@@ -29,14 +54,15 @@ export function pickCell(
   kind: 'aggressive' | 'cautious',
 ): PickCellDisplay {
   if (!block) {
-    return { label: 'ND', sublabel: 'Storico insuff.', isNd: true }
+    return { label: 'ND', sublabel: 'N/D', isNd: true }
+  }
+  if (block.status === 'error') {
+    const { sublabel, title } = ndSublabel(block)
+    return { label: 'ERR', sublabel, isNd: true, title }
   }
   if (block.status === 'no_prediction') {
-    const sub =
-      block.reason === 'INSUFFICIENT_HISTORY'
-        ? 'Storico insuff.'
-        : block.message?.slice(0, 40) || 'N/D'
-    return { label: 'ND', sublabel: sub, isNd: true }
+    const { sublabel, title } = ndSublabel(block)
+    return { label: 'ND', sublabel, isNd: true, title }
   }
 
   const line = kind === 'aggressive' ? block.aggressive_line : block.cautious_line
@@ -44,7 +70,8 @@ export function pickCell(
   const advice = kind === 'aggressive' ? block.aggressive_advice : block.cautious_advice
 
   if (line == null && block.predicted_total_sot == null) {
-    return { label: 'ND', sublabel: 'Storico insuff.', isNd: true }
+    const { sublabel, title } = ndSublabel(block)
+    return { label: 'ND', sublabel, isNd: true, title }
   }
   if (line == null) {
     return { label: advice || 'ND', sublabel: undefined, isNd: !advice }

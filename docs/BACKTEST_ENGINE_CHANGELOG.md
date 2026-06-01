@@ -22,6 +22,24 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-i-model-isolation
+
+**Titolo:** Isolamento modelli nel confronto Backtest
+
+**Descrizione:** Blindato il confronto v1.1/v2.0/v2.1: ogni modello usa il proprio adapter (`SotV11RoundAnalysisAdapter`, `SotV20RoundAnalysisAdapter`, `SotV21RoundAnalysisAdapter`) e salva `model_version_requested` / `model_version_used` / `model_engine_name`, evitando mix o fallback silenziosi. ND ed errori con `error_code` specifico (es. `V11_PREDICTION_INCOMPLETE` vs storico insufficiente generico). Preflight giornata solo informativo.
+
+**Highlights:**
+
+- `round_analysis_model_registry.py` + adapter dedicati; runner via registry.
+- Guard `MODEL_VERSION_MISMATCH` se `model_version_used != requested`.
+- Aggregator: display `OK` | `ND` | `ERROR` | `WARNINGS`, `prevalent_error_code`, conteggi fixture ok/nd/error.
+- UI: celle ND con codice errore; dettaglio partita con requested/used/engine; summary modelli arricchito.
+- Log `ROUND_ANALYSIS_MODEL_RUN` per fixture/modello.
+
+**File toccati:** registry, adapters, runner, preflight, aggregator, schemas, frontend backtest, test, docs.
+
+---
+
 ## backtest-step-i-round-analysis-delete-sort
 
 **Titolo:** Eliminazione analisi giornata e ordinamento lista Backtest
