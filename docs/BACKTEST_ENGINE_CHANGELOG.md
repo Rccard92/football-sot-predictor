@@ -22,6 +22,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-i-fix-v11-v20-adapters
+
+**Titolo:** Correzione adapter v1.1/v2.0 nella Round Analysis
+
+**Descrizione:** Corretto il flusso di calcolo v1.1/v2.0 nella pagina Backtest: contesto prior allineato al PIT (`competition_scoped_only`, `strict_kickoff_only`), risoluzione `season_id` tracciata, trace diagnostico per fixture, estrazione output e codici errore granulari (`V11_LEAGUE_BASELINE_EMPTY`, `V11_MISSING_TOTAL_SOT`, `V20_REQUIRES_HOME_AWAY_BASE`). Endpoint debug `GET /api/backtest/debug/round-analysis/fixture/{id}/model/{version}`.
+
+**File toccati:** `round_analysis_v11_context.py`, `v11_round_analysis_preview.py`, adapter v11/v20, `backtest_debug.py`, frontend `roundAnalysisUtils.ts`, test, docs.
+
+---
+
 ## backtest-step-i-model-isolation
 
 **Titolo:** Isolamento modelli nel confronto Backtest

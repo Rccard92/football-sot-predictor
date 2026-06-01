@@ -9,6 +9,7 @@ import {
 import { RoundAnalysisDeleteConfirm } from './RoundAnalysisDeleteConfirm'
 import {
   dataQualityBadgeClass,
+  errorCodeLabelIt,
   hitRateBadgeClass,
   modelDisplayBadgeClass,
   statusLabelIt,
@@ -236,7 +237,7 @@ export function ModelSummaryBar({
             </div>
             <p className="mt-2 text-xs text-slate-500">
               {nd && m.prevalent_error_code
-                ? `Motivo prevalente: ${m.prevalent_error_code}`
+                ? `Motivo prevalente: ${errorCodeLabelIt(m.prevalent_error_code)}`
                 : nd
                   ? 'Nessuna predizione su questa giornata'
                   : `MAE ${m.mae ?? '—'} · Bias ${m.bias ?? '—'}`}

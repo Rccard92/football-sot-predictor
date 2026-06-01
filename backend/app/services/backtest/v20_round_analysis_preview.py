@@ -108,5 +108,6 @@ class V20RoundAnalysisPreviewService:
                 **(v11.get("_meta") or {}),
                 "lineup_impact_status": impact.get("status"),
                 "sportapi_lineups_available": bool(impact.get("sportapi_lineups_available")),
+                "v11_trace_summary": (v11.get("_meta") or {}).get("trace_summary"),
             },
         }

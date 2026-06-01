@@ -17,7 +17,14 @@ from app.services.backtest.point_in_time_context_service import PointInTimeConte
 from app.services.backtest.sot_pick_evaluation_preview_service import SotPickEvaluationPreviewService
 from app.services.backtest.sot_v21_mini_run_preview_service import SotV21MiniRunPreviewService
 from app.services.backtest.sot_v21_preview_service import SotV21PointInTimePreviewService
+from app.services.backtest.round_analysis_model_registry import model_result_to_block
+from app.services.backtest.round_analysis_model_registry import get_round_analysis_adapter
+from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
 from app.services.backtest_health_service import BacktestHealthService
+from app.schemas.backtest_round_analysis import normalize_model_keys
+from app.models import Competition, Fixture
+from app.backtest.constants import BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
+from app.services.backtest.sot_pick_evaluation_logic import DEFAULT_PICK_LINES
 from app.schemas.backtest_sot_pick_evaluation import SotPickEvaluationRequest
 from app.schemas.backtest_sot_v21_mini_run import SotV21MiniRunRequest
 
@@ -238,3 +245,71 @@ def backtest_debug_historical_unavailable_audit(
         logger.exception("GET historical-unavailable-audit: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)
+
+
+@router.get("/round-analysis/fixture/{fixture_id}/model/{model_version}")
+def backtest_debug_round_analysis_fixture_model(
+    fixture_id: int,
+    model_version: str,
+    competition_id: int = Query(...),
+    season_year: int | None = Query(default=None),
+    mode: str = Query(default=BACKTEST_MODE_HISTORICAL_OFFICIAL_XI),
+    db: Session = Depends(get_db),
+):
+    """Debug singola fixture × modello Round Analysis."""
+    fx = db.get(Fixture, int(fixture_id))
+    if fx is None:
+        raise HTTPException(status_code=404, detail="fixture_not_found")
+    if fx.competition_id is None or int(fx.competition_id) != int(competition_id):
+        raise HTTPException(status_code=422, detail="fixture_competition_mismatch")
+
+    comp = db.get(Competition, int(competition_id))
+    if comp is None:
+        raise HTTPException(status_code=404, detail="competition_not_found")
+    if season_year is not None and int(comp.season) != int(season_year):
+        raise HTTPException(status_code=422, detail="season_year_mismatch")
+
+    try:
+        model_key = normalize_model_keys([model_version])[0]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    adapter = get_round_analysis_adapter(model_key)
+    try:
+        result = adapter.predict_fixture(
+            db,
+            fixture=fx,
+            competition_id=int(competition_id),
+            mode=mode,
+            lines=list(DEFAULT_PICK_LINES),
+            cautious_drop_threshold=0.75,
+            play_config=PlayAdviceConfig(),
+            data_quality={"lineup": "unknown", "mapping": "unknown"},
+            actual_total=None,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET round-analysis debug fixture/model: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)[:300]) from exc
+
+    block = model_result_to_block(result)
+    trace = result.trace_summary or block.get("trace_summary")
+    if result.explanation:
+        trace = {**(trace or {}), "explanation": result.explanation}
+
+    return jsonable_encoder(
+        {
+            "status": result.status,
+            "model_version_requested": result.model_version_requested,
+            "model_version_used": result.model_version_used,
+            "engine": result.model_engine_name,
+            "prediction": result.prediction,
+            "error_code": result.error_code,
+            "error_message": result.error_message,
+            "trace": trace,
+            "block": block,
+        },
+    )

@@ -532,6 +532,18 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 
 **Eliminazione:** dopo DELETE si può rianalizzare la stessa giornata; `_latest_completed` (409) considera solo analisi con `status == "completed"`.
 
+### Round Analysis v1.1/v2.0 adapter parity
+
+Gli adapter Round Analysis devono **mappare correttamente** l’output di `V11RoundAnalysisPreviewService` / `V20RoundAnalysisPreviewService` (non il motore v2.1):
+
+- **Contesto prior:** `build_prior_context` con `competition_scoped_only=True` e `strict_kickoff_only=True` (stesso cutoff del PIT v2.1).
+- **season_id:** risolto via `resolve_season_id_for_round_analysis` (fixture → competition → Season per year); tracciato in `trace_summary` se fallback.
+- **Baseline lega strict:** `compute_league_v11_baselines_strict` usa solo `Fixture.season_id`; se `league_baseline_eligible_fixtures=0` → `V11_LEAGUE_BASELINE_EMPTY` (diagnostica dati, non fallback v2.1).
+- **Output minimo v1.1:** `status=ok` se `predicted_total_sot` valido; split home/away opzionale con warning `V11_HOME_AWAY_SPLIT_MISSING`.
+- **v2.0:** dipende dalla base v1.1; `V20_REQUIRES_HOME_AWAY_BASE` se serve home+away per lineup impact; `V20_V11_BASE_FAILED` solo se base v1.1 assente.
+
+**Debug:** `GET /api/backtest/debug/round-analysis/fixture/{fixture_id}/model/{model_version}?competition_id=&mode=historical_official_xi`
+
 ### Round Analysis model isolation
 
 Ogni modello nel confronto giornata usa un **adapter dedicato** registrato in `ROUND_ANALYSIS_MODEL_REGISTRY`:

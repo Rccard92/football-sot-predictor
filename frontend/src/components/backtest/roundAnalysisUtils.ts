@@ -32,11 +32,41 @@ export type PickCellDisplay = {
   title?: string
 }
 
+/** Etichette leggibili per error_code Round Analysis. */
+export const ERROR_CODE_LABELS_IT: Record<string, string> = {
+  V11_PREDICTION_INCOMPLETE: 'Output v1.1 incompleto',
+  V11_MISSING_TOTAL_SOT: 'Predizione totale mancante',
+  V11_PRIOR_CONTEXT_EMPTY: 'Storico non recuperato',
+  V11_INSUFFICIENT_PRIOR_MATCHES: 'Prior insufficienti v1.1',
+  V11_LEAGUE_BASELINE_EMPTY: 'Baseline lega vuota',
+  V11_MISSING_TEAM_STATS: 'Team stats mancanti',
+  V11_ENGINE_ERROR: 'Errore motore v1.1',
+  V20_V11_BASE_FAILED: 'Base v1.1 non disponibile',
+  V20_REQUIRES_HOME_AWAY_BASE: 'Richiesti home/away base v1.1',
+  V20_LINEUP_DATA_MISSING: 'Lineup mancante v2.0',
+  V20_PLAYER_LAYER_MISSING: 'Player layer mancante',
+  V20_INSUFFICIENT_PRIOR_MATCHES: 'Prior insufficienti v2.0',
+  V20_PREDICTION_INCOMPLETE: 'Output v2.0 incompleto',
+  V20_ENGINE_ERROR: 'Errore motore v2.0',
+  V21_INSUFFICIENT_PRIOR_MATCHES: 'Prior insufficienti v2.1',
+  V21_PREDICTION_INCOMPLETE: 'Preview v2.1 incompleta',
+  V21_ENGINE_ERROR: 'Errore motore v2.1',
+  MODEL_VERSION_MISMATCH: 'Versione modello non corrispondente',
+  MODEL_ERROR: 'Errore generico modello',
+  INSUFFICIENT_HISTORY: 'Storico insufficiente',
+}
+
+export function errorCodeLabelIt(code: string | null | undefined): string {
+  if (!code) return 'N/D'
+  return ERROR_CODE_LABELS_IT[code] ?? code
+}
+
 function ndSublabel(block: RoundAnalysisModelBlock): { sublabel: string; title?: string } {
   const code = block.error_code || block.reason
   if (code && code !== 'INSUFFICIENT_HISTORY') {
+    const label = errorCodeLabelIt(code)
     return {
-      sublabel: code.length > 22 ? `${code.slice(0, 22)}…` : code,
+      sublabel: label.length > 24 ? `${label.slice(0, 24)}…` : label,
       title: block.error_message || block.message || code,
     }
   }

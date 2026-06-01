@@ -12,12 +12,14 @@ from app.schemas.backtest_round_analysis import MODEL_LABELS
 from app.services.backtest.round_analysis_model_picks import apply_v11_style_picks
 from app.services.backtest.round_analysis_model_registry import RoundAnalysisModelResult
 from app.services.backtest.round_analysis_preflight import REASON_INSUFFICIENT_HISTORY
+from app.services.backtest.round_analysis_v11_context import extract_v11_predictions
 from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
 from app.services.backtest.v20_round_analysis_preview import V20RoundAnalysisPreviewService
 
 ENGINE_NAME = "V20RoundAnalysisPreviewService"
 
 ERR_V11_BASE_FAILED = "V20_V11_BASE_FAILED"
+ERR_REQUIRES_HOME_AWAY_BASE = "V20_REQUIRES_HOME_AWAY_BASE"
 ERR_LINEUP_MISSING = "V20_LINEUP_DATA_MISSING"
 ERR_PLAYER_LAYER = "V20_PLAYER_LAYER_MISSING"
 ERR_INSUFFICIENT_PRIOR = "V20_INSUFFICIENT_PRIOR_MATCHES"
@@ -70,15 +72,20 @@ class SotV20RoundAnalysisAdapter:
         away_prior = int(meta.get("away_prior_count") or 0)
         min_prior = min(home_prior, away_prior)
         warnings = list(raw.get("warnings") or [])
-        predicted = raw.get("predicted_total_sot")
+        home_pred, away_pred, predicted = extract_v11_predictions(raw)
         dq = dict(raw.get("data_quality") or data_quality)
 
+        v11_trace = dict(meta.get("v11_trace_summary") or meta.get("trace_summary") or {})
         trace: dict[str, Any] = {
             "v11_base_used": True,
             "home_prior_count": home_prior,
             "away_prior_count": away_prior,
+            "base_predicted_total": predicted,
+            "base_home": home_pred,
+            "base_away": away_pred,
             "lineup_impact_status": meta.get("lineup_impact_status"),
             "sportapi_lineups_available": meta.get("sportapi_lineups_available"),
+            "v11_trace": v11_trace,
         }
 
         if min_prior == 0:
@@ -92,6 +99,22 @@ class SotV20RoundAnalysisAdapter:
                     f"Prior matches insufficienti per v2.0 (casa {home_prior}, trasferta {away_prior})."
                 ),
                 reason=REASON_INSUFFICIENT_HISTORY,
+                data_quality=dq,
+                trace_summary=trace,
+                label=self.label,
+            )
+
+        base_home = raw.get("predicted_home_sot")
+        base_away = raw.get("predicted_away_sot")
+        if predicted is not None and (base_home is None or base_away is None):
+            return RoundAnalysisModelResult(
+                model_version_requested=requested,
+                model_version_used=requested,
+                model_engine_name=self.model_engine_name,
+                status="no_prediction",
+                error_code=ERR_REQUIRES_HOME_AWAY_BASE,
+                error_message="v2.0 richiede base v1.1 con home e away; disponibile solo il totale.",
+                reason=ERR_REQUIRES_HOME_AWAY_BASE,
                 data_quality=dq,
                 trace_summary=trace,
                 label=self.label,

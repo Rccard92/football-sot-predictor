@@ -9,6 +9,13 @@ from sqlalchemy.orm import Session
 from app.core.constants import BASELINE_SOT_MODEL_VERSION_V11_SOT
 from app.models import Fixture, Team
 from app.schemas.backtest_round_analysis import MODEL_LABELS
+from app.services.backtest.round_analysis_v11_context import (
+    WARN_HOME_AWAY_SPLIT_MISSING,
+    build_v11_fixture_trace,
+    count_league_baseline_eligible_fixtures,
+    extract_v11_predictions,
+    resolve_season_id_for_round_analysis,
+)
 from app.services.predictions_v10.v10_prior_context import build_prior_context
 from app.services.predictions_v11.offensive_production_strict import compute_v11_side
 from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER
@@ -34,20 +41,41 @@ class V11RoundAnalysisPreviewService:
         away = db.get(Team, int(fixture.away_team_id))
         warnings: list[str] = []
 
+        season_id_used, season_resolution = resolve_season_id_for_round_analysis(
+            db,
+            fixture,
+            competition_id,
+        )
+
+        ctx_kwargs = {
+            "competition_id": competition_id,
+            "competition_scoped_only": True,
+            "strict_kickoff_only": True,
+        }
+
         home_ctx = build_prior_context(
             db,
             fixture,
             team_id=int(fixture.home_team_id),
             opponent_id=int(fixture.away_team_id),
-            competition_id=competition_id,
+            **ctx_kwargs,
         )
         away_ctx = build_prior_context(
             db,
             fixture,
             team_id=int(fixture.away_team_id),
             opponent_id=int(fixture.home_team_id),
-            competition_id=competition_id,
+            **ctx_kwargs,
         )
+
+        league_baseline_eligible = 0
+        if fixture.kickoff_at is not None:
+            league_baseline_eligible = count_league_baseline_eligible_fixtures(
+                db,
+                season_id=int(home_ctx.season_id),
+                cutoff_kickoff=fixture.kickoff_at,
+                cutoff_fixture_id=int(fixture.id),
+            )
 
         home_res = compute_v11_side(db, home_ctx, home_ctx.team_prior_fixtures)
         away_res = compute_v11_side(db, away_ctx, away_ctx.team_prior_fixtures)
@@ -62,6 +90,21 @@ class V11RoundAnalysisPreviewService:
         total_pred = None
         if home_pred is not None and away_pred is not None:
             total_pred = _round4(home_pred + away_pred)
+
+        if total_pred is None:
+            eh, ea, et = extract_v11_predictions(
+                {
+                    "predicted_home_sot": home_pred,
+                    "predicted_away_sot": away_pred,
+                    "predicted_total_sot": total_pred,
+                },
+            )
+            home_pred = home_pred if home_pred is not None else eh
+            away_pred = away_pred if away_pred is not None else ea
+            total_pred = et
+
+        if total_pred is not None and (home_pred is None or away_pred is None):
+            warnings.append(WARN_HOME_AWAY_SPLIT_MISSING)
 
         fq = str(home_res.formula_quality_status or away_res.formula_quality_status or "")
         if fq and fq != "ok":
@@ -90,6 +133,23 @@ class V11RoundAnalysisPreviewService:
             if isinstance(pl, dict) and str(pl.get("status") or "") in ("neutral", "fallback"):
                 player_neutral = True
 
+        trace_summary = build_v11_fixture_trace(
+            fixture=fixture,
+            competition_id=competition_id,
+            season_id_used=season_id_used,
+            season_resolution=season_resolution,
+            home_prior_count=int(home_ctx.team_prior_count),
+            away_prior_count=int(away_ctx.team_prior_count),
+            league_baseline_eligible=league_baseline_eligible,
+            home_res=home_res,
+            away_res=away_res,
+            home_pred=home_pred,
+            away_pred=away_pred,
+            total_pred=total_pred,
+            competition_scoped_only=True,
+            strict_kickoff_only=True,
+        )
+
         return {
             "model_key": BASELINE_SOT_MODEL_VERSION_V11_SOT,
             "label": MODEL_LABELS[BASELINE_SOT_MODEL_VERSION_V11_SOT],
@@ -97,12 +157,18 @@ class V11RoundAnalysisPreviewService:
             "predicted_away_sot": away_pred,
             "predicted_total_sot": total_pred,
             "sample_bucket": sample_bucket,
-            "warnings": warnings,
+            "warnings": list(dict.fromkeys(warnings)),
             "data_quality": dict(data_quality),
             "_meta": {
                 "home_prior_count": home_ctx.team_prior_count,
                 "away_prior_count": away_ctx.team_prior_count,
                 "player_layer_neutral": player_neutral,
                 "formula_quality_status": fq,
+                "season_id_used": season_id_used,
+                "season_resolution": season_resolution,
+                "league_baseline_eligible_fixtures": league_baseline_eligible,
+                "trace_summary": trace_summary,
+                "home_side": trace_summary.get("home_side"),
+                "away_side": trace_summary.get("away_side"),
             },
         }

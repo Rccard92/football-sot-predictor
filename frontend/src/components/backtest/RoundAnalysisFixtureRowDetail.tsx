@@ -1,5 +1,5 @@
 import type { RoundAnalysisFixtureRow } from '../../lib/api'
-import { MODEL_KEYS } from './roundAnalysisUtils'
+import { errorCodeLabelIt, MODEL_KEYS } from './roundAnalysisUtils'
 
 type Props = {
   fixture: RoundAnalysisFixtureRow
@@ -24,7 +24,9 @@ export function RoundAnalysisFixtureRowDetail({ fixture }: Props) {
           </p>
           <p className="text-[10px] text-slate-500">
             Status: {block.model_status ?? block.status ?? '—'}
-            {block.error_code ? ` · Codice: ${block.error_code}` : ''}
+            {block.error_code
+              ? ` · ${errorCodeLabelIt(block.error_code)} (${block.error_code})`
+              : ''}
           </p>
           {block.status === 'error' ? (
             <p className="text-rose-700">{block.error_message ?? block.message ?? 'Errore tecnico'}</p>
@@ -50,6 +52,23 @@ export function RoundAnalysisFixtureRowDetail({ fixture }: Props) {
                 {block.cautious_reason ?? ''}
               </p>
             </>
+          ) : null}
+          {block.trace_summary &&
+          typeof block.trace_summary === 'object' &&
+          'missing_fields' in block.trace_summary ? (
+            <p className="text-[10px] text-slate-500">
+              Campi mancanti:{' '}
+              {Array.isArray((block.trace_summary as { missing_fields?: string[] }).missing_fields)
+                ? (block.trace_summary as { missing_fields: string[] }).missing_fields.join(', ')
+                : '—'}
+              {' · '}
+              Prior:{' '}
+              {(block.trace_summary as { prior_context?: { home_prior_matches?: number } }).prior_context
+                ?.home_prior_matches ?? '—'}
+              /
+              {(block.trace_summary as { prior_context?: { away_prior_matches?: number } }).prior_context
+                ?.away_prior_matches ?? '—'}
+            </p>
           ) : null}
           {block.trace_summary ? (
             <details className="mt-1">

@@ -27,7 +27,13 @@ def test_v11_incomplete_prediction_error_code(mock_preview_cls):
         "sample_bucket": "medium_sample",
         "warnings": ["away_prediction_incomplete"],
         "data_quality": {},
-        "_meta": {"home_prior_count": 9, "away_prior_count": 9, "player_layer_neutral": False},
+        "_meta": {
+            "home_prior_count": 9,
+            "away_prior_count": 9,
+            "player_layer_neutral": False,
+            "league_baseline_eligible_fixtures": 20,
+            "trace_summary": {},
+        },
     }
     adapter = SotV11RoundAnalysisAdapter()
     result = adapter.predict_fixture(
@@ -44,6 +50,42 @@ def test_v11_incomplete_prediction_error_code(mock_preview_cls):
     assert result.status == "no_prediction"
     assert result.error_code == ERR_PREDICTION_INCOMPLETE
     assert result.error_code != "INSUFFICIENT_HISTORY"
+
+
+@patch("app.services.backtest.adapters.sot_v11_round_analysis_adapter.V11RoundAnalysisPreviewService")
+def test_v11_ok_when_total_present_despite_incomplete_warning(mock_preview_cls):
+    mock_preview_cls.return_value.build_fixture_model.return_value = {
+        "predicted_home_sot": 4.0,
+        "predicted_away_sot": None,
+        "predicted_total_sot": 9.5,
+        "sample_bucket": "medium_sample",
+        "warnings": ["away_prediction_incomplete", "V11_HOME_AWAY_SPLIT_MISSING"],
+        "data_quality": {},
+        "_meta": {
+            "home_prior_count": 9,
+            "away_prior_count": 9,
+            "player_layer_neutral": False,
+            "trace_summary": {"fixture_id": 1},
+        },
+    }
+    adapter = SotV11RoundAnalysisAdapter()
+    with patch(
+        "app.services.backtest.adapters.sot_v11_round_analysis_adapter.apply_v11_style_picks",
+        return_value=({"predicted_total_sot": 9.5, "warnings": []}, {"aggressive_line": 8.5}),
+    ):
+        result = adapter.predict_fixture(
+            MagicMock(),
+            fixture=MagicMock(id=1),
+            competition_id=1,
+            mode="historical_official_xi",
+            lines=[8.5],
+            cautious_drop_threshold=0.75,
+            play_config=PlayAdviceConfig(),
+            data_quality={},
+            actual_total=10,
+        )
+    assert result.status == "ok"
+    assert result.prediction is not None
 
 
 @patch("app.services.backtest.adapters.sot_v11_round_analysis_adapter.V11RoundAnalysisPreviewService")
@@ -66,7 +108,9 @@ def test_v11_zero_prior_error_code(mock_preview_cls):
         data_quality={},
         actual_total=None,
     )
-    assert result.error_code == ERR_INSUFFICIENT_PRIOR
+    from app.services.backtest.adapters.sot_v11_round_analysis_adapter import ERR_PRIOR_CONTEXT_EMPTY
+
+    assert result.error_code == ERR_PRIOR_CONTEXT_EMPTY
 
 
 def test_model_version_mismatch_block():
