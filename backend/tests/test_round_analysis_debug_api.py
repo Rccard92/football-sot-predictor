@@ -45,7 +45,17 @@ def test_debug_round_analysis_fixture_model(mock_get_adapter):
         model_engine_name="V11RoundAnalysisPreviewService",
         status="ok",
         prediction={"predicted_total_sot": 10.0},
-        trace_summary={"fixture_id": 92},
+        picks={
+            "aggressive_line": 8.5,
+            "aggressive_advice": "play",
+            "cautious_line": 9.5,
+            "cautious_advice": "skip",
+        },
+        trace_summary={
+            "fixture_id": 92,
+            "formula_inputs": {"context_mode": "production_v11"},
+            "formula_outputs": {"home": {"expected_sot": 5.0}},
+        },
     )
     mock_get_adapter.return_value = adapter
 
@@ -62,3 +72,7 @@ def test_debug_round_analysis_fixture_model(mock_get_adapter):
     assert body["status"] == "ok"
     assert body["engine"] == "V11RoundAnalysisPreviewService"
     assert body["trace"]["fixture_id"] == 92
+    assert body["trace"]["formula_inputs"]["context_mode"] == "production_v11"
+    assert body["trace"]["formula_outputs"]["home"]["expected_sot"] == 5.0
+    assert body["aggressive"]["line"] == 8.5
+    assert body["cautious"]["line"] == 9.5

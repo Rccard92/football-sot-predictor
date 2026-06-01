@@ -1,4 +1,4 @@
-"""Preview v1.1 in-memory per fixture finished (Step I) — nessuna scrittura DB."""
+"""Preview v1.1 in-memory per fixture finished (Step I) — motore produzione compute_v11_side."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ from app.services.backtest.round_analysis_v11_context import (
     build_v11_fixture_trace,
     count_league_baseline_eligible_fixtures,
     extract_v11_predictions,
+    infer_v11_failure_code,
     resolve_season_id_for_round_analysis,
 )
-from app.services.predictions_v10.v10_prior_context import build_prior_context
-from app.services.predictions_v11.offensive_production_strict import compute_v11_side
+from app.services.backtest.v11_round_analysis_engine import predict_v11_side_for_team
 from app.services.predictions_v11.player_layer_feature_sources import COMPONENT_KEY_PLAYER
 from app.services.predictions_v11.player_layer_lineup_helpers import fixture_both_lineups_available
 
@@ -47,25 +47,19 @@ class V11RoundAnalysisPreviewService:
             competition_id,
         )
 
-        ctx_kwargs = {
-            "competition_id": competition_id,
-            "competition_scoped_only": True,
-            "strict_kickoff_only": True,
-        }
-
-        home_ctx = build_prior_context(
+        home_res, home_ctx = predict_v11_side_for_team(
             db,
             fixture,
             team_id=int(fixture.home_team_id),
             opponent_id=int(fixture.away_team_id),
-            **ctx_kwargs,
+            competition_id=competition_id,
         )
-        away_ctx = build_prior_context(
+        away_res, away_ctx = predict_v11_side_for_team(
             db,
             fixture,
             team_id=int(fixture.away_team_id),
             opponent_id=int(fixture.home_team_id),
-            **ctx_kwargs,
+            competition_id=competition_id,
         )
 
         league_baseline_eligible = 0
@@ -76,9 +70,6 @@ class V11RoundAnalysisPreviewService:
                 cutoff_kickoff=fixture.kickoff_at,
                 cutoff_fixture_id=int(fixture.id),
             )
-
-        home_res = compute_v11_side(db, home_ctx, home_ctx.team_prior_fixtures)
-        away_res = compute_v11_side(db, away_ctx, away_ctx.team_prior_fixtures)
 
         if not home_res.valid or home_res.expected_sot is None:
             warnings.append("home_prediction_incomplete")
@@ -133,10 +124,17 @@ class V11RoundAnalysisPreviewService:
             if isinstance(pl, dict) and str(pl.get("status") or "") in ("neutral", "fallback"):
                 player_neutral = True
 
+        inferred_error = infer_v11_failure_code(
+            home_res,
+            away_res,
+            total_pred,
+            league_baseline_eligible=league_baseline_eligible,
+        )
+
         trace_summary = build_v11_fixture_trace(
             fixture=fixture,
             competition_id=competition_id,
-            season_id_used=season_id_used,
+            season_id_used=int(home_ctx.season_id),
             season_resolution=season_resolution,
             home_prior_count=int(home_ctx.team_prior_count),
             away_prior_count=int(away_ctx.team_prior_count),
@@ -146,8 +144,8 @@ class V11RoundAnalysisPreviewService:
             home_pred=home_pred,
             away_pred=away_pred,
             total_pred=total_pred,
-            competition_scoped_only=True,
-            strict_kickoff_only=True,
+            context_mode="production_v11",
+            inferred_error_code=inferred_error,
         )
 
         return {
@@ -164,9 +162,10 @@ class V11RoundAnalysisPreviewService:
                 "away_prior_count": away_ctx.team_prior_count,
                 "player_layer_neutral": player_neutral,
                 "formula_quality_status": fq,
-                "season_id_used": season_id_used,
+                "season_id_used": int(home_ctx.season_id),
                 "season_resolution": season_resolution,
                 "league_baseline_eligible_fixtures": league_baseline_eligible,
+                "inferred_error_code": inferred_error,
                 "trace_summary": trace_summary,
                 "home_side": trace_summary.get("home_side"),
                 "away_side": trace_summary.get("away_side"),

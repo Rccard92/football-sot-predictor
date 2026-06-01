@@ -22,6 +22,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-i-fix-v11-real-engine
+
+**Titolo:** Collegamento motore v1.1 reale alla Round Analysis
+
+**Descrizione:** Round Analysis v1.1 usa ora `v11_round_analysis_engine` (stesso percorso di `SotPredictionV11BaselineSotService`: `build_prior_context` produzione + `compute_v11_side`), rimuovendo i flag PIT che causavano fallimenti su entrambi i lati nonostante prior e baseline lega presenti. Trace esteso (`formula_inputs`/`formula_outputs`, `infer_v11_failure_code`, log con `failed_components`), adapter con codici errore granulari, debug API con aggressive/cautious, UI «Debug modello» in dettaglio partita.
+
+**File toccati:** `v11_round_analysis_engine.py`, `v11_round_analysis_preview.py`, `round_analysis_v11_context.py`, adapter v11, `backtest_debug.py`, `RoundAnalysisFixtureRowDetail.tsx`, test, docs.
+
+---
+
 ## backtest-step-i-fix-v11-v20-adapters
 
 **Titolo:** Correzione adapter v1.1/v2.0 nella Round Analysis

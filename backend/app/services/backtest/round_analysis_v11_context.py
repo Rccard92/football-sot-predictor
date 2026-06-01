@@ -92,6 +92,62 @@ def count_league_baseline_eligible_fixtures(
     )
 
 
+_FQ_TO_ERROR: dict[str, str] = {
+    "missing_required_xg_league_baseline": "V11_MISSING_XG_LEAGUE_BASELINE",
+    "missing_required_player_league_baseline": "V11_MISSING_PLAYER_LEAGUE_BASELINE",
+    "missing_required_league_split_baseline": "V11_MISSING_LEAGUE_SPLIT_BASELINE",
+    "missing_required_recent_league_baseline": "V11_MISSING_RECENT_LEAGUE_BASELINE",
+    "insufficient_player_profile_sample": "V11_INSUFFICIENT_PLAYER_PROFILE",
+    "insufficient_sample": "V11_INSUFFICIENT_SAMPLE",
+    "insufficient_split_sample": "V11_INSUFFICIENT_SPLIT_SAMPLE",
+    "insufficient_recent_sample": "V11_INSUFFICIENT_RECENT_SAMPLE",
+    "insufficient_xg_sample": "V11_INSUFFICIENT_XG_SAMPLE",
+    "missing_required_data": "V11_MISSING_TEAM_STATS",
+}
+
+
+def _failed_components(res: V11SideResult) -> list[str]:
+    comps = (res.raw_json or {}).get("components") if isinstance(res.raw_json, dict) else {}
+    failed: list[str] = []
+    if isinstance(comps, dict):
+        for key, val in comps.items():
+            if isinstance(val, dict) and str(val.get("status") or "") not in ("available", "ok", ""):
+                failed.append(f"{key}:{val.get('status')}")
+    return failed
+
+
+def _side_formula_output(res: V11SideResult) -> dict[str, Any]:
+    return {
+        "valid": bool(res.valid),
+        "expected_sot": res.expected_sot,
+        "formula_quality_status": res.formula_quality_status,
+        "failed_components": _failed_components(res),
+    }
+
+
+def infer_v11_failure_code(
+    home_res: V11SideResult,
+    away_res: V11SideResult,
+    total_pred: float | None,
+    *,
+    league_baseline_eligible: int,
+) -> str | None:
+    if total_pred is not None:
+        return None
+    if league_baseline_eligible == 0:
+        return "V11_LEAGUE_BASELINE_EMPTY"
+    for res in (home_res, away_res):
+        fq = str(res.formula_quality_status or "")
+        if fq in _FQ_TO_ERROR:
+            return _FQ_TO_ERROR[fq]
+    if not home_res.valid and not away_res.valid:
+        home_fq = str(home_res.formula_quality_status or "")
+        away_fq = str(away_res.formula_quality_status or "")
+        if home_fq == away_fq and home_fq in _FQ_TO_ERROR:
+            return _FQ_TO_ERROR[home_fq]
+    return "V11_PREDICTION_INCOMPLETE"
+
+
 def _side_trace_summary(side: str, res: V11SideResult) -> dict[str, Any]:
     comps = (res.raw_json or {}).get("components") if isinstance(res.raw_json, dict) else {}
     component_status: dict[str, str] = {}
@@ -123,8 +179,8 @@ def build_v11_fixture_trace(
     home_pred: float | None,
     away_pred: float | None,
     total_pred: float | None,
-    competition_scoped_only: bool,
-    strict_kickoff_only: bool,
+    context_mode: str = "production_v11",
+    inferred_error_code: str | None = None,
 ) -> dict[str, Any]:
     missing_fields: list[str] = []
     if home_pred is None:
@@ -148,15 +204,26 @@ def build_v11_fixture_trace(
         "home_team_id": int(fixture.home_team_id),
         "away_team_id": int(fixture.away_team_id),
         "cutoff_time": fixture.kickoff_at.isoformat() if fixture.kickoff_at else None,
+        "formula_inputs": {
+            "context_mode": context_mode,
+            "prior_home": home_prior_count,
+            "prior_away": away_prior_count,
+            "league_baseline_eligible_fixtures": league_baseline_eligible,
+            "season_id_used": int(season_id_used),
+        },
+        "formula_outputs": {
+            "home": _side_formula_output(home_res),
+            "away": _side_formula_output(away_res),
+        },
         "prior_context": {
             "home_prior_matches": home_prior_count,
             "away_prior_matches": away_prior_count,
             "league_baseline_eligible_fixtures": league_baseline_eligible,
-            "competition_scoped_only": competition_scoped_only,
-            "strict_kickoff_only": strict_kickoff_only,
+            "context_mode": context_mode,
         },
         "home_side": _side_trace_summary("home", home_res),
         "away_side": _side_trace_summary("away", away_res),
+        "inferred_error_code": inferred_error_code,
         "extracted_fields": {
             "home_predicted_sot": home_pred,
             "away_predicted_sot": away_pred,
@@ -164,15 +231,26 @@ def build_v11_fixture_trace(
         },
         "missing_fields": missing_fields,
     }
+    home_fq = trace["formula_outputs"]["home"].get("formula_quality_status")
+    away_fq = trace["formula_outputs"]["away"].get("formula_quality_status")
+    failed = (
+        trace["formula_outputs"]["home"].get("failed_components", [])
+        + trace["formula_outputs"]["away"].get("failed_components", [])
+    )
     logger.info(
         "V11_ROUND_ANALYSIS_TRACE fixture_id=%s season_id=%s home_prior=%s away_prior=%s "
-        "league_baseline_eligible=%s total_pred=%s missing=%s",
+        "league_baseline_eligible=%s formula_quality_home=%s formula_quality_away=%s "
+        "total_pred=%s error_code=%s failed_components=%s missing=%s",
         trace["fixture_id"],
         trace["season_id_used"],
         home_prior_count,
         away_prior_count,
         league_baseline_eligible,
+        home_fq,
+        away_fq,
         total_pred,
+        inferred_error_code or "-",
+        ",".join(failed) if failed else "-",
         ",".join(missing_fields) if missing_fields else "-",
     )
     return trace

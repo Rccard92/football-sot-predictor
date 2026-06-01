@@ -12,11 +12,26 @@ from app.schemas.backtest_round_analysis import MODEL_LABELS
 from app.services.backtest.round_analysis_model_picks import apply_v11_style_picks
 from app.services.backtest.round_analysis_model_registry import RoundAnalysisModelResult
 from app.services.backtest.round_analysis_preflight import REASON_INSUFFICIENT_HISTORY
-from app.services.backtest.round_analysis_v11_context import extract_v11_predictions
+from app.services.backtest.round_analysis_v11_context import (
+    extract_v11_predictions,
+    infer_v11_failure_code,
+)
 from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
 from app.services.backtest.v11_round_analysis_preview import V11RoundAnalysisPreviewService
 
 ENGINE_NAME = "V11RoundAnalysisPreviewService"
+
+
+def _trace_side_to_result(side: dict[str, Any]) -> Any:
+    """Costruisce un oggetto minimo per infer_v11_failure_code da trace."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        valid=bool(side.get("valid")),
+        expected_sot=side.get("expected_sot"),
+        formula_quality_status=side.get("formula_quality_status"),
+        raw_json={"components": {}},
+    )
 
 ERR_PRIOR_CONTEXT_EMPTY = "V11_PRIOR_CONTEXT_EMPTY"
 ERR_INSUFFICIENT_PRIOR = "V11_INSUFFICIENT_PRIOR_MATCHES"
@@ -148,16 +163,32 @@ class SotV11RoundAnalysisAdapter:
                 label=self.label,
             )
 
+        inferred = meta.get("inferred_error_code") or trace.get("inferred_error_code")
+        if inferred is None:
+            home_side = trace.get("formula_outputs", {}).get("home") or trace.get("home_side") or {}
+            away_side = trace.get("formula_outputs", {}).get("away") or trace.get("away_side") or {}
+            inferred = infer_v11_failure_code(
+                _trace_side_to_result(home_side),
+                _trace_side_to_result(away_side),
+                None,
+                league_baseline_eligible=league_eligible,
+            )
+
         if str(dq.get("team_stats") or "").lower() in ("missing", "partial"):
             code = ERR_MISSING_TEAM_STATS
             msg = "Team stats mancanti per il calcolo v1.1."
-        elif "home_prediction_incomplete" in warnings or "away_prediction_incomplete" in warnings:
-            code = ERR_PREDICTION_INCOMPLETE
+        elif inferred:
+            code = str(inferred)
             hs = trace.get("home_side") or {}
             aws = trace.get("away_side") or {}
+            fo = trace.get("formula_outputs") or {}
+            failed = (fo.get("home") or {}).get("failed_components", []) + (
+                fo.get("away") or {}
+            ).get("failed_components", [])
             msg = (
-                "Output v1.1 incompleto: "
-                f"home={hs.get('formula_quality_status')}, away={aws.get('formula_quality_status')}."
+                f"v1.1 non calcolabile ({code}): "
+                f"home={hs.get('formula_quality_status')}, away={aws.get('formula_quality_status')}"
+                + (f"; componenti={','.join(failed)}" if failed else ".")
             )
         else:
             code = ERR_MISSING_TOTAL_SOT

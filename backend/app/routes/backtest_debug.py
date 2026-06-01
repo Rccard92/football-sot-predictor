@@ -296,9 +296,9 @@ def backtest_debug_round_analysis_fixture_model(
         raise HTTPException(status_code=500, detail=str(exc)[:300]) from exc
 
     block = model_result_to_block(result)
-    trace = result.trace_summary or block.get("trace_summary")
+    trace = dict(result.trace_summary or block.get("trace_summary") or {})
     if result.explanation:
-        trace = {**(trace or {}), "explanation": result.explanation}
+        trace["explanation"] = result.explanation
 
     return jsonable_encoder(
         {
@@ -309,7 +309,21 @@ def backtest_debug_round_analysis_fixture_model(
             "prediction": result.prediction,
             "error_code": result.error_code,
             "error_message": result.error_message,
-            "trace": trace,
+            "aggressive": {
+                "line": block.get("aggressive_line"),
+                "advice": block.get("aggressive_advice"),
+                "reason": block.get("aggressive_reason"),
+            },
+            "cautious": {
+                "line": block.get("cautious_line"),
+                "advice": block.get("cautious_advice"),
+                "reason": block.get("cautious_reason"),
+            },
+            "trace": {
+                **trace,
+                "formula_inputs": trace.get("formula_inputs"),
+                "formula_outputs": trace.get("formula_outputs"),
+            },
             "block": block,
         },
     )

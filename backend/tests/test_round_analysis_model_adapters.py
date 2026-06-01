@@ -32,7 +32,12 @@ def test_v11_incomplete_prediction_error_code(mock_preview_cls):
             "away_prior_count": 9,
             "player_layer_neutral": False,
             "league_baseline_eligible_fixtures": 20,
-            "trace_summary": {},
+            "inferred_error_code": "V11_MISSING_PLAYER_LEAGUE_BASELINE",
+            "trace_summary": {
+                "inferred_error_code": "V11_MISSING_PLAYER_LEAGUE_BASELINE",
+                "home_side": {"formula_quality_status": "missing_required_player_league_baseline"},
+                "away_side": {"formula_quality_status": "missing_required_player_league_baseline"},
+            },
         },
     }
     adapter = SotV11RoundAnalysisAdapter()
@@ -48,7 +53,7 @@ def test_v11_incomplete_prediction_error_code(mock_preview_cls):
         actual_total=10,
     )
     assert result.status == "no_prediction"
-    assert result.error_code == ERR_PREDICTION_INCOMPLETE
+    assert result.error_code == "V11_MISSING_PLAYER_LEAGUE_BASELINE"
     assert result.error_code != "INSUFFICIENT_HISTORY"
 
 

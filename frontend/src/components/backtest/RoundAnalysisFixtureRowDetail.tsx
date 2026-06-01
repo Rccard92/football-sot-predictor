@@ -70,14 +70,44 @@ export function RoundAnalysisFixtureRowDetail({ fixture }: Props) {
                 ?.away_prior_matches ?? '—'}
             </p>
           ) : null}
-          {block.trace_summary ? (
-            <details className="mt-1">
-              <summary className="cursor-pointer text-slate-600">Trace modello</summary>
-              <pre className="mt-1 max-h-32 overflow-auto rounded bg-slate-100 p-2 text-[10px]">
-                {JSON.stringify(block.trace_summary, null, 2)}
-              </pre>
-            </details>
-          ) : null}
+          <details className="mt-2">
+            <summary className="cursor-pointer font-medium text-slate-700">Debug modello</summary>
+            <pre className="mt-1 max-h-40 overflow-auto rounded bg-slate-100 p-2 text-[10px]">
+              {JSON.stringify(
+                {
+                  model_version_requested: block.model_version_requested ?? key,
+                  model_version_used: block.model_version_used,
+                  model_engine_name: block.model_engine_name,
+                  status: block.model_status ?? block.status,
+                  error_code: block.error_code,
+                  error_message: block.error_message ?? block.message,
+                  trace_summary: block.trace_summary
+                    ? {
+                        formula_inputs: (
+                          block.trace_summary as { formula_inputs?: unknown }
+                        ).formula_inputs,
+                        formula_outputs: (
+                          block.trace_summary as { formula_outputs?: unknown }
+                        ).formula_outputs,
+                        missing_fields: (
+                          block.trace_summary as { missing_fields?: unknown }
+                        ).missing_fields,
+                        prior_context: (
+                          block.trace_summary as { prior_context?: unknown }
+                        ).prior_context,
+                        home_side: (block.trace_summary as { home_side?: unknown }).home_side,
+                        away_side: (block.trace_summary as { away_side?: unknown }).away_side,
+                        inferred_error_code: (
+                          block.trace_summary as { inferred_error_code?: unknown }
+                        ).inferred_error_code,
+                      }
+                    : undefined,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
         </div>
       ))}
       {expl ? (

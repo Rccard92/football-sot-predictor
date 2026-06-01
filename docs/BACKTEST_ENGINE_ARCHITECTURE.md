@@ -532,17 +532,21 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 
 **Eliminazione:** dopo DELETE si può rianalizzare la stessa giornata; `_latest_completed` (409) considera solo analisi con `status == "completed"`.
 
-### Round Analysis v1.1/v2.0 adapter parity
+### Round Analysis v1.1 adapter (motore produzione)
 
-Gli adapter Round Analysis devono **mappare correttamente** l’output di `V11RoundAnalysisPreviewService` / `V20RoundAnalysisPreviewService` (non il motore v2.1):
+Il prior context **non** equivale alla predizione v1.1: l’engine Round Analysis è `compute_v11_side` invocato tramite `v11_round_analysis_engine.predict_v11_side_for_team`, con lo stesso `build_prior_context` di `SotPredictionV11BaselineSotService` (**senza** `competition_scoped_only` / `strict_kickoff_only`; quei flag restano solo sul PIT v2.1).
 
-- **Contesto prior:** `build_prior_context` con `competition_scoped_only=True` e `strict_kickoff_only=True` (stesso cutoff del PIT v2.1).
-- **season_id:** risolto via `resolve_season_id_for_round_analysis` (fixture → competition → Season per year); tracciato in `trace_summary` se fallback.
-- **Baseline lega strict:** `compute_league_v11_baselines_strict` usa solo `Fixture.season_id`; se `league_baseline_eligible_fixtures=0` → `V11_LEAGUE_BASELINE_EMPTY` (diagnostica dati, non fallback v2.1).
+- **Nessun fallback** da `TeamSotPrediction` né da v2.1: solo calcolo live.
+- **season_id:** `resolve_season_id_for_round_analysis` solo per trace e conteggio baseline lega; il contesto reale usa `home_ctx.season_id` dopo `build_prior_context`.
+- **Trace:** `formula_inputs` (`context_mode: production_v11`, prior, baseline eligible), `formula_outputs` (per lato: `expected_sot`, `formula_quality_status`, `failed_components`), `infer_v11_failure_code` → codici granulari (`V11_MISSING_XG_LEAGUE_BASELINE`, `V11_MISSING_PLAYER_LEAGUE_BASELINE`, …).
 - **Output minimo v1.1:** `status=ok` se `predicted_total_sot` valido; split home/away opzionale con warning `V11_HOME_AWAY_SPLIT_MISSING`.
-- **v2.0:** dipende dalla base v1.1; `V20_REQUIRES_HOME_AWAY_BASE` se serve home+away per lineup impact; `V20_V11_BASE_FAILED` solo se base v1.1 assente.
+- **v2.0:** dipende dalla base v1.1; eredita `v11_trace_summary` in `_meta`.
 
-**Debug:** `GET /api/backtest/debug/round-analysis/fixture/{fixture_id}/model/{model_version}?competition_id=&mode=historical_official_xi`
+**Debug:** `GET /api/backtest/debug/round-analysis/fixture/{fixture_id}/model/{model_version}?competition_id=&mode=historical_official_xi` — response con `aggressive`/`cautious`, `trace.formula_inputs`/`formula_outputs`.
+
+### Round Analysis v2.0 adapter parity
+
+- **v2.0:** `V20_REQUIRES_HOME_AWAY_BASE` se serve home+away per lineup impact; `V20_V11_BASE_FAILED` solo se base v1.1 assente.
 
 ### Round Analysis model isolation
 
