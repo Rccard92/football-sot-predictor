@@ -48,7 +48,6 @@ export const ERROR_CODE_LABELS_IT: Record<string, string> = {
   V11_MISSING_RECENT_LEAGUE_BASELINE: 'Baseline recent lega mancante',
   V11_INSUFFICIENT_PLAYER_PROFILE: 'Profilo player insufficiente',
   V11_INSUFFICIENT_SAMPLE: 'Campione insufficiente v1.1',
-  V11_INSUFFICIENT_SPLIT_SAMPLE: 'Campione split insufficiente',
   V11_INSUFFICIENT_RECENT_SAMPLE: 'Campione recent insufficiente',
   V11_INSUFFICIENT_XG_SAMPLE: 'Campione xG insufficiente',
   V11_OUTPUT_MAPPING_FAILED: 'Mapping output v1.1 fallito',
