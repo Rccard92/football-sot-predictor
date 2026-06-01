@@ -12,8 +12,8 @@ from app.core.constants import (
 from app.services.backtest.round_analysis_calibration_export import (
     build_calibration_csv,
     build_calibration_report,
-    extract_v21_calibration_fields,
 )
+from app.services.backtest.round_analysis_v21_trace_helpers import extract_v21_calibration_fields
 
 V11 = BASELINE_SOT_MODEL_VERSION_V11_SOT
 V21 = BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
@@ -26,7 +26,7 @@ def test_extract_v21_calibration_fields():
             "weighted_macro_multiplier": 1.02,
             "macros": [
                 {"key": "player_layer", "macro_index": 1.05, "status": "available"},
-                {"key": "split", "macro_index": 0.98, "status": "available"},
+                {"key": "home_away_split", "macro_index": 0.98, "status": "available"},
             ],
         },
         "away": {"macros": [{"key": "lineups", "macro_index": 1.01, "status": "available"}]},

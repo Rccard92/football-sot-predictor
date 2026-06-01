@@ -32,57 +32,7 @@ def _round4(value: float | None) -> float | None:
         return None
     return round(float(value), 4)
 
-_MACRO_KEYS = (
-    "offensive_production",
-    "opponent_defensive_resistance",
-    "split",
-    "player_layer",
-    "lineups",
-    "injuries_unavailable",
-    "chance_quality",
-    "recent_form",
-    "pace_control",
-)
-
-
-def _macro_index(side_data: dict[str, Any] | None, macro_key: str) -> float | None:
-    if not isinstance(side_data, dict):
-        return None
-    macros = side_data.get("macros")
-    if not isinstance(macros, list):
-        return None
-    for macro in macros:
-        if isinstance(macro, dict) and macro.get("key") == macro_key:
-            idx = macro.get("macro_index")
-            return float(idx) if idx is not None else None
-    return None
-
-
-def extract_v21_calibration_fields(explanation_slice: dict[str, Any] | None) -> dict[str, Any]:
-    if not isinstance(explanation_slice, dict):
-        return {
-            "actuals_used_as_input": False,
-            "leakage_guard": True,
-        }
-    home = explanation_slice.get("home") if isinstance(explanation_slice.get("home"), dict) else {}
-    away = explanation_slice.get("away") if isinstance(explanation_slice.get("away"), dict) else {}
-    out: dict[str, Any] = {
-        "base_anchor_sot_home": home.get("base_anchor_sot"),
-        "base_anchor_sot_away": away.get("base_anchor_sot"),
-        "weighted_macro_multiplier_home": home.get("weighted_macro_multiplier"),
-        "weighted_macro_multiplier_away": away.get("weighted_macro_multiplier"),
-        "fallback_count": explanation_slice.get("fallback_count"),
-        "source_fixture_id_lineup_home": explanation_slice.get("source_fixture_id_lineup_home"),
-        "source_fixture_id_lineup_away": explanation_slice.get("source_fixture_id_lineup_away"),
-        "source_fixture_id_unavailable_home": explanation_slice.get("source_fixture_id_unavailable_home"),
-        "source_fixture_id_unavailable_away": explanation_slice.get("source_fixture_id_unavailable_away"),
-        "leakage_guard": explanation_slice.get("leakage_guard", True),
-        "actuals_used_as_input": bool(explanation_slice.get("actuals_used_as_input", False)),
-    }
-    for mk in _MACRO_KEYS:
-        out[f"{mk}_index_home"] = _macro_index(home, mk)
-        out[f"{mk}_index_away"] = _macro_index(away, mk)
-    return out
+from app.services.backtest.round_analysis_v21_trace_helpers import extract_v21_calibration_fields
 
 
 def _global_model_summary(rows: list[dict[str, Any]], model_keys: list[str]) -> dict[str, Any]:

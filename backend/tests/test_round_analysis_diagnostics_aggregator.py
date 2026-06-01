@@ -94,6 +94,15 @@ def test_extract_v21_macro_averages():
     assert out["weighted_macro_multiplier_avg"] == 1.03
 
 
+def test_split_avg_from_home_away_split():
+    expl = {
+        "home": {"macros": [{"key": "home_away_split", "macro_index": 1.02, "status": "available"}]},
+        "away": {"macros": [{"key": "home_away_split", "macro_index": 0.98, "status": "available"}]},
+    }
+    out = extract_v21_macro_averages(expl)
+    assert out["split_avg"] == 1.0
+
+
 def test_sot_bucket_breakdown():
     rows = [
         _row(actual=5, predicted=8.0, caut_outcome="LOSS"),

@@ -3328,6 +3328,84 @@ export async function getRoundAnalysisDiagnosticsReportJson(
   )
 }
 
+export type CalibrationSimulatorSummary = {
+  picks: number
+  wins: number
+  losses: number
+  hit_rate?: number | null
+  avg_line?: number | null
+  avg_predicted_total?: number | null
+  avg_actual_total?: number | null
+  mae?: number | null
+  bias?: number | null
+}
+
+export type CalibrationSimulatorStrategyBlock = {
+  strategy_id: string
+  label: string
+  summary: CalibrationSimulatorSummary
+  vs_v2_1_baseline: {
+    avoided_losses: number
+    missed_wins: number
+    delta_hit_rate?: number | null
+    delta_picks: number
+  }
+  vs_v1_1_baseline: {
+    delta_hit_rate?: number | null
+    delta_picks: number
+  }
+  by_line: Record<string, { plays: number; wins: number; losses: number; hit_rate?: number | null }>
+  by_sot_bucket: Record<string, CalibrationSimulatorSummary>
+  by_season_phase: Record<string, CalibrationSimulatorSummary>
+  walk_forward: Record<string, CalibrationSimulatorSummary>
+  filtered_wins_top?: Array<Record<string, unknown>>
+  filtered_losses_top?: Array<Record<string, unknown>>
+}
+
+export type RoundAnalysisCalibrationSimulator = {
+  report_type: string
+  metadata: {
+    competition_id: number
+    season_year: number
+    season_label: string
+    analyzed_fixtures: number
+    analyzed_rounds: number
+    generated_at: string
+  }
+  baselines: {
+    v1_1_cautious_advised: CalibrationSimulatorSummary
+    v2_1_cautious_advised: CalibrationSimulatorSummary
+  }
+  ranking: {
+    best_hit_rate?: string | null
+    best_volume?: string | null
+    most_balanced?: string | null
+  }
+  strategies: Record<string, CalibrationSimulatorStrategyBlock>
+}
+
+export async function getRoundAnalysisCalibrationSimulator(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): Promise<RoundAnalysisCalibrationSimulator> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  return requestJson<RoundAnalysisCalibrationSimulator>(
+    `/api/backtest/round-analysis/calibration-simulator?${q.toString()}`,
+  )
+}
+
+export async function getRoundAnalysisCalibrationSimulatorReportJson(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean },
+): Promise<RoundAnalysisCalibrationSimulator> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  return requestJson<RoundAnalysisCalibrationSimulator>(
+    `/api/backtest/round-analysis/calibration-simulator/report-json?${q.toString()}`,
+  )
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

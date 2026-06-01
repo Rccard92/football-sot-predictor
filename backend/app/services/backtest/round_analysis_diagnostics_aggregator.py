@@ -23,17 +23,11 @@ EDGE_BUCKETS = ("edge_low", "edge_medium", "edge_high")
 MACRO_BUCKET_KEYS = ("low", "neutral", "high")
 RISK_BUCKETS = ("low", "medium", "high")
 
-V21_MACRO_AVG_KEYS = (
-    "offensive_production_avg",
-    "opponent_defensive_resistance_avg",
-    "split_avg",
-    "recent_form_avg",
-    "chance_quality_avg",
-    "player_layer_avg",
-    "lineups_avg",
-    "injuries_unavailable_avg",
-    "pace_control_avg",
-    "weighted_macro_multiplier_avg",
+from app.services.backtest.round_analysis_v21_trace_helpers import (
+    V21_MACRO_AVG_KEYS,
+    extract_v21_macro_averages,
+    extract_v21_split_status,
+    split_status_summary,
 )
 
 
@@ -106,74 +100,13 @@ def edge_value_bucket(edge: float | None) -> str | None:
 
 
 def _macro_index(side_data: dict[str, Any] | None, macro_key: str) -> float | None:
-    if not isinstance(side_data, dict):
-        return None
-    macros = side_data.get("macros")
-    if not isinstance(macros, list):
-        return None
-    for macro in macros:
-        if isinstance(macro, dict) and macro.get("key") == macro_key:
-            idx = macro.get("macro_index")
-            return float(idx) if idx is not None else None
-    return None
+    from app.services.backtest.round_analysis_v21_trace_helpers import macro_index as _mi
 
-
-def extract_v21_macro_averages(explanation_slice: dict[str, Any] | None) -> dict[str, float | None]:
-    if not isinstance(explanation_slice, dict):
-        return {k: None for k in V21_MACRO_AVG_KEYS}
-    home = explanation_slice.get("home") if isinstance(explanation_slice.get("home"), dict) else {}
-    away = explanation_slice.get("away") if isinstance(explanation_slice.get("away"), dict) else {}
-
-    def _avg(macro_key: str) -> float | None:
-        h = _macro_index(home, macro_key)
-        a = _macro_index(away, macro_key)
-        if h is None and a is None:
-            return None
-        if h is None:
-            return _round4(a)
-        if a is None:
-            return _round4(h)
-        return _round4((h + a) / 2.0)
-
-    w_home = home.get("weighted_macro_multiplier")
-    w_away = away.get("weighted_macro_multiplier")
-    w_avg = None
-    if w_home is not None or w_away is not None:
-        wh = float(w_home) if w_home is not None else None
-        wa = float(w_away) if w_away is not None else None
-        if wh is not None and wa is not None:
-            w_avg = _round4((wh + wa) / 2.0)
-        elif wh is not None:
-            w_avg = _round4(wh)
-        elif wa is not None:
-            w_avg = _round4(wa)
-
-    return {
-        "offensive_production_avg": _avg("offensive_production"),
-        "opponent_defensive_resistance_avg": _avg("opponent_defensive_resistance"),
-        "split_avg": _avg("split"),
-        "recent_form_avg": _avg("recent_form"),
-        "chance_quality_avg": _avg("chance_quality"),
-        "player_layer_avg": _avg("player_layer"),
-        "lineups_avg": _avg("lineups"),
-        "injuries_unavailable_avg": _avg("injuries_unavailable"),
-        "pace_control_avg": _avg("pace_control"),
-        "weighted_macro_multiplier_avg": w_avg,
-    }
+    return _mi(side_data, macro_key)
 
 
 def _split_partial_low_sample(explanation_slice: dict[str, Any] | None) -> bool:
-    if not isinstance(explanation_slice, dict):
-        return False
-    for side_key in ("home", "away"):
-        side = explanation_slice.get(side_key)
-        if not isinstance(side, dict):
-            continue
-        for macro in side.get("macros") or []:
-            if isinstance(macro, dict) and macro.get("key") == "split":
-                if macro.get("status") == "partial_low_sample":
-                    return True
-    return False
+    return extract_v21_split_status(explanation_slice) == "partial_low_sample"
 
 
 def compute_low_total_risk_score(row: dict[str, Any]) -> float:
@@ -702,13 +635,22 @@ def build_diagnostics_payload(
         models_out[mk] = build_model_diagnostics(model_rows, mk)
 
     v21_rows = [r for r in flat_rows if r["model_key"] == V21]
+    low_risk = build_low_total_risk_diagnostic(v21_rows)
     return {
         "report_type": "round_analysis_diagnostics_v30",
         "metadata": metadata,
         "models": models_out,
         "v21_diagnostics": {
             "macro_buckets": build_v21_macro_diagnostics(v21_rows),
-            "low_total_risk": build_low_total_risk_diagnostic(v21_rows),
+            "split_status_summary": split_status_summary(v21_rows),
+            "low_total_risk": {
+                **low_risk,
+                "reliability": "experimental_unreliable",
+                "note": (
+                    "Indice low_total_risk attuale non discrimina in modo affidabile tra partite basse "
+                    "e altre; usare solo come esplorazione. Calibrazione prevista in v3.0."
+                ),
+            },
         },
         "critical_matches": build_critical_matches(flat_rows),
     }

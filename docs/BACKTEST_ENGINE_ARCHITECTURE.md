@@ -608,6 +608,27 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **Changelog:** `backtest-v30-diagnostics` in `docs/BACKTEST_ENGINE_CHANGELOG.md`.
 
+### Step V3.0-B — Calibration Simulator
+
+**Scopo:** simulare strategie di **selezione pick** (filtri GIOCA/linea/macro) su analisi già salvate, per preparare regole del futuro v3.0. **Non** crea modello ufficiale, **non** modifica predizioni persistite.
+
+| Endpoint | Ruolo |
+|----------|--------|
+| `GET /api/backtest/round-analysis/calibration-simulator` | Ranking strategie + metriche |
+| `GET /api/backtest/round-analysis/calibration-simulator/report-json` | Export JSON completo |
+
+**Fix diagnostica v2.1:** macro split letta come `home_away_split` (alias legacy `split`); `split_status` match-level (`missing` / `partial_low_sample` / `available`); `low_total_risk` marcato `experimental_unreliable`.
+
+**Strategie simulate:** v1.1 cauta advised; v2.1 cauta advised (baseline); v2.1 solo 6.5; no linee ≥8.5; overheat veto; consenso v1.1+v2.1 (min line / linea v2.1); conservative selector v3.0 candidato.
+
+**Metriche per strategia:** picks, hit rate, MAE, bias, vs baseline v1.1/v2.1 (avoided_losses, missed_wins), breakdown linea/fascia SOT/giornata/fase stagione, walk-forward (round 5–15, 16–26, 27–38).
+
+**Implementazione:** `round_analysis_v21_trace_helpers.py`, `round_analysis_calibration_simulator_*.py`.
+
+**UI Backtest:** sezione «Simulatore calibrazione v3.0» con ranking, dettaglio strategia, export JSON.
+
+**Changelog:** `backtest-v30-calibration-simulator`.
+
 ### Round Analysis v1.1 adapter (motore produzione)
 
 Il prior context **non** equivale alla predizione v1.1: l’engine Round Analysis è `compute_v11_side` invocato tramite `v11_round_analysis_engine.predict_v11_side_for_team`, con lo stesso `build_prior_context` di `SotPredictionV11BaselineSotService` (**senza** `competition_scoped_only` / `strict_kickoff_only`; quei flag restano solo sul PIT v2.1).

@@ -24,6 +24,18 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+---
+
+## backtest-v30-calibration-simulator
+
+**Titolo:** Simulatore calibrazione v3.0 per strategie pick Backtest
+
+**Descrizione:** Simulazione read-only di 8 strategie di selezione pick (filtri GIOCA, linea, macro overheat, consenso v1.1+v2.1, selector conservativo candidato) su analisi persistite. Fix `split_avg` da macro `home_away_split`; `split_status` e disclaimer `low_total_risk` experimental. Endpoint `/calibration-simulator` + export JSON; UI ranking strategie con walk-forward light.
+
+**File toccati:** `round_analysis_v21_trace_helpers.py`, `round_analysis_calibration_simulator_*.py`, diagnostics/export, routes, frontend Backtest, test, docs.
+
+---
+
 ## backtest-v30-diagnostics
 
 **Titolo:** Diagnostica avanzata per calibrazione modello v3.0
