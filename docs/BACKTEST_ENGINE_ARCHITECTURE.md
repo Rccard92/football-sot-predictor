@@ -532,6 +532,25 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 
 **Eliminazione:** dopo DELETE si può rianalizzare la stessa giornata; `_latest_completed` (409) considera solo analisi con `status == "completed"`.
 
+### Round Analysis JSON Report
+
+Export audit **solo da dati già persistiti** (nessuna chiamata SportAPI, nessun ricalcolo modelli).
+
+| Endpoint | Contenuto |
+|----------|-----------|
+| `GET /api/backtest/round-analysis/{analysis_id}/report-json` | Report giornata completo |
+| `GET /api/backtest/round-analysis/{analysis_id}/fixtures/{fixture_id}/report-json` | Singola fixture |
+
+**Struttura:** `analysis`, `config`, `round_summary`, `data_quality_summary`, `model_summaries`, `fixtures[]` con per ogni modello: identity, `prediction`, `betting` (aggressive/cautious), `trace_summary` (inclusi `leakage_guard`, `actuals_used_as_input=false`).
+
+- **v1.1:** prior, split_context, formula_quality, fallback_used, formula_inputs/outputs.
+- **v2.0:** base v1.1, lineup_impact_factors, adjusted_total (da trace persistito).
+- **v2.1:** macro summary da `explanation_json` + audit PIT (base_anchor, multiplier, source fixture lineup/unavailable).
+
+**UI:** pulsanti «Scarica report JSON» (giornata) e «Scarica JSON partita»; accordion Debug JSON con tab v1.1/v2.0/v2.1.
+
+**Log prior:** `prior_fixtures season_id fallback` è INFO (comportamento atteso competition-scoped), visibile nel report come qualità dato (`season_id_fallback_used` in trace v1.1), non come errore.
+
 ### Round Analysis v1.1 adapter (motore produzione)
 
 Il prior context **non** equivale alla predizione v1.1: l’engine Round Analysis è `compute_v11_side` invocato tramite `v11_round_analysis_engine.predict_v11_side_for_team`, con lo stesso `build_prior_context` di `SotPredictionV11BaselineSotService` (**senza** `competition_scoped_only` / `strict_kickoff_only`; quei flag restano solo sul PIT v2.1).

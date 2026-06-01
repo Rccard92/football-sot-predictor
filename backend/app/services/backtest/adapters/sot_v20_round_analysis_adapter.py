@@ -192,6 +192,10 @@ class SotV20RoundAnalysisAdapter:
             "warnings": pred_patch.get("warnings"),
         }
 
+        trace["adjusted_total_sot"] = prediction.get("predicted_total_sot")
+        trace["lineup_impact_factors"] = meta.get("lineup_impact_factors")
+        trace["base_v1_1_total"] = meta.get("base_v1_1_total") or trace.get("base_predicted_total")
+
         return RoundAnalysisModelResult(
             model_version_requested=requested,
             model_version_used=requested,

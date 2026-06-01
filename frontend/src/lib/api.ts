@@ -3025,6 +3025,23 @@ export async function deleteRoundAnalysis(analysisId: number): Promise<RoundAnal
   )
 }
 
+export async function getRoundAnalysisReportJson(
+  analysisId: number,
+): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(
+    `/api/backtest/round-analysis/${analysisId}/report-json`,
+  )
+}
+
+export async function getRoundAnalysisFixtureReportJson(
+  analysisId: number,
+  fixtureId: number,
+): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(
+    `/api/backtest/round-analysis/${analysisId}/fixtures/${fixtureId}/report-json`,
+  )
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

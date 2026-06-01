@@ -61,6 +61,7 @@ class V20RoundAnalysisPreviewService:
         base_away = v11.get("predicted_away_sot")
         home_pred = None
         away_pred = None
+        lineup_impact_factors: dict[str, Any] = {}
 
         if base_home is not None:
             off = float(home_side.get("offensive_lineup_factor") or home_side.get("factor") or 1.0)
@@ -69,12 +70,19 @@ class V20RoundAnalysisPreviewService:
                 or away_side.get("defensive_weakness_factor")
                 or 1.0,
             )
+            lineup_impact_factors["home"] = {
+                "offensive_lineup_factor": off,
+                "opponent_defensive_weakness": opp_def,
+                "base_sot": float(base_home),
+            }
             home_pred, _, _, _ = self._v20_formula._compute_side_v20(  # noqa: SLF001
                 base_sot=float(base_home),
                 offensive_factor=off,
                 opponent_defensive_weakness=opp_def,
                 impact=impact,
             )
+            if home_pred is not None:
+                lineup_impact_factors["home"]["adjusted_sot"] = home_pred
 
         if base_away is not None:
             off = float(away_side.get("offensive_lineup_factor") or away_side.get("factor") or 1.0)
@@ -83,12 +91,19 @@ class V20RoundAnalysisPreviewService:
                 or home_side.get("defensive_weakness_factor")
                 or 1.0,
             )
+            lineup_impact_factors["away"] = {
+                "offensive_lineup_factor": off,
+                "opponent_defensive_weakness": opp_def,
+                "base_sot": float(base_away),
+            }
             away_pred, _, side_warn, _ = self._v20_formula._compute_side_v20(  # noqa: SLF001
                 base_sot=float(base_away),
                 offensive_factor=off,
                 opponent_defensive_weakness=opp_def,
                 impact=impact,
             )
+            if away_pred is not None:
+                lineup_impact_factors["away"]["adjusted_sot"] = away_pred
             warnings.extend(side_warn)
 
         total_pred = None
@@ -109,5 +124,12 @@ class V20RoundAnalysisPreviewService:
                 "lineup_impact_status": impact.get("status"),
                 "sportapi_lineups_available": bool(impact.get("sportapi_lineups_available")),
                 "v11_trace_summary": (v11.get("_meta") or {}).get("trace_summary"),
+                "base_v1_1_total": (
+                    round(float(base_home) + float(base_away), 4)
+                    if base_home is not None and base_away is not None
+                    else None
+                ),
+                "lineup_impact_factors": lineup_impact_factors,
+                "adjusted_total_sot": total_pred,
             },
         }

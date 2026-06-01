@@ -1,20 +1,52 @@
-import type { RoundAnalysisFixtureRow } from '../../lib/api'
+import { useState } from 'react'
+import type { RoundAnalysisDetail, RoundAnalysisFixtureRow } from '../../lib/api'
+import {
+  buildModelDebugJson,
+  downloadFixtureReport,
+} from './roundAnalysisReportDownload'
 import { errorCodeLabelIt, MODEL_KEYS } from './roundAnalysisUtils'
 
 type Props = {
+  detail: RoundAnalysisDetail
+  competitionName?: string | null
   fixture: RoundAnalysisFixtureRow
 }
 
-export function RoundAnalysisFixtureRowDetail({ fixture }: Props) {
-  const expl = fixture.explanation_json?.[MODEL_KEYS.v21] as
-    | Record<string, unknown>
-    | undefined
+const MODEL_TABS = [
+  { key: MODEL_KEYS.v11, label: 'v1.1' },
+  { key: MODEL_KEYS.v20, label: 'v2.0' },
+  { key: MODEL_KEYS.v21, label: 'v2.1' },
+] as const
+
+export function RoundAnalysisFixtureRowDetail({ detail, competitionName, fixture }: Props) {
+  const [activeTab, setActiveTab] = useState<string>(MODEL_KEYS.v11)
+  const [fixtureDownloading, setFixtureDownloading] = useState(false)
 
   return (
     <div className="space-y-3 text-xs text-slate-700">
       {fixture.status === 'failed' ? (
         <p className="text-rose-700">{fixture.error_message ?? 'Errore calcolo'}</p>
       ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={fixtureDownloading}
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium hover:bg-slate-50 disabled:opacity-50"
+          onClick={async (e) => {
+            e.stopPropagation()
+            setFixtureDownloading(true)
+            try {
+              await downloadFixtureReport(detail, fixture, competitionName)
+            } finally {
+              setFixtureDownloading(false)
+            }
+          }}
+        >
+          {fixtureDownloading ? 'Download…' : 'Scarica JSON partita'}
+        </button>
+      </div>
+
       {Object.entries(fixture.models_json).map(([key, block]) => (
         <div key={key} className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="font-semibold text-slate-900">{block.label ?? key}</div>
@@ -70,71 +102,34 @@ export function RoundAnalysisFixtureRowDetail({ fixture }: Props) {
                 ?.away_prior_matches ?? '—'}
             </p>
           ) : null}
-          <details className="mt-2">
-            <summary className="cursor-pointer font-medium text-slate-700">Debug modello</summary>
-            <pre className="mt-1 max-h-40 overflow-auto rounded bg-slate-100 p-2 text-[10px]">
-              {JSON.stringify(
-                {
-                  model_version_requested: block.model_version_requested ?? key,
-                  model_version_used: block.model_version_used,
-                  model_engine_name: block.model_engine_name,
-                  status: block.model_status ?? block.status,
-                  error_code: block.error_code,
-                  error_message: block.error_message ?? block.message,
-                  prediction: {
-                    predicted_home_sot: block.predicted_home_sot,
-                    predicted_away_sot: block.predicted_away_sot,
-                    predicted_total_sot: block.predicted_total_sot,
-                  },
-                  formula_quality:
-                    (block as { formula_quality?: string }).formula_quality ??
-                    (block.trace_summary as { formula_quality?: string }).formula_quality,
-                  fallback_used:
-                    (block as { fallback_used?: string }).fallback_used ??
-                    (block.trace_summary as { fallback_used?: string }).fallback_used,
-                  warnings: block.warnings,
-                  trace_summary: block.trace_summary
-                    ? {
-                        formula_inputs: (
-                          block.trace_summary as { formula_inputs?: unknown }
-                        ).formula_inputs,
-                        formula_outputs: (
-                          block.trace_summary as { formula_outputs?: unknown }
-                        ).formula_outputs,
-                        split_context: (
-                          block.trace_summary as { split_context?: unknown }
-                        ).split_context,
-                        missing_fields: (
-                          block.trace_summary as { missing_fields?: unknown }
-                        ).missing_fields,
-                        prior_context: (
-                          block.trace_summary as { prior_context?: unknown }
-                        ).prior_context,
-                        home_side: (block.trace_summary as { home_side?: unknown }).home_side,
-                        away_side: (block.trace_summary as { away_side?: unknown }).away_side,
-                        inferred_error_code: (
-                          block.trace_summary as { inferred_error_code?: unknown }
-                        ).inferred_error_code,
-                      }
-                    : undefined,
-                },
-                null,
-                2,
-              )}
-            </pre>
-          </details>
         </div>
       ))}
-      {expl ? (
-        <details>
-          <summary className="cursor-pointer font-medium text-slate-800">
-            Dettaglio macro v2.1
-          </summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded bg-slate-100 p-2 text-[10px]">
-            {JSON.stringify(expl, null, 2)}
-          </pre>
-        </details>
-      ) : null}
+
+      <details className="mt-2" open>
+        <summary className="cursor-pointer font-medium text-slate-800">Debug JSON modello</summary>
+        <div className="mt-2 flex gap-1 border-b border-slate-200">
+          {MODEL_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`px-2 py-1 text-[10px] font-medium ${
+                activeTab === tab.key
+                  ? 'border-b-2 border-slate-800 text-slate-900'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setActiveTab(tab.key)
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <pre className="mt-2 max-h-48 overflow-auto rounded bg-slate-100 p-2 text-[10px]">
+          {JSON.stringify(buildModelDebugJson(fixture, activeTab), null, 2)}
+        </pre>
+      </details>
     </div>
   )
 }

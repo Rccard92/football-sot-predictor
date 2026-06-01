@@ -22,6 +22,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-i-json-report
+
+**Titolo:** Report JSON per analisi giornata Backtest
+
+**Descrizione:** Aggiunto export JSON completo per analisi giornata e singola fixture (`report-json`), utile per controllare input, output, fallback e qualità di ogni modello. Arricchito persist audit v2.1 (`explanation_json`) e trace v2.0 (`lineup_impact_factors`). Log `prior_fixtures season_id fallback` declassato a INFO. UI: download JSON e tab debug modello.
+
+**File toccati:** `round_analysis_report_builder.py`, `round_analysis_report_service.py`, `backtest_round_analysis.py`, adapter v21/v20 (audit), `v10_prior_context.py`, frontend Backtest, test, docs.
+
+---
+
 ## backtest-step-i-v11-split-fallback
 
 **Titolo:** Fallback controllato v1.1 su campione split insufficiente

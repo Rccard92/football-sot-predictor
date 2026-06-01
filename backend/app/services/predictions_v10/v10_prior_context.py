@@ -101,8 +101,9 @@ def _prior_fixtures_for_team(
 
     filtered = _query(use_season_filter=True)
     if not filtered and competition_id is not None:
-        logger.warning(
-            "prior_fixtures season_id fallback competition_id=%s season_id=%s team_id=%s",
+        logger.info(
+            "prior_fixtures season_id fallback (expected competition-scoped prior) "
+            "competition_id=%s season_id=%s team_id=%s",
             int(competition_id),
             int(season_id),
             int(team_id),

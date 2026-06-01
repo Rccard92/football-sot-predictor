@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.backtest_round_analysis import RoundAnalysisAnalyzeRequest
+from app.services.backtest.round_analysis_report_service import RoundAnalysisReportService
 from app.services.backtest.round_analysis_service import RoundAnalysisService
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,39 @@ def round_analysis_delete(
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("DELETE round-analysis: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/{analysis_id}/report-json")
+def round_analysis_report_json(
+    analysis_id: int,
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisReportService()
+    try:
+        payload = svc.get_round_report_json(db, analysis_id)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET round-analysis report-json: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/{analysis_id}/fixtures/{fixture_id}/report-json")
+def round_analysis_fixture_report_json(
+    analysis_id: int,
+    fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisReportService()
+    try:
+        payload = svc.get_fixture_report_json(db, analysis_id, fixture_id)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET round-analysis fixture report-json: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)
 

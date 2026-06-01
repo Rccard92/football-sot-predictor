@@ -27,7 +27,12 @@ ERR_ENGINE = "V21_ENGINE_ERROR"
 def _v21_explanation(preview: SotV21PreviewResponse) -> dict[str, Any]:
     def _macro_detail(side: str) -> dict[str, Any]:
         trace = preview.home_trace if side == "home" else preview.away_trace
-        out: dict[str, Any] = {"macros": []}
+        out: dict[str, Any] = {
+            "macros": [],
+            "base_anchor_sot": trace.base_anchor_sot,
+            "weighted_macro_multiplier": trace.weighted_macro_multiplier,
+            "expected_sot_v21": trace.expected_sot_v21_pit,
+        }
         for macro in trace.macros:
             entry: dict[str, Any] = {
                 "key": macro.key,
@@ -43,6 +48,11 @@ def _v21_explanation(preview: SotV21PreviewResponse) -> dict[str, Any]:
     return {
         "home": _macro_detail("home"),
         "away": _macro_detail("away"),
+        "leakage_guard": preview.leakage_guard,
+        "actuals_used_as_input": preview.actuals_used_as_input,
+        "warnings": list(preview.warnings or []),
+        "fallback_count": len(preview.fallback_variables or []),
+        "fallback_variables": list(preview.fallback_variables or []),
         "source_fixture_id_lineup_home": preview.source_fixture_id_lineup_home,
         "source_fixture_id_lineup_away": preview.source_fixture_id_lineup_away,
         "source_fixture_id_unavailable_home": preview.source_fixture_id_unavailable_home,

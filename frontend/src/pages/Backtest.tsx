@@ -4,6 +4,7 @@ import { RoundAnalysisAccordion, ModelSummaryBar } from '../components/backtest/
 import { RoundAnalysisDetailBox } from '../components/backtest/RoundAnalysisDetailBox'
 import { RoundAnalysisFixtureTable } from '../components/backtest/RoundAnalysisFixtureTable'
 import { RoundAnalysisForm } from '../components/backtest/RoundAnalysisForm'
+import { downloadRoundAnalysisReport } from '../components/backtest/roundAnalysisReportDownload'
 import { dataQualityBadgeClass, seasonLabelFromYear, statusLabelIt } from '../components/backtest/roundAnalysisUtils'
 import { useCompetition } from '../contexts/CompetitionContext'
 import { DEFAULT_SEASON, type RoundAnalysisDetail } from '../lib/api'
@@ -15,6 +16,7 @@ export function Backtest() {
   const [detail, setDetail] = useState<RoundAnalysisDetail | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [recommendedRound, setRecommendedRound] = useState<number | null>(null)
+  const [reportDownloading, setReportDownloading] = useState(false)
 
   const handleAnalyzed = (d: RoundAnalysisDetail) => {
     setDetail(d)
@@ -77,11 +79,30 @@ export function Backtest() {
             >
               Qualità dati: {detail.data_quality_summary_json?.badge ?? '—'}
             </span>
+            <button
+              type="button"
+              disabled={reportDownloading}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+              onClick={async () => {
+                setReportDownloading(true)
+                try {
+                  await downloadRoundAnalysisReport(detail, selectedCompetition?.name)
+                } finally {
+                  setReportDownloading(false)
+                }
+              }}
+            >
+              {reportDownloading ? 'Download…' : 'Scarica report JSON'}
+            </button>
           </div>
 
           <RoundAnalysisDetailBox detail={detail} />
           <ModelSummaryBar summary={detail.model_summary_json} />
-          <RoundAnalysisFixtureTable fixtures={detail.fixtures} />
+          <RoundAnalysisFixtureTable
+            detail={detail}
+            competitionName={selectedCompetition?.name}
+            fixtures={detail.fixtures}
+          />
         </section>
       ) : null}
     </div>

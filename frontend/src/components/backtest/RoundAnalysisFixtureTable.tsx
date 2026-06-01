@@ -1,9 +1,11 @@
 import { Fragment, useState } from 'react'
-import type { RoundAnalysisFixtureRow } from '../../lib/api'
+import type { RoundAnalysisDetail, RoundAnalysisFixtureRow } from '../../lib/api'
 import { MODEL_KEYS, ndBadgeClass, pickCell } from './roundAnalysisUtils'
 import { RoundAnalysisFixtureRowDetail } from './RoundAnalysisFixtureRowDetail'
 
 type Props = {
+  detail: RoundAnalysisDetail
+  competitionName?: string | null
   fixtures: RoundAnalysisFixtureRow[]
 }
 
@@ -32,7 +34,7 @@ function PickTd({
   )
 }
 
-export function RoundAnalysisFixtureTable({ fixtures }: Props) {
+export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   return (
@@ -81,7 +83,11 @@ export function RoundAnalysisFixtureTable({ fixtures }: Props) {
                 {expanded ? (
                   <tr>
                     <td colSpan={9} className="bg-slate-50 px-3 py-3">
-                      <RoundAnalysisFixtureRowDetail fixture={fx} />
+                      <RoundAnalysisFixtureRowDetail
+                        detail={detail}
+                        competitionName={competitionName}
+                        fixture={fx}
+                      />
                     </td>
                   </tr>
                 ) : null}
