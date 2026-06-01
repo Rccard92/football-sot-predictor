@@ -26,6 +26,7 @@ from app.models.fixture_referee import FixtureReferee
 from app.models.referee_season_profile import RefereeSeasonProfile
 from app.models.referee_fixture_card_summary import RefereeFixtureCardSummary
 from app.models.backtest import BacktestPick, BacktestPrediction, BacktestRun, BacktestRunMetric
+from app.models.backtest_round_analysis import BacktestRoundAnalysis, BacktestRoundFixtureResult
 from app.models.prediction_backtest import PredictionBacktest
 from app.models.season import Season
 from app.models.standing import StandingEntry, StandingsSnapshot
@@ -72,6 +73,8 @@ __all__ = [
     "BacktestPrediction",
     "BacktestRun",
     "BacktestRunMetric",
+    "BacktestRoundAnalysis",
+    "BacktestRoundFixtureResult",
     "PredictionBacktest",
     "Season",
     "StandingEntry",

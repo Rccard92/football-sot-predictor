@@ -2800,6 +2800,162 @@ export async function postBacktestSotPickEvaluation(
   )
 }
 
+// --- Backtest Step I — Analisi giornata persistente ---
+
+export type RoundAnalysisAdviceFilters = {
+  min_prior_matches_for_play?: number
+  min_aggressive_edge_for_play?: number
+  min_cautious_edge_for_play?: number
+  max_warnings_for_play?: number
+  allow_early_low_sample?: boolean
+  allow_low_confidence?: boolean
+  include_borderline_as_playable?: boolean
+}
+
+export type RoundAnalysisAnalyzeRequest = {
+  competition_id: number
+  season_year: number
+  round_number: number
+  mode?: string
+  models?: string[]
+  lines?: number[]
+  cautious_drop_threshold?: number
+  advice_filters?: RoundAnalysisAdviceFilters
+  force_recalculate?: boolean
+}
+
+export type RoundAnalysisModelBlock = {
+  label?: string
+  predicted_home_sot?: number | null
+  predicted_away_sot?: number | null
+  predicted_total_sot?: number | null
+  aggressive_line?: number | null
+  aggressive_edge?: number | null
+  aggressive_outcome?: string | null
+  aggressive_advice?: string | null
+  aggressive_reason?: string | null
+  cautious_line?: number | null
+  cautious_edge?: number | null
+  cautious_outcome?: string | null
+  cautious_advice?: string | null
+  cautious_reason?: string | null
+  confidence?: string | null
+  sample_bucket?: string | null
+  warnings?: string[]
+  data_quality?: Record<string, string>
+}
+
+export type RoundAnalysisFixtureRow = {
+  id: number
+  fixture_id: number
+  round_number?: number | null
+  home_team_name: string
+  away_team_name: string
+  actual_home_sot?: number | null
+  actual_away_sot?: number | null
+  actual_total_sot?: number | null
+  models_json: Record<string, RoundAnalysisModelBlock>
+  explanation_json?: Record<string, unknown> | null
+  status: string
+  error_message?: string | null
+}
+
+export type RoundAnalysisModelSummary = {
+  model_key: string
+  label: string
+  fixtures: number
+  aggressive_wins: number
+  aggressive_losses: number
+  aggressive_hit_rate?: number | null
+  cautious_wins: number
+  cautious_losses: number
+  cautious_hit_rate?: number | null
+  advised_plays: number
+  avg_predicted_total?: number | null
+  avg_actual_total?: number | null
+  mae?: number | null
+  bias?: number | null
+}
+
+export type RoundAnalysisDetail = {
+  id: number
+  competition_id: number
+  season_year: number
+  round_number: number
+  analysis_version: number
+  status: string
+  mode: string
+  config_json: Record<string, unknown>
+  total_fixtures: number
+  processed_fixtures: number
+  failed_fixtures: number
+  progress_pct: number
+  data_quality_summary_json?: {
+    badge?: string
+    warnings?: string[]
+    fixtures_with_lineup?: number
+    fixtures_with_unavailable?: number
+    fixtures_missing_mapping?: number
+    total_fixtures?: number
+  } | null
+  model_summary_json?: Record<string, RoundAnalysisModelSummary> | null
+  error_json?: Record<string, unknown> | null
+  created_at: string
+  completed_at?: string | null
+  fixtures: RoundAnalysisFixtureRow[]
+}
+
+export type RoundAnalysisListItem = {
+  id: number
+  competition_id: number
+  season_year: number
+  round_number: number
+  analysis_version: number
+  status: string
+  mode: string
+  total_fixtures: number
+  processed_fixtures: number
+  failed_fixtures: number
+  progress_pct: number
+  data_quality_badge?: string | null
+  created_at: string
+  completed_at?: string | null
+}
+
+export type RoundAnalysisListResponse = {
+  items: RoundAnalysisListItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export async function postRoundAnalysisAnalyze(
+  body: RoundAnalysisAnalyzeRequest,
+): Promise<{ analysis: RoundAnalysisDetail }> {
+  return requestPostJson<{ analysis: RoundAnalysisDetail }>(
+    '/api/backtest/round-analysis/analyze',
+    body,
+  )
+}
+
+export async function getRoundAnalyses(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { limit?: number; offset?: number },
+): Promise<RoundAnalysisListResponse> {
+  const q = new URLSearchParams({
+    competition_id: String(competitionId),
+    season_year: String(seasonYear),
+  })
+  if (opts?.limit != null) q.set('limit', String(opts.limit))
+  if (opts?.offset != null) q.set('offset', String(opts.offset))
+  return requestJson<RoundAnalysisListResponse>(`/api/backtest/round-analysis?${q.toString()}`)
+}
+
+export async function getRoundAnalysisDetail(analysisId: number): Promise<RoundAnalysisDetail> {
+  return requestJson<RoundAnalysisDetail>(`/api/backtest/round-analysis/${analysisId}`)
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

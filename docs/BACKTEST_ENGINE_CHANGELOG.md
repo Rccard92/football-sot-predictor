@@ -22,6 +22,41 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-step-i-round-analysis
+
+**Titolo:** Step I — Analisi giornata persistente (Backtest operativo)
+
+**Descrizione:** Pagina `/backtest` operativa con analisi one-click per giornata: preparazione automatica mapping/indisponibili, confronto v1.1 / v2.0 / v2.1 su fixture finite, persistenza su `backtest_round_analyses` e `backtest_round_fixture_results`.
+
+**Highlights:**
+
+- Migration `20260606120000_backtest_round_analyses.py` + modelli SQLAlchemy dedicati.
+- API: `POST /api/backtest/round-analysis/analyze`, `GET` lista e dettaglio.
+- Runner in-memory v1.1 (`build_prior_context` + `compute_v11_side`) e v2.0 (v1.1 × lineup impact); v2.1 riusa PIT preview + pick eval.
+- `RoundAnalysisDataPrepService`: preflight, backfill mapping/unavailable per giornata (solo high confidence mapping).
+- Rianalisi: `force_recalculate` → nuova `analysis_version`; altrimenti **409** se già `completed`.
+- Frontend: form, accordion giornate, tabella partite, dettaglio espandibile (copy italiano non tecnico).
+
+**File toccati:**
+
+- `backend/alembic/versions/20260606120000_backtest_round_analyses.py`
+- `backend/app/models/backtest_round_analysis.py`
+- `backend/app/schemas/backtest_round_analysis.py`
+- `backend/app/routes/backtest_round_analysis.py`
+- `backend/app/services/backtest/round_analysis_*.py`
+- `backend/app/services/backtest/v11_round_analysis_preview.py`
+- `backend/app/services/backtest/v20_round_analysis_preview.py`
+- `frontend/src/pages/Backtest.tsx`
+- `frontend/src/components/backtest/*`
+- `frontend/src/lib/api.ts`
+- `docs/BACKTEST_ENGINE_ARCHITECTURE.md`
+
+**Test eseguiti (locale):**
+
+- `pytest tests/test_round_analysis_*.py tests/test_backtest_models_import.py`
+
+---
+
 ## backtest-step-k5-unavailable-macro-trace
 
 **Titolo:** Macro K verificabile — conteggi normalizzati e trace dettagliato

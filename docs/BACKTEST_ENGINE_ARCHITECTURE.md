@@ -501,7 +501,27 @@ Confronto v2.0 vs v2.1 = **due run** con stesso `market_key`, stesso `mode`, div
 
 ## 11. Report e API futuri (Backtest Dashboard)
 
-### Frontend (Step I)
+### Step I — Analisi giornata persistente (completato)
+
+Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
+
+| Metodo | Path | Ruolo |
+|--------|------|--------|
+| POST | `/api/backtest/round-analysis/analyze` | Orchestrazione sync: prep dati + 3 modelli + persistenza |
+| GET | `/api/backtest/round-analysis` | Lista analisi per campionato/stagione |
+| GET | `/api/backtest/round-analysis/{id}` | Dettaglio + fixture results |
+
+**Tabelle:** `backtest_round_analyses`, `backtest_round_fixture_results` (unique giornata+versione).
+
+**Flusso:** selezione fixture finite giornata → preflight → backfill mapping SportAPI (high) → backfill unavailable se mapping OK → loop fixture × modelli (nessuna SportAPI in calcolo) → aggregazione `model_summary_json` / `data_quality_summary_json`.
+
+**Modelli:** alias API `baseline_v1_1` → `baseline_v1_1_sot`; v2.0/v2.1 invariati. v1.1/v2.0 **in-memory** su finished; v2.1 = `SotV21PointInTimePreviewService` + logica pick Step H.
+
+**Rianalisi:** `force_recalculate=true` incrementa `analysis_version`; altrimenti 409 se analisi `completed` esiste.
+
+`BacktestDebugPanel` resta solo su `/admin`.
+
+### Frontend legacy (dashboard run)
 
 Route proposta: `/backtest-dashboard` (non sostituisce `/dashboard` legacy).
 
@@ -543,7 +563,7 @@ Prefix generico `/api/backtest/` per il nuovo engine. Route legacy `/backtest/so
 | **F** | Mini-run preview SOT v2.1 PIT (metriche aggregate read-only) | No — **completato** |
 | **G** | Picks Over/Under → `backtest_picks` | No |
 | **H** | Confronto v2.0 vs v2.1 (due run, stesso market) | No |
-| **I** | Frontend Backtest Dashboard | No |
+| **I** | Analisi giornata persistente + pagina `/backtest` | No — **completato** |
 
 **Principio:** Prossima giornata, Audit, Monitoraggio giocate continuano su `team_sot_predictions` e `tracked_betting_picks`.
 

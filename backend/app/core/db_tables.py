@@ -24,6 +24,8 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "backtest_predictions",
         "backtest_picks",
         "backtest_run_metrics",
+        "backtest_round_analyses",
+        "backtest_round_fixture_results",
         "player_sot_profiles",
         "player_provider_mappings",
         "fixture_provider_mappings",

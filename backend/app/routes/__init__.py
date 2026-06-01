@@ -23,6 +23,7 @@ from app.routes import (
     betting_picks,
     backtest,
     backtest_debug,
+    backtest_round_analysis,
     backtest_runs,
     competition_scoped,
     competitions,
@@ -72,6 +73,7 @@ api_router.include_router(predictions.router)
 api_router.include_router(backtest.router)
 api_router.include_router(backtest_runs.router)
 api_router.include_router(backtest_debug.router)
+api_router.include_router(backtest_round_analysis.router)
 api_router.include_router(player_sot_profiles.router)
 api_router.include_router(h2h.router)
 api_router.include_router(standings.router)
