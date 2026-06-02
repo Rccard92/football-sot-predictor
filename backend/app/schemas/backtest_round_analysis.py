@@ -68,6 +68,10 @@ class RoundAnalysisAnalyzeRequest(BaseModel):
     round_number: int = Field(..., ge=1, le=50)
     mode: str = BACKTEST_MODE_HISTORICAL_OFFICIAL_XI
     models: list[str] | None = None
+    selected_models: list[str] | None = None
+    merge_mode: Literal["full", "upsert_selected_models"] = "full"
+    only_missing_models: bool = False
+    visible_card_mode: Literal["latest_only"] | None = None
     lines: list[float] | None = None
     cautious_drop_threshold: float = 0.75
     advice_filters: RoundAnalysisAdviceFilters | None = None
@@ -79,6 +83,10 @@ class RoundAnalysisAnalyzeRequest(BaseModel):
             object.__setattr__(self, "lines", list(DEFAULT_PICK_LINES))
         if self.models is not None:
             object.__setattr__(self, "models", normalize_model_keys(self.models))
+        if self.selected_models is not None:
+            if len(self.selected_models) == 0:
+                raise ValueError("selected_models_empty")
+            object.__setattr__(self, "selected_models", normalize_model_keys(self.selected_models))
         return self
 
 
@@ -206,7 +214,40 @@ class RoundAnalysisDetailResponse(BaseModel):
 
 
 class RoundAnalysisAnalyzeResponse(BaseModel):
-    analysis: RoundAnalysisDetailResponse
+    status: Literal["ok", "skipped"] = "ok"
+    reason: Literal["selected_models_already_present"] | None = None
+    round_number: int | None = None
+    analysis_id: int | None = None
+    analysis_version: int | None = None
+    created_new_analysis: bool | None = None
+    merged_into_existing_round: bool | None = None
+    selected_models: list[str] = Field(default_factory=list)
+    models_calculated: list[str] = Field(default_factory=list)
+    models_preserved: list[str] = Field(default_factory=list)
+    fixtures_processed: int | None = None
+    merge_changelog: list[dict[str, Any]] = Field(default_factory=list)
+    analysis: RoundAnalysisDetailResponse | None = None
+
+
+class RoundAnalysisVersionItem(BaseModel):
+    id: int
+    analysis_version: int
+    status: str
+    created_at: datetime
+    completed_at: datetime | None = None
+    mode: str
+    models_in_config: list[str] = Field(default_factory=list)
+    merge_mode: str | None = None
+    merge_changelog: list[dict[str, Any]] = Field(default_factory=list)
+    models_calculated_last_run: list[str] = Field(default_factory=list)
+    models_preserved_last_run: list[str] = Field(default_factory=list)
+
+
+class RoundAnalysisVersionsResponse(BaseModel):
+    competition_id: int
+    season_year: int
+    round_number: int
+    items: list[RoundAnalysisVersionItem] = Field(default_factory=list)
 
 
 class RoundAnalysisConflictResponse(BaseModel):

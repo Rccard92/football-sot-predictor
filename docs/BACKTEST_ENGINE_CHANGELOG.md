@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## backtest-season-batch-partial-model-update
+
+**Titolo:** Analisi stagione con aggiornamento parziale modelli
+
+**Descrizione:** Aggiunta analisi massiva stagione con checkbox modelli, progress bar e log batch sul frontend. L’endpoint `POST /api/backtest/round-analysis/analyze` supporta `selected_models`, `merge_mode=upsert_selected_models` e `only_missing_models` per aggiornare solo i modelli mancanti (es. aggiungere v3.0 senza ricalcolare v1.1/v2.0/v2.1), preservando i risultati esistenti e incrementando la versione interna. La lista giornate mostra una sola card per giornata (ultima versione), con storico consultabile via endpoint `GET /versions`. I report aggregati continuano a usare solo la latest version per round.
+
+**File toccati:** `round_analysis_service.py`, `round_analysis_merge.py`, `round_analysis_visible_selection.py`, `round_analysis_summary_resolver.py`, routes Round Analysis, frontend Backtest (season batch + versioni), docs.
+
+---
+
 ## backtest-v30-value-selector-refinement
 
 **Titolo:** Value selector v3.0-C — refinement simulatore calibrazione

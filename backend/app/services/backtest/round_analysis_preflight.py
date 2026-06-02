@@ -336,6 +336,7 @@ def accordion_summary_from_models(
         BASELINE_SOT_MODEL_VERSION_V11_SOT: "v1.1",
         BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT: "v2.0",
         BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS: "v2.1",
+        BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR: "v3.0",
     }
     out: dict[str, str] = {}
     any_predictions = False

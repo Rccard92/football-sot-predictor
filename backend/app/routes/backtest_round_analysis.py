@@ -11,7 +11,11 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.backtest_round_analysis import RoundAnalysisAnalyzeRequest
+from app.schemas.backtest_round_analysis import (
+    RoundAnalysisAnalyzeRequest,
+    RoundAnalysisAnalyzeResponse,
+    RoundAnalysisVersionsResponse,
+)
 from app.services.backtest.round_analysis_overview_service import RoundAnalysisOverviewService
 from app.services.backtest.round_analysis_diagnostics_service import RoundAnalysisDiagnosticsService
 from app.services.backtest.round_analysis_calibration_simulator_service import (
@@ -51,7 +55,10 @@ def round_analysis_analyze(
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("POST round-analysis/analyze: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
-    return jsonable_encoder({"analysis": payload})
+    # Retrocompatibilità: se il service ritorna un detail, lo incapsuliamo.
+    if isinstance(payload, dict) and ("status" in payload or "analysis" in payload):
+        return jsonable_encoder(payload)
+    return jsonable_encoder(RoundAnalysisAnalyzeResponse(analysis=payload))
 
 
 @router.get("")
@@ -62,6 +69,7 @@ def round_analysis_list(
     offset: int = Query(default=0, ge=0),
     sort_by: str = Query(default="round_number"),
     sort_dir: str = Query(default="desc"),
+    latest_only_per_round: bool = Query(default=True),
     db: Session = Depends(get_db),
 ):
     svc = RoundAnalysisService()
@@ -74,11 +82,35 @@ def round_analysis_list(
             offset=offset,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            latest_only_per_round=latest_only_per_round,
         )
     except HTTPException:
         raise
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("GET round-analysis: errore database")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(payload)
+
+
+@router.get("/versions")
+def round_analysis_versions(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    round_number: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    svc = RoundAnalysisService()
+    try:
+        payload = svc.list_versions(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            round_number=round_number,
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("GET round-analysis/versions: errore database")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(payload)
 

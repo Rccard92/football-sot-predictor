@@ -15,6 +15,9 @@ from app.models.backtest_round_analysis import BacktestRoundAnalysis, BacktestRo
 from app.schemas.backtest_round_analysis import (
     DEFAULT_ROUND_ANALYSIS_MODELS,
     RoundAnalysisAnalyzeRequest,
+    RoundAnalysisAnalyzeResponse,
+    RoundAnalysisVersionsResponse,
+    RoundAnalysisVersionItem,
     RoundAnalysisDeleteResponse,
     RoundAnalysisDetailResponse,
     RoundAnalysisFixtureRow,
@@ -30,6 +33,12 @@ from app.services.backtest.round_analysis_preflight import preflight_round_histo
 from app.services.backtest.round_analysis_summary_resolver import (
     fixture_rows_from_orm,
     resolve_round_display,
+)
+from app.services.backtest.round_analysis_merge import (
+    find_latest_completed_round_analysis,
+    load_fixtures_for_analysis,
+    preserved_model_keys_from_fixture,
+    selected_models_already_present,
 )
 from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
 
@@ -71,25 +80,50 @@ class RoundAnalysisService:
         self._runner = RoundAnalysisModelRunner()
         self._aggregator = RoundAnalysisAggregator()
 
-    def analyze(self, db: Session, request: RoundAnalysisAnalyzeRequest) -> RoundAnalysisDetailResponse:
+    def analyze(self, db: Session, request: RoundAnalysisAnalyzeRequest) -> RoundAnalysisDetailResponse | dict[str, Any]:
         comp = db.get(Competition, int(request.competition_id))
         if comp is None:
             raise_backtest_http(404, "competition_not_found", "Campionato non trovato.")
 
-        if not request.force_recalculate:
-            existing = self._latest_completed(
+        is_upsert = str(request.merge_mode) == "upsert_selected_models"
+        selected_models = list(request.selected_models or []) if request.selected_models is not None else []
+
+        base_analysis: BacktestRoundAnalysis | None = None
+        base_fixtures_by_fixture_id: dict[int, BacktestRoundFixtureResult] = {}
+        if is_upsert:
+            base_analysis = find_latest_completed_round_analysis(
                 db,
-                competition_id=request.competition_id,
-                season_year=request.season_year,
-                round_number=request.round_number,
+                competition_id=int(request.competition_id),
+                season_year=int(request.season_year),
+                round_number=int(request.round_number),
             )
-            if existing is not None:
-                raise_backtest_http(
-                    409,
-                    "analysis_already_completed",
-                    "Analisi già completata per questa giornata. Usa Rianalizza per una nuova versione.",
-                    existing_analysis_id=int(existing.id),
+            if base_analysis is not None:
+                base_fixtures = load_fixtures_for_analysis(db, analysis_id=int(base_analysis.id))
+                base_fixtures_by_fixture_id = {int(r.fixture_id): r for r in base_fixtures}
+
+                if request.only_missing_models and selected_models:
+                    if selected_models_already_present(base_fixtures, selected_models=selected_models):
+                        return RoundAnalysisAnalyzeResponse(
+                            status="skipped",
+                            reason="selected_models_already_present",
+                            round_number=int(request.round_number),
+                            selected_models=list(selected_models),
+                        ).model_dump()
+        else:
+            if not request.force_recalculate:
+                existing = self._latest_completed(
+                    db,
+                    competition_id=request.competition_id,
+                    season_year=request.season_year,
+                    round_number=request.round_number,
                 )
+                if existing is not None:
+                    raise_backtest_http(
+                        409,
+                        "analysis_already_completed",
+                        "Analisi già completata per questa giornata. Usa Rianalizza per una nuova versione.",
+                        existing_analysis_id=int(existing.id),
+                    )
 
         version = self._next_version(
             db,
@@ -99,6 +133,8 @@ class RoundAnalysisService:
         )
 
         models = normalize_model_keys(request.models)
+        if is_upsert and selected_models:
+            models = list(selected_models)
         advice = request.advice_filters
         play_config = PlayAdviceConfig(
             min_prior_matches_for_play=advice.min_prior_matches_for_play if advice else 10,
@@ -118,6 +154,10 @@ class RoundAnalysisService:
             "mode": request.mode,
             "season_label": season_label,
         }
+        if is_upsert:
+            config_json["merge_mode"] = "upsert_selected_models"
+            config_json["selected_models"] = list(selected_models)
+            config_json["only_missing_models"] = bool(request.only_missing_models)
 
         analysis = BacktestRoundAnalysis(
             competition_id=int(request.competition_id),
@@ -184,6 +224,14 @@ class RoundAnalysisService:
                 dq = self._prep.fixture_data_quality(preflight) if preflight else {"lineup": "unknown", "mapping": "unknown"}
 
                 try:
+                    preserved_models_json: dict[str, Any] = {}
+                    preserved_explanation_json: dict[str, Any] = {}
+                    base_row = base_fixtures_by_fixture_id.get(int(fx.id)) if is_upsert else None
+                    if base_row is not None:
+                        preserved_models_json, preserved_explanation_json = preserved_model_keys_from_fixture(
+                            base_row,
+                            selected_models=models,
+                        )
                     models_json, explanation_json = self._runner.run_for_fixture(
                         db,
                         fixture=fx,
@@ -197,6 +245,10 @@ class RoundAnalysisService:
                         actual_total=cand.actual_total_sot,
                         analysis_id=int(analysis.id),
                     )
+                    if preserved_models_json:
+                        models_json = {**preserved_models_json, **models_json}
+                    if preserved_explanation_json:
+                        explanation_json = {**preserved_explanation_json, **(explanation_json or {})}
                     home_sot, away_sot = self._actual_side_sots(db, fx)
                     row = BacktestRoundFixtureResult(
                         analysis_id=int(analysis.id),
@@ -216,13 +268,42 @@ class RoundAnalysisService:
                     fixture_rows.append(self._fixture_row_dict(row))
                 except Exception as exc:  # noqa: BLE001
                     failed += 1
-                    self._save_failed_fixture(
-                        db,
-                        analysis=analysis,
-                        cand=cand,
-                        message=str(exc)[:500],
-                        fx=fx,
-                    )
+                    # In modalità upsert preserviamo i modelli non selezionati anche in caso di errore.
+                    if is_upsert:
+                        base_row = base_fixtures_by_fixture_id.get(int(fx.id))
+                        preserved_models_json = {}
+                        preserved_explanation_json = {}
+                        if base_row is not None:
+                            preserved_models_json, preserved_explanation_json = preserved_model_keys_from_fixture(
+                                base_row,
+                                selected_models=models,
+                            )
+                        home_sot, away_sot = self._actual_side_sots(db, fx)
+                        row = BacktestRoundFixtureResult(
+                            analysis_id=int(analysis.id),
+                            fixture_id=int(fx.id),
+                            round_number=request.round_number,
+                            home_team_name=cand.home_team.name,
+                            away_team_name=cand.away_team.name,
+                            actual_home_sot=home_sot,
+                            actual_away_sot=away_sot,
+                            actual_total_sot=cand.actual_total_sot,
+                            models_json=preserved_models_json,
+                            explanation_json=preserved_explanation_json or {},
+                            status="failed",
+                            error_message=str(exc)[:500],
+                        )
+                        db.add(row)
+                        db.commit()
+                        fixture_rows.append(self._fixture_row_dict(row))
+                    else:
+                        self._save_failed_fixture(
+                            db,
+                            analysis=analysis,
+                            cand=cand,
+                            message=str(exc)[:500],
+                            fx=fx,
+                        )
 
                 analysis.processed_fixtures = processed
                 analysis.failed_fixtures = failed
@@ -265,7 +346,44 @@ class RoundAnalysisService:
 
             db.commit()
             db.refresh(analysis)
-            return self.get_detail(db, int(analysis.id))
+            detail = self.get_detail(db, int(analysis.id))
+            if not is_upsert:
+                return detail
+
+            preserved_keys: list[str] = []
+            if base_analysis is not None:
+                cfg = dict(base_analysis.config_json or {})
+                for k in cfg.get("models") or DEFAULT_ROUND_ANALYSIS_MODELS:
+                    if str(k) not in preserved_keys:
+                        preserved_keys.append(str(k))
+            preserved_keys = [k for k in preserved_keys if k not in models]
+            all_keys = [*preserved_keys, *models]
+
+            cfg2 = dict(analysis.config_json or {})
+            cfg2["models"] = all_keys
+            cfg2["models_calculated_last_run"] = list(models)
+            cfg2["models_preserved_last_run"] = list(preserved_keys)
+            cfg2["merge_changelog"] = [
+                {"model": k, "action": ("recalculated" if base_analysis is not None else "added")}
+                for k in models
+            ]
+            analysis.config_json = cfg2
+            db.commit()
+
+            return RoundAnalysisAnalyzeResponse(
+                status="ok",
+                round_number=int(request.round_number),
+                analysis_id=int(detail.id),
+                analysis_version=int(detail.analysis_version),
+                created_new_analysis=True,
+                merged_into_existing_round=base_analysis is not None,
+                selected_models=list(models),
+                models_calculated=list(models),
+                models_preserved=list(preserved_keys),
+                fixtures_processed=int(detail.processed_fixtures),
+                merge_changelog=list(cfg2.get("merge_changelog") or []),
+                analysis=detail,
+            ).model_dump()
 
         except HTTPException as exc:
             analysis.status = "failed"
@@ -360,21 +478,38 @@ class RoundAnalysisService:
         offset: int = 0,
         sort_by: str = "round_number",
         sort_dir: str = "desc",
+        latest_only_per_round: bool = False,
     ) -> RoundAnalysisListResponse:
         clauses = [
             BacktestRoundAnalysis.competition_id == int(competition_id),
             BacktestRoundAnalysis.season_year == int(season_year),
         ]
-        total = int(db.scalar(select(func.count()).select_from(BacktestRoundAnalysis).where(*clauses)) or 0)
         safe_sort_by = sort_by if sort_by in ("round_number", "created_at") else "round_number"
         safe_sort_dir = sort_dir if sort_dir in ("asc", "desc") else "desc"
-        rows = db.scalars(
-            select(BacktestRoundAnalysis)
-            .where(*clauses)
-            .order_by(*_list_order_clauses(safe_sort_by, safe_sort_dir))
-            .offset(max(0, offset))
-            .limit(max(1, min(limit, 100))),
-        ).all()
+
+        if latest_only_per_round:
+            # Carichiamo tutte le versioni completed e scegliamo una sola per round.
+            from app.services.backtest.round_analysis_visible_selection import pick_visible_latest_per_round
+
+            all_rows = db.scalars(
+                select(BacktestRoundAnalysis)
+                .where(*clauses, BacktestRoundAnalysis.status.in_(("completed", "completed_with_warnings")))
+                .order_by(*_list_order_clauses(safe_sort_by, safe_sort_dir)),
+            ).all()
+            visible = pick_visible_latest_per_round(all_rows)
+
+            total = len(visible)
+            # Paginazione applicata sul set deduplicato.
+            rows = visible[max(0, offset) : max(0, offset) + max(1, min(limit, 100))]
+        else:
+            total = int(db.scalar(select(func.count()).select_from(BacktestRoundAnalysis).where(*clauses)) or 0)
+            rows = db.scalars(
+                select(BacktestRoundAnalysis)
+                .where(*clauses)
+                .order_by(*_list_order_clauses(safe_sort_by, safe_sort_dir))
+                .offset(max(0, offset))
+                .limit(max(1, min(limit, 100))),
+            ).all()
 
         analysis_ids = [int(r.id) for r in rows]
         fixtures_by_id = self._load_fixtures_by_analysis_ids(db, analysis_ids)
@@ -419,6 +554,50 @@ class RoundAnalysisService:
             )
 
         return RoundAnalysisListResponse(items=items, total=total, limit=limit, offset=offset)
+
+    def list_versions(
+        self,
+        db: Session,
+        *,
+        competition_id: int,
+        season_year: int,
+        round_number: int,
+    ) -> RoundAnalysisVersionsResponse:
+        rows = db.scalars(
+            select(BacktestRoundAnalysis)
+            .where(
+                BacktestRoundAnalysis.competition_id == int(competition_id),
+                BacktestRoundAnalysis.season_year == int(season_year),
+                BacktestRoundAnalysis.round_number == int(round_number),
+            )
+            .order_by(BacktestRoundAnalysis.analysis_version.desc(), BacktestRoundAnalysis.created_at.desc()),
+        ).all()
+
+        items: list[RoundAnalysisVersionItem] = []
+        for row in rows:
+            cfg = dict(row.config_json or {})
+            items.append(
+                RoundAnalysisVersionItem(
+                    id=int(row.id),
+                    analysis_version=int(row.analysis_version),
+                    status=str(row.status),
+                    created_at=row.created_at,
+                    completed_at=row.completed_at,
+                    mode=str(row.mode),
+                    models_in_config=[str(k) for k in (cfg.get("models") or [])],
+                    merge_mode=cfg.get("merge_mode"),
+                    merge_changelog=list(cfg.get("merge_changelog") or []),
+                    models_calculated_last_run=[str(k) for k in (cfg.get("models_calculated_last_run") or [])],
+                    models_preserved_last_run=[str(k) for k in (cfg.get("models_preserved_last_run") or [])],
+                ),
+            )
+
+        return RoundAnalysisVersionsResponse(
+            competition_id=int(competition_id),
+            season_year=int(season_year),
+            round_number=int(round_number),
+            items=items,
+        )
 
     def get_detail(self, db: Session, analysis_id: int) -> RoundAnalysisDetailResponse:
         analysis = db.get(BacktestRoundAnalysis, int(analysis_id))

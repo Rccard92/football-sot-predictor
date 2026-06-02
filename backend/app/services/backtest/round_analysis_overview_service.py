@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import BacktestRoundAnalysis, BacktestRoundFixtureResult
 from app.schemas.backtest_round_analysis import DEFAULT_ROUND_ANALYSIS_MODELS, season_label_from_year
 from app.services.backtest.round_analysis_overview_aggregator import build_overview_payload
+from app.services.backtest.round_analysis_visible_selection import pick_visible_latest_per_round
 from app.services.backtest.round_analysis_calibration_export import (
     build_calibration_csv,
     build_calibration_report,
@@ -101,13 +102,7 @@ class RoundAnalysisOverviewService:
         )
         if include_all_versions or not use_latest_version_per_round:
             return sorted(rows, key=lambda r: (int(r.round_number), int(r.analysis_version)))
-        by_round: dict[int, BacktestRoundAnalysis] = {}
-        for row in rows:
-            rn = int(row.round_number)
-            prev = by_round.get(rn)
-            if prev is None or int(row.analysis_version) > int(prev.analysis_version):
-                by_round[rn] = row
-        return sorted(by_round.values(), key=lambda r: int(r.round_number))
+        return pick_visible_latest_per_round(rows)
 
     def _load_fixtures_by_analysis(
         self,

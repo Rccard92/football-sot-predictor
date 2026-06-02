@@ -3,10 +3,12 @@ import {
   deleteRoundAnalysis,
   getRoundAnalysisDetail,
   getRoundAnalyses,
+  getRoundAnalysisVersions,
   postRoundAnalysisRecalculate,
   type RoundAnalysisDetail,
   type RoundAnalysisListItem,
   type RoundAnalysisOverviewRound,
+  type RoundAnalysisVersionsResponse,
   type RoundOverviewModelChip,
 } from '../../lib/api'
 import { RoundAnalysisDeleteConfirm } from './RoundAnalysisDeleteConfirm'
@@ -94,6 +96,10 @@ export function RoundAnalysisAccordion({
   const [pendingDelete, setPendingDelete] = useState<RoundAnalysisListItem | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [recalculatingId, setRecalculatingId] = useState<number | null>(null)
+  const [versionsOpen, setVersionsOpen] = useState(false)
+  const [versionsLoading, setVersionsLoading] = useState(false)
+  const [versionsError, setVersionsError] = useState<string | null>(null)
+  const [versionsData, setVersionsData] = useState<RoundAnalysisVersionsResponse | null>(null)
 
   const load = useCallback(async () => {
     if (competitionId == null) return
@@ -103,6 +109,7 @@ export function RoundAnalysisAccordion({
         limit: 50,
         sortBy: 'round_number',
         sortDir: 'desc',
+        latestOnlyPerRound: true,
       })
       setItems(res.items)
     } finally {
@@ -150,6 +157,22 @@ export function RoundAnalysisAccordion({
       setErrorMessage(e instanceof Error ? e.message : String(e))
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const openVersions = async (item: RoundAnalysisListItem) => {
+    if (competitionId == null) return
+    setVersionsOpen(true)
+    setVersionsLoading(true)
+    setVersionsError(null)
+    setVersionsData(null)
+    try {
+      const data = await getRoundAnalysisVersions(competitionId, seasonYear, item.round_number)
+      setVersionsData(data)
+    } catch (e) {
+      setVersionsError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setVersionsLoading(false)
     }
   }
 
@@ -239,6 +262,16 @@ export function RoundAnalysisAccordion({
                     ) : null}
                     <button
                       type="button"
+                      className="rounded-lg border border-slate-200 px-2 py-1 text-slate-800 hover:bg-slate-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void openVersions(item)
+                      }}
+                    >
+                      Versioni
+                    </button>
+                    <button
+                      type="button"
                       className="rounded-lg border border-rose-200 px-2 py-1 text-rose-800 hover:bg-rose-50"
                       onClick={(e) => {
                         e.stopPropagation()
@@ -295,6 +328,10 @@ export function RoundAnalysisAccordion({
         })}
       </div>
 
+      <p className="text-xs text-slate-500">
+        Mostriamo solo l’ultima versione di ogni giornata. Le versioni precedenti restano consultabili nello storico.
+      </p>
+
       {pendingDelete ? (
         <RoundAnalysisDeleteConfirm
           roundNumber={pendingDelete.round_number}
@@ -304,6 +341,64 @@ export function RoundAnalysisAccordion({
           }}
           onConfirm={() => void confirmDelete()}
         />
+      ) : null}
+
+      {versionsOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setVersionsOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-xl bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Versioni</h3>
+                {versionsData ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Giornata {versionsData.round_number} · {versionsData.season_year}/{versionsData.season_year + 1}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                onClick={() => setVersionsOpen(false)}
+              >
+                Chiudi
+              </button>
+            </div>
+
+            {versionsLoading ? <p className="mt-3 text-sm text-slate-500">Caricamento…</p> : null}
+            {versionsError ? <p className="mt-3 text-sm text-rose-700">{versionsError}</p> : null}
+            {versionsData && !versionsLoading ? (
+              <div className="mt-3 space-y-2 text-sm text-slate-800">
+                {versionsData.items.map((v) => (
+                  <div key={v.id} className="rounded-lg border border-slate-200 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-medium">
+                        v{v.analysis_version}{' '}
+                        <span className="text-xs font-normal text-slate-500">({v.status})</span>
+                      </div>
+                      <div className="text-xs text-slate-500">{v.created_at}</div>
+                    </div>
+                    {v.models_calculated_last_run?.length ? (
+                      <div className="mt-2 text-xs text-slate-700">
+                        Modelli aggiornati: {v.models_calculated_last_run.join(', ')}
+                      </div>
+                    ) : null}
+                    {v.models_preserved_last_run?.length ? (
+                      <div className="mt-1 text-xs text-slate-700">
+                        Modelli preservati: {v.models_preserved_last_run.join(', ')}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </section>
   )

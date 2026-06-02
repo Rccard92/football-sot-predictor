@@ -7,6 +7,7 @@ import { RoundAnalysisCalibrationSimulatorSection } from '../components/backtest
 import { RoundAnalysisDetailBox } from '../components/backtest/RoundAnalysisDetailBox'
 import { RoundAnalysisFixtureTable } from '../components/backtest/RoundAnalysisFixtureTable'
 import { RoundAnalysisForm } from '../components/backtest/RoundAnalysisForm'
+import { RoundAnalysisSeasonBatchSection } from '../components/backtest/RoundAnalysisSeasonBatchSection'
 import { downloadRoundAnalysisReport } from '../components/backtest/roundAnalysisReportDownload'
 import { dataQualityBadgeClass, seasonLabelFromYear, statusLabelIt } from '../components/backtest/roundAnalysisUtils'
 import { useCompetition } from '../contexts/CompetitionContext'
@@ -69,6 +70,13 @@ export function Backtest() {
         seasonLabel={seasonLabel}
         firstRecommendedRound={recommendedRound ?? detail?.first_recommended_round ?? null}
         onAnalyzed={handleAnalyzed}
+        onReloadList={() => setReloadToken((t) => t + 1)}
+      />
+
+      <RoundAnalysisSeasonBatchSection
+        competitionId={selectedCompetitionId}
+        seasonYear={seasonYear}
+        seasonLabel={seasonLabel}
         onReloadList={() => setReloadToken((t) => t + 1)}
       />
 

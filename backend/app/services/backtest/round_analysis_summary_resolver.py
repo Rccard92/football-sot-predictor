@@ -135,6 +135,45 @@ def build_round_model_chips(
 ) -> dict[str, dict[str, Any]]:
     chips: dict[str, dict[str, Any]] = {}
     for model_key in model_keys:
+        if model_key == "baseline_v3_0_sot_value_selector":
+            picks_w = picks_l = 0
+            no_bet = borderline = 0
+            for row in rows:
+                if row.get("status") != "ok":
+                    continue
+                block = (row.get("models_json") or {}).get(model_key)
+                if not isinstance(block, dict):
+                    continue
+                if model_block_is_error(block) or model_block_is_no_prediction(block):
+                    continue
+
+                advice_raw = str(block.get("cautious_advice") or "").strip().upper()
+                if advice_raw in {"GIOCA", "PLAY"}:
+                    out = block.get("cautious_outcome")
+                    if out == "WIN":
+                        picks_w += 1
+                    elif out == "LOSS":
+                        picks_l += 1
+                elif advice_raw == "BORDERLINE":
+                    borderline += 1
+                elif advice_raw == "NO_BET":
+                    no_bet += 1
+
+            decided = picks_w + picks_l
+            hr = _hit_rate(picks_w, picks_l)
+            hr_display = f"{hr:.0f}%" if decided and hr is not None else "—"
+            base = f"{picks_w}/{decided} {hr_display}" if decided else "0/0 —"
+            parts = [base, f"NB {no_bet}"]
+            if borderline:
+                parts.insert(1, f"Borderline {borderline}")
+            chips[model_key] = {
+                "cautious_display": " · ".join(parts),
+                "aggressive_display": "—",
+                "cautious_hit_rate": hr,
+                "aggressive_hit_rate": None,
+            }
+            continue
+
         calc_agg = {"wins": 0, "losses": 0}
         calc_caut = {"wins": 0, "losses": 0}
         for row in rows:

@@ -507,8 +507,9 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 
 | Metodo | Path | Ruolo |
 |--------|------|--------|
-| POST | `/api/backtest/round-analysis/analyze` | Orchestrazione sync: prep dati + 3 modelli + persistenza |
-| GET | `/api/backtest/round-analysis` | Lista analisi per campionato/stagione (`sort_by`, `sort_dir`; default `round_number` desc + tie-breaker `analysis_version`, `created_at`) |
+| POST | `/api/backtest/round-analysis/analyze` | Orchestrazione sync: prep dati + modelli selezionati + persistenza. Supporta aggiornamento parziale (`selected_models`, `merge_mode=upsert_selected_models`) e skip (`only_missing_models=true`). |
+| GET | `/api/backtest/round-analysis` | Lista analisi per campionato/stagione. Default: **una sola card per giornata** (`latest_only_per_round=true`). Opzionale: includere tutte le versioni per debug. |
+| GET | `/api/backtest/round-analysis/versions` | Storico versioni per una giornata (`competition_id`, `season_year`, `round_number`). |
 | DELETE | `/api/backtest/round-analysis/{id}` | Elimina analisi e risultati fixture backtest (CASCADE); non tocca `fixtures` / mapping / indisponibili |
 | GET | `/api/backtest/round-analysis/{id}` | Dettaglio + fixture results |
 
@@ -518,7 +519,34 @@ Route operativa: **`/backtest`** (non sostituisce `/admin` debug).
 
 **Modelli:** alias API `baseline_v1_1` → `baseline_v1_1_sot`; v2.0/v2.1 invariati. v1.1/v2.0 **in-memory** su finished; v2.1 = `SotV21PointInTimePreviewService` + logica pick Step H.
 
-**Rianalisi:** `force_recalculate=true` incrementa `analysis_version`; altrimenti 409 se analisi `completed` esiste.
+**Rianalisi (full):** `force_recalculate=true` incrementa `analysis_version`; altrimenti 409 se analisi `completed` esiste.
+
+### Season Batch Analysis and Partial Model Updates
+
+Obiettivo: aggiornare più giornate (anche già analizzate) **senza duplicare** le card e senza ricalcolare modelli inutilmente.
+
+**Frontend batch orchestrator:** la UI esegue una chiamata per giornata (evita timeout Railway), aggiorna progress e continua anche se una giornata fallisce.
+
+**Payload (update parziale):**
+
+```json
+{
+  "competition_id": 1,
+  "season_year": 2025,
+  "round_number": 37,
+  "mode": "historical_official_xi",
+  "selected_models": ["baseline_v3_0_sot_value_selector"],
+  "merge_mode": "upsert_selected_models",
+  "only_missing_models": true
+}
+```
+
+**Regole principali:**
+
+- `selected_models` limita il calcolo ai modelli selezionati (es. solo v3.0).
+- `merge_mode=upsert_selected_models` crea una nuova versione della giornata ma **preserva** i risultati dei modelli non selezionati, copiandoli dalla versione visibile precedente.
+- `only_missing_models=true` può restituire `status=skipped` se i modelli selezionati sono già presenti (niente versioni inutili).
+- La lista (`GET /round-analysis`) mostra solo l’ultima versione per giornata; lo storico resta accessibile via endpoint `versions`.
 
 `BacktestDebugPanel` resta solo su `/admin`.
 

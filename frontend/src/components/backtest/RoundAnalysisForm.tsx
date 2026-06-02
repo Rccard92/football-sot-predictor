@@ -33,7 +33,7 @@ export function RoundAnalysisForm({
     setLoading(true)
     setError(null)
     try {
-      const { analysis } = await postRoundAnalysisAnalyze({
+      const res = await postRoundAnalysisAnalyze({
         competition_id: competitionId,
         season_year: seasonYear,
         round_number: roundNumber,
@@ -45,6 +45,10 @@ export function RoundAnalysisForm({
           'baseline_v3_0_sot_value_selector',
         ],
       })
+      const analysis = res.analysis
+      if (!analysis) {
+        throw new Error('Risposta endpoint non valida: analysis mancante.')
+      }
       onAnalyzed(analysis)
       onReloadList()
     } catch (e) {

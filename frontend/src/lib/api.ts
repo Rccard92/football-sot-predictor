@@ -2840,10 +2840,30 @@ export type RoundAnalysisAnalyzeRequest = {
   round_number: number
   mode?: string
   models?: string[]
+  selected_models?: string[]
+  merge_mode?: 'full' | 'upsert_selected_models'
+  only_missing_models?: boolean
+  visible_card_mode?: 'latest_only'
   lines?: number[]
   cautious_drop_threshold?: number
   advice_filters?: RoundAnalysisAdviceFilters
   force_recalculate?: boolean
+}
+
+export type RoundAnalysisAnalyzeResponse = {
+  status: 'ok' | 'skipped'
+  reason?: 'selected_models_already_present' | null
+  round_number?: number | null
+  analysis_id?: number | null
+  analysis_version?: number | null
+  created_new_analysis?: boolean | null
+  merged_into_existing_round?: boolean | null
+  selected_models?: string[]
+  models_calculated?: string[]
+  models_preserved?: string[]
+  fixtures_processed?: number | null
+  merge_changelog?: Array<{ model: string; action: 'added' | 'recalculated' | string }>
+  analysis?: RoundAnalysisDetail | null
 }
 
 export type RoundAnalysisModelBlock = {
@@ -3000,11 +3020,8 @@ export type RoundAnalysisListResponse = {
 
 export async function postRoundAnalysisAnalyze(
   body: RoundAnalysisAnalyzeRequest,
-): Promise<{ analysis: RoundAnalysisDetail }> {
-  return requestPostJson<{ analysis: RoundAnalysisDetail }>(
-    '/api/backtest/round-analysis/analyze',
-    body,
-  )
+): Promise<RoundAnalysisAnalyzeResponse> {
+  return requestPostJson<RoundAnalysisAnalyzeResponse>('/api/backtest/round-analysis/analyze', body)
 }
 
 export type RoundAnalysisDeleteResponse = {
@@ -3016,7 +3033,13 @@ export type RoundAnalysisDeleteResponse = {
 export async function getRoundAnalyses(
   competitionId: number,
   seasonYear: number,
-  opts?: { limit?: number; offset?: number; sortBy?: string; sortDir?: string },
+  opts?: {
+    limit?: number
+    offset?: number
+    sortBy?: string
+    sortDir?: string
+    latestOnlyPerRound?: boolean
+  },
 ): Promise<RoundAnalysisListResponse> {
   const q = new URLSearchParams({
     competition_id: String(competitionId),
@@ -3026,7 +3049,42 @@ export async function getRoundAnalyses(
   if (opts?.offset != null) q.set('offset', String(opts.offset))
   if (opts?.sortBy) q.set('sort_by', opts.sortBy)
   if (opts?.sortDir) q.set('sort_dir', opts.sortDir)
+  if (opts?.latestOnlyPerRound != null) q.set('latest_only_per_round', String(opts.latestOnlyPerRound))
   return requestJson<RoundAnalysisListResponse>(`/api/backtest/round-analysis?${q.toString()}`)
+}
+
+export type RoundAnalysisVersionItem = {
+  id: number
+  analysis_version: number
+  status: string
+  created_at: string
+  completed_at?: string | null
+  mode: string
+  models_in_config: string[]
+  merge_mode?: string | null
+  merge_changelog?: Array<Record<string, unknown>>
+  models_calculated_last_run?: string[]
+  models_preserved_last_run?: string[]
+}
+
+export type RoundAnalysisVersionsResponse = {
+  competition_id: number
+  season_year: number
+  round_number: number
+  items: RoundAnalysisVersionItem[]
+}
+
+export async function getRoundAnalysisVersions(
+  competitionId: number,
+  seasonYear: number,
+  roundNumber: number,
+): Promise<RoundAnalysisVersionsResponse> {
+  const q = new URLSearchParams({
+    competition_id: String(competitionId),
+    season_year: String(seasonYear),
+    round_number: String(roundNumber),
+  })
+  return requestJson<RoundAnalysisVersionsResponse>(`/api/backtest/round-analysis/versions?${q.toString()}`)
 }
 
 export async function getRoundAnalysisDetail(analysisId: number): Promise<RoundAnalysisDetail> {
