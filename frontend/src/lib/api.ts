@@ -2954,6 +2954,9 @@ export type RoundAnalysisModelSummary = {
   display?: string
   prevalent_error_code?: string | null
   model_engine_name?: string | null
+  no_bet_count?: number
+  borderline_count?: number
+  aggressive_na?: boolean
 }
 
 export type RoundAnalysisDetail = {
@@ -3152,6 +3155,13 @@ export type RoundAnalysisModePlayStats = {
   advice_counts?: Record<string, number>
 }
 
+export type RoundAnalysisLinePickStats = {
+  wins: number
+  losses: number
+  hit_rate?: number | null
+  display?: string
+}
+
 export type RoundAnalysisModelOverviewStats = {
   model_key: string
   label: string
@@ -3160,6 +3170,7 @@ export type RoundAnalysisModelOverviewStats = {
   aggressive: RoundAnalysisModePlayStats
   cautious: RoundAnalysisModePlayStats
   reliability_score?: number | null
+  reliability_mode?: 'pick_selected' | 'weighted_ca' | null
   sample_status: 'provvisorio' | 'medio' | 'solido'
   trend_last_5_rounds?: {
     hit_rate?: number | null
@@ -3169,6 +3180,11 @@ export type RoundAnalysisModelOverviewStats = {
   mae?: number | null
   bias?: number | null
   advised_plays_total?: number
+  no_bet_count?: number
+  borderline_count?: number
+  line_6_5?: RoundAnalysisLinePickStats | null
+  line_7_5?: RoundAnalysisLinePickStats | null
+  aggressive_na?: boolean
 }
 
 export type RoundAnalysisOverviewRound = {

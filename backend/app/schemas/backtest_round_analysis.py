@@ -113,6 +113,9 @@ class RoundAnalysisModelSummary(BaseModel):
     display: str = "ND"
     prevalent_error_code: str | None = None
     model_engine_name: str | None = None
+    no_bet_count: int = 0
+    borderline_count: int = 0
+    aggressive_na: bool = False
 
 
 def season_label_from_year(year: int) -> str:

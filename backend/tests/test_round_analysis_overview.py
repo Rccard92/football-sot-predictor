@@ -7,8 +7,14 @@ from types import SimpleNamespace
 from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+    BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR,
 )
-from app.services.backtest.round_analysis_mode_stats import count_play_mode, reliability_score
+from app.services.backtest.round_analysis_mode_stats import (
+    count_play_mode,
+    reliability_score,
+    reliability_score_for_model,
+)
+from app.services.backtest.round_analysis_report_builder import model_block_to_report
 from app.services.backtest.round_analysis_overview_aggregator import (
     build_overview_payload,
     summarize_model_from_fixtures,
@@ -16,6 +22,7 @@ from app.services.backtest.round_analysis_overview_aggregator import (
 
 V11 = BASELINE_SOT_MODEL_VERSION_V11_SOT
 V21 = BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
+V30 = BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR
 
 
 def _block(agg_advice: str, agg_out: str, caut_advice: str, caut_out: str) -> dict:
@@ -44,6 +51,68 @@ def test_count_play_mode_advised_vs_calculated():
 
 def test_reliability_score_weighted():
     assert reliability_score(80.0, 70.0) == round(0.65 * 80 + 0.35 * 70, 1)
+
+
+def test_reliability_score_for_model_v30_uses_pick_only():
+    assert reliability_score_for_model(V30, 74.8, 0.0) == 74.8
+    assert reliability_score_for_model(V11, 80.0, 0.0) == round(0.65 * 80, 1)
+
+
+def _v30_block(advice: str, outcome: str | None, line: float = 6.5) -> dict:
+    return {
+        "status": "ok",
+        "predicted_total_sot": 7.0,
+        "cautious_advice": advice,
+        "cautious_outcome": outcome,
+        "cautious_line": line,
+        "aggressive_advice": None,
+        "aggressive_outcome": None,
+    }
+
+
+def test_v30_reliability_equals_pick_hit_rate_not_weighted():
+    rows = [
+        {"status": "ok", "actual_total_sot": 8, "models_json": {V30: _v30_block("GIOCA", "WIN")}},
+        {"status": "ok", "actual_total_sot": 8, "models_json": {V30: _v30_block("GIOCA", "WIN")}},
+        {"status": "ok", "actual_total_sot": 8, "models_json": {V30: _v30_block("GIOCA", "LOSS")}},
+        {"status": "ok", "actual_total_sot": 8, "models_json": {V30: _v30_block("NO_BET", None)}},
+        {"status": "ok", "actual_total_sot": 8, "models_json": {V30: _v30_block("BORDERLINE", None)}},
+    ]
+    s = summarize_model_from_fixtures(V30, rows)
+    assert s["cautious"]["wins"] == 2
+    assert s["cautious"]["losses"] == 1
+    assert s["reliability_score"] == round(100.0 * 2 / 3, 1)
+    assert s["reliability_mode"] == "pick_selected"
+    assert s["no_bet_count"] == 1
+    assert s["borderline_count"] == 1
+    assert s["aggressive_na"] is True
+    assert s["aggressive"]["display"] == "N/A"
+
+
+def test_v30_no_bet_not_in_pick_denominator():
+    rows = [
+        {"status": "ok", "actual_total_sot": 8, "models_json": {V30: _v30_block("NO_BET", None)}},
+        {"status": "ok", "actual_total_sot": 8, "models_json": {V30: _v30_block("NO_BET", None)}},
+    ]
+    s = summarize_model_from_fixtures(V30, rows)
+    assert s["cautious"]["wins"] == 0
+    assert s["cautious"]["losses"] == 0
+    assert s["reliability_score"] is None
+    assert s["no_bet_count"] == 2
+
+
+def test_v30_report_audit_no_actuals_in_selection():
+    block = {
+        "status": "ok",
+        "cautious_advice": "NO_BET",
+        "trace_summary": {
+            "selection": {"decision": "NO_BET", "reason_codes": [], "no_bet_reasons": ["LOW_EDGE"]},
+            "audit": {"actuals_used_as_input": False, "leakage_guard": True},
+        },
+    }
+    report = model_block_to_report(V30, block, explanation_slice={})
+    assert report["value_selector"]["audit"]["actuals_used_as_input"] is False
+    assert report["trace_summary"]["audit"]["leakage_guard"] is True
 
 
 def test_summarize_model_hit_rates_advised_only():

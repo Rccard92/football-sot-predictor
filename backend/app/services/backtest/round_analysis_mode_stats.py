@@ -18,6 +18,8 @@ def advice_bucket(raw: str | None) -> str:
     norm = str(raw).strip().upper()
     if norm in {"GIOCA", "PLAY"}:
         return "GIOCA"
+    if norm == "NO_BET":
+        return "NO_BET"
     if norm in {"NON GIOCARE", "NO_PLAY", "NO PLAY"}:
         return "NON GIOCARE"
     if norm == "BORDERLINE":
@@ -110,6 +112,19 @@ def reliability_score(cautious_hit: float | None, aggressive_hit: float | None) 
     c = float(cautious_hit or 0.0)
     a = float(aggressive_hit or 0.0)
     return round(0.65 * c + 0.35 * a, 1)
+
+
+def reliability_score_for_model(
+    model_key: str,
+    cautious_hit: float | None,
+    aggressive_hit: float | None,
+) -> float | None:
+    """v3.0: solo hit rate sui pick selezionati (GIOCA con esito), senza penalità aggressive."""
+    from app.core.constants import BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR
+
+    if model_key == BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR:
+        return cautious_hit
+    return reliability_score(cautious_hit, aggressive_hit)
 
 
 def sample_status(advised_plays: int) -> str:

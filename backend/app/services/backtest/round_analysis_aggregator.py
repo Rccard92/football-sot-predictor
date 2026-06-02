@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from app.core.constants import BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR
 from app.schemas.backtest_round_analysis import (
     MODEL_LABELS,
     RoundAnalysisDataQualitySummary,
@@ -129,7 +130,9 @@ class RoundAnalysisAggregator:
         model_key: str,
         fixture_results: list[dict[str, Any]],
     ) -> RoundAnalysisModelSummary:
+        is_v30 = model_key == BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR
         agg_w = agg_l = caut_w = caut_l = advised = 0
+        no_bet_count = borderline_count = 0
         pred_totals: list[float] = []
         actual_totals: list[float] = []
         abs_errors: list[float] = []
@@ -179,22 +182,34 @@ class RoundAnalysisAggregator:
                 abs_errors.append(abs(err))
 
             if str(block.get("status") or "ok") == "ok":
-                agg_advice = advice_bucket(str(block.get("aggressive_advice") or ""))
                 caut_advice = advice_bucket(str(block.get("cautious_advice") or ""))
-                agg_out = block.get("aggressive_outcome")
                 caut_out = block.get("cautious_outcome")
-                if agg_advice == "GIOCA" and agg_out in ("WIN", "LOSS"):
-                    if agg_out == "WIN":
-                        agg_w += 1
-                    else:
-                        agg_l += 1
-                    advised += 1
-                if caut_advice == "GIOCA" and caut_out in ("WIN", "LOSS"):
-                    if caut_out == "WIN":
-                        caut_w += 1
-                    else:
-                        caut_l += 1
-                    advised += 1
+                if is_v30:
+                    if caut_advice == "GIOCA" and caut_out in ("WIN", "LOSS"):
+                        if caut_out == "WIN":
+                            caut_w += 1
+                        else:
+                            caut_l += 1
+                        advised += 1
+                    elif caut_advice == "NO_BET":
+                        no_bet_count += 1
+                    elif caut_advice == "BORDERLINE":
+                        borderline_count += 1
+                else:
+                    agg_advice = advice_bucket(str(block.get("aggressive_advice") or ""))
+                    agg_out = block.get("aggressive_outcome")
+                    if agg_advice == "GIOCA" and agg_out in ("WIN", "LOSS"):
+                        if agg_out == "WIN":
+                            agg_w += 1
+                        else:
+                            agg_l += 1
+                        advised += 1
+                    if caut_advice == "GIOCA" and caut_out in ("WIN", "LOSS"):
+                        if caut_out == "WIN":
+                            caut_w += 1
+                        else:
+                            caut_l += 1
+                        advised += 1
 
         prevalent_error_code: str | None = None
         if error_codes:
@@ -218,13 +233,16 @@ class RoundAnalysisAggregator:
             fixtures_ok=fixtures_ok,
             fixtures_nd=fixtures_nd,
             fixtures_error=fixtures_error,
-            aggressive_wins=agg_w,
-            aggressive_losses=agg_l,
-            aggressive_hit_rate=_hit_rate(agg_w, agg_l),
+            aggressive_wins=0 if is_v30 else agg_w,
+            aggressive_losses=0 if is_v30 else agg_l,
+            aggressive_hit_rate=None if is_v30 else _hit_rate(agg_w, agg_l),
             cautious_wins=caut_w,
             cautious_losses=caut_l,
             cautious_hit_rate=_hit_rate(caut_w, caut_l),
             advised_plays=advised,
+            no_bet_count=no_bet_count if is_v30 else 0,
+            borderline_count=borderline_count if is_v30 else 0,
+            aggressive_na=is_v30,
             avg_predicted_total=_mean(pred_totals),
             avg_actual_total=_mean(actual_totals),
             mae=_mean(abs_errors),

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.constants import BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR
 from app.schemas.backtest_round_analysis import DEFAULT_ROUND_ANALYSIS_MODELS, MODEL_LABELS
 from app.services.backtest.round_analysis_aggregator import _hit_rate, _mean, _round4
 from app.services.backtest.round_analysis_mode_stats import (
     count_play_mode,
-    reliability_score,
+    reliability_score_for_model,
     sample_status,
     trend_direction,
 )
@@ -85,10 +86,129 @@ def _mode_from_acc(acc: dict[str, int]) -> dict[str, Any]:
     }
 
 
+def _v30_advice_bucket(raw: str | None) -> str:
+    if not raw:
+        return ""
+    norm = str(raw).strip().upper()
+    if norm in {"GIOCA", "PLAY"}:
+        return "GIOCA"
+    if norm == "NO_BET":
+        return "NO_BET"
+    if norm == "BORDERLINE":
+        return "BORDERLINE"
+    return norm
+
+
+def _line_pick_stats(line_wins: int, line_losses: int) -> dict[str, Any]:
+    hr = _hit_rate(line_wins, line_losses)
+    plays = line_wins + line_losses
+    display = f"{line_wins}/{plays} · {hr:.1f}%" if plays > 0 and hr is not None else "0/0 · —"
+    return {"wins": line_wins, "losses": line_losses, "hit_rate": hr, "display": display}
+
+
+def summarize_v30_from_fixtures(
+    model_key: str,
+    fixture_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Metriche value selector: solo pick GIOCA con esito; NO BET/BORDERLINE esclusi dall'hit rate."""
+    pick_w = pick_l = 0
+    no_bet = borderline = 0
+    l65_w = l65_l = 0
+    l75_w = l75_l = 0
+    fixtures_ok = 0
+
+    for row in fixture_rows:
+        if row.get("status") != "ok":
+            continue
+        block = (row.get("models_json") or {}).get(model_key)
+        if not isinstance(block, dict):
+            continue
+        if model_block_is_error(block) or model_block_is_no_prediction(block):
+            continue
+        fixtures_ok += 1
+        advice = _v30_advice_bucket(str(block.get("cautious_advice") or ""))
+        outcome = block.get("cautious_outcome")
+        line_raw = block.get("cautious_line")
+
+        if advice == "GIOCA" and outcome in ("WIN", "LOSS"):
+            if outcome == "WIN":
+                pick_w += 1
+            else:
+                pick_l += 1
+            if line_raw is not None:
+                try:
+                    ln = float(line_raw)
+                    if abs(ln - 6.5) < 0.01:
+                        if outcome == "WIN":
+                            l65_w += 1
+                        else:
+                            l65_l += 1
+                    elif abs(ln - 7.5) < 0.01:
+                        if outcome == "WIN":
+                            l75_w += 1
+                        else:
+                            l75_l += 1
+                except (TypeError, ValueError):
+                    pass
+        elif advice == "NO_BET":
+            no_bet += 1
+        elif advice == "BORDERLINE":
+            borderline += 1
+
+    pick_stats = _finalize_mode_simple(pick_w, pick_l)
+    pick_plays = pick_w + pick_l
+    rel_raw = pick_stats.get("hit_rate")
+    rel = round(float(rel_raw), 1) if rel_raw is not None else None
+
+    aggressive_na = {
+        "plays": 0,
+        "wins": 0,
+        "losses": 0,
+        "hit_rate": None,
+        "display": "N/A",
+        "advised": {"plays": 0, "wins": 0, "losses": 0, "hit_rate": None},
+        "calculated": {"plays": 0, "wins": 0, "losses": 0, "hit_rate": None},
+        "advice_counts": {},
+    }
+
+    cautious = {
+        **pick_stats,
+        "advised": dict(pick_stats),
+        "calculated": dict(pick_stats),
+        "advice_counts": {
+            "GIOCA": pick_plays,
+            "NON GIOCARE": no_bet,
+            "BORDERLINE": borderline,
+        },
+    }
+
+    return {
+        "model_key": model_key,
+        "label": MODEL_LABELS.get(model_key, model_key),
+        "fixtures_analyzed": fixtures_ok,
+        "aggressive": aggressive_na,
+        "cautious": cautious,
+        "reliability_score": rel,
+        "reliability_mode": "pick_selected",
+        "sample_status": sample_status(pick_plays),
+        "mae": None,
+        "bias": None,
+        "advised_plays_total": pick_plays,
+        "no_bet_count": no_bet,
+        "borderline_count": borderline,
+        "line_6_5": _line_pick_stats(l65_w, l65_l),
+        "line_7_5": _line_pick_stats(l75_w, l75_l),
+        "aggressive_na": True,
+    }
+
+
 def summarize_model_from_fixtures(
     model_key: str,
     fixture_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    if model_key == BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR:
+        return summarize_v30_from_fixtures(model_key, fixture_rows)
+
     agg_acc = _empty_mode_acc()
     caut_acc = _empty_mode_acc()
     abs_errors: list[float] = []
@@ -116,7 +236,11 @@ def summarize_model_from_fixtures(
     aggressive = _mode_from_acc(agg_acc)
     cautious = _mode_from_acc(caut_acc)
     advised_total = int(agg_acc["giocha"]) + int(caut_acc["giocha"])
-    rel = reliability_score(cautious.get("hit_rate"), aggressive.get("hit_rate"))
+    rel = reliability_score_for_model(
+        model_key,
+        cautious.get("hit_rate"),
+        aggressive.get("hit_rate"),
+    )
 
     return {
         "model_key": model_key,
@@ -129,6 +253,7 @@ def summarize_model_from_fixtures(
         "mae": _mean(abs_errors),
         "bias": _mean(errors_signed),
         "advised_plays_total": advised_total,
+        "reliability_mode": "weighted_ca",
     }
 
 
@@ -183,14 +308,19 @@ def compute_trend_last_5(
         summary = summarize_model_from_fixtures(model_key, rows)
         caut = summary.get("cautious") or {}
         advised = caut.get("advised") or {}
-        agg_adv = (summary.get("aggressive") or {}).get("advised") or {}
-        cw = int(advised.get("wins") or 0)
-        cl = int(advised.get("losses") or 0)
-        aw = int(agg_adv.get("wins") or 0)
-        al = int(agg_adv.get("losses") or 0)
-        total_w = cw + aw
-        total_l = cl + al
-        hr = _hit_rate(total_w, total_l)
+        if model_key == BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR:
+            cw = int(advised.get("wins") or 0)
+            cl = int(advised.get("losses") or 0)
+            hr = _hit_rate(cw, cl)
+        else:
+            agg_adv = (summary.get("aggressive") or {}).get("advised") or {}
+            cw = int(advised.get("wins") or 0)
+            cl = int(advised.get("losses") or 0)
+            aw = int(agg_adv.get("wins") or 0)
+            al = int(agg_adv.get("losses") or 0)
+            total_w = cw + aw
+            total_l = cl + al
+            hr = _hit_rate(total_w, total_l)
         round_hits.append((int(analysis.round_number), hr))
 
     rounds = [r for r, _ in round_hits]

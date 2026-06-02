@@ -93,6 +93,73 @@ function ndSublabel(block: RoundAnalysisModelBlock): { sublabel: string; title?:
   }
 }
 
+export function formatReasonCodes(
+  codes: string[] | undefined | null,
+  max = 2,
+): { display: string; title: string } {
+  const list = (codes ?? []).filter(Boolean)
+  if (list.length === 0) return { display: '', title: '' }
+  const shown = list.slice(0, max)
+  const display = shown.join(', ') + (list.length > max ? '…' : '')
+  return { display, title: list.join(', ') }
+}
+
+export function v30DecisionCell(block: RoundAnalysisModelBlock | undefined): PickCellDisplay {
+  if (!block) {
+    return { label: 'ND', sublabel: 'N/D', isNd: true }
+  }
+  if (block.status === 'error') {
+    const { sublabel, title } = ndSublabel(block)
+    return { label: 'ERR', sublabel, isNd: true, title }
+  }
+  if (block.status === 'no_prediction') {
+    const { sublabel, title } = ndSublabel(block)
+    return { label: 'ND', sublabel, isNd: true, title }
+  }
+
+  const trace = block.trace_summary as { selection?: Record<string, unknown> } | undefined
+  const selection = trace?.selection ?? {}
+  const decision = String(
+    selection.decision ?? block.cautious_advice ?? '',
+  )
+    .trim()
+    .toUpperCase()
+  const line = selection.line ?? block.cautious_line
+  const outcome = block.cautious_outcome
+  const reasonCodes = [
+    ...((selection.reason_codes as string[] | undefined) ?? []),
+    ...((selection.no_bet_reasons as string[] | undefined) ?? []),
+  ]
+  const { display: subReasons, title: reasonTitle } = formatReasonCodes(reasonCodes, 2)
+
+  if (decision === 'GIOCA' && line != null && outcome) {
+    return {
+      label: `Over ${line} ${outcome}`,
+      sublabel: subReasons || undefined,
+      isNd: false,
+      title: reasonTitle || block.cautious_reason || undefined,
+    }
+  }
+  if (decision === 'NO_BET' || decision === 'NO BET') {
+    return {
+      label: 'NO BET',
+      sublabel: subReasons || block.cautious_reason || undefined,
+      isNd: false,
+      title: reasonTitle || block.cautious_reason || undefined,
+    }
+  }
+  if (decision === 'BORDERLINE') {
+    return {
+      label: 'BORDERLINE',
+      sublabel: subReasons || block.cautious_reason || undefined,
+      isNd: false,
+      title: reasonTitle,
+    }
+  }
+  const { sublabel, title } = ndSublabel(block)
+  return { label: 'ND', sublabel, isNd: true, title }
+}
+
 export function pickCell(
   block: RoundAnalysisModelBlock | undefined,
   kind: 'aggressive' | 'cautious',

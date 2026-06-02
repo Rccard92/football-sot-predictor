@@ -37,6 +37,13 @@ class ModelTrendLast5(BaseModel):
     rounds: list[int] = Field(default_factory=list)
 
 
+class LinePickStats(BaseModel):
+    wins: int = 0
+    losses: int = 0
+    hit_rate: float | None = None
+    display: str = ""
+
+
 class ModelOverviewStats(BaseModel):
     model_key: str
     label: str
@@ -45,11 +52,17 @@ class ModelOverviewStats(BaseModel):
     aggressive: ModePlayStatsExtended = Field(default_factory=ModePlayStatsExtended)
     cautious: ModePlayStatsExtended = Field(default_factory=ModePlayStatsExtended)
     reliability_score: float | None = None
+    reliability_mode: Literal["pick_selected", "weighted_ca"] | None = None
     sample_status: Literal["provvisorio", "medio", "solido"] = "provvisorio"
     trend_last_5_rounds: ModelTrendLast5 = Field(default_factory=ModelTrendLast5)
     mae: float | None = None
     bias: float | None = None
     advised_plays_total: int = 0
+    no_bet_count: int = 0
+    borderline_count: int = 0
+    line_6_5: LinePickStats | None = None
+    line_7_5: LinePickStats | None = None
+    aggressive_na: bool = False
 
 
 class RoundOverviewModelChip(BaseModel):

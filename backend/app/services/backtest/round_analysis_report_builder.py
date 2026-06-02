@@ -9,7 +9,9 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+    BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR,
 )
+from app.services.backtest.round_analysis_v21_trace_helpers import extract_v21_macro_averages
 from app.models import BacktestRoundAnalysis, BacktestRoundFixtureResult
 from app.services.backtest.player_layer_fixture_status import merge_player_layer_into_data_quality_summary
 from app.schemas.backtest_round_analysis import (
@@ -116,7 +118,61 @@ def _build_trace_summary_for_report(
     if block.get("warnings"):
         trace.setdefault("warnings", list(block.get("warnings") or []))
 
+    if model_key == BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR:
+        selection = trace.get("selection") or block.get("selection") or {}
+        audit = trace.get("audit") or block.get("audit") or {}
+        trace["selection"] = selection
+        trace["audit"] = audit
+        trace["actuals_used_as_input"] = audit.get("actuals_used_as_input", False)
+        trace["leakage_guard"] = audit.get("leakage_guard", True)
+        trace["v1_1_predicted_total"] = block.get("v1_1_predicted_total")
+        trace["v2_1_predicted_total"] = block.get("v2_1_predicted_total")
+        v11 = trace.get("v1_1_predicted_total") or block.get("v1_1_predicted_total")
+        v21 = trace.get("v2_1_predicted_total") or block.get("v2_1_predicted_total")
+        if v11 is not None and v21 is not None:
+            try:
+                trace["prediction_gap"] = round(float(v21) - float(v11), 4)
+            except (TypeError, ValueError):
+                pass
+        expl_v21 = None
+        if explanation_slice and isinstance(explanation_slice.get("reference_explanation_v2_1"), dict):
+            expl_v21 = explanation_slice["reference_explanation_v2_1"]
+        elif isinstance(explanation_slice, dict) and explanation_slice.get("home"):
+            expl_v21 = explanation_slice
+        trace["macro_snapshot"] = extract_v21_macro_averages(expl_v21)
+
     return trace
+
+
+def _value_selector_section(
+    block: dict[str, Any],
+    explanation_slice: dict[str, Any] | None,
+) -> dict[str, Any]:
+    trace = dict(block.get("trace_summary") or {})
+    selection = dict(trace.get("selection") or block.get("selection") or {})
+    audit = dict(trace.get("audit") or block.get("audit") or {})
+    expl_v21 = None
+    if explanation_slice:
+        expl_v21 = explanation_slice.get("reference_explanation_v2_1")
+        if not isinstance(expl_v21, dict):
+            expl_v21 = explanation_slice if explanation_slice.get("home") else None
+    v11 = block.get("v1_1_predicted_total")
+    v21 = block.get("v2_1_predicted_total")
+    gap = None
+    if v11 is not None and v21 is not None:
+        try:
+            gap = round(float(v21) - float(v11), 4)
+        except (TypeError, ValueError):
+            gap = None
+    return {
+        "selection": selection,
+        "audit": audit,
+        "v1_1_predicted_total": v11,
+        "v2_1_predicted_total": v21,
+        "prediction_gap": gap,
+        "macro_snapshot": extract_v21_macro_averages(expl_v21 if isinstance(expl_v21, dict) else None),
+        "warnings": list(block.get("warnings") or []),
+    }
 
 
 def model_block_to_report(
@@ -126,7 +182,7 @@ def model_block_to_report(
     explanation_slice: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     status = block.get("status") or block.get("model_status")
-    return {
+    out: dict[str, Any] = {
         "label": block.get("label") or MODEL_LABELS.get(model_key, model_key),
         "model_version_requested": block.get("model_version_requested") or model_key,
         "model_version_used": block.get("model_version_used") or model_key,
@@ -151,6 +207,9 @@ def model_block_to_report(
         "warnings": list(block.get("warnings") or []),
         "data_quality": dict(block.get("data_quality") or {}),
     }
+    if model_key == BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR:
+        out["value_selector"] = _value_selector_section(block, explanation_slice)
+    return out
 
 
 def build_fixture_report(
@@ -167,7 +226,7 @@ def build_fixture_report(
         block = models_json.get(key)
         if not isinstance(block, dict):
             continue
-        expl_slice = explanation.get(key) if key == V21_MODEL_KEY else None
+        expl_slice = explanation.get(key) if key in (V21_MODEL_KEY, BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR) else None
         if expl_slice is None and key == V21_MODEL_KEY:
             expl_slice = explanation.get(V21_MODEL_KEY) or explanation
         models_out[key] = model_block_to_report(key, block, explanation_slice=expl_slice)

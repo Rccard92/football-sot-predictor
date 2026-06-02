@@ -12,11 +12,13 @@ import {
   type RoundOverviewModelChip,
 } from '../../lib/api'
 import { RoundAnalysisDeleteConfirm } from './RoundAnalysisDeleteConfirm'
+import type { RoundAnalysisModelSummary } from '../../lib/api'
 import {
   dataQualityBadgeClass,
   errorCodeLabelIt,
   hitRateBadgeClass,
   modelDisplayBadgeClass,
+  MODEL_KEYS,
   statusLabelIt,
 } from './roundAnalysisUtils'
 
@@ -404,65 +406,166 @@ export function RoundAnalysisAccordion({
   )
 }
 
+const SUMMARY_BAR_ORDER = [
+  MODEL_KEYS.v11,
+  MODEL_KEYS.v20,
+  MODEL_KEYS.v21,
+  MODEL_KEYS.v30,
+] as const
+
+function dedupeSummaryByModelKey(
+  summary: Record<string, RoundAnalysisModelSummary>,
+): RoundAnalysisModelSummary[] {
+  const seen = new Set<string>()
+  const out: RoundAnalysisModelSummary[] = []
+  for (const key of SUMMARY_BAR_ORDER) {
+    const m = summary[key]
+    if (m && !seen.has(m.model_key)) {
+      seen.add(m.model_key)
+      out.push(m)
+    }
+  }
+  for (const m of Object.values(summary)) {
+    if (!seen.has(m.model_key)) {
+      seen.add(m.model_key)
+      out.push(m)
+    }
+  }
+  return out
+}
+
+export function V30RoundSummaryCard({ m }: { m: RoundAnalysisModelSummary }) {
+  const display = m.display ?? ((m.predictions_available ?? 0) > 0 ? 'OK' : 'ND')
+  const nd = display === 'ND' || display === 'ERROR'
+  const okCount = m.fixtures_ok ?? m.predictions_available ?? 0
+  const total = m.fixtures ?? 0
+  const pickW = m.cautious_wins ?? 0
+  const pickL = m.cautious_losses ?? 0
+  const decided = pickW + pickL
+  const hr =
+    m.cautious_hit_rate != null
+      ? `${m.cautious_hit_rate}%`
+      : decided > 0
+        ? '—'
+        : '—'
+  const pickChip =
+    decided > 0 ? `Pick ${pickW}/${decided} ${hr}` : 'Pick 0/0 —'
+  const nb = m.no_bet_count ?? 0
+  const bl = m.borderline_count ?? 0
+
+  return (
+    <div className="rounded-xl border border-violet-200 bg-white p-4 text-sm">
+      <div className="font-semibold text-slate-900">
+        {m.label}
+        <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-800">
+          Sperimentale
+        </span>
+        <span className={`ml-2 rounded px-1.5 py-0.5 text-xs ${modelDisplayBadgeClass(display)}`}>
+          {display}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        {okCount}/{total} calcolate
+        {m.model_engine_name ? ` · ${m.model_engine_name}` : ''}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        <span
+          className={`rounded-full px-2 py-0.5 ${
+            nd ? 'bg-slate-100 text-slate-600' : hitRateBadgeClass(m.cautious_hit_rate)
+          }`}
+        >
+          {pickChip}
+        </span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">NB {nb}</span>
+        {bl > 0 ? (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800">Borderline {bl}</span>
+        ) : null}
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">Agg N/A</span>
+      </div>
+      <p className="mt-2 text-[10px] leading-snug text-slate-500">
+        NO BET non è una perdita: escluso dall&apos;hit rate. Solo pick GIOCA con esito.
+      </p>
+      {!nd ? (
+        <p className="mt-1 text-xs text-slate-500">
+          {pickW}W · {pickL}L su {decided} pick
+        </p>
+      ) : (
+        <p className="mt-2 text-xs text-slate-500">
+          {nd && m.prevalent_error_code
+            ? `Motivo prevalente: ${errorCodeLabelIt(m.prevalent_error_code)}`
+            : 'Nessuna predizione su questa giornata'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ClassicRoundSummaryCard({ m }: { m: RoundAnalysisModelSummary }) {
+  const display = m.display ?? ((m.predictions_available ?? 0) > 0 ? 'OK' : 'ND')
+  const nd = display === 'ND' || display === 'ERROR'
+  const okCount = m.fixtures_ok ?? m.predictions_available ?? 0
+  const total = m.fixtures ?? 0
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
+      <div className="font-semibold text-slate-900">
+        {m.label}
+        <span className={`ml-2 rounded px-1.5 py-0.5 text-xs ${modelDisplayBadgeClass(display)}`}>
+          {display}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        {okCount}/{total} calcolate
+        {m.model_engine_name ? ` · ${m.model_engine_name}` : ''}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        <span
+          className={`rounded-full px-2 py-0.5 ${
+            nd ? 'bg-slate-100 text-slate-600' : hitRateBadgeClass(m.aggressive_hit_rate)
+          }`}
+        >
+          Agg{' '}
+          {m.aggressive_hit_rate != null
+            ? `${m.aggressive_wins ?? 0}/${(m.aggressive_wins ?? 0) + (m.aggressive_losses ?? 0)} · ${m.aggressive_hit_rate}%`
+            : 'ND'}
+        </span>
+        <span
+          className={`rounded-full px-2 py-0.5 ${
+            nd ? 'bg-slate-100 text-slate-600' : hitRateBadgeClass(m.cautious_hit_rate)
+          }`}
+        >
+          Cauta{' '}
+          {m.cautious_hit_rate != null
+            ? `${m.cautious_wins ?? 0}/${(m.cautious_wins ?? 0) + (m.cautious_losses ?? 0)} · ${m.cautious_hit_rate}%`
+            : 'ND'}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        {nd && m.prevalent_error_code
+          ? `Motivo prevalente: ${errorCodeLabelIt(m.prevalent_error_code)}`
+          : nd
+            ? 'Nessuna predizione su questa giornata'
+            : `MAE ${m.mae ?? '—'} · Bias ${m.bias ?? '—'}`}
+      </p>
+    </div>
+  )
+}
+
 export function ModelSummaryBar({
   summary,
 }: {
   summary: RoundAnalysisDetail['model_summary_json']
 }) {
   if (!summary) return null
+  const items = dedupeSummaryByModelKey(summary)
   return (
-    <div className="grid gap-3 md:grid-cols-3">
-      {Object.values(summary).map((m) => {
-        const display = m.display ?? ((m.predictions_available ?? 0) > 0 ? 'OK' : 'ND')
-        const nd = display === 'ND' || display === 'ERROR'
-        const okCount = m.fixtures_ok ?? m.predictions_available ?? 0
-        const total = m.fixtures ?? 0
-        return (
-          <div key={m.model_key} className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
-            <div className="font-semibold text-slate-900">
-              {m.label}
-              <span
-                className={`ml-2 rounded px-1.5 py-0.5 text-xs ${modelDisplayBadgeClass(display)}`}
-              >
-                {display}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              {okCount}/{total} calcolate
-              {m.model_engine_name ? ` · ${m.model_engine_name}` : ''}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-              <span
-                className={`rounded-full px-2 py-0.5 ${
-                  nd ? 'bg-slate-100 text-slate-600' : hitRateBadgeClass(m.aggressive_hit_rate)
-                }`}
-              >
-                Agg{' '}
-                {m.aggressive_hit_rate != null
-                  ? `${m.aggressive_wins ?? 0}/${(m.aggressive_wins ?? 0) + (m.aggressive_losses ?? 0)} · ${m.aggressive_hit_rate}%`
-                  : 'ND'}
-              </span>
-              <span
-                className={`rounded-full px-2 py-0.5 ${
-                  nd ? 'bg-slate-100 text-slate-600' : hitRateBadgeClass(m.cautious_hit_rate)
-                }`}
-              >
-                Cauta{' '}
-                {m.cautious_hit_rate != null
-                  ? `${m.cautious_wins ?? 0}/${(m.cautious_wins ?? 0) + (m.cautious_losses ?? 0)} · ${m.cautious_hit_rate}%`
-                  : 'ND'}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {nd && m.prevalent_error_code
-                ? `Motivo prevalente: ${errorCodeLabelIt(m.prevalent_error_code)}`
-                : nd
-                  ? 'Nessuna predizione su questa giornata'
-                  : `MAE ${m.mae ?? '—'} · Bias ${m.bias ?? '—'}`}
-            </p>
-          </div>
-        )
-      })}
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {items.map((m) =>
+        m.model_key === MODEL_KEYS.v30 ? (
+          <V30RoundSummaryCard key={m.model_key} m={m} />
+        ) : (
+          <ClassicRoundSummaryCard key={m.model_key} m={m} />
+        ),
+      )}
     </div>
   )
 }

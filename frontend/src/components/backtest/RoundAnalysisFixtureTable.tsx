@@ -1,8 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import type { RoundAnalysisDetail, RoundAnalysisFixtureRow, RoundAnalysisModelBlock } from '../../lib/api'
 import { getRoundAnalysisFixtureReportJson } from '../../lib/api'
-import { ModelSummaryBar } from './RoundAnalysisAccordion'
-import { MODEL_KEYS, ndBadgeClass, pickCell } from './roundAnalysisUtils'
+import { MODEL_KEYS, ndBadgeClass, pickCell, v30DecisionCell } from './roundAnalysisUtils'
 import { RoundAnalysisFixtureRowDetail } from './RoundAnalysisFixtureRowDetail'
 
 type Props = {
@@ -98,6 +97,28 @@ function PickTd({
   )
 }
 
+function V30DecisionTd({ block }: { block: Parameters<typeof v30DecisionCell>[0] }) {
+  const cell = v30DecisionCell(block)
+  const badge = cell.label === 'ERR' ? 'ERR' : 'ND'
+  return (
+    <td className="px-3 py-2 align-top" title={cell.title}>
+      {cell.isNd ? (
+        <div className="space-y-0.5">
+          <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${ndBadgeClass()}`}>
+            {badge}
+          </span>
+          {cell.sublabel ? <div className="text-[10px] text-slate-500">{cell.sublabel}</div> : null}
+        </div>
+      ) : (
+        <div className="space-y-0.5">
+          <span className="font-medium text-slate-900">{cell.label}</span>
+          {cell.sublabel ? <div className="text-[10px] text-slate-500">{cell.sublabel}</div> : null}
+        </div>
+      )}
+    </td>
+  )
+}
+
 export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }: Props) {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [filter, setFilter] = useState<FilterKind>('all')
@@ -152,8 +173,6 @@ export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }:
 
   return (
     <div className="space-y-4">
-      <ModelSummaryBar summary={detail.model_summary_json} />
-
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="font-medium text-slate-700">Filtri:</span>
         {(
@@ -237,8 +256,7 @@ export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }:
               <th className="px-3 py-2">v2.0 Cauta</th>
               <th className="px-3 py-2">v2.1 Agg</th>
               <th className="px-3 py-2">v2.1 Cauta</th>
-              <th className="px-3 py-2">v3.0 Agg</th>
-              <th className="px-3 py-2">v3.0 Cauta</th>
+              <th className="px-3 py-2">v3.0 Decisione</th>
               <th className="px-3 py-2">Qualità</th>
             </tr>
           </thead>
@@ -266,15 +284,14 @@ export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }:
                     <PickTd block={v20} kind="cautious" />
                     <PickTd block={v21} kind="aggressive" />
                     <PickTd block={v21} kind="cautious" />
-                    <PickTd block={v30} kind="aggressive" />
-                    <PickTd block={v30} kind="cautious" />
+                    <V30DecisionTd block={v30} />
                     <td className="px-3 py-2">
                       {dq ? `${dq.lineup ?? '—'} / ${dq.mapping ?? '—'}` : '—'}
                     </td>
                   </tr>
                   {expanded ? (
                     <tr>
-                      <td colSpan={11} className="bg-slate-50 px-3 py-3">
+                      <td colSpan={10} className="bg-slate-50 px-3 py-3">
                         <RoundAnalysisFixtureRowDetail
                           detail={detail}
                           competitionName={competitionName}
