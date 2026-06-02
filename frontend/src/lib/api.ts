@@ -658,8 +658,24 @@ function getApiBase(): string {
 function extractErrorMessage(body: unknown, statusText: string): string {
   if (body && typeof body === 'object') {
     const o = body as Record<string, unknown>
+    // Formati standard backend
+    if (typeof o.error_message === 'string') return o.error_message
+    if (typeof o.error_code === 'string' && typeof o.error_message === 'string') {
+      return `${o.error_code}: ${o.error_message}`
+    }
+    if (typeof o.error_code === 'string') return String(o.error_code)
     if (typeof o.message === 'string') return o.message
     if (typeof o.detail === 'string') return o.detail
+    if (o.detail && typeof o.detail === 'object') {
+      const d = o.detail as Record<string, unknown>
+      if (typeof d.error_message === 'string' && typeof d.error_code === 'string') {
+        return `${d.error_code}: ${d.error_message}`
+      }
+      if (typeof d.error_message === 'string') return d.error_message
+      if (typeof d.message === 'string' && typeof d.code === 'string') return `${d.code}: ${d.message}`
+      if (typeof d.message === 'string') return d.message
+      if (typeof d.code === 'string') return d.code
+    }
     if (Array.isArray(o.detail)) {
       const first = o.detail[0] as Record<string, unknown> | undefined
       if (first && typeof first.msg === 'string') return first.msg
