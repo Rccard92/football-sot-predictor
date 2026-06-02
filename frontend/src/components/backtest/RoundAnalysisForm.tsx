@@ -42,6 +42,7 @@ export function RoundAnalysisForm({
           'baseline_v1_1',
           'baseline_v2_0_lineup_impact',
           'baseline_v2_1_weighted_components',
+          'baseline_v3_0_sot_value_selector',
         ],
       })
       onAnalyzed(analysis)

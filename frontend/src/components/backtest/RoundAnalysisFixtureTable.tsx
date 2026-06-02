@@ -187,6 +187,7 @@ export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }:
           <option value={MODEL_KEYS.v11}>v1.1</option>
           <option value={MODEL_KEYS.v20}>v2.0</option>
           <option value={MODEL_KEYS.v21}>v2.1</option>
+          <option value={MODEL_KEYS.v30}>v3.0</option>
         </select>
       </div>
 
@@ -236,6 +237,8 @@ export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }:
               <th className="px-3 py-2">v2.0 Cauta</th>
               <th className="px-3 py-2">v2.1 Agg</th>
               <th className="px-3 py-2">v2.1 Cauta</th>
+              <th className="px-3 py-2">v3.0 Agg</th>
+              <th className="px-3 py-2">v3.0 Cauta</th>
               <th className="px-3 py-2">Qualità</th>
             </tr>
           </thead>
@@ -244,6 +247,7 @@ export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }:
               const v11 = fx.models_json[MODEL_KEYS.v11]
               const v20 = fx.models_json[MODEL_KEYS.v20]
               const v21 = fx.models_json[MODEL_KEYS.v21]
+              const v30 = fx.models_json[MODEL_KEYS.v30]
               const dq = v21?.data_quality ?? v11?.data_quality
               const expanded = expandedId === fx.id
               return (
@@ -262,13 +266,15 @@ export function RoundAnalysisFixtureTable({ detail, competitionName, fixtures }:
                     <PickTd block={v20} kind="cautious" />
                     <PickTd block={v21} kind="aggressive" />
                     <PickTd block={v21} kind="cautious" />
+                    <PickTd block={v30} kind="aggressive" />
+                    <PickTd block={v30} kind="cautious" />
                     <td className="px-3 py-2">
                       {dq ? `${dq.lineup ?? '—'} / ${dq.mapping ?? '—'}` : '—'}
                     </td>
                   </tr>
                   {expanded ? (
                     <tr>
-                      <td colSpan={9} className="bg-slate-50 px-3 py-3">
+                      <td colSpan={11} className="bg-slate-50 px-3 py-3">
                         <RoundAnalysisFixtureRowDetail
                           detail={detail}
                           competitionName={competitionName}

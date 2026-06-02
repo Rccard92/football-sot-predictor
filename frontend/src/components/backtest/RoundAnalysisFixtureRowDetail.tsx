@@ -16,6 +16,7 @@ const MODEL_TABS = [
   { key: MODEL_KEYS.v11, label: 'v1.1' },
   { key: MODEL_KEYS.v20, label: 'v2.0' },
   { key: MODEL_KEYS.v21, label: 'v2.1' },
+  { key: MODEL_KEYS.v30, label: 'v3.0' },
 ] as const
 
 export function RoundAnalysisFixtureRowDetail({ detail, competitionName, fixture }: Props) {
@@ -83,6 +84,69 @@ export function RoundAnalysisFixtureRowDetail({ detail, competitionName, fixture
                 Cauta: linea {block.cautious_line ?? '—'} · {block.cautious_advice ?? '—'} —{' '}
                 {block.cautious_reason ?? ''}
               </p>
+              {key === MODEL_KEYS.v30 &&
+              block.trace_summary &&
+              typeof block.trace_summary === 'object' &&
+              'selection' in block.trace_summary ? (
+                <div className="mt-2 rounded border border-slate-100 bg-slate-50 p-2">
+                  <div className="text-[10px] font-semibold text-slate-800">v3.0 Value Selector</div>
+                  <div className="mt-1 space-y-0.5 text-[10px] text-slate-700">
+                    <div>
+                      Decisione:{' '}
+                      {String(
+                        (block.trace_summary as { selection?: { decision?: string } }).selection?.decision ??
+                          '—',
+                      )}
+                      {' · '}Linea:{' '}
+                      {String(
+                        (block.trace_summary as { selection?: { line?: number | null } }).selection?.line ??
+                          '—',
+                      )}
+                      {' · '}Tier:{' '}
+                      {String(
+                        (block.trace_summary as { selection?: { confidence_tier?: string } }).selection
+                          ?.confidence_tier ?? '—',
+                      )}
+                    </div>
+                    <div>
+                      Motivi:{' '}
+                      {Array.isArray(
+                        (block.trace_summary as { selection?: { reason_codes?: string[] } }).selection
+                          ?.reason_codes,
+                      )
+                        ? (
+                            block.trace_summary as {
+                              selection?: { reason_codes?: string[]; no_bet_reasons?: string[] }
+                            }
+                          ).selection?.reason_codes?.join(', ') || '—'
+                        : '—'}
+                    </div>
+                    <div>
+                      No-bet:{' '}
+                      {Array.isArray(
+                        (block.trace_summary as { selection?: { no_bet_reasons?: string[] } }).selection
+                          ?.no_bet_reasons,
+                      )
+                        ? (
+                            block.trace_summary as { selection?: { no_bet_reasons?: string[] } }
+                          ).selection?.no_bet_reasons?.join(', ') || '—'
+                        : '—'}
+                    </div>
+                    <div className="text-slate-500">
+                      Audit: actuals_used_as_input=
+                      {String(
+                        (block.trace_summary as { audit?: { actuals_used_as_input?: boolean } }).audit
+                          ?.actuals_used_as_input ?? false,
+                      )}
+                      {' · '}leakage_guard=
+                      {String(
+                        (block.trace_summary as { audit?: { leakage_guard?: boolean } }).audit
+                          ?.leakage_guard ?? true,
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </>
           ) : null}
           {block.trace_summary &&

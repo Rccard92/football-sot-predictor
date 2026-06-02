@@ -5,6 +5,7 @@ const MODEL_ORDER = [
   { key: MODEL_KEYS.v11, short: 'v1.1' },
   { key: MODEL_KEYS.v20, short: 'v2.0' },
   { key: MODEL_KEYS.v21, short: 'v2.1' },
+  { key: MODEL_KEYS.v30, short: 'v3.0' },
 ] as const
 
 function reliabilityClass(score: number | null | undefined): string {
@@ -32,7 +33,7 @@ type Props = {
 
 export function ModelReliabilityScorecards({ models }: Props) {
   return (
-    <div className="grid gap-3 md:grid-cols-3">
+    <div className="grid gap-3 md:grid-cols-4">
       {MODEL_ORDER.map(({ key, short }) => {
         const m = models[key]
         if (!m) {

@@ -63,6 +63,8 @@ export const ERROR_CODE_LABELS_IT: Record<string, string> = {
   V21_INSUFFICIENT_PRIOR_MATCHES: 'Prior insufficienti v2.1',
   V21_PREDICTION_INCOMPLETE: 'Preview v2.1 incompleta',
   V21_ENGINE_ERROR: 'Errore motore v2.1',
+  V30_DEPENDENCY_MISSING: 'Dipendenze mancanti v3.0',
+  V30_ENGINE_ERROR: 'Errore motore v3.0',
   MODEL_VERSION_MISMATCH: 'Versione modello non corrispondente',
   MODEL_ERROR: 'Errore generico modello',
   INSUFFICIENT_HISTORY: 'Storico insufficiente',
@@ -125,6 +127,7 @@ export const MODEL_KEYS = {
   v11: 'baseline_v1_1_sot',
   v20: 'baseline_v2_0_lineup_impact',
   v21: 'baseline_v2_1_weighted_components',
+  v30: 'baseline_v3_0_sot_value_selector',
 } as const
 
 export function seasonLabelFromYear(year: number): string {

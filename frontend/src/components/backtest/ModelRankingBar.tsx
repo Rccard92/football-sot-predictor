@@ -5,6 +5,7 @@ const KEY_LABEL: Record<string, string> = {
   [MODEL_KEYS.v11]: 'v1.1',
   [MODEL_KEYS.v20]: 'v2.0',
   [MODEL_KEYS.v21]: 'v2.1',
+  [MODEL_KEYS.v30]: 'v3.0',
 }
 
 function labelFor(key: string | undefined, models: Record<string, RoundAnalysisModelOverviewStats>) {

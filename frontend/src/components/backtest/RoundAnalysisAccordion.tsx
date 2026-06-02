@@ -33,6 +33,7 @@ const MODEL_CHIP_ORDER = [
   { key: 'baseline_v1_1_sot', label: 'v1.1' },
   { key: 'baseline_v2_0_lineup_impact', label: 'v2.0' },
   { key: 'baseline_v2_1_weighted_components', label: 'v2.1' },
+  { key: 'baseline_v3_0_sot_value_selector', label: 'v3.0' },
 ] as const
 
 function chipsFromItem(
@@ -69,7 +70,7 @@ function staleMessageForItem(
 function accordionModelLine(item: RoundAnalysisListItem): string {
   const s = item.accordion_summary
   if (!s) return ''
-  const parts = ['v1.1', 'v2.0', 'v2.1'].map((k) => {
+  const parts = ['v1.1', 'v2.0', 'v2.1', 'v3.0'].map((k) => {
     const v = s[k]
     return v ? `${k}: ${v}` : null
   }).filter(Boolean)

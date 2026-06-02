@@ -41,7 +41,7 @@ export function Backtest() {
       <ContextBanner
         showModelSelector={false}
         seasonLabel={seasonLabel}
-        comparedModelsLabel="v1.1 · v2.0 · v2.1"
+        comparedModelsLabel="v1.1 · v2.0 · v2.1 · v3.0"
       />
 
       <RoundAnalysisOverviewSection

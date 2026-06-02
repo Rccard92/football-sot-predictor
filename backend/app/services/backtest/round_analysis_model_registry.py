@@ -12,6 +12,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V11_SOT,
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+    BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR,
 )
 from app.models import Fixture
 from app.schemas.backtest_round_analysis import MODEL_LABELS
@@ -67,11 +68,15 @@ def get_round_analysis_adapter(model_key: str) -> RoundAnalysisModelAdapter:
     from app.services.backtest.adapters.sot_v11_round_analysis_adapter import SotV11RoundAnalysisAdapter
     from app.services.backtest.adapters.sot_v20_round_analysis_adapter import SotV20RoundAnalysisAdapter
     from app.services.backtest.adapters.sot_v21_round_analysis_adapter import SotV21RoundAnalysisAdapter
+    from app.services.backtest.adapters.sot_v30_value_selector_round_analysis_adapter import (
+        SotV30ValueSelectorRoundAnalysisAdapter,
+    )
 
     registry: dict[str, type[RoundAnalysisModelAdapter]] = {
         BASELINE_SOT_MODEL_VERSION_V11_SOT: SotV11RoundAnalysisAdapter,
         BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT: SotV20RoundAnalysisAdapter,
         BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS: SotV21RoundAnalysisAdapter,
+        BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR: SotV30ValueSelectorRoundAnalysisAdapter,
     }
     cls = registry.get(model_key)
     if cls is None:
@@ -93,6 +98,11 @@ ROUND_ANALYSIS_MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS: {
         "label": MODEL_LABELS[BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS],
         "engine": "SotV21PointInTimePreviewService",
+        "market_key": "shots_on_target",
+    },
+    BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR: {
+        "label": MODEL_LABELS[BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR],
+        "engine": "SotV30ValueSelectorService",
         "market_key": "shots_on_target",
     },
 }
