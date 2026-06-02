@@ -215,7 +215,9 @@ class RoundAnalysisDetailResponse(BaseModel):
 
 class RoundAnalysisAnalyzeResponse(BaseModel):
     status: Literal["ok", "skipped"] = "ok"
-    reason: Literal["selected_models_already_present"] | None = None
+    reason: Literal["selected_models_already_present", "missing_v30_dependencies"] | None = None
+    missing_dependencies: list[str] = Field(default_factory=list)
+    message: str | None = None
     round_number: int | None = None
     analysis_id: int | None = None
     analysis_version: int | None = None

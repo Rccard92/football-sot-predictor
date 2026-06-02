@@ -124,7 +124,10 @@ export function RoundAnalysisSeasonBatchSection({
         })
         if (res.status === 'skipped') {
           setSkippedCount((n) => n + 1)
-          const msg = `Giornata ${rn}: saltata (modelli già presenti)`
+          const msg =
+            res.reason === 'missing_v30_dependencies'
+              ? `Giornata ${rn}: saltata — mancano v1.1/v2.1 per calcolare v3.0`
+              : `Giornata ${rn}: saltata (modelli già presenti)`
           setLastMessage(msg)
           appendLog(msg)
         } else {
@@ -226,6 +229,10 @@ export function RoundAnalysisSeasonBatchSection({
           <p className="text-xs text-slate-500">
             Se selezioni solo v3.0, il sistema aggiornerà le giornate esistenti aggiungendo solo la v3.0, senza
             ricalcolare v1.1/v2.0/v2.1.
+          </p>
+          <p className="text-xs text-slate-500">
+            La v3.0 usa v1.1 e v2.1 già salvate. Se selezioni solo v3.0, il sistema aggiorna solo le giornate che
+            hanno già queste basi; le altre vengono saltate.
           </p>
           {selectedModels.length === 0 ? (
             <p className="text-xs font-medium text-rose-700">Seleziona almeno un modello.</p>

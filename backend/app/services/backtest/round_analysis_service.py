@@ -40,6 +40,12 @@ from app.services.backtest.round_analysis_merge import (
     preserved_model_keys_from_fixture,
     selected_models_already_present,
 )
+from app.core.constants import (
+    BASELINE_SOT_MODEL_VERSION_V11_SOT,
+    BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+    BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR,
+)
+from app.services.backtest.round_analysis_v30_dependencies import resolve_v30_dependencies
 from app.services.backtest.sot_pick_play_advice_logic import PlayAdviceConfig
 
 def _list_order_clauses(
@@ -109,6 +115,32 @@ class RoundAnalysisService:
                             round_number=int(request.round_number),
                             selected_models=list(selected_models),
                         ).model_dump()
+                # Caso importante: selected solo v3.0. Non auto-includiamo dipendenze.
+                if selected_models == [BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR]:
+                    missing_round: list[str] = []
+                    if base_analysis is None:
+                        missing_round = [BASELINE_SOT_MODEL_VERSION_V11_SOT, BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS]
+                    else:
+                        for fxr in base_fixtures:
+                            if str(fxr.status) != "ok":
+                                continue
+                            deps = resolve_v30_dependencies(
+                                models_json=fxr.models_json if isinstance(fxr.models_json, dict) else {},
+                                explanation_json=fxr.explanation_json if isinstance(fxr.explanation_json, dict) else {},
+                            )
+                            if deps.status != "ok":
+                                for k in deps.missing_dependencies:
+                                    if k not in missing_round:
+                                        missing_round.append(k)
+                    if missing_round:
+                        return RoundAnalysisAnalyzeResponse(
+                            status="skipped",
+                            reason="missing_v30_dependencies",
+                            round_number=int(request.round_number),
+                            missing_dependencies=missing_round,
+                            message="v3.0 richiede v1.1 e v2.1 già calcolate per questa giornata.",
+                            selected_models=list(selected_models),
+                        ).model_dump()
         else:
             if not request.force_recalculate:
                 existing = self._latest_completed(
@@ -135,6 +167,24 @@ class RoundAnalysisService:
         models = normalize_model_keys(request.models)
         if is_upsert and selected_models:
             models = list(selected_models)
+        # Garantiamo ordine dipendenze per v3.0 se presenti nello stesso run
+        if BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR in models:
+            from app.core.constants import BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT
+
+            order = [
+                BASELINE_SOT_MODEL_VERSION_V11_SOT,
+                BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
+                BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
+                BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR,
+            ]
+            ordered: list[str] = []
+            for k in order:
+                if k in models and k not in ordered:
+                    ordered.append(k)
+            for k in models:
+                if k not in ordered:
+                    ordered.append(k)
+            models = ordered
         advice = request.advice_filters
         play_config = PlayAdviceConfig(
             min_prior_matches_for_play=advice.min_prior_matches_for_play if advice else 10,
@@ -243,12 +293,10 @@ class RoundAnalysisService:
                         play_config=play_config,
                         data_quality=dq,
                         actual_total=cand.actual_total_sot,
+                        initial_models_json=preserved_models_json,
+                        initial_explanation_json=preserved_explanation_json,
                         analysis_id=int(analysis.id),
                     )
-                    if preserved_models_json:
-                        models_json = {**preserved_models_json, **models_json}
-                    if preserved_explanation_json:
-                        explanation_json = {**preserved_explanation_json, **(explanation_json or {})}
                     home_sot, away_sot = self._actual_side_sots(db, fx)
                     row = BacktestRoundFixtureResult(
                         analysis_id=int(analysis.id),

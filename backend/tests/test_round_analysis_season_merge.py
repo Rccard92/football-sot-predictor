@@ -64,8 +64,10 @@ def test_selected_models_already_present_true_only_when_all_blocks_valid():
 def test_analyze_endpoint_accepts_wrapper_dict(mock_svc_cls):
     mock_svc_cls.return_value.analyze.return_value = {
         "status": "skipped",
-        "reason": "selected_models_already_present",
+        "reason": "missing_v30_dependencies",
         "round_number": 37,
+        "missing_dependencies": ["baseline_v1_1_sot", "baseline_v2_1_weighted_components"],
+        "message": "v3.0 richiede v1.1 e v2.1 già calcolate per questa giornata.",
         "selected_models": ["baseline_v3_0_sot_value_selector"],
     }
     res = client.post(
@@ -82,6 +84,7 @@ def test_analyze_endpoint_accepts_wrapper_dict(mock_svc_cls):
     assert res.status_code == 200
     assert res.json()["status"] == "skipped"
     assert res.json()["round_number"] == 37
+    assert res.json()["reason"] == "missing_v30_dependencies"
 
 
 @patch("app.routes.backtest_round_analysis.RoundAnalysisService")

@@ -2852,7 +2852,9 @@ export type RoundAnalysisAnalyzeRequest = {
 
 export type RoundAnalysisAnalyzeResponse = {
   status: 'ok' | 'skipped'
-  reason?: 'selected_models_already_present' | null
+  reason?: 'selected_models_already_present' | 'missing_v30_dependencies' | null
+  missing_dependencies?: string[]
+  message?: string | null
   round_number?: number | null
   analysis_id?: number | null
   analysis_version?: number | null
