@@ -507,9 +507,20 @@ def _score_components_for_blocks(blocks: list[dict[str, Any]]) -> None:
     comp_pairs = [(k, v) for k, v in comp_pairs if v is not None]
     comp_s = _normalize_scores(comp_pairs, higher_better=True) if comp_pairs else {}
 
+    def _pred_high_rate(block: dict[str, Any]) -> float | None:
+        dist = block.get("prediction_distribution") or {}
+        n = int((block.get("predictive_metrics") or {}).get("predictions_ok") or 0)
+        high = dist.get("predicted_high_count_over_9")
+        if high is None or n <= 0:
+            return None
+        return 100.0 * float(high) / n
+
+    phr_pairs = [(b["key"], _pred_high_rate(b)) for b in eligible]
+    phr_pairs = [(k, v) for k, v in phr_pairs if v is not None]
+    phr_s = _normalize_scores(phr_pairs, higher_better=True) if phr_pairs else {}
+
     for b in eligible:
         k = b["key"]
-        bm = b.get("bucket_metrics") or {}
         b["score_components"] = {
             "mae": mae_s.get(k),
             "rmse": rmse_s.get(k),
@@ -517,9 +528,13 @@ def _score_components_for_blocks(blocks: list[dict[str, Any]]) -> None:
             "within_1_5": w15_s.get(k),
             "high_recall": hr_s.get(k),
             "compression": comp_s.get(k),
+            "pred_high_rate": phr_s.get(k),
         }
         b["balanced_prediction_score"] = balanced_prediction_score(b)
         b["dynamic_score"] = dynamic_score(b)
+        b["numeric_precision_score"] = numeric_precision_score(b)
+        b["dynamic_detection_score"] = dynamic_detection_score(b)
+        b["compromise_score"] = compromise_score(b)
 
 
 def build_recommendation_explanation(
@@ -571,9 +586,87 @@ def build_recommendation_explanation(
     return f"Strategia consigliata: {label}.", trade
 
 
+def numeric_precision_score(block: dict[str, Any]) -> float | None:
+    parts = block.get("score_components") or {}
+    if not parts:
+        return None
+    return _round4(
+        0.40 * (parts.get("mae") or 0)
+        + 0.30 * (parts.get("rmse") or 0)
+        + 0.30 * (parts.get("bias") or 0),
+    )
+
+
+def dynamic_detection_score(block: dict[str, Any]) -> float | None:
+    parts = block.get("score_components") or {}
+    if not parts:
+        return None
+    return _round4(
+        0.35 * (parts.get("compression") or 0)
+        + 0.35 * (parts.get("high_recall") or 0)
+        + 0.30 * (parts.get("pred_high_rate") or 0),
+    )
+
+
+def compromise_score(block: dict[str, Any]) -> float | None:
+    parts = block.get("score_components") or {}
+    if not parts:
+        return None
+    return _round4(
+        0.30 * (parts.get("mae") or 0)
+        + 0.20 * (parts.get("bias") or 0)
+        + 0.25 * (parts.get("compression") or 0)
+        + 0.25 * (parts.get("high_recall") or 0),
+    )
+
+
+def build_model_interpretation(
+    strategy_blocks: list[dict[str, Any]],
+    best_by: dict[str, Any],
+) -> dict[str, Any]:
+    from app.services.backtest.v31_calibration_simulator_predictor import STRATEGY_STATUS
+
+    active = [b for b in strategy_blocks if STRATEGY_STATUS.get(b["key"], "archived") == "active"]
+    best_numeric = best_by.get("best_numeric_model", {}).get("strategy")
+    best_dynamic = best_by.get("best_dynamic_model", {}).get("strategy")
+    best_compromise = best_by.get("best_compromise_model", {}).get("strategy")
+
+    main_issue = "none"
+    next_action = "monitor"
+
+    flat_count = 0
+    for b in active:
+        dist = b.get("prediction_distribution") or {}
+        ratio = dist.get("compression_ratio")
+        if ratio is not None and float(ratio) < 0.35:
+            flat_count += 1
+    if active and flat_count == len(active):
+        main_issue = "models_too_flat"
+
+    hybrid = next((b for b in strategy_blocks if b["key"] == "v31_bias_dynamic_high_guard"), None)
+    if hybrid:
+        hd = hybrid.get("hybrid_debug") or {}
+        hw = hd.get("hybrid_warnings") or []
+        if "V31_HYBRID_IDENTICAL_TO_BASELINE" in hw or "V31_HYBRID_BOOST_NOT_APPLIED" in hw:
+            main_issue = "hybrid_not_working"
+            next_action = "fix_hybrid_dynamic_high_guard"
+    elif main_issue == "models_too_flat":
+        next_action = "fix_hybrid_dynamic_high_guard"
+
+    return {
+        "best_numeric_model": best_numeric,
+        "best_dynamic_model": best_dynamic,
+        "best_compromise_model": best_compromise,
+        "main_issue": main_issue,
+        "next_action": next_action,
+    }
+
+
 def summarize_strategy(
     strategy_key: str,
     rows: list[dict[str, Any]],
+    *,
+    baseline_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     pm = predictive_metrics(rows)
     diag = prediction_diagnostics(rows)
@@ -601,8 +694,22 @@ def summarize_strategy(
         "bucket_metrics": bm,
     }
     sw = strategy_warnings(block_preview)
+    hybrid_debug: dict[str, Any] | None = None
 
-    return {
+    if strategy_key == "v31_bias_dynamic_high_guard":
+        from app.services.backtest.v31_calibration_simulator_high_guard import aggregate_hybrid_debug
+
+        hybrid_debug = aggregate_hybrid_debug(rows, baseline_rows)
+        for w in hybrid_debug.get("hybrid_warnings") or []:
+            if w not in sw:
+                sw.append(w)
+        diag_warnings = list((diag.get("warnings") or []))
+        for w in hybrid_debug.get("hybrid_warnings") or []:
+            if w not in diag_warnings:
+                diag_warnings.append(w)
+        diag["warnings"] = diag_warnings
+
+    result: dict[str, Any] = {
         "key": strategy_key,
         "strategy_warnings": sw,
         "prediction_diagnostics": diag,
@@ -645,6 +752,9 @@ def summarize_strategy(
             "model_too_flat": dist.get("model_too_flat"),
         },
     }
+    if hybrid_debug is not None:
+        result["hybrid_debug"] = hybrid_debug
+    return result
 
 
 def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: int) -> dict[str, Any]:
@@ -652,9 +762,12 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
 
     _score_components_for_blocks(strategy_blocks)
     for b in strategy_blocks:
+        b["score_components"] = b.get("score_components") or {}
         b["balanced_prediction_score"] = balanced_prediction_score(b)
         b["dynamic_score"] = dynamic_score(b)
-        b["score_components"] = b.get("score_components") or {}
+        b["numeric_precision_score"] = numeric_precision_score(b)
+        b["dynamic_detection_score"] = dynamic_detection_score(b)
+        b["compromise_score"] = compromise_score(b)
         b["strategy_warnings"] = strategy_warnings(b)
 
     min_ok = max(1, int(fixtures_total * 0.95))
@@ -697,16 +810,48 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
         return {"strategy": best_key, "value": _round4(best_val)} if best_key else None
 
     recommended = None
-    best_score = None
+    best_compromise_val = None
     pick_pool = eligible_active if eligible_active else eligible
     for b in pick_pool:
-        dist = b.get("prediction_distribution") or {}
-        if dist.get("model_too_flat") and (b.get("dynamic_score") or 0) < 45:
-            continue
-        sc = b.get("dynamic_score")
-        if sc is not None and (best_score is None or sc > best_score):
-            best_score = sc
+        sc = b.get("compromise_score")
+        if sc is not None and (best_compromise_val is None or sc > best_compromise_val):
+            best_compromise_val = sc
             recommended = b["key"]
+
+    def _best_active_block(getter, lower_is_better: bool = False) -> dict[str, Any] | None:
+        best_key = None
+        best_val = None
+        pool = eligible_active if eligible_active else eligible
+        for b in pool:
+            v = getter(b)
+            if v is None:
+                continue
+            if best_val is None:
+                best_val, best_key = v, b["key"]
+            elif lower_is_better and v < best_val:
+                best_val, best_key = v, b["key"]
+            elif not lower_is_better and v > best_val:
+                best_val, best_key = v, b["key"]
+        return {"strategy": best_key, "value": best_val} if best_key else None
+
+    best_numeric = _best(
+        lambda pm: pm.get("mae"),
+        lower_is_better=True,
+    )
+    if best_numeric and eligible_active:
+        active_mae = None
+        active_key = None
+        for b in eligible_active:
+            mae = (b.get("predictive_metrics") or {}).get("mae")
+            if mae is None:
+                continue
+            if active_mae is None or float(mae) < active_mae:
+                active_mae, active_key = float(mae), b["key"]
+        if active_key:
+            best_numeric = {"strategy": active_key, "value": active_mae}
+
+    best_dynamic_det = _best_active_block(lambda b: b.get("dynamic_detection_score"), lower_is_better=False)
+    best_compromise = _best_active_block(lambda b: b.get("compromise_score"), lower_is_better=False)
 
     note = None
     tradeoff = None
@@ -736,20 +881,6 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
 
     from app.services.backtest.v31_calibration_simulator_predictor import STRATEGY_REGISTRY
 
-    dynamic_families = {"dynamic", "aggressive"}
-    strategy_family = {k: v.strategy_family for k, v in STRATEGY_REGISTRY.items()}
-
-    best_dynamic = None
-    best_dyn_score = None
-    for b in strategy_blocks:
-        fam = strategy_family.get(b["key"], "")
-        if fam not in dynamic_families:
-            continue
-        sc = b.get("balanced_prediction_score")
-        if sc is not None and (best_dyn_score is None or sc > best_dyn_score):
-            best_dyn_score = sc
-            best_dynamic = b["key"]
-
     return {
         "mae": _best(lambda pm: pm.get("mae"), lower_is_better=True),
         "rmse": _best(lambda pm: pm.get("rmse"), lower_is_better=True),
@@ -760,14 +891,20 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
             lambda b: (b.get("bucket_metrics") or {}).get("high_total_recall"),
             lower_is_better=False,
         ),
-        "best_dynamic_model": {"strategy": best_dynamic, "value": best_dyn_score},
+        "best_numeric_model": best_numeric,
+        "best_dynamic_model": best_dynamic_det,
+        "best_compromise_model": best_compromise,
         "balanced_prediction_score": {
             "strategy": recommended,
-            "value": best_score,
+            "value": best_compromise_val,
         },
         "dynamic_score": {
             "strategy": recommended,
-            "value": best_score,
+            "value": best_compromise_val,
+        },
+        "compromise_score": {
+            "strategy": recommended,
+            "value": best_compromise_val,
         },
         "recommended_strategy": recommended,
         "recommendation_note": note,

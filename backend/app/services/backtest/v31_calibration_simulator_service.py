@@ -16,6 +16,7 @@ from app.services.backtest.v31_calibration_simulator_feature_engine import extra
 from app.services.backtest.v31_calibration_simulator_interactions import compute_fixture_interactions
 from app.services.backtest.v31_calibration_simulator_errors import V31SimulatorInternalError
 from app.services.backtest.v31_calibration_simulator_metrics import (
+    build_model_interpretation,
     compute_best_by,
     summarize_strategy,
 )
@@ -114,11 +115,24 @@ class V31CalibrationSimulatorService:
 
         keys = resolve_strategy_keys(strategy, strategy_status_filter)
 
+        bias_corrected_simulated: list[dict[str, Any]] | None = None
+        if "v31_bias_dynamic_high_guard" in keys and "v31_bias_corrected" not in keys:
+            bias_corrected_simulated = predict_rows_for_strategy(rows, "v31_bias_corrected", cohort=cohort)
+
         strategy_blocks: list[dict[str, Any]] = []
         for key in keys:
             simulated = predict_rows_for_strategy(rows, key, cohort=cohort)
+            if key == "v31_bias_corrected":
+                bias_corrected_simulated = simulated
+            baseline_for_hybrid = (
+                bias_corrected_simulated if key == "v31_bias_dynamic_high_guard" else None
+            )
             try:
-                summary = summarize_strategy(key, simulated)
+                summary = summarize_strategy(
+                    key,
+                    simulated,
+                    baseline_rows=baseline_for_hybrid,
+                )
             except Exception as exc:
                 logger.exception("V31 summarize_strategy failed strategy=%s", key)
                 raise V31SimulatorInternalError(
@@ -145,6 +159,7 @@ class V31CalibrationSimulatorService:
             strategy_blocks.append(block)
 
         best_by = compute_best_by(strategy_blocks, fixtures_total=fixtures_count)
+        model_interpretation = build_model_interpretation(strategy_blocks, best_by)
 
         recommendation_note = best_by.get("recommendation_note")
         recommendation_tradeoff = best_by.get("recommendation_tradeoff")
@@ -164,6 +179,7 @@ class V31CalibrationSimulatorService:
                 "recommended_strategy": best_by.get("recommended_strategy"),
                 "recommendation_note": recommendation_note,
                 "recommendation_tradeoff": recommendation_tradeoff,
+                "model_interpretation": model_interpretation,
                 "phase": "predictive_numeric",
                 "betting_phase_enabled": False,
             },

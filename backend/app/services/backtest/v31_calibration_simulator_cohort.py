@@ -35,14 +35,20 @@ class CohortStats:
     match_open_p70: float = 2.2
     favorite_pressure_p70: float = 1.3
     fixture_interactions: dict[int, dict[str, Any]] = field(default_factory=dict)
+    signal_component_values: dict[str, list[float]] = field(default_factory=dict)
 
 
 def build_cohort_from_rows(rows: list[dict[str, Any]]) -> CohortStats:
+    from app.services.backtest.v31_calibration_simulator_high_guard import (
+        extract_signal_raw_values,
+    )
+
     off_vals: list[float] = []
     comb_vals: list[float] = []
     open_vals: list[float] = []
     fav_vals: list[float] = []
     interactions: dict[int, dict[str, Any]] = {}
+    signal_vals: dict[str, list[float]] = {}
 
     for row in rows:
         signals = extract_fixture_signals(row)
@@ -55,6 +61,10 @@ def build_cohort_from_rows(rows: list[dict[str, Any]]) -> CohortStats:
         comb_vals.append(float(inter["combined_offensive_strength"]))
         open_vals.append(float(inter["match_open_score"]))
         fav_vals.append(float(inter["favorite_pressure_score"]))
+        raw, _ = extract_signal_raw_values(signals, inter)
+        for key, val in raw.items():
+            if val is not None:
+                signal_vals.setdefault(key, []).append(float(val))
 
     off_sorted = sorted(off_vals)
     comb_sorted = sorted(comb_vals)
@@ -69,6 +79,7 @@ def build_cohort_from_rows(rows: list[dict[str, Any]]) -> CohortStats:
         match_open_p70=_percentile(open_sorted, 0.70),
         favorite_pressure_p70=_percentile(fav_sorted, 0.70),
         fixture_interactions=interactions,
+        signal_component_values=signal_vals,
     )
 
 

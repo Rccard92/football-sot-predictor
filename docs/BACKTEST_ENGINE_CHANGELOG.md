@@ -26,6 +26,14 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-hybrid-high-guard-fix
+
+**Titolo:** Fix boost v31_bias_dynamic_high_guard (signal 0–100, hybrid_debug)
+
+**Descrizione:** Riscritto high_total_signal su scala 0–100; boost 52/60/70/80; guardrail graduali; hybrid_debug e warning clone; ranking numeric/dynamic/compromise; model_interpretation.
+
+---
+
 ## v31-simulator-light-report-hybrid
 
 **Titolo:** Report JSON leggero, strategy_status e strategia ibrida high guard

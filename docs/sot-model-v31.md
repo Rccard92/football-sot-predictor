@@ -80,11 +80,9 @@ Ogni strategia ha `strategy_status`: `active`, `diagnostic`, `archived`. Il rank
 | `v31_chaos_game` | Partite aperte (concessioni, ritmo) |
 | `v31_low_block_guard` | Penalità favorita vs avversario a basso ritmo |
 | `v31_extreme_bucket_model` | Classificazione bucket → totale target (diagnostic) |
-| `v31_bias_dynamic_high_guard` | Base bias_corrected + boost selettivo high_total_signal (active) |
+| `v31_bias_dynamic_high_guard` | Base bias_corrected + boost selettivo high_total_signal (0–100, soglie 52/60/70/80) |
 
-**Active (default UI):** bias_corrected, low_variance, player_layer_heavy, big_vs_weak_push, chaos_game, bias_dynamic_high_guard.  
-**Diagnostic:** variance_unlocked, extreme_bucket_model.  
-**Archived:** equal_weights, core_sot_xg, context_adjusted, split_heavy, recent_form_heavy, low_block_guard, big_match_boost.
+**Signal 0–100:** componenti PIT normalizzati con redistribuzione pesi; trace `hybrid_debug` nel report.
 
 ### Volume tiri (`avg_total_shots_for`)
 
@@ -102,7 +100,9 @@ Nel dataset **standard**, il campo è popolato da `pace_control_index` (proxy PI
 
 **Bucket:** low (≤5), normal (6–9), high (≥10), very high (≥12) — accuracy, recall/precision high/low.
 
-**Ranking:** `dynamic_score` per raccomandazione (30% MAE + 20% bias + 20% within_1.5 + 15% high recall + 15% compression). Legacy: `balanced_prediction_score`.
+**Ranking:** `best_numeric_model` (MAE), `best_dynamic_model` (`dynamic_detection_score`), `best_compromise_model` (`compromise_score`). Raccomandazione su compromesso, non coverage win. `model_interpretation` nel summary.
+
+**Hybrid (`v31_bias_dynamic_high_guard`):** boost tier ≥52 (+0.25), ≥60 (+0.50), ≥70 (+0.75), ≥80 (+1.00); guardrail graduali; `hybrid_debug` con warning `V31_HYBRID_BOOST_NOT_APPLIED` / `V31_HYBRID_IDENTICAL_TO_BASELINE`.
 
 ## Walk-forward
 

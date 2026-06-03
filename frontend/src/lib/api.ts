@@ -4035,6 +4035,33 @@ export type V31BucketMetrics = {
   confusion_matrix?: Record<string, Record<string, number>>
 }
 
+export type V31HybridDebug = {
+  base_prediction_avg?: number | null
+  final_prediction_avg?: number | null
+  boosted_fixtures_count?: number
+  boost_0_25_count?: number
+  boost_0_50_count?: number
+  boost_0_75_count?: number
+  boost_1_00_count?: number
+  avg_boost_applied?: number | null
+  max_boost_applied?: number | null
+  high_signal_avg?: number | null
+  high_signal_p75?: number | null
+  high_signal_p90?: number | null
+  guardrail_blocked_count?: number
+  identical_to_baseline_pct?: number | null
+  hybrid_warnings?: string[]
+  top_boosted_fixtures?: Array<Record<string, unknown>>
+}
+
+export type V31ModelInterpretation = {
+  best_numeric_model?: string | null
+  best_dynamic_model?: string | null
+  best_compromise_model?: string | null
+  main_issue?: string
+  next_action?: string
+}
+
 export type V31StrategyStatus = 'active' | 'archived' | 'diagnostic'
 
 export type V31CalibrationSimulatorStrategy = {
@@ -4045,6 +4072,10 @@ export type V31CalibrationSimulatorStrategy = {
   strategy_status?: V31StrategyStatus
   strategy_warnings?: string[]
   dynamic_score?: number | null
+  numeric_precision_score?: number | null
+  dynamic_detection_score?: number | null
+  compromise_score?: number | null
+  hybrid_debug?: V31HybridDebug
   weights: V31StrategyWeights
   prediction_diagnostics?: V31PredictionDiagnostics & {
     prediction_distribution?: V31PredictionDistribution
@@ -4100,6 +4131,7 @@ export type V31CalibrationSimulator = {
     recommended_strategy?: string | null
     recommendation_note?: string | null
     recommendation_tradeoff?: string | null
+    model_interpretation?: V31ModelInterpretation
     strategy_status_filter?: string
     report_detail?: string
     round_range?: string
@@ -4124,7 +4156,10 @@ export type V31CalibrationSimulator = {
     within_1_5_pct?: { strategy?: string | null; value?: number | null }
     coverage_win_rate?: { strategy?: string | null; value?: number | null }
     best_high_total_detection?: { strategy?: string | null; value?: number | null }
+    best_numeric_model?: { strategy?: string | null; value?: number | null }
     best_dynamic_model?: { strategy?: string | null; value?: number | null }
+    best_compromise_model?: { strategy?: string | null; value?: number | null }
+    compromise_score?: { strategy?: string | null; value?: number | null }
     balanced_prediction_score?: { strategy?: string | null; value?: number | null }
     dynamic_score?: { strategy?: string | null; value?: number | null }
     recommended_strategy?: string | null

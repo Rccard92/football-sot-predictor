@@ -32,7 +32,7 @@ from app.services.backtest.v31_calibration_simulator_cohort import CohortStats
 from app.services.backtest.v31_calibration_simulator_dynamics import apply_dynamics
 from app.services.backtest.v31_calibration_simulator_feature_engine import FixtureSignals
 from app.services.backtest.v31_calibration_simulator_high_guard import (
-    HIGH_GUARD_MAX_EXTREME,
+    HIGH_GUARD_MAX,
     HIGH_GUARD_MIN,
 )
 
@@ -261,7 +261,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         uses_dynamic_bias=True,
         uses_high_guard=True,
         total_min=HIGH_GUARD_MIN,
-        total_max=HIGH_GUARD_MAX_EXTREME,
+        total_max=HIGH_GUARD_MAX,
     ),
 }
 

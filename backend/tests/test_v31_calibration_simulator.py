@@ -321,11 +321,21 @@ def _extreme_cohort_rows(n: int = 40) -> list[dict]:
             row["features"]["existing_macro_features"]["away"] = low
         else:
             row = _sample_row(round_number=r, actual=12, avg_sot_for=1.35)
-            hi = {**_macro_side(1.35), "pace_control_index": 1.35, "offensive_production_index": 1.35}
+            hi = {
+                **_macro_side(1.35),
+                "pace_control_index": 1.35,
+                "offensive_production_index": 1.35,
+                "recent_form_index": 1.12,
+                "player_layer_index": 1.12,
+            }
             row["features"]["existing_macro_features"]["home"] = hi
             row["features"]["existing_macro_features"]["away"] = hi
             row["features"]["team_raw_features"]["home"]["avg_total_shots_for"] = 15.0
             row["features"]["team_raw_features"]["away"]["avg_total_shots_for"] = 14.5
+            row["features"]["team_raw_features"]["home"]["avg_xg_for"] = 1.42
+            row["features"]["team_raw_features"]["away"]["avg_xg_for"] = 1.38
+            row["features"]["team_raw_features"]["home"]["avg_sot_against"] = 1.25
+            row["features"]["team_raw_features"]["away"]["avg_sot_against"] = 1.22
         rows.append(row)
     return rows
 
@@ -361,6 +371,65 @@ def test_strategy_status_active_keys():
     assert STRATEGY_STATUS["v31_variance_unlocked"] == "diagnostic"
 
 
+def test_high_guard_boost_on_high_macro():
+    from app.services.backtest.v31_calibration_simulator_high_guard import (
+        compute_high_total_signal,
+        predict_high_guard,
+    )
+
+    row = _sample_row(round_number=10, avg_sot_for=1.35)
+    hi = {
+        **_macro_side(1.35),
+        "pace_control_index": 1.35,
+        "offensive_production_index": 1.35,
+        "recent_form_index": 1.30,
+    }
+    row["features"]["existing_macro_features"]["home"] = hi
+    row["features"]["existing_macro_features"]["away"] = hi
+    row["features"]["team_raw_features"]["home"]["avg_total_shots_for"] = 15.0
+    row["features"]["team_raw_features"]["away"]["avg_total_shots_for"] = 14.0
+    row["features"]["team_raw_features"]["home"]["avg_xg_for"] = 1.45
+    row["features"]["team_raw_features"]["away"]["avg_xg_for"] = 1.42
+    row["features"]["existing_macro_features"]["home"]["player_layer_index"] = 1.12
+    row["features"]["existing_macro_features"]["away"]["player_layer_index"] = 1.12
+    sig = extract_fixture_signals(row)
+    assert sig is not None
+    signal, _, _ = compute_high_total_signal(sig)
+    assert signal >= 52.0
+    out = predict_high_guard(sig, bias_offset=0.0)
+    trace = out.get("trace") or {}
+    assert float(trace.get("boost_applied") or 0) > 0
+
+
+def test_hybrid_differs_from_bias_corrected_on_extreme():
+    rows = _extreme_cohort_rows(20)
+    from app.services.backtest.v31_calibration_simulator_cohort import build_cohort_from_rows
+
+    cohort = build_cohort_from_rows(rows)
+    bias_preds = [
+        float(predict_row(r, "v31_bias_corrected", cohort=cohort)["predicted_total_sot"])
+        for r in rows
+    ]
+    hybrid_preds = [
+        float(predict_row(r, "v31_bias_dynamic_high_guard", cohort=cohort)["predicted_total_sot"])
+        for r in rows
+    ]
+    diffs = sum(1 for a, b in zip(bias_preds, hybrid_preds) if abs(a - b) > 0.05)
+    assert diffs > 0
+    assert max(hybrid_preds) > max(bias_preds)
+
+
+def test_aggregate_hybrid_debug_boosted():
+    from app.services.backtest.v31_calibration_simulator_high_guard import aggregate_hybrid_debug
+
+    rows_src = _extreme_cohort_rows(10)
+    cohort = build_cohort_from_rows(rows_src)
+    rows = [predict_row(r, "v31_bias_dynamic_high_guard", cohort=cohort) for r in rows_src]
+    debug = aggregate_hybrid_debug(rows)
+    assert debug.get("boosted_fixtures_count", 0) > 0
+    assert "V31_HYBRID_IDENTICAL_TO_BASELINE" not in (debug.get("hybrid_warnings") or [])
+
+
 def test_high_guard_no_crash_none_boost():
     from app.services.backtest.v31_calibration_simulator_high_guard import (
         compute_high_total_signal,
@@ -370,13 +439,33 @@ def test_high_guard_no_crash_none_boost():
     row = _sample_row()
     sig = extract_fixture_signals(row)
     assert sig is not None
-    signal, _ = compute_high_total_signal(sig)
-    assert signal >= 0
+    signal, _, _ = compute_high_total_signal(sig)
+    assert 0 <= signal <= 100
     out = predict_high_guard(sig, bias_offset=0.0)
     assert out.get("predicted_total_sot") is not None
     trace = out.get("trace") or {}
     assert trace.get("high_total_signal") is not None
     assert "decision" not in out
+
+
+def test_model_interpretation_in_summary():
+    from app.services.backtest.v31_calibration_simulator_metrics import (
+        build_model_interpretation,
+        compute_best_by,
+        summarize_strategy,
+    )
+
+    rows = [predict_row(_sample_row(round_number=r), "v31_bias_corrected") for r in range(5, 15)]
+    block = {
+        "key": "v31_bias_corrected",
+        **summarize_strategy("v31_bias_corrected", rows),
+        "rows_sample": rows,
+    }
+    best_by = compute_best_by([block], fixtures_total=len(rows))
+    interp = build_model_interpretation([block], best_by)
+    assert interp.get("best_numeric_model") is not None
+    assert "main_issue" in interp
+    assert "next_action" in interp
 
 
 def test_build_report_payload_summary():

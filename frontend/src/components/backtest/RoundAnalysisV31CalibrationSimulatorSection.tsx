@@ -178,6 +178,16 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
       ? data?.strategies.find((s) => s.key === best.recommended_strategy)?.label
       : null)
 
+  const interp = data?.summary.model_interpretation
+  const labelFor = (key?: string | null) =>
+    key ? data?.strategies.find((s) => s.key === key)?.label ?? key : '—'
+
+  const discouraged = data?.strategies.find(
+    (s) =>
+      s.key === 'v31_big_vs_weak_push' &&
+      (s.strategy_warnings ?? []).some((w) => w.includes('Bias eccessivo')),
+  )
+
   return (
     <section className="space-y-4 rounded-lg border border-violet-200 bg-violet-50/30 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -246,24 +256,58 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
               value={fmtPct(best?.coverage_win_rate?.value)}
             />
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3 text-xs lg:col-span-2">
-              <p className="font-medium text-emerald-800">Strategia consigliata</p>
-              <p className="mt-1 text-sm font-semibold text-emerald-900">{recLabel ?? '—'}</p>
-              {best?.dynamic_score?.value != null ? (
+              <p className="font-medium text-emerald-800">Interpretazione modelli</p>
+              <ul className="mt-2 space-y-1 text-emerald-900">
+                <li>
+                  Miglior numerico (MAE):{' '}
+                  <strong>{labelFor(interp?.best_numeric_model ?? best?.best_numeric_model?.strategy)}</strong>
+                </li>
+                <li>
+                  Miglior dinamico:{' '}
+                  <strong>{labelFor(interp?.best_dynamic_model ?? best?.best_dynamic_model?.strategy)}</strong>
+                </li>
+                <li>
+                  Compromesso consigliato:{' '}
+                  <strong>{labelFor(interp?.best_compromise_model ?? best?.best_compromise_model?.strategy)}</strong>
+                </li>
+              </ul>
+              <p className="mt-2 text-emerald-800">
+                Al momento la migliore per MAE è v31_bias_corrected, ma non è ancora una v3.1 definitiva
+                perché è troppo piatta.
+              </p>
+              {discouraged ? (
+                <p className="mt-1 text-amber-800">
+                  Modello sconsigliato: {discouraged.label} (bias eccessivo).
+                </p>
+              ) : null}
+              {recLabel ? (
+                <p className="mt-2 text-sm font-semibold text-emerald-900">{recLabel}</p>
+              ) : null}
+              {best?.compromise_score?.value != null ? (
                 <p className="text-emerald-700">
-                  Dynamic score {fmtNum(best.dynamic_score.value, 1)}
+                  Compromise score {fmtNum(best.compromise_score.value, 1)}
                 </p>
               ) : null}
               {data.summary.recommendation_tradeoff ? (
                 <p className="mt-2 text-emerald-900">{data.summary.recommendation_tradeoff}</p>
               ) : null}
               {(() => {
-                const recKey = best?.recommended_strategy
-                const recS = data.strategies.find((s) => s.key === recKey)
-                const warns = recS?.strategy_warnings ?? []
-                return warns.length ? (
-                  <ul className="mt-1 list-inside list-disc text-amber-800">
-                    {warns.map((w) => (
-                      <li key={w}>{w}</li>
+                const hybrid = data.strategies.find((s) => s.key === 'v31_bias_dynamic_high_guard')
+                const hw = hybrid?.hybrid_debug?.hybrid_warnings ?? hybrid?.strategy_warnings ?? []
+                const hybridWarns = hw.filter(
+                  (w) =>
+                    w.includes('V31_HYBRID') ||
+                    w.includes('ibrida') ||
+                    w === 'Modello troppo piatto',
+                )
+                return hybridWarns.length ? (
+                  <ul className="mt-1 list-inside list-disc text-rose-800">
+                    {hybridWarns.map((w) => (
+                      <li key={w}>
+                        {w === 'V31_HYBRID_IDENTICAL_TO_BASELINE'
+                          ? 'La strategia ibrida non sta modificando la baseline.'
+                          : w}
+                      </li>
                     ))}
                   </ul>
                 ) : null
