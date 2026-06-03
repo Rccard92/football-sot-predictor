@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-calibration-simulator
+
+**Titolo:** Simulatore calibrazione v3.1 con 5 strategie sperimentali
+
+**Descrizione:** Nuovo `GET /api/backtest/v31/calibration-simulator` che carica righe dataset standard, predice SOT solo da feature pre-match (no predizioni legacy in input), calcola metriche regressione/betting, walk-forward (5–15→16–26, 5–26→27–37), spiegazioni IT. UI Backtest con tab Strategie/Walk-forward/Linee/No bet/Reason codes/Audit. Docs `docs/sot-model-v31.md`.
+
+**File toccati:** `v31_calibration_simulator_*.py`, `backtest_v31.py`, frontend sezione simulatore, test, docs.
+
+---
+
 ## v31-full-export-chunks
 
 **Titolo:** Export JSON completo v3.1 in 3 chunk per intervallo giornate

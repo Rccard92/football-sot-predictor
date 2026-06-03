@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.backtest.v31_calibration_dataset_service import V31CalibrationDatasetService
+from app.services.backtest.v31_calibration_simulator_service import V31CalibrationSimulatorService
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,33 @@ def v31_full_export_job_download(job_id: str):
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/calibration-simulator")
+def v31_calibration_simulator(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    strategy: str = Query(default="all"),
+    include_rows: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    svc = V31CalibrationSimulatorService()
+    try:
+        payload = svc.run_simulator(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+            strategy=strategy,
+            include_rows=include_rows,
+        )
+    except (OperationalError, ProgrammingError):
+        logger.exception("GET v31/calibration-simulator database error")
+        raise
+    return jsonable_encoder(payload)
 
 
 @router.get("/calibration-dataset/summary")

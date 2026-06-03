@@ -5,6 +5,7 @@ import { RoundAnalysisOverviewSection } from '../components/backtest/RoundAnalys
 import { RoundAnalysisDiagnosticsSection } from '../components/backtest/RoundAnalysisDiagnosticsSection'
 import { RoundAnalysisCalibrationSimulatorSection } from '../components/backtest/RoundAnalysisCalibrationSimulatorSection'
 import { RoundAnalysisV31CalibrationDatasetSection } from '../components/backtest/RoundAnalysisV31CalibrationDatasetSection'
+import { RoundAnalysisV31CalibrationSimulatorSection } from '../components/backtest/RoundAnalysisV31CalibrationSimulatorSection'
 import { RoundAnalysisDetailBox } from '../components/backtest/RoundAnalysisDetailBox'
 import { RoundAnalysisFixtureTable } from '../components/backtest/RoundAnalysisFixtureTable'
 import { RoundAnalysisForm } from '../components/backtest/RoundAnalysisForm'
@@ -69,6 +70,11 @@ export function Backtest() {
         competitionId={selectedCompetitionId}
         seasonYear={seasonYear}
         reloadToken={reloadToken}
+      />
+
+      <RoundAnalysisV31CalibrationSimulatorSection
+        competitionId={selectedCompetitionId}
+        seasonYear={seasonYear}
       />
 
       <RoundAnalysisForm

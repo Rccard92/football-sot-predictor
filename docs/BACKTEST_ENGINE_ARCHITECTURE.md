@@ -663,6 +663,7 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 | Endpoint | Ruolo |
 |----------|--------|
+| `GET /api/backtest/v31/calibration-simulator` | Simulazione 5 strategie v3.1 (`strategy=all\|key`, `include_rows`) |
 | `GET /api/backtest/v31/calibration-dataset/summary` | Summary + anti-leakage su `row.features` (build standard, no PIT) |
 | `GET /api/backtest/v31/calibration-dataset/anti-leakage-report` | Solo errori leakage + sample (max 20) |
 | `GET /api/backtest/v31/calibration-dataset?detail=standard` | JSON veloce da trace persistito (default UI) |
@@ -685,11 +686,13 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **Implementazione:** `v31_calibration_dataset_builder.py`, `v31_calibration_feature_mappers.py`, `v31_calibration_csv_export.py`, `V31CalibrationDatasetService`, router `backtest_v31.py`.
 
-**UI Backtest:** sezione «Dataset calibrazione v3.1» — standard/CSV sync consigliati; JSON full in **3 chunk** (giornate 5–15, 16–26, 27–37), job indipendenti, polling 2s, warning 60s, stall 90s senza abort automatico.
+**UI Backtest:** sezione «Dataset calibrazione v3.1» — standard/CSV sync consigliati; JSON full in **3 chunk** (giornate 5–15, 16–26, 27–37), job indipendenti, polling 2s, warning 60s, stall 90s senza abort automatico. Sezione «Simulatore calibrazione v3.1» sotto il dataset.
 
-**Log:** `V31_DATASET_SUMMARY_START/DONE`, `V31_DATASET_EXPORT_START/DONE`, `V31_FULL_EXPORT_CHUNK_START/PROGRESS/DONE` (con `duration_ms`).
+**Log:** `V31_DATASET_SUMMARY_START/DONE`, `V31_DATASET_EXPORT_START/DONE`, `V31_FULL_EXPORT_CHUNK_*`, `V31_CALIBRATION_SIMULATOR_START/DONE`.
 
-**Changelog:** `v31-calibration-dataset`, `v31-calibration-dataset-summary-ui`, `v31-full-export-chunks`.
+**Changelog:** `v31-calibration-dataset`, `v31-calibration-dataset-summary-ui`, `v31-full-export-chunks`, `v31-calibration-simulator`.
+
+**Modello:** vedi [`docs/sot-model-v31.md`](sot-model-v31.md).
 
 ### Step V3.0-C — Value Selector Refinement
 

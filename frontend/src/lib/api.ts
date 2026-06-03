@@ -3875,6 +3875,82 @@ export async function downloadV31FullExportJobJson(
   URL.revokeObjectURL(url)
 }
 
+export type V31SimulatorStrategyMetrics = {
+  mae?: number | null
+  bias?: number | null
+  rmse?: number | null
+  pick_count?: number
+  no_bet_count?: number
+  win_count?: number
+  loss_count?: number
+  hit_rate?: number | null
+  hit_rate_over_6_5?: number | null
+  hit_rate_over_7_5?: number | null
+}
+
+export type V31CalibrationSimulatorStrategy = {
+  key: string
+  label: string
+  description: string
+  weights: {
+    macro_areas: Record<string, number>
+    multipliers: Record<string, number>
+    selector_thresholds: Record<string, unknown>
+  }
+  regression_metrics: { mae?: number | null; bias?: number | null; rmse?: number | null; n?: number }
+  betting_metrics: Record<string, unknown>
+  walk_forward_metrics: Record<string, unknown>
+  line_metrics: Record<string, unknown>
+  confidence_metrics: Record<string, unknown>
+  reason_code_counts?: Record<string, number>
+  metrics: V31SimulatorStrategyMetrics
+  verdict: string
+  verdict_label: string
+  rows_sample: Array<Record<string, unknown>>
+}
+
+export type V31CalibrationSimulator = {
+  report_type: string
+  generated_at: string
+  summary: {
+    competition_id: number
+    competition_name?: string | null
+    season_year: number
+    season_label?: string
+    fixtures_count: number
+    strategies_run: number
+    recommended_strategy?: string | null
+    round_range?: string
+  }
+  strategies: V31CalibrationSimulatorStrategy[]
+  best_by: {
+    mae?: { strategy?: string | null; value?: number | null }
+    hit_rate?: { strategy?: string | null; value?: number | null }
+    balanced_score?: { strategy?: string | null; value?: number | null }
+    conservative_profit_proxy?: { strategy?: string; wins_minus_losses?: number }
+    recommended_strategy?: string | null
+  }
+  audit: {
+    anti_leakage: boolean
+    forbidden_fields_used: string[]
+    legacy_predictions_used_as_features: boolean
+  }
+}
+
+export async function getV31CalibrationSimulator(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts & { strategy?: string; includeRows?: boolean },
+): Promise<V31CalibrationSimulator> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  if (opts?.strategy) q.set('strategy', opts.strategy)
+  if (opts?.includeRows) q.set('include_rows', 'true')
+  return requestV31Json<V31CalibrationSimulator>(
+    `/api/backtest/v31/calibration-simulator?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {
