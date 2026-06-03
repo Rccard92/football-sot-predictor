@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.backtest.v31_calibration_team_raw_resolver import enrich_team_raw_side
+
 V31_MACRO_AREA_KEYS = (
     "offensive_production_index",
     "opponent_defensive_resistance_index",
@@ -58,6 +60,7 @@ class FixtureSignals:
     warning_count: int = 0
     team_stats_status: str = "unknown"
     missing_fields: list[str] = field(default_factory=list)
+    shots_resolution: dict[str, Any] = field(default_factory=dict)
 
 
 def _side_macros(macro_side: dict[str, Any] | None, prefix: str) -> SideSignals:
@@ -101,12 +104,13 @@ def extract_fixture_signals(row: dict[str, Any]) -> FixtureSignals | None:
         macros_block.get("away") if isinstance(macros_block, dict) else None,
         "away",
     )
-    home_macros.team_raw = _team_raw_dict(
-        team_raw.get("home") if isinstance(team_raw, dict) else None,
-    )
-    away_macros.team_raw = _team_raw_dict(
-        team_raw.get("away") if isinstance(team_raw, dict) else None,
-    )
+    league_ctx = feats.get("league_context") if isinstance(feats.get("league_context"), dict) else {}
+    home_tr = _team_raw_dict(team_raw.get("home") if isinstance(team_raw, dict) else None)
+    away_tr = _team_raw_dict(team_raw.get("away") if isinstance(team_raw, dict) else None)
+    home_tr, home_shots = enrich_team_raw_side(home_tr, home_macros.macros, league_ctx)
+    away_tr, away_shots = enrich_team_raw_side(away_tr, away_macros.macros, league_ctx)
+    home_macros.team_raw = home_tr
+    away_macros.team_raw = away_tr
 
     all_missing = list(dict.fromkeys(home_macros.missing_fields + away_macros.missing_fields))
 
@@ -118,10 +122,11 @@ def extract_fixture_signals(row: dict[str, Any]) -> FixtureSignals | None:
         home=home_macros,
         away=away_macros,
         data_quality=dq,
-        league_context=feats.get("league_context") if isinstance(feats.get("league_context"), dict) else {},
+        league_context=league_ctx,
         player_layer=feats.get("player_layer") if isinstance(feats.get("player_layer"), dict) else {},
         lineups=feats.get("lineups") if isinstance(feats.get("lineups"), dict) else {},
         warning_count=int(dq.get("warning_count") or 0),
         team_stats_status=str(dq.get("team_stats_status") or "unknown"),
         missing_fields=all_missing,
+        shots_resolution={"home": home_shots, "away": away_shots},
     )

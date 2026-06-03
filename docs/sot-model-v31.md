@@ -56,7 +56,7 @@ Mai in input al modello (validazione in `v31_calibration_anti_leakage`):
 
 4. **Fase attuale:** solo predizione numerica su **tutte** le fixture (`prediction_status` ok/failed). Nessun pick, NO_BET, linee o probabilità Over in questa fase.
 
-## Simulatore predittivo (8 strategie)
+## Simulatore predittivo (14 strategie)
 
 Endpoint: `GET /api/backtest/v31/calibration-simulator`  
 Export: `GET /api/backtest/v31/calibration-simulator/report-json` (tutte le righe fixture)
@@ -71,6 +71,16 @@ Export: `GET /api/backtest/v31/calibration-simulator/report-json` (tutte le righ
 | `v31_recent_form_heavy` | Enfasi ultime 5 + forma recente |
 | `v31_bias_corrected` | Contesto aggiustato + offset dinamico da errori precedenti |
 | `v31_low_variance` | Blend lega alto, cap totali stretti |
+| `v31_variance_unlocked` | Varianza sbloccata: blend basso, cap larghi |
+| `v31_big_match_boost` | Boost quando entrambe offensive (percentili cohort) |
+| `v31_big_vs_weak_push` | Favorita vs difesa fragile |
+| `v31_chaos_game` | Partite aperte (concessioni, ritmo) |
+| `v31_low_block_guard` | Penalità favorita vs avversario a basso ritmo |
+| `v31_extreme_bucket_model` | Classificazione bucket → totale target |
+
+### Volume tiri (`avg_total_shots_for`)
+
+Nel dataset **standard**, il campo è popolato da `pace_control_index` (proxy PIT). Il simulatore applica un resolver con alias e fallback macro; il report espone `feature_availability`.
 
 ## Metriche predittive
 
@@ -80,7 +90,11 @@ Export: `GET /api/backtest/v31/calibration-simulator/report-json` (tutte le righ
 
 **Coverage WIN (direzionale):** WIN se `actual_total_sot > predicted_total_sot` (non sostituisce MAE/bias).
 
-**Ranking:** `balanced_prediction_score` (35% MAE + 20% RMSE + 15% |bias| + 20% within_1.5 + 10% coverage).
+**Distribuzione:** `predicted_std`, `compression_ratio`, warning `V31_MODEL_TOO_FLAT` se ratio &lt; 0.55.
+
+**Bucket:** low (≤5), normal (6–9), high (≥10), very high (≥12) — accuracy, recall/precision high/low.
+
+**Ranking:** `balanced_prediction_score` (25% MAE + 15% RMSE + 15% |bias| + 20% within_1.5 + 15% high recall + 10% compression).
 
 ## Walk-forward
 

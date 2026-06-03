@@ -6,6 +6,9 @@ import math
 import statistics
 from typing import Any
 
+from app.services.backtest.v31_calibration_simulator_buckets import BUCKET_KEYS, bucket_label
+from app.services.backtest.v31_calibration_simulator_error_reasons import probable_reason
+
 STRATEGY_VERDICT_LABELS = {
     "weak": "Debole",
     "promising": "Promettente",
@@ -63,6 +66,127 @@ def regression_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _percentile(vals: list[float], p: float) -> float | None:
+    if not vals:
+        return None
+    s = sorted(vals)
+    if len(s) == 1:
+        return _round4(s[0])
+    idx = (len(s) - 1) * p
+    lo = int(idx)
+    hi = min(lo + 1, len(s) - 1)
+    frac = idx - lo
+    return _round4(s[lo] * (1 - frac) + s[hi] * frac)
+
+
+def prediction_distribution(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ok = _ok_rows(rows)
+    scored = _scored_rows(rows)
+    preds = [float(r["predicted_total_sot"]) for r in ok if r.get("predicted_total_sot") is not None]
+    actuals = [float(r["actual_total_sot"]) for r in scored]
+    pred_std = _round4(statistics.pstdev(preds)) if len(preds) > 1 else None
+    actual_std = _round4(statistics.pstdev(actuals)) if len(actuals) > 1 else None
+    compression = None
+    if pred_std is not None and actual_std and actual_std > 0:
+        compression = _round4(pred_std / actual_std)
+
+    dist_warnings: list[str] = []
+    if compression is not None and compression < 0.55:
+        dist_warnings.append("V31_MODEL_TOO_FLAT")
+
+    pred_high = sum(1 for p in preds if p > 9)
+    pred_very_high = sum(1 for p in preds if p > 10)
+    pred_low = sum(1 for p in preds if p < 6)
+    act_high = sum(1 for a in actuals if a > 9)
+    act_very_high = sum(1 for a in actuals if a > 10)
+    act_low = sum(1 for a in actuals if a < 6)
+
+    if act_high > 0 and pred_high < act_high * 0.5:
+        dist_warnings.append("V31_HIGH_TOTAL_UNDERDETECTED")
+    if act_low > 0 and pred_low < act_low * 0.5:
+        dist_warnings.append("V31_LOW_TOTAL_UNDERDETECTED")
+
+    return {
+        "predicted_std": pred_std,
+        "actual_std": actual_std,
+        "compression_ratio": compression,
+        "predicted_p10": _percentile(preds, 0.10),
+        "predicted_p25": _percentile(preds, 0.25),
+        "predicted_p50": _percentile(preds, 0.50),
+        "predicted_p75": _percentile(preds, 0.75),
+        "predicted_p90": _percentile(preds, 0.90),
+        "actual_p10": _percentile(actuals, 0.10),
+        "actual_p25": _percentile(actuals, 0.25),
+        "actual_p50": _percentile(actuals, 0.50),
+        "actual_p75": _percentile(actuals, 0.75),
+        "actual_p90": _percentile(actuals, 0.90),
+        "predicted_low_count_under_6": pred_low,
+        "predicted_high_count_over_9": pred_high,
+        "predicted_very_high_count_over_10": pred_very_high,
+        "actual_low_count_under_6": act_low,
+        "actual_high_count_over_9": act_high,
+        "actual_very_high_count_over_10": act_very_high,
+        "distribution_warnings": dist_warnings,
+        "model_too_flat": "V31_MODEL_TOO_FLAT" in dist_warnings,
+    }
+
+
+def bucket_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    scored = _scored_rows(rows)
+    if not scored:
+        return {
+            "bucket_accuracy": None,
+            "high_total_recall": None,
+            "high_total_precision": None,
+            "low_total_recall": None,
+            "low_total_precision": None,
+            "confusion_matrix": {},
+        }
+
+    correct = 0
+    confusion: dict[str, dict[str, int]] = {b: {k: 0 for k in BUCKET_KEYS} for b in BUCKET_KEYS}
+
+    high_actual = low_actual = 0
+    high_pred_hit = low_pred_hit = 0
+    high_pred_total = low_pred_total = 0
+
+    for r in scored:
+        pb = r.get("predicted_bucket") or bucket_label(r.get("predicted_total_sot"))
+        ab = r.get("actual_bucket") or bucket_label(r.get("actual_total_sot"))
+        if pb is None or ab is None:
+            continue
+        if pb == ab:
+            correct += 1
+        if pb in confusion and ab in confusion[pb]:
+            confusion[pb][ab] += 1
+        if ab in ("high_total", "very_high_total"):
+            high_actual += 1
+            if pb in ("high_total", "very_high_total"):
+                high_pred_hit += 1
+        if pb in ("high_total", "very_high_total"):
+            high_pred_total += 1
+        if ab == "low_total":
+            low_actual += 1
+            if pb == "low_total":
+                low_pred_hit += 1
+        if pb == "low_total":
+            low_pred_total += 1
+
+    n = len(scored)
+    return {
+        "bucket_accuracy": _round1(100.0 * correct / n) if n else None,
+        "high_total_recall": _round1(100.0 * high_pred_hit / high_actual) if high_actual else None,
+        "high_total_precision": _round1(100.0 * high_pred_hit / high_pred_total) if high_pred_total else None,
+        "low_total_recall": _round1(100.0 * low_pred_hit / low_actual) if low_actual else None,
+        "low_total_precision": _round1(100.0 * low_pred_hit / low_pred_total) if low_pred_total else None,
+        "high_actual_count": high_actual,
+        "high_predicted_count": high_pred_total,
+        "low_actual_count": low_actual,
+        "low_predicted_count": low_pred_total,
+        "confusion_matrix": confusion,
+    }
+
+
 def prediction_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ok = _ok_rows(rows)
     preds = [float(r["predicted_total_sot"]) for r in ok if r.get("predicted_total_sot") is not None]
@@ -74,6 +198,8 @@ def prediction_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if pred_avg is not None and (pred_avg < 5.5 or pred_avg > 10.5):
         scale_warning = True
         warnings.append("V31_PREDICTION_SCALE_OUT_OF_RANGE")
+    dist = prediction_distribution(rows)
+    warnings.extend(dist.get("distribution_warnings") or [])
     return {
         "actual_total_avg": _mean(actuals),
         "predicted_total_avg": pred_avg,
@@ -85,6 +211,7 @@ def prediction_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "predicted_over_12_count": sum(1 for p in preds if p > 12),
         "scale_warning": scale_warning,
         "warnings": warnings,
+        "prediction_distribution": dist,
     }
 
 
@@ -118,9 +245,12 @@ def error_distribution(rows: list[dict[str, Any]], *, top_n: int = 5) -> dict[st
             "round_number": r.get("round_number"),
             "predicted_total_sot": r.get("predicted_total_sot"),
             "actual_total_sot": r.get("actual_total_sot"),
+            "predicted_bucket": r.get("predicted_bucket"),
+            "actual_bucket": r.get("actual_bucket"),
             "error": r.get("error"),
             "abs_error": r.get("abs_error"),
             "possible_factors": _possible_factors(r),
+            "probable_reason": probable_reason(r),
         }
         if err > 0:
             over.append(entry)
@@ -278,11 +408,12 @@ def balanced_prediction_score(block: dict[str, Any]) -> float | None:
     if not parts:
         return None
     return _round4(
-        0.35 * (parts.get("mae") or 0)
-        + 0.20 * (parts.get("rmse") or 0)
+        0.25 * (parts.get("mae") or 0)
+        + 0.15 * (parts.get("rmse") or 0)
         + 0.15 * (parts.get("bias") or 0)
         + 0.20 * (parts.get("within_1_5") or 0)
-        + 0.10 * (parts.get("coverage") or 0),
+        + 0.15 * (parts.get("high_recall") or 0)
+        + 0.10 * (parts.get("compression") or 0),
     )
 
 
@@ -291,7 +422,7 @@ def _score_components_for_blocks(blocks: list[dict[str, Any]]) -> None:
     if not eligible:
         return
 
-    def collect(getter, higher_better: bool) -> dict[str, float]:
+    def collect_pm(getter, higher_better: bool) -> dict[str, float]:
         pairs: list[tuple[str, float]] = []
         for b in eligible:
             pm = b.get("predictive_metrics") or {}
@@ -300,23 +431,54 @@ def _score_components_for_blocks(blocks: list[dict[str, Any]]) -> None:
                 pairs.append((b["key"], float(v)))
         return _normalize_scores(pairs, higher_better=higher_better)
 
-    mae_s = collect(lambda pm: pm.get("mae"), higher_better=False)
-    rmse_s = collect(lambda pm: pm.get("rmse"), higher_better=False)
-    bias_s = collect(
+    def collect_block(getter, higher_better: bool) -> dict[str, float]:
+        pairs: list[tuple[str, float]] = []
+        for b in eligible:
+            v = getter(b)
+            if v is not None:
+                pairs.append((b["key"], float(v)))
+        return _normalize_scores(pairs, higher_better=higher_better)
+
+    mae_s = collect_pm(lambda pm: pm.get("mae"), higher_better=False)
+    rmse_s = collect_pm(lambda pm: pm.get("rmse"), higher_better=False)
+    bias_s = collect_pm(
         lambda pm: abs(pm.get("bias") or 0) if pm.get("bias") is not None else None,
         higher_better=False,
     )
-    w15_s = collect(lambda pm: pm.get("within_1_5_pct"), higher_better=True)
-    cov_s = collect(lambda pm: pm.get("coverage_win_rate"), higher_better=True)
+    w15_s = collect_pm(lambda pm: pm.get("within_1_5_pct"), higher_better=True)
+    hr_s = collect_block(
+        lambda b: (b.get("bucket_metrics") or {}).get("high_total_recall"),
+        higher_better=True,
+    )
+
+    def _compression_score(block: dict[str, Any]) -> float | None:
+        dist = (block.get("prediction_diagnostics") or {}).get("prediction_distribution") or {}
+        ratio = dist.get("compression_ratio")
+        if ratio is None:
+            return None
+        r = float(ratio)
+        if r < 0.55:
+            return 0.0
+        if 0.7 <= r <= 1.0:
+            return 100.0
+        if r < 0.7:
+            return 100.0 * (r - 0.55) / 0.15
+        return max(0.0, 100.0 - (r - 1.0) * 50.0)
+
+    comp_pairs = [(b["key"], _compression_score(b)) for b in eligible]
+    comp_pairs = [(k, v) for k, v in comp_pairs if v is not None]
+    comp_s = _normalize_scores(comp_pairs, higher_better=True) if comp_pairs else {}
 
     for b in eligible:
         k = b["key"]
+        bm = b.get("bucket_metrics") or {}
         b["score_components"] = {
             "mae": mae_s.get(k),
             "rmse": rmse_s.get(k),
             "bias": bias_s.get(k),
             "within_1_5": w15_s.get(k),
-            "coverage": cov_s.get(k),
+            "high_recall": hr_s.get(k),
+            "compression": comp_s.get(k),
         }
         b["balanced_prediction_score"] = balanced_prediction_score(b)
 
@@ -330,6 +492,8 @@ def summarize_strategy(
     reg = regression_metrics(rows)
     err_dist = error_distribution(rows)
     cov = coverage_metrics(rows)
+    bm = bucket_metrics(rows)
+    dist = diag.get("prediction_distribution") or prediction_distribution(rows)
     verdict = compute_strategy_verdict(
         mae=pm.get("mae"),
         within_1_5_pct=pm.get("within_1_5_pct"),
@@ -349,6 +513,8 @@ def summarize_strategy(
         "regression_metrics": reg,
         "coverage_metrics": cov,
         "error_distribution": err_dist,
+        "bucket_metrics": bm,
+        "prediction_distribution": dist,
         "walk_forward_metrics": walk_forward_metrics(rows),
         "verdict": verdict,
         "verdict_label": STRATEGY_VERDICT_LABELS.get(verdict, verdict),
@@ -370,6 +536,16 @@ def summarize_strategy(
             "predicted_total_avg": diag.get("predicted_total_avg"),
             "actual_total_avg": diag.get("actual_total_avg"),
             "scale_warning": diag.get("scale_warning"),
+            "predicted_std": dist.get("predicted_std"),
+            "actual_std": dist.get("actual_std"),
+            "compression_ratio": dist.get("compression_ratio"),
+            "predicted_high_count_over_9": dist.get("predicted_high_count_over_9"),
+            "actual_high_count_over_9": dist.get("actual_high_count_over_9"),
+            "predicted_low_count_under_6": dist.get("predicted_low_count_under_6"),
+            "actual_low_count_under_6": dist.get("actual_low_count_under_6"),
+            "high_total_recall": bm.get("high_total_recall"),
+            "low_total_recall": bm.get("low_total_recall"),
+            "model_too_flat": dist.get("model_too_flat"),
         },
     }
 
@@ -419,6 +595,9 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
     recommended = None
     best_score = None
     for b in eligible:
+        dist = (b.get("prediction_distribution") or {})
+        if dist.get("model_too_flat") and (b.get("balanced_prediction_score") or 0) < 50:
+            continue
         sc = b.get("balanced_prediction_score")
         if sc is not None and (best_score is None or sc > best_score):
             best_score = sc
@@ -428,12 +607,48 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
     if not eligible and strategy_blocks:
         note = "Nessuna strategia con copertura predittiva sufficiente (predictions_ok < 95% fixture)."
 
+    def _best_block(getter, lower_is_better: bool = True) -> dict[str, Any] | None:
+        best_key = None
+        best_val = None
+        for b in strategy_blocks:
+            v = getter(b)
+            if v is None:
+                continue
+            if best_val is None:
+                best_val, best_key = v, b["key"]
+            elif lower_is_better and v < best_val:
+                best_val, best_key = v, b["key"]
+            elif not lower_is_better and v > best_val:
+                best_val, best_key = v, b["key"]
+        return {"strategy": best_key, "value": best_val} if best_key else None
+
+    from app.services.backtest.v31_calibration_simulator_predictor import STRATEGY_REGISTRY
+
+    dynamic_families = {"dynamic", "aggressive"}
+    strategy_family = {k: v.strategy_family for k, v in STRATEGY_REGISTRY.items()}
+
+    best_dynamic = None
+    best_dyn_score = None
+    for b in strategy_blocks:
+        fam = strategy_family.get(b["key"], "")
+        if fam not in dynamic_families:
+            continue
+        sc = b.get("balanced_prediction_score")
+        if sc is not None and (best_dyn_score is None or sc > best_dyn_score):
+            best_dyn_score = sc
+            best_dynamic = b["key"]
+
     return {
         "mae": _best(lambda pm: pm.get("mae"), lower_is_better=True),
         "rmse": _best(lambda pm: pm.get("rmse"), lower_is_better=True),
         "bias_near_zero": _best_abs_bias(),
         "within_1_5_pct": _best(lambda pm: pm.get("within_1_5_pct"), lower_is_better=False),
         "coverage_win_rate": _best(lambda pm: pm.get("coverage_win_rate"), lower_is_better=False),
+        "best_high_total_detection": _best_block(
+            lambda b: (b.get("bucket_metrics") or {}).get("high_total_recall"),
+            lower_is_better=False,
+        ),
+        "best_dynamic_model": {"strategy": best_dynamic, "value": best_dyn_score},
         "balanced_prediction_score": {
             "strategy": recommended,
             "value": best_score,

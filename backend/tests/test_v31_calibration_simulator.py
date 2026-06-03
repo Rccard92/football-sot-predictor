@@ -6,14 +6,19 @@ from app.services.backtest.v31_calibration_simulator_base_sot import (
     absolute_from_field,
     calculate_team_base_sot,
 )
+from app.services.backtest.v31_calibration_simulator_buckets import bucket_label
+from app.services.backtest.v31_calibration_simulator_cohort import build_cohort_from_rows
 from app.services.backtest.v31_calibration_simulator_feature_engine import extract_fixture_signals
 from app.services.backtest.v31_calibration_simulator_metrics import (
+    bucket_metrics,
     compute_best_by,
+    prediction_distribution,
     predictive_metrics,
     prediction_diagnostics,
     regression_metrics,
     walk_forward_metrics,
 )
+from app.services.backtest.v31_calibration_team_raw_resolver import resolve_shots_for_side
 from app.services.backtest.v31_calibration_simulator_strategies import (
     STRATEGY_KEYS,
     predict_row,
@@ -199,6 +204,8 @@ def test_compute_best_by_recommends_with_predictions_ok():
                 "within_1_5_pct": 30.0,
                 "coverage_win_rate": 80.0,
             },
+            "bucket_metrics": {"high_total_recall": 20.0},
+            "prediction_distribution": {"compression_ratio": 0.4, "model_too_flat": True},
         },
         {
             "key": "b",
@@ -210,6 +217,8 @@ def test_compute_best_by_recommends_with_predictions_ok():
                 "within_1_5_pct": 50.0,
                 "coverage_win_rate": 55.0,
             },
+            "bucket_metrics": {"high_total_recall": 45.0},
+            "prediction_distribution": {"compression_ratio": 0.75, "model_too_flat": False},
         },
     ]
     best = compute_best_by(blocks, fixtures_total=15)
@@ -258,3 +267,81 @@ def test_invalid_features_failed_not_skipped():
     out = predict_row(row, "v31_equal_weights")
     assert out["prediction_status"] == "failed"
     assert out["error_code"] == "V31_INVALID_FEATURES"
+
+
+def test_shots_resolved_from_pace_macro():
+    row = _sample_row()
+    sig = extract_fixture_signals(row)
+    assert sig is not None
+    res = resolve_shots_for_side(sig.home.team_raw, sig.home.macros, sig.league_context)
+    assert res["resolved"] is True
+    out = predict_row(row, "v31_core_sot_xg")
+    trace = out.get("trace") or {}
+    home_trace = trace.get("home_base_trace") or {}
+    comps = home_trace.get("components") or {}
+    assert comps.get("shots_to_sot") is not None
+
+
+def test_predicted_buckets_on_rows():
+    row = _sample_row(actual=11)
+    out = predict_row(row, "v31_equal_weights")
+    assert out.get("predicted_bucket") is not None
+    assert out.get("actual_bucket") == bucket_label(11)
+
+
+def test_bucket_metrics_structure():
+    rows = [predict_row(_sample_row(round_number=r, actual=8 + (r % 4)), "v31_equal_weights") for r in range(5, 25)]
+    bm = bucket_metrics(rows)
+    assert bm.get("bucket_accuracy") is not None
+    assert "confusion_matrix" in bm
+
+
+def test_prediction_distribution_compression():
+    rows = [
+        predict_row(_sample_row(round_number=r, actual=5 + (r % 6)), "v31_low_variance")
+        for r in range(5, 25)
+    ]
+    dist = prediction_distribution(rows)
+    assert dist.get("predicted_std") is not None
+    assert dist.get("compression_ratio") is not None
+
+
+def _extreme_cohort_rows(n: int = 40) -> list[dict]:
+    rows: list[dict] = []
+    for i, r in enumerate(range(5, 5 + n)):
+        if i % 2 == 0:
+            row = _sample_row(round_number=r, actual=4, avg_sot_for=0.62)
+            low = {
+                **_macro_side(0.62),
+                "pace_control_index": 0.62,
+                "offensive_production_index": 0.62,
+                "chance_quality_index": 0.62,
+            }
+            row["features"]["existing_macro_features"]["home"] = low
+            row["features"]["existing_macro_features"]["away"] = low
+        else:
+            row = _sample_row(round_number=r, actual=12, avg_sot_for=1.35)
+            hi = {**_macro_side(1.35), "pace_control_index": 1.35, "offensive_production_index": 1.35}
+            row["features"]["existing_macro_features"]["home"] = hi
+            row["features"]["existing_macro_features"]["away"] = hi
+            row["features"]["team_raw_features"]["home"]["avg_total_shots_for"] = 15.0
+            row["features"]["team_raw_features"]["away"]["avg_total_shots_for"] = 14.5
+        rows.append(row)
+    return rows
+
+
+def test_variance_unlocked_wider_range():
+    rows = _extreme_cohort_rows()
+    cohort = build_cohort_from_rows(rows)
+    preds = [
+        float(predict_row(r, "v31_variance_unlocked", cohort=cohort)["predicted_total_sot"])
+        for r in rows
+    ]
+    assert max(preds) > 10.0
+    assert min(preds) < max(preds) - 2.5
+
+
+def test_strategy_count_includes_aggressive():
+    assert len(STRATEGY_KEYS) >= 14
+    assert "v31_variance_unlocked" in STRATEGY_KEYS
+    assert "v31_big_match_boost" in STRATEGY_KEYS

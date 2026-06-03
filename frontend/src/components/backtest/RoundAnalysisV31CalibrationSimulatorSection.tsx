@@ -8,8 +8,10 @@ import {
 
 const TABS = [
   { id: 'strategies', label: 'Strategie' },
+  { id: 'variance', label: 'Varianza modello' },
   { id: 'accuracy', label: 'Accuratezza' },
   { id: 'coverage', label: 'Coverage WIN' },
+  { id: 'buckets', label: 'Bucket SOT' },
   { id: 'errors', label: 'Errori peggiori' },
   { id: 'walkforward', label: 'Walk-forward' },
   { id: 'weights', label: 'Pesi e variabili' },
@@ -171,7 +173,16 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
           <p className="text-[10px] text-slate-500">
             Fixture: {data.summary.fixtures_count} · Strategie: {data.summary.strategies_run} · Fase:{' '}
             {data.summary.phase ?? 'predictive_numeric'}
+            {data.feature_availability?.avg_total_shots_for ? (
+              <>
+                {' '}
+                · Shots ok: {data.feature_availability.avg_total_shots_for.available_count}/
+                {data.feature_availability.avg_total_shots_for.fixtures_sides_total}
+              </>
+            ) : null}
           </p>
+
+          {selected ? <VarianceSummaryCard strategy={selected} /> : null}
 
           <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-1">
             {TABS.map((t) => (
@@ -203,6 +214,11 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
                     <th className="px-2 py-2">Bias</th>
                     <th className="px-2 py-2">±1.0</th>
                     <th className="px-2 py-2">±1.5</th>
+                    <th className="px-2 py-2">Pred std</th>
+                    <th className="px-2 py-2">Compress.</th>
+                    <th className="px-2 py-2">High rec.</th>
+                    <th className="px-2 py-2">Pred&gt;9</th>
+                    <th className="px-2 py-2">Act&gt;9</th>
                     <th className="px-2 py-2">Coverage W/L</th>
                     <th className="px-2 py-2">Coverage %</th>
                     <th className="px-2 py-2">Score</th>
@@ -223,7 +239,9 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
             </div>
           ) : null}
 
+          {activeTab === 'variance' && data ? <VarianceTable strategies={data.strategies} /> : null}
           {activeTab === 'accuracy' && selected ? <AccuracyPanel strategy={selected} /> : null}
+          {activeTab === 'buckets' && selected ? <BucketsPanel strategy={selected} /> : null}
           {activeTab === 'coverage' && selected ? <CoveragePanel strategy={selected} /> : null}
           {activeTab === 'errors' && selected ? <WorstErrorsPanel strategy={selected} /> : null}
           {activeTab === 'walkforward' && selected ? <WalkForwardPanel strategy={selected} /> : null}
@@ -277,6 +295,8 @@ function StrategyRow({
 }) {
   const m = s.metrics
   const pm = s.predictive_metrics
+  const dist = s.prediction_distribution ?? s.prediction_diagnostics?.prediction_distribution
+  const bm = s.bucket_metrics
   const covW = m.coverage_win_count ?? pm?.coverage_win_count ?? 0
   const covL = m.coverage_loss_count ?? pm?.coverage_loss_count ?? 0
   return (
@@ -292,6 +312,11 @@ function StrategyRow({
       <td className="px-2 py-2">{fmtNum(m.bias, 3)}</td>
       <td className="px-2 py-2">{fmtPct(m.within_1_0_pct ?? pm?.within_1_0_pct)}</td>
       <td className="px-2 py-2">{fmtPct(m.within_1_5_pct ?? pm?.within_1_5_pct)}</td>
+      <td className="px-2 py-2">{fmtNum(m.predicted_std ?? dist?.predicted_std, 2)}</td>
+      <td className="px-2 py-2">{fmtNum(m.compression_ratio ?? dist?.compression_ratio, 2)}</td>
+      <td className="px-2 py-2">{fmtPct(m.high_total_recall ?? bm?.high_total_recall)}</td>
+      <td className="px-2 py-2">{m.predicted_high_count_over_9 ?? dist?.predicted_high_count_over_9 ?? '—'}</td>
+      <td className="px-2 py-2">{m.actual_high_count_over_9 ?? dist?.actual_high_count_over_9 ?? '—'}</td>
       <td className="px-2 py-2">
         {covW}/{covL}
       </td>
@@ -429,8 +454,11 @@ function ErrorList({
               Pred {e.predicted_total_sot} · Actual {e.actual_total_sot} · Errore{' '}
               {fmtNum(e.error, 2)}
             </p>
-            {(e.possible_factors ?? []).length > 0 ? (
-              <p className="text-[10px] text-slate-500">{e.possible_factors?.join('; ')}</p>
+            <p className="text-[10px] text-slate-500">
+              Bucket pred/real: {e.predicted_bucket ?? '—'} / {e.actual_bucket ?? '—'}
+            </p>
+            {e.probable_reason ? (
+              <p className="text-[10px] text-violet-800">{e.probable_reason}</p>
             ) : null}
           </li>
         ))}
@@ -492,6 +520,116 @@ function WeightsPanel({ strategy }: { strategy: V31CalibrationSimulatorStrategy 
           {w.uses_dynamic_bias ? ' · Bias dinamico: sì' : ''}
         </p>
       </div>
+    </div>
+  )
+}
+
+function VarianceSummaryCard({ strategy }: { strategy: V31CalibrationSimulatorStrategy }) {
+  const dist = strategy.prediction_distribution ?? strategy.prediction_diagnostics?.prediction_distribution
+  const flat = dist?.model_too_flat ?? strategy.metrics?.model_too_flat
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-700">
+      <p className="font-medium text-slate-900">Varianza modello — {strategy.label}</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <span>Pred std: {fmtNum(dist?.predicted_std, 2)}</span>
+        <span>Actual std: {fmtNum(dist?.actual_std, 2)}</span>
+        <span>Compression: {fmtNum(dist?.compression_ratio, 2)}</span>
+        <span>Pred &gt; 9: {dist?.predicted_high_count_over_9 ?? '—'}</span>
+        <span>Actual &gt; 9: {dist?.actual_high_count_over_9 ?? '—'}</span>
+        <span>
+          {flat ? (
+            <span className="font-medium text-rose-700">Modello troppo piatto</span>
+          ) : (
+            <span className="text-emerald-700">Varianza OK</span>
+          )}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function VarianceTable({ strategies }: { strategies: V31CalibrationSimulatorStrategy[] }) {
+  return (
+    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+      <table className="min-w-full text-left text-xs">
+        <thead className="bg-slate-50 text-slate-600">
+          <tr>
+            <th className="px-2 py-2">Strategia</th>
+            <th className="px-2 py-2">Pred std</th>
+            <th className="px-2 py-2">Actual std</th>
+            <th className="px-2 py-2">Compression</th>
+            <th className="px-2 py-2">Pred&gt;9</th>
+            <th className="px-2 py-2">Actual&gt;9</th>
+            <th className="px-2 py-2">Piatto?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {strategies.map((s) => {
+            const d = s.prediction_distribution ?? s.prediction_diagnostics?.prediction_distribution
+            return (
+              <tr key={s.key} className="border-t border-slate-100">
+                <td className="px-2 py-2 font-medium">{s.label}</td>
+                <td className="px-2 py-2">{fmtNum(d?.predicted_std, 2)}</td>
+                <td className="px-2 py-2">{fmtNum(d?.actual_std, 2)}</td>
+                <td className="px-2 py-2">{fmtNum(d?.compression_ratio, 2)}</td>
+                <td className="px-2 py-2">{d?.predicted_high_count_over_9 ?? '—'}</td>
+                <td className="px-2 py-2">{d?.actual_high_count_over_9 ?? '—'}</td>
+                <td className="px-2 py-2">{d?.model_too_flat ? 'Sì' : 'No'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function BucketsPanel({ strategy }: { strategy: V31CalibrationSimulatorStrategy }) {
+  const bm = strategy.bucket_metrics
+  const cm = bm?.confusion_matrix as Record<string, Record<string, number>> | undefined
+  return (
+    <div className="space-y-3 text-xs text-slate-700">
+      <div className="rounded border border-slate-200 bg-white p-3">
+        <p className="font-medium">{strategy.label}</p>
+        <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+          <li>Bucket accuracy: {fmtPct(bm?.bucket_accuracy)}</li>
+          <li>High recall: {fmtPct(bm?.high_total_recall)}</li>
+          <li>High precision: {fmtPct(bm?.high_total_precision)}</li>
+          <li>Low recall: {fmtPct(bm?.low_total_recall)}</li>
+          <li>
+            High actual / pred: {bm?.high_actual_count ?? '—'} / {bm?.high_predicted_count ?? '—'}
+          </li>
+        </ul>
+      </div>
+      {cm ? (
+        <div className="overflow-x-auto rounded border border-slate-200 bg-white p-3">
+          <p className="mb-2 font-medium">Confusion matrix (pred → actual)</p>
+          <table className="text-[10px]">
+            <thead>
+              <tr>
+                <th className="px-1">pred \ actual</th>
+                {['low_total', 'normal_total', 'high_total', 'very_high_total'].map((b) => (
+                  <th key={b} className="px-1">
+                    {b.replace('_total', '')}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(cm).map(([pred, row]) => (
+                <tr key={pred}>
+                  <td className="px-1 font-medium">{pred.replace('_total', '')}</td>
+                  {['low_total', 'normal_total', 'high_total', 'very_high_total'].map((ab) => (
+                    <td key={ab} className="px-1 text-center">
+                      {row[ab] ?? 0}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   )
 }

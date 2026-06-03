@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-predictive-dynamics
+
+**Titolo:** Simulatore v3.1 — varianza, bucket e strategie aggressive
+
+**Descrizione:** Fix `avg_total_shots_for` (builder standard + resolver); `prediction_distribution` e warning compressione; metriche bucket; 6 strategie aggressive (`variance_unlocked`, `big_match_boost`, …); interazioni PIT; ranking con high recall e compression score; UI tab Varianza/Bucket.
+
+**File toccati:** `v31_calibration_*`, `v31_calibration_row_builder_standard.py`, frontend simulatore, test, docs.
+
+---
+
 ## v31-predictive-simulator
 
 **Titolo:** Simulatore predittivo v3.1 (refactor numerico)

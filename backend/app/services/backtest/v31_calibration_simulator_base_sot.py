@@ -270,7 +270,14 @@ def predict_fixture_totals(
     total_league_blend: float = TOTAL_LEAGUE_BLEND,
     total_min: float = 4.0,
     total_max: float = 14.0,
+    side_cap_min: float = 0.8,
+    side_cap_max: float = 8.5,
     bias_offset: float = 0.0,
+    home_side_multiplier: float = 1.0,
+    away_side_multiplier: float = 1.0,
+    total_boost: float = 0.0,
+    bucket_override_total: float | None = None,
+    dynamics_trace: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Predizione home/away/total da base SOT + context multiplier."""
     league_ctx = signals.league_context
@@ -311,11 +318,14 @@ def predict_fixture_totals(
         context_weights=context_weights,
     )
 
-    h_pred = max(0.8, min(8.5, home_base * h_ctx))
-    a_pred = max(0.8, min(8.5, away_base * a_ctx))
+    h_pred = max(side_cap_min, min(side_cap_max, home_base * h_ctx * home_side_multiplier))
+    a_pred = max(side_cap_min, min(side_cap_max, away_base * a_ctx * away_side_multiplier))
     raw_total = h_pred + a_pred
     blend = max(0.0, min(1.0, total_league_blend))
-    total = _round1((1.0 - blend) * raw_total + blend * LEAGUE_AVG_TOTAL_SOT + bias_offset)
+    if bucket_override_total is not None:
+        total = _round1(float(bucket_override_total))
+    else:
+        total = _round1((1.0 - blend) * raw_total + blend * LEAGUE_AVG_TOTAL_SOT + bias_offset + total_boost)
     total = max(total_min, min(total_max, total))
 
     all_missing = list(
@@ -340,5 +350,11 @@ def predict_fixture_totals(
             "away_base_trace": away_trace,
             "home_context_weights": h_ctx_w,
             "away_context_weights": a_ctx_w,
+            "league_blend_applied": round(blend, 4),
+            "total_boost_applied": round(total_boost, 4),
+            "home_side_multiplier": round(home_side_multiplier, 4),
+            "away_side_multiplier": round(away_side_multiplier, 4),
+            "shots_resolution": getattr(signals, "shots_resolution", {}),
+            **(dynamics_trace or {}),
         },
     }

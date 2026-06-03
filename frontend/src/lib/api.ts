@@ -3955,19 +3955,50 @@ export type V31ErrorSample = {
   round_number?: number
   predicted_total_sot?: number
   actual_total_sot?: number
+  predicted_bucket?: string
+  actual_bucket?: string
+  probable_reason?: string
   error?: number
   abs_error?: number
   possible_factors?: string[]
+}
+
+export type V31PredictionDistribution = {
+  predicted_std?: number | null
+  actual_std?: number | null
+  compression_ratio?: number | null
+  predicted_high_count_over_9?: number
+  actual_high_count_over_9?: number
+  predicted_low_count_under_6?: number
+  actual_low_count_under_6?: number
+  model_too_flat?: boolean
+  distribution_warnings?: string[]
+}
+
+export type V31BucketMetrics = {
+  bucket_accuracy?: number | null
+  high_total_recall?: number | null
+  high_total_precision?: number | null
+  low_total_recall?: number | null
+  low_total_precision?: number | null
+  high_actual_count?: number
+  high_predicted_count?: number
+  confusion_matrix?: Record<string, Record<string, number>>
 }
 
 export type V31CalibrationSimulatorStrategy = {
   key: string
   label: string
   description: string
+  strategy_family?: string
   weights: V31StrategyWeights
-  prediction_diagnostics?: V31PredictionDiagnostics
+  prediction_diagnostics?: V31PredictionDiagnostics & {
+    prediction_distribution?: V31PredictionDistribution
+  }
+  prediction_distribution?: V31PredictionDistribution
   predictive_metrics?: V31PredictiveMetrics
   regression_metrics: { mae?: number | null; bias?: number | null; rmse?: number | null; n?: number }
+  bucket_metrics?: V31BucketMetrics
   coverage_metrics?: {
     coverage_win_count?: number
     coverage_loss_count?: number
@@ -4019,12 +4050,24 @@ export type V31CalibrationSimulator = {
     betting_phase_enabled?: boolean
   }
   strategies: V31CalibrationSimulatorStrategy[]
+  feature_availability?: {
+    avg_total_shots_for?: {
+      available_count?: number
+      missing_count?: number
+      fixtures_sides_total?: number
+      source_field_used_counts?: Record<string, number>
+      note?: string | null
+    }
+  }
+  interaction_features_summary?: Record<string, number>
   best_by: {
     mae?: { strategy?: string | null; value?: number | null }
     rmse?: { strategy?: string | null; value?: number | null }
     bias_near_zero?: { strategy?: string | null; value?: number | null }
     within_1_5_pct?: { strategy?: string | null; value?: number | null }
     coverage_win_rate?: { strategy?: string | null; value?: number | null }
+    best_high_total_detection?: { strategy?: string | null; value?: number | null }
+    best_dynamic_model?: { strategy?: string | null; value?: number | null }
     balanced_prediction_score?: { strategy?: string | null; value?: number | null }
     recommended_strategy?: string | null
     recommendation_note?: string | null
@@ -4037,6 +4080,8 @@ export type V31CalibrationSimulator = {
     simulation_only?: boolean
     target_used_for_metrics_only?: boolean
     comparisons_used_for_audit_only?: boolean
+    actual_bucket_metrics_only?: boolean
+    interaction_features_pre_match_only?: boolean
   }
 }
 

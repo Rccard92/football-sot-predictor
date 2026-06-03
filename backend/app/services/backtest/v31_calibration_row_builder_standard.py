@@ -64,6 +64,10 @@ def _standard_team_side(expl_side: dict[str, Any] | None) -> dict[str, Any]:
         "home_away_split_sot_for": _round4_macro(
             macro_index(expl_side, "home_away_split", aliases=SPLIT_MACRO_ALIASES),
         ),
+        "avg_total_shots_for": _round4_macro(macro_index(expl_side, "pace_control")),
+        "avg_total_shots_against": _round4_macro(
+            macro_index(expl_side, "opponent_defensive_resistance"),
+        ),
         "sample_count": None,
     }
 

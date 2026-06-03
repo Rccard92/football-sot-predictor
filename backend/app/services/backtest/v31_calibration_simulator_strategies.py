@@ -1,9 +1,11 @@
-"""Otto strategie predittive numeriche simulatore v3.1."""
+"""Strategie predittive numeriche simulatore v3.1."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.services.backtest.v31_calibration_simulator_buckets import bucket_label
+from app.services.backtest.v31_calibration_simulator_cohort import CohortStats
 from app.services.backtest.v31_calibration_simulator_feature_engine import extract_fixture_signals
 from app.services.backtest.v31_calibration_simulator_predictor import (
     STRATEGY_REGISTRY,
@@ -36,6 +38,8 @@ def get_strategy_weights_payload(strategy_key: str) -> dict[str, Any]:
         "total_min": spec.total_min,
         "total_max": spec.total_max,
         "uses_dynamic_bias": spec.uses_dynamic_bias,
+        "strategy_family": spec.strategy_family,
+        "uses_dynamics": spec.uses_dynamics,
         "features_on": list(spec.base_weights.keys()),
         "macro_areas": list(spec.context_weights.keys()),
     }
@@ -59,6 +63,7 @@ def predict_row(
     strategy_key: str,
     *,
     bias_offset: float = 0.0,
+    cohort: CohortStats | None = None,
 ) -> dict[str, Any]:
     """Predice sempre una riga (ok o failed); mai None."""
     base = _base_row_fields(row)
@@ -81,7 +86,7 @@ def predict_row(
         }
 
     try:
-        pred = predict_for_strategy(signals, strategy_key, bias_offset=bias_offset)
+        pred = predict_for_strategy(signals, strategy_key, bias_offset=bias_offset, cohort=cohort)
     except ValueError as exc:
         return {
             **base,
@@ -129,6 +134,9 @@ def predict_row(
     trace["home_context_multiplier"] = pred.get("home_context_multiplier")
     trace["away_context_multiplier"] = pred.get("away_context_multiplier")
 
+    pred_bucket = bucket_label(total)
+    act_bucket = bucket_label(actual) if actual is not None else None
+
     return {
         **base,
         "prediction_status": "ok",
@@ -136,6 +144,8 @@ def predict_row(
         "predicted_home_sot": pred.get("predicted_home_sot"),
         "predicted_away_sot": pred.get("predicted_away_sot"),
         "predicted_total_sot": total,
+        "predicted_bucket": pred_bucket,
+        "actual_bucket": act_bucket,
         "error": error,
         "abs_error": abs_error,
         "coverage_outcome": coverage_outcome,
@@ -147,14 +157,16 @@ def predict_row(
 def predict_rows_for_strategy(
     rows: list[dict[str, Any]],
     strategy_key: str,
+    *,
+    cohort: CohortStats | None = None,
 ) -> list[dict[str, Any]]:
     """Predice tutte le righe; bias_corrected usa offset dinamico per round."""
     spec = STRATEGY_REGISTRY.get(strategy_key)
     if spec is None:
-        return [predict_row(r, strategy_key) for r in rows]
+        return [predict_row(r, strategy_key, cohort=cohort) for r in rows]
 
     if not spec.uses_dynamic_bias:
-        return [predict_row(r, strategy_key) for r in rows]
+        return [predict_row(r, strategy_key, cohort=cohort) for r in rows]
 
     indexed = list(enumerate(rows))
     indexed.sort(key=lambda x: int((x[1].get("metadata") or {}).get("round_number") or 0))
@@ -162,7 +174,7 @@ def predict_rows_for_strategy(
     n_prior = 0
     by_index: dict[int, dict[str, Any]] = {}
     for idx, row in indexed:
-        out = predict_row(row, strategy_key, bias_offset=bias_offset)
+        out = predict_row(row, strategy_key, bias_offset=bias_offset, cohort=cohort)
         by_index[idx] = out
         if out.get("prediction_status") == "ok" and out.get("error") is not None:
             actual = out.get("actual_total_sot")
