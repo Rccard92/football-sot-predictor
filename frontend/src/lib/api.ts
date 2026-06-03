@@ -3933,6 +3933,22 @@ export type V31SimulatorStrategyMetrics = {
   predicted_total_avg?: number | null
   actual_total_avg?: number | null
   scale_warning?: boolean
+  predicted_std?: number | null
+  actual_std?: number | null
+  compression_ratio?: number | null
+  model_too_flat?: boolean
+  high_total_recall?: number | null
+  high_total_precision?: number | null
+  low_total_recall?: number | null
+  low_total_precision?: number | null
+  bucket_accuracy?: number | null
+  predicted_high_count_over_9?: number | null
+  actual_high_count_over_9?: number | null
+  predicted_very_high_count_over_10?: number | null
+  actual_very_high_count_over_10?: number | null
+  predicted_low_count_under_6?: number | null
+  actual_low_count_under_6?: number | null
+  prediction_distribution?: V31PredictionDistribution
 }
 
 export type V31StrategyWeights = {
@@ -3961,16 +3977,47 @@ export type V31ErrorSample = {
   error?: number
   abs_error?: number
   possible_factors?: string[]
+  missing_fields?: string[]
+  row_warning?: string
+}
+
+/** Riga worst error nel simulatore (alias con null espliciti sui numeri). */
+export type V31WorstErrorRow = {
+  match?: string
+  fixture_id?: number
+  round_number?: number
+  predicted_total_sot?: number | null
+  actual_total_sot?: number | null
+  error?: number | null
+  abs_error?: number | null
+  predicted_bucket?: string | null
+  actual_bucket?: string | null
+  probable_reason?: string | null
+  possible_factors?: string[]
+  missing_fields?: string[]
+  row_warning?: string
 }
 
 export type V31PredictionDistribution = {
   predicted_std?: number | null
   actual_std?: number | null
   compression_ratio?: number | null
-  predicted_high_count_over_9?: number
-  actual_high_count_over_9?: number
-  predicted_low_count_under_6?: number
-  actual_low_count_under_6?: number
+  predicted_p10?: number | null
+  predicted_p25?: number | null
+  predicted_p50?: number | null
+  predicted_p75?: number | null
+  predicted_p90?: number | null
+  actual_p10?: number | null
+  actual_p25?: number | null
+  actual_p50?: number | null
+  actual_p75?: number | null
+  actual_p90?: number | null
+  predicted_high_count_over_9?: number | null
+  actual_high_count_over_9?: number | null
+  predicted_very_high_count_over_10?: number | null
+  actual_very_high_count_over_10?: number | null
+  predicted_low_count_under_6?: number | null
+  actual_low_count_under_6?: number | null
   model_too_flat?: boolean
   distribution_warnings?: string[]
 }

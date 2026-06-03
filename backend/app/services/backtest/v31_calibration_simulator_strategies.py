@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.backtest.v31_calibration_simulator_buckets import bucket_label
+from app.services.backtest.v31_calibration_simulator_trace import normalize_prediction_trace
 from app.services.backtest.v31_calibration_simulator_cohort import CohortStats
 from app.services.backtest.v31_calibration_simulator_feature_engine import extract_fixture_signals
 from app.services.backtest.v31_calibration_simulator_predictor import (
@@ -127,7 +128,7 @@ def predict_row(
         abs_error = round(abs(error), 4)
         coverage_outcome = "win" if float(actual) > float(total) else "loss"
 
-    trace = pred.get("trace") or {}
+    trace = normalize_prediction_trace(pred.get("trace"))
     trace["strategy_key"] = strategy_key
     trace["home_base_sot"] = pred.get("home_base_sot")
     trace["away_base_sot"] = pred.get("away_base_sot")

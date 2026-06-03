@@ -4,6 +4,7 @@ import {
   getV31CalibrationSimulatorReportJson,
   type V31CalibrationSimulator,
   type V31CalibrationSimulatorStrategy,
+  type V31WorstErrorRow,
 } from '../../lib/api'
 
 const TABS = [
@@ -435,13 +436,7 @@ function ErrorList({
   items,
 }: {
   title: string
-  items?: Array<{
-    match?: string
-    predicted_total_sot?: number
-    actual_total_sot?: number
-    error?: number
-    possible_factors?: string[]
-  }>
+  items?: V31WorstErrorRow[]
 }) {
   return (
     <div className="rounded border border-slate-200 bg-white p-3">
@@ -457,9 +452,9 @@ function ErrorList({
             <p className="text-[10px] text-slate-500">
               Bucket pred/real: {e.predicted_bucket ?? '—'} / {e.actual_bucket ?? '—'}
             </p>
-            {e.probable_reason ? (
-              <p className="text-[10px] text-violet-800">{e.probable_reason}</p>
-            ) : null}
+            <p className="text-[10px] text-violet-800">
+              {e.probable_reason || 'Motivo non disponibile'}
+            </p>
           </li>
         ))}
       </ul>

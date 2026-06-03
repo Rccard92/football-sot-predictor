@@ -14,6 +14,7 @@ from app.services.backtest.v31_calibration_dataset_builder import build_v31_data
 from app.services.backtest.v31_calibration_simulator_cohort import build_cohort_from_rows
 from app.services.backtest.v31_calibration_simulator_feature_engine import extract_fixture_signals
 from app.services.backtest.v31_calibration_simulator_interactions import compute_fixture_interactions
+from app.services.backtest.v31_calibration_simulator_errors import V31SimulatorInternalError
 from app.services.backtest.v31_calibration_simulator_metrics import (
     compute_best_by,
     summarize_strategy,
@@ -116,7 +117,15 @@ class V31CalibrationSimulatorService:
         strategy_blocks: list[dict[str, Any]] = []
         for key in keys:
             simulated = predict_rows_for_strategy(rows, key, cohort=cohort)
-            summary = summarize_strategy(key, simulated)
+            try:
+                summary = summarize_strategy(key, simulated)
+            except Exception as exc:
+                logger.exception("V31 summarize_strategy failed strategy=%s", key)
+                raise V31SimulatorInternalError(
+                    str(exc),
+                    stage="summarize_strategy",
+                    strategy=key,
+                ) from exc
             sample = simulated if include_rows else simulated[:ROWS_SAMPLE_MAX]
             for s in sample:
                 s.pop("comparisons_snapshot", None)

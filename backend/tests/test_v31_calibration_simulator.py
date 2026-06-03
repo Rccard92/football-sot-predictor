@@ -345,3 +345,45 @@ def test_strategy_count_includes_aggressive():
     assert len(STRATEGY_KEYS) >= 14
     assert "v31_variance_unlocked" in STRATEGY_KEYS
     assert "v31_big_match_boost" in STRATEGY_KEYS
+
+
+def test_probable_reason_none_boost_reason():
+    from app.services.backtest.v31_calibration_simulator_error_reasons import (
+        probable_reason,
+        safe_probable_reason,
+    )
+
+    row = {
+        "predicted_total_sot": 10.0,
+        "actual_total_sot": 6.0,
+        "error": 4.0,
+        "predicted_bucket": "high_total",
+        "actual_bucket": "normal_total",
+        "trace": {"boost_reason": None, "boost_applied": None},
+    }
+    assert isinstance(probable_reason(row), str)
+    assert isinstance(safe_probable_reason(row), str)
+
+
+def test_normalize_prediction_trace_defaults():
+    from app.services.backtest.v31_calibration_simulator_trace import normalize_prediction_trace
+
+    t = normalize_prediction_trace({"boost_reason": None, "boost_applied": None})
+    assert t["boost_reason"] == ""
+    assert t["boost_applied"] == 0.0
+    assert t["league_blend_applied"] == 0.0
+    assert t["interaction_scores"] == {}
+
+
+def test_error_distribution_incomplete_trace():
+    from app.services.backtest.v31_calibration_simulator_metrics import error_distribution
+
+    row = predict_row(_sample_row(actual=12), "v31_equal_weights")
+    row["trace"] = {"boost_reason": None, "boost_applied": None}
+    row["error"] = float(row["predicted_total_sot"]) - 12.0
+    dist = error_distribution([row])
+    worst = dist.get("worst_overestimations") or dist.get("worst_underestimations") or []
+    if worst:
+        assert worst[0].get("probable_reason")
+    else:
+        assert dist.get("overestimated_count", 0) >= 0

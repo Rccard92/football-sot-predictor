@@ -11,6 +11,7 @@ from app.services.backtest.v31_calibration_simulator_feature_engine import (
     _round1,
     _round4,
 )
+from app.services.backtest.v31_calibration_simulator_trace import normalize_prediction_trace
 
 LEAGUE_AVG_SOT_FOR = 3.35
 LEAGUE_AVG_XG_FOR = 1.25
@@ -345,16 +346,19 @@ def predict_fixture_totals(
         "home_context_multiplier": h_ctx,
         "away_context_multiplier": a_ctx,
         "missing_fields": all_missing,
-        "trace": {
-            "home_base_trace": home_trace,
-            "away_base_trace": away_trace,
-            "home_context_weights": h_ctx_w,
-            "away_context_weights": a_ctx_w,
-            "league_blend_applied": round(blend, 4),
-            "total_boost_applied": round(total_boost, 4),
-            "home_side_multiplier": round(home_side_multiplier, 4),
-            "away_side_multiplier": round(away_side_multiplier, 4),
-            "shots_resolution": getattr(signals, "shots_resolution", {}),
-            **(dynamics_trace or {}),
-        },
+        "trace": normalize_prediction_trace(
+            {
+                "home_base_trace": home_trace,
+                "away_base_trace": away_trace,
+                "home_context_weights": h_ctx_w,
+                "away_context_weights": a_ctx_w,
+                "league_blend_applied": round(blend, 4),
+                "total_boost_applied": round(total_boost, 4),
+                "boost_applied": round(total_boost, 4),
+                "home_side_multiplier": round(home_side_multiplier, 4),
+                "away_side_multiplier": round(away_side_multiplier, 4),
+                "shots_resolution": getattr(signals, "shots_resolution", {}),
+                **(dynamics_trace or {}),
+            },
+        ),
     }

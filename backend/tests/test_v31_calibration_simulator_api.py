@@ -78,6 +78,10 @@ def test_calibration_simulator_api(mock_run):
     body = r.json()
     assert body["report_type"] == "v31_predictive_simulator"
     assert len(body["strategies"]) == 1
+    ed = body["strategies"][0].get("error_distribution") or {}
+    worst = (ed.get("worst_overestimations") or []) + (ed.get("worst_underestimations") or [])
+    for w in worst:
+        assert w.get("probable_reason")
     assert body["strategies"][0]["key"] == "v31_equal_weights"
     assert "betting_metrics" not in body["strategies"][0]
     assert body["audit"]["legacy_predictions_used_as_features"] is False

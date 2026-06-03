@@ -7,7 +7,10 @@ import statistics
 from typing import Any
 
 from app.services.backtest.v31_calibration_simulator_buckets import BUCKET_KEYS, bucket_label
-from app.services.backtest.v31_calibration_simulator_error_reasons import probable_reason
+from app.services.backtest.v31_calibration_simulator_error_reasons import (
+    FALLBACK_REASON,
+    safe_probable_reason,
+)
 
 STRATEGY_VERDICT_LABELS = {
     "weak": "Debole",
@@ -250,8 +253,10 @@ def error_distribution(rows: list[dict[str, Any]], *, top_n: int = 5) -> dict[st
             "error": r.get("error"),
             "abs_error": r.get("abs_error"),
             "possible_factors": _possible_factors(r),
-            "probable_reason": probable_reason(r),
+            "probable_reason": safe_probable_reason(r),
         }
+        if entry["probable_reason"] == FALLBACK_REASON:
+            entry["row_warning"] = "V31_PROBABLE_REASON_FALLBACK"
         if err > 0:
             over.append(entry)
         elif err < 0:

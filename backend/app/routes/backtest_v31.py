@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.backtest.v31_calibration_dataset_service import V31CalibrationDatasetService
+from app.services.backtest.v31_calibration_simulator_errors import V31SimulatorInternalError
 from app.services.backtest.v31_calibration_simulator_service import V31CalibrationSimulatorService
 
 logger = logging.getLogger(__name__)
@@ -119,9 +120,24 @@ def v31_calibration_simulator(
             strategy=strategy,
             include_rows=include_rows,
         )
+    except V31SimulatorInternalError as exc:
+        return JSONResponse(status_code=500, content=exc.to_payload())
     except (OperationalError, ProgrammingError):
         logger.exception("GET v31/calibration-simulator database error")
         raise
+    except Exception as exc:
+        logger.exception("GET v31/calibration-simulator internal error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error_code": "V31_SIMULATOR_INTERNAL_ERROR",
+                "message": str(exc),
+                "stage": "run_simulator",
+                "strategy": strategy,
+                "fixture_id": None,
+            },
+        )
     return jsonable_encoder(payload)
 
 
@@ -145,9 +161,24 @@ def v31_calibration_simulator_report_json(
             strategy=strategy,
             include_rows=True,
         )
+    except V31SimulatorInternalError as exc:
+        return JSONResponse(status_code=500, content=exc.to_payload())
     except (OperationalError, ProgrammingError):
         logger.exception("GET v31/calibration-simulator/report-json database error")
         raise
+    except Exception as exc:
+        logger.exception("GET v31/calibration-simulator/report-json internal error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error_code": "V31_SIMULATOR_INTERNAL_ERROR",
+                "message": str(exc),
+                "stage": "run_simulator",
+                "strategy": strategy,
+                "fixture_id": None,
+            },
+        )
     filename = f"v31-predictive-simulator-{competition_id}-{season_year}.json"
     return JSONResponse(
         content=jsonable_encoder(payload),

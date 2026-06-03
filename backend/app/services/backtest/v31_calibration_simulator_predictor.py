@@ -262,8 +262,10 @@ def predict_for_strategy(
         bucket_override_total=dyn.get("bucket_override_total"),
         dynamics_trace={
             "boost_applied": round(float(dyn.get("total_boost") or 0.0), 4),
-            "boost_reason": dyn.get("boost_reason"),
-            "interaction_scores": dyn.get("interaction_scores"),
+            "boost_reason": dyn.get("boost_reason") or "",
+            "interaction_scores": dyn.get("interaction_scores")
+            if isinstance(dyn.get("interaction_scores"), dict)
+            else {},
             "strategy_family": spec.strategy_family,
         },
     )
