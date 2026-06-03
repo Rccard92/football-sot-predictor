@@ -1,4 +1,5 @@
 import type { RoundAnalysisModelBlock } from '../../lib/api'
+import { v30TableShortReason } from '../../lib/v30Explanation'
 
 export function hitRateBadgeClass(hitRate: number | null | undefined): string {
   if (hitRate == null) return 'bg-slate-100 text-slate-600'
@@ -130,30 +131,33 @@ export function v30DecisionCell(block: RoundAnalysisModelBlock | undefined): Pic
     ...((selection.reason_codes as string[] | undefined) ?? []),
     ...((selection.no_bet_reasons as string[] | undefined) ?? []),
   ]
-  const { display: subReasons, title: reasonTitle } = formatReasonCodes(reasonCodes, 2)
+  const { display: subReasons, title: reasonTitle } = formatReasonCodes(reasonCodes, 99)
+  const { display: shortIt, title: shortTitle } = v30TableShortReason(block)
 
-  if (decision === 'GIOCA' && line != null && outcome) {
+  if (decision === 'GIOCA' && line != null) {
+    const outcomeSuffix = outcome ? ` — ${outcome}` : ''
     return {
-      label: `Over ${line} ${outcome}`,
-      sublabel: subReasons || undefined,
+      label: `GIOCA Over ${line}${outcomeSuffix}`,
+      sublabel: shortIt || subReasons || undefined,
       isNd: false,
-      title: reasonTitle || block.cautious_reason || undefined,
+      title: shortTitle || reasonTitle || block.cautious_reason || undefined,
     }
   }
   if (decision === 'NO_BET' || decision === 'NO BET') {
     return {
       label: 'NO BET',
-      sublabel: subReasons || block.cautious_reason || undefined,
+      sublabel: shortIt || subReasons || block.cautious_reason || undefined,
       isNd: false,
-      title: reasonTitle || block.cautious_reason || undefined,
+      title: shortTitle || reasonTitle || block.cautious_reason || undefined,
     }
   }
   if (decision === 'BORDERLINE') {
+    const linePart = line != null ? ` Over ${line}` : ''
     return {
-      label: 'BORDERLINE',
-      sublabel: subReasons || block.cautious_reason || undefined,
+      label: `BORDERLINE${linePart}`,
+      sublabel: shortIt || subReasons || block.cautious_reason || undefined,
       isNd: false,
-      title: reasonTitle,
+      title: shortTitle || reasonTitle,
     }
   }
   const { sublabel, title } = ndSublabel(block)

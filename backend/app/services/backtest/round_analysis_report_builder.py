@@ -140,6 +140,12 @@ def _build_trace_summary_for_report(
         elif isinstance(explanation_slice, dict) and explanation_slice.get("home"):
             expl_v21 = explanation_slice
         trace["macro_snapshot"] = extract_v21_macro_averages(expl_v21)
+        if block.get("human_explanation"):
+            trace["human_explanation"] = block.get("human_explanation")
+        elif trace.get("human_explanation") is None:
+            ts_h = (block.get("trace_summary") or {}).get("human_explanation")
+            if ts_h:
+                trace["human_explanation"] = ts_h
 
     return trace
 
@@ -164,6 +170,7 @@ def _value_selector_section(
             gap = round(float(v21) - float(v11), 4)
         except (TypeError, ValueError):
             gap = None
+    human = block.get("human_explanation") or trace.get("human_explanation")
     return {
         "selection": selection,
         "audit": audit,
@@ -172,6 +179,7 @@ def _value_selector_section(
         "prediction_gap": gap,
         "macro_snapshot": extract_v21_macro_averages(expl_v21 if isinstance(expl_v21, dict) else None),
         "warnings": list(block.get("warnings") or []),
+        "human_explanation": human if isinstance(human, dict) else None,
     }
 
 
@@ -209,6 +217,9 @@ def model_block_to_report(
     }
     if model_key == BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR:
         out["value_selector"] = _value_selector_section(block, explanation_slice)
+        he = block.get("human_explanation") or (block.get("trace_summary") or {}).get("human_explanation")
+        if isinstance(he, dict):
+            out["human_explanation"] = he
     return out
 
 

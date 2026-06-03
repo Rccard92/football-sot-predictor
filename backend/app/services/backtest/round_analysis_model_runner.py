@@ -61,9 +61,16 @@ class RoundAnalysisModelRunner:
                     selection = (payload.get("selection") or {}) if isinstance(payload, dict) else {}
                     decision = str(selection.get("decision") or "NO_BET")
                     line = selection.get("line")
-                    reason_codes = list(selection.get("reason_codes") or [])
-                    no_bet_reasons = list(selection.get("no_bet_reasons") or [])
-                    cautious_reason = ",".join((reason_codes or no_bet_reasons)[:3])
+                    human_explanation = (
+                        trace_summary.get("human_explanation")
+                        or payload.get("human_explanation")
+                        or {}
+                    )
+                    cautious_reason = str(human_explanation.get("short_reason") or "").strip()
+                    if not cautious_reason:
+                        reason_codes = list(selection.get("reason_codes") or [])
+                        no_bet_reasons = list(selection.get("no_bet_reasons") or [])
+                        cautious_reason = ",".join((reason_codes or no_bet_reasons)[:3])
 
                     cautious_outcome = None
                     if line is not None and actual_total is not None:
@@ -104,7 +111,13 @@ class RoundAnalysisModelRunner:
                         },
                     )
                     log_model_run(analysis_id=analysis_id, fixture_id=int(fixture.id), result=result)
-                    models_json[model_key] = model_result_to_block(result)
+                    block = model_result_to_block(result)
+                    if isinstance(human_explanation, dict) and human_explanation:
+                        block["human_explanation"] = human_explanation
+                    block["v1_1_predicted_total"] = payload.get("v1_1_predicted_total")
+                    block["v2_1_predicted_total"] = payload.get("v2_1_predicted_total")
+                    block["prediction_gap"] = payload.get("prediction_gap")
+                    models_json[model_key] = block
                     if result.explanation:
                         explanation_json[model_key] = result.explanation
                     continue

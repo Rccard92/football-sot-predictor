@@ -16,6 +16,7 @@ from app.models import Fixture
 from app.services.backtest.round_analysis_v21_trace_helpers import (
     extract_v21_macro_averages,
 )
+from app.services.backtest.sot_v30_human_explanation import build_human_explanation
 from app.services.backtest.sot_v30_value_selector_logic import (
     FORBIDDEN_INPUT_FIELDS,
     select_value_pick,
@@ -89,6 +90,19 @@ class SotV30ValueSelectorService:
         selection_obj, trace = select_value_pick(pre_match_context)
         selection = selection_obj.as_json()
 
+        v11_pt = _safe_float(v11_block.get("predicted_total_sot"))
+        v21_pt = _safe_float(v21_block.get("predicted_total_sot"))
+        gap = None
+        if v11_pt is not None and v21_pt is not None:
+            gap = round(float(v21_pt) - float(v11_pt), 4)
+
+        human_explanation = build_human_explanation(
+            pre_match_context,
+            selection_obj,
+            trace,
+            explanation_v21=explanation_v21,
+        )
+
         # Audit anti-leakage: dimostrare cosa NON è stato usato
         audit = {
             "actuals_used_as_input": False,
@@ -120,21 +134,29 @@ class SotV30ValueSelectorService:
             "model_label": self.model_label,
             "reference_model": self.reference_model,
             "predicted_total_sot_reference": _safe_float(v21_block.get("predicted_total_sot")),
-            "v1_1_predicted_total": _safe_float(v11_block.get("predicted_total_sot")),
-            "v2_1_predicted_total": _safe_float(v21_block.get("predicted_total_sot")),
+            "v1_1_predicted_total": v11_pt,
+            "v2_1_predicted_total": v21_pt,
+            "prediction_gap": gap,
             "selected_market": "shots_on_target",
             "selection": selection,
             "audit": audit,
             "trace": trace,
+            "human_explanation": human_explanation,
         }
 
-        # Un “trace_summary” compatto per models_json (il resto resta nel blocco `trace_summary`)
+        macro_snapshot = trace.get("macro_snapshot") or macros
+
         trace_summary = {
             "selection": selection,
             "audit": audit,
             "selection_trace": trace,
             "model_key": self.model_key,
             "reference_model": self.reference_model,
+            "v1_1_predicted_total": v11_pt,
+            "v2_1_predicted_total": v21_pt,
+            "prediction_gap": gap,
+            "macro_snapshot": macro_snapshot,
+            "human_explanation": human_explanation,
         }
         return payload, trace_summary
 

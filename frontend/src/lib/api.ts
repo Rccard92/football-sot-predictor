@@ -2914,6 +2914,22 @@ export type RoundAnalysisModelBlock = {
   sample_bucket?: string | null
   warnings?: string[]
   data_quality?: Record<string, string>
+  human_explanation?: {
+    headline?: string
+    summary?: string
+    decision_reason?: string
+    risk_reason?: string
+    line_reason?: string
+    confidence_reason?: string
+    key_factors?: string[]
+    warning_notes?: string[]
+    italian_text?: string
+    short_reason?: string
+    data_used?: Record<string, number | string | null | undefined>
+  }
+  v1_1_predicted_total?: number | null
+  v2_1_predicted_total?: number | null
+  prediction_gap?: number | null
 }
 
 export type RoundAnalysisFixtureRow = {

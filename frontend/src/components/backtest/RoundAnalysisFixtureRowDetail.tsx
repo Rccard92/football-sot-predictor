@@ -86,7 +86,13 @@ export function RoundAnalysisFixtureRowDetail({ detail, competitionName, fixture
                 {block.cautious_reason ?? ''}
               </p>
               {key === MODEL_KEYS.v30 && block.status === 'ok' ? (
-                <V30FixtureReasoningPanel block={block} />
+                <V30FixtureReasoningPanel
+                  block={block}
+                  explanationSlice={
+                    (fixture.explanation_json?.[MODEL_KEYS.v30] as Record<string, unknown>) ??
+                    undefined
+                  }
+                />
               ) : null}
             </>
           ) : null}
