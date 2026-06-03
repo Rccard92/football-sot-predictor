@@ -110,6 +110,13 @@ const icons: Record<NavIconName, ReactNode> = {
       <path d="M3 3v5h5" />
     </>
   ),
+  flask: (
+    <>
+      <path d="M10 2v6.5L4.5 18a4 4 0 0 0 3.5 6h8a4 4 0 0 0 3.5-6L14 8.5V2" />
+      <path d="M8.5 2h7" />
+      <path d="M7 16h10" />
+    </>
+  ),
   'book-open': (
     <>
       <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />

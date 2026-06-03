@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { Admin } from './pages/Admin'
 import { ApiDataCatalog } from './pages/ApiDataCatalog'
 import { Backtest } from './pages/Backtest'
+import { PredictiveSimulatorPage } from './pages/PredictiveSimulatorPage'
 import { Dashboard } from './pages/Dashboard'
 import { DataHealth } from './pages/DataHealth'
 import { MatchPrediction } from './pages/MatchPrediction'
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/teams" element={<Teams />} />
           <Route path="/match-prediction" element={<MatchPrediction />} />
           <Route path="/backtest" element={<Backtest />} />
+          <Route path="/predictive-simulator" element={<PredictiveSimulatorPage />} />
           <Route path="/model-legend" element={<ModelLegend />} />
           <Route path="/api-data-catalog" element={<ApiDataCatalog />} />
           <Route path="/model-debug" element={<ModelDebug />} />

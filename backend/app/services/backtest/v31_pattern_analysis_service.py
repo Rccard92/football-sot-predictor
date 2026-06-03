@@ -35,6 +35,7 @@ from app.services.backtest.v31_pattern_analysis_distribution import (
 )
 from app.services.backtest.v31_pattern_analysis_recommendations import TOP3_KEYS, build_recommendations
 from app.services.backtest.v31_pattern_analysis_top3 import build_top3_comparisons
+from app.services.backtest.v31_pattern_analysis_verdict import build_pattern_verdict
 from app.services.backtest.v31_pattern_analysis_win_quality import enrich_row_with_pattern_fields
 
 logger = logging.getLogger(__name__)
@@ -171,6 +172,7 @@ class V31PatternAnalysisService:
             top3_cluster_summary=top3_cluster_summary,
             distribution=distribution,
         )
+        pattern_verdict = build_pattern_verdict(strategy_blocks, top3_cluster_summary, distribution)
 
         payload: dict[str, Any] = {
             "report_type": "v31_pattern_analysis",
@@ -200,6 +202,7 @@ class V31PatternAnalysisService:
                 },
                 "top3_cluster_summary": top3_cluster_summary,
                 "recommendations": recommendations,
+                "pattern_verdict": pattern_verdict,
                 "phase": "pattern_analysis_post_match",
                 "betting_phase_enabled": False,
             },

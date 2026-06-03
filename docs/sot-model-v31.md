@@ -114,6 +114,8 @@ Analisi qualità coverage WIN/LOSS su top-3 strategie (`bias_corrected`, `dynami
 - **`diagnostic_weight`:** solo analisi; non modifica pesi modello.
 - Endpoint: `GET /backtest/v31/pattern-analysis` (+ report summary/full).
 
+**UI:** pagina dedicata [`/predictive-simulator`](frontend/src/pages/PredictiveSimulatorPage.tsx) con verdetto, problemi strutturali e tab Simulatore/Pattern Analysis. Backtest contiene solo card link.
+
 ## Walk-forward
 
 | Split | Train | Test |

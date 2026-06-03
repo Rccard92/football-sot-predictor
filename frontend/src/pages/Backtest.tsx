@@ -1,12 +1,11 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ContextBanner } from '../components/ContextBanner'
 import { RoundAnalysisAccordion, ModelSummaryBar } from '../components/backtest/RoundAnalysisAccordion'
 import { RoundAnalysisOverviewSection } from '../components/backtest/RoundAnalysisOverviewSection'
 import { RoundAnalysisDiagnosticsSection } from '../components/backtest/RoundAnalysisDiagnosticsSection'
 import { RoundAnalysisCalibrationSimulatorSection } from '../components/backtest/RoundAnalysisCalibrationSimulatorSection'
 import { RoundAnalysisV31CalibrationDatasetSection } from '../components/backtest/RoundAnalysisV31CalibrationDatasetSection'
-import { RoundAnalysisV31CalibrationSimulatorSection } from '../components/backtest/RoundAnalysisV31CalibrationSimulatorSection'
-import { RoundAnalysisV31PatternAnalysisSection } from '../components/backtest/RoundAnalysisV31PatternAnalysisSection'
 import { RoundAnalysisDetailBox } from '../components/backtest/RoundAnalysisDetailBox'
 import { RoundAnalysisFixtureTable } from '../components/backtest/RoundAnalysisFixtureTable'
 import { RoundAnalysisForm } from '../components/backtest/RoundAnalysisForm'
@@ -73,15 +72,18 @@ export function Backtest() {
         reloadToken={reloadToken}
       />
 
-      <RoundAnalysisV31CalibrationSimulatorSection
-        competitionId={selectedCompetitionId}
-        seasonYear={seasonYear}
-      />
-
-      <RoundAnalysisV31PatternAnalysisSection
-        competitionId={selectedCompetitionId}
-        seasonYear={seasonYear}
-      />
+      <section className="rounded-lg border border-violet-200 bg-violet-50/40 p-4">
+        <h2 className="text-base font-semibold text-slate-900">Simulatore Predittivo v3.1</h2>
+        <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          Analizza modelli sperimentali, pattern di errore e strategie predittive in una pagina dedicata.
+        </p>
+        <Link
+          to="/predictive-simulator"
+          className="mt-3 inline-block rounded-lg border border-violet-700 bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600"
+        >
+          Apri Simulatore Predittivo
+        </Link>
+      </section>
 
       <RoundAnalysisForm
         competitionId={selectedCompetitionId}

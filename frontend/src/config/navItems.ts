@@ -10,6 +10,7 @@ export type NavIconName =
   | 'bar-chart'
   | 'heart-pulse'
   | 'rotate-ccw'
+  | 'flask'
   | 'book-open'
   | 'settings'
 
@@ -37,6 +38,7 @@ export const NAV_TECH: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard modello', icon: 'bar-chart', section: 'tech' },
   { to: '/data-health', label: 'Data Health', icon: 'heart-pulse', section: 'tech' },
   { to: '/backtest', label: 'Backtest', icon: 'rotate-ccw', section: 'tech' },
+  { to: '/predictive-simulator', label: 'Simulatore Predittivo', icon: 'flask', section: 'tech' },
   { to: '/model-legend', label: 'Legenda Modello', icon: 'book-open', section: 'tech' },
   { to: '/admin', label: 'Admin', icon: 'settings', section: 'tech' },
 ]

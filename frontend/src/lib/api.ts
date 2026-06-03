@@ -4297,6 +4297,7 @@ export type V31PatternStrategyBlock = {
   high_total_non_extreme_summary?: Record<string, unknown>
   predictive_metrics?: Record<string, unknown>
   coverage_metrics?: Record<string, unknown>
+  hybrid_debug?: Record<string, unknown>
 }
 
 export type V31Top3FixtureComparison = {
@@ -4332,6 +4333,7 @@ export type V31PatternAnalysis = {
     high_total_non_extreme_summary?: Record<string, unknown>
     top3_cluster_summary?: { total_fixtures: number; counts: Record<string, number>; pct: Record<string, number> }
     recommendations?: V31PatternRecommendation[]
+    pattern_verdict?: Record<string, unknown>
     report_detail?: string
     betting_phase_enabled?: boolean
   }

@@ -5,8 +5,8 @@ import {
   type V31PatternAnalysis,
   type V31PatternRecommendation,
   type V31PatternStrategyBlock,
-  type V31Top3FixtureComparison,
 } from '../../lib/api'
+import { PatternAnalysisTop3Panel } from '../predictive/PatternAnalysisTop3Panel'
 
 const TABS = [
   { id: 'wins', label: 'Pattern vincenti' },
@@ -21,6 +21,12 @@ type TabId = (typeof TABS)[number]['id']
 type Props = {
   competitionId: number | null
   seasonYear: number
+  embedded?: boolean
+  hidePageHeader?: boolean
+  externalData?: V31PatternAnalysis | null
+  externalLoading?: boolean
+  externalError?: string | null
+  onExternalRun?: () => void
 }
 
 function fmtNum(v: number | null | undefined, d = 2): string {
@@ -53,14 +59,22 @@ const REC_TYPE_LABEL: Record<string, string> = {
   dangerous_pattern: 'Pattern pericoloso',
 }
 
-export function RoundAnalysisV31PatternAnalysisSection({ competitionId, seasonYear }: Props) {
-  const [data, setData] = useState<V31PatternAnalysis | null>(null)
+export function RoundAnalysisV31PatternAnalysisSection({
+  competitionId,
+  seasonYear,
+  embedded = false,
+  hidePageHeader = false,
+  externalData,
+  externalLoading,
+  externalError,
+  onExternalRun,
+}: Props) {
+  const [data, setData] = useState<V31PatternAnalysis | null>(externalData ?? null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(externalError ?? null)
   const [tab, setTab] = useState<TabId>('wins')
   const [selectedKey, setSelectedKey] = useState<string>('v31_bias_corrected')
-  const [clusterFilter, setClusterFilter] = useState<string>('all')
 
   const run = useCallback(async () => {
     if (competitionId == null) return
@@ -96,9 +110,21 @@ export function RoundAnalysisV31PatternAnalysisSection({ competitionId, seasonYe
     }
   }, [competitionId, seasonYear])
 
-  const selected = data?.strategies.find((s) => s.key === selectedKey) ?? data?.strategies[0]
-  const dist = data?.summary.actual_sot_distribution
-  const thresholds = data?.summary.dynamic_bucket_thresholds
+  const effectiveData = embedded && externalData !== undefined ? externalData : data
+  const effectiveLoading = embedded && externalLoading !== undefined ? externalLoading : loading
+  const effectiveError = embedded && externalError !== undefined ? externalError : error
+
+  const handleRun = () => {
+    if (embedded && onExternalRun) {
+      onExternalRun()
+      return
+    }
+    void run()
+  }
+
+  const selected = effectiveData?.strategies.find((s) => s.key === selectedKey) ?? effectiveData?.strategies[0]
+  const dist = effectiveData?.summary.actual_sot_distribution
+  const thresholds = effectiveData?.summary.dynamic_bucket_thresholds
 
   const kpiFromStrategy = (s: V31PatternStrategyBlock | undefined) => {
     const wq = s?.win_quality_summary?.counts ?? {}
@@ -112,39 +138,58 @@ export function RoundAnalysisV31PatternAnalysisSection({ competitionId, seasonYe
   const kpis = kpiFromStrategy(selected)
 
   return (
-    <section className="space-y-4 rounded-lg border border-amber-200 bg-amber-50/30 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Pattern Analysis v3.1</h2>
-          <p className="mt-1 max-w-3xl text-xs text-slate-600">
-            Coverage WIN non significa sempre previsione corretta. Una partita può essere vinta perché il
-            reale supera il predetto, ma se il distacco è molto alto il modello potrebbe avere sottostimato.
-            Gli eventi estremi vengono separati per evitare di calibrare il modello su anomalie rare.
-          </p>
+    <section
+      className={
+        embedded
+          ? 'space-y-4'
+          : 'space-y-4 rounded-lg border border-amber-200 bg-amber-50/30 p-4'
+      }
+    >
+      {!hidePageHeader ? (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Pattern Analysis v3.1</h2>
+            <p className="mt-1 max-w-3xl text-xs text-slate-600">
+              Coverage WIN non significa sempre previsione corretta. Una partita può essere vinta perché il
+              reale supera il predetto, ma se il distacco è molto alto il modello potrebbe avere sottostimato.
+              Gli eventi estremi vengono separati per evitare di calibrare il modello su anomalie rare.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={effectiveLoading || competitionId == null}
+              className="rounded-lg border border-amber-700 bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+              onClick={handleRun}
+            >
+              {effectiveLoading ? 'Analisi…' : 'Esegui Pattern Analysis'}
+            </button>
+            <button
+              type="button"
+              disabled={exporting || !effectiveData}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+              onClick={() => void downloadJson()}
+            >
+              {exporting ? 'Export…' : 'Scarica report JSON'}
+            </button>
+          </div>
         </div>
+      ) : (
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={loading || competitionId == null}
-            className="rounded-lg border border-amber-700 bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-            onClick={() => void run()}
-          >
-            {loading ? 'Analisi…' : 'Esegui Pattern Analysis'}
-          </button>
-          <button
-            type="button"
-            disabled={exporting || !data}
+            disabled={exporting || !effectiveData}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             onClick={() => void downloadJson()}
           >
-            {exporting ? 'Export…' : 'Scarica report JSON'}
+            {exporting ? 'Export…' : 'Report pattern JSON'}
           </button>
         </div>
-      </div>
+      )}
 
-      {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+      {effectiveError ? <p className="text-sm text-rose-700">{effectiveError}</p> : null}
 
-      {data ? (
+      {effectiveData ? (
         <>
           {dist ? (
             <p className="text-xs text-slate-600">
@@ -154,15 +199,17 @@ export function RoundAnalysisV31PatternAnalysisSection({ competitionId, seasonYe
             </p>
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiBox title="Vittorie sane" value={String(kpis.healthy)} tone="emerald" />
-            <KpiBox title="Vittorie con sottostima" value={String(kpis.understated)} tone="amber" />
-            <KpiBox title="Perse per sovrastima" value={String(kpis.badLoss)} tone="rose" />
-            <KpiBox title="Eventi estremi" value={String(kpis.extreme)} tone="violet" />
-          </div>
+          {!embedded ? (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <KpiBox title="Vittorie sane" value={String(kpis.healthy)} tone="emerald" />
+              <KpiBox title="Vittorie con sottostima" value={String(kpis.understated)} tone="amber" />
+              <KpiBox title="Perse per sovrastima" value={String(kpis.badLoss)} tone="rose" />
+              <KpiBox title="Eventi estremi" value={String(kpis.extreme)} tone="violet" />
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
-            {data.strategies.map((s) => (
+            {effectiveData.strategies.map((s) => (
               <button
                 key={s.key}
                 type="button"
@@ -199,14 +246,12 @@ export function RoundAnalysisV31PatternAnalysisSection({ competitionId, seasonYe
               {tab === 'losses' ? <LosingPanel strategy={selected} /> : null}
               {tab === 'high' ? <HighOutlierPanel strategy={selected} dist={dist} thresholds={thresholds} /> : null}
               {tab === 'top3' ? (
-                <Top3Panel
-                  fixtures={data.top3_fixtures ?? []}
-                  clusterSummary={data.summary.top3_cluster_summary}
-                  clusterFilter={clusterFilter}
-                  onClusterFilter={setClusterFilter}
+                <PatternAnalysisTop3Panel
+                  fixtures={effectiveData.top3_fixtures ?? []}
+                  clusterSummary={effectiveData.summary.top3_cluster_summary}
                 />
               ) : null}
-              {tab === 'recs' ? <RecommendationsPanel recs={data.summary.recommendations ?? []} /> : null}
+              {tab === 'recs' ? <RecommendationsPanel recs={effectiveData.summary.recommendations ?? []} /> : null}
             </div>
           ) : null}
         </>
@@ -340,76 +385,6 @@ function HighOutlierPanel({
         </p>
       ) : null}
       {dist ? <p className="text-[10px] text-slate-500">Media campionato actual: {fmtNum(dist.mean)} SOT</p> : null}
-    </div>
-  )
-}
-
-function Top3Panel({
-  fixtures,
-  clusterSummary,
-  clusterFilter,
-  onClusterFilter,
-}: {
-  fixtures: V31Top3FixtureComparison[]
-  clusterSummary?: { counts?: Record<string, number>; pct?: Record<string, number> }
-  clusterFilter: string
-  onClusterFilter: (v: string) => void
-}) {
-  const clusters = Object.keys(clusterSummary?.counts ?? {})
-  const filtered =
-    clusterFilter === 'all' ? fixtures : fixtures.filter((f) => f.top3_cluster === clusterFilter)
-
-  return (
-    <div className="space-y-3">
-      {clusters.length ? (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={`rounded px-2 py-0.5 text-[10px] ${clusterFilter === 'all' ? 'bg-slate-800 text-white' : 'border'}`}
-            onClick={() => onClusterFilter('all')}
-          >
-            Tutti ({fixtures.length})
-          </button>
-          {clusters.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={`rounded px-2 py-0.5 text-[10px] ${clusterFilter === c ? 'bg-slate-800 text-white' : 'border'}`}
-              onClick={() => onClusterFilter(c)}
-            >
-              {c} ({clusterSummary?.counts?.[c] ?? 0})
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-xs">
-          <thead>
-            <tr className="border-b text-slate-500">
-              <th className="py-1 pr-2">Match</th>
-              <th className="py-1 pr-2">Actual</th>
-              <th className="py-1 pr-2">Bias</th>
-              <th className="py-1 pr-2">Hybrid</th>
-              <th className="py-1 pr-2">Chaos</th>
-              <th className="py-1 pr-2">Cluster</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.slice(0, 40).map((f) => (
-              <tr key={f.fixture_id} className="border-b border-slate-50">
-                <td className="py-1 pr-2">{f.match ?? f.fixture_id}</td>
-                <td className="py-1 pr-2">
-                  {f.actual_total_sot} ({f.actual_bucket_dynamic})
-                </td>
-                <td className="py-1 pr-2">{fmtNum(f.models?.v31_bias_corrected?.predicted_total_sot)}</td>
-                <td className="py-1 pr-2">{fmtNum(f.models?.v31_bias_dynamic_high_guard?.predicted_total_sot)}</td>
-                <td className="py-1 pr-2">{fmtNum(f.models?.v31_chaos_game?.predicted_total_sot)}</td>
-                <td className="py-1 pr-2 text-[10px]">{f.top3_cluster}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   )
 }

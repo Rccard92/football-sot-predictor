@@ -34,6 +34,12 @@ const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
 type Props = {
   competitionId: number | null
   seasonYear: number
+  embedded?: boolean
+  hidePageHeader?: boolean
+  externalData?: V31CalibrationSimulator | null
+  externalLoading?: boolean
+  externalError?: string | null
+  onExternalRun?: () => void
 }
 
 function fmtPct(v: number | null | undefined): string {
@@ -62,6 +68,12 @@ function verdictBadgeClass(verdict: string): string {
 export function RoundAnalysisV31CalibrationSimulatorSection({
   competitionId,
   seasonYear,
+  embedded = false,
+  hidePageHeader = false,
+  externalData,
+  externalLoading,
+  externalError,
+  onExternalRun,
 }: Props) {
   const [data, setData] = useState<V31CalibrationSimulator | null>(null)
   const [loading, setLoading] = useState(false)
@@ -92,6 +104,18 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
       setLoading(false)
     }
   }, [competitionId, seasonYear, statusFilter])
+
+  const effectiveData = embedded && externalData !== undefined ? externalData : data
+  const effectiveLoading = embedded && externalLoading !== undefined ? externalLoading : loading
+  const effectiveError = embedded && externalError !== undefined ? externalError : error
+
+  const handleRun = () => {
+    if (embedded && onExternalRun) {
+      onExternalRun()
+      return
+    }
+    void run()
+  }
 
   const downloadBlob = (payload: unknown, name: string) => {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
@@ -162,62 +186,97 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
 
   if (competitionId == null) return null
 
-  const best = data?.best_by
+  const best = effectiveData?.best_by
   const visibleStrategies =
-    data?.strategies.filter(
+    effectiveData?.strategies.filter(
       (s) => statusFilter === 'all' || (s.strategy_status ?? 'active') === statusFilter,
     ) ?? []
   const selected =
     visibleStrategies.find((s) => s.key === selectedKey) ??
-    data?.strategies.find((s) => s.key === selectedKey) ??
+    effectiveData?.strategies.find((s) => s.key === selectedKey) ??
     visibleStrategies[0] ??
-    data?.strategies[0]
+    effectiveData?.strategies[0]
   const recLabel =
-    data?.summary.recommendation_note ??
+    effectiveData?.summary.recommendation_note ??
     (best?.recommended_strategy
-      ? data?.strategies.find((s) => s.key === best.recommended_strategy)?.label
+      ? effectiveData?.strategies.find((s) => s.key === best.recommended_strategy)?.label
       : null)
 
-  const interp = data?.summary.model_interpretation
+  const interp = effectiveData?.summary.model_interpretation
   const labelFor = (key?: string | null) =>
-    key ? data?.strategies.find((s) => s.key === key)?.label ?? key : '—'
+    key ? effectiveData?.strategies.find((s) => s.key === key)?.label ?? key : '—'
 
-  const discouraged = data?.strategies.find(
+  const discouraged = effectiveData?.strategies.find(
     (s) =>
       s.key === 'v31_big_vs_weak_push' &&
       (s.strategy_warnings ?? []).some((w) => w.includes('Bias eccessivo')),
   )
 
   return (
-    <section className="space-y-4 rounded-lg border border-violet-200 bg-violet-50/30 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Simulatore predittivo v3.1</h2>
-          <p className="mt-1 max-w-2xl text-xs text-slate-600">
-            Confronta strategie numeriche indipendenti. Ogni strategia predice il totale SOT di tutte
-            le partite. La fase bet/no bet verrà costruita dopo.
-          </p>
+    <section
+      className={
+        embedded
+          ? 'space-y-4'
+          : 'space-y-4 rounded-lg border border-violet-200 bg-violet-50/30 p-4'
+      }
+    >
+      {!hidePageHeader ? (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Simulatore predittivo v3.1</h2>
+            <p className="mt-1 max-w-2xl text-xs text-slate-600">
+              Confronta strategie numeriche indipendenti. Ogni strategia predice il totale SOT di tutte
+              le partite. La fase bet/no bet verrà costruita dopo.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={effectiveLoading}
+              className="rounded-lg border border-violet-700 bg-violet-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+              onClick={handleRun}
+            >
+              {effectiveLoading ? 'Simulazione…' : 'Esegui simulazione v3.1'}
+            </button>
+            <button
+              type="button"
+              disabled={exporting || !effectiveData}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+              onClick={() => void downloadReportSummary()}
+            >
+              {exporting ? 'Export…' : 'Scarica report summary'}
+            </button>
+            <button
+              type="button"
+              disabled={exporting || !effectiveData}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+              onClick={() => void downloadReportFull()}
+            >
+              Report completo
+            </button>
+            <button
+              type="button"
+              disabled={exporting || !effectiveData || !selectedKey}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+              onClick={() => void downloadReportSelected()}
+            >
+              Report strategia
+            </button>
+          </div>
         </div>
+      ) : (
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={loading}
-            className="rounded-lg border border-violet-700 bg-violet-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-50"
-            onClick={() => void run()}
-          >
-            {loading ? 'Simulazione…' : 'Esegui simulazione v3.1'}
-          </button>
-          <button
-            type="button"
-            disabled={exporting || !data}
+            disabled={exporting || !effectiveData}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             onClick={() => void downloadReportSummary()}
           >
-            {exporting ? 'Export…' : 'Scarica report summary'}
+            Report summary
           </button>
           <button
             type="button"
-            disabled={exporting || !data}
+            disabled={exporting || !effectiveData}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             onClick={() => void downloadReportFull()}
           >
@@ -225,18 +284,18 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
           </button>
           <button
             type="button"
-            disabled={exporting || !data || !selectedKey}
+            disabled={exporting || !effectiveData || !selectedKey}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             onClick={() => void downloadReportSelected()}
           >
             Report strategia
           </button>
         </div>
-      </div>
+      )}
 
-      {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+      {effectiveError ? <p className="text-sm text-rose-700">{effectiveError}</p> : null}
 
-      {data ? (
+      {effectiveData ? (
         <>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             <KpiCard title="Miglior MAE" strategy={best?.mae?.strategy} value={fmtNum(best?.mae?.value, 3)} />
@@ -288,11 +347,11 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
                   Compromise score {fmtNum(best.compromise_score.value, 1)}
                 </p>
               ) : null}
-              {data.summary.recommendation_tradeoff ? (
-                <p className="mt-2 text-emerald-900">{data.summary.recommendation_tradeoff}</p>
+              {effectiveData.summary.recommendation_tradeoff ? (
+                <p className="mt-2 text-emerald-900">{effectiveData.summary.recommendation_tradeoff}</p>
               ) : null}
               {(() => {
-                const hybrid = data.strategies.find((s) => s.key === 'v31_bias_dynamic_high_guard')
+                const hybrid = effectiveData.strategies.find((s) => s.key === 'v31_bias_dynamic_high_guard')
                 const hw = hybrid?.hybrid_debug?.hybrid_warnings ?? hybrid?.strategy_warnings ?? []
                 const hybridWarns = hw.filter(
                   (w) =>
@@ -316,13 +375,13 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
           </div>
 
           <p className="text-[10px] text-slate-500">
-            Fixture: {data.summary.fixtures_count} · Strategie: {data.summary.strategies_run} · Fase:{' '}
-            {data.summary.phase ?? 'predictive_numeric'}
-            {data.feature_availability?.avg_total_shots_for ? (
+            Fixture: {effectiveData.summary.fixtures_count} · Strategie: {effectiveData.summary.strategies_run} · Fase:{' '}
+            {effectiveData.summary.phase ?? 'predictive_numeric'}
+            {effectiveData.feature_availability?.avg_total_shots_for ? (
               <>
                 {' '}
-                · Shots ok: {data.feature_availability.avg_total_shots_for.available_count}/
-                {data.feature_availability.avg_total_shots_for.fixtures_sides_total}
+                · Shots ok: {effectiveData.feature_availability.avg_total_shots_for.available_count}/
+                {effectiveData.feature_availability.avg_total_shots_for.fixtures_sides_total}
               </>
             ) : null}
           </p>
@@ -401,20 +460,20 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
             </div>
           ) : null}
 
-          {activeTab === 'variance' && data ? <VarianceTable strategies={data.strategies} /> : null}
+          {activeTab === 'variance' && effectiveData ? <VarianceTable strategies={effectiveData.strategies} /> : null}
           {activeTab === 'accuracy' && selected ? <AccuracyPanel strategy={selected} /> : null}
           {activeTab === 'buckets' && selected ? <BucketsPanel strategy={selected} /> : null}
           {activeTab === 'coverage' && selected ? <CoveragePanel strategy={selected} /> : null}
-          {activeTab === 'errors' && data ? (
+          {activeTab === 'errors' && effectiveData ? (
             <WorstErrorsPanel
-              strategies={visibleStrategies.length ? visibleStrategies : data.strategies}
+              strategies={visibleStrategies.length ? visibleStrategies : effectiveData.strategies}
               strategyKey={errorsStrategyKey}
               onStrategyKeyChange={setErrorsStrategyKey}
             />
           ) : null}
           {activeTab === 'walkforward' && selected ? <WalkForwardPanel strategy={selected} /> : null}
           {activeTab === 'weights' && selected ? <WeightsPanel strategy={selected} /> : null}
-          {activeTab === 'audit' ? <AuditPanel audit={data.audit} /> : null}
+          {activeTab === 'audit' ? <AuditPanel audit={effectiveData?.audit} /> : null}
 
           {selected && activeTab !== 'strategies' && activeTab !== 'audit' ? (
             <p className="text-[10px] text-slate-500">

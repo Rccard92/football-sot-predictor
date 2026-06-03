@@ -26,6 +26,14 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-predictive-simulator-page
+
+**Titolo:** Pagina dedicata Simulatore Predittivo + verdetto Pattern Analysis
+
+**Descrizione:** Route `/predictive-simulator`, menu laterale, Backtest alleggerito con card link, pannelli verdetto/diagnostici e cluster Top 3 ordinati.
+
+---
+
 ## v31-pattern-analysis
 
 **Titolo:** Pattern Analysis intelligente v3.1 (win_quality, bucket dinamici, top-3)
