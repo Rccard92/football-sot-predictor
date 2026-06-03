@@ -666,7 +666,11 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 | `GET /api/backtest/v31/calibration-dataset/summary` | Summary + anti-leakage su `row.features` (build standard, no PIT) |
 | `GET /api/backtest/v31/calibration-dataset/anti-leakage-report` | Solo errori leakage + sample (max 20) |
 | `GET /api/backtest/v31/calibration-dataset?detail=standard` | JSON veloce da trace persistito (default UI) |
-| `GET /api/backtest/v31/calibration-dataset?detail=full` | JSON con rebuild PIT per fixture |
+| `GET /api/backtest/v31/calibration-dataset?detail=full` | JSON sync con PIT (solo test/`max_fixtures` basso; UI non lo usa) |
+| `POST /api/backtest/v31/calibration-dataset/full/build-job` | Avvia job asincrono export full |
+| `GET .../full/build-job/{job_id}` | Stato job (`progress_pct`, `rows_done`, `current_fixture_id`) |
+| `GET .../full/build-job/{job_id}/download` | Download JSON full quando `done` + anti-leakage OK |
+| `POST .../full/build-job/{job_id}/cancel` | Annulla job in corso |
 | `GET /api/backtest/v31/calibration-dataset.csv` | CSV piatto standard (no PIT); 422 se anti-leakage failed |
 
 **Selezione fixture:** stessa logica di `_select_analyses_for_calibration` (latest per giornata, status completato, fixture `ok`, `actual_total_sot` presente).
@@ -681,7 +685,7 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **Implementazione:** `v31_calibration_dataset_builder.py`, `v31_calibration_feature_mappers.py`, `v31_calibration_csv_export.py`, `V31CalibrationDatasetService`, router `backtest_v31.py`.
 
-**UI Backtest:** sezione «Dataset calibrazione v3.1» dopo il simulatore v3.0; al mount solo summary; export JSON/CSV al click con progress indeterminata e annullamento.
+**UI Backtest:** sezione «Dataset calibrazione v3.1» — standard/CSV sync consigliati; JSON full via job con polling, barra progress reale, timeout 120s e annulla.
 
 **Log:** `V31_DATASET_SUMMARY_START/DONE`, `V31_DATASET_EXPORT_START/DONE` (con `duration_ms`).
 

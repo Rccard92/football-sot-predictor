@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-full-export-async-job
+
+**Titolo:** Export JSON completo v3.1 via job asincrono
+
+**Descrizione:** Il JSON full (rebuild PIT × N fixture) non usa più una richiesta HTTP lunga dalla UI. Job in-memory con POST/GET poll/cancel/download, log diagnostici per fixture (`V31_FULL_EXPORT_*`, `V31_DATASET_EXPORT_PROGRESS detail=full rows_done=`), progress bar determinata in UI, warning 60s e timeout 120s con cancel automatico.
+
+**File toccati:** `v31_calibration_full_export_job.py`, `v31_calibration_dataset_builder.py`, `backtest_v31.py`, frontend sezione v3.1, test job API.
+
+---
+
 ## v31-anti-leakage-export-fix
 
 **Titolo:** Anti-leakage corretto e export standard veloce v3.1

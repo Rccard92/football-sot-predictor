@@ -14,6 +14,12 @@ from app.services.backtest.v31_calibration_dataset_builder import (
     build_v31_calibration_dataset,
     build_v31_dataset_rows_standard,
 )
+from app.services.backtest.v31_calibration_full_export_job import (
+    cancel_full_export_job,
+    get_full_export_job_download,
+    get_full_export_job_status,
+    start_full_export_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,3 +152,45 @@ class V31CalibrationDatasetService:
             duration_ms,
         )
         return csv_text
+
+    def start_full_export_job(
+        self,
+        *,
+        competition_id: int,
+        season_year: int,
+        use_latest_version_per_round: bool = True,
+        include_all_versions: bool = False,
+    ) -> dict:
+        return start_full_export_job(
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+        )
+
+    def get_full_export_job(self, job_id: str) -> dict | None:
+        return get_full_export_job_status(job_id)
+
+    def cancel_full_export_job(self, job_id: str) -> dict:
+        return cancel_full_export_job(job_id)
+
+    def get_full_export_job_download_payload(self, job_id: str) -> dict:
+        job = get_full_export_job_status(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail={"error_code": "V31_JOB_NOT_FOUND"})
+        if job.get("status") != "done":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error_code": "V31_JOB_NOT_READY",
+                    "status": job.get("status"),
+                    "error_message": job.get("error_message"),
+                },
+            )
+        payload = get_full_export_job_download(job_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail={"error_code": "V31_JOB_NO_PAYLOAD"})
+        anti = payload.get("anti_leakage_check") or {}
+        if anti.get("status") != "ok":
+            raise V31AntiLeakageFailedError(anti)
+        return payload

@@ -3744,6 +3744,107 @@ export async function downloadV31CalibrationDatasetCsv(
   return res.blob()
 }
 
+export type V31FullExportJob = {
+  job_id: string
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'not_found'
+  competition_id: number
+  season_year: number
+  rows_expected: number
+  rows_done: number
+  progress_pct: number
+  duration_seconds: number
+  current_fixture_id: number | null
+  error_message: string | null
+  created_at?: string
+  started_at?: string | null
+  finished_at?: string | null
+  exportable?: boolean | null
+  anti_leakage_status?: string | null
+}
+
+export async function startV31FullExportJob(
+  competitionId: number,
+  seasonYear: number,
+  opts?: Pick<V31CalibrationFetchOpts, 'useLatestVersionPerRound' | 'includeAllVersions'>,
+): Promise<V31FullExportJob> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  const base = getApiBase()
+  const res = await fetch(
+    `${base}/api/backtest/v31/calibration-dataset/full/build-job?${q.toString()}`,
+    { method: 'POST' },
+  )
+  const ct = res.headers.get('content-type') ?? ''
+  let body: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      body = await res.json()
+    } catch {
+      body = null
+    }
+  }
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(body, res.statusText))
+  }
+  return body as V31FullExportJob
+}
+
+export async function getV31FullExportJob(jobId: string): Promise<V31FullExportJob> {
+  return requestV31Json<V31FullExportJob>(
+    `/api/backtest/v31/calibration-dataset/full/build-job/${encodeURIComponent(jobId)}`,
+  )
+}
+
+export async function cancelV31FullExportJob(jobId: string): Promise<V31FullExportJob> {
+  const base = getApiBase()
+  const res = await fetch(
+    `${base}/api/backtest/v31/calibration-dataset/full/build-job/${encodeURIComponent(jobId)}/cancel`,
+    { method: 'POST' },
+  )
+  const ct = res.headers.get('content-type') ?? ''
+  let body: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      body = await res.json()
+    } catch {
+      body = null
+    }
+  }
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(body, res.statusText))
+  }
+  return body as V31FullExportJob
+}
+
+export async function downloadV31FullExportJobJson(
+  jobId: string,
+  competitionId: number,
+  seasonYear: number,
+): Promise<void> {
+  const base = getApiBase()
+  const res = await fetch(
+    `${base}/api/backtest/v31/calibration-dataset/full/build-job/${encodeURIComponent(jobId)}/download`,
+  )
+  const ct = res.headers.get('content-type') ?? ''
+  let body: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      body = await res.json()
+    } catch {
+      body = null
+    }
+  }
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(body, res.statusText))
+  }
+  const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `v31-calibration-dataset-full-${competitionId}-${seasonYear}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

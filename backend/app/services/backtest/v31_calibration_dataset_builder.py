@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 V21 = BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
 PROGRESS_EVERY = 50
+PROGRESS_EVERY_FULL = 25
 DetailLevel = Literal["standard", "full"]
 
 
@@ -138,6 +139,66 @@ def build_v31_dataset_rows_standard(
     return rows, excluded, max_round
 
 
+def build_single_full_row(
+    db: Session,
+    orm_row: Any,
+    *,
+    competition_id: int,
+    season_year: int,
+    round_number: int,
+    max_round: int,
+    pit_svc: PointInTimeContextService | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Costruisce una riga full con PIT. Ritorna (row, pit_error)."""
+    fid = int(orm_row.fixture_id)
+    pit = pit_svc or PointInTimeContextService()
+    expl_all = dict(orm_row.explanation_json or {})
+    explanation_v21 = expl_all.get(V21) if isinstance(expl_all.get(V21), dict) else None
+    models_json = dict(orm_row.models_json or {})
+
+    t_pit = time.perf_counter()
+    logger.info("V31_FULL_EXPORT_PIT_RECONSTRUCTION_START fixture_id=%s", fid)
+    try:
+        ctx = pit.build_sot_context_with_historical(
+            db,
+            competition_id=int(competition_id),
+            fixture_id=fid,
+            mode=BACKTEST_MODE_HISTORICAL_OFFICIAL_XI,
+        )
+    except Exception as exc:  # noqa: BLE001
+        pit_ms = int((time.perf_counter() - t_pit) * 1000)
+        logger.warning(
+            "V31_FULL_EXPORT_PIT_RECONSTRUCTION_DONE fixture_id=%s duration_ms=%s failed=1",
+            fid,
+            pit_ms,
+        )
+        return None, {"fixture_id": fid, "error": str(exc)[:200]}
+    pit_ms = int((time.perf_counter() - t_pit) * 1000)
+    logger.info(
+        "V31_FULL_EXPORT_PIT_RECONSTRUCTION_DONE fixture_id=%s duration_ms=%s",
+        fid,
+        pit_ms,
+    )
+
+    bundle = build_features_bundle(ctx, explanation_v21=explanation_v21, max_round=max_round)
+    meta = map_metadata(
+        ctx,
+        competition_id=competition_id,
+        season_year=season_year,
+        round_number=round_number,
+    )
+    meta["detail"] = "full"
+    return (
+        {
+            "metadata": meta,
+            "target": map_target(ctx),
+            "features": bundle["features"],
+            "comparisons": map_comparisons(models_json),
+        },
+        None,
+    )
+
+
 def build_v31_dataset_rows_full(
     db: Session,
     *,
@@ -173,40 +234,34 @@ def build_v31_dataset_rows_full(
         if max_fixtures is not None and len(rows) >= max_fixtures:
             break
         fid = int(orm_row.fixture_id)
-        expl_all = dict(orm_row.explanation_json or {})
-        explanation_v21 = expl_all.get(V21) if isinstance(expl_all.get(V21), dict) else None
-        models_json = dict(orm_row.models_json or {})
-
-        try:
-            ctx = pit_svc.build_sot_context_with_historical(
-                db,
-                competition_id=int(competition_id),
-                fixture_id=fid,
-                mode=BACKTEST_MODE_HISTORICAL_OFFICIAL_XI,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("v31 PIT build failed fixture_id=%s: %s", fid, exc)
-            pit_errors.append({"fixture_id": fid, "error": str(exc)[:200]})
-            continue
-
-        bundle = build_features_bundle(ctx, explanation_v21=explanation_v21, max_round=max_round)
-        meta = map_metadata(
-            ctx,
+        t_row = time.perf_counter()
+        logger.info("V31_FULL_EXPORT_BUILD_ROW_START fixture_id=%s", fid)
+        row, err = build_single_full_row(
+            db,
+            orm_row,
             competition_id=competition_id,
             season_year=season_year,
             round_number=rn,
+            max_round=max_round,
+            pit_svc=pit_svc,
         )
-        meta["detail"] = "full"
-        rows.append(
-            {
-                "metadata": meta,
-                "target": map_target(ctx),
-                "features": bundle["features"],
-                "comparisons": map_comparisons(models_json),
-            },
+        row_ms = int((time.perf_counter() - t_row) * 1000)
+        logger.info(
+            "V31_FULL_EXPORT_BUILD_ROW_DONE fixture_id=%s duration_ms=%s",
+            fid,
+            row_ms,
         )
-        if len(rows) % PROGRESS_EVERY == 0:
-            logger.info("V31_DATASET_EXPORT_PROGRESS rows=%s", len(rows))
+        if err:
+            pit_errors.append(err)
+            continue
+        if row:
+            rows.append(row)
+        if len(rows) % PROGRESS_EVERY_FULL == 0 and len(rows) > 0:
+            logger.info(
+                "V31_DATASET_EXPORT_PROGRESS detail=full rows_done=%s rows_expected=%s",
+                len(rows),
+                rows_expected,
+            )
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
     logger.info(
@@ -215,6 +270,47 @@ def build_v31_dataset_rows_full(
         duration_ms,
     )
     return rows, excluded + pit_errors, max_round
+
+
+def assemble_full_dataset_payload(
+    db: Session,
+    *,
+    rows: list[dict[str, Any]],
+    excluded: list[dict[str, Any]],
+    competition_id: int,
+    season_year: int,
+    max_round: int,
+    use_latest_version_per_round: bool,
+) -> dict[str, Any]:
+    comp = db.get(Competition, int(competition_id))
+    anti = validate_v31_rows(rows)
+    coverage = _coverage_summary(rows)
+    return {
+        "report_type": "v31_calibration_dataset",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "competition_id": int(competition_id),
+        "competition_name": comp.name if comp else None,
+        "season_year": int(season_year),
+        "season_label": season_label_from_year(int(season_year)),
+        "detail": "full",
+        "use_latest_version_per_round": use_latest_version_per_round,
+        "fixtures_count": len(rows),
+        "max_round_number": max_round,
+        "coverage_summary": coverage,
+        "comparisons_are_not_features": True,
+        "anti_leakage_check": anti,
+        "exportable": anti.get("status") == "ok",
+        "excluded_analyses": excluded,
+        "rows": rows,
+        "v31_model": {
+            "model_key": "baseline_v3_1_sot_calibrated_predictor",
+            "label": "v3.1 SOT Calibrated Predictor",
+            "stage": "experimental",
+            "description": (
+                "Predittore indipendente pre-match; non usa predizioni finali v1.1/v2.0/v2.1/v3.0."
+            ),
+        },
+    }
 
 
 def build_v31_dataset_rows(
