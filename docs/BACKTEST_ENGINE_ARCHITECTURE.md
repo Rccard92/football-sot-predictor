@@ -663,15 +663,17 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 | Endpoint | Ruolo |
 |----------|--------|
-| `GET /api/backtest/v31/calibration-dataset/summary` | Summary leggera (conteggi da analisi persistite, senza rebuild PIT) |
-| `GET /api/backtest/v31/calibration-dataset` | JSON completo on-demand: `metadata`, `target`, `features`, `comparisons`, `data_quality` |
-| `GET /api/backtest/v31/calibration-dataset.csv` | Export CSV piatto (feature + colonne `comparison_*`) |
+| `GET /api/backtest/v31/calibration-dataset/summary` | Summary + anti-leakage su `row.features` (build standard, no PIT) |
+| `GET /api/backtest/v31/calibration-dataset/anti-leakage-report` | Solo errori leakage + sample (max 20) |
+| `GET /api/backtest/v31/calibration-dataset?detail=standard` | JSON veloce da trace persistito (default UI) |
+| `GET /api/backtest/v31/calibration-dataset?detail=full` | JSON con rebuild PIT per fixture |
+| `GET /api/backtest/v31/calibration-dataset.csv` | CSV piatto standard (no PIT); 422 se anti-leakage failed |
 
 **Selezione fixture:** stessa logica di `_select_analyses_for_calibration` (latest per giornata, status completato, fixture `ok`, `actual_total_sot` presente).
 
 **Feature pre-match:** ricostruzione per fixture via `PointInTimeContextService.build_sot_context_with_historical` (mode `historical_official_xi`). Sezioni: team raw, player layer, lineups, unavailable, macro indici v2.1 (da trace, **senza** `predicted_total_sot`), league context, data quality.
 
-**Anti-leakage:** `v31_calibration_anti_leakage` — walk su `features` only; `actual_*`, outcome, `predicted_total_sot`, chiavi v3.0 vietate in features.
+**Anti-leakage:** `v31_calibration_anti_leakage` — walk solo su `row.features` (chiavi esplicite; `target`/`comparisons` esclusi). Export bloccato con HTTP 422 se `status != ok`.
 
 **Comparisons:** totali/decisioni v1.1/v2.0/v2.1/v3.0 da `models_json` persistito; `allowed_for_v31_training: false`.
 

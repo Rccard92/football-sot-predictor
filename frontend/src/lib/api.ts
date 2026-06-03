@@ -3575,18 +3575,30 @@ export type V31CalibrationDatasetSummary = {
     unavailable_available: number
     macro_features_available: number
   }
-  anti_leakage_check: {
-    status: string
-    forbidden_fields_found: string[]
-    scope?: string
-  }
+  anti_leakage_check: V31AntiLeakageCheck
+  exportable?: boolean
   last_updated_at: string | null
+}
+
+export type V31AntiLeakageSample = {
+  fixture_id: number | null
+  path: string
+  field: string
+}
+
+export type V31AntiLeakageCheck = {
+  status: string
+  forbidden_fields_found: string[]
+  forbidden_fields_found_count?: number
+  sample_forbidden_fields?: V31AntiLeakageSample[]
+  scope?: string
 }
 
 export type V31CalibrationFetchOpts = {
   useLatestVersionPerRound?: boolean
   includeAllVersions?: boolean
   maxFixtures?: number
+  detail?: 'standard' | 'full'
   signal?: AbortSignal
 }
 
@@ -3659,6 +3671,27 @@ export type V31CalibrationDataset = {
   }
 }
 
+export type V31AntiLeakageReport = {
+  report_type: 'v31_anti_leakage_report'
+  competition_id: number
+  season_year: number
+  fixtures_checked: number
+  exportable: boolean
+  anti_leakage_check: V31AntiLeakageCheck
+}
+
+export async function getV31AntiLeakageReport(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts,
+): Promise<V31AntiLeakageReport> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  return requestV31Json<V31AntiLeakageReport>(
+    `/api/backtest/v31/calibration-dataset/anti-leakage-report?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
 export async function getV31CalibrationDataset(
   competitionId: number,
   seasonYear: number,
@@ -3667,6 +3700,11 @@ export async function getV31CalibrationDataset(
   const q = diagnosticsQuery(competitionId, seasonYear, opts)
   if (opts?.maxFixtures != null) {
     q.set('max_fixtures', String(opts.maxFixtures))
+  }
+  if (opts?.detail) {
+    q.set('detail', opts.detail)
+  } else {
+    q.set('detail', 'standard')
   }
   return requestV31Json<V31CalibrationDataset>(
     `/api/backtest/v31/calibration-dataset?${q.toString()}`,

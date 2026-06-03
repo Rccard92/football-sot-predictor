@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.encoders import jsonable_encoder
@@ -41,6 +42,29 @@ def v31_calibration_dataset_summary(
     return jsonable_encoder(payload)
 
 
+@router.get("/calibration-dataset/anti-leakage-report")
+def v31_calibration_anti_leakage_report(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    svc = V31CalibrationDatasetService()
+    try:
+        payload = svc.get_anti_leakage_report(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+        )
+    except (OperationalError, ProgrammingError):
+        logger.exception("GET v31/calibration-dataset/anti-leakage-report database error")
+        raise
+    return jsonable_encoder(payload)
+
+
 @router.get("/calibration-dataset")
 def v31_calibration_dataset(
     competition_id: int = Query(...),
@@ -48,6 +72,7 @@ def v31_calibration_dataset(
     use_latest_version_per_round: bool = Query(default=True),
     include_all_versions: bool = Query(default=False),
     max_fixtures: int | None = Query(default=None, ge=1, le=2000),
+    detail: Literal["standard", "full"] = Query(default="standard"),
     db: Session = Depends(get_db),
 ):
     svc = V31CalibrationDatasetService()
@@ -59,6 +84,7 @@ def v31_calibration_dataset(
             use_latest_version_per_round=use_latest_version_per_round,
             include_all_versions=include_all_versions,
             max_fixtures=max_fixtures,
+            detail=detail,
         )
     except (OperationalError, ProgrammingError):
         logger.exception("GET v31/calibration-dataset database error")

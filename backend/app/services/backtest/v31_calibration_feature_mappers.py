@@ -484,6 +484,7 @@ def build_features_bundle(
     for part in (team, player, lineups, unavailable, macros):
         all_missing.extend(part.pop("missing_fields", []))
 
+    dq = map_data_quality(ctx, all_missing)
     features = {
         "team_raw_features": {"home": team["home"], "away": team["away"]},
         "player_layer": {"home": player["home"], "away": player["away"]},
@@ -494,6 +495,6 @@ def build_features_bundle(
             "away": macros["away"],
         },
         "league_context": league,
+        "data_quality": dq,
     }
-    dq = map_data_quality(ctx, all_missing)
-    return {"features": features, "data_quality": dq}
+    return {"features": features}

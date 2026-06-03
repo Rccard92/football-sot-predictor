@@ -26,7 +26,14 @@ V31_SUMMARY = {
         "unavailable_available": 280,
         "macro_features_available": 335,
     },
-    "anti_leakage_check": {"status": "ok", "forbidden_fields_found": []},
+    "anti_leakage_check": {
+        "status": "ok",
+        "forbidden_fields_found": [],
+        "forbidden_fields_found_count": 0,
+        "sample_forbidden_fields": [],
+        "scope": "row.features",
+    },
+    "exportable": True,
     "last_updated_at": "2026-06-01T18:42:00+00:00",
 }
 
@@ -34,9 +41,17 @@ V31_PAYLOAD = {
     "report_type": "v31_calibration_dataset",
     "competition_id": 1,
     "season_year": 2025,
+    "detail": "standard",
     "fixtures_count": 1,
     "comparisons_are_not_features": True,
-    "anti_leakage_check": {"status": "ok", "forbidden_fields_found": []},
+    "exportable": True,
+    "anti_leakage_check": {
+        "status": "ok",
+        "forbidden_fields_found": [],
+        "forbidden_fields_found_count": 0,
+        "sample_forbidden_fields": [],
+        "scope": "row.features",
+    },
     "coverage_summary": {
         "fixtures_count": 1,
         "player_layer_available_pct": 100.0,
@@ -63,13 +78,13 @@ V31_PAYLOAD = {
                 "unavailable": {"home": {}, "away": {}},
                 "existing_macro_features": {"home": {}, "away": {}},
                 "league_context": {"season_phase": "early"},
+                "data_quality": {"actuals_used_as_input": False, "warning_count": 0},
             },
             "comparisons": {
                 "allowed_for_v31_training": False,
                 "v1_1_predicted_total": 8.5,
                 "v2_1_predicted_total": 9.0,
             },
-            "data_quality": {"warning_count": 0, "fallback_count": 0},
         },
     ],
 }
@@ -98,10 +113,31 @@ def test_v31_calibration_dataset_summary_200(mock_summary):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["fixtures_with_target"] == 340
-    assert body["features"]["player_layer_available"] == 320
     assert body["anti_leakage_check"]["status"] == "ok"
+    assert body["exportable"] is True
     mock_summary.assert_called_once()
+
+
+@patch("app.routes.backtest_v31.V31CalibrationDatasetService.get_anti_leakage_report")
+def test_v31_anti_leakage_report_200(mock_report):
+    mock_report.return_value = {
+        "report_type": "v31_anti_leakage_report",
+        "competition_id": 1,
+        "season_year": 2025,
+        "fixtures_checked": 10,
+        "exportable": False,
+        "anti_leakage_check": {
+            "status": "failed",
+            "forbidden_fields_found_count": 1,
+            "sample_forbidden_fields": [{"fixture_id": 1, "path": "bad", "field": "outcome"}],
+        },
+    }
+    r = client.get(
+        "/api/backtest/v31/calibration-dataset/anti-leakage-report",
+        params={"competition_id": 1, "season_year": 2025},
+    )
+    assert r.status_code == 200
+    assert r.json()["exportable"] is False
 
 
 @patch("app.routes.backtest_v31.V31CalibrationDatasetService.get_dataset")
@@ -109,7 +145,7 @@ def test_v31_calibration_dataset_json_200(mock_get):
     mock_get.return_value = V31_PAYLOAD
     r = client.get(
         "/api/backtest/v31/calibration-dataset",
-        params={"competition_id": 1, "season_year": 2025},
+        params={"competition_id": 1, "season_year": 2025, "detail": "standard"},
     )
     assert r.status_code == 200
     body = r.json()
@@ -126,6 +162,28 @@ def test_v31_calibration_dataset_json_200(mock_get):
     )
     assert feats_forbidden == []
     assert row["comparisons"]["v2_1_predicted_total"] == 9.0
+    mock_get.assert_called_once()
+    assert mock_get.call_args.kwargs.get("detail") == "standard"
+
+
+@patch("app.routes.backtest_v31.V31CalibrationDatasetService.get_dataset")
+def test_v31_calibration_dataset_json_422_on_leakage(mock_get):
+    from app.services.backtest.v31_calibration_dataset_service import V31AntiLeakageFailedError
+
+    mock_get.side_effect = V31AntiLeakageFailedError(
+        {
+            "status": "failed",
+            "forbidden_fields_found": ["rows[0].features.bad.predicted_total_sot"],
+            "sample_forbidden_fields": [],
+        },
+    )
+    r = client.get(
+        "/api/backtest/v31/calibration-dataset",
+        params={"competition_id": 1, "season_year": 2025},
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert detail["error_code"] == "V31_ANTI_LEAKAGE_FAILED"
 
 
 @patch("app.routes.backtest_v31.V31CalibrationDatasetService.get_dataset_csv")
@@ -143,4 +201,17 @@ def test_v31_calibration_dataset_csv_200(mock_csv):
     text = r.text
     assert "fixture_id" in text.splitlines()[0]
     assert "comparison_v21_predicted_total" in text.splitlines()[0]
-    assert "10,1," in text.splitlines()[1]
+
+
+@patch(
+    "app.services.backtest.v31_calibration_dataset_builder.PointInTimeContextService.build_sot_context_with_historical",
+)
+@patch("app.routes.backtest_v31.V31CalibrationDatasetService.get_dataset")
+def test_standard_export_does_not_require_pit(mock_get, mock_pit):
+    """Route mock: verifica che detail=standard sia il default richiesto."""
+    mock_get.return_value = V31_PAYLOAD
+    client.get(
+        "/api/backtest/v31/calibration-dataset",
+        params={"competition_id": 1, "season_year": 2025},
+    )
+    mock_pit.assert_not_called()

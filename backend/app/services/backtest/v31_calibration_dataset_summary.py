@@ -9,17 +9,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core.constants import BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
 from app.schemas.backtest_round_analysis import season_label_from_year
 from app.services.backtest.round_analysis_calibration_export import _select_analyses_for_calibration
 from app.services.backtest.round_analysis_report_builder import _iso
 from app.services.backtest.round_analysis_v21_trace_helpers import macro_index
-from app.services.backtest.v31_calibration_anti_leakage import _walk
+from app.services.backtest.v31_calibration_anti_leakage import validate_v31_rows
+from app.services.backtest.v31_calibration_dataset_builder import _iter_calibration_fixtures
+from app.services.backtest.v31_calibration_row_builder_standard import build_standard_row
 
 logger = logging.getLogger(__name__)
-
-V21 = BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
-
 
 def _side_has_macro(expl: dict[str, Any] | None, macro_key: str) -> bool:
     if not isinstance(expl, dict):
@@ -31,18 +29,6 @@ def _side_has_macro(expl: dict[str, Any] | None, macro_key: str) -> bool:
     return False
 
 
-def _scan_explanation_forbidden(
-    explanation_json: dict[str, Any] | None,
-    *,
-    fixture_id: int,
-) -> list[str]:
-    """Scan leggero su explanation_json (models_json escluso: contiene confronti legacy)."""
-    found: list[str] = []
-    if isinstance(explanation_json, dict):
-        _walk(explanation_json, f"fixture_{fixture_id}.explanation_json", found)
-    return found
-
-
 def build_v31_calibration_summary(
     db: Session,
     *,
@@ -51,6 +37,8 @@ def build_v31_calibration_summary(
     use_latest_version_per_round: bool = True,
     include_all_versions: bool = False,
 ) -> dict[str, Any]:
+    from app.core.constants import BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS
+
     t0 = time.perf_counter()
     logger.info(
         "V31_DATASET_SUMMARY_START competition_id=%s season_year=%s",
@@ -65,11 +53,12 @@ def build_v31_calibration_summary(
         use_latest_version_per_round=use_latest_version_per_round,
         include_all_versions=include_all_versions,
     )
+    max_round = max((int(a.round_number) for a in analyses), default=38)
 
     fixtures_ok = 0
     fixtures_with_target = 0
     team_stats = player_layer = lineups = unavailable = macro_features = 0
-    all_forbidden: list[str] = []
+    preview_rows: list[dict[str, Any]] = []
     last_updated: datetime | None = None
 
     for analysis in analyses:
@@ -77,17 +66,13 @@ def build_v31_calibration_summary(
         if ts is not None and (last_updated is None or ts > last_updated):
             last_updated = ts
 
-        for orm_row in fixtures_by_id.get(int(analysis.id), []):
-            if str(orm_row.status) != "ok":
-                continue
-            fixtures_ok += 1
-            if orm_row.actual_total_sot is None:
-                continue
-            fixtures_with_target += 1
+    for _analysis, orm_row, rn in _iter_calibration_fixtures(analyses, fixtures_by_id):
+        fixtures_ok += 1
+        fixtures_with_target += 1
 
-            fid = int(orm_row.fixture_id)
-            expl_all = dict(orm_row.explanation_json or {})
-            expl_v21 = expl_all.get(V21) if isinstance(expl_all.get(V21), dict) else None
+        expl_all = dict(orm_row.explanation_json or {})
+        expl_v21 = expl_all.get(BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS)
+        if isinstance(expl_v21, dict):
             if _side_has_macro(expl_v21, "offensive_production"):
                 team_stats += 1
             if _side_has_macro(expl_v21, "player_layer"):
@@ -99,14 +84,23 @@ def build_v31_calibration_summary(
             if _side_has_macro(expl_v21, "chance_quality"):
                 macro_features += 1
 
-            all_forbidden.extend(_scan_explanation_forbidden(expl_all, fixture_id=fid))
+        preview_rows.append(
+            build_standard_row(
+                orm_row,
+                competition_id=competition_id,
+                season_year=season_year,
+                round_number=rn,
+                max_round=max_round,
+            ),
+        )
 
-    forbidden_uniq = sorted(set(all_forbidden))
+    anti = validate_v31_rows(preview_rows, sample_limit=20)
     duration_ms = int((time.perf_counter() - t0) * 1000)
     logger.info(
-        "V31_DATASET_SUMMARY_DONE fixtures=%s target=%s duration_ms=%s",
+        "V31_DATASET_SUMMARY_DONE fixtures=%s target=%s anti=%s duration_ms=%s",
         fixtures_with_target,
         fixtures_with_target,
+        anti.get("status"),
         duration_ms,
     )
 
@@ -125,10 +119,7 @@ def build_v31_calibration_summary(
             "unavailable_available": unavailable,
             "macro_features_available": macro_features,
         },
-        "anti_leakage_check": {
-            "status": "failed" if forbidden_uniq else "ok",
-            "forbidden_fields_found": forbidden_uniq,
-            "scope": "persisted_fixture_json",
-        },
+        "anti_leakage_check": anti,
+        "exportable": anti.get("status") == "ok",
         "last_updated_at": _iso(last_updated) if last_updated else None,
     }

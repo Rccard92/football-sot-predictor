@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-anti-leakage-export-fix
+
+**Titolo:** Anti-leakage corretto e export standard veloce v3.1
+
+**Descrizione:** Anti-leakage scansiona solo `row.features` (chiavi esplicite; `actuals_used_as_input` consentito). Summary non legge più `explanation_json` intero (fix falsi 960 failure). Export `detail=standard` senza rebuild PIT; `detail=full` con PIT e progress log. Download bloccato (422) se leakage; endpoint report anti-leakage; CSV solo standard.
+
+**File toccati:** `v31_calibration_anti_leakage.py`, `v31_calibration_row_builder_standard.py`, builder/service/routes, frontend sezione v3.1, test.
+
+---
+
 ## v31-calibration-dataset-summary-ui
 
 **Titolo:** Summary leggera e download on-demand dataset v3.1

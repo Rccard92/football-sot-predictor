@@ -69,7 +69,7 @@ def row_to_csv_dict(row: dict[str, Any]) -> dict[str, Any]:
     lua = _g(row, "features", "lineups", "away") or {}
     mah = _g(row, "features", "existing_macro_features", "home") or {}
     maa = _g(row, "features", "existing_macro_features", "away") or {}
-    dq = row.get("data_quality") or {}
+    dq = _g(row, "features", "data_quality") or row.get("data_quality") or {}
     comp = row.get("comparisons") or {}
 
     flags = "|".join(
