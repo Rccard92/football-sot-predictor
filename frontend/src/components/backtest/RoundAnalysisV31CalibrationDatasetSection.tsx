@@ -14,8 +14,15 @@ import {
 
 const SUMMARY_SLOW_MS = 15_000
 const FULL_EXPORT_WARN_MS = 60_000
-const FULL_EXPORT_TIMEOUT_MS = 120_000
+const FULL_EXPORT_STALL_MS = 90_000
 const FULL_JOB_POLL_MS = 2_000
+const CHUNK_TOTAL_PARTS = 3
+
+const V31_FULL_EXPORT_CHUNKS = [
+  { part: 1, roundFrom: 5, roundTo: 15 },
+  { part: 2, roundFrom: 16, roundTo: 26 },
+  { part: 3, roundFrom: 27, roundTo: 37 },
+] as const
 
 type Props = {
   competitionId: number | null
@@ -23,7 +30,34 @@ type Props = {
   reloadToken: number
 }
 
-type ExportKind = 'json' | 'csv' | 'json-full' | null
+type ExportKind = 'json' | 'csv' | null
+type ChunkUiStatus = 'idle' | 'running' | 'ready' | 'error' | 'cancelled'
+
+type ChunkState = {
+  status: ChunkUiStatus
+  job: V31FullExportJob | null
+  jobId: string | null
+  error: string | null
+  elapsed: number
+  slowWarn: boolean
+  stallWarn: boolean
+  lastRowsDone: number | null
+  lastProgressAt: number | null
+}
+
+function initialChunkState(): ChunkState {
+  return {
+    status: 'idle',
+    job: null,
+    jobId: null,
+    error: null,
+    elapsed: 0,
+    slowWarn: false,
+    stallWarn: false,
+    lastRowsDone: null,
+    lastProgressAt: null,
+  }
+}
 
 function formatUpdatedAt(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -45,41 +79,73 @@ export function RoundAnalysisV31CalibrationDatasetSection({
   const [error, setError] = useState<string | null>(null)
   const [exportKind, setExportKind] = useState<ExportKind>(null)
   const [exportElapsed, setExportElapsed] = useState(0)
-  const [exportSlow, setExportSlow] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [downloadingLeakReport, setDownloadingLeakReport] = useState(false)
-  const [fullJob, setFullJob] = useState<V31FullExportJob | null>(null)
+  const [chunks, setChunks] = useState<Record<number, ChunkState>>(() =>
+    Object.fromEntries(V31_FULL_EXPORT_CHUNKS.map((c) => [c.part, initialChunkState()])),
+  )
+
   const exportAbortRef = useRef<AbortController | null>(null)
   const exportTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const fullJobIdRef = useRef<string | null>(null)
+  const chunkPollRefs = useRef<Record<number, ReturnType<typeof setTimeout> | null>>({})
+  const chunkTimerRefs = useRef<Record<number, ReturnType<typeof setInterval> | null>>({})
+  const chunkJobIdRefs = useRef<Record<number, string | null>>({})
   const summaryAbortRef = useRef<AbortController | null>(null)
 
-  const clearExportTimer = useCallback(() => {
+  const clearSyncExportTimer = useCallback(() => {
     if (exportTimerRef.current != null) {
       clearInterval(exportTimerRef.current)
       exportTimerRef.current = null
     }
-    if (pollTimerRef.current != null) {
-      clearTimeout(pollTimerRef.current)
-      pollTimerRef.current = null
-    }
-    setExportSlow(false)
   }, [])
 
-  const stopExport = useCallback(() => {
+  const stopSyncExport = useCallback(() => {
     exportAbortRef.current?.abort()
     exportAbortRef.current = null
-    const jid = fullJobIdRef.current
-    if (jid) {
-      void cancelV31FullExportJob(jid).catch(() => undefined)
-      fullJobIdRef.current = null
-    }
-    clearExportTimer()
+    clearSyncExportTimer()
     setExportKind(null)
     setExportElapsed(0)
-    setFullJob(null)
-  }, [clearExportTimer])
+  }, [clearSyncExportTimer])
+
+  const clearChunkTimers = useCallback((part: number) => {
+    const poll = chunkPollRefs.current[part]
+    if (poll != null) {
+      clearTimeout(poll)
+      chunkPollRefs.current[part] = null
+    }
+    const timer = chunkTimerRefs.current[part]
+    if (timer != null) {
+      clearInterval(timer)
+      chunkTimerRefs.current[part] = null
+    }
+  }, [])
+
+  const updateChunk = useCallback((part: number, patch: Partial<ChunkState>) => {
+    setChunks((prev) => ({
+      ...prev,
+      [part]: { ...prev[part], ...patch },
+    }))
+  }, [])
+
+  const stopChunk = useCallback(
+    (part: number, finalStatus?: ChunkUiStatus) => {
+      const jid = chunkJobIdRefs.current[part]
+      if (jid) {
+        void cancelV31FullExportJob(jid).catch(() => undefined)
+        chunkJobIdRefs.current[part] = null
+      }
+      clearChunkTimers(part)
+      setChunks((prev) => ({
+        ...prev,
+        [part]: {
+          ...prev[part],
+          status: finalStatus ?? prev[part].status,
+          jobId: null,
+        },
+      }))
+    },
+    [clearChunkTimers],
+  )
 
   const loadSummary = useCallback(async () => {
     if (competitionId == null) return
@@ -117,109 +183,224 @@ export function RoundAnalysisV31CalibrationDatasetSection({
 
   useEffect(
     () => () => {
-      stopExport()
+      stopSyncExport()
       summaryAbortRef.current?.abort()
+      for (const c of V31_FULL_EXPORT_CHUNKS) {
+        stopChunk(c.part, 'idle')
+      }
     },
-    [stopExport],
+    [stopSyncExport, stopChunk],
   )
 
-  const startExportTimer = useCallback(
-    (opts?: { fullJob?: boolean }) => {
-      clearExportTimer()
-      setExportElapsed(0)
-      const warnMs = opts?.fullJob ? FULL_EXPORT_WARN_MS : 60_000
-      exportTimerRef.current = setInterval(() => {
-        setExportElapsed((s) => {
-          const next = s + 1
-          if (opts?.fullJob && next * 1000 >= warnMs) setExportSlow(true)
-          return next
+  const startChunkElapsedTimer = useCallback(
+    (part: number) => {
+      clearChunkTimers(part)
+      updateChunk(part, { elapsed: 0, slowWarn: false, stallWarn: false })
+      chunkTimerRefs.current[part] = setInterval(() => {
+        setChunks((prev) => {
+          const ch = prev[part]
+          const nextElapsed = ch.elapsed + 1
+          const slowWarn = ch.slowWarn || nextElapsed * 1000 >= FULL_EXPORT_WARN_MS
+          let stallWarn = ch.stallWarn
+          if (
+            ch.lastProgressAt != null &&
+            ch.status === 'running' &&
+            Date.now() - ch.lastProgressAt >= FULL_EXPORT_STALL_MS
+          ) {
+            stallWarn = true
+          }
+          return {
+            ...prev,
+            [part]: { ...ch, elapsed: nextElapsed, slowWarn, stallWarn },
+          }
         })
       }, 1000)
     },
-    [clearExportTimer],
+    [clearChunkTimers, updateChunk],
   )
 
-  const pollFullJob = useCallback(
-    async (jobId: string, startedAt: number) => {
-      if (fullJobIdRef.current !== jobId) return
+  const pollChunkJob = useCallback(
+    async (
+      part: number,
+      jobId: string,
+      roundFrom: number,
+      roundTo: number,
+    ) => {
+      if (chunkJobIdRefs.current[part] !== jobId) return
       try {
         const status = await getV31FullExportJob(jobId)
-        if (fullJobIdRef.current !== jobId) return
-        setFullJob(status)
+        if (chunkJobIdRefs.current[part] !== jobId) return
+
+        setChunks((prev) => {
+          const ch = prev[part]
+          const rowsDone = status.rows_done ?? 0
+          const progressed =
+            ch.lastRowsDone == null || rowsDone > ch.lastRowsDone
+          return {
+            ...prev,
+            [part]: {
+              ...ch,
+              job: status,
+              lastRowsDone: rowsDone,
+              lastProgressAt: progressed ? Date.now() : ch.lastProgressAt,
+              stallWarn:
+                ch.lastProgressAt != null &&
+                !progressed &&
+                ch.status === 'running' &&
+                Date.now() - ch.lastProgressAt >= FULL_EXPORT_STALL_MS,
+            },
+          }
+        })
 
         if (status.status === 'done') {
-          if (competitionId != null) {
-            await downloadV31FullExportJobJson(jobId, competitionId, seasonYear)
-          }
-          stopExport()
+          chunkJobIdRefs.current[part] = null
+          clearChunkTimers(part)
+          updateChunk(part, { status: 'ready', job: status, jobId: null })
           return
         }
         if (status.status === 'failed') {
-          setExportError(
-            status.error_message ||
-              'Export completo fallito. Usa il dataset standard per la calibrazione.',
-          )
-          stopExport()
+          clearChunkTimers(part)
+          chunkJobIdRefs.current[part] = null
+          updateChunk(part, {
+            status: 'error',
+            job: status,
+            jobId: null,
+            error:
+              status.error_message ||
+              'Export chunk fallito. Usa il dataset standard per la calibrazione.',
+          })
           return
         }
         if (status.status === 'cancelled') {
-          setExportError('Export completo annullato.')
-          stopExport()
+          clearChunkTimers(part)
+          chunkJobIdRefs.current[part] = null
+          updateChunk(part, {
+            status: 'cancelled',
+            job: status,
+            jobId: null,
+            error: 'Export annullato.',
+          })
           return
         }
 
-        const elapsed = Date.now() - startedAt
-        if (elapsed >= FULL_EXPORT_TIMEOUT_MS) {
-          await cancelV31FullExportJob(jobId)
-          setExportError(
-            'Export completo interrotto per timeout. Il dataset standard è già disponibile e consigliato.',
-          )
-          stopExport()
-          return
-        }
-
-        pollTimerRef.current = setTimeout(() => {
-          void pollFullJob(jobId, startedAt)
+        chunkPollRefs.current[part] = setTimeout(() => {
+          void pollChunkJob(part, jobId, roundFrom, roundTo)
         }, FULL_JOB_POLL_MS)
       } catch (e) {
-        if (fullJobIdRef.current !== jobId) return
-        setExportError(e instanceof Error ? e.message : String(e))
-        stopExport()
+        if (chunkJobIdRefs.current[part] !== jobId) return
+        clearChunkTimers(part)
+        chunkJobIdRefs.current[part] = null
+        updateChunk(part, {
+          status: 'error',
+          jobId: null,
+          error: e instanceof Error ? e.message : String(e),
+        })
       }
     },
-    [competitionId, seasonYear, stopExport],
+    [clearChunkTimers, updateChunk],
   )
 
-  const startFullExport = useCallback(async () => {
-    if (competitionId == null) return
-    stopExport()
-    setExportKind('json-full')
-    setExportError(null)
-    setFullJob(null)
-    startExportTimer({ fullJob: true })
-    const startedAt = Date.now()
-    try {
-      const job = await startV31FullExportJob(competitionId, seasonYear)
-      fullJobIdRef.current = job.job_id
-      setFullJob(job)
-      pollTimerRef.current = setTimeout(() => {
-        void pollFullJob(job.job_id, startedAt)
-      }, FULL_JOB_POLL_MS)
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : String(e))
-      stopExport()
-    }
-  }, [competitionId, seasonYear, pollFullJob, startExportTimer, stopExport])
+  const startChunkExport = useCallback(
+    async (part: number, roundFrom: number, roundTo: number) => {
+      if (competitionId == null) return
+      stopChunk(part, 'idle')
+      updateChunk(part, {
+        status: 'running',
+        job: null,
+        jobId: null,
+        error: null,
+        lastRowsDone: null,
+        lastProgressAt: Date.now(),
+        stallWarn: false,
+        slowWarn: false,
+      })
+      startChunkElapsedTimer(part)
+      try {
+        const job = await startV31FullExportJob(competitionId, seasonYear, {
+          roundFrom,
+          roundTo,
+          chunkPart: part,
+          chunkTotalParts: CHUNK_TOTAL_PARTS,
+        })
+        chunkJobIdRefs.current[part] = job.job_id
+        updateChunk(part, { job, jobId: job.job_id })
+        chunkPollRefs.current[part] = setTimeout(() => {
+          void pollChunkJob(part, job.job_id, roundFrom, roundTo)
+        }, FULL_JOB_POLL_MS)
+      } catch (e) {
+        clearChunkTimers(part)
+        updateChunk(part, {
+          status: 'error',
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+    },
+    [
+      competitionId,
+      seasonYear,
+      pollChunkJob,
+      startChunkElapsedTimer,
+      stopChunk,
+      updateChunk,
+    ],
+  )
+
+  const downloadChunk = useCallback(
+    async (part: number, roundFrom: number, roundTo: number) => {
+      if (competitionId == null) return
+      const ch = chunks[part]
+      const jobId = ch.job?.job_id ?? ch.jobId
+      if (!jobId) return
+      try {
+        await downloadV31FullExportJobJson(jobId, {
+          competitionId,
+          seasonYear,
+          chunkPart: part,
+          roundFrom,
+          roundTo,
+        })
+      } catch (e) {
+        updateChunk(part, {
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+    },
+    [chunks, competitionId, seasonYear, updateChunk],
+  )
+
+  const cancelChunk = useCallback(
+    (part: number) => {
+      stopChunk(part, 'cancelled')
+      updateChunk(part, { error: 'Export annullato.' })
+    },
+    [stopChunk, updateChunk],
+  )
+
+  const regenerateChunk = useCallback(
+    (part: number, roundFrom: number, roundTo: number) => {
+      updateChunk(part, initialChunkState())
+      void startChunkExport(part, roundFrom, roundTo)
+    },
+    [startChunkExport, updateChunk],
+  )
+
+  const startSyncExportTimer = useCallback(() => {
+    clearSyncExportTimer()
+    setExportElapsed(0)
+    exportTimerRef.current = setInterval(() => {
+      setExportElapsed((s) => s + 1)
+    }, 1000)
+  }, [clearSyncExportTimer])
 
   const runSyncExport = useCallback(
     async (kind: 'json' | 'csv') => {
       if (competitionId == null) return
-      stopExport()
+      stopSyncExport()
       const ac = new AbortController()
       exportAbortRef.current = ac
       setExportKind(kind)
       setExportError(null)
-      startExportTimer()
+      startSyncExportTimer()
       try {
         if (kind === 'csv') {
           const blob = await downloadV31CalibrationDatasetCsv(competitionId, seasonYear, {
@@ -250,10 +431,10 @@ export function RoundAnalysisV31CalibrationDatasetSection({
         if (ac.signal.aborted) return
         setExportError(e instanceof Error ? e.message : String(e))
       } finally {
-        if (!ac.signal.aborted) stopExport()
+        if (!ac.signal.aborted) stopSyncExport()
       }
     },
-    [competitionId, seasonYear, startExportTimer, stopExport],
+    [competitionId, seasonYear, startSyncExportTimer, stopSyncExport],
   )
 
   const downloadLeakReport = useCallback(async () => {
@@ -282,13 +463,13 @@ export function RoundAnalysisV31CalibrationDatasetSection({
   const feats = summary?.features
   const anti = summary?.anti_leakage_check
   const exportable = summary?.exportable !== false && anti?.status === 'ok'
-  const exporting = exportKind != null
+  const exportingSync = exportKind != null
   const samples = anti?.sample_forbidden_fields ?? []
   const forbiddenCount =
     anti?.forbidden_fields_found_count ?? anti?.forbidden_fields_found?.length ?? 0
-  const fullProgress = fullJob?.progress_pct ?? 0
-  const fullRowsDone = fullJob?.rows_done ?? 0
-  const fullRowsExpected = fullJob?.rows_expected ?? 0
+  const anyChunkRunning = V31_FULL_EXPORT_CHUNKS.some(
+    (c) => chunks[c.part]?.status === 'running',
+  )
 
   return (
     <section className="space-y-4">
@@ -297,39 +478,26 @@ export function RoundAnalysisV31CalibrationDatasetSection({
           <h2 className="text-lg font-semibold text-slate-900">Dataset calibrazione v3.1</h2>
           <p className="mt-1 max-w-2xl text-xs text-slate-600">
             Per la calibrazione v3.1 usa il <strong>dataset standard</strong> (veloce, anti-leakage
-            verificato). Il JSON completo è solo diagnostico e può essere molto pesante.
+            verificato). Il JSON completo è solo diagnostico e viene diviso in 3 file.
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              disabled={!exportable || target === 0 || exporting}
-              className="rounded-lg border border-slate-800 bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-              onClick={() => void runSyncExport('json')}
-            >
-              Scarica dataset JSON standard
-            </button>
-            <button
-              type="button"
-              disabled={!exportable || target === 0 || exporting}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-              onClick={() => void runSyncExport('csv')}
-            >
-              Scarica dataset CSV
-            </button>
-          </div>
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
-            disabled={!exportable || target === 0 || exporting}
-            className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-normal text-slate-600 hover:bg-slate-100 disabled:opacity-50"
-            onClick={() => void startFullExport()}
+            disabled={!exportable || target === 0 || exportingSync || anyChunkRunning}
+            className="rounded-lg border border-slate-800 bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            onClick={() => void runSyncExport('json')}
           >
-            Scarica JSON completo (debug)
+            Scarica dataset JSON standard
           </button>
-          <p className="max-w-xs text-right text-[10px] text-slate-500">
-            Il JSON completo può essere molto pesante. Usalo solo per debug tecnico.
-          </p>
+          <button
+            type="button"
+            disabled={!exportable || target === 0 || exportingSync || anyChunkRunning}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => void runSyncExport('csv')}
+          >
+            Scarica dataset CSV
+          </button>
         </div>
       </div>
 
@@ -417,50 +585,128 @@ export function RoundAnalysisV31CalibrationDatasetSection({
         </p>
       ) : null}
 
-      {exporting && exportKind === 'json-full' ? (
-        <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50/60 p-3">
-          <p className="text-sm text-blue-900">
-            Preparazione JSON completo… {exportElapsed > 0 ? `${exportElapsed}s` : ''}
-            {fullRowsExpected > 0
-              ? ` — ${fullRowsDone}/${fullRowsExpected} fixture`
-              : null}
-            {fullJob?.current_fixture_id != null
-              ? ` (fixture ${fullJob.current_fixture_id})`
-              : null}
-          </p>
-          {exportSlow ? (
-            <p className="text-xs text-amber-800">
-              Export completo troppo pesante. Usa il dataset standard oppure attendi il job
-              asincrono in background.
+      {exportable && target > 0 ? (
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">JSON completo (debug) — 3 parti</p>
+            <p className="mt-1 text-xs text-slate-600">
+              Il JSON completo viene diviso in 3 file perché ricostruisce il contesto PIT completo
+              per ogni fixture (~3–4 min per parte).
             </p>
-          ) : null}
-          {fullRowsExpected > 0 ? (
-            <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100">
-              <div
-                className="h-full rounded-full bg-blue-600 transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.max(0, fullProgress))}%` }}
-              />
-            </div>
-          ) : (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
-              <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
-            </div>
-          )}
-          <p className="text-xs text-blue-800">
-            Job asincrono: {fullJob?.status ?? 'avvio…'}
-            {fullProgress > 0 ? ` (${fullProgress.toFixed(0)}%)` : ''}
-          </p>
-          <button
-            type="button"
-            className="rounded border border-blue-300 bg-white px-2 py-1 text-xs font-medium text-blue-900 hover:bg-blue-50"
-            onClick={() => stopExport()}
-          >
-            Annulla preparazione
-          </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-1 lg:grid-cols-3">
+            {V31_FULL_EXPORT_CHUNKS.map(({ part, roundFrom, roundTo }) => {
+              const ch = chunks[part] ?? initialChunkState()
+              const job = ch.job
+              const progress = job?.progress_pct ?? 0
+              const rowsDone = job?.rows_done ?? 0
+              const rowsExpected = job?.rows_expected ?? 0
+              const isRunning = ch.status === 'running'
+              const isReady = ch.status === 'ready'
+              const busy = isRunning || exportingSync
+
+              return (
+                <div
+                  key={part}
+                  className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3"
+                >
+                  <p className="text-xs font-semibold text-slate-800">
+                    Parte {part}/{CHUNK_TOTAL_PARTS} — giornate {roundFrom}–{roundTo}
+                  </p>
+                  <p className="text-[10px] text-slate-500 capitalize">Stato: {ch.status}</p>
+
+                  {isRunning ? (
+                    <div className="space-y-1">
+                      <p className="text-xs text-blue-900">
+                        {ch.elapsed > 0 ? `${ch.elapsed}s` : 'Avvio…'}
+                        {rowsExpected > 0
+                          ? ` — ${rowsDone}/${rowsExpected} fixture`
+                          : null}
+                        {job?.current_fixture_id != null
+                          ? ` (fixture ${job.current_fixture_id})`
+                          : null}
+                      </p>
+                      {ch.slowWarn ? (
+                        <p className="text-[10px] text-amber-800">
+                          Export pesante in corso; il dataset standard resta consigliato.
+                        </p>
+                      ) : null}
+                      {ch.stallWarn ? (
+                        <p className="text-[10px] text-amber-900 font-medium">
+                          Il job non sta avanzando da 90s. Attendi o annulla manualmente.
+                        </p>
+                      ) : null}
+                      {rowsExpected > 0 ? (
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100">
+                          <div
+                            className="h-full rounded-full bg-blue-600 transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
+                          <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500" />
+                        </div>
+                      )}
+                      <p className="text-[10px] text-blue-800">
+                        {job?.status ?? 'queued'}
+                        {progress > 0 ? ` (${progress.toFixed(0)}%)` : ''}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {ch.error ? (
+                    <p className="text-[10px] text-rose-700">{ch.error}</p>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {!isRunning && !isReady ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="rounded border border-slate-700 bg-slate-700 px-2 py-1 text-[10px] font-medium text-white hover:bg-slate-600 disabled:opacity-50"
+                        onClick={() => void startChunkExport(part, roundFrom, roundTo)}
+                      >
+                        Genera
+                      </button>
+                    ) : null}
+                    {isReady ? (
+                      <>
+                        <button
+                          type="button"
+                          className="rounded border border-emerald-600 bg-emerald-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-emerald-500"
+                          onClick={() => void downloadChunk(part, roundFrom, roundTo)}
+                        >
+                          Scarica
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="rounded border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          onClick={() => regenerateChunk(part, roundFrom, roundTo)}
+                        >
+                          Rigenera
+                        </button>
+                      </>
+                    ) : null}
+                    {isRunning ? (
+                      <button
+                        type="button"
+                        className="rounded border border-rose-300 bg-white px-2 py-1 text-[10px] font-medium text-rose-800 hover:bg-rose-50"
+                        onClick={() => cancelChunk(part)}
+                      >
+                        Annulla
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       ) : null}
 
-      {exporting && exportKind !== 'json-full' ? (
+      {exportingSync ? (
         <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50/60 p-3">
           <p className="text-sm text-blue-900">
             {exportKind === 'csv' ? 'Preparazione CSV…' : 'Preparazione JSON standard…'}{' '}
@@ -472,7 +718,7 @@ export function RoundAnalysisV31CalibrationDatasetSection({
           <button
             type="button"
             className="rounded border border-blue-300 bg-white px-2 py-1 text-xs font-medium text-blue-900 hover:bg-blue-50"
-            onClick={() => stopExport()}
+            onClick={() => stopSyncExport()}
           >
             Annulla preparazione
           </button>

@@ -92,6 +92,10 @@ class V31CalibrationDatasetService:
         include_all_versions: bool = False,
         max_fixtures: int | None = None,
         detail: DetailLevel = "standard",
+        round_from: int | None = None,
+        round_to: int | None = None,
+        chunk_part: int | None = None,
+        chunk_total_parts: int | None = None,
     ) -> dict:
         payload = build_v31_calibration_dataset(
             db,
@@ -101,6 +105,10 @@ class V31CalibrationDatasetService:
             include_all_versions=include_all_versions,
             max_fixtures=max_fixtures,
             detail=detail,
+            round_from=round_from,
+            round_to=round_to,
+            chunk_part=chunk_part,
+            chunk_total_parts=chunk_total_parts,
         )
         anti = payload.get("anti_leakage_check") or {}
         if anti.get("status") != "ok":
@@ -160,12 +168,20 @@ class V31CalibrationDatasetService:
         season_year: int,
         use_latest_version_per_round: bool = True,
         include_all_versions: bool = False,
+        round_from: int | None = None,
+        round_to: int | None = None,
+        chunk_part: int | None = None,
+        chunk_total_parts: int | None = None,
     ) -> dict:
         return start_full_export_job(
             competition_id=competition_id,
             season_year=season_year,
             use_latest_version_per_round=use_latest_version_per_round,
             include_all_versions=include_all_versions,
+            round_from=round_from,
+            round_to=round_to,
+            chunk_part=chunk_part,
+            chunk_total_parts=chunk_total_parts,
         )
 
     def get_full_export_job(self, job_id: str) -> dict | None:

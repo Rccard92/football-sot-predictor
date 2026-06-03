@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -25,7 +25,27 @@ def v31_full_export_build_job(
     season_year: int = Query(...),
     use_latest_version_per_round: bool = Query(default=True),
     include_all_versions: bool = Query(default=False),
+    round_from: int | None = Query(default=None, ge=1, le=38),
+    round_to: int | None = Query(default=None, ge=1, le=38),
+    chunk_part: int | None = Query(default=None, ge=1, le=10),
+    chunk_total_parts: int | None = Query(default=None, ge=1, le=10),
+    body: dict | None = Body(default=None),
 ):
+    if body:
+        competition_id = int(body.get("competition_id", competition_id))
+        season_year = int(body.get("season_year", season_year))
+        use_latest_version_per_round = bool(
+            body.get("use_latest_version_per_round", use_latest_version_per_round),
+        )
+        include_all_versions = bool(body.get("include_all_versions", include_all_versions))
+        if body.get("round_from") is not None:
+            round_from = int(body["round_from"])
+        if body.get("round_to") is not None:
+            round_to = int(body["round_to"])
+        if body.get("chunk_part") is not None:
+            chunk_part = int(body["chunk_part"])
+        if body.get("chunk_total_parts") is not None:
+            chunk_total_parts = int(body["chunk_total_parts"])
     svc = V31CalibrationDatasetService()
     return jsonable_encoder(
         svc.start_full_export_job(
@@ -33,6 +53,10 @@ def v31_full_export_build_job(
             season_year=season_year,
             use_latest_version_per_round=use_latest_version_per_round,
             include_all_versions=include_all_versions,
+            round_from=round_from,
+            round_to=round_to,
+            chunk_part=chunk_part,
+            chunk_total_parts=chunk_total_parts,
         ),
     )
 
@@ -57,9 +81,15 @@ def v31_full_export_job_download(job_id: str):
     svc = V31CalibrationDatasetService()
     payload = svc.get_full_export_job_download_payload(job_id)
     job = svc.get_full_export_job(job_id) or {}
-    cid = job.get("competition_id", "x")
-    sy = job.get("season_year", "x")
-    filename = f"v31-calibration-dataset-full-{cid}-{sy}.json"
+    part = job.get("chunk_part")
+    rf = job.get("round_from")
+    rt = job.get("round_to")
+    if part is not None and rf is not None and rt is not None:
+        filename = f"v31-calibration-dataset-full-part-{part}-rounds-{rf}-{rt}.json"
+    else:
+        cid = job.get("competition_id", "x")
+        sy = job.get("season_year", "x")
+        filename = f"v31-calibration-dataset-full-{cid}-{sy}.json"
     return JSONResponse(
         content=jsonable_encoder(payload),
         media_type="application/json",
@@ -121,6 +151,10 @@ def v31_calibration_dataset(
     include_all_versions: bool = Query(default=False),
     max_fixtures: int | None = Query(default=None, ge=1, le=2000),
     detail: Literal["standard", "full"] = Query(default="standard"),
+    round_from: int | None = Query(default=None, ge=1, le=38),
+    round_to: int | None = Query(default=None, ge=1, le=38),
+    chunk_part: int | None = Query(default=None, ge=1, le=10),
+    chunk_total_parts: int | None = Query(default=None, ge=1, le=10),
     db: Session = Depends(get_db),
 ):
     svc = V31CalibrationDatasetService()
@@ -133,6 +167,10 @@ def v31_calibration_dataset(
             include_all_versions=include_all_versions,
             max_fixtures=max_fixtures,
             detail=detail,
+            round_from=round_from,
+            round_to=round_to,
+            chunk_part=chunk_part,
+            chunk_total_parts=chunk_total_parts,
         )
     except (OperationalError, ProgrammingError):
         logger.exception("GET v31/calibration-dataset database error")

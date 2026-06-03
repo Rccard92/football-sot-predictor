@@ -32,14 +32,32 @@ PROGRESS_EVERY_FULL = 25
 DetailLevel = Literal["standard", "full"]
 
 
+def _round_in_range(
+    round_number: int,
+    *,
+    round_from: int | None,
+    round_to: int | None,
+) -> bool:
+    if round_from is not None and round_number < int(round_from):
+        return False
+    if round_to is not None and round_number > int(round_to):
+        return False
+    return True
+
+
 def _iter_calibration_fixtures(
     analyses: list[Any],
     fixtures_by_id: dict[int, list[Any]],
+    *,
+    round_from: int | None = None,
+    round_to: int | None = None,
 ) -> list[tuple[Any, Any, int]]:
-    """(analysis, orm_row, round_number) per fixture idonea."""
+    """(analysis, orm_row, round_number) per fixture idonea, opz. filtrate per giornata."""
     out: list[tuple[Any, Any, int]] = []
     for analysis in sorted(analyses, key=lambda a: int(a.round_number)):
         rn = int(analysis.round_number)
+        if not _round_in_range(rn, round_from=round_from, round_to=round_to):
+            continue
         for orm_row in fixtures_by_id.get(int(analysis.id), []):
             if str(orm_row.status) != "ok" or orm_row.actual_total_sot is None:
                 continue
@@ -208,6 +226,8 @@ def build_v31_dataset_rows_full(
     include_all_versions: bool = False,
     max_fixtures: int | None = None,
     rows_expected: int | None = None,
+    round_from: int | None = None,
+    round_to: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     analyses, excluded, fixtures_by_id = _select_analyses_for_calibration(
         db,
@@ -217,7 +237,12 @@ def build_v31_dataset_rows_full(
         include_all_versions=include_all_versions,
     )
     max_round = max((int(a.round_number) for a in analyses), default=38)
-    fixtures = _iter_calibration_fixtures(analyses, fixtures_by_id)
+    fixtures = _iter_calibration_fixtures(
+        analyses,
+        fixtures_by_id,
+        round_from=round_from,
+        round_to=round_to,
+    )
     if rows_expected is None:
         rows_expected = len(fixtures)
 
@@ -281,11 +306,12 @@ def assemble_full_dataset_payload(
     season_year: int,
     max_round: int,
     use_latest_version_per_round: bool,
+    chunk_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     comp = db.get(Competition, int(competition_id))
     anti = validate_v31_rows(rows)
     coverage = _coverage_summary(rows)
-    return {
+    payload: dict[str, Any] = {
         "report_type": "v31_calibration_dataset",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "competition_id": int(competition_id),
@@ -311,6 +337,9 @@ def assemble_full_dataset_payload(
             ),
         },
     }
+    if chunk_meta:
+        payload["chunk"] = chunk_meta
+    return payload
 
 
 def build_v31_dataset_rows(
@@ -322,6 +351,8 @@ def build_v31_dataset_rows(
     include_all_versions: bool = False,
     max_fixtures: int | None = None,
     detail: DetailLevel = "standard",
+    round_from: int | None = None,
+    round_to: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     if detail == "full":
         return build_v31_dataset_rows_full(
@@ -331,6 +362,8 @@ def build_v31_dataset_rows(
             use_latest_version_per_round=use_latest_version_per_round,
             include_all_versions=include_all_versions,
             max_fixtures=max_fixtures,
+            round_from=round_from,
+            round_to=round_to,
         )
     return build_v31_dataset_rows_standard(
         db,
@@ -351,6 +384,10 @@ def build_v31_calibration_dataset(
     include_all_versions: bool = False,
     max_fixtures: int | None = None,
     detail: DetailLevel = "standard",
+    round_from: int | None = None,
+    round_to: int | None = None,
+    chunk_part: int | None = None,
+    chunk_total_parts: int | None = None,
 ) -> dict[str, Any]:
     comp = db.get(Competition, int(competition_id))
     rows, excluded, max_round = build_v31_dataset_rows(
@@ -361,7 +398,29 @@ def build_v31_calibration_dataset(
         include_all_versions=include_all_versions,
         max_fixtures=max_fixtures,
         detail=detail,
+        round_from=round_from,
+        round_to=round_to,
     )
+
+    if detail == "full":
+        chunk_meta = None
+        if chunk_part is not None and round_from is not None and round_to is not None:
+            chunk_meta = {
+                "part": int(chunk_part),
+                "total_parts": int(chunk_total_parts or 1),
+                "round_from": int(round_from),
+                "round_to": int(round_to),
+            }
+        return assemble_full_dataset_payload(
+            db,
+            rows=rows,
+            excluded=excluded,
+            competition_id=competition_id,
+            season_year=season_year,
+            max_round=max_round,
+            use_latest_version_per_round=use_latest_version_per_round,
+            chunk_meta=chunk_meta,
+        )
 
     anti = validate_v31_rows(rows)
     coverage = _coverage_summary(rows)

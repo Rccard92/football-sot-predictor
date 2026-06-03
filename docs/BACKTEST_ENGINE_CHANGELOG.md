@@ -26,11 +26,21 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-full-export-chunks
+
+**Titolo:** Export JSON completo v3.1 in 3 chunk per intervallo giornate
+
+**Descrizione:** L’export full è partizionato in tre job indipendenti (giornate 5–15, 16–26, 27–37) con `round_from`/`round_to`, metadata `chunk` nel payload, log `V31_FULL_EXPORT_CHUNK_*`, filename `v31-calibration-dataset-full-part-{n}-rounds-{from}-{to}.json`. UI: tre card con Genera/Scarica/Annulla/Rigenera; nessun timeout 120s; warning stallo se `rows_done` fermo 90s. Filtro giornate anche su `GET ?detail=full&round_from=&round_to=`.
+
+**File toccati:** `v31_calibration_dataset_builder.py`, `v31_calibration_full_export_job.py`, `backtest_v31.py`, `v31_calibration_dataset_service.py`, frontend sezione v3.1 + `api.ts`, test job API, docs.
+
+---
+
 ## v31-full-export-async-job
 
 **Titolo:** Export JSON completo v3.1 via job asincrono
 
-**Descrizione:** Il JSON full (rebuild PIT × N fixture) non usa più una richiesta HTTP lunga dalla UI. Job in-memory con POST/GET poll/cancel/download, log diagnostici per fixture (`V31_FULL_EXPORT_*`, `V31_DATASET_EXPORT_PROGRESS detail=full rows_done=`), progress bar determinata in UI, warning 60s e timeout 120s con cancel automatico.
+**Descrizione:** Il JSON full (rebuild PIT × N fixture) non usa più una richiesta HTTP lunga dalla UI. Job in-memory con POST/GET poll/cancel/download, log diagnostici per fixture (`V31_FULL_EXPORT_*`, `V31_DATASET_EXPORT_PROGRESS detail=full rows_done=`), progress bar determinata in UI, warning 60s e timeout 120s con cancel automatico (sostituito in UI da chunk + stall 90s).
 
 **File toccati:** `v31_calibration_full_export_job.py`, `v31_calibration_dataset_builder.py`, `backtest_v31.py`, frontend sezione v3.1, test job API.
 

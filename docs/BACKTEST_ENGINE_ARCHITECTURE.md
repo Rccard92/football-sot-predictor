@@ -666,10 +666,10 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 | `GET /api/backtest/v31/calibration-dataset/summary` | Summary + anti-leakage su `row.features` (build standard, no PIT) |
 | `GET /api/backtest/v31/calibration-dataset/anti-leakage-report` | Solo errori leakage + sample (max 20) |
 | `GET /api/backtest/v31/calibration-dataset?detail=standard` | JSON veloce da trace persistito (default UI) |
-| `GET /api/backtest/v31/calibration-dataset?detail=full` | JSON sync con PIT (solo test/`max_fixtures` basso; UI non lo usa) |
-| `POST /api/backtest/v31/calibration-dataset/full/build-job` | Avvia job asincrono export full |
+| `GET /api/backtest/v31/calibration-dataset?detail=full&round_from=&round_to=` | JSON sync con PIT filtrato per giornata (test/API) |
+| `POST /api/backtest/v31/calibration-dataset/full/build-job` | Avvia job asincrono export full; query/body: `round_from`, `round_to`, `chunk_part`, `chunk_total_parts` |
 | `GET .../full/build-job/{job_id}` | Stato job (`progress_pct`, `rows_done`, `current_fixture_id`) |
-| `GET .../full/build-job/{job_id}/download` | Download JSON full quando `done` + anti-leakage OK |
+| `GET .../full/build-job/{job_id}/download` | Download JSON full quando `done` + anti-leakage OK; filename chunk-aware se `chunk_part` impostato |
 | `POST .../full/build-job/{job_id}/cancel` | Annulla job in corso |
 | `GET /api/backtest/v31/calibration-dataset.csv` | CSV piatto standard (no PIT); 422 se anti-leakage failed |
 
@@ -685,11 +685,11 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **Implementazione:** `v31_calibration_dataset_builder.py`, `v31_calibration_feature_mappers.py`, `v31_calibration_csv_export.py`, `V31CalibrationDatasetService`, router `backtest_v31.py`.
 
-**UI Backtest:** sezione «Dataset calibrazione v3.1» — standard/CSV sync consigliati; JSON full via job con polling, barra progress reale, timeout 120s e annulla.
+**UI Backtest:** sezione «Dataset calibrazione v3.1» — standard/CSV sync consigliati; JSON full in **3 chunk** (giornate 5–15, 16–26, 27–37), job indipendenti, polling 2s, warning 60s, stall 90s senza abort automatico.
 
-**Log:** `V31_DATASET_SUMMARY_START/DONE`, `V31_DATASET_EXPORT_START/DONE` (con `duration_ms`).
+**Log:** `V31_DATASET_SUMMARY_START/DONE`, `V31_DATASET_EXPORT_START/DONE`, `V31_FULL_EXPORT_CHUNK_START/PROGRESS/DONE` (con `duration_ms`).
 
-**Changelog:** `v31-calibration-dataset`, `v31-calibration-dataset-summary-ui`.
+**Changelog:** `v31-calibration-dataset`, `v31-calibration-dataset-summary-ui`, `v31-full-export-chunks`.
 
 ### Step V3.0-C — Value Selector Refinement
 

@@ -3744,11 +3744,21 @@ export async function downloadV31CalibrationDatasetCsv(
   return res.blob()
 }
 
+export type V31FullExportChunkOpts = {
+  roundFrom: number
+  roundTo: number
+  chunkPart: number
+  chunkTotalParts?: number
+}
+
 export type V31FullExportJob = {
   job_id: string
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'not_found'
   competition_id: number
   season_year: number
+  round_from?: number
+  round_to?: number
+  chunk_part?: number
   rows_expected: number
   rows_done: number
   progress_pct: number
@@ -3765,9 +3775,14 @@ export type V31FullExportJob = {
 export async function startV31FullExportJob(
   competitionId: number,
   seasonYear: number,
-  opts?: Pick<V31CalibrationFetchOpts, 'useLatestVersionPerRound' | 'includeAllVersions'>,
+  opts?: Pick<V31CalibrationFetchOpts, 'useLatestVersionPerRound' | 'includeAllVersions'> &
+    V31FullExportChunkOpts,
 ): Promise<V31FullExportJob> {
   const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  if (opts?.roundFrom != null) q.set('round_from', String(opts.roundFrom))
+  if (opts?.roundTo != null) q.set('round_to', String(opts.roundTo))
+  if (opts?.chunkPart != null) q.set('chunk_part', String(opts.chunkPart))
+  if (opts?.chunkTotalParts != null) q.set('chunk_total_parts', String(opts.chunkTotalParts))
   const base = getApiBase()
   const res = await fetch(
     `${base}/api/backtest/v31/calibration-dataset/full/build-job?${q.toString()}`,
@@ -3817,8 +3832,13 @@ export async function cancelV31FullExportJob(jobId: string): Promise<V31FullExpo
 
 export async function downloadV31FullExportJobJson(
   jobId: string,
-  competitionId: number,
-  seasonYear: number,
+  opts: {
+    competitionId: number
+    seasonYear: number
+    chunkPart?: number
+    roundFrom?: number
+    roundTo?: number
+  },
 ): Promise<void> {
   const base = getApiBase()
   const res = await fetch(
@@ -3836,11 +3856,21 @@ export async function downloadV31FullExportJobJson(
   if (!res.ok) {
     throw new Error(extractErrorMessage(body, res.statusText))
   }
+  const disposition = res.headers.get('content-disposition') ?? ''
+  const match = /filename="([^"]+)"/.exec(disposition)
+  let filename = match?.[1]
+  if (!filename) {
+    const { competitionId, seasonYear, chunkPart, roundFrom, roundTo } = opts
+    filename =
+      chunkPart != null && roundFrom != null && roundTo != null
+        ? `v31-calibration-dataset-full-part-${chunkPart}-rounds-${roundFrom}-${roundTo}.json`
+        : `v31-calibration-dataset-full-${competitionId}-${seasonYear}.json`
+  }
   const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `v31-calibration-dataset-full-${competitionId}-${seasonYear}.json`
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
 }

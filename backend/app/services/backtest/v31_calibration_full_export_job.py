@@ -27,6 +27,23 @@ _store_lock = threading.Lock()
 _jobs: dict[str, "FullExportJobState"] = {}
 
 
+def _chunk_meta_dict(
+    *,
+    chunk_part: int | None,
+    chunk_total_parts: int | None,
+    round_from: int | None,
+    round_to: int | None,
+) -> dict[str, Any] | None:
+    if chunk_part is None or round_from is None or round_to is None:
+        return None
+    return {
+        "part": int(chunk_part),
+        "total_parts": int(chunk_total_parts or 1),
+        "round_from": int(round_from),
+        "round_to": int(round_to),
+    }
+
+
 @dataclass
 class FullExportJobState:
     job_id: str
@@ -35,6 +52,10 @@ class FullExportJobState:
     season_year: int
     use_latest_version_per_round: bool
     include_all_versions: bool
+    round_from: int | None = None
+    round_to: int | None = None
+    chunk_part: int | None = None
+    chunk_total_parts: int | None = None
     rows_expected: int = 0
     rows_done: int = 0
     progress_pct: float = 0.0
@@ -49,7 +70,7 @@ class FullExportJobState:
     pit_errors: list[dict[str, Any]] = field(default_factory=list)
 
     def to_public_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "job_id": self.job_id,
             "status": self.status,
             "competition_id": self.competition_id,
@@ -74,6 +95,13 @@ class FullExportJobState:
                 else None
             ),
         }
+        if self.round_from is not None:
+            out["round_from"] = self.round_from
+        if self.round_to is not None:
+            out["round_to"] = self.round_to
+        if self.chunk_part is not None:
+            out["chunk_part"] = self.chunk_part
+        return out
 
 
 def _get_job(job_id: str) -> FullExportJobState | None:
@@ -90,14 +118,64 @@ def _update_job(job_id: str, **kwargs: Any) -> None:
             setattr(job, k, v)
 
 
+def _count_chunk_fixtures(
+    db: Any,
+    *,
+    competition_id: int,
+    season_year: int,
+    use_latest_version_per_round: bool,
+    include_all_versions: bool,
+    round_from: int | None,
+    round_to: int | None,
+) -> int:
+    from app.services.backtest.round_analysis_calibration_export import (
+        _select_analyses_for_calibration,
+    )
+
+    analyses, _excluded, fixtures_by_id = _select_analyses_for_calibration(
+        db,
+        competition_id=competition_id,
+        season_year=season_year,
+        use_latest_version_per_round=use_latest_version_per_round,
+        include_all_versions=include_all_versions,
+    )
+    return len(
+        _iter_calibration_fixtures(
+            analyses,
+            fixtures_by_id,
+            round_from=round_from,
+            round_to=round_to,
+        ),
+    )
+
+
 def start_full_export_job(
     *,
     competition_id: int,
     season_year: int,
     use_latest_version_per_round: bool = True,
     include_all_versions: bool = False,
+    round_from: int | None = None,
+    round_to: int | None = None,
+    chunk_part: int | None = None,
+    chunk_total_parts: int | None = None,
 ) -> dict[str, Any]:
     job_id = str(uuid.uuid4())
+    rows_expected = 0
+    db = SessionLocal()
+    try:
+        rows_expected = _count_chunk_fixtures(
+            db,
+            competition_id=int(competition_id),
+            season_year=int(season_year),
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+            round_from=round_from,
+            round_to=round_to,
+        )
+    finally:
+        db.close()
+
     job = FullExportJobState(
         job_id=job_id,
         status="queued",
@@ -105,6 +183,11 @@ def start_full_export_job(
         season_year=int(season_year),
         use_latest_version_per_round=use_latest_version_per_round,
         include_all_versions=include_all_versions,
+        round_from=round_from,
+        round_to=round_to,
+        chunk_part=chunk_part,
+        chunk_total_parts=chunk_total_parts,
+        rows_expected=rows_expected,
     )
     with _store_lock:
         _jobs[job_id] = job
@@ -180,8 +263,13 @@ def _run_full_export_job(job_id: str) -> None:
             include_all_versions=job.include_all_versions,
         )
         max_round = max((int(a.round_number) for a in analyses), default=38)
-        fixtures = _iter_calibration_fixtures(analyses, fixtures_by_id)
-        rows_expected = len(fixtures)
+        fixtures = _iter_calibration_fixtures(
+            analyses,
+            fixtures_by_id,
+            round_from=job.round_from,
+            round_to=job.round_to,
+        )
+        rows_expected = job.rows_expected or len(fixtures)
         load_ms = int((time.perf_counter() - t_load) * 1000)
         logger.info(
             "V31_FULL_EXPORT_LOAD_ANALYSES_DONE analyses=%s fixtures=%s duration_ms=%s",
@@ -189,6 +277,15 @@ def _run_full_export_job(job_id: str) -> None:
             rows_expected,
             load_ms,
         )
+
+        if job.chunk_part is not None:
+            logger.info(
+                "V31_FULL_EXPORT_CHUNK_START part=%s round_from=%s round_to=%s rows_expected=%s",
+                job.chunk_part,
+                job.round_from,
+                job.round_to,
+                rows_expected,
+            )
 
         _update_job(job_id, rows_expected=rows_expected)
         logger.info(
@@ -258,7 +355,20 @@ def _run_full_export_job(job_id: str) -> None:
                     rows_done,
                     rows_expected,
                 )
+                if job.chunk_part is not None:
+                    logger.info(
+                        "V31_FULL_EXPORT_CHUNK_PROGRESS part=%s rows_done=%s rows_expected=%s",
+                        job.chunk_part,
+                        rows_done,
+                        rows_expected,
+                    )
 
+        chunk_meta = _chunk_meta_dict(
+            chunk_part=job.chunk_part,
+            chunk_total_parts=job.chunk_total_parts,
+            round_from=job.round_from,
+            round_to=job.round_to,
+        )
         payload = assemble_full_dataset_payload(
             db,
             rows=rows,
@@ -267,6 +377,7 @@ def _run_full_export_job(job_id: str) -> None:
             season_year=job.season_year,
             max_round=max_round,
             use_latest_version_per_round=job.use_latest_version_per_round,
+            chunk_meta=chunk_meta,
         )
         anti = payload.get("anti_leakage_check") or {}
         duration_ms = int((time.perf_counter() - t_job) * 1000)
@@ -295,6 +406,13 @@ def _run_full_export_job(job_id: str) -> None:
             rows_done=len(rows),
             duration_seconds=time.perf_counter() - t_job,
         )
+        if job.chunk_part is not None:
+            logger.info(
+                "V31_FULL_EXPORT_CHUNK_DONE part=%s rows=%s duration_ms=%s",
+                job.chunk_part,
+                len(rows),
+                duration_ms,
+            )
         logger.info(
             "V31_DATASET_EXPORT_DONE format=json detail=full rows=%s duration_ms=%s job_id=%s",
             len(rows),
