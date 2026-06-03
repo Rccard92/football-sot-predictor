@@ -90,6 +90,8 @@ class V31CalibrationSimulatorService:
         strategy: str = "all",
         strategy_status_filter: str = "active",
         include_rows: bool = False,
+        rows: list[dict[str, Any]] | None = None,
+        excluded_analyses: list[Any] | None = None,
     ) -> dict[str, Any]:
         logger.info(
             "V31_PREDICTIVE_SIMULATOR_START competition_id=%s season_year=%s strategy=%s status=%s",
@@ -99,13 +101,16 @@ class V31CalibrationSimulatorService:
             strategy_status_filter,
         )
         comp = db.get(Competition, int(competition_id))
-        rows, excluded, _max_round = build_v31_dataset_rows_standard(
-            db,
-            competition_id=competition_id,
-            season_year=season_year,
-            use_latest_version_per_round=use_latest_version_per_round,
-            include_all_versions=include_all_versions,
-        )
+        if rows is None:
+            rows, excluded, _max_round = build_v31_dataset_rows_standard(
+                db,
+                competition_id=competition_id,
+                season_year=season_year,
+                use_latest_version_per_round=use_latest_version_per_round,
+                include_all_versions=include_all_versions,
+            )
+        else:
+            excluded = excluded_analyses or []
         rows = _filter_rounds(rows)
         fixtures_count = len(rows)
 

@@ -4380,6 +4380,187 @@ export async function getV31PatternAnalysisReportJson(
   )
 }
 
+// --- Laboratorio predittivo persistente ---
+
+export type PredictiveReasonCode = {
+  code: string
+  label_it: string
+  evidence: string
+  suggested_action: string
+}
+
+export type PredictivePatternInsight = {
+  id?: number
+  insight_type: string
+  severity: string
+  title: string
+  description: string
+  evidence_json?: Record<string, unknown>
+  recommended_action?: string | null
+  strategy_key?: string | null
+}
+
+export type PredictiveRunListItem = {
+  run_id: number
+  competition_id: number
+  season_year: number
+  season_label?: string | null
+  created_at?: string | null
+  fixtures_count: number
+  strategies_count: number
+  recommended_strategy?: string | null
+  best_mae_strategy?: string | null
+  main_warning?: string | null
+  run_type: string
+  model_version: string
+}
+
+export type PredictiveSimulationRun = {
+  run_id: number
+  competition_id: number
+  season_year: number
+  season_label?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  summary: Record<string, unknown>
+  simulator: V31CalibrationSimulator
+  pattern: V31PatternAnalysis
+  insights: PredictivePatternInsight[]
+  audit: Record<string, boolean | string>
+  betting_phase_enabled?: boolean
+}
+
+export type PredictiveFixturePrediction = {
+  fixture_id: number
+  round_number: number
+  home_team_name: string
+  away_team_name: string
+  match: string
+  strategy_key: string
+  predicted_total_sot?: number | null
+  actual_total_sot?: number | null
+  error?: number | null
+  abs_error?: number | null
+  predicted_bucket?: string | null
+  actual_bucket?: string | null
+  actual_bucket_dynamic?: string | null
+  win_quality?: string | null
+  outcome_type?: string | null
+  reason_codes?: PredictiveReasonCode[]
+  probable_reason?: string | null
+  boost_applied?: number | null
+  high_total_signal?: number | null
+  feature_snapshot?: Record<string, unknown> | null
+  user_note?: string | null
+  user_note_tag?: string | null
+}
+
+export type PredictiveFixturesPage = {
+  total: number
+  limit: number
+  offset: number
+  items: PredictiveFixturePrediction[]
+}
+
+export type PredictiveRunCreateResult = {
+  run_id: number | null
+  summary: Record<string, unknown>
+  message: string
+  simulator?: V31CalibrationSimulator
+  pattern?: V31PatternAnalysis
+  insights?: PredictivePatternInsight[]
+  audit?: Record<string, boolean | string>
+}
+
+export type PredictiveAiInsights = {
+  id?: number
+  run_id?: number
+  created_at?: string | null
+  output?: Record<string, unknown> | null
+  message?: string
+}
+
+export async function postPredictiveSimulatorRun(
+  body: {
+    competition_id: number
+    season_year: number
+    strategy?: string
+    strategy_status?: string
+    persist?: boolean
+  },
+): Promise<PredictiveRunCreateResult> {
+  return requestPostJson<PredictiveRunCreateResult>('/api/predictive-simulator/run', body)
+}
+
+export async function listPredictiveSimulatorRuns(
+  competitionId?: number,
+  seasonYear?: number,
+  limit = 50,
+): Promise<PredictiveRunListItem[]> {
+  const q = new URLSearchParams()
+  if (competitionId != null) q.set('competition_id', String(competitionId))
+  if (seasonYear != null) q.set('season_year', String(seasonYear))
+  q.set('limit', String(limit))
+  return requestJson<PredictiveRunListItem[]>(`/api/predictive-simulator/runs?${q.toString()}`)
+}
+
+export async function getPredictiveSimulatorRun(runId: number): Promise<PredictiveSimulationRun> {
+  return requestJson<PredictiveSimulationRun>(`/api/predictive-simulator/runs/${runId}`)
+}
+
+export async function getPredictiveSimulatorFixtures(
+  runId: number,
+  params?: {
+    strategy_key?: string
+    round_number?: number
+    outcome_type?: string
+    predicted_bucket?: string
+    actual_bucket?: string
+    min_abs_error?: number
+    max_abs_error?: number
+    sort_by?: string
+    sort_dir?: string
+    limit?: number
+    offset?: number
+  },
+): Promise<PredictiveFixturesPage> {
+  const q = new URLSearchParams()
+  if (params?.strategy_key) q.set('strategy_key', params.strategy_key)
+  if (params?.round_number != null) q.set('round_number', String(params.round_number))
+  if (params?.outcome_type) q.set('outcome_type', params.outcome_type)
+  if (params?.predicted_bucket) q.set('predicted_bucket', params.predicted_bucket)
+  if (params?.actual_bucket) q.set('actual_bucket', params.actual_bucket)
+  if (params?.min_abs_error != null) q.set('min_abs_error', String(params.min_abs_error))
+  if (params?.max_abs_error != null) q.set('max_abs_error', String(params.max_abs_error))
+  if (params?.sort_by) q.set('sort_by', params.sort_by)
+  if (params?.sort_dir) q.set('sort_dir', params.sort_dir)
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  if (params?.offset != null) q.set('offset', String(params.offset))
+  return requestJson<PredictiveFixturesPage>(
+    `/api/predictive-simulator/runs/${runId}/fixtures?${q.toString()}`,
+  )
+}
+
+export async function postPredictiveFixtureNote(
+  runId: number,
+  fixtureId: number,
+  body: { strategy_key: string; note: string; tag?: string | null },
+): Promise<Record<string, unknown>> {
+  return requestPostJson(`/api/predictive-simulator/runs/${runId}/fixtures/${fixtureId}/notes`, body)
+}
+
+export async function postPredictiveAiInsights(runId: number): Promise<PredictiveAiInsights> {
+  return requestPostJson<PredictiveAiInsights>(`/api/predictive-simulator/runs/${runId}/ai-insights`, {})
+}
+
+export async function getPredictiveAiInsights(runId: number): Promise<PredictiveAiInsights> {
+  return requestJson<PredictiveAiInsights>(`/api/predictive-simulator/runs/${runId}/ai-insights`)
+}
+
+export async function getPredictiveSimulatorConfig(): Promise<{ openai_configured: boolean }> {
+  return requestJson<{ openai_configured: boolean }>('/api/predictive-simulator/config')
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

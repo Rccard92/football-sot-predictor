@@ -116,6 +116,47 @@ Analisi qualità coverage WIN/LOSS su top-3 strategie (`bias_corrected`, `dynami
 
 **UI:** pagina dedicata [`/predictive-simulator`](frontend/src/pages/PredictiveSimulatorPage.tsx) con verdetto, problemi strutturali e tab Simulatore/Pattern Analysis. Backtest contiene solo card link.
 
+## Laboratorio predittivo persistente (v31-predictive-lab-persistence)
+
+Il simulatore predittivo è ora un **laboratorio persistente** con run salvate in PostgreSQL.
+
+### API (`/api/predictive-simulator`)
+
+| Metodo | Path | Descrizione |
+|--------|------|-------------|
+| `POST` | `/run` | Esegue simulatore + pattern analysis e persiste la run |
+| `GET` | `/runs` | Storico run (filtri `competition_id`, `season_year`) |
+| `GET` | `/runs/{id}` | Payload completo (simulator + pattern + insights + audit) |
+| `GET` | `/runs/{id}/fixtures` | Diagnosi fixture-by-fixture con filtri |
+| `POST` | `/runs/{id}/fixtures/{fixture_id}/notes` | Nota utente per fixture×strategia |
+| `POST` / `GET` | `/runs/{id}/ai-insights` | Analisi AI diagnostica (opzionale, `OPENAI_API_KEY`) |
+| `GET` | `/config` | `{ openai_configured: bool }` |
+
+Gli endpoint GET `/api/backtest/v31/*` restano per export one-shot e retrocompatibilità.
+
+### Tabelle DB
+
+- `predictive_simulation_runs` — summary + snapshot JSON simulator/pattern
+- `predictive_fixture_predictions` — una riga per fixture×strategia con `reason_codes_json`, `win_quality`, `outcome_type`
+- `predictive_pattern_insights` — insight aggregati tipizzati
+- `predictive_fixture_notes` — note utente
+- `predictive_ai_insights` — output analisi OpenAI (solo diagnostica, no predizione SOT)
+
+### UI
+
+Sette tab: Panoramica, Storico analisi, Simulatore v3.1, Diagnosi partite, Pattern Analysis, Analisi AI, Audit.
+
+**Esegui analisi** → `POST /run` → messaggio «Analisi salvata nello storico».
+
+La fase bet/no bet resta disabilitata (`betting_phase_enabled: false`).
+
+### Changelog v31-predictive-lab-persistence
+
+- Persistenza run, fixture predictions, pattern insights e note
+- Reason codes analitici deterministici (`HIGH_TOTAL_MISSED`, `FALSE_HIGH_PREDICTION`, …)
+- Placeholder OpenAI diagnostico post-match (503 graceful se API key assente)
+- Audit esteso anti-leakage nel laboratorio
+
 ## Walk-forward
 
 | Split | Train | Test |

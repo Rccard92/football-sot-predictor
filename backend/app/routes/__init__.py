@@ -39,6 +39,7 @@ from app.routes import (
     match_context,
     model,
     player_sot_profiles,
+    predictive_simulator,
     predictions,
     standings,
 )
@@ -76,6 +77,7 @@ api_router.include_router(backtest_runs.router)
 api_router.include_router(backtest_debug.router)
 api_router.include_router(backtest_round_analysis.router)
 api_router.include_router(backtest_v31.router)
+api_router.include_router(predictive_simulator.router)
 api_router.include_router(player_sot_profiles.router)
 api_router.include_router(h2h.router)
 api_router.include_router(standings.router)

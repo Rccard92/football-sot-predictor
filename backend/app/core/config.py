@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     use_sportapi_lineups_in_model: bool = False
     use_sportapi_lineup_impact_in_model: bool = False
 
+    # OpenAI (diagnostico laboratorio predittivo — opzionale)
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
     # Job pre-match (cron Railway + pulsante Admin)
     cron_secret: str = Field(
         default="",

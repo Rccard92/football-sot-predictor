@@ -30,6 +30,17 @@ def _bucket_str(value: Any) -> str | None:
 
 
 def probable_reason(row: dict[str, Any]) -> str:
+    reason_codes = row.get("reason_codes")
+    if isinstance(reason_codes, list) and reason_codes:
+        first = reason_codes[0]
+        if isinstance(first, dict):
+            label = first.get("label_it")
+            evidence = first.get("evidence")
+            if label and evidence:
+                return f"{label}: {evidence}"
+            if label:
+                return str(label)
+
     pred = row.get("predicted_total_sot")
     actual = row.get("actual_total_sot")
     err = row.get("error")
