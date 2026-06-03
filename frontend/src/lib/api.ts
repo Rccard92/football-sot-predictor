@@ -3558,6 +3558,71 @@ export async function getRoundAnalysisCalibrationSimulatorReportJson(
   )
 }
 
+// --- v3.1 calibration dataset (experimental predictor scaffold) ---
+
+export type V31CalibrationCoverageSummary = {
+  fixtures_count: number
+  player_layer_available_pct: number
+  lineups_available_pct: number
+  unavailable_available_pct: number
+  top_warnings: { code: string; count: number }[]
+}
+
+export type V31CalibrationDataset = {
+  report_type: 'v31_calibration_dataset'
+  generated_at: string
+  competition_id: number
+  competition_name?: string | null
+  season_year: number
+  season_label: string
+  fixtures_count: number
+  coverage_summary: V31CalibrationCoverageSummary
+  comparisons_are_not_features: boolean
+  anti_leakage_check: { status: string; forbidden_fields_found: string[] }
+  rows: unknown[]
+  v31_model?: {
+    model_key: string
+    label: string
+    stage: string
+    description: string
+  }
+}
+
+export async function getV31CalibrationDataset(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean; maxFixtures?: number },
+): Promise<V31CalibrationDataset> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  if (opts?.maxFixtures != null) {
+    q.set('max_fixtures', String(opts.maxFixtures))
+  }
+  return requestJson<V31CalibrationDataset>(
+    `/api/backtest/v31/calibration-dataset?${q.toString()}`,
+  )
+}
+
+export async function downloadV31CalibrationDatasetCsv(
+  competitionId: number,
+  seasonYear: number,
+  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean; maxFixtures?: number },
+): Promise<Blob> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  if (opts?.maxFixtures != null) {
+    q.set('max_fixtures', String(opts.maxFixtures))
+  }
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/backtest/v31/calibration-dataset.csv?${q.toString()}`)
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+  const ct = res.headers.get('content-type') ?? ''
+  if (!ct.includes('text/csv')) {
+    throw new Error('Risposta non CSV: verifica VITE_API_BASE_URL e endpoint backend')
+  }
+  return res.blob()
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

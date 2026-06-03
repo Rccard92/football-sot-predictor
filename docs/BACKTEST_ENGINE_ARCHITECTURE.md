@@ -657,6 +657,31 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **Changelog:** `backtest-v30-calibration-simulator`.
 
+### Step V3.1-A — Calibrated Predictor — Dataset Phase
+
+**Scopo:** esportare un dataset di calibrazione per il futuro predittore **v3.1** (`baseline_v3_1_sot_calibrated_predictor`), indipendente da v1.1/v2.0/v2.1/v3.0. **Non** implementa formule di predizione né modifica v3.0 o i motori legacy nel path `analyze`.
+
+| Endpoint | Ruolo |
+|----------|--------|
+| `GET /api/backtest/v31/calibration-dataset` | JSON con righe fixture: `metadata`, `target`, `features`, `comparisons`, `data_quality` |
+| `GET /api/backtest/v31/calibration-dataset.csv` | Export CSV piatto (feature + colonne `comparison_*`) |
+
+**Selezione fixture:** stessa logica di `_select_analyses_for_calibration` (latest per giornata, status completato, fixture `ok`, `actual_total_sot` presente).
+
+**Feature pre-match:** ricostruzione per fixture via `PointInTimeContextService.build_sot_context_with_historical` (mode `historical_official_xi`). Sezioni: team raw, player layer, lineups, unavailable, macro indici v2.1 (da trace, **senza** `predicted_total_sot`), league context, data quality.
+
+**Anti-leakage:** `v31_calibration_anti_leakage` — walk su `features` only; `actual_*`, outcome, `predicted_total_sot`, chiavi v3.0 vietate in features.
+
+**Comparisons:** totali/decisioni v1.1/v2.0/v2.1/v3.0 da `models_json` persistito; `allowed_for_v31_training: false`.
+
+**Scaffold (non in analyze):** `SotV31CalibratedPredictorService`, `SotV31BetSelectorService`; registry `experimental`, `enabled_in_round_analysis: false`.
+
+**Implementazione:** `v31_calibration_dataset_builder.py`, `v31_calibration_feature_mappers.py`, `v31_calibration_csv_export.py`, `V31CalibrationDatasetService`, router `backtest_v31.py`.
+
+**UI Backtest:** sezione «Dataset calibrazione v3.1» dopo il simulatore v3.0; download JSON/CSV.
+
+**Changelog:** `v31-calibration-dataset`.
+
 ### Step V3.0-C — Value Selector Refinement
 
 **Scopo:** affinare il simulatore con **5 strategie value selector v3**, indicatore `low_total_risk_v2`, **loss diagnostics** arricchite, `strategy_verdict` e UI a tab — sempre **solo simulazione read-only**. **Non** registra `baseline_v3_0_sot_value_selector` né modifica motori/pesi/`models_json`.

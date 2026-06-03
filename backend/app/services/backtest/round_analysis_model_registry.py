@@ -13,6 +13,7 @@ from app.core.constants import (
     BASELINE_SOT_MODEL_VERSION_V20_LINEUP_IMPACT,
     BASELINE_SOT_MODEL_VERSION_V21_WEIGHTED_COMPONENTS,
     BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR,
+    BASELINE_SOT_MODEL_VERSION_V31_CALIBRATED_PREDICTOR,
 )
 from app.models import Fixture
 from app.schemas.backtest_round_analysis import MODEL_LABELS
@@ -104,6 +105,19 @@ ROUND_ANALYSIS_MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "label": MODEL_LABELS[BASELINE_SOT_MODEL_VERSION_V30_VALUE_SELECTOR],
         "engine": "SotV30ValueSelectorService",
         "market_key": "shots_on_target",
+    },
+    BASELINE_SOT_MODEL_VERSION_V31_CALIBRATED_PREDICTOR: {
+        "label": MODEL_LABELS.get(
+            BASELINE_SOT_MODEL_VERSION_V31_CALIBRATED_PREDICTOR,
+            "v3.1 SOT Calibrated Predictor",
+        ),
+        "engine": "SotV31CalibratedPredictorService",
+        "market_key": "shots_on_target",
+        "stage": "experimental",
+        "enabled_in_round_analysis": False,
+        "description": (
+            "Predittore indipendente pre-match; non usa output finali v1.1/v2.0/v2.1/v3.0."
+        ),
     },
 }
 

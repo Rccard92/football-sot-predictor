@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-calibration-dataset
+
+**Titolo:** Dataset calibrazione v3.1 SOT Calibrated Predictor
+
+**Descrizione:** Step V3.1-A: export JSON/CSV del dataset di calibrazione con feature pre-match ricostruite via PIT storico (`historical_official_xi`), target separato (`actual_*`, `final_score`), sezione `comparisons` isolata dai modelli legacy (non usata come feature), controllo anti-leakage sul payload. Predittore v3.1 registrato come experimental scaffold (`SotV31CalibratedPredictorService`, `SotV31BetSelectorService`) senza integrazione nel loop `analyze`. v3.0 e motori v1/v2 invariati.
+
+**File toccati:** `constants.py`, `backtest_round_analysis.py`, `round_analysis_model_registry.py`, `sot_v31_*`, `v31_calibration_*`, `backtest_v31.py`, frontend `RoundAnalysisV31CalibrationDatasetSection`, `api.ts`, `Backtest.tsx`, test `test_v31_calibration_dataset_api.py`, docs.
+
+---
+
 ## backtest-season-batch-partial-model-update
 
 **Titolo:** Analisi stagione con aggiornamento parziale modelli
