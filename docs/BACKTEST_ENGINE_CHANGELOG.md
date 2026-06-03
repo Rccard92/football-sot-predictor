@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-calibration-dataset-summary-ui
+
+**Titolo:** Summary leggera e download on-demand dataset v3.1
+
+**Descrizione:** Endpoint `GET /calibration-dataset/summary` (conteggi rapidi da analisi persistite, proxy macro v2.1, anti-leakage su `explanation_json`). UI Backtest: mount carica solo summary; export JSON/CSV solo al click con timer, barra indeterminata, `AbortController` e log export `duration_ms`.
+
+**File toccati:** `v31_calibration_dataset_summary.py`, `v31_calibration_dataset_service.py`, `backtest_v31.py`, `RoundAnalysisV31CalibrationDatasetSection.tsx`, `api.ts`, test API, docs.
+
+---
+
 ## v31-calibration-dataset
 
 **Titolo:** Dataset calibrazione v3.1 SOT Calibrated Predictor

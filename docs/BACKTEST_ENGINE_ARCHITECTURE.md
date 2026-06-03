@@ -663,7 +663,8 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 | Endpoint | Ruolo |
 |----------|--------|
-| `GET /api/backtest/v31/calibration-dataset` | JSON con righe fixture: `metadata`, `target`, `features`, `comparisons`, `data_quality` |
+| `GET /api/backtest/v31/calibration-dataset/summary` | Summary leggera (conteggi da analisi persistite, senza rebuild PIT) |
+| `GET /api/backtest/v31/calibration-dataset` | JSON completo on-demand: `metadata`, `target`, `features`, `comparisons`, `data_quality` |
 | `GET /api/backtest/v31/calibration-dataset.csv` | Export CSV piatto (feature + colonne `comparison_*`) |
 
 **Selezione fixture:** stessa logica di `_select_analyses_for_calibration` (latest per giornata, status completato, fixture `ok`, `actual_total_sot` presente).
@@ -678,9 +679,11 @@ Overview stagionale **solo lettura DB** (nessun ricalcolo modelli).
 
 **Implementazione:** `v31_calibration_dataset_builder.py`, `v31_calibration_feature_mappers.py`, `v31_calibration_csv_export.py`, `V31CalibrationDatasetService`, router `backtest_v31.py`.
 
-**UI Backtest:** sezione «Dataset calibrazione v3.1» dopo il simulatore v3.0; download JSON/CSV.
+**UI Backtest:** sezione «Dataset calibrazione v3.1» dopo il simulatore v3.0; al mount solo summary; export JSON/CSV al click con progress indeterminata e annullamento.
 
-**Changelog:** `v31-calibration-dataset`.
+**Log:** `V31_DATASET_SUMMARY_START/DONE`, `V31_DATASET_EXPORT_START/DONE` (con `duration_ms`).
+
+**Changelog:** `v31-calibration-dataset`, `v31-calibration-dataset-summary-ui`.
 
 ### Step V3.0-C — Value Selector Refinement
 

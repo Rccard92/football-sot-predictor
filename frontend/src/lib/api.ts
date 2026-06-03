@@ -3560,6 +3560,77 @@ export async function getRoundAnalysisCalibrationSimulatorReportJson(
 
 // --- v3.1 calibration dataset (experimental predictor scaffold) ---
 
+export type V31CalibrationDatasetSummary = {
+  status: string
+  competition_id: number
+  season_year: number
+  season_label: string
+  rounds_available: number
+  fixtures_available: number
+  fixtures_with_target: number
+  features: {
+    team_stats_available: number
+    player_layer_available: number
+    lineups_available: number
+    unavailable_available: number
+    macro_features_available: number
+  }
+  anti_leakage_check: {
+    status: string
+    forbidden_fields_found: string[]
+    scope?: string
+  }
+  last_updated_at: string | null
+}
+
+export type V31CalibrationFetchOpts = {
+  useLatestVersionPerRound?: boolean
+  includeAllVersions?: boolean
+  maxFixtures?: number
+  signal?: AbortSignal
+}
+
+async function requestV31Json<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const base = getApiBase()
+  const p = path.startsWith('/') ? path : `/${path}`
+  const res = await fetch(`${base}${p}`, { signal })
+
+  const ct = res.headers.get('content-type') ?? ''
+  let body: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      body = await res.json()
+    } catch {
+      body = null
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(extractErrorMessage(body, res.statusText))
+  }
+
+  if (body && typeof body === 'object' && 'status' in body) {
+    const st = (body as Record<string, unknown>).status
+    if (st === 'error') {
+      throw new Error(extractErrorMessage(body, 'Errore API'))
+    }
+  }
+
+  return body as T
+}
+
+export async function getV31CalibrationSummary(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts,
+): Promise<V31CalibrationDatasetSummary> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  return requestV31Json<V31CalibrationDatasetSummary>(
+    `/api/backtest/v31/calibration-dataset/summary?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
 export type V31CalibrationCoverageSummary = {
   fixtures_count: number
   player_layer_available_pct: number
@@ -3591,30 +3662,42 @@ export type V31CalibrationDataset = {
 export async function getV31CalibrationDataset(
   competitionId: number,
   seasonYear: number,
-  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean; maxFixtures?: number },
+  opts?: V31CalibrationFetchOpts,
 ): Promise<V31CalibrationDataset> {
   const q = diagnosticsQuery(competitionId, seasonYear, opts)
   if (opts?.maxFixtures != null) {
     q.set('max_fixtures', String(opts.maxFixtures))
   }
-  return requestJson<V31CalibrationDataset>(
+  return requestV31Json<V31CalibrationDataset>(
     `/api/backtest/v31/calibration-dataset?${q.toString()}`,
+    opts?.signal,
   )
 }
 
 export async function downloadV31CalibrationDatasetCsv(
   competitionId: number,
   seasonYear: number,
-  opts?: { useLatestVersionPerRound?: boolean; includeAllVersions?: boolean; maxFixtures?: number },
+  opts?: V31CalibrationFetchOpts,
 ): Promise<Blob> {
   const q = diagnosticsQuery(competitionId, seasonYear, opts)
   if (opts?.maxFixtures != null) {
     q.set('max_fixtures', String(opts.maxFixtures))
   }
   const base = getApiBase()
-  const res = await fetch(`${base}/api/backtest/v31/calibration-dataset.csv?${q.toString()}`)
+  const res = await fetch(`${base}/api/backtest/v31/calibration-dataset.csv?${q.toString()}`, {
+    signal: opts?.signal,
+  })
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`)
+    let body: unknown = null
+    const ct = res.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        body = await res.json()
+      } catch {
+        body = null
+      }
+    }
+    throw new Error(extractErrorMessage(body, res.statusText))
   }
   const ct = res.headers.get('content-type') ?? ''
   if (!ct.includes('text/csv')) {

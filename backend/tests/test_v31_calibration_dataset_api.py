@@ -11,6 +11,25 @@ from app.services.backtest.v31_calibration_csv_export import CSV_COLUMNS
 
 client = TestClient(app)
 
+V31_SUMMARY = {
+    "status": "ok",
+    "competition_id": 1,
+    "season_year": 2025,
+    "season_label": "2025/2026",
+    "rounds_available": 34,
+    "fixtures_available": 340,
+    "fixtures_with_target": 340,
+    "features": {
+        "team_stats_available": 338,
+        "player_layer_available": 320,
+        "lineups_available": 330,
+        "unavailable_available": 280,
+        "macro_features_available": 335,
+    },
+    "anti_leakage_check": {"status": "ok", "forbidden_fields_found": []},
+    "last_updated_at": "2026-06-01T18:42:00+00:00",
+}
+
 V31_PAYLOAD = {
     "report_type": "v31_calibration_dataset",
     "competition_id": 1,
@@ -67,6 +86,22 @@ def _features_has_forbidden(obj, forbidden: set[str]) -> list[str]:
         for item in obj:
             found.extend(_features_has_forbidden(item, forbidden))
     return found
+
+
+@patch("app.routes.backtest_v31.V31CalibrationDatasetService.get_summary")
+def test_v31_calibration_dataset_summary_200(mock_summary):
+    mock_summary.return_value = V31_SUMMARY
+    r = client.get(
+        "/api/backtest/v31/calibration-dataset/summary",
+        params={"competition_id": 1, "season_year": 2025},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["fixtures_with_target"] == 340
+    assert body["features"]["player_layer_available"] == 320
+    assert body["anti_leakage_check"]["status"] == "ok"
+    mock_summary.assert_called_once()
 
 
 @patch("app.routes.backtest_v31.V31CalibrationDatasetService.get_dataset")
