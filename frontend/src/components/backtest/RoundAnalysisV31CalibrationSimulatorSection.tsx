@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react'
 import {
   getV31CalibrationSimulator,
-  getV31CalibrationSimulatorReportJson,
+  getV31CalibrationSimulatorReport,
   type V31CalibrationSimulator,
   type V31CalibrationSimulatorStrategy,
+  type V31StrategyStatus,
   type V31WorstErrorRow,
 } from '../../lib/api'
 
@@ -20,6 +21,15 @@ const TABS = [
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
+
+type StatusFilter = V31StrategyStatus | 'all'
+
+const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
+  { id: 'active', label: 'Active' },
+  { id: 'diagnostic', label: 'Diagnostic' },
+  { id: 'archived', label: 'Archived' },
+  { id: 'all', label: 'Tutte' },
+]
 
 type Props = {
   competitionId: number | null
@@ -59,6 +69,8 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabId>('strategies')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [errorsStrategyKey, setErrorsStrategyKey] = useState<string | null>(null)
 
   const run = useCallback(async () => {
     if (competitionId == null) return
@@ -67,31 +79,43 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
     try {
       const res = await getV31CalibrationSimulator(competitionId, seasonYear, {
         strategy: 'all',
+        strategyStatus: statusFilter === 'all' ? 'all' : statusFilter,
       })
       setData(res)
-      setSelectedKey(res.best_by.recommended_strategy ?? res.strategies[0]?.key ?? null)
+      const rec = res.best_by.recommended_strategy ?? res.strategies[0]?.key ?? null
+      setSelectedKey(rec)
+      setErrorsStrategyKey(rec)
     } catch (e) {
       setData(null)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [competitionId, seasonYear])
+  }, [competitionId, seasonYear, statusFilter])
 
-  const downloadReport = useCallback(async () => {
+  const downloadBlob = (payload: unknown, name: string) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const downloadReportSummary = useCallback(async () => {
     if (competitionId == null) return
     setExporting(true)
     try {
-      const payload = await getV31CalibrationSimulatorReportJson(competitionId, seasonYear, {
+      const payload = await getV31CalibrationSimulatorReport(competitionId, seasonYear, {
         strategy: 'all',
+        strategyStatus: 'active',
+        detail: 'summary',
       })
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `v31-predictive-simulator-${competitionId}-${seasonYear}.json`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(
+        payload,
+        `v31-predictive-simulator-summary-${competitionId}-${seasonYear}.json`,
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -99,10 +123,55 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
     }
   }, [competitionId, seasonYear])
 
+  const downloadReportFull = useCallback(async () => {
+    if (competitionId == null) return
+    setExporting(true)
+    try {
+      const payload = await getV31CalibrationSimulatorReport(competitionId, seasonYear, {
+        strategy: 'all',
+        strategyStatus: 'all',
+        detail: 'full',
+      })
+      downloadBlob(payload, `v31-predictive-simulator-full-${competitionId}-${seasonYear}.json`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setExporting(false)
+    }
+  }, [competitionId, seasonYear])
+
+  const downloadReportSelected = useCallback(async () => {
+    if (competitionId == null || !selectedKey) return
+    setExporting(true)
+    try {
+      const payload = await getV31CalibrationSimulatorReport(competitionId, seasonYear, {
+        strategy: selectedKey,
+        strategyStatus: 'all',
+        detail: 'full',
+      })
+      downloadBlob(
+        payload,
+        `v31-predictive-simulator-${selectedKey}-${competitionId}-${seasonYear}.json`,
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setExporting(false)
+    }
+  }, [competitionId, seasonYear, selectedKey])
+
   if (competitionId == null) return null
 
   const best = data?.best_by
-  const selected = data?.strategies.find((s) => s.key === selectedKey) ?? data?.strategies[0]
+  const visibleStrategies =
+    data?.strategies.filter(
+      (s) => statusFilter === 'all' || (s.strategy_status ?? 'active') === statusFilter,
+    ) ?? []
+  const selected =
+    visibleStrategies.find((s) => s.key === selectedKey) ??
+    data?.strategies.find((s) => s.key === selectedKey) ??
+    visibleStrategies[0] ??
+    data?.strategies[0]
   const recLabel =
     data?.summary.recommendation_note ??
     (best?.recommended_strategy
@@ -132,9 +201,25 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
             type="button"
             disabled={exporting || !data}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-            onClick={() => void downloadReport()}
+            onClick={() => void downloadReportSummary()}
           >
-            {exporting ? 'Export…' : 'Scarica report JSON'}
+            {exporting ? 'Export…' : 'Scarica report summary'}
+          </button>
+          <button
+            type="button"
+            disabled={exporting || !data}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => void downloadReportFull()}
+          >
+            Report completo
+          </button>
+          <button
+            type="button"
+            disabled={exporting || !data || !selectedKey}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => void downloadReportSelected()}
+          >
+            Report strategia
           </button>
         </div>
       </div>
@@ -160,14 +245,29 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
               strategy={best?.coverage_win_rate?.strategy}
               value={fmtPct(best?.coverage_win_rate?.value)}
             />
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3 text-xs">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3 text-xs lg:col-span-2">
               <p className="font-medium text-emerald-800">Strategia consigliata</p>
               <p className="mt-1 text-sm font-semibold text-emerald-900">{recLabel ?? '—'}</p>
-              {best?.balanced_prediction_score?.value != null ? (
+              {best?.dynamic_score?.value != null ? (
                 <p className="text-emerald-700">
-                  Score {fmtNum(best.balanced_prediction_score.value, 1)}
+                  Dynamic score {fmtNum(best.dynamic_score.value, 1)}
                 </p>
               ) : null}
+              {data.summary.recommendation_tradeoff ? (
+                <p className="mt-2 text-emerald-900">{data.summary.recommendation_tradeoff}</p>
+              ) : null}
+              {(() => {
+                const recKey = best?.recommended_strategy
+                const recS = data.strategies.find((s) => s.key === recKey)
+                const warns = recS?.strategy_warnings ?? []
+                return warns.length ? (
+                  <ul className="mt-1 list-inside list-disc text-amber-800">
+                    {warns.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                ) : null
+              })()}
             </div>
           </div>
 
@@ -202,6 +302,23 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
             ))}
           </div>
 
+          <div className="flex flex-wrap gap-1">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={`rounded px-2 py-1 text-[10px] font-medium ${
+                  statusFilter === f.id
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-white text-slate-600 ring-1 ring-slate-200'
+                }`}
+                onClick={() => setStatusFilter(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
           {activeTab === 'strategies' ? (
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
               <table className="min-w-full text-left text-xs">
@@ -227,7 +344,7 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {data.strategies.map((s) => (
+                  {visibleStrategies.map((s) => (
                     <StrategyRow
                       key={s.key}
                       s={s}
@@ -244,7 +361,13 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
           {activeTab === 'accuracy' && selected ? <AccuracyPanel strategy={selected} /> : null}
           {activeTab === 'buckets' && selected ? <BucketsPanel strategy={selected} /> : null}
           {activeTab === 'coverage' && selected ? <CoveragePanel strategy={selected} /> : null}
-          {activeTab === 'errors' && selected ? <WorstErrorsPanel strategy={selected} /> : null}
+          {activeTab === 'errors' && data ? (
+            <WorstErrorsPanel
+              strategies={visibleStrategies.length ? visibleStrategies : data.strategies}
+              strategyKey={errorsStrategyKey}
+              onStrategyKeyChange={setErrorsStrategyKey}
+            />
+          ) : null}
           {activeTab === 'walkforward' && selected ? <WalkForwardPanel strategy={selected} /> : null}
           {activeTab === 'weights' && selected ? <WeightsPanel strategy={selected} /> : null}
           {activeTab === 'audit' ? <AuditPanel audit={data.audit} /> : null}
@@ -305,7 +428,14 @@ function StrategyRow({
       className={`cursor-pointer border-t border-slate-100 ${selected ? 'bg-violet-50/50' : 'hover:bg-slate-50'}`}
       onClick={onSelect}
     >
-      <td className="px-2 py-2 font-medium text-slate-800">{s.label}</td>
+      <td className="px-2 py-2 font-medium text-slate-800">
+        {s.label}
+        {s.strategy_status ? (
+          <span className="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[9px] text-slate-600">
+            {s.strategy_status}
+          </span>
+        ) : null}
+      </td>
       <td className="px-2 py-2">{fmtNum(m.predicted_avg ?? m.predicted_total_avg, 2)}</td>
       <td className="px-2 py-2">{fmtNum(m.actual_avg ?? m.actual_total_avg, 2)}</td>
       <td className="px-2 py-2">{fmtNum(m.mae, 3)}</td>
@@ -322,7 +452,7 @@ function StrategyRow({
         {covW}/{covL}
       </td>
       <td className="px-2 py-2">{fmtPct(m.coverage_win_rate ?? pm?.coverage_win_rate)}</td>
-      <td className="px-2 py-2">{fmtNum(s.balanced_prediction_score, 1)}</td>
+      <td className="px-2 py-2">{fmtNum(s.dynamic_score ?? s.balanced_prediction_score, 1)}</td>
       <td className="px-2 py-2">
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${verdictBadgeClass(s.verdict)}`}>
           {s.verdict_label}
@@ -421,12 +551,37 @@ function CoveragePanel({ strategy }: { strategy: V31CalibrationSimulatorStrategy
   )
 }
 
-function WorstErrorsPanel({ strategy }: { strategy: V31CalibrationSimulatorStrategy }) {
-  const ed = strategy.error_distribution
+function WorstErrorsPanel({
+  strategies,
+  strategyKey,
+  onStrategyKeyChange,
+}: {
+  strategies: V31CalibrationSimulatorStrategy[]
+  strategyKey: string | null
+  onStrategyKeyChange: (k: string) => void
+}) {
+  const strategy = strategies.find((s) => s.key === strategyKey) ?? strategies[0]
+  const ed = strategy?.error_distribution
   return (
-    <div className="grid gap-3 sm:grid-cols-2 text-xs text-slate-700">
-      <ErrorList title="Worst underestimations (pred troppo basso)" items={ed?.worst_underestimations} />
-      <ErrorList title="Worst overestimations (pred troppo alto)" items={ed?.worst_overestimations} />
+    <div className="space-y-2 text-xs text-slate-700">
+      <label className="flex items-center gap-2">
+        <span className="font-medium">Strategia</span>
+        <select
+          className="rounded border border-slate-200 px-2 py-1 text-xs"
+          value={strategy?.key ?? ''}
+          onChange={(e) => onStrategyKeyChange(e.target.value)}
+        >
+          {strategies.map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ErrorList title="Worst underestimations (pred troppo basso)" items={ed?.worst_underestimations} />
+        <ErrorList title="Worst overestimations (pred troppo alto)" items={ed?.worst_overestimations} />
+      </div>
     </div>
   )
 }
@@ -451,6 +606,10 @@ function ErrorList({
             </p>
             <p className="text-[10px] text-slate-500">
               Bucket pred/real: {e.predicted_bucket ?? '—'} / {e.actual_bucket ?? '—'}
+            </p>
+            <p className="text-[10px] text-slate-500">
+              Boost: {fmtNum(e.boost_applied as number | undefined, 2)} · Signal:{' '}
+              {fmtNum(e.high_total_signal as number | undefined, 2)}
             </p>
             <p className="text-[10px] text-violet-800">
               {e.probable_reason || 'Motivo non disponibile'}

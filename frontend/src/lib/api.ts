@@ -3996,6 +3996,8 @@ export type V31WorstErrorRow = {
   possible_factors?: string[]
   missing_fields?: string[]
   row_warning?: string
+  boost_applied?: number | null
+  high_total_signal?: number | null
 }
 
 export type V31PredictionDistribution = {
@@ -4033,11 +4035,16 @@ export type V31BucketMetrics = {
   confusion_matrix?: Record<string, Record<string, number>>
 }
 
+export type V31StrategyStatus = 'active' | 'archived' | 'diagnostic'
+
 export type V31CalibrationSimulatorStrategy = {
   key: string
   label: string
   description: string
   strategy_family?: string
+  strategy_status?: V31StrategyStatus
+  strategy_warnings?: string[]
+  dynamic_score?: number | null
   weights: V31StrategyWeights
   prediction_diagnostics?: V31PredictionDiagnostics & {
     prediction_distribution?: V31PredictionDistribution
@@ -4092,6 +4099,9 @@ export type V31CalibrationSimulator = {
     strategies_run: number
     recommended_strategy?: string | null
     recommendation_note?: string | null
+    recommendation_tradeoff?: string | null
+    strategy_status_filter?: string
+    report_detail?: string
     round_range?: string
     phase?: string
     betting_phase_enabled?: boolean
@@ -4116,8 +4126,10 @@ export type V31CalibrationSimulator = {
     best_high_total_detection?: { strategy?: string | null; value?: number | null }
     best_dynamic_model?: { strategy?: string | null; value?: number | null }
     balanced_prediction_score?: { strategy?: string | null; value?: number | null }
+    dynamic_score?: { strategy?: string | null; value?: number | null }
     recommended_strategy?: string | null
     recommendation_note?: string | null
+    recommendation_tradeoff?: string | null
   }
   audit: {
     anti_leakage: boolean
@@ -4135,10 +4147,15 @@ export type V31CalibrationSimulator = {
 export async function getV31CalibrationSimulator(
   competitionId: number,
   seasonYear: number,
-  opts?: V31CalibrationFetchOpts & { strategy?: string; includeRows?: boolean },
+  opts?: V31CalibrationFetchOpts & {
+    strategy?: string
+    strategyStatus?: V31StrategyStatus | 'all'
+    includeRows?: boolean
+  },
 ): Promise<V31CalibrationSimulator> {
   const q = diagnosticsQuery(competitionId, seasonYear, opts)
   if (opts?.strategy) q.set('strategy', opts.strategy)
+  if (opts?.strategyStatus) q.set('strategy_status', opts.strategyStatus)
   if (opts?.includeRows) q.set('include_rows', 'true')
   return requestV31Json<V31CalibrationSimulator>(
     `/api/backtest/v31/calibration-simulator?${q.toString()}`,
@@ -4146,13 +4163,33 @@ export async function getV31CalibrationSimulator(
   )
 }
 
-export async function getV31CalibrationSimulatorReportJson(
+export async function getV31CalibrationSimulatorReport(
   competitionId: number,
   seasonYear: number,
-  opts?: V31CalibrationFetchOpts & { strategy?: string },
+  opts?: Omit<V31CalibrationFetchOpts, 'detail'> & {
+    strategy?: string
+    strategyStatus?: V31StrategyStatus | 'all'
+    detail?: 'summary' | 'full'
+  },
 ): Promise<V31CalibrationSimulator> {
   const q = diagnosticsQuery(competitionId, seasonYear, opts)
   if (opts?.strategy) q.set('strategy', opts.strategy)
+  if (opts?.strategyStatus) q.set('strategy_status', opts.strategyStatus)
+  q.set('detail', opts?.detail ?? 'summary')
+  return requestV31Json<V31CalibrationSimulator>(
+    `/api/backtest/v31/calibration-simulator/report?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
+export async function getV31CalibrationSimulatorReportJson(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts & { strategy?: string; strategyStatus?: V31StrategyStatus | 'all' },
+): Promise<V31CalibrationSimulator> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  if (opts?.strategy) q.set('strategy', opts.strategy)
+  if (opts?.strategyStatus) q.set('strategy_status', opts.strategyStatus ?? 'all')
   return requestV31Json<V31CalibrationSimulator>(
     `/api/backtest/v31/calibration-simulator/report-json?${q.toString()}`,
     opts?.signal,

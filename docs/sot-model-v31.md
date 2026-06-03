@@ -56,10 +56,13 @@ Mai in input al modello (validazione in `v31_calibration_anti_leakage`):
 
 4. **Fase attuale:** solo predizione numerica su **tutte** le fixture (`prediction_status` ok/failed). Nessun pick, NO_BET, linee o probabilità Over in questa fase.
 
-## Simulatore predittivo (14 strategie)
+## Simulatore predittivo (15 strategie)
 
-Endpoint: `GET /api/backtest/v31/calibration-simulator`  
-Export: `GET /api/backtest/v31/calibration-simulator/report-json` (tutte le righe fixture)
+Endpoint: `GET /api/backtest/v31/calibration-simulator` (default: strategie **active**)  
+Export summary: `GET /api/backtest/v31/calibration-simulator/report?detail=summary`  
+Export completo: `GET /api/backtest/v31/calibration-simulator/report?detail=full` o `report-json`
+
+Ogni strategia ha `strategy_status`: `active`, `diagnostic`, `archived`. Il ranking consigliato usa `dynamic_score` solo tra **active**.
 
 | Chiave | Idea |
 |--------|------|
@@ -76,7 +79,12 @@ Export: `GET /api/backtest/v31/calibration-simulator/report-json` (tutte le righ
 | `v31_big_vs_weak_push` | Favorita vs difesa fragile |
 | `v31_chaos_game` | Partite aperte (concessioni, ritmo) |
 | `v31_low_block_guard` | Penalità favorita vs avversario a basso ritmo |
-| `v31_extreme_bucket_model` | Classificazione bucket → totale target |
+| `v31_extreme_bucket_model` | Classificazione bucket → totale target (diagnostic) |
+| `v31_bias_dynamic_high_guard` | Base bias_corrected + boost selettivo high_total_signal (active) |
+
+**Active (default UI):** bias_corrected, low_variance, player_layer_heavy, big_vs_weak_push, chaos_game, bias_dynamic_high_guard.  
+**Diagnostic:** variance_unlocked, extreme_bucket_model.  
+**Archived:** equal_weights, core_sot_xg, context_adjusted, split_heavy, recent_form_heavy, low_block_guard, big_match_boost.
 
 ### Volume tiri (`avg_total_shots_for`)
 
@@ -94,7 +102,7 @@ Nel dataset **standard**, il campo è popolato da `pace_control_index` (proxy PI
 
 **Bucket:** low (≤5), normal (6–9), high (≥10), very high (≥12) — accuracy, recall/precision high/low.
 
-**Ranking:** `balanced_prediction_score` (25% MAE + 15% RMSE + 15% |bias| + 20% within_1.5 + 15% high recall + 10% compression).
+**Ranking:** `dynamic_score` per raccomandazione (30% MAE + 20% bias + 20% within_1.5 + 15% high recall + 15% compression). Legacy: `balanced_prediction_score`.
 
 ## Walk-forward
 

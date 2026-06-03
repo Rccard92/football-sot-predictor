@@ -19,9 +19,9 @@ from app.services.backtest.v31_calibration_simulator_metrics import (
     compute_best_by,
     summarize_strategy,
 )
+from app.services.backtest.v31_calibration_simulator_predictor import resolve_strategy_keys
 from app.services.backtest.v31_calibration_simulator_strategies import (
     STRATEGY_DESCRIPTIONS,
-    STRATEGY_KEYS,
     STRATEGY_LABELS,
     get_strategy_weights_payload,
     predict_rows_for_strategy,
@@ -87,13 +87,15 @@ class V31CalibrationSimulatorService:
         use_latest_version_per_round: bool = True,
         include_all_versions: bool = False,
         strategy: str = "all",
+        strategy_status_filter: str = "active",
         include_rows: bool = False,
     ) -> dict[str, Any]:
         logger.info(
-            "V31_PREDICTIVE_SIMULATOR_START competition_id=%s season_year=%s strategy=%s",
+            "V31_PREDICTIVE_SIMULATOR_START competition_id=%s season_year=%s strategy=%s status=%s",
             competition_id,
             season_year,
             strategy,
+            strategy_status_filter,
         )
         comp = db.get(Competition, int(competition_id))
         rows, excluded, _max_round = build_v31_dataset_rows_standard(
@@ -110,9 +112,7 @@ class V31CalibrationSimulatorService:
         feature_availability = aggregate_shots_availability(_collect_shots_resolutions(rows))
         interaction_summary = _interaction_summary(rows)
 
-        keys = list(STRATEGY_KEYS) if strategy == "all" else [strategy]
-        if strategy != "all" and strategy not in STRATEGY_KEYS:
-            keys = []
+        keys = resolve_strategy_keys(strategy, strategy_status_filter)
 
         strategy_blocks: list[dict[str, Any]] = []
         for key in keys:
@@ -130,25 +130,24 @@ class V31CalibrationSimulatorService:
             for s in sample:
                 s.pop("comparisons_snapshot", None)
             weights = get_strategy_weights_payload(key)
-            strategy_blocks.append(
-                {
-                    "key": key,
-                    "label": STRATEGY_LABELS.get(key, key),
-                    "description": STRATEGY_DESCRIPTIONS.get(key, ""),
-                    "weights": weights,
-                    "strategy_family": weights.get("strategy_family"),
-                    **summary,
-                    "rows_sample": sample,
-                },
-            )
+            block: dict[str, Any] = {
+                "key": key,
+                "label": STRATEGY_LABELS.get(key, key),
+                "description": STRATEGY_DESCRIPTIONS.get(key, ""),
+                "weights": weights,
+                "strategy_family": weights.get("strategy_family"),
+                "strategy_status": weights.get("strategy_status"),
+                **summary,
+                "rows_sample": sample,
+            }
+            if include_rows:
+                block["_all_rows"] = simulated
+            strategy_blocks.append(block)
 
         best_by = compute_best_by(strategy_blocks, fixtures_total=fixtures_count)
 
         recommendation_note = best_by.get("recommendation_note")
-        if recommendation_note is None and best_by.get("recommended_strategy"):
-            rec = best_by["recommended_strategy"]
-            label = STRATEGY_LABELS.get(rec, rec)
-            recommendation_note = f"Strategia consigliata: {label} (score predittivo bilanciato)."
+        recommendation_tradeoff = best_by.get("recommendation_tradeoff")
 
         payload = {
             "report_type": "v31_predictive_simulator",
@@ -164,6 +163,7 @@ class V31CalibrationSimulatorService:
                 "round_range": f"{ROUND_MIN}-{ROUND_MAX}",
                 "recommended_strategy": best_by.get("recommended_strategy"),
                 "recommendation_note": recommendation_note,
+                "recommendation_tradeoff": recommendation_tradeoff,
                 "phase": "predictive_numeric",
                 "betting_phase_enabled": False,
             },
@@ -181,6 +181,7 @@ class V31CalibrationSimulatorService:
                 "comparisons_used_for_audit_only": True,
                 "actual_bucket_metrics_only": True,
                 "interaction_features_pre_match_only": True,
+                "hybrid_strategy_pre_match_only": True,
             },
         }
         logger.info(

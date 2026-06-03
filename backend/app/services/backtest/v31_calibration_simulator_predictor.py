@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+
+StrategyStatus = Literal["active", "archived", "diagnostic"]
 
 from app.services.backtest.v31_calibration_simulator_base_sot import (
     CONTEXT_CAP_MAX,
@@ -29,6 +31,10 @@ from app.services.backtest.v31_calibration_simulator_base_sot import (
 from app.services.backtest.v31_calibration_simulator_cohort import CohortStats
 from app.services.backtest.v31_calibration_simulator_dynamics import apply_dynamics
 from app.services.backtest.v31_calibration_simulator_feature_engine import FixtureSignals
+from app.services.backtest.v31_calibration_simulator_high_guard import (
+    HIGH_GUARD_MAX_EXTREME,
+    HIGH_GUARD_MIN,
+)
 
 VARIANCE_CTX_MIN = 0.75
 VARIANCE_CTX_MAX = 1.30
@@ -53,6 +59,8 @@ class StrategySpec:
     side_cap_max: float = 8.5
     uses_dynamic_bias: bool = False
     uses_dynamics: bool = False
+    uses_high_guard: bool = False
+    strategy_status: StrategyStatus = "archived"
 
 
 def _spec(
@@ -63,6 +71,7 @@ def _spec(
     context_weights: dict[str, float],
     *,
     strategy_family: str = "balanced",
+    strategy_status: StrategyStatus = "archived",
     **kwargs: Any,
 ) -> StrategySpec:
     return StrategySpec(
@@ -72,6 +81,7 @@ def _spec(
         base_weights=base_weights,
         context_weights=context_weights,
         strategy_family=strategy_family,
+        strategy_status=strategy_status,
         **kwargs,
     )
 
@@ -84,6 +94,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         EQUAL_BASE_WEIGHTS,
         CONTEXT_MACRO_WEIGHTS,
         strategy_family="balanced",
+        strategy_status="archived",
     ),
     "v31_core_sot_xg": _spec(
         "v31_core_sot_xg",
@@ -94,6 +105,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         strategy_family="balanced",
         context_cap_min=CORE_CONTEXT_CAP_MIN,
         context_cap_max=CORE_CONTEXT_CAP_MAX,
+        strategy_status="archived",
     ),
     "v31_context_adjusted": _spec(
         "v31_context_adjusted",
@@ -102,6 +114,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         DEFAULT_BASE_WEIGHTS,
         CONTEXT_MACRO_WEIGHTS,
         strategy_family="balanced",
+        strategy_status="archived",
     ),
     "v31_player_layer_heavy": _spec(
         "v31_player_layer_heavy",
@@ -110,6 +123,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         DEFAULT_BASE_WEIGHTS,
         PLAYER_LAYER_CONTEXT_WEIGHTS,
         strategy_family="balanced",
+        strategy_status="active",
     ),
     "v31_home_away_split_heavy": _spec(
         "v31_home_away_split_heavy",
@@ -118,6 +132,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         SPLIT_HEAVY_BASE_WEIGHTS,
         SPLIT_HEAVY_CONTEXT_WEIGHTS,
         strategy_family="balanced",
+        strategy_status="archived",
     ),
     "v31_recent_form_heavy": _spec(
         "v31_recent_form_heavy",
@@ -126,6 +141,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         FORM_HEAVY_BASE_WEIGHTS,
         FORM_HEAVY_CONTEXT_WEIGHTS,
         strategy_family="balanced",
+        strategy_status="archived",
     ),
     "v31_bias_corrected": _spec(
         "v31_bias_corrected",
@@ -135,6 +151,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         CONTEXT_MACRO_WEIGHTS,
         strategy_family="balanced",
         uses_dynamic_bias=True,
+        strategy_status="active",
     ),
     "v31_low_variance": _spec(
         "v31_low_variance",
@@ -148,6 +165,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         total_league_blend=LOW_VARIANCE_BLEND,
         total_min=LOW_VARIANCE_TOTAL_MIN,
         total_max=LOW_VARIANCE_TOTAL_MAX,
+        strategy_status="active",
     ),
     "v31_variance_unlocked": _spec(
         "v31_variance_unlocked",
@@ -163,6 +181,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         total_max=WIDE_TOTAL_MAX,
         side_cap_max=9.5,
         uses_dynamics=True,
+        strategy_status="diagnostic",
     ),
     "v31_big_match_boost": _spec(
         "v31_big_match_boost",
@@ -175,6 +194,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         total_min=4.0,
         total_max=WIDE_TOTAL_MAX,
         uses_dynamics=True,
+        strategy_status="archived",
     ),
     "v31_big_vs_weak_push": _spec(
         "v31_big_vs_weak_push",
@@ -187,10 +207,11 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         total_min=4.0,
         total_max=WIDE_TOTAL_MAX,
         uses_dynamics=True,
+        strategy_status="active",
     ),
     "v31_chaos_game": _spec(
         "v31_chaos_game",
-        "v3.1 — Partita aperta",
+        "v3.1 — Partita aperta / Chaos game",
         "Boost su match aperti: concessioni, xG e ritmo alti.",
         DEFAULT_BASE_WEIGHTS,
         CONTEXT_MACRO_WEIGHTS,
@@ -201,6 +222,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         total_min=4.0,
         total_max=WIDE_TOTAL_MAX,
         uses_dynamics=True,
+        strategy_status="active",
     ),
     "v31_low_block_guard": _spec(
         "v31_low_block_guard",
@@ -213,6 +235,7 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         total_min=5.0,
         total_max=12.0,
         uses_dynamics=True,
+        strategy_status="archived",
     ),
     "v31_extreme_bucket_model": _spec(
         "v31_extreme_bucket_model",
@@ -225,8 +248,42 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
         total_min=WIDE_TOTAL_MIN,
         total_max=WIDE_TOTAL_MAX,
         uses_dynamics=True,
+        strategy_status="diagnostic",
+    ),
+    "v31_bias_dynamic_high_guard": _spec(
+        "v31_bias_dynamic_high_guard",
+        "v3.1 — Bias dinamico + high guard",
+        "Base bias_corrected con boost selettivo per partite potenzialmente alte (guardrail PIT).",
+        DEFAULT_BASE_WEIGHTS,
+        CONTEXT_MACRO_WEIGHTS,
+        strategy_family="dynamic",
+        strategy_status="active",
+        uses_dynamic_bias=True,
+        uses_high_guard=True,
+        total_min=HIGH_GUARD_MIN,
+        total_max=HIGH_GUARD_MAX_EXTREME,
     ),
 }
+
+STRATEGY_STATUS: dict[str, str] = {k: v.strategy_status for k, v in STRATEGY_REGISTRY.items()}
+
+
+def keys_by_status(*statuses: str) -> tuple[str, ...]:
+    if not statuses or "all" in statuses:
+        return tuple(STRATEGY_REGISTRY.keys())
+    allowed = set(statuses)
+    return tuple(k for k, v in STRATEGY_REGISTRY.items() if v.strategy_status in allowed)
+
+
+def resolve_strategy_keys(
+    strategy: str,
+    strategy_status_filter: str = "active",
+) -> list[str]:
+    if strategy != "all":
+        return [strategy] if strategy in STRATEGY_REGISTRY else []
+    if strategy_status_filter == "all":
+        return list(STRATEGY_REGISTRY.keys())
+    return list(keys_by_status(strategy_status_filter))
 
 
 def predict_for_strategy(
@@ -239,6 +296,11 @@ def predict_for_strategy(
     spec = STRATEGY_REGISTRY.get(strategy_key)
     if spec is None:
         raise ValueError(f"Unknown strategy: {strategy_key}")
+
+    if spec.uses_high_guard:
+        from app.services.backtest.v31_calibration_simulator_high_guard import predict_high_guard
+
+        return predict_high_guard(signals, bias_offset=bias_offset, cohort=cohort)
 
     dyn: dict[str, Any] = {}
     if spec.uses_dynamics:

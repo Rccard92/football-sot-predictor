@@ -342,9 +342,54 @@ def test_variance_unlocked_wider_range():
 
 
 def test_strategy_count_includes_aggressive():
-    assert len(STRATEGY_KEYS) >= 14
+    assert len(STRATEGY_KEYS) >= 15
     assert "v31_variance_unlocked" in STRATEGY_KEYS
-    assert "v31_big_match_boost" in STRATEGY_KEYS
+    assert "v31_bias_dynamic_high_guard" in STRATEGY_KEYS
+
+
+def test_strategy_status_active_keys():
+    from app.services.backtest.v31_calibration_simulator_predictor import (
+        STRATEGY_STATUS,
+        keys_by_status,
+    )
+
+    active = set(keys_by_status("active"))
+    assert "v31_bias_corrected" in active
+    assert "v31_bias_dynamic_high_guard" in active
+    assert "v31_chaos_game" in active
+    assert "v31_equal_weights" not in active
+    assert STRATEGY_STATUS["v31_variance_unlocked"] == "diagnostic"
+
+
+def test_high_guard_no_crash_none_boost():
+    from app.services.backtest.v31_calibration_simulator_high_guard import (
+        compute_high_total_signal,
+        predict_high_guard,
+    )
+
+    row = _sample_row()
+    sig = extract_fixture_signals(row)
+    assert sig is not None
+    signal, _ = compute_high_total_signal(sig)
+    assert signal >= 0
+    out = predict_high_guard(sig, bias_offset=0.0)
+    assert out.get("predicted_total_sot") is not None
+    trace = out.get("trace") or {}
+    assert trace.get("high_total_signal") is not None
+    assert "decision" not in out
+
+
+def test_build_report_payload_summary():
+    from app.services.backtest.v31_calibration_simulator_report import build_report_payload
+
+    rows = [predict_row(_sample_row(round_number=r), "v31_equal_weights") for r in range(5, 12)]
+    from app.services.backtest.v31_calibration_simulator_metrics import summarize_strategy
+
+    block = {"key": "v31_equal_weights", **summarize_strategy("v31_equal_weights", rows), "rows_sample": rows}
+    raw = {"summary": {"fixtures_count": 7}, "strategies": [block], "best_by": {}, "audit": {}}
+    slim = build_report_payload(raw, detail="summary", strategy="all", strategy_status_filter="all")
+    assert len(slim["strategies"]) == 1
+    assert len(slim["strategies"][0]["rows_sample"]) <= 10
 
 
 def test_probable_reason_none_boost_reason():

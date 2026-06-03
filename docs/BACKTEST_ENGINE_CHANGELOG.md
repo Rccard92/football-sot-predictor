@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-simulator-light-report-hybrid
+
+**Titolo:** Report JSON leggero, strategy_status e strategia ibrida high guard
+
+**Descrizione:** `strategy_status` active/diagnostic/archived; export default `report?detail=summary`; nuova `v31_bias_dynamic_high_guard`; `dynamic_score` per raccomandazione; UI filtri e tab errori con boost/signal.
+
+**File toccati:** `v31_calibration_simulator_*`, `backtest_v31.py`, frontend simulatore, test, docs.
+
+---
+
 ## v31-predictive-dynamics
 
 **Titolo:** Simulatore v3.1 — varianza, bucket e strategie aggressive

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.backtest.v31_calibration_dataset_service import V31CalibrationDatasetService
 from app.services.backtest.v31_calibration_simulator_errors import V31SimulatorInternalError
+from app.services.backtest.v31_calibration_simulator_report import build_report_payload
 from app.services.backtest.v31_calibration_simulator_service import V31CalibrationSimulatorService
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,7 @@ def v31_calibration_simulator(
     use_latest_version_per_round: bool = Query(default=True),
     include_all_versions: bool = Query(default=False),
     strategy: str = Query(default="all"),
+    strategy_status: str = Query(default="active"),
     include_rows: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
@@ -118,6 +120,7 @@ def v31_calibration_simulator(
             use_latest_version_per_round=use_latest_version_per_round,
             include_all_versions=include_all_versions,
             strategy=strategy,
+            strategy_status_filter=strategy_status,
             include_rows=include_rows,
         )
     except V31SimulatorInternalError as exc:
@@ -141,6 +144,61 @@ def v31_calibration_simulator(
     return jsonable_encoder(payload)
 
 
+@router.get("/calibration-simulator/report")
+def v31_calibration_simulator_report(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    strategy: str = Query(default="all"),
+    strategy_status: str = Query(default="active"),
+    detail: str = Query(default="summary"),
+    db: Session = Depends(get_db),
+):
+    svc = V31CalibrationSimulatorService()
+    try:
+        raw = svc.run_simulator(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+            strategy=strategy,
+            strategy_status_filter=strategy_status,
+            include_rows=detail == "full",
+        )
+        payload = build_report_payload(
+            raw,
+            detail=detail,
+            strategy=strategy,
+            strategy_status_filter=strategy_status,
+        )
+    except V31SimulatorInternalError as exc:
+        return JSONResponse(status_code=500, content=exc.to_payload())
+    except (OperationalError, ProgrammingError):
+        logger.exception("GET v31/calibration-simulator/report database error")
+        raise
+    except Exception as exc:
+        logger.exception("GET v31/calibration-simulator/report internal error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error_code": "V31_SIMULATOR_INTERNAL_ERROR",
+                "message": str(exc),
+                "stage": "run_simulator",
+                "strategy": strategy,
+                "fixture_id": None,
+            },
+        )
+    filename = f"v31-predictive-simulator-{detail}-{competition_id}-{season_year}.json"
+    return JSONResponse(
+        content=jsonable_encoder(payload),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/calibration-simulator/report-json")
 def v31_calibration_simulator_report_json(
     competition_id: int = Query(...),
@@ -148,18 +206,26 @@ def v31_calibration_simulator_report_json(
     use_latest_version_per_round: bool = Query(default=True),
     include_all_versions: bool = Query(default=False),
     strategy: str = Query(default="all"),
+    strategy_status: str = Query(default="all"),
     db: Session = Depends(get_db),
 ):
     svc = V31CalibrationSimulatorService()
     try:
-        payload = svc.run_simulator(
+        raw = svc.run_simulator(
             db,
             competition_id=competition_id,
             season_year=season_year,
             use_latest_version_per_round=use_latest_version_per_round,
             include_all_versions=include_all_versions,
             strategy=strategy,
+            strategy_status_filter=strategy_status,
             include_rows=True,
+        )
+        payload = build_report_payload(
+            raw,
+            detail="full",
+            strategy=strategy,
+            strategy_status_filter=strategy_status,
         )
     except V31SimulatorInternalError as exc:
         return JSONResponse(status_code=500, content=exc.to_payload())

@@ -40,7 +40,9 @@ def get_strategy_weights_payload(strategy_key: str) -> dict[str, Any]:
         "total_max": spec.total_max,
         "uses_dynamic_bias": spec.uses_dynamic_bias,
         "strategy_family": spec.strategy_family,
+        "strategy_status": spec.strategy_status,
         "uses_dynamics": spec.uses_dynamics,
+        "uses_high_guard": spec.uses_high_guard,
         "features_on": list(spec.base_weights.keys()),
         "macro_areas": list(spec.context_weights.keys()),
     }
@@ -166,7 +168,7 @@ def predict_rows_for_strategy(
     if spec is None:
         return [predict_row(r, strategy_key, cohort=cohort) for r in rows]
 
-    if not spec.uses_dynamic_bias:
+    if not spec.uses_dynamic_bias and not spec.uses_high_guard:
         return [predict_row(r, strategy_key, cohort=cohort) for r in rows]
 
     indexed = list(enumerate(rows))

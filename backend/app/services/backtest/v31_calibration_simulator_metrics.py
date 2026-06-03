@@ -242,6 +242,7 @@ def error_distribution(rows: list[dict[str, Any]], *, top_n: int = 5) -> dict[st
     under: list[dict[str, Any]] = []
     for r in scored:
         err = float(r.get("error") or 0)
+        trace = r.get("trace") if isinstance(r.get("trace"), dict) else {}
         entry = {
             "fixture_id": r.get("fixture_id"),
             "match": r.get("match"),
@@ -254,6 +255,8 @@ def error_distribution(rows: list[dict[str, Any]], *, top_n: int = 5) -> dict[st
             "abs_error": r.get("abs_error"),
             "possible_factors": _possible_factors(r),
             "probable_reason": safe_probable_reason(r),
+            "boost_applied": trace.get("boost_applied"),
+            "high_total_signal": trace.get("high_total_signal"),
         }
         if entry["probable_reason"] == FALLBACK_REASON:
             entry["row_warning"] = "V31_PROBABLE_REASON_FALLBACK"
@@ -407,6 +410,36 @@ def _normalize_scores(values: list[tuple[str, float]], *, higher_better: bool) -
     return out
 
 
+def strategy_warnings(block: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    dist = block.get("prediction_distribution") or (
+        (block.get("prediction_diagnostics") or {}).get("prediction_distribution") or {}
+    )
+    pm = block.get("predictive_metrics") or {}
+    ratio = dist.get("compression_ratio")
+    if ratio is not None and float(ratio) < 0.25:
+        warnings.append("Modello troppo piatto")
+    bias = pm.get("bias")
+    if bias is not None:
+        b = float(bias)
+        if b > 1.0 or b < -1.0:
+            warnings.append("Bias eccessivo")
+    return warnings
+
+
+def dynamic_score(block: dict[str, Any]) -> float | None:
+    parts = block.get("score_components") or {}
+    if not parts:
+        return None
+    return _round4(
+        0.30 * (parts.get("mae") or 0)
+        + 0.20 * (parts.get("bias") or 0)
+        + 0.20 * (parts.get("within_1_5") or 0)
+        + 0.15 * (parts.get("high_recall") or 0)
+        + 0.15 * (parts.get("compression") or 0),
+    )
+
+
 def balanced_prediction_score(block: dict[str, Any]) -> float | None:
     pm = block.get("predictive_metrics") or {}
     parts = block.get("score_components") or {}
@@ -486,6 +519,56 @@ def _score_components_for_blocks(blocks: list[dict[str, Any]]) -> None:
             "compression": comp_s.get(k),
         }
         b["balanced_prediction_score"] = balanced_prediction_score(b)
+        b["dynamic_score"] = dynamic_score(b)
+
+
+def build_recommendation_explanation(
+    recommended: str | None,
+    blocks: list[dict[str, Any]],
+    *,
+    best_by: dict[str, Any] | None = None,
+) -> tuple[str | None, str | None]:
+    """Ritorna (note, tradeoff) in italiano."""
+    if not recommended:
+        return None, None
+    by_key = {b["key"]: b for b in blocks}
+    rec = by_key.get(recommended)
+    if rec is None:
+        return None, None
+
+    label = rec.get("label") or recommended
+    warns = strategy_warnings(rec)
+    warn_txt = f" Attenzione: {', '.join(warns)}." if warns else ""
+
+    if recommended == "v31_bias_dynamic_high_guard":
+        return (
+            f"Strategia consigliata: {label} (dynamic score).",
+            "Mantiene la stabilità del bias corretto con boost selettivo per partite "
+            f"potenzialmente alte; migliora high recall senza esplodere come variance_unlocked.{warn_txt}",
+        )
+
+    if recommended == "v31_bias_corrected":
+        dist = rec.get("prediction_distribution") or {}
+        pred_high = dist.get("predicted_high_count_over_9", 0)
+        act_high = dist.get("actual_high_count_over_9", 0)
+        return (
+            f"Strategia consigliata: {label} (miglior equilibrio MAE/bias).",
+            f"Ha il miglior MAE e bias controllato, ma resta troppo piatta: riconosce solo "
+            f"{pred_high} partite sopra 9 SOT contro {act_high} reali.{warn_txt}",
+        )
+
+    hybrid = by_key.get("v31_bias_dynamic_high_guard")
+    if hybrid and recommended != "v31_bias_dynamic_high_guard":
+        hr_h = (hybrid.get("bucket_metrics") or {}).get("high_total_recall")
+        hr_r = (rec.get("bucket_metrics") or {}).get("high_total_recall")
+        trade = (
+            f"{label} ottimizza accuratezza media; v31_bias_dynamic_high_guard offre "
+            f"migliore rilevamento partite alte (recall {hr_h}% vs {hr_r}%).{warn_txt}"
+        )
+    else:
+        trade = f"Scelta basata su dynamic score tra strategie active.{warn_txt}"
+
+    return f"Strategia consigliata: {label}.", trade
 
 
 def summarize_strategy(
@@ -495,7 +578,7 @@ def summarize_strategy(
     pm = predictive_metrics(rows)
     diag = prediction_diagnostics(rows)
     reg = regression_metrics(rows)
-    err_dist = error_distribution(rows)
+    err_dist = error_distribution(rows, top_n=10)
     cov = coverage_metrics(rows)
     bm = bucket_metrics(rows)
     dist = diag.get("prediction_distribution") or prediction_distribution(rows)
@@ -511,8 +594,17 @@ def summarize_strategy(
         key=lambda r: float(r.get("abs_error") or 0),
     )[:30]
 
+    block_preview = {
+        "key": strategy_key,
+        "predictive_metrics": pm,
+        "prediction_distribution": dist,
+        "bucket_metrics": bm,
+    }
+    sw = strategy_warnings(block_preview)
+
     return {
         "key": strategy_key,
+        "strategy_warnings": sw,
         "prediction_diagnostics": diag,
         "predictive_metrics": pm,
         "regression_metrics": reg,
@@ -556,16 +648,23 @@ def summarize_strategy(
 
 
 def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: int) -> dict[str, Any]:
+    from app.services.backtest.v31_calibration_simulator_predictor import STRATEGY_STATUS
+
     _score_components_for_blocks(strategy_blocks)
     for b in strategy_blocks:
         b["balanced_prediction_score"] = balanced_prediction_score(b)
+        b["dynamic_score"] = dynamic_score(b)
         b["score_components"] = b.get("score_components") or {}
+        b["strategy_warnings"] = strategy_warnings(b)
 
     min_ok = max(1, int(fixtures_total * 0.95))
     eligible = [
         b
         for b in strategy_blocks
         if int((b.get("predictive_metrics") or {}).get("predictions_ok") or 0) >= min_ok
+    ]
+    eligible_active = [
+        b for b in eligible if STRATEGY_STATUS.get(b["key"], "archived") == "active"
     ]
 
     def _best(getter, lower_is_better: bool = True) -> dict[str, Any] | None:
@@ -599,16 +698,24 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
 
     recommended = None
     best_score = None
-    for b in eligible:
-        dist = (b.get("prediction_distribution") or {})
-        if dist.get("model_too_flat") and (b.get("balanced_prediction_score") or 0) < 50:
+    pick_pool = eligible_active if eligible_active else eligible
+    for b in pick_pool:
+        dist = b.get("prediction_distribution") or {}
+        if dist.get("model_too_flat") and (b.get("dynamic_score") or 0) < 45:
             continue
-        sc = b.get("balanced_prediction_score")
+        sc = b.get("dynamic_score")
         if sc is not None and (best_score is None or sc > best_score):
             best_score = sc
             recommended = b["key"]
 
     note = None
+    tradeoff = None
+    if recommended:
+        note, tradeoff = build_recommendation_explanation(
+            recommended,
+            strategy_blocks,
+            best_by={},
+        )
     if not eligible and strategy_blocks:
         note = "Nessuna strategia con copertura predittiva sufficiente (predictions_ok < 95% fixture)."
 
@@ -658,6 +765,11 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]], *, fixtures_total: in
             "strategy": recommended,
             "value": best_score,
         },
+        "dynamic_score": {
+            "strategy": recommended,
+            "value": best_score,
+        },
         "recommended_strategy": recommended,
         "recommendation_note": note,
+        "recommendation_tradeoff": tradeoff,
     }
