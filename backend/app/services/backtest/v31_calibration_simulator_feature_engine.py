@@ -18,8 +18,6 @@ V31_MACRO_AREA_KEYS = (
     "weighted_macro_multiplier",
 )
 
-LEAGUE_AVG_SOT_PER_SIDE = 3.35
-
 
 def _f(v: Any) -> float | None:
     if v is None:
@@ -41,7 +39,7 @@ def _round4(v: float) -> float:
 @dataclass
 class SideSignals:
     macros: dict[str, float | None]
-    baseline_sot: float | None
+    team_raw: dict[str, Any] = field(default_factory=dict)
     missing_fields: list[str] = field(default_factory=list)
 
 
@@ -53,10 +51,13 @@ class FixtureSignals:
     away_team_name: str
     home: SideSignals
     away: SideSignals
-    warning_count: int
-    team_stats_status: str
+    data_quality: dict[str, Any] = field(default_factory=dict)
+    league_context: dict[str, Any] = field(default_factory=dict)
+    player_layer: dict[str, Any] = field(default_factory=dict)
+    lineups: dict[str, Any] = field(default_factory=dict)
+    warning_count: int = 0
+    team_stats_status: str = "unknown"
     missing_fields: list[str] = field(default_factory=list)
-    confidence_score: float = 0.5
 
 
 def _side_macros(macro_side: dict[str, Any] | None, prefix: str) -> SideSignals:
@@ -68,18 +69,13 @@ def _side_macros(macro_side: dict[str, Any] | None, prefix: str) -> SideSignals:
         macros[key] = val
         if val is None:
             missing.append(f"{prefix}.{key}")
-    return SideSignals(macros=macros, baseline_sot=None, missing_fields=missing)
+    return SideSignals(macros=macros, team_raw={}, missing_fields=missing)
 
 
-def _side_baseline(team_side: dict[str, Any] | None, macro_side: SideSignals) -> float | None:
-    team = team_side if isinstance(team_side, dict) else {}
-    avg = _f(team.get("avg_sot_for"))
-    if avg is not None and avg > 0:
-        return avg
-    off = macro_side.macros.get("offensive_production_index")
-    if off is not None:
-        return LEAGUE_AVG_SOT_PER_SIDE * float(off)
-    return None
+def _team_raw_dict(team_side: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(team_side, dict):
+        return {}
+    return dict(team_side)
 
 
 def extract_fixture_signals(row: dict[str, Any]) -> FixtureSignals | None:
@@ -94,6 +90,8 @@ def extract_fixture_signals(row: dict[str, Any]) -> FixtureSignals | None:
     macros_block = feats.get("existing_macro_features") or {}
     team_raw = feats.get("team_raw_features") or {}
     dq = feats.get("data_quality") or {}
+    if not isinstance(dq, dict):
+        dq = {}
 
     home_macros = _side_macros(
         macros_block.get("home") if isinstance(macros_block, dict) else None,
@@ -103,30 +101,14 @@ def extract_fixture_signals(row: dict[str, Any]) -> FixtureSignals | None:
         macros_block.get("away") if isinstance(macros_block, dict) else None,
         "away",
     )
-    home_macros.baseline_sot = _side_baseline(
+    home_macros.team_raw = _team_raw_dict(
         team_raw.get("home") if isinstance(team_raw, dict) else None,
-        home_macros,
     )
-    away_macros.baseline_sot = _side_baseline(
+    away_macros.team_raw = _team_raw_dict(
         team_raw.get("away") if isinstance(team_raw, dict) else None,
-        away_macros,
     )
 
     all_missing = list(dict.fromkeys(home_macros.missing_fields + away_macros.missing_fields))
-    if home_macros.baseline_sot is None:
-        all_missing.append("home.baseline_sot")
-    if away_macros.baseline_sot is None:
-        all_missing.append("away.baseline_sot")
-
-    wc = int(dq.get("warning_count") or 0)
-    ts_status = str(dq.get("team_stats_status") or "unknown")
-
-    conf = 1.0
-    if ts_status not in ("ok", "partial"):
-        conf -= 0.25
-    conf -= min(0.35, 0.05 * wc)
-    conf -= min(0.25, 0.02 * len(all_missing))
-    conf = max(0.15, min(1.0, conf))
 
     return FixtureSignals(
         fixture_id=fid,
@@ -135,8 +117,11 @@ def extract_fixture_signals(row: dict[str, Any]) -> FixtureSignals | None:
         away_team_name=str(meta.get("away_team_name") or "Trasferta"),
         home=home_macros,
         away=away_macros,
-        warning_count=wc,
-        team_stats_status=ts_status,
+        data_quality=dq,
+        league_context=feats.get("league_context") if isinstance(feats.get("league_context"), dict) else {},
+        player_layer=feats.get("player_layer") if isinstance(feats.get("player_layer"), dict) else {},
+        lineups=feats.get("lineups") if isinstance(feats.get("lineups"), dict) else {},
+        warning_count=int(dq.get("warning_count") or 0),
+        team_stats_status=str(dq.get("team_stats_status") or "unknown"),
         missing_fields=all_missing,
-        confidence_score=_round4(conf),
     )

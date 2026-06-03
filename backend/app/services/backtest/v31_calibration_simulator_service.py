@@ -107,6 +107,12 @@ class V31CalibrationSimulatorService:
             )
 
         best_by = compute_best_by(strategy_blocks)
+        recommendation_note = None
+        if best_by.get("all_strategies_zero_picks"):
+            recommendation_note = (
+                "Nessuna strategia valida: tutte hanno 0 pick. "
+                "Controllare scala predizione e soglie selector."
+            )
         payload = {
             "report_type": "v31_calibration_simulator",
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -120,6 +126,7 @@ class V31CalibrationSimulatorService:
                 "excluded_analyses": excluded,
                 "round_range": f"{ROUND_MIN}-{ROUND_MAX}",
                 "recommended_strategy": best_by.get("recommended_strategy"),
+                "recommendation_note": recommendation_note,
             },
             "strategies": strategy_blocks,
             "best_by": best_by,
@@ -127,6 +134,7 @@ class V31CalibrationSimulatorService:
                 "anti_leakage": True,
                 "forbidden_fields_used": [],
                 "legacy_predictions_used_as_features": False,
+                "target_used_as_input": False,
                 "simulation_only": True,
                 "target_used_for_metrics_only": True,
                 "comparisons_used_for_audit_only": True,

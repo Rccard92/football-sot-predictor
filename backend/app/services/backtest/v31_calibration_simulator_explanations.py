@@ -2,31 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 _REASON_IT: dict[str, str] = {
-    "stable_sot_production": "entrambe le squadre mostrano una produzione SOT stabile",
-    "strong_offensive_macro": "gli indici di produzione offensiva sono sopra la media",
-    "home_away_split_supports": "lo split casa/trasferta conferma il volume offensivo atteso",
-    "recent_form_positive": "la forma recente sostiene il volume di tiri in porta",
-    "player_layer_ok": "il layer giocatori non segnala cali rilevanti",
-    "absences_light": "le assenze offensive non risultano abbastanza pesanti da abbassare la previsione",
-    "line_65_best_margin": "la linea 6.5 offre il miglior margine rispetto al totale previsto",
-    "line_75_excluded_margin": "la linea 7.5 viene esclusa perché il margine non è sufficiente",
-    "line_85_excluded": "la linea 8.5 è troppo alta rispetto al totale atteso",
-    "prob_over_65_sufficient": "la probabilità stimata su Over 6.5 supera la soglia richiesta",
-    "prob_over_75_sufficient": "la probabilità su Over 7.5 è sufficiente per una giocata più aperta",
-    "data_quality_ok": "la qualità dei dati pre-match è accettabile",
-    "data_quality_weak": "la qualità dei dati è debole",
-    "warnings_high": "troppi warning sui dati pre-match",
-    "confidence_high": "il livello di confidenza del modello è alto",
-    "confidence_low": "la confidenza del modello è bassa",
-    "no_bet_quality": "si preferisce non giocare per cautela sulla qualità del dato",
-    "no_bet_probability": "la probabilità stimata non giustifica una giocata",
-    "borderline_probability": "il segnale è borderline: margine o probabilità appena sufficienti",
-    "missing_features": "alcune feature pre-match non sono disponibili",
-    "conservative_threshold": "la strategia conservativa richiede segnali più netti",
-    "balanced_opens_75": "la strategia bilanciata ammette Over 7.5 con margine adeguato",
+    "V31_OVER_6_5_PROB_OK": "la probabilità stimata su Over 6.5 supera la soglia",
+    "V31_OVER_7_5_PREMIUM": "Over 7.5 risulta preferibile per probabilità e margine",
+    "V31_OVER_8_5_PREMIUM": "Over 8.5 è supportato da previsione alta e probabilità adeguata",
+    "V31_MARGIN_OK": "il margine tra previsione e linea è sufficiente",
+    "V31_CONFIDENCE_HIGH": "la confidenza sui dati pre-match è alta",
+    "V31_CONFIDENCE_MEDIUM": "la confidenza è media ma accettabile",
+    "V31_DATA_QUALITY_OK": "i dati pre-match sono completi e senza warning rilevanti",
+    "V31_PROBABILITY_BELOW_THRESHOLD": "la probabilità stimata non supera la soglia minima",
+    "V31_LOW_CONFIDENCE": "la confidenza sui dati o sul segnale è troppo bassa",
+    "V31_LINE_TOO_RISKY": "la linea richiesta è troppo alta rispetto alla previsione",
+    "V31_DATA_QUALITY_WEAK": "la qualità dei dati pre-match è debole",
+    "V31_MARGIN_TOO_LOW": "il margine tra previsione e linea è troppo basso",
+    "V31_BORDERLINE_SIGNAL": "il segnale è borderline: probabilità o margine appena sufficienti",
+    "V31_MISSING_FEATURES": "alcune feature pre-match non sono disponibili",
 }
 
 
@@ -36,28 +26,31 @@ def build_human_explanation(
     selected_line: float | None,
     reason_codes: list[str],
     predicted_total: float | None,
+    prob_pct: float | None,
     home_name: str,
     away_name: str,
 ) -> str:
-    parts: list[str] = []
     if decision == "GIOCA" and selected_line is not None and predicted_total is not None:
-        parts.append(
-            f"Il modello consiglia Over {selected_line} su {home_name}–{away_name} "
-            f"con totale SOT previsto intorno a {predicted_total}."
-        )
+        prob_txt = f" del {prob_pct:.0f}%" if prob_pct is not None else ""
+        parts = [
+            f"La v3.1 consiglia Over {selected_line} perché la previsione totale è {predicted_total} SOT"
+            f", con una probabilità stimata{prob_txt}.",
+            "La base statistica è sostenuta dalla produzione SOT delle due squadre e dallo split casa/trasferta.",
+        ]
     elif decision == "BORDERLINE":
-        parts.append(
-            f"Il modello valuta {home_name}–{away_name} come caso borderline: "
-            "il segnale c'è ma non è abbastanza netto per una giocata piena."
-        )
+        parts = [
+            f"La v3.1 valuta {home_name}–{away_name} come caso borderline: "
+            "il segnale c'è ma non è abbastanza netto per una giocata piena.",
+        ]
     else:
-        parts.append(
-            f"Il modello non consiglia giocata su {home_name}–{away_name} "
-            "in questa configurazione."
-        )
+        parts = [
+            f"La v3.1 non consiglia la giocata su {home_name}–{away_name} perché, "
+            "pur avendo una previsione vicina alla linea, la probabilità stimata non supera la soglia minima "
+            "o il margine è basso.",
+        ]
 
-    reasons = [_REASON_IT.get(c, c.replace("_", " ")) for c in reason_codes[:6]]
-    if reasons:
-        parts.append(" ".join(r.capitalize() if r == reasons[0] else r for r in reasons) + ".")
+    extras = [_REASON_IT.get(c, "") for c in reason_codes if c in _REASON_IT]
+    if extras:
+        parts.append(" ".join(e for e in extras if e) + ".")
 
     return " ".join(parts)

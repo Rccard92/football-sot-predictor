@@ -46,6 +46,18 @@ Mai in input al modello (validazione in `v31_calibration_anti_leakage`):
 9. lineups_index  
 10. weighted_macro_multiplier  
 
+## Formula predittiva (simulatore)
+
+1. **Base SOT assoluta** per squadra (`calculate_team_base_sot`): mix pesato di `avg_sot_for`, `opponent_conceded_sot_avg`, `last5`, split, `xg_to_sot`, `shots_to_sot`. Valori in dataset standard che sembrano indici macro (0.65–1.45) vengono convertiti in SOT assoluti (`league_avg × indice`).
+
+2. **Moltiplicatore contestuale** (macro come correttivi, cap 0.85–1.15): forma, qualità chance, ritmo, split, player layer, assenze, lineups.
+
+3. **Totale**: `home_base × ctx_home + away_base × ctx_away`, con leggero ancoraggio al prior lega (~8.0 SOT totali) senza usare il target della fixture.
+
+4. **Probabilità Over**: normale con σ = 2.2; `P(Over k.5) = 1 - Φ((k.5 - μ) / σ)`.
+
+5. **Selector**: soglie per strategia (conservative / balanced); confidence da qualità dato pre-match.
+
 ## Simulatore calibrazione (5 strategie)
 
 Endpoint: `GET /api/backtest/v31/calibration-simulator`

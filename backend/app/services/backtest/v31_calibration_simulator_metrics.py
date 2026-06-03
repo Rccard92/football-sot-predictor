@@ -104,10 +104,22 @@ def betting_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "betting": {**_betting_summary(_picks(sub)), "fixture_count": len(sub)},
         }
 
+    no_bet_rows = [r for r in rows if r.get("decision") == "NO_BET"]
+    no_bet_samples = [
+        {
+            "fixture_id": r.get("fixture_id"),
+            "match": r.get("match"),
+            "predicted_total_sot": r.get("predicted_total_sot"),
+            "reason_codes": (r.get("reason_codes") or [])[:5],
+        }
+        for r in no_bet_rows[:5]
+    ]
+
     return {
         **summary,
         "no_bet_count": no_bet,
         "borderline_count": borderline,
+        "no_bet_samples": no_bet_samples,
         "hit_rate_over_6_5": _hit_for_line(picks, 6.5),
         "hit_rate_over_7_5": _hit_for_line(picks, 7.5),
         "hit_rate_over_8_5": _hit_for_line(picks, 8.5),
@@ -116,20 +128,66 @@ def betting_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _prob_for_line(row: dict[str, Any], line: float) -> float | None:
+    key = f"estimated_probability_over_{str(line).replace('.', '_')}"
+    v = row.get(key)
+    return float(v) if v is not None else None
+
+
+def prediction_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    preds = [float(r["predicted_total_sot"]) for r in rows if r.get("predicted_total_sot") is not None]
+    actuals = [float(r["actual_total_sot"]) for r in rows if r.get("actual_total_sot") is not None]
+    warnings: list[str] = []
+    pred_avg = _mean(preds)
+    scale_warning = False
+    if pred_avg is not None and (pred_avg < 5.5 or pred_avg > 10.5):
+        scale_warning = True
+        warnings.append("V31_PREDICTION_SCALE_OUT_OF_RANGE")
+    return {
+        "actual_total_avg": _mean(actuals),
+        "predicted_total_avg": pred_avg,
+        "predicted_total_min": min(preds) if preds else None,
+        "predicted_total_max": max(preds) if preds else None,
+        "actual_total_min": min(actuals) if actuals else None,
+        "actual_total_max": max(actuals) if actuals else None,
+        "predicted_under_3_count": sum(1 for p in preds if p < 3),
+        "predicted_over_12_count": sum(1 for p in preds if p > 12),
+        "scale_warning": scale_warning,
+        "warnings": warnings,
+    }
+
+
 def line_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     picks = _picks(rows)
-    acc: dict[str, dict[str, int]] = {}
+    acc: dict[str, dict[str, Any]] = {}
     for p in picks:
         ln = str(float(p["selected_line"]))
-        cell = acc.setdefault(ln, {"wins": 0, "losses": 0, "picks": 0})
+        cell = acc.setdefault(
+            ln,
+            {"wins": 0, "losses": 0, "picks": 0, "prob_sum": 0.0, "margin_sum": 0.0},
+        )
         cell["picks"] += 1
         if p.get("outcome") == "WIN":
             cell["wins"] += 1
         elif p.get("outcome") == "LOSS":
             cell["losses"] += 1
+        prob = _prob_for_line(p, float(p["selected_line"]))
+        if prob is not None:
+            cell["prob_sum"] += prob
+        pred = p.get("predicted_total_sot")
+        if pred is not None:
+            cell["margin_sum"] += float(pred) - float(p["selected_line"])
     out: dict[str, Any] = {}
     for ln, cell in sorted(acc.items(), key=lambda x: float(x[0])):
-        out[ln] = {**cell, "hit_rate": _hit_rate(cell["wins"], cell["losses"])}
+        n = cell["picks"] or 1
+        out[ln] = {
+            "wins": cell["wins"],
+            "losses": cell["losses"],
+            "picks": cell["picks"],
+            "hit_rate": _hit_rate(cell["wins"], cell["losses"]),
+            "avg_estimated_prob": _round4(cell["prob_sum"] / n) if cell["picks"] else None,
+            "avg_margin": _round4(cell["margin_sum"] / n) if cell["picks"] else None,
+        }
     return out
 
 
@@ -204,8 +262,10 @@ def summarize_strategy(
         pick_count=bet.get("pick_count", 0),
         best_mae=best_mae,
     )
+    diag = prediction_diagnostics(rows)
     return {
         "key": strategy_key,
+        "prediction_diagnostics": diag,
         "regression_metrics": reg,
         "betting_metrics": bet,
         "walk_forward_metrics": walk_forward_metrics(rows),
@@ -225,6 +285,9 @@ def summarize_strategy(
             "hit_rate": bet.get("hit_rate"),
             "hit_rate_over_6_5": bet.get("hit_rate_over_6_5"),
             "hit_rate_over_7_5": bet.get("hit_rate_over_7_5"),
+            "predicted_total_avg": diag.get("predicted_total_avg"),
+            "actual_total_avg": diag.get("actual_total_avg"),
+            "scale_warning": diag.get("scale_warning"),
         },
     }
 
@@ -238,18 +301,28 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]]) -> dict[str, Any]:
     best_bal_val = None
     cons_proxy = None
 
+    with_picks = [
+        b
+        for b in strategy_blocks
+        if int((b.get("metrics") or {}).get("pick_count") or 0) > 0
+    ]
+
     for block in strategy_blocks:
         key = block["key"]
         m = block.get("metrics") or {}
         mae = m.get("mae")
-        hr = m.get("hit_rate")
         if mae is not None and (best_mae_val is None or mae < best_mae_val):
             best_mae_val = mae
             best_mae_key = key
+
+    for block in with_picks:
+        key = block["key"]
+        m = block.get("metrics") or {}
+        hr = m.get("hit_rate")
         if hr is not None and (best_hr_val is None or hr > best_hr_val):
             best_hr_val = hr
             best_hr_key = key
-        bs = balanced_score(hr, mae)
+        bs = balanced_score(hr, m.get("mae"))
         if bs is not None and (best_bal_val is None or bs > best_bal_val):
             best_bal_val = bs
             best_bal_key = key
@@ -258,11 +331,15 @@ def compute_best_by(strategy_blocks: list[dict[str, Any]]) -> dict[str, Any]:
             l = m.get("loss_count") or 0
             cons_proxy = {"strategy": key, "wins_minus_losses": w - l}
 
-    recommended = best_bal_key or best_hr_key or best_mae_key
+    recommended = None
+    if with_picks:
+        recommended = best_bal_key or best_hr_key or with_picks[0]["key"]
+
     return {
         "mae": {"strategy": best_mae_key, "value": best_mae_val},
-        "hit_rate": {"strategy": best_hr_key, "value": best_hr_val},
-        "balanced_score": {"strategy": best_bal_key, "value": best_bal_val},
+        "hit_rate": {"strategy": best_hr_key, "value": best_hr_val if with_picks else None},
+        "balanced_score": {"strategy": best_bal_key, "value": best_bal_val if with_picks else None},
         "conservative_profit_proxy": cons_proxy,
         "recommended_strategy": recommended,
+        "all_strategies_zero_picks": len(with_picks) == 0 and len(strategy_blocks) > 0,
     }

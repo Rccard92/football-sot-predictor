@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-calibration-simulator-scale-fix
+
+**Titolo:** Correzione scala predizione simulatore v3.1
+
+**Descrizione:** Base SOT assoluta (`v31_calibration_simulator_base_sot.py`) con conversione macro→SOT; context multiplier cappato; probabilità Over normale (σ=2.2); selector e confidence rivisti; `prediction_diagnostics` e UI tab Diagnostica scala; `best_by` esclude strategie a 0 pick.
+
+**File toccati:** moduli `v31_calibration_simulator_*`, frontend simulatore, test, `sot-model-v31.md`.
+
+---
+
 ## v31-calibration-simulator
 
 **Titolo:** Simulatore calibrazione v3.1 con 5 strategie sperimentali

@@ -3875,6 +3875,19 @@ export async function downloadV31FullExportJobJson(
   URL.revokeObjectURL(url)
 }
 
+export type V31PredictionDiagnostics = {
+  actual_total_avg?: number | null
+  predicted_total_avg?: number | null
+  predicted_total_min?: number | null
+  predicted_total_max?: number | null
+  actual_total_min?: number | null
+  actual_total_max?: number | null
+  predicted_under_3_count?: number
+  predicted_over_12_count?: number
+  scale_warning?: boolean
+  warnings?: string[]
+}
+
 export type V31SimulatorStrategyMetrics = {
   mae?: number | null
   bias?: number | null
@@ -3886,6 +3899,9 @@ export type V31SimulatorStrategyMetrics = {
   hit_rate?: number | null
   hit_rate_over_6_5?: number | null
   hit_rate_over_7_5?: number | null
+  predicted_total_avg?: number | null
+  actual_total_avg?: number | null
+  scale_warning?: boolean
 }
 
 export type V31CalibrationSimulatorStrategy = {
@@ -3897,6 +3913,7 @@ export type V31CalibrationSimulatorStrategy = {
     multipliers: Record<string, number>
     selector_thresholds: Record<string, unknown>
   }
+  prediction_diagnostics?: V31PredictionDiagnostics
   regression_metrics: { mae?: number | null; bias?: number | null; rmse?: number | null; n?: number }
   betting_metrics: Record<string, unknown>
   walk_forward_metrics: Record<string, unknown>
@@ -3920,6 +3937,7 @@ export type V31CalibrationSimulator = {
     fixtures_count: number
     strategies_run: number
     recommended_strategy?: string | null
+    recommendation_note?: string | null
     round_range?: string
   }
   strategies: V31CalibrationSimulatorStrategy[]
@@ -3929,11 +3947,13 @@ export type V31CalibrationSimulator = {
     balanced_score?: { strategy?: string | null; value?: number | null }
     conservative_profit_proxy?: { strategy?: string; wins_minus_losses?: number }
     recommended_strategy?: string | null
+    all_strategies_zero_picks?: boolean
   }
   audit: {
     anti_leakage: boolean
     forbidden_fields_used: string[]
     legacy_predictions_used_as_features: boolean
+    target_used_as_input?: boolean
   }
 }
 

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from app.services.backtest.v31_calibration_simulator_explanations import build_human_explanation
-from app.services.backtest.v31_calibration_simulator_feature_engine import (
-    V31_MACRO_AREA_KEYS,
-    extract_fixture_signals,
+from app.services.backtest.v31_calibration_simulator_base_sot import (
+    CORE_BASE_WEIGHTS,
+    DEFAULT_BASE_WEIGHTS,
+    EQUAL_BASE_WEIGHTS,
 )
-from app.services.backtest.v31_calibration_simulator_predictor import predict_sides
+from app.services.backtest.v31_calibration_simulator_confidence import compute_confidence_tier
+from app.services.backtest.v31_calibration_simulator_explanations import build_human_explanation
+from app.services.backtest.v31_calibration_simulator_feature_engine import extract_fixture_signals
+from app.services.backtest.v31_calibration_simulator_predictor import predict_for_strategy
 
 STRATEGY_KEYS = (
     "v31_equal_weights",
@@ -28,167 +31,153 @@ STRATEGY_LABELS: dict[str, str] = {
 }
 
 STRATEGY_DESCRIPTIONS: dict[str, str] = {
-    "v31_equal_weights": "Dieci macroaree con peso uguale; selezione linea per margine μ−linea.",
-    "v31_core_sot_xg": "Peso alto su SOT, xG e volume; basso su player layer e assenze.",
-    "v31_context_adjusted": "Base core con moltiplicatori su split, forma, player, assenze e qualità dato.",
-    "v31_conservative_selector": "Gioca solo con dati OK, pochi warning, confidenza alta e P(Over 6.5) elevata.",
-    "v31_balanced_selector": "Più aperto: ammette Over 7.5 con probabilità e margine sufficienti.",
+    "v31_equal_weights": "Base SOT uniforme sui componenti statistici; selector moderato.",
+    "v31_core_sot_xg": "Peso alto su SOT, xG e volume; context multiplier più piatto.",
+    "v31_context_adjusted": "Base statistica + moltiplicatori contestuali cappati.",
+    "v31_conservative_selector": "Stessa predizione del contesto; selector severo.",
+    "v31_balanced_selector": "Stessa predizione del contesto; selector più aperto.",
 }
 
-
-def _equal_weights() -> dict[str, float]:
-    w = 1.0 / len(V31_MACRO_AREA_KEYS)
-    return {k: w for k in V31_MACRO_AREA_KEYS}
+SelectorMode = Literal["moderate", "conservative", "balanced"]
 
 
-def _core_weights() -> dict[str, float]:
-    return {
-        "offensive_production_index": 0.18,
-        "opponent_defensive_resistance_index": 0.16,
-        "chance_quality_index": 0.16,
-        "pace_control_index": 0.14,
-        "home_away_split_index": 0.10,
-        "recent_form_index": 0.08,
-        "player_layer_index": 0.05,
-        "injuries_unavailable_index": 0.05,
-        "lineups_index": 0.04,
-        "weighted_macro_multiplier": 0.04,
-    }
-
-
-def _confidence_tier(score: float) -> str:
-    if score >= 0.72:
-        return "high"
-    if score >= 0.48:
-        return "medium"
-    return "low"
+def _prob(pred: dict[str, Any], line: float) -> float:
+    key = f"estimated_probability_over_{str(line).replace('.', '_')}"
+    return float(pred.get(key) or 0.0)
 
 
 def _pick_line_and_decision(
     pred: dict[str, Any],
     signals: Any,
     *,
-    min_p_65: float,
-    min_p_75: float | None,
-    max_warnings: int,
-    require_confidence: str,
-    allow_75: bool,
+    mode: SelectorMode,
 ) -> tuple[float | None, str, list[str]]:
     reasons: list[str] = []
     total = pred.get("predicted_total_sot")
     if total is None:
-        reasons.append("missing_features")
+        reasons.append("V31_MISSING_FEATURES")
         return None, "NO_BET", reasons
 
-    conf = signals.confidence_score
-    tier = _confidence_tier(conf)
-    if signals.warning_count > max_warnings:
-        reasons.append("warnings_high")
-        return None, "NO_BET", reasons + ["no_bet_quality"]
-    if signals.team_stats_status not in ("ok", "partial"):
-        reasons.append("data_quality_weak")
-        return None, "NO_BET", reasons + ["no_bet_quality"]
-    if len(signals.missing_fields) > 12:
-        reasons.append("missing_features")
-
-    p65 = pred.get("estimated_probability_over_6_5") or 0.0
-    p75 = pred.get("estimated_probability_over_7_5") or 0.0
-    margins = {
-        6.5: float(total) - 6.5,
-        7.5: float(total) - 7.5,
-        8.5: float(total) - 8.5,
-    }
-
-    selected: float | None = None
-    if allow_75 and p75 >= (min_p_75 or 0.52) and margins[7.5] >= 0.35:
-        selected = 7.5
-        reasons.extend(["balanced_opens_75", "prob_over_75_sufficient", "line_65_best_margin"])
-    elif p65 >= min_p_65 and margins[6.5] >= 0.25:
-        selected = 6.5
-        reasons.extend(["prob_over_65_sufficient", "line_65_best_margin"])
-    elif margins[6.5] >= 0.15 and p65 >= min_p_65 - 0.06:
-        selected = 6.5
-        reasons.append("borderline_probability")
-
-    if selected is None:
-        if margins[7.5] < 0.35:
-            reasons.append("line_75_excluded_margin")
-        if margins[8.5] < 0.5:
-            reasons.append("line_85_excluded")
-        reasons.append("no_bet_probability")
+    mu = float(total)
+    dq = signals.data_quality
+    if str(dq.get("team_stats_status") or signals.team_stats_status) not in ("ok", "partial"):
+        reasons.extend(["V31_DATA_QUALITY_WEAK", "V31_PROBABILITY_BELOW_THRESHOLD"])
         return None, "NO_BET", reasons
 
-    if require_confidence == "high" and tier != "high":
-        reasons.append("confidence_low")
-        if require_confidence == "high":
-            reasons.append("conservative_threshold")
-            return selected, "NO_BET", reasons + ["no_bet_quality"]
+    candidates: list[tuple[float, str, list[str]]] = []
 
-    if tier == "high":
-        reasons.append("confidence_high")
+    def _try(line: float, p_min: float, min_margin: float, need_high: bool, code: str) -> None:
+        p = _prob(pred, line)
+        margin = mu - line
+        tier = compute_confidence_tier(
+            signals,
+            predicted_total=mu,
+            selected_line=line,
+        )
+        if margin < min_margin:
+            return
+        if p < p_min:
+            return
+        if need_high and tier != "high":
+            return
+        if mode == "conservative" and tier == "low":
+            return
+        r = [code, "V31_MARGIN_OK"]
+        if tier == "high":
+            r.append("V31_CONFIDENCE_HIGH")
+        elif tier == "medium":
+            r.append("V31_CONFIDENCE_MEDIUM")
+        if dq.get("team_stats_status") == "ok":
+            r.append("V31_DATA_QUALITY_OK")
+        candidates.append((line, tier, r))
+
+    if mode == "conservative":
+        if mu >= 9.2:
+            _try(8.5, 0.56, 0.9, True, "V31_OVER_8_5_PREMIUM")
+        _try(7.5, 0.65, 0.7, True, "V31_OVER_7_5_PREMIUM")
+        _try(6.5, 0.72, 0.5, False, "V31_OVER_6_5_PROB_OK")
+    elif mode == "balanced":
+        _try(8.5, 0.53, 0.5, False, "V31_OVER_8_5_PREMIUM")
+        _try(7.5, 0.60, 0.4, False, "V31_OVER_7_5_PREMIUM")
+        _try(6.5, 0.65, 0.35, False, "V31_OVER_6_5_PROB_OK")
     else:
-        reasons.append("confidence_low")
+        _try(7.5, 0.62, 0.45, False, "V31_OVER_7_5_PREMIUM")
+        _try(6.5, 0.68, 0.30, False, "V31_OVER_6_5_PROB_OK")
 
-    if float(total) >= 7.0:
-        reasons.append("stable_sot_production")
-    off_h = signals.home.macros.get("offensive_production_index")
-    off_a = signals.away.macros.get("offensive_production_index")
-    if off_h and off_a and float(off_h) >= 1.0 and float(off_a) >= 1.0:
-        reasons.append("strong_offensive_macro")
-    if signals.home.macros.get("home_away_split_index") and signals.away.macros.get("home_away_split_index"):
-        reasons.append("home_away_split_supports")
-    if signals.home.macros.get("recent_form_index") or signals.away.macros.get("recent_form_index"):
-        reasons.append("recent_form_positive")
-    if signals.home.macros.get("player_layer_index"):
-        reasons.append("player_layer_ok")
-    if signals.home.macros.get("injuries_unavailable_index"):
-        reasons.append("absences_light")
-    reasons.append("data_quality_ok")
+    if not candidates:
+        p65 = _prob(pred, 6.5)
+        margin65 = mu - 6.5
+        if p65 >= 0.65 and margin65 >= 0.2:
+            tier = compute_confidence_tier(signals, predicted_total=mu, selected_line=6.5)
+            if tier != "low":
+                reasons.extend(["V31_BORDERLINE_SIGNAL", "V31_OVER_6_5_PROB_OK"])
+                return 6.5, "BORDERLINE", reasons
+        if margin65 < 0.4:
+            reasons.append("V31_MARGIN_TOO_LOW")
+        if p65 < 0.65:
+            reasons.append("V31_PROBABILITY_BELOW_THRESHOLD")
+        if signals.warning_count > 4:
+            reasons.append("V31_DATA_QUALITY_WEAK")
+        tier_probe = compute_confidence_tier(signals, predicted_total=mu, selected_line=6.5)
+        if tier_probe == "low":
+            reasons.append("V31_LOW_CONFIDENCE")
+        if _prob(pred, 7.5) < 0.55 and mu < 8.0:
+            reasons.append("V31_LINE_TOO_RISKY")
+        return None, "NO_BET", list(dict.fromkeys(reasons))
+
+    best = max(candidates, key=lambda c: (c[0], _prob(pred, c[0])))
+    line, tier_used, r = best
+    tier = compute_confidence_tier(signals, predicted_total=mu, selected_line=line)
+    if mode == "conservative" and tier == "low":
+        reasons.extend(["V31_LOW_CONFIDENCE", "V31_PROBABILITY_BELOW_THRESHOLD"])
+        return None, "NO_BET", reasons
 
     decision = "GIOCA"
-    if tier != "high" and p65 < min_p_65 + 0.04:
+    margin = mu - float(line)
+    prob_line = _prob(pred, line)
+    if mode == "moderate" and tier == "medium" and prob_line < 0.72:
         decision = "BORDERLINE"
-        reasons.append("borderline_probability")
+        r.append("V31_BORDERLINE_SIGNAL")
+    elif mode == "balanced" and tier == "low":
+        decision = "BORDERLINE"
+        r.append("V31_BORDERLINE_SIGNAL")
+    elif margin < 0.45 and prob_line < 0.62:
+        decision = "BORDERLINE"
+        r.append("V31_BORDERLINE_SIGNAL")
 
-    return selected, decision, list(dict.fromkeys(reasons))
+    return line, decision, list(dict.fromkeys(r))
 
 
 def _strategy_config(key: str) -> dict[str, Any]:
     if key == "v31_equal_weights":
         return {
-            "macro_weights": _equal_weights(),
-            "multipliers": {},
-            "selector": {"min_p_65": 0.52, "min_p_75": None, "max_warnings": 8, "require_confidence": "medium", "allow_75": False},
+            "prediction_key": key,
+            "base_weights": EQUAL_BASE_WEIGHTS,
+            "selector_mode": "moderate",
         }
     if key == "v31_core_sot_xg":
         return {
-            "macro_weights": _core_weights(),
-            "multipliers": {},
-            "selector": {"min_p_65": 0.52, "min_p_75": None, "max_warnings": 8, "require_confidence": "medium", "allow_75": False},
+            "prediction_key": "v31_core_sot_xg",
+            "base_weights": CORE_BASE_WEIGHTS,
+            "selector_mode": "moderate",
         }
     if key == "v31_context_adjusted":
         return {
-            "macro_weights": _core_weights(),
-            "multipliers": {
-                "home_away_split": 1.05,
-                "recent_form": 1.04,
-                "player_layer": 1.03,
-                "injuries_unavailable": 0.98,
-                "data_quality": 1.0,
-            },
-            "selector": {"min_p_65": 0.54, "min_p_75": 0.50, "max_warnings": 6, "require_confidence": "medium", "allow_75": True},
+            "prediction_key": "v31_context_adjusted",
+            "base_weights": DEFAULT_BASE_WEIGHTS,
+            "selector_mode": "moderate",
         }
     if key == "v31_conservative_selector":
         return {
-            "macro_weights": _core_weights(),
-            "multipliers": {"home_away_split": 1.03, "recent_form": 1.02, "player_layer": 1.02, "injuries_unavailable": 0.99, "data_quality": 1.0},
-            "selector": {"min_p_65": 0.58, "min_p_75": None, "max_warnings": 3, "require_confidence": "high", "allow_75": False},
+            "prediction_key": "v31_context_adjusted",
+            "base_weights": DEFAULT_BASE_WEIGHTS,
+            "selector_mode": "conservative",
         }
     if key == "v31_balanced_selector":
         return {
-            "macro_weights": _core_weights(),
-            "multipliers": {"home_away_split": 1.05, "recent_form": 1.04, "player_layer": 1.03, "injuries_unavailable": 0.98, "data_quality": 1.0},
-            "selector": {"min_p_65": 0.52, "min_p_75": 0.52, "max_warnings": 6, "require_confidence": "medium", "allow_75": True},
+            "prediction_key": "v31_context_adjusted",
+            "base_weights": DEFAULT_BASE_WEIGHTS,
+            "selector_mode": "balanced",
         }
     raise ValueError(f"Unknown strategy: {key}")
 
@@ -198,22 +187,17 @@ def simulate_row(row: dict[str, Any], strategy_key: str) -> dict[str, Any] | Non
     if signals is None:
         return None
     cfg = _strategy_config(strategy_key)
-    pred = predict_sides(
-        signals,
-        macro_weights=cfg["macro_weights"],
-        multipliers=cfg.get("multipliers"),
-    )
-    sel = cfg["selector"]
+    pred = predict_for_strategy(signals, cfg["prediction_key"])
     line, decision, reason_codes = _pick_line_and_decision(
         pred,
         signals,
-        min_p_65=sel["min_p_65"],
-        min_p_75=sel.get("min_p_75"),
-        max_warnings=sel["max_warnings"],
-        require_confidence=sel["require_confidence"],
-        allow_75=sel["allow_75"],
+        mode=cfg["selector_mode"],
     )
-    tier = _confidence_tier(signals.confidence_score)
+    tier = compute_confidence_tier(
+        signals,
+        predicted_total=pred.get("predicted_total_sot"),
+        selected_line=line,
+    )
     if decision == "NO_BET":
         tier = "low"
 
@@ -224,15 +208,21 @@ def simulate_row(row: dict[str, Any], strategy_key: str) -> dict[str, Any] | Non
     if decision == "GIOCA" and line is not None and actual is not None:
         outcome = "WIN" if int(actual) > int(line) else "LOSS"
 
+    prob_pct = None
+    if line is not None:
+        prob_pct = 100.0 * _prob(pred, line)
+
     human = build_human_explanation(
         decision=decision,
         selected_line=line,
         reason_codes=reason_codes,
         predicted_total=pred.get("predicted_total_sot"),
+        prob_pct=prob_pct,
         home_name=signals.home_team_name,
         away_name=signals.away_team_name,
     )
 
+    trace = pred.get("trace") or {}
     return {
         "fixture_id": signals.fixture_id,
         "round_number": signals.round_number,
@@ -244,31 +234,40 @@ def simulate_row(row: dict[str, Any], strategy_key: str) -> dict[str, Any] | Non
         "estimated_probability_over_6_5": pred.get("estimated_probability_over_6_5"),
         "estimated_probability_over_7_5": pred.get("estimated_probability_over_7_5"),
         "estimated_probability_over_8_5": pred.get("estimated_probability_over_8_5"),
+        "estimated_probability_over_9_5": pred.get("estimated_probability_over_9_5"),
+        "estimated_probability_over_10_5": pred.get("estimated_probability_over_10_5"),
+        "estimated_probability_over_11_5": pred.get("estimated_probability_over_11_5"),
         "selected_line": line,
         "decision": decision,
         "confidence_tier": tier,
         "reason_codes": reason_codes,
         "human_explanation": human,
-        "missing_fields": signals.missing_fields,
+        "missing_fields": pred.get("missing_fields") or signals.missing_fields,
         "actual_total_sot": actual,
         "outcome": outcome,
         "trace": {
-            "macro_weights": cfg["macro_weights"],
-            "multipliers": cfg.get("multipliers"),
-            "selector_thresholds": sel,
-            "macro_blend_home": pred.get("macro_blend_home"),
-            "macro_blend_away": pred.get("macro_blend_away"),
-            "confidence_score": signals.confidence_score,
-            "warning_count": signals.warning_count,
+            "strategy_key": strategy_key,
+            "prediction_key": cfg["prediction_key"],
+            "selector_mode": cfg["selector_mode"],
+            "home_base_sot": pred.get("home_base_sot"),
+            "away_base_sot": pred.get("away_base_sot"),
+            "home_context_multiplier": pred.get("home_context_multiplier"),
+            "away_context_multiplier": pred.get("away_context_multiplier"),
+            "sigma_total": pred.get("sigma_total"),
+            **trace,
         },
-        "comparisons_snapshot": row.get("comparisons") if isinstance(row.get("comparisons"), dict) else None,
     }
 
 
 def get_strategy_weights_payload(strategy_key: str) -> dict[str, Any]:
     cfg = _strategy_config(strategy_key)
+    from app.services.backtest.v31_calibration_simulator_base_sot import (
+        CONTEXT_MACRO_WEIGHTS,
+    )
+
     return {
-        "macro_areas": cfg["macro_weights"],
-        "multipliers": cfg.get("multipliers") or {},
-        "selector_thresholds": cfg["selector"],
+        "macro_areas": cfg.get("base_weights") or DEFAULT_BASE_WEIGHTS,
+        "context_macro_weights": CONTEXT_MACRO_WEIGHTS,
+        "selector_mode": cfg["selector_mode"],
+        "prediction_key": cfg["prediction_key"],
     }

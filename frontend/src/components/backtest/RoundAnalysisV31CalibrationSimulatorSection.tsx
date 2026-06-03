@@ -7,6 +7,7 @@ import {
 
 const TABS = [
   { id: 'strategies', label: 'Strategie' },
+  { id: 'scale', label: 'Diagnostica scala' },
   { id: 'walkforward', label: 'Walk-forward' },
   { id: 'lines', label: 'Linee' },
   { id: 'nobet', label: 'No bet' },
@@ -76,6 +77,11 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
 
   const best = data?.best_by
   const selected = data?.strategies.find((s) => s.key === selectedKey) ?? data?.strategies[0]
+  const recLabel =
+    data?.summary.recommendation_note ??
+    (best?.recommended_strategy
+      ? data?.strategies.find((s) => s.key === best.recommended_strategy)?.label
+      : null)
 
   return (
     <section className="space-y-4 rounded-lg border border-violet-200 bg-violet-50/30 p-4">
@@ -83,8 +89,8 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Simulatore calibrazione v3.1</h2>
           <p className="mt-1 max-w-2xl text-xs text-slate-600">
-            Confronta 5 configurazioni sperimentali indipendenti da v1.1/v2.x/v3.0. Usa solo feature
-            pre-match del dataset v3.1; le predizioni legacy restano solo per audit.
+            Base SOT assoluta + correttivi macro. Le predizioni legacy (v1.1–v3.0) non entrano nel
+            modello.
           </p>
         </div>
         <button
@@ -123,15 +129,26 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
               </p>
               <p className="text-slate-600">{fmtNum(best?.balanced_score?.value, 2)}</p>
             </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3 text-xs">
-              <p className="font-medium text-emerald-800">Strategia consigliata</p>
-              <p className="mt-1 text-sm font-semibold text-emerald-900">
-                {data.strategies.find((s) => s.key === best?.recommended_strategy)?.label ??
-                  best?.recommended_strategy ??
-                  '—'}
+            <div
+              className={`rounded-lg border p-3 text-xs ${
+                best?.all_strategies_zero_picks
+                  ? 'border-rose-300 bg-rose-50'
+                  : 'border-emerald-200 bg-emerald-50/80'
+              }`}
+            >
+              <p
+                className={`font-medium ${
+                  best?.all_strategies_zero_picks ? 'text-rose-800' : 'text-emerald-800'
+                }`}
+              >
+                Strategia consigliata
               </p>
-              <p className="text-emerald-700">
-                {data.summary.fixtures_count} fixture · giornate {data.summary.round_range}
+              <p
+                className={`mt-1 text-sm font-semibold ${
+                  best?.all_strategies_zero_picks ? 'text-rose-900' : 'text-emerald-900'
+                }`}
+              >
+                {recLabel ?? '—'}
               </p>
             </div>
           </div>
@@ -159,14 +176,14 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
                     <th className="px-2 py-2">Strategia</th>
+                    <th className="px-2 py-2">Pred avg</th>
+                    <th className="px-2 py-2">Actual avg</th>
+                    <th className="px-2 py-2">Scala</th>
+                    <th className="px-2 py-2">Pick</th>
+                    <th className="px-2 py-2">No bet</th>
+                    <th className="px-2 py-2">Hit%</th>
                     <th className="px-2 py-2">MAE</th>
                     <th className="px-2 py-2">Bias</th>
-                    <th className="px-2 py-2">Pick</th>
-                    <th className="px-2 py-2">W/L</th>
-                    <th className="px-2 py-2">Hit%</th>
-                    <th className="px-2 py-2">O6.5%</th>
-                    <th className="px-2 py-2">O7.5%</th>
-                    <th className="px-2 py-2">No bet</th>
                     <th className="px-2 py-2">Verdict</th>
                   </tr>
                 </thead>
@@ -184,6 +201,10 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
             </div>
           ) : null}
 
+          {activeTab === 'scale' && selected ? (
+            <ScaleDiagnosticsPanel strategy={selected} />
+          ) : null}
+
           {activeTab === 'walkforward' && selected ? (
             <WalkForwardPanel strategy={selected} />
           ) : null}
@@ -192,7 +213,7 @@ export function RoundAnalysisV31CalibrationSimulatorSection({
           {activeTab === 'reasons' && selected ? <ReasonsPanel strategy={selected} /> : null}
           {activeTab === 'audit' ? <AuditPanel audit={data.audit} /> : null}
 
-          {selected && activeTab !== 'strategies' && activeTab !== 'audit' ? (
+          {selected && activeTab !== 'strategies' && activeTab !== 'scale' && activeTab !== 'audit' ? (
             <p className="text-[10px] text-slate-500">
               Dettaglio: {selected.label}{' '}
               <button
@@ -220,28 +241,60 @@ function StrategyRow({
   onSelect: () => void
 }) {
   const m = s.metrics
+  const scaleWarn = m.scale_warning ?? s.prediction_diagnostics?.scale_warning
   return (
     <tr
       className={`cursor-pointer border-t border-slate-100 ${selected ? 'bg-violet-50/50' : 'hover:bg-slate-50'}`}
       onClick={onSelect}
     >
       <td className="px-2 py-2 font-medium text-slate-800">{s.label}</td>
+      <td className="px-2 py-2">{fmtNum(m.predicted_total_avg ?? s.prediction_diagnostics?.predicted_total_avg, 2)}</td>
+      <td className="px-2 py-2">{fmtNum(m.actual_total_avg ?? s.prediction_diagnostics?.actual_total_avg, 2)}</td>
+      <td className="px-2 py-2">
+        {scaleWarn ? (
+          <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-800">
+            Fuori scala
+          </span>
+        ) : (
+          <span className="text-emerald-700">OK</span>
+        )}
+      </td>
+      <td className="px-2 py-2">{m.pick_count ?? 0}</td>
+      <td className="px-2 py-2">{m.no_bet_count ?? 0}</td>
+      <td className="px-2 py-2">{fmtPct(m.hit_rate)}</td>
       <td className="px-2 py-2">{fmtNum(m.mae, 3)}</td>
       <td className="px-2 py-2">{fmtNum(m.bias, 3)}</td>
-      <td className="px-2 py-2">{m.pick_count ?? 0}</td>
-      <td className="px-2 py-2">
-        {m.win_count ?? 0}/{m.loss_count ?? 0}
-      </td>
-      <td className="px-2 py-2">{fmtPct(m.hit_rate)}</td>
-      <td className="px-2 py-2">{fmtPct(m.hit_rate_over_6_5)}</td>
-      <td className="px-2 py-2">{fmtPct(m.hit_rate_over_7_5)}</td>
-      <td className="px-2 py-2">{m.no_bet_count ?? 0}</td>
       <td className="px-2 py-2">
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${verdictBadgeClass(s.verdict)}`}>
           {s.verdict_label}
         </span>
       </td>
     </tr>
+  )
+}
+
+function ScaleDiagnosticsPanel({ strategy }: { strategy: V31CalibrationSimulatorStrategy }) {
+  const d = strategy.prediction_diagnostics
+  if (!d) return <p className="text-xs text-slate-500">Nessuna diagnostica.</p>
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-700">
+      <p className="font-medium text-slate-900">{strategy.label}</p>
+      {d.scale_warning ? (
+        <p className="mt-1 font-medium text-rose-800">
+          Fuori scala — {(d.warnings ?? []).join(', ')}
+        </p>
+      ) : (
+        <p className="mt-1 text-emerald-700">Scala predizione nella norma attesa.</p>
+      )}
+      <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+        <li>Pred avg: {fmtNum(d.predicted_total_avg, 2)}</li>
+        <li>Actual avg: {fmtNum(d.actual_total_avg, 2)}</li>
+        <li>Pred min/max: {fmtNum(d.predicted_total_min, 1)} / {fmtNum(d.predicted_total_max, 1)}</li>
+        <li>Actual min/max: {fmtNum(d.actual_total_min, 1)} / {fmtNum(d.actual_total_max, 1)}</li>
+        <li>Pred &lt; 3: {d.predicted_under_3_count ?? 0}</li>
+        <li>Pred &gt; 12: {d.predicted_over_12_count ?? 0}</li>
+      </ul>
+    </div>
   )
 }
 
@@ -272,12 +325,24 @@ function WalkForwardPanel({ strategy }: { strategy: V31CalibrationSimulatorStrat
 }
 
 function LinesPanel({ strategy }: { strategy: V31CalibrationSimulatorStrategy }) {
-  const lm = strategy.line_metrics as Record<string, { picks?: number; hit_rate?: number }>
+  const lm = strategy.line_metrics as Record<
+    string,
+    {
+      picks?: number
+      wins?: number
+      losses?: number
+      hit_rate?: number
+      avg_estimated_prob?: number
+      avg_margin?: number
+    }
+  >
   return (
     <ul className="space-y-1 text-xs">
       {Object.entries(lm).map(([line, cell]) => (
         <li key={line} className="rounded border border-slate-200 bg-white px-3 py-2">
-          Linea {line}: {cell.picks ?? 0} pick — hit {fmtPct(cell.hit_rate)}
+          Linea {line}: {cell.picks ?? 0} pick — W/L {cell.wins ?? 0}/{cell.losses ?? 0} — hit{' '}
+          {fmtPct(cell.hit_rate)} — prob media {fmtNum((cell.avg_estimated_prob ?? 0) * 100, 1)}% —
+          margine medio {fmtNum(cell.avg_margin, 2)}
         </li>
       ))}
     </ul>
@@ -289,12 +354,43 @@ function NoBetPanel({ strategy }: { strategy: V31CalibrationSimulatorStrategy })
     no_bet_count?: number
     borderline_count?: number
     pick_count?: number
+    no_bet_samples?: Array<{
+      fixture_id?: number
+      match?: string
+      predicted_total_sot?: number
+      reason_codes?: string[]
+    }>
   }
+  const top = Object.entries(strategy.reason_code_counts ?? {}).slice(0, 8)
   return (
-    <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-700">
-      <p>No bet / borderline: {bet.no_bet_count ?? 0}</p>
-      <p>Borderline: {bet.borderline_count ?? 0}</p>
-      <p>Pick GIOCA: {bet.pick_count ?? 0}</p>
+    <div className="space-y-2 text-xs text-slate-700">
+      <div className="rounded border border-slate-200 bg-white p-3">
+        <p>No bet / borderline: {bet.no_bet_count ?? 0}</p>
+        <p>Borderline: {bet.borderline_count ?? 0}</p>
+        <p>Pick GIOCA: {bet.pick_count ?? 0}</p>
+      </div>
+      <div className="rounded border border-slate-200 bg-white p-3">
+        <p className="font-medium">Top reason codes (no bet)</p>
+        <ul className="mt-1 font-mono text-[10px]">
+          {top.map(([code, n]) => (
+            <li key={code}>
+              {code}: {n}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {(bet.no_bet_samples ?? []).length > 0 ? (
+        <div className="rounded border border-slate-200 bg-white p-3">
+          <p className="font-medium">Esempi no bet</p>
+          <ul className="mt-1 space-y-1">
+            {bet.no_bet_samples?.map((s) => (
+              <li key={s.fixture_id}>
+                {s.match} — pred {s.predicted_total_sot} — {(s.reason_codes ?? []).join(', ')}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -318,6 +414,7 @@ function AuditPanel({ audit }: { audit: V31CalibrationSimulator['audit'] }) {
     <div className="rounded border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900">
       <p>Anti-leakage: {audit.anti_leakage ? 'OK' : 'FAILED'}</p>
       <p>Legacy predictions come feature: {audit.legacy_predictions_used_as_features ? 'sì' : 'no'}</p>
+      <p>Target usato come input: {audit.target_used_as_input === false ? 'no' : 'sì'}</p>
       <p>Campi vietati usati: {(audit.forbidden_fields_used ?? []).length}</p>
     </div>
   )
