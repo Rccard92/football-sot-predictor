@@ -16,6 +16,8 @@ from app.services.backtest.v31_calibration_dataset_service import V31Calibration
 from app.services.backtest.v31_calibration_simulator_errors import V31SimulatorInternalError
 from app.services.backtest.v31_calibration_simulator_report import build_report_payload
 from app.services.backtest.v31_calibration_simulator_service import V31CalibrationSimulatorService
+from app.services.backtest.v31_pattern_analysis_report import build_pattern_report_payload
+from app.services.backtest.v31_pattern_analysis_service import V31PatternAnalysisService
 
 logger = logging.getLogger(__name__)
 
@@ -360,5 +362,144 @@ def v31_calibration_dataset_csv(
     return Response(
         content=csv_text,
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _run_pattern_analysis(
+    db: Session,
+    *,
+    competition_id: int,
+    season_year: int,
+    use_latest_version_per_round: bool,
+    include_all_versions: bool,
+    include_fixtures: bool,
+) -> dict:
+    svc = V31PatternAnalysisService()
+    return svc.run_pattern_analysis(
+        db,
+        competition_id=competition_id,
+        season_year=season_year,
+        use_latest_version_per_round=use_latest_version_per_round,
+        include_all_versions=include_all_versions,
+        include_fixtures=include_fixtures,
+    )
+
+
+@router.get("/pattern-analysis")
+def v31_pattern_analysis(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    include_fixtures: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    try:
+        payload = _run_pattern_analysis(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+            include_fixtures=include_fixtures,
+        )
+    except V31SimulatorInternalError as exc:
+        return JSONResponse(status_code=500, content=exc.to_payload())
+    except (OperationalError, ProgrammingError):
+        logger.exception("GET v31/pattern-analysis database error")
+        raise
+    except Exception as exc:
+        logger.exception("GET v31/pattern-analysis internal error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error_code": "V31_PATTERN_ANALYSIS_ERROR",
+                "message": str(exc),
+            },
+        )
+    return jsonable_encoder(payload)
+
+
+@router.get("/pattern-analysis/report")
+def v31_pattern_analysis_report(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    detail: str = Query(default="summary"),
+    db: Session = Depends(get_db),
+):
+    try:
+        raw = _run_pattern_analysis(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+            include_fixtures=detail == "full",
+        )
+        payload = build_pattern_report_payload(raw, detail=detail)
+    except V31SimulatorInternalError as exc:
+        return JSONResponse(status_code=500, content=exc.to_payload())
+    except (OperationalError, ProgrammingError):
+        logger.exception("GET v31/pattern-analysis/report database error")
+        raise
+    except Exception as exc:
+        logger.exception("GET v31/pattern-analysis/report internal error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error_code": "V31_PATTERN_ANALYSIS_ERROR",
+                "message": str(exc),
+            },
+        )
+    filename = f"v31-pattern-analysis-{detail}-{competition_id}-{season_year}.json"
+    return JSONResponse(
+        content=jsonable_encoder(payload),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/pattern-analysis/report-json")
+def v31_pattern_analysis_report_json(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    try:
+        raw = _run_pattern_analysis(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+            include_fixtures=True,
+        )
+        payload = build_pattern_report_payload(raw, detail="full")
+    except V31SimulatorInternalError as exc:
+        return JSONResponse(status_code=500, content=exc.to_payload())
+    except (OperationalError, ProgrammingError):
+        logger.exception("GET v31/pattern-analysis/report-json database error")
+        raise
+    except Exception as exc:
+        logger.exception("GET v31/pattern-analysis/report-json internal error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error_code": "V31_PATTERN_ANALYSIS_ERROR",
+                "message": str(exc),
+            },
+        )
+    filename = f"v31-pattern-analysis-{competition_id}-{season_year}.json"
+    return JSONResponse(
+        content=jsonable_encoder(payload),
+        media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

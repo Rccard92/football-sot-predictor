@@ -104,6 +104,16 @@ Nel dataset **standard**, il campo è popolato da `pace_control_index` (proxy PI
 
 **Hybrid (`v31_bias_dynamic_high_guard`):** boost tier ≥52 (+0.25), ≥60 (+0.50), ≥70 (+0.75), ≥80 (+1.00); guardrail graduali; `hybrid_debug` con warning `V31_HYBRID_BOOST_NOT_APPLIED` / `V31_HYBRID_IDENTICAL_TO_BASELINE`.
 
+## Pattern Analysis (post-match)
+
+Analisi qualità coverage WIN/LOSS su top-3 strategie (`bias_corrected`, `dynamic_high_guard`, `chaos_game`).
+
+- **`actual_sot_distribution`:** percentili calcolati dal campionato (no soglie fisse).
+- **Bucket dinamici:** low/normal/high/very_high/extreme da p25/p75/p90/p95.
+- **`win_quality`:** HEALTHY_WIN, ACCEPTABLE_WIN, UNDERSTATED_WIN, EXTREME_WIN_OUTLIER, BAD_LOSS, CLOSE_LOSS, NORMAL_LOSS.
+- **`diagnostic_weight`:** solo analisi; non modifica pesi modello.
+- Endpoint: `GET /backtest/v31/pattern-analysis` (+ report summary/full).
+
 ## Walk-forward
 
 | Split | Train | Test |

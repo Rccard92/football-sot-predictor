@@ -26,6 +26,14 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-pattern-analysis
+
+**Titolo:** Pattern Analysis intelligente v3.1 (win_quality, bucket dinamici, top-3)
+
+**Descrizione:** Distribuzione actual da percentili, classificazione vittorie/persi, outlier, confronto top-3, raccomandazioni A/B/C/D, UI dedicata, report JSON.
+
+---
+
 ## v31-hybrid-high-guard-fix
 
 **Titolo:** Fix boost v31_bias_dynamic_high_guard (signal 0–100, hybrid_debug)

@@ -4231,6 +4231,153 @@ export async function getV31CalibrationSimulatorReportJson(
   )
 }
 
+// --- v3.1 Pattern Analysis ---
+
+export type V31WinQuality =
+  | 'HEALTHY_WIN'
+  | 'ACCEPTABLE_WIN'
+  | 'UNDERSTATED_WIN'
+  | 'EXTREME_WIN_OUTLIER'
+  | 'BAD_LOSS_OVERESTIMATION'
+  | 'CLOSE_LOSS'
+  | 'NORMAL_LOSS'
+
+export type V31ActualSotDistribution = {
+  count: number
+  mean: number | null
+  median: number | null
+  std: number | null
+  p25: number | null
+  p50: number | null
+  p75: number | null
+  p85: number | null
+  p90: number | null
+  p95: number | null
+  p97: number | null
+  max: number | null
+}
+
+export type V31PatternRecommendation = {
+  type: string
+  severity: string
+  message: string
+  evidence?: Record<string, unknown>
+}
+
+export type V31PatternCategoryBlock = {
+  count: number
+  pct_of_total: number
+  avg_abs_error?: number | null
+  actual_bucket_dynamic_distribution?: Record<string, number>
+  pattern_tags?: Array<{ tag: string; count: number }>
+  examples?: Array<Record<string, unknown>>
+}
+
+export type V31PatternStrategyBlock = {
+  key: string
+  label: string
+  description?: string
+  win_quality_summary?: { total_fixtures: number; counts: Record<string, number>; pct: Record<string, number> }
+  loss_quality_summary?: { total_fixtures: number; counts: Record<string, number>; pct: Record<string, number> }
+  winning_patterns?: {
+    total_fixtures: number
+    total_wins: number
+    categories: Record<string, V31PatternCategoryBlock>
+    interpretation?: string
+  }
+  losing_patterns?: {
+    total_fixtures: number
+    total_losses: number
+    categories: Record<string, V31PatternCategoryBlock>
+    special_categories?: Record<string, { count: number; pct_of_total: number; examples?: Array<Record<string, unknown>> }>
+    interpretation?: string
+  }
+  high_and_outlier?: Record<string, unknown>
+  extreme_outlier_summary?: Record<string, unknown>
+  high_total_non_extreme_summary?: Record<string, unknown>
+  predictive_metrics?: Record<string, unknown>
+  coverage_metrics?: Record<string, unknown>
+}
+
+export type V31Top3FixtureComparison = {
+  fixture_id: number
+  match?: string
+  actual_total_sot?: number
+  actual_bucket_dynamic?: string
+  actual_bucket_static?: string
+  models?: Record<string, { predicted_total_sot?: number; abs_error?: number; win_quality?: V31WinQuality; diagnostic_weight?: number }>
+  best_model_on_fixture?: string
+  is_outlier?: boolean
+  dynamic_guard_improves_bias?: boolean
+  chaos_catches_high_non_extreme?: boolean
+  chaos_chasing_outlier?: boolean
+  top3_cluster?: string
+}
+
+export type V31PatternAnalysis = {
+  report_type: 'v31_pattern_analysis'
+  generated_at: string
+  summary: {
+    competition_id: number
+    competition_name?: string | null
+    season_year: number
+    season_label?: string
+    fixtures_count: number
+    strategies_analyzed: string[]
+    actual_sot_distribution: V31ActualSotDistribution
+    dynamic_bucket_thresholds: { p25?: number | null; p75?: number | null; p90?: number | null; p95?: number | null }
+    win_quality_summary?: Record<string, unknown>
+    loss_quality_summary?: Record<string, unknown>
+    extreme_outlier_summary?: Record<string, unknown>
+    high_total_non_extreme_summary?: Record<string, unknown>
+    top3_cluster_summary?: { total_fixtures: number; counts: Record<string, number>; pct: Record<string, number> }
+    recommendations?: V31PatternRecommendation[]
+    report_detail?: string
+    betting_phase_enabled?: boolean
+  }
+  strategies: V31PatternStrategyBlock[]
+  top3_fixtures?: V31Top3FixtureComparison[]
+  audit?: Record<string, boolean>
+}
+
+export async function getV31PatternAnalysis(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts & { includeFixtures?: boolean },
+): Promise<V31PatternAnalysis> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  if (opts?.includeFixtures) q.set('include_fixtures', 'true')
+  return requestV31Json<V31PatternAnalysis>(
+    `/api/backtest/v31/pattern-analysis?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
+export async function getV31PatternAnalysisReport(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts & { detail?: 'summary' | 'full' },
+): Promise<V31PatternAnalysis> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  q.set('detail', opts?.detail ?? 'summary')
+  return requestV31Json<V31PatternAnalysis>(
+    `/api/backtest/v31/pattern-analysis/report?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
+export async function getV31PatternAnalysisReportJson(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts,
+): Promise<V31PatternAnalysis> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  return requestV31Json<V31PatternAnalysis>(
+    `/api/backtest/v31/pattern-analysis/report-json?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {
