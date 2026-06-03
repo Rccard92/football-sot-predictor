@@ -1,4 +1,4 @@
-"""Test unit simulatore calibrazione v3.1."""
+"""Test unit simulatore predittivo v3.1."""
 
 from __future__ import annotations
 
@@ -9,14 +9,15 @@ from app.services.backtest.v31_calibration_simulator_base_sot import (
 from app.services.backtest.v31_calibration_simulator_feature_engine import extract_fixture_signals
 from app.services.backtest.v31_calibration_simulator_metrics import (
     compute_best_by,
+    predictive_metrics,
     prediction_diagnostics,
     regression_metrics,
     walk_forward_metrics,
 )
-from app.services.backtest.v31_calibration_simulator_predictor import prob_over_line
 from app.services.backtest.v31_calibration_simulator_strategies import (
     STRATEGY_KEYS,
-    simulate_row,
+    predict_row,
+    predict_rows_for_strategy,
 )
 
 
@@ -136,81 +137,124 @@ def test_calculate_team_base_sot_realistic():
         "avg_total_shots_for": 12.0,
     }
     opp = {"avg_sot_against": 3.2}
-    base, trace = calculate_team_base_sot(side, opp, {})
+    base, _trace = calculate_team_base_sot(side, opp, {})
     assert base is not None
     assert 2.5 <= base <= 6.5
 
 
-def test_prob_over_65_high_when_mu_8():
-    p = prob_over_line(8.0, 6.5)
-    assert p >= 0.7
-
-
-def test_simulate_row_realistic_total_from_macro_indices():
+def test_predict_row_realistic_total_from_macro_indices():
     row = _sample_row()
-    sim = simulate_row(row, "v31_balanced_selector")
-    assert sim is not None
-    total = float(sim["predicted_total_sot"])
+    out = predict_row(row, "v31_context_adjusted")
+    assert out["prediction_status"] == "ok"
+    total = float(out["predicted_total_sot"])
     assert 5.0 <= total <= 11.0
+    assert "decision" not in out
 
 
 def test_macro_index_and_absolute_similar_scale():
     r_idx = _sample_row(avg_sot_for=1.05, use_absolute_sot=False)
     r_abs = _sample_row(use_absolute_sot=True)
-    t_idx = float(simulate_row(r_idx, "v31_context_adjusted")["predicted_total_sot"])
-    t_abs = float(simulate_row(r_abs, "v31_context_adjusted")["predicted_total_sot"])
+    t_idx = float(predict_row(r_idx, "v31_context_adjusted")["predicted_total_sot"])
+    t_abs = float(predict_row(r_abs, "v31_context_adjusted")["predicted_total_sot"])
     assert abs(t_idx - t_abs) < 2.5
 
 
-def test_balanced_selector_has_picks_on_batch():
+def test_all_fixtures_predicted_ok():
     rows = [_sample_row(round_number=r, actual=8 + (r % 3)) for r in range(5, 20)]
-    simulated = [simulate_row(r, "v31_balanced_selector") for r in rows]
-    picks = sum(1 for s in simulated if s and s["decision"] == "GIOCA")
-    assert picks > 0
+    for key in STRATEGY_KEYS:
+        simulated = predict_rows_for_strategy(rows, key)
+        assert len(simulated) == len(rows)
+        ok = sum(1 for s in simulated if s["prediction_status"] == "ok")
+        assert ok == len(rows), key
+
+
+def test_coverage_win_rule():
+    row = _sample_row(actual=10)
+    out = predict_row(row, "v31_equal_weights")
+    assert out["prediction_status"] == "ok"
+    pred = float(out["predicted_total_sot"])
+    if 10 > pred:
+        assert out["coverage_outcome"] == "win"
+    else:
+        assert out["coverage_outcome"] == "loss"
 
 
 def test_prediction_diagnostics_no_scale_warning_on_normal_batch():
-    rows = [simulate_row(_sample_row(round_number=r), "v31_balanced_selector") for r in range(5, 20)]
-    rows = [r for r in rows if r]
+    rows = [predict_row(_sample_row(round_number=r), "v31_equal_weights") for r in range(5, 20)]
     diag = prediction_diagnostics(rows)
     assert diag["predicted_total_avg"] is not None
     assert 6.5 <= diag["predicted_total_avg"] <= 9.5
     assert diag["scale_warning"] is False
 
 
-def test_compute_best_by_skips_zero_pick_for_recommendation():
+def test_compute_best_by_recommends_with_predictions_ok():
     blocks = [
-        {"key": "a", "metrics": {"pick_count": 0, "hit_rate": None, "mae": 1.0}},
+        {
+            "key": "a",
+            "predictive_metrics": {
+                "predictions_ok": 15,
+                "mae": 3.0,
+                "rmse": 3.5,
+                "bias": -1.0,
+                "within_1_5_pct": 30.0,
+                "coverage_win_rate": 80.0,
+            },
+        },
         {
             "key": "b",
-            "metrics": {"pick_count": 10, "hit_rate": 55.0, "mae": 2.5},
-            "prediction_diagnostics": {"scale_warning": False},
+            "predictive_metrics": {
+                "predictions_ok": 15,
+                "mae": 2.0,
+                "rmse": 2.5,
+                "bias": -0.3,
+                "within_1_5_pct": 50.0,
+                "coverage_win_rate": 55.0,
+            },
         },
     ]
-    best = compute_best_by(blocks)
-    assert best["recommended_strategy"] == "b"
-    assert best["hit_rate"]["strategy"] == "b"
+    best = compute_best_by(blocks, fixtures_total=15)
+    assert best["recommended_strategy"] is not None
+    assert best["recommended_strategy"] in ("a", "b")
+    assert "hit_rate" not in best
 
 
 def test_regression_mae_not_extreme_bias():
-    rows = [simulate_row(_sample_row(round_number=r), "v31_equal_weights") for r in range(5, 18)]
-    rows = [r for r in rows if r]
+    rows = [predict_row(_sample_row(round_number=r), "v31_equal_weights") for r in range(5, 18)]
     reg = regression_metrics(rows)
     assert reg["bias"] is not None
     assert abs(float(reg["bias"])) < 4.0
 
 
-def test_walk_forward_splits():
+def test_predictive_metrics_within_bands():
+    rows = [predict_row(_sample_row(round_number=r), "v31_equal_weights") for r in range(5, 18)]
+    pm = predictive_metrics(rows)
+    assert pm["fixtures_total"] == len(rows)
+    assert pm["predictions_ok"] == len(rows)
+    assert pm["within_1_5_pct"] is not None
+
+
+def test_walk_forward_splits_numeric_only():
     rows = []
     for r in range(5, 38):
-        sim = simulate_row(_sample_row(round_number=r), "v31_equal_weights")
-        if sim:
-            rows.append(sim)
+        rows.append(predict_row(_sample_row(round_number=r), "v31_equal_weights"))
     wf = walk_forward_metrics(rows)
-    assert wf["wf_5_15_to_16_26"]["test_fixture_count"] > 0
+    split = wf["wf_5_15_to_16_26"]
+    assert split["test_fixture_count"] > 0
+    assert "test_predictive" in split
+    assert "test_betting" not in split
 
 
-def test_all_strategy_keys_simulate():
+def test_all_strategy_keys_predict():
     row = _sample_row()
     for key in STRATEGY_KEYS:
-        assert simulate_row(row, key) is not None
+        out = predict_row(row, key)
+        assert out is not None
+        assert out["prediction_status"] == "ok"
+
+
+def test_invalid_features_failed_not_skipped():
+    row = _sample_row()
+    row["features"] = None
+    out = predict_row(row, "v31_equal_weights")
+    assert out["prediction_status"] == "failed"
+    assert out["error_code"] == "V31_INVALID_FEATURES"

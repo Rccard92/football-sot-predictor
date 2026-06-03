@@ -3888,41 +3888,117 @@ export type V31PredictionDiagnostics = {
   warnings?: string[]
 }
 
+export type V31PredictiveMetrics = {
+  fixtures_total?: number
+  predictions_ok?: number
+  predictions_failed?: number
+  predicted_avg?: number | null
+  actual_avg?: number | null
+  mae?: number | null
+  rmse?: number | null
+  bias?: number | null
+  median_abs_error?: number | null
+  error_std?: number | null
+  within_0_5_count?: number
+  within_0_5_pct?: number | null
+  within_1_0_count?: number
+  within_1_0_pct?: number | null
+  within_1_5_count?: number
+  within_1_5_pct?: number | null
+  within_2_0_count?: number
+  within_2_0_pct?: number | null
+  coverage_win_count?: number
+  coverage_loss_count?: number
+  coverage_win_rate?: number | null
+  coverage_bias_warning?: string | null
+  overestimated_count?: number
+  underestimated_count?: number
+  exact_or_near_count?: number
+}
+
 export type V31SimulatorStrategyMetrics = {
+  fixtures_total?: number
+  predictions_ok?: number
+  predictions_failed?: number
+  predicted_avg?: number | null
+  actual_avg?: number | null
   mae?: number | null
   bias?: number | null
   rmse?: number | null
-  pick_count?: number
-  no_bet_count?: number
-  win_count?: number
-  loss_count?: number
-  hit_rate?: number | null
-  hit_rate_over_6_5?: number | null
-  hit_rate_over_7_5?: number | null
+  within_1_0_pct?: number | null
+  within_1_5_pct?: number | null
+  coverage_win_count?: number
+  coverage_loss_count?: number
+  coverage_win_rate?: number | null
   predicted_total_avg?: number | null
   actual_total_avg?: number | null
   scale_warning?: boolean
+}
+
+export type V31StrategyWeights = {
+  strategy_key?: string
+  base_weights?: Record<string, number>
+  base_weights_pct?: Record<string, number>
+  context_weights?: Record<string, number>
+  context_weights_pct?: Record<string, number>
+  context_cap_min?: number
+  context_cap_max?: number
+  total_league_blend?: number
+  uses_dynamic_bias?: boolean
+  features_on?: string[]
+  macro_areas?: string[]
+}
+
+export type V31ErrorSample = {
+  fixture_id?: number
+  match?: string
+  round_number?: number
+  predicted_total_sot?: number
+  actual_total_sot?: number
+  error?: number
+  abs_error?: number
+  possible_factors?: string[]
 }
 
 export type V31CalibrationSimulatorStrategy = {
   key: string
   label: string
   description: string
-  weights: {
-    macro_areas: Record<string, number>
-    multipliers: Record<string, number>
-    selector_thresholds: Record<string, unknown>
-  }
+  weights: V31StrategyWeights
   prediction_diagnostics?: V31PredictionDiagnostics
+  predictive_metrics?: V31PredictiveMetrics
   regression_metrics: { mae?: number | null; bias?: number | null; rmse?: number | null; n?: number }
-  betting_metrics: Record<string, unknown>
-  walk_forward_metrics: Record<string, unknown>
-  line_metrics: Record<string, unknown>
-  confidence_metrics: Record<string, unknown>
-  reason_code_counts?: Record<string, number>
+  coverage_metrics?: {
+    coverage_win_count?: number
+    coverage_loss_count?: number
+    coverage_win_rate?: number | null
+    coverage_bias_warning?: string | null
+  }
+  error_distribution?: {
+    worst_overestimations?: V31ErrorSample[]
+    worst_underestimations?: V31ErrorSample[]
+    overestimated_count?: number
+    underestimated_count?: number
+  }
+  walk_forward_metrics: Record<
+    string,
+    {
+      test_rounds?: string
+      test_fixture_count?: number
+      test_predictive?: {
+        mae?: number | null
+        rmse?: number | null
+        bias?: number | null
+        within_1_5_pct?: number | null
+        coverage_win_rate?: number | null
+      }
+    }
+  >
+  balanced_prediction_score?: number | null
   metrics: V31SimulatorStrategyMetrics
   verdict: string
   verdict_label: string
+  coverage_samples?: Array<Record<string, unknown>>
   rows_sample: Array<Record<string, unknown>>
 }
 
@@ -3939,21 +4015,28 @@ export type V31CalibrationSimulator = {
     recommended_strategy?: string | null
     recommendation_note?: string | null
     round_range?: string
+    phase?: string
+    betting_phase_enabled?: boolean
   }
   strategies: V31CalibrationSimulatorStrategy[]
   best_by: {
     mae?: { strategy?: string | null; value?: number | null }
-    hit_rate?: { strategy?: string | null; value?: number | null }
-    balanced_score?: { strategy?: string | null; value?: number | null }
-    conservative_profit_proxy?: { strategy?: string; wins_minus_losses?: number }
+    rmse?: { strategy?: string | null; value?: number | null }
+    bias_near_zero?: { strategy?: string | null; value?: number | null }
+    within_1_5_pct?: { strategy?: string | null; value?: number | null }
+    coverage_win_rate?: { strategy?: string | null; value?: number | null }
+    balanced_prediction_score?: { strategy?: string | null; value?: number | null }
     recommended_strategy?: string | null
-    all_strategies_zero_picks?: boolean
+    recommendation_note?: string | null
   }
   audit: {
     anti_leakage: boolean
     forbidden_fields_used: string[]
     legacy_predictions_used_as_features: boolean
     target_used_as_input?: boolean
+    simulation_only?: boolean
+    target_used_for_metrics_only?: boolean
+    comparisons_used_for_audit_only?: boolean
   }
 }
 
@@ -3967,6 +4050,19 @@ export async function getV31CalibrationSimulator(
   if (opts?.includeRows) q.set('include_rows', 'true')
   return requestV31Json<V31CalibrationSimulator>(
     `/api/backtest/v31/calibration-simulator?${q.toString()}`,
+    opts?.signal,
+  )
+}
+
+export async function getV31CalibrationSimulatorReportJson(
+  competitionId: number,
+  seasonYear: number,
+  opts?: V31CalibrationFetchOpts & { strategy?: string },
+): Promise<V31CalibrationSimulator> {
+  const q = diagnosticsQuery(competitionId, seasonYear, opts)
+  if (opts?.strategy) q.set('strategy', opts.strategy)
+  return requestV31Json<V31CalibrationSimulator>(
+    `/api/backtest/v31/calibration-simulator/report-json?${q.toString()}`,
     opts?.signal,
   )
 }

@@ -1,4 +1,4 @@
-"""Servizio simulatore calibrazione v3.1 (read-only, feature pre-match)."""
+"""Servizio simulatore predittivo v3.1 (read-only, feature pre-match)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from app.schemas.backtest_round_analysis import season_label_from_year
 from app.services.backtest.v31_calibration_dataset_builder import build_v31_dataset_rows_standard
 from app.services.backtest.v31_calibration_simulator_metrics import (
     compute_best_by,
-    regression_metrics,
     summarize_strategy,
 )
 from app.services.backtest.v31_calibration_simulator_strategies import (
@@ -21,7 +20,7 @@ from app.services.backtest.v31_calibration_simulator_strategies import (
     STRATEGY_KEYS,
     STRATEGY_LABELS,
     get_strategy_weights_payload,
-    simulate_row,
+    predict_rows_for_strategy,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,7 +52,7 @@ class V31CalibrationSimulatorService:
         include_rows: bool = False,
     ) -> dict[str, Any]:
         logger.info(
-            "V31_CALIBRATION_SIMULATOR_START competition_id=%s season_year=%s strategy=%s",
+            "V31_PREDICTIVE_SIMULATOR_START competition_id=%s season_year=%s strategy=%s",
             competition_id,
             season_year,
             strategy,
@@ -67,31 +66,16 @@ class V31CalibrationSimulatorService:
             include_all_versions=include_all_versions,
         )
         rows = _filter_rounds(rows)
+        fixtures_count = len(rows)
 
         keys = list(STRATEGY_KEYS) if strategy == "all" else [strategy]
         if strategy != "all" and strategy not in STRATEGY_KEYS:
             keys = []
 
-        simulated_by_key: dict[str, list[dict[str, Any]]] = {}
-        for key in keys:
-            simulated: list[dict[str, Any]] = []
-            for row in rows:
-                sim = simulate_row(row, key)
-                if sim is not None:
-                    simulated.append(sim)
-            simulated_by_key[key] = simulated
-
-        all_maes: list[tuple[str, float]] = []
-        for k in keys:
-            mae = regression_metrics(simulated_by_key[k]).get("mae")
-            if mae is not None:
-                all_maes.append((k, float(mae)))
-        best_mae_val = min((m for _, m in all_maes), default=None)
-
         strategy_blocks: list[dict[str, Any]] = []
         for key in keys:
-            simulated = simulated_by_key[key]
-            summary = summarize_strategy(key, simulated, best_mae=best_mae_val)
+            simulated = predict_rows_for_strategy(rows, key)
+            summary = summarize_strategy(key, simulated)
             sample = simulated if include_rows else simulated[:ROWS_SAMPLE_MAX]
             for s in sample:
                 s.pop("comparisons_snapshot", None)
@@ -106,27 +90,30 @@ class V31CalibrationSimulatorService:
                 },
             )
 
-        best_by = compute_best_by(strategy_blocks)
-        recommendation_note = None
-        if best_by.get("all_strategies_zero_picks"):
-            recommendation_note = (
-                "Nessuna strategia valida: tutte hanno 0 pick. "
-                "Controllare scala predizione e soglie selector."
-            )
+        best_by = compute_best_by(strategy_blocks, fixtures_total=fixtures_count)
+
+        recommendation_note = best_by.get("recommendation_note")
+        if recommendation_note is None and best_by.get("recommended_strategy"):
+            rec = best_by["recommended_strategy"]
+            label = STRATEGY_LABELS.get(rec, rec)
+            recommendation_note = f"Strategia consigliata: {label} (score predittivo bilanciato)."
+
         payload = {
-            "report_type": "v31_calibration_simulator",
+            "report_type": "v31_predictive_simulator",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "summary": {
                 "competition_id": int(competition_id),
                 "competition_name": comp.name if comp else None,
                 "season_year": int(season_year),
                 "season_label": season_label_from_year(int(season_year)),
-                "fixtures_count": len(rows),
+                "fixtures_count": fixtures_count,
                 "strategies_run": len(strategy_blocks),
                 "excluded_analyses": excluded,
                 "round_range": f"{ROUND_MIN}-{ROUND_MAX}",
                 "recommended_strategy": best_by.get("recommended_strategy"),
                 "recommendation_note": recommendation_note,
+                "phase": "predictive_numeric",
+                "betting_phase_enabled": False,
             },
             "strategies": strategy_blocks,
             "best_by": best_by,
@@ -141,8 +128,8 @@ class V31CalibrationSimulatorService:
             },
         }
         logger.info(
-            "V31_CALIBRATION_SIMULATOR_DONE fixtures=%s strategies=%s",
-            len(rows),
+            "V31_PREDICTIVE_SIMULATOR_DONE fixtures=%s strategies=%s",
+            fixtures_count,
             len(strategy_blocks),
         )
         return payload

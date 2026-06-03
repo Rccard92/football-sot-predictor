@@ -52,31 +52,35 @@ Mai in input al modello (validazione in `v31_calibration_anti_leakage`):
 
 2. **Moltiplicatore contestuale** (macro come correttivi, cap 0.85–1.15): forma, qualità chance, ritmo, split, player layer, assenze, lineups.
 
-3. **Totale**: `home_base × ctx_home + away_base × ctx_away`, con leggero ancoraggio al prior lega (~8.0 SOT totali) senza usare il target della fixture.
+3. **Totale**: `home_base × ctx_home + away_base × ctx_away`, con ancoraggio al prior lega (~8.0 SOT totali) senza usare il target della fixture.
 
-4. **Probabilità Over**: normale con σ = 2.2; `P(Over k.5) = 1 - Φ((k.5 - μ) / σ)`.
+4. **Fase attuale:** solo predizione numerica su **tutte** le fixture (`prediction_status` ok/failed). Nessun pick, NO_BET, linee o probabilità Over in questa fase.
 
-5. **Selector**: soglie per strategia (conservative / balanced); confidence da qualità dato pre-match.
+## Simulatore predittivo (8 strategie)
 
-## Simulatore calibrazione (5 strategie)
-
-Endpoint: `GET /api/backtest/v31/calibration-simulator`
+Endpoint: `GET /api/backtest/v31/calibration-simulator`  
+Export: `GET /api/backtest/v31/calibration-simulator/report-json` (tutte le righe fixture)
 
 | Chiave | Idea |
 |--------|------|
-| `v31_equal_weights` | Peso uguale sulle macro disponibili |
-| `v31_core_sot_xg` | Peso alto su SOT/xG/volume; basso su player/assenze |
-| `v31_context_adjusted` | Core + moltiplicatori split/forma/player/assenze |
-| `v31_conservative_selector` | Gioca solo con dati OK, pochi warning, confidenza alta, P(Over 6.5) alta |
-| `v31_balanced_selector` | Più aperto; ammette Over 7.5 con margine e probabilità sufficienti |
+| `v31_equal_weights` | Peso uguale sui 6 componenti base |
+| `v31_core_sot_xg` | Peso alto su SOT/xG/volume; context più piatto |
+| `v31_context_adjusted` | Base standard + correttivi macro pieni |
+| `v31_player_layer_heavy` | Enfasi player layer / assenze / lineups |
+| `v31_home_away_split_heavy` | Enfasi split casa/trasferta |
+| `v31_recent_form_heavy` | Enfasi ultime 5 + forma recente |
+| `v31_bias_corrected` | Contesto aggiustato + offset dinamico da errori precedenti |
+| `v31_low_variance` | Blend lega alto, cap totali stretti |
 
-Ogni strategia espone pesi, metriche, walk-forward e spiegazione umana in italiano per fixture campione.
+## Metriche predittive
 
-## Metriche
+**Regressione:** MAE, RMSE, bias, median abs error, error std.
 
-**Regressione:** MAE, bias, RMSE del `predicted_total_sot` vs actual (solo valutazione).
+**Vicinanza:** within ±0.5 / ±1.0 / ±1.5 / ±2.0 SOT.
 
-**Betting:** pick / no bet, win/loss, hit rate globale e per linea 6.5 / 7.5 / 8.5, per tier di confidenza, per blocchi giornate 5–15, 16–26, 27–37.
+**Coverage WIN (direzionale):** WIN se `actual_total_sot > predicted_total_sot` (non sostituisce MAE/bias).
+
+**Ranking:** `balanced_prediction_score` (35% MAE + 20% RMSE + 15% |bias| + 20% within_1.5 + 10% coverage).
 
 ## Walk-forward
 
@@ -85,13 +89,11 @@ Ogni strategia espone pesi, metriche, walk-forward e spiegazione umana in italia
 | `wf_5_15_to_16_26` | 5–15 | 16–26 |
 | `wf_5_26_to_27_37` | 5–26 | 27–37 |
 
-**Limite v1:** le soglie del selector sono fisse per strategia (nessun ri-fit automatico sul train). Il walk-forward misura robustezza out-of-sample con la stessa configurazione.
+Metriche test: MAE, RMSE, bias, within_1_5, coverage_win_rate (solo numerico).
 
-## Logica bet / no bet
+## Fase bet (futura)
 
-- Stima μ = totale SOT previsto; probabilità Over via Poisson(μ).
-- Linea scelta per margine μ − linea e soglie su P(Over).
-- `GIOCA` / `BORDERLINE` / `NO_BET` in base a qualità dato, warning, confidenza e strategia.
+La selezione linee, probabilità Over e GIOCA/NO_BET sarà aggiunta in una fase successiva, separata dal confronto numerico attuale.
 - Feature mancanti: nessun valore inventato → `missing_fields`, confidenza ridotta, spesso `NO_BET`.
 
 ## Limiti attuali

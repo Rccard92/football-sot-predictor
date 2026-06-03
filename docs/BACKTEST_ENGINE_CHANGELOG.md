@@ -26,6 +26,16 @@ Changelog backend dedicato al Backtest Engine multi-mercato. Non sostituisce `fr
 
 ---
 
+## v31-predictive-simulator
+
+**Titolo:** Simulatore predittivo v3.1 (refactor numerico)
+
+**Descrizione:** Rimossa logica betting (GIOCA/NO_BET, linee, hit rate) dalla fase calibrazione. Otto strategie numeriche predicono home/away/total su tutte le fixture. Metriche: MAE/RMSE/bias, within bands, coverage WIN, error distribution, `balanced_prediction_score`. UI: 7 tab predittivi + export JSON. Endpoint `GET /calibration-simulator/report-json`.
+
+**File toccati:** `v31_calibration_simulator_*`, `backtest_v31.py`, frontend simulatore, test, `sot-model-v31.md`.
+
+---
+
 ## v31-calibration-simulator-scale-fix
 
 **Titolo:** Correzione scala predizione simulatore v3.1

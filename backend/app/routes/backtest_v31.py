@@ -125,6 +125,37 @@ def v31_calibration_simulator(
     return jsonable_encoder(payload)
 
 
+@router.get("/calibration-simulator/report-json")
+def v31_calibration_simulator_report_json(
+    competition_id: int = Query(...),
+    season_year: int = Query(...),
+    use_latest_version_per_round: bool = Query(default=True),
+    include_all_versions: bool = Query(default=False),
+    strategy: str = Query(default="all"),
+    db: Session = Depends(get_db),
+):
+    svc = V31CalibrationSimulatorService()
+    try:
+        payload = svc.run_simulator(
+            db,
+            competition_id=competition_id,
+            season_year=season_year,
+            use_latest_version_per_round=use_latest_version_per_round,
+            include_all_versions=include_all_versions,
+            strategy=strategy,
+            include_rows=True,
+        )
+    except (OperationalError, ProgrammingError):
+        logger.exception("GET v31/calibration-simulator/report-json database error")
+        raise
+    filename = f"v31-predictive-simulator-{competition_id}-{season_year}.json"
+    return JSONResponse(
+        content=jsonable_encoder(payload),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/calibration-dataset/summary")
 def v31_calibration_dataset_summary(
     competition_id: int = Query(...),

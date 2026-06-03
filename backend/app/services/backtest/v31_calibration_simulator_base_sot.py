@@ -46,6 +46,24 @@ CORE_BASE_WEIGHTS: dict[str, float] = {
     "shots_to_sot": 0.08,
 }
 
+SPLIT_HEAVY_BASE_WEIGHTS: dict[str, float] = {
+    "avg_sot_for": 0.22,
+    "opponent_conceded_sot_avg": 0.20,
+    "last5_avg_sot_for": 0.10,
+    "home_away_split_sot_for": 0.28,
+    "xg_to_sot": 0.10,
+    "shots_to_sot": 0.10,
+}
+
+FORM_HEAVY_BASE_WEIGHTS: dict[str, float] = {
+    "avg_sot_for": 0.22,
+    "opponent_conceded_sot_avg": 0.18,
+    "last5_avg_sot_for": 0.32,
+    "home_away_split_sot_for": 0.08,
+    "xg_to_sot": 0.10,
+    "shots_to_sot": 0.10,
+}
+
 CONTEXT_MACRO_WEIGHTS: dict[str, float] = {
     "recent_form_index": 0.20,
     "chance_quality_index": 0.20,
@@ -55,6 +73,42 @@ CONTEXT_MACRO_WEIGHTS: dict[str, float] = {
     "injuries_unavailable_index": 0.10,
     "lineups_index": 0.05,
 }
+
+PLAYER_LAYER_CONTEXT_WEIGHTS: dict[str, float] = {
+    "recent_form_index": 0.10,
+    "chance_quality_index": 0.10,
+    "pace_control_index": 0.10,
+    "home_away_split_index": 0.10,
+    "player_layer_index": 0.30,
+    "injuries_unavailable_index": 0.20,
+    "lineups_index": 0.10,
+}
+
+SPLIT_HEAVY_CONTEXT_WEIGHTS: dict[str, float] = {
+    "recent_form_index": 0.12,
+    "chance_quality_index": 0.12,
+    "pace_control_index": 0.10,
+    "home_away_split_index": 0.36,
+    "player_layer_index": 0.12,
+    "injuries_unavailable_index": 0.10,
+    "lineups_index": 0.08,
+}
+
+FORM_HEAVY_CONTEXT_WEIGHTS: dict[str, float] = {
+    "recent_form_index": 0.38,
+    "chance_quality_index": 0.18,
+    "pace_control_index": 0.12,
+    "home_away_split_index": 0.10,
+    "player_layer_index": 0.10,
+    "injuries_unavailable_index": 0.07,
+    "lineups_index": 0.05,
+}
+
+LOW_VARIANCE_BLEND = 0.55
+LOW_VARIANCE_TOTAL_MIN = 5.5
+LOW_VARIANCE_TOTAL_MAX = 10.5
+LOW_VARIANCE_CTX_MIN = 0.93
+LOW_VARIANCE_CTX_MAX = 1.07
 
 
 def league_avgs(league_context: dict[str, Any] | None) -> tuple[float, float, float]:
@@ -187,10 +241,12 @@ def context_multiplier(
     *,
     cap_min: float = CONTEXT_CAP_MIN,
     cap_max: float = CONTEXT_CAP_MAX,
+    context_weights: dict[str, float] | None = None,
 ) -> tuple[float, dict[str, float]]:
+    weights_map = context_weights or CONTEXT_MACRO_WEIGHTS
     used: dict[str, float] = {}
     num = den = 0.0
-    for macro_key, w in CONTEXT_MACRO_WEIGHTS.items():
+    for macro_key, w in weights_map.items():
         val = side.macros.get(macro_key)
         if val is None or w <= 0:
             continue
@@ -210,6 +266,11 @@ def predict_fixture_totals(
     base_weights: dict[str, float] | None = None,
     context_cap_min: float = CONTEXT_CAP_MIN,
     context_cap_max: float = CONTEXT_CAP_MAX,
+    context_weights: dict[str, float] | None = None,
+    total_league_blend: float = TOTAL_LEAGUE_BLEND,
+    total_min: float = 4.0,
+    total_max: float = 14.0,
+    bias_offset: float = 0.0,
 ) -> dict[str, Any]:
     """Predizione home/away/total da base SOT + context multiplier."""
     league_ctx = signals.league_context
@@ -241,18 +302,21 @@ def predict_fixture_totals(
         signals.home,
         cap_min=context_cap_min,
         cap_max=context_cap_max,
+        context_weights=context_weights,
     )
     a_ctx, a_ctx_w = context_multiplier(
         signals.away,
         cap_min=context_cap_min,
         cap_max=context_cap_max,
+        context_weights=context_weights,
     )
 
     h_pred = max(0.8, min(8.5, home_base * h_ctx))
     a_pred = max(0.8, min(8.5, away_base * a_ctx))
     raw_total = h_pred + a_pred
-    total = _round1((1.0 - TOTAL_LEAGUE_BLEND) * raw_total + TOTAL_LEAGUE_BLEND * LEAGUE_AVG_TOTAL_SOT)
-    total = max(4.0, min(14.0, total))
+    blend = max(0.0, min(1.0, total_league_blend))
+    total = _round1((1.0 - blend) * raw_total + blend * LEAGUE_AVG_TOTAL_SOT + bias_offset)
+    total = max(total_min, min(total_max, total))
 
     all_missing = list(
         dict.fromkeys(

@@ -81,7 +81,7 @@ def _team_raw_dict(team_side: dict[str, Any] | None) -> dict[str, Any]:
 def extract_fixture_signals(row: dict[str, Any]) -> FixtureSignals | None:
     """Estrae segnali da row.features — non legge target né comparisons."""
     meta = row.get("metadata") or {}
-    feats = row.get("features") or {}
+    feats = row.get("features")
     if not isinstance(feats, dict):
         return None
 
