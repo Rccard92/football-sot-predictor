@@ -199,6 +199,9 @@ class PredictiveFixtureNote(Base, TimestampMixin):
 
 class PredictiveAiInsight(Base):
     __tablename__ = "predictive_ai_insights"
+    __table_args__ = (
+        Index("ix_predictive_ai_insights_run_type_created", "run_id", "analysis_type", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     run_id: Mapped[int] = mapped_column(
@@ -207,6 +210,16 @@ class PredictiveAiInsight(Base):
         nullable=False,
         index=True,
     )
+    analysis_type: Mapped[str] = mapped_column(String(64), nullable=False, default="legacy_generic")
+    fixture_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    strategy_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    input_summary_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+    model_name: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
     output_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,

@@ -58,6 +58,10 @@ export function PredictiveSimulatorPage() {
   const [savedMessage, setSavedMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingFixtureAnalysis, setPendingFixtureAnalysis] = useState<{
+    fixtureId: number
+    strategyKey: string
+  } | null>(null)
 
   const refreshHistory = useCallback(async () => {
     if (selectedCompetitionId == null) return
@@ -209,7 +213,15 @@ export function PredictiveSimulatorPage() {
         />
       ) : null}
 
-      {pageTab === 'diagnosis' ? <PredictiveFixtureDiagnosisPanel runId={currentRunId} /> : null}
+      {pageTab === 'diagnosis' ? (
+        <PredictiveFixtureDiagnosisPanel
+          runId={currentRunId}
+          onAnalyzeFixture={(fixtureId, strategyKey) => {
+            setPendingFixtureAnalysis({ fixtureId, strategyKey })
+            setPageTab('ai')
+          }}
+        />
+      ) : null}
 
       {pageTab === 'pattern' ? (
         <RoundAnalysisV31PatternAnalysisSection
@@ -224,7 +236,13 @@ export function PredictiveSimulatorPage() {
         />
       ) : null}
 
-      {pageTab === 'ai' ? <PredictiveAiInsightsPanel runId={currentRunId} /> : null}
+      {pageTab === 'ai' ? (
+        <PredictiveAiInsightsPanel
+          runId={currentRunId}
+          pendingFixture={pendingFixtureAnalysis}
+          onPendingFixtureConsumed={() => setPendingFixtureAnalysis(null)}
+        />
+      ) : null}
 
       {pageTab === 'audit' ? (
         <div className="space-y-4">

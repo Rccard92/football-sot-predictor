@@ -129,7 +129,9 @@ Il simulatore predittivo è ora un **laboratorio persistente** con run salvate i
 | `GET` | `/runs/{id}` | Payload completo (simulator + pattern + insights + audit) |
 | `GET` | `/runs/{id}/fixtures` | Diagnosi fixture-by-fixture con filtri |
 | `POST` | `/runs/{id}/fixtures/{fixture_id}/notes` | Nota utente per fixture×strategia |
-| `POST` / `GET` | `/runs/{id}/ai-insights` | Analisi AI diagnostica (opzionale, `OPENAI_API_KEY`) |
+| `POST` | `/runs/{id}/ai-insights` | Analisi AI mirata (`analysis_type` nel body) |
+| `GET` | `/runs/{id}/ai-insights` | Storico analisi AI (`?analysis_type=`, `?limit=`) |
+| `GET` | `/runs/{id}/ai-insights/{insight_id}` | Dettaglio singola analisi AI |
 | `GET` | `/config` | `{ openai_configured: bool }` |
 
 Gli endpoint GET `/api/backtest/v31/*` restano per export one-shot e retrocompatibilità.
@@ -140,7 +142,18 @@ Gli endpoint GET `/api/backtest/v31/*` restano per export one-shot e retrocompat
 - `predictive_fixture_predictions` — una riga per fixture×strategia con `reason_codes_json`, `win_quality`, `outcome_type`
 - `predictive_pattern_insights` — insight aggregati tipizzati
 - `predictive_fixture_notes` — note utente
-- `predictive_ai_insights` — output analisi OpenAI (solo diagnostica, no predizione SOT)
+- `predictive_ai_insights` — analisi AI mirate con `analysis_type`, `input_summary_json`, `model_name`
+
+### Analisi AI mirata
+
+Tipi `analysis_type` per `POST /runs/{id}/ai-insights`:
+
+- `missed_high_non_extreme` — high/very_high non estreme sottostimate dai top-3
+- `false_high_predictions` — pred ≥ 9, actual ≤ 7
+- `top3_model_comparison` — bias vs hybrid vs chaos su cluster reali
+- `single_fixture` — richiede `fixture_id` (+ opzionale `strategy_key`)
+
+Output strutturato: `short_verdict`, `key_evidence`, `root_causes`, `recommended_experiments`, `do_not_overreact_to`, `next_action`, `fixture_notes`. Nessuna predizione SOT, nessun bet/no bet.
 
 ### UI
 
@@ -156,6 +169,12 @@ La fase bet/no bet resta disabilitata (`betting_phase_enabled: false`).
 - Reason codes analitici deterministici (`HIGH_TOTAL_MISSED`, `FALSE_HIGH_PREDICTION`, …)
 - Placeholder OpenAI diagnostico post-match (503 graceful se API key assente)
 - Audit esteso anti-leakage nel laboratorio
+
+### Changelog targeted-ai-diagnostics
+
+- Analisi AI per tipo con context builder deterministici e prompt vincolato
+- Storico analisi AI per run con `analysis_type` e fixture opzionale
+- UI tab Analisi AI: 4 blocchi mirati, card/tabelle leggibili, integrazione Diagnosi partite
 
 ## Walk-forward
 

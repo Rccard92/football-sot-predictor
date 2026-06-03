@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class PredictiveRunCreateBody(BaseModel):
@@ -68,4 +68,28 @@ class PredictiveFixturesResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    items: list[dict[str, Any]]
+
+
+AnalysisType = Literal[
+    "missed_high_non_extreme",
+    "false_high_predictions",
+    "top3_model_comparison",
+    "single_fixture",
+]
+
+
+class PredictiveAiInsightsCreateBody(BaseModel):
+    analysis_type: AnalysisType
+    fixture_id: int | None = None
+    strategy_key: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_single_fixture(self) -> PredictiveAiInsightsCreateBody:
+        if self.analysis_type == "single_fixture" and self.fixture_id is None:
+            raise ValueError("fixture_id è obbligatorio per single_fixture")
+        return self
+
+
+class PredictiveAiInsightsHistoryResponse(BaseModel):
     items: list[dict[str, Any]]

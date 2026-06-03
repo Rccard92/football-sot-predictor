@@ -17,9 +17,10 @@ const OUTCOME_OPTIONS = [
 
 type Props = {
   runId: number | null
+  onAnalyzeFixture?: (fixtureId: number, strategyKey: string) => void
 }
 
-export function PredictiveFixtureDiagnosisPanel({ runId }: Props) {
+export function PredictiveFixtureDiagnosisPanel({ runId, onAnalyzeFixture }: Props) {
   const [items, setItems] = useState<PredictiveFixturePrediction[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -142,6 +143,7 @@ export function PredictiveFixtureDiagnosisPanel({ runId }: Props) {
               <th className="px-2 py-2">Outcome</th>
               <th className="px-2 py-2">Motivo</th>
               <th className="px-2 py-2">Nota</th>
+              <th className="px-2 py-2">AI</th>
             </tr>
           </thead>
           <tbody>
@@ -200,10 +202,23 @@ export function PredictiveFixtureDiagnosisPanel({ runId }: Props) {
                         Salva
                       </button>
                     </td>
+                    <td className="px-2 py-2">
+                      {onAnalyzeFixture ? (
+                        <button
+                          type="button"
+                          className="whitespace-nowrap text-violet-700 underline"
+                          onClick={() => onAnalyzeFixture(row.fixture_id, row.strategy_key)}
+                        >
+                          Analizza con AI
+                        </button>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                   </tr>
                   {isOpen ? (
                     <tr key={`${rowKey}-detail`} className="bg-slate-50/80">
-                      <td colSpan={10} className="px-4 py-3 text-xs text-slate-700">
+                      <td colSpan={11} className="px-4 py-3 text-xs text-slate-700">
                         <p className="font-medium">{row.probable_reason}</p>
                         <ul className="mt-2 list-disc pl-4">
                           {(row.reason_codes ?? []).map((rc) => (

@@ -192,9 +192,89 @@ def test_post_fixture_note(mock_note, mock_get):
 @patch("app.routes.predictive_simulator.PredictiveSimulationRunService.get_run")
 def test_ai_insights_not_configured(mock_get, _mock_cfg):
     mock_get.return_value = {"run_id": 42}
-    r = client.post("/api/predictive-simulator/runs/42/ai-insights")
+    r = client.post(
+        "/api/predictive-simulator/runs/42/ai-insights",
+        json={"analysis_type": "missed_high_non_extreme"},
+    )
     assert r.status_code == 503
     assert r.json()["detail"]["error_code"] == "OPENAI_NOT_CONFIGURED"
+
+
+def test_ai_insights_single_fixture_requires_fixture_id():
+    with patch(
+        "app.routes.predictive_simulator.PredictiveSimulationRunService.get_run",
+        return_value={"run_id": 42},
+    ):
+        r = client.post(
+            "/api/predictive-simulator/runs/42/ai-insights",
+            json={"analysis_type": "single_fixture"},
+        )
+    assert r.status_code == 422
+
+
+@patch("app.routes.predictive_simulator.openai_configured", return_value=True)
+@patch("app.routes.predictive_simulator.PredictiveAiInsightsService.generate")
+@patch("app.routes.predictive_simulator.PredictiveSimulationRunService.get_run")
+def test_ai_insights_targeted_post(mock_get, mock_generate, _mock_openai):
+    mock_get.return_value = {"run_id": 42}
+    mock_generate.return_value = {
+        "id": 7,
+        "run_id": 42,
+        "analysis_type": "missed_high_non_extreme",
+        "output": {
+            "analysis_type": "missed_high_non_extreme",
+            "short_verdict": "12 high non estreme sottostimate",
+            "key_evidence": [{"metric": "count", "value": "12", "interpretation": "test"}],
+            "root_causes": [],
+            "recommended_experiments": [],
+            "do_not_overreact_to": [],
+            "next_action": "Testare boost tier",
+            "fixture_notes": [],
+            "audit": {"openai_analysis_no_weight_mutation": True, "no_sot_prediction": True},
+        },
+    }
+    r = client.post(
+        "/api/predictive-simulator/runs/42/ai-insights",
+        json={"analysis_type": "missed_high_non_extreme"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["analysis_type"] == "missed_high_non_extreme"
+    assert body["output"]["short_verdict"]
+    assert "decision" not in str(body)
+    mock_generate.assert_called_once()
+
+
+@patch("app.routes.predictive_simulator.PredictiveAiInsightsService.list_history")
+@patch("app.routes.predictive_simulator.PredictiveSimulationRunService.get_run")
+def test_ai_insights_history_list(mock_get, mock_list):
+    mock_get.return_value = {"run_id": 42}
+    mock_list.return_value = [
+        {
+            "id": 1,
+            "run_id": 42,
+            "analysis_type": "false_high_predictions",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "short_verdict": "8 falsi positivi",
+        },
+    ]
+    r = client.get("/api/predictive-simulator/runs/42/ai-insights")
+    assert r.status_code == 200
+    assert len(r.json()["items"]) == 1
+
+
+def test_normalize_ai_output_schema():
+    from app.schemas.predictive_ai_output import normalize_ai_output
+
+    out = normalize_ai_output(
+        {
+            "short_verdict": "Test",
+            "key_evidence": [{"metric": "n", "value": "1", "interpretation": "ok"}],
+        },
+        "missed_high_non_extreme",
+    )
+    assert out["analysis_type"] == "missed_high_non_extreme"
+    assert out["audit"]["no_sot_prediction"] is True
 
 
 def test_reason_codes_on_extreme_row():

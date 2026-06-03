@@ -4472,12 +4472,107 @@ export type PredictiveRunCreateResult = {
   audit?: Record<string, boolean | string>
 }
 
-export type PredictiveAiInsights = {
-  id?: number
-  run_id?: number
+export type PredictiveAiAnalysisType =
+  | 'missed_high_non_extreme'
+  | 'false_high_predictions'
+  | 'top3_model_comparison'
+  | 'single_fixture'
+
+export type PredictiveAiKeyEvidence = {
+  metric: string
+  value: string
+  interpretation: string
+}
+
+export type PredictiveAiRootCause = {
+  cause: string
+  evidence: string
+  affected_models?: string[]
+  severity?: 'low' | 'medium' | 'high'
+}
+
+export type PredictiveAiExperiment = {
+  experiment_name: string
+  hypothesis: string
+  change_to_test: string
+  expected_benefit: string
+  risk: string
+  success_metric: string
+}
+
+export type PredictiveAiFixtureNote = {
+  match?: string
+  predicted?: string | number | null
+  actual?: string | number | null
+  error?: string | number | null
+  reason_codes?: string[] | string
+  diagnosis?: string
+}
+
+export type PredictiveAiOutput = {
+  analysis_type?: string
+  short_verdict?: string
+  key_evidence?: PredictiveAiKeyEvidence[]
+  root_causes?: PredictiveAiRootCause[]
+  recommended_experiments?: PredictiveAiExperiment[]
+  do_not_overreact_to?: Array<{ case: string; reason: string }>
+  next_action?: string
+  fixture_notes?: PredictiveAiFixtureNote[]
+  audit?: Record<string, boolean>
+}
+
+export type PredictiveAiHistoryItem = {
+  id: number
+  run_id: number
+  analysis_type: PredictiveAiAnalysisType | string
+  fixture_id?: number | null
+  strategy_key?: string | null
+  model_name?: string
   created_at?: string | null
-  output?: Record<string, unknown> | null
-  message?: string
+  short_verdict?: string | null
+  input_summary?: Record<string, unknown>
+}
+
+export type PredictiveAiInsightDetail = PredictiveAiHistoryItem & {
+  output?: PredictiveAiOutput
+}
+
+export async function postPredictiveAiInsights(
+  runId: number,
+  body: {
+    analysis_type: PredictiveAiAnalysisType
+    fixture_id?: number
+    strategy_key?: string
+  },
+): Promise<PredictiveAiInsightDetail> {
+  return requestPostJson<PredictiveAiInsightDetail>(`/api/predictive-simulator/runs/${runId}/ai-insights`, body)
+}
+
+export async function listPredictiveAiInsights(
+  runId: number,
+  params?: { analysis_type?: string; limit?: number },
+): Promise<{ items: PredictiveAiHistoryItem[] }> {
+  const q = new URLSearchParams()
+  if (params?.analysis_type) q.set('analysis_type', params.analysis_type)
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  const qs = q.toString()
+  return requestJson<{ items: PredictiveAiHistoryItem[] }>(
+    `/api/predictive-simulator/runs/${runId}/ai-insights${qs ? `?${qs}` : ''}`,
+  )
+}
+
+export async function getPredictiveAiInsight(
+  runId: number,
+  insightId: number,
+): Promise<PredictiveAiInsightDetail> {
+  return requestJson<PredictiveAiInsightDetail>(
+    `/api/predictive-simulator/runs/${runId}/ai-insights/${insightId}`,
+  )
+}
+
+/** @deprecated use listPredictiveAiInsights */
+export async function getPredictiveAiInsightsLegacy(runId: number): Promise<{ items: PredictiveAiHistoryItem[] }> {
+  return listPredictiveAiInsights(runId)
 }
 
 export async function postPredictiveSimulatorRun(
@@ -4547,14 +4642,6 @@ export async function postPredictiveFixtureNote(
   body: { strategy_key: string; note: string; tag?: string | null },
 ): Promise<Record<string, unknown>> {
   return requestPostJson(`/api/predictive-simulator/runs/${runId}/fixtures/${fixtureId}/notes`, body)
-}
-
-export async function postPredictiveAiInsights(runId: number): Promise<PredictiveAiInsights> {
-  return requestPostJson<PredictiveAiInsights>(`/api/predictive-simulator/runs/${runId}/ai-insights`, {})
-}
-
-export async function getPredictiveAiInsights(runId: number): Promise<PredictiveAiInsights> {
-  return requestJson<PredictiveAiInsights>(`/api/predictive-simulator/runs/${runId}/ai-insights`)
 }
 
 export async function getPredictiveSimulatorConfig(): Promise<{ openai_configured: boolean }> {

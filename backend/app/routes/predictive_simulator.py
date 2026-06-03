@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.predictive_simulator import (
+    PredictiveAiInsightsCreateBody,
     PredictiveFixtureNoteBody,
     PredictiveRunCreateBody,
 )
@@ -166,7 +167,11 @@ def upsert_fixture_note(
 
 
 @router.post("/runs/{run_id}/ai-insights")
-def generate_ai_insights(run_id: int, db: Session = Depends(get_db)):
+def generate_ai_insights(
+    run_id: int,
+    body: PredictiveAiInsightsCreateBody,
+    db: Session = Depends(get_db),
+):
     run = PredictiveSimulationRunService().get_run(db, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail={"error_code": "RUN_NOT_FOUND"})
@@ -177,18 +182,49 @@ def generate_ai_insights(run_id: int, db: Session = Depends(get_db)):
         )
     svc = PredictiveAiInsightsService()
     try:
-        return jsonable_encoder(svc.generate(db, run_id))
+        result = svc.generate(
+            db,
+            run_id,
+            analysis_type=body.analysis_type,
+            fixture_id=body.fixture_id,
+            strategy_key=body.strategy_key,
+        )
     except (OperationalError, ProgrammingError) as exc:
         raise _db_error(exc) from exc
+    if result.get("error_code") == "RUN_NOT_FOUND":
+        raise HTTPException(status_code=404, detail={"error_code": "RUN_NOT_FOUND"})
+    if result.get("error_code") == "FIXTURE_NOT_FOUND":
+        raise HTTPException(status_code=404, detail={"error_code": "FIXTURE_NOT_FOUND"})
+    if result.get("error_code") == OPENAI_NOT_CONFIGURED:
+        raise HTTPException(
+            status_code=503,
+            detail={"error_code": OPENAI_NOT_CONFIGURED, "openai_configured": False},
+        )
+    return jsonable_encoder(result)
 
 
 @router.get("/runs/{run_id}/ai-insights")
-def get_ai_insights(run_id: int, db: Session = Depends(get_db)):
+def list_ai_insights(
+    run_id: int,
+    analysis_type: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
     run = PredictiveSimulationRunService().get_run(db, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail={"error_code": "RUN_NOT_FOUND"})
     svc = PredictiveAiInsightsService()
-    data = svc.get_latest(db, run_id)
+    items = svc.list_history(db, run_id, analysis_type=analysis_type, limit=limit)
+    return jsonable_encoder({"items": items})
+
+
+@router.get("/runs/{run_id}/ai-insights/{insight_id}")
+def get_ai_insight(run_id: int, insight_id: int, db: Session = Depends(get_db)):
+    run = PredictiveSimulationRunService().get_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail={"error_code": "RUN_NOT_FOUND"})
+    svc = PredictiveAiInsightsService()
+    data = svc.get_by_id(db, run_id, insight_id)
     if data is None:
-        return {"output": None, "message": "Nessuna analisi AI salvata"}
+        raise HTTPException(status_code=404, detail={"error_code": "AI_INSIGHT_NOT_FOUND"})
     return jsonable_encoder(data)
