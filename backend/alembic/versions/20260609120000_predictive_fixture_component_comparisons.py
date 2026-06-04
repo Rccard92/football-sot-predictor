@@ -60,17 +60,23 @@ def upgrade() -> None:
             "run_id",
             "fixture_id",
             "strategy_key",
-            name="uq_predictive_fixture_component_comparisons_run_fixture_strategy",
+            name="uq_pred_fix_cmp_run_fixture_strategy",
         ),
     )
     op.create_index(
-        "ix_predictive_fixture_component_comparisons_run_round",
+        "ix_pred_fix_cmp_run_id",
+        "predictive_fixture_component_comparisons",
+        ["run_id"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_pred_fix_cmp_run_round",
         "predictive_fixture_component_comparisons",
         ["run_id", "round_number"],
         unique=False,
     )
     op.create_index(
-        "ix_predictive_fixture_component_comparisons_run_strategy",
+        "ix_pred_fix_cmp_run_strategy",
         "predictive_fixture_component_comparisons",
         ["run_id", "strategy_key"],
         unique=False,
@@ -83,11 +89,15 @@ def downgrade() -> None:
         return
 
     op.drop_index(
-        "ix_predictive_fixture_component_comparisons_run_strategy",
+        "ix_pred_fix_cmp_run_strategy",
         table_name="predictive_fixture_component_comparisons",
     )
     op.drop_index(
-        "ix_predictive_fixture_component_comparisons_run_round",
+        "ix_pred_fix_cmp_run_round",
+        table_name="predictive_fixture_component_comparisons",
+    )
+    op.drop_index(
+        "ix_pred_fix_cmp_run_id",
         table_name="predictive_fixture_component_comparisons",
     )
     op.drop_table("predictive_fixture_component_comparisons")

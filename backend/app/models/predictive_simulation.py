@@ -112,10 +112,11 @@ class PredictiveFixtureComponentComparison(Base):
             "run_id",
             "fixture_id",
             "strategy_key",
-            name="uq_predictive_fixture_component_comparisons_run_fixture_strategy",
+            name="uq_pred_fix_cmp_run_fixture_strategy",
         ),
-        Index("ix_predictive_fixture_component_comparisons_run_round", "run_id", "round_number"),
-        Index("ix_predictive_fixture_component_comparisons_run_strategy", "run_id", "strategy_key"),
+        Index("ix_pred_fix_cmp_run_id", "run_id"),
+        Index("ix_pred_fix_cmp_run_round", "run_id", "round_number"),
+        Index("ix_pred_fix_cmp_run_strategy", "run_id", "strategy_key"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -123,7 +124,6 @@ class PredictiveFixtureComponentComparison(Base):
         BigInteger,
         ForeignKey("predictive_simulation_runs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     fixture_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     strategy_key: Mapped[str] = mapped_column(String(64), nullable=False)
