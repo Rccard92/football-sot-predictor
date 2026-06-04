@@ -1,4 +1,4 @@
-import type { CecchinoUpcomingFixtureRow } from '../../lib/api'
+import type { CecchinoUpcomingFixtureRow } from '../../lib/cecchinoApi'
 
 type Props = {
   fixtures: CecchinoUpcomingFixtureRow[]

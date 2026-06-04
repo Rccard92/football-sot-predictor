@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CecchinoFixtureDetail } from '../components/cecchino/CecchinoFixtureDetail'
-import { CecchinoFixtureList } from '../components/cecchino/CecchinoFixtureList'
+import { CecchinoFixtureDetailPanel } from '../components/cecchino/CecchinoFixtureDetailPanel'
+import { CecchinoFixturesTable } from '../components/cecchino/CecchinoFixturesTable'
+import { CecchinoPageHeader } from '../components/cecchino/CecchinoPageHeader'
 import { ContextBanner } from '../components/ContextBanner'
 import { useCompetition } from '../contexts/CompetitionContext'
 import {
@@ -9,7 +10,7 @@ import {
   getCecchinoUpcomingForCompetition,
   type CecchinoFixtureDetailResponse,
   type CecchinoUpcomingResponse,
-} from '../lib/api'
+} from '../lib/cecchinoApi'
 import { formatFetchError } from '../utils/formatFetchError'
 
 function useQuery(): URLSearchParams {
@@ -22,12 +23,12 @@ export function CecchinoPage() {
   const navigate = useNavigate()
   const { selectedCompetitionId } = useCompetition()
 
-  const fixtureIdFromQS = Number(qs.get('fixture_id') || '')
+  const fixtureId = useMemo(() => {
+    const id = Number(qs.get('fixture_id') || '')
+    return Number.isFinite(id) && id > 0 ? id : null
+  }, [qs])
   const [upcoming, setUpcoming] = useState<CecchinoUpcomingResponse | null>(null)
   const [detail, setDetail] = useState<CecchinoFixtureDetailResponse | null>(null)
-  const [fixtureId, setFixtureId] = useState<number | null>(
-    Number.isFinite(fixtureIdFromQS) && fixtureIdFromQS > 0 ? fixtureIdFromQS : null,
-  )
   const [listLoading, setListLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
@@ -51,18 +52,12 @@ export function CecchinoPage() {
       setDetail(null)
       if (selectedCompetitionId == null) {
         setListError('Seleziona un campionato nella sidebar.')
-        setFixtureId(null)
         return
       }
       setListLoading(true)
       try {
         const data = await getCecchinoUpcomingForCompetition(selectedCompetitionId, { limit: 50 })
         setUpcoming(data)
-        if (fixtureId == null && data.fixtures.length > 0) {
-          const first = data.fixtures[0].fixture.fixture_id
-          setFixtureId(first)
-          syncUrl(first)
-        }
       } catch (e) {
         setListError(formatFetchError(e))
       } finally {
@@ -70,7 +65,6 @@ export function CecchinoPage() {
       }
     }
     void load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on competition change only
   }, [selectedCompetitionId])
 
   useEffect(() => {
@@ -92,23 +86,12 @@ export function CecchinoPage() {
   }, [selectedCompetitionId, fixtureId])
 
   const onSelectFixture = (id: number) => {
-    setFixtureId(id)
     syncUrl(id)
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Cecchino</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Quote 1X2 da picchetti tecnici (v0.1 parità Excel). Modulo separato dal modello SOT — non
-          influenza le previsioni SOT v2.0/v2.1.
-        </p>
-      </header>
-
-      <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-4 py-3 text-xs text-indigo-900">
-        Modulo separato dal modello SOT. Non influenza le previsioni SOT v2.0/v2.1.
-      </div>
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+      <CecchinoPageHeader cecchinoVersion={upcoming?.cecchino_version} />
 
       <ContextBanner showModelSelector={false} />
 
@@ -118,44 +101,35 @@ export function CecchinoPage() {
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(240px,280px)_1fr]">
-        <aside className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-800">
-            Prossime partite
-            {upcoming?.round_label ? ` · ${upcoming.round_label}` : ''}
-          </h2>
-          {listLoading && <p className="text-xs text-slate-500">Caricamento…</p>}
-          {upcoming && (
-            <CecchinoFixtureList
-              fixtures={upcoming.fixtures}
-              selectedFixtureId={fixtureId}
-              onSelect={onSelectFixture}
-            />
-          )}
-        </aside>
+      {listLoading && <p className="text-xs text-slate-500">Caricamento partite…</p>}
 
-        <section className="space-y-4">
-          {detailLoading && <p className="text-xs text-slate-500">Calcolo dettaglio…</p>}
+      {upcoming && (
+        <CecchinoFixturesTable
+          fixtures={upcoming.fixtures}
+          selectedFixtureId={fixtureId}
+          onSelect={onSelectFixture}
+          roundLabel={upcoming.round_label}
+        />
+      )}
+
+      {fixtureId == null && upcoming && upcoming.fixtures.length > 0 && (
+        <p className="text-sm text-slate-500">
+          Seleziona una partita dalla tabella e premi «Dettaglio» per vedere picchetti e quote.
+        </p>
+      )}
+
+      {fixtureId != null && (
+        <section className="space-y-3 border-t border-slate-200 pt-6">
+          <h2 className="text-sm font-semibold text-slate-800">Dettaglio partita</h2>
+          {detailLoading && <p className="text-xs text-slate-500">Caricamento dettaglio…</p>}
           {detailError && (
             <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
               {detailError}
             </p>
           )}
-          {detail && detail.status === 'ok' && (
-            <>
-              <div className="text-sm text-slate-700">
-                <span className="font-medium text-slate-900">
-                  {detail.fixture.home_team.name} vs {detail.fixture.away_team.name}
-                </span>
-                <span className="ml-2 text-xs text-slate-500">
-                  {detail.cecchino_version} · {detail.calculation_status}
-                </span>
-              </div>
-              <CecchinoFixtureDetail detail={detail} />
-            </>
-          )}
+          {detail && <CecchinoFixtureDetailPanel detail={detail} />}
         </section>
-      </div>
+      )}
     </div>
   )
 }

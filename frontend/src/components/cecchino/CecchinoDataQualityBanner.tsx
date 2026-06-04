@@ -1,4 +1,4 @@
-import type { CecchinoDataQuality } from '../../lib/api'
+import type { CecchinoDataQuality } from '../../lib/cecchinoApi'
 
 type Props = {
   dataQuality: CecchinoDataQuality | null | undefined

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { CecchinoContextSnapshot, CecchinoDataQuality } from '../../lib/api'
+import type { CecchinoContextSnapshot, CecchinoDataQuality } from '../../lib/cecchinoApi'
 
 const CONTEXT_ROWS: { key: string; label: string; sampleKey: keyof CecchinoDataQuality }[] = [
   { key: 'home_context', label: 'Casa (split casalinghe)', sampleKey: 'sample_home_context' },

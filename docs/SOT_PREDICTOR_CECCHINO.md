@@ -7,7 +7,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Campo | Valore |
 |-------|--------|
 | Versione | `cecchino_v0_1_excel_parity` |
-| Fase | 1 — parità Excel; **2** — recupero dati reali e anti-leakage |
+| Fase | 1 — parità Excel; **2** — recupero dati reali e anti-leakage; **3** — dashboard frontend autonoma |
 | Separazione SOT | Totale — engine, API, UI e tabella dedicati |
 
 ## Obiettivo
@@ -123,7 +123,21 @@ Campi: `input_snapshot_json`, `output_json`, `warnings_json`, `status`, team ids
 
 ## Frontend
 
-Route `/cecchino` — voce menu principale. Banner: modulo separato da SOT v2.0/v2.1.
+Route `/cecchino` — voce menu principale. Modulo separato da SOT v2.0/v2.1 (nessun `model_version` SOT).
+
+### Fase 3 — Dashboard autonoma
+
+| File | Ruolo |
+|------|--------|
+| `frontend/src/lib/cecchinoApi.ts` | Client HTTP e tipi Cecchino (non in `api.ts`) |
+| `frontend/src/lib/cecchinoUtils.ts` | `formatWdl`, `computeBestSide`, `canShowFinalOdds`, badge stato |
+| `frontend/src/pages/CecchinoPage.tsx` | Layout: header → tabella partite → dettaglio sotto |
+| `CecchinoFixturesTable` | Colonne quote/prob/best side; quote `—` se non `available`/`partial_low_sample` |
+| `CecchinoFixtureDetailPanel` | Sezioni A–F: metadati, picchetti, final, placeholder, debug JSON |
+
+**Stati UI dettaglio:** `available` / `partial_low_sample` → picchetti + quote finali; `insufficient_data` → messaggio senza numeri; `leakage failed` → banner errore; accordion «Debug tecnico» con JSON serializzato.
+
+**URL:** `?competition_id=&fixture_id=` per deep-link al dettaglio.
 
 ## Test parità Excel
 
@@ -138,4 +152,4 @@ Caso di riferimento: **San Lorenzo de Almagro vs Deportivo Riestra** — vedi `b
 | Service | `backend/app/services/cecchino/cecchino_service.py` |
 | Route | `backend/app/routes/cecchino.py` |
 | Model | `backend/app/models/cecchino_prediction.py` |
-| UI | `frontend/src/pages/CecchinoPage.tsx` |
+| UI | `frontend/src/pages/CecchinoPage.tsx`, `frontend/src/lib/cecchinoApi.ts` |

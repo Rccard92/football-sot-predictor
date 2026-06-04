@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-0.3.0',
+    date: '2026-06-04',
+    title: 'Cecchino — Fase 3 — Dashboard frontend autonoma',
+    type: 'minor',
+    summary:
+      'Dashboard /cecchino con tabella operativa, dettaglio strutturato A–F, client API dedicato e gestione stati senza quote inventate.',
+    highlights: [
+      'Client cecchinoApi.ts + helper cecchinoUtils.ts (best side, formatWdl, stati).',
+      'Tabella full-width: quote finali, probabilità, best side, azione Dettaglio.',
+      'Pannello dettaglio: metadati, picchetti con record W/D/L, quote finali evidenziate, debug JSON.',
+      'insufficient_data / leakage failed: messaggi chiari, nessuna tabella quote.',
+      'Nessuna modifica a SOT v2.0/v2.1 né a Prossima giornata.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-0.2.0',
     date: '2026-06-04',
     title: 'Cecchino — Fase 2 — Recupero dati reali e no leakage',

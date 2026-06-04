@@ -1,4 +1,4 @@
-import type { CecchinoFinalOdds } from '../../lib/api'
+import type { CecchinoFinalOdds } from '../../lib/cecchinoApi'
 
 type Props = {
   final: CecchinoFinalOdds

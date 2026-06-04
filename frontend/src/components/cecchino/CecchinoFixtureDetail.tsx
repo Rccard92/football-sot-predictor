@@ -1,4 +1,4 @@
-import type { CecchinoFixtureDetailResponse } from '../../lib/api'
+import type { CecchinoFixtureDetailResponse } from '../../lib/cecchinoApi'
 import { CecchinoDataQualityBanner } from './CecchinoDataQualityBanner'
 import { CecchinoInputDataPanel } from './CecchinoInputDataPanel'
 import { CecchinoFinalOddsCard } from './CecchinoFinalOddsCard'
