@@ -16,7 +16,10 @@ from app.services.cecchino.cecchino_constants import (
     LEAKAGE_FAILED,
     STATUS_ERROR,
 )
+from app.services.cecchino.cecchino_bookmaker_odds_service import load_fixture_bookmaker_odds_payload
 from app.services.cecchino.cecchino_engine import build_full_cecchino_output, manual_input_to_snapshot
+from app.services.cecchino.cecchino_kpi_panel import build_cecchino_kpi_panel
+from app.services.cecchino.cecchino_statistical_kpi import build_statistical_kpi_odds
 from app.services.cecchino.cecchino_fixture_history import (
     audit_leakage,
     build_data_quality,
@@ -78,12 +81,52 @@ def _signals_matrix_is_available(output: dict[str, Any] | None) -> bool:
     return sm.get("status") == "available"
 
 
+def _kpi_panel_is_available(output: dict[str, Any] | None) -> bool:
+    if not output:
+        return False
+    kp = output.get("kpi_panel")
+    if not isinstance(kp, dict):
+        return False
+    return kp.get("version") == CECCHINO_VERSION and isinstance(kp.get("rows"), list)
+
+
+def _enrich_output_with_kpi(
+    db: Session,
+    comp: Competition,
+    fixture: Fixture,
+    *,
+    output: dict[str, Any],
+    input_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    statistical = build_statistical_kpi_odds(input_snapshot)
+    bm_payload = load_fixture_bookmaker_odds_payload(
+        db,
+        competition_id=int(comp.id),
+        fixture_id=int(fixture.id),
+    )
+    kpi = build_cecchino_kpi_panel(
+        statistical=statistical,
+        final_odds=output.get("final") or {},
+        bookmaker_payload=bm_payload,
+    )
+    output = dict(output)
+    output["kpi_panel"] = kpi
+    output["bookmaker_comparison"] = {
+        "status": bm_payload.get("status") or "not_available",
+        "kpi_panel": kpi,
+        "bookmaker_odds": bm_payload,
+    }
+    return output
+
+
 def _stored_row_is_usable(row: CecchinoPrediction) -> bool:
     if not row.output_json:
         return False
     if not input_snapshot_is_complete(row.input_snapshot_json):
         return False
     if not _signals_matrix_is_available(row.output_json):
+        return False
+    if not _kpi_panel_is_available(row.output_json):
         return False
     dq = (row.output_json or {}).get("data_quality") or {}
     if _leakage_status(dq) == LEAKAGE_FAILED:
@@ -215,6 +258,14 @@ def calculate_and_persist_for_fixture(
         warnings = _merge_warnings(bundle.warnings, calc.warnings)
         output = calc.to_dict()
         output["data_quality"] = bundle.data_quality
+        output = _enrich_output_with_kpi(
+            db,
+            comp,
+            fixture,
+            output=output,
+            input_snapshot=bundle.input_snapshot,
+        )
+        warnings = _merge_warnings(warnings, output.get("kpi_panel", {}).get("warnings") or [])
 
         payload = {
             "status": "ok",
@@ -225,6 +276,7 @@ def calculate_and_persist_for_fixture(
             "input_snapshot": bundle.input_snapshot,
             "data_quality": bundle.data_quality,
             "output": output,
+            "kpi_panel": output.get("kpi_panel"),
             "warnings": warnings,
         }
         if persist:
@@ -316,6 +368,20 @@ def build_fixture_detail(
     row = _load_stored_row(db, int(comp.id), int(fixture.id))
     if row is not None and _stored_row_is_usable(row):
         dq = (row.output_json or {}).get("data_quality") or {}
+        out = row.output_json or {}
+        bm_fresh = load_fixture_bookmaker_odds_payload(
+            db,
+            competition_id=int(comp.id),
+            fixture_id=int(fixture.id),
+        )
+        if bm_fresh.get("status") != "not_available":
+            out = _enrich_output_with_kpi(
+                db,
+                comp,
+                fixture,
+                output=dict(out),
+                input_snapshot=row.input_snapshot_json or {},
+            )
         return {
             "status": "ok",
             "cecchino_version": CECCHINO_VERSION,
@@ -324,7 +390,8 @@ def build_fixture_detail(
             "calculation_status": row.status,
             "input_snapshot": row.input_snapshot_json,
             "data_quality": dq,
-            "output": row.output_json,
+            "output": out,
+            "kpi_panel": out.get("kpi_panel"),
             "warnings": row.warnings_json or [],
             "stored": True,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,

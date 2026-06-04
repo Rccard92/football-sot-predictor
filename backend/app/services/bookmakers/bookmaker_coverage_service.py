@@ -72,27 +72,37 @@ class BookmakerCoverageService:
             bookmaker_name=bookmaker_name,
         )
 
-        by_fixture: dict[int, list[dict[str, Any]]] = {fid: [] for fid in fixture_ids}
+        by_fixture: dict[int, dict[tuple[str, str], dict[str, Any]]] = {fid: {} for fid in fixture_ids}
         bookmaker_set: set[str] = set()
         for o in odds_rows:
             bookmaker_set.add(o.bookmaker_name)
-            by_fixture.setdefault(int(o.fixture_id), []).append(
+            key = (o.bookmaker_name, o.provider_bookmaker_id)
+            slot = by_fixture.setdefault(int(o.fixture_id), {}).setdefault(
+                key,
                 {
                     "bookmaker_name": o.bookmaker_name,
                     "provider_source": o.provider_source,
                     "provider_bookmaker_id": o.provider_bookmaker_id,
-                    "home_odds": o.home_odds,
-                    "draw_odds": o.draw_odds,
-                    "away_odds": o.away_odds,
-                    "odds_updated_at": o.odds_updated_at.isoformat() if o.odds_updated_at else None,
+                    "home_odds": None,
+                    "draw_odds": None,
+                    "away_odds": None,
+                    "odds_updated_at": None,
                 },
             )
+            if o.selection_key == "HOME":
+                slot["home_odds"] = o.odds_value
+            elif o.selection_key == "DRAW":
+                slot["draw_odds"] = o.odds_value
+            elif o.selection_key == "AWAY":
+                slot["away_odds"] = o.odds_value
+            if o.odds_updated_at:
+                slot["odds_updated_at"] = o.odds_updated_at.isoformat()
 
         fixtures_out: list[dict[str, Any]] = []
         with_odds = 0
         for fx in target:
             fid = int(fx.id)
-            sample = by_fixture.get(fid) or []
+            sample = list((by_fixture.get(fid) or {}).values())
             has = len(sample) > 0
             if has:
                 with_odds += 1

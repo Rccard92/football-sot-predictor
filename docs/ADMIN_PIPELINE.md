@@ -282,7 +282,7 @@ Sync bookmaker: `POST /api/admin/bookmakers/sync` (API-Football) + `POST /api/ad
 3. `POST /api/admin/bookmakers/sportapi/odds/markets-discovery` — discovery mercati SOT
 4. `POST /api/admin/bookmakers/sportapi/odds/next-round-sot` — quote SOT prossimo turno
 
-**Nota:** odds/bookmakers sono **informativi** — non entrano nel calcolo SOT né in Cecchino (`bookmaker_comparison` resta `not_implemented_yet`; confronto futuro su `fixture_bookmaker_odds`).
+**Nota:** odds/bookmakers admin discovery sono **informativi** per SOT. Il **Cecchino** usa `fixture_bookmaker_odds` + pannello KPI (Bet365/Betfair/Pinnacle) — vedi sezione Cecchino sotto.
 
 ---
 
@@ -396,6 +396,13 @@ Vedi anche [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md).
 ## Cecchino (modulo separato)
 
 Il **Cecchino** non è incluso in `refresh/next-round` né nella generazione v2.0/v2.1.
+
+Per sincronizzare quote bookmaker API-Football (Bet365 8, Betfair 3, Pinnacle 4) sul prossimo turno o su una fixture:
+
+```
+POST /api/admin/competitions/{competition_id}/cecchino/bookmakers/sync-next-round
+Body: { "fixture_id": 123, "bookmaker_ids": [8, 3, 4], "markets": ["MATCH_WINNER_1X2", "DOUBLE_CHANCE", "OVER_UNDER_GOALS"] }
+```
 
 Per ricalcolare le quote 1X2 Cecchino sulle prossime partite (o su una singola fixture):
 

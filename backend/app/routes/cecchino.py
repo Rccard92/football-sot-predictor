@@ -10,7 +10,13 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.cecchino import CecchinoDebugCalculateBody, CecchinoRecalculateBody
+from app.schemas.cecchino import (
+    CecchinoBookmakerSyncBody,
+    CecchinoDebugCalculateBody,
+    CecchinoRecalculateBody,
+)
+from app.services.cecchino.cecchino_bookmaker_odds_service import load_fixture_bookmaker_odds_payload
+from app.services.cecchino.cecchino_bookmaker_sync_service import CecchinoBookmakerSyncService
 from app.services.cecchino.cecchino_constants import CECCHINO_VERSION
 from app.services.cecchino.cecchino_service import (
     build_fixture_detail,
@@ -80,3 +86,41 @@ def cecchino_debug_calculate(body: CecchinoDebugCalculateBody):
     data = body.model_dump()
     payload = debug_calculate_from_manual(data)
     return jsonable_encoder(payload)
+
+
+@router.get("/{competition_id}/cecchino/fixture/{fixture_id}/bookmaker-odds")
+def cecchino_fixture_bookmaker_odds(
+    competition_id: int,
+    fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    comp = CompetitionService().get_by_id_or_raise(db, competition_id)
+    fx, err, code = _validate_fixture_for_competition(db, comp, fixture_id)
+    if err is not None:
+        return JSONResponse(status_code=code or 404, content=jsonable_encoder(err))
+    assert fx is not None
+    payload = load_fixture_bookmaker_odds_payload(
+        db,
+        competition_id=int(comp.id),
+        fixture_id=int(fx.id),
+    )
+    return jsonable_encoder(payload)
+
+
+@admin_router.post("/competitions/{competition_id}/cecchino/bookmakers/sync-next-round")
+def cecchino_sync_bookmaker_odds(
+    competition_id: int,
+    body: CecchinoBookmakerSyncBody | None = None,
+    db: Session = Depends(get_db),
+):
+    comp = CompetitionService().get_by_id_or_raise(db, competition_id)
+    req = body or CecchinoBookmakerSyncBody()
+    payload = CecchinoBookmakerSyncService().sync(
+        db,
+        int(comp.id),
+        fixture_id=req.fixture_id,
+        bookmaker_ids=req.bookmaker_ids,
+        markets=req.markets,
+    )
+    status_code = 200 if payload.get("status") == "success" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))

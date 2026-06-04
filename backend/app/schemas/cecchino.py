@@ -28,3 +28,9 @@ class CecchinoDebugCalculateBody(BaseModel):
 class CecchinoRecalculateBody(BaseModel):
     fixture_id: int | None = None
     limit: int = Field(50, ge=1, le=200)
+
+
+class CecchinoBookmakerSyncBody(BaseModel):
+    fixture_id: int | None = None
+    bookmaker_ids: list[int] | None = Field(default=None)
+    markets: list[str] | None = Field(default=None)

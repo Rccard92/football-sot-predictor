@@ -5,7 +5,7 @@ import { CecchinoDebugJsonPanel } from './CecchinoDebugJsonPanel'
 import { CecchinoFinalOddsDashboard } from './CecchinoFinalOddsDashboard'
 import { CecchinoInputDataPanel } from './CecchinoInputDataPanel'
 import { CecchinoMatchBasics } from './CecchinoMatchBasics'
-import { CecchinoOddsComparisonPlaceholder } from './CecchinoOddsComparisonPlaceholder'
+import { CecchinoKpiPanel } from './CecchinoKpiPanel'
 import { CecchinoPicchettiDashboardTable } from './CecchinoPicchettiDashboardTable'
 import { CecchinoSignalsMatrixPanel } from './CecchinoSignalsMatrixPanel'
 import { CecchinoSignalsMatrixPlaceholder } from './CecchinoSignalsMatrixPlaceholder'
@@ -114,7 +114,12 @@ export function CecchinoFixtureDetailPanel({ detail }: Props) {
       ) : (
         <CecchinoSignalsMatrixPlaceholder status={output.signals_matrix?.status} />
       )}
-      <CecchinoOddsComparisonPlaceholder status={output.bookmaker_comparison?.status} />
+      {(detail.kpi_panel || output.kpi_panel) ? (
+        <CecchinoKpiPanel
+          panel={(detail.kpi_panel || output.kpi_panel)!}
+          bookmakerStatus={output.bookmaker_comparison?.status}
+        />
+      ) : null}
       <CecchinoDebugJsonPanel detail={detail} />
     </div>
   )

@@ -6,6 +6,7 @@ import { CecchinoPageHeader } from '../components/cecchino/CecchinoPageHeader'
 import { ContextBanner } from '../components/ContextBanner'
 import { useCompetition } from '../contexts/CompetitionContext'
 import {
+  adminSyncCecchinoBookmakerOdds,
   getCecchinoFixtureDetail,
   getCecchinoUpcomingForCompetition,
   type CecchinoFixtureDetailResponse,
@@ -34,6 +35,7 @@ export function CecchinoPage() {
   const [listError, setListError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [recalcLoading, setRecalcLoading] = useState(false)
+  const [bmSyncLoading, setBmSyncLoading] = useState(false)
 
   const syncUrl = useCallback(
     (nextFixtureId: number | null) => {
@@ -90,6 +92,27 @@ export function CecchinoPage() {
     syncUrl(id)
   }
 
+  const onSyncBookmakerOdds = async () => {
+    if (selectedCompetitionId == null || fixtureId == null) return
+    setBmSyncLoading(true)
+    setDetailError(null)
+    try {
+      await adminSyncCecchinoBookmakerOdds(
+        selectedCompetitionId,
+        { fixture_id: fixtureId, bookmaker_ids: [8, 3, 4] },
+        { timeoutMs: 300_000 },
+      )
+      const data = await getCecchinoFixtureDetail(selectedCompetitionId, fixtureId, {
+        recalculate: true,
+      })
+      setDetail(data)
+    } catch (e) {
+      setDetailError(formatFetchError(e))
+    } finally {
+      setBmSyncLoading(false)
+    }
+  }
+
   const onRecalculateDetail = async () => {
     if (selectedCompetitionId == null || fixtureId == null) return
     setRecalcLoading(true)
@@ -139,14 +162,24 @@ export function CecchinoPage() {
         <section className="space-y-3 border-t border-slate-200 pt-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-slate-800">Dettaglio partita</h2>
-            <button
-              type="button"
-              disabled={detailLoading || recalcLoading}
-              onClick={() => void onRecalculateDetail()}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              {recalcLoading ? 'Ricalcolo…' : 'Ricalcola'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={detailLoading || recalcLoading || bmSyncLoading}
+                onClick={() => void onSyncBookmakerOdds()}
+                className="rounded-md border border-sky-600 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+              >
+                {bmSyncLoading ? 'Sync quote…' : 'Aggiorna quote bookmaker'}
+              </button>
+              <button
+                type="button"
+                disabled={detailLoading || recalcLoading || bmSyncLoading}
+                onClick={() => void onRecalculateDetail()}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {recalcLoading ? 'Ricalcolo…' : 'Ricalcola'}
+              </button>
+            </div>
           </div>
           {detailLoading && <p className="text-xs text-slate-500">Caricamento dettaglio…</p>}
           {detailError && (

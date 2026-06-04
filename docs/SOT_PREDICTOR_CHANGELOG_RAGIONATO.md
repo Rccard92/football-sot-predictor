@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 4 — Bookmaker odds e Pannello KPI (2026-06-04)
+
+- Versione `cecchino_v0_4_bookmaker_kpi`; whitelist API-Football Bet365 (8), Betfair (3), Pinnacle (4).
+- Import quote per fixture / prossimo turno → `fixture_bookmaker_odds` (righe per `selection_key`).
+- Medie bookmaker, doppie chance derivate da 1X2, pannello KPI tab DASHBOARD (STATISTICA / CECCHINO / BOOK / MEDIA / EDGE).
+- Endpoint: `POST .../cecchino/bookmakers/sync-next-round`, `GET .../bookmaker-odds`; `kpi_panel` nel dettaglio fixture.
+- v2.0/v2.1 e `team_sot_predictions` non modificati.
+
 ## Bookmakers — Discovery provider e mercati odds (2026-06-04)
 
 - Tabelle `bookmaker_markets` e `fixture_bookmaker_odds` (unique per competizione/fixture/fonte/bookmaker/mercato).

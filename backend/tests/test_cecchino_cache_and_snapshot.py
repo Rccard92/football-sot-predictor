@@ -79,7 +79,7 @@ def test_stored_row_v02_without_signals_not_usable():
 
 
 def test_cecchino_version_is_v03():
-    assert CECCHINO_VERSION == "cecchino_v0_3_signals_matrix"
+    assert CECCHINO_VERSION == "cecchino_v0_4_bookmaker_kpi"
 
 
 def test_stored_row_not_usable_without_signals_matrix():
@@ -94,7 +94,7 @@ def test_stored_row_not_usable_without_signals_matrix():
     assert _stored_row_is_usable(row) is False
 
 
-def test_stored_row_usable_v03_with_signals():
+def test_stored_row_usable_v04_with_signals_and_kpi():
     row = SimpleNamespace(
         output_json={
             "final": {"quota_1": 2.0},
@@ -103,7 +103,23 @@ def test_stored_row_usable_v03_with_signals():
                 "status": "available",
                 "rows": [{"key": "draw"}],
             },
+            "kpi_panel": {
+                "version": CECCHINO_VERSION,
+                "rows": [{"label": "1"}],
+            },
         },
         input_snapshot_json=_v02_snapshot(),
     )
     assert _stored_row_is_usable(row) is True
+
+
+def test_stored_row_not_usable_without_kpi_panel():
+    row = SimpleNamespace(
+        output_json={
+            "final": {"quota_1": 2.0},
+            "data_quality": {"leakage_check": {"status": LEAKAGE_PASSED}},
+            "signals_matrix": {"status": "available", "rows": []},
+        },
+        input_snapshot_json=_v02_snapshot(),
+    )
+    assert _stored_row_is_usable(row) is False

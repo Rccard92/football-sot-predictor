@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-0.5.0',
+    date: '2026-06-04',
+    title: 'Cecchino — Fase 4 — Bookmaker odds e Pannello KPI',
+    type: 'minor',
+    summary:
+      'Import quote Bet365/Betfair/Pinnacle da API-Football, media book, pannello KPI DASHBOARD con EDGE e quote statistiche.',
+    highlights: [
+      'Whitelist bookmaker id 8, 3, 4 (API-Football).',
+      'Sync quote fixture o prossimo turno; store fixture_bookmaker_odds.',
+      'Pannello KPI blu: STATISTICA, CECCHINO, BOOK, MEDIA, EDGE + legenda delta forza.',
+      'Doppie chance 1X/X2/12 derivate da 1X2 bookmaker quando assenti nel feed.',
+      'Nessuna modifica SOT v2.0/v2.1 né team_sot_predictions.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'bookmakers-discovery-1.0.0',
     date: '2026-06-04',
     title: 'Bookmakers — Discovery provider e mercati odds',

@@ -20,7 +20,7 @@ from app.services.bookmakers.bookmaker_constants import (
     PROVIDER_SOURCE_API_FOOTBALL,
     PROVIDER_SOURCE_SPORTAPI,
 )
-from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_fixture_odds
+from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_fixture_odds_1x2
 from app.services.competition_service import CompetitionService
 from app.services.next_round_selection import select_next_round_fixtures
 from app.services.sportapi.sportapi_client import SportApiClient, SportApiDisabledError, SportApiError
@@ -197,7 +197,7 @@ class BookmakerSyncNextRoundService:
             markets_found.add(MARKET_MATCH_WINNER_1X2)
             bookmakers_found.add(bm_name)
 
-            upsert_fixture_odds(
+            upsert_fixture_odds_1x2(
                 db,
                 competition_id=int(comp.id),
                 fixture_id=int(fx.id),
@@ -209,6 +209,7 @@ class BookmakerSyncNextRoundService:
                 draw_odds=norm.get("draw_odd"),
                 away_odds=norm.get("away_odd"),
                 provider_market_id=norm.get("market_name_original"),
+                market_label=norm.get("market_name_original"),
                 raw_payload_json=norm if isinstance(norm, dict) else None,
                 odds_updated_at=datetime.now(timezone.utc),
             )

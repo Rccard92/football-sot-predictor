@@ -108,12 +108,37 @@ export type CecchinoSignalsMatrix = {
   warnings?: string[]
 }
 
+export type CecchinoKpiRow = {
+  market_key: string
+  label: string
+  statistica?: string | number | null
+  cecchino?: string | number | null
+  book?: string | number | null
+  bookmakers?: Record<string, number | null>
+  book_average?: number | null
+  media?: number | null
+  edge?: number | null
+  edge_pct?: number | null
+  status?: string
+  warnings?: string[]
+}
+
+export type CecchinoKpiPanel = {
+  version: string
+  bookmakers_used?: Array<{ name: string; provider_bookmaker_id: number; status: string }>
+  bookmaker_status?: string
+  rows: CecchinoKpiRow[]
+  delta_force_legend?: Array<{ range: string; label: string }>
+  warnings?: string[]
+}
+
 export type CecchinoOutput = {
   picchetti: Record<string, CecchinoPicchetto>
   final: CecchinoFinalOdds
   signals_matrix: CecchinoSignalsMatrix
   reliability_index: CecchinoReliability | CecchinoPlaceholderSection
-  bookmaker_comparison: CecchinoPlaceholderSection
+  bookmaker_comparison: CecchinoPlaceholderSection & { kpi_panel?: CecchinoKpiPanel }
+  kpi_panel?: CecchinoKpiPanel
   status: string
   warnings: string[]
   data_quality?: CecchinoDataQuality
@@ -169,6 +194,7 @@ export type CecchinoFixtureDetailResponse = {
   input_snapshot: Record<string, CecchinoContextSnapshot | unknown>
   data_quality?: CecchinoDataQuality
   output?: CecchinoOutput
+  kpi_panel?: CecchinoKpiPanel
   warnings: string[]
   stored?: boolean
   updated_at?: string | null
@@ -198,6 +224,18 @@ export async function getCecchinoFixtureDetail(
   const q = p.toString()
   return requestJson<CecchinoFixtureDetailResponse>(
     `/api/competitions/${competitionId}/cecchino/fixture/${fixtureId}${q ? `?${q}` : ''}`,
+  )
+}
+
+export async function adminSyncCecchinoBookmakerOdds(
+  competitionId: number,
+  body?: { fixture_id?: number; bookmaker_ids?: number[]; markets?: string[] },
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  return adminPostJson<unknown>(
+    `/api/admin/competitions/${competitionId}/cecchino/bookmakers/sync-next-round`,
+    body ?? {},
+    opts,
   )
 }
 

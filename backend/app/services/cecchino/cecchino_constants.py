@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-CECCHINO_VERSION = "cecchino_v0_3_signals_matrix"
+CECCHINO_VERSION = "cecchino_v0_4_bookmaker_kpi"
+
+PROVIDER_API_FOOTBALL = "api_football"
+
+CECCHINO_BOOKMAKERS: list[dict[str, str | int]] = [
+    {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "8", "name": "Bet365"},
+    {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "3", "name": "Betfair"},
+    {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "4", "name": "Pinnacle"},
+]
 
 PICCHETTO_KEY_HOME_AWAY = "home_away"
 PICCHETTO_KEY_TOTALS = "totals"
@@ -68,7 +76,7 @@ LEAKAGE_UNDEFINED = "undefined"
 
 PLACEHOLDER_SIGNALS = {"status": STATUS_PENDING_FORMULA}
 PLACEHOLDER_RELIABILITY = {"status": "not_implemented_yet"}
-PLACEHOLDER_BOOKMAKER = {"status": "not_implemented_yet"}
+PLACEHOLDER_BOOKMAKER = {"status": "pending_bookmaker_odds"}
 
 # Picchetti utilizzabili per quota finale (incluso campione parziale)
 PICCHETTO_STATUSES_FOR_FINAL = frozenset({STATUS_AVAILABLE, STATUS_PARTIAL_LOW_SAMPLE})

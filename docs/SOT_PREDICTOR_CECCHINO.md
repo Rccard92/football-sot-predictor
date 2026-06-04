@@ -6,9 +6,9 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 
 | Campo | Valore |
 |-------|--------|
-| Versione corrente | `cecchino_v0_3_signals_matrix` |
-| Versioni precedenti | `cecchino_v0_2_real_records`, `cecchino_v0_1_excel_parity` (cache legacy, non più servite) |
-| Fase | 1 — parità Excel picchetti; **2** — W/D/L reali; **3** — dashboard FE; **3b** — matrice segnali SI/NO |
+| Versione corrente | `cecchino_v0_4_bookmaker_kpi` |
+| Versioni precedenti | `cecchino_v0_3_signals_matrix`, `cecchino_v0_2_real_records`, `cecchino_v0_1_excel_parity` (cache legacy) |
+| Fase | 1–3 come prima; **4** — quote bookmaker API-Football + Pannello KPI DASHBOARD |
 | Separazione SOT | Totale — engine, API, UI e tabella dedicati |
 
 ## Obiettivo
@@ -21,15 +21,25 @@ Replicare online la logica del foglio **CECCHINO** di `AutomazioneCecchino.xlsm`
 4. Picchetto stato di forma ultime 6 totali
 5. Quota matematica finale Cecchino (media ponderata)
 
-Sezioni **non ancora implementate**:
+**Implementate in v0.4:**
 
-- Confronto quota matematica vs bookmaker → `not_implemented_yet` (futuro: tabella unificata `fixture_bookmaker_odds` dalla pagina Bookmakers discovery)
-- Movimento quota / rumors → non presente
+- Bookmaker whitelist API-Football: **Bet365** (id 8), **Betfair** (3), **Pinnacle** (4)
+- Persistenza quote in `fixture_bookmaker_odds` (per `selection_key`: HOME, DRAW, AWAY, ONE_X, …)
+- Media aritmetica bookmaker; doppie chance **derivate** da 1X2 se non in feed (`100/(p_home+p_draw)`, …)
+- **Pannello KPI** (tab DASHBOARD): colonne STATISTICA, CECCHINO, BOOK (media 3 book), MEDIA, EDGE
+- EDGE: `(BOOK / CECCHINO) - 1` in percentuale; quote statistiche da W25–W32 su `input_snapshot`
+- DELTA DI FORZA e ANALISI DEL MATCH (Equilibrio / Squilibrio / Neutro) su statistica, Cecchino e book
+- Legenda metrica delta forza sotto il pannello; mercati assenti → `not_available` (no quote inventate)
 
 **Implementate in v0.3:**
 
 - Matrice segnali SI/NO (formule Excel F32–F60, colonne D/E/F/G)
 - Indice affidabilità (`sample` picchetto casa/trasferta, `index = min(sample/20, 1)`)
+
+**Non implementate:**
+
+- Movimento quota / rumors
+- OVER PT senza mercato reale in feed
 
 ## Formule (v0.1)
 
