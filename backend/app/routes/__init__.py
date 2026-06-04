@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.routes import (
     backtest_v31,
+    cecchino,
     admin,
     admin_betting_picks,
     admin_bookmakers,
@@ -67,6 +68,8 @@ api_router.include_router(admin_competitions.router)
 api_router.include_router(admin_competition_ingest.router)
 api_router.include_router(competitions.router)
 api_router.include_router(competition_scoped.router)
+api_router.include_router(cecchino.router)
+api_router.include_router(cecchino.admin_router)
 api_router.include_router(betting_picks.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(dashboard.router)

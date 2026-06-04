@@ -89,6 +89,7 @@ Contesto: [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md). Pipeline admin: [ADMIN_PIP
 | Tabella | Contenuto |
 |---------|-----------|
 | `team_sot_predictions` | Predizioni SOT per fixture/squadra/`model_version` |
+| `cecchino_predictions` | Predizioni Cecchino 1X2 per fixture/`cecchino_version` (modulo separato da SOT) |
 | `team_sot_features` | Feature store (legacy) |
 | `team_sot_prediction_adjustments` | Aggiustamenti predizione |
 | `player_season_profiles` | Profili stagionali giocatore per `competition_id` |
@@ -250,6 +251,17 @@ Prefisso globale: **`/api`**.
 | POST | `/api/admin/betting-picks/serie-a/{season}/refresh-results` | Refresh risultati pick |
 
 > Per flussi operativi multi-campionato usare sempre endpoint con `{competition_id}`.
+
+### Cecchino (modulo separato da SOT)
+
+| Metodo | Path | Descrizione |
+|--------|------|-------------|
+| GET | `/api/competitions/{competition_id}/cecchino/upcoming` | Lista prossime partite + summary quote |
+| GET | `/api/competitions/{competition_id}/cecchino/fixture/{fixture_id}` | Dettaglio picchetti e quota finale |
+| POST | `/api/admin/competitions/{competition_id}/cecchino/recalculate` | Ricalcolo e persistenza |
+| POST | `/api/admin/cecchino/debug/calculate` | Calcolo da W/D/L manuali (test Excel) |
+
+Dettaglio: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
 
 ### Health
 

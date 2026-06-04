@@ -15,6 +15,7 @@ import { Teams } from './pages/Teams'
 import { Changelog } from './pages/Changelog'
 import { BetMonitoring } from './pages/BetMonitoring'
 import { Bookmakers } from './pages/Bookmakers'
+import { CecchinoPage } from './pages/CecchinoPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<UpcomingMatches />} />
+          <Route path="/cecchino" element={<CecchinoPage />} />
           <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
           <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />

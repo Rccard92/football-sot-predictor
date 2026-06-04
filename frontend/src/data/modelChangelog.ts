@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-0.1.0',
+    date: '2026-06-04',
+    title: 'Cecchino — Fase 1 — Modulo isolato e parità Excel base',
+    type: 'minor',
+    summary:
+      'Nuova sezione Cecchino: quote 1X2 da picchetti tecnici, completamente separata dal modello SOT v2.0/v2.1.',
+    highlights: [
+      'Engine Cecchino dedicato (cecchino_v0_1_excel_parity).',
+      'Endpoint competition-scoped e tabella cecchino_predictions.',
+      'UI /cecchino con picchetti, quota finale e placeholder segnali/bookmaker.',
+      'Nessuna modifica a baseline v2.0 o v2.1.',
+      'Formule picchetti 1–5 e pesi finali come da Excel.',
+      'Test parità San Lorenzo vs Deportivo Riestra.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: '2.1.18',
     date: '2026-05-30',
     title: 'Fix refresh risultati Monitoraggio multi-campionato',

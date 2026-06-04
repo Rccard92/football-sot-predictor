@@ -356,6 +356,8 @@ Vedi anche [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md).
 | GET | `/api/competitions/{competition_id}/predictions/sot/upcoming-fixture/{fixture_id}/detail` |
 | GET | `/api/competitions/{competition_id}/predictions/sot/fixtures` |
 | GET | `/api/competitions/{competition_id}/predictions/sot/fixture/{fixture_id}/explanation` |
+| GET | `/api/competitions/{competition_id}/cecchino/upcoming` |
+| GET | `/api/competitions/{competition_id}/cecchino/fixture/{fixture_id}` |
 
 ### Admin (multi-campionato)
 
@@ -375,6 +377,22 @@ Vedi anche [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md).
 | GET | `/api/admin/debug/competitions/{competition_id}/xg-coverage` |
 | GET | `/api/admin/data-health/competitions/{competition_id}` |
 | POST | `/api/admin/jobs/pre-match-official-lineups/run` |
+| POST | `/api/admin/competitions/{competition_id}/cecchino/recalculate` |
+
+---
+
+## Cecchino (modulo separato)
+
+Il **Cecchino** non è incluso in `refresh/next-round` né nella generazione v2.0/v2.1.
+
+Per ricalcolare le quote 1X2 Cecchino sulle prossime partite (o su una singola fixture):
+
+```
+POST /api/admin/competitions/{competition_id}/cecchino/recalculate
+Body opzionale: { "fixture_id": 12345, "limit": 50 }
+```
+
+Lettura UI: `/cecchino`. Dettaglio: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
 
 ---
 

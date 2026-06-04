@@ -26,6 +26,7 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 | `season` | Anno stagione (es. 2025). Associato alla `Competition`. |
 | `fixture_id` | Identificativo interno della partita. |
 | `model_version` | Slug del modello SOT (es. `baseline_v2_1_weighted_components`). Ogni prediction è model-aware. |
+| `cecchino_version` | Slug del modulo Cecchino (es. `cecchino_v0_1_excel_parity`). Indipendente da `model_version`. |
 | `provider_league_id` | ID lega su API-Football, collegato alla `Competition`. |
 
 ## Fonti dati
@@ -56,6 +57,7 @@ Selettore campionato (`CompetitionSelector`) in sidebar.
 - Framework Analisi
 - Spiegazione previsione (audit model-aware)
 - Prossima giornata (quick report, confronto v2.0 vs v2.1)
+- Cecchino (quote 1X2 da picchetti — **non** influenza SOT)
 - Monitoraggio Giocate
 - Bookmakers
 - Changelog
@@ -110,6 +112,7 @@ ChatGPT (aggiornamento docs /docs se autorizzato)
 | [MATCH_ANALYSIS_FRAMEWORK.md](./MATCH_ANALYSIS_FRAMEWORK.md) | Framework interpretazione partita |
 | [MODEL_LEGEND.md](./MODEL_LEGEND.md) | Legenda modelli v2.0/v2.1 e legacy |
 | [SOT_MODEL_FEATURE_REGISTRY.md](./SOT_MODEL_FEATURE_REGISTRY.md) | Registry feature/macro/micro v2.1 |
+| [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md) | Modulo Cecchino (1X2, separato da SOT) |
 
 ## Prompt di ripartenza (nuova chat)
 

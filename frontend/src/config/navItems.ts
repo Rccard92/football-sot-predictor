@@ -3,6 +3,7 @@ export type NavIconName =
   | 'file-text'
   | 'calendar'
   | 'target'
+  | 'crosshair'
   | 'landmark'
   | 'history'
   | 'bug'
@@ -27,6 +28,7 @@ export const NAV_MAIN: NavItem[] = [
   { to: '/match-analysis-framework', label: 'Framework Analisi', icon: 'activity', section: 'main' },
   { to: '/match-variable-audit', label: 'Spiegazione previsione', icon: 'file-text', section: 'main' },
   { to: '/', label: 'Prossima giornata', icon: 'calendar', section: 'main' },
+  { to: '/cecchino', label: 'Cecchino', icon: 'crosshair', section: 'main' },
   { to: '/monitoraggio-giocate', label: 'Monitoraggio Giocate', icon: 'target', section: 'main' },
   { to: '/bookmakers', label: 'Bookmakers', icon: 'landmark', section: 'main' },
   { to: '/changelog', label: 'Changelog', icon: 'history', section: 'main' },

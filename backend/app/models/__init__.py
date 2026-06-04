@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.cecchino_prediction import CecchinoPrediction
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -51,6 +52,7 @@ from app.models.sportapi_odds_provider import SportApiOddsProvider
 
 __all__ = [
     "Base",
+    "CecchinoPrediction",
     "Competition",
     "Fixture",
     "FixtureLineup",

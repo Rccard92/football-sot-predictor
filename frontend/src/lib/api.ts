@@ -6271,3 +6271,141 @@ export async function buildPlayerSotProfiles(season: number, opts?: AdminRequest
 export async function getPlayerSotProfilesSummary(season: number, opts?: AdminRequestOpts): Promise<unknown> {
   return adminGetJson<unknown>(`/api/features/player-sot-profiles/serie-a/${season}/summary`, opts)
 }
+
+// --- Cecchino (modulo separato da SOT) ---
+
+export type CecchinoWDL = { wins: number; draws: number; losses: number }
+
+export type CecchinoOutcome = {
+  prob: number | null
+  prob_pct: number | null
+  quota: number | null
+}
+
+export type CecchinoPicchetto = {
+  key: string
+  label: string
+  home_context: CecchinoWDL
+  away_context: CecchinoWDL
+  total_matches: number
+  outcome_1: CecchinoOutcome
+  outcome_x: CecchinoOutcome
+  outcome_2: CecchinoOutcome
+  status: string
+  warnings: string[]
+}
+
+export type CecchinoFinalOdds = {
+  quota_1: number | null
+  quota_x: number | null
+  quota_2: number | null
+  prob_1: number | null
+  prob_x: number | null
+  prob_2: number | null
+  prob_1_pct: number | null
+  prob_x_pct: number | null
+  prob_2_pct: number | null
+  status: string
+  warnings: string[]
+  weights: Record<string, number>
+}
+
+export type CecchinoPlaceholderSection = { status: string }
+
+export type CecchinoOutput = {
+  picchetti: Record<string, CecchinoPicchetto>
+  final: CecchinoFinalOdds
+  signals_matrix: CecchinoPlaceholderSection
+  reliability_index: CecchinoPlaceholderSection
+  bookmaker_comparison: CecchinoPlaceholderSection
+  status: string
+  warnings: string[]
+}
+
+export type CecchinoTeamBrief = {
+  id: number
+  name: string
+  logo_url: string | null
+}
+
+export type CecchinoFixtureBrief = {
+  fixture_id: number
+  kickoff_at: string | null
+  status: string
+  round: string | null
+  home_team: CecchinoTeamBrief
+  away_team: CecchinoTeamBrief
+}
+
+export type CecchinoUpcomingFixtureRow = {
+  fixture: CecchinoFixtureBrief
+  calculation_status: string | null
+  warnings: string[]
+  final_quota_1: number | null
+  final_quota_x: number | null
+  final_quota_2: number | null
+  final_prob_1_pct: number | null
+  final_prob_x_pct: number | null
+  final_prob_2_pct: number | null
+}
+
+export type CecchinoUpcomingResponse = {
+  status: string
+  cecchino_version: string
+  competition_id: number
+  round_label: string | null
+  fixtures_count: number
+  fixtures: CecchinoUpcomingFixtureRow[]
+}
+
+export type CecchinoFixtureDetailResponse = {
+  status: string
+  cecchino_version: string
+  competition_id: number
+  fixture: CecchinoFixtureBrief
+  calculation_status: string
+  input_snapshot: Record<string, unknown>
+  output: CecchinoOutput
+  warnings: string[]
+  stored?: boolean
+  updated_at?: string | null
+  code?: string
+  message?: string
+}
+
+export async function getCecchinoUpcomingForCompetition(
+  competitionId: number,
+  opts?: { limit?: number },
+): Promise<CecchinoUpcomingResponse> {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  const q = p.toString()
+  return requestJson<CecchinoUpcomingResponse>(
+    `/api/competitions/${competitionId}/cecchino/upcoming${q ? `?${q}` : ''}`,
+  )
+}
+
+export async function getCecchinoFixtureDetail(
+  competitionId: number,
+  fixtureId: number,
+  opts?: { recalculate?: boolean },
+): Promise<CecchinoFixtureDetailResponse> {
+  const p = new URLSearchParams()
+  if (opts?.recalculate) p.set('recalculate', 'true')
+  const q = p.toString()
+  return requestJson<CecchinoFixtureDetailResponse>(
+    `/api/competitions/${competitionId}/cecchino/fixture/${fixtureId}${q ? `?${q}` : ''}`,
+  )
+}
+
+export async function adminRecalculateCecchino(
+  competitionId: number,
+  body?: { fixture_id?: number; limit?: number },
+  opts?: AdminRequestOpts,
+): Promise<unknown> {
+  return adminPostJson<unknown>(
+    `/api/admin/competitions/${competitionId}/cecchino/recalculate`,
+    body ?? {},
+    opts,
+  )
+}
