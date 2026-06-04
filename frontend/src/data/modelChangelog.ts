@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'bookmakers-discovery-1.0.0',
+    date: '2026-06-04',
+    title: 'Bookmakers — Discovery provider e mercati odds',
+    type: 'minor',
+    summary:
+      'Layer discovery unificata: provider API-Football + SportAPI, mercati normalizzati, coverage e sync quote 1X2 per competizione su fixture_bookmaker_odds.',
+    highlights: [
+      'Endpoint admin providers/markets/coverage/sync-next-round-odds.',
+      'UI Bookmakers con banner competizione e stati not_configured senza crash.',
+      'Mercati enum MATCH_WINNER_1X2, DOUBLE_CHANCE, OVER_UNDER_GOALS, BTTS, UNKNOWN.',
+      'Nessun collegamento a Cecchino né a modelli SOT v2.0/v2.1.',
+      'Route SportAPI legacy conservate in sezione avanzata.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-0.4.0',
     date: '2026-06-04',
     title: 'Cecchino — Fase 3 — Matrice segnali SI/NO da Excel',

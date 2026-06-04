@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Bookmakers — Discovery provider e mercati odds (2026-06-04)
+
+- Tabelle `bookmaker_markets` e `fixture_bookmaker_odds` (unique per competizione/fixture/fonte/bookmaker/mercato).
+- Endpoint: `GET /api/admin/bookmakers/providers`, `GET .../markets`, `GET /api/admin/competitions/{id}/bookmakers/coverage`, `POST .../sync-next-round-odds`.
+- UI Bookmakers: card provider, lista unificata, mercati normalizzati (`UNKNOWN` evidenziato), coverage prossimo turno, sync 1X2 competition-scoped.
+- Sync 1X2 via SportAPI (API-Football lista bookmaker only fino a integrazione odds fixture); snapshot legacy `sportapi_fixture_odds_snapshots` invariato.
+- Cecchino e SOT v2.0/v2.1 non modificati.
+
 ## Cecchino — Fase 3 — Matrice segnali SI/NO da Excel (2026-06-04)
 
 - Versione backend `cecchino_v0_3_signals_matrix`; cache v0.2 senza matrice → ricalcolo.

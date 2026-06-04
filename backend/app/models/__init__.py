@@ -44,6 +44,8 @@ from app.models.team_sot_feature import TeamSotFeature
 from app.models.team_sot_prediction_adjustment import TeamSotPredictionAdjustment
 from app.models.team_sot_prediction import TeamSotPrediction
 from app.models.tracked_betting_pick import TrackedBettingPick
+from app.models.bookmaker_market import BookmakerMarket
+from app.models.fixture_bookmaker_odds import FixtureBookmakerOdds
 from app.models.odds_bookmaker import OddsBookmaker
 from app.models.odds_discovery_snapshot import OddsDiscoverySnapshot
 from app.models.sportapi_fixture_odds_snapshot import SportApiFixtureOddsSnapshot
@@ -100,6 +102,8 @@ __all__ = [
     "TeamSotPredictionAdjustment",
     "TeamSotPrediction",
     "TrackedBettingPick",
+    "BookmakerMarket",
+    "FixtureBookmakerOdds",
     "OddsBookmaker",
     "OddsDiscoverySnapshot",
     "SportApiOddsProvider",

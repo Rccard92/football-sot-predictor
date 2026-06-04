@@ -64,3 +64,10 @@ class SportApiScanSotProvidersBody(BaseModel):
 class SportApiProvidersSyncBody(BaseModel):
     country: str = Field(default="IT", min_length=2, max_length=8)
     channel: str = Field(default="app", min_length=2, max_length=16)
+
+
+class BookmakerSyncNextRoundBody(BaseModel):
+    market: str = Field(default="MATCH_WINNER_1X2", min_length=1)
+    provider_source: str = Field(default="auto", min_length=1)
+    bookmaker_name: str | None = None
+    provider_slug: str = Field(default="sisal-italy-affiliate", min_length=1)

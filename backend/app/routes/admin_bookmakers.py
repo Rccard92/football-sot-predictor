@@ -33,6 +33,8 @@ from app.services.sportapi.sportapi_odds_market_mapping_service import SportApiO
 from app.services.sportapi.sportapi_odds_discovery_service import SportApiOddsDiscoveryService
 from app.services.sportapi.sportapi_odds_provider_detail_service import SportApiOddsProviderDetailService
 from app.services.sportapi.sportapi_odds_providers_sync_service import SportApiOddsProvidersSyncService
+from app.services.bookmakers.bookmaker_markets_discovery import BookmakerMarketsDiscoveryService
+from app.services.bookmakers.bookmaker_providers_discovery import BookmakerProvidersDiscoveryService
 
 logger = logging.getLogger(__name__)
 
@@ -364,5 +366,41 @@ def sportapi_odds_scan_sot_providers(
     except (OperationalError, ProgrammingError) as exc:
         logger.exception("sportapi scan sot providers DB error")
         db.rollback()
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.get("/providers", response_model=None)
+def list_discovery_providers(db: Session = Depends(get_db)):
+    """Fonti provider (API-Football + SportAPI) con stato configurazione."""
+    try:
+        out = BookmakerProvidersDiscoveryService().list_sources(db)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("list discovery providers DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.get("/providers/bookmakers", response_model=None)
+def list_unified_bookmakers(db: Session = Depends(get_db)):
+    """Tabella bookmaker aggregata da tutte le fonti."""
+    try:
+        out = BookmakerProvidersDiscoveryService().list_unified_bookmakers(db)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("list unified bookmakers DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.get("/markets", response_model=None)
+def list_discovery_markets(
+    provider_source: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Catalogo mercati normalizzati (UNKNOWN evidenziato in payload)."""
+    try:
+        out = BookmakerMarketsDiscoveryService().list_markets(db, provider_source=provider_source)
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("list discovery markets DB error")
         raise HTTPException(status_code=503, detail="Database error") from exc
     return jsonable_encoder(out)

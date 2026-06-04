@@ -1,0 +1,22 @@
+"""Costanti discovery bookmaker/odds."""
+
+from __future__ import annotations
+
+PROVIDER_SOURCE_API_FOOTBALL = "api_football"
+PROVIDER_SOURCE_SPORTAPI = "sportapi"
+
+MARKET_MATCH_WINNER_1X2 = "MATCH_WINNER_1X2"
+MARKET_DOUBLE_CHANCE = "DOUBLE_CHANCE"
+MARKET_OVER_UNDER_GOALS = "OVER_UNDER_GOALS"
+MARKET_BTTS = "BTTS"
+MARKET_UNKNOWN = "UNKNOWN"
+
+ALL_NORMALIZED_MARKETS = frozenset(
+    {
+        MARKET_MATCH_WINNER_1X2,
+        MARKET_DOUBLE_CHANCE,
+        MARKET_OVER_UNDER_GOALS,
+        MARKET_BTTS,
+        MARKET_UNKNOWN,
+    },
+)

@@ -265,12 +265,24 @@ Pagina frontend: **Data Health** (strumenti tecnici).
 
 Operazioni admin (pagina **Bookmakers**):
 
+### Discovery unificata (competition-scoped)
+
+1. `GET /api/admin/bookmakers/providers` — fonti API-Football + SportAPI (`available` / `not_configured`)
+2. `GET /api/admin/bookmakers/providers/bookmakers` — lista bookmaker aggregata
+3. `GET /api/admin/bookmakers/markets` — catalogo mercati normalizzati (`MATCH_WINNER_1X2`, …, `UNKNOWN`)
+4. `GET /api/admin/competitions/{id}/bookmakers/coverage` — coverage % quote 1X2 sul prossimo turno
+5. `POST /api/admin/competitions/{id}/bookmakers/sync-next-round-odds` — sync 1X2 → `fixture_bookmaker_odds` (+ snapshot legacy SportAPI)
+
+Sync bookmaker: `POST /api/admin/bookmakers/sync` (API-Football) + `POST /api/admin/bookmakers/sportapi/providers/sync` (SportAPI).
+
+### Legacy SportAPI (SOT / probe)
+
 1. `POST /api/admin/bookmakers/sportapi/providers/sync` — sync provider
 2. `POST /api/admin/bookmakers/sportapi/odds-discovery` — discovery odds
 3. `POST /api/admin/bookmakers/sportapi/odds/markets-discovery` — discovery mercati SOT
 4. `POST /api/admin/bookmakers/sportapi/odds/next-round-sot` — quote SOT prossimo turno
 
-**Nota:** odds/bookmakers sono **informativi** — non entrano nel calcolo SOT.
+**Nota:** odds/bookmakers sono **informativi** — non entrano nel calcolo SOT né in Cecchino (`bookmaker_comparison` resta `not_implemented_yet`; confronto futuro su `fixture_bookmaker_odds`).
 
 ---
 

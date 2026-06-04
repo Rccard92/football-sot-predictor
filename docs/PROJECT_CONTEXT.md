@@ -59,7 +59,7 @@ Selettore campionato (`CompetitionSelector`) in sidebar.
 - Prossima giornata (quick report, confronto v2.0 vs v2.1)
 - Cecchino — dashboard autonoma (tabella partite + dettaglio picchetti/quote; **non** influenza SOT)
 - Monitoraggio Giocate
-- Bookmakers
+- Bookmakers — discovery provider/mercati, coverage e sync 1X2 per competizione (`fixture_bookmaker_odds`; non collegato a Cecchino/SOT)
 - Changelog
 
 **Strumenti tecnici:**

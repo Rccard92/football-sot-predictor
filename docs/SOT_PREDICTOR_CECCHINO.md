@@ -23,7 +23,7 @@ Replicare online la logica del foglio **CECCHINO** di `AutomazioneCecchino.xlsm`
 
 Sezioni **non ancora implementate**:
 
-- Confronto quota matematica vs bookmaker → `not_implemented_yet`
+- Confronto quota matematica vs bookmaker → `not_implemented_yet` (futuro: tabella unificata `fixture_bookmaker_odds` dalla pagina Bookmakers discovery)
 - Movimento quota / rumors → non presente
 
 **Implementate in v0.3:**

@@ -1350,6 +1350,127 @@ export async function postSyncBookmakers(opts?: AdminRequestOpts): Promise<Bookm
   return adminPostJson<BookmakersSyncSummary>('/api/admin/bookmakers/sync', {}, opts)
 }
 
+export type BookmakerProviderSourceRow = {
+  provider_source: string
+  label: string
+  status: 'available' | 'not_configured' | 'error'
+  bookmakers_count: number
+  last_synced_at: string | null
+  supports_fixture_odds?: boolean
+  note?: string | null
+}
+
+export type BookmakerProvidersDiscoveryResponse = {
+  sources: BookmakerProviderSourceRow[]
+  checked_at: string
+}
+
+export type UnifiedBookmakerRow = {
+  provider_source: string
+  provider_bookmaker_id: string
+  provider_slug?: string
+  name: string
+  is_selected: boolean
+  last_synced_at: string | null
+  working_odds_provider_id?: number | null
+}
+
+export type BookmakerMarketsDiscoveryResponse = {
+  markets: Array<{
+    id: number | null
+    provider_source: string
+    provider_market_id: string
+    market_key: string
+    market_name: string
+    normalized_market: string
+    is_unknown: boolean
+  }>
+  total: number
+}
+
+export type BookmakerCoverageResponse = {
+  competition_id: number
+  competition_key: string
+  round_label: string | null
+  market: string
+  provider_source: string | null
+  fixtures_total: number
+  fixtures_with_odds: number
+  coverage_pct: number
+  bookmakers_found: string[]
+  fixtures: Array<{
+    fixture_id: number
+    kickoff_at: string | null
+    home_team: string | null
+    away_team: string | null
+    has_odds: boolean
+    odds_count: number
+    sample_odds: Array<{
+      bookmaker_name: string
+      provider_source: string
+      home_odds: number | null
+      draw_odds: number | null
+      away_odds: number | null
+    }>
+  }>
+}
+
+export type BookmakerSyncNextRoundResponse = {
+  status: string
+  competition_id: number
+  round_label: string | null
+  market: string
+  provider_source: string
+  fixtures_checked: number
+  odds_saved: number
+  bookmakers_found: string[]
+  markets_found: string[]
+  failed: string[]
+  warnings: string[]
+  message?: string
+}
+
+export async function getBookmakerDiscoveryProviders(): Promise<BookmakerProvidersDiscoveryResponse> {
+  return adminGetJson<BookmakerProvidersDiscoveryResponse>('/api/admin/bookmakers/providers')
+}
+
+export async function getUnifiedBookmakersList(): Promise<{ bookmakers: UnifiedBookmakerRow[]; total: number }> {
+  return adminGetJson('/api/admin/bookmakers/providers/bookmakers')
+}
+
+export async function getBookmakerDiscoveryMarkets(
+  providerSource?: string,
+): Promise<BookmakerMarketsDiscoveryResponse> {
+  const q = providerSource ? `?provider_source=${encodeURIComponent(providerSource)}` : ''
+  return adminGetJson<BookmakerMarketsDiscoveryResponse>(`/api/admin/bookmakers/markets${q}`)
+}
+
+export async function getCompetitionBookmakerCoverage(
+  competitionId: number,
+  params?: { only_next_round?: boolean; market?: string; provider_source?: string },
+): Promise<BookmakerCoverageResponse> {
+  const sp = new URLSearchParams()
+  if (params?.only_next_round !== undefined) sp.set('only_next_round', String(params.only_next_round))
+  if (params?.market) sp.set('market', params.market)
+  if (params?.provider_source) sp.set('provider_source', params.provider_source)
+  const qs = sp.toString() ? `?${sp}` : ''
+  return adminGetJson<BookmakerCoverageResponse>(
+    `/api/admin/competitions/${competitionId}/bookmakers/coverage${qs}`,
+  )
+}
+
+export async function postCompetitionSyncNextRoundOdds(
+  competitionId: number,
+  body?: { market?: string; provider_source?: string; bookmaker_name?: string; provider_slug?: string },
+  opts?: AdminRequestOpts,
+): Promise<BookmakerSyncNextRoundResponse> {
+  return adminPostJson<BookmakerSyncNextRoundResponse>(
+    `/api/admin/competitions/${competitionId}/bookmakers/sync-next-round-odds`,
+    body ?? {},
+    opts,
+  )
+}
+
 export type SportApiNormalizedMarket = {
   source: string
   provider_id: number
