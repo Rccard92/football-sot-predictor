@@ -16,6 +16,7 @@ import { Changelog } from './pages/Changelog'
 import { BetMonitoring } from './pages/BetMonitoring'
 import { Bookmakers } from './pages/Bookmakers'
 import { CecchinoPage } from './pages/CecchinoPage'
+import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<UpcomingMatches />} />
           <Route path="/cecchino" element={<CecchinoPage />} />
+          <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
           <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />

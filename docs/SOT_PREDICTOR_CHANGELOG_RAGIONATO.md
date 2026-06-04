@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 6 — Cecchino Today manual discovery (2026-06-04)
+
+- Versione `cecchino_today_v0_1_manual_discovery`: scan manuale partite odierne via API-Football (`GET fixtures?date=`).
+- Filtri competizione (no coppe/femminili/amichevoli/youth), gate quote strict 3 bookmaker 1X2, bootstrap DB minimo Cecchino-only (teams + fixture FT, no SOT).
+- Gate statistiche + leakage; calcolo Cecchino + KPI; snapshot in `cecchino_today_fixtures`.
+- Endpoint: `POST /api/admin/cecchino/today/scan`, `GET /api/cecchino/today`, dettaglio, `GET .../excluded` admin.
+- UI `/cecchino-today`; fix regressione DC Cecchino nel pannello KPI (`1/(prob_1+prob_x)`).
+- v2.0/v2.1 e `team_sot_predictions` non modificati.
+
 ## Cecchino — Fase 4 — Bookmaker odds e Pannello KPI (2026-06-04)
 
 - Versione `cecchino_v0_4_bookmaker_kpi`; whitelist API-Football Bet365 (8), Betfair (3), Pinnacle (4).

@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.1.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Discovery giornaliera manuale',
+    type: 'minor',
+    summary:
+      'Scan manuale partite odierne: filtri competizione, quote strict 3 bookmaker, stats+leakage, Cecchino+KPI, lista solo eleggibili.',
+    highlights: [
+      'POST /api/admin/cecchino/today/scan e GET /api/cecchino/today.',
+      'Tabella cecchino_today_fixtures con snapshot odds/stats/output.',
+      'UI /cecchino-today con date picker e dettaglio KPI.',
+      'Fix quote DC Cecchino nel pannello KPI (scala probabilità decimali).',
+      'Zero modifiche SOT v2.0/v2.1 e team_sot_predictions.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-0.5.0',
     date: '2026-06-04',
     title: 'Cecchino — Fase 4 — Bookmaker odds e Pannello KPI',

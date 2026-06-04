@@ -176,6 +176,10 @@ Warning tipici: `zero_matches_in_context`, `zero_probability`, `low_sample:*`, `
 | GET | `/api/competitions/{competition_id}/cecchino/fixture/{fixture_id}` |
 | POST | `/api/admin/competitions/{competition_id}/cecchino/recalculate` |
 | POST | `/api/admin/cecchino/debug/calculate` |
+| POST | `/api/admin/cecchino/today/scan` |
+| GET | `/api/cecchino/today` |
+| GET | `/api/cecchino/today/{today_fixture_id}` |
+| GET | `/api/admin/cecchino/today/excluded` |
 
 Body recalculate opzionale: `{ "fixture_id": number, "limit": number }`.
 
@@ -204,6 +208,25 @@ Route `/cecchino` — voce menu principale. Modulo separato da SOT v2.0/v2.1 (ne
 
 **URL:** `?competition_id=&fixture_id=` per deep-link al dettaglio.
 
+## Cecchino Today — discovery giornaliera v0.1
+
+Pipeline **manuale** (no cron) per scoprire partite odierne via API-Football, filtrare competizioni non ammesse, verificare quote 1X2 complete su Bet365/Betfair/Pinnacle, bootstrap DB minimo Cecchino-only, gate statistiche + leakage, calcolo Cecchino + KPI.
+
+| Filtro | Esclusione |
+|--------|------------|
+| Femminili / coppe / amichevoli / youth | `excluded_women`, `excluded_cup`, … |
+| Partita già iniziata | `excluded_started` |
+| Bookmaker o 1X2 incompleti | `excluded_missing_bookmaker`, `excluded_missing_1x2_market` |
+| Stats insufficienti o leakage | `excluded_insufficient_stats` |
+
+**Soglie stats:** home/away context ≥3, total ≥6, recent_5 ≥3, recent_6 ≥5, leakage `passed`.
+
+**Persistenza:** tabella `cecchino_today_fixtures` (snapshot per `scan_date` + `provider_fixture_id`, anche righe escluse per debug admin).
+
+**UI:** route `/cecchino-today` — pulsante «Aggiorna partite odierne», lista solo `eligible`, dettaglio con KPI + matrice segnali + link a Cecchino classico.
+
+**Versione:** `cecchino_today_v0_1_manual_discovery`. Nessuna modifica a SOT v2.0/v2.1 né `team_sot_predictions`.
+
 ## Test parità Excel
 
 Caso di riferimento: **San Lorenzo de Almagro vs Deportivo Riestra** — vedi `backend/tests/test_cecchino_engine_excel_parity.py`.
@@ -217,5 +240,6 @@ Caso di riferimento: **San Lorenzo de Almagro vs Deportivo Riestra** — vedi `b
 | Fixture history | `backend/app/services/cecchino/cecchino_fixture_history.py` |
 | Service | `backend/app/services/cecchino/cecchino_service.py` |
 | Route | `backend/app/routes/cecchino.py` |
-| Model | `backend/app/models/cecchino_prediction.py` |
-| UI | `frontend/src/pages/CecchinoPage.tsx`, `frontend/src/lib/cecchinoApi.ts` |
+| Cecchino Today | `backend/app/services/cecchino/cecchino_today_service.py`, `backend/app/routes/cecchino_today.py` |
+| Model | `backend/app/models/cecchino_prediction.py`, `cecchino_today_fixture.py` |
+| UI | `frontend/src/pages/CecchinoPage.tsx`, `CecchinoTodayPage.tsx`, `cecchinoApi.ts`, `cecchinoTodayApi.ts` |

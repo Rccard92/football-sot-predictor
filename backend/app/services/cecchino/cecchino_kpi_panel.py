@@ -126,9 +126,9 @@ def build_cecchino_kpi_panel(
     px = _num(final_odds.get("prob_x"))
     p2 = _num(final_odds.get("prob_2"))
 
-    cec_1x = round(100.0 / (p1 + px), 2) if p1 and px and (p1 + px) > 0 else None
-    cec_x2 = round(100.0 / (px + p2), 2) if px and p2 and (px + p2) > 0 else None
-    cec_12 = round(100.0 / (p1 + p2), 2) if p1 and p2 and (p1 + p2) > 0 else None
+    cec_1x = round(1.0 / (p1 + px), 2) if p1 and px and (p1 + px) > 0 else None
+    cec_x2 = round(1.0 / (px + p2), 2) if px and p2 and (px + p2) > 0 else None
+    cec_12 = round(1.0 / (p1 + p2), 2) if p1 and p2 and (p1 + p2) > 0 else None
 
     book_home = avg_1x2.get(SEL_HOME)
     book_draw = avg_1x2.get(SEL_DRAW)

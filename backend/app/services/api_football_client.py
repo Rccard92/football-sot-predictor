@@ -132,6 +132,15 @@ class ApiFootballClient:
         body = self.get("fixtures", {"league": league_id, "season": season, "status": status})
         return list(body.get("response") or [])
 
+    def get_fixtures_by_date(
+        self,
+        date: str,
+        timezone: str = "Europe/Rome",
+    ) -> list[dict[str, Any]]:
+        """GET /fixtures?date=YYYY-MM-DD — partite del giorno."""
+        body = self.get("fixtures", {"date": date, "timezone": timezone})
+        return list(body.get("response") or [])
+
     def get_fixture_by_id(self, api_fixture_id: int) -> dict[str, Any] | None:
         """GET /fixtures?id={api_fixture_id} — dettaglio singola partita."""
         body = self.get("fixtures", {"id": int(api_fixture_id)})
