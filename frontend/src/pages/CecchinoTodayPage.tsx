@@ -1,38 +1,70 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CecchinoTodayDetailPanel,
   CecchinoTodayDetailPlaceholder,
 } from '../components/cecchino/CecchinoTodayDetailPanel'
+import { CecchinoTodayDayTabs } from '../components/cecchino/CecchinoTodayDayTabs'
+import { CecchinoTodayExcludedPanel } from '../components/cecchino/CecchinoTodayExcludedPanel'
 import { CecchinoTodayFixtureList, type TodayFlatFixture } from '../components/cecchino/CecchinoTodayFixtureList'
 import { CecchinoTodayPageHeader } from '../components/cecchino/CecchinoTodayPageHeader'
 import { CecchinoTodayScanSummary } from '../components/cecchino/CecchinoTodayScanSummary'
 import { todayPageGrid, todaySectionTitle } from '../components/cecchino/cecchinoTodayStyles'
 import {
+  getCecchinoTodayDays,
   getCecchinoTodayDetail,
   getCecchinoTodayList,
-  scanCecchinoToday,
+  scanCecchinoTodayToday,
+  scanCecchinoTodayTomorrow,
+  todayIsoRome,
+  tomorrowIsoRome,
+  type CecchinoTodayDay,
   type CecchinoTodayDetailResponse,
   type CecchinoTodayListResponse,
   type CecchinoTodayScanReport,
 } from '../lib/cecchinoTodayApi'
 import { formatFetchError } from '../utils/formatFetchError'
 
-function todayIsoRome(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date())
-}
-
 export function CecchinoTodayPage() {
-  const [scanDate, setScanDate] = useState(todayIsoRome())
+  const [selectedDay, setSelectedDay] = useState(todayIsoRome())
+  const [days, setDays] = useState<CecchinoTodayDay[]>([])
   const [list, setList] = useState<CecchinoTodayListResponse | null>(null)
   const [scanReport, setScanReport] = useState<CecchinoTodayScanReport | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [detail, setDetail] = useState<CecchinoTodayDetailResponse | null>(null)
   const [listLoading, setListLoading] = useState(false)
-  const [scanLoading, setScanLoading] = useState(false)
+  const [daysLoading, setDaysLoading] = useState(false)
+  const [scanTodayLoading, setScanTodayLoading] = useState(false)
+  const [scanTomorrowLoading, setScanTomorrowLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [excludedOpen, setExcludedOpen] = useState(false)
+  const dayNavReady = useRef(false)
+  const loadExcludedRef = useRef<(() => Promise<void>) | null>(null)
+
+  const registerExcludedLoad = useCallback((loader: (() => Promise<void>) | null) => {
+    loadExcludedRef.current = loader
+  }, [])
+
+  const showExcludedPanel = useCallback(() => {
+    setExcludedOpen(true)
+    void loadExcludedRef.current?.()
+  }, [])
+
+  const loadDays = useCallback(async () => {
+    setDaysLoading(true)
+    try {
+      const res = await getCecchinoTodayDays()
+      setDays(res.days)
+      return res
+    } catch {
+      setDays([])
+      return null
+    } finally {
+      setDaysLoading(false)
+    }
+  }, [])
 
   const loadList = useCallback(async (date: string) => {
     setListError(null)
@@ -49,21 +81,22 @@ export function CecchinoTodayPage() {
   }, [])
 
   useEffect(() => {
-    const load = async () => {
-      setListError(null)
-      setListLoading(true)
-      try {
-        const data = await getCecchinoTodayList({ date: scanDate, timezone: 'Europe/Rome' })
-        setList(data)
-      } catch (e) {
-        setListError(formatFetchError(e))
-        setList(null)
-      } finally {
-        setListLoading(false)
-      }
+    const init = async () => {
+      const daysRes = await loadDays()
+      const today = daysRes?.today ?? todayIsoRome()
+      setSelectedDay(today)
+      await loadList(today)
+      dayNavReady.current = true
     }
-    void load()
-  }, [scanDate])
+    void init()
+  }, [loadDays, loadList])
+
+  useEffect(() => {
+    if (!dayNavReady.current) return
+    setSelectedId(null)
+    setDetail(null)
+    void loadList(selectedDay)
+  }, [selectedDay, loadList])
 
   useEffect(() => {
     const load = async () => {
@@ -84,17 +117,37 @@ export function CecchinoTodayPage() {
     void load()
   }, [selectedId])
 
-  const handleScan = async () => {
+  const handleScanToday = async () => {
     setScanError(null)
-    setScanLoading(true)
+    setScanTodayLoading(true)
     try {
-      const report = await scanCecchinoToday({ scan_date: scanDate, timezone: 'Europe/Rome' })
+      const report = await scanCecchinoTodayToday()
       setScanReport(report)
-      await loadList(scanDate)
+      await loadDays()
+      const today = todayIsoRome()
+      setSelectedDay(today)
+      await loadList(today)
     } catch (e) {
       setScanError(formatFetchError(e))
     } finally {
-      setScanLoading(false)
+      setScanTodayLoading(false)
+    }
+  }
+
+  const handleScanTomorrow = async () => {
+    setScanError(null)
+    setScanTomorrowLoading(true)
+    try {
+      const report = await scanCecchinoTodayTomorrow()
+      setScanReport(report)
+      await loadDays()
+      const tomorrow = tomorrowIsoRome()
+      setSelectedDay(tomorrow)
+      await loadList(tomorrow)
+    } catch (e) {
+      setScanError(formatFetchError(e))
+    } finally {
+      setScanTomorrowLoading(false)
     }
   }
 
@@ -114,10 +167,10 @@ export function CecchinoTodayPage() {
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-6">
       <CecchinoTodayPageHeader
-        scanDate={scanDate}
-        onScanDateChange={setScanDate}
-        onScan={() => void handleScan()}
-        scanLoading={scanLoading}
+        onScanToday={() => void handleScanToday()}
+        onScanTomorrow={() => void handleScanTomorrow()}
+        scanTodayLoading={scanTodayLoading}
+        scanTomorrowLoading={scanTomorrowLoading}
       />
 
       {scanError && (
@@ -127,18 +180,34 @@ export function CecchinoTodayPage() {
       )}
 
       {scanReport && scanReport.status === 'ok' && (
-        <CecchinoTodayScanSummary report={scanReport} />
+        <CecchinoTodayScanSummary report={scanReport} onShowExcluded={showExcludedPanel} />
       )}
+
+      {!daysLoading && days.length > 0 && (
+        <CecchinoTodayDayTabs
+          days={days}
+          selectedDay={selectedDay}
+          onSelectDay={setSelectedDay}
+        />
+      )}
+
+      <CecchinoTodayExcludedPanel
+        selectedDay={selectedDay}
+        open={excludedOpen}
+        onToggle={() => setExcludedOpen((o) => !o)}
+        onRegisterLoad={registerExcludedLoad}
+      />
 
       <div className={todayPageGrid}>
         <CecchinoTodayFixtureList
           fixtures={flatFixtures}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          loading={listLoading || scanLoading}
+          loading={listLoading}
           error={listError}
-          scanDate={scanDate}
-          onScan={() => void handleScan()}
+          selectedDay={selectedDay}
+          scanMeta={list?.scan_meta}
+          onScanToday={() => void handleScanToday()}
         />
 
         <section className="min-w-0 space-y-4">

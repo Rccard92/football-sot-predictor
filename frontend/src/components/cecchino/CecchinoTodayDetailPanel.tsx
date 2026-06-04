@@ -28,10 +28,8 @@ export function CecchinoTodayDetailSkeleton() {
     <div className="space-y-4" aria-busy="true" aria-label="Caricamento dettaglio">
       <div className={`${todaySkeleton} h-36 w-full rounded-xl`} />
       <div className={`${todaySkeleton} h-64 w-full rounded-xl`} />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className={`${todaySkeleton} h-48 w-full rounded-xl`} />
-        <div className={`${todaySkeleton} h-48 w-full rounded-xl`} />
-      </div>
+      <div className={`${todaySkeleton} h-40 w-full rounded-xl`} />
+      <div className={`${todaySkeleton} h-56 w-full rounded-xl`} />
     </div>
   )
 }
@@ -66,14 +64,13 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         />
       )}
 
+      {finalOdds && <CecchinoTodayFinalOddsCard final={finalOdds} />}
+
+      {signals && <CecchinoSignalsCard matrix={signals} />}
+
       {detail.kpi_panel?.rows && (
         <CecchinoBookmakerDetailsCard rows={detail.kpi_panel.rows} />
       )}
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        {signals && <CecchinoSignalsCard matrix={signals} />}
-        {finalOdds && <CecchinoTodayFinalOddsCard final={finalOdds} />}
-      </div>
 
       {(detail.warnings?.length ?? 0) > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">

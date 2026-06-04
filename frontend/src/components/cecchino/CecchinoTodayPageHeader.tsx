@@ -1,17 +1,15 @@
-import { todayCard, todayCardPadding } from './cecchinoTodayStyles'
-
 type Props = {
-  scanDate: string
-  onScanDateChange: (date: string) => void
-  onScan: () => void
-  scanLoading: boolean
+  onScanToday: () => void
+  onScanTomorrow: () => void
+  scanTodayLoading: boolean
+  scanTomorrowLoading: boolean
 }
 
 export function CecchinoTodayPageHeader({
-  scanDate,
-  onScanDateChange,
-  onScan,
-  scanLoading,
+  onScanToday,
+  onScanTomorrow,
+  scanTodayLoading,
+  scanTomorrowLoading,
 }: Props) {
   return (
     <header className="space-y-4">
@@ -20,34 +18,39 @@ export function CecchinoTodayPageHeader({
           Cecchino Today
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-600">
-          Discovery giornaliera — solo partite eleggibili con quote complete, statistiche OK e
-          nessun leakage.
+          Discovery giornaliera persistente — scansiona oggi o domani e naviga tra le giornate
+          salvate (storico 7 giorni).
         </p>
       </div>
 
-      <div className={`${todayCard} ${todayCardPadding} flex flex-wrap items-end gap-4`}>
-        <label className="flex min-w-[160px] flex-col gap-1.5 text-sm font-medium text-slate-700">
-          Data scan
-          <input
-            type="date"
-            value={scanDate}
-            onChange={(e) => onScanDateChange(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          />
-        </label>
+      <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          onClick={onScan}
-          disabled={scanLoading}
+          onClick={onScanToday}
+          disabled={scanTodayLoading}
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {scanLoading && (
+          {scanTodayLoading && (
             <span
               className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
               aria-hidden
             />
           )}
-          {scanLoading ? 'Scansione in corso…' : 'Aggiorna partite odierne'}
+          {scanTodayLoading ? 'Scansione oggi…' : 'Scansione oggi'}
+        </button>
+        <button
+          type="button"
+          onClick={onScanTomorrow}
+          disabled={scanTomorrowLoading}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {scanTomorrowLoading && (
+            <span
+              className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700"
+              aria-hidden
+            />
+          )}
+          {scanTomorrowLoading ? 'Scansione domani…' : 'Scansione domani'}
         </button>
       </div>
     </header>

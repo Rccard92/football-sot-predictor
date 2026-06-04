@@ -58,7 +58,7 @@ Selettore campionato (`CompetitionSelector`) in sidebar.
 - Spiegazione previsione (audit model-aware)
 - Prossima giornata (quick report, confronto v2.0 vs v2.1)
 - Cecchino — dashboard autonoma (picchetti, KPI DASHBOARD, quote Bet365/Betfair/Pinnacle; **non** influenza SOT)
-- Cecchino Today — discovery giornaliera manuale (`/cecchino-today`; dashboard 2 colonne, KPI Today-only, card partite e dettaglio restyled)
+- Cecchino Today — discovery giornaliera persistente (`/cecchino-today`; pill oggi/domani/storico 7d, scan oggi/domani, retention 7 giorni)
 - Monitoraggio Giocate
 - Bookmakers — discovery provider/mercati, coverage e sync 1X2 per competizione (`fixture_bookmaker_odds`; non collegato a Cecchino/SOT)
 - Changelog

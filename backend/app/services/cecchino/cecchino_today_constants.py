@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-CECCHINO_TODAY_VERSION = "cecchino_today_v0_1_manual_discovery"
+CECCHINO_TODAY_VERSION = "cecchino_today_v0_2_persistent_days"
 DEFAULT_TODAY_TIMEZONE = "Europe/Rome"
+DEFAULT_RETENTION_DAYS = 7
 PROVIDER_API_FOOTBALL = "api_football"
 
 MIN_HOME_CONTEXT = 3

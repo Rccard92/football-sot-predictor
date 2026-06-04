@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 8 — Today persistente, scan oggi/domani e storico 7 giorni (2026-06-04)
+
+- Versione `cecchino_today_v0_2_persistent_days`: snapshot per `scan_date` indipendenti (scan domani non cancella oggi).
+- Endpoint: `GET /api/cecchino/today/days`, `POST .../scan-today`, `POST .../scan-tomorrow`, `POST .../cleanup`, `GET .../debug-search`, escluse arricchite con debug bookmaker/stats.
+- Retention automatica post-scan: elimina solo `scan_date < oggi - 7` (Europe/Rome); oggi/domani/future protetti.
+- UI `/cecchino-today`: pill giornate (Oggi/Domani/storico), pulsanti scan oggi/domani (no date picker), empty state per giornata non scansionata, pannello escluse collapsible, dettaglio verticale Quote → Segnali.
+- Report scan: `fixtures_found`, `top_exclusion_reasons`; lista pubblica include `scan_meta`.
+- v2.0/v2.1 e `team_sot_predictions` non modificati.
+
 ## Cecchino — Fase 7 — Restyling UI/UX dashboard Today (2026-06-04)
 
 - Redesign pagina `/cecchino-today`: layout 2 colonne (38% lista / 62% dettaglio), sfondo chiaro allineato al layout globale.

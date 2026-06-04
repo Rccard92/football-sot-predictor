@@ -413,16 +413,20 @@ Body opzionale: { "fixture_id": 12345, "limit": 50 }
 
 Lettura UI: `/cecchino`. Dettaglio: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
 
-### Cecchino Today (scan manuale giornaliero)
+### Cecchino Today (scan manuale giornaliero persistente)
 
-Equivalente operativo per la giornata corrente — **non** incluso in cron pre-match SOT:
+Equivalente operativo per giornata corrente o successiva — **non** incluso in cron pre-match SOT:
 
 ```
+POST /api/admin/cecchino/today/scan-today
+POST /api/admin/cecchino/today/scan-tomorrow
 POST /api/admin/cecchino/today/scan
-Body opzionale: { "scan_date": "YYYY-MM-DD", "timezone": "Europe/Rome" }
+Body opzionale scan: { "scan_date": "YYYY-MM-DD", "timezone": "Europe/Rome" }
+POST /api/admin/cecchino/today/cleanup
+Body opzionale: { "retention_days": 7, "timezone": "Europe/Rome" }
 ```
 
-Lettura pubblica eleggibili: `GET /api/cecchino/today?date=`. Debug escluse: `GET /api/admin/cecchino/today/excluded`. UI: `/cecchino-today`.
+Lettura: `GET /api/cecchino/today/days`, `GET /api/cecchino/today?date=` (solo eleggibili + `scan_meta`). Debug admin: `GET /api/admin/cecchino/today/excluded`, `GET .../debug-search?date=&q=`. UI: `/cecchino-today`. Retention automatica post-scan: elimina snapshot con `scan_date` più vecchi di 7 giorni (oggi/domani protetti).
 
 **Fase 2 (dati reali):** i record W/D/L derivano solo da fixture **finite** prima del kickoff target, filtrate per `competition_id`. La risposta API include `data_quality` (sample count, `leakage_check`). Dopo deploy, eseguire `recalculate` per aggiornare righe già in cache con il nuovo schema.
 

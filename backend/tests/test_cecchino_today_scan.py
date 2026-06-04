@@ -66,15 +66,74 @@ def test_list_endpoint_eligible_only():
 def test_excluded_admin_endpoint():
     payload = {
         "status": "ok",
-        "version": "cecchino_today_v0_1_manual_discovery",
+        "version": "cecchino_today_v0_2_persistent_days",
         "scan_date": "2026-06-04",
         "total": 1,
-        "fixtures": [{"id": 1, "eligibility_status": "excluded_cup"}],
+        "fixtures": [
+            {
+                "id": 1,
+                "eligibility_status": "excluded_cup",
+                "bookmaker_debug": {"Bet365": "missing"},
+                "stats_debug": {"status": "insufficient"},
+            },
+        ],
     }
     with patch("app.routes.cecchino_today.list_excluded_today", return_value=payload):
         resp = client.get("/api/admin/cecchino/today/excluded?date=2026-06-04")
     assert resp.status_code == 200
-    assert resp.json()["fixtures"][0]["eligibility_status"] == "excluded_cup"
+    assert resp.json()["fixtures"][0]["bookmaker_debug"]["Bet365"] == "missing"
+
+
+def test_days_endpoint():
+    payload = {
+        "status": "ok",
+        "version": "cecchino_today_v0_2_persistent_days",
+        "timezone": "Europe/Rome",
+        "today": "2026-06-04",
+        "tomorrow": "2026-06-05",
+        "days": [{"date": "2026-06-04", "label": "Oggi", "eligible_count": 0, "status": "pending"}],
+    }
+    with patch("app.routes.cecchino_today.list_available_days", return_value=payload):
+        resp = client.get("/api/cecchino/today/days")
+    assert resp.status_code == 200
+    assert resp.json()["today"] == "2026-06-04"
+
+
+def test_scan_today_endpoint():
+    report = {"status": "ok", "scan_date": "2026-06-04", "eligible": 1, "excluded": {}, "warnings": []}
+    with patch("app.routes.cecchino_today.run_scan_today", return_value=report) as mock_run:
+        resp = client.post("/api/admin/cecchino/today/scan-today")
+    assert resp.status_code == 200
+    mock_run.assert_called_once()
+
+
+def test_scan_tomorrow_endpoint():
+    report = {"status": "ok", "scan_date": "2026-06-05", "eligible": 0, "excluded": {}, "warnings": []}
+    with patch("app.routes.cecchino_today.run_scan_tomorrow", return_value=report) as mock_run:
+        resp = client.post("/api/admin/cecchino/today/scan-tomorrow")
+    assert resp.status_code == 200
+    mock_run.assert_called_once()
+
+
+def test_cleanup_endpoint():
+    payload = {"status": "ok", "deleted": 2, "cutoff_date": "2026-05-28"}
+    with patch("app.routes.cecchino_today.cleanup_cecchino_today_snapshots", return_value=payload):
+        resp = client.post("/api/admin/cecchino/today/cleanup", json={"retention_days": 7})
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+
+
+def test_debug_search_endpoint():
+    payload = {
+        "status": "ok",
+        "scan_date": "2026-06-04",
+        "query": "Inter",
+        "results": [{"match_type": "excluded", "message": "Esclusa: excluded_cup"}],
+    }
+    with patch("app.routes.cecchino_today.debug_search", return_value=payload):
+        resp = client.get("/api/admin/cecchino/today/debug-search?date=2026-06-04&q=Inter")
+    assert resp.status_code == 200
+    assert resp.json()["results"][0]["match_type"] == "excluded"
 
 
 def test_run_scan_saves_excluded_competition():

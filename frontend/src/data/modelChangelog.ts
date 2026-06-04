@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.3.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Persistenza giornate e scan oggi/domani',
+    type: 'minor',
+    summary:
+      'Today persistente per giornata: scan oggi/domani indipendenti, navigazione pill storico 7 giorni, diagnostica escluse, retention automatica.',
+    highlights: [
+      'GET /api/cecchino/today/days e scan-today/scan-tomorrow senza date picker.',
+      'Scan domani non cancella i dati di oggi; cleanup retention 7 giorni.',
+      'Pannello escluse con debug bookmaker/stats e ricerca debug-search.',
+      'Dettaglio verticale: Quote finali sopra, Segnali sotto.',
+      'Zero modifiche SOT v2.0/v2.1 e team_sot_predictions.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-ui-0.2.0',
     date: '2026-06-04',
     title: 'Cecchino — Restyling UI/UX dashboard Today',
