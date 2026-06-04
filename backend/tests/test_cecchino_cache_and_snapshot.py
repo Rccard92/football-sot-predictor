@@ -59,7 +59,8 @@ def test_stored_row_not_usable_with_legacy_snapshot():
     assert _stored_row_is_usable(row) is False
 
 
-def test_stored_row_usable_v02():
+def test_stored_row_v02_without_signals_not_usable():
+    """Cache v0.2 senza signals_matrix.available → ricalcolo."""
     row = SimpleNamespace(
         output_json={
             "final": {"quota_1": 2.0},
@@ -74,8 +75,35 @@ def test_stored_row_usable_v02():
         },
         input_snapshot_json=_v02_snapshot(),
     )
+    assert _stored_row_is_usable(row) is False
+
+
+def test_cecchino_version_is_v03():
+    assert CECCHINO_VERSION == "cecchino_v0_3_signals_matrix"
+
+
+def test_stored_row_not_usable_without_signals_matrix():
+    row = SimpleNamespace(
+        output_json={
+            "final": {"quota_1": 2.0},
+            "data_quality": {"leakage_check": {"status": LEAKAGE_PASSED}},
+            "signals_matrix": {"status": "pending_formula_extraction"},
+        },
+        input_snapshot_json=_v02_snapshot(),
+    )
+    assert _stored_row_is_usable(row) is False
+
+
+def test_stored_row_usable_v03_with_signals():
+    row = SimpleNamespace(
+        output_json={
+            "final": {"quota_1": 2.0},
+            "data_quality": {"leakage_check": {"status": LEAKAGE_PASSED}},
+            "signals_matrix": {
+                "status": "available",
+                "rows": [{"key": "draw"}],
+            },
+        },
+        input_snapshot_json=_v02_snapshot(),
+    )
     assert _stored_row_is_usable(row) is True
-
-
-def test_cecchino_version_is_v02():
-    assert CECCHINO_VERSION == "cecchino_v0_2_real_records"

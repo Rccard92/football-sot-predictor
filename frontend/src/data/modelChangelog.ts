@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-0.4.0',
+    date: '2026-06-04',
+    title: 'Cecchino — Fase 3 — Matrice segnali SI/NO da Excel',
+    type: 'minor',
+    summary:
+      'Matrice segnali SI/NO (AutomazioneCecchino.xlsm) con formule reali F32–F60, indice affidabilità e UI tabellare; versione backend cecchino_v0_3_signals_matrix.',
+    highlights: [
+      'Segnali UNDER/UNDER PT, X, OVER/OVER PT, 1, 1X, 2, X2, 12 (colonne Excel D/E/F/G).',
+      'Indice affidabilità da sample picchetto casa/trasferta (min(sample/20, 1)).',
+      'Test parità numerica su valori esempio Excel; nessuna formula inventata.',
+      'Nessun collegamento a modelli SOT o team_sot_predictions.',
+      'v2.0 e v2.1 non modificati.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-0.2.1',
     date: '2026-06-04',
     title: 'Cecchino — Fase 2 — Recupero dati reali e tracciabilità input',

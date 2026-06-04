@@ -4,6 +4,7 @@ import { CecchinoInputDataPanel } from './CecchinoInputDataPanel'
 import { CecchinoFinalOddsCard } from './CecchinoFinalOddsCard'
 import { CecchinoOddsComparisonPlaceholder } from './CecchinoOddsComparisonPlaceholder'
 import { CecchinoPicchettiTable } from './CecchinoPicchettiTable'
+import { CecchinoSignalsMatrixPanel } from './CecchinoSignalsMatrixPanel'
 import { CecchinoSignalsMatrixPlaceholder } from './CecchinoSignalsMatrixPlaceholder'
 
 type Props = {
@@ -40,7 +41,11 @@ export function CecchinoFixtureDetail({ detail }: Props) {
 
       <CecchinoPicchettiTable picchetti={output.picchetti} />
       <CecchinoFinalOddsCard final={output.final} />
-      <CecchinoSignalsMatrixPlaceholder status={output.signals_matrix?.status} />
+      {output.signals_matrix?.status === 'available' ? (
+        <CecchinoSignalsMatrixPanel matrix={output.signals_matrix} />
+      ) : (
+        <CecchinoSignalsMatrixPlaceholder status={output.signals_matrix?.status} />
+      )}
       <CecchinoOddsComparisonPlaceholder status={output.bookmaker_comparison?.status} />
     </div>
   )

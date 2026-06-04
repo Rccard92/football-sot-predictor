@@ -6,9 +6,9 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 
 | Campo | Valore |
 |-------|--------|
-| Versione corrente | `cecchino_v0_2_real_records` |
-| Versioni precedenti | `cecchino_v0_1_excel_parity` (cache legacy, non più servita) |
-| Fase | 1 — parità Excel; **2** — recupero dati reali e tracciabilità input; **3** — dashboard frontend autonoma |
+| Versione corrente | `cecchino_v0_3_signals_matrix` |
+| Versioni precedenti | `cecchino_v0_2_real_records`, `cecchino_v0_1_excel_parity` (cache legacy, non più servite) |
+| Fase | 1 — parità Excel picchetti; **2** — W/D/L reali; **3** — dashboard FE; **3b** — matrice segnali SI/NO |
 | Separazione SOT | Totale — engine, API, UI e tabella dedicati |
 
 ## Obiettivo
@@ -21,12 +21,15 @@ Replicare online la logica del foglio **CECCHINO** di `AutomazioneCecchino.xlsm`
 4. Picchetto stato di forma ultime 6 totali
 5. Quota matematica finale Cecchino (media ponderata)
 
-Sezioni **non ancora implementate** (solo placeholder in `output_json`):
+Sezioni **non ancora implementate**:
 
-- Matrice segnali SI/NO → `pending_formula_extraction`
-- Indice affidabilità → `not_implemented_yet`
 - Confronto quota matematica vs bookmaker → `not_implemented_yet`
-- Movimento quota / rumors → non presente in v0.1
+- Movimento quota / rumors → non presente
+
+**Implementate in v0.3:**
+
+- Matrice segnali SI/NO (formule Excel F32–F60, colonne D/E/F/G)
+- Indice affidabilità (`sample` picchetto casa/trasferta, `index = min(sample/20, 1)`)
 
 ## Formule (v0.1)
 
@@ -113,9 +116,29 @@ Campi: conteggi campione per contesto, `leakage_check` (oggetto), `warnings`, `f
 
 Se `status = failed` → risposta `cecchino_leakage_failed`, nessun calcolo quote salvato come `available`.
 
-### Cache v0.2
+### Matrice segnali SI/NO (v0.3)
 
-Righe `cecchino_predictions` con `cecchino_version = cecchino_v0_2_real_records`. Snapshot incompleto (v0.1 o `null`) **non** viene servito: il service ricalcola da DB.
+Modulo: [`cecchino_signals_matrix.py`](../backend/app/services/cecchino/cecchino_signals_matrix.py)
+
+**Input (solo quote Cecchino, nessun output SOT):**
+
+| Variabile | Excel | Formula |
+|-----------|-------|---------|
+| q1 | F32 | quota finale 1 |
+| qx | F33 | quota finale X |
+| q2 | F34 | quota finale 2 |
+| avg_q | F35 | media(q1, qx, q2) |
+| diff_1_2 | F36 | q2 − q1 |
+
+**Righe:** UNDER/UNDER PT, SEGNO X, OVER/OVER PT, 1, 1X, 2, X2, 12 — colonne Excel D/E/F/G (+ Scala per 1 e 2).
+
+**Affidabilità:** `sample` = somma campioni picchetto casa/trasferta; `index = min(sample/20, 1)`; status OK/NO BET; livello ALTA/MEDIA/BASSA.
+
+Se q1/qx/q2 mancanti → `signals_matrix.status = insufficient_data`.
+
+### Cache v0.3
+
+Righe `cecchino_predictions` con `cecchino_version = cecchino_v0_3_signals_matrix`. Cache senza `signals_matrix.status = available` o snapshot incompleto → ricalcolo automatico.
 
 Ricalcolo manuale: `GET .../fixture/{id}?recalculate=true` o `?force_recalculate=true`, oppure `POST /api/admin/competitions/{id}/cecchino/recalculate`.
 
@@ -164,7 +187,8 @@ Route `/cecchino` — voce menu principale. Modulo separato da SOT v2.0/v2.1 (ne
 | `frontend/src/lib/cecchinoUtils.ts` | `formatWdl`, `computeBestSide`, `canShowFinalOdds`, badge stato |
 | `frontend/src/pages/CecchinoPage.tsx` | Layout: header → tabella partite → dettaglio sotto |
 | `CecchinoFixturesTable` | Colonne quote/prob/best side; quote `—` se non `available`/`partial_low_sample` |
-| `CecchinoFixtureDetailPanel` | Sezioni A–F: metadati, picchetti, final, placeholder, debug JSON |
+| `CecchinoFixtureDetailPanel` | Sezioni A–F: metadati, picchetti, final, matrice SI/NO, debug JSON |
+| `CecchinoSignalsMatrixPanel` | Tabella segnali D/E/F/G + card affidabilità |
 
 **Stati UI dettaglio:** `available` / `partial_low_sample` → picchetti + quote finali; `insufficient_data` → messaggio senza numeri; `leakage failed` → banner errore; accordion «Debug tecnico» con JSON serializzato.
 
@@ -179,6 +203,7 @@ Caso di riferimento: **San Lorenzo de Almagro vs Deportivo Riestra** — vedi `b
 | Componente | Path |
 |------------|------|
 | Engine | `backend/app/services/cecchino/cecchino_engine.py` |
+| Signals matrix | `backend/app/services/cecchino/cecchino_signals_matrix.py` |
 | Fixture history | `backend/app/services/cecchino/cecchino_fixture_history.py` |
 | Service | `backend/app/services/cecchino/cecchino_service.py` |
 | Route | `backend/app/routes/cecchino.py` |

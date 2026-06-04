@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-CECCHINO_VERSION = "cecchino_v0_2_real_records"
+CECCHINO_VERSION = "cecchino_v0_3_signals_matrix"
 
 PICCHETTO_KEY_HOME_AWAY = "home_away"
 PICCHETTO_KEY_TOTALS = "totals"

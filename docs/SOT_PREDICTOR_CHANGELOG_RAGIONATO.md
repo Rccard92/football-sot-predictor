@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 3 — Matrice segnali SI/NO da Excel (2026-06-04)
+
+- Versione backend `cecchino_v0_3_signals_matrix`; cache v0.2 senza matrice → ricalcolo.
+- Implementate formule reali del foglio CECCHINO (F32–F36 input, righe D39–D60) senza segnali inventati.
+- Segnali: UNDER/UNDER PT, SEGNO X, OVER/OVER PT, 1, 1X, 2, X2, 12; indice affidabilità da sample picchetto casa/trasferta.
+- UI: tabella Excel D/E/F/G + card affidabilità; stato `insufficient_data` se quote finali assenti.
+- Nessun uso di `team_sot_predictions` né output SOT; v2.0 e v2.1 invariati.
+
 ## Cecchino — Fase 2 — Recupero dati reali e tracciabilità input (2026-06-04)
 
 - Rimossi dalla UI i testi descrittivi sul modulo separato da SOT (il modulo resta tecnicamente isolato).

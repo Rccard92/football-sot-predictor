@@ -17,7 +17,6 @@ from app.services.cecchino.cecchino_constants import (
     PICCHETTO_STATUSES_FOR_FINAL,
     PLACEHOLDER_BOOKMAKER,
     PLACEHOLDER_RELIABILITY,
-    PLACEHOLDER_SIGNALS,
     STATUS_AVAILABLE,
     STATUS_INSUFFICIENT_DATA,
     STATUS_PARTIAL_LOW_SAMPLE,
@@ -25,6 +24,7 @@ from app.services.cecchino.cecchino_constants import (
     WARNING_ZERO_MATCHES,
     WARNING_ZERO_PROBABILITY,
 )
+from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
 
 @dataclass(frozen=True)
@@ -365,11 +365,26 @@ def build_full_cecchino_output(
     else:
         overall = STATUS_INSUFFICIENT_DATA
 
+    home_away_block = picchetti[PICCHETTO_KEY_HOME_AWAY]
+    sample_home = home_away_block.home_sample_count or 0
+    sample_away = home_away_block.away_sample_count or 0
+    sample_split = int(sample_home) + int(sample_away)
+
+    signals_matrix = build_signals_matrix(
+        q1=final.quota_1,
+        qx=final.quota_x,
+        q2=final.quota_2,
+        sample_home_away_split=sample_split,
+    )
+    all_warnings.extend(signals_matrix.get("warnings") or [])
+
+    reliability_index = signals_matrix.get("reliability") or dict(PLACEHOLDER_RELIABILITY)
+
     return CecchinoCalculationOutput(
         picchetti=picchetti,
         final=final,
-        signals_matrix=dict(PLACEHOLDER_SIGNALS),
-        reliability_index=dict(PLACEHOLDER_RELIABILITY),
+        signals_matrix=signals_matrix,
+        reliability_index=reliability_index,
         bookmaker_comparison=dict(PLACEHOLDER_BOOKMAKER),
         status=overall,
         warnings=all_warnings,

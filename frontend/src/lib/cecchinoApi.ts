@@ -79,11 +79,40 @@ export type CecchinoFinalOdds = {
 
 export type CecchinoPlaceholderSection = { status: string }
 
+export type CecchinoReliability = {
+  sample?: number | null
+  index?: number | null
+  status?: string | null
+  level?: string | null
+}
+
+export type CecchinoSignalRow = {
+  key: string
+  label: string
+  signals: Record<string, string>
+}
+
+export type CecchinoSignalsMatrix = {
+  status: string
+  source?: string
+  excel_mapping?: Record<string, string>
+  inputs?: {
+    q1?: number | null
+    qx?: number | null
+    q2?: number | null
+    avg_q?: number | null
+    diff_1_2?: number | null
+  }
+  rows?: CecchinoSignalRow[]
+  reliability?: CecchinoReliability
+  warnings?: string[]
+}
+
 export type CecchinoOutput = {
   picchetti: Record<string, CecchinoPicchetto>
   final: CecchinoFinalOdds
-  signals_matrix: CecchinoPlaceholderSection
-  reliability_index: CecchinoPlaceholderSection
+  signals_matrix: CecchinoSignalsMatrix
+  reliability_index: CecchinoReliability | CecchinoPlaceholderSection
   bookmaker_comparison: CecchinoPlaceholderSection
   status: string
   warnings: string[]

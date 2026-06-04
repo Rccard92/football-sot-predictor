@@ -7,6 +7,7 @@ import { CecchinoInputDataPanel } from './CecchinoInputDataPanel'
 import { CecchinoMatchBasics } from './CecchinoMatchBasics'
 import { CecchinoOddsComparisonPlaceholder } from './CecchinoOddsComparisonPlaceholder'
 import { CecchinoPicchettiDashboardTable } from './CecchinoPicchettiDashboardTable'
+import { CecchinoSignalsMatrixPanel } from './CecchinoSignalsMatrixPanel'
 import { CecchinoSignalsMatrixPlaceholder } from './CecchinoSignalsMatrixPlaceholder'
 import { CecchinoStatusMessage } from './CecchinoStatusMessage'
 
@@ -108,7 +109,11 @@ export function CecchinoFixtureDetailPanel({ detail }: Props) {
         />
       )}
 
-      <CecchinoSignalsMatrixPlaceholder status={output.signals_matrix?.status} />
+      {output.signals_matrix?.status === 'available' ? (
+        <CecchinoSignalsMatrixPanel matrix={output.signals_matrix} />
+      ) : (
+        <CecchinoSignalsMatrixPlaceholder status={output.signals_matrix?.status} />
+      )}
       <CecchinoOddsComparisonPlaceholder status={output.bookmaker_comparison?.status} />
       <CecchinoDebugJsonPanel detail={detail} />
     </div>

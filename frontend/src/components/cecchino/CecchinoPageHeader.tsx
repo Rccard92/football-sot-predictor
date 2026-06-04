@@ -3,7 +3,7 @@ type Props = {
 }
 
 export function CecchinoPageHeader({ cecchinoVersion }: Props) {
-  const version = cecchinoVersion ?? 'cecchino_v0_2_real_records'
+  const version = cecchinoVersion ?? 'cecchino_v0_3_signals_matrix'
 
   return (
     <header className="space-y-2">

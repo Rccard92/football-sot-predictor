@@ -77,7 +77,7 @@ def test_upcoming_endpoint_ok():
     mock_comp.id = 7
     payload = {
         "status": "ok",
-        "cecchino_version": "cecchino_v0_2_real_records",
+        "cecchino_version": "cecchino_v0_3_signals_matrix",
         "competition_id": 7,
         "fixtures": [],
     }

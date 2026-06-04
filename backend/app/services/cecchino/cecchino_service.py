@@ -69,10 +69,21 @@ def _leakage_status(dq: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _signals_matrix_is_available(output: dict[str, Any] | None) -> bool:
+    if not output:
+        return False
+    sm = output.get("signals_matrix")
+    if not isinstance(sm, dict):
+        return False
+    return sm.get("status") == "available"
+
+
 def _stored_row_is_usable(row: CecchinoPrediction) -> bool:
     if not row.output_json:
         return False
     if not input_snapshot_is_complete(row.input_snapshot_json):
+        return False
+    if not _signals_matrix_is_available(row.output_json):
         return False
     dq = (row.output_json or {}).get("data_quality") or {}
     if _leakage_status(dq) == LEAKAGE_FAILED:
