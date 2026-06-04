@@ -10,6 +10,7 @@ import {
 
 type Props = {
   final: CecchinoFinalOdds
+  variant?: 'default' | 'embedded'
 }
 
 function sideCard(
@@ -33,16 +34,28 @@ function sideCard(
   )
 }
 
-export function CecchinoFinalOddsDashboard({ final }: Props) {
+export function CecchinoFinalOddsDashboard({ final, variant = 'default' }: Props) {
+  const embedded = variant === 'embedded'
   const showNumbers = canShowFinalOdds(final.status)
   const best = computeBestSideFromFinal(final)
 
+  const outerClass = embedded
+    ? 'space-y-3'
+    : 'rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-sm'
+
   return (
-    <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-indigo-900">Quota matematica finale Cecchino</h3>
-        <span className="text-[10px] uppercase text-indigo-700">{statusLabel(final.status)}</span>
-      </div>
+    <div className={outerClass}>
+      {!embedded && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-indigo-900">Quota matematica finale Cecchino</h3>
+          <span className="text-[10px] uppercase text-indigo-700">{statusLabel(final.status)}</span>
+        </div>
+      )}
+      {embedded && (
+        <span className="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-800">
+          {statusLabel(final.status)}
+        </span>
+      )}
       <div className="grid grid-cols-3 gap-3">
         {sideCard('1', final.quota_1, final.prob_1_pct, best === '1', showNumbers)}
         {sideCard('X', final.quota_x, final.prob_x_pct, best === 'X', showNumbers)}

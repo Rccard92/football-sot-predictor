@@ -223,7 +223,7 @@ Pipeline **manuale** (no cron) per scoprire partite odierne via API-Football, fi
 
 **Persistenza:** tabella `cecchino_today_fixtures` (snapshot per `scan_date` + `provider_fixture_id`, anche righe escluse per debug admin).
 
-**UI:** route `/cecchino-today` — pulsante «Aggiorna partite odierne», lista solo `eligible`, dettaglio con KPI + matrice segnali + link a Cecchino classico.
+**UI:** route `/cecchino-today` — layout dashboard 2 colonne (38% lista / 62% dettaglio), card partite con badge bookmaker/stats, scan summary, skeleton loading. Dettaglio: header partita, `CecchinoTodayKpiPanel` (KPI Today-only), card «Dettaglio quote bookmaker», segnali + quote finali affiancate. Il KPI classico su `/cecchino` resta invariato (`CecchinoKpiPanel`).
 
 **Versione:** `cecchino_today_v0_1_manual_discovery`. Nessuna modifica a SOT v2.0/v2.1 né `team_sot_predictions`.
 
@@ -242,4 +242,4 @@ Caso di riferimento: **San Lorenzo de Almagro vs Deportivo Riestra** — vedi `b
 | Route | `backend/app/routes/cecchino.py` |
 | Cecchino Today | `backend/app/services/cecchino/cecchino_today_service.py`, `backend/app/routes/cecchino_today.py` |
 | Model | `backend/app/models/cecchino_prediction.py`, `cecchino_today_fixture.py` |
-| UI | `frontend/src/pages/CecchinoPage.tsx`, `CecchinoTodayPage.tsx`, `cecchinoApi.ts`, `cecchinoTodayApi.ts` |
+| UI | `frontend/src/pages/CecchinoPage.tsx`, `CecchinoTodayPage.tsx`, componenti `CecchinoToday*`, `cecchinoApi.ts`, `cecchinoTodayApi.ts` |

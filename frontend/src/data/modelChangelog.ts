@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-ui-0.2.0',
+    date: '2026-06-04',
+    title: 'Cecchino — Restyling UI/UX dashboard Today',
+    type: 'patch',
+    summary:
+      'Redesign frontend Cecchino Today: layout 2 colonne, card partite premium, KPI Today-only, dettaglio bookmaker separato, segnali e quote affiancate.',
+    highlights: [
+      'Layout 38/62 lista/dettaglio con sfondo chiaro e skeleton loading.',
+      'CecchinoTodayKpiPanel con EDGE verde/rosso e tabella più leggibile.',
+      'Card Dettaglio quote bookmaker sotto il KPI principale.',
+      'Segnali Cecchino e quote finali in grid affiancata su desktop.',
+      'Nessuna modifica logica Cecchino né SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.1.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Discovery giornaliera manuale',

@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 7 — Restyling UI/UX dashboard Today (2026-06-04)
+
+- Redesign pagina `/cecchino-today`: layout 2 colonne (38% lista / 62% dettaglio), sfondo chiaro allineato al layout globale.
+- Nuove card partite con micro-badge bookmaker/stats, stati selezione/hover, empty state e skeleton loading.
+- Header dettaglio partita dedicato; KPI Today-only (`CecchinoTodayKpiPanel`) con EDGE colorato e tabella più leggibile.
+- Dettaglio quote bookmaker in card secondaria separata dal KPI principale.
+- Segnali e quote finali affiancate su desktop; riuso `CecchinoFinalOddsDashboard` con highlight best side.
+- Nessuna modifica alla logica di business Cecchino, formule KPI/segnali, filtri o backend.
+- v2.0/v2.1 e `team_sot_predictions` non modificati.
+
 ## Cecchino — Fase 6 — Cecchino Today manual discovery (2026-06-04)
 
 - Versione `cecchino_today_v0_1_manual_discovery`: scan manuale partite odierne via API-Football (`GET fixtures?date=`).

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CecchinoTodayDetailPanel } from '../components/cecchino/CecchinoTodayDetailPanel'
 import {
-  formatKickoffTime,
+  CecchinoTodayDetailPanel,
+  CecchinoTodayDetailPlaceholder,
+} from '../components/cecchino/CecchinoTodayDetailPanel'
+import { CecchinoTodayFixtureList, type TodayFlatFixture } from '../components/cecchino/CecchinoTodayFixtureList'
+import { CecchinoTodayPageHeader } from '../components/cecchino/CecchinoTodayPageHeader'
+import { CecchinoTodayScanSummary } from '../components/cecchino/CecchinoTodayScanSummary'
+import { todayPageGrid, todaySectionTitle } from '../components/cecchino/cecchinoTodayStyles'
+import {
   getCecchinoTodayDetail,
   getCecchinoTodayList,
   scanCecchinoToday,
@@ -92,9 +98,9 @@ export function CecchinoTodayPage() {
     }
   }
 
-  const flatFixtures = useMemo(() => {
+  const flatFixtures = useMemo((): TodayFlatFixture[] => {
     if (!list) return []
-    const out: Array<{ country: string; league: string; fixture: (typeof list.countries)[0]['leagues'][0]['fixtures'][0] }> = []
+    const out: TodayFlatFixture[] = []
     for (const c of list.countries) {
       for (const l of c.leagues) {
         for (const f of l.fixtures) {
@@ -106,103 +112,49 @@ export function CecchinoTodayPage() {
   }, [list])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-bold text-white">Cecchino Today</h1>
-        <p className="text-sm text-slate-300">
-          Discovery manuale partite odierne — solo eleggibili (quote complete, statistiche OK, no leakage).
+    <div className="mx-auto w-full max-w-[1280px] space-y-6">
+      <CecchinoTodayPageHeader
+        scanDate={scanDate}
+        onScanDateChange={setScanDate}
+        onScan={() => void handleScan()}
+        scanLoading={scanLoading}
+      />
+
+      {scanError && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+          {scanError}
         </p>
-      </header>
-
-      <section className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-600 bg-slate-900/50 p-4">
-        <label className="flex flex-col gap-1 text-sm text-slate-300">
-          Data scan
-          <input
-            type="date"
-            value={scanDate}
-            onChange={(e) => setScanDate(e.target.value)}
-            className="rounded border border-slate-500 bg-slate-800 px-2 py-1 text-white"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void handleScan()}
-          disabled={scanLoading}
-          className="rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
-        >
-          {scanLoading ? 'Scansione…' : 'Aggiorna partite odierne'}
-        </button>
-      </section>
-
-      {scanError && <p className="text-sm text-red-300">{scanError}</p>}
-
-      {scanReport && (
-        <section className="rounded-lg border border-emerald-600/40 bg-emerald-950/20 p-4 text-sm text-emerald-100">
-          <p>
-            Scan completato — scoperte: {scanReport.total_discovered}, eleggibili: {scanReport.eligible},
-            escluse: {scanReport.excluded_total ?? Object.values(scanReport.excluded).reduce((a, b) => a + b, 0)}
-          </p>
-          {(scanReport.warnings?.length ?? 0) > 0 && (
-            <ul className="mt-2 list-inside list-disc text-xs text-amber-200">
-              {scanReport.warnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          )}
-        </section>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-white">Partite eleggibili</h2>
-          {listLoading && <p className="text-sm text-slate-400">Caricamento…</p>}
-          {listError && <p className="text-sm text-red-300">{listError}</p>}
-          {!listLoading && !listError && flatFixtures.length === 0 && (
-            <p className="rounded-lg border border-dashed border-slate-600 p-6 text-center text-sm text-slate-400">
-              Nessuna partita eleggibile per {scanDate}. Esegui lo scan o cambia data.
+      {scanReport && scanReport.status === 'ok' && (
+        <CecchinoTodayScanSummary report={scanReport} />
+      )}
+
+      <div className={todayPageGrid}>
+        <CecchinoTodayFixtureList
+          fixtures={flatFixtures}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          loading={listLoading || scanLoading}
+          error={listError}
+          scanDate={scanDate}
+          onScan={() => void handleScan()}
+        />
+
+        <section className="min-w-0 space-y-4">
+          <h2 className={todaySectionTitle}>Dettaglio analisi</h2>
+          {detailError && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+              {detailError}
             </p>
           )}
-          <ul className="space-y-2">
-            {flatFixtures.map(({ country, league, fixture: f }) => {
-              const bm = f.bookmakers || {}
-              const bmLabel = ['Bet365', 'Betfair', 'Pinnacle']
-                .map((n) => `${n} ${bm[n] === 'OK' ? 'OK' : '—'}`)
-                .join(' / ')
-              const active = selectedId === f.id
-              return (
-                <li key={f.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(f.id)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
-                      active
-                        ? 'border-sky-500 bg-sky-950/40 text-white'
-                        : 'border-slate-600 bg-slate-900/40 text-slate-200 hover:border-slate-500'
-                    }`}
-                  >
-                    <span className="font-mono text-sky-300">{formatKickoffTime(f.kickoff)}</span>
-                    {' — '}
-                    <span className="font-medium">
-                      {f.home_team_name} vs {f.away_team_name}
-                    </span>
-                    <span className="mt-1 block text-xs text-slate-400">
-                      {country} · {league} — {bmLabel} — Statistiche {f.stats_status === 'ok' ? 'OK' : '—'}
-                    </span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-
-        <section>
-          <h2 className="mb-3 text-lg font-semibold text-white">Dettaglio analisi</h2>
-          {selectedId == null && (
-            <p className="text-sm text-slate-400">Seleziona una partita dalla lista.</p>
+          {selectedId == null && !detailLoading && <CecchinoTodayDetailPlaceholder />}
+          {(selectedId != null || detailLoading) && (
+            <CecchinoTodayDetailPanel
+              detail={detail ?? { status: 'error', message: 'Caricamento…' }}
+              loading={detailLoading}
+            />
           )}
-          {detailLoading && <p className="text-sm text-slate-400">Caricamento dettaglio…</p>}
-          {detailError && <p className="text-sm text-red-300">{detailError}</p>}
-          {detail && !detailLoading && <CecchinoTodayDetailPanel detail={detail} />}
         </section>
       </div>
     </div>
