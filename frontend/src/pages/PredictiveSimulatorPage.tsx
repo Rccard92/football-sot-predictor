@@ -6,6 +6,7 @@ import {
   PredictiveAiInsightsPanel,
   PredictiveLabAuditPanel,
 } from '../components/predictive/PredictiveAiInsightsPanel'
+import { PredictiveComponentComparisonPanel } from '../components/predictive/PredictiveComponentComparisonPanel'
 import { PredictiveFixtureDiagnosisPanel } from '../components/predictive/PredictiveFixtureDiagnosisPanel'
 import {
   PredictiveAuditPanel,
@@ -36,6 +37,7 @@ const PAGE_TABS = [
   { id: 'history', label: 'Storico analisi' },
   { id: 'simulator', label: 'Simulatore v3.1' },
   { id: 'diagnosis', label: 'Diagnosi partite' },
+  { id: 'pred-vs-actual', label: 'Predetto vs Reale' },
   { id: 'pattern', label: 'Pattern Analysis' },
   { id: 'ai', label: 'Analisi AI' },
   { id: 'audit', label: 'Audit' },
@@ -221,6 +223,10 @@ export function PredictiveSimulatorPage() {
             setPageTab('ai')
           }}
         />
+      ) : null}
+
+      {pageTab === 'pred-vs-actual' ? (
+        <PredictiveComponentComparisonPanel runId={currentRunId} />
       ) : null}
 
       {pageTab === 'pattern' ? (

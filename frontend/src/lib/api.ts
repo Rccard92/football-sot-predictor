@@ -4648,6 +4648,123 @@ export async function getPredictiveSimulatorConfig(): Promise<{ openai_configure
   return requestJson<{ openai_configured: boolean }>('/api/predictive-simulator/config')
 }
 
+// --- Predetto vs Reale (component backtest) ---
+
+export type ComponentComparisonRow = {
+  key: string
+  label: string
+  macro_area: string
+  macro_area_label?: string
+  predicted_value?: number | null
+  actual_value?: number | null
+  delta?: number | null
+  delta_pct?: number | null
+  weight?: number | null
+  weight_pct?: number | null
+  predicted_contribution?: number | null
+  actual_contribution_proxy?: number | null
+  contribution_delta?: number | null
+  error_direction?: string
+  suspicion_level?: string
+  ui_status?: string
+  actual_comparison_type?: string
+  match?: string
+  round_number?: number
+  fixture_id?: number
+  strategy_key?: string
+  team?: string
+  team_side?: string
+  layer?: string
+}
+
+export type ComponentComparisonReport = {
+  run_id: number
+  detail: string
+  round_summary?: Record<string, unknown>
+  season_summary?: {
+    fixtures_compared?: number
+    strategies?: Record<
+      string,
+      {
+        aggregates_count?: number
+        top_overestimated_macros?: Array<{ macro_area: string; count: number }>
+        top_underestimated_macros?: Array<{ macro_area: string; count: number }>
+        top_suspicious_variables?: Array<Record<string, unknown>>
+      }
+    >
+  }
+  fixtures_in_scope?: number
+  audit?: Record<string, boolean>
+  fixtures?: Array<Record<string, unknown>>
+}
+
+export type ComponentComparisonFixtureDetail = {
+  fixture_id: number
+  strategy_key: string
+  round_number: number
+  match_summary?: Record<string, unknown>
+  component_payload?: {
+    home?: { team_name?: string; inputs?: ComponentComparisonRow[] }
+    away?: { team_name?: string; inputs?: ComponentComparisonRow[] }
+    match_level?: { inputs?: ComponentComparisonRow[] }
+  }
+  audit?: Record<string, boolean>
+}
+
+export async function getPredictiveComponentComparisonFixtures(
+  runId: number,
+  params?: {
+    strategy_key?: string
+    round_number?: number
+    fixture_id?: number
+    team_side?: string
+    macro_area?: string
+    error_direction?: string
+    suspicious_only?: boolean
+    limit?: number
+    offset?: number
+  },
+): Promise<{ total: number; limit: number; offset: number; items: ComponentComparisonRow[] }> {
+  const q = new URLSearchParams()
+  if (params?.strategy_key) q.set('strategy_key', params.strategy_key)
+  if (params?.round_number != null) q.set('round_number', String(params.round_number))
+  if (params?.fixture_id != null) q.set('fixture_id', String(params.fixture_id))
+  if (params?.team_side) q.set('team_side', params.team_side)
+  if (params?.macro_area) q.set('macro_area', params.macro_area)
+  if (params?.error_direction) q.set('error_direction', params.error_direction)
+  if (params?.suspicious_only) q.set('suspicious_only', 'true')
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  if (params?.offset != null) q.set('offset', String(params.offset))
+  return requestJson(
+    `/api/predictive-simulator/runs/${runId}/component-actual-comparison/fixtures?${q.toString()}`,
+  )
+}
+
+export async function getPredictiveComponentComparisonReport(
+  runId: number,
+  params?: { detail?: 'summary' | 'full'; strategy_key?: string; round_number?: number },
+): Promise<ComponentComparisonReport> {
+  const q = new URLSearchParams()
+  if (params?.detail) q.set('detail', params.detail)
+  if (params?.strategy_key) q.set('strategy_key', params.strategy_key)
+  if (params?.round_number != null) q.set('round_number', String(params.round_number))
+  const qs = q.toString()
+  return requestJson<ComponentComparisonReport>(
+    `/api/predictive-simulator/runs/${runId}/component-actual-comparison/report${qs ? `?${qs}` : ''}`,
+  )
+}
+
+export async function getPredictiveComponentComparisonFixtureDetail(
+  runId: number,
+  fixtureId: number,
+  strategyKey: string,
+): Promise<ComponentComparisonFixtureDetail> {
+  const q = new URLSearchParams({ strategy_key: strategyKey })
+  return requestJson<ComponentComparisonFixtureDetail>(
+    `/api/predictive-simulator/runs/${runId}/component-actual-comparison/fixtures/${fixtureId}?${q.toString()}`,
+  )
+}
+
 // --- Backtest Engine Step G2A (Historical Official XI Audit) ---
 
 export type HistoricalLineupPlayerPriorStats = {

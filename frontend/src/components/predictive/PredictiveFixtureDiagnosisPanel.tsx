@@ -4,6 +4,7 @@ import {
   postPredictiveFixtureNote,
   type PredictiveFixturePrediction,
 } from '../../lib/api'
+import { PredictiveFixtureComponentAccordion } from './PredictiveFixtureComponentAccordion'
 
 const OUTCOME_OPTIONS = [
   { value: '', label: 'Tutti gli outcome' },
@@ -28,7 +29,8 @@ export function PredictiveFixtureDiagnosisPanel({ runId, onAnalyzeFixture }: Pro
   const [strategyKey, setStrategyKey] = useState('')
   const [outcomeType, setOutcomeType] = useState('')
   const [minAbsError, setMinAbsError] = useState('')
-  const [expanded, setExpanded] = useState<number | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [componentExpanded, setComponentExpanded] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
@@ -149,7 +151,8 @@ export function PredictiveFixtureDiagnosisPanel({ runId, onAnalyzeFixture }: Pro
           <tbody>
             {items.map((row) => {
               const rowKey = `${row.fixture_id}:${row.strategy_key}`
-              const isOpen = expanded === row.fixture_id
+              const isOpen = expanded === rowKey
+              const isComponentOpen = componentExpanded === rowKey
               return (
                 <Fragment key={rowKey}>
                   <tr key={rowKey} className="border-b border-slate-100 hover:bg-slate-50/50">
@@ -180,9 +183,16 @@ export function PredictiveFixtureDiagnosisPanel({ runId, onAnalyzeFixture }: Pro
                       <button
                         type="button"
                         className="mt-1 text-violet-700 underline"
-                        onClick={() => setExpanded(isOpen ? null : row.fixture_id)}
+                        onClick={() => setExpanded(isOpen ? null : rowKey)}
                       >
                         {isOpen ? 'Chiudi' : 'Dettaglio'}
+                      </button>
+                      <button
+                        type="button"
+                        className="ml-2 mt-1 text-violet-700 underline"
+                        onClick={() => setComponentExpanded(isComponentOpen ? null : rowKey)}
+                      >
+                        {isComponentOpen ? 'Chiudi confronto' : 'Apri confronto componenti'}
                       </button>
                     </td>
                     <td className="px-2 py-2">
@@ -231,6 +241,13 @@ export function PredictiveFixtureDiagnosisPanel({ runId, onAnalyzeFixture }: Pro
                           <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-[10px]">
                             {JSON.stringify(row.feature_snapshot, null, 2)}
                           </pre>
+                        ) : null}
+                        {isComponentOpen && runId != null ? (
+                          <PredictiveFixtureComponentAccordion
+                            runId={runId}
+                            fixtureId={row.fixture_id}
+                            strategyKey={row.strategy_key}
+                          />
                         ) : null}
                       </td>
                     </tr>

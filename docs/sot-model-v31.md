@@ -157,7 +157,7 @@ Output strutturato: `short_verdict`, `key_evidence`, `root_causes`, `recommended
 
 ### UI
 
-Sette tab: Panoramica, Storico analisi, Simulatore v3.1, Diagnosi partite, Pattern Analysis, Analisi AI, Audit.
+Otto tab: Panoramica, Storico analisi, Simulatore v3.1, Diagnosi partite, **Predetto vs Reale**, Pattern Analysis, Analisi AI, Audit.
 
 **Esegui analisi** → `POST /run` → messaggio «Analisi salvata nello storico».
 
@@ -175,6 +175,30 @@ La fase bet/no bet resta disabilitata (`betting_phase_enabled: false`).
 - Analisi AI per tipo con context builder deterministici e prompt vincolato
 - Storico analisi AI per run con `analysis_type` e fixture opzionale
 - UI tab Analisi AI: 4 blocchi mirati, card/tabelle leggibili, integrazione Diagnosi partite
+
+### Changelog v31-component-actual-comparison
+
+Confronto post-match **componente-per-componente** (predetto pre-match vs actual da `fixture_team_stats`), senza leakage nel motore predittivo.
+
+**Backend**
+
+- `v31_component_actual_registry.py` — mapping `actual_comparison_type` (direct / derived / diagnostic_only / unavailable)
+- `v31_component_actual_resolver.py` — actual post-match da `FixtureTeamStat` (+ avversario)
+- `v31_component_trace_builder.py` + `v31_component_error_direction.py` — trace esteso, `error_direction`, `suspicion_level`
+- Tabella `predictive_fixture_component_comparisons`; `season_component_error_summary_json` su run
+- Persistenza in `create_and_run`; aggregati giornata/stagione (`v31_component_aggregators.py`)
+- API: `GET .../component-actual-comparison/fixtures`, `.../report?detail=summary|full`, `.../rounds/{round}`, `.../fixtures/{fixture_id}`
+
+**Audit risposta API**
+
+- `predicted_value_pre_match_only`, `actual_value_post_match_diagnostic_only`, `actual_contribution_proxy_diagnostic_only`, `no_weight_mutation`
+
+**UI**
+
+- Tab «Predetto vs Reale»: filtri, tabella colorata, export JSON summary/full
+- Diagnosi partite: accordion «Apri confronto componenti» per fixture×strategia
+
+**Migrazione:** `alembic upgrade head` (revisione `20260609120000`).
 
 ## Walk-forward
 

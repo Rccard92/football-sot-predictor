@@ -20,6 +20,9 @@ from app.services.backtest.predictive_ai_insights_service import (
     PredictiveAiInsightsService,
     openai_configured,
 )
+from app.services.backtest.predictive_component_comparison_service import (
+    PredictiveComponentComparisonService,
+)
 from app.services.backtest.predictive_simulation_run_service import PredictiveSimulationRunService
 
 logger = logging.getLogger(__name__)
@@ -216,6 +219,112 @@ def list_ai_insights(
     svc = PredictiveAiInsightsService()
     items = svc.list_history(db, run_id, analysis_type=analysis_type, limit=limit)
     return jsonable_encoder({"items": items})
+
+
+@router.get("/runs/{run_id}/component-actual-comparison/fixtures")
+def list_component_comparison_fixtures(
+    run_id: int,
+    strategy_key: str | None = Query(default=None),
+    round_number: int | None = Query(default=None),
+    fixture_id: int | None = Query(default=None),
+    team_side: str | None = Query(default=None),
+    macro_area: str | None = Query(default=None),
+    error_direction: str | None = Query(default=None),
+    suspicious_only: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    svc = PredictiveComponentComparisonService()
+    try:
+        result = svc.list_fixture_rows(
+            db,
+            run_id,
+            strategy_key=strategy_key,
+            round_number=round_number,
+            fixture_id=fixture_id,
+            team_side=team_side,
+            macro_area=macro_area,
+            error_direction=error_direction,
+            suspicious_only=suspicious_only,
+            limit=limit,
+            offset=offset,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        raise _db_error(exc) from exc
+    if result.get("error_code") == "RUN_NOT_FOUND":
+        raise HTTPException(status_code=404, detail={"error_code": "RUN_NOT_FOUND"})
+    return jsonable_encoder(result)
+
+
+@router.get("/runs/{run_id}/component-actual-comparison/report")
+def get_component_comparison_report(
+    run_id: int,
+    detail: str = Query(default="summary"),
+    strategy_key: str | None = Query(default=None),
+    round_number: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    if detail not in ("summary", "full"):
+        raise HTTPException(status_code=400, detail={"error_code": "INVALID_DETAIL"})
+    svc = PredictiveComponentComparisonService()
+    try:
+        result = svc.get_report(
+            db,
+            run_id,
+            detail=detail,
+            strategy_key=strategy_key,
+            round_number=round_number,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        raise _db_error(exc) from exc
+    if result.get("error_code") == "RUN_NOT_FOUND":
+        raise HTTPException(status_code=404, detail={"error_code": "RUN_NOT_FOUND"})
+    return jsonable_encoder(result)
+
+
+@router.get("/runs/{run_id}/component-actual-comparison/rounds/{round_number}")
+def get_component_comparison_round(
+    run_id: int,
+    round_number: int,
+    strategy_key: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    svc = PredictiveComponentComparisonService()
+    try:
+        result = svc.get_round_summary(
+            db,
+            run_id,
+            round_number,
+            strategy_key=strategy_key,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        raise _db_error(exc) from exc
+    if result.get("error_code") == "RUN_NOT_FOUND":
+        raise HTTPException(status_code=404, detail={"error_code": "RUN_NOT_FOUND"})
+    return jsonable_encoder(result)
+
+
+@router.get("/runs/{run_id}/component-actual-comparison/fixtures/{fixture_id}")
+def get_component_comparison_fixture_detail(
+    run_id: int,
+    fixture_id: int,
+    strategy_key: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    svc = PredictiveComponentComparisonService()
+    try:
+        data = svc.get_fixture_detail(
+            db,
+            run_id,
+            fixture_id=fixture_id,
+            strategy_key=strategy_key,
+        )
+    except (OperationalError, ProgrammingError) as exc:
+        raise _db_error(exc) from exc
+    if data is None:
+        raise HTTPException(status_code=404, detail={"error_code": "COMPARISON_NOT_FOUND"})
+    return jsonable_encoder(data)
 
 
 @router.get("/runs/{run_id}/ai-insights/{insight_id}")

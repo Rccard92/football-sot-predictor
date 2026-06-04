@@ -10,11 +10,14 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    PredictiveFixtureComponentComparison,
     PredictiveFixtureNote,
     PredictiveFixturePrediction,
     PredictivePatternInsight,
     PredictiveSimulationRun,
 )
+from app.services.backtest.v31_component_aggregators import season_component_error_summary
+from app.services.backtest.v31_component_trace_builder import build_component_comparison
 from app.schemas.backtest_round_analysis import season_label_from_year
 from app.services.backtest.v31_calibration_dataset_builder import build_v31_dataset_rows_standard
 from app.services.backtest.v31_calibration_simulator_error_reasons import safe_probable_reason
@@ -125,6 +128,11 @@ class PredictiveSimulationRunService:
             include_all_versions=include_all_versions,
         )
         rows = _filter_rounds(raw_rows)
+        dataset_by_fixture: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            fid = int((row.get("metadata") or {}).get("fixture_id") or 0)
+            if fid:
+                dataset_by_fixture[fid] = row
 
         sim_svc = V31CalibrationSimulatorService()
         pat_svc = V31PatternAnalysisService()
@@ -176,6 +184,7 @@ class PredictiveSimulationRunService:
 
         enriched_by_strategy: dict[str, list[dict[str, Any]]] = {}
         fixture_rows: list[PredictiveFixturePrediction] = []
+        component_comparison_payloads: list[dict[str, Any]] = []
 
         for block in simulator_payload.get("strategies") or []:
             key = block.get("key")
@@ -191,9 +200,21 @@ class PredictiveSimulationRunService:
                 probable = safe_probable_reason(row_with_codes)
                 home, away = _parse_teams(row)
                 trace = row.get("trace") if isinstance(row.get("trace"), dict) else {}
+                fid = int(row.get("fixture_id") or 0)
+                ds_row = dataset_by_fixture.get(fid)
+                if ds_row is not None:
+                    cmp_payload = build_component_comparison(
+                        db,
+                        dataset_row=ds_row,
+                        simulated_row=row,
+                        strategy_key=str(key),
+                    )
+                    if cmp_payload is not None:
+                        component_comparison_payloads.append(cmp_payload)
+
                 fixture_rows.append(
                     PredictiveFixturePrediction(
-                        fixture_id=int(row.get("fixture_id") or 0),
+                        fixture_id=fid,
                         round_number=int(row.get("round_number") or 0),
                         home_team_name=home,
                         away_team_name=away,
@@ -226,6 +247,8 @@ class PredictiveSimulationRunService:
         sim_summary = simulator_payload.get("summary") or {}
         clean_sim = _clean_simulator_payload(simulator_payload)
         audit = _merge_audit(simulator_payload, pattern_payload)
+
+        season_cmp_summary = season_component_error_summary(component_comparison_payloads)
 
         summary_json = {
             "competition_id": competition_id,
@@ -261,6 +284,7 @@ class PredictiveSimulationRunService:
             simulator_payload_json=clean_sim,
             pattern_payload_json=pattern_payload,
             audit_json=audit,
+            season_component_error_summary_json=season_cmp_summary,
         )
 
         if persist:
@@ -280,6 +304,26 @@ class PredictiveSimulationRunService:
                         evidence_json=ins.get("evidence_json") or {},
                         recommended_action=ins.get("recommended_action"),
                         strategy_key=ins.get("strategy_key"),
+                    ),
+                )
+            for cmp_payload in component_comparison_payloads:
+                ms = cmp_payload.get("match_summary") or {}
+                home = cmp_payload.get("home") or {}
+                away = cmp_payload.get("away") or {}
+                db.add(
+                    PredictiveFixtureComponentComparison(
+                        run_id=run.id,
+                        fixture_id=int(ms.get("fixture_id") or 0),
+                        strategy_key=str(ms.get("strategy_key") or ""),
+                        round_number=int(ms.get("round_number") or 0),
+                        home_team_id=int(home.get("team_id") or 0),
+                        away_team_id=int(away.get("team_id") or 0),
+                        match_summary_json=ms,
+                        component_payload_json={
+                            "home": home,
+                            "away": away,
+                            "match_level": cmp_payload.get("match_level") or {},
+                        },
                     ),
                 )
             db.commit()
@@ -365,6 +409,7 @@ class PredictiveSimulationRunService:
             ],
             "audit": run.audit_json,
             "betting_phase_enabled": run.betting_phase_enabled,
+            "season_component_error_summary": run.season_component_error_summary_json,
         }
 
     def get_fixtures(

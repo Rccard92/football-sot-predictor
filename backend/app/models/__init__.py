@@ -29,6 +29,7 @@ from app.models.backtest import BacktestPick, BacktestPrediction, BacktestRun, B
 from app.models.backtest_round_analysis import BacktestRoundAnalysis, BacktestRoundFixtureResult
 from app.models.predictive_simulation import (
     PredictiveAiInsight,
+    PredictiveFixtureComponentComparison,
     PredictiveFixtureNote,
     PredictiveFixturePrediction,
     PredictivePatternInsight,
@@ -84,6 +85,7 @@ __all__ = [
     "BacktestRoundFixtureResult",
     "PredictiveAiInsight",
     "PredictiveFixtureNote",
+    "PredictiveFixtureComponentComparison",
     "PredictiveFixturePrediction",
     "PredictivePatternInsight",
     "PredictiveSimulationRun",

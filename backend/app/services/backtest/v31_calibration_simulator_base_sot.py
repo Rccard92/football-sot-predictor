@@ -229,11 +229,13 @@ def calculate_team_base_sot(
 
     base = num / den
     base = max(1.8, min(7.0, base))
+    sample_size = int(side_team_raw.get("sample_count") or 0)
     return _round4(base), {
         "components": {k: _round4(v) if v is not None else None for k, v in components.items()},
         "missing_fields": missing,
         "base_weights_used": used_weights,
         "league_avgs": {"sot": league_sot, "xg": league_xg, "shots": league_shots},
+        "sample_size": sample_size,
     }
 
 

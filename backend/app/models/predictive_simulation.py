@@ -71,6 +71,11 @@ class PredictiveSimulationRun(Base, TimestampMixin):
         default=dict,
         server_default="{}",
     )
+    season_component_error_summary_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+    )
 
     competition: Mapped[Competition] = relationship("Competition")
     fixture_predictions: Mapped[list[PredictiveFixturePrediction]] = relationship(
@@ -92,6 +97,55 @@ class PredictiveSimulationRun(Base, TimestampMixin):
         "PredictiveAiInsight",
         back_populates="run",
         cascade="all, delete-orphan",
+    )
+    component_comparisons: Mapped[list[PredictiveFixtureComponentComparison]] = relationship(
+        "PredictiveFixtureComponentComparison",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class PredictiveFixtureComponentComparison(Base):
+    __tablename__ = "predictive_fixture_component_comparisons"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "fixture_id",
+            "strategy_key",
+            name="uq_predictive_fixture_component_comparisons_run_fixture_strategy",
+        ),
+        Index("ix_predictive_fixture_component_comparisons_run_round", "run_id", "round_number"),
+        Index("ix_predictive_fixture_component_comparisons_run_strategy", "run_id", "strategy_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("predictive_simulation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    fixture_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    strategy_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    home_team_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    away_team_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    match_summary_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+    component_payload_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    run: Mapped[PredictiveSimulationRun] = relationship(
+        "PredictiveSimulationRun",
+        back_populates="component_comparisons",
     )
 
 
