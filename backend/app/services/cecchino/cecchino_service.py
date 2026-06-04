@@ -3,139 +3,90 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import CecchinoPrediction, Competition, Fixture, Team
-from app.services.cecchino.cecchino_constants import (
-    CECCHINO_VERSION,
-    PICCHETTO_KEY_HOME_AWAY,
-    PICCHETTO_KEY_LAST5_HOME_AWAY,
-    PICCHETTO_KEY_LAST6_TOTALS,
-    PICCHETTO_KEY_TOTALS,
-    STATUS_ERROR,
-    WARNING_PARTIAL_RECENT_SAMPLE,
+from app.services.cecchino.cecchino_constants import CECCHINO_VERSION, STATUS_ERROR
+from app.services.cecchino.cecchino_engine import build_full_cecchino_output, manual_input_to_snapshot
+from app.services.cecchino.cecchino_fixture_history import (
+    LEAKAGE_FAILED,
+    audit_leakage,
+    build_data_quality,
+    build_fixture_contexts,
+    contexts_to_calculation_input,
+    load_finished_fixtures_for_team,
+    picchetto_sample_meta,
 )
-from app.services.cecchino.cecchino_engine import (
-    CecchinoCalculationInput,
-    WDLRecord,
-    build_full_cecchino_output,
-    manual_input_to_snapshot,
-)
+from app.services.cecchino.cecchino_engine import input_from_manual_dict
 from app.services.next_round_selection import select_next_round_fixtures
-from app.services.predictions_v10.v10_prior_context import (
-    _prior_fixtures_for_team,
-    _resolve_fixture_season_id,
-)
-from app.services.predictions_v11.split_fixtures import team_split_fixtures
-from app.services.predictions_v11.v11_shared import last_n
 
 logger = logging.getLogger(__name__)
 
-LAST5_TARGET = 5
-LAST6_TARGET = 6
+
+@dataclass
+class CecchinoBuildBundle:
+    input_snapshot: dict[str, Any]
+    data_quality: dict[str, Any]
+    warnings: list[str]
+    leakage_failed: bool
 
 
-def wdl_from_fixtures(fixtures: list[Fixture], team_id: int) -> WDLRecord:
-    """Aggrega V/X/S da partite finite con gol disponibili."""
-    wins = draws = losses = 0
-    tid = int(team_id)
-    for f in fixtures:
-        if int(f.home_team_id) == tid:
-            gf, ga = f.goals_home, f.goals_away
-        elif int(f.away_team_id) == tid:
-            gf, ga = f.goals_away, f.goals_home
-        else:
-            continue
-        if gf is None or ga is None:
-            continue
-        if int(gf) > int(ga):
-            wins += 1
-        elif int(gf) < int(ga):
-            losses += 1
-        else:
-            draws += 1
-    return WDLRecord(wins=wins, draws=draws, losses=losses)
-
-
-def _prior_for_team(db: Session, fixture: Fixture, team_id: int) -> list[Fixture]:
-    season_id = _resolve_fixture_season_id(db, fixture)
-    comp_id = int(fixture.competition_id) if fixture.competition_id is not None else None
-    return _prior_fixtures_for_team(
-        db,
-        season_id=season_id,
-        cutoff_kickoff=fixture.kickoff_at,
-        cutoff_fixture_id=int(fixture.id),
-        team_id=int(team_id),
-        competition_id=comp_id,
-        competition_scoped_only=comp_id is not None,
-    )
+def _all_prior_fixtures_for_audit(db: Session, target: Fixture) -> list[Fixture]:
+    hid = int(target.home_team_id)
+    aid = int(target.away_team_id)
+    home = load_finished_fixtures_for_team(db, target, hid)
+    away = load_finished_fixtures_for_team(db, target, aid)
+    by_id = {int(f.id): f for f in home + away}
+    return sorted(by_id.values(), key=lambda f: (f.kickoff_at, int(f.id)))
 
 
 def build_calculation_input_for_fixture(
     db: Session,
     fixture: Fixture,
-) -> tuple[CecchinoCalculationInput, dict[str, Any], list[str]]:
-    """Costruisce input engine da storico fixture (anti-leakage)."""
-    hid = int(fixture.home_team_id)
-    aid = int(fixture.away_team_id)
-    home_prior = _prior_for_team(db, fixture, hid)
-    away_prior = _prior_for_team(db, fixture, aid)
-
-    home_split = team_split_fixtures(home_prior, hid, is_home_context=True)
-    away_split = team_split_fixtures(away_prior, aid, is_home_context=False)
-
-    home_last5 = last_n(home_split, LAST5_TARGET)
-    away_last5 = last_n(away_split, LAST5_TARGET)
-    home_last6 = last_n(home_prior, LAST6_TARGET)
-    away_last6 = last_n(away_prior, LAST6_TARGET)
+) -> CecchinoBuildBundle:
+    """Costruisce input engine, data_quality e snapshot da fixture DB."""
+    ctx = build_fixture_contexts(db, fixture)
+    prior_pool = _all_prior_fixtures_for_audit(db, fixture)
+    leakage_check, leakage_reasons = audit_leakage(prior_pool, fixture)
 
     warnings: list[str] = []
-    if len(home_last5) < LAST5_TARGET or len(away_last5) < LAST5_TARGET:
-        warnings.append(WARNING_PARTIAL_RECENT_SAMPLE)
-    if len(home_last6) < LAST6_TARGET or len(away_last6) < LAST6_TARGET:
-        warnings.append(WARNING_PARTIAL_RECENT_SAMPLE)
+    leakage_failed = leakage_check == LEAKAGE_FAILED
 
-    inp = CecchinoCalculationInput(
-        home_away=(wdl_from_fixtures(home_split, hid), wdl_from_fixtures(away_split, aid)),
-        totals=(wdl_from_fixtures(home_prior, hid), wdl_from_fixtures(away_prior, aid)),
-        last5_home_away=(wdl_from_fixtures(home_last5, hid), wdl_from_fixtures(away_last5, aid)),
-        last6_totals=(wdl_from_fixtures(home_last6, hid), wdl_from_fixtures(away_last6, aid)),
+    if leakage_failed:
+        data_quality = build_data_quality(
+            ctx,
+            leakage_check=leakage_check,
+            leakage_reasons=leakage_reasons,
+        )
+        return CecchinoBuildBundle(
+            input_snapshot=ctx.to_input_snapshot(),
+            data_quality=data_quality,
+            warnings=data_quality.get("warnings") or [],
+            leakage_failed=True,
+        )
+
+    data_quality = build_data_quality(
+        ctx,
+        leakage_check=leakage_check,
+        leakage_reasons=leakage_reasons,
     )
+    warnings = list(data_quality.get("warnings") or [])
 
-    snapshot = {
-        PICCHETTO_KEY_HOME_AWAY: {
-            "home": asdict(inp.home_away[0]),
-            "away": asdict(inp.home_away[1]),
-            "home_matches": len(home_split),
-            "away_matches": len(away_split),
-        },
-        PICCHETTO_KEY_TOTALS: {
-            "home": asdict(inp.totals[0]),
-            "away": asdict(inp.totals[1]),
-            "home_matches": len(home_prior),
-            "away_matches": len(away_prior),
-        },
-        PICCHETTO_KEY_LAST5_HOME_AWAY: {
-            "home": asdict(inp.last5_home_away[0]),
-            "away": asdict(inp.last5_home_away[1]),
-            "home_matches": len(home_last5),
-            "away_matches": len(away_last5),
-        },
-        PICCHETTO_KEY_LAST6_TOTALS: {
-            "home": asdict(inp.last6_totals[0]),
-            "away": asdict(inp.last6_totals[1]),
-            "home_matches": len(home_last6),
-            "away_matches": len(away_last6),
-        },
-        "fixture_id": int(fixture.id),
-        "home_team_id": hid,
-        "away_team_id": aid,
-    }
-    return inp, snapshot, warnings
+    snapshot = ctx.to_input_snapshot()
+    snapshot["fixture_id"] = int(fixture.id)
+    snapshot["home_team_id"] = int(fixture.home_team_id)
+    snapshot["away_team_id"] = int(fixture.away_team_id)
+
+    return CecchinoBuildBundle(
+        input_snapshot=snapshot,
+        data_quality=data_quality,
+        warnings=warnings,
+        leakage_failed=False,
+    )
 
 
 def _team_brief(db: Session, team_id: int) -> dict[str, Any]:
@@ -175,17 +126,40 @@ def calculate_and_persist_for_fixture(
     persist: bool = True,
 ) -> dict[str, Any]:
     try:
-        inp, snapshot, input_warnings = build_calculation_input_for_fixture(db, fixture)
-        calc = build_full_cecchino_output(inp)
-        warnings = _merge_warnings(input_warnings, calc.warnings)
+        bundle = build_calculation_input_for_fixture(db, fixture)
+
+        if bundle.leakage_failed:
+            return {
+                "status": "error",
+                "code": "cecchino_leakage_failed",
+                "cecchino_version": CECCHINO_VERSION,
+                "competition_id": int(comp.id),
+                "fixture": _fixture_brief(db, fixture),
+                "calculation_status": STATUS_ERROR,
+                "input_snapshot": bundle.input_snapshot,
+                "data_quality": bundle.data_quality,
+                "warnings": bundle.warnings,
+                "message": "Leakage check failed: fixture history violates PIT rules",
+            }
+
+        ctx = build_fixture_contexts(db, fixture)
+        inp = contexts_to_calculation_input(ctx)
+        calc = build_full_cecchino_output(
+            inp,
+            picchetto_sample_meta=picchetto_sample_meta(ctx),
+        )
+        warnings = _merge_warnings(bundle.warnings, calc.warnings)
         output = calc.to_dict()
+        output["data_quality"] = bundle.data_quality
+
         payload = {
             "status": "ok",
             "cecchino_version": CECCHINO_VERSION,
             "competition_id": int(comp.id),
             "fixture": _fixture_brief(db, fixture),
             "calculation_status": calc.status,
-            "input_snapshot": snapshot,
+            "input_snapshot": bundle.input_snapshot,
+            "data_quality": bundle.data_quality,
             "output": output,
             "warnings": warnings,
         }
@@ -195,7 +169,7 @@ def calculate_and_persist_for_fixture(
                 comp=comp,
                 fixture=fixture,
                 calculation_status=calc.status,
-                input_snapshot=snapshot,
+                input_snapshot=bundle.input_snapshot,
                 output=output,
                 warnings=warnings,
             )
@@ -277,6 +251,7 @@ def build_fixture_detail(
 
     row = _load_stored_row(db, int(comp.id), int(fixture.id))
     if row is not None and row.output_json:
+        dq = (row.output_json or {}).get("data_quality") or {}
         return {
             "status": "ok",
             "cecchino_version": CECCHINO_VERSION,
@@ -284,6 +259,7 @@ def build_fixture_detail(
             "fixture": _fixture_brief(db, fixture),
             "calculation_status": row.status,
             "input_snapshot": row.input_snapshot_json,
+            "data_quality": dq,
             "output": row.output_json,
             "warnings": row.warnings_json or [],
             "stored": True,
@@ -320,10 +296,12 @@ def build_upcoming_list(
             row = _load_stored_row(db, int(comp.id), int(fx.id))
             if row is not None and row.output_json:
                 final = (row.output_json or {}).get("final") or {}
+                dq = (row.output_json or {}).get("data_quality") or {}
                 detail = {
                     "status": "ok",
                     "calculation_status": row.status,
                     "warnings": row.warnings_json or [],
+                    "data_quality": dq,
                     "final": final,
                     "stored": True,
                 }
@@ -331,11 +309,17 @@ def build_upcoming_list(
                 detail = calculate_and_persist_for_fixture(db, comp, fx, persist=True)
 
         final = (detail.get("output") or {}).get("final") if detail.get("output") else detail.get("final")
+        dq = detail.get("data_quality") or (detail.get("output") or {}).get("data_quality") or {}
         items.append(
             {
                 "fixture": _fixture_brief(db, fx),
                 "calculation_status": detail.get("calculation_status"),
                 "warnings": detail.get("warnings") or [],
+                "data_quality": {
+                    "leakage_check": dq.get("leakage_check"),
+                    "sample_home_total": dq.get("sample_home_total"),
+                    "sample_away_total": dq.get("sample_away_total"),
+                },
                 "final_quota_1": (final or {}).get("quota_1"),
                 "final_quota_x": (final or {}).get("quota_x"),
                 "final_quota_2": (final or {}).get("quota_2"),
@@ -397,21 +381,28 @@ def recalculate_for_competition(
 def debug_calculate_from_manual(data: dict[str, Any]) -> dict[str, Any]:
     """Endpoint debug: calcolo senza DB."""
     snapshot = manual_input_to_snapshot(data)
-    inp_data = {
-        "home_away": data["home_away"],
-        "totals": data["totals"],
-        "last5_home_away": data["last5_home_away"],
-        "last6_totals": data["last6_totals"],
-    }
-    from app.services.cecchino.cecchino_engine import input_from_manual_dict
-
-    inp = input_from_manual_dict(inp_data)
+    inp = input_from_manual_dict(data)
     calc = build_full_cecchino_output(inp)
+    output = calc.to_dict()
+    output["data_quality"] = {
+        "sample_home_context": None,
+        "sample_away_context": None,
+        "sample_home_total": None,
+        "sample_away_total": None,
+        "sample_home_recent_context": None,
+        "sample_away_recent_context": None,
+        "sample_home_recent_total": None,
+        "sample_away_recent_total": None,
+        "leakage_check": "not_applicable",
+        "warnings": ["manual_input:no_db"],
+        "fixture_ids_used": {},
+    }
     return {
         "status": "ok",
         "cecchino_version": CECCHINO_VERSION,
         "calculation_status": calc.status,
         "input_snapshot": snapshot,
-        "output": calc.to_dict(),
+        "data_quality": output["data_quality"],
+        "output": output,
         "warnings": calc.warnings,
     }

@@ -1,4 +1,6 @@
 import type { CecchinoFixtureDetailResponse } from '../../lib/api'
+import { CecchinoDataQualityBanner } from './CecchinoDataQualityBanner'
+import { CecchinoInputDataPanel } from './CecchinoInputDataPanel'
 import { CecchinoFinalOddsCard } from './CecchinoFinalOddsCard'
 import { CecchinoOddsComparisonPlaceholder } from './CecchinoOddsComparisonPlaceholder'
 import { CecchinoPicchettiTable } from './CecchinoPicchettiTable'
@@ -16,6 +18,15 @@ export function CecchinoFixtureDetail({ detail }: Props) {
 
   return (
     <div className="space-y-4">
+      <CecchinoDataQualityBanner
+        dataQuality={detail.data_quality}
+        calculationStatus={detail.calculation_status}
+      />
+      <CecchinoInputDataPanel
+        inputSnapshot={detail.input_snapshot}
+        dataQuality={detail.data_quality}
+      />
+
       {detail.warnings.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <p className="font-semibold">Warning</p>

@@ -257,9 +257,11 @@ Prefisso globale: **`/api`**.
 | Metodo | Path | Descrizione |
 |--------|------|-------------|
 | GET | `/api/competitions/{competition_id}/cecchino/upcoming` | Lista prossime partite + summary quote |
-| GET | `/api/competitions/{competition_id}/cecchino/fixture/{fixture_id}` | Dettaglio picchetti e quota finale |
+| GET | `/api/competitions/{competition_id}/cecchino/fixture/{fixture_id}` | Dettaglio picchetti, `data_quality`, quota finale |
 | POST | `/api/admin/competitions/{competition_id}/cecchino/recalculate` | Ricalcolo e persistenza |
 | POST | `/api/admin/cecchino/debug/calculate` | Calcolo da W/D/L manuali (test Excel) |
+
+Risposta arricchita (Fase 2): `data_quality` (8 sample count, `leakage_check`, `fixture_ids_used`), `input_snapshot` con 8 contesti W/D/L.
 
 Dettaglio: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
 

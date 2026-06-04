@@ -6280,13 +6280,41 @@ export type CecchinoOutcome = {
   prob: number | null
   prob_pct: number | null
   quota: number | null
+  mathematical_odds?: number | null
+}
+
+export type CecchinoContextSnapshot = {
+  key: string
+  wdl: CecchinoWDL
+  sample_count: number
+  target_sample: number | null
+  fixture_ids?: number[]
+}
+
+export type CecchinoDataQuality = {
+  sample_home_context: number
+  sample_away_context: number
+  sample_home_total: number
+  sample_away_total: number
+  sample_home_recent_context: number
+  sample_away_recent_context: number
+  sample_home_recent_total: number
+  sample_away_recent_total: number
+  leakage_check: 'passed' | 'failed' | 'not_applicable' | string
+  warnings: string[]
+  fixture_ids_used?: Record<string, number[]>
 }
 
 export type CecchinoPicchetto = {
   key: string
   label: string
+  input_records?: { home: CecchinoWDL; away: CecchinoWDL }
   home_context: CecchinoWDL
   away_context: CecchinoWDL
+  sample_home?: number | null
+  sample_away?: number | null
+  target_sample_home?: number | null
+  target_sample_away?: number | null
   total_matches: number
   outcome_1: CecchinoOutcome
   outcome_x: CecchinoOutcome
@@ -6341,6 +6369,11 @@ export type CecchinoUpcomingFixtureRow = {
   fixture: CecchinoFixtureBrief
   calculation_status: string | null
   warnings: string[]
+  data_quality?: {
+    leakage_check?: string | null
+    sample_home_total?: number | null
+    sample_away_total?: number | null
+  }
   final_quota_1: number | null
   final_quota_x: number | null
   final_quota_2: number | null
@@ -6364,7 +6397,8 @@ export type CecchinoFixtureDetailResponse = {
   competition_id: number
   fixture: CecchinoFixtureBrief
   calculation_status: string
-  input_snapshot: Record<string, unknown>
+  input_snapshot: Record<string, CecchinoContextSnapshot | unknown>
+  data_quality?: CecchinoDataQuality
   output: CecchinoOutput
   warnings: string[]
   stored?: boolean

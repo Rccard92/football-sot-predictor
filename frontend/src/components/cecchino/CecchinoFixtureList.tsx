@@ -50,15 +50,25 @@ export function CecchinoFixtureList({ fixtures, selectedFixtureId, onSelect }: P
                   </p>
                   <p className="mt-0.5 text-slate-500">{fmtKickoff(row.fixture.kickoff_at)}</p>
                 </div>
-                <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
-                    row.calculation_status === 'available'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-amber-100 text-amber-800'
-                  }`}
-                >
-                  {row.calculation_status ?? '—'}
-                </span>
+                <div className="flex shrink-0 flex-col items-end gap-0.5">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
+                      row.calculation_status === 'available'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : row.calculation_status === 'partial_low_sample'
+                          ? 'bg-amber-100 text-amber-900'
+                          : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {row.calculation_status ?? '—'}
+                  </span>
+                  {row.data_quality?.leakage_check === 'passed' && (
+                    <span className="text-[9px] text-emerald-700">No leakage</span>
+                  )}
+                  {(row.warnings || []).some((w) => w.startsWith('low_sample')) && (
+                    <span className="text-[9px] text-amber-700">Campione basso</span>
+                  )}
+                </div>
               </div>
               {row.final_quota_1 != null && (
                 <p className="mt-1 tabular-nums text-slate-600">

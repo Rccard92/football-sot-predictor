@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-0.2.0',
+    date: '2026-06-04',
+    title: 'Cecchino — Fase 2 — Recupero dati reali e no leakage',
+    type: 'minor',
+    summary:
+      'Recupero automatico W/D/L da fixture finite con filtri competition_id, controllo anti-leakage e data_quality in API/UI.',
+    highlights: [
+      '8 contesti dati espliciti (casa/trasferta, totali, ultime 5/6).',
+      'Audit leakage_check passed/failed su ogni calcolo.',
+      'Sample count e status partial_low_sample con warning low_sample.',
+      'UI: pannello espandibile Dati usati dal Cecchino e badge No leakage passed.',
+      'Test dedicati PIT, competition scope e campione basso.',
+      'Nessuna modifica a SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-0.1.0',
     date: '2026-06-04',
     title: 'Cecchino — Fase 1 — Modulo isolato e parità Excel base',

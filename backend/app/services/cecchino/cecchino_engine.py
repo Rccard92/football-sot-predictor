@@ -14,11 +14,14 @@ from app.services.cecchino.cecchino_constants import (
     PICCHETTO_KEY_LAST5_HOME_AWAY,
     PICCHETTO_KEY_LAST6_TOTALS,
     PICCHETTO_KEY_TOTALS,
+    PICCHETTO_STATUSES_FOR_FINAL,
     PLACEHOLDER_BOOKMAKER,
     PLACEHOLDER_RELIABILITY,
     PLACEHOLDER_SIGNALS,
     STATUS_AVAILABLE,
     STATUS_INSUFFICIENT_DATA,
+    STATUS_PARTIAL_LOW_SAMPLE,
+    WARNING_LOW_SAMPLE,
     WARNING_ZERO_MATCHES,
     WARNING_ZERO_PROBABILITY,
 )
@@ -56,26 +59,62 @@ class PicchettoBlock:
     outcome_2: OutcomeOdds | None = None
     status: str = STATUS_INSUFFICIENT_DATA
     warnings: list[str] = field(default_factory=list)
+    home_sample_count: int | None = None
+    away_sample_count: int | None = None
+    home_target_sample: int | None = None
+    away_target_sample: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         def _outcome(o: OutcomeOdds | None) -> dict[str, Any]:
             if o is None:
-                return {"prob": None, "prob_pct": None, "quota": None}
+                return {
+                    "prob": None,
+                    "prob_pct": None,
+                    "quota": None,
+                    "mathematical_odds": None,
+                }
+            q = round(o.quota, 2) if o.quota is not None else None
             return {
                 "prob": round(o.prob, 6) if o.prob is not None else None,
                 "prob_pct": round(o.prob * 100, 4) if o.prob is not None else None,
-                "quota": round(o.quota, 2) if o.quota is not None else None,
+                "quota": q,
+                "mathematical_odds": q,
             }
+
+        o1 = _outcome(self.outcome_1)
+        ox = _outcome(self.outcome_x)
+        o2 = _outcome(self.outcome_2)
 
         return {
             "key": self.key,
             "label": self.label,
+            "input_records": {
+                "home": self.home_context.to_dict(),
+                "away": self.away_context.to_dict(),
+            },
             "home_context": self.home_context.to_dict(),
             "away_context": self.away_context.to_dict(),
+            "sample_home": self.home_sample_count,
+            "sample_away": self.away_sample_count,
+            "target_sample_home": self.home_target_sample,
+            "target_sample_away": self.away_target_sample,
             "total_matches": self.total_matches,
-            "outcome_1": _outcome(self.outcome_1),
-            "outcome_x": _outcome(self.outcome_x),
-            "outcome_2": _outcome(self.outcome_2),
+            "probabilities": {
+                "prob_1": o1["prob"],
+                "prob_x": ox["prob"],
+                "prob_2": o2["prob"],
+                "prob_1_pct": o1["prob_pct"],
+                "prob_x_pct": ox["prob_pct"],
+                "prob_2_pct": o2["prob_pct"],
+            },
+            "mathematical_odds": {
+                "quota_1": o1["mathematical_odds"],
+                "quota_x": ox["mathematical_odds"],
+                "quota_2": o2["mathematical_odds"],
+            },
+            "outcome_1": o1,
+            "outcome_x": ox,
+            "outcome_2": o2,
             "status": self.status,
             "warnings": list(self.warnings),
         }
@@ -160,6 +199,10 @@ def compute_picchetto(
     away: WDLRecord,
     *,
     label: str | None = None,
+    home_sample_count: int | None = None,
+    away_sample_count: int | None = None,
+    home_target_sample: int | None = None,
+    away_target_sample: int | None = None,
 ) -> PicchettoBlock:
     """Calcola probabilità e quote 1/X/2 per un picchetto."""
     total_matches = home.total + away.total
@@ -169,6 +212,10 @@ def compute_picchetto(
         home_context=home,
         away_context=away,
         total_matches=total_matches,
+        home_sample_count=home_sample_count,
+        away_sample_count=away_sample_count,
+        home_target_sample=home_target_sample,
+        away_target_sample=away_target_sample,
     )
 
     if total_matches == 0:
@@ -185,6 +232,16 @@ def compute_picchetto(
         if prob <= 0:
             warnings.append(f"{WARNING_ZERO_PROBABILITY}:{name}")
 
+    low_sample = False
+    if home_target_sample is not None and home_sample_count is not None:
+        if home_sample_count < home_target_sample:
+            warnings.append(f"{WARNING_LOW_SAMPLE}:{key}:home")
+            low_sample = True
+    if away_target_sample is not None and away_sample_count is not None:
+        if away_sample_count < away_target_sample:
+            warnings.append(f"{WARNING_LOW_SAMPLE}:{key}:away")
+            low_sample = True
+
     block.outcome_1 = OutcomeOdds(prob=prob_1 if prob_1 > 0 else None, quota=_prob_to_quota(prob_1))
     block.outcome_x = OutcomeOdds(prob=prob_x if prob_x > 0 else None, quota=_prob_to_quota(prob_x))
     block.outcome_2 = OutcomeOdds(prob=prob_2 if prob_2 > 0 else None, quota=_prob_to_quota(prob_2))
@@ -193,6 +250,8 @@ def compute_picchetto(
     outcomes = (block.outcome_1, block.outcome_x, block.outcome_2)
     if any(o is None or o.quota is None for o in outcomes):
         block.status = STATUS_INSUFFICIENT_DATA
+    elif low_sample:
+        block.status = STATUS_PARTIAL_LOW_SAMPLE
     else:
         block.status = STATUS_AVAILABLE
 
@@ -207,7 +266,7 @@ def compute_final_odds(picchetti: dict[str, PicchettoBlock]) -> FinalOddsBlock:
 
     for pic_key, weight in FINAL_QUOTA_WEIGHTS.items():
         block = picchetti.get(pic_key)
-        if block is None or block.status != STATUS_AVAILABLE:
+        if block is None or block.status not in PICCHETTO_STATUSES_FOR_FINAL:
             missing_keys.append(pic_key)
             continue
         for outcome_attr, quota_attr in (
@@ -254,20 +313,38 @@ def compute_final_odds(picchetti: dict[str, PicchettoBlock]) -> FinalOddsBlock:
     return final
 
 
-def build_full_cecchino_output(inp: CecchinoCalculationInput) -> CecchinoCalculationOutput:
+def build_full_cecchino_output(
+    inp: CecchinoCalculationInput,
+    *,
+    picchetto_sample_meta: dict[str, dict[str, int | None]] | None = None,
+) -> CecchinoCalculationOutput:
     """Pipeline completa: 4 picchetti + quota finale + placeholder sezioni 6–8."""
+    meta = picchetto_sample_meta or {}
+
+    def _pic(key: str, home: WDLRecord, away: WDLRecord) -> PicchettoBlock:
+        m = meta.get(key, {})
+        return compute_picchetto(
+            key,
+            home,
+            away,
+            home_sample_count=m.get("home_sample_count"),
+            away_sample_count=m.get("away_sample_count"),
+            home_target_sample=m.get("home_target_sample"),
+            away_target_sample=m.get("away_target_sample"),
+        )
+
     picchetti = {
-        PICCHETTO_KEY_HOME_AWAY: compute_picchetto(
-            PICCHETTO_KEY_HOME_AWAY, inp.home_away[0], inp.home_away[1]
+        PICCHETTO_KEY_HOME_AWAY: _pic(PICCHETTO_KEY_HOME_AWAY, inp.home_away[0], inp.home_away[1]),
+        PICCHETTO_KEY_TOTALS: _pic(PICCHETTO_KEY_TOTALS, inp.totals[0], inp.totals[1]),
+        PICCHETTO_KEY_LAST5_HOME_AWAY: _pic(
+            PICCHETTO_KEY_LAST5_HOME_AWAY,
+            inp.last5_home_away[0],
+            inp.last5_home_away[1],
         ),
-        PICCHETTO_KEY_TOTALS: compute_picchetto(
-            PICCHETTO_KEY_TOTALS, inp.totals[0], inp.totals[1]
-        ),
-        PICCHETTO_KEY_LAST5_HOME_AWAY: compute_picchetto(
-            PICCHETTO_KEY_LAST5_HOME_AWAY, inp.last5_home_away[0], inp.last5_home_away[1]
-        ),
-        PICCHETTO_KEY_LAST6_TOTALS: compute_picchetto(
-            PICCHETTO_KEY_LAST6_TOTALS, inp.last6_totals[0], inp.last6_totals[1]
+        PICCHETTO_KEY_LAST6_TOTALS: _pic(
+            PICCHETTO_KEY_LAST6_TOTALS,
+            inp.last6_totals[0],
+            inp.last6_totals[1],
         ),
     }
     final = compute_final_odds(picchetti)
@@ -277,9 +354,13 @@ def build_full_cecchino_output(inp: CecchinoCalculationInput) -> CecchinoCalcula
         all_warnings.extend(p.warnings)
     all_warnings.extend(final.warnings)
 
+    pic_statuses = {p.status for p in picchetti.values()}
     if final.status == STATUS_AVAILABLE:
-        overall = STATUS_AVAILABLE
-    elif any(p.status == STATUS_AVAILABLE for p in picchetti.values()):
+        if STATUS_PARTIAL_LOW_SAMPLE in pic_statuses:
+            overall = STATUS_PARTIAL_LOW_SAMPLE
+        else:
+            overall = STATUS_AVAILABLE
+    elif any(s in PICCHETTO_STATUSES_FOR_FINAL for s in pic_statuses):
         overall = STATUS_INSUFFICIENT_DATA
     else:
         overall = STATUS_INSUFFICIENT_DATA

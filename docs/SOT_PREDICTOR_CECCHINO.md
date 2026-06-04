@@ -7,7 +7,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Campo | Valore |
 |-------|--------|
 | Versione | `cecchino_v0_1_excel_parity` |
-| Fase | 1 — parità Excel base (picchetti 1–5) |
+| Fase | 1 — parità Excel; **2** — recupero dati reali e anti-leakage |
 | Separazione SOT | Totale — engine, API, UI e tabella dedicati |
 
 ## Obiettivo
@@ -58,18 +58,51 @@ Record W/D/L aggregati da `fixtures` finite **prima** del kickoff target (anti-l
 - Ultime 5: ultimi 5 match nello split casa/fuori
 - Ultime 6: ultimi 6 match totali
 
-Warning `partial_recent_sample` se meno di 5/6 partite disponibili (calcolo comunque se `total_matches > 0`).
+Warning `low_sample:{contesto}` se meno di 5/6 partite nel target (calcolo comunque se `total_matches > 0`).
+
+## Fase 2 — Recupero dati e no leakage
+
+Modulo dedicato: [cecchino_fixture_history.py](../backend/app/services/cecchino/cecchino_fixture_history.py)
+
+### 8 contesti dati
+
+| Chiave | Contenuto |
+|--------|-----------|
+| `home_context` | Record casalinghe squadra home |
+| `away_context` | Record esterne squadra away |
+| `home_total` / `away_total` | Record totali stagione/competition |
+| `home_recent_context_5` / `away_recent_context_5` | Ultime 5 nel rispettivo split |
+| `home_recent_total_6` / `away_recent_total_6` | Ultime 6 totali |
+
+### Filtri query
+
+- Solo `status IN (FT, AET, PEN)`
+- `competition_id` = competizione target
+- `season_id` quando non in modalità solo-competition
+- Partita prior solo se `kickoff` (e `fixture_id`) strettamente prima del target — **no data leakage**
+- Esclusi stati live (`1H`, …) e futuri (`NS`, …) dal pool usato
+
+### Blocco `data_quality` (API)
+
+Campi: `sample_home_context`, `sample_away_context`, `sample_home_total`, `sample_away_total`, `sample_home_recent_context`, `sample_away_recent_context`, `sample_home_recent_total`, `sample_away_recent_total`, `leakage_check` (`passed` | `failed`), `warnings`, `fixture_ids_used`.
+
+Se `leakage_check = failed` → risposta `cecchino_leakage_failed`, nessun calcolo quote.
+
+### Picchetto arricchito
+
+Ogni picchetto in `output.picchetti` include: `input_records`, `sample_home` / `sample_away`, `probabilities`, `mathematical_odds`, `status`.
 
 ## Status e warning
 
 | Status | Significato |
 |--------|-------------|
-| `available` | Tutte le quote calcolabili |
+| `available` | Tutte le quote calcolabili, campione sufficiente |
+| `partial_low_sample` | Quote calcolabili ma meno partite del target 5/6 |
 | `insufficient_data` | Nessuna partita o probabilità zero |
 | `pending_formula_extraction` | Placeholder sezioni 6–8 |
-| `error` | Errore runtime service |
+| `error` | Errore runtime / leakage failed |
 
-Warning tipici: `zero_matches_in_context`, `zero_probability`, `partial_recent_sample`.
+Warning tipici: `zero_matches_in_context`, `zero_probability`, `low_sample:*`, `leakage:*`.
 
 ## Endpoint
 
@@ -101,6 +134,7 @@ Caso di riferimento: **San Lorenzo de Almagro vs Deportivo Riestra** — vedi `b
 | Componente | Path |
 |------------|------|
 | Engine | `backend/app/services/cecchino/cecchino_engine.py` |
+| Fixture history | `backend/app/services/cecchino/cecchino_fixture_history.py` |
 | Service | `backend/app/services/cecchino/cecchino_service.py` |
 | Route | `backend/app/routes/cecchino.py` |
 | Model | `backend/app/models/cecchino_prediction.py` |

@@ -394,6 +394,8 @@ Body opzionale: { "fixture_id": 12345, "limit": 50 }
 
 Lettura UI: `/cecchino`. Dettaglio: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
 
+**Fase 2 (dati reali):** i record W/D/L derivano solo da fixture **finite** prima del kickoff target, filtrate per `competition_id`. La risposta API include `data_quality` (sample count, `leakage_check`). Dopo deploy, eseguire `recalculate` per aggiornare righe già in cache con il nuovo schema.
+
 ---
 
 ## Riferimenti
