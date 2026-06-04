@@ -6,8 +6,9 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 
 | Campo | Valore |
 |-------|--------|
-| Versione | `cecchino_v0_1_excel_parity` |
-| Fase | 1 — parità Excel; **2** — recupero dati reali e anti-leakage; **3** — dashboard frontend autonoma |
+| Versione corrente | `cecchino_v0_2_real_records` |
+| Versioni precedenti | `cecchino_v0_1_excel_parity` (cache legacy, non più servita) |
+| Fase | 1 — parità Excel; **2** — recupero dati reali e tracciabilità input; **3** — dashboard frontend autonoma |
 | Separazione SOT | Totale — engine, API, UI e tabella dedicati |
 
 ## Obiettivo
@@ -82,11 +83,41 @@ Modulo dedicato: [cecchino_fixture_history.py](../backend/app/services/cecchino/
 - Partita prior solo se `kickoff` (e `fixture_id`) strettamente prima del target — **no data leakage**
 - Esclusi stati live (`1H`, …) e futuri (`NS`, …) dal pool usato
 
+### `input_snapshot` (8 slice)
+
+Ogni chiave (`home_context`, …) espone:
+
+| Campo | Descrizione |
+|-------|-------------|
+| `label` | Etichetta UI (es. Casa split casalinghe) |
+| `wdl` | `{ wins, draws, losses }` |
+| `sample_count` | Partite nel campione |
+| `target_sample` | Target 5/6 per contesti recenti, altrimenti `null` |
+| `status` | `available` \| `partial_low_sample` \| `insufficient_data` |
+| `fixture_ids` | ID fixture usate |
+
 ### Blocco `data_quality` (API)
 
-Campi: `sample_home_context`, `sample_away_context`, `sample_home_total`, `sample_away_total`, `sample_home_recent_context`, `sample_away_recent_context`, `sample_home_recent_total`, `sample_away_recent_total`, `leakage_check` (`passed` | `failed`), `warnings`, `fixture_ids_used`.
+Campi: conteggi campione per contesto, `leakage_check` (oggetto), `warnings`, `fixture_ids_used`.
 
-Se `leakage_check = failed` → risposta `cecchino_leakage_failed`, nessun calcolo quote.
+`leakage_check`:
+
+```json
+{
+  "status": "passed|failed|undefined",
+  "target_kickoff": "ISO8601",
+  "max_source_fixture_date": "ISO8601",
+  "checked_at": "ISO8601"
+}
+```
+
+Se `status = failed` → risposta `cecchino_leakage_failed`, nessun calcolo quote salvato come `available`.
+
+### Cache v0.2
+
+Righe `cecchino_predictions` con `cecchino_version = cecchino_v0_2_real_records`. Snapshot incompleto (v0.1 o `null`) **non** viene servito: il service ricalcola da DB.
+
+Ricalcolo manuale: `GET .../fixture/{id}?recalculate=true` o `?force_recalculate=true`, oppure `POST /api/admin/competitions/{id}/cecchino/recalculate`.
 
 ### Picchetto arricchito
 

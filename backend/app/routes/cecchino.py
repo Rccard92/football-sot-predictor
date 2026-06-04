@@ -43,6 +43,7 @@ def cecchino_fixture_detail(
     competition_id: int,
     fixture_id: int,
     recalculate: bool = Query(False),
+    force_recalculate: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     comp = CompetitionService().get_by_id_or_raise(db, competition_id)
@@ -50,7 +51,8 @@ def cecchino_fixture_detail(
     if err is not None:
         return JSONResponse(status_code=code or 404, content=jsonable_encoder(err))
     assert fx is not None
-    payload = build_fixture_detail(db, comp, fx, recalculate=recalculate)
+    do_recalc = recalculate or force_recalculate
+    payload = build_fixture_detail(db, comp, fx, recalculate=do_recalc)
     status_code = 200 if payload.get("status") == "ok" else 422
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 

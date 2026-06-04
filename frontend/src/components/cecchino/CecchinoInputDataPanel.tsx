@@ -1,36 +1,31 @@
 import { useState } from 'react'
-import type { CecchinoContextSnapshot, CecchinoDataQuality } from '../../lib/cecchinoApi'
-
-const CONTEXT_ROWS: { key: string; label: string; sampleKey: keyof CecchinoDataQuality }[] = [
-  { key: 'home_context', label: 'Casa (split casalinghe)', sampleKey: 'sample_home_context' },
-  { key: 'away_context', label: 'Trasferta (split esterne)', sampleKey: 'sample_away_context' },
-  { key: 'home_total', label: 'Totali casa', sampleKey: 'sample_home_total' },
-  { key: 'away_total', label: 'Totali trasferta', sampleKey: 'sample_away_total' },
-  {
-    key: 'home_recent_context_5',
-    label: 'Ultime 5 casalinghe',
-    sampleKey: 'sample_home_recent_context',
-  },
-  {
-    key: 'away_recent_context_5',
-    label: 'Ultime 5 esterne',
-    sampleKey: 'sample_away_recent_context',
-  },
-  { key: 'home_recent_total_6', label: 'Ultime 6 totali casa', sampleKey: 'sample_home_recent_total' },
-  { key: 'away_recent_total_6', label: 'Ultime 6 totali trasferta', sampleKey: 'sample_away_recent_total' },
-]
-
-function fmtWdl(w: { wins: number; draws: number; losses: number }) {
-  return `${w.wins}V / ${w.draws}X / ${w.losses}S`
-}
+import type { CecchinoDataQuality } from '../../lib/cecchinoApi'
+import {
+  formatWdl,
+  INPUT_SNAPSHOT_CONTEXT_KEYS,
+  normalizeContextSlice,
+  statusBadgeClass,
+  statusLabel,
+} from '../../lib/cecchinoUtils'
 
 type Props = {
   inputSnapshot: Record<string, unknown>
   dataQuality?: CecchinoDataQuality | null
 }
 
+const SAMPLE_KEYS: Record<string, keyof CecchinoDataQuality> = {
+  home_context: 'sample_home_context',
+  away_context: 'sample_away_context',
+  home_total: 'sample_home_total',
+  away_total: 'sample_away_total',
+  home_recent_context_5: 'sample_home_recent_context',
+  away_recent_context_5: 'sample_away_recent_context',
+  home_recent_total_6: 'sample_home_recent_total',
+  away_recent_total_6: 'sample_away_recent_total',
+}
+
 export function CecchinoInputDataPanel({ inputSnapshot, dataQuality }: Props) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -50,24 +45,45 @@ export function CecchinoInputDataPanel({ inputSnapshot, dataQuality }: Props) {
                 <th className="py-1 pr-2">Contesto</th>
                 <th className="py-1 pr-2">Record W/D/L</th>
                 <th className="py-1 pr-2">Campione</th>
+                <th className="py-1 pr-2">Stato</th>
               </tr>
             </thead>
             <tbody>
-              {CONTEXT_ROWS.map((row) => {
-                const snap = inputSnapshot[row.key] as CecchinoContextSnapshot | undefined
-                const wdl = snap?.wdl
-                const target = snap?.target_sample
-                const count =
-                  dataQuality?.[row.sampleKey] ?? snap?.sample_count ?? '—'
+              {INPUT_SNAPSHOT_CONTEXT_KEYS.map((key) => {
+                const slice = normalizeContextSlice(key, inputSnapshot[key])
+                const sampleKey = SAMPLE_KEYS[key]
+                const dqCount =
+                  sampleKey && dataQuality?.[sampleKey] != null
+                    ? Number(dataQuality[sampleKey])
+                    : null
+                const count = slice?.sampleCount ?? dqCount
+                const target = slice?.targetSample ?? null
                 const sampleLabel =
-                  target != null ? `${count} / ${target}` : String(count)
+                  count != null
+                    ? target != null
+                      ? `${count} / ${target}`
+                      : String(count)
+                    : '—'
+                const rowStatus = slice?.status ?? (count === 0 ? 'insufficient_data' : null)
+
                 return (
-                  <tr key={row.key} className="border-t border-slate-50">
-                    <td className="py-1.5 pr-2 font-medium">{row.label}</td>
+                  <tr key={key} className="border-t border-slate-50">
+                    <td className="py-1.5 pr-2 font-medium">{slice?.label ?? key}</td>
                     <td className="py-1.5 pr-2 tabular-nums">
-                      {wdl ? fmtWdl(wdl) : '—'}
+                      {slice?.wdl ? formatWdl(slice.wdl) : '—'}
                     </td>
                     <td className="py-1.5 pr-2 tabular-nums">{sampleLabel}</td>
+                    <td className="py-1.5 pr-2">
+                      {rowStatus ? (
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${statusBadgeClass(rowStatus)}`}
+                        >
+                          {statusLabel(rowStatus)}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                   </tr>
                 )
               })}

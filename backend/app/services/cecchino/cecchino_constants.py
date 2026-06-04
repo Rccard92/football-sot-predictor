@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-CECCHINO_VERSION = "cecchino_v0_1_excel_parity"
+CECCHINO_VERSION = "cecchino_v0_2_real_records"
 
 PICCHETTO_KEY_HOME_AWAY = "home_away"
 PICCHETTO_KEY_TOTALS = "totals"
@@ -18,6 +18,28 @@ KEY_HOME_RECENT_CONTEXT_5 = "home_recent_context_5"
 KEY_AWAY_RECENT_CONTEXT_5 = "away_recent_context_5"
 KEY_HOME_RECENT_TOTAL_6 = "home_recent_total_6"
 KEY_AWAY_RECENT_TOTAL_6 = "away_recent_total_6"
+
+INPUT_SNAPSHOT_CONTEXT_KEYS: tuple[str, ...] = (
+    KEY_HOME_CONTEXT,
+    KEY_AWAY_CONTEXT,
+    KEY_HOME_TOTAL,
+    KEY_AWAY_TOTAL,
+    KEY_HOME_RECENT_CONTEXT_5,
+    KEY_AWAY_RECENT_CONTEXT_5,
+    KEY_HOME_RECENT_TOTAL_6,
+    KEY_AWAY_RECENT_TOTAL_6,
+)
+
+CONTEXT_SLICE_LABELS: dict[str, str] = {
+    KEY_HOME_CONTEXT: "Casa split casalinghe",
+    KEY_AWAY_CONTEXT: "Trasferta split esterne",
+    KEY_HOME_TOTAL: "Totali casa",
+    KEY_AWAY_TOTAL: "Totali trasferta",
+    KEY_HOME_RECENT_CONTEXT_5: "Ultime 5 casalinghe",
+    KEY_AWAY_RECENT_CONTEXT_5: "Ultime 5 esterne",
+    KEY_HOME_RECENT_TOTAL_6: "Ultime 6 totali casa",
+    KEY_AWAY_RECENT_TOTAL_6: "Ultime 6 totali trasferta",
+}
 
 TARGET_RECENT_CONTEXT = 5
 TARGET_RECENT_TOTAL = 6
@@ -42,6 +64,7 @@ WARNING_LOW_SAMPLE = "low_sample"
 
 LEAKAGE_PASSED = "passed"
 LEAKAGE_FAILED = "failed"
+LEAKAGE_UNDEFINED = "undefined"
 
 PLACEHOLDER_SIGNALS = {"status": STATUS_PENDING_FORMULA}
 PLACEHOLDER_RELIABILITY = {"status": "not_implemented_yet"}

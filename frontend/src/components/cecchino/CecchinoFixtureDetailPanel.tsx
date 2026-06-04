@@ -1,5 +1,5 @@
 import type { CecchinoFixtureDetailResponse } from '../../lib/cecchinoApi'
-import { canShowFinalOdds } from '../../lib/cecchinoUtils'
+import { canShowFinalOdds, getLeakageStatus } from '../../lib/cecchinoUtils'
 import { CecchinoDataQualityBanner } from './CecchinoDataQualityBanner'
 import { CecchinoDebugJsonPanel } from './CecchinoDebugJsonPanel'
 import { CecchinoFinalOddsDashboard } from './CecchinoFinalOddsDashboard'
@@ -15,7 +15,7 @@ type Props = {
 }
 
 export function CecchinoFixtureDetailPanel({ detail }: Props) {
-  const leakageFailed = detail.data_quality?.leakage_check === 'failed'
+  const leakageFailed = getLeakageStatus(detail.data_quality) === 'failed'
   const calcStatus = detail.calculation_status
   const output = detail.output
   const showOutput = detail.status === 'ok' && output != null && canShowFinalOdds(calcStatus)

@@ -13,11 +13,20 @@ export type CecchinoOutcome = {
   mathematical_odds?: number | null
 }
 
+export type CecchinoLeakageCheck = {
+  status: string
+  target_kickoff?: string | null
+  max_source_fixture_date?: string | null
+  checked_at?: string | null
+}
+
 export type CecchinoContextSnapshot = {
   key: string
+  label?: string
   wdl: CecchinoWDL
   sample_count: number
   target_sample: number | null
+  status?: string
   fixture_ids?: number[]
 }
 
@@ -30,7 +39,7 @@ export type CecchinoDataQuality = {
   sample_away_recent_context: number
   sample_home_recent_total: number
   sample_away_recent_total: number
-  leakage_check: 'passed' | 'failed' | 'not_applicable' | string
+  leakage_check: CecchinoLeakageCheck | string
   warnings: string[]
   fixture_ids_used?: Record<string, number[]>
 }

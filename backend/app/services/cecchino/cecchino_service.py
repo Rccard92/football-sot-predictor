@@ -10,10 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import CecchinoPrediction, Competition, Fixture, Team
-from app.services.cecchino.cecchino_constants import CECCHINO_VERSION, STATUS_ERROR
+from app.services.cecchino.cecchino_constants import (
+    CECCHINO_VERSION,
+    INPUT_SNAPSHOT_CONTEXT_KEYS,
+    LEAKAGE_FAILED,
+    STATUS_ERROR,
+)
 from app.services.cecchino.cecchino_engine import build_full_cecchino_output, manual_input_to_snapshot
 from app.services.cecchino.cecchino_fixture_history import (
-    LEAKAGE_FAILED,
     audit_leakage,
     build_data_quality,
     build_fixture_contexts,
@@ -25,6 +29,55 @@ from app.services.cecchino.cecchino_engine import input_from_manual_dict
 from app.services.next_round_selection import select_next_round_fixtures
 
 logger = logging.getLogger(__name__)
+
+
+def _wdl_from_raw(raw: Any) -> dict[str, int] | None:
+    if not isinstance(raw, dict):
+        return None
+    if isinstance(raw.get("wdl"), dict):
+        w = raw["wdl"]
+    else:
+        w = raw
+    try:
+        return {
+            "wins": int(w["wins"]),
+            "draws": int(w["draws"]),
+            "losses": int(w["losses"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def input_snapshot_is_complete(snapshot: dict[str, Any] | None) -> bool:
+    """True se input_snapshot ha le 8 slice v0.2 con W/D/L numerici."""
+    if not snapshot or not isinstance(snapshot, dict):
+        return False
+    for key in INPUT_SNAPSHOT_CONTEXT_KEYS:
+        if _wdl_from_raw(snapshot.get(key)) is None:
+            return False
+    return True
+
+
+def _leakage_status(dq: dict[str, Any] | None) -> str | None:
+    if not dq:
+        return None
+    lc = dq.get("leakage_check")
+    if isinstance(lc, dict):
+        return str(lc.get("status") or "")
+    if isinstance(lc, str):
+        return lc
+    return None
+
+
+def _stored_row_is_usable(row: CecchinoPrediction) -> bool:
+    if not row.output_json:
+        return False
+    if not input_snapshot_is_complete(row.input_snapshot_json):
+        return False
+    dq = (row.output_json or {}).get("data_quality") or {}
+    if _leakage_status(dq) == LEAKAGE_FAILED:
+        return False
+    return True
 
 
 @dataclass
@@ -54,7 +107,7 @@ def build_calculation_input_for_fixture(
     leakage_check, leakage_reasons = audit_leakage(prior_pool, fixture)
 
     warnings: list[str] = []
-    leakage_failed = leakage_check == LEAKAGE_FAILED
+    leakage_failed = leakage_check.get("status") == LEAKAGE_FAILED
 
     if leakage_failed:
         data_quality = build_data_quality(
@@ -250,7 +303,7 @@ def build_fixture_detail(
         return calculate_and_persist_for_fixture(db, comp, fixture, persist=True)
 
     row = _load_stored_row(db, int(comp.id), int(fixture.id))
-    if row is not None and row.output_json:
+    if row is not None and _stored_row_is_usable(row):
         dq = (row.output_json or {}).get("data_quality") or {}
         return {
             "status": "ok",
@@ -294,7 +347,7 @@ def build_upcoming_list(
             detail = calculate_and_persist_for_fixture(db, comp, fx, persist=True)
         else:
             row = _load_stored_row(db, int(comp.id), int(fx.id))
-            if row is not None and row.output_json:
+            if row is not None and _stored_row_is_usable(row):
                 final = (row.output_json or {}).get("final") or {}
                 dq = (row.output_json or {}).get("data_quality") or {}
                 detail = {
@@ -393,7 +446,12 @@ def debug_calculate_from_manual(data: dict[str, Any]) -> dict[str, Any]:
         "sample_away_recent_context": None,
         "sample_home_recent_total": None,
         "sample_away_recent_total": None,
-        "leakage_check": "not_applicable",
+        "leakage_check": {
+            "status": "not_applicable",
+            "target_kickoff": None,
+            "max_source_fixture_date": None,
+            "checked_at": None,
+        },
         "warnings": ["manual_input:no_db"],
         "fixture_ids_used": {},
     }

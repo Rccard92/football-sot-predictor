@@ -26,7 +26,7 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 | `season` | Anno stagione (es. 2025). Associato alla `Competition`. |
 | `fixture_id` | Identificativo interno della partita. |
 | `model_version` | Slug del modello SOT (es. `baseline_v2_1_weighted_components`). Ogni prediction è model-aware. |
-| `cecchino_version` | Slug del modulo Cecchino (es. `cecchino_v0_1_excel_parity`). Indipendente da `model_version`. |
+| `cecchino_version` | Slug del modulo Cecchino (corrente: `cecchino_v0_2_real_records`). Indipendente da `model_version`. |
 | `provider_league_id` | ID lega su API-Football, collegato alla `Competition`. |
 
 ## Fonti dati

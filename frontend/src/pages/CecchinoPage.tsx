@@ -33,6 +33,7 @@ export function CecchinoPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [recalcLoading, setRecalcLoading] = useState(false)
 
   const syncUrl = useCallback(
     (nextFixtureId: number | null) => {
@@ -89,6 +90,22 @@ export function CecchinoPage() {
     syncUrl(id)
   }
 
+  const onRecalculateDetail = async () => {
+    if (selectedCompetitionId == null || fixtureId == null) return
+    setRecalcLoading(true)
+    setDetailError(null)
+    try {
+      const data = await getCecchinoFixtureDetail(selectedCompetitionId, fixtureId, {
+        recalculate: true,
+      })
+      setDetail(data)
+    } catch (e) {
+      setDetailError(formatFetchError(e))
+    } finally {
+      setRecalcLoading(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
       <CecchinoPageHeader cecchinoVersion={upcoming?.cecchino_version} />
@@ -120,7 +137,17 @@ export function CecchinoPage() {
 
       {fixtureId != null && (
         <section className="space-y-3 border-t border-slate-200 pt-6">
-          <h2 className="text-sm font-semibold text-slate-800">Dettaglio partita</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-800">Dettaglio partita</h2>
+            <button
+              type="button"
+              disabled={detailLoading || recalcLoading}
+              onClick={() => void onRecalculateDetail()}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {recalcLoading ? 'Ricalcolo…' : 'Ricalcola'}
+            </button>
+          </div>
           {detailLoading && <p className="text-xs text-slate-500">Caricamento dettaglio…</p>}
           {detailError && (
             <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">

@@ -1,5 +1,5 @@
 import type { CecchinoFixtureDetailResponse } from '../../lib/cecchinoApi'
-import { fmtKickoff } from '../../lib/cecchinoUtils'
+import { fmtKickoff, getLeakageStatus, leakageDisplayLabel } from '../../lib/cecchinoUtils'
 
 type Props = {
   detail: CecchinoFixtureDetailResponse
@@ -44,12 +44,8 @@ export function CecchinoMatchBasics({ detail }: Props) {
         </div>
         <div>
           <dt className="text-slate-500">Leakage</dt>
-          <dd>
-            {detail.data_quality?.leakage_check === 'passed'
-              ? 'passed'
-              : detail.data_quality?.leakage_check === 'failed'
-                ? 'failed'
-                : detail.data_quality?.leakage_check ?? '—'}
+          <dd className="font-medium uppercase">
+            {leakageDisplayLabel(getLeakageStatus(detail.data_quality))}
           </dd>
         </div>
         <div>

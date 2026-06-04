@@ -1,4 +1,111 @@
-import type { CecchinoFinalOdds, CecchinoUpcomingFixtureRow, CecchinoWDL } from './cecchinoApi'
+import type {
+  CecchinoDataQuality,
+  CecchinoFinalOdds,
+  CecchinoLeakageCheck,
+  CecchinoUpcomingFixtureRow,
+  CecchinoWDL,
+} from './cecchinoApi'
+
+export const INPUT_SNAPSHOT_CONTEXT_KEYS = [
+  'home_context',
+  'away_context',
+  'home_total',
+  'away_total',
+  'home_recent_context_5',
+  'away_recent_context_5',
+  'home_recent_total_6',
+  'away_recent_total_6',
+] as const
+
+const CONTEXT_LABELS: Record<string, string> = {
+  home_context: 'Casa split casalinghe',
+  away_context: 'Trasferta split esterne',
+  home_total: 'Totali casa',
+  away_total: 'Totali trasferta',
+  home_recent_context_5: 'Ultime 5 casalinghe',
+  away_recent_context_5: 'Ultime 5 esterne',
+  home_recent_total_6: 'Ultime 6 totali casa',
+  away_recent_total_6: 'Ultime 6 totali trasferta',
+}
+
+export type NormalizedContextSlice = {
+  key: string
+  label: string
+  wdl: CecchinoWDL | null
+  sampleCount: number | null
+  targetSample: number | null
+  status: string | null
+}
+
+export function normalizeLeakageCheck(raw: unknown): CecchinoLeakageCheck | null {
+  if (raw == null) return null
+  if (typeof raw === 'string') {
+    return {
+      status: raw,
+      target_kickoff: null,
+      max_source_fixture_date: null,
+      checked_at: null,
+    }
+  }
+  if (typeof raw === 'object') {
+    const o = raw as Record<string, unknown>
+    return {
+      status: String(o.status ?? 'undefined'),
+      target_kickoff: (o.target_kickoff as string | null) ?? null,
+      max_source_fixture_date: (o.max_source_fixture_date as string | null) ?? null,
+      checked_at: (o.checked_at as string | null) ?? null,
+    }
+  }
+  return null
+}
+
+export function getLeakageStatus(dataQuality: CecchinoDataQuality | null | undefined): string {
+  const lc = normalizeLeakageCheck(dataQuality?.leakage_check)
+  return lc?.status ?? 'undefined'
+}
+
+export function leakageDisplayLabel(status: string | null | undefined): string {
+  const s = (status ?? 'undefined').toLowerCase()
+  if (s === 'passed') return 'PASSED'
+  if (s === 'failed') return 'FAILED'
+  if (s === 'not_applicable') return 'N/A'
+  return 'UNDEFINED'
+}
+
+function parseWdl(raw: unknown): CecchinoWDL | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const inner = o.wdl && typeof o.wdl === 'object' ? (o.wdl as Record<string, unknown>) : o
+  const wins = Number(inner.wins)
+  const draws = Number(inner.draws)
+  const losses = Number(inner.losses)
+  if (!Number.isFinite(wins) || !Number.isFinite(draws) || !Number.isFinite(losses)) {
+    return null
+  }
+  return { wins, draws, losses }
+}
+
+export function normalizeContextSlice(
+  key: string,
+  raw: unknown,
+  fallbackLabel?: string,
+): NormalizedContextSlice | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const wdl = parseWdl(o)
+  const sampleCount =
+    typeof o.sample_count === 'number' && Number.isFinite(o.sample_count)
+      ? o.sample_count
+      : null
+  const targetSample =
+    typeof o.target_sample === 'number' && Number.isFinite(o.target_sample)
+      ? o.target_sample
+      : null
+  const status = typeof o.status === 'string' ? o.status : null
+  const label =
+    typeof o.label === 'string' ? o.label : (fallbackLabel ?? CONTEXT_LABELS[key] ?? key)
+  return { key, label, wdl, sampleCount, targetSample, status }
+}
 
 export type CecchinoSide = '1' | 'X' | '2'
 

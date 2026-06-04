@@ -13,9 +13,8 @@ from app.services.cecchino.cecchino_constants import (
     WARNING_LOW_SAMPLE,
 )
 from app.services.cecchino.cecchino_engine import compute_picchetto
+from app.services.cecchino.cecchino_constants import LEAKAGE_FAILED, LEAKAGE_PASSED
 from app.services.cecchino.cecchino_fixture_history import (
-    LEAKAGE_FAILED,
-    LEAKAGE_PASSED,
     audit_leakage,
     take_last_n,
     wdl_from_fixtures,
@@ -93,11 +92,12 @@ def test_only_fixtures_before_kickoff():
     )
 
     check, reasons = audit_leakage([prior_ok], target)
-    assert check == LEAKAGE_PASSED
+    assert check["status"] == LEAKAGE_PASSED
+    assert check.get("target_kickoff") is not None
     assert reasons == []
 
     check2, _ = audit_leakage([prior_after], target)
-    assert check2 == LEAKAGE_FAILED
+    assert check2["status"] == LEAKAGE_FAILED
 
 
 def test_excludes_future_and_non_finished_fixtures():
@@ -117,7 +117,7 @@ def test_excludes_future_and_non_finished_fixtures():
         status="1H",
     )
     check, reasons = audit_leakage([future_ns, live], target)
-    assert check == LEAKAGE_FAILED
+    assert check["status"] == LEAKAGE_FAILED
     assert any("not_finished" in r or "live_or_scheduled" in r for r in reasons)
 
 
@@ -131,7 +131,7 @@ def test_excludes_other_competition():
         competition_id=99,
     )
     check, reasons = audit_leakage([other_comp], target)
-    assert check == LEAKAGE_FAILED
+    assert check["status"] == LEAKAGE_FAILED
     assert any("competition_mismatch" in r for r in reasons)
 
 

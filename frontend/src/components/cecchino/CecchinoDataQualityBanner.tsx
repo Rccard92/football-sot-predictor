@@ -1,4 +1,9 @@
 import type { CecchinoDataQuality } from '../../lib/cecchinoApi'
+import {
+  getLeakageStatus,
+  hasLowSampleWarning,
+  leakageDisplayLabel,
+} from '../../lib/cecchinoUtils'
 
 type Props = {
   dataQuality: CecchinoDataQuality | null | undefined
@@ -8,9 +13,10 @@ type Props = {
 export function CecchinoDataQualityBanner({ dataQuality, calculationStatus }: Props) {
   if (!dataQuality) return null
 
-  const leakage = dataQuality.leakage_check
-  const leakageOk = leakage === 'passed'
-  const lowSample = (dataQuality.warnings || []).some((w) => w.startsWith('low_sample'))
+  const leakageStatus = getLeakageStatus(dataQuality)
+  const leakageOk = leakageStatus === 'passed'
+  const leakageFailed = leakageStatus === 'failed'
+  const lowSample = hasLowSampleWarning(dataQuality.warnings)
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
@@ -18,12 +24,12 @@ export function CecchinoDataQualityBanner({ dataQuality, calculationStatus }: Pr
         className={`rounded px-2 py-0.5 font-semibold uppercase ${
           leakageOk
             ? 'bg-emerald-100 text-emerald-800'
-            : leakage === 'not_applicable'
-              ? 'bg-slate-100 text-slate-600'
-              : 'bg-red-100 text-red-800'
+            : leakageFailed
+              ? 'bg-red-100 text-red-800'
+              : 'bg-slate-100 text-slate-600'
         }`}
       >
-        {leakageOk ? 'No leakage passed' : leakage === 'failed' ? 'Leakage failed' : `Leakage: ${leakage}`}
+        LEAKAGE: {leakageDisplayLabel(leakageStatus)}
       </span>
       {calculationStatus && (
         <span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700">

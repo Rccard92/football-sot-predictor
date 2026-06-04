@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-0.2.1',
+    date: '2026-06-04',
+    title: 'Cecchino — Fase 2 — Recupero dati reali e tracciabilità input',
+    type: 'patch',
+    summary:
+      'Versione cecchino_v0_2_real_records: input_snapshot popolato da fixture finite, leakage_check strutturato, invalidazione cache legacy; testi marketing SOT rimossi dalla UI.',
+    highlights: [
+      'Record W/D/L reali in 8 contesti (helper fixture v10/v11, non output SOT).',
+      'Pannello Dati usati dal Cecchino con W/D/L, campione e status per riga.',
+      'leakage_check oggetto (PASSED / FAILED / UNDEFINED) in API e badge UI.',
+      'Cache v0_1 incompleta ignorata; ricalcolo automatico o pulsante Ricalcola.',
+      'Nessuna modifica a baseline v2.0, v2.1 o team_sot_predictions.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-0.3.0',
     date: '2026-06-04',
     title: 'Cecchino — Fase 3 — Dashboard frontend autonoma',

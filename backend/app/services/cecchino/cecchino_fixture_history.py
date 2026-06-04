@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import FINISHED_STATUSES, LIVE_STATUSES, SCHEDULED_STATUSES
 from app.models import Fixture
 from app.services.cecchino.cecchino_constants import (
+    CONTEXT_SLICE_LABELS,
     KEY_AWAY_CONTEXT,
     KEY_AWAY_RECENT_CONTEXT_5,
     KEY_AWAY_RECENT_TOTAL_6,
@@ -18,6 +20,12 @@ from app.services.cecchino.cecchino_constants import (
     KEY_HOME_RECENT_CONTEXT_5,
     KEY_HOME_RECENT_TOTAL_6,
     KEY_HOME_TOTAL,
+    LEAKAGE_FAILED,
+    LEAKAGE_PASSED,
+    LEAKAGE_UNDEFINED,
+    STATUS_AVAILABLE,
+    STATUS_INSUFFICIENT_DATA,
+    STATUS_PARTIAL_LOW_SAMPLE,
     TARGET_RECENT_CONTEXT,
     TARGET_RECENT_TOTAL,
     WARNING_LOW_SAMPLE,
@@ -31,8 +39,13 @@ from app.services.predictions_v11.split_fixtures import team_split_fixtures
 from app.services.predictions_v11.v11_shared import last_n
 from app.services.sot_feature_math import fixture_key_before
 
-LEAKAGE_PASSED = "passed"
-LEAKAGE_FAILED = "failed"
+
+def _slice_status(sample_count: int, target_sample: int | None) -> str:
+    if sample_count <= 0:
+        return STATUS_INSUFFICIENT_DATA
+    if target_sample is not None and sample_count < target_sample:
+        return STATUS_PARTIAL_LOW_SAMPLE
+    return STATUS_AVAILABLE
 
 
 @dataclass
@@ -48,9 +61,11 @@ class WDLContextSlice:
     def to_dict(self) -> dict[str, Any]:
         return {
             "key": self.key,
+            "label": CONTEXT_SLICE_LABELS.get(self.key, self.key),
             "wdl": self.wdl.to_dict(),
             "sample_count": self.sample_count,
             "target_sample": self.target_sample,
+            "status": _slice_status(self.sample_count, self.target_sample),
             "fixture_ids": list(self.fixture_ids),
         }
 
@@ -146,13 +161,27 @@ def _fixture_ids(fixtures: list[Fixture]) -> list[int]:
 def audit_leakage(
     fixtures: list[Fixture],
     target: Fixture,
-) -> tuple[str, list[str]]:
-    """Verifica che ogni fixture usata rispetti PIT e competition scope."""
+) -> tuple[dict[str, Any], list[str]]:
+    """Verifica PIT/competition scope; restituisce oggetto leakage_check + motivi."""
     reasons: list[str] = []
     target_comp = int(target.competition_id or 0)
     cutoff_ko = target.kickoff_at
     cutoff_id = int(target.id)
+    target_kickoff = cutoff_ko.isoformat() if cutoff_ko is not None else None
+    checked_at = datetime.now(timezone.utc).isoformat()
 
+    if cutoff_ko is None:
+        return (
+            {
+                "status": LEAKAGE_UNDEFINED,
+                "target_kickoff": None,
+                "max_source_fixture_date": None,
+                "checked_at": checked_at,
+            },
+            ["target:missing_kickoff"],
+        )
+
+    max_ko: datetime | None = None
     for f in fixtures:
         fid = int(f.id)
         st = (f.status or "").strip().upper()
@@ -167,10 +196,42 @@ def audit_leakage(
             reasons.append(f"fixture_{fid}:kickoff_not_before_target")
         if st in LIVE_STATUSES or st in SCHEDULED_STATUSES:
             reasons.append(f"fixture_{fid}:live_or_scheduled:{st}")
+        if f.kickoff_at is not None and (max_ko is None or f.kickoff_at > max_ko):
+            max_ko = f.kickoff_at
+
+    max_source = max_ko.isoformat() if max_ko is not None else None
 
     if reasons:
-        return LEAKAGE_FAILED, reasons
-    return LEAKAGE_PASSED, []
+        return (
+            {
+                "status": LEAKAGE_FAILED,
+                "target_kickoff": target_kickoff,
+                "max_source_fixture_date": max_source,
+                "checked_at": checked_at,
+            },
+            reasons,
+        )
+
+    if not fixtures:
+        return (
+            {
+                "status": LEAKAGE_UNDEFINED,
+                "target_kickoff": target_kickoff,
+                "max_source_fixture_date": None,
+                "checked_at": checked_at,
+            },
+            [],
+        )
+
+    return (
+        {
+            "status": LEAKAGE_PASSED,
+            "target_kickoff": target_kickoff,
+            "max_source_fixture_date": max_source,
+            "checked_at": checked_at,
+        },
+        [],
+    )
 
 
 def _slice(
@@ -261,7 +322,7 @@ def collect_low_sample_warnings(ctx: CecchinoFixtureContexts) -> list[str]:
 def build_data_quality(
     ctx: CecchinoFixtureContexts,
     *,
-    leakage_check: str,
+    leakage_check: dict[str, Any],
     leakage_reasons: list[str],
     extra_warnings: list[str] | None = None,
 ) -> dict[str, Any]:
