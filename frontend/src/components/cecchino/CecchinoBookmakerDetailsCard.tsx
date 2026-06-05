@@ -4,16 +4,22 @@ import { todayCard, todayCardPadding, todaySectionTitle } from './cecchinoTodayS
 
 const BOOK_NAMES = ['Bet365', 'Betfair', 'Pinnacle'] as const
 
-type Props = {
-  rows: CecchinoKpiRow[]
+function countPresentBooks(row: CecchinoKpiRow): number {
+  const bm = row.bookmakers || {}
+  return BOOK_NAMES.filter((n) => bm[n] != null).length
 }
 
 function hasBookmakerData(row: CecchinoKpiRow): boolean {
-  const bm = row.bookmakers || {}
-  return BOOK_NAMES.some((n) => bm[n] != null) || row.book_average != null
+  return countPresentBooks(row) > 0
 }
 
-export function CecchinoBookmakerDetailsCard({ rows }: Props) {
+function displayAverage(row: CecchinoKpiRow): number | null {
+  const present = countPresentBooks(row)
+  if (present === 0) return null
+  return row.book_average != null ? (row.book_average as number) : null
+}
+
+export function CecchinoBookmakerDetailsCard({ rows }: { rows: CecchinoKpiRow[] }) {
   const withData = rows.filter(hasBookmakerData)
   if (withData.length === 0) return null
 
@@ -41,16 +47,25 @@ export function CecchinoBookmakerDetailsCard({ rows }: Props) {
           <tbody>
             {withData.map((row) => {
               const bm = row.bookmakers || {}
+              const avg = displayAverage(row)
+              const isPartial = row.status === 'partial'
               return (
                 <tr key={row.label} className="border-t border-slate-100 hover:bg-slate-50/80">
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{row.label}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-800">
+                    <span>{row.label}</span>
+                    {isPartial ? (
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900">
+                        Parziale
+                      </span>
+                    ) : null}
+                  </td>
                   {BOOK_NAMES.map((n) => (
                     <td key={n} className="px-4 py-2.5 text-center tabular-nums text-slate-700">
                       {fmtKpiCell(bm[n] as number | null, true)}
                     </td>
                   ))}
                   <td className="px-4 py-2.5 text-center font-medium tabular-nums text-indigo-700">
-                    {fmtKpiCell(row.book_average, true)}
+                    {fmtKpiCell(avg, true)}
                   </td>
                 </tr>
               )

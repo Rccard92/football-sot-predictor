@@ -35,6 +35,9 @@ from app.services.sportapi.sportapi_odds_provider_detail_service import SportApi
 from app.services.sportapi.sportapi_odds_providers_sync_service import SportApiOddsProvidersSyncService
 from app.services.bookmakers.bookmaker_markets_discovery import BookmakerMarketsDiscoveryService
 from app.services.bookmakers.bookmaker_providers_discovery import BookmakerProvidersDiscoveryService
+from app.services.bookmakers.api_football_fixture_markets_debug_service import (
+    ApiFootballFixtureMarketsDebugService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +370,37 @@ def sportapi_odds_scan_sot_providers(
         logger.exception("sportapi scan sot providers DB error")
         db.rollback()
         raise HTTPException(status_code=503, detail="Database error") from exc
+    return jsonable_encoder(out)
+
+
+@router.get("/fixture-markets-debug", response_model=None)
+def fixture_markets_debug(
+    fixture_id: int | None = None,
+    provider_fixture_id: int | None = None,
+    provider_source: str = "api_football",
+    bookmaker_ids: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Debug raw mercati API-Football per fixture (Bet365/Betfair/Pinnacle)."""
+    _require_api_football_key()
+    ids: list[int] | None = None
+    if bookmaker_ids:
+        ids = [int(x.strip()) for x in bookmaker_ids.split(",") if x.strip()]
+    try:
+        out = ApiFootballFixtureMarketsDebugService().run(
+            db,
+            fixture_id=fixture_id,
+            provider_fixture_id=provider_fixture_id,
+            provider_source=provider_source,
+            bookmaker_ids=ids,
+        )
+    except ApiFootballError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OperationalError, ProgrammingError) as exc:
+        logger.exception("fixture markets debug DB error")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    if out.get("status") == "error" and not out.get("bookmakers"):
+        raise HTTPException(status_code=400, detail=out.get("message", "Errore debug mercati"))
     return jsonable_encoder(out)
 
 

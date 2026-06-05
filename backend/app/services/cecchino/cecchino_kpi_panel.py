@@ -100,7 +100,6 @@ def build_cecchino_kpi_panel(
     avg = bookmaker_payload.get("bookmaker_average") or {}
     avg_1x2 = avg.get(MARKET_1X2) or {}
     avg_dc = avg.get("DOUBLE_CHANCE") or {}
-    avg_ou = avg.get(MARKET_OU) or avg.get("OVER_UNDER_GOALS") or {}
 
     bookmakers_by_name: dict[str, dict[str, Any]] = {}
     for bm in bookmaker_payload.get("bookmakers") or []:
@@ -116,6 +115,25 @@ def build_cecchino_kpi_panel(
                 continue
             out[name] = (bm.get("markets") or {}).get(mkt, {}).get(sk)
         return out
+
+    def _ou_row(selection_key: str, label: str) -> dict[str, Any]:
+        bm_vals = _bm_vals(MARKET_OU, selection_key)
+        present = [v for v in bm_vals.values() if v is not None]
+        avg_val = arithmetic_mean(present) if present else None
+        if not present:
+            ou_status = "not_available"
+        elif len(present) < 3:
+            ou_status = "partial"
+        else:
+            ou_status = "available"
+        return _row(
+            market_key=selection_key,
+            label=label,
+            book=avg_val,
+            bookmakers=bm_vals,
+            book_average=avg_val,
+            status=ou_status,
+        )
 
     stat_ok = statistical.get("status") == "available"
     cec_ok = final_odds.get("status") == "available"
@@ -207,24 +225,8 @@ def build_cecchino_kpi_panel(
             book_average=book_12,
             status=row_status,
         ),
-        _row(
-            market_key=SEL_OVER_1_5,
-            label="OVER 1.5",
-            statistica=None,
-            cecchino=None,
-            book=avg_ou.get(SEL_OVER_1_5),
-            book_average=avg_ou.get(SEL_OVER_1_5),
-            status="not_available" if avg_ou.get(SEL_OVER_1_5) is None else row_status,
-        ),
-        _row(
-            market_key=SEL_OVER_2_5,
-            label="OVER 2.5",
-            statistica=None,
-            cecchino=None,
-            book=avg_ou.get(SEL_OVER_2_5),
-            book_average=avg_ou.get(SEL_OVER_2_5),
-            status="not_available" if avg_ou.get(SEL_OVER_2_5) is None else row_status,
-        ),
+        _ou_row(SEL_OVER_1_5, "OVER 1.5"),
+        _ou_row(SEL_OVER_2_5, "OVER 2.5"),
         _row(
             market_key="OVER_PT",
             label="OVER PT",

@@ -61,3 +61,54 @@ def normalize_market_name(raw_name: str | None, *, raw_market_key: str | None = 
     if _BTTS_PATTERNS.search(n):
         return MARKET_BTTS
     return MARKET_UNKNOWN
+
+
+SEL_OVER_1_5 = "OVER_1_5"
+SEL_UNDER_1_5 = "UNDER_1_5"
+SEL_OVER_2_5 = "OVER_2_5"
+SEL_UNDER_2_5 = "UNDER_2_5"
+SEL_UNKNOWN = "UNKNOWN"
+
+_OU_VALUE_HINT = re.compile(r"\b(?:over|under|o/u)\b", re.IGNORECASE)
+_LINE_15 = re.compile(r"1[,.]5")
+_LINE_25 = re.compile(r"2[,.]5")
+
+
+def normalize_over_under_selection(raw_value: str | None) -> str:
+    """Mappa value grezzo API-Football a selection enum Over/Under."""
+    if not raw_value or not str(raw_value).strip():
+        return SEL_UNKNOWN
+    n = _norm(str(raw_value))
+    is_over = "over" in n
+    is_under = "under" in n
+    if not is_over and not is_under:
+        return SEL_UNKNOWN
+    has_15 = bool(_LINE_15.search(n))
+    has_25 = bool(_LINE_25.search(n))
+    if is_over and has_15:
+        return SEL_OVER_1_5
+    if is_under and has_15:
+        return SEL_UNDER_1_5
+    if is_over and has_25:
+        return SEL_OVER_2_5
+    if is_under and has_25:
+        return SEL_UNDER_2_5
+    return SEL_UNKNOWN
+
+
+def normalize_api_football_market(
+    raw_market_name: str | None,
+    raw_values: list[str] | None = None,
+) -> str:
+    """Normalizza nome mercato API-Football; rifiuta OU ambiguo senza values compatibili."""
+    norm = normalize_market_name(raw_market_name)
+    if norm != MARKET_OVER_UNDER_GOALS:
+        return norm
+    if not raw_values:
+        return norm
+    hints = [_norm(v) for v in raw_values if v]
+    if not hints:
+        return norm
+    if any(_OU_VALUE_HINT.search(v) for v in hints):
+        return MARKET_OVER_UNDER_GOALS
+    return MARKET_UNKNOWN

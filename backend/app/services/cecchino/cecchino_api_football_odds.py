@@ -11,7 +11,12 @@ from app.services.bookmakers.bookmaker_constants import (
     MARKET_MATCH_WINNER_1X2,
     MARKET_OVER_UNDER_GOALS,
 )
-from app.services.bookmakers.market_normalize import normalize_market_name
+from app.services.bookmakers.market_normalize import (
+    normalize_api_football_market,
+    normalize_over_under_selection,
+    SEL_OVER_1_5,
+    SEL_OVER_2_5,
+)
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     MARKET_DC,
@@ -21,8 +26,6 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
-    SEL_OVER_1_5,
-    SEL_OVER_2_5,
     SEL_X_TWO,
 )
 
@@ -70,13 +73,10 @@ def _map_dc_value(value: str) -> str | None:
     return _DC_VALUE_MAP.get(_norm_val(value))
 
 
-def _map_ou_value(value: str, *, want_over: bool) -> str | None:
-    n = _norm_val(value)
-    if want_over and n.startswith("over"):
-        if "1.5" in n or "1,5" in n:
-            return SEL_OVER_1_5
-        if "2.5" in n or "2,5" in n:
-            return SEL_OVER_2_5
+def _map_ou_value(value: str) -> str | None:
+    sk = normalize_over_under_selection(value)
+    if sk in (SEL_OVER_1_5, SEL_OVER_2_5):
+        return sk
     return None
 
 
@@ -101,7 +101,12 @@ def parse_api_football_odds_response(
                 if not isinstance(bet, dict):
                     continue
                 bet_name = str(bet.get("name") or "")
-                norm = normalize_market_name(bet_name)
+                raw_value_labels = [
+                    str(v.get("value") or "")
+                    for v in (bet.get("values") or [])
+                    if isinstance(v, dict)
+                ]
+                norm = normalize_api_football_market(bet_name, raw_value_labels)
                 if norm not in wanted and norm not in (
                     MARKET_MATCH_WINNER_1X2,
                     MARKET_DOUBLE_CHANCE,
@@ -127,7 +132,7 @@ def parse_api_football_odds_response(
                         sk = _map_dc_value(label)
                         norm_out = MARKET_DC
                     elif norm == MARKET_OVER_UNDER_GOALS or norm == MARKET_OU:
-                        sk = _map_ou_value(label, want_over=True)
+                        sk = _map_ou_value(label)
                         norm_out = MARKET_OU
                     else:
                         continue
@@ -142,6 +147,13 @@ def parse_api_football_odds_response(
                             "odds_value": odd,
                             "market_label": bet_name,
                             "provider_market_id": str(bet.get("id") or ""),
+                            "raw_payload_json": {
+                                "bet_id": bet.get("id"),
+                                "bet_name": bet_name,
+                                "value": label,
+                                "odd": val.get("odd"),
+                                "normalized_selection": normalize_over_under_selection(label),
+                            },
                         },
                     )
 

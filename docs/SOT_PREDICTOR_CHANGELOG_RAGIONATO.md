@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 13 — Debug mercati Over/Under bookmaker (2026-06-04)
+
+- Aggiunto debug raw markets per fixture/bookmaker (`GET /api/admin/bookmakers/fixture-markets-debug`).
+- Verificata disponibilità Over 1.5 e Over 2.5 da API-Football (mercato `Goals Over/Under`, bet id 5).
+- Migliorata normalizzazione `OVER_UNDER_GOALS` con `normalize_api_football_market` e `normalize_over_under_selection`.
+- Scan-day persiste quote OU in `fixture_bookmaker_odds` con `provider_bookmaker_id` corretto.
+- Corretta media book Over: derivata solo dai tre bookmaker visibili; KPI espone dettaglio per-book.
+- Impedita incoerenza media valorizzata con singoli bookmaker vuoti nel dettaglio Cecchino.
+- Nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 12 — Fix idempotenza scan-day e upsert leghe (2026-06-04)
 
 - Corretto errore duplicate key su `leagues.api_league_id` (es. Uruguay 268) che causava HTTP 500 su scan-day.

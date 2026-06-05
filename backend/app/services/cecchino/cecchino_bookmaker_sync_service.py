@@ -138,6 +138,7 @@ class CecchinoBookmakerSyncService:
                         market_label=pr.get("market_label"),
                         provider_fixture_id=api_fid,
                         provider_market_id=pr.get("provider_market_id"),
+                        raw_payload_json=pr.get("raw_payload_json"),
                         odds_updated_at=datetime.now(timezone.utc),
                     )
                     odds_saved += 1

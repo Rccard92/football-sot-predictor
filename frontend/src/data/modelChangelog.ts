@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.7.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Fix Over/Under bookmaker',
+    type: 'patch',
+    summary:
+      'Dettaglio quote OVER 1.5/2.5 coerente: per-book Bet365/Betfair/Pinnacle + media derivata solo da quote presenti.',
+    highlights: [
+      'Debug raw mercati API-Football per fixture.',
+      'Normalizzazione OVER_UNDER_GOALS e selection OVER_1_5/OVER_2_5.',
+      'Scan-day persiste quote Over in DB.',
+      'Badge Parziale se mancano bookmaker.',
+      'Zero modifiche SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.6.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Fix idempotenza scan-day',

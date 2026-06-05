@@ -268,6 +268,17 @@ Versione `cecchino_today_v0_5_scan_idempotency`: bootstrap idempotente leghe/squ
 
 **UI:** messaggio chiaro su HTTP 500 scan («Controlla i log backend»); report 200 con esclusioni mostrato normalmente.
 
+## Cecchino Today — Fase 13 — Over/Under bookmaker (v0.6)
+
+| Componente | Comportamento |
+|------------|---------------|
+| Debug mercati | `GET /api/admin/bookmakers/fixture-markets-debug` — raw bets API-Football per Bet365/Betfair/Pinnacle |
+| Mercato raw | `Goals Over/Under` (bet id 5), selection `Over 1.5` / `Over 2.5` |
+| Scan-day | Persiste 1X2 + DC + OU in `fixture_bookmaker_odds` |
+| KPI dettaglio | Righe OVER mostrano quote per book + media coerente; badge «Parziale» se 1–2 book |
+
+**Eleggibilità:** invariata su 1X2 completo + Cecchino; Over opzionale nel KPI.
+
 ## Cecchino Today — discovery giornaliera v0.2 (persistenza giornate)
 
 Versione `cecchino_today_v0_2_persistent_days` — sostituita da v0.3 (Fase 9).

@@ -48,7 +48,7 @@ from app.services.cecchino.cecchino_constants import (
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
 )
 from app.services.cecchino.cecchino_fixture_history import build_fixture_contexts
-from app.services.cecchino.cecchino_selection_keys import MARKET_1X2
+from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, MARKET_DC, MARKET_OU
 from app.services.cecchino.cecchino_service import (
     build_calculation_input_for_fixture,
     calculate_and_persist_for_fixture,
@@ -277,13 +277,14 @@ def sync_today_bookmaker_odds(
     api_fixture_id: int,
     odds_by_bookmaker: dict[int, list[dict[str, Any]]],
 ) -> int:
-    """Persiste quote 1X2 parsed in fixture_bookmaker_odds."""
+    """Persiste quote 1X2/DC/OU parsed in fixture_bookmaker_odds."""
     saved = 0
     now = datetime.now(timezone.utc)
+    wanted = [MARKET_1X2, MARKET_DC, MARKET_OU]
     for bm in CECCHINO_BOOKMAKERS:
         bid = int(bm["provider_bookmaker_id"])
         raw = odds_by_bookmaker.get(bid) or []
-        parsed, _ = parse_api_football_odds_response(raw, requested_markets=[MARKET_1X2])
+        parsed, _ = parse_api_football_odds_response(raw, requested_markets=wanted)
         for pr in parsed:
             upsert_selection_odds(
                 db,
@@ -299,6 +300,7 @@ def sync_today_bookmaker_odds(
                 market_label=pr.get("market_label"),
                 provider_fixture_id=api_fixture_id,
                 provider_market_id=pr.get("provider_market_id"),
+                raw_payload_json=pr.get("raw_payload_json"),
                 odds_updated_at=now,
             )
             saved += 1

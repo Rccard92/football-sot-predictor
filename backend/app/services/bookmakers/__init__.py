@@ -9,7 +9,11 @@ from app.services.bookmakers.bookmaker_constants import (
     PROVIDER_SOURCE_API_FOOTBALL,
     PROVIDER_SOURCE_SPORTAPI,
 )
-from app.services.bookmakers.market_normalize import normalize_market_name
+from app.services.bookmakers.market_normalize import (
+    normalize_api_football_market,
+    normalize_market_name,
+    normalize_over_under_selection,
+)
 
 __all__ = [
     "MARKET_BTTS",
@@ -20,4 +24,6 @@ __all__ = [
     "PROVIDER_SOURCE_API_FOOTBALL",
     "PROVIDER_SOURCE_SPORTAPI",
     "normalize_market_name",
+    "normalize_api_football_market",
+    "normalize_over_under_selection",
 ]

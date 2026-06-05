@@ -30,6 +30,12 @@ Durante scan-day, se lega/squadra/fixture esistono già nel DB:
 - **Errore mapping** — fixture esclusa con `excluded_mapping_error`; scan non interrotto
 - **Sessione DB** — savepoint per fixture + `recover_session_if_inactive()` evita PendingRollbackError
 
+## Quote Over/Under (Fase 13)
+
+- **API-Football** espone Over 1.5/2.5 nel mercato `Goals Over/Under` (bet id 5).
+- **Scan-day** persiste OU oltre a 1X2/DC; gate eleggibilità resta solo su 1X2.
+- **Media Over** calcolata solo da Bet365/Betfair/Pinnacle con quote presenti; mai media orphan senza dettaglio.
+
 ## Lista vs debug
 
 | Endpoint | Contenuto |

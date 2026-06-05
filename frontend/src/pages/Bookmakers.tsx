@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ContextBanner } from '../components/ContextBanner'
 import { BookmakersDiscoveryPanel } from '../components/bookmakers/BookmakersDiscoveryPanel'
+import { ApiFootballFixtureMarketsPanel } from '../components/bookmakers/ApiFootballFixtureMarketsPanel'
 import { SportApiMarketsDiscoveryPanel } from '../components/bookmakers/SportApiMarketsDiscoveryPanel'
 import { SportApiOddsDetailsProbePanel } from '../components/bookmakers/SportApiOddsDetailsProbePanel'
 import { SportApiSotProviderScanPanel } from '../components/bookmakers/SportApiSotProviderScanPanel'
@@ -27,6 +28,8 @@ export function Bookmakers() {
       </header>
 
       <ContextBanner showModelSelector={false} />
+
+      <ApiFootballFixtureMarketsPanel />
 
       <BookmakersDiscoveryPanel competitionId={selectedCompetitionId} />
 

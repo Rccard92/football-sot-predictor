@@ -1350,6 +1350,64 @@ export async function postSyncBookmakers(opts?: AdminRequestOpts): Promise<Bookm
   return adminPostJson<BookmakersSyncSummary>('/api/admin/bookmakers/sync', {}, opts)
 }
 
+export type ApiFootballFixtureMarketValue = {
+  raw_value: string
+  odd: number | null
+  normalized_selection?: string
+}
+
+export type ApiFootballFixtureMarketRow = {
+  provider_market_id: string
+  raw_market_name: string
+  normalized_market: string
+  values: ApiFootballFixtureMarketValue[]
+}
+
+export type ApiFootballFixtureBookmakerMarkets = {
+  bookmaker_id: number
+  bookmaker_name: string
+  markets: ApiFootballFixtureMarketRow[]
+  error?: string
+}
+
+export type ApiFootballOverCandidate = {
+  bookmaker_id: number
+  bookmaker_name: string
+  raw_market_name: string
+  provider_market_id?: string
+  raw_value: string
+  normalized_selection?: string
+  odd: number | null
+}
+
+export type ApiFootballFixtureMarketsDebugResponse = {
+  status: string
+  provider_source: string
+  provider_fixture_id: number
+  fixture_id?: number | null
+  bookmakers: ApiFootballFixtureBookmakerMarkets[]
+  detected_over_candidates?: ApiFootballOverCandidate[]
+  errors?: string[]
+  message?: string
+}
+
+export async function getApiFootballFixtureMarketsDebug(params: {
+  fixture_id?: number
+  provider_fixture_id?: number
+  provider_source?: string
+  bookmaker_ids?: string
+}): Promise<ApiFootballFixtureMarketsDebugResponse> {
+  const q = new URLSearchParams()
+  if (params.fixture_id != null) q.set('fixture_id', String(params.fixture_id))
+  if (params.provider_fixture_id != null) q.set('provider_fixture_id', String(params.provider_fixture_id))
+  if (params.provider_source) q.set('provider_source', params.provider_source)
+  if (params.bookmaker_ids) q.set('bookmaker_ids', params.bookmaker_ids)
+  const suffix = q.toString() ? `?${q.toString()}` : ''
+  return adminGetJson<ApiFootballFixtureMarketsDebugResponse>(
+    `/api/admin/bookmakers/fixture-markets-debug${suffix}`,
+  )
+}
+
 export type BookmakerProviderSourceRow = {
   provider_source: string
   label: string
