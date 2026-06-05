@@ -1,13 +1,28 @@
-import type { CecchinoTodayListSummary } from '../../lib/cecchinoTodayApi'
+import type { CecchinoTodayListSummary, CecchinoTodayScanJob } from '../../lib/cecchinoTodayApi'
 import { todayBadgeMuted, todayCard, todayCardPadding } from './cecchinoTodayStyles'
 
 type Props = {
   selectedDay: string
   summary: CecchinoTodayListSummary | null
   isScanned: boolean
+  activeJob?: CecchinoTodayScanJob | null
 }
 
-export function CecchinoTodayDaySummary({ selectedDay, summary, isScanned }: Props) {
+export function CecchinoTodayDaySummary({ selectedDay, summary, isScanned, activeJob }: Props) {
+  const isScanning = activeJob?.status === 'queued' || activeJob?.status === 'running'
+
+  if (isScanning && activeJob) {
+    return (
+      <section className={`${todayCard} ${todayCardPadding}`}>
+        <p className="text-sm text-slate-700">
+          Giornata <span className="font-medium text-slate-900">{selectedDay}</span> — scansione in
+          corso ({activeJob.progress_current}
+          {activeJob.progress_total != null ? ` / ${activeJob.progress_total}` : ''} fixture).
+        </p>
+      </section>
+    )
+  }
+
   if (!isScanned || !summary) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>

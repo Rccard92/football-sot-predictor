@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.10.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Scan asincrona e polling',
+    type: 'minor',
+    summary:
+      'Scan giornaliera come job background con progresso step-by-step, polling UI e odds ottimizzate (single-call + cache).',
+    highlights: [
+      'Job persistito cecchino_today_scan_jobs con thread daemon.',
+      'POST scan-day/start + GET scan-jobs per polling ogni 2,5s.',
+      'Cache odds da snapshot se force_rescan=false.',
+      'Single-call GET /odds?fixture= con fallback selettivo.',
+      'Badge Scanning in timeline; niente timeout 180s browser.',
+      'Zero modifiche SOT v2.0/v2.1 e formule Cecchino.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.9.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Over/Under strict FT e PT',

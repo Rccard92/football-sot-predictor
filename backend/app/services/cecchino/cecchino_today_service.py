@@ -6,7 +6,7 @@ import logging
 import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, or_, select
@@ -80,8 +80,13 @@ from app.services.cecchino.cecchino_today_final_eligibility import (
     validate_cecchino_today_final_eligibility,
 )
 from app.services.cecchino.cecchino_today_stats_gate import check_cecchino_today_stats_eligible
+from app.services.cecchino.cecchino_today_odds_fetch import fetch_fixture_odds_for_cecchino_bookmakers
+from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 
 logger = logging.getLogger(__name__)
+
+ProgressReporter = Callable[..., None]
+SCAN_BATCH_SIZE = 10
 
 _BOOK_REASON_TO_STATUS = {
     "missing_bookmaker": ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER,
@@ -405,24 +410,79 @@ def build_cecchino_today_report(
     }
 
 
+def _emit_progress(
+    progress: ProgressReporter | None,
+    *,
+    current_step: str | None = None,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+    fixtures_found: int | None = None,
+    fixtures_checked: int | None = None,
+    odds_checked: int | None = None,
+    eligible_count: int | None = None,
+    excluded_count: int | None = None,
+    excluded_summary: dict[str, int] | None = None,
+    warnings: list[str] | None = None,
+    errors: list[str] | None = None,
+) -> None:
+    if progress is None:
+        return
+    payload: dict[str, Any] = {}
+    if current_step is not None:
+        payload["current_step"] = current_step
+    if progress_current is not None:
+        payload["progress_current"] = progress_current
+    if progress_total is not None:
+        payload["progress_total"] = progress_total
+    if fixtures_found is not None:
+        payload["fixtures_found"] = fixtures_found
+    if fixtures_checked is not None:
+        payload["fixtures_checked"] = fixtures_checked
+    if odds_checked is not None:
+        payload["odds_checked"] = odds_checked
+    if eligible_count is not None:
+        payload["eligible_count"] = eligible_count
+    if excluded_count is not None:
+        payload["excluded_count"] = excluded_count
+    if excluded_summary is not None:
+        payload["excluded_summary_json"] = dict(excluded_summary)
+    if warnings is not None:
+        payload["warnings_json"] = list(warnings)
+    if errors is not None:
+        payload["errors_json"] = list(errors)
+    if payload:
+        progress(**payload)
+
+
 def run_scan(
     db: Session,
     *,
     scan_date: date | None = None,
     timezone: str = DEFAULT_TODAY_TIMEZONE,
     client: ApiFootballClient | None = None,
+    force_rescan: bool = False,
+    progress: ProgressReporter | None = None,
+    metrics: ScanRunMetrics | None = None,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     """Pipeline completa discovery Cecchino Today."""
     resolved_date = resolve_scan_date(scan_date, timezone)
     now_rome = datetime.now(ZoneInfo(timezone))
     af_client = client or ApiFootballClient()
     warnings: list[str] = []
+    errors: list[str] = []
     by_status: dict[str, int] = defaultdict(int)
+    run_metrics = metrics or ScanRunMetrics(started_at=time.time())
+    if run_metrics.started_at <= 0:
+        run_metrics.started_at = time.time()
+
+    _emit_progress(progress, current_step="fetching_fixtures")
 
     try:
         raw_items = af_client.get_fixtures_by_date(resolved_date.isoformat(), timezone=timezone)
+        run_metrics.api_calls["fixtures"] = run_metrics.api_calls.get("fixtures", 0) + 1
     except ApiFootballError as exc:
-        return {
+        err_report = {
             "status": "error",
             "version": CECCHINO_TODAY_VERSION,
             "scan_date": resolved_date.isoformat(),
@@ -431,179 +491,254 @@ def run_scan(
             "eligible": 0,
             "excluded": {},
             "warnings": [str(exc)],
+            "errors": [str(exc)],
         }
+        _emit_progress(progress, current_step="completed", errors=[str(exc)])
+        return err_report
 
-    for item in raw_items:
-        brief = _item_brief(item)
-        api_fid = brief["provider_fixture_id"]
-        row_warnings: list[str] = []
+    total = len(raw_items)
+    run_metrics.fixtures_found = total
+    after_filter_count = 0
+    fixtures_checked = 0
+    odds_checked = 0
 
-        allowed, excl_status = is_cecchino_allowed_competition(item)
-        if not allowed:
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=excl_status or ELIGIBILITY_EXCLUDED_CUP,
-                eligibility_reason=excl_status,
-            )
-            by_status[excl_status or ELIGIBILITY_EXCLUDED_CUP] += 1
-            continue
+    _emit_progress(
+        progress,
+        current_step="fetching_fixtures",
+        fixtures_found=total,
+        progress_total=total,
+        progress_current=0,
+    )
 
-        if not is_fixture_not_started(item, now_rome):
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=ELIGIBILITY_EXCLUDED_STARTED,
-                eligibility_reason="fixture_already_started_or_finished",
-            )
-            by_status[ELIGIBILITY_EXCLUDED_STARTED] += 1
-            continue
-
-        odds_by_book, odds_warnings = fetch_today_bookmaker_odds(af_client, api_fid)
-        row_warnings.extend(odds_warnings)
-        bm_ok, odds_snapshot, bm_reason = verify_complete_1x2_odds(odds_by_book)
-        if not bm_ok:
-            status = _BOOK_REASON_TO_STATUS.get(bm_reason or "", ELIGIBILITY_EXCLUDED_MISSING_1X2)
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=status,
-                eligibility_reason=bm_reason,
-                bookmaker_status="missing",
-                odds_snapshot=odds_snapshot,
-                warnings=row_warnings,
-            )
-            by_status[status] += 1
-            continue
-
-        local_fx = db.scalar(select(Fixture).where(Fixture.api_fixture_id == api_fid))
-        comp: Competition | None = None
-        if local_fx is not None and local_fx.competition_id:
-            comp = db.get(Competition, int(local_fx.competition_id))
-
-        if local_fx is None or comp is None:
+    for batch_start in range(0, total, SCAN_BATCH_SIZE):
+        batch = raw_items[batch_start : batch_start + SCAN_BATCH_SIZE]
+        for item in batch:
+            fixtures_checked += 1
             try:
-                with db.begin_nested():
-                    comp, local_fx, boot_warnings = ensure_competition_and_history(
+                brief = _item_brief(item)
+                api_fid = brief["provider_fixture_id"]
+                row_warnings: list[str] = []
+
+                _emit_progress(
+                    progress,
+                    current_step="filtering_competitions",
+                    progress_current=fixtures_checked,
+                    progress_total=total,
+                    fixtures_found=total,
+                    fixtures_checked=fixtures_checked,
+                    odds_checked=odds_checked,
+                    eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+                    excluded_count=sum(by_status.values()) - by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+                    excluded_summary={k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
+                    warnings=warnings,
+                )
+
+                allowed, excl_status = is_cecchino_allowed_competition(item)
+                if not allowed:
+                    _upsert_today_snapshot(
                         db,
+                        scan_date=resolved_date,
                         api_item=item,
-                        client=af_client,
+                        eligibility_status=excl_status or ELIGIBILITY_EXCLUDED_CUP,
+                        eligibility_reason=excl_status,
                     )
-                row_warnings.extend(boot_warnings)
-            except Exception as exc:
-                logger.exception("Bootstrap Cecchino Today failed fixture=%s", api_fid)
-                recover_session_if_inactive(db)
-                detail = str(exc)[:200]
-                _upsert_today_snapshot(
+                    by_status[excl_status or ELIGIBILITY_EXCLUDED_CUP] += 1
+                    continue
+
+                if not is_fixture_not_started(item, now_rome):
+                    _upsert_today_snapshot(
+                        db,
+                        scan_date=resolved_date,
+                        api_item=item,
+                        eligibility_status=ELIGIBILITY_EXCLUDED_STARTED,
+                        eligibility_reason="fixture_already_started_or_finished",
+                    )
+                    by_status[ELIGIBILITY_EXCLUDED_STARTED] += 1
+                    continue
+
+                after_filter_count += 1
+                run_metrics.after_competition_filter = after_filter_count
+
+                _emit_progress(progress, current_step="fetching_odds")
+                odds_by_book, odds_warnings, _strategy = fetch_fixture_odds_for_cecchino_bookmakers(
+                    af_client,
+                    api_fid,
+                    db=db,
+                    scan_date=resolved_date,
+                    force_rescan=force_rescan,
+                    metrics=run_metrics,
+                )
+                odds_checked += 1
+                run_metrics.odds_checked = odds_checked
+                row_warnings.extend(odds_warnings)
+
+                bm_ok, odds_snapshot, bm_reason = verify_complete_1x2_odds(odds_by_book)
+                if not bm_ok:
+                    status = _BOOK_REASON_TO_STATUS.get(bm_reason or "", ELIGIBILITY_EXCLUDED_MISSING_1X2)
+                    _upsert_today_snapshot(
+                        db,
+                        scan_date=resolved_date,
+                        api_item=item,
+                        eligibility_status=status,
+                        eligibility_reason=bm_reason,
+                        bookmaker_status="missing",
+                        odds_snapshot=odds_snapshot,
+                        warnings=row_warnings,
+                    )
+                    by_status[status] += 1
+                    continue
+
+                local_fx = db.scalar(select(Fixture).where(Fixture.api_fixture_id == api_fid))
+                comp: Competition | None = None
+                if local_fx is not None and local_fx.competition_id:
+                    comp = db.get(Competition, int(local_fx.competition_id))
+
+                if local_fx is None or comp is None:
+                    _emit_progress(progress, current_step="importing_stats")
+                    try:
+                        with db.begin_nested():
+                            comp, local_fx, boot_warnings = ensure_competition_and_history(
+                                db,
+                                api_item=item,
+                                client=af_client,
+                            )
+                        row_warnings.extend(boot_warnings)
+                        run_metrics.api_calls["teams"] = run_metrics.api_calls.get("teams", 0) + 1
+                    except Exception as exc:
+                        logger.exception("Bootstrap Cecchino Today failed fixture=%s", api_fid)
+                        recover_session_if_inactive(db)
+                        detail = str(exc)[:200]
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                            eligibility_reason=f"Errore import lega/team/fixture: {detail}",
+                            bookmaker_status="ok",
+                            odds_snapshot=odds_snapshot,
+                            warnings=row_warnings,
+                            blocking_reasons=_mapping_blocking_reasons(exc),
+                        )
+                        by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
+                        continue
+
+                if comp is None or local_fx is None:
+                    _upsert_today_snapshot(
+                        db,
+                        scan_date=resolved_date,
+                        api_item=item,
+                        eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                        eligibility_reason="local_fixture_or_competition_missing",
+                        bookmaker_status="ok",
+                        odds_snapshot=odds_snapshot,
+                        warnings=row_warnings,
+                    )
+                    by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
+                    continue
+
+                _emit_progress(progress, current_step="importing_stats")
+                bundle = build_calculation_input_for_fixture(db, local_fx)
+                leakage_check = bundle.data_quality.get("leakage_check") or {}
+                if isinstance(leakage_check, dict):
+                    leakage_status = str(leakage_check.get("status") or "undefined")
+                else:
+                    leakage_status = str(leakage_check)
+
+                ctx = build_fixture_contexts(db, local_fx)
+                stats_ok, stats_snapshot, stats_reason = check_cecchino_today_stats_eligible(
+                    ctx,
+                    leakage_status=leakage_status,
+                )
+                if not stats_ok:
+                    _upsert_today_snapshot(
+                        db,
+                        scan_date=resolved_date,
+                        api_item=item,
+                        eligibility_status=stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+                        eligibility_reason=(stats_snapshot.get("failures") or [""])[0],
+                        local_fixture_id=int(local_fx.id),
+                        competition_id=int(comp.id),
+                        bookmaker_status="ok",
+                        stats_status="insufficient",
+                        odds_snapshot=odds_snapshot,
+                        stats_snapshot=stats_snapshot,
+                        warnings=row_warnings,
+                    )
+                    by_status[stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS] += 1
+                    continue
+
+                _emit_progress(progress, current_step="calculating_cecchino")
+                try:
+                    sync_today_bookmaker_odds(
+                        db,
+                        competition_id=int(comp.id),
+                        fixture_id=int(local_fx.id),
+                        api_fixture_id=api_fid,
+                        odds_by_bookmaker=odds_by_book,
+                    )
+                    calc = calculate_and_persist_for_fixture(db, comp, local_fx, persist=True)
+                except Exception as exc:
+                    logger.exception("Cecchino Today calc failed fixture=%s", api_fid)
+                    recover_session_if_inactive(db)
+                    _upsert_today_snapshot(
+                        db,
+                        scan_date=resolved_date,
+                        api_item=item,
+                        eligibility_status=ELIGIBILITY_ERROR,
+                        eligibility_reason=str(exc)[:500],
+                        local_fixture_id=int(local_fx.id),
+                        competition_id=int(comp.id),
+                        bookmaker_status="ok",
+                        stats_status="ok",
+                        cecchino_status="error",
+                        odds_snapshot=odds_snapshot,
+                        stats_snapshot=stats_snapshot,
+                        warnings=row_warnings + [f"calc_error:{exc!s}"[:200]],
+                    )
+                    by_status[ELIGIBILITY_ERROR] += 1
+                    errors.append(f"fixture {api_fid}: {exc!s}"[:200])
+                    continue
+
+                _emit_progress(progress, current_step="validating_eligibility")
+                cecchino_output = calc.get("output")
+                kpi_panel = calc.get("kpi_panel")
+                _emit_progress(progress, current_step="saving_snapshots")
+                _, eligibility_status = _persist_post_calc_snapshot(
                     db,
                     scan_date=resolved_date,
                     api_item=item,
-                    eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
-                    eligibility_reason=f"Errore import lega/team/fixture: {detail}",
-                    bookmaker_status="ok",
+                    local_fixture_id=int(local_fx.id),
+                    competition_id=int(comp.id),
                     odds_snapshot=odds_snapshot,
-                    warnings=row_warnings,
-                    blocking_reasons=_mapping_blocking_reasons(exc),
+                    stats_snapshot=stats_snapshot,
+                    cecchino_output=cecchino_output,
+                    kpi_panel=kpi_panel,
+                    row_warnings=row_warnings,
+                    calc=calc,
+                    leakage_status=leakage_status,
                 )
-                by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
-                continue
+                by_status[eligibility_status] += 1
+            except Exception as exc:
+                logger.exception("Cecchino Today scan fixture failed")
+                recover_session_if_inactive(db)
+                errors.append(str(exc)[:200])
+                by_status[ELIGIBILITY_ERROR] += 1
 
-        if comp is None or local_fx is None:
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
-                eligibility_reason="local_fixture_or_competition_missing",
-                bookmaker_status="ok",
-                odds_snapshot=odds_snapshot,
-                warnings=row_warnings,
-            )
-            by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
-            continue
-
-        bundle = build_calculation_input_for_fixture(db, local_fx)
-        leakage_check = bundle.data_quality.get("leakage_check") or {}
-        if isinstance(leakage_check, dict):
-            leakage_status = str(leakage_check.get("status") or "undefined")
-        else:
-            leakage_status = str(leakage_check)
-
-        ctx = build_fixture_contexts(db, local_fx)
-        stats_ok, stats_snapshot, stats_reason = check_cecchino_today_stats_eligible(
-            ctx,
-            leakage_status=leakage_status,
+        db.commit()
+        excluded_count = sum(v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE)
+        _emit_progress(
+            progress,
+            progress_current=fixtures_checked,
+            progress_total=total,
+            fixtures_checked=fixtures_checked,
+            odds_checked=odds_checked,
+            eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+            excluded_count=excluded_count,
+            excluded_summary={k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
+            warnings=warnings,
+            errors=errors,
         )
-        if not stats_ok:
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
-                eligibility_reason=(stats_snapshot.get("failures") or [""])[0],
-                local_fixture_id=int(local_fx.id),
-                competition_id=int(comp.id),
-                bookmaker_status="ok",
-                stats_status="insufficient",
-                odds_snapshot=odds_snapshot,
-                stats_snapshot=stats_snapshot,
-                warnings=row_warnings,
-            )
-            by_status[stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS] += 1
-            continue
 
-        try:
-            sync_today_bookmaker_odds(
-                db,
-                competition_id=int(comp.id),
-                fixture_id=int(local_fx.id),
-                api_fixture_id=api_fid,
-                odds_by_bookmaker=odds_by_book,
-            )
-            calc = calculate_and_persist_for_fixture(db, comp, local_fx, persist=True)
-        except Exception as exc:
-            logger.exception("Cecchino Today calc failed fixture=%s", api_fid)
-            recover_session_if_inactive(db)
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=ELIGIBILITY_ERROR,
-                eligibility_reason=str(exc)[:500],
-                local_fixture_id=int(local_fx.id),
-                competition_id=int(comp.id),
-                bookmaker_status="ok",
-                stats_status="ok",
-                cecchino_status="error",
-                odds_snapshot=odds_snapshot,
-                stats_snapshot=stats_snapshot,
-                warnings=row_warnings + [f"calc_error:{exc!s}"[:200]],
-            )
-            by_status[ELIGIBILITY_ERROR] += 1
-            continue
-
-        cecchino_output = calc.get("output")
-        kpi_panel = calc.get("kpi_panel")
-        _, eligibility_status = _persist_post_calc_snapshot(
-            db,
-            scan_date=resolved_date,
-            api_item=item,
-            local_fixture_id=int(local_fx.id),
-            competition_id=int(comp.id),
-            odds_snapshot=odds_snapshot,
-            stats_snapshot=stats_snapshot,
-            cecchino_output=cecchino_output,
-            kpi_panel=kpi_panel,
-            row_warnings=row_warnings,
-            calc=calc,
-            leakage_status=leakage_status,
-        )
-        by_status[eligibility_status] += 1
-
-    db.commit()
     cleanup_result = cleanup_cecchino_today_snapshots(
         db,
         retention_days=DEFAULT_RETENTION_DAYS,
@@ -613,12 +748,29 @@ def run_scan(
     warnings.extend([w for w in warnings if w])
     report = build_cecchino_today_report(
         scan_date=resolved_date,
-        total=len(raw_items),
+        total=total,
         by_status=dict(by_status),
         warnings=warnings,
+        errors=errors,
     )
-    report["fixtures_processed"] = len(raw_items)
+    report["fixtures_processed"] = total
     report["cleanup"] = cleanup_result
+    if job_id:
+        report["job_id"] = job_id
+
+    duration = time.time() - run_metrics.started_at
+    excluded_summary = {k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE}
+    run_metrics.excluded_summary = dict(excluded_summary)
+    report["result_summary"] = run_metrics.to_result_summary(
+        fixtures_found=total,
+        after_competition_filter=after_filter_count,
+        odds_checked=odds_checked,
+        eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+        excluded_count=sum(excluded_summary.values()),
+        excluded_summary=excluded_summary,
+        duration_seconds=duration,
+    )
+    _emit_progress(progress, current_step="completed", progress_current=total, progress_total=total)
     return report
 
 
@@ -647,6 +799,9 @@ def run_scan_day(
     timezone: str = DEFAULT_TODAY_TIMEZONE,
     force_rescan: bool = False,
     client: ApiFootballClient | None = None,
+    job_id: str | None = None,
+    progress: ProgressReporter | None = None,
+    metrics: ScanRunMetrics | None = None,
 ) -> dict[str, Any]:
     meta = get_day_scan_meta(db, scan_date, timezone=timezone)
     if not force_rescan and meta.get("has_scan"):
@@ -657,7 +812,16 @@ def run_scan_day(
             "message": "Giornata già scansionata. Usa force_rescan=true per aggiornare.",
             "scan_meta": meta,
         }
-    report = run_scan(db, scan_date=scan_date, timezone=timezone, client=client)
+    report = run_scan(
+        db,
+        scan_date=scan_date,
+        timezone=timezone,
+        client=client,
+        force_rescan=force_rescan,
+        progress=progress,
+        metrics=metrics,
+        job_id=job_id,
+    )
     report["scan_meta"] = get_day_scan_meta(db, scan_date, timezone=timezone)
     return report
 
@@ -1232,15 +1396,28 @@ def list_available_days(
     timezone: str = DEFAULT_TODAY_TIMEZONE,
     window_days: int = TIMELINE_WINDOW_DAYS,
 ) -> dict[str, Any]:
+    from app.services.cecchino.cecchino_today_scan_job_service import get_active_jobs_by_dates
+
     today = rome_today(timezone)
     tomorrow = rome_tomorrow(timezone)
     agg = _aggregate_scan_dates(db)
 
+    day_dates: list[date] = [today + timedelta(days=offset) for offset in range(-window_days, window_days + 1)]
+    active_jobs = get_active_jobs_by_dates(db, day_dates)
+
     day_entries: list[dict[str, Any]] = []
-    for offset in range(-window_days, window_days + 1):
-        d = today + timedelta(days=offset)
+    for d in day_dates:
         meta = agg.get(d)
         has_scan = meta is not None
+        active_job = active_jobs.get(d)
+        scan_job_status = active_job.status if active_job else None
+        scan_job_id = active_job.job_id if active_job else None
+        if scan_job_status in ("queued", "running"):
+            scan_state = "scanning"
+        elif has_scan:
+            scan_state = "scanned"
+        else:
+            scan_state = "not_scanned"
         day_entries.append(
             {
                 "date": d.isoformat(),
@@ -1254,8 +1431,10 @@ def list_available_days(
                 "live_count": int(meta["live_count"]) if meta else 0,
                 "finished_count": int(meta["finished_count"]) if meta else 0,
                 "last_scan_at": meta.get("last_scan_at") if meta else None,
-                "scan_state": "scanned" if has_scan else "not_scanned",
+                "scan_state": scan_state,
                 "status": "available" if has_scan else "pending",
+                "scan_job_status": scan_job_status,
+                "scan_job_id": scan_job_id,
             },
         )
 

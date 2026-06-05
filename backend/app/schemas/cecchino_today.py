@@ -21,6 +21,39 @@ class CecchinoTodayScanDayBody(BaseModel):
     force_rescan: bool = False
 
 
+class CecchinoTodayScanJobStartResponse(BaseModel):
+    job_id: str | None = None
+    status: str
+    scan_date: str
+    message: str
+    scan_meta: dict[str, Any] | None = None
+
+
+class CecchinoTodayScanJobStatus(BaseModel):
+    job_id: str
+    scan_date: str
+    timezone: str = DEFAULT_TODAY_TIMEZONE
+    force_rescan: bool = False
+    status: str
+    current_step: str | None = None
+    progress_current: int = 0
+    progress_total: int | None = None
+    progress_pct: float | None = None
+    fixtures_found: int = 0
+    fixtures_checked: int = 0
+    odds_checked: int = 0
+    eligible_count: int = 0
+    excluded_count: int = 0
+    excluded_summary: dict[str, Any] = Field(default_factory=dict)
+    result_summary: dict[str, Any] | None = None
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    started_at: str | None = None
+    finished_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class CecchinoTodayUpdateResultsBody(BaseModel):
     target_date: DateType | None = Field(default=None, alias="date")
     timezone: str = Field(default=DEFAULT_TODAY_TIMEZONE)
@@ -51,6 +84,8 @@ class CecchinoTodayDay(BaseModel):
     last_scan_at: str | None = None
     scan_state: str = "not_scanned"
     status: str = "pending"
+    scan_job_status: str | None = None
+    scan_job_id: str | None = None
 
 
 class CecchinoTodayDaysResponse(BaseModel):

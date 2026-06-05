@@ -216,7 +216,7 @@ Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timel
 |--------|------|--------|
 | GET | `/api/cecchino/today/days` | Timeline ±7: oggi, futuro, storico; counts per stato |
 | GET | `/api/cecchino/today?date=` | Eleggibili + summary + filters + score/loghi |
-| POST | `/api/admin/cecchino/today/scan-day` | Scan giornata selezionata (`force_rescan`) |
+| POST | `/api/admin/cecchino/today/scan-day` | Avvia scan async (wrapper → `/scan-day/start`; `sync=true` solo debug) |
 | POST | `/api/admin/cecchino/today/update-results` | Aggiorna stato/score eleggibili salvate |
 | POST | `/api/admin/cecchino/today/scan-today` | Alias scan oggi (mantenuto) |
 | POST | `/api/admin/cecchino/today/scan-tomorrow` | Alias scan domani (mantenuto) |
@@ -277,7 +277,31 @@ Versione `cecchino_today_v0_5_scan_idempotency`: bootstrap idempotente leghe/squ
 | Scan-day | Persiste 1X2 + DC + OU in `fixture_bookmaker_odds` |
 | KPI dettaglio | Righe OVER mostrano quote per book + media coerente; badge «Parziale» se 1–2 book |
 
-**Eleggibilità:** invariata su 1X2 completo + Cecchino; Over opzionale nel KPI.
+**Eleggibilità:** invariata; Over e Over PT opzionali nel KPI.
+
+## Cecchino Today — Fase 16 — Scan asincrona e polling (v0.10)
+
+Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background con polling UI; odds ottimizzate (single-call + cache).
+
+| Metodo | Path | Scopo |
+|--------|------|--------|
+| POST | `/api/admin/cecchino/today/scan-day/start` | Avvia job; risposta immediata `{job_id, status}` |
+| GET | `/api/admin/cecchino/today/scan-jobs/{job_id}` | Stato job completo per polling |
+| GET | `/api/admin/cecchino/today/scan-jobs/latest?date=` | Ultimo job per giornata (o `null`) |
+| POST | `/api/admin/cecchino/today/scan-day` | Wrapper async (default); `?sync=true` sync deprecato |
+
+| Componente | Comportamento |
+|------------|---------------|
+| Tabella | `cecchino_today_scan_jobs` — status, progress, step, contatori, JSON summary/warnings/errors |
+| Thread | `SessionLocal` dedicata; commit progress ogni batch (~10 fixture) |
+| Duplicati | Job `queued\|running` stesso `scan_date` → restituisce esistente; `force_rescan` + running → 409 |
+| Stale | Job running >30 min → `failed` (`stale job timeout`) |
+| Odds | `get_fixture_odds_by_fixture` + cache snapshot; strategie `cached`, `fixture_single_call`, fallback |
+| Timeline | `scan_job_status`, `scan_job_id`, `scan_state=scanning` su GET `/days` |
+
+**UI:** `CecchinoTodayScanProgressCard`, polling 2,5s, resume job su reload pagina via `latest`.
+
+**Eleggibilità e formule Cecchino:** invariati.
 
 ## Cecchino Today — Fase 15 — Over/Under strict FT e PT (v0.9)
 
@@ -318,6 +342,6 @@ Caso di riferimento: **San Lorenzo de Almagro vs Deportivo Riestra** — vedi `b
 | Fixture history | `backend/app/services/cecchino/cecchino_fixture_history.py` |
 | Service | `backend/app/services/cecchino/cecchino_service.py` |
 | Route | `backend/app/routes/cecchino.py` |
-| Cecchino Today | `backend/app/services/cecchino/cecchino_today_service.py`, `backend/app/routes/cecchino_today.py` |
+| Cecchino Today | `backend/app/services/cecchino/cecchino_today_service.py`, `cecchino_today_scan_job_service.py`, `cecchino_today_odds_fetch.py`, `backend/app/routes/cecchino_today.py` |
 | Model | `backend/app/models/cecchino_prediction.py`, `cecchino_today_fixture.py` |
 | UI | `frontend/src/pages/CecchinoPage.tsx`, `CecchinoTodayPage.tsx`, componenti `CecchinoToday*`, `cecchinoApi.ts`, `cecchinoTodayApi.ts` |

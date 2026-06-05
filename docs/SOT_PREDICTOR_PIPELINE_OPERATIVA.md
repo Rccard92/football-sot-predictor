@@ -1,6 +1,31 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
-## Flusso scan giornaliero
+## Flusso scan giornaliero (Fase 16 — async)
+
+```mermaid
+flowchart TD
+  startUI[Admin Avvia scan] --> startEP[POST scan-day/start]
+  startEP --> jobRow[cecchino_today_scan_jobs queued]
+  startEP --> thread[Thread daemon SessionLocal]
+  thread --> runScan[run_scan + progress_reporter]
+  runScan --> oddsOpt[fetch_fixture_odds_for_cecchino_bookmakers]
+  oddsOpt --> cache{force_rescan?}
+  cache -->|no| snapshotReuse[odds_snapshot_json cache]
+  cache -->|yes| apiCall[API-Football odds?fixture=]
+  runScan --> compFilter[Filtro competizione]
+  compFilter --> startedGate[Non iniziata]
+  startedGate --> bmGate[Gate bookmaker 1X2]
+  bmGate --> bootstrap[Bootstrap DB minimo]
+  bootstrap --> statsGate[Gate campioni statistici]
+  statsGate --> calc[Calcolo Cecchino + KPI]
+  calc --> finalGate[validate_final_eligibility]
+  finalGate -->|eligible| listMain[Lista principale GET /today]
+  finalGate -->|excluded_*| debugExcluded[Debug escluse admin]
+  pollUI[Frontend polling 2.5s] --> jobUpdate[GET scan-jobs/id]
+  jobUpdate -->|completed| reloadUI[loadDays + loadList]
+```
+
+## Flusso scan sincrono legacy (pre-Fase 16)
 
 ```mermaid
 flowchart TD
@@ -37,6 +62,17 @@ Durante scan-day, se lega/squadra/fixture esistono già nel DB:
 - **Esclusi dal feed principale:** Goal Line, Result/Total Goals, Total Home/Away, RTG_H1 e mercati combo.
 - **Scan-day** persiste 1X2/DC/OU/OU_FH; gate eleggibilità resta solo su 1X2.
 - **Media Over** calcolata solo da book whitelist con quote presenti; mai media orphan senza dettaglio.
+
+## Strategia fetch odds (Fase 16)
+
+| Strategia | Quando |
+|-----------|--------|
+| `cached` | `force_rescan=false` e `odds_snapshot_json.raw_by_bookmaker_id` completo (3 book + 1X2) |
+| `fixture_single_call` | `GET /odds?fixture=` con filtro book 8/3/4 |
+| `fixture_single_call_with_bookmaker_fallback` | Single-call parziale → fallback solo book mancanti |
+| `bookmaker_per_fixture` | Response vuota → 3× `GET /odds?fixture=&bookmaker=` (legacy) |
+
+Metriche in `result_summary_json`: `api_calls`, `odds_from_cache`, `odds_from_api`, `duration_seconds`.
 
 ## Fixture ID e debug JSON (Fase 14–15)
 

@@ -1,6 +1,7 @@
 from app.models.base import Base
 from app.models.cecchino_prediction import CecchinoPrediction
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
+from app.models.cecchino_today_scan_job import CecchinoTodayScanJob
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -57,6 +58,7 @@ __all__ = [
     "Base",
     "CecchinoPrediction",
     "CecchinoTodayFixture",
+    "CecchinoTodayScanJob",
     "Competition",
     "Fixture",
     "FixtureLineup",

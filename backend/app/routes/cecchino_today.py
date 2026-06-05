@@ -17,6 +17,13 @@ from app.schemas.cecchino_today import (
     CecchinoTodayScanDayBody,
     CecchinoTodayUpdateResultsBody,
 )
+from app.services.cecchino.cecchino_today_scan_job_service import (
+    get_latest_scan_job,
+    get_scan_job,
+    job_to_dict,
+    recover_stale_scan_jobs,
+    start_scan_job,
+)
 from app.services.cecchino.cecchino_today_service import (
     cleanup_cecchino_today_snapshots,
     debug_search,
@@ -106,18 +113,72 @@ def cecchino_today_scan_tomorrow(
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 
 
-@admin_router.post("/scan-day")
-def cecchino_today_scan_day(
+@admin_router.post("/scan-day/start")
+def cecchino_today_scan_day_start(
     body: CecchinoTodayScanDayBody,
     db: Session = Depends(get_db),
 ):
-    payload = run_scan_day(
+    payload = start_scan_job(
         db,
         scan_date=body.date,
         timezone=body.timezone,
         force_rescan=body.force_rescan,
     )
-    status_code = 200 if payload.get("status") in ("ok", "already_scanned") else 422
+    if payload.get("status") == "conflict":
+        return JSONResponse(status_code=409, content=jsonable_encoder(payload))
+    status_code = 200 if payload.get("status") in ("queued", "running", "already_scanned") else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+
+@admin_router.get("/scan-jobs/latest")
+def cecchino_today_scan_job_latest(
+    date: date = Query(..., alias="date"),
+    db: Session = Depends(get_db),
+):
+    recover_stale_scan_jobs(db)
+    job = get_latest_scan_job(db, date)
+    if job is None:
+        return JSONResponse(status_code=200, content=None)
+    return jsonable_encoder(job_to_dict(job))
+
+
+@admin_router.get("/scan-jobs/{job_id}")
+def cecchino_today_scan_job_status(
+    job_id: str,
+    db: Session = Depends(get_db),
+):
+    recover_stale_scan_jobs(db)
+    job = get_scan_job(db, job_id)
+    if job is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Job not found"})
+    return jsonable_encoder(job_to_dict(job))
+
+
+@admin_router.post("/scan-day")
+def cecchino_today_scan_day(
+    body: CecchinoTodayScanDayBody,
+    sync: bool = Query(default=False, description="Modalità sync debug (deprecata)"),
+    db: Session = Depends(get_db),
+):
+    if sync:
+        payload = run_scan_day(
+            db,
+            scan_date=body.date,
+            timezone=body.timezone,
+            force_rescan=body.force_rescan,
+        )
+        status_code = 200 if payload.get("status") in ("ok", "already_scanned") else 422
+        return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+    payload = start_scan_job(
+        db,
+        scan_date=body.date,
+        timezone=body.timezone,
+        force_rescan=body.force_rescan,
+    )
+    if payload.get("status") == "conflict":
+        return JSONResponse(status_code=409, content=jsonable_encoder(payload))
+    status_code = 200 if payload.get("status") in ("queued", "running", "already_scanned") else 422
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 
 

@@ -238,13 +238,22 @@ def test_cleanup_does_not_touch_today():
 
 
 def test_scan_day_endpoint():
-    with patch("app.routes.cecchino_today.run_scan_day", return_value={"status": "ok"}) as mock_run:
+    with patch(
+        "app.routes.cecchino_today.start_scan_job",
+        return_value={
+            "job_id": "async-job",
+            "status": "queued",
+            "scan_date": "2026-06-04",
+            "message": "Scansione avviata",
+        },
+    ) as mock_start:
         resp = client.post(
             "/api/admin/cecchino/today/scan-day",
             json={"date": "2026-06-04", "force_rescan": False},
         )
     assert resp.status_code == 200
-    mock_run.assert_called_once()
+    assert resp.json()["job_id"] == "async-job"
+    mock_start.assert_called_once()
 
 
 def test_update_results_endpoint():

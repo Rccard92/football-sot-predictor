@@ -70,6 +70,7 @@ export function CecchinoDayTimeline({ days, selectedDay, onSelectDay }: Props) {
         <div className={`${todayTimelineGrid} min-w-0 flex-1`}>
           {visibleDays.map((day) => {
             const active = day.date === selectedDay
+            const isScanning = day.scan_job_status === 'queued' || day.scan_job_status === 'running'
             const countLabel = day.is_scanned ? String(day.eligible_count) : '—'
             return (
               <button
@@ -105,7 +106,16 @@ export function CecchinoDayTimeline({ days, selectedDay, onSelectDay }: Props) {
                   {countLabel}
                 </div>
                 <div className={`mt-0.5 text-[10px] ${active ? 'text-blue-100' : 'text-slate-400'}`}>
-                  {day.is_scanned ? 'Scansionata' : 'Non scansionata'}
+                  {isScanning ? (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                      Scanning
+                    </span>
+                  ) : day.is_scanned ? (
+                    'Scansionata'
+                  ) : (
+                    'Non scansionata'
+                  )}
                 </div>
               </button>
             )

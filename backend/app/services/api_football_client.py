@@ -189,6 +189,11 @@ class ApiFootballClient:
         )
         return list(body.get("response") or [])
 
+    def get_fixture_odds_by_fixture(self, api_fixture_id: int) -> list[dict[str, Any]]:
+        """GET /odds — quote per fixture (tutti i bookmaker nel payload)."""
+        body = self.get("odds", {"fixture": int(api_fixture_id)})
+        return list(body.get("response") or [])
+
     @staticmethod
     def injuries_response_items(body: dict[str, Any]) -> tuple[list[dict[str, Any]], list[Any]]:
         """Normalizza response injuries + eventuali errori nel body."""

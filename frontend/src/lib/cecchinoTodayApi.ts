@@ -2,7 +2,7 @@
  * Client API Cecchino Today — discovery giornaliera (separato da SOT e Cecchino classico).
  */
 
-import { adminPostJson, requestJson } from './api'
+import { adminGetJson, adminPostJson, requestJson } from './api'
 
 export type MatchDisplayStatus = 'upcoming' | 'live' | 'finished' | 'postponed' | 'cancelled' | 'unknown'
 
@@ -37,8 +37,10 @@ export type CecchinoTodayDay = {
   live_count: number
   finished_count: number
   last_scan_at: string | null
-  scan_state: 'scanned' | 'not_scanned' | 'error' | 'partial'
+  scan_state: 'scanned' | 'not_scanned' | 'scanning' | 'error' | 'partial'
   status: 'available' | 'pending'
+  scan_job_status?: string | null
+  scan_job_id?: string | null
 }
 
 export type CecchinoTodayDaysResponse = {
@@ -49,6 +51,52 @@ export type CecchinoTodayDaysResponse = {
   tomorrow: string
   selected_default: string
   days: CecchinoTodayDay[]
+}
+
+export type CecchinoTodayScanJobStartResponse = {
+  job_id?: string | null
+  status: string
+  scan_date: string
+  message: string
+  scan_meta?: CecchinoTodayScanMeta
+}
+
+export type CecchinoTodayScanJob = {
+  job_id: string
+  scan_date: string
+  timezone: string
+  force_rescan: boolean
+  status: string
+  current_step: string | null
+  progress_current: number
+  progress_total: number | null
+  progress_pct: number | null
+  fixtures_found: number
+  fixtures_checked: number
+  odds_checked: number
+  eligible_count: number
+  excluded_count: number
+  excluded_summary: Record<string, number>
+  result_summary: Record<string, unknown> | null
+  warnings: string[]
+  errors: string[]
+  started_at: string | null
+  finished_at: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export const SCAN_JOB_POLL_MS = 2500
+
+export const SCAN_STEP_LABELS: Record<string, string> = {
+  fetching_fixtures: 'Recupero partite',
+  filtering_competitions: 'Filtro competizioni',
+  fetching_odds: 'Recupero quote bookmaker',
+  importing_stats: 'Import statistiche',
+  calculating_cecchino: 'Calcolo Cecchino',
+  validating_eligibility: 'Validazione eleggibilità',
+  saving_snapshots: 'Salvataggio snapshot',
+  completed: 'Completato',
 }
 
 export type CecchinoTodayScanMeta = {
@@ -274,16 +322,41 @@ export function formatDayShort(dateIso: string): string {
   return `${d}/${m}`
 }
 
+export async function startCecchinoTodayScanDay(params: {
+  date: string
+  timezone?: string
+  forceRescan?: boolean
+}): Promise<CecchinoTodayScanJobStartResponse> {
+  return adminPostJson<CecchinoTodayScanJobStartResponse>(
+    '/api/admin/cecchino/today/scan-day/start',
+    {
+      date: params.date,
+      timezone: params.timezone ?? 'Europe/Rome',
+      force_rescan: params.forceRescan ?? false,
+    },
+    { timeoutMs: 15_000 },
+  )
+}
+
+export async function getCecchinoTodayScanJob(jobId: string): Promise<CecchinoTodayScanJob> {
+  return adminGetJson<CecchinoTodayScanJob>(`/api/admin/cecchino/today/scan-jobs/${jobId}`)
+}
+
+export async function getCecchinoTodayLatestScanJob(
+  date: string,
+): Promise<CecchinoTodayScanJob | null> {
+  return adminGetJson<CecchinoTodayScanJob | null>(
+    `/api/admin/cecchino/today/scan-jobs/latest?date=${encodeURIComponent(date)}`,
+  )
+}
+
+/** @deprecated Usare startCecchinoTodayScanDay + polling job */
 export async function scanCecchinoTodayDay(params: {
   date: string
   timezone?: string
   forceRescan?: boolean
-}): Promise<CecchinoTodayScanReport> {
-  return adminPostJson<CecchinoTodayScanReport>('/api/admin/cecchino/today/scan-day', {
-    date: params.date,
-    timezone: params.timezone ?? 'Europe/Rome',
-    force_rescan: params.forceRescan ?? false,
-  })
+}): Promise<CecchinoTodayScanJobStartResponse> {
+  return startCecchinoTodayScanDay(params)
 }
 
 export async function updateCecchinoTodayResults(params: {

@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 16 — Scan asincrona e polling Today (2026-06-04)
+
+- Scan giornaliera spostata su job asincrono persistito (`cecchino_today_scan_jobs`) con thread daemon e stato su DB.
+- Nuovi endpoint: `POST /scan-day/start`, `GET /scan-jobs/{job_id}`, `GET /scan-jobs/latest?date=`; `POST /scan-day` delega al job (param `sync=true` solo debug).
+- Progress step-by-step (`fetching_fixtures` → … → `completed`), contatori fixture/odds/eleggibili/escluse, `result_summary_json` con metriche API.
+- Ottimizzazione odds: singola chiamata `GET /odds?fixture=` con filtro Bet365/Betfair/Pinnacle; fallback selettivo o per-bookmaker; cache da `odds_snapshot_json` se `force_rescan=false`.
+- Prevenzione job duplicati (stesso `scan_date` running → job esistente) e stale job (>30 min → `failed`).
+- Frontend: polling ogni 2,5s, card progresso, badge «Scanning» in timeline; niente timeout browser 180s sullo start.
+- Nessuna modifica ai modelli SOT v2.0/v2.1 né alle formule Cecchino/eligibility gate.
+
 ## Cecchino — Fase 15 — Over/Under full time e primo tempo bookmaker (2026-06-04)
 
 - Corretto mapping Over 1.5 / Over 2.5 usando solo mercato `Goals Over/Under` con bet_id=5.
