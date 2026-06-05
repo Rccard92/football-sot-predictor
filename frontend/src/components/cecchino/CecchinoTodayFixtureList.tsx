@@ -31,7 +31,7 @@ type Props = {
 }
 
 function FixtureSkeleton() {
-  return <div className={`${todaySkeleton} h-32 w-full`} />
+  return <div className={`${todaySkeleton} h-36 w-full`} />
 }
 
 export function CecchinoTodayFixtureList({
@@ -107,26 +107,24 @@ export function CecchinoTodayFixtureList({
       )}
 
       {!loading && !error && fixtureCount > 0 && (
-        <div className="max-h-[calc(100vh-320px)] space-y-6 overflow-y-auto pr-1">
+        <div className="space-y-8 pr-1">
           {countries.map((country) => (
-            <div key={country.country_name} className="space-y-3">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+            <div key={country.country_name} className="space-y-4">
+              <div className="flex items-center gap-2 border-b-2 border-slate-200 pb-2">
                 <SafeImg
                   src={country.country_flag_url}
                   alt=""
                   className="h-4 w-6 object-cover"
                 />
-                <h3 className="text-sm font-semibold text-slate-800">{country.country_name}</h3>
+                <h3 className="text-base font-semibold text-slate-900">{country.country_name}</h3>
               </div>
               {country.leagues.map((league) => (
-                <div key={`${country.country_name}-${league.league_name}`} className="space-y-2 pl-1">
-                  <div className="flex items-center gap-2">
+                <div key={`${country.country_name}-${league.league_name}`} className="space-y-3 pl-1">
+                  <div className="flex items-center gap-2 py-1">
                     <SafeImg src={league.league_logo_url} alt="" className="h-5 w-5 object-contain" />
-                    <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                      {league.league_name}
-                    </h4>
+                    <h4 className="text-sm font-semibold text-slate-700">{league.league_name}</h4>
                   </div>
-                  <ul className="space-y-2">
+                  <ul className="space-y-3">
                     {league.fixtures.map((fixture: CecchinoTodayListFixture) => (
                       <li key={fixture.today_fixture_id}>
                         <CecchinoTodayFixtureCard

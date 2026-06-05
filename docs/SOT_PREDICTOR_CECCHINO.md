@@ -223,7 +223,15 @@ Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timel
 
 **Persistenza post-kickoff:** le eleggibili restano in lista; `update-results` aggiorna `match_display_status`, score e loghi. Cleanup retention 7 giorni invariato.
 
-**UI:** timeline orizzontale scrollabile, filtri stato/nazione/campionato/ricerca, card senza badge bookmaker, placeholder predizione consigliata, dettaglio KPI → Quote → Segnali (verticale).
+**UI:** timeline a frecce (finestra paginata 3/5/7 giorni, no scrollbar), filtri stato/nazione/campionato/ricerca, card senza badge bookmaker, lista sticky su desktop, dettaglio KPI → Quote → Segnali (verticale).
+
+## Cecchino Today — Fase 10 UX (refinement timeline e card)
+
+- Timeline `CecchinoDayTimeline`: frecce avanti/indietro, 7/5/3 giorni visibili, centrata su oggi al mount, nessuna scrollbar.
+- Lista partite sticky su desktop (`lg:sticky`); scroll interno se lunga.
+- Card partita: riga principale (ora, squadre, CTA destra); riga secondaria predizione consigliata + risultato.
+- Debug escluse sotto il layout principale (accordion, default chiuso).
+- Nessuna modifica backend o formule Cecchino/SOT.
 
 ## Cecchino Today — discovery giornaliera v0.2 (persistenza giornate)
 

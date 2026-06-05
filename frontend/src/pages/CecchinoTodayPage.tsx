@@ -12,8 +12,8 @@ import {
 import { CecchinoTodayFixtureList } from '../components/cecchino/CecchinoTodayFixtureList'
 import { CecchinoTodayPageHeader } from '../components/cecchino/CecchinoTodayPageHeader'
 import { CecchinoTodayScanSummary } from '../components/cecchino/CecchinoTodayScanSummary'
-import { CecchinoTodayTimeline } from '../components/cecchino/CecchinoTodayTimeline'
-import { todayPageGrid, todaySectionTitle } from '../components/cecchino/cecchinoTodayStyles'
+import { CecchinoDayTimeline } from '../components/cecchino/CecchinoDayTimeline'
+import { todayPageGrid, todaySectionTitle, todayStickyListColumn } from '../components/cecchino/cecchinoTodayStyles'
 import {
   getCecchinoTodayDays,
   getCecchinoTodayDetail,
@@ -242,7 +242,7 @@ export function CecchinoTodayPage() {
       )}
 
       {!daysLoading && days.length > 0 && (
-        <CecchinoTodayTimeline days={days} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+        <CecchinoDayTimeline days={days} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
       )}
 
       <CecchinoTodayDaySummary
@@ -266,26 +266,21 @@ export function CecchinoTodayPage() {
         />
       )}
 
-      <CecchinoTodayExcludedPanel
-        selectedDay={selectedDay}
-        open={excludedOpen}
-        onToggle={() => setExcludedOpen((o) => !o)}
-        onRegisterLoad={registerExcludedLoad}
-      />
-
       <div className={todayPageGrid}>
-        <CecchinoTodayFixtureList
-          countries={filteredCountries}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          loading={listLoading}
-          error={listError}
-          selectedDay={selectedDay}
-          isScanned={isScanned}
-          hasActiveFilters={hasActiveFilters}
-          totalBeforeFilter={totalBeforeFilter}
-          onScanDay={() => void handleScanDay(false)}
-        />
+        <div className={todayStickyListColumn}>
+          <CecchinoTodayFixtureList
+            countries={filteredCountries}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            loading={listLoading}
+            error={listError}
+            selectedDay={selectedDay}
+            isScanned={isScanned}
+            hasActiveFilters={hasActiveFilters}
+            totalBeforeFilter={totalBeforeFilter}
+            onScanDay={() => void handleScanDay(false)}
+          />
+        </div>
 
         <section className="min-w-0 space-y-4">
           <h2 className={todaySectionTitle}>Dettaglio analisi</h2>
@@ -303,6 +298,13 @@ export function CecchinoTodayPage() {
           )}
         </section>
       </div>
+
+      <CecchinoTodayExcludedPanel
+        selectedDay={selectedDay}
+        open={excludedOpen}
+        onToggle={() => setExcludedOpen((o) => !o)}
+        onRegisterLoad={registerExcludedLoad}
+      />
     </div>
   )
 }

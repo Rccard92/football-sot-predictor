@@ -35,4 +35,16 @@ export const todayFixtureCardDefault =
 export const todayFixtureCardSelected =
   'border-blue-400 bg-blue-50/70 shadow-md ring-2 ring-blue-500/40'
 
+export const todayFixtureCardFinished =
+  'border-slate-300 bg-slate-50/80 shadow-sm hover:border-slate-400 hover:shadow-md'
+
+export const todayTimelineArrow =
+  'flex shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 py-2 text-xl font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white sm:px-3'
+
+export const todayTimelineGrid =
+  'grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-7'
+
+export const todayStickyListColumn =
+  'min-w-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:self-start'
+
 export const todaySkeleton = 'animate-pulse rounded-lg bg-slate-200/80'

@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-ui-0.3.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Refinement timeline e card partite',
+    type: 'patch',
+    summary:
+      'UX refinement: timeline a frecce senza scrollbar, lista sticky desktop, card con predizione/risultato sotto e CTA a destra.',
+    highlights: [
+      'Timeline paginata 3/5/7 giorni con frecce e centratura su oggi.',
+      'Lista partite eleggibili sticky su desktop.',
+      'Card: riga secondaria predizione consigliata + risultato; pulsante solo a destra.',
+      'Debug escluse sotto il layout principale; filtri e raggruppamento invariati.',
+      'Zero modifiche formule Cecchino e SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.4.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Timeline, filtri e risultati finali',

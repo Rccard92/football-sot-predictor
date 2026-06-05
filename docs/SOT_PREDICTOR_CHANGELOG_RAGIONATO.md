@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 10 — Refinement timeline e card partite (2026-06-04)
+
+- Rimossa scrollbar visibile dalla timeline; aggiunte frecce avanti/indietro con finestra paginata (3/5/7 giorni).
+- Timeline centrata su oggi all’apertura; `selectedDay` invariato durante navigazione frecce.
+- Lista partite resa sticky su desktop con scroll interno.
+- Card partite riorganizzate: predizione e risultato in riga secondaria; solo CTA a destra nella riga principale.
+- Debug escluse spostato sotto grid lista/dettaglio; filtri, bandiere, loghi e raggruppamento invariati.
+- Nessuna modifica logica Cecchino/KPI/segnali; v2.0/v2.1 non toccati.
+
 ## Cecchino — Fase 9 — Timeline giornaliera, filtri e risultati finali (2026-06-04)
 
 - Versione `cecchino_today_v0_3_timeline_results`: timeline orizzontale ±7 giorni con oggi evidenziato e count eleggibili per giorno.

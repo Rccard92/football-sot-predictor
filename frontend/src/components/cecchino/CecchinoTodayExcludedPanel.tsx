@@ -184,3 +184,6 @@ function ExcludedRow({ fixture }: { fixture: CecchinoTodayExcludedFixture }) {
     </tr>
   )
 }
+
+/** Alias descrittivo — stesso componente accordion debug escluse. */
+export const CecchinoExcludedDebugAccordion = CecchinoTodayExcludedPanel
