@@ -1,0 +1,35 @@
+# SOT Predictor — Pipeline operativa Cecchino Today
+
+## Flusso scan giornaliero
+
+```mermaid
+flowchart TD
+  discovery[API-Football fixtures by date] --> compFilter[Filtro competizione]
+  compFilter --> startedGate[Non iniziata]
+  startedGate --> bmGate[Gate bookmaker 1X2]
+  bmGate --> bootstrap[Bootstrap DB minimo]
+  bootstrap --> statsGate[Gate campioni statistici]
+  statsGate --> calc[Calcolo Cecchino + KPI]
+  calc --> finalGate[validate_final_eligibility]
+  finalGate -->|eligible| listMain[Lista principale GET /today]
+  finalGate -->|excluded_*| debugExcluded[Debug escluse admin]
+```
+
+## Post-scan: rivalidazione
+
+`POST /api/admin/cecchino/today/revalidate-day` rilegge gli snapshot JSON già salvati (`odds_snapshot`, `stats_snapshot`, `cecchino_output`, `kpi_panel`) e aggiorna `eligibility_status` senza chiamate API-Football.
+
+Utile per riclassificare record marcati `eligible` prima dell’introduzione del gate finale.
+
+## Lista vs debug
+
+| Endpoint | Contenuto |
+|----------|-----------|
+| `GET /api/cecchino/today?date=` | Solo `eligibility_status=eligible` |
+| `GET /api/admin/cecchino/today/excluded?date=` | Tutte le escluse con diagnostica |
+
+## Garanzie out-of-scope
+
+- Formule SOT v2.0/v2.1 non modificate
+- `team_sot_predictions` non utilizzata da Cecchino Today
+- Engine Cecchino (`cecchino_engine.py`) invariato — il gate consuma solo l’output

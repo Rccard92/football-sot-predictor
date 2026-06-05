@@ -63,6 +63,7 @@ def _make_row(
     row.odds_snapshot_json = {"bookmakers": {}, "missing": ["Bet365"]}
     row.stats_snapshot_json = {}
     row.warnings_json = []
+    row.blocking_reasons_json = []
     row.kpi_panel_json = {}
     row.cecchino_output_json = {}
     row.match_display_status = "upcoming"

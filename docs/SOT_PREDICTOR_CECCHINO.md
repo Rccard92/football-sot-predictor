@@ -233,6 +233,28 @@ Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timel
 - Debug escluse sotto il layout principale (accordion, default chiuso).
 - Nessuna modifica backend o formule Cecchino/SOT.
 
+## Cecchino Today — Fase 11 — Final eligibility gate (v0.4)
+
+Versione `cecchino_today_v0_4_final_eligibility_gate`: gate post-calcolo che impedisce l’ingresso in lista principale di partite con Cecchino o KPI incompleti.
+
+| Metodo | Path | Scopo |
+|--------|------|--------|
+| POST | `/api/admin/cecchino/today/revalidate-day` | Ricalcola eleggibilità su snapshot persistiti per una giornata |
+
+**Regole bloccanti (ordine di valutazione):**
+
+1. Bookmaker Bet365/Betfair/Pinnacle con 1X2 HOME/DRAW/AWAY completo
+2. Campioni statistici minimi + assenza `low_sample:*` sotto soglia
+3. Leakage `failed` ( `undefined` → warning non bloccante )
+4. Picchetti obbligatori calcolabili (`home_away`, `totals`, `last5_home_away`, `last6_totals`)
+5. Nessuna `zero_probability` su 1/X/2
+6. Quote finali Cecchino `status=available` con quota/prob 1/X/2
+7. KPI 1X2 con valori Cecchino, BOOK ed edge calcolabili (Over 1.5/2.5/PT opzionali)
+
+**Debug escluse:** `blocking_reasons`, `cecchino_debug`, `kpi_debug`, `import_info`.
+
+**UI:** label italiane per motivi esclusione; dettaglio eligible mostra «Note dati» (non bloccanti) vs avvisi; pulsante «Rivalida eleggibilità».
+
 ## Cecchino Today — discovery giornaliera v0.2 (persistenza giornate)
 
 Versione `cecchino_today_v0_2_persistent_days` — sostituita da v0.3 (Fase 9).

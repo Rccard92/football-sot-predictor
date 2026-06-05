@@ -75,3 +75,10 @@ def test_stats_leakage_failed():
     assert not ok
     assert reason == ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS
     assert "leakage_check_failed" in snap["failures"]
+
+
+def test_stats_leakage_undefined_passes():
+    ok, snap, reason = check_cecchino_today_stats_eligible(_contexts(), leakage_status="undefined")
+    assert ok
+    assert reason is None
+    assert snap["failures"] == []

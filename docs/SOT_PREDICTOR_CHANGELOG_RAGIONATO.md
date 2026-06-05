@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 11 — Final eligibility gate e esclusione dati incompleti (2026-06-04)
+
+- Introdotto validatore finale `validate_cecchino_today_final_eligibility`: una partita è `eligible` solo se bookmaker 1X2 completi, statistiche sufficienti, picchetti obbligatori, quote finali Cecchino e KPI 1X2 sono tutti disponibili.
+- `low_sample` sotto soglia, `zero_probability`, `missing_picchetto_quotas` e `final_odds insufficient_data` diventano bloccanti ed escludono dalla lista principale.
+- `fixtures_ft_imported` spostato da warning ad `import_info` (non compare più come avviso giallo).
+- Endpoint admin `POST /api/admin/cecchino/today/revalidate-day` per riclassificare snapshot già salvati senza richiamare API-Football.
+- GET `/today` restituisce solo `eligibility_status=eligible`; escluse arricchite con `blocking_reasons`, `cecchino_debug`, `kpi_debug`.
+- Versione `cecchino_today_v0_4_final_eligibility_gate`; migrazione `blocking_reasons_json`.
+- v2.0/v2.1 e `team_sot_predictions` non modificati.
+
 ## Cecchino — Fase 10 — Refinement timeline e card partite (2026-06-04)
 
 - Rimossa scrollbar visibile dalla timeline; aggiunte frecce avanti/indietro con finestra paginata (3/5/7 giorni).

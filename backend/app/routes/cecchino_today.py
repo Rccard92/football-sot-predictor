@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.cecchino_today import (
     CecchinoTodayCleanupBody,
+    CecchinoTodayRevalidateDayBody,
     CecchinoTodayScanBody,
     CecchinoTodayScanDayBody,
     CecchinoTodayUpdateResultsBody,
@@ -23,6 +24,7 @@ from app.services.cecchino.cecchino_today_service import (
     list_available_days,
     list_eligible_today,
     list_excluded_today,
+    revalidate_cecchino_today_day,
     run_scan,
     run_scan_day,
     run_scan_today,
@@ -168,3 +170,13 @@ def cecchino_today_excluded(
 ):
     payload = list_excluded_today(db, scan_date=date, timezone=timezone)
     return jsonable_encoder(payload)
+
+
+@admin_router.post("/revalidate-day")
+def cecchino_today_revalidate_day(
+    body: CecchinoTodayRevalidateDayBody,
+    db: Session = Depends(get_db),
+):
+    payload = revalidate_cecchino_today_day(db, scan_date=body.date)
+    status_code = 200 if payload.get("status") == "ok" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))

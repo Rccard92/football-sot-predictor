@@ -33,6 +33,10 @@ class CecchinoTodayCleanupBody(BaseModel):
     timezone: str = Field(default=DEFAULT_TODAY_TIMEZONE)
 
 
+class CecchinoTodayRevalidateDayBody(BaseModel):
+    date: DateType
+
+
 class CecchinoTodayDay(BaseModel):
     date: str
     label: str
@@ -94,8 +98,12 @@ class CecchinoTodayExcludedFixture(BaseModel):
     kickoff: str | None = None
     eligibility_status: str
     eligibility_reason: str | None = None
+    blocking_reasons: list[str] = Field(default_factory=list)
     bookmaker_debug: dict[str, Any] = Field(default_factory=dict)
     stats_debug: dict[str, Any] = Field(default_factory=dict)
+    cecchino_debug: dict[str, Any] = Field(default_factory=dict)
+    kpi_debug: dict[str, Any] = Field(default_factory=dict)
+    import_info: list[str] = Field(default_factory=list)
     competition_filter_debug: dict[str, Any] = Field(default_factory=dict)
     fixture_status_debug: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)

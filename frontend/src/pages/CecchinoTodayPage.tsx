@@ -18,6 +18,7 @@ import {
   getCecchinoTodayDays,
   getCecchinoTodayDetail,
   getCecchinoTodayList,
+  revalidateCecchinoTodayDay,
   scanCecchinoTodayDay,
   todayIsoRome,
   updateCecchinoTodayResults,
@@ -40,6 +41,7 @@ export function CecchinoTodayPage() {
   const [daysLoading, setDaysLoading] = useState(false)
   const [scanDayLoading, setScanDayLoading] = useState(false)
   const [updateResultsLoading, setUpdateResultsLoading] = useState(false)
+  const [revalidateLoading, setRevalidateLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -165,6 +167,23 @@ export function CecchinoTodayPage() {
     }
   }
 
+  const handleRevalidateDay = async () => {
+    setActionError(null)
+    setRevalidateLoading(true)
+    try {
+      await revalidateCecchinoTodayDay({ date: selectedDay })
+      await loadDays()
+      await loadList(selectedDay)
+      if (excludedOpen) {
+        await loadExcludedRef.current?.()
+      }
+    } catch (e) {
+      setActionError(formatFetchError(e))
+    } finally {
+      setRevalidateLoading(false)
+    }
+  }
+
   const filteredCountries = useMemo((): CecchinoTodayListCountry[] => {
     if (!list) return []
     const q = searchQuery.trim().toLowerCase()
@@ -227,8 +246,10 @@ export function CecchinoTodayPage() {
         isScanned={isScanned}
         scanDayLoading={scanDayLoading}
         updateResultsLoading={updateResultsLoading}
+        revalidateLoading={revalidateLoading}
         onScanDay={(force) => void handleScanDay(force)}
         onUpdateResults={() => void handleUpdateResults()}
+        onRevalidateDay={() => void handleRevalidateDay()}
       />
 
       {actionError && (

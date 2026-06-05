@@ -22,6 +22,11 @@ ELIGIBILITY_EXCLUDED_STARTED = "excluded_started"
 ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER = "excluded_missing_bookmaker"
 ELIGIBILITY_EXCLUDED_MISSING_1X2 = "excluded_missing_1x2_market"
 ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS = "excluded_insufficient_stats"
+ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO = "excluded_missing_picchetto"
+ELIGIBILITY_EXCLUDED_ZERO_PROBABILITY = "excluded_zero_probability"
+ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE = "excluded_cecchino_not_calculable"
+ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE = "excluded_kpi_not_calculable"
+ELIGIBILITY_EXCLUDED_LEAKAGE_FAILED = "excluded_leakage_failed"
 ELIGIBILITY_EXCLUDED_MAPPING = "excluded_mapping_error"
 ELIGIBILITY_ERROR = "error"
 
@@ -81,3 +86,4 @@ class CecchinoTodayFixture(Base, TimestampMixin):
     kpi_panel_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     raw_fixture_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     warnings_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
+    blocking_reasons_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)

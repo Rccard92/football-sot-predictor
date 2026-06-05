@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.5.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Final eligibility gate',
+    type: 'minor',
+    summary:
+      'Gate post-calcolo: solo partite con bookmaker, statistiche, picchetti, quote finali e KPI 1X2 completi compaiono in lista eleggibili.',
+    highlights: [
+      'Validatore finale validate_cecchino_today_final_eligibility dopo ogni scan.',
+      'low_sample, zero_probability, missing_picchetto e final_odds insufficient_data escludono la partita.',
+      'POST revalidate-day per riclassificare snapshot già salvati.',
+      'Debug escluse con blocking_reasons, cecchino_debug e kpi_debug.',
+      'Zero modifiche SOT v2.0/v2.1 e team_sot_predictions.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-ui-0.3.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Refinement timeline e card partite',

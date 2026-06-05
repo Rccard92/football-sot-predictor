@@ -1,5 +1,6 @@
 import type { CecchinoFinalOdds, CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
 import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
+import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoBookmakerDetailsCard } from './CecchinoBookmakerDetailsCard'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
@@ -52,6 +53,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
   const signals = (detail.signals_matrix ?? output?.signals_matrix) as
     | CecchinoSignalsMatrix
     | undefined
+  const importInfo = (detail.stats_snapshot?.import_info as string[] | undefined) ?? []
+  const { notes: dataNotes, blocking: blockingWarnings } = partitionTodayDetailWarnings(detail.warnings)
 
   return (
     <div className="space-y-5">
@@ -72,11 +75,25 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         <CecchinoBookmakerDetailsCard rows={detail.kpi_panel.rows} />
       )}
 
-      {(detail.warnings?.length ?? 0) > 0 && (
+      {(importInfo.length > 0 || dataNotes.length > 0) && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Note dati</p>
+          <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
+            {importInfo.map((info) => (
+              <li key={info}>{info}</li>
+            ))}
+            {dataNotes.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {blockingWarnings.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Avvisi</p>
           <ul className="mt-2 list-inside list-disc text-sm text-amber-900/90">
-            {detail.warnings!.map((w) => (
+            {blockingWarnings.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>

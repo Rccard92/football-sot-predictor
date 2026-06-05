@@ -55,8 +55,6 @@ def check_cecchino_today_stats_eligible(
 
     if leakage_status == LEAKAGE_FAILED:
         failures.append("leakage_check_failed")
-    elif leakage_status != LEAKAGE_PASSED:
-        failures.append(f"leakage_{leakage_status}")
 
     stats_snapshot = {
         "input_snapshot": snapshot,

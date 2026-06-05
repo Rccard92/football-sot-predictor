@@ -16,15 +16,20 @@ from app.models import CecchinoTodayFixture, Competition, Fixture
 from app.models.cecchino_today_fixture import (
     ELIGIBILITY_ELIGIBLE,
     ELIGIBILITY_ERROR,
+    ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE,
     ELIGIBILITY_EXCLUDED_CUP,
     ELIGIBILITY_EXCLUDED_FRIENDLY,
     ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+    ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE,
+    ELIGIBILITY_EXCLUDED_LEAKAGE_FAILED,
     ELIGIBILITY_EXCLUDED_MAPPING,
     ELIGIBILITY_EXCLUDED_MISSING_1X2,
     ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER,
+    ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO,
     ELIGIBILITY_EXCLUDED_STARTED,
     ELIGIBILITY_EXCLUDED_WOMEN,
     ELIGIBILITY_EXCLUDED_YOUTH,
+    ELIGIBILITY_EXCLUDED_ZERO_PROBABILITY,
     MATCH_FINISHED,
     MATCH_LIVE,
     MATCH_UPCOMING,
@@ -66,6 +71,12 @@ from app.services.cecchino.cecchino_today_display import (
     status_label_for_row,
 )
 from app.services.cecchino.cecchino_today_fixture_filter import is_fixture_not_started
+from app.services.cecchino.cecchino_today_final_eligibility import (
+    build_cecchino_debug,
+    build_kpi_debug,
+    partition_scan_warnings,
+    validate_cecchino_today_final_eligibility,
+)
 from app.services.cecchino.cecchino_today_stats_gate import check_cecchino_today_stats_eligible
 
 logger = logging.getLogger(__name__)
@@ -85,6 +96,95 @@ _COMPETITION_EXCLUDED_STATUSES = frozenset(
 )
 
 _BOOKMAKER_NAMES = ("Bet365", "Betfair", "Pinnacle")
+
+
+def _merge_stats_import_info(
+    stats_snapshot: dict[str, Any] | None,
+    import_info: list[str],
+) -> dict[str, Any] | None:
+    if not import_info and not stats_snapshot:
+        return stats_snapshot
+    merged = dict(stats_snapshot or {})
+    existing = list(merged.get("import_info") or [])
+    for item in import_info:
+        if item not in existing:
+            existing.append(item)
+    if existing:
+        merged["import_info"] = existing
+    return merged
+
+
+def _extract_leakage_status(stats_snapshot: dict[str, Any] | None) -> str:
+    if not stats_snapshot:
+        return "undefined"
+    return str(stats_snapshot.get("leakage_status") or "undefined")
+
+
+def _persist_post_calc_snapshot(
+    db: Session,
+    *,
+    scan_date: date,
+    api_item: dict[str, Any],
+    local_fixture_id: int,
+    competition_id: int,
+    odds_snapshot: dict[str, Any],
+    stats_snapshot: dict[str, Any],
+    cecchino_output: dict[str, Any] | None,
+    kpi_panel: dict[str, Any] | None,
+    row_warnings: list[str],
+    calc: dict[str, Any],
+    leakage_status: str,
+) -> tuple[CecchinoTodayFixture, str]:
+    cec_status = str(calc.get("calculation_status") or calc.get("status") or "")
+    all_warnings = row_warnings + list(calc.get("warnings") or [])
+    import_info, _, _ = partition_scan_warnings(all_warnings)
+    stats_with_import = _merge_stats_import_info(stats_snapshot, import_info)
+
+    if calc.get("status") != "ok":
+        eligibility_status = ELIGIBILITY_ERROR
+        eligibility_reason = str(calc.get("message") or calc.get("code") or "calculation_error")[:500]
+        blocking_reasons = [str(calc.get("code") or "calculation_error")]
+        stored_warnings: list[str] = []
+    else:
+        eligibility = validate_cecchino_today_final_eligibility(
+            odds_snapshot=odds_snapshot,
+            stats_snapshot=stats_with_import,
+            cecchino_output=cecchino_output,
+            kpi_panel=kpi_panel,
+            warnings=all_warnings,
+            leakage_status=leakage_status,
+            calc_status=cec_status,
+        )
+        if eligibility.is_eligible:
+            eligibility_status = ELIGIBILITY_ELIGIBLE
+            eligibility_reason = eligibility.eligibility_reason
+            blocking_reasons = []
+            stored_warnings = eligibility.warnings
+        else:
+            eligibility_status = eligibility.eligibility_status
+            eligibility_reason = eligibility.eligibility_reason
+            blocking_reasons = eligibility.blocking_reasons
+            stored_warnings = eligibility.warnings
+
+    row = _upsert_today_snapshot(
+        db,
+        scan_date=scan_date,
+        api_item=api_item,
+        eligibility_status=eligibility_status,
+        eligibility_reason=eligibility_reason,
+        local_fixture_id=local_fixture_id,
+        competition_id=competition_id,
+        bookmaker_status="ok",
+        stats_status="ok" if eligibility_status == ELIGIBILITY_ELIGIBLE else "insufficient",
+        cecchino_status=cec_status,
+        odds_snapshot=odds_snapshot,
+        stats_snapshot=stats_with_import,
+        cecchino_output=cecchino_output,
+        kpi_panel=kpi_panel,
+        warnings=stored_warnings,
+        blocking_reasons=blocking_reasons,
+    )
+    return row, eligibility_status
 
 
 def rome_today(tz_name: str = DEFAULT_TODAY_TIMEZONE) -> date:
@@ -203,6 +303,7 @@ def _upsert_today_snapshot(
     cecchino_output: dict[str, Any] | None = None,
     kpi_panel: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
+    blocking_reasons: list[str] | None = None,
 ) -> CecchinoTodayFixture:
     brief = _item_brief(api_item)
     provider_fixture_id = brief["provider_fixture_id"]
@@ -244,6 +345,7 @@ def _upsert_today_snapshot(
     row.kpi_panel_json = kpi_panel
     row.raw_fixture_json = api_item
     row.warnings_json = warnings or []
+    row.blocking_reasons_json = blocking_reasons or []
     apply_display_from_api(row, api_item)
     if eligibility_status == ELIGIBILITY_ELIGIBLE and row.match_display_status not in (
         MATCH_LIVE,
@@ -455,46 +557,21 @@ def run_scan(
 
         cecchino_output = calc.get("output")
         kpi_panel = calc.get("kpi_panel")
-        cec_status = calc.get("calculation_status") or calc.get("status")
-        is_eligible = calc.get("status") == "ok" and cec_status not in ("error",)
-
-        if is_eligible:
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=ELIGIBILITY_ELIGIBLE,
-                local_fixture_id=int(local_fx.id),
-                competition_id=int(comp.id),
-                bookmaker_status="ok",
-                stats_status="ok",
-                cecchino_status=str(cec_status),
-                odds_snapshot=odds_snapshot,
-                stats_snapshot=stats_snapshot,
-                cecchino_output=cecchino_output,
-                kpi_panel=kpi_panel,
-                warnings=row_warnings + list(calc.get("warnings") or []),
-            )
-            by_status[ELIGIBILITY_ELIGIBLE] += 1
-        else:
-            _upsert_today_snapshot(
-                db,
-                scan_date=resolved_date,
-                api_item=item,
-                eligibility_status=ELIGIBILITY_ERROR,
-                eligibility_reason=calc.get("message") or calc.get("code"),
-                local_fixture_id=int(local_fx.id),
-                competition_id=int(comp.id),
-                bookmaker_status="ok",
-                stats_status="ok",
-                cecchino_status=str(cec_status),
-                odds_snapshot=odds_snapshot,
-                stats_snapshot=stats_snapshot,
-                cecchino_output=cecchino_output,
-                kpi_panel=kpi_panel,
-                warnings=row_warnings + list(calc.get("warnings") or []),
-            )
-            by_status[ELIGIBILITY_ERROR] += 1
+        _, eligibility_status = _persist_post_calc_snapshot(
+            db,
+            scan_date=resolved_date,
+            api_item=item,
+            local_fixture_id=int(local_fx.id),
+            competition_id=int(comp.id),
+            odds_snapshot=odds_snapshot,
+            stats_snapshot=stats_snapshot,
+            cecchino_output=cecchino_output,
+            kpi_panel=kpi_panel,
+            row_warnings=row_warnings,
+            calc=calc,
+            leakage_status=leakage_status,
+        )
+        by_status[eligibility_status] += 1
 
     db.commit()
     cleanup_result = cleanup_cecchino_today_snapshots(
@@ -553,6 +630,71 @@ def run_scan_day(
     report = run_scan(db, scan_date=scan_date, timezone=timezone, client=client)
     report["scan_meta"] = get_day_scan_meta(db, scan_date, timezone=timezone)
     return report
+
+
+def revalidate_cecchino_today_day(
+    db: Session,
+    *,
+    scan_date: date,
+) -> dict[str, Any]:
+    """Ricalcola eleggibilità finale su snapshot persistiti (senza API-Football)."""
+    rows = list(
+        db.scalars(
+            select(CecchinoTodayFixture).where(CecchinoTodayFixture.scan_date == scan_date),
+        ).all(),
+    )
+    kept_eligible = 0
+    moved_to_excluded = 0
+    reasons: dict[str, int] = defaultdict(int)
+    checked = 0
+
+    for row in rows:
+        if row.cecchino_output_json is None:
+            continue
+        checked += 1
+        was_eligible = row.eligibility_status == ELIGIBILITY_ELIGIBLE
+        leakage_status = _extract_leakage_status(row.stats_snapshot_json)
+        combined_warnings: list[str] = list(row.warnings_json or [])
+        output = row.cecchino_output_json or {}
+        for w in output.get("warnings") or []:
+            combined_warnings.append(str(w))
+        for w in (output.get("final") or {}).get("warnings") or []:
+            combined_warnings.append(str(w))
+
+        result = validate_cecchino_today_final_eligibility(
+            odds_snapshot=row.odds_snapshot_json,
+            stats_snapshot=row.stats_snapshot_json,
+            cecchino_output=output,
+            kpi_panel=row.kpi_panel_json,
+            warnings=combined_warnings,
+            leakage_status=leakage_status,
+            calc_status=str(row.cecchino_status or ""),
+        )
+
+        row.eligibility_status = result.eligibility_status
+        row.eligibility_reason = result.eligibility_reason
+        row.blocking_reasons_json = result.blocking_reasons
+        row.warnings_json = result.warnings
+        if result.is_eligible:
+            row.stats_status = "ok"
+            kept_eligible += 1
+        else:
+            reasons[result.eligibility_status] += 1
+            if was_eligible:
+                moved_to_excluded += 1
+            if result.eligibility_status == ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS:
+                row.stats_status = "insufficient"
+
+    db.commit()
+    return {
+        "status": "ok",
+        "version": CECCHINO_TODAY_VERSION,
+        "date": scan_date.isoformat(),
+        "checked": checked,
+        "kept_eligible": kept_eligible,
+        "moved_to_excluded": moved_to_excluded,
+        "reasons": dict(reasons),
+    }
 
 
 def _resolve_row_match_status(row: CecchinoTodayFixture) -> str:
@@ -891,10 +1033,17 @@ def build_exclusion_reason_message(row: CecchinoTodayFixture) -> str | None:
         missing = [n for n in _BOOKMAKER_NAMES if bm.get(n) != "available"]
         if missing:
             return f"Esclusa perché manca {' / '.join(missing)}"
-    if row.eligibility_status == ELIGIBILITY_EXCLUDED_MISSING_1X2:
-        return "Esclusa perché manca mercato 1X2 completo su uno o più bookmaker"
-    if row.eligibility_status == ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS:
-        return "Esclusa perché statistiche insufficienti o leakage non superato"
+    labels = {
+        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Esclusa perché manca mercato 1X2 completo su uno o più bookmaker",
+        ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS: "Esclusa perché statistiche insufficienti",
+        ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO: "Esclusa perché un picchetto Cecchino obbligatorio non è calcolabile",
+        ELIGIBILITY_EXCLUDED_ZERO_PROBABILITY: "Esclusa per probabilità zero su 1/X/2",
+        ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE: "Esclusa perché le quote finali Cecchino non sono calcolabili",
+        ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE: "Esclusa perché il KPI 1X2 non è calcolabile",
+        ELIGIBILITY_EXCLUDED_LEAKAGE_FAILED: "Esclusa perché il leakage check non è superato",
+    }
+    if row.eligibility_status in labels:
+        return labels[row.eligibility_status]
     if row.eligibility_status in _COMPETITION_EXCLUDED_STATUSES:
         return f"Esclusa per filtro competizione ({row.eligibility_status})"
     if row.eligibility_status == ELIGIBILITY_EXCLUDED_STARTED:
@@ -904,6 +1053,7 @@ def build_exclusion_reason_message(row: CecchinoTodayFixture) -> str | None:
 
 def _excluded_fixture_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
     reason_msg = build_exclusion_reason_message(row)
+    stats_snap = row.stats_snapshot_json or {}
     return {
         "id": int(row.id),
         "provider_fixture_id": int(row.provider_fixture_id),
@@ -914,8 +1064,12 @@ def _excluded_fixture_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
         "kickoff": row.kickoff.isoformat() if row.kickoff else None,
         "eligibility_status": row.eligibility_status,
         "eligibility_reason": reason_msg or row.eligibility_reason,
+        "blocking_reasons": list(row.blocking_reasons_json or []),
         "bookmaker_debug": build_bookmaker_debug(row),
         "stats_debug": build_stats_debug(row),
+        "cecchino_debug": build_cecchino_debug(row.cecchino_output_json),
+        "kpi_debug": build_kpi_debug(row.kpi_panel_json),
+        "import_info": list(stats_snap.get("import_info") or []),
         "competition_filter_debug": build_competition_filter_debug(row),
         "fixture_status_debug": build_fixture_status_debug(row),
         "warnings": list(row.warnings_json or []),

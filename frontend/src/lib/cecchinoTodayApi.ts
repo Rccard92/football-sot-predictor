@@ -177,11 +177,37 @@ export type CecchinoTodayExcludedFixture = {
   kickoff: string | null
   eligibility_status: string
   eligibility_reason: string | null
+  blocking_reasons?: string[]
   bookmaker_debug: Record<string, string>
   stats_debug: Record<string, unknown>
+  cecchino_debug?: CecchinoTodayCecchinoDebug
+  kpi_debug?: CecchinoTodayKpiDebug
+  import_info?: string[]
   competition_filter_debug: Record<string, unknown>
   fixture_status_debug?: Record<string, unknown>
   warnings: string[]
+}
+
+export type CecchinoTodayCecchinoDebug = {
+  missing_picchetto_quotas?: string[]
+  zero_probability?: string[]
+  final_odds_status?: string | null
+  missing_final_odds?: string[]
+}
+
+export type CecchinoTodayKpiDebug = {
+  kpi_status?: string
+  missing_rows?: string[]
+}
+
+export type CecchinoTodayRevalidateDayResponse = {
+  status: string
+  version: string
+  date: string
+  checked: number
+  kept_eligible: number
+  moved_to_excluded: number
+  reasons: Record<string, number>
 }
 
 export type CecchinoTodayExcludedResponse = {
@@ -286,6 +312,61 @@ export async function debugSearchCecchinoToday(params: {
   return requestJson<CecchinoTodayDebugSearchResponse>(
     `/api/admin/cecchino/today/debug-search${qs({ date: params.date, q: params.q, timezone: 'Europe/Rome' })}`,
   )
+}
+
+export async function revalidateCecchinoTodayDay(params: {
+  date: string
+}): Promise<CecchinoTodayRevalidateDayResponse> {
+  return adminPostJson<CecchinoTodayRevalidateDayResponse>('/api/admin/cecchino/today/revalidate-day', {
+    date: params.date,
+  })
+}
+
+const ELIGIBILITY_STATUS_LABELS: Record<string, string> = {
+  excluded_missing_bookmaker: 'Bookmaker mancante',
+  excluded_missing_1x2_market: 'Mercato 1X2 mancante',
+  excluded_insufficient_stats: 'Statistiche insufficienti',
+  excluded_missing_picchetto: 'Picchetto mancante',
+  excluded_zero_probability: 'Probabilità zero',
+  excluded_cecchino_not_calculable: 'Quote finali Cecchino non calcolabili',
+  excluded_kpi_not_calculable: 'KPI non calcolabile',
+  excluded_leakage_failed: 'Leakage non superato',
+  excluded_started: 'Partita già iniziata',
+  excluded_cup: 'Coppa / torneo escluso',
+  excluded_women: 'Competizione femminile',
+  excluded_friendly: 'Amichevole',
+  excluded_youth: 'Giovanili',
+  excluded_mapping_error: 'Errore mapping',
+  error: 'Errore calcolo',
+}
+
+export function eligibilityStatusLabel(status: string): string {
+  return ELIGIBILITY_STATUS_LABELS[status] ?? status
+}
+
+const BLOCKING_WARNING_PATTERNS = [
+  /^low_sample:/,
+  /^missing_picchetto/,
+  /^zero_probability:/,
+  /^final_odds_status:/,
+  /^missing_final_odds:/,
+]
+
+export function isBlockingTodayWarning(w: string): boolean {
+  return BLOCKING_WARNING_PATTERNS.some((re) => re.test(w))
+}
+
+export function partitionTodayDetailWarnings(warnings: string[] | undefined): {
+  notes: string[]
+  blocking: string[]
+} {
+  const notes: string[] = []
+  const blocking: string[] = []
+  for (const w of warnings ?? []) {
+    if (isBlockingTodayWarning(w)) blocking.push(w)
+    else notes.push(w)
+  }
+  return { notes, blocking }
 }
 
 export function formatKickoffTime(iso: string | null | undefined): string {

@@ -2,16 +2,20 @@ type Props = {
   isScanned: boolean
   scanDayLoading: boolean
   updateResultsLoading: boolean
+  revalidateLoading?: boolean
   onScanDay: (forceRescan: boolean) => void
   onUpdateResults: () => void
+  onRevalidateDay?: () => void
 }
 
 export function CecchinoTodayPageHeader({
   isScanned,
   scanDayLoading,
   updateResultsLoading,
+  revalidateLoading = false,
   onScanDay,
   onUpdateResults,
+  onRevalidateDay,
 }: Props) {
   return (
     <header className="space-y-4">
@@ -52,6 +56,16 @@ export function CecchinoTodayPageHeader({
             >
               {scanDayLoading ? 'Riscansione…' : 'Riscansiona giornata'}
             </button>
+            {onRevalidateDay && (
+              <button
+                type="button"
+                onClick={() => onRevalidateDay()}
+                disabled={revalidateLoading}
+                className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-900 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {revalidateLoading ? 'Rivalidazione…' : 'Rivalida eleggibilità'}
+              </button>
+            )}
           </>
         )}
       </div>
