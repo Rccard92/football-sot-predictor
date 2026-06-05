@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.6.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Fix idempotenza scan-day',
+    type: 'patch',
+    summary:
+      'Scan-day non va più in 500 per leghe già presenti: get-or-create idempotente con recovery IntegrityError.',
+    highlights: [
+      'Helper league_ingest_helpers per League/Season/Competition/Team.',
+      'Savepoint per fixture e rollback sessione su errori mapping.',
+      'Errori bootstrap → excluded_mapping_error; scan continua.',
+      'UI: messaggio chiaro su errore 500 scan.',
+      'Zero modifiche SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.5.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Final eligibility gate',

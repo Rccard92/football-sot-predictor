@@ -29,6 +29,7 @@ import {
   type CecchinoTodayScanReport,
 } from '../lib/cecchinoTodayApi'
 import { formatFetchError } from '../utils/formatFetchError'
+import { AdminHttpError } from '../lib/api'
 
 export function CecchinoTodayPage() {
   const [selectedDay, setSelectedDay] = useState(todayIsoRome())
@@ -141,13 +142,22 @@ export function CecchinoTodayPage() {
     setScanDayLoading(true)
     try {
       const report = await scanCecchinoTodayDay({ date: selectedDay, forceRescan })
-      if (report.status === 'ok') {
-        setScanReport(report)
+      if (report.status === 'ok' || report.status === 'already_scanned') {
+        setScanReport(report.status === 'ok' ? report : null)
       }
       await loadDays()
       await loadList(selectedDay)
     } catch (e) {
-      setActionError(formatFetchError(e))
+      if (e instanceof AdminHttpError && e.status === 500) {
+        const msg = e.message.toLowerCase()
+        if (msg.includes('errore database interno') || msg.includes('database')) {
+          setActionError('Errore durante la scansione. Controlla i log backend.')
+        } else {
+          setActionError(formatFetchError(e))
+        }
+      } else {
+        setActionError(formatFetchError(e))
+      }
     } finally {
       setScanDayLoading(false)
     }

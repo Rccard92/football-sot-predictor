@@ -8,15 +8,17 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Competition, Fixture, League, Season
+from app.models import Competition, Fixture
 from app.services.api_football_client import ApiFootballClient
+from app.services.cecchino.league_ingest_helpers import (
+    get_or_create_competition_for_league_season,
+    get_or_create_league_by_api_id,
+    get_or_create_season,
+    safe_upsert_team_from_api_item,
+)
 from app.services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
-
-
-def _slug_key(league_id: int, season: int) -> str:
-    return f"cecchino_today_{league_id}_{season}"
 
 
 def ensure_competition_and_history(
@@ -39,63 +41,45 @@ def ensure_competition_and_history(
     af_client = client or ApiFootballClient()
     ingest = IngestionService(client=af_client)
 
-    league = db.scalar(select(League).where(League.api_league_id == provider_league_id))
-    if league is None:
-        league = League(
-            api_league_id=provider_league_id,
-            name=str(league_meta.get("name") or f"League {provider_league_id}"),
-            country=str(league_meta.get("country") or "") or None,
-            logo_url=league_meta.get("logo"),
-            raw_json=league_meta,
-        )
-        db.add(league)
-        db.flush()
+    league_name = str(league_meta.get("name") or f"League {provider_league_id}")
+    league_country = str(league_meta.get("country") or "") or None
+    logo = league_meta.get("logo")
+    logo_url = str(logo) if logo else None
 
-    season_row = db.scalar(
-        select(Season).where(Season.league_id == league.id, Season.year == season_year),
+    league = get_or_create_league_by_api_id(
+        db,
+        api_league_id=provider_league_id,
+        name=league_name,
+        country=league_country,
+        logo_url=logo_url,
+        raw_json=league_meta,
     )
-    if season_row is None:
-        season_row = Season(
-            league_id=league.id,
-            year=season_year,
-            label=str(season_year),
-            is_current=True,
-            raw_json={"year": season_year},
-        )
-        db.add(season_row)
-        db.flush()
 
-    comp = db.scalar(
-        select(Competition).where(
-            Competition.provider_league_id == provider_league_id,
-            Competition.season == season_year,
-        ),
+    season_row = get_or_create_season(
+        db,
+        league_id=int(league.id),
+        year=season_year,
+        label=str(season_year),
+        raw_json={"year": season_year},
     )
-    if comp is None:
-        comp = Competition(
-            key=_slug_key(provider_league_id, season_year),
-            name=str(league_meta.get("name") or league.name),
-            country=str(league_meta.get("country") or league.country),
-            provider="api_sports",
-            provider_league_id=provider_league_id,
-            season=season_year,
-            timezone="Europe/Rome",
-            is_active=True,
-            is_primary=False,
-            pre_match_cron_enabled=False,
-            status="cecchino_today_bootstrap",
-            league_id=league.id,
-            season_id=season_row.id,
-            raw_payload=league_meta,
-        )
-        db.add(comp)
-        db.flush()
+
+    comp, created = get_or_create_competition_for_league_season(
+        db,
+        provider_league_id=provider_league_id,
+        season=season_year,
+        league_id=int(league.id),
+        season_id=int(season_row.id),
+        league_meta=league_meta,
+        league_name=league_name,
+        league_country=league_country or league.country,
+    )
+    if created:
         warnings.append(f"created_competition:{comp.key}")
 
     try:
         teams = af_client.get_teams(provider_league_id, season_year)
         for t in teams:
-            ingest._upsert_team_from_api_item(db, t)
+            safe_upsert_team_from_api_item(db, ingest, t)
     except Exception as exc:
         warnings.append(f"teams_import_error:{exc!s}"[:200])
 

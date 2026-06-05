@@ -71,6 +71,7 @@ from app.services.cecchino.cecchino_today_display import (
     status_label_for_row,
 )
 from app.services.cecchino.cecchino_today_fixture_filter import is_fixture_not_started
+from app.services.cecchino.league_ingest_helpers import recover_session_if_inactive
 from app.services.cecchino.cecchino_today_final_eligibility import (
     build_cecchino_debug,
     build_kpi_debug,
@@ -96,6 +97,24 @@ _COMPETITION_EXCLUDED_STATUSES = frozenset(
 )
 
 _BOOKMAKER_NAMES = ("Bet365", "Betfair", "Pinnacle")
+
+
+def _mapping_blocking_reasons(exc: Exception) -> list[str]:
+    from sqlalchemy.exc import IntegrityError
+
+    reasons = ["league_upsert_error"]
+    if isinstance(exc, IntegrityError):
+        reasons.append("integrity_error")
+    msg = str(exc).lower()
+    if "uq_leagues_api_league_id" in msg or "api_league_id" in msg:
+        reasons.append("duplicate_league_api_id")
+    if "uq_seasons_league_year" in msg:
+        reasons.append("duplicate_season")
+    if "uq_competitions_key" in msg:
+        reasons.append("duplicate_competition_key")
+    if "uq_teams_api_team_id" in msg:
+        reasons.append("duplicate_team")
+    return reasons
 
 
 def _merge_stats_import_info(
@@ -362,6 +381,7 @@ def build_cecchino_today_report(
     total: int,
     by_status: dict[str, int],
     warnings: list[str],
+    errors: list[str] | None = None,
 ) -> dict[str, Any]:
     eligible = by_status.get(ELIGIBILITY_ELIGIBLE, 0)
     excluded = {k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE}
@@ -374,9 +394,11 @@ def build_cecchino_today_report(
         "total_discovered": total,
         "eligible": eligible,
         "excluded": excluded,
+        "excluded_summary": dict(excluded),
         "excluded_total": sum(excluded.values()),
         "top_exclusion_reasons": [{"status": k, "count": v} for k, v in top],
         "warnings": warnings,
+        "errors": list(errors or []),
     }
 
 
@@ -461,23 +483,27 @@ def run_scan(
 
         if local_fx is None or comp is None:
             try:
-                comp, local_fx, boot_warnings = ensure_competition_and_history(
-                    db,
-                    api_item=item,
-                    client=af_client,
-                )
+                with db.begin_nested():
+                    comp, local_fx, boot_warnings = ensure_competition_and_history(
+                        db,
+                        api_item=item,
+                        client=af_client,
+                    )
                 row_warnings.extend(boot_warnings)
             except Exception as exc:
                 logger.exception("Bootstrap Cecchino Today failed fixture=%s", api_fid)
+                recover_session_if_inactive(db)
+                detail = str(exc)[:200]
                 _upsert_today_snapshot(
                     db,
                     scan_date=resolved_date,
                     api_item=item,
                     eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
-                    eligibility_reason=str(exc)[:500],
+                    eligibility_reason=f"Errore import lega/team/fixture: {detail}",
                     bookmaker_status="ok",
                     odds_snapshot=odds_snapshot,
-                    warnings=row_warnings + [f"bootstrap_error:{exc!s}"[:200]],
+                    warnings=row_warnings,
+                    blocking_reasons=_mapping_blocking_reasons(exc),
                 )
                 by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
                 continue
@@ -537,6 +563,7 @@ def run_scan(
             calc = calculate_and_persist_for_fixture(db, comp, local_fx, persist=True)
         except Exception as exc:
             logger.exception("Cecchino Today calc failed fixture=%s", api_fid)
+            recover_session_if_inactive(db)
             _upsert_today_snapshot(
                 db,
                 scan_date=resolved_date,

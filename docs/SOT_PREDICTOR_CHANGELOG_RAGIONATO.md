@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 12 — Fix idempotenza scan-day e upsert leghe (2026-06-04)
+
+- Corretto errore duplicate key su `leagues.api_league_id` (es. Uruguay 268) che causava HTTP 500 su scan-day.
+- Introdotto `league_ingest_helpers.py` con get-or-create idempotente per League, Season, Competition e safe upsert Team (savepoint + recovery IntegrityError).
+- Evitato `PendingRollbackError`: rollback sessione + savepoint per fixture in bootstrap.
+- Errori mapping → `excluded_mapping_error` con `blocking_reasons` (`league_upsert_error`); scan continua sulle altre partite.
+- Report scan arricchito con `errors` e `excluded_summary`.
+- Versione `cecchino_today_v0_5_scan_idempotency`; v2.0/v2.1 e `team_sot_predictions` non modificati.
+
 ## Cecchino — Fase 11 — Final eligibility gate e esclusione dati incompleti (2026-06-04)
 
 - Introdotto validatore finale `validate_cecchino_today_final_eligibility`: una partita è `eligible` solo se bookmaker 1X2 completi, statistiche sufficienti, picchetti obbligatori, quote finali Cecchino e KPI 1X2 sono tutti disponibili.

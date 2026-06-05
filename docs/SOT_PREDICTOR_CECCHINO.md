@@ -255,6 +255,19 @@ Versione `cecchino_today_v0_4_final_eligibility_gate`: gate post-calcolo che imp
 
 **UI:** label italiane per motivi esclusione; dettaglio eligible mostra «Note dati» (non bloccanti) vs avvisi; pulsante «Rivalida eleggibilità».
 
+## Cecchino Today — Fase 12 — Idempotenza scan-day (v0.5)
+
+Versione `cecchino_today_v0_5_scan_idempotency`: bootstrap idempotente leghe/squadre/fixture; scan-day non va in 500 per duplicate league.
+
+| Componente | Comportamento |
+|------------|---------------|
+| `league_ingest_helpers.py` | `get_or_create_league_by_api_id`, Season, Competition; `safe_upsert_team_from_api_item` |
+| IntegrityError | Savepoint + rollback + re-fetch record esistente |
+| Bootstrap fallito | `excluded_mapping_error` + `blocking_reasons`; scan prosegue |
+| Report scan | Campi `errors`, `excluded_summary` |
+
+**UI:** messaggio chiaro su HTTP 500 scan («Controlla i log backend»); report 200 con esclusioni mostrato normalmente.
+
 ## Cecchino Today — discovery giornaliera v0.2 (persistenza giornate)
 
 Versione `cecchino_today_v0_2_persistent_days` — sostituita da v0.3 (Fase 9).

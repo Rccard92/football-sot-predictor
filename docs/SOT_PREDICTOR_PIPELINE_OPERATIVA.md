@@ -21,6 +21,15 @@ flowchart TD
 
 Utile per riclassificare record marcati `eligible` prima dell’introduzione del gate finale.
 
+## Bootstrap idempotente (Fase 12)
+
+Durante scan-day, se lega/squadra/fixture esistono già nel DB:
+
+- **League** — `get_or_create_league_by_api_id` riusa per `api_league_id`; INSERT solo in savepoint con recovery su race condition
+- **Season / Competition / Team** — stesso pattern via `league_ingest_helpers.py`
+- **Errore mapping** — fixture esclusa con `excluded_mapping_error`; scan non interrotto
+- **Sessione DB** — savepoint per fixture + `recover_session_if_inactive()` evita PendingRollbackError
+
 ## Lista vs debug
 
 | Endpoint | Contenuto |

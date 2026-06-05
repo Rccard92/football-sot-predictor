@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-CECCHINO_TODAY_VERSION = "cecchino_today_v0_4_final_eligibility_gate"
+CECCHINO_TODAY_VERSION = "cecchino_today_v0_5_scan_idempotency"
 DEFAULT_TODAY_TIMEZONE = "Europe/Rome"
 DEFAULT_RETENTION_DAYS = 7
 TIMELINE_WINDOW_DAYS = 7

@@ -18,6 +18,8 @@ export type CecchinoTodayScanReport = {
   fixtures_processed?: number
   top_exclusion_reasons?: Array<{ status: string; count: number }>
   warnings: string[]
+  errors?: string[]
+  excluded_summary?: Record<string, number>
   message?: string
   cleanup?: { deleted: number; cutoff_date: string }
   scan_meta?: CecchinoTodayScanMeta
