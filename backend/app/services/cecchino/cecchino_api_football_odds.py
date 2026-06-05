@@ -9,18 +9,24 @@ from app.services.bookmakers.bookmaker_constants import (
     MARKET_BTTS,
     MARKET_DOUBLE_CHANCE,
     MARKET_MATCH_WINNER_1X2,
-    MARKET_OVER_UNDER_GOALS,
 )
 from app.services.bookmakers.market_normalize import (
+    MAIN_FT_OU_RAW_NAME,
+    is_main_first_half_goals_over_under,
+    is_main_full_time_goals_over_under,
     normalize_api_football_market,
+    normalize_first_half_over_under_selection,
     normalize_over_under_selection,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     MARKET_DC,
     MARKET_OU,
+    MARKET_OU_FH,
     SEL_AWAY,
     SEL_DRAW,
     SEL_HOME,
@@ -80,6 +86,13 @@ def _map_ou_value(value: str) -> str | None:
     return None
 
 
+def _map_ou_pt_value(value: str) -> str | None:
+    sk = normalize_first_half_over_under_selection(value)
+    if sk in (SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
+        return sk
+    return None
+
+
 def parse_api_football_odds_response(
     response_items: list[dict[str, Any]],
     *,
@@ -89,7 +102,7 @@ def parse_api_football_odds_response(
     Estrae righe {normalized_market, selection_key, selection_label, odds_value, market_label}.
     Ritorna (rows, missing_markets).
     """
-    wanted = set(requested_markets or [MARKET_1X2, MARKET_DC, MARKET_OU])
+    wanted = set(requested_markets or [MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH])
     rows: list[dict[str, Any]] = []
     found_markets: set[str] = set()
 
@@ -101,16 +114,55 @@ def parse_api_football_odds_response(
                 if not isinstance(bet, dict):
                     continue
                 bet_name = str(bet.get("name") or "")
+                bet_id = bet.get("id")
                 raw_value_labels = [
                     str(v.get("value") or "")
                     for v in (bet.get("values") or [])
                     if isinstance(v, dict)
                 ]
+
+                is_ft_ou = is_main_full_time_goals_over_under(bet_name, bet_id)
+                is_fh_ou = is_main_first_half_goals_over_under(bet_name)
+
+                if is_ft_ou or is_fh_ou:
+                    norm_out = MARKET_OU if is_ft_ou else MARKET_OU_FH
+                    market_label = MAIN_FT_OU_RAW_NAME if is_ft_ou else bet_name
+                    if norm_out not in wanted:
+                        continue
+                    for val in bet.get("values") or []:
+                        if not isinstance(val, dict):
+                            continue
+                        label = str(val.get("value") or "")
+                        odd = _parse_odd(val.get("odd"))
+                        if odd is None:
+                            continue
+                        sk = _map_ou_value(label) if is_ft_ou else _map_ou_pt_value(label)
+                        if sk is None:
+                            continue
+                        found_markets.add(norm_out)
+                        rows.append(
+                            {
+                                "normalized_market": norm_out,
+                                "selection_key": sk,
+                                "selection_label": label,
+                                "odds_value": odd,
+                                "market_label": market_label,
+                                "provider_market_id": str(bet.get("id") or ""),
+                                "raw_payload_json": {
+                                    "bet_id": bet.get("id"),
+                                    "bet_name": bet_name,
+                                    "value": label,
+                                    "odd": val.get("odd"),
+                                    "normalized_selection": sk,
+                                },
+                            },
+                        )
+                    continue
+
                 norm = normalize_api_football_market(bet_name, raw_value_labels)
                 if norm not in wanted and norm not in (
                     MARKET_MATCH_WINNER_1X2,
                     MARKET_DOUBLE_CHANCE,
-                    MARKET_OVER_UNDER_GOALS,
                     MARKET_BTTS,
                 ):
                     continue
@@ -131,9 +183,6 @@ def parse_api_football_odds_response(
                     elif norm == MARKET_DOUBLE_CHANCE or norm == MARKET_DC:
                         sk = _map_dc_value(label)
                         norm_out = MARKET_DC
-                    elif norm == MARKET_OVER_UNDER_GOALS or norm == MARKET_OU:
-                        sk = _map_ou_value(label)
-                        norm_out = MARKET_OU
                     else:
                         continue
                     if sk is None:
@@ -152,7 +201,6 @@ def parse_api_football_odds_response(
                                 "bet_name": bet_name,
                                 "value": label,
                                 "odd": val.get("odd"),
-                                "normalized_selection": normalize_over_under_selection(label),
                             },
                         },
                     )

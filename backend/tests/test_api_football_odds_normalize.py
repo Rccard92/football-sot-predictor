@@ -271,6 +271,28 @@ def test_kpi_over_partial_status():
     assert over_15["book_average"] == 1.45
 
 
+def test_goal_line_does_not_map_to_main_over():
+    rows, _ = parse_api_football_odds_response(
+        [
+            {
+                "bookmakers": [
+                    {
+                        "bets": [
+                            {
+                                "id": 5,
+                                "name": "Goal Line",
+                                "values": [{"value": "Over 1.5", "odd": "1.5"}],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+        requested_markets=[MARKET_OU],
+    )
+    assert rows == []
+
+
 def test_fixture_markets_debug_endpoint_mock():
     mock_payload = _mock_ou_payload()
     mock_payload[0]["bookmakers"][0]["bets"].append(

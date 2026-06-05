@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from app.services.bookmakers.bookmaker_constants import (
     MARKET_BTTS,
@@ -67,11 +68,33 @@ SEL_OVER_1_5 = "OVER_1_5"
 SEL_UNDER_1_5 = "UNDER_1_5"
 SEL_OVER_2_5 = "OVER_2_5"
 SEL_UNDER_2_5 = "UNDER_2_5"
+SEL_OVER_PT_0_5 = "OVER_PT_0_5"
+SEL_OVER_PT_1_5 = "OVER_PT_1_5"
 SEL_UNKNOWN = "UNKNOWN"
 
+MAIN_FT_OU_RAW_NAME = "Goals Over/Under"
+MAIN_FH_OU_RAW_NAMES = frozenset(
+    {
+        "Goals Over/Under First Half",
+        "Goals Over/Under - First Half",
+    },
+)
+API_FOOTBALL_BET_ID_GOALS_OU = 5
+
 _OU_VALUE_HINT = re.compile(r"\b(?:over|under|o/u)\b", re.IGNORECASE)
+_LINE_05 = re.compile(r"0[,.]5")
 _LINE_15 = re.compile(r"1[,.]5")
 _LINE_25 = re.compile(r"2[,.]5")
+
+
+def is_main_full_time_goals_over_under(raw_market_name: str | None, bet_id: Any) -> bool:
+    """True solo per Goals Over/Under full match con bet_id=5."""
+    return raw_market_name == MAIN_FT_OU_RAW_NAME and str(bet_id) == str(API_FOOTBALL_BET_ID_GOALS_OU)
+
+
+def is_main_first_half_goals_over_under(raw_market_name: str | None) -> bool:
+    """True solo per Goals Over/Under First Half (varianti ammesse)."""
+    return raw_market_name in MAIN_FH_OU_RAW_NAMES
 
 
 def normalize_over_under_selection(raw_value: str | None) -> str:
@@ -93,6 +116,22 @@ def normalize_over_under_selection(raw_value: str | None) -> str:
         return SEL_OVER_2_5
     if is_under and has_25:
         return SEL_UNDER_2_5
+    return SEL_UNKNOWN
+
+
+def normalize_first_half_over_under_selection(raw_value: str | None) -> str:
+    """Mappa value grezzo API-Football a selection enum Over primo tempo."""
+    if not raw_value or not str(raw_value).strip():
+        return SEL_UNKNOWN
+    n = _norm(str(raw_value))
+    if "over" not in n:
+        return SEL_UNKNOWN
+    has_05 = bool(_LINE_05.search(n))
+    has_15 = bool(_LINE_15.search(n))
+    if has_05:
+        return SEL_OVER_PT_0_5
+    if has_15:
+        return SEL_OVER_PT_1_5
     return SEL_UNKNOWN
 
 

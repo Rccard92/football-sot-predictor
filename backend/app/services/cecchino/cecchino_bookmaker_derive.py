@@ -8,6 +8,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     MARKET_DC,
     MARKET_OU,
+    MARKET_OU_FH,
     SEL_AWAY,
     SEL_DRAW,
     SEL_HOME,
@@ -15,6 +16,8 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
     SEL_X_TWO,
 )
 
@@ -103,6 +106,9 @@ def build_bookmaker_structures(
             ou = markets_raw.get(MARKET_OU, {})
             if ou:
                 markets[MARKET_OU] = dict(ou)
+            ou_fh = markets_raw.get(MARKET_OU_FH, {})
+            if ou_fh:
+                markets[MARKET_OU_FH] = dict(ou_fh)
 
         bookmakers_out.append(
             {
@@ -118,6 +124,7 @@ def build_bookmaker_structures(
         (MARKET_1X2, [SEL_HOME, SEL_DRAW, SEL_AWAY]),
         (MARKET_DC, [SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO]),
         (MARKET_OU, [SEL_OVER_1_5, SEL_OVER_2_5]),
+        (MARKET_OU_FH, [SEL_OVER_PT_0_5, SEL_OVER_PT_1_5]),
     ):
         avg[mkt] = {}
         for sk in keys:

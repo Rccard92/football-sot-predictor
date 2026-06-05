@@ -30,16 +30,19 @@ Durante scan-day, se lega/squadra/fixture esistono già nel DB:
 - **Errore mapping** — fixture esclusa con `excluded_mapping_error`; scan non interrotto
 - **Sessione DB** — savepoint per fixture + `recover_session_if_inactive()` evita PendingRollbackError
 
-## Quote Over/Under (Fase 13)
+## Quote Over/Under (Fase 13–15)
 
-- **API-Football** espone Over 1.5/2.5 nel mercato `Goals Over/Under` (bet id 5).
-- **Scan-day** persiste OU oltre a 1X2/DC; gate eleggibilità resta solo su 1X2.
-- **Media Over** calcolata solo da Bet365/Betfair/Pinnacle con quote presenti; mai media orphan senza dettaglio.
+- **Full time:** Over 1.5/2.5 solo da `Goals Over/Under` bet_id=5 (Bet365/Betfair/Pinnacle).
+- **Primo tempo:** Over PT 0.5/1.5 solo da `Goals Over/Under First Half` (variante con trattino accettata).
+- **Esclusi dal feed principale:** Goal Line, Result/Total Goals, Total Home/Away, RTG_H1 e mercati combo.
+- **Scan-day** persiste 1X2/DC/OU/OU_FH; gate eleggibilità resta solo su 1X2.
+- **Media Over** calcolata solo da book whitelist con quote presenti; mai media orphan senza dettaglio.
 
-## Fixture ID e debug JSON (Fase 14)
+## Fixture ID e debug JSON (Fase 14–15)
 
 - Dettaglio Today espone `fixture_ids` e link a `/bookmakers?provider_fixture_id=...`.
 - Export JSON raw filtrato via `fixture-raw-odds` (copy/download in UI admin).
+- Debug Over separato FT/FH con mercati scartati (`rejected_from_markets`).
 
 ## Lista vs debug
 

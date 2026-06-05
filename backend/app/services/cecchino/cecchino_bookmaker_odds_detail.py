@@ -1,4 +1,4 @@
-"""Dettaglio quote bookmaker stabile per Cecchino Today (8 righe fisse)."""
+"""Dettaglio quote bookmaker stabile per Cecchino Today (10 righe fisse)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
     SEL_X_TWO,
 )
 
@@ -27,6 +29,8 @@ BOOKMAKER_ODDS_DETAIL_KEYS: tuple[tuple[str, str], ...] = (
     (SEL_ONE_TWO, "12"),
     (SEL_OVER_1_5, "OVER 1.5"),
     (SEL_OVER_2_5, "OVER 2.5"),
+    (SEL_OVER_PT_0_5, "OVER PT 0.5"),
+    (SEL_OVER_PT_1_5, "OVER PT 1.5"),
 )
 
 
@@ -87,7 +91,7 @@ def _row_from_kpi(kpi_row: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_bookmaker_odds_detail(kpi_panel: dict[str, Any] | None) -> dict[str, Any]:
-    """Costruisce 8 righe bookmaker stabili da kpi_panel (con placeholder se mancanti)."""
+    """Costruisce 10 righe bookmaker stabili da kpi_panel (con placeholder se mancanti)."""
     by_key: dict[str, dict[str, Any]] = {}
     for row in (kpi_panel or {}).get("rows") or []:
         if isinstance(row, dict) and row.get("market_key"):

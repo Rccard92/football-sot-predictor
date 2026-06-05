@@ -279,6 +279,19 @@ Versione `cecchino_today_v0_5_scan_idempotency`: bootstrap idempotente leghe/squ
 
 **Eleggibilità:** invariata su 1X2 completo + Cecchino; Over opzionale nel KPI.
 
+## Cecchino Today — Fase 15 — Over/Under strict FT e PT (v0.9)
+
+| Componente | Comportamento |
+|------------|---------------|
+| Over FT | Solo `Goals Over/Under` bet_id=5 → `OVER_1_5`, `OVER_2_5` |
+| Over PT | Solo `Goals Over/Under First Half` (o `- First Half`) → `OVER_PT_0_5`, `OVER_PT_1_5` |
+| Esclusi | Goal Line, Result/Total Goals, Total Home/Away, RTG_H1, combo, corner |
+| Dettaglio quote | 10 righe stabili (1/X/2/1X/X2/12/OVER 1.5/2.5/OVER PT 0.5/1.5) |
+| KPI | BOOK/MEDIA da media book; STATISTICA/CECCHINO/EDGE = `—` per Over |
+| Debug raw | `over_under_full_time_debug` + `over_under_first_half_debug` con rejected |
+
+**Eleggibilità:** invariata; Over e Over PT opzionali nel KPI.
+
 ## Cecchino Today — Fase 14 — Fixture ID e export JSON (v0.7)
 
 | Componente | Comportamento |

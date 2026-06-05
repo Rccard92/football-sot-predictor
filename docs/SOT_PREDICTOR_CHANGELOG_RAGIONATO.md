@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 15 — Over/Under full time e primo tempo bookmaker (2026-06-04)
+
+- Corretto mapping Over 1.5 / Over 2.5 usando solo mercato `Goals Over/Under` con bet_id=5.
+- Aggiunto mapping Over PT 0.5 / Over PT 1.5 usando mercato `Goals Over/Under First Half` (variante `Goals Over/Under - First Half` accettata).
+- Esclusi mercati ambigui come Goal Line, Result/Total Goals, Total - Home/Away, RTG_H1 dal feed principale Over.
+- Aggiunte righe OVER PT 0.5 e OVER PT 1.5 al dettaglio quote bookmaker (10 righe stabili).
+- Aggiunte righe OVER PT 0.5 e OVER PT 1.5 al Pannello KPI; BOOK e MEDIA popolati solo da quote bookmaker tracciate.
+- Nessun edge calcolato senza quota Cecchino; STATISTICA e CECCHINO restano `—` per i mercati Over.
+- Debug raw odds separato in `over_under_full_time_debug` e `over_under_first_half_debug` con mercati scartati.
+- Nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 14 — Fixture ID e JSON raw odds filtrato (2026-06-04)
 
 - Ripristinate righe Over 1.5 e Over 2.5 sempre visibili nel dettaglio quote bookmaker.

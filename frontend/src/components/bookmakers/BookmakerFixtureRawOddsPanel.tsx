@@ -19,6 +19,7 @@ function marketBadgeClass(normalized: string): string {
   if (normalized === 'MATCH_WINNER_1X2') return 'bg-blue-100 text-blue-800'
   if (normalized === 'DOUBLE_CHANCE') return 'bg-violet-100 text-violet-800'
   if (normalized === 'OVER_UNDER_GOALS') return 'bg-emerald-100 text-emerald-800'
+  if (normalized === 'OVER_UNDER_GOALS_FIRST_HALF') return 'bg-teal-100 text-teal-800'
   return 'bg-slate-100 text-slate-700'
 }
 
@@ -90,7 +91,8 @@ export function BookmakerFixtureRawOddsPanel({
       bookmakers_requested: result.bookmakers_requested.filter((b) => wanted.has(b.id)),
       bookmakers: result.bookmakers.filter((b) => wanted.has(b.bookmaker_id)),
       summary: result.summary,
-      over_under_debug: result.over_under_debug,
+      over_under_full_time_debug: result.over_under_full_time_debug,
+      over_under_first_half_debug: result.over_under_first_half_debug,
     }
   }, [result, selectedIds])
 
@@ -172,17 +174,49 @@ export function BookmakerFixtureRawOddsPanel({
               <li>Bookmaker trovati: {result.summary.bookmakers_found.join(', ') || '—'}</li>
               <li>Mercati: {result.summary.markets_found.join(', ') || '—'}</li>
               <li>1X2 trovato: {result.summary.match_winner_found ? 'sì' : 'no'}</li>
-              <li>Over 1.5 trovato: {result.summary.over_1_5_found ? 'sì' : 'no'}</li>
-              <li>Over 2.5 trovato: {result.summary.over_2_5_found ? 'sì' : 'no'}</li>
+              <li>Over 1.5 trovato (strict FT): {result.summary.over_1_5_found ? 'sì' : 'no'}</li>
+              <li>Over 2.5 trovato (strict FT): {result.summary.over_2_5_found ? 'sì' : 'no'}</li>
+              <li>Over PT 0.5 trovato (strict FH): {result.summary.over_pt_0_5_found ? 'sì' : 'no'}</li>
+              <li>Over PT 1.5 trovato (strict FH): {result.summary.over_pt_1_5_found ? 'sì' : 'no'}</li>
             </ul>
-            {result.over_under_debug.over_1_5.raw_market_names.length > 0 ? (
-              <p className="mt-2">
-                Mercati raw Over 1.5: {result.over_under_debug.over_1_5.raw_market_names.join(', ')}
+            <p className="mt-3 font-semibold text-slate-800">Over/Under full time (strict)</p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5">
+              <li>
+                OVER 1.5: {result.over_under_full_time_debug.OVER_1_5.found ? 'sì' : 'no'}
+                {result.over_under_full_time_debug.OVER_1_5.raw_market_name
+                  ? ` — ${result.over_under_full_time_debug.OVER_1_5.raw_market_name} (bet_id ${result.over_under_full_time_debug.OVER_1_5.bet_id ?? '—'})`
+                  : ''}
+              </li>
+              <li>
+                OVER 2.5: {result.over_under_full_time_debug.OVER_2_5.found ? 'sì' : 'no'}
+                {result.over_under_full_time_debug.OVER_2_5.raw_market_name
+                  ? ` — ${result.over_under_full_time_debug.OVER_2_5.raw_market_name} (bet_id ${result.over_under_full_time_debug.OVER_2_5.bet_id ?? '—'})`
+                  : ''}
+              </li>
+            </ul>
+            {result.over_under_full_time_debug.rejected_from_markets.length > 0 ? (
+              <p className="mt-2 text-amber-800">
+                Scartati FT: {result.over_under_full_time_debug.rejected_from_markets.length} candidati da mercati non ammessi
               </p>
             ) : null}
-            {result.over_under_debug.over_2_5.raw_market_names.length > 0 ? (
-              <p className="mt-1">
-                Mercati raw Over 2.5: {result.over_under_debug.over_2_5.raw_market_names.join(', ')}
+            <p className="mt-3 font-semibold text-slate-800">Over/Under primo tempo (strict)</p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5">
+              <li>
+                OVER PT 0.5: {result.over_under_first_half_debug.OVER_PT_0_5.found ? 'sì' : 'no'}
+                {result.over_under_first_half_debug.OVER_PT_0_5.raw_market_name
+                  ? ` — ${result.over_under_first_half_debug.OVER_PT_0_5.raw_market_name}`
+                  : ''}
+              </li>
+              <li>
+                OVER PT 1.5: {result.over_under_first_half_debug.OVER_PT_1_5.found ? 'sì' : 'no'}
+                {result.over_under_first_half_debug.OVER_PT_1_5.raw_market_name
+                  ? ` — ${result.over_under_first_half_debug.OVER_PT_1_5.raw_market_name}`
+                  : ''}
+              </li>
+            </ul>
+            {result.over_under_first_half_debug.rejected_from_markets.length > 0 ? (
+              <p className="mt-2 text-amber-800">
+                Scartati FH: {result.over_under_first_half_debug.rejected_from_markets.length} candidati da mercati non ammessi
               </p>
             ) : null}
           </div>

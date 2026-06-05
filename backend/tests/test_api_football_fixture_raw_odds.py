@@ -18,7 +18,12 @@ from app.services.bookmakers.api_football_fixture_raw_odds_service import (
     ApiFootballFixtureRawOddsService,
 )
 from app.services.cecchino.cecchino_bookmaker_odds_detail import build_bookmaker_odds_detail
-from app.services.cecchino.cecchino_selection_keys import SEL_OVER_1_5, SEL_OVER_2_5
+from app.services.cecchino.cecchino_selection_keys import (
+    SEL_OVER_1_5,
+    SEL_OVER_2_5,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
+)
 
 client = TestClient(app)
 
@@ -66,7 +71,7 @@ def test_raw_odds_summary_over_not_found():
         out = svc.run(provider_fixture_id=1520609, bookmaker_ids=[8])
     assert out["summary"]["over_1_5_found"] is False
     assert out["summary"]["over_2_5_found"] is False
-    assert out["over_under_debug"]["over_1_5"]["found"] is False
+    assert out["over_under_full_time_debug"]["OVER_1_5"]["found"] is False
 
 
 def test_raw_odds_summary_over_found():
@@ -75,8 +80,8 @@ def test_raw_odds_summary_over_found():
         out = svc.run(provider_fixture_id=1520609, bookmaker_ids=[8])
     assert out["summary"]["over_1_5_found"] is True
     assert out["summary"]["over_2_5_found"] is True
-    assert "Bet365" in out["over_under_debug"]["over_1_5"]["found_in_bookmakers"]
-    assert "Goals Over/Under" in out["over_under_debug"]["over_1_5"]["raw_market_names"]
+    assert "Bet365" in out["over_under_full_time_debug"]["OVER_1_5"]["found_in_bookmakers"]
+    assert out["over_under_full_time_debug"]["OVER_1_5"]["raw_market_name"] == "Goals Over/Under"
 
 
 def test_raw_odds_json_no_api_key():
@@ -93,6 +98,8 @@ def test_bookmaker_odds_detail_always_includes_over_rows():
     keys = [r["market_key"] for r in detail["rows"]]
     assert SEL_OVER_1_5 in keys
     assert SEL_OVER_2_5 in keys
+    assert SEL_OVER_PT_0_5 in keys
+    assert SEL_OVER_PT_1_5 in keys
     over_15 = next(r for r in detail["rows"] if r["market_key"] == SEL_OVER_1_5)
     assert over_15["book_average"] is None
     assert all(v is None for v in over_15["bookmakers"].values())
@@ -153,10 +160,42 @@ def test_fixture_raw_odds_endpoint_mock():
                 "match_winner_found": False,
                 "over_1_5_found": False,
                 "over_2_5_found": False,
+                "over_pt_0_5_found": False,
+                "over_pt_1_5_found": False,
             },
-            "over_under_debug": {
-                "over_1_5": {"found": False, "found_in_bookmakers": [], "raw_market_names": [], "raw_values": []},
-                "over_2_5": {"found": False, "found_in_bookmakers": [], "raw_market_names": [], "raw_values": []},
+            "over_under_full_time_debug": {
+                "OVER_1_5": {
+                    "found": False,
+                    "found_in_bookmakers": [],
+                    "raw_market_name": None,
+                    "bet_id": None,
+                    "raw_values": [],
+                },
+                "OVER_2_5": {
+                    "found": False,
+                    "found_in_bookmakers": [],
+                    "raw_market_name": None,
+                    "bet_id": None,
+                    "raw_values": [],
+                },
+                "rejected_from_markets": [],
+            },
+            "over_under_first_half_debug": {
+                "OVER_PT_0_5": {
+                    "found": False,
+                    "found_in_bookmakers": [],
+                    "raw_market_name": None,
+                    "bet_id": None,
+                    "raw_values": [],
+                },
+                "OVER_PT_1_5": {
+                    "found": False,
+                    "found_in_bookmakers": [],
+                    "raw_market_name": None,
+                    "bet_id": None,
+                    "raw_values": [],
+                },
+                "rejected_from_markets": [],
             },
         },
     ):

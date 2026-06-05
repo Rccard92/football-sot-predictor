@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.9.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Over/Under strict FT e PT',
+    type: 'patch',
+    summary:
+      'Mapping strict Over full match e primo tempo: solo mercati API-Football ammessi, 10 righe dettaglio quote e KPI con OVER PT.',
+    highlights: [
+      'Over 1.5/2.5 solo da Goals Over/Under bet_id=5.',
+      'Over PT 0.5/1.5 da Goals Over/Under First Half.',
+      'Esclusi Goal Line, RTG_H1, Result/Total Goals.',
+      'Dettaglio quote e KPI a 10 righe; EDGE null senza Cecchino.',
+      'Debug raw FT/FH separato con mercati scartati.',
+      'Zero modifiche SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.8.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Fixture ID e JSON raw odds',

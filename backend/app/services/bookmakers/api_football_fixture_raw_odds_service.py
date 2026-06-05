@@ -11,10 +11,16 @@ from app.services.bookmakers.bookmaker_constants import (
     PROVIDER_SOURCE_API_FOOTBALL,
 )
 from app.services.bookmakers.market_normalize import (
+    MAIN_FT_OU_RAW_NAME,
+    is_main_first_half_goals_over_under,
+    is_main_full_time_goals_over_under,
     normalize_api_football_market,
+    normalize_first_half_over_under_selection,
     normalize_over_under_selection,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
 )
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKERS
 
@@ -42,6 +48,57 @@ def _extract_bookmaker_bets(raw_items: list[dict[str, Any]]) -> list[dict[str, A
 
 def _sanitize_raw_payload(bets: list[dict[str, Any]]) -> dict[str, Any]:
     return {"bets": bets}
+
+
+def _empty_ou_debug_entry() -> dict[str, Any]:
+    return {
+        "found": False,
+        "found_in_bookmakers": [],
+        "raw_market_name": None,
+        "bet_id": None,
+        "raw_values": [],
+    }
+
+
+def _mark_ou_found(
+    dbg: dict[str, Any],
+    *,
+    bookmaker_name: str,
+    bet_name: str,
+    bet_id: Any,
+    raw_value: str,
+) -> None:
+    dbg["found"] = True
+    if bookmaker_name not in dbg["found_in_bookmakers"]:
+        dbg["found_in_bookmakers"].append(bookmaker_name)
+    if dbg["raw_market_name"] is None:
+        dbg["raw_market_name"] = bet_name
+    if dbg["bet_id"] is None:
+        dbg["bet_id"] = str(bet_id) if bet_id is not None else None
+    if raw_value not in dbg["raw_values"]:
+        dbg["raw_values"].append(raw_value)
+
+
+def _append_rejected(
+    rejected: list[dict[str, Any]],
+    *,
+    bookmaker_name: str,
+    bet_name: str,
+    bet_id: Any,
+    raw_value: str,
+    selection_key: str,
+    reason: str,
+) -> None:
+    rejected.append(
+        {
+            "bookmaker_name": bookmaker_name,
+            "raw_market_name": bet_name,
+            "bet_id": str(bet_id) if bet_id is not None else None,
+            "raw_value": raw_value,
+            "selection_key": selection_key,
+            "reason": reason,
+        },
+    )
 
 
 class ApiFootballFixtureRawOddsService:
@@ -73,21 +130,15 @@ class ApiFootballFixtureRawOddsService:
         bookmakers_found: list[str] = []
         markets_found: set[str] = set()
         match_winner_found = False
-        over_15_found = False
-        over_25_found = False
-        ou_debug: dict[str, dict[str, Any]] = {
-            "over_1_5": {
-                "found": False,
-                "found_in_bookmakers": [],
-                "raw_market_names": [],
-                "raw_values": [],
-            },
-            "over_2_5": {
-                "found": False,
-                "found_in_bookmakers": [],
-                "raw_market_names": [],
-                "raw_values": [],
-            },
+        ft_debug: dict[str, Any] = {
+            "OVER_1_5": _empty_ou_debug_entry(),
+            "OVER_2_5": _empty_ou_debug_entry(),
+            "rejected_from_markets": [],
+        }
+        fh_debug: dict[str, Any] = {
+            "OVER_PT_0_5": _empty_ou_debug_entry(),
+            "OVER_PT_1_5": _empty_ou_debug_entry(),
+            "rejected_from_markets": [],
         }
 
         for bid in wanted:
@@ -113,6 +164,7 @@ class ApiFootballFixtureRawOddsService:
                 if not isinstance(bet, dict):
                     continue
                 bet_name = str(bet.get("name") or "")
+                bet_id = bet.get("id")
                 raw_value_labels = [
                     str(v.get("value") or "")
                     for v in (bet.get("values") or [])
@@ -124,6 +176,9 @@ class ApiFootballFixtureRawOddsService:
                 if normalized == MARKET_MATCH_WINNER_1X2:
                     match_winner_found = True
 
+                is_ft_ou = is_main_full_time_goals_over_under(bet_name, bet_id)
+                is_fh_ou = is_main_first_half_goals_over_under(bet_name)
+
                 values_out: list[dict[str, Any]] = []
                 for val in bet.get("values") or []:
                     if not isinstance(val, dict):
@@ -131,39 +186,106 @@ class ApiFootballFixtureRawOddsService:
                     raw_value = str(val.get("value") or "")
                     odd = _parse_odd(val.get("odd"))
                     sel_norm = normalize_over_under_selection(raw_value)
+                    sel_pt = normalize_first_half_over_under_selection(raw_value)
                     values_out.append(
                         {
                             "raw_value": raw_value,
                             "normalized_selection": sel_norm,
+                            "normalized_selection_first_half": sel_pt,
                             "odd": odd,
+                            "strict_full_time": is_ft_ou,
+                            "strict_first_half": is_fh_ou,
                         },
                     )
-                    if sel_norm == SEL_OVER_1_5 and odd is not None:
-                        over_15_found = True
-                        dbg = ou_debug["over_1_5"]
-                        dbg["found"] = True
-                        if name not in dbg["found_in_bookmakers"]:
-                            dbg["found_in_bookmakers"].append(name)
-                        if bet_name not in dbg["raw_market_names"]:
-                            dbg["raw_market_names"].append(bet_name)
-                        if raw_value not in dbg["raw_values"]:
-                            dbg["raw_values"].append(raw_value)
-                    if sel_norm == SEL_OVER_2_5 and odd is not None:
-                        over_25_found = True
-                        dbg = ou_debug["over_2_5"]
-                        dbg["found"] = True
-                        if name not in dbg["found_in_bookmakers"]:
-                            dbg["found_in_bookmakers"].append(name)
-                        if bet_name not in dbg["raw_market_names"]:
-                            dbg["raw_market_names"].append(bet_name)
-                        if raw_value not in dbg["raw_values"]:
-                            dbg["raw_values"].append(raw_value)
+
+                    if odd is None:
+                        continue
+
+                    if sel_norm == SEL_OVER_1_5:
+                        if is_ft_ou:
+                            _mark_ou_found(
+                                ft_debug["OVER_1_5"],
+                                bookmaker_name=name,
+                                bet_name=MAIN_FT_OU_RAW_NAME,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                            )
+                        else:
+                            _append_rejected(
+                                ft_debug["rejected_from_markets"],
+                                bookmaker_name=name,
+                                bet_name=bet_name,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                                selection_key=SEL_OVER_1_5,
+                                reason="not_main_full_time_goals_over_under",
+                            )
+                    if sel_norm == SEL_OVER_2_5:
+                        if is_ft_ou:
+                            _mark_ou_found(
+                                ft_debug["OVER_2_5"],
+                                bookmaker_name=name,
+                                bet_name=MAIN_FT_OU_RAW_NAME,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                            )
+                        else:
+                            _append_rejected(
+                                ft_debug["rejected_from_markets"],
+                                bookmaker_name=name,
+                                bet_name=bet_name,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                                selection_key=SEL_OVER_2_5,
+                                reason="not_main_full_time_goals_over_under",
+                            )
+
+                    if sel_pt == SEL_OVER_PT_0_5:
+                        if is_fh_ou:
+                            _mark_ou_found(
+                                fh_debug["OVER_PT_0_5"],
+                                bookmaker_name=name,
+                                bet_name=bet_name,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                            )
+                        else:
+                            _append_rejected(
+                                fh_debug["rejected_from_markets"],
+                                bookmaker_name=name,
+                                bet_name=bet_name,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                                selection_key=SEL_OVER_PT_0_5,
+                                reason="not_main_first_half_goals_over_under",
+                            )
+                    if sel_pt == SEL_OVER_PT_1_5:
+                        if is_fh_ou:
+                            _mark_ou_found(
+                                fh_debug["OVER_PT_1_5"],
+                                bookmaker_name=name,
+                                bet_name=bet_name,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                            )
+                        else:
+                            _append_rejected(
+                                fh_debug["rejected_from_markets"],
+                                bookmaker_name=name,
+                                bet_name=bet_name,
+                                bet_id=bet_id,
+                                raw_value=raw_value,
+                                selection_key=SEL_OVER_PT_1_5,
+                                reason="not_main_first_half_goals_over_under",
+                            )
 
                 markets.append(
                     {
                         "bet_id": str(bet.get("id") or ""),
                         "raw_market_name": bet_name,
                         "normalized_market": normalized,
+                        "strict_full_time": is_ft_ou,
+                        "strict_first_half": is_fh_ou,
                         "values": values_out,
                     },
                 )
@@ -174,9 +296,12 @@ class ApiFootballFixtureRawOddsService:
             bookmakers_out.append(entry)
 
         over_candidates = []
-        for key, dbg in ou_debug.items():
-            if dbg["found"]:
-                over_candidates.append(key)
+        for key in ("OVER_1_5", "OVER_2_5"):
+            if ft_debug[key]["found"]:
+                over_candidates.append(key.lower())
+        for key in ("OVER_PT_0_5", "OVER_PT_1_5"):
+            if fh_debug[key]["found"]:
+                over_candidates.append(key.lower())
 
         return {
             "status": "ok",
@@ -189,8 +314,11 @@ class ApiFootballFixtureRawOddsService:
                 "markets_found": sorted(markets_found),
                 "over_under_candidates": over_candidates,
                 "match_winner_found": match_winner_found,
-                "over_1_5_found": over_15_found,
-                "over_2_5_found": over_25_found,
+                "over_1_5_found": ft_debug["OVER_1_5"]["found"],
+                "over_2_5_found": ft_debug["OVER_2_5"]["found"],
+                "over_pt_0_5_found": fh_debug["OVER_PT_0_5"]["found"],
+                "over_pt_1_5_found": fh_debug["OVER_PT_1_5"]["found"],
             },
-            "over_under_debug": ou_debug,
+            "over_under_full_time_debug": ft_debug,
+            "over_under_first_half_debug": fh_debug,
         }

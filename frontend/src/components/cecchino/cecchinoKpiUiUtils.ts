@@ -8,6 +8,13 @@ import {
 
 export const KPI_PRIMARY_LABELS = new Set(['1', 'X', '2', '1X', 'X2', '12'])
 
+export const KPI_OVER_LABELS = new Set([
+  'OVER 1.5',
+  'OVER 2.5',
+  'OVER PT 0.5',
+  'OVER PT 1.5',
+])
+
 export const KPI_ANALYSIS_LABELS = new Set(['ANALISI DEL MATCH', 'DELTA DI FORZA'])
 
 export function fmtKpiCell(
@@ -26,6 +33,10 @@ export function isKpiAnalysisRow(label: string): boolean {
 
 export function isKpiPrimaryRow(label: string): boolean {
   return KPI_PRIMARY_LABELS.has(label)
+}
+
+export function isKpiOverRow(label: string): boolean {
+  return KPI_OVER_LABELS.has(label)
 }
 
 export function edgeClassName(edge: number | null | undefined): string {

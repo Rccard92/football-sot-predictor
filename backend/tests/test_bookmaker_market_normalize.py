@@ -8,7 +8,10 @@ from app.services.bookmakers.bookmaker_constants import (
     MARKET_UNKNOWN,
 )
 from app.services.bookmakers.market_normalize import (
+    is_main_first_half_goals_over_under,
+    is_main_full_time_goals_over_under,
     normalize_api_football_market,
+    normalize_first_half_over_under_selection,
     normalize_market_name,
     normalize_over_under_selection,
     SEL_OVER_1_5,
@@ -39,3 +42,13 @@ def test_match_goals_without_ou_values_stays_unknown():
 
 def test_over_selection_helper():
     assert normalize_over_under_selection("Over 1.5") == SEL_OVER_1_5
+
+
+def test_strict_full_time_helper():
+    assert is_main_full_time_goals_over_under("Goals Over/Under", 5) is True
+    assert is_main_full_time_goals_over_under("Goal Line", 5) is False
+
+
+def test_strict_first_half_helper():
+    assert is_main_first_half_goals_over_under("Goals Over/Under First Half") is True
+    assert normalize_first_half_over_under_selection("Over 0.5") == "OVER_PT_0_5"

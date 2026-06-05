@@ -11,6 +11,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     MARKET_DC,
     MARKET_OU,
+    MARKET_OU_FH,
     SEL_AWAY,
     SEL_DRAW,
     SEL_HOME,
@@ -18,6 +19,8 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
     SEL_X_TWO,
 )
 
@@ -116,8 +119,8 @@ def build_cecchino_kpi_panel(
             out[name] = (bm.get("markets") or {}).get(mkt, {}).get(sk)
         return out
 
-    def _ou_row(selection_key: str, label: str) -> dict[str, Any]:
-        bm_vals = _bm_vals(MARKET_OU, selection_key)
+    def _ou_row(mkt: str, selection_key: str, label: str) -> dict[str, Any]:
+        bm_vals = _bm_vals(mkt, selection_key)
         present = [v for v in bm_vals.values() if v is not None]
         avg_val = arithmetic_mean(present) if present else None
         if not present:
@@ -225,16 +228,10 @@ def build_cecchino_kpi_panel(
             book_average=book_12,
             status=row_status,
         ),
-        _ou_row(SEL_OVER_1_5, "OVER 1.5"),
-        _ou_row(SEL_OVER_2_5, "OVER 2.5"),
-        _row(
-            market_key="OVER_PT",
-            label="OVER PT",
-            statistica=None,
-            cecchino=None,
-            book=None,
-            status="not_available",
-        ),
+        _ou_row(MARKET_OU, SEL_OVER_1_5, "OVER 1.5"),
+        _ou_row(MARKET_OU, SEL_OVER_2_5, "OVER 2.5"),
+        _ou_row(MARKET_OU_FH, SEL_OVER_PT_0_5, "OVER PT 0.5"),
+        _ou_row(MARKET_OU_FH, SEL_OVER_PT_1_5, "OVER PT 1.5"),
         _row(
             market_key="MATCH_ANALYSIS",
             label="ANALISI DEL MATCH",

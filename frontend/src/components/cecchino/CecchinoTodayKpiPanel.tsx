@@ -4,6 +4,7 @@ import {
   fmtKpiCell,
   formatEdgePct,
   isKpiAnalysisRow,
+  isKpiOverRow,
   isKpiPrimaryRow,
 } from './cecchinoKpiUiUtils'
 
@@ -56,8 +57,9 @@ export function CecchinoTodayKpiPanel({ panel, bookmakerStatus }: Props) {
           <tbody>
             {(panel.rows || []).map((row) => {
               const primary = isKpiPrimaryRow(row.label)
+              const over = isKpiOverRow(row.label)
               const analysis = isKpiAnalysisRow(row.label)
-              const asDecimal = !analysis && typeof row.statistica === 'number'
+              const asDecimal = over || (!analysis && typeof row.statistica === 'number')
               const rowBg = primary
                 ? 'bg-[#1a3d5c]/60'
                 : analysis

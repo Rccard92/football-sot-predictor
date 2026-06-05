@@ -1432,8 +1432,30 @@ export type BookmakerRawOddsBookmaker = {
 export type BookmakerOverUnderDebugEntry = {
   found: boolean
   found_in_bookmakers: string[]
-  raw_market_names: string[]
+  raw_market_name: string | null
+  bet_id: string | null
   raw_values: string[]
+}
+
+export type BookmakerOverUnderRejectedEntry = {
+  bookmaker_name: string
+  raw_market_name: string
+  bet_id: string | null
+  raw_value: string
+  selection_key: string
+  reason: string
+}
+
+export type BookmakerOverUnderFullTimeDebug = {
+  OVER_1_5: BookmakerOverUnderDebugEntry
+  OVER_2_5: BookmakerOverUnderDebugEntry
+  rejected_from_markets: BookmakerOverUnderRejectedEntry[]
+}
+
+export type BookmakerOverUnderFirstHalfDebug = {
+  OVER_PT_0_5: BookmakerOverUnderDebugEntry
+  OVER_PT_1_5: BookmakerOverUnderDebugEntry
+  rejected_from_markets: BookmakerOverUnderRejectedEntry[]
 }
 
 export type BookmakerFixtureRawOddsResponse = {
@@ -1449,11 +1471,11 @@ export type BookmakerFixtureRawOddsResponse = {
     match_winner_found: boolean
     over_1_5_found: boolean
     over_2_5_found: boolean
+    over_pt_0_5_found: boolean
+    over_pt_1_5_found: boolean
   }
-  over_under_debug: {
-    over_1_5: BookmakerOverUnderDebugEntry
-    over_2_5: BookmakerOverUnderDebugEntry
-  }
+  over_under_full_time_debug: BookmakerOverUnderFullTimeDebug
+  over_under_first_half_debug: BookmakerOverUnderFirstHalfDebug
   message?: string
 }
 
