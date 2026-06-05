@@ -108,6 +108,18 @@ export type CecchinoTodayScanJob = {
 
 export const SCAN_JOB_POLL_MS = 2500
 
+/** Percentuale avanzamento job — fallback se progress_pct assente o 0. */
+export function computeScanJobProgressPct(job: CecchinoTodayScanJob): number {
+  if (job.status === 'completed') return 100
+  if (job.progress_pct != null && job.progress_pct > 0) return job.progress_pct
+  const cur = job.progress_current ?? job.fixtures_checked ?? 0
+  const tot = job.progress_total
+  if (cur > 0 && tot != null && tot > 0) {
+    return Math.min(100, Math.round((cur / tot) * 1000) / 10)
+  }
+  return 0
+}
+
 export const SCAN_STEP_LABELS: Record<string, string> = {
   fetching_fixtures: 'Recupero partite',
   filtering_competitions: 'Filtro competizioni',

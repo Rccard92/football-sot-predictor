@@ -167,7 +167,7 @@ export function CecchinoTodayPage() {
         if (job.status === 'failed' || job.status === 'cancelled') {
           stopPolling()
           setScanDayLoading(false)
-          setActionError(job.errors?.[0] ?? 'Scansione non riuscita')
+          setActionError(job.errors?.[0] ?? 'Scansione interrotta')
           await loadDays()
           return
         }
@@ -510,7 +510,8 @@ export function CecchinoTodayPage() {
     activeJob.scan_date === selectedDay &&
     (activeJob.status === 'queued' ||
       activeJob.status === 'running' ||
-      activeJob.status === 'failed')
+      activeJob.status === 'failed' ||
+      activeJob.status === 'completed')
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-6">
@@ -533,7 +534,7 @@ export function CecchinoTodayPage() {
 
       {showProgress && activeJob ? <CecchinoTodayScanProgressCard job={activeJob} /> : null}
 
-      {scanReport && scanReport.status === 'ok' && !showProgress ? (
+      {scanReport && scanReport.status === 'ok' && !scanInProgress && activeJob?.status !== 'running' ? (
         <CecchinoTodayScanSummary report={scanReport} onShowExcluded={showExcludedPanel} />
       ) : null}
 

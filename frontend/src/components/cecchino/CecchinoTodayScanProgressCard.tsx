@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CecchinoTodayScanJob } from '../../lib/cecchinoTodayApi'
-import { SCAN_STEP_LABELS } from '../../lib/cecchinoTodayApi'
+import { SCAN_STEP_LABELS, computeScanJobProgressPct } from '../../lib/cecchinoTodayApi'
 import { todayCard, todayCardPadding } from './cecchinoTodayStyles'
 
 type Props = {
@@ -24,10 +24,11 @@ function formatElapsed(startedAt: string | null, nowMs: number): string | null {
 
 export function CecchinoTodayScanProgressCard({ job }: Props) {
   const [nowMs, setNowMs] = useState(() => Date.now())
-  const pct = job.progress_pct ?? 0
+  const pct = computeScanJobProgressPct(job)
   const isRunning = job.status === 'queued' || job.status === 'running'
-  const isFailed = job.status === 'failed'
+  const isFailed = job.status === 'failed' || job.status === 'cancelled'
   const isCompleted = job.status === 'completed'
+  const showBar = isRunning || isCompleted || (isFailed && pct > 0)
   const elapsed = useMemo(() => formatElapsed(job.started_at, nowMs), [job.started_at, nowMs])
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
               : isCompleted
                 ? 'Scansione completata'
                 : isFailed
-                  ? 'Scansione non riuscita'
+                  ? 'Scansione interrotta'
                   : 'Scansione giornata'}
           </h3>
           <p className="mt-1 text-xs text-slate-600">
@@ -66,21 +67,27 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
             <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
             Scanning
           </span>
+        ) : isCompleted ? (
+          <span className="inline-flex rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white">
+            Completata
+          </span>
         ) : null}
       </div>
 
-      {isRunning ? (
+      {showBar ? (
         <div className="mt-4">
           <div className="mb-1 flex justify-between text-xs text-slate-600">
             <span>
-              Fixture {job.fixtures_checked}
+              Fixture {job.progress_current || job.fixtures_checked}
               {job.progress_total != null ? ` / ${job.progress_total}` : ''}
             </span>
             <span>{pct.toFixed(1)}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-slate-200">
             <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-300"
+              className={`h-full rounded-full transition-all duration-300 ${
+                isFailed ? 'bg-red-500' : isCompleted ? 'bg-emerald-600' : 'bg-blue-600'
+              }`}
               style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
             />
           </div>

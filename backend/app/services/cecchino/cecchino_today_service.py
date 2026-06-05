@@ -416,6 +416,7 @@ def _emit_progress(
     current_step: str | None = None,
     progress_current: int | None = None,
     progress_total: int | None = None,
+    progress_pct: float | None = None,
     fixtures_found: int | None = None,
     fixtures_checked: int | None = None,
     odds_checked: int | None = None,
@@ -434,6 +435,8 @@ def _emit_progress(
         payload["progress_current"] = progress_current
     if progress_total is not None:
         payload["progress_total"] = progress_total
+    if progress_pct is not None:
+        payload["progress_pct"] = progress_pct
     if fixtures_found is not None:
         payload["fixtures_found"] = fixtures_found
     if fixtures_checked is not None:
@@ -514,6 +517,7 @@ def run_scan(
         batch = raw_items[batch_start : batch_start + SCAN_BATCH_SIZE]
         for item in batch:
             fixtures_checked += 1
+            api_fid: int | None = None
             try:
                 brief = _item_brief(item)
                 api_fid = brief["provider_fixture_id"]
@@ -719,25 +723,56 @@ def run_scan(
                 )
                 by_status[eligibility_status] += 1
             except Exception as exc:
-                logger.exception("Cecchino Today scan fixture failed")
+                logger.exception(
+                    "CecchinoTodayJob fixture_error job_id=%s provider_fixture_id=%s error=%s",
+                    job_id,
+                    api_fid,
+                    exc,
+                )
                 recover_session_if_inactive(db)
-                errors.append(str(exc)[:200])
+                err_msg = str(exc)[:200]
+                errors.append(err_msg)
                 by_status[ELIGIBILITY_ERROR] += 1
+                if api_fid is not None:
+                    try:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=ELIGIBILITY_ERROR,
+                            eligibility_reason=err_msg,
+                            warnings=[err_msg],
+                        )
+                    except Exception:
+                        logger.exception(
+                            "CecchinoTodayJob fixture_error_persist failed provider_fixture_id=%s",
+                            api_fid,
+                        )
+                        recover_session_if_inactive(db)
+            finally:
+                excluded_count = sum(v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE)
+                _emit_progress(
+                    progress,
+                    progress_current=fixtures_checked,
+                    progress_total=total,
+                    fixtures_checked=fixtures_checked,
+                    odds_checked=odds_checked,
+                    eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+                    excluded_count=excluded_count,
+                    excluded_summary={k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
+                    warnings=warnings,
+                    errors=errors,
+                )
+                if job_id:
+                    logger.info(
+                        "CecchinoTodayJob job_id=%s fixture=%s/%s provider_fixture_id=%s",
+                        job_id,
+                        fixtures_checked,
+                        total,
+                        api_fid,
+                    )
 
         db.commit()
-        excluded_count = sum(v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE)
-        _emit_progress(
-            progress,
-            progress_current=fixtures_checked,
-            progress_total=total,
-            fixtures_checked=fixtures_checked,
-            odds_checked=odds_checked,
-            eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
-            excluded_count=excluded_count,
-            excluded_summary={k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
-            warnings=warnings,
-            errors=errors,
-        )
 
     cleanup_result = cleanup_cecchino_today_snapshots(
         db,
@@ -770,7 +805,24 @@ def run_scan(
         excluded_summary=excluded_summary,
         duration_seconds=duration,
     )
-    _emit_progress(progress, current_step="completed", progress_current=total, progress_total=total)
+    _emit_progress(
+        progress,
+        current_step="completed",
+        progress_current=total,
+        progress_total=total,
+        progress_pct=100.0,
+        fixtures_checked=total,
+        eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+        excluded_count=sum(excluded_summary.values()),
+    )
+    if job_id:
+        logger.info(
+            "CecchinoTodayJob job_id=%s scan pipeline finished eligible=%s excluded=%s duration=%.1fs",
+            job_id,
+            by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+            sum(excluded_summary.values()),
+            duration,
+        )
     return report
 
 

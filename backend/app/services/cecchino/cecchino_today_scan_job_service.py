@@ -28,14 +28,28 @@ from app.services.cecchino.cecchino_today_service import run_scan_day
 logger = logging.getLogger(__name__)
 
 STALE_JOB_MINUTES = 30
+STALE_NO_PROGRESS_MINUTES = 5
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _compute_progress_pct(current: int | None, total: int | None) -> Decimal | None:
+    if current is None or not total or int(total) <= 0:
+        return None
+    return Decimal(str(round(float(current) / float(total) * 100.0, 1)))
+
+
+def _resolve_job_progress_pct(job: CecchinoTodayScanJob) -> float | None:
+    if job.progress_pct is not None:
+        return float(job.progress_pct)
+    pct = _compute_progress_pct(int(job.progress_current or 0), job.progress_total)
+    return float(pct) if pct is not None else None
+
+
 def job_to_dict(job: CecchinoTodayScanJob) -> dict[str, Any]:
-    progress_pct = float(job.progress_pct) if job.progress_pct is not None else None
+    progress_pct = _resolve_job_progress_pct(job)
     return {
         "job_id": job.job_id,
         "scan_date": job.scan_date.isoformat(),
@@ -62,8 +76,15 @@ def job_to_dict(job: CecchinoTodayScanJob) -> dict[str, Any]:
     }
 
 
-def recover_stale_scan_jobs(db: Session, *, max_age_minutes: int = STALE_JOB_MINUTES) -> int:
-    cutoff = _utcnow() - timedelta(minutes=max_age_minutes)
+def recover_stale_scan_jobs(
+    db: Session,
+    *,
+    max_age_minutes: int = STALE_JOB_MINUTES,
+    no_progress_minutes: int = STALE_NO_PROGRESS_MINUTES,
+) -> int:
+    now = _utcnow()
+    overall_cutoff = now - timedelta(minutes=max_age_minutes)
+    no_progress_cutoff = now - timedelta(minutes=no_progress_minutes)
     rows = list(
         db.scalars(
             select(CecchinoTodayScanJob).where(
@@ -71,16 +92,16 @@ def recover_stale_scan_jobs(db: Session, *, max_age_minutes: int = STALE_JOB_MIN
                 or_(
                     and_(
                         CecchinoTodayScanJob.status == JOB_STATUS_QUEUED,
-                        CecchinoTodayScanJob.created_at < cutoff,
+                        CecchinoTodayScanJob.created_at < overall_cutoff,
                     ),
                     and_(
                         CecchinoTodayScanJob.status == JOB_STATUS_RUNNING,
                         or_(
+                            CecchinoTodayScanJob.updated_at < no_progress_cutoff,
                             and_(
                                 CecchinoTodayScanJob.started_at.isnot(None),
-                                CecchinoTodayScanJob.started_at < cutoff,
+                                CecchinoTodayScanJob.started_at < overall_cutoff,
                             ),
-                            CecchinoTodayScanJob.updated_at < cutoff,
                         ),
                     ),
                 ),
@@ -132,7 +153,9 @@ def _update_job_fields(job: CecchinoTodayScanJob, **kwargs: Any) -> None:
     for key, val in kwargs.items():
         if not hasattr(job, key):
             continue
-        if key == "progress_pct" and val is not None:
+        if key == "progress_pct":
+            if val is None:
+                continue
             job.progress_pct = Decimal(str(round(float(val), 1)))
         else:
             setattr(job, key, val)
@@ -150,18 +173,38 @@ def update_scan_job(db: Session, job_id: str, **kwargs: Any) -> CecchinoTodaySca
 
 def make_progress_reporter(db: Session, job_id: str) -> Callable[..., None]:
     def progress(**kwargs: Any) -> None:
-        current = kwargs.get("progress_current")
-        total = kwargs.get("progress_total")
-        pct = None
-        if current is not None and total:
-            pct = round(float(current) / float(total) * 100.0, 1)
-        elif kwargs.get("progress_pct") is not None:
+        job = get_scan_job(db, job_id)
+        if job is None:
+            return
+
+        fields = {k: v for k, v in kwargs.items() if k != "progress_pct"}
+        current_raw = fields.get("progress_current", job.progress_current)
+        total_raw = fields.get("progress_total", job.progress_total)
+        current = int(current_raw) if current_raw is not None else None
+        total = int(total_raw) if total_raw is not None else None
+
+        pct: float | Decimal | None
+        if kwargs.get("progress_pct") is not None:
             pct = kwargs.get("progress_pct")
-        update_scan_job(
-            db,
+        else:
+            computed = _compute_progress_pct(current, total)
+            pct = float(computed) if computed is not None else None
+            if pct is None and job.progress_pct is not None:
+                pct = float(job.progress_pct)
+
+        update_fields: dict[str, Any] = dict(fields)
+        if pct is not None:
+            update_fields["progress_pct"] = pct
+
+        update_scan_job(db, job_id, **update_fields)
+        step = fields.get("current_step") or job.current_step
+        logger.info(
+            "CecchinoTodayJob job_id=%s progress=%s/%s pct=%s step=%s",
             job_id,
-            progress_pct=pct,
-            **{k: v for k, v in kwargs.items() if k != "progress_pct"},
+            current,
+            total,
+            pct,
+            step,
         )
         db.commit()
 
@@ -241,6 +284,8 @@ def _run_scan_job_thread(job_id: str) -> None:
             status=JOB_STATUS_COMPLETED,
             finished_at=_utcnow(),
             current_step="completed",
+            progress_current=int(report.get("fixtures_processed") or report.get("total_discovered") or 0),
+            progress_total=int(report.get("fixtures_found") or report.get("total_discovered") or 0),
             progress_pct=Decimal("100.0"),
             eligible_count=int(report.get("eligible") or 0),
             excluded_count=int(report.get("excluded_total") or 0),
@@ -253,7 +298,14 @@ def _run_scan_job_thread(job_id: str) -> None:
         )
         db.commit()
         terminal = True
-        logger.info("Cecchino scan job completed job_id=%s scan_date=%s", job_id, job.scan_date.isoformat())
+        logger.info(
+            "CecchinoTodayJob job_id=%s completed scan_date=%s eligible=%s excluded=%s duration=%s",
+            job_id,
+            job.scan_date.isoformat(),
+            report.get("eligible"),
+            report.get("excluded_total"),
+            (report.get("result_summary") or {}).get("duration_seconds"),
+        )
     except Exception as exc:
         logger.exception(
             "Cecchino Today scan job failed job_id=%s scan_date=%s step=runner",

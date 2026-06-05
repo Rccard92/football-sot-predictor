@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 18 — Fix progress bar e finalizzazione scan job (2026-06-04)
+
+- Corretto calcolo `progress_pct`: gli update step-only non azzerano più la percentuale (merge con stato job DB).
+- Aggiunto fallback frontend `computeScanJobProgressPct` da `progress_current/progress_total`.
+- Progress bar riflette l'avanzamento reale (208/433 ≈ 48%, 432/433 ≈ 99.8%, completed = 100%).
+- Loop fixture con `finally` per progress garantito e log `provider_fixture_id`; errore singola fixture non blocca il job.
+- Finalizzazione `completed` imposta `progress_current`, `progress_total`, `progress_pct=100`, `finished_at`.
+- Stale job più aggressivo: `updated_at` fermo >5 min o elapsed >30 min → `failed`.
+- UI completed/failed con barra, badge e retry; nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 17 — Fix polling scan job e selectedDay persistente (2026-06-04)
 
 - Corretto reset di `selectedDay` a oggi dopo refresh timeline/polling (init effect instabile con dipendenza da `activeJob`).

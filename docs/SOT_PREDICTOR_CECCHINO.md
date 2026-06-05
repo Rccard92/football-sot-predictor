@@ -301,7 +301,20 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** `CecchinoTodayScanProgressCard`, polling 2,5s, resume job su reload pagina via `latest`.
 
-**Eleggibilità e formule Cecchino:** invariati.
+**UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
+
+## Cecchino Today — Fase 18 — Fix progress bar e finalizzazione (v0.12)
+
+Versione `cecchino_today_v0_12_progress_fix`: barra avanzamento e chiusura job robusta.
+
+| Componente | Comportamento |
+|------------|---------------|
+| `progress_pct` | Calcolato da `progress_current/total`; mai azzerato da update step-only |
+| Frontend | `computeScanJobProgressPct` fallback se backend manda pct 0/null |
+| Loop fixture | `try/except/finally` per fixture; errore singola → excluded, job continua |
+| Completed | `progress_current=total`, `progress_pct=100`, `finished_at`, `result_summary_json` |
+| Stale | `updated_at` fermo >5 min **o** elapsed >30 min → `failed` (`stale_job_timeout`) |
+| UI | Barra visibile con % reale; completed/failed con badge e retry |
 
 ## Cecchino Today — Fase 17 — Fix polling e selectedDay (v0.11)
 

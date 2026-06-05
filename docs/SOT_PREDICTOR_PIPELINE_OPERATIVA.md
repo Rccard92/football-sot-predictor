@@ -32,6 +32,14 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fix Fase 18 — progress_pct e finalizzazione
+
+- **`progress_pct`:** `round(progress_current / progress_total * 100, 1)` ad ogni update; merge con stato job se step-only.
+- **Fixture:** `finally` garantisce progress; log `CecchinoTodayJob job_id=... fixture=N/M`.
+- **Completed:** thread imposta `status=completed`, `progress_pct=100`, contatori finali.
+- **Stale aggressivo:** running senza progresso >5 min (`updated_at`) o job >30 min → `failed`.
+- **Frontend:** `computeScanJobProgressPct` + barra width `${pct}%`.
+
 ## Flusso scan sincrono legacy (pre-Fase 16)
 
 ```mermaid

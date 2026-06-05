@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.12.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Fix progress bar e finalizzazione scan',
+    type: 'patch',
+    summary:
+      'Progress bar con percentuale reale, finalizzazione completed robusta e stale job più aggressivo.',
+    highlights: [
+      'progress_pct calcolato e non azzerato da step-only.',
+      'Fallback frontend computeScanJobProgressPct.',
+      'Fixture con finally; errore singola non blocca job.',
+      'Completed con progress 100% e finished_at.',
+      'Stale updated_at >5 min → failed.',
+      'Zero modifiche SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.11.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Fix polling scan job e selectedDay',
