@@ -21,6 +21,7 @@ import {
   getCecchinoTodayLatestScanJob,
   getCecchinoTodayList,
   getCecchinoTodayScanJob,
+  logCecchinoTodayDebug,
   revalidateCecchinoTodayDay,
   SCAN_JOB_POLL_MS,
   startCecchinoTodayScanDay,
@@ -79,10 +80,17 @@ export function CecchinoTodayPage() {
   const [leagueFilter, setLeagueFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const dayNavReady = useRef(false)
+  const initializedRef = useRef(false)
+  const selectedDayRef = useRef(selectedDay)
   const loadExcludedRef = useRef<(() => Promise<void>) | null>(null)
   const pollTimerRef = useRef<number | null>(null)
   const pollFailCountRef = useRef(0)
   const pollJobRef = useRef<(jobId: string, date: string) => Promise<void>>(async () => {})
+  const activePollRef = useRef<{ jobId: string; date: string } | null>(null)
+
+  useEffect(() => {
+    selectedDayRef.current = selectedDay
+  }, [selectedDay])
 
   const registerExcludedLoad = useCallback((loader: (() => Promise<void>) | null) => {
     loadExcludedRef.current = loader
@@ -94,10 +102,12 @@ export function CecchinoTodayPage() {
   }, [])
 
   const loadDays = useCallback(async () => {
+    logCecchinoTodayDebug('loadDays start', { selectedDay: selectedDayRef.current })
     setDaysLoading(true)
     try {
       const res = await getCecchinoTodayDays()
       setDays(res.days)
+      logCecchinoTodayDebug('loadDays done', { selectedDay: selectedDayRef.current })
       return res
     } catch {
       setDays([])
@@ -134,6 +144,7 @@ export function CecchinoTodayPage() {
       window.clearTimeout(pollTimerRef.current)
       pollTimerRef.current = null
     }
+    activePollRef.current = null
   }, [])
 
   const pollJob = useCallback(
@@ -142,6 +153,7 @@ export function CecchinoTodayPage() {
         const job = await getCecchinoTodayScanJob(jobId)
         pollFailCountRef.current = 0
         setActiveJob(job)
+        logCecchinoTodayDebug('poll tick', { jobId, status: job.status, date })
 
         if (job.status === 'completed') {
           stopPolling()
@@ -185,9 +197,16 @@ export function CecchinoTodayPage() {
 
   const attachToJob = useCallback(
     (jobId: string, date: string) => {
+      const current = activePollRef.current
+      if (current?.jobId === jobId && current.date === date) {
+        logCecchinoTodayDebug('attachToJob skip — già in poll', { jobId, date })
+        return
+      }
       stopPolling()
+      activePollRef.current = { jobId, date }
       pollFailCountRef.current = 0
       setScanDayLoading(true)
+      logCecchinoTodayDebug('attachToJob start poll', { jobId, date })
       void pollJob(jobId, date)
     },
     [pollJob, stopPolling],
@@ -197,50 +216,85 @@ export function CecchinoTodayPage() {
     async (date: string) => {
       try {
         const latest = await getCecchinoTodayLatestScanJob(date)
+        if (!latest) {
+          setActiveJob((prev) => (prev?.scan_date === date ? null : prev))
+          return
+        }
+
+        if (
+          (latest.status === 'queued' || latest.status === 'running') &&
+          latest.job_id
+        ) {
+          setActiveJob(latest)
+          attachToJob(latest.job_id, date)
+          return
+        }
+
+        if (latest.scan_date === date) {
+          setActiveJob((prev) => {
+            if (prev?.scan_date === date && (prev.status === 'queued' || prev.status === 'running')) {
+              return prev
+            }
+            if (latest.status === 'failed' || latest.status === 'completed') {
+              return latest
+            }
+            return prev?.scan_date === date ? null : prev
+          })
+        }
+      } catch {
+        /* ignore resume errors */
+      }
+    },
+    [attachToJob],
+  )
+
+  useEffect(() => {
+    if (initializedRef.current) return
+    let cancelled = false
+
+    const init = async () => {
+      const daysRes = await loadDays()
+      if (cancelled) return
+      const today = daysRes?.selected_default ?? daysRes?.today ?? todayIsoRome()
+      setSelectedDay(today)
+      await loadList(today)
+      if (cancelled) return
+      try {
+        const latest = await getCecchinoTodayLatestScanJob(today)
         if (
           latest &&
           (latest.status === 'queued' || latest.status === 'running') &&
           latest.job_id
         ) {
           setActiveJob(latest)
-          attachToJob(latest.job_id, date)
-        } else if (latest?.status === 'completed' && activeJob?.job_id === latest.job_id) {
-          setActiveJob(latest)
-        } else if (!latest || latest.status === 'failed' || latest.status === 'completed') {
-          if (activeJob?.scan_date === date && (activeJob.status === 'queued' || activeJob.status === 'running')) {
-            return
-          }
-          if (latest?.status !== 'running' && latest?.status !== 'queued') {
-            setActiveJob((prev) => (prev?.scan_date === date ? null : prev))
-          }
+          attachToJob(latest.job_id, today)
         }
       } catch {
-        /* ignore resume errors */
+        /* ignore */
       }
-    },
-    [activeJob, attachToJob],
-  )
-
-  useEffect(() => {
-    const init = async () => {
-      const daysRes = await loadDays()
-      const today = daysRes?.selected_default ?? daysRes?.today ?? todayIsoRome()
-      setSelectedDay(today)
-      await loadList(today)
-      await resumeActiveJobForDay(today)
+      initializedRef.current = true
       dayNavReady.current = true
     }
+
     void init()
-    return () => stopPolling()
-  }, [loadDays, loadList, resumeActiveJobForDay, stopPolling])
+    return () => {
+      cancelled = true
+      stopPolling()
+    }
+  }, [attachToJob, loadDays, loadList, stopPolling])
 
   useEffect(() => {
     if (!dayNavReady.current) return
+    const prevPoll = activePollRef.current
+    if (prevPoll && prevPoll.date !== selectedDay) {
+      stopPolling()
+      setScanDayLoading(false)
+    }
     setSelectedId(null)
     setDetail(null)
     void loadList(selectedDay)
     void resumeActiveJobForDay(selectedDay)
-  }, [selectedDay, loadList, resumeActiveJobForDay])
+  }, [selectedDay, loadList, resumeActiveJobForDay, stopPolling])
 
   useEffect(() => {
     const load = async () => {
@@ -265,8 +319,10 @@ export function CecchinoTodayPage() {
     setActionError(null)
     setScanReport(null)
     setScanDayLoading(true)
+    logCecchinoTodayDebug('handleScanDay', { date: selectedDay, forceRescan })
     try {
       const start = await startCecchinoTodayScanDay({ date: selectedDay, forceRescan })
+      logCecchinoTodayDebug('handleScanDay response', start)
 
       if (start.status === 'already_scanned') {
         setScanDayLoading(false)
@@ -282,6 +338,35 @@ export function CecchinoTodayPage() {
           attachToJob(start.job_id, selectedDay)
         }
         return
+      }
+
+      if (start.status === 'queued' || start.status === 'running') {
+        if (start.job_id) {
+          setActiveJob({
+            job_id: start.job_id,
+            scan_date: start.scan_date,
+            timezone: 'Europe/Rome',
+            force_rescan: forceRescan,
+            status: start.status,
+            current_step: 'fetching_fixtures',
+            progress_current: 0,
+            progress_total: null,
+            progress_pct: null,
+            fixtures_found: 0,
+            fixtures_checked: 0,
+            odds_checked: 0,
+            eligible_count: 0,
+            excluded_count: 0,
+            excluded_summary: {},
+            result_summary: null,
+            warnings: [],
+            errors: [],
+            started_at: null,
+            finished_at: null,
+          })
+          attachToJob(start.job_id, selectedDay)
+          return
+        }
       }
 
       if (!start.job_id) {
@@ -416,6 +501,10 @@ export function CecchinoTodayPage() {
   const isScanned = list?.is_scanned ?? false
   const hasActiveFilters =
     statusFilter !== 'all' || !!countryFilter || !!leagueFilter || !!searchQuery.trim()
+  const scanInProgress =
+    scanDayLoading ||
+    (activeJob?.scan_date === selectedDay &&
+      (activeJob.status === 'queued' || activeJob.status === 'running'))
   const showProgress =
     activeJob &&
     activeJob.scan_date === selectedDay &&
@@ -428,6 +517,7 @@ export function CecchinoTodayPage() {
       <CecchinoTodayPageHeader
         isScanned={isScanned}
         scanDayLoading={scanDayLoading}
+        scanInProgress={scanInProgress}
         updateResultsLoading={updateResultsLoading}
         revalidateLoading={revalidateLoading}
         onScanDay={(force) => void handleScanDay(force)}

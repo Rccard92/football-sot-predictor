@@ -22,8 +22,15 @@ flowchart TD
   finalGate -->|eligible| listMain[Lista principale GET /today]
   finalGate -->|excluded_*| debugExcluded[Debug escluse admin]
   pollUI[Frontend polling 2.5s] --> jobUpdate[GET scan-jobs/id]
-  jobUpdate -->|completed| reloadUI[loadDays + loadList]
+  jobUpdate -->|completed| reloadUI[loadDays + loadList selectedDay]
 ```
+
+## Fix Fase 17 — selectedDay e job lifecycle
+
+- **selectedDay:** init eseguito una sola volta al mount; `loadDays()` non sovrascrive la data scelta dall'utente.
+- **Polling:** attach per `(job_id, scan_date)`; stop al cambio giorno; retry x3 senza reset data.
+- **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
+- **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
 ## Flusso scan sincrono legacy (pre-Fase 16)
 

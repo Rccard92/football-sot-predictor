@@ -42,4 +42,16 @@ export function centerWindowOnToday(
   return clampWindowStart(anchor - Math.floor(visibleCount / 2), visibleCount, days.length)
 }
 
+export function centerWindowOnDate(
+  days: Array<{ date: string }>,
+  targetDate: string,
+  visibleCount: number,
+): number {
+  if (!days.length) return 0
+  const index = days.findIndex((d) => d.date === targetDate)
+  const anchor = index >= 0 ? index : days.findIndex((d) => (d as { is_today?: boolean }).is_today)
+  const resolved = anchor >= 0 ? anchor : 0
+  return clampWindowStart(resolved - Math.floor(visibleCount / 2), visibleCount, days.length)
+}
+
 export { clampWindowStart }

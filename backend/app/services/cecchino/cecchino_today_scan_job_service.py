@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
-from sqlalchemy import desc, select
+from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -68,8 +68,22 @@ def recover_stale_scan_jobs(db: Session, *, max_age_minutes: int = STALE_JOB_MIN
         db.scalars(
             select(CecchinoTodayScanJob).where(
                 CecchinoTodayScanJob.status.in_(tuple(JOB_ACTIVE_STATUSES)),
-                CecchinoTodayScanJob.started_at.isnot(None),
-                CecchinoTodayScanJob.started_at < cutoff,
+                or_(
+                    and_(
+                        CecchinoTodayScanJob.status == JOB_STATUS_QUEUED,
+                        CecchinoTodayScanJob.created_at < cutoff,
+                    ),
+                    and_(
+                        CecchinoTodayScanJob.status == JOB_STATUS_RUNNING,
+                        or_(
+                            and_(
+                                CecchinoTodayScanJob.started_at.isnot(None),
+                                CecchinoTodayScanJob.started_at < cutoff,
+                            ),
+                            CecchinoTodayScanJob.updated_at < cutoff,
+                        ),
+                    ),
+                ),
             ),
         ).all(),
     )
@@ -78,8 +92,9 @@ def recover_stale_scan_jobs(db: Session, *, max_age_minutes: int = STALE_JOB_MIN
         row.status = JOB_STATUS_FAILED
         row.finished_at = _utcnow()
         row.current_step = "completed"
+        row.updated_at = _utcnow()
         errs = list(row.errors_json or [])
-        errs.append("stale job timeout")
+        errs.append("stale_job_timeout")
         row.errors_json = errs
         count += 1
     if count:
@@ -100,6 +115,7 @@ def get_running_job_for_date(db: Session, scan_date: date) -> CecchinoTodayScanJ
 
 
 def get_latest_scan_job(db: Session, scan_date: date) -> CecchinoTodayScanJob | None:
+    recover_stale_scan_jobs(db)
     return db.scalar(
         select(CecchinoTodayScanJob)
         .where(CecchinoTodayScanJob.scan_date == scan_date)
@@ -127,6 +143,7 @@ def update_scan_job(db: Session, job_id: str, **kwargs: Any) -> CecchinoTodaySca
     if job is None:
         return None
     _update_job_fields(job, **kwargs)
+    job.updated_at = _utcnow()
     db.flush()
     return job
 
@@ -153,10 +170,17 @@ def make_progress_reporter(db: Session, job_id: str) -> Callable[..., None]:
 
 def _run_scan_job_thread(job_id: str) -> None:
     db = SessionLocal()
+    terminal = False
     try:
         job = get_scan_job(db, job_id)
         if job is None:
+            logger.warning("Cecchino scan job not found job_id=%s", job_id)
             return
+        logger.info(
+            "Cecchino scan job starting job_id=%s scan_date=%s",
+            job_id,
+            job.scan_date.isoformat(),
+        )
         update_scan_job(
             db,
             job_id,
@@ -193,6 +217,7 @@ def _run_scan_job_thread(job_id: str) -> None:
                 warnings_json=[],
             )
             db.commit()
+            terminal = True
             return
 
         if status != "ok":
@@ -207,6 +232,7 @@ def _run_scan_job_thread(job_id: str) -> None:
                 result_summary_json=report.get("result_summary"),
             )
             db.commit()
+            terminal = True
             return
 
         update_scan_job(
@@ -226,26 +252,51 @@ def _run_scan_job_thread(job_id: str) -> None:
             fixtures_checked=int(report.get("fixtures_processed") or 0),
         )
         db.commit()
+        terminal = True
+        logger.info("Cecchino scan job completed job_id=%s scan_date=%s", job_id, job.scan_date.isoformat())
     except Exception as exc:
-        logger.exception("Cecchino Today scan job failed job_id=%s", job_id)
+        logger.exception(
+            "Cecchino Today scan job failed job_id=%s scan_date=%s step=runner",
+            job_id,
+            getattr(locals().get("job"), "scan_date", "?"),
+        )
         try:
-            recover_session = db
-            job = get_scan_job(recover_session, job_id)
+            db.rollback()
+            job = get_scan_job(db, job_id)
             if job is not None:
                 errs = list(job.errors_json or [])
                 errs.append(str(exc)[:500])
                 update_scan_job(
-                    recover_session,
+                    db,
                     job_id,
                     status=JOB_STATUS_FAILED,
                     finished_at=_utcnow(),
                     current_step="completed",
                     errors_json=errs,
                 )
-                recover_session.commit()
+                db.commit()
+                terminal = True
         except Exception:
             logger.exception("Failed to mark scan job as failed job_id=%s", job_id)
     finally:
+        if not terminal:
+            try:
+                db.rollback()
+                job = get_scan_job(db, job_id)
+                if job is not None and job.status in JOB_ACTIVE_STATUSES:
+                    errs = list(job.errors_json or [])
+                    errs.append("job thread exited without terminal status")
+                    update_scan_job(
+                        db,
+                        job_id,
+                        status=JOB_STATUS_FAILED,
+                        finished_at=_utcnow(),
+                        current_step="completed",
+                        errors_json=errs,
+                    )
+                    db.commit()
+            except Exception:
+                logger.exception("Failed guard cleanup for scan job job_id=%s", job_id)
         db.close()
 
 
@@ -312,6 +363,23 @@ def start_scan_job(
         "scan_date": scan_date.isoformat(),
         "message": "Scansione avviata",
     }
+
+
+def get_latest_jobs_by_dates(db: Session, dates: list[date]) -> dict[date, CecchinoTodayScanJob]:
+    if not dates:
+        return {}
+    rows = list(
+        db.scalars(
+            select(CecchinoTodayScanJob)
+            .where(CecchinoTodayScanJob.scan_date.in_(dates))
+            .order_by(CecchinoTodayScanJob.scan_date, desc(CecchinoTodayScanJob.created_at)),
+        ).all(),
+    )
+    out: dict[date, CecchinoTodayScanJob] = {}
+    for row in rows:
+        if row.scan_date not in out:
+            out[row.scan_date] = row
+    return out
 
 
 def get_active_jobs_by_dates(db: Session, dates: list[date]) -> dict[date, CecchinoTodayScanJob]:

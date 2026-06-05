@@ -1396,28 +1396,47 @@ def list_available_days(
     timezone: str = DEFAULT_TODAY_TIMEZONE,
     window_days: int = TIMELINE_WINDOW_DAYS,
 ) -> dict[str, Any]:
-    from app.services.cecchino.cecchino_today_scan_job_service import get_active_jobs_by_dates
+    from app.services.cecchino.cecchino_today_scan_job_service import (
+        get_active_jobs_by_dates,
+        get_latest_jobs_by_dates,
+        recover_stale_scan_jobs,
+    )
 
+    recover_stale_scan_jobs(db)
     today = rome_today(timezone)
     tomorrow = rome_tomorrow(timezone)
     agg = _aggregate_scan_dates(db)
 
     day_dates: list[date] = [today + timedelta(days=offset) for offset in range(-window_days, window_days + 1)]
     active_jobs = get_active_jobs_by_dates(db, day_dates)
+    latest_jobs = get_latest_jobs_by_dates(db, day_dates)
 
     day_entries: list[dict[str, Any]] = []
     for d in day_dates:
         meta = agg.get(d)
         has_scan = meta is not None
         active_job = active_jobs.get(d)
+        latest_job = latest_jobs.get(d)
         scan_job_status = active_job.status if active_job else None
         scan_job_id = active_job.job_id if active_job else None
-        if scan_job_status in ("queued", "running"):
+
+        if active_job is not None:
+            scan_status = active_job.status
+            active_job_id = active_job.job_id
             scan_state = "scanning"
+        elif latest_job is not None and latest_job.status in ("failed", "completed", "cancelled"):
+            scan_status = latest_job.status
+            active_job_id = latest_job.job_id
+            scan_state = "error" if latest_job.status == "failed" else "scanned"
         elif has_scan:
+            scan_status = "completed"
+            active_job_id = latest_job.job_id if latest_job else None
             scan_state = "scanned"
         else:
+            scan_status = "not_scanned"
+            active_job_id = None
             scan_state = "not_scanned"
+
         day_entries.append(
             {
                 "date": d.isoformat(),
@@ -1433,8 +1452,10 @@ def list_available_days(
                 "last_scan_at": meta.get("last_scan_at") if meta else None,
                 "scan_state": scan_state,
                 "status": "available" if has_scan else "pending",
+                "scan_status": scan_status,
+                "active_job_id": active_job_id,
                 "scan_job_status": scan_job_status,
-                "scan_job_id": scan_job_id,
+                "scan_job_id": scan_job_id or active_job_id,
             },
         )
 

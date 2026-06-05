@@ -303,6 +303,20 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **Eleggibilità e formule Cecchino:** invariati.
 
+## Cecchino Today — Fase 17 — Fix polling e selectedDay (v0.11)
+
+Versione `cecchino_today_v0_11_scan_polling_fix`: correzione UX scan async e lifecycle job.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Frontend | Init mount-only; `selectedDay` preservato su refresh days/poll; polling per `job_id` + data |
+| Timeline | `scan_status`, badge Scanning/Fallita/Scansionata; finestra centrata su giorno selezionato |
+| Stale recovery | `queued` vecchi via `created_at`; `running` bloccati via `updated_at` o `started_at` >30 min |
+| Runner | `SessionLocal` autonoma; `rollback` + mark `failed`; guard se thread esce senza stato terminale |
+| GET `/days` | Campi `scan_status`, `active_job_id` (+ alias legacy `scan_job_*`) |
+
+**UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
+
 ## Cecchino Today — Fase 15 — Over/Under strict FT e PT (v0.9)
 
 | Componente | Comportamento |

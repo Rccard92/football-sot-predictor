@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { CecchinoTodayDay } from '../../lib/cecchinoTodayApi'
+import type { CecchinoTodayDay, CecchinoTodayScanStatus } from '../../lib/cecchinoTodayApi'
 import { formatDayShort } from '../../lib/cecchinoTodayApi'
 import {
   todayCard,
@@ -8,7 +8,7 @@ import {
   todayTimelineGrid,
 } from './cecchinoTodayStyles'
 import {
-  centerWindowOnToday,
+  centerWindowOnDate,
   clampWindowStart,
   useTimelineVisibleCount,
 } from './useTimelineVisibleCount'
@@ -19,28 +19,53 @@ type Props = {
   onSelectDay: (date: string) => void
 }
 
+function resolveScanStatus(day: CecchinoTodayDay): CecchinoTodayScanStatus {
+  if (day.scan_status) return day.scan_status
+  if (day.scan_job_status === 'queued' || day.scan_job_status === 'running') {
+    return day.scan_job_status
+  }
+  if (day.is_scanned) return 'completed'
+  return 'not_scanned'
+}
+
+function statusLabel(status: CecchinoTodayScanStatus): string {
+  switch (status) {
+    case 'queued':
+    case 'running':
+      return 'Scanning'
+    case 'failed':
+      return 'Fallita'
+    case 'completed':
+      return 'Scansionata'
+    default:
+      return 'Non scansionata'
+  }
+}
+
 export function CecchinoDayTimeline({ days, selectedDay, onSelectDay }: Props) {
   const visibleCount = useTimelineVisibleCount()
   const daysKey = useMemo(() => days.map((d) => d.date).join('|'), [days])
-  const centerStart = useMemo(
-    () => centerWindowOnToday(days, visibleCount),
-    [days, visibleCount],
+  const defaultStart = useMemo(
+    () => centerWindowOnDate(days, selectedDay, visibleCount),
+    [days, selectedDay, visibleCount],
   )
 
-  const [navState, setNavState] = useState({ daysKey: '', navPages: 0 })
-  const navPages = navState.daysKey === daysKey ? navState.navPages : 0
+  const [navState, setNavState] = useState({ daysKey: '', anchorDate: '', navPages: 0 })
+  const navPages =
+    navState.daysKey === daysKey && navState.anchorDate === selectedDay ? navState.navPages : 0
 
   const setNavPages = (updater: (prev: number) => number) => {
     setNavState((prev) => {
-      const currentPages = prev.daysKey === daysKey ? prev.navPages : 0
-      return { daysKey, navPages: updater(currentPages) }
+      const currentPages =
+        prev.daysKey === daysKey && prev.anchorDate === selectedDay ? prev.navPages : 0
+      return { daysKey, anchorDate: selectedDay, navPages: updater(currentPages) }
     })
   }
 
   if (!days.length) return null
 
   const maxStart = Math.max(0, days.length - visibleCount)
-  const windowStart = clampWindowStart(centerStart + navPages * visibleCount, visibleCount, days.length)
+  const windowStart = clampWindowStart(defaultStart + navPages * visibleCount, visibleCount, days.length)
   const canPrev = windowStart > 0
   const canNext = windowStart < maxStart
   const visibleDays = days.slice(windowStart, windowStart + visibleCount)
@@ -70,7 +95,9 @@ export function CecchinoDayTimeline({ days, selectedDay, onSelectDay }: Props) {
         <div className={`${todayTimelineGrid} min-w-0 flex-1`}>
           {visibleDays.map((day) => {
             const active = day.date === selectedDay
-            const isScanning = day.scan_job_status === 'queued' || day.scan_job_status === 'running'
+            const scanStatus = resolveScanStatus(day)
+            const isScanning = scanStatus === 'queued' || scanStatus === 'running'
+            const isFailed = scanStatus === 'failed'
             const countLabel = day.is_scanned ? String(day.eligible_count) : '—'
             return (
               <button
@@ -82,7 +109,9 @@ export function CecchinoDayTimeline({ days, selectedDay, onSelectDay }: Props) {
                     ? 'border-blue-500 bg-blue-600 text-white shadow-md ring-2 ring-blue-300'
                     : day.is_scanned && day.eligible_count > 0
                       ? 'border-slate-300 bg-white text-slate-900 hover:border-blue-300'
-                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+                      : isFailed
+                        ? 'border-red-200 bg-red-50 text-red-900 hover:border-red-300'
+                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
                 }`}
               >
                 <div className={`text-xs ${day.is_today && !active ? 'font-bold' : 'font-medium'}`}>
@@ -109,12 +138,10 @@ export function CecchinoDayTimeline({ days, selectedDay, onSelectDay }: Props) {
                   {isScanning ? (
                     <span className="inline-flex items-center gap-1">
                       <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                      Scanning
+                      {statusLabel(scanStatus)}
                     </span>
-                  ) : day.is_scanned ? (
-                    'Scansionata'
                   ) : (
-                    'Non scansionata'
+                    statusLabel(scanStatus)
                   )}
                 </div>
               </button>

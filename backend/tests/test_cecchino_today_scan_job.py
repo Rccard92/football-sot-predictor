@@ -131,7 +131,7 @@ def test_recover_stale_scan_jobs():
     count = recover_stale_scan_jobs(db, max_age_minutes=30)
     assert count == 1
     assert stale.status == JOB_STATUS_FAILED
-    assert "stale job timeout" in (stale.errors_json or [])[0]
+    assert "stale_job_timeout" in (stale.errors_json or [])[0]
 
 
 def test_job_to_dict_includes_progress():

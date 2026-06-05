@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.11.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Fix polling scan job e selectedDay',
+    type: 'patch',
+    summary:
+      'Corretto reset selectedDay a oggi, polling stabile per job async, stale recovery e progress card più esplicita.',
+    highlights: [
+      'selectedDay preservato su refresh timeline e polling.',
+      'Polling agganciato al job della data selezionata.',
+      'Stale job queued/running → failed dopo 30 min.',
+      'Runner con rollback e guard failed.',
+      'Timeline scan_status + progress card elapsed time.',
+      'Zero modifiche SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.10.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Scan asincrona e polling',

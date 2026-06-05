@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 17 — Fix polling scan job e selectedDay persistente (2026-06-04)
+
+- Corretto reset di `selectedDay` a oggi dopo refresh timeline/polling (init effect instabile con dipendenza da `activeJob`).
+- Polling agganciato al job della data selezionata; `activePollRef` evita doppio attach e stop al cambio giorno.
+- Click su giorno in scanning non riporta più a oggi; timeline centrata sulla data selezionata.
+- Background job usa `SessionLocal` autonoma; eccezioni marcano `failed` con rollback e guard in `finally`.
+- Stale job recovery estesa a `queued` (via `created_at`) e `running` (via `updated_at`/`started_at`).
+- GET `/days` espone `scan_status` e `active_job_id`; progress card con elapsed time e header disabilitato durante scan.
+- Scan completed ricarica la giornata selezionata, non oggi; nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 16 — Scan asincrona e polling Today (2026-06-04)
 
 - Scan giornaliera spostata su job asincrono persistito (`cecchino_today_scan_jobs`) con thread daemon e stato su DB.

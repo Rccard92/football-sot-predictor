@@ -25,6 +25,13 @@ export type CecchinoTodayScanReport = {
   scan_meta?: CecchinoTodayScanMeta
 }
 
+export type CecchinoTodayScanStatus =
+  | 'not_scanned'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+
 export type CecchinoTodayDay = {
   date: string
   label: string
@@ -39,8 +46,21 @@ export type CecchinoTodayDay = {
   last_scan_at: string | null
   scan_state: 'scanned' | 'not_scanned' | 'scanning' | 'error' | 'partial'
   status: 'available' | 'pending'
+  scan_status?: CecchinoTodayScanStatus
+  active_job_id?: string | null
   scan_job_status?: string | null
   scan_job_id?: string | null
+}
+
+/** Log debug solo in DEV — polling/selectedDay. */
+export function logCecchinoTodayDebug(message: string, data?: unknown): void {
+  if (import.meta.env.DEV) {
+    if (data !== undefined) {
+      console.debug(`[CecchinoToday] ${message}`, data)
+    } else {
+      console.debug(`[CecchinoToday] ${message}`)
+    }
+  }
 }
 
 export type CecchinoTodayDaysResponse = {
