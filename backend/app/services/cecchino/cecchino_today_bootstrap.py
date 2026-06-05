@@ -10,6 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.models import Competition, Fixture
 from app.services.api_football_client import ApiFootballClient
+from app.services.cecchino.cecchino_league_stats_cache_service import (
+    get_league_stats_cache,
+    is_league_stats_cache_valid,
+    upsert_league_stats_cache,
+)
 from app.services.cecchino.league_ingest_helpers import (
     get_or_create_competition_for_league_season,
     get_or_create_league_by_api_id,
@@ -26,6 +31,9 @@ def ensure_competition_and_history(
     *,
     api_item: dict[str, Any],
     client: ApiFootballClient | None = None,
+    skip_api_import: bool = False,
+    bootstrapped_leagues: set[tuple[int, int]] | None = None,
+    metrics: Any | None = None,
 ) -> tuple[Competition | None, Fixture | None, list[str]]:
     """
     Crea/trova competition, importa teams + fixture FT, upsert fixture odierna.
@@ -76,28 +84,59 @@ def ensure_competition_and_history(
     if created:
         warnings.append(f"created_competition:{comp.key}")
 
-    try:
-        teams = af_client.get_teams(provider_league_id, season_year)
-        for t in teams:
-            safe_upsert_team_from_api_item(db, ingest, t)
-    except Exception as exc:
-        warnings.append(f"teams_import_error:{exc!s}"[:200])
+    league_key = (provider_league_id, season_year)
+    cache_row = get_league_stats_cache(db, provider_league_id=provider_league_id, season=season_year)
+    cache_valid = is_league_stats_cache_valid(cache_row)
+    in_memory_hit = bootstrapped_leagues is not None and league_key in bootstrapped_leagues
 
-    try:
-        ft_items = af_client.get_fixtures(provider_league_id, season_year, status="FT")
-        n = 0
-        for item in ft_items:
-            if ingest._upsert_fixture_from_api_item(
+    should_import = not skip_api_import and not cache_valid and not in_memory_hit
+
+    fixtures_imported = int(cache_row.fixtures_ft_imported) if cache_row else 0
+    if should_import:
+        try:
+            teams = af_client.get_teams(provider_league_id, season_year)
+            if metrics is not None:
+                metrics.api_calls["teams"] = metrics.api_calls.get("teams", 0) + 1
+                metrics.sync_api_calls_total()
+            for t in teams:
+                safe_upsert_team_from_api_item(db, ingest, t)
+        except Exception as exc:
+            warnings.append(f"teams_import_error:{exc!s}"[:200])
+
+        try:
+            ft_items = af_client.get_fixtures(provider_league_id, season_year, status="FT")
+            if metrics is not None:
+                metrics.api_calls["fixtures"] = metrics.api_calls.get("fixtures", 0) + 1
+                metrics.sync_api_calls_total()
+            n = 0
+            for item in ft_items:
+                if ingest._upsert_fixture_from_api_item(
+                    db,
+                    league,
+                    season_row,
+                    item,
+                    competition_id=int(comp.id),
+                ):
+                    n += 1
+            fixtures_imported = n
+            warnings.append(f"fixtures_ft_imported:{n}")
+            upsert_league_stats_cache(
                 db,
-                league,
-                season_row,
-                item,
-                competition_id=int(comp.id),
-            ):
-                n += 1
-        warnings.append(f"fixtures_ft_imported:{n}")
-    except Exception as exc:
-        warnings.append(f"fixtures_import_error:{exc!s}"[:200])
+                provider_league_id=provider_league_id,
+                season=season_year,
+                country=league_country,
+                league_name=league_name,
+                fixtures_ft_imported=n,
+                has_minimum_stats=n >= 6,
+                stats_quality_status="imported" if n >= 6 else "low_sample",
+            )
+        except Exception as exc:
+            warnings.append(f"fixtures_import_error:{exc!s}"[:200])
+    elif cache_valid or in_memory_hit:
+        warnings.append(f"league_stats_cache_hit:{provider_league_id}:{season_year}")
+
+    if bootstrapped_leagues is not None:
+        bootstrapped_leagues.add(league_key)
 
     api_fixture_id = int((api_item.get("fixture") or {})["id"])
     if not ingest._upsert_fixture_from_api_item(

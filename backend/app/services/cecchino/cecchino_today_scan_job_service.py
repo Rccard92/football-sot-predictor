@@ -18,10 +18,14 @@ from app.models.cecchino_today_scan_job import (
     JOB_ACTIVE_STATUSES,
     JOB_STATUS_COMPLETED,
     JOB_STATUS_FAILED,
+    JOB_STATUS_FAILED_BUDGET_GUARD,
+    JOB_STATUS_PARTIAL_STOPPED_BUDGET,
     JOB_STATUS_QUEUED,
     JOB_STATUS_RUNNING,
     CecchinoTodayScanJob,
 )
+from app.services.api_usage_context import BudgetGuardStop
+from app.services.api_usage_service import check_api_budget_before_scan
 from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 from app.services.cecchino.cecchino_today_service import run_scan_day
 
@@ -264,15 +268,23 @@ def _run_scan_job_thread(job_id: str) -> None:
             return
 
         if status != "ok":
+            job_status = JOB_STATUS_FAILED
+            if status in (JOB_STATUS_PARTIAL_STOPPED_BUDGET, JOB_STATUS_FAILED_BUDGET_GUARD):
+                job_status = status
             update_scan_job(
                 db,
                 job_id,
-                status=JOB_STATUS_FAILED,
+                status=job_status,
                 finished_at=_utcnow(),
                 current_step="completed",
                 errors_json=list(report.get("errors") or [report.get("message", "scan failed")]),
                 warnings_json=list(report.get("warnings") or []),
                 result_summary_json=report.get("result_summary"),
+                progress_current=int(report.get("fixtures_processed") or 0),
+                progress_total=int(report.get("fixtures_found") or report.get("total_discovered") or 0),
+                eligible_count=int(report.get("eligible") or 0),
+                excluded_count=int(report.get("excluded_total") or 0),
+                excluded_summary_json=dict(report.get("excluded_summary") or {}),
             )
             db.commit()
             terminal = True
@@ -386,6 +398,16 @@ def start_scan_job(
             "scan_date": scan_date.isoformat(),
             "message": "Giornata già scansionata. Usa force_rescan=true per aggiornare.",
             "scan_meta": meta,
+        }
+
+    try:
+        check_api_budget_before_scan(db, usage_date=scan_date)
+    except BudgetGuardStop as bg:
+        return {
+            "status": bg.status,
+            "scan_date": scan_date.isoformat(),
+            "message": bg.message,
+            "details": bg.details,
         }
 
     job_id = str(uuid.uuid4())

@@ -1,4 +1,6 @@
 from app.models.base import Base
+from app.models.api_usage_event import ApiUsageEvent
+from app.models.cecchino_league_stats_cache import CecchinoLeagueStatsCache
 from app.models.cecchino_prediction import CecchinoPrediction
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.models.cecchino_today_scan_job import CecchinoTodayScanJob
@@ -55,7 +57,9 @@ from app.models.sportapi_odds_market_mapping import SportApiOddsMarketMapping
 from app.models.sportapi_odds_provider import SportApiOddsProvider
 
 __all__ = [
+    "ApiUsageEvent",
     "Base",
+    "CecchinoLeagueStatsCache",
     "CecchinoPrediction",
     "CecchinoTodayFixture",
     "CecchinoTodayScanJob",

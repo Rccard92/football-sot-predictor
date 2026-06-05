@@ -8,6 +8,8 @@ from urllib.parse import urljoin
 import httpx
 
 from app.core.config import get_settings
+from app.services.api_usage_context import ApiUsageContext
+from app.services.api_usage_service import record_api_usage_event
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +30,49 @@ class ApiFootballClient:
         base_url: str | None = None,
         api_key: str | None = None,
         timeout_s: float = 60.0,
+        usage_db: Any | None = None,
+        usage_context: ApiUsageContext | None = None,
     ) -> None:
         settings = get_settings()
         self._base_url = (base_url or settings.api_football_base_url).rstrip("/") + "/"
         self._api_key = api_key if api_key is not None else settings.api_football_key
         self._timeout = timeout_s
+        self._usage_db = usage_db
+        self._usage_context = usage_context or ApiUsageContext(record_events=False)
 
     def _headers(self) -> dict[str, str]:
         return {"x-apisports-key": self._api_key}
+
+    def set_usage_context(self, ctx: ApiUsageContext | None) -> None:
+        self._usage_context = ctx or ApiUsageContext(record_events=False)
+
+    def set_usage_db(self, db: Any | None) -> None:
+        self._usage_db = db
+
+    def _record_usage(
+        self,
+        *,
+        path: str,
+        params: dict[str, Any] | None,
+        status_code: int | None,
+        duration_ms: int,
+    ) -> None:
+        ctx = self._usage_context
+        if ctx is None or not ctx.record_events:
+            return
+        record_api_usage_event(
+            self._usage_db,
+            endpoint=path,
+            params=params,
+            status_code=status_code,
+            duration_ms=duration_ms,
+            scan_date=ctx.scan_date,
+            job_id=ctx.job_id,
+            provider_fixture_id=ctx.provider_fixture_id,
+            provider_league_id=ctx.provider_league_id,
+            cache_hit=ctx.cache_hit,
+            negative_cache_hit=ctx.negative_cache_hit,
+        )
 
     def get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         if not (self._api_key or "").strip():
@@ -74,7 +111,19 @@ class ApiFootballClient:
                 data = resp.json()
                 errors = data.get("errors")
                 if errors:
+                    self._record_usage(
+                        path=path,
+                        params=query,
+                        status_code=resp.status_code,
+                        duration_ms=elapsed_ms,
+                    )
                     raise ApiFootballError(f"API errors: {errors}")
+                self._record_usage(
+                    path=path,
+                    params=query,
+                    status_code=resp.status_code,
+                    duration_ms=elapsed_ms,
+                )
                 return data
             except httpx.HTTPStatusError as e:
                 last_exc = e

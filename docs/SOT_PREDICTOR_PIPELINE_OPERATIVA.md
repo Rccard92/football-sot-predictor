@@ -32,6 +32,14 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fix Fase 19 — gate progressivi e consumo API
+
+- **Censimento:** tutte le fixture salvate come `discovered` dopo `GET fixtures?date=`.
+- **Gate order:** competition → negative/positive odds cache → bookmaker 1X2 → league stats cache → stats → Cecchino.
+- **API tracking:** `api_usage_events` su ogni `ApiFootballClient.get`; summary giornaliero admin.
+- **Budget guard:** `API_FOOTBALL_DAILY_BUDGET=7500`, stop job se budget residuo < 500 o job > 1000 chiamate.
+- **update-results:** date-level fetch; fallback per-id solo se assente nel payload giornaliero.
+
 ## Fix Fase 18 — progress_pct e finalizzazione
 
 - **`progress_pct`:** `round(progress_current / progress_total * 100, 1)` ad ogni update; merge con stato job se step-only.

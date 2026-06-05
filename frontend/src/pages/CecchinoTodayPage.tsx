@@ -40,13 +40,13 @@ import { AdminHttpError } from '../lib/api'
 const POLL_RETRY_MAX = 3
 
 function jobToScanReport(job: CecchinoTodayScanJob): CecchinoTodayScanReport {
-  const rs = (job.result_summary ?? {}) as Record<string, unknown>
+  const rs = job.result_summary
   return {
     status: 'ok',
     version: '',
     scan_date: job.scan_date,
-    fixtures_found: Number(rs.fixtures_found ?? job.fixtures_found),
-    total_discovered: Number(rs.fixtures_found ?? job.fixtures_found),
+    fixtures_found: Number(rs?.fixtures_found ?? job.fixtures_found),
+    total_discovered: Number(rs?.fixtures_found ?? job.fixtures_found),
     eligible: job.eligible_count,
     excluded: job.excluded_summary ?? {},
     excluded_total: job.excluded_count,
@@ -54,7 +54,8 @@ function jobToScanReport(job: CecchinoTodayScanJob): CecchinoTodayScanReport {
     warnings: job.warnings ?? [],
     errors: job.errors ?? [],
     excluded_summary: job.excluded_summary ?? {},
-  }
+    result_summary: rs ?? undefined,
+  } as CecchinoTodayScanReport & { result_summary?: typeof rs }
 }
 
 export function CecchinoTodayPage() {

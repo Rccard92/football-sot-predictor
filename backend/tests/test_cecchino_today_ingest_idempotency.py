@@ -90,6 +90,10 @@ def test_ensure_competition_with_existing_league_no_crash():
         ) as mock_comp,
         patch("app.services.cecchino.cecchino_today_bootstrap.ApiFootballClient") as mock_client_cls,
         patch("app.services.cecchino.cecchino_today_bootstrap.IngestionService") as mock_ingest_cls,
+        patch(
+            "app.services.cecchino.cecchino_today_bootstrap.get_league_stats_cache",
+            return_value=None,
+        ),
     ):
         season = MagicMock()
         season.id = 2
@@ -108,7 +112,8 @@ def test_ensure_competition_with_existing_league_no_crash():
         ingest._upsert_fixture_from_api_item.return_value = True
         mock_ingest_cls.return_value = ingest
 
-        db.scalar.return_value = MagicMock(id=100)
+        local_fx = MagicMock(id=100)
+        db.scalar.return_value = local_fx
 
         api_item = {
             "league": {"id": 268, "season": 2025, "name": "Primera", "country": "Uruguay"},
@@ -205,15 +210,16 @@ def test_scan_continues_after_mapping_error_on_one_fixture():
         patch("app.services.cecchino.cecchino_today_service.is_fixture_not_started", return_value=True),
         patch(
             "app.services.cecchino.cecchino_today_service.verify_complete_1x2_odds",
-            return_value=(True, {"bookmakers": {}}, None),
+            return_value=(True, {"bookmakers": {}}, None, []),
         ),
         patch(
             "app.services.cecchino.cecchino_today_service.ensure_competition_and_history",
             side_effect=bootstrap_side_effect,
         ),
+        patch("app.services.cecchino.cecchino_today_service.cleanup_cecchino_today_snapshots", return_value={"deleted": 0}),
         patch(
-            "app.services.cecchino.cecchino_today_service.cleanup_cecchino_today_snapshots",
-            return_value={"deleted": 0},
+            "app.services.cecchino.cecchino_today_service.get_api_usage_summary",
+            return_value={"total_calls": 0, "estimated_remaining_daily_budget": 7500},
         ),
         patch("app.services.cecchino.cecchino_today_service._upsert_today_snapshot") as mock_upsert,
     ):

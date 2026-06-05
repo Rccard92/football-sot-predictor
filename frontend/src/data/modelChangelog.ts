@@ -12,6 +12,23 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.13.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Gate progressivi e riduzione consumo API',
+    type: 'patch',
+    summary:
+      'Censimento di tutte le fixture, short-circuit per gate, cache odds, negative cache, tracking API e budget guard.',
+    highlights: [
+      'Tutte le fixture censite come discovered.',
+      'Competition gate prima delle odds; bookmaker gate prima delle stats.',
+      'Negative cache odds e deduplica bootstrap lega.',
+      'Tabella api_usage_events e GET /admin/api-usage/summary.',
+      'Budget guard 7500/giorno; UI consumo API e funnel esclusioni.',
+      'Zero modifiche SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.12.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Fix progress bar e finalizzazione scan',

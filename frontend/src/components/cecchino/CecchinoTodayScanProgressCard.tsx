@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CecchinoTodayScanJob } from '../../lib/cecchinoTodayApi'
-import { SCAN_STEP_LABELS, computeScanJobProgressPct } from '../../lib/cecchinoTodayApi'
+import {
+  SCAN_STEP_LABELS,
+  computeScanJobProgressPct,
+  getScanJobApiMetrics,
+} from '../../lib/cecchinoTodayApi'
 import { todayCard, todayCardPadding } from './cecchinoTodayStyles'
 
 type Props = {
@@ -25,8 +29,11 @@ function formatElapsed(startedAt: string | null, nowMs: number): string | null {
 export function CecchinoTodayScanProgressCard({ job }: Props) {
   const [nowMs, setNowMs] = useState(() => Date.now())
   const pct = computeScanJobProgressPct(job)
+  const apiMetrics = getScanJobApiMetrics(job)
   const isRunning = job.status === 'queued' || job.status === 'running'
-  const isFailed = job.status === 'failed' || job.status === 'cancelled'
+  const isBudgetStop =
+    job.status === 'partial_stopped_budget' || job.status === 'failed_budget_guard'
+  const isFailed = job.status === 'failed' || job.status === 'cancelled' || isBudgetStop
   const isCompleted = job.status === 'completed'
   const showBar = isRunning || isCompleted || (isFailed && pct > 0)
   const elapsed = useMemo(() => formatElapsed(job.started_at, nowMs), [job.started_at, nowMs])
@@ -55,7 +62,9 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
               : isCompleted
                 ? 'Scansione completata'
                 : isFailed
-                  ? 'Scansione interrotta'
+                  ? isBudgetStop
+                    ? 'Scansione interrotta per budget API'
+                    : 'Scansione interrotta'
                   : 'Scansione giornata'}
           </h3>
           <p className="mt-1 text-xs text-slate-600">
@@ -107,10 +116,18 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
         {elapsed ? (
           <span className="rounded bg-white/80 px-2 py-1 text-slate-500">Trascorso: {elapsed}</span>
         ) : null}
-        {job.started_at ? (
-          <span className="rounded bg-white/80 px-2 py-1 text-slate-500">
-            Avvio: {new Date(job.started_at).toLocaleTimeString('it-IT')}
-          </span>
+      </div>
+
+      <div className="mt-3 grid gap-1 rounded-lg border border-white/60 bg-white/50 p-3 text-xs text-slate-700">
+        <p className="font-medium text-slate-800">Consumo API (job)</p>
+        <p>API usate: {apiMetrics.apiCallsTotal}</p>
+        <p>Odds API: {apiMetrics.oddsApi}</p>
+        <p>Odds cache: {apiMetrics.oddsCache}</p>
+        <p>Negative cache: {apiMetrics.negativeCache}</p>
+        <p>Teams: {apiMetrics.teams}</p>
+        <p>Fixtures: {apiMetrics.fixtures}</p>
+        {apiMetrics.budgetRemaining != null ? (
+          <p>Budget residuo stimato: {apiMetrics.budgetRemaining.toLocaleString('it-IT')}</p>
         ) : null}
       </div>
 

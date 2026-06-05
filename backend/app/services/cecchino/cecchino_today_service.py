@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models import CecchinoTodayFixture, Competition, Fixture
 from app.models.cecchino_today_fixture import (
+    ELIGIBILITY_DISCOVERED,
     ELIGIBILITY_ELIGIBLE,
     ELIGIBILITY_ERROR,
     ELIGIBILITY_EXCLUDED_CECCHINO_NOT_CALCULABLE,
@@ -36,6 +37,13 @@ from app.models.cecchino_today_fixture import (
     PROVIDER_API_FOOTBALL,
 )
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.api_usage_context import ApiUsageContext, BudgetGuardStop
+from app.services.api_usage_service import (
+    build_api_usage_debug_for_fixture,
+    check_api_budget_during_scan,
+    count_job_api_calls,
+    get_api_usage_summary,
+)
 from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_selection_odds
 from app.services.cecchino.cecchino_bookmaker_odds_detail import build_bookmaker_odds_detail
 from app.services.cecchino.cecchino_api_football_odds import parse_api_football_odds_response
@@ -80,7 +88,10 @@ from app.services.cecchino.cecchino_today_final_eligibility import (
     validate_cecchino_today_final_eligibility,
 )
 from app.services.cecchino.cecchino_today_stats_gate import check_cecchino_today_stats_eligible
-from app.services.cecchino.cecchino_today_odds_fetch import fetch_fixture_odds_for_cecchino_bookmakers
+from app.services.cecchino.cecchino_today_odds_fetch import (
+    fetch_fixture_odds_for_cecchino_bookmakers,
+    write_negative_odds_cache,
+)
 from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 
 logger = logging.getLogger(__name__)
@@ -331,6 +342,9 @@ def _upsert_today_snapshot(
     kpi_panel: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
     blocking_reasons: list[str] | None = None,
+    odds_check_status: str | None = None,
+    odds_checked_at: datetime | None = None,
+    negative_cache_until: datetime | None = None,
 ) -> CecchinoTodayFixture:
     brief = _item_brief(api_item)
     provider_fixture_id = brief["provider_fixture_id"]
@@ -373,6 +387,12 @@ def _upsert_today_snapshot(
     row.raw_fixture_json = api_item
     row.warnings_json = warnings or []
     row.blocking_reasons_json = blocking_reasons or []
+    if odds_check_status is not None:
+        row.odds_check_status = odds_check_status
+    if odds_checked_at is not None:
+        row.odds_checked_at = odds_checked_at
+    if negative_cache_until is not None:
+        row.negative_cache_until = negative_cache_until
     apply_display_from_api(row, api_item)
     if eligibility_status == ELIGIBILITY_ELIGIBLE and row.match_display_status not in (
         MATCH_LIVE,
@@ -420,6 +440,14 @@ def _emit_progress(
     fixtures_found: int | None = None,
     fixtures_checked: int | None = None,
     odds_checked: int | None = None,
+    fixtures_censused: int | None = None,
+    fixtures_after_competition_gate: int | None = None,
+    fixtures_after_bookmaker_gate: int | None = None,
+    fixtures_after_stats_gate: int | None = None,
+    odds_cache_hits: int | None = None,
+    negative_cache_hits: int | None = None,
+    api_calls_total: int | None = None,
+    api_calls: dict[str, int] | None = None,
     eligible_count: int | None = None,
     excluded_count: int | None = None,
     excluded_summary: dict[str, int] | None = None,
@@ -443,6 +471,22 @@ def _emit_progress(
         payload["fixtures_checked"] = fixtures_checked
     if odds_checked is not None:
         payload["odds_checked"] = odds_checked
+    if fixtures_censused is not None:
+        payload["fixtures_censused"] = fixtures_censused
+    if fixtures_after_competition_gate is not None:
+        payload["fixtures_after_competition_gate"] = fixtures_after_competition_gate
+    if fixtures_after_bookmaker_gate is not None:
+        payload["fixtures_after_bookmaker_gate"] = fixtures_after_bookmaker_gate
+    if fixtures_after_stats_gate is not None:
+        payload["fixtures_after_stats_gate"] = fixtures_after_stats_gate
+    if odds_cache_hits is not None:
+        payload["odds_cache_hits"] = odds_cache_hits
+    if negative_cache_hits is not None:
+        payload["negative_cache_hits"] = negative_cache_hits
+    if api_calls_total is not None:
+        payload["api_calls_total"] = api_calls_total
+    if api_calls is not None:
+        payload["api_calls_json"] = dict(api_calls)
     if eligible_count is not None:
         payload["eligible_count"] = eligible_count
     if excluded_count is not None:
@@ -471,19 +515,31 @@ def run_scan(
     """Pipeline completa discovery Cecchino Today."""
     resolved_date = resolve_scan_date(scan_date, timezone)
     now_rome = datetime.now(ZoneInfo(timezone))
+    usage_ctx = ApiUsageContext(
+        job_id=job_id,
+        scan_date=resolved_date,
+        record_events=True,
+    )
     af_client = client or ApiFootballClient()
+    af_client.set_usage_db(db)
+    af_client.set_usage_context(usage_ctx)
     warnings: list[str] = []
     errors: list[str] = []
     by_status: dict[str, int] = defaultdict(int)
     run_metrics = metrics or ScanRunMetrics(started_at=time.time())
     if run_metrics.started_at <= 0:
         run_metrics.started_at = time.time()
+    bootstrapped_leagues: set[tuple[int, int]] = set()
+    budget_stopped = False
+    budget_stop_status = "partial_stopped_budget"
+    budget_stop_message = "Scansione interrotta per proteggere il budget API giornaliero."
 
     _emit_progress(progress, current_step="fetching_fixtures")
 
     try:
         raw_items = af_client.get_fixtures_by_date(resolved_date.isoformat(), timezone=timezone)
         run_metrics.api_calls["fixtures"] = run_metrics.api_calls.get("fixtures", 0) + 1
+        run_metrics.sync_api_calls_total()
     except ApiFootballError as exc:
         err_report = {
             "status": "error",
@@ -505,36 +561,80 @@ def run_scan(
     fixtures_checked = 0
     odds_checked = 0
 
+    for item in raw_items:
+        _upsert_today_snapshot(
+            db,
+            scan_date=resolved_date,
+            api_item=item,
+            eligibility_status=ELIGIBILITY_DISCOVERED,
+            eligibility_reason="discovered",
+        )
+    run_metrics.fixtures_censused = total
+    db.commit()
+
     _emit_progress(
         progress,
         current_step="fetching_fixtures",
         fixtures_found=total,
+        fixtures_censused=total,
         progress_total=total,
         progress_current=0,
     )
 
+    def _progress_metrics_payload() -> dict[str, Any]:
+        run_metrics.sync_api_calls_total()
+        excluded_count = sum(v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE)
+        return {
+            "fixtures_found": total,
+            "fixtures_checked": fixtures_checked,
+            "fixtures_censused": run_metrics.fixtures_censused,
+            "fixtures_after_competition_gate": run_metrics.fixtures_after_competition_gate,
+            "fixtures_after_bookmaker_gate": run_metrics.fixtures_after_bookmaker_gate,
+            "fixtures_after_stats_gate": run_metrics.fixtures_after_stats_gate,
+            "odds_checked": odds_checked,
+            "odds_cache_hits": run_metrics.odds_cache_hits,
+            "negative_cache_hits": run_metrics.negative_cache_hits,
+            "api_calls_total": run_metrics.api_calls_total,
+            "eligible_count": by_status.get(ELIGIBILITY_ELIGIBLE, 0),
+            "excluded_count": excluded_count,
+            "excluded_summary": {k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
+            "warnings": warnings,
+            "errors": errors,
+        }
+
     for batch_start in range(0, total, SCAN_BATCH_SIZE):
+        if budget_stopped:
+            break
         batch = raw_items[batch_start : batch_start + SCAN_BATCH_SIZE]
         for item in batch:
             fixtures_checked += 1
             api_fid: int | None = None
             try:
+                try:
+                    check_api_budget_during_scan(
+                        db,
+                        job_id=job_id,
+                        usage_date=resolved_date,
+                        job_calls=count_job_api_calls(db, job_id) if job_id else run_metrics.api_calls_total,
+                    )
+                except BudgetGuardStop as bg:
+                    budget_stopped = True
+                    budget_stop_status = bg.status
+                    budget_stop_message = bg.message
+                    errors.append(bg.message)
+                    break
+
                 brief = _item_brief(item)
                 api_fid = brief["provider_fixture_id"]
                 row_warnings: list[str] = []
+                af_client.set_usage_context(usage_ctx.with_fixture(api_fid))
 
                 _emit_progress(
                     progress,
                     current_step="filtering_competitions",
                     progress_current=fixtures_checked,
                     progress_total=total,
-                    fixtures_found=total,
-                    fixtures_checked=fixtures_checked,
-                    odds_checked=odds_checked,
-                    eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
-                    excluded_count=sum(by_status.values()) - by_status.get(ELIGIBILITY_ELIGIBLE, 0),
-                    excluded_summary={k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
-                    warnings=warnings,
+                    **_progress_metrics_payload(),
                 )
 
                 allowed, excl_status = is_cecchino_allowed_competition(item)
@@ -562,9 +662,10 @@ def run_scan(
 
                 after_filter_count += 1
                 run_metrics.after_competition_filter = after_filter_count
+                run_metrics.fixtures_after_competition_gate = after_filter_count
 
                 _emit_progress(progress, current_step="fetching_odds")
-                odds_by_book, odds_warnings, _strategy = fetch_fixture_odds_for_cecchino_bookmakers(
+                odds_by_book, odds_warnings, _strategy, neg_cache_hit = fetch_fixture_odds_for_cecchino_bookmakers(
                     af_client,
                     api_fid,
                     db=db,
@@ -576,9 +677,34 @@ def run_scan(
                 run_metrics.odds_checked = odds_checked
                 row_warnings.extend(odds_warnings)
 
-                bm_ok, odds_snapshot, bm_reason = verify_complete_1x2_odds(odds_by_book)
+                if neg_cache_hit:
+                    neg_status = ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER
+                    if odds_warnings and "negative_cache:" in odds_warnings[0]:
+                        reason = odds_warnings[0].split(":", 1)[-1]
+                        if "1x2" in reason:
+                            neg_status = ELIGIBILITY_EXCLUDED_MISSING_1X2
+                    _upsert_today_snapshot(
+                        db,
+                        scan_date=resolved_date,
+                        api_item=item,
+                        eligibility_status=neg_status,
+                        eligibility_reason=odds_warnings[0] if odds_warnings else "negative_cache",
+                        bookmaker_status="missing",
+                        blocking_reasons=[odds_warnings[0]] if odds_warnings else ["negative_cache"],
+                    )
+                    by_status[neg_status] += 1
+                    continue
+
+                bm_ok, odds_snapshot, bm_reason, bm_blocking = verify_complete_1x2_odds(odds_by_book)
                 if not bm_ok:
                     status = _BOOK_REASON_TO_STATUS.get(bm_reason or "", ELIGIBILITY_EXCLUDED_MISSING_1X2)
+                    write_negative_odds_cache(
+                        db,
+                        None,
+                        scan_date=resolved_date,
+                        provider_fixture_id=api_fid,
+                        odds_check_status=bm_reason or "missing_bookmaker",
+                    )
                     _upsert_today_snapshot(
                         db,
                         scan_date=resolved_date,
@@ -588,14 +714,25 @@ def run_scan(
                         bookmaker_status="missing",
                         odds_snapshot=odds_snapshot,
                         warnings=row_warnings,
+                        blocking_reasons=bm_blocking,
+                        odds_check_status=bm_reason or "missing_bookmaker",
+                        odds_checked_at=datetime.now(timezone.utc),
                     )
                     by_status[status] += 1
                     continue
+
+                run_metrics.fixtures_after_bookmaker_gate += 1
 
                 local_fx = db.scalar(select(Fixture).where(Fixture.api_fixture_id == api_fid))
                 comp: Competition | None = None
                 if local_fx is not None and local_fx.competition_id:
                     comp = db.get(Competition, int(local_fx.competition_id))
+
+                league_meta = item.get("league") or {}
+                provider_league_id = int(league_meta.get("id") or 0)
+                af_client.set_usage_context(
+                    usage_ctx.with_fixture(api_fid).with_league(provider_league_id or None),
+                )
 
                 if local_fx is None or comp is None:
                     _emit_progress(progress, current_step="importing_stats")
@@ -605,9 +742,10 @@ def run_scan(
                                 db,
                                 api_item=item,
                                 client=af_client,
+                                bootstrapped_leagues=bootstrapped_leagues,
+                                metrics=run_metrics,
                             )
                         row_warnings.extend(boot_warnings)
-                        run_metrics.api_calls["teams"] = run_metrics.api_calls.get("teams", 0) + 1
                     except Exception as exc:
                         logger.exception("Bootstrap Cecchino Today failed fixture=%s", api_fid)
                         recover_session_if_inactive(db)
@@ -649,6 +787,7 @@ def run_scan(
                     leakage_status = str(leakage_check)
 
                 ctx = build_fixture_contexts(db, local_fx)
+                run_metrics.stats_checked += 1
                 stats_ok, stats_snapshot, stats_reason = check_cecchino_today_stats_eligible(
                     ctx,
                     leakage_status=leakage_status,
@@ -670,6 +809,8 @@ def run_scan(
                     )
                     by_status[stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS] += 1
                     continue
+
+                run_metrics.fixtures_after_stats_gate += 1
 
                 _emit_progress(progress, current_step="calculating_cecchino")
                 try:
@@ -750,27 +891,23 @@ def run_scan(
                         )
                         recover_session_if_inactive(db)
             finally:
-                excluded_count = sum(v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE)
                 _emit_progress(
                     progress,
                     progress_current=fixtures_checked,
                     progress_total=total,
-                    fixtures_checked=fixtures_checked,
-                    odds_checked=odds_checked,
-                    eligible_count=by_status.get(ELIGIBILITY_ELIGIBLE, 0),
-                    excluded_count=excluded_count,
-                    excluded_summary={k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE},
-                    warnings=warnings,
-                    errors=errors,
+                    **_progress_metrics_payload(),
                 )
                 if job_id:
                     logger.info(
-                        "CecchinoTodayJob job_id=%s fixture=%s/%s provider_fixture_id=%s",
+                        "CecchinoTodayJob job_id=%s fixture=%s/%s provider_fixture_id=%s step=%s",
                         job_id,
                         fixtures_checked,
                         total,
                         api_fid,
+                        "budget_stop" if budget_stopped else "ok",
                     )
+            if budget_stopped:
+                break
 
         db.commit()
 
@@ -796,6 +933,8 @@ def run_scan(
     duration = time.time() - run_metrics.started_at
     excluded_summary = {k: v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE}
     run_metrics.excluded_summary = dict(excluded_summary)
+    api_usage_summary = get_api_usage_summary(db, usage_date=resolved_date)
+    run_metrics.budget_remaining_estimated = api_usage_summary.get("estimated_remaining_daily_budget")
     report["result_summary"] = run_metrics.to_result_summary(
         fixtures_found=total,
         after_competition_filter=after_filter_count,
@@ -804,7 +943,14 @@ def run_scan(
         excluded_count=sum(excluded_summary.values()),
         excluded_summary=excluded_summary,
         duration_seconds=duration,
+        api_usage=api_usage_summary,
     )
+    if budget_stopped:
+        report["status"] = budget_stop_status
+        report["message"] = budget_stop_message
+        report["budget_stopped"] = True
+        if budget_stop_message not in report["errors"]:
+            report["errors"].append(budget_stop_message)
     _emit_progress(
         progress,
         current_step="completed",
@@ -1099,25 +1245,62 @@ def update_today_fixture_results(
         db.scalars(
             select(CecchinoTodayFixture).where(
                 CecchinoTodayFixture.scan_date == resolved,
-                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
             ),
         ).all(),
     )
+    if not rows:
+        return {
+            "status": "ok",
+            "version": CECCHINO_TODAY_VERSION,
+            "date": resolved.isoformat(),
+            "fixtures_checked": 0,
+            "results_updated": 0,
+            "still_upcoming": 0,
+            "live": 0,
+            "failed": [],
+            "warnings": [],
+            "api_calls": 0,
+        }
+
     warnings: list[str] = []
     failed: list[dict[str, Any]] = []
     results_updated = 0
     still_upcoming = 0
     live = 0
+    api_calls = 0
 
-    for idx, row in enumerate(rows):
-        if idx > 0:
-            time.sleep(SLEEP_BETWEEN_CALLS_S)
-        try:
-            api_item = af_client.get_fixture_by_id(int(row.provider_fixture_id))
-        except ApiFootballError as exc:
-            failed.append({"provider_fixture_id": row.provider_fixture_id, "error": str(exc)})
-            warnings.append(str(exc))
-            continue
+    try:
+        api_items = af_client.get_fixtures_by_date(resolved.isoformat(), timezone=timezone)
+        api_calls += 1
+    except ApiFootballError as exc:
+        return {
+            "status": "error",
+            "version": CECCHINO_TODAY_VERSION,
+            "date": resolved.isoformat(),
+            "message": str(exc),
+            "fixtures_checked": len(rows),
+            "results_updated": 0,
+            "failed": [],
+            "warnings": [str(exc)],
+            "api_calls": api_calls,
+        }
+
+    by_api_id = {
+        int((item.get("fixture") or {}).get("id") or 0): item
+        for item in api_items
+        if (item.get("fixture") or {}).get("id") is not None
+    }
+
+    for row in rows:
+        api_item = by_api_id.get(int(row.provider_fixture_id))
+        if api_item is None:
+            try:
+                api_item = af_client.get_fixture_by_id(int(row.provider_fixture_id))
+                api_calls += 1
+            except ApiFootballError as exc:
+                failed.append({"provider_fixture_id": row.provider_fixture_id, "error": str(exc)})
+                warnings.append(str(exc))
+                continue
         if not api_item:
             failed.append(
                 {"provider_fixture_id": row.provider_fixture_id, "error": "fixture_not_found"},
@@ -1144,6 +1327,7 @@ def update_today_fixture_results(
         "live": live,
         "failed": failed,
         "warnings": warnings,
+        "api_calls": api_calls,
     }
 
 
@@ -1309,10 +1493,10 @@ def build_exclusion_reason_message(row: CecchinoTodayFixture) -> str | None:
     return row.eligibility_reason
 
 
-def _excluded_fixture_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
+def _excluded_fixture_payload(row: CecchinoTodayFixture, db: Session | None = None) -> dict[str, Any]:
     reason_msg = build_exclusion_reason_message(row)
     stats_snap = row.stats_snapshot_json or {}
-    return {
+    payload = {
         "id": int(row.id),
         "provider_fixture_id": int(row.provider_fixture_id),
         "home_team_name": row.home_team_name,
@@ -1332,6 +1516,13 @@ def _excluded_fixture_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
         "fixture_status_debug": build_fixture_status_debug(row),
         "warnings": list(row.warnings_json or []),
     }
+    if db is not None:
+        payload["api_usage_debug"] = build_api_usage_debug_for_fixture(
+            db,
+            provider_fixture_id=int(row.provider_fixture_id),
+            scan_date=row.scan_date,
+        )
+    return payload
 
 
 def list_excluded_today_enriched(
@@ -1356,7 +1547,7 @@ def list_excluded_today_enriched(
         "version": CECCHINO_TODAY_VERSION,
         "scan_date": resolved.isoformat(),
         "total": len(rows),
-        "fixtures": [_excluded_fixture_payload(r) for r in rows],
+        "fixtures": [_excluded_fixture_payload(r, db) for r in rows],
         "scan_meta": get_day_scan_meta(db, resolved, timezone=timezone),
     }
 
@@ -1596,7 +1787,7 @@ def debug_search(
             results.append(
                 {
                     "match_type": "excluded",
-                    "fixture": _excluded_fixture_payload(row),
+                    "fixture": _excluded_fixture_payload(row, db),
                     "message": f"Esclusa: {row.eligibility_status}",
                 },
             )

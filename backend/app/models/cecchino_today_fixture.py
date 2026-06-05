@@ -13,6 +13,7 @@ from app.models.base import Base
 from app.models.mixins import TimestampMixin
 
 ELIGIBILITY_ELIGIBLE = "eligible"
+ELIGIBILITY_DISCOVERED = "discovered"
 ELIGIBILITY_EXCLUDED_COMPETITION = "excluded_competition_type"
 ELIGIBILITY_EXCLUDED_WOMEN = "excluded_women"
 ELIGIBILITY_EXCLUDED_CUP = "excluded_cup"
@@ -87,3 +88,6 @@ class CecchinoTodayFixture(Base, TimestampMixin):
     raw_fixture_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     warnings_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
     blocking_reasons_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
+    odds_check_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    odds_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    negative_cache_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

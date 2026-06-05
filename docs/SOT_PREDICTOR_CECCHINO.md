@@ -303,6 +303,20 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 19 — Gate progressivi e riduzione consumo API (v0.13)
+
+Versione `cecchino_today_v0_13_api_gates`: ottimizzazione consumo API-Football con gate progressivi e tracking.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Censimento | Tutte le fixture → `discovered` prima dei gate |
+| Short-circuit | Stop immediato su esclusione; no stats/Cecchino se bookmaker fallisce |
+| Odds | Single-call + cache positiva + negative cache 6h |
+| Bootstrap | `cecchino_league_stats_cache` deduplica import lega |
+| API usage | Tabella `api_usage_events`; summary admin e job report |
+| Budget guard | 7500/giorno; max 1000/job; status `partial_stopped_budget` |
+| UI | Box job con API usate, cache, budget residuo; funnel esclusioni |
+
 ## Cecchino Today — Fase 18 — Fix progress bar e finalizzazione (v0.12)
 
 Versione `cecchino_today_v0_12_progress_fix`: barra avanzamento e chiusura job robusta.

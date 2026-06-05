@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.routes import (
+    api_usage,
     backtest_v31,
     cecchino,
     cecchino_today,
@@ -50,6 +51,7 @@ from app.routes import (
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(admin.router, tags=["admin"])
+api_router.include_router(api_usage.router)
 api_router.include_router(admin_debug_player_db.router)
 api_router.include_router(admin_debug_player_stats.router)
 api_router.include_router(admin_debug_api_football_catalog.router)

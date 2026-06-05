@@ -21,6 +21,7 @@ export type CecchinoTodayScanReport = {
   errors?: string[]
   excluded_summary?: Record<string, number>
   message?: string
+  result_summary?: CecchinoTodayScanJobResultSummary
   cleanup?: { deleted: number; cutoff_date: string }
   scan_meta?: CecchinoTodayScanMeta
 }
@@ -81,6 +82,41 @@ export type CecchinoTodayScanJobStartResponse = {
   scan_meta?: CecchinoTodayScanMeta
 }
 
+export type CecchinoTodayScanJobResultSummary = {
+  fixtures_found?: number
+  fixtures_censused?: number
+  after_competition_filter?: number
+  fixtures_after_competition_gate?: number
+  fixtures_after_bookmaker_gate?: number
+  fixtures_after_stats_gate?: number
+  odds_checked?: number
+  odds_from_cache?: number
+  odds_from_api?: number
+  odds_cache_hits?: number
+  negative_cache_hits?: number
+  stats_checked?: number
+  bookmaker_fallback_count?: number
+  api_calls?: Record<string, number>
+  api_calls_total?: number
+  api_calls_by_endpoint?: Record<string, number>
+  odds_strategy?: Record<string, number>
+  duration_seconds?: number
+  excluded_funnel?: {
+    competition?: number
+    bookmaker?: number
+    market_1x2?: number
+    stats?: number
+    cecchino?: number
+  }
+  api_usage?: {
+    total_calls?: number
+    cache_hits?: number
+    negative_cache_hits?: number
+    estimated_remaining_daily_budget?: number
+    by_endpoint?: Record<string, number>
+  }
+}
+
 export type CecchinoTodayScanJob = {
   job_id: string
   scan_date: string
@@ -97,7 +133,7 @@ export type CecchinoTodayScanJob = {
   eligible_count: number
   excluded_count: number
   excluded_summary: Record<string, number>
-  result_summary: Record<string, unknown> | null
+  result_summary: CecchinoTodayScanJobResultSummary | null
   warnings: string[]
   errors: string[]
   started_at: string | null
@@ -107,6 +143,33 @@ export type CecchinoTodayScanJob = {
 }
 
 export const SCAN_JOB_POLL_MS = 2500
+
+/** Estrae metriche API dal job (compatibile job legacy senza result_summary). */
+export function getScanJobApiMetrics(job: CecchinoTodayScanJob): {
+  apiCallsTotal: number
+  oddsApi: number
+  oddsCache: number
+  negativeCache: number
+  teams: number
+  fixtures: number
+  budgetRemaining: number | null
+} {
+  const rs = job.result_summary
+  const apiCalls = rs?.api_calls ?? rs?.api_calls_by_endpoint ?? {}
+  const apiUsage = rs?.api_usage
+  return {
+    apiCallsTotal: Number(rs?.api_calls_total ?? apiUsage?.total_calls ?? 0),
+    oddsApi: Number(apiCalls.odds ?? apiUsage?.by_endpoint?.odds ?? 0),
+    oddsCache: Number(rs?.odds_cache_hits ?? rs?.odds_from_cache ?? 0),
+    negativeCache: Number(rs?.negative_cache_hits ?? apiUsage?.negative_cache_hits ?? 0),
+    teams: Number(apiCalls.teams ?? apiUsage?.by_endpoint?.teams ?? 0),
+    fixtures: Number(apiCalls.fixtures ?? apiUsage?.by_endpoint?.fixtures ?? 0),
+    budgetRemaining:
+      apiUsage?.estimated_remaining_daily_budget != null
+        ? Number(apiUsage.estimated_remaining_daily_budget)
+        : null,
+  }
+}
 
 /** Percentuale avanzamento job — fallback se progress_pct assente o 0. */
 export function computeScanJobProgressPct(job: CecchinoTodayScanJob): number {
@@ -289,6 +352,7 @@ export type CecchinoTodayExcludedFixture = {
   import_info?: string[]
   competition_filter_debug: Record<string, unknown>
   fixture_status_debug?: Record<string, unknown>
+  api_usage_debug?: Record<string, unknown>
   warnings: string[]
 }
 

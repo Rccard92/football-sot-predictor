@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     database_url: str
     api_football_key: str = ""
     api_football_base_url: str = "https://v3.football.api-sports.io"
+    api_football_daily_budget: int = 7500
+    api_football_cecchino_scan_max_calls: int = 1000
+    api_football_safe_stop_remaining: int = 500
+    cecchino_odds_bookmaker_fallback: bool = True
+    cecchino_odds_negative_cache_hours: int = 6
+    cecchino_league_stats_cache_hours: int = 12
+    cecchino_league_stats_cache_hours_ok: int = 24
     cors_origins: str = (
         "https://frontend-production-9b20.up.railway.app,"
         "http://localhost:5173,"

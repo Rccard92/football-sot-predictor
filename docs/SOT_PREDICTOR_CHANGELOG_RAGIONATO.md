@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 19 — Gate progressivi e riduzione consumo API (2026-06-04)
+
+- Tutte le fixture della giornata vengono censite (`eligibility_status=discovered`) prima dei gate.
+- Short-circuit per fixture: competition → odds → bookmaker → stats → Cecchino; stop immediato al primo fallimento.
+- Negative cache odds (`negative_cache_until`, 6h) evita richiamate API su fixture già escluse per bookmaker/1X2.
+- Cache bootstrap lega (`cecchino_league_stats_cache`, TTL 12h/24h) deduplica `teams` + `fixtures FT`.
+- Tabella `api_usage_events` + `GET /admin/api-usage/summary`; budget guard (7500/giorno, max 1000/job, stop a 500 residui).
+- `update-results` ottimizzato: 1× `fixtures?date=`; `revalidate-day` resta offline-only.
+- UI: consumo API nel box job, funnel esclusioni post-scan; nessuna modifica SOT v2.0/v2.1.
+
 ## Cecchino — Fase 18 — Fix progress bar e finalizzazione scan job (2026-06-04)
 
 - Corretto calcolo `progress_pct`: gli update step-only non azzerano più la percentuale (merge con stato job DB).

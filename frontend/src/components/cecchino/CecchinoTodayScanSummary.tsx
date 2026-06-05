@@ -12,11 +12,17 @@ function countExcluded(report: CecchinoTodayScanReport, keys: string[]): number 
 }
 
 export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
+  const rs = (report as CecchinoTodayScanReport & { result_summary?: Record<string, unknown> })
+    .result_summary
+  const funnel = (rs?.excluded_funnel ?? {}) as Record<string, number>
   const excludedQuote = countExcluded(report, [
     'excluded_missing_bookmaker',
     'excluded_missing_1x2_market',
   ])
-  const excludedStats = countExcluded(report, ['excluded_insufficient_stats'])
+  const excludedStats = countExcluded(report, [
+    'excluded_insufficient_stats',
+    'excluded_leakage_failed',
+  ])
   const excludedCompetition = countExcluded(report, [
     'excluded_cup',
     'excluded_women',
@@ -24,7 +30,14 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
     'excluded_youth',
     'excluded_started',
   ])
+  const excludedCecchino = countExcluded(report, [
+    'excluded_missing_picchetto',
+    'excluded_zero_probability',
+    'excluded_cecchino_not_calculable',
+    'excluded_kpi_not_calculable',
+  ])
   const excludedErrors = countExcluded(report, ['excluded_mapping_error', 'error'])
+  const found = report.fixtures_found ?? report.total_discovered
 
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-3`}>
@@ -40,19 +53,49 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
           </button>
         )}
       </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-xs text-slate-700">
+        <p className="mb-2 font-medium text-slate-800">Funnel esclusioni</p>
+        <ul className="space-y-1">
+          <li>Fixture trovate: {found}</li>
+          <li>
+            Dopo filtro competizione:{' '}
+            {Number(rs?.fixtures_after_competition_gate ?? rs?.after_competition_filter ?? '—')}
+          </li>
+          <li>
+            Dopo gate bookmaker: {Number(rs?.fixtures_after_bookmaker_gate ?? '—')}
+          </li>
+          <li>Dopo gate stats: {Number(rs?.fixtures_after_stats_gate ?? '—')}</li>
+          <li className="font-medium text-emerald-800">Eleggibili finali: {report.eligible}</li>
+        </ul>
+      </div>
+
       <div className="flex flex-wrap gap-2">
-        <span className={todayBadgeMuted}>
-          Trovate: {report.fixtures_found ?? report.total_discovered}
-        </span>
+        <span className={todayBadgeMuted}>Trovate: {found}</span>
         <span className={todayBadgeOk}>Eleggibili: {report.eligible}</span>
+        {(funnel.competition ?? excludedCompetition) > 0 && (
+          <span className={todayBadgeMuted}>
+            Escluse competizione: {funnel.competition ?? excludedCompetition}
+          </span>
+        )}
+        {(funnel.bookmaker ?? countExcluded(report, ['excluded_missing_bookmaker'])) > 0 && (
+          <span className={todayBadgeMuted}>
+            Escluse bookmaker: {funnel.bookmaker ?? countExcluded(report, ['excluded_missing_bookmaker'])}
+          </span>
+        )}
+        {(funnel.market_1x2 ?? countExcluded(report, ['excluded_missing_1x2_market'])) > 0 && (
+          <span className={todayBadgeMuted}>
+            Escluse mercato 1X2: {funnel.market_1x2 ?? countExcluded(report, ['excluded_missing_1x2_market'])}
+          </span>
+        )}
+        {(funnel.stats ?? excludedStats) > 0 && (
+          <span className={todayBadgeMuted}>Escluse stats: {funnel.stats ?? excludedStats}</span>
+        )}
+        {(funnel.cecchino ?? excludedCecchino) > 0 && (
+          <span className={todayBadgeMuted}>Escluse Cecchino: {funnel.cecchino ?? excludedCecchino}</span>
+        )}
         {excludedQuote > 0 && (
-          <span className={todayBadgeMuted}>Escluse quote: {excludedQuote}</span>
-        )}
-        {excludedStats > 0 && (
-          <span className={todayBadgeMuted}>Escluse statistiche: {excludedStats}</span>
-        )}
-        {excludedCompetition > 0 && (
-          <span className={todayBadgeMuted}>Escluse competizione: {excludedCompetition}</span>
+          <span className={todayBadgeMuted}>Escluse quote (tot): {excludedQuote}</span>
         )}
         {excludedErrors > 0 && (
           <span className={todayBadgeMuted}>Errori: {excludedErrors}</span>

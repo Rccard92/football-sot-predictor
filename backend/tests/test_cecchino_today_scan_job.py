@@ -225,7 +225,7 @@ def test_fetch_fixture_odds_uses_cache_without_api():
     db.scalar.return_value = row
     client = MagicMock()
     metrics = ScanRunMetrics()
-    odds, _, strategy = fetch_fixture_odds_for_cecchino_bookmakers(
+    odds, _, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
         client,
         123,
         db=db,
@@ -251,7 +251,7 @@ def test_fetch_fixture_odds_force_rescan_calls_api():
         },
     ]
     metrics = ScanRunMetrics()
-    _, _, strategy = fetch_fixture_odds_for_cecchino_bookmakers(
+    _, _, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
         client,
         123,
         db=db,
@@ -285,7 +285,7 @@ def test_fetch_fixture_odds_fallback_per_bookmaker():
     client.get_fixture_odds_by_fixture.return_value = []
     client.get_fixture_odds.side_effect = lambda fid, bid: _mock_1x2_bets(bid)
     metrics = ScanRunMetrics()
-    odds, _, strategy = fetch_fixture_odds_for_cecchino_bookmakers(
+    odds, _, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
         client,
         456,
         db=db,
