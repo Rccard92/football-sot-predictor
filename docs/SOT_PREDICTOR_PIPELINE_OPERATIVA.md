@@ -36,6 +36,11 @@ Durante scan-day, se lega/squadra/fixture esistono già nel DB:
 - **Scan-day** persiste OU oltre a 1X2/DC; gate eleggibilità resta solo su 1X2.
 - **Media Over** calcolata solo da Bet365/Betfair/Pinnacle con quote presenti; mai media orphan senza dettaglio.
 
+## Fixture ID e debug JSON (Fase 14)
+
+- Dettaglio Today espone `fixture_ids` e link a `/bookmakers?provider_fixture_id=...`.
+- Export JSON raw filtrato via `fixture-raw-odds` (copy/download in UI admin).
+
 ## Lista vs debug
 
 | Endpoint | Contenuto |

@@ -38,6 +38,9 @@ from app.services.bookmakers.bookmaker_providers_discovery import BookmakerProvi
 from app.services.bookmakers.api_football_fixture_markets_debug_service import (
     ApiFootballFixtureMarketsDebugService,
 )
+from app.services.bookmakers.api_football_fixture_raw_odds_service import (
+    ApiFootballFixtureRawOddsService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +404,32 @@ def fixture_markets_debug(
         raise HTTPException(status_code=503, detail="Database error") from exc
     if out.get("status") == "error" and not out.get("bookmakers"):
         raise HTTPException(status_code=400, detail=out.get("message", "Errore debug mercati"))
+    return jsonable_encoder(out)
+
+
+@router.get("/fixture-raw-odds", response_model=None)
+def fixture_raw_odds(
+    provider_fixture_id: int,
+    provider_source: str = "api_football",
+    bookmaker_ids: str | None = None,
+    include_raw: bool = True,
+):
+    """Raw odds API-Football filtrati su Bet365/Betfair/Pinnacle."""
+    _require_api_football_key()
+    ids: list[int] | None = None
+    if bookmaker_ids:
+        ids = [int(x.strip()) for x in bookmaker_ids.split(",") if x.strip()]
+    try:
+        out = ApiFootballFixtureRawOddsService().run(
+            provider_fixture_id=int(provider_fixture_id),
+            provider_source=provider_source,
+            bookmaker_ids=ids,
+            include_raw=include_raw,
+        )
+    except ApiFootballError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if out.get("status") == "error":
+        raise HTTPException(status_code=400, detail=out.get("message", "Errore raw odds"))
     return jsonable_encoder(out)
 
 

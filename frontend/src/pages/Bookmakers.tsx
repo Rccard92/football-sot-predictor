@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ContextBanner } from '../components/ContextBanner'
+import { BookmakerFixtureRawOddsPanel } from '../components/bookmakers/BookmakerFixtureRawOddsPanel'
 import { BookmakersDiscoveryPanel } from '../components/bookmakers/BookmakersDiscoveryPanel'
-import { ApiFootballFixtureMarketsPanel } from '../components/bookmakers/ApiFootballFixtureMarketsPanel'
 import { SportApiMarketsDiscoveryPanel } from '../components/bookmakers/SportApiMarketsDiscoveryPanel'
 import { SportApiOddsDetailsProbePanel } from '../components/bookmakers/SportApiOddsDetailsProbePanel'
 import { SportApiSotProviderScanPanel } from '../components/bookmakers/SportApiSotProviderScanPanel'
@@ -14,6 +15,8 @@ import type { SportApiOddsProviderRow } from '../lib/api'
 
 export function Bookmakers() {
   const { selectedCompetitionId } = useCompetition()
+  const [searchParams] = useSearchParams()
+  const providerFixtureIdFromUrl = searchParams.get('provider_fixture_id') ?? ''
   const [providers, setProviders] = useState<SportApiOddsProviderRow[]>([])
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -29,7 +32,11 @@ export function Bookmakers() {
 
       <ContextBanner showModelSelector={false} />
 
-      <ApiFootballFixtureMarketsPanel />
+      <BookmakerFixtureRawOddsPanel
+        key={providerFixtureIdFromUrl || 'bookmaker-raw-empty'}
+        initialProviderFixtureId={providerFixtureIdFromUrl}
+        autoFetch={Boolean(providerFixtureIdFromUrl.trim())}
+      />
 
       <BookmakersDiscoveryPanel competitionId={selectedCompetitionId} />
 

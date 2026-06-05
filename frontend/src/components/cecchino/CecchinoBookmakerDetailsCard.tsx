@@ -1,27 +1,25 @@
-import type { CecchinoKpiRow } from '../../lib/cecchinoApi'
+import type { CecchinoBookmakerOddsDetailRow } from '../../lib/cecchinoTodayApi'
 import { fmtKpiCell } from './cecchinoKpiUiUtils'
 import { todayCard, todayCardPadding, todaySectionTitle } from './cecchinoTodayStyles'
 
 const BOOK_NAMES = ['Bet365', 'Betfair', 'Pinnacle'] as const
 
-function countPresentBooks(row: CecchinoKpiRow): number {
+function countPresentBooks(row: CecchinoBookmakerOddsDetailRow): number {
   const bm = row.bookmakers || {}
   return BOOK_NAMES.filter((n) => bm[n] != null).length
 }
 
-function hasBookmakerData(row: CecchinoKpiRow): boolean {
-  return countPresentBooks(row) > 0
-}
-
-function displayAverage(row: CecchinoKpiRow): number | null {
-  const present = countPresentBooks(row)
-  if (present === 0) return null
+function displayAverage(row: CecchinoBookmakerOddsDetailRow): number | null {
+  if (countPresentBooks(row) === 0) return null
   return row.book_average != null ? (row.book_average as number) : null
 }
 
-export function CecchinoBookmakerDetailsCard({ rows }: { rows: CecchinoKpiRow[] }) {
-  const withData = rows.filter(hasBookmakerData)
-  if (withData.length === 0) return null
+type Props = {
+  rows: CecchinoBookmakerOddsDetailRow[]
+}
+
+export function CecchinoBookmakerDetailsCard({ rows }: Props) {
+  if (!rows.length) return null
 
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
@@ -45,12 +43,12 @@ export function CecchinoBookmakerDetailsCard({ rows }: { rows: CecchinoKpiRow[] 
             </tr>
           </thead>
           <tbody>
-            {withData.map((row) => {
+            {rows.map((row) => {
               const bm = row.bookmakers || {}
               const avg = displayAverage(row)
               const isPartial = row.status === 'partial'
               return (
-                <tr key={row.label} className="border-t border-slate-100 hover:bg-slate-50/80">
+                <tr key={row.market_key} className="border-t border-slate-100 hover:bg-slate-50/80">
                   <td className="px-4 py-2.5 font-medium text-slate-800">
                     <span>{row.label}</span>
                     {isPartial ? (

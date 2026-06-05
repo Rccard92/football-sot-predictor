@@ -144,13 +144,34 @@ export type CecchinoTodayUpdateResultsResponse = {
   warnings: string[]
 }
 
+export type CecchinoBookmakerOddsDetailRow = {
+  market_key: string
+  label: string
+  bookmakers: Record<string, number | null>
+  book_average: number | null
+  status: string
+}
+
+export type CecchinoBookmakerOddsDetail = {
+  rows: CecchinoBookmakerOddsDetailRow[]
+}
+
+export type CecchinoTodayFixtureIds = {
+  today_fixture_id: number
+  local_fixture_id: number | null
+  provider_fixture_id: number
+}
+
 export type CecchinoTodayDetailResponse = {
   status: string
   version?: string
   id?: number
+  today_fixture_id?: number
   scan_date?: string
+  provider_source?: string
   provider_fixture_id?: number
   local_fixture_id?: number | null
+  fixture_ids?: CecchinoTodayFixtureIds
   competition_id?: number | null
   country_name?: string | null
   league_name?: string | null
@@ -163,6 +184,7 @@ export type CecchinoTodayDetailResponse = {
   cecchino_output?: Record<string, unknown>
   signals_matrix?: Record<string, unknown>
   kpi_panel?: import('./cecchinoApi').CecchinoKpiPanel
+  bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]
   code?: string

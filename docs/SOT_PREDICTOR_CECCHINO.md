@@ -279,6 +279,15 @@ Versione `cecchino_today_v0_5_scan_idempotency`: bootstrap idempotente leghe/squ
 
 **Eleggibilità:** invariata su 1X2 completo + Cecchino; Over opzionale nel KPI.
 
+## Cecchino Today — Fase 14 — Fixture ID e export JSON (v0.7)
+
+| Componente | Comportamento |
+|------------|---------------|
+| Dettaglio quote | Righe OVER 1.5/2.5 **sempre visibili** (— se assenti) |
+| `bookmaker_odds_detail` | 8 righe stabili con status not_available/partial/available |
+| ID tecnici | Today, Local, API-Football copiabili; link a Bookmakers debug |
+| Raw odds | `GET /api/admin/bookmakers/fixture-raw-odds` — solo book 8/3/4 |
+
 ## Cecchino Today — discovery giornaliera v0.2 (persistenza giornate)
 
 Versione `cecchino_today_v0_2_persistent_days` — sostituita da v0.3 (Fase 9).

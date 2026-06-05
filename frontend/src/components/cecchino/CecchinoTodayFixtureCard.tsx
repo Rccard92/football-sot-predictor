@@ -111,6 +111,10 @@ export function CecchinoTodayFixtureCard({ fixture, selected, onSelect }: Props)
           <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-slate-800">{result.value}</p>
         </div>
       </div>
+      <p className="mt-2 text-[10px] tabular-nums text-slate-400">
+        API-Football: {fixture.provider_fixture_id}
+        {fixture.local_fixture_id != null ? ` · Local: ${fixture.local_fixture_id}` : ''}
+      </p>
     </article>
   )
 }

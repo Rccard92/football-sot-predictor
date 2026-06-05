@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.8.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Fixture ID e JSON raw odds',
+    type: 'patch',
+    summary:
+      'Righe Over sempre visibili, ID fixture copiabili e debug Bookmakers con export JSON filtrato Bet365/Betfair/Pinnacle.',
+    highlights: [
+      'bookmaker_odds_detail con 8 righe stabili.',
+      'fixture_ids nel dettaglio Today.',
+      'Endpoint fixture-raw-odds e UI copy/download.',
+      'Link rapido da Cecchino a Bookmakers debug.',
+      'Zero modifiche SOT v2.0/v2.1.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.7.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Fix Over/Under bookmaker',

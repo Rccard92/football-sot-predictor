@@ -1408,6 +1408,71 @@ export async function getApiFootballFixtureMarketsDebug(params: {
   )
 }
 
+export type BookmakerRawOddsValue = {
+  raw_value: string
+  normalized_selection: string
+  odd: number | string | null
+}
+
+export type BookmakerRawOddsMarket = {
+  bet_id: string
+  raw_market_name: string
+  normalized_market: string
+  values: BookmakerRawOddsValue[]
+}
+
+export type BookmakerRawOddsBookmaker = {
+  bookmaker_id: number
+  bookmaker_name: string
+  markets: BookmakerRawOddsMarket[]
+  raw_payload?: { bets: unknown[] }
+  error?: string
+}
+
+export type BookmakerOverUnderDebugEntry = {
+  found: boolean
+  found_in_bookmakers: string[]
+  raw_market_names: string[]
+  raw_values: string[]
+}
+
+export type BookmakerFixtureRawOddsResponse = {
+  status: string
+  provider_source: string
+  provider_fixture_id: number
+  bookmakers_requested: Array<{ id: number; name: string }>
+  bookmakers: BookmakerRawOddsBookmaker[]
+  summary: {
+    bookmakers_found: string[]
+    markets_found: string[]
+    over_under_candidates: string[]
+    match_winner_found: boolean
+    over_1_5_found: boolean
+    over_2_5_found: boolean
+  }
+  over_under_debug: {
+    over_1_5: BookmakerOverUnderDebugEntry
+    over_2_5: BookmakerOverUnderDebugEntry
+  }
+  message?: string
+}
+
+export async function getBookmakerFixtureRawOdds(params: {
+  provider_fixture_id: number
+  provider_source?: string
+  bookmaker_ids?: string
+  include_raw?: boolean
+}): Promise<BookmakerFixtureRawOddsResponse> {
+  const q = new URLSearchParams()
+  q.set('provider_fixture_id', String(params.provider_fixture_id))
+  if (params.provider_source) q.set('provider_source', params.provider_source)
+  if (params.bookmaker_ids) q.set('bookmaker_ids', params.bookmaker_ids)
+  if (params.include_raw != null) q.set('include_raw', String(params.include_raw))
+  return adminGetJson<BookmakerFixtureRawOddsResponse>(
+    `/api/admin/bookmakers/fixture-raw-odds?${q.toString()}`,
+  )
+}
+
 export type BookmakerProviderSourceRow = {
   provider_source: string
   label: string

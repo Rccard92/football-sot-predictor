@@ -37,6 +37,7 @@ from app.models.cecchino_today_fixture import (
 )
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_selection_odds
+from app.services.cecchino.cecchino_bookmaker_odds_detail import build_bookmaker_odds_detail
 from app.services.cecchino.cecchino_api_football_odds import parse_api_football_odds_response
 from app.services.cecchino.cecchino_bookmaker_sync_service import SLEEP_BETWEEN_CALLS_S
 from app.services.cecchino.cecchino_constants import (
@@ -943,13 +944,24 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         }
 
     output = row.cecchino_output_json or {}
+    kpi_panel = row.kpi_panel_json
+    today_id = int(row.id)
+    provider_fid = int(row.provider_fixture_id)
+    local_fid = int(row.local_fixture_id) if row.local_fixture_id else None
     return {
         "status": "ok",
         "version": CECCHINO_TODAY_VERSION,
-        "id": int(row.id),
+        "id": today_id,
+        "today_fixture_id": today_id,
         "scan_date": row.scan_date.isoformat(),
-        "provider_fixture_id": int(row.provider_fixture_id),
-        "local_fixture_id": int(row.local_fixture_id) if row.local_fixture_id else None,
+        "provider_source": PROVIDER_API_FOOTBALL,
+        "provider_fixture_id": provider_fid,
+        "local_fixture_id": local_fid,
+        "fixture_ids": {
+            "today_fixture_id": today_id,
+            "local_fixture_id": local_fid,
+            "provider_fixture_id": provider_fid,
+        },
         "competition_id": int(row.competition_id) if row.competition_id else None,
         "country_name": row.country_name,
         "league_name": row.league_name,
@@ -961,7 +973,8 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "stats_snapshot": row.stats_snapshot_json,
         "cecchino_output": output,
         "signals_matrix": output.get("signals_matrix"),
-        "kpi_panel": row.kpi_panel_json,
+        "kpi_panel": kpi_panel,
+        "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (
             f"/cecchino?competition_id={row.competition_id}&fixture_id={row.local_fixture_id}"
             if row.competition_id and row.local_fixture_id

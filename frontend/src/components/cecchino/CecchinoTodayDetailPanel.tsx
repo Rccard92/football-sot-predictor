@@ -71,8 +71,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
 
       {signals && <CecchinoSignalsCard matrix={signals} />}
 
-      {detail.kpi_panel?.rows && (
-        <CecchinoBookmakerDetailsCard rows={detail.kpi_panel.rows} />
+      {(detail.bookmaker_odds_detail?.rows?.length || detail.kpi_panel) && (
+        <CecchinoBookmakerDetailsCard rows={detail.bookmaker_odds_detail?.rows ?? []} />
       )}
 
       {(importInfo.length > 0 || dataNotes.length > 0) && (

@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 14 — Fixture ID e JSON raw odds filtrato (2026-06-04)
+
+- Ripristinate righe Over 1.5 e Over 2.5 sempre visibili nel dettaglio quote bookmaker.
+- Aggiunta esposizione `provider_fixture_id` API-Football e `fixture_ids` nel dettaglio Cecchino Today.
+- Nuovo endpoint `GET /api/admin/bookmakers/fixture-raw-odds` con JSON filtrato Bet365/Betfair/Pinnacle.
+- UI Bookmakers: copy/download JSON, summary Over 1.5/2.5, prefill da query param.
+- Campo `bookmaker_odds_detail` con 8 righe stabili; media Over solo da book whitelist.
+- Nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 13 — Debug mercati Over/Under bookmaker (2026-06-04)
 
 - Aggiunto debug raw markets per fixture/bookmaker (`GET /api/admin/bookmakers/fixture-markets-debug`).

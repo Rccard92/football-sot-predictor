@@ -1,4 +1,6 @@
+import { Link } from 'react-router-dom'
 import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
+import { CecchinoTodayTechnicalIds } from './CecchinoTodayTechnicalIds'
 import {
   todayBadgeActive,
   todayBadgeOk,
@@ -41,6 +43,8 @@ export function CecchinoTodayDetailHeader({ detail }: Props) {
         <span className={todayBadgeActive}>Analizzabile</span>
       </div>
 
+      <CecchinoTodayTechnicalIds detail={detail} />
+
       <div className="flex flex-wrap gap-2">
         {BOOKMAKERS.map((name) => (
           <span
@@ -53,14 +57,24 @@ export function CecchinoTodayDetailHeader({ detail }: Props) {
         <span className={todayBadgeOk}>Statistiche OK</span>
       </div>
 
-      {detail.cecchino_link && (
-        <a
-          href={detail.cecchino_link}
-          className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
-        >
-          Apri analisi Cecchino classica
-        </a>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {detail.cecchino_link && (
+          <a
+            href={detail.cecchino_link}
+            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+          >
+            Apri analisi Cecchino classica
+          </a>
+        )}
+        {detail.provider_fixture_id != null ? (
+          <Link
+            to={`/bookmakers?provider_fixture_id=${detail.provider_fixture_id}`}
+            className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-800 shadow-sm transition hover:bg-indigo-100"
+          >
+            Debug quote bookmaker
+          </Link>
+        ) : null}
+      </div>
     </header>
   )
 }
