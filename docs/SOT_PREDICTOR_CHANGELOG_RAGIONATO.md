@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 9 — Timeline giornaliera, filtri e risultati finali (2026-06-04)
+
+- Versione `cecchino_today_v0_3_timeline_results`: timeline orizzontale ±7 giorni con oggi evidenziato e count eleggibili per giorno.
+- Scan per giornata selezionata (`POST scan-day`) con `force_rescan`; mantenuti scan-today/scan-tomorrow.
+- `POST update-results` aggiorna stato/score eleggibili persistite; non rimuove partite finite dalla lista.
+- GET `/today` arricchito: summary, filters, score, loghi, placeholder predizione consigliata.
+- UI: filtri stato/nazione/campionato/ricerca client-side; card raggruppate per nazione/campionato; rimossi badge Bet365/Betfair/Pinnacle/Stats dalle card.
+- Migrazione colonne display: score, loghi, `match_display_status`.
+- v2.0/v2.1 e `team_sot_predictions` non modificati.
+
 ## Cecchino — Fase 8 — Today persistente, scan oggi/domani e storico 7 giorni (2026-06-04)
 
 - Versione `cecchino_today_v0_2_persistent_days`: snapshot per `scan_date` indipendenti (scan domani non cancella oggi).

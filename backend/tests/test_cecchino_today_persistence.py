@@ -63,6 +63,20 @@ def _make_row(
     row.odds_snapshot_json = {"bookmakers": {}, "missing": ["Bet365"]}
     row.stats_snapshot_json = {}
     row.warnings_json = []
+    row.kpi_panel_json = {}
+    row.cecchino_output_json = {}
+    row.match_display_status = "upcoming"
+    row.fixture_status = "NS"
+    row.country_flag_url = None
+    row.league_logo_url = None
+    row.home_team_logo_url = None
+    row.away_team_logo_url = None
+    row.goals_home = None
+    row.goals_away = None
+    row.score_fulltime_home = None
+    row.score_fulltime_away = None
+    row.elapsed_minutes = None
+    row.raw_fixture_json = {}
     return row
 
 
@@ -131,7 +145,7 @@ def test_scan_tomorrow_does_not_touch_today_rows():
     assert today not in upsert_dates
 
 
-def test_list_available_days_includes_today_and_tomorrow_empty():
+def test_list_available_days_includes_timeline_window():
     db = MagicMock()
     with (
         patch("app.services.cecchino.cecchino_today_service.rome_today", return_value=date(2026, 6, 4)),
@@ -140,10 +154,10 @@ def test_list_available_days_includes_today_and_tomorrow_empty():
     ):
         payload = list_available_days(db)
     dates = [d["date"] for d in payload["days"]]
+    assert len(dates) == 15
     assert "2026-06-04" in dates
     assert "2026-06-05" in dates
-    pending = [d for d in payload["days"] if d["status"] == "pending"]
-    assert len(pending) >= 2
+    assert payload["selected_default"] == "2026-06-04"
 
 
 def test_cleanup_does_not_touch_today_tomorrow_future():

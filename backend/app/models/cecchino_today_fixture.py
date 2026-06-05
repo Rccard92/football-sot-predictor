@@ -27,6 +27,13 @@ ELIGIBILITY_ERROR = "error"
 
 PROVIDER_API_FOOTBALL = "api_football"
 
+MATCH_UPCOMING = "upcoming"
+MATCH_LIVE = "live"
+MATCH_FINISHED = "finished"
+MATCH_POSTPONED = "postponed"
+MATCH_CANCELLED = "cancelled"
+MATCH_UNKNOWN = "unknown"
+
 
 class CecchinoTodayFixture(Base, TimestampMixin):
     __tablename__ = "cecchino_today_fixtures"
@@ -53,6 +60,16 @@ class CecchinoTodayFixture(Base, TimestampMixin):
     away_team_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     kickoff: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fixture_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    match_display_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    country_flag_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    league_logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    home_team_logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    away_team_logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    goals_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    goals_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_fulltime_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_fulltime_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    elapsed_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     eligibility_status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     eligibility_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
     bookmaker_status: Mapped[str | None] = mapped_column(String(32), nullable=True)

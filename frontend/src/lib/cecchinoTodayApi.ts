@@ -4,6 +4,8 @@
 
 import { adminPostJson, requestJson } from './api'
 
+export type MatchDisplayStatus = 'upcoming' | 'live' | 'finished' | 'postponed' | 'cancelled' | 'unknown'
+
 export type CecchinoTodayScanReport = {
   status: string
   version: string
@@ -18,14 +20,22 @@ export type CecchinoTodayScanReport = {
   warnings: string[]
   message?: string
   cleanup?: { deleted: number; cutoff_date: string }
+  scan_meta?: CecchinoTodayScanMeta
 }
 
 export type CecchinoTodayDay = {
   date: string
   label: string
+  is_today: boolean
+  is_future: boolean
+  is_scanned: boolean
   eligible_count: number
   excluded_count: number
+  upcoming_count: number
+  live_count: number
+  finished_count: number
   last_scan_at: string | null
+  scan_state: 'scanned' | 'not_scanned' | 'error' | 'partial'
   status: 'available' | 'pending'
 }
 
@@ -35,44 +45,101 @@ export type CecchinoTodayDaysResponse = {
   timezone: string
   today: string
   tomorrow: string
+  selected_default: string
   days: CecchinoTodayDay[]
 }
 
 export type CecchinoTodayScanMeta = {
   has_scan: boolean
+  is_scanned?: boolean
   eligible_count: number
   excluded_count: number
+  upcoming_count?: number
+  live_count?: number
+  finished_count?: number
   last_scan_at: string | null
   day_status: 'available' | 'pending'
+  scan_state?: string
+}
+
+export type CecchinoTodayScore = {
+  home: number | null
+  away: number | null
+  available: boolean
+}
+
+export type CecchinoTodayRecommendedPrediction = {
+  status: string
+  label: string
+  market: string | null
+  confidence: number | null
 }
 
 export type CecchinoTodayListFixture = {
+  today_fixture_id: number
   id: number
   provider_fixture_id: number
   local_fixture_id: number | null
   competition_id: number | null
   home_team_name: string | null
   away_team_name: string | null
+  home_team_logo_url: string | null
+  away_team_logo_url: string | null
   kickoff: string | null
-  bookmaker_status: string | null
-  stats_status: string | null
-  cecchino_status: string | null
-  bookmakers: Record<string, string>
+  status: MatchDisplayStatus
+  status_label: string
+  score: CecchinoTodayScore
+  cecchino_recommended_prediction: CecchinoTodayRecommendedPrediction
+  kpi_status: string
+  signals_status: string
+}
+
+export type CecchinoTodayListCountry = {
+  country_name: string
+  country_flag_url: string | null
+  leagues: Array<{
+    league_name: string
+    league_logo_url: string | null
+    fixtures: CecchinoTodayListFixture[]
+  }>
+}
+
+export type CecchinoTodayListSummary = {
+  eligible_count: number
+  upcoming_count: number
+  live_count: number
+  finished_count: number
+  excluded_count: number
+  last_scan_at: string | null
 }
 
 export type CecchinoTodayListResponse = {
   status: string
   version: string
+  date: string
   scan_date: string
+  is_scanned: boolean
   total: number
-  countries: Array<{
-    country_name: string
-    leagues: Array<{
-      league_name: string
-      fixtures: CecchinoTodayListFixture[]
-    }>
-  }>
+  summary: CecchinoTodayListSummary
+  filters: {
+    countries: string[]
+    leagues: string[]
+    statuses: string[]
+  }
+  countries: CecchinoTodayListCountry[]
   scan_meta?: CecchinoTodayScanMeta
+}
+
+export type CecchinoTodayUpdateResultsResponse = {
+  status: string
+  version?: string
+  date: string
+  fixtures_checked: number
+  results_updated: number
+  still_upcoming: number
+  live: number
+  failed: Array<{ provider_fixture_id: number; error: string }>
+  warnings: string[]
 }
 
 export type CecchinoTodayDetailResponse = {
@@ -113,6 +180,7 @@ export type CecchinoTodayExcludedFixture = {
   bookmaker_debug: Record<string, string>
   stats_debug: Record<string, unknown>
   competition_filter_debug: Record<string, unknown>
+  fixture_status_debug?: Record<string, unknown>
   warnings: string[]
 }
 
@@ -151,25 +219,31 @@ export function todayIsoRome(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date())
 }
 
-export function tomorrowIsoRome(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(d)
+export function formatDayShort(dateIso: string): string {
+  const [, m, d] = dateIso.split('-')
+  return `${d}/${m}`
 }
 
-export async function scanCecchinoToday(body: {
-  scan_date?: string
+export async function scanCecchinoTodayDay(params: {
+  date: string
   timezone?: string
-} = {}): Promise<CecchinoTodayScanReport> {
-  return adminPostJson<CecchinoTodayScanReport>('/api/admin/cecchino/today/scan', body)
+  forceRescan?: boolean
+}): Promise<CecchinoTodayScanReport> {
+  return adminPostJson<CecchinoTodayScanReport>('/api/admin/cecchino/today/scan-day', {
+    date: params.date,
+    timezone: params.timezone ?? 'Europe/Rome',
+    force_rescan: params.forceRescan ?? false,
+  })
 }
 
-export async function scanCecchinoTodayToday(): Promise<CecchinoTodayScanReport> {
-  return adminPostJson<CecchinoTodayScanReport>('/api/admin/cecchino/today/scan-today', {})
-}
-
-export async function scanCecchinoTodayTomorrow(): Promise<CecchinoTodayScanReport> {
-  return adminPostJson<CecchinoTodayScanReport>('/api/admin/cecchino/today/scan-tomorrow', {})
+export async function updateCecchinoTodayResults(params: {
+  date: string
+  timezone?: string
+}): Promise<CecchinoTodayUpdateResultsResponse> {
+  return adminPostJson<CecchinoTodayUpdateResultsResponse>('/api/admin/cecchino/today/update-results', {
+    date: params.date,
+    timezone: params.timezone ?? 'Europe/Rome',
+  })
 }
 
 export async function getCecchinoTodayDays(): Promise<CecchinoTodayDaysResponse> {
@@ -214,17 +288,6 @@ export async function debugSearchCecchinoToday(params: {
   )
 }
 
-export async function cleanupCecchinoToday(retentionDays = 7): Promise<{
-  status: string
-  deleted: number
-  cutoff_date: string
-}> {
-  return adminPostJson('/api/admin/cecchino/today/cleanup', {
-    retention_days: retentionDays,
-    timezone: 'Europe/Rome',
-  })
-}
-
 export function formatKickoffTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
@@ -232,5 +295,19 @@ export function formatKickoffTime(iso: string | null | undefined): string {
     return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' })
   } catch {
     return iso
+  }
+}
+
+export function statusBadgeClass(status: MatchDisplayStatus): string {
+  switch (status) {
+    case 'live':
+      return 'bg-red-50 text-red-700 ring-red-200'
+    case 'finished':
+      return 'bg-slate-100 text-slate-700 ring-slate-200'
+    case 'postponed':
+    case 'cancelled':
+      return 'bg-amber-50 text-amber-800 ring-amber-200'
+    default:
+      return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
   }
 }

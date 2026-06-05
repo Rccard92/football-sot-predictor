@@ -208,42 +208,26 @@ Route `/cecchino` — voce menu principale. Modulo separato da SOT v2.0/v2.1 (ne
 
 **URL:** `?competition_id=&fixture_id=` per deep-link al dettaglio.
 
-## Cecchino Today — discovery giornaliera v0.2 (persistenza giornate)
+## Cecchino Today — discovery giornaliera v0.3 (timeline, filtri, risultati)
 
-Pipeline **manuale** (no cron) per scoprire partite via API-Football per giornata (`scan_date`), filtrare competizioni non ammesse, verificare quote 1X2 complete su Bet365/Betfair/Pinnacle, bootstrap DB minimo Cecchino-only, gate statistiche + leakage, calcolo Cecchino + KPI.
-
-| Filtro | Esclusione |
-|--------|------------|
-| Femminili / coppe / amichevoli / youth | `excluded_women`, `excluded_cup`, … |
-| Partita già iniziata | `excluded_started` |
-| Bookmaker o 1X2 incompleti | `excluded_missing_bookmaker`, `excluded_missing_1x2_market` |
-| Stats insufficienti o leakage | `excluded_insufficient_stats` |
-
-**Soglie stats:** home/away context ≥3, total ≥6, recent_5 ≥3, recent_6 ≥5, leakage `passed`.
-
-**Persistenza:** tabella `cecchino_today_fixtures` — upsert per `(scan_date, provider_fixture_id)`; ogni scan tocca **solo** la propria giornata. Retention 7 giorni (cleanup post-scan).
-
-**Endpoint:**
+Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timeline ±7 giorni, scan per giornata selezionata, aggiornamento risultati post-kickoff, filtri client-side, card arricchite (stato, score, loghi).
 
 | Metodo | Path | Scopo |
 |--------|------|--------|
-| GET | `/api/cecchino/today/days` | Giornate (oggi, domani, storico 7d) |
-| GET | `/api/cecchino/today?date=` | Solo eleggibili persistiti + `scan_meta` |
-| GET | `/api/cecchino/today/{id}` | Dettaglio persistito |
-| POST | `/api/admin/cecchino/today/scan` | Scan generico (data opzionale) |
-| POST | `/api/admin/cecchino/today/scan-today` | Scan oggi (Europe/Rome) |
-| POST | `/api/admin/cecchino/today/scan-tomorrow` | Scan domani |
-| POST | `/api/admin/cecchino/today/cleanup` | Retention manuale |
-| GET | `/api/admin/cecchino/today/excluded?date=` | Escluse + debug |
-| GET | `/api/admin/cecchino/today/debug-search?date=&q=` | Ricerca diagnostica |
+| GET | `/api/cecchino/today/days` | Timeline ±7: oggi, futuro, storico; counts per stato |
+| GET | `/api/cecchino/today?date=` | Eleggibili + summary + filters + score/loghi |
+| POST | `/api/admin/cecchino/today/scan-day` | Scan giornata selezionata (`force_rescan`) |
+| POST | `/api/admin/cecchino/today/update-results` | Aggiorna stato/score eleggibili salvate |
+| POST | `/api/admin/cecchino/today/scan-today` | Alias scan oggi (mantenuto) |
+| POST | `/api/admin/cecchino/today/scan-tomorrow` | Alias scan domani (mantenuto) |
 
-**UI:** route `/cecchino-today` — pill giornate, scan oggi/domani, layout 2 colonne (38% lista / 62% dettaglio). Dettaglio verticale: KPI → Quote finali → Segnali → Dettaglio bookmaker. Pannello admin «Vedi escluse» con debug. Il KPI classico su `/cecchino` resta invariato.
+**Persistenza post-kickoff:** le eleggibili restano in lista; `update-results` aggiorna `match_display_status`, score e loghi. Cleanup retention 7 giorni invariato.
 
-**Versione:** `cecchino_today_v0_2_persistent_days`. Nessuna modifica a SOT v2.0/v2.1 né `team_sot_predictions`.
+**UI:** timeline orizzontale scrollabile, filtri stato/nazione/campionato/ricerca, card senza badge bookmaker, placeholder predizione consigliata, dettaglio KPI → Quote → Segnali (verticale).
 
-## Cecchino Today — discovery giornaliera v0.1 (storico)
+## Cecchino Today — discovery giornaliera v0.2 (persistenza giornate)
 
-Versione iniziale con date picker singolo e scan generico — sostituita da v0.2 (Fase 8).
+Versione `cecchino_today_v0_2_persistent_days` — sostituita da v0.3 (Fase 9).
 
 ## Test parità Excel
 

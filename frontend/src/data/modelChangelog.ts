@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-today-0.4.0',
+    date: '2026-06-04',
+    title: 'Cecchino Today — Timeline, filtri e risultati finali',
+    type: 'minor',
+    summary:
+      'Dashboard giornaliera professionale: timeline ±7 giorni, scan-day per giornata selezionata, aggiornamento risultati, filtri e card con score/loghi.',
+    highlights: [
+      'Timeline orizzontale con oggi evidenziato e count partite per giorno.',
+      'POST scan-day e update-results; eleggibili persistono dopo kickoff/finale.',
+      'Filtri stato, nazione, campionato e ricerca; card senza badge bookmaker.',
+      'Loghi squadre/campionato e bandiere; placeholder predizione consigliata.',
+      'Zero modifiche SOT v2.0/v2.1 e team_sot_predictions.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.3.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Persistenza giornate e scan oggi/domani',

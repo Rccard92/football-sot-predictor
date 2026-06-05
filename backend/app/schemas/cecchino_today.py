@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date as DateType
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -11,8 +11,21 @@ from app.services.cecchino.cecchino_today_constants import DEFAULT_TODAY_TIMEZON
 
 
 class CecchinoTodayScanBody(BaseModel):
-    scan_date: date | None = None
+    scan_date: DateType | None = None
     timezone: str = Field(default=DEFAULT_TODAY_TIMEZONE)
+
+
+class CecchinoTodayScanDayBody(BaseModel):
+    date: DateType
+    timezone: str = Field(default=DEFAULT_TODAY_TIMEZONE)
+    force_rescan: bool = False
+
+
+class CecchinoTodayUpdateResultsBody(BaseModel):
+    target_date: DateType | None = Field(default=None, alias="date")
+    timezone: str = Field(default=DEFAULT_TODAY_TIMEZONE)
+
+    model_config = {"populate_by_name": True}
 
 
 class CecchinoTodayCleanupBody(BaseModel):
@@ -23,10 +36,17 @@ class CecchinoTodayCleanupBody(BaseModel):
 class CecchinoTodayDay(BaseModel):
     date: str
     label: str
-    eligible_count: int
-    excluded_count: int
+    is_today: bool = False
+    is_future: bool = False
+    is_scanned: bool = False
+    eligible_count: int = 0
+    excluded_count: int = 0
+    upcoming_count: int = 0
+    live_count: int = 0
+    finished_count: int = 0
     last_scan_at: str | None = None
-    status: str
+    scan_state: str = "not_scanned"
+    status: str = "pending"
 
 
 class CecchinoTodayDaysResponse(BaseModel):
@@ -35,6 +55,7 @@ class CecchinoTodayDaysResponse(BaseModel):
     timezone: str
     today: str
     tomorrow: str
+    selected_default: str
     days: list[CecchinoTodayDay]
 
 
@@ -57,6 +78,12 @@ class CecchinoTodayCompetitionFilterDebug(BaseModel):
     reason: str | None = None
 
 
+class CecchinoTodayFixtureStatusDebug(BaseModel):
+    fixture_status_at_scan: str
+    elapsed_at_scan: int | None = None
+    message: str | None = None
+
+
 class CecchinoTodayExcludedFixture(BaseModel):
     id: int
     provider_fixture_id: int
@@ -70,4 +97,5 @@ class CecchinoTodayExcludedFixture(BaseModel):
     bookmaker_debug: dict[str, Any] = Field(default_factory=dict)
     stats_debug: dict[str, Any] = Field(default_factory=dict)
     competition_filter_debug: dict[str, Any] = Field(default_factory=dict)
+    fixture_status_debug: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)

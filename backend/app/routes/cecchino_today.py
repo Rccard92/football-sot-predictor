@@ -10,7 +10,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.cecchino_today import CecchinoTodayCleanupBody, CecchinoTodayScanBody
+from app.schemas.cecchino_today import (
+    CecchinoTodayCleanupBody,
+    CecchinoTodayScanBody,
+    CecchinoTodayScanDayBody,
+    CecchinoTodayUpdateResultsBody,
+)
 from app.services.cecchino.cecchino_today_service import (
     cleanup_cecchino_today_snapshots,
     debug_search,
@@ -19,8 +24,10 @@ from app.services.cecchino.cecchino_today_service import (
     list_eligible_today,
     list_excluded_today,
     run_scan,
+    run_scan_day,
     run_scan_today,
     run_scan_tomorrow,
+    update_today_fixture_results,
 )
 
 router = APIRouter(prefix="/cecchino/today", tags=["cecchino-today"])
@@ -93,6 +100,36 @@ def cecchino_today_scan_tomorrow(
     db: Session = Depends(get_db),
 ):
     payload = run_scan_tomorrow(db, timezone=timezone)
+    status_code = 200 if payload.get("status") == "ok" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+
+@admin_router.post("/scan-day")
+def cecchino_today_scan_day(
+    body: CecchinoTodayScanDayBody,
+    db: Session = Depends(get_db),
+):
+    payload = run_scan_day(
+        db,
+        scan_date=body.date,
+        timezone=body.timezone,
+        force_rescan=body.force_rescan,
+    )
+    status_code = 200 if payload.get("status") in ("ok", "already_scanned") else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+
+@admin_router.post("/update-results")
+def cecchino_today_update_results(
+    body: CecchinoTodayUpdateResultsBody | None = None,
+    db: Session = Depends(get_db),
+):
+    req = body or CecchinoTodayUpdateResultsBody()
+    payload = update_today_fixture_results(
+        db,
+        scan_date=req.target_date,
+        timezone=req.timezone,
+    )
     status_code = 200 if payload.get("status") == "ok" else 422
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 

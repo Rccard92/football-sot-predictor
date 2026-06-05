@@ -66,7 +66,7 @@ def test_list_endpoint_eligible_only():
 def test_excluded_admin_endpoint():
     payload = {
         "status": "ok",
-        "version": "cecchino_today_v0_2_persistent_days",
+        "version": "cecchino_today_v0_3_timeline_results",
         "scan_date": "2026-06-04",
         "total": 1,
         "fixtures": [
@@ -87,7 +87,7 @@ def test_excluded_admin_endpoint():
 def test_days_endpoint():
     payload = {
         "status": "ok",
-        "version": "cecchino_today_v0_2_persistent_days",
+        "version": "cecchino_today_v0_3_timeline_results",
         "timezone": "Europe/Rome",
         "today": "2026-06-04",
         "tomorrow": "2026-06-05",

@@ -1,97 +1,65 @@
-import type { CecchinoTodayScanMeta } from '../../lib/cecchinoTodayApi'
+import { useState } from 'react'
+import type { CecchinoTodayListCountry, CecchinoTodayListFixture } from '../../lib/cecchinoTodayApi'
 import { CecchinoTodayFixtureCard } from './CecchinoTodayFixtureCard'
 import { todayCard, todayCardPadding, todaySectionTitle, todaySkeleton } from './cecchinoTodayStyles'
 
-export type TodayFlatFixture = {
-  country: string
-  league: string
-  fixture: import('../../lib/cecchinoTodayApi').CecchinoTodayListFixture
+function SafeImg({ src, alt, className }: { src: string | null | undefined; alt: string; className: string }) {
+  const [hidden, setHidden] = useState(false)
+  if (!src || hidden) return null
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      onError={() => setHidden(true)}
+    />
+  )
 }
 
 type Props = {
-  fixtures: TodayFlatFixture[]
+  countries: CecchinoTodayListCountry[]
   selectedId: number | null
   onSelect: (id: number) => void
   loading: boolean
   error: string | null
   selectedDay: string
-  scanMeta: CecchinoTodayScanMeta | null | undefined
-  onScanToday?: () => void
+  isScanned: boolean
+  hasActiveFilters: boolean
+  totalBeforeFilter: number
+  onScanDay: () => void
 }
 
 function FixtureSkeleton() {
-  return <div className={`${todaySkeleton} h-28 w-full`} />
-}
-
-function EmptyMessage({
-  selectedDay,
-  scanMeta,
-  onScanToday,
-}: {
-  selectedDay: string
-  scanMeta: CecchinoTodayScanMeta | null | undefined
-  onScanToday?: () => void
-}) {
-  if (!scanMeta || scanMeta.day_status === 'pending' || !scanMeta.has_scan) {
-    return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-10 text-center">
-        <p className="text-sm font-medium text-slate-700">
-          Giornata non ancora scansionata ({selectedDay}).
-        </p>
-        <p className="mt-2 text-xs text-slate-500">
-          Usa &quot;Scansione oggi&quot; o &quot;Scansione domani&quot; per scoprire le partite
-          eleggibili.
-        </p>
-        {onScanToday && (
-          <button
-            type="button"
-            onClick={onScanToday}
-            className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Scansione oggi
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/80 px-6 py-10 text-center">
-      <p className="text-sm font-medium text-slate-800">
-        Nessuna partita eleggibile salvata per questa giornata.
-      </p>
-      <p className="mt-2 text-xs text-slate-600">
-        Scansione completata: nessuna partita ha superato i controlli su quote bookmaker e
-        statistiche ({scanMeta.excluded_count} escluse).
-      </p>
-    </div>
-  )
+  return <div className={`${todaySkeleton} h-32 w-full`} />
 }
 
 export function CecchinoTodayFixtureList({
-  fixtures,
+  countries,
   selectedId,
   onSelect,
   loading,
   error,
   selectedDay,
-  scanMeta,
-  onScanToday,
+  isScanned,
+  hasActiveFilters,
+  totalBeforeFilter,
+  onScanDay,
 }: Props) {
+  const fixtureCount = countries.reduce(
+    (n, c) => n + c.leagues.reduce((ln, l) => ln + l.fixtures.length, 0),
+    0,
+  )
+
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
       <div className="flex items-center justify-between gap-2">
         <h2 className={todaySectionTitle}>Partite eleggibili</h2>
-        {!loading && (
-          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-            {fixtures.length}
-          </span>
-        )}
+        {!loading && <span className="text-xs text-slate-500">{fixtureCount} visibili</span>}
       </div>
 
       {loading && (
-        <div className="space-y-3" aria-busy="true" aria-label="Caricamento partite">
-          <FixtureSkeleton />
+        <div className="space-y-3" aria-busy="true">
           <FixtureSkeleton />
           <FixtureSkeleton />
         </div>
@@ -103,24 +71,77 @@ export function CecchinoTodayFixtureList({
         </p>
       )}
 
-      {!loading && !error && fixtures.length === 0 && (
-        <EmptyMessage selectedDay={selectedDay} scanMeta={scanMeta} onScanToday={onScanToday} />
+      {!loading && !error && !isScanned && (
+        <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 py-10 text-center">
+          <p className="text-sm font-medium text-slate-800">
+            Giornata non ancora scansionata ({selectedDay}).
+          </p>
+          <p className="mt-2 text-xs text-slate-600">
+            Avvia la scansione per importare e salvare le partite eleggibili.
+          </p>
+          <button
+            type="button"
+            onClick={onScanDay}
+            className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Avvia scansione giornata
+          </button>
+        </div>
       )}
 
-      {!loading && !error && fixtures.length > 0 && (
-        <ul className="max-h-[calc(100vh-280px)] space-y-3 overflow-y-auto pr-1">
-          {fixtures.map(({ country, league, fixture }) => (
-            <li key={fixture.id}>
-              <CecchinoTodayFixtureCard
-                fixture={fixture}
-                country={country}
-                league={league}
-                selected={selectedId === fixture.id}
-                onSelect={() => onSelect(fixture.id)}
-              />
-            </li>
+      {!loading && !error && isScanned && totalBeforeFilter === 0 && (
+        <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/80 px-6 py-10 text-center">
+          <p className="text-sm font-medium text-slate-800">
+            Scansione completata: nessuna partita ha superato i controlli.
+          </p>
+          <p className="mt-2 text-xs text-slate-600">
+            Consulta il pannello debug escluse per i dettagli.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && isScanned && totalBeforeFilter > 0 && fixtureCount === 0 && hasActiveFilters && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center text-sm text-slate-600">
+          Nessuna partita corrisponde ai filtri selezionati.
+        </div>
+      )}
+
+      {!loading && !error && fixtureCount > 0 && (
+        <div className="max-h-[calc(100vh-320px)] space-y-6 overflow-y-auto pr-1">
+          {countries.map((country) => (
+            <div key={country.country_name} className="space-y-3">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                <SafeImg
+                  src={country.country_flag_url}
+                  alt=""
+                  className="h-4 w-6 object-cover"
+                />
+                <h3 className="text-sm font-semibold text-slate-800">{country.country_name}</h3>
+              </div>
+              {country.leagues.map((league) => (
+                <div key={`${country.country_name}-${league.league_name}`} className="space-y-2 pl-1">
+                  <div className="flex items-center gap-2">
+                    <SafeImg src={league.league_logo_url} alt="" className="h-5 w-5 object-contain" />
+                    <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      {league.league_name}
+                    </h4>
+                  </div>
+                  <ul className="space-y-2">
+                    {league.fixtures.map((fixture: CecchinoTodayListFixture) => (
+                      <li key={fixture.today_fixture_id}>
+                        <CecchinoTodayFixtureCard
+                          fixture={fixture}
+                          selected={selectedId === fixture.today_fixture_id}
+                          onSelect={() => onSelect(fixture.today_fixture_id)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </section>
   )

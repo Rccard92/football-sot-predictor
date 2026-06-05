@@ -1,15 +1,17 @@
 type Props = {
-  onScanToday: () => void
-  onScanTomorrow: () => void
-  scanTodayLoading: boolean
-  scanTomorrowLoading: boolean
+  isScanned: boolean
+  scanDayLoading: boolean
+  updateResultsLoading: boolean
+  onScanDay: (forceRescan: boolean) => void
+  onUpdateResults: () => void
 }
 
 export function CecchinoTodayPageHeader({
-  onScanToday,
-  onScanTomorrow,
-  scanTodayLoading,
-  scanTomorrowLoading,
+  isScanned,
+  scanDayLoading,
+  updateResultsLoading,
+  onScanDay,
+  onUpdateResults,
 }: Props) {
   return (
     <header className="space-y-4">
@@ -18,40 +20,40 @@ export function CecchinoTodayPageHeader({
           Cecchino Today
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-600">
-          Discovery giornaliera persistente — scansiona oggi o domani e naviga tra le giornate
-          salvate (storico 7 giorni).
+          Dashboard giornaliera partite eleggibili — timeline, filtri e risultati finali.
         </p>
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={onScanToday}
-          disabled={scanTodayLoading}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {scanTodayLoading && (
-            <span
-              className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
-              aria-hidden
-            />
-          )}
-          {scanTodayLoading ? 'Scansione oggi…' : 'Scansione oggi'}
-        </button>
-        <button
-          type="button"
-          onClick={onScanTomorrow}
-          disabled={scanTomorrowLoading}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {scanTomorrowLoading && (
-            <span
-              className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700"
-              aria-hidden
-            />
-          )}
-          {scanTomorrowLoading ? 'Scansione domani…' : 'Scansione domani'}
-        </button>
+        {!isScanned ? (
+          <button
+            type="button"
+            onClick={() => onScanDay(false)}
+            disabled={scanDayLoading}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {scanDayLoading ? 'Scansione…' : 'Avvia scansione giornata'}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => onUpdateResults()}
+              disabled={updateResultsLoading}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {updateResultsLoading ? 'Aggiornamento…' : 'Aggiorna risultati giornata'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onScanDay(true)}
+              disabled={scanDayLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {scanDayLoading ? 'Riscansione…' : 'Riscansiona giornata'}
+            </button>
+          </>
+        )}
       </div>
     </header>
   )

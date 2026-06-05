@@ -25,6 +25,9 @@ from app.models.cecchino_today_fixture import (
     ELIGIBILITY_EXCLUDED_STARTED,
     ELIGIBILITY_EXCLUDED_WOMEN,
     ELIGIBILITY_EXCLUDED_YOUTH,
+    MATCH_FINISHED,
+    MATCH_LIVE,
+    MATCH_UPCOMING,
     PROVIDER_API_FOOTBALL,
 )
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
@@ -52,6 +55,15 @@ from app.services.cecchino.cecchino_today_constants import (
     CECCHINO_TODAY_VERSION,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_TODAY_TIMEZONE,
+    TIMELINE_WINDOW_DAYS,
+)
+from app.services.cecchino.cecchino_today_display import (
+    apply_display_from_api,
+    extract_display_assets,
+    map_fixture_display_status,
+    recommended_prediction_placeholder,
+    row_score_payload,
+    status_label_for_row,
 )
 from app.services.cecchino.cecchino_today_fixture_filter import is_fixture_not_started
 from app.services.cecchino.cecchino_today_stats_gate import check_cecchino_today_stats_eligible
@@ -232,6 +244,12 @@ def _upsert_today_snapshot(
     row.kpi_panel_json = kpi_panel
     row.raw_fixture_json = api_item
     row.warnings_json = warnings or []
+    apply_display_from_api(row, api_item)
+    if eligibility_status == ELIGIBILITY_ELIGIBLE and row.match_display_status not in (
+        MATCH_LIVE,
+        MATCH_FINISHED,
+    ):
+        row.match_display_status = MATCH_UPCOMING
     db.flush()
     return row
 
@@ -515,6 +533,95 @@ def run_scan_tomorrow(
     return run_scan(db, scan_date=rome_tomorrow(timezone), timezone=timezone, client=client)
 
 
+def run_scan_day(
+    db: Session,
+    *,
+    scan_date: date,
+    timezone: str = DEFAULT_TODAY_TIMEZONE,
+    force_rescan: bool = False,
+    client: ApiFootballClient | None = None,
+) -> dict[str, Any]:
+    meta = get_day_scan_meta(db, scan_date, timezone=timezone)
+    if not force_rescan and meta.get("has_scan"):
+        return {
+            "status": "already_scanned",
+            "version": CECCHINO_TODAY_VERSION,
+            "scan_date": scan_date.isoformat(),
+            "message": "Giornata già scansionata. Usa force_rescan=true per aggiornare.",
+            "scan_meta": meta,
+        }
+    report = run_scan(db, scan_date=scan_date, timezone=timezone, client=client)
+    report["scan_meta"] = get_day_scan_meta(db, scan_date, timezone=timezone)
+    return report
+
+
+def _resolve_row_match_status(row: CecchinoTodayFixture) -> str:
+    if row.match_display_status:
+        return row.match_display_status
+    short = row.fixture_status or "NS"
+    display, _ = map_fixture_display_status(short, row.elapsed_minutes)
+    return display
+
+
+def _count_eligible_by_status(rows: list[CecchinoTodayFixture]) -> dict[str, int]:
+    counts = {"upcoming": 0, "live": 0, "finished": 0, "postponed": 0, "cancelled": 0, "unknown": 0}
+    for row in rows:
+        st = _resolve_row_match_status(row)
+        if st in counts:
+            counts[st] += 1
+        else:
+            counts["unknown"] += 1
+    return counts
+
+
+def _build_list_filters(rows: list[CecchinoTodayFixture]) -> dict[str, Any]:
+    countries: list[str] = []
+    leagues: list[str] = []
+    statuses: set[str] = set()
+    seen_c: set[str] = set()
+    seen_l: set[str] = set()
+    for row in rows:
+        c = row.country_name or "Unknown"
+        l = row.league_name or "Unknown"
+        if c not in seen_c:
+            countries.append(c)
+            seen_c.add(c)
+        key = f"{c}::{l}"
+        if key not in seen_l:
+            leagues.append(l)
+            seen_l.add(key)
+        statuses.add(_resolve_row_match_status(row))
+    return {
+        "countries": sorted(countries),
+        "leagues": sorted(leagues),
+        "statuses": sorted(statuses),
+    }
+
+
+def _row_list_item(row: CecchinoTodayFixture) -> dict[str, Any]:
+    display_status = _resolve_row_match_status(row)
+    kpi_panel = row.kpi_panel_json or {}
+    output = row.cecchino_output_json or {}
+    return {
+        "today_fixture_id": int(row.id),
+        "id": int(row.id),
+        "provider_fixture_id": int(row.provider_fixture_id),
+        "local_fixture_id": int(row.local_fixture_id) if row.local_fixture_id else None,
+        "competition_id": int(row.competition_id) if row.competition_id else None,
+        "home_team_name": row.home_team_name,
+        "away_team_name": row.away_team_name,
+        "home_team_logo_url": row.home_team_logo_url,
+        "away_team_logo_url": row.away_team_logo_url,
+        "kickoff": row.kickoff.isoformat() if row.kickoff else None,
+        "status": display_status,
+        "status_label": status_label_for_row(row),
+        "score": row_score_payload(row),
+        "cecchino_recommended_prediction": recommended_prediction_placeholder(),
+        "kpi_status": "available" if kpi_panel else "pending",
+        "signals_status": "available" if output.get("signals_matrix") else "pending",
+    }
+
+
 def list_eligible_today(
     db: Session,
     *,
@@ -524,12 +631,15 @@ def list_eligible_today(
     timezone: str = DEFAULT_TODAY_TIMEZONE,
 ) -> dict[str, Any]:
     resolved = resolve_scan_date(scan_date, timezone)
+    meta = get_day_scan_meta(db, resolved, timezone=timezone)
     q = select(CecchinoTodayFixture).where(
         CecchinoTodayFixture.scan_date == resolved,
         CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
     )
-    rows = list(db.scalars(q.order_by(CecchinoTodayFixture.kickoff.asc())).all())
+    all_rows = list(db.scalars(q.order_by(CecchinoTodayFixture.kickoff.asc())).all())
+    status_counts = _count_eligible_by_status(all_rows)
 
+    rows = all_rows
     if country:
         c_low = country.strip().lower()
         rows = [r for r in rows if (r.country_name or "").lower().find(c_low) >= 0]
@@ -537,47 +647,115 @@ def list_eligible_today(
         l_low = league.strip().lower()
         rows = [r for r in rows if (r.league_name or "").lower().find(l_low) >= 0]
 
-    grouped: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+    grouped: dict[str, dict[str, Any]] = {}
     for r in rows:
         cname = r.country_name or "Unknown"
         lname = r.league_name or "Unknown"
-        grouped[cname][lname].append(_row_list_item(r))
+        if cname not in grouped:
+            grouped[cname] = {"country_name": cname, "country_flag_url": r.country_flag_url, "leagues": {}}
+        if not grouped[cname]["country_flag_url"] and r.country_flag_url:
+            grouped[cname]["country_flag_url"] = r.country_flag_url
+        leagues_map = grouped[cname]["leagues"]
+        if lname not in leagues_map:
+            leagues_map[lname] = {"league_name": lname, "league_logo_url": r.league_logo_url, "fixtures": []}
+        if not leagues_map[lname]["league_logo_url"] and r.league_logo_url:
+            leagues_map[lname]["league_logo_url"] = r.league_logo_url
+        leagues_map[lname]["fixtures"].append(_row_list_item(r))
 
     countries = []
     for cname in sorted(grouped.keys()):
         leagues = []
-        for lname in sorted(grouped[cname].keys()):
-            leagues.append({"league_name": lname, "fixtures": grouped[cname][lname]})
-        countries.append({"country_name": cname, "leagues": leagues})
+        for lname in sorted(grouped[cname]["leagues"].keys()):
+            leagues.append(grouped[cname]["leagues"][lname])
+        countries.append(
+            {
+                "country_name": grouped[cname]["country_name"],
+                "country_flag_url": grouped[cname]["country_flag_url"],
+                "leagues": leagues,
+            },
+        )
+
+    summary = {
+        "eligible_count": len(all_rows),
+        "upcoming_count": status_counts["upcoming"],
+        "live_count": status_counts["live"],
+        "finished_count": status_counts["finished"],
+        "excluded_count": int(meta.get("excluded_count") or 0),
+        "last_scan_at": meta.get("last_scan_at"),
+    }
 
     return {
         "status": "ok",
         "version": CECCHINO_TODAY_VERSION,
+        "date": resolved.isoformat(),
         "scan_date": resolved.isoformat(),
+        "is_scanned": bool(meta.get("has_scan")),
         "total": len(rows),
+        "summary": summary,
+        "filters": _build_list_filters(all_rows),
         "countries": countries,
-        "scan_meta": get_day_scan_meta(db, resolved, timezone=timezone),
+        "scan_meta": meta,
     }
 
 
-def _row_list_item(row: CecchinoTodayFixture) -> dict[str, Any]:
-    odds = row.odds_snapshot_json or {}
-    bm = odds.get("bookmakers") or {}
+def update_today_fixture_results(
+    db: Session,
+    *,
+    scan_date: date | None = None,
+    timezone: str = DEFAULT_TODAY_TIMEZONE,
+    client: ApiFootballClient | None = None,
+) -> dict[str, Any]:
+    resolved = resolve_scan_date(scan_date, timezone)
+    af_client = client or ApiFootballClient()
+    rows = list(
+        db.scalars(
+            select(CecchinoTodayFixture).where(
+                CecchinoTodayFixture.scan_date == resolved,
+                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+            ),
+        ).all(),
+    )
+    warnings: list[str] = []
+    failed: list[dict[str, Any]] = []
+    results_updated = 0
+    still_upcoming = 0
+    live = 0
+
+    for idx, row in enumerate(rows):
+        if idx > 0:
+            time.sleep(SLEEP_BETWEEN_CALLS_S)
+        try:
+            api_item = af_client.get_fixture_by_id(int(row.provider_fixture_id))
+        except ApiFootballError as exc:
+            failed.append({"provider_fixture_id": row.provider_fixture_id, "error": str(exc)})
+            warnings.append(str(exc))
+            continue
+        if not api_item:
+            failed.append(
+                {"provider_fixture_id": row.provider_fixture_id, "error": "fixture_not_found"},
+            )
+            continue
+
+        apply_display_from_api(row, api_item)
+        row.raw_fixture_json = api_item
+        st = _resolve_row_match_status(row)
+        if st == MATCH_UPCOMING:
+            still_upcoming += 1
+        elif st == MATCH_LIVE:
+            live += 1
+        results_updated += 1
+
+    db.commit()
     return {
-        "id": int(row.id),
-        "provider_fixture_id": int(row.provider_fixture_id),
-        "local_fixture_id": int(row.local_fixture_id) if row.local_fixture_id else None,
-        "competition_id": int(row.competition_id) if row.competition_id else None,
-        "home_team_name": row.home_team_name,
-        "away_team_name": row.away_team_name,
-        "kickoff": row.kickoff.isoformat() if row.kickoff else None,
-        "bookmaker_status": row.bookmaker_status,
-        "stats_status": row.stats_status,
-        "cecchino_status": row.cecchino_status,
-        "bookmakers": {
-            name: "OK" if name in bm else "MISSING"
-            for name in ("Bet365", "Betfair", "Pinnacle")
-        },
+        "status": "ok",
+        "version": CECCHINO_TODAY_VERSION,
+        "date": resolved.isoformat(),
+        "fixtures_checked": len(rows),
+        "results_updated": results_updated,
+        "still_upcoming": still_upcoming,
+        "live": live,
+        "failed": failed,
+        "warnings": warnings,
     }
 
 
@@ -692,7 +870,40 @@ def build_competition_filter_debug(row: CecchinoTodayFixture) -> dict[str, Any]:
     return {"allowed": True, "reason": None}
 
 
+def build_fixture_status_debug(row: CecchinoTodayFixture) -> dict[str, Any]:
+    raw = row.raw_fixture_json or {}
+    fx = raw.get("fixture") or {}
+    status_block = fx.get("status") or {}
+    short = row.fixture_status or status_block.get("short") or "unknown"
+    message = None
+    if row.eligibility_status == ELIGIBILITY_EXCLUDED_STARTED:
+        message = "Esclusa perché partita già iniziata o conclusa al momento dello scan"
+    return {
+        "fixture_status_at_scan": short,
+        "elapsed_at_scan": status_block.get("elapsed"),
+        "message": message,
+    }
+
+
+def build_exclusion_reason_message(row: CecchinoTodayFixture) -> str | None:
+    if row.eligibility_status == ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER:
+        bm = build_bookmaker_debug(row)
+        missing = [n for n in _BOOKMAKER_NAMES if bm.get(n) != "available"]
+        if missing:
+            return f"Esclusa perché manca {' / '.join(missing)}"
+    if row.eligibility_status == ELIGIBILITY_EXCLUDED_MISSING_1X2:
+        return "Esclusa perché manca mercato 1X2 completo su uno o più bookmaker"
+    if row.eligibility_status == ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS:
+        return "Esclusa perché statistiche insufficienti o leakage non superato"
+    if row.eligibility_status in _COMPETITION_EXCLUDED_STATUSES:
+        return f"Esclusa per filtro competizione ({row.eligibility_status})"
+    if row.eligibility_status == ELIGIBILITY_EXCLUDED_STARTED:
+        return "Esclusa perché partita già iniziata al momento dello scan"
+    return row.eligibility_reason
+
+
 def _excluded_fixture_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
+    reason_msg = build_exclusion_reason_message(row)
     return {
         "id": int(row.id),
         "provider_fixture_id": int(row.provider_fixture_id),
@@ -702,10 +913,11 @@ def _excluded_fixture_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
         "country_name": row.country_name,
         "kickoff": row.kickoff.isoformat() if row.kickoff else None,
         "eligibility_status": row.eligibility_status,
-        "eligibility_reason": row.eligibility_reason,
+        "eligibility_reason": reason_msg or row.eligibility_reason,
         "bookmaker_debug": build_bookmaker_debug(row),
         "stats_debug": build_stats_debug(row),
         "competition_filter_debug": build_competition_filter_debug(row),
+        "fixture_status_debug": build_fixture_status_debug(row),
         "warnings": list(row.warnings_json or []),
     }
 
@@ -747,14 +959,32 @@ def _aggregate_scan_dates(db: Session) -> dict[date, dict[str, Any]]:
             func.count().filter(CecchinoTodayFixture.eligibility_status != ELIGIBILITY_ELIGIBLE).label(
                 "excluded_count",
             ),
+            func.count().filter(
+                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+                or_(
+                    CecchinoTodayFixture.match_display_status == MATCH_UPCOMING,
+                    CecchinoTodayFixture.match_display_status.is_(None),
+                ),
+            ).label("upcoming_count"),
+            func.count().filter(
+                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+                CecchinoTodayFixture.match_display_status == MATCH_LIVE,
+            ).label("live_count"),
+            func.count().filter(
+                CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+                CecchinoTodayFixture.match_display_status == MATCH_FINISHED,
+            ).label("finished_count"),
             func.max(CecchinoTodayFixture.updated_at).label("last_scan_at"),
         ).group_by(CecchinoTodayFixture.scan_date),
     ).all()
     out: dict[date, dict[str, Any]] = {}
-    for scan_date, eligible, excluded, last_at in rows:
+    for scan_date, eligible, excluded, upcoming, live, finished, last_at in rows:
         out[scan_date] = {
             "eligible_count": int(eligible or 0),
             "excluded_count": int(excluded or 0),
+            "upcoming_count": int(upcoming or 0),
+            "live_count": int(live or 0),
+            "finished_count": int(finished or 0),
             "last_scan_at": last_at.isoformat() if last_at else None,
             "has_scan": True,
         }
@@ -771,63 +1001,67 @@ def get_day_scan_meta(
     if agg is None:
         return {
             "has_scan": False,
+            "is_scanned": False,
             "eligible_count": 0,
             "excluded_count": 0,
+            "upcoming_count": 0,
+            "live_count": 0,
+            "finished_count": 0,
             "last_scan_at": None,
             "day_status": "pending",
+            "scan_state": "not_scanned",
         }
     return {
         **agg,
+        "is_scanned": True,
         "day_status": "available",
+        "scan_state": "scanned",
     }
 
 
-def _day_label(d: date, today: date, tomorrow: date) -> str:
+_WEEKDAY_IT = ("Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom")
+
+
+def _timeline_day_label(d: date, today: date, tomorrow: date) -> str:
     if d == today:
         return "Oggi"
     if d == tomorrow:
         return "Domani"
-    return d.strftime("%d/%m")
+    return _WEEKDAY_IT[d.weekday()]
 
 
 def list_available_days(
     db: Session,
     *,
     timezone: str = DEFAULT_TODAY_TIMEZONE,
-    retention_days: int = DEFAULT_RETENTION_DAYS,
+    window_days: int = TIMELINE_WINDOW_DAYS,
 ) -> dict[str, Any]:
     today = rome_today(timezone)
     tomorrow = rome_tomorrow(timezone)
-    cutoff = today - timedelta(days=retention_days)
     agg = _aggregate_scan_dates(db)
 
-    seen: set[date] = set()
     day_entries: list[dict[str, Any]] = []
-
-    def _entry(d: date) -> dict[str, Any]:
+    for offset in range(-window_days, window_days + 1):
+        d = today + timedelta(days=offset)
         meta = agg.get(d)
         has_scan = meta is not None
-        return {
-            "date": d.isoformat(),
-            "label": _day_label(d, today, tomorrow),
-            "eligible_count": int(meta["eligible_count"]) if meta else 0,
-            "excluded_count": int(meta["excluded_count"]) if meta else 0,
-            "last_scan_at": meta.get("last_scan_at") if meta else None,
-            "status": "available" if has_scan else "pending",
-        }
-
-    for d in (tomorrow, today):
-        if d not in seen:
-            day_entries.append(_entry(d))
-            seen.add(d)
-
-    historical = sorted(
-        [d for d in agg.keys() if d >= cutoff and d not in seen],
-        reverse=True,
-    )
-    for d in historical:
-        day_entries.append(_entry(d))
-        seen.add(d)
+        day_entries.append(
+            {
+                "date": d.isoformat(),
+                "label": _timeline_day_label(d, today, tomorrow),
+                "is_today": d == today,
+                "is_future": d > today,
+                "is_scanned": has_scan,
+                "eligible_count": int(meta["eligible_count"]) if meta else 0,
+                "excluded_count": int(meta["excluded_count"]) if meta else 0,
+                "upcoming_count": int(meta["upcoming_count"]) if meta else 0,
+                "live_count": int(meta["live_count"]) if meta else 0,
+                "finished_count": int(meta["finished_count"]) if meta else 0,
+                "last_scan_at": meta.get("last_scan_at") if meta else None,
+                "scan_state": "scanned" if has_scan else "not_scanned",
+                "status": "available" if has_scan else "pending",
+            },
+        )
 
     return {
         "status": "ok",
@@ -835,6 +1069,7 @@ def list_available_days(
         "timezone": timezone,
         "today": today.isoformat(),
         "tomorrow": tomorrow.isoformat(),
+        "selected_default": today.isoformat(),
         "days": day_entries,
     }
 

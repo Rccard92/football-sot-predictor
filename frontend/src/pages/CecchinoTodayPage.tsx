@@ -3,22 +3,27 @@ import {
   CecchinoTodayDetailPanel,
   CecchinoTodayDetailPlaceholder,
 } from '../components/cecchino/CecchinoTodayDetailPanel'
-import { CecchinoTodayDayTabs } from '../components/cecchino/CecchinoTodayDayTabs'
+import { CecchinoTodayDaySummary } from '../components/cecchino/CecchinoTodayDaySummary'
 import { CecchinoTodayExcludedPanel } from '../components/cecchino/CecchinoTodayExcludedPanel'
-import { CecchinoTodayFixtureList, type TodayFlatFixture } from '../components/cecchino/CecchinoTodayFixtureList'
+import {
+  CecchinoTodayFilters,
+  type StatusFilter,
+} from '../components/cecchino/CecchinoTodayFilters'
+import { CecchinoTodayFixtureList } from '../components/cecchino/CecchinoTodayFixtureList'
 import { CecchinoTodayPageHeader } from '../components/cecchino/CecchinoTodayPageHeader'
 import { CecchinoTodayScanSummary } from '../components/cecchino/CecchinoTodayScanSummary'
+import { CecchinoTodayTimeline } from '../components/cecchino/CecchinoTodayTimeline'
 import { todayPageGrid, todaySectionTitle } from '../components/cecchino/cecchinoTodayStyles'
 import {
   getCecchinoTodayDays,
   getCecchinoTodayDetail,
   getCecchinoTodayList,
-  scanCecchinoTodayToday,
-  scanCecchinoTodayTomorrow,
+  scanCecchinoTodayDay,
   todayIsoRome,
-  tomorrowIsoRome,
+  updateCecchinoTodayResults,
   type CecchinoTodayDay,
   type CecchinoTodayDetailResponse,
+  type CecchinoTodayListCountry,
   type CecchinoTodayListResponse,
   type CecchinoTodayScanReport,
 } from '../lib/cecchinoTodayApi'
@@ -33,13 +38,17 @@ export function CecchinoTodayPage() {
   const [detail, setDetail] = useState<CecchinoTodayDetailResponse | null>(null)
   const [listLoading, setListLoading] = useState(false)
   const [daysLoading, setDaysLoading] = useState(false)
-  const [scanTodayLoading, setScanTodayLoading] = useState(false)
-  const [scanTomorrowLoading, setScanTomorrowLoading] = useState(false)
+  const [scanDayLoading, setScanDayLoading] = useState(false)
+  const [updateResultsLoading, setUpdateResultsLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
-  const [scanError, setScanError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [excludedOpen, setExcludedOpen] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [countryFilter, setCountryFilter] = useState('')
+  const [leagueFilter, setLeagueFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const dayNavReady = useRef(false)
   const loadExcludedRef = useRef<(() => Promise<void>) | null>(null)
 
@@ -72,6 +81,14 @@ export function CecchinoTodayPage() {
     try {
       const data = await getCecchinoTodayList({ date, timezone: 'Europe/Rome' })
       setList(data)
+      if (data.summary.upcoming_count > 0) {
+        setStatusFilter('upcoming')
+      } else {
+        setStatusFilter('all')
+      }
+      setCountryFilter('')
+      setLeagueFilter('')
+      setSearchQuery('')
     } catch (e) {
       setListError(formatFetchError(e))
       setList(null)
@@ -83,7 +100,7 @@ export function CecchinoTodayPage() {
   useEffect(() => {
     const init = async () => {
       const daysRes = await loadDays()
-      const today = daysRes?.today ?? todayIsoRome()
+      const today = daysRes?.selected_default ?? daysRes?.today ?? todayIsoRome()
       setSelectedDay(today)
       await loadList(today)
       dayNavReady.current = true
@@ -117,65 +134,106 @@ export function CecchinoTodayPage() {
     void load()
   }, [selectedId])
 
-  const handleScanToday = async () => {
-    setScanError(null)
-    setScanTodayLoading(true)
+  const handleScanDay = async (forceRescan: boolean) => {
+    setActionError(null)
+    setScanDayLoading(true)
     try {
-      const report = await scanCecchinoTodayToday()
-      setScanReport(report)
+      const report = await scanCecchinoTodayDay({ date: selectedDay, forceRescan })
+      if (report.status === 'ok') {
+        setScanReport(report)
+      }
       await loadDays()
-      const today = todayIsoRome()
-      setSelectedDay(today)
-      await loadList(today)
+      await loadList(selectedDay)
     } catch (e) {
-      setScanError(formatFetchError(e))
+      setActionError(formatFetchError(e))
     } finally {
-      setScanTodayLoading(false)
+      setScanDayLoading(false)
     }
   }
 
-  const handleScanTomorrow = async () => {
-    setScanError(null)
-    setScanTomorrowLoading(true)
+  const handleUpdateResults = async () => {
+    setActionError(null)
+    setUpdateResultsLoading(true)
     try {
-      const report = await scanCecchinoTodayTomorrow()
-      setScanReport(report)
+      await updateCecchinoTodayResults({ date: selectedDay })
       await loadDays()
-      const tomorrow = tomorrowIsoRome()
-      setSelectedDay(tomorrow)
-      await loadList(tomorrow)
+      await loadList(selectedDay)
     } catch (e) {
-      setScanError(formatFetchError(e))
+      setActionError(formatFetchError(e))
     } finally {
-      setScanTomorrowLoading(false)
+      setUpdateResultsLoading(false)
     }
   }
 
-  const flatFixtures = useMemo((): TodayFlatFixture[] => {
+  const filteredCountries = useMemo((): CecchinoTodayListCountry[] => {
     if (!list) return []
-    const out: TodayFlatFixture[] = []
-    for (const c of list.countries) {
-      for (const l of c.leagues) {
-        for (const f of l.fixtures) {
-          out.push({ country: c.country_name, league: l.league_name, fixture: f })
+    const q = searchQuery.trim().toLowerCase()
+    const out: CecchinoTodayListCountry[] = []
+
+    for (const country of list.countries) {
+      if (countryFilter && country.country_name !== countryFilter) continue
+
+      const leagues = []
+      for (const league of country.leagues) {
+        if (leagueFilter && league.league_name !== leagueFilter) continue
+
+        const fixtures = league.fixtures.filter((f) => {
+          if (statusFilter !== 'all' && f.status !== statusFilter) return false
+          if (!q) return true
+          const hay = [
+            f.home_team_name,
+            f.away_team_name,
+            league.league_name,
+            country.country_name,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+          return hay.includes(q)
+        })
+
+        if (fixtures.length > 0) {
+          leagues.push({ ...league, fixtures })
         }
+      }
+
+      if (leagues.length > 0) {
+        out.push({ ...country, leagues })
       }
     }
     return out
-  }, [list])
+  }, [list, statusFilter, countryFilter, leagueFilter, searchQuery])
+
+  const availableLeagues = useMemo(() => {
+    if (!list) return []
+    const names: string[] = []
+    for (const c of list.countries) {
+      if (countryFilter && c.country_name !== countryFilter) continue
+      for (const l of c.leagues) {
+        names.push(l.league_name)
+      }
+    }
+    return [...new Set(names)].sort()
+  }, [list, countryFilter])
+
+  const totalBeforeFilter = list?.summary.eligible_count ?? 0
+  const isScanned = list?.is_scanned ?? false
+  const hasActiveFilters =
+    statusFilter !== 'all' || !!countryFilter || !!leagueFilter || !!searchQuery.trim()
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-6">
       <CecchinoTodayPageHeader
-        onScanToday={() => void handleScanToday()}
-        onScanTomorrow={() => void handleScanTomorrow()}
-        scanTodayLoading={scanTodayLoading}
-        scanTomorrowLoading={scanTomorrowLoading}
+        isScanned={isScanned}
+        scanDayLoading={scanDayLoading}
+        updateResultsLoading={updateResultsLoading}
+        onScanDay={(force) => void handleScanDay(force)}
+        onUpdateResults={() => void handleUpdateResults()}
       />
 
-      {scanError && (
+      {actionError && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
-          {scanError}
+          {actionError}
         </p>
       )}
 
@@ -184,10 +242,27 @@ export function CecchinoTodayPage() {
       )}
 
       {!daysLoading && days.length > 0 && (
-        <CecchinoTodayDayTabs
-          days={days}
-          selectedDay={selectedDay}
-          onSelectDay={setSelectedDay}
+        <CecchinoTodayTimeline days={days} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+      )}
+
+      <CecchinoTodayDaySummary
+        selectedDay={selectedDay}
+        summary={list?.summary ?? null}
+        isScanned={isScanned}
+      />
+
+      {isScanned && list && (
+        <CecchinoTodayFilters
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          countryFilter={countryFilter}
+          onCountryFilterChange={setCountryFilter}
+          leagueFilter={leagueFilter}
+          onLeagueFilterChange={setLeagueFilter}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          countries={list.filters.countries}
+          leagues={availableLeagues}
         />
       )}
 
@@ -200,14 +275,16 @@ export function CecchinoTodayPage() {
 
       <div className={todayPageGrid}>
         <CecchinoTodayFixtureList
-          fixtures={flatFixtures}
+          countries={filteredCountries}
           selectedId={selectedId}
           onSelect={setSelectedId}
           loading={listLoading}
           error={listError}
           selectedDay={selectedDay}
-          scanMeta={list?.scan_meta}
-          onScanToday={() => void handleScanToday()}
+          isScanned={isScanned}
+          hasActiveFilters={hasActiveFilters}
+          totalBeforeFilter={totalBeforeFilter}
+          onScanDay={() => void handleScanDay(false)}
         />
 
         <section className="min-w-0 space-y-4">
