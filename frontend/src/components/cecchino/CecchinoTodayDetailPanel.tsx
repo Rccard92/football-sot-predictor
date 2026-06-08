@@ -62,6 +62,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
+          deltaForceAnalysis={detail.delta_force_analysis}
         />
       )}
 

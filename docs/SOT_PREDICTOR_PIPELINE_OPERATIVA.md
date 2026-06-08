@@ -32,6 +32,22 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 36 — Delta Forza e Linearità Match
+
+```mermaid
+flowchart TD
+  kpiRows[KPI rows 1/X/2] --> edge[edge_pct book vs Cecchino]
+  edge --> delta[delta_forza_abs = abs edge]
+  delta --> matchMax[max match delta]
+  matchMax --> classify[linear / non_linear / strong_distortion]
+  classify --> balance[balance_analysis v3 enrichment]
+  classify --> ui[KPI mini-card + Equilibrio card]
+```
+
+- **Formula:** `edge_pct = (quota_book / quota_cecchino - 1) * 100`; Delta = valore assoluto.
+- **Soglie:** 17% e 31% configurabili (`CECCHINO_DELTA_LINEAR_THRESHOLD`, `CECCHINO_DELTA_STRONG_THRESHOLD`).
+- **API:** `delta_force_analysis` + `balance_analysis.delta_force` in GET `/api/cecchino/today/{id}`.
+
 ## Fase 35 — Sidebar Cecchino e metriche Monitoraggio Segnali
 
 ```mermaid

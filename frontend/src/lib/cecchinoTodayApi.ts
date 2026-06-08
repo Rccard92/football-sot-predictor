@@ -559,6 +559,52 @@ export type CecchinoBalanceAnalysisOperational = {
   severity?: 'positive' | 'warning' | 'negative' | 'neutral' | string
 }
 
+export type CecchinoDeltaForceRow = {
+  market_key?: string
+  segno?: string
+  quota_book?: number
+  quota_cecchino?: number
+  edge_pct?: number
+  delta_forza_abs?: number
+  class_key?: string
+  label?: string
+  direction?: string
+  direction_label?: string
+}
+
+export type CecchinoDeltaForceMatch = {
+  delta_forza_abs?: number
+  label?: string
+  subtitle?: string
+  class_key?: string
+  severity?: 'positive' | 'warning' | 'negative' | string
+  responsible_side?: string
+  responsible_side_label?: string
+  responsible_edge_pct?: number
+  responsible_direction?: string
+  responsible_direction_label?: string
+  meaning?: string
+  description?: string
+}
+
+export type CecchinoDeltaForceAnalysis = {
+  version?: string
+  status?: string
+  thresholds?: {
+    linear_max_pct?: number
+    strong_distortion_min_pct?: number
+  }
+  match?: CecchinoDeltaForceMatch
+  rows?: CecchinoDeltaForceRow[]
+  warnings?: string[]
+}
+
+export type CecchinoBalanceDeltaForceEmbed = {
+  match?: CecchinoDeltaForceMatch
+  rows?: CecchinoDeltaForceRow[]
+  thresholds?: CecchinoDeltaForceAnalysis['thresholds']
+}
+
 export type CecchinoBalanceAnalysisSummary = {
   main_label?: string
   short_advice?: string
@@ -567,6 +613,10 @@ export type CecchinoBalanceAnalysisSummary = {
   is_false_balance?: boolean
   is_confirmed_imbalance?: boolean
   is_x_dominance?: boolean
+  is_linear_match?: boolean
+  is_non_linear_match?: boolean
+  has_strong_delta_distortion?: boolean
+  delta_force_label?: string
 }
 
 export type CecchinoBalanceAnalysisTechnical = {
@@ -602,6 +652,7 @@ export type CecchinoBalanceAnalysis = {
   operational?: CecchinoBalanceAnalysisOperational
   summary?: CecchinoBalanceAnalysisSummary
   technical?: CecchinoBalanceAnalysisTechnical
+  delta_force?: CecchinoBalanceDeltaForceEmbed
   warnings?: string[]
 }
 
@@ -635,6 +686,7 @@ export type CecchinoTodayDetailResponse = {
   kpi_panel?: CecchinoKpiV2Panel
   kpi_panel_v2?: CecchinoKpiV2Panel
   picchetti_debug_summary?: CecchinoPicchettiDebugSummary
+  delta_force_analysis?: CecchinoDeltaForceAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
@@ -814,6 +866,8 @@ export type CecchinoKpiDebugJsonResponse = {
     name: string
   }
   kpi_panel?: CecchinoKpiV2Panel
+  delta_force_analysis?: CecchinoDeltaForceAnalysis
+  balance_analysis?: CecchinoBalanceAnalysis
   betfair_odds_used?: Record<string, unknown>
   cecchino_odds_used?: Record<string, unknown>
   raw_betfair_markets_used?: Array<Record<string, unknown>>

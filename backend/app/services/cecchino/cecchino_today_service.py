@@ -63,6 +63,7 @@ from app.services.cecchino.cecchino_constants import (
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
+from app.services.cecchino.cecchino_delta_force_analysis import build_cecchino_delta_force_analysis
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_backfill import sync_signals_for_scan_date
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
@@ -1489,8 +1490,10 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
             kpi_panel=kpi_panel,
         )
         picchetti_debug_summary = build_picchetti_debug_summary(full_debug)
+    delta_force_analysis = build_cecchino_delta_force_analysis(kpi_panel)
     balance_analysis = build_balance_analysis_from_final(
         output.get("final") if isinstance(output, dict) else {},
+        delta_force=delta_force_analysis if delta_force_analysis.get("status") == "available" else None,
     )
     sync_cecchino_signal_activations(db, int(row.id))
     today_id = int(row.id)
@@ -1524,6 +1527,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "kpi_panel": kpi_panel,
         "kpi_panel_v2": kpi_panel,
         "picchetti_debug_summary": picchetti_debug_summary,
+        "delta_force_analysis": delta_force_analysis,
         "balance_analysis": balance_analysis,
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (

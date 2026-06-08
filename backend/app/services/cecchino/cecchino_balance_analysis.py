@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-VERSION = "cecchino_balance_analysis_v2"
+VERSION = "cecchino_balance_analysis_v3"
 
 _SIDE_LABEL_TO_ENUM = {"1": "HOME", "X": "DRAW", "2": "AWAY"}
 _SIDE_ENUM_TO_LABEL = {v: k for k, v in _SIDE_LABEL_TO_ENUM.items()}
@@ -527,11 +527,79 @@ def _favorite_direction(
     return "Tendenza verso 2"
 
 
+def _enrich_operational_with_delta_force(
+    operational: dict[str, Any],
+    *,
+    f36_abs: float,
+    dominance_pp: float,
+    quota_x: float,
+    best_side_enum: str,
+    delta_force: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not delta_force or delta_force.get("status") != "available":
+        return operational
+
+    match = delta_force.get("match") or {}
+    class_key = match.get("class_key")
+    if not class_key:
+        return operational
+
+    detail = operational.get("detail", "")
+    additions: list[str] = []
+
+    is_linear = class_key == "linear_statistical"
+    is_non_linear = class_key in ("non_linear", "strong_distortion")
+    low_dominance = dominance_pp <= 5
+
+    if (
+        f36_abs < 0.75
+        and (best_side_enum == "DRAW" or low_dominance)
+        and quota_x <= 3.50
+        and is_linear
+    ):
+        additions.append("Il Delta Forza è basso: la lettura X/Under è lineare.")
+
+    if f36_abs < 0.75 and quota_x <= 3.50 and is_non_linear:
+        additions.append(
+            "Attenzione: il match è equilibrato nei valori Cecchino, "
+            "ma il Delta Forza indica una lettura non lineare rispetto al book."
+        )
+
+    if (
+        f36_abs < 0.75
+        and best_side_enum in ("HOME", "AWAY")
+        and dominance_pp > 10
+        and is_non_linear
+        and operational.get("class_key") == "false_balance"
+    ):
+        additions.append("Falso equilibrio rafforzato dal Delta Forza.")
+
+    if (
+        f36_abs > 1.50
+        and best_side_enum in ("HOME", "AWAY")
+        and dominance_pp > 10
+        and is_non_linear
+        and operational.get("class_key") == "confirmed_imbalance"
+    ):
+        additions.append("Squilibrio confermato anche dal Delta Forza.")
+
+    if not additions:
+        return operational
+
+    merged = dict(operational)
+    merged["detail"] = detail
+    for note in additions:
+        if note not in detail:
+            merged["detail"] = f"{merged['detail']} {note}".strip()
+    return merged
+
+
 def _build_summary(
     operational: dict[str, Any],
     cross_reading: dict[str, str],
     favorite_direction: str,
     best_side_enum: str,
+    delta_force: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     op_class = operational.get("class_key", "")
     is_x_dominance = best_side_enum == "DRAW"
@@ -565,6 +633,8 @@ def _build_summary(
         operational.get("detail", ""),
     )
 
+    match = (delta_force or {}).get("match") or {}
+    class_key = match.get("class_key")
     return {
         "main_label": operational.get("label"),
         "short_advice": short_advice,
@@ -573,6 +643,10 @@ def _build_summary(
         "is_false_balance": is_false_balance,
         "is_confirmed_imbalance": is_confirmed_imbalance,
         "is_x_dominance": is_x_dominance,
+        "is_linear_match": class_key == "linear_statistical",
+        "is_non_linear_match": class_key == "non_linear",
+        "has_strong_delta_distortion": class_key == "strong_distortion",
+        "delta_force_label": match.get("label"),
     }
 
 
@@ -584,6 +658,7 @@ def build_cecchino_balance_analysis(
     prob_cecchino_1: float | None,
     prob_cecchino_x: float | None,
     prob_cecchino_2: float | None,
+    delta_force: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     q1 = _num(quota_cecchino_1)
     qx = _num(quota_cecchino_x)
@@ -635,10 +710,20 @@ def build_cecchino_balance_analysis(
         best_enum,
         dominance_context["effect_on_balance"],
     )
+    operational = _enrich_operational_with_delta_force(
+        operational,
+        f36_abs=f36_abs,
+        dominance_pp=dominance_pp,
+        quota_x=qx,
+        best_side_enum=best_enum,
+        delta_force=delta_force,
+    )
     favorite = _favorite_direction(f36_abs, dominance_pp, best_label, best_enum)
-    summary = _build_summary(operational, cross, favorite, best_enum)
+    summary = _build_summary(operational, cross, favorite, best_enum, delta_force=delta_force)
 
-    return {
+    from app.services.cecchino.cecchino_delta_force_analysis import delta_force_embed
+
+    payload: dict[str, Any] = {
         "version": VERSION,
         "status": "available",
         "inputs": {
@@ -676,13 +761,21 @@ def build_cecchino_balance_analysis(
             "lateral_dominance_note": (
                 "Se domina 1 o 2, la Dominanza indebolisce equilibrio o conferma squilibrio."
             ),
-            "legend_version": "balance_operational_legend_v2_contextual_dominance",
+            "legend_version": "balance_operational_legend_v3_delta_force",
         },
         "warnings": [],
     }
+    embedded = delta_force_embed(delta_force)
+    if embedded:
+        payload["delta_force"] = embedded
+    return payload
 
 
-def build_balance_analysis_from_final(final: dict[str, Any]) -> dict[str, Any]:
+def build_balance_analysis_from_final(
+    final: dict[str, Any],
+    *,
+    delta_force: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not isinstance(final, dict) or final.get("status") != "available":
         return {
             "version": VERSION,
@@ -697,4 +790,5 @@ def build_balance_analysis_from_final(final: dict[str, Any]) -> dict[str, Any]:
         prob_cecchino_1=_num(final.get("prob_1_pct")) or _num(final.get("prob_1")),
         prob_cecchino_x=_num(final.get("prob_x_pct")) or _num(final.get("prob_x")),
         prob_cecchino_2=_num(final.get("prob_2_pct")) or _num(final.get("prob_2")),
+        delta_force=delta_force,
     )

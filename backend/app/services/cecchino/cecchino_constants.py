@@ -4,6 +4,9 @@ from __future__ import annotations
 
 CECCHINO_VERSION = "cecchino_v0_4_bookmaker_kpi"
 
+CECCHINO_DELTA_LINEAR_THRESHOLD = 17
+CECCHINO_DELTA_STRONG_THRESHOLD = 31
+
 PROVIDER_API_FOOTBALL = "api_football"
 
 CECCHINO_BOOKMAKER: dict[str, str | int] = {

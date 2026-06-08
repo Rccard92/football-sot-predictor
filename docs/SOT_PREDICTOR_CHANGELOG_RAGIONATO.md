@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 36 — Delta Forza e Linearità Match (2026-06-08)
+
+- Aggiunto Delta Forza come valore assoluto dell'Edge % su 1/X/2.
+- Classificazione Partita statistica (<17%), Partita non statistica (17-31%), Forte favorita/Forte distorsione (>31%).
+- Delta Forza Match basato sul massimo scostamento tra 1/X/2 con segno responsabile.
+- Mini-card Delta Forza nel Pannello KPI senza nuove colonne.
+- Quinta card Linearità in Equilibrio vs Squilibrio + dettaglio tecnico Delta 1X2.
+- Legenda operativa v3 con blocco Lettura Delta Forza.
+- Delta Forza completa F36/Dominanza senza sostituirli.
+- Nessuna modifica a Betfair-only né modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 35 — Sidebar Cecchino e metriche Monitoraggio Segnali (2026-06-08)
 
 - Creata sezione Cecchino nella sidebar con voci in alto: Cecchino, Cecchino Today, Monitoraggio Segnali.

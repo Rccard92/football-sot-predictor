@@ -303,6 +303,21 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 36 — Delta Forza e Linearità Match (v0.30)
+
+Versione UI `cecchino_today_v0_30_delta_force` — linearità match vs book Betfair.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Delta Forza | `abs(edge_pct)` su 1/X/2; edge = `(quota_book/quota_cecchino - 1) * 100` |
+| Soglie | `<17%` lineare, `17-31%` non lineare, `>31%` forte distorsione |
+| Match-level | `max(delta_1, delta_x, delta_2)` + segno responsabile |
+| KPI UI | Mini-card «Delta Forza Match» sopra tabella (nessuna colonna nuova) |
+| Equilibrio | Quinta card Delta Forza + arricchimento lettura operativa |
+| Debug | `delta_force_analysis` in detail e `kpi-debug-json` |
+
+**Invariato:** Betfair-only, formule KPI, F36/Dominanza come fattori primari, SOT v2.0/v2.1.
+
 ## Cecchino Today — Fase 35 — Sidebar Cecchino e metriche Monitoraggio Segnali (v0.29)
 
 Versione UI `cecchino_today_v0_29_signals_ui_metrics` — navigazione e KPI monitoraggio.

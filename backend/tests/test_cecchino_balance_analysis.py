@@ -9,6 +9,8 @@ from app.services.cecchino.cecchino_balance_analysis import (
     build_balance_analysis_from_final,
     build_cecchino_balance_analysis,
 )
+from app.services.cecchino.cecchino_delta_force_analysis import build_cecchino_delta_force_analysis
+from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
 
 
 def _build(**kwargs):
@@ -24,10 +26,10 @@ def _build(**kwargs):
     return build_cecchino_balance_analysis(**defaults)
 
 
-def test_version_is_v2():
+def test_version_is_v3():
     out = _build()
-    assert out["version"] == "cecchino_balance_analysis_v2"
-    assert VERSION == "cecchino_balance_analysis_v2"
+    assert out["version"] == "cecchino_balance_analysis_v3"
+    assert VERSION == "cecchino_balance_analysis_v3"
 
 
 def test_f36_signed_is_quota2_minus_quota1():
@@ -256,5 +258,27 @@ def test_technical_legend_version_present():
     out = _build()
     assert (
         out["technical"]["legend_version"]
-        == "balance_operational_legend_v2_contextual_dominance"
+        == "balance_operational_legend_v3_delta_force"
     )
+
+
+def test_operational_enriched_with_delta_force_linear_draw():
+    panel = {
+        "rows": [
+            {"market_key": SEL_HOME, "quota_book": 2.05, "quota_cecchino": 2.0},
+            {"market_key": SEL_DRAW, "quota_book": 3.05, "quota_cecchino": 3.0},
+            {"market_key": SEL_AWAY, "quota_book": 4.05, "quota_cecchino": 4.0},
+        ]
+    }
+    delta = build_cecchino_delta_force_analysis(panel)
+    out = build_cecchino_balance_analysis(
+        quota_cecchino_1=2.50,
+        quota_cecchino_x=3.20,
+        quota_cecchino_2=2.90,
+        prob_cecchino_1=31.0,
+        prob_cecchino_x=42.0,
+        prob_cecchino_2=27.0,
+        delta_force=delta,
+    )
+    assert "Il Delta Forza è basso" in out["operational"]["detail"]
+    assert out["summary"]["is_linear_match"] is True
