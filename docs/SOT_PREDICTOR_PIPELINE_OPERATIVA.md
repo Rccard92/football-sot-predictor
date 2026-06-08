@@ -32,6 +32,13 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 39 — Legenda formule Monitoraggio Segnali
+
+- **UI:** accordion sotto Heatmap Segnale × Colonna in `/monitoraggio-segnali`.
+- **Dati:** legenda statica frontend — nessuna chiamata API aggiuntiva.
+- **Contenuto:** celle D39–G57, G48/G54, D60/E60 con formule Excel, testo parlante, target FT e regole W/L.
+- **Verifica:** confronto diretto con tab CECCHINO di AutomazioneCecchino.xlsm.
+
 ## Fase 38 — Fix definitivo Scala 1X/X2
 
 - **Root cause heatmap errata:** activation legacy `HOME+SCALA` / `AWAY+SCALA` ancora `is_current=true` + matrici DB non ricostruite da `force_remap`.

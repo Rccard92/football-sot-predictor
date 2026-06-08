@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 39 — Legenda formule Monitoraggio Segnali (2026-06-08)
+
+- Aggiunta sezione espandibile sotto la Heatmap Segnale × Colonna in Monitoraggio Segnali.
+- La legenda mostra cella Excel, formula Excel, formula parlante, target e regola W/L per ogni segnale/colonna.
+- Documentate tutte le formule della tab CECCHINO (UNDER 2.5, SEGNO X, OVER 2.5, 1, 1X, 2, X2, 12).
+- Chiarito che SCALA è valida solo per 1X (G48) e X2 (G54); D48 → 1 Excel D; D54 → 2 Excel D.
+- Legenda statica frontend (`cecchinoSignalFormulaLegend.ts`); nessun endpoint backend aggiuntivo.
+- Nessuna modifica a modelli SOT v2.0/v2.1, Betfair-only, KPI, Equilibrio, Delta Forza.
+
 ## Cecchino — Fase 38 — Fix definitivo Scala 1X/X2 (2026-06-08)
 
 - Corretto definitivamente il mapping SCALA della matrice Segnali Cecchino.

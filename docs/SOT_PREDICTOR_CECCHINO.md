@@ -303,6 +303,21 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 39 — Legenda formule Monitoraggio Segnali (v0.33)
+
+Versione UI `cecchino_today_v0_33_signals_formula_legend` — debug formule heatmap.
+
+| Componente | Comportamento |
+|------------|---------------|
+| UI | Accordion «Legenda formule segnali Cecchino» sotto heatmap, chiuso di default |
+| Dati | `cecchinoSignalFormulaLegend.ts` — formule Excel + parlanti statiche |
+| Tab | 8 segnali (stesso ordine heatmap): UNDER 2.5, SEGNO X, OVER 2.5, 1, 1X, 2, X2, 12 |
+| Colonne | Excel D/E/F/G + SCALA; colonne non previste marcate «Non prevista da Excel» |
+| Nota SCALA | G48 solo 1X/SCALA; G54 solo X2/SCALA; righe 1 e 2 senza SCALA |
+| Aggregazione | Box intro su Attivazioni, Valutati, Success rate heatmap |
+
+**Invariato:** backend segnali, Betfair-only, SOT v2.0/v2.1, formule calcolo matrice.
+
 ## Cecchino Today — Fase 38 — Fix definitivo Scala 1X/X2 (v0.32)
 
 Versione UI `cecchino_today_v0_32_scala_fix_definitivo` — heatmap e storico SCALA corretti.

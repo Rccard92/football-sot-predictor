@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SignalsActivationsTable } from '../components/cecchino/signals/SignalsActivationsTable'
+import { SignalsFormulaLegendAccordion } from '../components/cecchino/signals/SignalsFormulaLegendAccordion'
 import { SignalsHeatmapMatrix } from '../components/cecchino/signals/SignalsHeatmapMatrix'
 import { SignalsMonitoringKpiCards } from '../components/cecchino/signals/SignalsMonitoringKpiCards'
 import { SignalsTopRanking } from '../components/cecchino/signals/SignalsTopRanking'
@@ -382,20 +383,25 @@ export function CecchinoSignalsMonitoringPage() {
         </div>
       )}
 
-      {loading && !summary ? (
-        <p className="text-sm text-slate-500">Caricamento...</p>
-      ) : summary ? (
+      {summary && <SignalsMonitoringKpiCards overall={summary.overall} />}
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-800">Heatmap Segnale × Colonna</h2>
+        <div className="mt-3">
+          {summary ? (
+            <SignalsHeatmapMatrix summary={summary} />
+          ) : loading ? (
+            <p className="text-sm text-slate-500">Caricamento heatmap...</p>
+          ) : null}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          UNDER 2.5 e OVER 2.5 sono valutati sul risultato Full Time.
+        </p>
+        <SignalsFormulaLegendAccordion />
+      </section>
+
+      {summary && (
         <>
-          <SignalsMonitoringKpiCards overall={summary.overall} />
-          <section className="rounded-lg border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-slate-800">Heatmap Segnale × Colonna</h2>
-            <div className="mt-3">
-              <SignalsHeatmapMatrix summary={summary} />
-            </div>
-            <p className="mt-3 text-xs text-slate-500">
-              UNDER 2.5 e OVER 2.5 sono valutati sul risultato Full Time.
-            </p>
-          </section>
           <SignalsTopRanking summary={summary} />
           <section className="rounded-lg border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-slate-800">Dettaglio partite</h2>
@@ -404,7 +410,7 @@ export function CecchinoSignalsMonitoringPage() {
             </div>
           </section>
         </>
-      ) : null}
+      )}
     </div>
   )
 }
