@@ -32,6 +32,24 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 30 — Dominanza contestualizzata
+
+```mermaid
+flowchart TD
+  probs[prob_1 X prob_2] --> domCalc[dominanza invariata]
+  probs --> bestSide[best_side HOME DRAW AWAY]
+  bestSide -->|DRAW| reinforce[reinforces_balance]
+  bestSide -->|HOME AWAY| lateral[weakens or confirms imbalance]
+  domCalc --> domCtx[dominance_context]
+  reinforce --> operational[operational reading]
+  lateral --> operational
+```
+
+- **Falso equilibrio:** solo laterale (HOME/AWAY) con F36<0.75 e dom>10.
+- **X dominante:** operational X forte / X molto forte, mai false_balance.
+- **Gap 1/2 Prob:** `abs(prob_1 - prob_2)` in p.p.
+- **Payload:** `cecchino_balance_analysis_v2`.
+
 ## Fase 29 — Equilibrio vs Squilibrio
 
 ```mermaid

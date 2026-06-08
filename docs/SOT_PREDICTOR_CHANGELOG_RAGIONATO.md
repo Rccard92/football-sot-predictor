@@ -1,5 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 30 — Dominanza contestualizzata (2026-06-08)
+
+- Corretta interpretazione Dominanza nella sezione Equilibrio vs Squilibrio.
+- Dominanza resta `prob_max − prob_seconda` in punti percentuali.
+- Aggiunta distinzione tra Dominanza della X (`reinforces_balance`) e Dominanza laterale 1/2 (`weakens_balance` / `confirms_imbalance`).
+- Se domina X, la Dominanza rafforza equilibrio e lettura X/Under; mai classificata come falso equilibrio.
+- Falso equilibrio scatta solo con F36<0.75, dominanza>10 e best_side HOME/AWAY.
+- Aggiunto indicatore Gap 1/2 Probabilistico (`side_probability_gap`).
+- UI aggiornata: 4 card, dominance_context, flag `is_x_dominance`.
+- Versione analisi: `cecchino_balance_analysis_v2`.
+- Nessuna modifica a Betfair-only né SOT v2.0/v2.1.
+
 ## Cecchino — Fase 29 — Equilibrio vs Squilibrio (2026-06-08)
 
 - Aggiunta nuova sezione «Equilibrio vs Squilibrio» nel dettaglio analisi Cecchino Today (sotto Debug Picchetti).

@@ -303,6 +303,22 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 30 — Dominanza contestualizzata (v0.24)
+
+Versione UI `cecchino_today_v0_24_dominance_context` — correzione lettura Dominanza.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Formula Dominanza | Invariata: prob_max − prob_seconda (p.p.) |
+| dominance_context | Interpretazione in base a best_side (HOME/DRAW/AWAY) |
+| X dominante | Dominanza rafforza equilibrio (`reinforces_balance`) |
+| 1/2 dominante | Dominanza indebolisce o conferma squilibrio laterale |
+| Falso equilibrio | Solo se F36<0.75, dom>10 e domina HOME/AWAY |
+| Gap 1/2 Prob. | `abs(prob_1 − prob_2)` — metrica di supporto |
+| Versione | `cecchino_balance_analysis_v2` |
+
+**Invariato:** F36, Quota X, KPI Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino Today — Fase 29 — Equilibrio vs Squilibrio (v0.23)
 
 Versione UI `cecchino_today_v0_23_balance_analysis` — lettura equilibrio partita da Cecchino 1/X/2.

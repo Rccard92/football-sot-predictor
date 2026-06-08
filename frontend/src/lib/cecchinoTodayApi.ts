@@ -510,13 +510,32 @@ export type CecchinoBalanceAnalysisF36 = {
 
 export type CecchinoBalanceAnalysisDominance = {
   value?: number
-  label?: string
-  stars?: number
-  class_key?: string
   best_side?: string
-  second_side?: string
+  best_side_label?: string
   best_probability?: number
+  second_side?: string
+  second_side_label?: string
   second_probability?: number
+}
+
+export type CecchinoBalanceAnalysisDominanceContext = {
+  best_side?: string
+  best_side_label?: string
+  best_probability?: number
+  second_side?: string
+  second_side_label?: string
+  second_probability?: number
+  dominance_value?: number
+  dominance_direction?: string
+  label?: string
+  interpretation?: string
+  effect_on_balance?: string
+}
+
+export type CecchinoBalanceAnalysisSideGap = {
+  value?: number
+  label?: string
+  class_key?: string
 }
 
 export type CecchinoBalanceAnalysisDraw = {
@@ -544,13 +563,19 @@ export type CecchinoBalanceAnalysisSummary = {
   is_draw_under_candidate?: boolean
   is_false_balance?: boolean
   is_confirmed_imbalance?: boolean
+  is_x_dominance?: boolean
 }
 
 export type CecchinoBalanceAnalysisTechnical = {
   f36_formula?: string
   dominance_formula?: string
+  side_gap_formula?: string
   rule_id?: number
   operational_class_key?: string
+  effect_on_balance?: string
+  dominance_direction?: string
+  x_dominance_note?: string
+  lateral_dominance_note?: string
 }
 
 export type CecchinoBalanceAnalysis = {
@@ -565,7 +590,9 @@ export type CecchinoBalanceAnalysis = {
     prob_2?: number
   }
   f36?: CecchinoBalanceAnalysisF36
+  side_probability_gap?: CecchinoBalanceAnalysisSideGap
   dominance?: CecchinoBalanceAnalysisDominance
+  dominance_context?: CecchinoBalanceAnalysisDominanceContext
   draw?: CecchinoBalanceAnalysisDraw
   cross_reading?: CecchinoBalanceAnalysisCrossReading
   operational?: CecchinoBalanceAnalysisOperational

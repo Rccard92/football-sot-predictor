@@ -36,29 +36,36 @@ function severityIcon(severity?: string): string {
   }
 }
 
-function Stars({ count }: { count?: number }) {
-  const n = count ?? 0
-  return (
-    <span className="text-amber-500" aria-label={`${n} stelle`}>
-      {'★'.repeat(n)}
-      {'☆'.repeat(Math.max(0, 5 - n))}
-    </span>
-  )
+function dominanceCardStyles(effect?: string): string {
+  switch (effect) {
+    case 'reinforces_balance':
+      return 'border-emerald-200 bg-emerald-50/70'
+    case 'weakens_balance':
+      return 'border-amber-200 bg-amber-50/70'
+    case 'confirms_imbalance':
+      return 'border-violet-300 bg-violet-50/70'
+    default:
+      return 'border-indigo-200 bg-indigo-50/60'
+  }
 }
 
-const OPERATIONAL_RULES: Array<{ id: number; condition: string; label: string }> = [
-  { id: 1, condition: 'F36<0.75, dom≤5, X≤3.50', label: 'X molto forte' },
-  { id: 2, condition: 'F36<0.75, dom≤5, 3.50<X≤4.20', label: 'X possibile / Under' },
-  { id: 3, condition: 'F36<0.75, dom≤5, X>4.20', label: 'Equilibrio apparente' },
-  { id: 4, condition: 'F36<0.75, 5<dom≤10, X≤3.50', label: 'X possibile' },
-  { id: 5, condition: 'F36<0.75, 5<dom≤10, X>3.50', label: 'Equilibrio con tendenza' },
-  { id: 6, condition: 'F36<0.75, dom>10', label: 'Falso equilibrio' },
-  { id: 7, condition: '0.75≤F36≤1.50, dom≤5, X≤3.50', label: 'Equilibrata meno pulita' },
-  { id: 8, condition: '0.75≤F36≤1.50, 5<dom≤10, X≤3.50', label: 'Zona grigia' },
-  { id: 9, condition: '0.75≤F36≤1.50, dom>10', label: 'Tendenza verso 1 o 2' },
-  { id: 10, condition: 'F36>1.50, dom≤5, X≤3.50', label: 'Partita anomala' },
-  { id: 11, condition: 'F36>1.50, 5<dom≤10', label: 'Squilibrio moderato' },
-  { id: 12, condition: 'F36>1.50, dom>10', label: 'Squilibrio confermato' },
+function sideLabel(side?: string, label?: string): string {
+  if (label) return label
+  if (side === 'HOME') return '1'
+  if (side === 'DRAW') return 'X'
+  if (side === 'AWAY') return '2'
+  return side ?? '—'
+}
+
+const OPERATIONAL_RULES_V2: Array<{ id: number; condition: string; label: string }> = [
+  { id: 1, condition: 'DRAW, F36<0.75, X≤3.50, dom>10', label: 'X molto forte' },
+  { id: 2, condition: 'DRAW, F36<0.75, X≤3.50, dom>5', label: 'X forte' },
+  { id: 3, condition: 'DRAW, 0.75≤F36≤1.50, X≤3.50', label: 'X interessante' },
+  { id: 4, condition: 'DRAW, 3.50<X≤4.20', label: 'X possibile' },
+  { id: 5, condition: 'DRAW, X>4.20', label: 'X prima ma poco affidabile' },
+  { id: 7, condition: 'HOME/AWAY, F36<0.75, dom>10', label: 'Falso equilibrio' },
+  { id: 8, condition: 'F36<0.75, dom≤5, X≤3.50', label: 'X molto forte (legacy)' },
+  { id: 20, condition: 'F36>1.50, dom>10, laterale', label: 'Squilibrio confermato' },
 ]
 
 export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
@@ -77,9 +84,20 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
     )
   }
 
-  const { f36, dominance, draw, operational, summary, cross_reading, inputs, technical } =
-    balanceAnalysis
+  const {
+    f36,
+    side_probability_gap,
+    dominance,
+    dominance_context: domCtx,
+    draw,
+    operational,
+    summary,
+    cross_reading,
+    inputs,
+    technical,
+  } = balanceAnalysis
   const ruleId = technical?.rule_id
+  const effect = domCtx?.effect_on_balance
 
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
@@ -91,37 +109,46 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
         <article className="rounded-lg border border-sky-200 bg-sky-50/60 p-3 text-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">F36</p>
           <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
             {fmtNum(f36?.abs)}
           </p>
           <p className="mt-1 font-medium text-slate-800">{f36?.label ?? '—'}</p>
-          <p className="mt-1 text-xs text-slate-600">
-            Score {f36?.score ?? '—'}/100
-          </p>
+          <p className="mt-1 text-xs text-slate-600">Score {f36?.score ?? '—'}/100</p>
           {f36?.direction_note && (
             <p className="mt-2 text-xs text-slate-600">{f36.direction_note}</p>
           )}
         </article>
 
-        <article className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 text-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
+        <article className={`rounded-lg border p-3 text-sm ${dominanceCardStyles(effect)}`}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
             Dominanza
           </p>
           <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-            {fmtNum(dominance?.value)} p.p.
+            {fmtNum(dominance?.value ?? domCtx?.dominance_value)} p.p.
           </p>
-          <p className="mt-1 font-medium text-slate-800">{dominance?.label ?? '—'}</p>
-          <p className="mt-1">
-            <Stars count={dominance?.stars} />
-          </p>
-          <p className="mt-2 text-xs tabular-nums text-slate-600">
-            1°: {dominance?.best_side ?? '—'} — {fmtNum(dominance?.best_probability, 1)}%
+          <p className="mt-1 font-medium text-slate-800">{domCtx?.label ?? '—'}</p>
+          <p className="mt-2 text-xs tabular-nums text-slate-700">
+            Domina: {sideLabel(dominance?.best_side, dominance?.best_side_label)}{' '}
+            {fmtNum(dominance?.best_probability ?? domCtx?.best_probability, 1)}%
             <br />
-            2°: {dominance?.second_side ?? '—'} — {fmtNum(dominance?.second_probability, 1)}%
+            Secondo: {sideLabel(dominance?.second_side, dominance?.second_side_label)}{' '}
+            {fmtNum(dominance?.second_probability ?? domCtx?.second_probability, 1)}%
           </p>
+          {domCtx?.interpretation && (
+            <p className="mt-2 text-xs text-slate-600">{domCtx.interpretation}</p>
+          )}
+          {effect === 'reinforces_balance' && (
+            <p className="mt-1 text-xs font-medium text-emerald-800">Rafforza equilibrio</p>
+          )}
+          {effect === 'weakens_balance' && (
+            <p className="mt-1 text-xs font-medium text-amber-800">Indebolisce equilibrio</p>
+          )}
+          {effect === 'confirms_imbalance' && (
+            <p className="mt-1 text-xs font-medium text-violet-800">Conferma squilibrio</p>
+          )}
         </article>
 
         <article className="rounded-lg border border-violet-200 bg-violet-50/60 p-3 text-sm">
@@ -132,6 +159,18 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
             {fmtNum(draw?.quota_x)}
           </p>
           <p className="mt-1 font-medium text-slate-800">{draw?.label ?? '—'}</p>
+        </article>
+
+        <article className="rounded-lg border border-teal-200 bg-teal-50/60 p-3 text-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
+            Gap 1/2 Prob.
+          </p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+            {fmtNum(side_probability_gap?.value)} p.p.
+          </p>
+          <p className="mt-1 font-medium text-slate-800">
+            {side_probability_gap?.label ?? '—'}
+          </p>
         </article>
       </div>
 
@@ -171,6 +210,10 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
             <dd className="text-slate-800">{summary?.short_advice ?? '—'}</dd>
           </div>
           <div>
+            <dt className="text-xs text-slate-500">X dominante</dt>
+            <dd>{summary?.is_x_dominance ? 'Sì' : 'No'}</dd>
+          </div>
+          <div>
             <dt className="text-xs text-slate-500">Candidato X/Under</dt>
             <dd>{summary?.is_draw_under_candidate ? 'Sì' : 'No'}</dd>
           </div>
@@ -207,10 +250,17 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
             <dd>{fmtNum(f36?.signed)}</dd>
             <dt className="text-slate-500">F36 abs</dt>
             <dd>{fmtNum(f36?.abs)}</dd>
+            <dt className="text-slate-500">best_side</dt>
+            <dd>{dominance?.best_side ?? domCtx?.best_side ?? '—'}</dd>
+            <dt className="text-slate-500">effect_on_balance</dt>
+            <dd>{technical?.effect_on_balance ?? domCtx?.effect_on_balance ?? '—'}</dd>
           </dl>
           <div className="mt-3 space-y-1 text-xs text-slate-600">
             <p>{technical?.f36_formula}</p>
             <p>{technical?.dominance_formula}</p>
+            <p>{technical?.side_gap_formula}</p>
+            <p>{technical?.x_dominance_note}</p>
+            <p>{technical?.lateral_dominance_note}</p>
             <p>Regola applicata: #{ruleId ?? '—'}</p>
           </div>
           <div className="mt-3 overflow-x-auto">
@@ -223,7 +273,7 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {OPERATIONAL_RULES.map((r) => (
+                {OPERATIONAL_RULES_V2.map((r) => (
                   <tr
                     key={r.id}
                     className={r.id === ruleId ? 'bg-sky-50 font-medium' : undefined}
