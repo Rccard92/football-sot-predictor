@@ -25,29 +25,29 @@ from app.services.cecchino.cecchino_selection_keys import (
 )
 
 
-def _prob_pct(odd: float) -> float:
-    return 100.0 / float(odd)
-
-
 def derive_double_chance_from_1x2(
     home: float | None,
     draw: float | None,
     away: float | None,
 ) -> dict[str, float | None]:
+    """Deriva quote DC da 1X2 con probabilità implicite decimali (1/quota)."""
     if home is None or draw is None or away is None:
-        return {"ONE_X": None, "X_TWO": None, "ONE_TWO": None}
-    p1 = _prob_pct(home)
-    px = _prob_pct(draw)
-    p2 = _prob_pct(away)
+        return {SEL_ONE_X: None, SEL_X_TWO: None, SEL_ONE_TWO: None}
+    try:
+        p1 = 1.0 / float(home)
+        px = 1.0 / float(draw)
+        p2 = 1.0 / float(away)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return {SEL_ONE_X: None, SEL_X_TWO: None, SEL_ONE_TWO: None}
     s1x = p1 + px
     sx2 = px + p2
     s12 = p1 + p2
     if s1x <= 0 or sx2 <= 0 or s12 <= 0:
-        return {"ONE_X": None, "X_TWO": None, "ONE_TWO": None}
+        return {SEL_ONE_X: None, SEL_X_TWO: None, SEL_ONE_TWO: None}
     return {
-        "ONE_X": round(100.0 / s1x, 2),
-        "X_TWO": round(100.0 / sx2, 2),
-        "ONE_TWO": round(100.0 / s12, 2),
+        SEL_ONE_X: round(1.0 / s1x, 2),
+        SEL_X_TWO: round(1.0 / sx2, 2),
+        SEL_ONE_TWO: round(1.0 / s12, 2),
     }
 
 
@@ -102,9 +102,9 @@ def build_bookmaker_structures(
             markets[MARKET_1X2] = {SEL_HOME: home, SEL_DRAW: draw, SEL_AWAY: away}
             dc = markets_raw.get(MARKET_DC, {})
             markets[MARKET_DC] = {
-                SEL_ONE_X: dc.get(SEL_ONE_X) or derived.get("ONE_X"),
-                SEL_X_TWO: dc.get(SEL_X_TWO) or derived.get("X_TWO"),
-                SEL_ONE_TWO: dc.get(SEL_ONE_TWO) or derived.get("ONE_TWO"),
+                SEL_ONE_X: dc.get(SEL_ONE_X) or derived.get(SEL_ONE_X),
+                SEL_X_TWO: dc.get(SEL_X_TWO) or derived.get(SEL_X_TWO),
+                SEL_ONE_TWO: dc.get(SEL_ONE_TWO) or derived.get(SEL_ONE_TWO),
             }
             ou = markets_raw.get(MARKET_OU, {})
             if ou:

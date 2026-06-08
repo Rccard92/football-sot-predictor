@@ -290,6 +290,7 @@ export type CecchinoTodayUpdateResultsResponse = {
 export type CecchinoKpiV2Row = {
   market_key: string
   segno: string
+  label?: string
   quota_book: number | null
   quota_cecchino: number | null
   prob_book: number | null

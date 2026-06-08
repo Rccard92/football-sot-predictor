@@ -48,6 +48,10 @@ from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_sel
 from app.services.cecchino.cecchino_bookmaker_odds_detail import build_bookmaker_odds_detail
 from app.services.cecchino.cecchino_api_football_odds import parse_api_football_odds_response
 from app.services.cecchino.cecchino_bookmaker_sync_service import SLEEP_BETWEEN_CALLS_S
+from app.services.cecchino.cecchino_betfair_odds_payload import (
+    build_betfair_payload_from_raw,
+    build_betfair_payload_from_snapshot,
+)
 from app.services.cecchino.cecchino_bookmaker_odds_service import load_betfair_odds_payload
 from app.services.cecchino.cecchino_constants import (
     CECCHINO_BOOKMAKER,
@@ -58,7 +62,11 @@ from app.services.cecchino.cecchino_constants import (
     KEY_HOME_TOTAL,
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
 )
-from app.services.cecchino.cecchino_kpi_panel_v2_betfair import build_cecchino_kpi_panel_v2_betfair
+from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
+    KPI_V2_VERSION,
+    build_cecchino_kpi_panel_v2_betfair,
+    normalize_kpi_panel_rows,
+)
 from app.services.cecchino.cecchino_fixture_history import build_fixture_contexts
 from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH
 from app.services.cecchino.cecchino_service import (
@@ -666,7 +674,7 @@ def run_scan(
                 run_metrics.fixtures_after_competition_gate = after_filter_count
 
                 _emit_progress(progress, current_step="fetching_odds")
-                odds_by_book, odds_warnings, _strategy, neg_cache_hit = fetch_fixture_odds_for_cecchino_bookmakers(
+                odds_by_book, odds_warnings, odds_strategy, neg_cache_hit = fetch_fixture_odds_for_cecchino_bookmakers(
                     af_client,
                     api_fid,
                     db=db,
@@ -822,6 +830,7 @@ def run_scan(
                         api_fixture_id=api_fid,
                         odds_by_bookmaker=odds_by_book,
                     )
+                    db.flush()
                     calc = calculate_and_persist_for_fixture(db, comp, local_fx, persist=True)
                 except Exception as exc:
                     logger.exception("Cecchino Today calc failed fixture=%s", api_fid)
@@ -847,13 +856,25 @@ def run_scan(
 
                 _emit_progress(progress, current_step="validating_eligibility")
                 cecchino_output = calc.get("output")
-                kpi_panel = build_cecchino_kpi_panel_v2_betfair(
-                    final_odds=(cecchino_output or {}).get("final") or {},
-                    betfair_payload=load_betfair_odds_payload(
+                odds_source = "cached_betfair_odds" if odds_strategy == "cached" else "betfair"
+                betfair_payload = build_betfair_payload_from_raw(
+                    odds_by_book,
+                    source=odds_source,
+                )
+                if betfair_payload.get("status") == "not_available":
+                    betfair_payload = build_betfair_payload_from_snapshot(
+                        odds_snapshot,
+                        source=odds_source,
+                    )
+                if betfair_payload.get("status") == "not_available":
+                    betfair_payload = load_betfair_odds_payload(
                         db,
                         competition_id=int(comp.id),
                         fixture_id=int(local_fx.id),
-                    ),
+                    )
+                kpi_panel = build_cecchino_kpi_panel_v2_betfair(
+                    final_odds=(cecchino_output or {}).get("final") or {},
+                    betfair_payload=betfair_payload,
                 )
                 _emit_progress(progress, current_step="saving_snapshots")
                 _, eligibility_status = _persist_post_calc_snapshot(
@@ -1339,6 +1360,53 @@ def update_today_fixture_results(
     }
 
 
+def _kpi_panel_needs_rebuild(kpi_panel: dict[str, Any] | None) -> bool:
+    if not kpi_panel or not isinstance(kpi_panel, dict):
+        return True
+    if kpi_panel.get("version") != KPI_V2_VERSION:
+        return True
+    rows = kpi_panel.get("rows") or []
+    if not rows:
+        return True
+    data_rows = [r for r in rows if isinstance(r, dict)]
+    if not data_rows:
+        return True
+    if all(r.get("quota_book") is None for r in data_rows):
+        return True
+    if any(not (r.get("segno") or r.get("label")) for r in data_rows):
+        return True
+    return False
+
+
+def _resolve_kpi_panel_for_detail(row: CecchinoTodayFixture, db: Session) -> dict[str, Any] | None:
+    """Normalizza o ricostruisce KPI v2 da snapshot/DB per il dettaglio API."""
+    kpi = row.kpi_panel_json
+    if not _kpi_panel_needs_rebuild(kpi):
+        return normalize_kpi_panel_rows(kpi)
+
+    output = row.cecchino_output_json or {}
+    final_odds = (output.get("final") or {}) if isinstance(output, dict) else {}
+
+    betfair_payload = build_betfair_payload_from_snapshot(
+        row.odds_snapshot_json,
+        source="cached_betfair_odds",
+    )
+    if betfair_payload.get("status") == "not_available" and row.competition_id and row.local_fixture_id:
+        betfair_payload = load_betfair_odds_payload(
+            db,
+            competition_id=int(row.competition_id),
+            fixture_id=int(row.local_fixture_id),
+        )
+
+    if betfair_payload.get("status") == "not_available" and kpi:
+        return normalize_kpi_panel_rows(kpi)
+
+    return build_cecchino_kpi_panel_v2_betfair(
+        final_odds=final_odds,
+        betfair_payload=betfair_payload,
+    )
+
+
 def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
     row = db.get(CecchinoTodayFixture, int(today_fixture_id))
     if row is None:
@@ -1352,7 +1420,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         }
 
     output = row.cecchino_output_json or {}
-    kpi_panel = row.kpi_panel_json
+    kpi_panel = _resolve_kpi_panel_for_detail(row, db)
     today_id = int(row.id)
     provider_fid = int(row.provider_fixture_id)
     local_fid = int(row.local_fixture_id) if row.local_fixture_id else None

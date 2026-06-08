@@ -19,8 +19,10 @@ def _source_for_row(kpi_row: dict[str, Any] | None) -> str:
     if not kpi_row:
         return "not_available"
     src = kpi_row.get("book_source")
-    if src in ("raw_betfair", "derived_from_1x2"):
-        return src
+    if src in ("derived_from_1x2", "derived_from_betfair_1x2"):
+        return "derived_from_1x2"
+    if src in ("raw_betfair", "betfair", "cached_betfair_odds"):
+        return "raw_betfair"
     if kpi_row.get("quota_book") is not None:
         return "raw_betfair"
     return "not_available"

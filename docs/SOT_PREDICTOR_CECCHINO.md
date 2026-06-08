@@ -303,6 +303,22 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 21 — Fix KPI Betfair rows e quote book (v0.15)
+
+Versione KPI `cecchino_kpi_v2_betfair` — correzione SEGNO, Quota Book e layout desktop.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Payload Betfair | `build_betfair_payload_from_raw` da `odds_by_bookmaker[3]` o snapshot; fallback DB |
+| DC derivata | Formula `1/(prob_i+prob_j)` con prob decimali `1/quota`; source `derived_from_betfair_1x2` |
+| KPI righe | Ogni riga espone `segno` + `label` (alias legacy); Under PT 1.5 con spazio |
+| Dettaglio API | `_resolve_kpi_panel_for_detail` normalizza/rebuild da snapshot senza rescan |
+| Layout UI | Griglia desktop 32%/68%; colonna SEGNO 12%; header abbreviati; no overflow orizzontale |
+
+**UI:** fallback `segno || label || market_key` nel pannello KPI; tabella desktop più ampia.
+
+**Invariato:** modelli SOT v2.0/v2.1, formule Cecchino 1/X/2, segnali SI/NO, Cecchino classico (`/cecchino`).
+
 ## Cecchino Today — Fase 20 — KPI Betfair-only e nuovo rating panel (v0.14)
 
 Versione KPI `cecchino_kpi_v2_betfair`: bookmaker unico Betfair e pannello rating.

@@ -20,6 +20,7 @@ export const KPI_OVER_LABELS = new Set([
   'Under 2.5',
   'Under 3.5',
   'Under PT1.5',
+  'Under PT 1.5',
 ])
 
 export const KPI_ANALYSIS_LABELS = new Set(['ANALISI DEL MATCH', 'DELTA DI FORZA'])

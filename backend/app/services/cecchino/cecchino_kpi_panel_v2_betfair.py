@@ -50,7 +50,7 @@ KPI_V2_ROW_DEFS: tuple[tuple[str, str], ...] = (
     (SEL_OVER_2_5, "Over 2.5"),
     (SEL_UNDER_2_5, "Under 2.5"),
     (SEL_UNDER_3_5, "Under 3.5"),
-    (SEL_UNDER_PT_1_5, "Under PT1.5"),
+    (SEL_UNDER_PT_1_5, "Under PT 1.5"),
     (SEL_OVER_PT_0_5, "Over PT 0.5"),
     (SEL_OVER_PT_1_5, "Over PT 1.5"),
 )
@@ -145,6 +145,7 @@ def _build_metrics_row(
         return {
             "market_key": market_key,
             "segno": segno,
+            "label": segno,
             "quota_book": round(quota_book, 2) if quota_book is not None else None,
             "quota_cecchino": None,
             "prob_book": prob_book,
@@ -163,6 +164,7 @@ def _build_metrics_row(
         return {
             "market_key": market_key,
             "segno": segno,
+            "label": segno,
             "quota_book": round(quota_book, 2) if quota_book is not None else None,
             "quota_cecchino": round(quota_cecchino, 2) if quota_cecchino is not None else None,
             "prob_book": prob_book,
@@ -191,6 +193,7 @@ def _build_metrics_row(
     return {
         "market_key": market_key,
         "segno": segno,
+        "label": segno,
         "quota_book": round(quota_book, 2),
         "quota_cecchino": round(quota_cecchino, 2),
         "prob_book": prob_book,
@@ -204,6 +207,43 @@ def _build_metrics_row(
         "book_source": book_source,
         "cecchino_source": cecchino_source,
     }
+
+
+def normalize_kpi_panel_rows(kpi_panel: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Normalizza segno/label su righe KPI v2 o legacy."""
+    if not kpi_panel or not isinstance(kpi_panel, dict):
+        return kpi_panel
+    rows_out: list[dict[str, Any]] = []
+    for raw in kpi_panel.get("rows") or []:
+        if not isinstance(raw, dict):
+            continue
+        row = dict(raw)
+        segno = row.get("segno") or row.get("label") or row.get("market_key") or ""
+        row["segno"] = segno
+        row["label"] = row.get("label") or segno
+        rows_out.append(row)
+    out = dict(kpi_panel)
+    out["rows"] = rows_out
+    return out
+
+
+def _book_source_for_row(
+    market_key: str,
+    *,
+    has_quota: bool,
+    betfair_payload: dict[str, Any],
+    odds_source: str,
+) -> str:
+    if not has_quota:
+        return "not_available"
+    if market_key in _CECCHINO_DC_KEYS:
+        for bm in betfair_payload.get("bookmakers") or []:
+            dc_derived = (bm or {}).get("dc_derived") or {}
+            if dc_derived.get(market_key):
+                return "derived_from_betfair_1x2"
+    if odds_source == "cached_betfair_odds":
+        return "cached_betfair_odds"
+    return "betfair"
 
 
 def _extract_betfair_markets(betfair_payload: dict[str, Any]) -> dict[str, dict[str, float | None]]:
@@ -250,6 +290,7 @@ def build_cecchino_kpi_panel_v2_betfair(
 ) -> dict[str, Any]:
     warnings: list[str] = list(betfair_payload.get("warnings") or [])
     bm_status = betfair_payload.get("status") or "not_available"
+    odds_source = str(betfair_payload.get("odds_source") or "betfair")
     markets = _extract_betfair_markets(betfair_payload)
 
     cec_ok = final_odds.get("status") == "available"
@@ -267,7 +308,12 @@ def build_cecchino_kpi_panel_v2_betfair(
     for market_key, segno in KPI_V2_ROW_DEFS:
         mkt = _MARKET_FOR_KEY[market_key]
         quota_book = (markets.get(mkt) or {}).get(market_key)
-        book_source = "raw_betfair" if quota_book is not None else "not_available"
+        book_source = _book_source_for_row(
+            market_key,
+            has_quota=quota_book is not None,
+            betfair_payload=betfair_payload,
+            odds_source=odds_source,
+        )
 
         quota_cecchino, cecchino_source = _cecchino_quota_for_key(
             market_key,

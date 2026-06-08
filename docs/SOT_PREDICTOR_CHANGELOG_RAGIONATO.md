@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 21 — Fix KPI Betfair rows e quote book (2026-06-08)
+
+- Corretta colonna SEGNO vuota: ogni riga KPI espone `segno` e `label`; frontend con fallback `segno || label || market_key`.
+- Quota Book Betfair costruita da raw/snapshot (`build_betfair_payload_from_raw`) prima del DB; rebuild automatico in `get_today_fixture_detail`.
+- Corretta derivazione DC da 1X2: probabilità implicite decimali `1/quota` invece di `100/quota`.
+- Layout desktop Cecchino Today 32%/68%; pannello KPI senza overflow orizzontale; colonna SEGNO 12%.
+- Nessuna modifica ai modelli SOT v2.0/v2.1, formule Cecchino 1/X/2 né segnali SI/NO.
+
 ## Cecchino — Fase 20 — KPI Betfair-only e nuovo rating panel (2026-06-08)
 
 - Sostituito il vecchio Pannello KPI con lo schema a 9 colonne: Segno, Quota Book, Quota Cecchino, Prob. Book, Prob. Cecchino, Vantaggio Prob., Edge %, Score Acquisto, Rating 0-100.

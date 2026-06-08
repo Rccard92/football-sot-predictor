@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
+    KPI_V2_ROW_DEFS,
     KPI_V2_VERSION,
     build_cecchino_kpi_panel_v2_betfair,
+    normalize_kpi_panel_rows,
     rating_label,
 )
 from app.services.cecchino.cecchino_selection_keys import (
@@ -15,6 +17,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_ONE_X,
     SEL_OVER_1_5,
     SEL_UNDER_2_5,
+    SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
 from app.services.cecchino.cecchino_today_odds_fetch import (
@@ -83,6 +86,30 @@ def _build():
 
 def _row_by_key(panel: dict, key: str) -> dict:
     return next(r for r in panel["rows"] if r["market_key"] == key)
+
+
+def test_kpi_v2_rows_segno_and_label():
+    panel = _build()
+    expected = {key: label for key, label in KPI_V2_ROW_DEFS}
+    for row in panel["rows"]:
+        assert row["segno"] == expected[row["market_key"]]
+        assert row["label"] == row["segno"]
+
+
+def test_under_pt_15_segno_with_space():
+    panel = _build()
+    row = _row_by_key(panel, SEL_UNDER_PT_1_5)
+    assert row["segno"] == "Under PT 1.5"
+    assert row["label"] == "Under PT 1.5"
+
+
+def test_normalize_legacy_label_only():
+    legacy = {
+        "version": KPI_V2_VERSION,
+        "rows": [{"market_key": SEL_HOME, "label": "1", "quota_book": 4.05}],
+    }
+    out = normalize_kpi_panel_rows(legacy)
+    assert out["rows"][0]["segno"] == "1"
 
 
 def test_kpi_v2_columns_and_version():
