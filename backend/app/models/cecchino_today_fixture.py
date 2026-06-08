@@ -75,6 +75,8 @@ class CecchinoTodayFixture(Base, TimestampMixin):
     goals_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
     score_fulltime_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
     score_fulltime_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_halftime_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_halftime_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
     elapsed_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     eligibility_status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     eligibility_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)

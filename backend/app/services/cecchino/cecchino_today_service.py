@@ -857,14 +857,21 @@ def run_scan(
                 _emit_progress(progress, current_step="validating_eligibility")
                 cecchino_output = calc.get("output")
                 odds_source = "cached_betfair_odds" if odds_strategy == "cached" else "betfair"
+                teams = item.get("teams") or {}
+                home_name = (teams.get("home") or {}).get("name")
+                away_name = (teams.get("away") or {}).get("name")
                 betfair_payload = build_betfair_payload_from_raw(
                     odds_by_book,
                     source=odds_source,
+                    home_team_name=home_name,
+                    away_team_name=away_name,
                 )
                 if betfair_payload.get("status") == "not_available":
                     betfair_payload = build_betfair_payload_from_snapshot(
                         odds_snapshot,
                         source=odds_source,
+                        home_team_name=home_name,
+                        away_team_name=away_name,
                     )
                 if betfair_payload.get("status") == "not_available":
                     betfair_payload = load_betfair_odds_payload(
@@ -1390,6 +1397,8 @@ def _resolve_kpi_panel_for_detail(row: CecchinoTodayFixture, db: Session) -> dic
     betfair_payload = build_betfair_payload_from_snapshot(
         row.odds_snapshot_json,
         source="cached_betfair_odds",
+        home_team_name=row.home_team_name,
+        away_team_name=row.away_team_name,
     )
     if betfair_payload.get("status") == "not_available" and row.competition_id and row.local_fixture_id:
         betfair_payload = load_betfair_odds_payload(

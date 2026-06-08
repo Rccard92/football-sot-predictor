@@ -218,6 +218,8 @@ def test_resolve_kpi_panel_rebuilds_from_snapshot():
         cecchino_output_json={"final": _final_odds()},
         competition_id=1,
         local_fixture_id=10,
+        home_team_name="Home FC",
+        away_team_name="Away FC",
     )
     db = MagicMock()
     resolved = _resolve_kpi_panel_for_detail(row, db)

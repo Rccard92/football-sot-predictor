@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 22 — Cleanup dettaglio analisi e debug JSON KPI Betfair (2026-06-08)
+
+- Rimosse dal dettaglio analisi le card Quote finali Cecchino e Dettaglio quote Betfair; il Pannello KPI resta l’unico riferimento per quote e metriche.
+- Ridisegnata la card partite eleggibili: orario, stato, squadre, predizione consigliata, risultato PT/FT e CTA Apri/Rivedi analisi.
+- Aggiunto supporto risultato primo tempo e finale nelle card (`score.halftime` / `score.fulltime`).
+- Rafforzato mapping Betfair 1/X/2 tramite solo `Match Winner` con selection per nome (inclusi nomi squadra).
+- Rafforzato mapping Double Chance raw o derivato da 1X2 con `book_source` tracciabile.
+- Aggiunto endpoint `GET /api/cecchino/today/{id}/kpi-debug-json` e pulsanti Scarica/Copia JSON KPI nel pannello.
+- JSON debug filtrato solo su Betfair con `raw_market_name`, `raw_value` e `source` per ogni quota.
+- Nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 21 — Fix KPI Betfair rows e quote book (2026-06-08)
 
 - Corretta colonna SEGNO vuota: ogni riga KPI espone `segno` e `label`; frontend con fallback `segno || label || market_key`.

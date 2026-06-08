@@ -25,6 +25,17 @@ from app.services.bookmakers.market_normalize import (
     SEL_UNDER_3_5,
     SEL_UNDER_PT_1_5,
 )
+from app.services.cecchino.cecchino_betfair_odds_mapping import (
+    SEL_UNKNOWN,
+    _SOURCE_DOUBLE_CHANCE,
+    _SOURCE_MATCH_WINNER,
+    _SOURCE_OVER_UNDER,
+    _SOURCE_OVER_UNDER_FH,
+    is_strict_double_chance_market,
+    is_strict_match_winner_market,
+    normalize_double_chance_selection,
+    normalize_match_winner_selection,
+)
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     MARKET_DC,
@@ -100,6 +111,10 @@ def parse_api_football_odds_response(
     response_items: list[dict[str, Any]],
     *,
     requested_markets: list[str] | None = None,
+    strict_betfair_kpi: bool = False,
+    home_team_name: str | None = None,
+    away_team_name: str | None = None,
+    mapping_warnings: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """
     Estrae righe {normalized_market, selection_key, selection_label, odds_value, market_label}.
@@ -108,6 +123,7 @@ def parse_api_football_odds_response(
     wanted = set(requested_markets or [MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH])
     rows: list[dict[str, Any]] = []
     found_markets: set[str] = set()
+    warn = mapping_warnings if mapping_warnings is not None else []
 
     for item in response_items:
         for bm in item.get("bookmakers") or []:
@@ -143,20 +159,88 @@ def parse_api_football_odds_response(
                         if sk is None:
                             continue
                         found_markets.add(norm_out)
+                        ou_source = _SOURCE_OVER_UNDER if is_ft_ou else _SOURCE_OVER_UNDER_FH
+                        row_data: dict[str, Any] = {
+                            "normalized_market": norm_out,
+                            "selection_key": sk,
+                            "selection_label": label,
+                            "odds_value": odd,
+                            "market_label": market_label,
+                            "provider_market_id": str(bet.get("id") or ""),
+                            "raw_payload_json": {
+                                "bet_id": bet.get("id"),
+                                "bet_name": bet_name,
+                                "value": label,
+                                "odd": val.get("odd"),
+                                "normalized_selection": sk,
+                            },
+                        }
+                        if strict_betfair_kpi:
+                            row_data["provenance"] = {
+                                "raw_market_name": bet_name,
+                                "bet_id": bet.get("id"),
+                                "raw_value": label,
+                                "selection_key": sk,
+                                "source": ou_source,
+                            }
+                        rows.append(row_data)
+                    continue
+
+                if strict_betfair_kpi:
+                    is_1x2 = is_strict_match_winner_market(bet_name, bet_id)
+                    is_dc = is_strict_double_chance_market(bet_name)
+                    if not is_1x2 and not is_dc:
+                        continue
+                    if is_1x2 and MARKET_1X2 not in wanted:
+                        continue
+                    if is_dc and MARKET_DC not in wanted:
+                        continue
+                    for val in bet.get("values") or []:
+                        if not isinstance(val, dict):
+                            continue
+                        label = str(val.get("value") or "")
+                        odd = _parse_odd(val.get("odd"))
+                        if odd is None:
+                            continue
+                        if is_1x2:
+                            sk = normalize_match_winner_selection(
+                                label,
+                                home_team_name,
+                                away_team_name,
+                            )
+                            if sk == SEL_UNKNOWN:
+                                warn.append(f"1x2_selection_unknown:{label}")
+                                continue
+                            norm_out = MARKET_1X2
+                            src = _SOURCE_MATCH_WINNER
+                        else:
+                            sk = normalize_double_chance_selection(label)
+                            if sk == SEL_UNKNOWN:
+                                warn.append(f"dc_selection_unknown:{label}")
+                                continue
+                            norm_out = MARKET_DC
+                            src = _SOURCE_DOUBLE_CHANCE
+                        found_markets.add(norm_out)
                         rows.append(
                             {
                                 "normalized_market": norm_out,
                                 "selection_key": sk,
                                 "selection_label": label,
                                 "odds_value": odd,
-                                "market_label": market_label,
+                                "market_label": bet_name,
                                 "provider_market_id": str(bet.get("id") or ""),
                                 "raw_payload_json": {
                                     "bet_id": bet.get("id"),
                                     "bet_name": bet_name,
                                     "value": label,
                                     "odd": val.get("odd"),
-                                    "normalized_selection": sk,
+                                },
+                                "provenance": {
+                                    "raw_market_name": bet_name,
+                                    "bet_id": bet.get("id"),
+                                    "raw_value": label,
+                                    "selection_key": sk,
+                                    "source": src,
                                 },
                             },
                         )

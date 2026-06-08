@@ -207,10 +207,15 @@ export type CecchinoTodayScanMeta = {
   scan_state?: string
 }
 
-export type CecchinoTodayScore = {
+export type CecchinoTodayScoreSide = {
   home: number | null
   away: number | null
   available: boolean
+}
+
+export type CecchinoTodayScore = {
+  halftime: CecchinoTodayScoreSide
+  fulltime: CecchinoTodayScoreSide
 }
 
 export type CecchinoTodayRecommendedPrediction = {
@@ -519,6 +524,37 @@ export async function getCecchinoTodayList(params: {
 
 export async function getCecchinoTodayDetail(todayFixtureId: number): Promise<CecchinoTodayDetailResponse> {
   return requestJson<CecchinoTodayDetailResponse>(`/api/cecchino/today/${todayFixtureId}`)
+}
+
+export type CecchinoKpiDebugJsonResponse = {
+  status: string
+  fixture?: {
+    today_fixture_id: number
+    local_fixture_id: number | null
+    provider_fixture_id: number
+    home_team: string | null
+    away_team: string | null
+    kickoff: string | null
+  }
+  bookmaker?: {
+    provider_source: string
+    provider_bookmaker_id: number
+    name: string
+  }
+  kpi_panel?: CecchinoKpiV2Panel
+  betfair_odds_used?: Record<string, unknown>
+  cecchino_odds_used?: Record<string, unknown>
+  raw_betfair_markets_used?: Array<Record<string, unknown>>
+  warnings?: string[]
+  message?: string
+}
+
+export async function getCecchinoKpiDebugJson(
+  todayFixtureId: number,
+): Promise<CecchinoKpiDebugJsonResponse> {
+  return requestJson<CecchinoKpiDebugJsonResponse>(
+    `/api/cecchino/today/${todayFixtureId}/kpi-debug-json`,
+  )
 }
 
 export async function getCecchinoTodayExcluded(params: {

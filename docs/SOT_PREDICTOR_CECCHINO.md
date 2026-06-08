@@ -303,6 +303,22 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 22 — Cleanup dettaglio analisi e debug JSON KPI Betfair (v0.16)
+
+Versione UI `cecchino_today_v0_16_cleanup` — dettaglio snello, card eleggibili, mapping strict.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Dettaglio analisi | Rimossi Quote finali Cecchino e Dettaglio quote Betfair; KPI unico riferimento quote |
+| Card eleggibili | Layout 2 righe: orario/stato, squadre vs, CTA; box Predizione, PT, FT |
+| Score | `score.halftime` + `score.fulltime` da API-Football (`update-results`) |
+| Mapping 1X2 | Solo `Match Winner` bet_id=1; selection per nome/team; no First Half Winner |
+| Mapping DC | `Double Chance` raw oppure `derived_from_betfair_1x2` |
+| Debug JSON | `GET /cecchino/today/{id}/kpi-debug-json` + pulsante Scarica/Copia nel KPI |
+| Layout | Griglia lista 35% / dettaglio 65% |
+
+**Invariato:** modelli SOT v2.0/v2.1, formule Cecchino 1/X/2, segnali SI/NO, Cecchino classico.
+
 ## Cecchino Today — Fase 21 — Fix KPI Betfair rows e quote book (v0.15)
 
 Versione KPI `cecchino_kpi_v2_betfair` — correzione SEGNO, Quota Book e layout desktop.

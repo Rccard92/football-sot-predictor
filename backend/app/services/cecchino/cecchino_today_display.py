@@ -60,6 +60,7 @@ def extract_display_assets(api_item: dict[str, Any]) -> dict[str, Any]:
     goals = api_item.get("goals") or {}
     score = api_item.get("score") or {}
     fulltime = score.get("fulltime") or {}
+    halftime = score.get("halftime") or {}
     short_status = str(status_block.get("short") or "NS")
     elapsed_raw = status_block.get("elapsed")
     elapsed = int(elapsed_raw) if elapsed_raw is not None else None
@@ -82,6 +83,8 @@ def extract_display_assets(api_item: dict[str, Any]) -> dict[str, Any]:
         "goals_away": _int_or_none(goals.get("away")),
         "score_fulltime_home": _int_or_none(fulltime.get("home")),
         "score_fulltime_away": _int_or_none(fulltime.get("away")),
+        "score_halftime_home": _int_or_none(halftime.get("home")),
+        "score_halftime_away": _int_or_none(halftime.get("away")),
         "elapsed_minutes": elapsed,
         "fixture_status": short_status,
         "match_display_status": display_status,
@@ -100,6 +103,8 @@ def apply_display_from_api(row: CecchinoTodayFixture, api_item: dict[str, Any]) 
         "goals_away",
         "score_fulltime_home",
         "score_fulltime_away",
+        "score_halftime_home",
+        "score_halftime_away",
         "elapsed_minutes",
         "fixture_status",
         "match_display_status",
@@ -112,15 +117,26 @@ def status_label_for_row(row: CecchinoTodayFixture) -> str:
     return _STATUS_LABELS.get(status, _STATUS_LABELS[MATCH_UNKNOWN])
 
 
-def row_score_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
-    if row.match_display_status == MATCH_FINISHED:
-        home = row.score_fulltime_home if row.score_fulltime_home is not None else row.goals_home
-        away = row.score_fulltime_away if row.score_fulltime_away is not None else row.goals_away
-    else:
-        home = row.goals_home
-        away = row.goals_away
+def _score_side(home: int | None, away: int | None) -> dict[str, Any]:
     available = home is not None and away is not None
     return {"home": home, "away": away, "available": available}
+
+
+def row_score_payload(row: CecchinoTodayFixture) -> dict[str, Any]:
+    ht_home = row.score_halftime_home
+    ht_away = row.score_halftime_away
+
+    if row.match_display_status == MATCH_FINISHED:
+        ft_home = row.score_fulltime_home if row.score_fulltime_home is not None else row.goals_home
+        ft_away = row.score_fulltime_away if row.score_fulltime_away is not None else row.goals_away
+    else:
+        ft_home = row.goals_home
+        ft_away = row.goals_away
+
+    return {
+        "halftime": _score_side(ht_home, ht_away),
+        "fulltime": _score_side(ft_home, ft_away),
+    }
 
 
 def recommended_prediction_placeholder() -> dict[str, Any]:

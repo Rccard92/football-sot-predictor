@@ -236,11 +236,26 @@ def _book_source_for_row(
 ) -> str:
     if not has_quota:
         return "not_available"
+
+    provenance = betfair_payload.get("provenance_by_selection") or {}
+    prov = provenance.get(market_key) or {}
+    src = prov.get("source")
+    if src:
+        if odds_source == "cached_betfair_odds" and src.startswith("betfair_raw"):
+            return f"cached_{src}"
+        return str(src)
+
     if market_key in _CECCHINO_DC_KEYS:
         for bm in betfair_payload.get("bookmakers") or []:
             dc_derived = (bm or {}).get("dc_derived") or {}
             if dc_derived.get(market_key):
                 return "derived_from_betfair_1x2"
+    if market_key in _CECCHINO_1X2_KEYS:
+        return "betfair_raw_match_winner"
+    if market_key in (SEL_OVER_1_5, SEL_OVER_2_5, SEL_UNDER_2_5, SEL_UNDER_3_5):
+        return "betfair_raw_over_under"
+    if market_key in (SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
+        return "betfair_raw_over_under_first_half"
     if odds_source == "cached_betfair_odds":
         return "cached_betfair_odds"
     return "betfair"
@@ -307,6 +322,8 @@ def build_cecchino_kpi_panel_v2_betfair(
     rows: list[dict[str, Any]] = []
     for market_key, segno in KPI_V2_ROW_DEFS:
         mkt = _MARKET_FOR_KEY[market_key]
+        provenance_map = betfair_payload.get("provenance_by_selection")
+        prov = (provenance_map or {}).get(market_key) or {}
         quota_book = (markets.get(mkt) or {}).get(market_key)
         book_source = _book_source_for_row(
             market_key,
@@ -314,6 +331,16 @@ def build_cecchino_kpi_panel_v2_betfair(
             betfair_payload=betfair_payload,
             odds_source=odds_source,
         )
+        if quota_book is not None and book_source == "not_available":
+            quota_book = None
+        if (
+            provenance_map is not None
+            and quota_book is not None
+            and market_key in _CECCHINO_1X2_KEYS
+            and not prov.get("source")
+        ):
+            warnings.append(f"kpi_{market_key}:provenance_mancante")
+            quota_book = None
 
         quota_cecchino, cecchino_source = _cecchino_quota_for_key(
             market_key,

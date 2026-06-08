@@ -24,6 +24,7 @@ from app.services.cecchino.cecchino_today_scan_job_service import (
     recover_stale_scan_jobs,
     start_scan_job,
 )
+from app.services.cecchino.cecchino_kpi_debug_json import get_kpi_debug_json
 from app.services.cecchino.cecchino_today_service import (
     cleanup_cecchino_today_snapshots,
     debug_search,
@@ -68,6 +69,18 @@ def cecchino_today_list(
         timezone=timezone,
     )
     return jsonable_encoder(payload)
+
+
+@router.get("/{today_fixture_id}/kpi-debug-json")
+def cecchino_today_kpi_debug_json(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    payload = get_kpi_debug_json(db, today_fixture_id)
+    if payload is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
+    status_code = 200 if payload.get("status") == "ok" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 
 
 @router.get("/{today_fixture_id}")

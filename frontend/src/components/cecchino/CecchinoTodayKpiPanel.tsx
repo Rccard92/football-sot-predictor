@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import type { CecchinoKpiV2Panel, CecchinoKpiV2Row } from '../../lib/cecchinoTodayApi'
+import { getCecchinoKpiDebugJson } from '../../lib/cecchinoTodayApi'
 import {
   edgeClassName,
   fmtKpiCell,
@@ -18,23 +20,97 @@ function kpiSegnoLabel(row: CecchinoKpiV2Row): string {
 type Props = {
   panel: CecchinoKpiV2Panel
   bookmakerStatus?: string
+  todayFixtureId?: number
+  providerFixtureId?: number
 }
 
-export function CecchinoTodayKpiPanel({ panel, bookmakerStatus }: Props) {
+export function CecchinoTodayKpiPanel({
+  panel,
+  bookmakerStatus,
+  todayFixtureId,
+  providerFixtureId,
+}: Props) {
   const status = bookmakerStatus || panel.bookmaker_status || 'not_available'
+  const [jsonBusy, setJsonBusy] = useState(false)
+  const [jsonMsg, setJsonMsg] = useState<string | null>(null)
+
+  async function fetchDebugJson() {
+    if (!todayFixtureId) return null
+    return getCecchinoKpiDebugJson(todayFixtureId)
+  }
+
+  async function handleDownloadJson() {
+    if (!todayFixtureId || !providerFixtureId) return
+    setJsonBusy(true)
+    setJsonMsg(null)
+    try {
+      const data = await fetchDebugJson()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cecchino-kpi-betfair-${providerFixtureId}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setJsonMsg('Download non riuscito')
+    } finally {
+      setJsonBusy(false)
+    }
+  }
+
+  async function handleCopyJson() {
+    if (!todayFixtureId) return
+    setJsonBusy(true)
+    setJsonMsg(null)
+    try {
+      const data = await fetchDebugJson()
+      await navigator.clipboard.writeText(JSON.stringify(data, null, 2))
+      setJsonMsg('JSON copiato')
+    } catch {
+      setJsonMsg('Copia non riuscita')
+    } finally {
+      setJsonBusy(false)
+    }
+  }
 
   return (
     <section className="rounded-xl border border-slate-300 shadow-md">
-      <div className="bg-[#1e3a5f] px-4 py-3 text-center">
-        <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PANNELLO KPI</h3>
-        <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
-          Bookmaker: {panel.bookmaker?.name ?? 'Betfair'}
-        </p>
-        {status === 'not_available' && (
-          <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">
-            Quote Betfair non disponibili
-          </p>
-        )}
+      <div className="bg-[#1e3a5f] px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 flex-1 text-center sm:text-left">
+            <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PANNELLO KPI</h3>
+            <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
+              Bookmaker: {panel.bookmaker?.name ?? 'Betfair'}
+            </p>
+            {status === 'not_available' && (
+              <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">
+                Quote Betfair non disponibili
+              </p>
+            )}
+          </div>
+          {todayFixtureId != null && providerFixtureId != null && (
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                disabled={jsonBusy}
+                onClick={() => void handleDownloadJson()}
+                className="rounded-md border border-slate-500/60 bg-slate-800/50 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-700/60 disabled:opacity-50 sm:text-xs"
+              >
+                Scarica JSON KPI
+              </button>
+              <button
+                type="button"
+                disabled={jsonBusy}
+                onClick={() => void handleCopyJson()}
+                className="rounded-md border border-slate-500/60 bg-slate-800/50 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-700/60 disabled:opacity-50 sm:text-xs"
+              >
+                Copia JSON KPI
+              </button>
+            </div>
+          )}
+        </div>
+        {jsonMsg && <p className="mt-1 text-right text-[10px] text-emerald-200">{jsonMsg}</p>}
       </div>
 
       <div className="hidden bg-[#163352] md:block">

@@ -1,10 +1,8 @@
-import type { CecchinoFinalOdds, CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
+import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
 import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
 import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
-import { CecchinoBookmakerDetailsCard } from './CecchinoBookmakerDetailsCard'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
-import { CecchinoTodayFinalOddsCard } from './CecchinoTodayFinalOddsCard'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 
@@ -18,7 +16,7 @@ export function CecchinoTodayDetailPlaceholder() {
     <div className={`${todayCard} ${todayCardPadding} flex min-h-[320px] flex-col items-center justify-center text-center`}>
       <p className="text-sm font-medium text-slate-700">Seleziona una partita dalla lista</p>
       <p className="mt-2 max-w-xs text-xs text-slate-500">
-        Il dettaglio con KPI, segnali e quote finali Cecchino apparirà qui.
+        Il dettaglio con Pannello KPI e segnali Cecchino apparirà qui.
       </p>
     </div>
   )
@@ -29,8 +27,7 @@ export function CecchinoTodayDetailSkeleton() {
     <div className="space-y-4" aria-busy="true" aria-label="Caricamento dettaglio">
       <div className={`${todaySkeleton} h-36 w-full rounded-xl`} />
       <div className={`${todaySkeleton} h-64 w-full rounded-xl`} />
-      <div className={`${todaySkeleton} h-40 w-full rounded-xl`} />
-      <div className={`${todaySkeleton} h-56 w-full rounded-xl`} />
+      <div className={`${todaySkeleton} h-48 w-full rounded-xl`} />
     </div>
   )
 }
@@ -49,7 +46,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
   }
 
   const output = detail.cecchino_output
-  const finalOdds = output?.final as CecchinoFinalOdds | undefined
   const signals = (detail.signals_matrix ?? output?.signals_matrix) as
     | CecchinoSignalsMatrix
     | undefined
@@ -64,16 +60,12 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
+          todayFixtureId={detail.today_fixture_id ?? detail.id}
+          providerFixtureId={detail.provider_fixture_id}
         />
       )}
 
-      {finalOdds && <CecchinoTodayFinalOddsCard final={finalOdds} />}
-
       {signals && <CecchinoSignalsCard matrix={signals} />}
-
-      {(detail.bookmaker_odds_detail?.rows?.length || detail.kpi_panel) && (
-        <CecchinoBookmakerDetailsCard rows={detail.bookmaker_odds_detail?.rows ?? []} />
-      )}
 
       {(importInfo.length > 0 || dataNotes.length > 0) && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

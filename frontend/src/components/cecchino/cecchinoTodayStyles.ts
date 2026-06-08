@@ -6,7 +6,7 @@ export const todayCard =
 export const todayCardPadding = 'p-4 sm:p-5'
 
 export const todayPageGrid =
-  'grid gap-6 lg:grid-cols-[minmax(300px,0.32fr)_minmax(0,0.68fr)]'
+  'grid gap-6 lg:grid-cols-[minmax(320px,0.35fr)_minmax(0,0.65fr)]'
 
 export const todaySectionTitle = 'text-base font-semibold text-slate-900'
 

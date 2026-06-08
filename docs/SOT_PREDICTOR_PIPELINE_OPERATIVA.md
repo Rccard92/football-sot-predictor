@@ -32,6 +32,14 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 22 — Cleanup dettaglio e debug JSON KPI
+
+- **UI dettaglio:** solo Header, KPI, Segnali, Note; niente card quote finali né dettaglio Betfair separato.
+- **Card eleggibili:** layout 2 righe con PT/FT; colonna lista 35%.
+- **Score:** `score_halftime_*` persistiti; payload list con `halftime`/`fulltime`.
+- **Mapping strict:** `Match Winner` + `Double Chance` + provenance; validazione `validate_betfair_kpi_odds_mapping`.
+- **Debug:** `GET /cecchino/today/{id}/kpi-debug-json` per audit quote Betfair usate nel KPI.
+
 ## Fase 21 — Fix KPI Betfair rows e quote book
 
 - **Payload odds:** `build_betfair_payload_from_raw` su `odds_by_bookmaker[3]` durante scan; fallback snapshot → DB.
