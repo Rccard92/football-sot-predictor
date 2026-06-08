@@ -4,9 +4,12 @@ type Props = {
   scanInProgress?: boolean
   updateResultsLoading: boolean
   revalidateLoading?: boolean
+  selectedFixtureId?: number | null
+  refreshBetfairLoading?: boolean
   onScanDay: (forceRescan: boolean) => void
   onUpdateResults: () => void
   onRevalidateDay?: () => void
+  onRefreshBetfairOdds?: () => void
 }
 
 export function CecchinoTodayPageHeader({
@@ -15,9 +18,12 @@ export function CecchinoTodayPageHeader({
   scanInProgress = false,
   updateResultsLoading,
   revalidateLoading = false,
+  selectedFixtureId = null,
+  refreshBetfairLoading = false,
   onScanDay,
   onUpdateResults,
   onRevalidateDay,
+  onRefreshBetfairOdds,
 }: Props) {
   const scanBusy = scanDayLoading || scanInProgress
 
@@ -68,6 +74,16 @@ export function CecchinoTodayPageHeader({
                 className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-900 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {revalidateLoading ? 'Rivalidazione…' : 'Rivalida eleggibilità'}
+              </button>
+            )}
+            {selectedFixtureId != null && onRefreshBetfairOdds && (
+              <button
+                type="button"
+                onClick={() => onRefreshBetfairOdds()}
+                disabled={refreshBetfairLoading || scanBusy}
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-900 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {refreshBetfairLoading ? 'Aggiornamento…' : 'Aggiorna quote Betfair'}
               </button>
             )}
           </>

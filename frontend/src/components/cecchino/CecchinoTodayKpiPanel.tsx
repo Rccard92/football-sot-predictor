@@ -1,10 +1,4 @@
-import { useState } from 'react'
-import type { CecchinoKpiV2Panel, CecchinoKpiV2Row, CecchinoOddsMeta } from '../../lib/cecchinoTodayApi'
-import {
-  getBetfairMarketsJson,
-  getCecchinoKpiDebugJson,
-  refreshBetfairOdds,
-} from '../../lib/cecchinoTodayApi'
+import type { CecchinoKpiV2Panel, CecchinoKpiV2Row } from '../../lib/cecchinoTodayApi'
 import {
   edgeClassName,
   fmtKpiCell,
@@ -33,206 +27,26 @@ function fmtOddsTimestamp(iso?: string | null): string {
 type Props = {
   panel: CecchinoKpiV2Panel
   bookmakerStatus?: string
-  todayFixtureId?: number
-  providerFixtureId?: number
-  onKpiPanelUpdate?: (panel: CecchinoKpiV2Panel, oddsMeta?: CecchinoOddsMeta) => void
 }
 
-export function CecchinoTodayKpiPanel({
-  panel,
-  bookmakerStatus,
-  todayFixtureId,
-  providerFixtureId,
-  onKpiPanelUpdate,
-}: Props) {
+export function CecchinoTodayKpiPanel({ panel, bookmakerStatus }: Props) {
   const status = bookmakerStatus || panel.bookmaker_status || 'not_available'
   const oddsMeta = panel.odds_meta
-  const [jsonBusy, setJsonBusy] = useState(false)
-  const [refreshBusy, setRefreshBusy] = useState(false)
-  const [marketsBusy, setMarketsBusy] = useState(false)
-  const [actionMsg, setActionMsg] = useState<string | null>(null)
-  const [actionMsgTone, setActionMsgTone] = useState<'ok' | 'warn' | 'err'>('ok')
-
-  function setMsg(text: string, tone: 'ok' | 'warn' | 'err' = 'ok') {
-    setActionMsg(text)
-    setActionMsgTone(tone)
-  }
-
-  async function fetchDebugJson() {
-    if (!todayFixtureId) return null
-    return getCecchinoKpiDebugJson(todayFixtureId)
-  }
-
-  async function handleDownloadJson() {
-    if (!todayFixtureId || !providerFixtureId) return
-    setJsonBusy(true)
-    setActionMsg(null)
-    try {
-      const data = await fetchDebugJson()
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `cecchino-kpi-betfair-${providerFixtureId}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      setMsg('Download non riuscito', 'err')
-    } finally {
-      setJsonBusy(false)
-    }
-  }
-
-  async function handleCopyJson() {
-    if (!todayFixtureId) return
-    setJsonBusy(true)
-    setActionMsg(null)
-    try {
-      const data = await fetchDebugJson()
-      await navigator.clipboard.writeText(JSON.stringify(data, null, 2))
-      setMsg('JSON KPI copiato')
-    } catch {
-      setMsg('Copia non riuscita', 'err')
-    } finally {
-      setJsonBusy(false)
-    }
-  }
-
-  async function handleRefreshOdds() {
-    if (!todayFixtureId) return
-    setRefreshBusy(true)
-    setActionMsg(null)
-    try {
-      const res = await refreshBetfairOdds(todayFixtureId, { force: true, rebuild_kpi: true })
-      if (res.status === 'budget_blocked') {
-        setMsg(res.message ?? 'Budget API bloccato', 'warn')
-        return
-      }
-      if (res.status !== 'ok') {
-        setMsg(res.message ?? 'Refresh non riuscito', 'err')
-        return
-      }
-      if (res.kpi_panel) {
-        onKpiPanelUpdate?.(res.kpi_panel, res.bookmaker ?? res.kpi_panel.odds_meta)
-      }
-      if (res.changed) {
-        const mkts = (res.changed_markets ?? []).join(', ')
-        setMsg(`Quote aggiornate (${mkts || '1X2'})`)
-      } else {
-        setMsg('Nessuna variazione sul feed API-Football', 'warn')
-      }
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Errore refresh quote', 'err')
-    } finally {
-      setRefreshBusy(false)
-    }
-  }
-
-  async function handleDownloadMarkets() {
-    if (!todayFixtureId || !providerFixtureId) return
-    setMarketsBusy(true)
-    setActionMsg(null)
-    try {
-      const data = await getBetfairMarketsJson(todayFixtureId, true)
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `betfair-markets-${providerFixtureId}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      setMsg('Download mercati non riuscito', 'err')
-    } finally {
-      setMarketsBusy(false)
-    }
-  }
-
-  async function handleCopyMarkets() {
-    if (!todayFixtureId) return
-    setMarketsBusy(true)
-    setActionMsg(null)
-    try {
-      const data = await getBetfairMarketsJson(todayFixtureId, true)
-      await navigator.clipboard.writeText(JSON.stringify(data, null, 2))
-      setMsg('JSON mercati copiato')
-    } catch {
-      setMsg('Copia mercati non riuscita', 'err')
-    } finally {
-      setMarketsBusy(false)
-    }
-  }
-
-  const msgClass =
-    actionMsgTone === 'err'
-      ? 'text-red-200'
-      : actionMsgTone === 'warn'
-        ? 'text-amber-200'
-        : 'text-emerald-200'
-
-  const anyBusy = jsonBusy || refreshBusy || marketsBusy
 
   return (
     <section className="rounded-xl border border-slate-300 shadow-md">
       <div className="bg-[#1e3a5f] px-4 py-3">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 flex-1 text-center sm:text-left">
-            <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PANNELLO KPI</h3>
-            <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
-              Bookmaker: {panel.bookmaker?.name ?? 'Betfair'}
+        <div className="text-center sm:text-left">
+          <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PANNELLO KPI</h3>
+          <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
+            Bookmaker: {panel.bookmaker?.name ?? 'Betfair'}
+          </p>
+          {status === 'not_available' && (
+            <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">
+              Quote Betfair non disponibili
             </p>
-            {status === 'not_available' && (
-              <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">
-                Quote Betfair non disponibili
-              </p>
-            )}
-          </div>
-          {todayFixtureId != null && providerFixtureId != null && (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-              <button
-                type="button"
-                disabled={anyBusy}
-                onClick={() => void handleRefreshOdds()}
-                className="rounded-md border border-emerald-500/50 bg-emerald-900/40 px-2 py-1 text-[10px] font-medium text-emerald-100 hover:bg-emerald-800/50 disabled:opacity-50 sm:text-xs"
-              >
-                {refreshBusy ? 'Aggiornamento…' : 'Aggiorna quote Betfair'}
-              </button>
-              <button
-                type="button"
-                disabled={anyBusy}
-                onClick={() => void handleDownloadMarkets()}
-                className="rounded-md border border-slate-500/60 bg-slate-800/50 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-700/60 disabled:opacity-50 sm:text-xs"
-              >
-                Scarica mercati Betfair
-              </button>
-              <button
-                type="button"
-                disabled={anyBusy}
-                onClick={() => void handleCopyMarkets()}
-                className="rounded-md border border-slate-500/60 bg-slate-800/50 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-700/60 disabled:opacity-50 sm:text-xs"
-              >
-                Copia JSON mercati
-              </button>
-              <button
-                type="button"
-                disabled={anyBusy}
-                onClick={() => void handleDownloadJson()}
-                className="rounded-md border border-slate-500/60 bg-slate-800/50 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-700/60 disabled:opacity-50 sm:text-xs"
-              >
-                Scarica JSON KPI
-              </button>
-              <button
-                type="button"
-                disabled={anyBusy}
-                onClick={() => void handleCopyJson()}
-                className="rounded-md border border-slate-500/60 bg-slate-800/50 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-700/60 disabled:opacity-50 sm:text-xs"
-              >
-                Copia JSON KPI
-              </button>
-            </div>
           )}
         </div>
-        {actionMsg && <p className={`mt-1 text-right text-[10px] ${msgClass}`}>{actionMsg}</p>}
         {oddsMeta && (
           <div className="mt-2 rounded-md border border-slate-500/30 bg-slate-900/30 px-2 py-1.5 text-[10px] text-slate-300 sm:text-xs">
             <p>

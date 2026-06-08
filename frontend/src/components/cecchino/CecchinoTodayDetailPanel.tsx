@@ -1,9 +1,5 @@
 import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
-import type {
-  CecchinoKpiV2Panel,
-  CecchinoOddsMeta,
-  CecchinoTodayDetailResponse,
-} from '../../lib/cecchinoTodayApi'
+import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
 import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
@@ -13,7 +9,6 @@ import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyle
 type Props = {
   detail: CecchinoTodayDetailResponse
   loading?: boolean
-  onKpiPanelUpdate?: (panel: CecchinoKpiV2Panel, oddsMeta?: CecchinoOddsMeta) => void
 }
 
 export function CecchinoTodayDetailPlaceholder() {
@@ -37,7 +32,7 @@ export function CecchinoTodayDetailSkeleton() {
   )
 }
 
-export function CecchinoTodayDetailPanel({ detail, loading, onKpiPanelUpdate }: Props) {
+export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
   if (loading) {
     return <CecchinoTodayDetailSkeleton />
   }
@@ -65,9 +60,6 @@ export function CecchinoTodayDetailPanel({ detail, loading, onKpiPanelUpdate }: 
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
-          todayFixtureId={detail.today_fixture_id ?? detail.id}
-          providerFixtureId={detail.provider_fixture_id}
-          onKpiPanelUpdate={onKpiPanelUpdate}
         />
       )}
 

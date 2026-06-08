@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 24 — Pulizia toolbar KPI Betfair (2026-06-08)
+
+- Rimossi pulsanti tecnici dal Pannello KPI.
+- Spostato Aggiorna quote Betfair nella toolbar principale.
+- Endpoint JSON/debug mantenuti ma non visibili nel pannello.
+- Pannello KPI più pulito.
+- Nessuna modifica a formule Cecchino/KPI.
+- Nessuna modifica a SOT v2.0/v2.1.
+
 ## Cecchino — Fase 23 — Refresh quote Betfair singola fixture (2026-06-08)
 
 - Aggiunto metadata timestamp quote in `odds_snapshot_json.odds_meta` (source, fetched_at, is_cached, last_betfair_refresh_at).

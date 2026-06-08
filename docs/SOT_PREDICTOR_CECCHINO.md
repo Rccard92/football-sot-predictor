@@ -303,6 +303,19 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 24 — Pulizia toolbar KPI Betfair (v0.18)
+
+Versione UI `cecchino_today_v0_18_kpi_cleanup` — pannello KPI snello, refresh in toolbar.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Pannello KPI | Solo titolo, bookmaker, timestamp e tabella; nessun pulsante tecnico |
+| Refresh quote | Pulsante **Aggiorna quote Betfair** nella toolbar principale (visibile con partita selezionata) |
+| Feedback | Banner inline: aggiornate / nessuna variazione / errore / budget bloccato |
+| Endpoint debug | `refresh-betfair-odds`, `betfair-markets-json`, `kpi-debug-json` restano attivi ma non esposti in UI |
+
+**Invariato:** formule Cecchino/KPI, modelli SOT v2.0/v2.1, scan giornata, Cecchino classico.
+
 ## Cecchino Today — Fase 23 — Refresh quote Betfair singola fixture (v0.17)
 
 Versione UI `cecchino_today_v0_17_betfair_refresh` — quote live on-demand e export mercati.
@@ -313,7 +326,7 @@ Versione UI `cecchino_today_v0_17_betfair_refresh` — quote live on-demand e ex
 | Refresh singola | `POST /cecchino/today/{id}/refresh-betfair-odds` — bypass cache, solo bookmaker_id=3, rebuild KPI |
 | Risposta refresh | `before`/`after` 1X2, `changed`, `changed_markets`, `api_calls_used`, `manual_comparison_note` |
 | Export mercati | `GET /cecchino/today/{id}/betfair-markets-json?force=` — tutti i bets Betfair con normalizzazione opzionale |
-| UI KPI | Pulsante Aggiorna quote Betfair; Scarica/Copia JSON mercati; box timestamp sotto header |
+| UI KPI (Fase 24) | Pulsanti tecnici spostati/rimossi; refresh in toolbar; box timestamp nel pannello |
 | Aggiornamento UI | KPI aggiornato nello state senza reload pagina dopo refresh |
 
 **Budget:** `check_api_budget_before_scan` prima di ogni fetch live; status `budget_blocked` se guard attivo.

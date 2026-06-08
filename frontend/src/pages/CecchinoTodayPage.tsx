@@ -22,6 +22,7 @@ import {
   getCecchinoTodayList,
   getCecchinoTodayScanJob,
   logCecchinoTodayDebug,
+  refreshBetfairOdds,
   revalidateCecchinoTodayDay,
   SCAN_JOB_POLL_MS,
   startCecchinoTodayScanDay,
@@ -77,6 +78,11 @@ export function CecchinoTodayPage() {
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [refreshBetfairLoading, setRefreshBetfairLoading] = useState(false)
+  const [refreshBetfairMsg, setRefreshBetfairMsg] = useState<{
+    text: string
+    tone: 'ok' | 'warn' | 'err'
+  } | null>(null)
 
   const handleKpiPanelUpdate = useCallback((panel: CecchinoKpiV2Panel, oddsMeta?: CecchinoOddsMeta) => {
     setDetail((prev) => {
@@ -92,6 +98,44 @@ export function CecchinoTodayPage() {
       }
     })
   }, [])
+
+  const handleRefreshBetfairOdds = useCallback(async () => {
+    if (selectedId == null) return
+    setRefreshBetfairLoading(true)
+    setRefreshBetfairMsg(null)
+    try {
+      const res = await refreshBetfairOdds(selectedId, { force: true, rebuild_kpi: true })
+      if (res.status === 'budget_blocked') {
+        setRefreshBetfairMsg({
+          text: res.message ?? 'Budget API bloccato',
+          tone: 'warn',
+        })
+        return
+      }
+      if (res.status !== 'ok') {
+        setRefreshBetfairMsg({
+          text: res.message ?? 'Refresh quote non riuscito',
+          tone: 'err',
+        })
+        return
+      }
+      if (res.kpi_panel) {
+        handleKpiPanelUpdate(res.kpi_panel, res.bookmaker ?? res.kpi_panel.odds_meta)
+      }
+      setRefreshBetfairMsg({
+        text: res.changed ? 'Quote Betfair aggiornate' : 'Nessuna variazione quote',
+        tone: res.changed ? 'ok' : 'warn',
+      })
+    } catch (e) {
+      setRefreshBetfairMsg({
+        text: e instanceof Error ? e.message : 'Errore refresh quote Betfair',
+        tone: 'err',
+      })
+    } finally {
+      setRefreshBetfairLoading(false)
+    }
+  }, [selectedId, handleKpiPanelUpdate])
+
   const [excludedOpen, setExcludedOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [countryFilter, setCountryFilter] = useState('')
@@ -333,6 +377,11 @@ export function CecchinoTodayPage() {
     void load()
   }, [selectedId])
 
+  const handleSelectFixture = useCallback((id: number) => {
+    setRefreshBetfairMsg(null)
+    setSelectedId(id)
+  }, [])
+
   const handleScanDay = async (forceRescan: boolean) => {
     setActionError(null)
     setScanReport(null)
@@ -539,10 +588,27 @@ export function CecchinoTodayPage() {
         scanInProgress={scanInProgress}
         updateResultsLoading={updateResultsLoading}
         revalidateLoading={revalidateLoading}
+        selectedFixtureId={selectedId}
+        refreshBetfairLoading={refreshBetfairLoading}
         onScanDay={(force) => void handleScanDay(force)}
         onUpdateResults={() => void handleUpdateResults()}
         onRevalidateDay={() => void handleRevalidateDay()}
+        onRefreshBetfairOdds={() => void handleRefreshBetfairOdds()}
       />
+
+      {refreshBetfairMsg && (
+        <p
+          className={`rounded-lg border px-4 py-2 text-sm ${
+            refreshBetfairMsg.tone === 'err'
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : refreshBetfairMsg.tone === 'warn'
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          }`}
+        >
+          {refreshBetfairMsg.text}
+        </p>
+      )}
 
       {actionError && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
@@ -587,7 +653,7 @@ export function CecchinoTodayPage() {
           <CecchinoTodayFixtureList
             countries={filteredCountries}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={handleSelectFixture}
             loading={listLoading}
             error={listError}
             selectedDay={selectedDay}
@@ -610,7 +676,6 @@ export function CecchinoTodayPage() {
             <CecchinoTodayDetailPanel
               detail={detail ?? { status: 'error', message: 'Caricamento…' }}
               loading={detailLoading}
-              onKpiPanelUpdate={handleKpiPanelUpdate}
             />
           )}
         </section>
