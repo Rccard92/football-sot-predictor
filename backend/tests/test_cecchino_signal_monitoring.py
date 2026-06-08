@@ -24,6 +24,7 @@ from app.models.cecchino_today_fixture import (
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_signal_aggregation import (
     _bucket_counts,
+    _format_signal_display_label,
     _serialize_activation_row,
     _success_rate,
     build_signals_summary,
@@ -333,8 +334,20 @@ def test_serialize_activation_row_under_over_ft_labels():
         is_current=True,
     )
     over.id = 2
-    assert _serialize_activation_row(under)["target_market_label"] == "Under 2.5 FT"
-    assert _serialize_activation_row(over)["target_market_label"] == "Over 2.5 FT"
+    under_row = _serialize_activation_row(under)
+    over_row = _serialize_activation_row(over)
+    assert under_row["target_market_label"] == "Under 2.5 FT"
+    assert over_row["target_market_label"] == "Over 2.5 FT"
+    assert under_row["signal_label"] == "UNDER 2.5"
+    assert over_row["signal_label"] == "OVER 2.5"
+    assert under_row["signal_group"] == "UNDER_UNDER_PT"
+    assert over_row["signal_group"] == "OVER_OVER_PT"
+
+
+def test_format_signal_display_label_under_over():
+    assert _format_signal_display_label("UNDER_UNDER_PT", "UNDER / UNDER PT") == "UNDER 2.5"
+    assert _format_signal_display_label("OVER_OVER_PT", "OVER / OVER PT") == "OVER 2.5"
+    assert _format_signal_display_label("DRAW", "SEGNO X") == "SEGNO X"
 
 
 def test_evaluate_draw_won_lost():
@@ -467,6 +480,7 @@ def test_build_signals_summary_aggregates_by_signal_and_column():
         ),
     ]
     db.scalars.return_value.all.return_value = rows
+    db.scalar.return_value = 2
     summary = build_signals_summary(
         db,
         date_from=date(2026, 6, 1),
@@ -475,7 +489,92 @@ def test_build_signals_summary_aggregates_by_signal_and_column():
     assert summary["overall"]["won"] == 1
     assert summary["overall"]["lost"] == 1
     assert summary["overall"]["success_rate"] == 50.0
+    assert summary["overall"]["eligible_fixtures_count"] == 2
+    assert summary["overall"]["fixtures_with_signals_count"] == 2
+    assert summary["overall"]["avg_signals_per_fixture"] == 1.0
     assert len(summary["by_signal_and_column"]) == 1
+
+
+def test_summary_avg_signals_per_fixture_uses_eligible_count():
+    db = MagicMock()
+    rows = [
+        CecchinoSignalActivation(
+            today_fixture_id=i,
+            provider_fixture_id=i,
+            scan_date=date(2026, 6, 8),
+            signal_group="DRAW",
+            signal_label="SEGNO X",
+            source_column="EXCEL_D",
+            signal_value=True,
+            evaluation_status=EVAL_WON,
+            is_current=True,
+        )
+        for i in range(1, 7)
+    ]
+    db.scalars.return_value.all.return_value = rows
+    db.scalar.return_value = 2
+    summary = build_signals_summary(
+        db,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 30),
+    )
+    assert summary["overall"]["activations"] == 6
+    assert summary["overall"]["fixtures_with_signals_count"] == 6
+    assert summary["overall"]["eligible_fixtures_count"] == 2
+    assert summary["overall"]["avg_signals_per_fixture"] == 3.0
+
+
+def test_summary_avg_signals_per_fixture_null_when_no_fixtures():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    db.scalar.return_value = 0
+    summary = build_signals_summary(
+        db,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 30),
+    )
+    assert summary["overall"]["activations"] == 0
+    assert summary["overall"]["eligible_fixtures_count"] == 0
+    assert summary["overall"]["fixtures_with_signals_count"] == 0
+    assert summary["overall"]["avg_signals_per_fixture"] is None
+
+
+def test_summary_under_over_display_labels():
+    db = MagicMock()
+    rows = [
+        CecchinoSignalActivation(
+            today_fixture_id=1,
+            provider_fixture_id=1,
+            scan_date=date(2026, 6, 8),
+            signal_group="UNDER_UNDER_PT",
+            signal_label="UNDER / UNDER PT",
+            source_column="EXCEL_D",
+            signal_value=True,
+            evaluation_status=EVAL_WON,
+            is_current=True,
+        ),
+        CecchinoSignalActivation(
+            today_fixture_id=2,
+            provider_fixture_id=2,
+            scan_date=date(2026, 6, 8),
+            signal_group="OVER_OVER_PT",
+            signal_label="OVER / OVER PT",
+            source_column="EXCEL_E",
+            signal_value=True,
+            evaluation_status=EVAL_LOST,
+            is_current=True,
+        ),
+    ]
+    db.scalars.return_value.all.return_value = rows
+    db.scalar.return_value = 2
+    summary = build_signals_summary(
+        db,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 30),
+    )
+    labels = {row["signal_group"]: row["signal_label"] for row in summary["by_signal"]}
+    assert labels["UNDER_UNDER_PT"] == "UNDER 2.5"
+    assert labels["OVER_OVER_PT"] == "OVER 2.5"
 
 
 def test_export_csv_respects_filters():

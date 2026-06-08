@@ -34,6 +34,12 @@ export function statusBadgeClass(status: string): string {
   }
 }
 
+export function formatSignalLabel(signal_group: string, signal_label?: string): string {
+  if (signal_group === 'UNDER_UNDER_PT') return 'UNDER 2.5'
+  if (signal_group === 'OVER_OVER_PT') return 'OVER 2.5'
+  return signal_label ?? signal_group
+}
+
 export function formatTargetLabel(row: Pick<SignalActivationRow, 'signal_group' | 'target_market_label'>): string {
   if (row.signal_group === 'UNDER_UNDER_PT') return 'Under 2.5 FT'
   if (row.signal_group === 'OVER_OVER_PT') return 'Over 2.5 FT'

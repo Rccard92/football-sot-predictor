@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { NAV_MAIN, NAV_TECH } from '../config/navItems'
+import { NAV_CECCHINO, NAV_MAIN, NAV_TECH } from '../config/navItems'
 import { useSidebarLayout } from '../contexts/SidebarLayoutContext'
 import { NavLinks } from './nav/NavLinks'
 
@@ -60,9 +60,19 @@ export function MobileNavDrawer() {
         </div>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-          <nav className="flex flex-col gap-0.5">
-            <NavLinks items={NAV_MAIN} collapsed={false} onNavigate={closeMobile} />
-          </nav>
+          <div>
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Cecchino
+            </p>
+            <nav className="mt-0.5 flex flex-col gap-0.5">
+              <NavLinks items={NAV_CECCHINO} collapsed={false} onNavigate={closeMobile} />
+            </nav>
+          </div>
+          <div className="border-t border-slate-200/80 pt-3">
+            <nav className="flex flex-col gap-0.5">
+              <NavLinks items={NAV_MAIN} collapsed={false} onNavigate={closeMobile} />
+            </nav>
+          </div>
           <div className="border-t border-slate-200/80 pt-3">
             <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Strumenti tecnici

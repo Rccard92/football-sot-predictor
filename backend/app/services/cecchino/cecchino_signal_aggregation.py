@@ -18,6 +18,7 @@ from app.models.cecchino_signal_activation import (
     EVAL_WON,
     CecchinoSignalActivation,
 )
+from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 
 
 def _success_rate(won: int, lost: int) -> float | None:
@@ -25,6 +26,65 @@ def _success_rate(won: int, lost: int) -> float | None:
     if settled <= 0:
         return None
     return round((won / settled) * 100.0, 1)
+
+
+def _format_signal_display_label(signal_group: str, signal_label: str) -> str:
+    if signal_group == "UNDER_UNDER_PT":
+        return "UNDER 2.5"
+    if signal_group == "OVER_OVER_PT":
+        return "OVER 2.5"
+    return signal_label
+
+
+def _count_eligible_fixtures(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    league_name: str | None = None,
+    country_name: str | None = None,
+) -> int:
+    query = select(func.count()).select_from(CecchinoTodayFixture).where(
+        CecchinoTodayFixture.scan_date >= date_from,
+        CecchinoTodayFixture.scan_date <= date_to,
+        CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+    )
+    if league_name:
+        query = query.where(CecchinoTodayFixture.league_name == league_name)
+    if country_name:
+        query = query.where(CecchinoTodayFixture.country_name == country_name)
+    return int(db.scalar(query) or 0)
+
+
+def _enrich_overall_metrics(
+    db: Session,
+    overall: dict[str, Any],
+    rows: list[Any],
+    *,
+    date_from: date,
+    date_to: date,
+    league_name: str | None = None,
+    country_name: str | None = None,
+) -> dict[str, Any]:
+    fixtures_with_signals_count = len({int(r.today_fixture_id) for r in rows if r.today_fixture_id is not None})
+    eligible_fixtures_count = _count_eligible_fixtures(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        league_name=league_name,
+        country_name=country_name,
+    )
+    denominator = eligible_fixtures_count if eligible_fixtures_count > 0 else fixtures_with_signals_count
+    activations = int(overall.get("activations") or 0)
+    avg_signals_per_fixture = (
+        round(activations / denominator, 1) if denominator > 0 else None
+    )
+    return {
+        **overall,
+        "eligible_fixtures_count": eligible_fixtures_count,
+        "fixtures_with_signals_count": fixtures_with_signals_count,
+        "avg_signals_per_fixture": avg_signals_per_fixture,
+    }
 
 
 def _bucket_counts(rows: list[Any]) -> dict[str, int]:
@@ -121,7 +181,15 @@ def build_signals_summary(
             ),
         ).all(),
     )
-    overall = _bucket_counts(rows)
+    overall = _enrich_overall_metrics(
+        db,
+        _bucket_counts(rows),
+        rows,
+        date_from=date_from,
+        date_to=date_to,
+        league_name=league_name,
+        country_name=country_name,
+    )
 
     by_signal_map: dict[str, list[Any]] = {}
     by_column_map: dict[str, list[Any]] = {}
@@ -136,7 +204,7 @@ def build_signals_summary(
     by_signal = [
         {
             "signal_group": sg,
-            "signal_label": items[0].signal_label,
+            "signal_label": _format_signal_display_label(sg, items[0].signal_label),
             **_bucket_counts(items),
         }
         for sg, items in sorted(by_signal_map.items())
@@ -148,7 +216,7 @@ def build_signals_summary(
     by_signal_and_column = [
         {
             "signal_group": sg,
-            "signal_label": label,
+            "signal_label": _format_signal_display_label(sg, label),
             "source_column": col,
             **_bucket_counts(items),
         }
@@ -238,7 +306,7 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
         "country_name": row.country_name,
         "league_name": row.league_name,
         "signal_group": row.signal_group,
-        "signal_label": row.signal_label,
+        "signal_label": _format_signal_display_label(row.signal_group, row.signal_label),
         "source_column": row.source_column,
         "target_market_label": _format_target_market_label(row),
         "evaluation_status": row.evaluation_status,

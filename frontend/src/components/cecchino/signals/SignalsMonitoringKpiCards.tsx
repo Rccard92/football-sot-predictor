@@ -14,9 +14,14 @@ const cards: Array<{ key: keyof SignalsBucket; label: string }> = [
   { key: 'not_evaluable', label: 'Non valutabili' },
 ]
 
+function formatAvgSignalsPerFixture(value: number | null | undefined): string {
+  if (value == null) return '—'
+  return value.toFixed(1)
+}
+
 export function SignalsMonitoringKpiCards({ overall }: Props) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
       {cards.map((card) => (
         <div key={card.key} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
           <p className="text-xs text-slate-500">{card.label}</p>
@@ -25,7 +30,14 @@ export function SignalsMonitoringKpiCards({ overall }: Props) {
           </p>
         </div>
       ))}
-      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 col-span-2 md:col-span-4 xl:col-span-7">
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+        <p className="text-xs text-slate-500">Media segnali / partita</p>
+        <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+          {formatAvgSignalsPerFixture(overall.avg_signals_per_fixture)}
+        </p>
+        <p className="mt-1 text-[10px] text-slate-500">su partite eleggibili</p>
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 col-span-2 md:col-span-4">
         <p className="text-xs text-slate-500">Success rate (won / settled)</p>
         <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
           {formatSuccessRate(overall.success_rate)}

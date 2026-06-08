@@ -32,6 +32,19 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 35 — Sidebar Cecchino e metriche Monitoraggio Segnali
+
+```mermaid
+flowchart TD
+  sidebar[Sidebar sezione CECCHINO] --> pages[Cecchino / Today / Monitoraggio]
+  summary[GET signals/summary] --> avg[avg_signals_per_fixture]
+  avg --> card[Card Media segnali / partita]
+```
+
+- **Sidebar:** `NAV_CECCHINO` in cima, voci rimosse da `NAV_MAIN`.
+- **UI heatmap:** label `UNDER 2.5` / `OVER 2.5`; `signal_group` backend invariato.
+- **Metrica:** `avg = activations / eligible_fixtures_count` (fallback `fixtures_with_signals_count`).
+
 ## Fase 34 — Mapping Under/Over su 2.5 FT
 
 ```mermaid

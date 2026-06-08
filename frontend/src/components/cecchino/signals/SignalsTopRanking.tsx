@@ -1,5 +1,5 @@
 import type { SignalsSummaryResponse } from '../../../lib/cecchinoSignalsApi'
-import { formatSuccessRate } from './signalsHeatmapUtils'
+import { formatSignalLabel, formatSuccessRate } from './signalsHeatmapUtils'
 
 type Props = {
   summary: SignalsSummaryResponse
@@ -26,7 +26,8 @@ export function SignalsTopRanking({ summary, minSettled = 5 }: Props) {
               className="flex flex-wrap items-baseline justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm"
             >
               <span className="font-medium text-slate-800">
-                {row.signal_label} / {row.source_column.replace('EXCEL_', 'Excel ')}
+                {formatSignalLabel(row.signal_group, row.signal_label)} /{' '}
+                {row.source_column.replace('EXCEL_', 'Excel ')}
               </span>
               <span className="tabular-nums text-slate-700">
                 {formatSuccessRate(row.success_rate)} — {row.won}/{row.settled} — {row.activations}{' '}

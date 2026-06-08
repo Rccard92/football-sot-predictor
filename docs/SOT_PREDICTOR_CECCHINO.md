@@ -303,6 +303,19 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 35 — Sidebar Cecchino e metriche Monitoraggio Segnali (v0.29)
+
+Versione UI `cecchino_today_v0_29_signals_ui_metrics` — navigazione e KPI monitoraggio.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Sidebar | Sezione **CECCHINO** in alto: Cecchino, Cecchino Today, Monitoraggio Segnali |
+| Heatmap | Label righe `UNDER 2.5` e `OVER 2.5` (signal_group interni invariati) |
+| Summary | `eligible_fixtures_count`, `fixtures_with_signals_count`, `avg_signals_per_fixture` |
+| UI KPI | Card «Media segnali / partita» con 1 decimale, sottotitolo «su partite eleggibili» |
+
+**Invariato:** SOT v2.0/v2.1, KPI Betfair-only, valutazione Under/Over 2.5 FT (Fase 34).
+
 ## Cecchino Today — Fase 34 — Mapping Under/Over su 2.5 FT (v0.28)
 
 Versione UI `cecchino_today_v0_28_under_over_mapping` — valutazione segnali UNDER/OVER aggregati.

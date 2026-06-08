@@ -8,6 +8,9 @@ export type SignalsBucket = {
   pending: number
   not_evaluable: number
   success_rate: number | null
+  eligible_fixtures_count?: number
+  fixtures_with_signals_count?: number
+  avg_signals_per_fixture?: number | null
 }
 
 export type SignalsDiagnostics = {
@@ -206,9 +209,9 @@ export async function revaluateCecchinoSignals(params: {
 
 export const SIGNAL_GROUPS = [
   { value: '', label: 'Tutti' },
-  { value: 'UNDER_UNDER_PT', label: 'UNDER / UNDER PT' },
+  { value: 'UNDER_UNDER_PT', label: 'UNDER 2.5' },
   { value: 'DRAW', label: 'SEGNO X' },
-  { value: 'OVER_OVER_PT', label: 'OVER / OVER PT' },
+  { value: 'OVER_OVER_PT', label: 'OVER 2.5' },
   { value: 'HOME', label: '1' },
   { value: 'ONE_X', label: '1X' },
   { value: 'AWAY', label: '2' },
@@ -234,9 +237,9 @@ export const EVAL_STATUSES = [
 ] as const
 
 export const HEATMAP_SIGNAL_ROWS = [
-  { group: 'UNDER_UNDER_PT', label: 'UNDER / UNDER PT' },
+  { group: 'UNDER_UNDER_PT', label: 'UNDER 2.5' },
   { group: 'DRAW', label: 'SEGNO X' },
-  { group: 'OVER_OVER_PT', label: 'OVER / OVER PT' },
+  { group: 'OVER_OVER_PT', label: 'OVER 2.5' },
   { group: 'HOME', label: '1' },
   { group: 'ONE_X', label: '1X' },
   { group: 'AWAY', label: '2' },

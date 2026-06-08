@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 35 — Sidebar Cecchino e metriche Monitoraggio Segnali (2026-06-08)
+
+- Creata sezione Cecchino nella sidebar con voci in alto: Cecchino, Cecchino Today, Monitoraggio Segnali.
+- Rinominate righe heatmap `UNDER / UNDER PT` → `UNDER 2.5` e `OVER / OVER PT` → `OVER 2.5`.
+- Aggiunta card «Media segnali / partita» nel Monitoraggio Segnali.
+- Aggiornato summary endpoint con `avg_signals_per_fixture`, `eligible_fixtures_count`, `fixtures_with_signals_count`.
+- Nessuna modifica ai modelli SOT v2.0/v2.1, Betfair-only, logica valutazione segnali Fase 34.
+
 ## Cecchino — Fase 34 — Mapping Under/Over su 2.5 FT (2026-06-08)
 
 - Mappati segnali aggregati `UNDER_UNDER_PT` e `OVER_OVER_PT` su Under/Over 2.5 FT nel monitoraggio.

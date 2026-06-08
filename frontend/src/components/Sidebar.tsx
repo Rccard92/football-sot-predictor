@@ -1,4 +1,4 @@
-import { NAV_MAIN, NAV_TECH } from '../config/navItems'
+import { NAV_CECCHINO, NAV_MAIN, NAV_TECH } from '../config/navItems'
 import { useSidebarLayout } from '../contexts/SidebarLayoutContext'
 import { CompetitionSelector } from './CompetitionSelector'
 import { NavLinks } from './nav/NavLinks'
@@ -48,9 +48,22 @@ export function Sidebar() {
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-        <nav className="flex flex-col gap-0.5">
-          <NavLinks items={NAV_MAIN} collapsed={collapsed} />
-        </nav>
+        <div>
+          {!collapsed ? (
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Cecchino
+            </p>
+          ) : null}
+          <nav className="mt-0.5 flex flex-col gap-0.5">
+            <NavLinks items={NAV_CECCHINO} collapsed={collapsed} />
+          </nav>
+        </div>
+
+        <div className={collapsed ? 'border-t border-slate-200/80 pt-2' : 'border-t border-slate-200/80 pt-3'}>
+          <nav className="flex flex-col gap-0.5">
+            <NavLinks items={NAV_MAIN} collapsed={collapsed} />
+          </nav>
+        </div>
 
         <div className={collapsed ? 'border-t border-slate-200/80 pt-2' : 'border-t border-slate-200/80 pt-3'}>
           {!collapsed ? (
