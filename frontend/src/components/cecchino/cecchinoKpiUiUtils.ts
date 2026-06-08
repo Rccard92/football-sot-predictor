@@ -47,9 +47,13 @@ export function fmtVantaggioProb(v: number | null | undefined): string {
   return `${sign}${pts.toFixed(2)} pp`
 }
 
+export function formatScorePercent(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return `${(Number(value) * 100).toFixed(1)}%`
+}
+
 export function fmtScoreAcquisto(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(Number(v))) return '—'
-  return Number(v).toFixed(3)
+  return formatScorePercent(v)
 }
 
 export function isKpiAnalysisRow(label: string): boolean {
