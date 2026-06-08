@@ -32,6 +32,23 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 32 — Monitoraggio Segnali Cecchino
+
+```mermaid
+flowchart TD
+  matrix[signals_matrix SI/NO] --> sync[sync_cecchino_signal_activations]
+  sync --> table[cecchino_signal_activations]
+  updateResults[POST today/update-results] --> eval[evaluate_activations_for_fixture]
+  eval --> table
+  table --> summary[GET signals/summary]
+  summary --> ui[Monitoraggio Segnali page]
+```
+
+- **Sync hook:** upsert scan eleggibile + `get_today_fixture_detail`.
+- **Idempotenza:** unique `(today_fixture_id, signal_group, source_column, COALESCE(target_market_key,''))`.
+- **Success rate:** `won / (won + lost)` — esclude pending e not_evaluable.
+- **Revaluate:** `POST /admin/cecchino/signals/revaluate` — solo DB.
+
 ## Fase 31 — Legenda operativa equilibrio
 
 ```mermaid

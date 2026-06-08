@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 32 — Monitoraggio Segnali Cecchino (2026-06-08)
+
+- Mantenuta matrice Segnali Cecchino nel dettaglio analisi partita.
+- Aggiunta pagina «Monitoraggio Segnali» (`/monitoraggio-segnali`) con KPI, heatmap Signal×Column, top segnali e lista dettaglio.
+- Ogni segnale SI persistito in `cecchino_signal_activations` con sync idempotente (`is_current`, `deactivated_at`).
+- Valutazione automatica esito dopo `POST /admin/cecchino/today/update-results` (solo DB, nessuna API extra).
+- Mapping sicuro 1/X/2/1X/X2/12; UNDER/OVER generici restano `not_evaluable` finché manca target esplicito.
+- Endpoint aggregati: summary, activations, export CSV, revaluate offline.
+- Link «Apri monitoraggio segnali» nel dettaglio partita con filtri preimpostati per giornata.
+- Nessuna modifica a SOT v2.0/v2.1, `team_sot_predictions`, KPI Betfair-only, Debug Picchetti, Equilibrio vs Squilibrio.
+
 ## Cecchino — Fase 31 — Legenda operativa equilibrio (2026-06-08)
 
 - Aggiunta legenda operativa aggiornata (18 righe) nella sezione Equilibrio vs Squilibrio.

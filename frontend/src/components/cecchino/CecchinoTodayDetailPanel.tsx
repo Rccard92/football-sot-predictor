@@ -74,7 +74,13 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
 
       <CecchinoTodayBalanceAnalysisPanel balanceAnalysis={detail.balance_analysis} />
 
-      {signals && <CecchinoSignalsCard matrix={signals} />}
+      {signals && (
+        <CecchinoSignalsCard
+          matrix={signals}
+          scanDate={detail.scan_date}
+          todayFixtureId={detail.today_fixture_id ?? detail.id}
+        />
+      )}
 
       {(importInfo.length > 0 || dataNotes.length > 0) && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

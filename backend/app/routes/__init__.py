@@ -4,6 +4,7 @@ from app.routes import (
     api_usage,
     backtest_v31,
     cecchino,
+    cecchino_signals,
     cecchino_today,
     admin,
     admin_betting_picks,
@@ -75,6 +76,7 @@ api_router.include_router(competitions.router)
 api_router.include_router(competition_scoped.router)
 api_router.include_router(cecchino.router)
 api_router.include_router(cecchino.admin_router)
+api_router.include_router(cecchino_signals.router)
 api_router.include_router(cecchino_today.router)
 api_router.include_router(cecchino_today.admin_router)
 api_router.include_router(betting_picks.router)

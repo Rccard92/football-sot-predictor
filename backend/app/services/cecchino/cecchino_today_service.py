@@ -63,6 +63,8 @@ from app.services.cecchino.cecchino_constants import (
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
+from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
+from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_picchetti_debug import (
     build_cecchino_picchetti_debug,
     build_picchetti_debug_summary,
@@ -419,6 +421,8 @@ def _upsert_today_snapshot(
     ):
         row.match_display_status = MATCH_UPCOMING
     db.flush()
+    if eligibility_status == ELIGIBILITY_ELIGIBLE and isinstance(cecchino_output, dict):
+        sync_cecchino_signal_activations(db, int(row.id))
     return row
 
 
@@ -1327,6 +1331,8 @@ def update_today_fixture_results(
     still_upcoming = 0
     live = 0
     api_calls = 0
+    signals_evaluated = 0
+    signals_pending = 0
 
     try:
         api_items = af_client.get_fixtures_by_date(resolved.isoformat(), timezone=timezone)
@@ -1374,6 +1380,9 @@ def update_today_fixture_results(
         elif st == MATCH_LIVE:
             live += 1
         results_updated += 1
+        eval_counts = evaluate_activations_for_fixture(db, int(row.id))
+        signals_evaluated += eval_counts.get("evaluated", 0)
+        signals_pending += eval_counts.get("pending", 0)
 
     db.commit()
     return {
@@ -1387,6 +1396,8 @@ def update_today_fixture_results(
         "failed": failed,
         "warnings": warnings,
         "api_calls": api_calls,
+        "signals_evaluated": signals_evaluated,
+        "signals_pending": signals_pending,
     }
 
 
@@ -1469,6 +1480,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
     balance_analysis = build_balance_analysis_from_final(
         output.get("final") if isinstance(output, dict) else {},
     )
+    sync_cecchino_signal_activations(db, int(row.id))
     today_id = int(row.id)
     provider_fid = int(row.provider_fixture_id)
     local_fid = int(row.local_fixture_id) if row.local_fixture_id else None

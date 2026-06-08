@@ -290,6 +290,9 @@ export type CecchinoTodayUpdateResultsResponse = {
   live: number
   failed: Array<{ provider_fixture_id: number; error: string }>
   warnings: string[]
+  api_calls?: number
+  signals_evaluated?: number
+  signals_pending?: number
 }
 
 export type CecchinoKpiV2Row = {

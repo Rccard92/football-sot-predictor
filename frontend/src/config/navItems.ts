@@ -30,6 +30,7 @@ export const NAV_MAIN: NavItem[] = [
   { to: '/', label: 'Prossima giornata', icon: 'calendar', section: 'main' },
   { to: '/cecchino', label: 'Cecchino', icon: 'crosshair', section: 'main' },
   { to: '/cecchino-today', label: 'Cecchino Today', icon: 'calendar', section: 'main' },
+  { to: '/monitoraggio-segnali', label: 'Monitoraggio Segnali', icon: 'target', section: 'main' },
   { to: '/monitoraggio-giocate', label: 'Monitoraggio Giocate', icon: 'target', section: 'main' },
   { to: '/bookmakers', label: 'Bookmakers', icon: 'landmark', section: 'main' },
   { to: '/changelog', label: 'Changelog', icon: 'history', section: 'main' },

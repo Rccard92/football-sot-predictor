@@ -303,6 +303,22 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 32 — Monitoraggio Segnali Cecchino (v0.26)
+
+Versione UI `cecchino_today_v0_26_signal_monitoring` — persistenza e analisi storica segnali SI.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Matrice dettaglio | Invariata nel dettaglio partita (`CecchinoSignalsMatrixPanel`) |
+| Tabella DB | `cecchino_signal_activations` — ogni SI salvato come activation |
+| Sync | Idempotente su scan upsert e apertura dettaglio (`sync_cecchino_signal_activations`) |
+| Valutazione | `won`/`lost`/`pending`/`not_evaluable` dopo update-results (offline) |
+| Mapping sicuro | 1/X/2/1X/X2/12 valutabili FT; UNDER/OVER generici `not_evaluable` |
+| Pagina UI | `/monitoraggio-segnali` — KPI, heatmap, top segnali, lista, export CSV |
+| API admin | `GET summary`, `GET activations`, `GET export.csv`, `POST revaluate` |
+
+**Invariato:** KPI Betfair-only, SOT v2.0/v2.1, Debug Picchetti, Equilibrio vs Squilibrio, formule matrice segnali.
+
 ## Cecchino Today — Fase 31 — Legenda operativa equilibrio (v0.25)
 
 Versione UI `cecchino_today_v0_25_balance_legend` — legenda operativa aggiornata sotto Dettaglio tecnico.
