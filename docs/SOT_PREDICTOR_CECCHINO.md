@@ -303,6 +303,26 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 37 — Correzione mapping Scala segnali (v0.31)
+
+Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
+
+| Riga | `row.key` | `signal_group` | Colonne signals |
+|------|-----------|----------------|-----------------|
+| 1 | `one` | HOME | solo `excel_d` (D48) |
+| 1X | `one_x` | ONE_X | D/E/F/G + `scala_1x` (G48) |
+| 2 | `two` | AWAY | solo `excel_d` (D54) |
+| X2 | `x_two` | X_TWO | D/E/F/G + `scala_x2` (G54) |
+
+| Componente | Comportamento |
+|------------|---------------|
+| Backfill | `force_remap=true` ricalcola matrice, disattiva legacy HOME/AWAY+SCALA, risincronizza |
+| Remap | `remap_legacy_scala_activations_in_range` con `evaluation_reason` dedicato |
+| UI | Pulsante «Ricalcola mapping segnali»; heatmap corretta dopo remap |
+| Dettaglio | `CecchinoSignalsMatrixPanel` mostra Scala solo su righe 1X e X2 |
+
+**Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
+
 ## Cecchino Today — Fase 36 — Delta Forza e Linearità Match (v0.30)
 
 Versione UI `cecchino_today_v0_30_delta_force` — linearità match vs book Betfair.

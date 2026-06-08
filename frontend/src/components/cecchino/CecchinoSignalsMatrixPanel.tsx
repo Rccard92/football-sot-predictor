@@ -80,9 +80,11 @@ export function CecchinoSignalsMatrixPanel({ matrix, variant = 'default' }: Prop
             {rows.map((row) => {
               const sig = row.signals ?? {}
               const scala =
-                signalVal(sig, 'scala_1x') !== '—'
+                row.key === 'one_x'
                   ? signalVal(sig, 'scala_1x')
-                  : signalVal(sig, 'scala_x2')
+                  : row.key === 'x_two'
+                    ? signalVal(sig, 'scala_x2')
+                    : '—'
               return (
                 <tr key={row.key} className="border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-3 py-2 font-medium text-slate-800">{row.label}</td>

@@ -39,7 +39,13 @@ from app.services.cecchino.cecchino_signal_backfill import (
     backfill_signal_activations,
     build_signal_diagnostics,
 )
-from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
+from app.services.cecchino.cecchino_signal_sync import (
+    LEGACY_AWAY_SCALA_REASON,
+    LEGACY_HOME_SCALA_REASON,
+    remap_legacy_scala_activations_in_range,
+    sync_cecchino_signal_activations,
+)
+from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 from app.services.cecchino.cecchino_signal_target_mapping import (
     apply_under_over_target_to_activation,
     map_cecchino_signal_to_target,
@@ -415,6 +421,133 @@ def test_success_rate_excludes_pending_and_not_evaluable():
     assert bucket["success_rate"] == pytest.approx(66.7, abs=0.1)
     assert bucket["pending"] == 1
     assert bucket["not_evaluable"] == 1
+
+
+def test_matrix_home_away_have_no_scala_column():
+    matrix = build_signals_matrix(
+        q1=2.50,
+        qx=3.20,
+        q2=2.90,
+        sample_home_away_split=16,
+    )
+    rows = {row["key"]: row["signals"] for row in matrix["rows"]}
+    assert "scala_1x" not in rows["one"]
+    assert "scala_x2" not in rows["two"]
+    assert "scala_1x" in rows["one_x"]
+    assert "scala_x2" in rows["x_two"]
+
+
+def test_sync_scala_on_one_x_not_home():
+    db = MagicMock()
+    row = _fixture_row()
+    row.cecchino_output_json = {
+        "signals_matrix": {
+            "status": STATUS_AVAILABLE,
+            "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9, "avg_q": 2.87, "diff_1_2": 0.4},
+            "rows": [
+                {"key": "one", "label": "1", "signals": {"excel_d": "NO"}},
+                {
+                    "key": "one_x",
+                    "label": "1X",
+                    "signals": {
+                        "excel_d": "NO",
+                        "excel_e": "NO",
+                        "excel_f": "NO",
+                        "excel_g": "NO",
+                        "scala_1x": "SI",
+                    },
+                },
+            ],
+        },
+    }
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    added = db.add.call_args[0][0]
+    assert added.signal_group == "ONE_X"
+    assert added.source_column == "SCALA"
+    assert added.signal_group != "HOME"
+
+
+def test_remap_legacy_scala_activations_deactivates_home_away():
+    db = MagicMock()
+    home_scala = CecchinoSignalActivation(
+        today_fixture_id=1,
+        provider_fixture_id=1,
+        scan_date=date(2026, 6, 8),
+        signal_group="HOME",
+        signal_label="1",
+        source_column="SCALA",
+        signal_value=True,
+        is_current=True,
+    )
+    away_scala = CecchinoSignalActivation(
+        today_fixture_id=2,
+        provider_fixture_id=2,
+        scan_date=date(2026, 6, 8),
+        signal_group="AWAY",
+        signal_label="2",
+        source_column="SCALA",
+        signal_value=True,
+        is_current=True,
+    )
+    db.scalars.return_value.all.return_value = [home_scala, away_scala]
+
+    count = remap_legacy_scala_activations_in_range(
+        db,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 30),
+    )
+
+    assert count == 2
+    assert home_scala.is_current is False
+    assert away_scala.is_current is False
+    assert home_scala.evaluation_reason == LEGACY_HOME_SCALA_REASON
+    assert away_scala.evaluation_reason == LEGACY_AWAY_SCALA_REASON
+
+
+def test_backfill_force_remap_rebuilds_activations_offline():
+    db = MagicMock()
+    fixture = _fixture_row()
+    db.scalars.return_value.all.return_value = [fixture]
+    db.scalar.return_value = 0
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
+        return_value={"created": 2, "updated": 0, "deactivated": 1, "skipped": 0},
+    ) as mock_sync, patch(
+        "app.services.cecchino.cecchino_signal_backfill.remap_legacy_scala_activations_in_range",
+        return_value=3,
+    ) as mock_remap, patch(
+        "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill.evaluate_activations_for_fixture",
+        return_value={"evaluated": 2, "pending": 0, "not_evaluable": 0},
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill._activation_status_counts",
+        return_value={"won": 1, "lost": 1, "pending": 0, "not_evaluable": 0, "evaluated_count": 2},
+    ), patch(
+        "app.services.api_football_client.ApiFootballClient",
+    ) as mock_client:
+        out = backfill_signal_activations(
+            db,
+            date_from=date(2026, 6, 8),
+            date_to=date(2026, 6, 8),
+            only_missing=False,
+            evaluate_after=True,
+            force_remap=True,
+        )
+
+    assert out["force_remap"] is True
+    assert out["legacy_scala_deactivated"] == 3
+    assert out["fixtures_with_signals"] == 1
+    mock_remap.assert_called_once()
+    mock_sync.assert_called_once_with(db, 99)
+    mock_client.assert_not_called()
 
 
 def test_sync_saves_only_si_and_is_idempotent():

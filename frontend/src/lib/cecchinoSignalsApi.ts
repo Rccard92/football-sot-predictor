@@ -54,6 +54,9 @@ export type SignalsBackfillResponse = {
   lost: number
   pending: number
   not_evaluable: number
+  remapped?: number
+  legacy_scala_deactivated?: number
+  force_remap?: boolean
   warnings: string[]
 }
 
@@ -143,12 +146,14 @@ export async function backfillCecchinoSignals(params: {
   date_to: string
   only_missing?: boolean
   evaluate_after?: boolean
+  force_remap?: boolean
 }): Promise<SignalsBackfillResponse> {
   return adminPostJson<SignalsBackfillResponse>('/api/admin/cecchino/signals/backfill', {
     date_from: params.date_from,
     date_to: params.date_to,
     only_missing: params.only_missing ?? true,
     evaluate_after: params.evaluate_after ?? true,
+    force_remap: params.force_remap ?? false,
   })
 }
 
@@ -191,12 +196,14 @@ export async function revaluateCecchinoSignals(params: {
   date_to: string
   force?: boolean
   sync_missing?: boolean
+  force_remap?: boolean
 }): Promise<{
   status: string
   fixtures: number
   evaluated: number
   pending: number
   not_evaluable: number
+  force_remap?: boolean
   backfill_summary?: SignalsBackfillResponse
 }> {
   return adminPostJson('/api/admin/cecchino/signals/revaluate', {
@@ -204,6 +211,7 @@ export async function revaluateCecchinoSignals(params: {
     date_to: params.date_to,
     force: params.force ?? false,
     sync_missing: params.sync_missing ?? false,
+    force_remap: params.force_remap ?? false,
   })
 }
 

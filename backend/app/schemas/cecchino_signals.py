@@ -12,6 +12,7 @@ class CecchinoSignalsRevaluateBody(BaseModel):
     date_to: date
     force: bool = False
     sync_missing: bool = False
+    force_remap: bool = False
 
 
 class CecchinoSignalsBackfillBody(BaseModel):
@@ -19,3 +20,4 @@ class CecchinoSignalsBackfillBody(BaseModel):
     date_to: date
     only_missing: bool = True
     evaluate_after: bool = True
+    force_remap: bool = False

@@ -176,7 +176,8 @@ def build_signals_matrix(
         {
             "key": "one",
             "label": "1",
-            "signals": {"excel_d": one_d, "scala_1x": scala_1x},
+            "signals": {"excel_d": one_d},
+            "excel_cells": {"excel_d": "D48"},
         },
         {
             "key": "one_x",
@@ -186,12 +187,21 @@ def build_signals_matrix(
                 "excel_e": one_x_e,
                 "excel_f": one_x_f,
                 "excel_g": one_x_g,
+                "scala_1x": scala_1x,
+            },
+            "excel_cells": {
+                "excel_d": "D51",
+                "excel_e": "E51",
+                "excel_f": "F51",
+                "excel_g": "G51",
+                "scala_1x": "G48",
             },
         },
         {
             "key": "two",
             "label": "2",
-            "signals": {"excel_d": two_d, "scala_x2": scala_x2},
+            "signals": {"excel_d": two_d},
+            "excel_cells": {"excel_d": "D54"},
         },
         {
             "key": "x_two",
@@ -201,6 +211,14 @@ def build_signals_matrix(
                 "excel_e": x_two_e,
                 "excel_f": x_two_f,
                 "excel_g": x_two_g,
+                "scala_x2": scala_x2,
+            },
+            "excel_cells": {
+                "excel_d": "D57",
+                "excel_e": "E57",
+                "excel_f": "F57",
+                "excel_g": "G57",
+                "scala_x2": "G54",
             },
         },
         {

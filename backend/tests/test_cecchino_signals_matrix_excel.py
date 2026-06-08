@@ -35,16 +35,28 @@ def test_excel_example_parity():
     assert over == {"excel_d": "NO", "excel_e": "NO", "excel_f": "NO", "excel_g": "NO"}
 
     one = _signals_by_key(result, "one")
-    assert one == {"excel_d": "NO", "scala_1x": "SI"}
+    assert one == {"excel_d": "NO"}
 
     one_x = _signals_by_key(result, "one_x")
-    assert one_x == {"excel_d": "NO", "excel_e": "SI", "excel_f": "NO", "excel_g": "NO"}
+    assert one_x == {
+        "excel_d": "NO",
+        "excel_e": "SI",
+        "excel_f": "NO",
+        "excel_g": "NO",
+        "scala_1x": "SI",
+    }
 
     two = _signals_by_key(result, "two")
-    assert two == {"excel_d": "NO", "scala_x2": "NO"}
+    assert two == {"excel_d": "NO"}
 
     x_two = _signals_by_key(result, "x_two")
-    assert x_two == {"excel_d": "NO", "excel_e": "NO", "excel_f": "NO", "excel_g": "NO"}
+    assert x_two == {
+        "excel_d": "NO",
+        "excel_e": "NO",
+        "excel_f": "NO",
+        "excel_g": "NO",
+        "scala_x2": "NO",
+    }
 
     twelve = _signals_by_key(result, "twelve")
     assert twelve == {"excel_d": "NO", "excel_e": "NO"}

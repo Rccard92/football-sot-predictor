@@ -20,7 +20,10 @@ from app.models.cecchino_signal_activation import (
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
-from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
+from app.services.cecchino.cecchino_signal_sync import (
+    remap_legacy_scala_activations_in_range,
+    sync_cecchino_signal_activations,
+)
 from app.services.cecchino.cecchino_signal_target_mapping import remap_under_over_activations_in_range
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
@@ -220,6 +223,7 @@ def backfill_signal_activations(
     date_to: date,
     only_missing: bool = True,
     evaluate_after: bool = True,
+    force_remap: bool = False,
 ) -> dict[str, Any]:
     fixtures = _fixtures_in_range(db, date_from, date_to)
     warnings: list[str] = []
@@ -237,11 +241,12 @@ def backfill_signal_activations(
         "not_evaluable": 0,
     }
     processed_fixture_ids: list[int] = []
+    effective_only_missing = only_missing and not force_remap
 
     for row in fixtures:
         if row.eligibility_status != ELIGIBILITY_ELIGIBLE:
             continue
-        if only_missing and _fixture_has_current_activations(db, int(row.id)):
+        if effective_only_missing and _fixture_has_current_activations(db, int(row.id)):
             totals["fixtures_skipped"] += 1
             continue
         if not _ensure_signals_matrix_on_row(row):
@@ -249,11 +254,25 @@ def backfill_signal_activations(
             continue
 
         totals["fixtures_with_signals"] += 1
-        sync_counts = sync_cecchino_signal_activations(db, int(row.id))
-        totals["signals_created"] += sync_counts.get("created", 0)
-        totals["signals_updated"] += sync_counts.get("updated", 0)
-        totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
         processed_fixture_ids.append(int(row.id))
+        if not force_remap:
+            sync_counts = sync_cecchino_signal_activations(db, int(row.id))
+            totals["signals_created"] += sync_counts.get("created", 0)
+            totals["signals_updated"] += sync_counts.get("updated", 0)
+            totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
+
+    legacy_scala_deactivated = 0
+    if force_remap:
+        legacy_scala_deactivated = remap_legacy_scala_activations_in_range(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        for fid in processed_fixture_ids:
+            sync_counts = sync_cecchino_signal_activations(db, fid)
+            totals["signals_created"] += sync_counts.get("created", 0)
+            totals["signals_updated"] += sync_counts.get("updated", 0)
+            totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
 
     remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
 
@@ -284,6 +303,8 @@ def backfill_signal_activations(
         "status": "ok",
         **totals,
         "remapped": remapped,
+        "legacy_scala_deactivated": legacy_scala_deactivated,
+        "force_remap": force_remap,
         "warnings": warnings[:100],
     }
 

@@ -185,3 +185,45 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
 
     db.flush()
     return counts
+
+
+LEGACY_HOME_SCALA_REASON = "wrong_legacy_mapping_home_scala_should_be_one_x_scala"
+LEGACY_AWAY_SCALA_REASON = "wrong_legacy_mapping_away_scala_should_be_x_two_scala"
+
+
+def remap_legacy_scala_activations_in_range(db: Session, *, date_from, date_to) -> int:
+    """Disattiva activation HOME/AWAY+SCALA errate (mapping pre-Fase 37)."""
+    from sqlalchemy import and_, or_, select
+
+    rows = list(
+        db.scalars(
+            select(CecchinoSignalActivation).where(
+                CecchinoSignalActivation.scan_date >= date_from,
+                CecchinoSignalActivation.scan_date <= date_to,
+                CecchinoSignalActivation.is_current.is_(True),
+                or_(
+                    and_(
+                        CecchinoSignalActivation.signal_group == "HOME",
+                        CecchinoSignalActivation.source_column == "SCALA",
+                    ),
+                    and_(
+                        CecchinoSignalActivation.signal_group == "AWAY",
+                        CecchinoSignalActivation.source_column == "SCALA",
+                    ),
+                ),
+            ),
+        ).all(),
+    )
+    if not rows:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    for activation in rows:
+        activation.is_current = False
+        activation.deactivated_at = now
+        if activation.signal_group == "HOME":
+            activation.evaluation_reason = LEGACY_HOME_SCALA_REASON
+        else:
+            activation.evaluation_reason = LEGACY_AWAY_SCALA_REASON
+    db.flush()
+    return len(rows)

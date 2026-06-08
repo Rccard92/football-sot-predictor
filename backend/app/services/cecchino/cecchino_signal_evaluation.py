@@ -238,11 +238,23 @@ def revaluate_signal_activations(
     date_to: date,
     force: bool = False,
     sync_missing: bool = False,
+    force_remap: bool = False,
 ) -> dict[str, Any]:
     remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
 
     backfill_summary: dict[str, Any] | None = None
-    if sync_missing:
+    if force_remap:
+        from app.services.cecchino.cecchino_signal_backfill import backfill_signal_activations
+
+        backfill_summary = backfill_signal_activations(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            only_missing=False,
+            evaluate_after=True,
+            force_remap=True,
+        )
+    elif sync_missing:
         from app.services.cecchino.cecchino_signal_backfill import (
             backfill_signal_activations,
             build_signal_diagnostics,
@@ -283,6 +295,7 @@ def revaluate_signal_activations(
 
     db.commit()
     totals["remapped"] = remapped
+    totals["force_remap"] = force_remap
     if backfill_summary is not None:
         totals["backfill_summary"] = backfill_summary
     return totals

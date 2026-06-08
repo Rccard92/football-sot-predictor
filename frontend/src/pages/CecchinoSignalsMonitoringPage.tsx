@@ -132,6 +132,26 @@ export function CecchinoSignalsMonitoringPage() {
     }
   }
 
+  const handleRemapMapping = async () => {
+    setActionLoading(true)
+    setActionMessage(null)
+    try {
+      await backfillCecchinoSignals({
+        date_from: dateFrom,
+        date_to: dateTo,
+        only_missing: false,
+        evaluate_after: true,
+        force_remap: true,
+      })
+      setActionMessage('Mapping segnali ricalcolato correttamente.')
+      await loadData()
+    } catch (err) {
+      setError(formatFetchError(err))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const handleRevaluate = async () => {
     setActionLoading(true)
     setActionMessage(null)
@@ -273,6 +293,14 @@ export function CecchinoSignalsMonitoringPage() {
             className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
           >
             Aggiorna risultati giornata
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRemapMapping()}
+            disabled={actionLoading}
+            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+          >
+            Ricalcola mapping segnali
           </button>
           <button
             type="button"

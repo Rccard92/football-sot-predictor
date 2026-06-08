@@ -46,6 +46,7 @@ def cecchino_signals_backfill(
         date_to=body.date_to,
         only_missing=body.only_missing,
         evaluate_after=body.evaluate_after,
+        force_remap=body.force_remap,
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -149,5 +150,6 @@ def cecchino_signals_revaluate(
         date_to=body.date_to,
         force=body.force,
         sync_missing=body.sync_missing,
+        force_remap=body.force_remap,
     )
     return JSONResponse(content=jsonable_encoder({"status": "ok", **payload}))

@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 37 — Correzione mapping Scala segnali (2026-06-08)
+
+- Corretto mapping matrice: `scala_1x` (G48) su riga 1X (`ONE_X`), `scala_x2` (G54) su riga X2 (`X_TWO`).
+- Righe 1/2 espongono solo `excel_d` (D48/D54); niente più activation `HOME+SCALA` / `AWAY+SCALA`.
+- Aggiunto `remap_legacy_scala_activations_in_range` per disattivare activation legacy errate.
+- Backfill/revaluate supportano `force_remap=true` (ricalcolo matrice + sync + rivalutazione offline).
+- UI Monitoraggio: pulsante «Ricalcola mapping segnali»; matrice dettaglio mostra Scala solo su 1X/X2.
+- Zero chiamate API-Football; nessuna modifica a SOT v2.0/v2.1, KPI Betfair-only, Under/Over Fase 34.
+
 ## Cecchino — Fase 36 — Delta Forza e Linearità Match (2026-06-08)
 
 - Aggiunto Delta Forza come valore assoluto dell'Edge % su 1/X/2.

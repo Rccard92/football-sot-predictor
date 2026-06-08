@@ -32,6 +32,23 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 37 — Correzione mapping Scala segnali
+
+```mermaid
+flowchart LR
+  subgraph fixed [Mapping corretto]
+    HOME[HOME] --> EXCEL_D1[EXCEL_D D48]
+    ONE_X[ONE_X] --> SCALA_1X[SCALA G48]
+    AWAY[AWAY] --> EXCEL_D2[EXCEL_D D54]
+    X_TWO[X_TWO] --> SCALA_X2[SCALA G54]
+  end
+```
+
+- **Fix matrice:** `build_signals_matrix` sposta `scala_1x`/`scala_x2` da righe `one`/`two` a `one_x`/`x_two`.
+- **Legacy:** `remap_legacy_scala_activations_in_range` disattiva `HOME+SCALA` e `AWAY+SCALA` con reason dedicato.
+- **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
+- **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
+
 ## Fase 36 — Delta Forza e Linearità Match
 
 ```mermaid
