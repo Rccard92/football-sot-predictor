@@ -427,6 +427,9 @@ export type CecchinoGoalMarketContextRow = {
   name?: string
   label?: string
   weight?: number
+  original_weight?: number
+  effective_weight?: number
+  weight_renormalized?: boolean
   sample_home?: number
   sample_away?: number
   lambda_total?: number
@@ -465,6 +468,7 @@ export type CecchinoPicchettiMarketDebug = {
   warnings?: string[]
   skipped_missing_halftime_score?: number
   summary?: CecchinoGoalMarketSummary
+  weights?: Record<string, number>
   contexts?: CecchinoGoalMarketContextRow[]
   legacy_excel_parity?: CecchinoGoalLegacyExcelParity
   technical?: Record<string, unknown>

@@ -16,12 +16,26 @@ const PICCHETTO_LABELS: Record<string, string> = {
   last5_home_away: 'Ultime 5 casa/fuori',
 }
 
-const WEIGHT_LABELS: Array<{ key: string; pct: string }> = [
+const WEIGHT_LABELS_1X2: Array<{ key: string; pct: string }> = [
   { key: 'totals', pct: '25%' },
   { key: 'home_away', pct: '20%' },
   { key: 'last6_totals', pct: '35%' },
   { key: 'last5_home_away', pct: '20%' },
 ]
+
+const GOAL_WEIGHT_LABELS: Array<{ key: string; pct: string }> = [
+  { key: 'totals', pct: '10%' },
+  { key: 'home_away', pct: '20%' },
+  { key: 'last6_totals', pct: '35%' },
+  { key: 'last5_home_away', pct: '35%' },
+]
+
+const GOAL_WEIGHT_LABEL_KEYS: Record<string, string> = {
+  totals: 'Totali stagione',
+  home_away: 'Casa/Fuori',
+  last6_totals: 'Ultime 6 totali',
+  last5_home_away: 'Ultime 5 casa/fuori',
+}
 
 type TabId = '1' | 'X' | '2' | 'dc' | 'goals' | 'missing'
 
@@ -275,7 +289,19 @@ function GoalContextTable({ contexts }: { contexts?: CecchinoPicchettiMarketDebu
                     : '—'}
               </td>
               <td className="px-3 py-2">
-                {r.weight != null ? `${(r.weight * 100).toFixed(0)}%` : '—'}
+                {(() => {
+                  const eff = r.effective_weight ?? r.weight
+                  if (eff == null) return '—'
+                  const pct = `${(eff * 100).toFixed(0)}%`
+                  if (r.weight_renormalized && r.original_weight != null && r.original_weight !== eff) {
+                    return (
+                      <span title={`Originale: ${(r.original_weight * 100).toFixed(0)}%`}>
+                        {pct}*
+                      </span>
+                    )
+                  }
+                  return pct
+                })()}
               </td>
               <td className="px-3 py-2 capitalize">{r.status === 'low_sample' ? 'Basso campione' : 'OK'}</td>
             </tr>
@@ -345,8 +371,26 @@ function GoalsTab({
   const [subTab, setSubTab] = useState<GoalMarketKey>(GOAL_MARKET_KEYS[0])
   const market = markets[subTab]
 
+  const goalWeightBadges =
+    market?.weights != null
+      ? GOAL_WEIGHT_LABELS.map(({ key }) => {
+          const w = market.weights?.[key]
+          return w != null ? { key, pct: `${(w * 100).toFixed(0)}%` } : null
+        }).filter((x): x is { key: string; pct: string } => x != null)
+      : GOAL_WEIGHT_LABELS
+
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {goalWeightBadges.map(({ key, pct }) => (
+          <span
+            key={key}
+            className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700"
+          >
+            {GOAL_WEIGHT_LABEL_KEYS[key] ?? PICCHETTO_LABELS[key] ?? key} {pct}
+          </span>
+        ))}
+      </div>
       <div className="flex flex-wrap gap-1">
         {GOAL_MARKET_KEYS.map((key) => {
           const m = markets[key]
@@ -484,7 +528,7 @@ export function CecchinoTodayPicchettiDebugPanel({
       <div className="border-t border-slate-200 px-4 py-4">
         {weights && (
           <div className="mb-4 flex flex-wrap gap-2">
-            {WEIGHT_LABELS.map(({ key, pct }) => (
+            {WEIGHT_LABELS_1X2.map(({ key, pct }) => (
               <span
                 key={key}
                 className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700"

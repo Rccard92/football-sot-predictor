@@ -32,6 +32,23 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 28 — Nuovi pesi goal market
+
+```mermaid
+flowchart LR
+  weights1X2[CECCHINO_1X2_WEIGHTS 25/20/35/20] --> engine[cecchino_engine 1X2]
+  weightsGoal[CECCHINO_GOAL_MARKET_WEIGHTS 10/20/35/35] --> v2[goal_market_poisson_empirical_v2]
+  v2 --> goalMarkets[goal_markets.final_odd]
+  goalMarkets --> kpi[cecchino_kpi_panel_v2_betfair]
+  v2 --> debug[Debug Picchetti goal tab]
+```
+
+- **Pesi goal:** totals 10%, home_away 20%, last6_totals 35%, last5_home_away 35%.
+- **Pesi 1X2:** invariati 25/20/35/20 (engine e badge header debug 1/X/2).
+- **KPI:** struttura Betfair-only invariata; `quota_cecchino` OU riflette nuova ponderazione dopo rescan.
+- **Debug:** pesi goal per tab OU; JSON con `original_weight` / `effective_weight`.
+- **Rescan:** necessario per ricalcolare quote OU con i nuovi pesi.
+
 ## Fase 27 — Goal market Poisson + storico
 
 ```mermaid

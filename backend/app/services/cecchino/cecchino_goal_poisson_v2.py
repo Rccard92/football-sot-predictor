@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Fixture
 from app.services.cecchino.cecchino_constants import (
-    FINAL_QUOTA_WEIGHTS,
+    CECCHINO_GOAL_MARKET_WEIGHTS,
     PICCHETTO_KEY_HOME_AWAY,
     PICCHETTO_KEY_LAST5_HOME_AWAY,
     PICCHETTO_KEY_LAST6_TOTALS,
@@ -55,10 +55,10 @@ MIN_PROB = 0.03
 MAX_PROB = 0.97
 
 _CONTEXT_WEIGHT_MAP: dict[str, float] = {
-    CONTEXT_KEY_TOTALS: FINAL_QUOTA_WEIGHTS[PICCHETTO_KEY_TOTALS],
-    CONTEXT_KEY_HOME_AWAY: FINAL_QUOTA_WEIGHTS[PICCHETTO_KEY_HOME_AWAY],
-    CONTEXT_KEY_LAST6_TOTALS: FINAL_QUOTA_WEIGHTS[PICCHETTO_KEY_LAST6_TOTALS],
-    CONTEXT_KEY_LAST5_HOME_AWAY: FINAL_QUOTA_WEIGHTS[PICCHETTO_KEY_LAST5_HOME_AWAY],
+    CONTEXT_KEY_TOTALS: CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_TOTALS],
+    CONTEXT_KEY_HOME_AWAY: CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_HOME_AWAY],
+    CONTEXT_KEY_LAST6_TOTALS: CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_LAST6_TOTALS],
+    CONTEXT_KEY_LAST5_HOME_AWAY: CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_LAST5_HOME_AWAY],
 }
 
 _FT_MARKETS = (SEL_OVER_1_5, SEL_OVER_2_5, SEL_UNDER_2_5, SEL_UNDER_3_5)
@@ -142,6 +142,43 @@ def _weighted_blend(values: list[tuple[float, float]]) -> float | None:
     return sum(v * w for v, w in usable) / total_w
 
 
+def _context_weight_details(
+    contexts: list[GoalContextSlice],
+) -> tuple[bool, dict[str, dict[str, float | bool]]]:
+    """Calcola original/effective weight per contesto goal market."""
+    details: dict[str, dict[str, float | bool]] = {}
+    usable_sum = 0.0
+    for ctx in contexts:
+        original = _CONTEXT_WEIGHT_MAP.get(ctx.name, 0.0)
+        if _context_usable(ctx):
+            usable_sum += original
+        details[ctx.name] = {"original_weight": original, "effective_weight": 0.0}
+
+    renormalized = usable_sum < 0.9999
+    for ctx in contexts:
+        d = details[ctx.name]
+        original = float(d["original_weight"])
+        if _context_usable(ctx) and usable_sum > 0:
+            d["effective_weight"] = original / usable_sum
+        d["weight_renormalized"] = renormalized
+    return renormalized, details
+
+
+def _weight_fields(
+    ctx: GoalContextSlice,
+    weight_details: dict[str, dict[str, float | bool]],
+) -> dict[str, Any]:
+    d = weight_details.get(ctx.name, {})
+    original = float(d.get("original_weight", 0.0))
+    effective = float(d.get("effective_weight", 0.0))
+    return {
+        "weight": original,
+        "original_weight": original,
+        "effective_weight": effective,
+        "weight_renormalized": bool(d.get("weight_renormalized", False)),
+    }
+
+
 def weighted_lambda(
     contexts: list[GoalContextSlice],
 ) -> tuple[float | None, list[dict[str, Any]], float, list[str]]:
@@ -149,9 +186,10 @@ def weighted_lambda(
     ctx_rows: list[dict[str, Any]] = []
     weighted_vals: list[tuple[float, float]] = []
     rel_vals: list[tuple[float, float]] = []
+    _, weight_details = _context_weight_details(contexts)
 
     for ctx in contexts:
-        weight = _CONTEXT_WEIGHT_MAP.get(ctx.name, 0.0)
+        wf = _weight_fields(ctx, weight_details)
         lam_d = lambda_for_context(ctx.home_totals, ctx.away_totals)
         rel = context_reliability(ctx.sample_home, ctx.sample_away, ctx.target_sample)
         usable = _context_usable(ctx)
@@ -159,13 +197,14 @@ def weighted_lambda(
         if not usable:
             warnings.append(f"low_sample:{ctx.name}")
         else:
-            weighted_vals.append((lam_d["lambda_total"], weight))
-            rel_vals.append((rel, weight))
+            eff = float(wf["effective_weight"])
+            weighted_vals.append((lam_d["lambda_total"], eff))
+            rel_vals.append((rel, eff))
         ctx_rows.append(
             {
                 "name": ctx.name,
                 "label": ctx.label,
-                "weight": weight,
+                **wf,
                 "sample_home": ctx.sample_home,
                 "sample_away": ctx.sample_away,
                 "lambda_home": round(lam_d["lambda_home"], 4),
@@ -281,15 +320,16 @@ def weighted_empirical_probability(
     warnings: list[str] = []
     rows: list[dict[str, Any]] = []
     vals: list[tuple[float, float]] = []
+    _, weight_details = _context_weight_details(contexts)
 
     for ctx in contexts:
-        weight = _CONTEXT_WEIGHT_MAP.get(ctx.name, 0.0)
+        wf = _weight_fields(ctx, weight_details)
         if not _context_usable(ctx):
             rows.append(
                 {
                     "name": ctx.name,
                     "label": ctx.label,
-                    "weight": weight,
+                    **wf,
                     "sample_home": ctx.sample_home,
                     "sample_away": ctx.sample_away,
                     "hit_rate_home": None,
@@ -314,12 +354,12 @@ def weighted_empirical_probability(
             is_ht=is_ht,
         )
         if emp is not None:
-            vals.append((emp, weight))
+            vals.append((emp, float(wf["effective_weight"])))
         rows.append(
             {
                 "name": ctx.name,
                 "label": ctx.label,
-                "weight": weight,
+                **wf,
                 "sample_home": ctx.sample_home,
                 "sample_away": ctx.sample_away,
                 "hit_rate_home": round(rate_home, 4) if rate_home is not None else None,
@@ -520,6 +560,7 @@ def calculate_goal_market_v2(
         "formula_version": FORMULA_V2,
         "final_odd": final_odd,
         "status": status,
+        "weights": dict(CECCHINO_GOAL_MARKET_WEIGHTS),
         "summary": summary,
         "contexts": merged_ctx,
         "technical": {
@@ -549,7 +590,10 @@ def _merge_context_rows(
             {
                 "name": lr["name"],
                 "label": lr["label"],
-                "weight": lr["weight"],
+                "weight": lr.get("weight"),
+                "original_weight": lr.get("original_weight", lr.get("weight")),
+                "effective_weight": lr.get("effective_weight", lr.get("weight")),
+                "weight_renormalized": lr.get("weight_renormalized", False),
                 "sample_home": lr["sample_home"],
                 "sample_away": lr["sample_away"],
                 "lambda_total": lr.get("lambda_total"),

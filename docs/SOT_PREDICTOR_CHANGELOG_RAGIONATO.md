@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 28 — Nuovi pesi goal market KPI confermato (2026-06-08)
+
+- Pannello KPI Betfair-only confermato nella struttura finale (colonne, layout, mapping quote invariati).
+- Aggiornati i pesi dei picchetti per i mercati goal Over/Under FT e PT.
+- Totali stagione ridotto al 10%; Casa/Fuori mantenuto al 20%; Ultime 6 totali al 35%; Ultime 5 casa/fuori aumentato al 35%.
+- I pesi 1/X/2 restano invariati (25/20/35/20) — costanti separate `CECCHINO_1X2_WEIGHTS` e `CECCHINO_GOAL_MARKET_WEIGHTS`.
+- `goal_market_poisson_empirical_v2` aggiornato: lambda, probabilità empirica e reliability con pesi 10/20/35/35.
+- Rinormalizzazione pesi quando un contesto è escluso; debug con `original_weight`, `effective_weight`, `weight_renormalized`.
+- Debug Picchetti e JSON KPI (`cecchino_goal_odds_used`) aggiornati con sezione `weights` per mercato goal.
+- Nessuna modifica ai modelli SOT v2.0/v2.1 né a `team_sot_predictions`.
+
 ## Cecchino — Fase 27 — Goal market Poisson + storico (2026-06-08)
 
 - Introdotto modello `goal_market_poisson_empirical_v2` per i 7 mercati Over/Under.

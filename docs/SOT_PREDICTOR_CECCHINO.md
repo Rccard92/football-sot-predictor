@@ -303,6 +303,22 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 28 — Nuovi pesi goal market KPI confermato (v0.22)
+
+Versione UI `cecchino_today_v0_22_goal_weights` — pesi picchetti goal separati da 1X2.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Pannello KPI | Struttura Betfair-only confermata (invariata); solo valori `quota_cecchino` OU aggiornati |
+| Pesi 1X2 | Invariati: totals 25%, home_away 20%, last6_totals 35%, last5_home_away 20% |
+| Pesi goal OU | totals 10%, home_away 20%, last6_totals 35%, last5_home_away 35% |
+| Modello | `goal_market_poisson_empirical_v2` — lambda FT/HT, empirico e reliability con nuovi pesi |
+| Rinormalizzazione | Se contesto escluso (campione basso), pesi effective sui contesti disponibili |
+| Debug | Badge pesi goal nel tab OU; contesti con `original_weight`, `effective_weight`, `weight_renormalized` |
+| JSON debug | `weights` per mercato goal + campi peso per contesto |
+
+**Invariato:** engine 1X2, SOT v2.0/v2.1, `team_sot_predictions`, Betfair-only, refresh quote, colonne KPI.
+
 ## Cecchino Today — Fase 27 — Goal market Poisson + storico (v0.21)
 
 Versione UI `cecchino_today_v0_21_goal_poisson_v2` — modello analitico OU distinto per soglia.

@@ -12,6 +12,7 @@ os.environ.setdefault(
 )
 
 from app.services.cecchino.cecchino_constants import (
+    CECCHINO_GOAL_MARKET_WEIGHTS,
     FINAL_QUOTA_WEIGHTS,
     PICCHETTO_KEY_HOME_AWAY,
     PICCHETTO_KEY_LAST5_HOME_AWAY,
@@ -295,7 +296,20 @@ def test_missing_formulas_empty_when_goal_markets_present():
             "formula_version": "goal_market_poisson_empirical_v2",
             "final_odd": 2.1,
             "status": "available",
+            "weights": dict(CECCHINO_GOAL_MARKET_WEIGHTS),
             "summary": {"final_odd": 2.1, "final_probability": 0.476},
+            "contexts": [
+                {
+                    "name": "last5_home_away",
+                    "label": "Ultime 5 casa/fuori",
+                    "original_weight": 0.35,
+                    "effective_weight": 0.35,
+                    "weight_renormalized": False,
+                    "sample_home": 5,
+                    "sample_away": 5,
+                    "status": "available",
+                },
+            ],
             "legacy_excel_parity": {"final_odd": 1.6, "enabled_for_kpi": False},
         },
         "OVER_2_5": {
@@ -314,8 +328,14 @@ def test_missing_formulas_empty_when_goal_markets_present():
     assert debug["missing_formulas"] == []
     assert "OVER_1_5" in debug["markets"]
     assert debug["markets"]["OVER_1_5"]["final_odd"] == 2.1
+    assert debug["markets"]["OVER_1_5"]["weights"] == CECCHINO_GOAL_MARKET_WEIGHTS
+    ctx0 = debug["markets"]["OVER_1_5"]["contexts"][0]
+    assert ctx0["original_weight"] == 0.35
+    assert ctx0["effective_weight"] == 0.35
+    assert ctx0["weight_renormalized"] is False
     assert debug["markets"]["OVER_1_5"]["legacy_excel_parity"]["final_odd"] == 1.6
     assert debug["markets"]["OVER_2_5"]["final_odd"] == 2.4
+    assert debug["weights"] == FINAL_QUOTA_WEIGHTS
 
 
 def test_summary_from_full_debug():

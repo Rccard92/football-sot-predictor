@@ -378,6 +378,8 @@ def build_goal_market_debug(market_result: dict[str, Any]) -> dict[str, Any]:
         "status": market_result.get("status"),
         "warnings": list(market_result.get("warnings") or []),
     }
+    if market_result.get("weights"):
+        out["weights"] = market_result["weights"]
     if market_result.get("summary"):
         out["summary"] = market_result["summary"]
     if market_result.get("contexts"):
