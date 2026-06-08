@@ -310,6 +310,15 @@ export type CecchinoKpiV2Row = {
   cecchino_source?: string | null
 }
 
+export type CecchinoOddsMeta = {
+  odds_source?: string | null
+  odds_fetched_at?: string | null
+  odds_cached_at?: string | null
+  last_betfair_refresh_at?: string | null
+  is_cached?: boolean | null
+  odds_updated_at?: string | null
+}
+
 export type CecchinoKpiV2Panel = {
   version: string
   columns?: string[]
@@ -319,8 +328,45 @@ export type CecchinoKpiV2Panel = {
     provider_source: string
   }
   bookmaker_status?: string
+  odds_meta?: CecchinoOddsMeta
   rows: CecchinoKpiV2Row[]
   warnings?: string[]
+}
+
+export type CecchinoBetfairRefreshResponse = {
+  status: string
+  today_fixture_id?: number
+  provider_fixture_id?: number
+  bookmaker?: CecchinoOddsMeta & {
+    name?: string
+    provider_bookmaker_id?: number
+    provider_source?: string
+  }
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  changed?: boolean
+  changed_markets?: string[]
+  kpi_panel?: CecchinoKpiV2Panel
+  api_calls_used?: number
+  manual_comparison_note?: { message?: string }
+  warnings?: string[]
+  message?: string
+  code?: string
+}
+
+export type CecchinoBetfairMarketsJsonResponse = {
+  status: string
+  fixture?: Record<string, unknown>
+  bookmaker?: CecchinoOddsMeta & { name?: string; provider_bookmaker_id?: number }
+  odds_fetched_at?: string | null
+  last_betfair_refresh_at?: string | null
+  is_cached?: boolean | null
+  api_calls_used?: number
+  markets?: Array<Record<string, unknown>>
+  raw_payload?: Record<string, unknown>
+  manual_comparison_note?: { message?: string }
+  warnings?: string[]
+  message?: string
 }
 
 export type CecchinoBookmakerOddsDetailRow = {
@@ -554,6 +600,61 @@ export async function getCecchinoKpiDebugJson(
 ): Promise<CecchinoKpiDebugJsonResponse> {
   return requestJson<CecchinoKpiDebugJsonResponse>(
     `/api/cecchino/today/${todayFixtureId}/kpi-debug-json`,
+  )
+}
+
+function getCecchinoApiBase(): string {
+  const raw = import.meta.env.VITE_API_BASE_URL
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    throw new Error('VITE_API_BASE_URL non configurata.')
+  }
+  return String(raw).replace(/\/$/, '')
+}
+
+async function cecchinoPostJson<T>(path: string, body: unknown = {}): Promise<T> {
+  const base = getCecchinoApiBase()
+  const p = path.startsWith('/') ? path : `/${path}`
+  const res = await fetch(`${base}${p}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+  const ct = res.headers.get('content-type') ?? ''
+  let parsed: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      parsed = await res.json()
+    } catch {
+      parsed = null
+    }
+  }
+  if (!res.ok) {
+    const msg =
+      parsed && typeof parsed === 'object' && parsed !== null && 'message' in parsed
+        ? String((parsed as { message?: string }).message ?? res.statusText)
+        : res.statusText
+    throw new Error(msg)
+  }
+  return parsed as T
+}
+
+export async function refreshBetfairOdds(
+  todayFixtureId: number,
+  opts: { force?: boolean; rebuild_kpi?: boolean } = {},
+): Promise<CecchinoBetfairRefreshResponse> {
+  return cecchinoPostJson<CecchinoBetfairRefreshResponse>(
+    `/api/cecchino/today/${todayFixtureId}/refresh-betfair-odds`,
+    { force: opts.force ?? true, rebuild_kpi: opts.rebuild_kpi ?? true },
+  )
+}
+
+export async function getBetfairMarketsJson(
+  todayFixtureId: number,
+  force = false,
+): Promise<CecchinoBetfairMarketsJsonResponse> {
+  const q = force ? '?force=true' : '?force=false'
+  return requestJson<CecchinoBetfairMarketsJsonResponse>(
+    `/api/cecchino/today/${todayFixtureId}/betfair-markets-json${q}`,
   )
 }
 

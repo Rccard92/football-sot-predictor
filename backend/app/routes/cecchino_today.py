@@ -12,10 +12,15 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.cecchino_today import (
     CecchinoTodayCleanupBody,
+    CecchinoTodayRefreshBetfairBody,
     CecchinoTodayRevalidateDayBody,
     CecchinoTodayScanBody,
     CecchinoTodayScanDayBody,
     CecchinoTodayUpdateResultsBody,
+)
+from app.services.cecchino.cecchino_today_betfair_refresh import (
+    get_betfair_markets_json_by_id,
+    refresh_betfair_odds_by_id,
 )
 from app.services.cecchino.cecchino_today_scan_job_service import (
     get_latest_scan_job,
@@ -69,6 +74,38 @@ def cecchino_today_list(
         timezone=timezone,
     )
     return jsonable_encoder(payload)
+
+
+@router.post("/{today_fixture_id}/refresh-betfair-odds")
+def cecchino_today_refresh_betfair_odds(
+    today_fixture_id: int,
+    body: CecchinoTodayRefreshBetfairBody | None = None,
+    db: Session = Depends(get_db),
+):
+    req = body or CecchinoTodayRefreshBetfairBody()
+    payload = refresh_betfair_odds_by_id(
+        db,
+        today_fixture_id,
+        force=req.force,
+        rebuild_kpi=req.rebuild_kpi,
+    )
+    if payload is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
+    status_code = 200 if payload.get("status") == "ok" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+
+@router.get("/{today_fixture_id}/betfair-markets-json")
+def cecchino_today_betfair_markets_json(
+    today_fixture_id: int,
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    payload = get_betfair_markets_json_by_id(db, today_fixture_id, force=force)
+    if payload is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
+    status_code = 200 if payload.get("status") == "ok" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 
 
 @router.get("/{today_fixture_id}/kpi-debug-json")

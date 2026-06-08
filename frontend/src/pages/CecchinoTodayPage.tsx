@@ -27,6 +27,8 @@ import {
   startCecchinoTodayScanDay,
   todayIsoRome,
   updateCecchinoTodayResults,
+  type CecchinoKpiV2Panel,
+  type CecchinoOddsMeta,
   type CecchinoTodayDay,
   type CecchinoTodayDetailResponse,
   type CecchinoTodayListCountry,
@@ -75,6 +77,21 @@ export function CecchinoTodayPage() {
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+
+  const handleKpiPanelUpdate = useCallback((panel: CecchinoKpiV2Panel, oddsMeta?: CecchinoOddsMeta) => {
+    setDetail((prev) => {
+      if (!prev || prev.status !== 'ok') return prev
+      const merged: CecchinoKpiV2Panel = {
+        ...panel,
+        odds_meta: oddsMeta ?? panel.odds_meta,
+      }
+      return {
+        ...prev,
+        kpi_panel_v2: merged,
+        kpi_panel: merged,
+      }
+    })
+  }, [])
   const [excludedOpen, setExcludedOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [countryFilter, setCountryFilter] = useState('')
@@ -593,6 +610,7 @@ export function CecchinoTodayPage() {
             <CecchinoTodayDetailPanel
               detail={detail ?? { status: 'error', message: 'Caricamento…' }}
               loading={detailLoading}
+              onKpiPanelUpdate={handleKpiPanelUpdate}
             />
           )}
         </section>

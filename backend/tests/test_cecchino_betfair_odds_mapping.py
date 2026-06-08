@@ -15,6 +15,7 @@ from app.services.cecchino.cecchino_betfair_odds_mapping import (
 from app.services.cecchino.cecchino_betfair_odds_payload import build_betfair_payload_from_raw
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER
 from app.services.cecchino.cecchino_kpi_debug_json import build_kpi_debug_json, get_kpi_debug_json
+from app.services.cecchino.cecchino_today_odds_meta import attach_scan_odds_meta
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     SEL_AWAY,
@@ -125,13 +126,16 @@ def test_kpi_debug_json_betfair_only():
         away_team_name="Milan",
         kickoff=None,
         eligibility_status="eligible",
-        odds_snapshot_json={
-            "raw_by_bookmaker_id": {
-                str(bid): _payload(
-                    _bet("Match Winner", 1, [("Inter", "2.0"), ("Draw", "3.2"), ("Milan", "4.0")]),
-                ),
+        odds_snapshot_json=attach_scan_odds_meta(
+            {
+                "raw_by_bookmaker_id": {
+                    str(bid): _payload(
+                        _bet("Match Winner", 1, [("Inter", "2.0"), ("Draw", "3.2"), ("Milan", "4.0")]),
+                    ),
+                },
             },
-        },
+            from_cache=True,
+        ),
         cecchino_output_json={
             "final": {
                 "status": "available",
@@ -150,6 +154,8 @@ def test_kpi_debug_json_betfair_only():
     out = build_kpi_debug_json(row, db)
     assert out["bookmaker"]["provider_bookmaker_id"] == 3
     assert out["bookmaker"]["name"] == "Betfair"
+    assert out["bookmaker"]["odds_fetched_at"]
+    assert out["bookmaker"]["is_cached"] is True
     assert "Bet365" not in str(out)
     assert "Pinnacle" not in str(out)
     home_used = out["betfair_odds_used"][SEL_HOME]

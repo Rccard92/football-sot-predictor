@@ -70,6 +70,11 @@ class CecchinoTodayRevalidateDayBody(BaseModel):
     date: DateType
 
 
+class CecchinoTodayRefreshBetfairBody(BaseModel):
+    force: bool = True
+    rebuild_kpi: bool = True
+
+
 class CecchinoTodayDay(BaseModel):
     date: str
     label: str

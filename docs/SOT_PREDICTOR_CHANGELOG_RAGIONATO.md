@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 23 — Refresh quote Betfair singola fixture (2026-06-08)
+
+- Aggiunto metadata timestamp quote in `odds_snapshot_json.odds_meta` (source, fetched_at, is_cached, last_betfair_refresh_at).
+- Nuovo refresh on-demand per singola fixture: `POST /api/cecchino/today/{id}/refresh-betfair-odds` con confronto before/after 1X2 e rebuild KPI.
+- Fetch live usa solo Betfair (bookmaker_id=3), bypass cache snapshot, tracking API usage con job_id dedicato.
+- Nuovo export diagnostico `GET /api/cecchino/today/{id}/betfair-markets-json` con tutti i mercati Betfair del payload raw.
+- UI Pannello KPI: pulsante Aggiorna quote Betfair, download/copia JSON mercati, box timestamp; aggiornamento KPI senza reload pagina.
+- Nessuna modifica ai modelli SOT v2.0/v2.1 né alla pipeline scan giornata intera.
+
 ## Cecchino — Fase 22 — Cleanup dettaglio analisi e debug JSON KPI Betfair (2026-06-08)
 
 - Rimosse dal dettaglio analisi le card Quote finali Cecchino e Dettaglio quote Betfair; il Pannello KPI resta l’unico riferimento per quote e metriche.

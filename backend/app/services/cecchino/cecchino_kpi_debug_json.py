@@ -15,6 +15,7 @@ from app.services.cecchino.cecchino_betfair_odds_payload import (
     build_betfair_payload_from_snapshot,
 )
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
+from app.services.cecchino.cecchino_today_odds_meta import bookmaker_meta_block, read_odds_meta
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -163,11 +164,12 @@ def build_kpi_debug_json(row: CecchinoTodayFixture, db: Session) -> dict[str, An
             "away_team": row.away_team_name,
             "kickoff": row.kickoff.isoformat() if row.kickoff else None,
         },
-        "bookmaker": {
-            "provider_source": PROVIDER_API_FOOTBALL,
-            "provider_bookmaker_id": _BETFAIR_ID,
-            "name": CECCHINO_BOOKMAKER["name"],
-        },
+        "bookmaker": bookmaker_meta_block(
+            read_odds_meta(row.odds_snapshot_json),
+            provider_bookmaker_id=_BETFAIR_ID,
+            name=CECCHINO_BOOKMAKER["name"],
+            provider_source=PROVIDER_API_FOOTBALL,
+        ),
         "kpi_panel": kpi_panel,
         "betfair_odds_used": betfair_odds_used,
         "cecchino_odds_used": _cecchino_odds_used(output if isinstance(output, dict) else {}),

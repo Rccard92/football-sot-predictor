@@ -32,6 +32,24 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 23 — Refresh quote Betfair singola fixture
+
+```mermaid
+flowchart TD
+  btn[Aggiorna quote Betfair UI] --> post[POST refresh-betfair-odds]
+  post --> budget[check_api_budget_before_scan]
+  budget --> api["GET odds?fixture=X&bookmaker=3"]
+  api --> snapshot[Aggiorna odds_snapshot_json + odds_meta]
+  snapshot --> kpi[build_cecchino_kpi_panel_v2_betfair]
+  kpi --> save[Salva kpi_panel_json]
+  save --> ui[Aggiorna Pannello KPI + timestamp]
+```
+
+- **odds_meta:** impostato allo scan (`is_cached=true`) e al refresh live (`odds_source=api_live_refresh`).
+- **Refresh:** `_fetch_betfair_only` — una sola chiamata API; opzionale `sync_today_bookmaker_odds` se `local_fixture_id`.
+- **Export:** `betfair-markets-json` con `force=false` da snapshot o `force=true` con fetch live.
+- **Confronto manuale:** `manual_comparison_note` nella risposta refresh/export per audit vs app Betfair.
+
 ## Fase 22 — Cleanup dettaglio e debug JSON KPI
 
 - **UI dettaglio:** solo Header, KPI, Segnali, Note; niente card quote finali né dettaglio Betfair separato.

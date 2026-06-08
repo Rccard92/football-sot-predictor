@@ -103,6 +103,7 @@ from app.services.cecchino.cecchino_today_odds_fetch import (
     fetch_fixture_odds_for_cecchino_bookmakers,
     write_negative_odds_cache,
 )
+from app.services.cecchino.cecchino_today_odds_meta import attach_scan_odds_meta, read_odds_meta
 from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 
 logger = logging.getLogger(__name__)
@@ -705,6 +706,11 @@ def run_scan(
                     continue
 
                 bm_ok, odds_snapshot, bm_reason, bm_blocking = verify_complete_1x2_odds(odds_by_book)
+                if bm_ok:
+                    odds_snapshot = attach_scan_odds_meta(
+                        odds_snapshot,
+                        from_cache=(odds_strategy == "cached"),
+                    )
                 if not bm_ok:
                     status = _BOOK_REASON_TO_STATUS.get(bm_reason or "", ELIGIBILITY_EXCLUDED_MISSING_1X2)
                     write_negative_odds_cache(
@@ -1410,10 +1416,14 @@ def _resolve_kpi_panel_for_detail(row: CecchinoTodayFixture, db: Session) -> dic
     if betfair_payload.get("status") == "not_available" and kpi:
         return normalize_kpi_panel_rows(kpi)
 
-    return build_cecchino_kpi_panel_v2_betfair(
+    panel = build_cecchino_kpi_panel_v2_betfair(
         final_odds=final_odds,
         betfair_payload=betfair_payload,
     )
+    meta = read_odds_meta(row.odds_snapshot_json)
+    if meta:
+        panel["odds_meta"] = meta
+    return panel
 
 
 def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, Any] | None:
