@@ -62,6 +62,10 @@ from app.services.cecchino.cecchino_constants import (
     KEY_HOME_TOTAL,
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
 )
+from app.services.cecchino.cecchino_picchetti_debug import (
+    build_cecchino_picchetti_debug,
+    build_picchetti_debug_summary,
+)
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
     KPI_V2_VERSION,
     build_cecchino_kpi_panel_v2_betfair,
@@ -1440,6 +1444,13 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
 
     output = row.cecchino_output_json or {}
     kpi_panel = _resolve_kpi_panel_for_detail(row, db)
+    picchetti_debug_summary = None
+    if isinstance(output, dict) and output:
+        full_debug = build_cecchino_picchetti_debug(
+            cecchino_output=output,
+            kpi_panel=kpi_panel,
+        )
+        picchetti_debug_summary = build_picchetti_debug_summary(full_debug)
     today_id = int(row.id)
     provider_fid = int(row.provider_fixture_id)
     local_fid = int(row.local_fixture_id) if row.local_fixture_id else None
@@ -1470,6 +1481,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "signals_matrix": output.get("signals_matrix"),
         "kpi_panel": kpi_panel,
         "kpi_panel_v2": kpi_panel,
+        "picchetti_debug_summary": picchetti_debug_summary,
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (
             f"/cecchino?competition_id={row.competition_id}&fixture_id={row.local_fixture_id}"

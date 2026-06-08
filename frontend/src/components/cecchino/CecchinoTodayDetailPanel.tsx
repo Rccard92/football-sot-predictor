@@ -4,6 +4,7 @@ import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
+import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 
 type Props = {
@@ -62,6 +63,13 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
         />
       )}
+
+      <CecchinoTodayPicchettiDebugPanel
+        todayFixtureId={detail.today_fixture_id ?? detail.id}
+        providerFixtureId={detail.provider_fixture_id}
+        summary={detail.picchetti_debug_summary}
+        kpiPanel={detail.kpi_panel_v2 ?? detail.kpi_panel}
+      />
 
       {signals && <CecchinoSignalsCard matrix={signals} />}
 

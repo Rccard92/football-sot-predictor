@@ -303,6 +303,22 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 25 — Debug Picchetti Quota Cecchino (v0.19)
+
+Versione UI `cecchino_today_v0_19_picchetti_debug` — breakdown formule Quota Cecchino nel dettaglio.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Debug picchetti | Sezione accordion sotto Pannello KPI con tab 1/X/2, 1X/X2/12, formule mancanti |
+| Pesi | totals 25%, home_away 20%, last6_totals 35%, last5_home_away 20% |
+| Breakdown 1/X/2 | Per picchetto: campione, W-D-L, probabilità, quota, peso, contributo ponderato |
+| DC | 1X/X2/12 derivate da prob implicite quote finali 1/X/2 |
+| Over/Under | `formula_status: missing_formula` — nessuna Quota Cecchino inventata |
+| Coerenza KPI | Warning `kpi_debug_mismatch` se debug ≠ KPI (tolleranza 0.01) |
+| API | `GET /cecchino/today/{id}/picchetti-debug` + `picchetti_debug_summary` nel detail |
+
+**Invariato:** engine Cecchino, SOT v2.0/v2.1, gate Betfair, refresh quote.
+
 ## Cecchino Today — Fase 24 — Pulizia toolbar KPI Betfair (v0.18)
 
 Versione UI `cecchino_today_v0_18_kpi_cleanup` — pannello KPI snello, refresh in toolbar.

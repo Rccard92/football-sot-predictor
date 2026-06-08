@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 25 — Debug Picchetti Quota Cecchino (2026-06-08)
+
+- Aggiunta sezione Debug Picchetti nel dettaglio analisi (accordion chiuso di default).
+- Mostrati pesi totals/home_away/last6_totals/last5_home_away.
+- Mostrato breakdown quote Cecchino per 1/X/2 con campioni, record W/D/L, probabilità, quote picchetto e contributi ponderati.
+- Aggiunta derivazione 1X/X2/12 da probabilità implicite 1/X/2.
+- Indicate formule ancora mancanti per Over/Under (nessuna formula inventata).
+- Aggiunto controllo coerenza tra debug e colonna Quota Cecchino del KPI.
+- Endpoint `GET /api/cecchino/today/{id}/picchetti-debug` e summary leggero nel detail.
+- Nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 24 — Pulizia toolbar KPI Betfair (2026-06-08)
 
 - Rimossi pulsanti tecnici dal Pannello KPI.

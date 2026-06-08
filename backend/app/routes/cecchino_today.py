@@ -30,6 +30,7 @@ from app.services.cecchino.cecchino_today_scan_job_service import (
     start_scan_job,
 )
 from app.services.cecchino.cecchino_kpi_debug_json import get_kpi_debug_json
+from app.services.cecchino.cecchino_picchetti_debug import get_picchetti_debug_json
 from app.services.cecchino.cecchino_today_service import (
     cleanup_cecchino_today_snapshots,
     debug_search,
@@ -102,6 +103,18 @@ def cecchino_today_betfair_markets_json(
     db: Session = Depends(get_db),
 ):
     payload = get_betfair_markets_json_by_id(db, today_fixture_id, force=force)
+    if payload is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
+    status_code = 200 if payload.get("status") == "ok" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+
+@router.get("/{today_fixture_id}/picchetti-debug")
+def cecchino_today_picchetti_debug(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    payload = get_picchetti_debug_json(db, today_fixture_id)
     if payload is None:
         return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
     status_code = 200 if payload.get("status") == "ok" else 422

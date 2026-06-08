@@ -32,6 +32,23 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 25 — Debug Picchetti Quota Cecchino
+
+```mermaid
+flowchart LR
+  output[cecchino_output_json] --> debug[build_cecchino_picchetti_debug]
+  kpi[kpi_panel_json] --> debug
+  debug --> api[GET picchetti-debug]
+  debug --> summary[picchetti_debug_summary in detail]
+  api --> ui[Accordion Debug Picchetti UI]
+```
+
+- **Input:** `picchetti` + `final` già in `cecchino_output_json` (nessun ricalcolo da SOT).
+- **1/X/2:** contributi `odd * weight` per totals/home_away/last6_totals/last5_home_away.
+- **DC:** `1 / (prob_i + prob_j)` da quote finali Cecchino.
+- **OU:** solo `missing_formula` in debug; KPI mantiene `quota_cecchino: null`.
+- **Coerenza:** confronto debug vs KPI con tolleranza 0.01.
+
 ## Fase 23 — Refresh quote Betfair singola fixture
 
 ```mermaid

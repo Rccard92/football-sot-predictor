@@ -369,6 +369,50 @@ export type CecchinoBetfairMarketsJsonResponse = {
   message?: string
 }
 
+export type CecchinoPicchettiDebugSummary = {
+  version?: string
+  formula_status?: string
+  weights?: Record<string, number>
+  missing_formulas_count?: number
+}
+
+export type CecchinoPicchettoContribution = {
+  name: string
+  weight: number
+  sample_home?: number | null
+  sample_away?: number | null
+  record_home?: string
+  record_away?: string
+  probability?: number | null
+  probability_pct?: number | null
+  odd?: number | null
+  weighted_contribution?: number | null
+  status?: string
+}
+
+export type CecchinoPicchettiMarketDebug = {
+  market_key: string
+  segno: string
+  picchetti?: CecchinoPicchettoContribution[]
+  final_odd?: number | null
+  formula?: string
+  inputs?: Record<string, number | null>
+  formula_status?: string
+}
+
+export type CecchinoPicchettiDebugResponse = {
+  status: string
+  version?: string
+  formula_status?: string
+  weights?: Record<string, number>
+  markets?: Record<string, CecchinoPicchettiMarketDebug>
+  missing_formulas?: Array<{ market_key: string; label: string; formula_status: string }>
+  warnings?: string[]
+  fixture?: Record<string, unknown>
+  final?: Record<string, unknown>
+  message?: string
+}
+
 export type CecchinoBookmakerOddsDetailRow = {
   market_key: string
   label: string
@@ -410,6 +454,7 @@ export type CecchinoTodayDetailResponse = {
   signals_matrix?: Record<string, unknown>
   kpi_panel?: CecchinoKpiV2Panel
   kpi_panel_v2?: CecchinoKpiV2Panel
+  picchetti_debug_summary?: CecchinoPicchettiDebugSummary
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]
@@ -600,6 +645,14 @@ export async function getCecchinoKpiDebugJson(
 ): Promise<CecchinoKpiDebugJsonResponse> {
   return requestJson<CecchinoKpiDebugJsonResponse>(
     `/api/cecchino/today/${todayFixtureId}/kpi-debug-json`,
+  )
+}
+
+export async function getPicchettiDebugJson(
+  todayFixtureId: number,
+): Promise<CecchinoPicchettiDebugResponse> {
+  return requestJson<CecchinoPicchettiDebugResponse>(
+    `/api/cecchino/today/${todayFixtureId}/picchetti-debug`,
   )
 }
 
