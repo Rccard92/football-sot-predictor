@@ -576,6 +576,7 @@ export type CecchinoBalanceAnalysisTechnical = {
   dominance_direction?: string
   x_dominance_note?: string
   lateral_dominance_note?: string
+  legend_version?: string
 }
 
 export type CecchinoBalanceAnalysis = {

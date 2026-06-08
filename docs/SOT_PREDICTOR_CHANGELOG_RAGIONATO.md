@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 31 — Legenda operativa equilibrio (2026-06-08)
+
+- Aggiunta legenda operativa aggiornata (18 righe) nella sezione Equilibrio vs Squilibrio.
+- Componente `CecchinoBalanceLegend` con accordion separato sotto Dettaglio tecnico.
+- Tabella responsive: desktop overflow-x-auto, mobile card stack.
+- Allineate 3 label operative backend alla legenda (DRAW dom bassa/media, laterale dom≤5).
+- Campo `technical.legend_version`: `balance_operational_legend_v2_contextual_dominance`.
+- Rimossa tabella regole ridotta dal dettaglio tecnico (sostituita dalla legenda completa).
+- Nessuna modifica a formule F36/Dominanza/Gap né a Betfair-only / SOT v2.0/v2.1.
+
 ## Cecchino — Fase 30 — Dominanza contestualizzata (2026-06-08)
 
 - Corretta interpretazione Dominanza nella sezione Equilibrio vs Squilibrio.

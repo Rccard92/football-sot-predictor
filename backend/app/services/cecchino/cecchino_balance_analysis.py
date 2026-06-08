@@ -324,14 +324,11 @@ def _operational_reading(
                 "very_strong_draw_balance",
                 "positive",
             )
-        if f36_abs < 0.75 and quota_x <= 3.50 and dominance_pp > 5:
+        if f36_abs < 0.75 and quota_x <= 3.50 and 5 < dominance_pp <= 10:
             return _result(
                 2,
-                "X forte",
-                (
-                    "La partita è equilibrata tra 1 e 2 e la X è lo scenario "
-                    "dominante del modello."
-                ),
+                "X molto interessante",
+                "La X rafforza l'equilibrio tra 1 e 2.",
                 "strong_draw_balance",
                 "positive",
             )
@@ -371,9 +368,9 @@ def _operational_reading(
         if f36_abs < 0.75 and dominance_pp <= 5 and quota_x <= 3.50:
             return _result(
                 6,
-                "X molto forte",
-                "Tipica partita da X / Under",
-                "very_strong_draw_balance",
+                "X forte",
+                "Equilibrio reale tra 1 e 2, X/Under interessante.",
+                "strong_draw_balance",
                 "positive",
             )
 
@@ -397,9 +394,9 @@ def _operational_reading(
     if f36_abs < 0.75 and dominance_pp <= 5 and quota_x <= 3.50:
         return _result(
             8,
-            "X molto forte",
-            "Tipica partita da X / Under",
-            "very_strong_draw_under",
+            "X possibile",
+            "Equilibrio tra 1 e 2 ancora pulito.",
+            "possible_draw_light_trend",
             "positive",
         )
     if f36_abs < 0.75 and dominance_pp <= 5 and 3.50 < quota_x <= 4.20:
@@ -679,6 +676,7 @@ def build_cecchino_balance_analysis(
             "lateral_dominance_note": (
                 "Se domina 1 o 2, la Dominanza indebolisce equilibrio o conferma squilibrio."
             ),
+            "legend_version": "balance_operational_legend_v2_contextual_dominance",
         },
         "warnings": [],
     }

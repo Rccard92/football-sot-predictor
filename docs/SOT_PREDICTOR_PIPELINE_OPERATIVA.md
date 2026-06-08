@@ -32,6 +32,20 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 31 — Legenda operativa equilibrio
+
+```mermaid
+flowchart LR
+  panel[Equilibrio vs Squilibrio panel] --> detail[Dettaglio tecnico accordion]
+  detail --> legend[CecchinoBalanceLegend accordion]
+  legend --> rows[18 righe F36 dom X quota]
+  builder[build_cecchino_balance_analysis] --> legendVersion[technical.legend_version]
+```
+
+- **UI:** legenda statica frontend (`balanceOperationalLegend.ts`); non duplicata in API.
+- **Label backend:** solo allineamento testi operativi; logica regole invariata.
+- **legend_version:** `balance_operational_legend_v2_contextual_dominance`.
+
 ## Fase 30 — Dominanza contestualizzata
 
 ```mermaid

@@ -1,4 +1,4 @@
-"""Test analisi Equilibrio vs Squilibrio — Cecchino Fase 29/30."""
+"""Test analisi Equilibrio vs Squilibrio — Cecchino Fase 29/30/31."""
 
 from __future__ import annotations
 
@@ -203,3 +203,58 @@ def test_build_from_final_decimal_probs():
 def test_build_from_final_unavailable():
     out = build_balance_analysis_from_final({"status": "insufficient_data"})
     assert out["status"] == "insufficient_data"
+
+
+def test_draw_dom_low_label_x_forte():
+    out = _build(
+        quota_cecchino_1=2.50,
+        quota_cecchino_2=2.90,
+        quota_cecchino_x=3.20,
+        prob_cecchino_1=34.0,
+        prob_cecchino_x=35.0,
+        prob_cecchino_2=31.0,
+    )
+    assert out["dominance_context"]["best_side"] == "DRAW"
+    assert out["dominance"]["value"] == pytest.approx(1.0, abs=0.01)
+    assert out["operational"]["label"] == "X forte"
+    assert out["technical"]["rule_id"] == 6
+    assert out["summary"]["is_false_balance"] is False
+
+
+def test_draw_dom_mid_label_x_molto_interessante():
+    out = _build(
+        quota_cecchino_1=2.50,
+        quota_cecchino_2=2.90,
+        quota_cecchino_x=3.20,
+        prob_cecchino_1=33.0,
+        prob_cecchino_x=40.0,
+        prob_cecchino_2=27.0,
+    )
+    assert out["dominance"]["value"] == pytest.approx(7.0, abs=0.01)
+    assert out["operational"]["label"] == "X molto interessante"
+    assert out["technical"]["rule_id"] == 2
+    assert out["summary"]["is_false_balance"] is False
+
+
+def test_lateral_dom_low_label_x_possibile():
+    out = _build(
+        quota_cecchino_1=2.50,
+        quota_cecchino_2=2.90,
+        quota_cecchino_x=3.20,
+        prob_cecchino_1=36.0,
+        prob_cecchino_x=30.0,
+        prob_cecchino_2=34.0,
+    )
+    assert out["dominance_context"]["best_side"] == "HOME"
+    assert out["dominance"]["value"] == pytest.approx(2.0, abs=0.01)
+    assert out["operational"]["label"] == "X possibile"
+    assert out["technical"]["rule_id"] == 8
+    assert out["summary"]["is_false_balance"] is False
+
+
+def test_technical_legend_version_present():
+    out = _build()
+    assert (
+        out["technical"]["legend_version"]
+        == "balance_operational_legend_v2_contextual_dominance"
+    )

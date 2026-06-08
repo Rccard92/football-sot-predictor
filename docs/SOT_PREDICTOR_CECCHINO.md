@@ -303,6 +303,21 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 31 — Legenda operativa equilibrio (v0.25)
+
+Versione UI `cecchino_today_v0_25_balance_legend` — legenda operativa aggiornata sotto Dettaglio tecnico.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Legenda UI | Accordion «Legenda lettura operativa» sotto Dettaglio tecnico equilibrio |
+| Tabella | 18 righe: F36, Segno dominante, Dominanza, Quota X, Lettura operativa |
+| Responsive | Tabella desktop + card stack mobile |
+| Note | 2 note esplicative su Dominanza contestualizzata e F36 |
+| Backend label | Allineamento: DRAW dom 0–5 → «X forte»; 6–10 → «X molto interessante»; laterale dom≤5 → «X possibile» |
+| technical.legend_version | `balance_operational_legend_v2_contextual_dominance` |
+
+**Invariato:** formule F36/Dominanza/Gap, logica decisionale, KPI Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino Today — Fase 30 — Dominanza contestualizzata (v0.24)
 
 Versione UI `cecchino_today_v0_24_dominance_context` — correzione lettura Dominanza.

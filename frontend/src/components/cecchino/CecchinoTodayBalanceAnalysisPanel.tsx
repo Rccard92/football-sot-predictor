@@ -1,4 +1,5 @@
 import type { CecchinoBalanceAnalysis } from '../../lib/cecchinoTodayApi'
+import { CecchinoBalanceLegend } from './CecchinoBalanceLegend'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type Props = {
@@ -56,17 +57,6 @@ function sideLabel(side?: string, label?: string): string {
   if (side === 'AWAY') return '2'
   return side ?? '—'
 }
-
-const OPERATIONAL_RULES_V2: Array<{ id: number; condition: string; label: string }> = [
-  { id: 1, condition: 'DRAW, F36<0.75, X≤3.50, dom>10', label: 'X molto forte' },
-  { id: 2, condition: 'DRAW, F36<0.75, X≤3.50, dom>5', label: 'X forte' },
-  { id: 3, condition: 'DRAW, 0.75≤F36≤1.50, X≤3.50', label: 'X interessante' },
-  { id: 4, condition: 'DRAW, 3.50<X≤4.20', label: 'X possibile' },
-  { id: 5, condition: 'DRAW, X>4.20', label: 'X prima ma poco affidabile' },
-  { id: 7, condition: 'HOME/AWAY, F36<0.75, dom>10', label: 'Falso equilibrio' },
-  { id: 8, condition: 'F36<0.75, dom≤5, X≤3.50', label: 'X molto forte (legacy)' },
-  { id: 20, condition: 'F36>1.50, dom>10, laterale', label: 'Squilibrio confermato' },
-]
 
 export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
   if (!balanceAnalysis || balanceAnalysis.status !== 'available') {
@@ -262,32 +252,14 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
             <p>{technical?.x_dominance_note}</p>
             <p>{technical?.lateral_dominance_note}</p>
             <p>Regola applicata: #{ruleId ?? '—'}</p>
-          </div>
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-xs">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-2 py-1 text-left font-medium">#</th>
-                  <th className="px-2 py-1 text-left font-medium">Condizione</th>
-                  <th className="px-2 py-1 text-left font-medium">Esito</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {OPERATIONAL_RULES_V2.map((r) => (
-                  <tr
-                    key={r.id}
-                    className={r.id === ruleId ? 'bg-sky-50 font-medium' : undefined}
-                  >
-                    <td className="px-2 py-1 tabular-nums">{r.id}</td>
-                    <td className="px-2 py-1">{r.condition}</td>
-                    <td className="px-2 py-1">{r.label}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {technical?.legend_version && (
+              <p>Legenda: {technical.legend_version}</p>
+            )}
           </div>
         </div>
       </details>
+
+      <CecchinoBalanceLegend />
     </section>
   )
 }
