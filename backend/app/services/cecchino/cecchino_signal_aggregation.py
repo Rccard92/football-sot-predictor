@@ -7,7 +7,7 @@ import io
 from datetime import date
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_signal_activation import (
@@ -140,6 +140,17 @@ def _base_query(
         query = query.where(CecchinoSignalActivation.country_name == country_name)
     if evaluation_status:
         query = query.where(CecchinoSignalActivation.evaluation_status == evaluation_status)
+    query = query.where(
+        not_(
+            and_(
+                CecchinoSignalActivation.source_column == "SCALA",
+                or_(
+                    CecchinoSignalActivation.signal_group == "HOME",
+                    CecchinoSignalActivation.signal_group == "AWAY",
+                ),
+            ),
+        ),
+    )
     return query
 
 
@@ -181,6 +192,27 @@ def build_signals_summary(
             ),
         ).all(),
     )
+    legacy_count_query = (
+        select(func.count())
+        .select_from(CecchinoSignalActivation)
+        .where(
+            CecchinoSignalActivation.scan_date >= date_from,
+            CecchinoSignalActivation.scan_date <= date_to,
+            CecchinoSignalActivation.signal_value.is_(True),
+            CecchinoSignalActivation.source_column == "SCALA",
+            or_(
+                CecchinoSignalActivation.signal_group == "HOME",
+                CecchinoSignalActivation.signal_group == "AWAY",
+            ),
+        )
+    )
+    if only_current:
+        legacy_count_query = legacy_count_query.where(CecchinoSignalActivation.is_current.is_(True))
+    legacy_wrong_in_range = int(db.scalar(legacy_count_query) or 0)
+    summary_warnings: list[str] = []
+    if legacy_wrong_in_range:
+        summary_warnings.append("legacy_wrong_scala_mapping_detected")
+
     overall = _enrich_overall_metrics(
         db,
         _bucket_counts(rows),
@@ -229,6 +261,7 @@ def build_signals_summary(
         "by_signal": by_signal,
         "by_column": by_column,
         "by_signal_and_column": by_signal_and_column,
+        "warnings": summary_warnings,
     }
     if include_diagnostics:
         from app.services.cecchino.cecchino_signal_backfill import build_signal_diagnostics

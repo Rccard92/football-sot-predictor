@@ -6,7 +6,7 @@ import logging
 from datetime import date
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_signal_activation import (
@@ -69,9 +69,7 @@ def _num(value: Any) -> float | None:
         return None
 
 
-def _ensure_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
-    if _has_available_matrix(row):
-        return True
+def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
     output = row.cecchino_output_json
     if not isinstance(output, dict):
         return False
@@ -95,6 +93,14 @@ def _ensure_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
     output["signals_matrix"] = matrix
     row.cecchino_output_json = output
     return True
+
+
+def _ensure_signals_matrix_on_row(row: CecchinoTodayFixture, *, force_rebuild: bool = False) -> bool:
+    if force_rebuild:
+        return _rebuild_signals_matrix_on_row(row)
+    if _has_available_matrix(row):
+        return True
+    return _rebuild_signals_matrix_on_row(row)
 
 
 def _fixture_has_current_activations(db: Session, today_fixture_id: int) -> bool:
@@ -189,6 +195,27 @@ def build_signal_diagnostics(
         ),
     ) or 0
     status_counts = _activation_status_counts(db, date_from, date_to, only_current=True)
+    legacy_wrong_scala_mapping_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(CecchinoSignalActivation)
+            .where(
+                CecchinoSignalActivation.scan_date >= date_from,
+                CecchinoSignalActivation.scan_date <= date_to,
+                CecchinoSignalActivation.is_current.is_(True),
+                CecchinoSignalActivation.source_column == "SCALA",
+                or_(
+                    CecchinoSignalActivation.signal_group == "HOME",
+                    CecchinoSignalActivation.signal_group == "AWAY",
+                ),
+            ),
+        )
+        or 0,
+    )
+    if legacy_wrong_scala_mapping_count > 0:
+        warnings.append(
+            "Esistono activation legacy errate in SCALA su 1/2. Eseguire Ricalcola mapping segnali.",
+        )
 
     payload = {
         "date_from": date_from.isoformat(),
@@ -198,6 +225,7 @@ def build_signal_diagnostics(
         "fixtures_with_signal_matrix_count": len(with_matrix),
         "signal_activations_count": int(activations_total),
         "current_signal_activations_count": int(current_total),
+        "legacy_wrong_scala_mapping_count": legacy_wrong_scala_mapping_count,
         "evaluated_count": status_counts["evaluated_count"],
         "won": status_counts["won"],
         "lost": status_counts["lost"],
@@ -249,7 +277,7 @@ def backfill_signal_activations(
         if effective_only_missing and _fixture_has_current_activations(db, int(row.id)):
             totals["fixtures_skipped"] += 1
             continue
-        if not _ensure_signals_matrix_on_row(row):
+        if not _ensure_signals_matrix_on_row(row, force_rebuild=force_remap):
             warnings.append(f"fixture_{row.id}:no_signals_matrix")
             continue
 

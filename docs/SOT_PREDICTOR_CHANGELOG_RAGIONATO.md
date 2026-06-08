@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 38 — Fix definitivo Scala 1X/X2 (2026-06-08)
+
+- Corretto definitivamente il mapping SCALA della matrice Segnali Cecchino.
+- G48 assegnato solo a 1X / SCALA; G54 solo a X2 / SCALA; D48 a 1 / Excel D; D54 a 2 / Excel D.
+- Rimosso il mapping errato HOME/AWAY su SCALA (guardrail sync + filtro summary/heatmap).
+- `force_remap` ricostruisce sempre la matrice da quote finali (fix matrici legacy pre-Fase 37).
+- Protezione backend: summary/list/export ignorano activation `HOME+SCALA` e `AWAY+SCALA`.
+- Diagnostics: `legacy_wrong_scala_mapping_count` + banner UI con invito a Ricalcola mapping.
+- Nessuna modifica a modelli SOT v2.0/v2.1, Betfair-only, KPI, Equilibrio, Delta Forza.
+
 ## Cecchino — Fase 37 — Correzione mapping Scala segnali (2026-06-08)
 
 - Corretto mapping matrice: `scala_1x` (G48) su riga 1X (`ONE_X`), `scala_x2` (G54) su riga X2 (`X_TWO`).

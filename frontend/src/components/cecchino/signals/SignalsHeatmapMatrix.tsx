@@ -15,6 +15,9 @@ function findCell(
   signalGroup: string,
   sourceColumn: string,
 ) {
+  if (sourceColumn === 'SCALA' && (signalGroup === 'HOME' || signalGroup === 'AWAY')) {
+    return undefined
+  }
   return summary.by_signal_and_column.find(
     (row) => row.signal_group === signalGroup && row.source_column === sourceColumn,
   )

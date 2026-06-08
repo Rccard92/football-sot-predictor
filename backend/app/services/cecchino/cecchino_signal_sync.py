@@ -18,7 +18,9 @@ from app.services.cecchino.cecchino_signal_evaluation import (
     match_result_from_fixture,
 )
 from app.services.cecchino.cecchino_signal_target_mapping import (
+    LEGACY_WRONG_SCALA_REASON,
     extract_kpi_context,
+    is_valid_scala_activation,
     map_column_to_source,
     map_cecchino_signal_to_target,
     map_row_key_to_signal_group,
@@ -58,6 +60,8 @@ def _iter_si_cells(signals_matrix: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             source_column = map_column_to_source(str(column_key))
             if not source_column:
+                continue
+            if not is_valid_scala_activation(signal_group, source_column):
                 continue
             cells.append(
                 {
@@ -187,12 +191,8 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
     return counts
 
 
-LEGACY_HOME_SCALA_REASON = "wrong_legacy_mapping_home_scala_should_be_one_x_scala"
-LEGACY_AWAY_SCALA_REASON = "wrong_legacy_mapping_away_scala_should_be_x_two_scala"
-
-
 def remap_legacy_scala_activations_in_range(db: Session, *, date_from, date_to) -> int:
-    """Disattiva activation HOME/AWAY+SCALA errate (mapping pre-Fase 37)."""
+    """Disattiva activation HOME/AWAY+SCALA errate (mapping pre-Fase 37/38)."""
     from sqlalchemy import and_, or_, select
 
     rows = list(
@@ -221,9 +221,6 @@ def remap_legacy_scala_activations_in_range(db: Session, *, date_from, date_to) 
     for activation in rows:
         activation.is_current = False
         activation.deactivated_at = now
-        if activation.signal_group == "HOME":
-            activation.evaluation_reason = LEGACY_HOME_SCALA_REASON
-        else:
-            activation.evaluation_reason = LEGACY_AWAY_SCALA_REASON
+        activation.evaluation_reason = LEGACY_WRONG_SCALA_REASON
     db.flush()
     return len(rows)

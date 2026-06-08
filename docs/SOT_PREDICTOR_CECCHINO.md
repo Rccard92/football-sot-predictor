@@ -303,6 +303,21 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 38 — Fix definitivo Scala 1X/X2 (v0.32)
+
+Versione UI `cecchino_today_v0_32_scala_fix_definitivo` — heatmap e storico SCALA corretti.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Mapping | G48 → ONE_X+SCALA; G54 → X_TWO+SCALA; D48 → HOME+EXCEL_D; D54 → AWAY+EXCEL_D |
+| Sync guard | Mai creare HOME/AWAY+SCALA anche da matrici legacy malformate |
+| force_remap | `force_rebuild=True` sovrascrive sempre `signals_matrix` prima del sync |
+| Summary | Esclude legacy HOME/AWAY+SCALA da heatmap e aggregati |
+| Diagnostics | `legacy_wrong_scala_mapping_count`; warning se > 0 |
+| UI | Banner amber + difesa heatmap su righe 1/2 colonna SCALA |
+
+**Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
+
 ## Cecchino Today — Fase 37 — Correzione mapping Scala segnali (v0.31)
 
 Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.

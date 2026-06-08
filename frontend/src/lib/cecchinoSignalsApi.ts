@@ -27,6 +27,7 @@ export type SignalsDiagnostics = {
   pending: number
   not_evaluable: number
   date_filter_field_used: string
+  legacy_wrong_scala_mapping_count?: number
   warnings: string[]
 }
 

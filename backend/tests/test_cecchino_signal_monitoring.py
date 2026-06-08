@@ -40,14 +40,16 @@ from app.services.cecchino.cecchino_signal_backfill import (
     build_signal_diagnostics,
 )
 from app.services.cecchino.cecchino_signal_sync import (
-    LEGACY_AWAY_SCALA_REASON,
-    LEGACY_HOME_SCALA_REASON,
     remap_legacy_scala_activations_in_range,
     sync_cecchino_signal_activations,
 )
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 from app.services.cecchino.cecchino_signal_target_mapping import (
+    LEGACY_WRONG_SCALA_REASON,
+    VALID_SCALA_SIGNAL_GROUPS,
     apply_under_over_target_to_activation,
+    is_invalid_legacy_scala_activation,
+    is_valid_scala_activation,
     map_cecchino_signal_to_target,
     map_row_key_to_signal_group,
     remap_under_over_activations_in_range,
@@ -505,8 +507,169 @@ def test_remap_legacy_scala_activations_deactivates_home_away():
     assert count == 2
     assert home_scala.is_current is False
     assert away_scala.is_current is False
-    assert home_scala.evaluation_reason == LEGACY_HOME_SCALA_REASON
-    assert away_scala.evaluation_reason == LEGACY_AWAY_SCALA_REASON
+    assert home_scala.evaluation_reason == LEGACY_WRONG_SCALA_REASON
+    assert away_scala.evaluation_reason == LEGACY_WRONG_SCALA_REASON
+
+
+def test_sync_skips_home_scala_from_malformed_matrix():
+    db = MagicMock()
+    row = _fixture_row()
+    row.cecchino_output_json = {
+        "signals_matrix": {
+            "status": STATUS_AVAILABLE,
+            "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
+            "rows": [
+                {"key": "one", "label": "1", "signals": {"excel_d": "NO", "scala_1x": "SI"}},
+                {"key": "two", "label": "2", "signals": {"excel_d": "NO", "scala_x2": "SI"}},
+            ],
+        },
+    }
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 0
+    assert not db.add.called
+
+
+def test_sync_home_from_d48_excel_d_only():
+    db = MagicMock()
+    row = _fixture_row()
+    row.cecchino_output_json = {
+        "signals_matrix": {
+            "status": STATUS_AVAILABLE,
+            "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
+            "rows": [{"key": "one", "label": "1", "signals": {"excel_d": "SI"}}],
+        },
+    }
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    added = db.add.call_args[0][0]
+    assert added.signal_group == "HOME"
+    assert added.source_column == "EXCEL_D"
+
+
+def test_sync_away_from_d54_excel_d_only():
+    db = MagicMock()
+    row = _fixture_row()
+    row.cecchino_output_json = {
+        "signals_matrix": {
+            "status": STATUS_AVAILABLE,
+            "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
+            "rows": [{"key": "two", "label": "2", "signals": {"excel_d": "SI"}}],
+        },
+    }
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    added = db.add.call_args[0][0]
+    assert added.signal_group == "AWAY"
+    assert added.source_column == "EXCEL_D"
+
+
+def test_sync_x_two_from_g54_scala():
+    db = MagicMock()
+    row = _fixture_row()
+    row.cecchino_output_json = {
+        "signals_matrix": {
+            "status": STATUS_AVAILABLE,
+            "inputs": {"q1": 2.5, "qx": 3.2, "q2": 2.9},
+            "rows": [
+                {
+                    "key": "x_two",
+                    "label": "X2",
+                    "signals": {
+                        "excel_d": "NO",
+                        "excel_e": "NO",
+                        "excel_f": "NO",
+                        "excel_g": "NO",
+                        "scala_x2": "SI",
+                    },
+                },
+            ],
+        },
+    }
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    added = db.add.call_args[0][0]
+    assert added.signal_group == "X_TWO"
+    assert added.source_column == "SCALA"
+
+
+def test_scala_validation_accepts_only_one_x_x_two():
+    assert is_valid_scala_activation("ONE_X", "SCALA")
+    assert is_valid_scala_activation("X_TWO", "SCALA")
+    assert not is_valid_scala_activation("HOME", "SCALA")
+    assert not is_valid_scala_activation("AWAY", "SCALA")
+    assert is_valid_scala_activation("HOME", "EXCEL_D")
+    assert VALID_SCALA_SIGNAL_GROUPS == frozenset({"ONE_X", "X_TWO"})
+
+
+def test_summary_excludes_home_away_scala_legacy():
+    db = MagicMock()
+    valid = CecchinoSignalActivation(
+        today_fixture_id=1,
+        provider_fixture_id=1,
+        scan_date=date(2026, 6, 8),
+        signal_group="ONE_X",
+        signal_label="1X",
+        source_column="SCALA",
+        signal_value=True,
+        evaluation_status=EVAL_WON,
+        is_current=True,
+    )
+    db.scalars.return_value.all.return_value = [valid]
+    db.scalar.side_effect = [1, 2]
+
+    summary = build_signals_summary(
+        db,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 30),
+    )
+
+    combos = {(r["signal_group"], r["source_column"]) for r in summary["by_signal_and_column"]}
+    assert ("ONE_X", "SCALA") in combos
+    assert ("HOME", "SCALA") not in combos
+    assert "legacy_wrong_scala_mapping_detected" in summary["warnings"]
+    assert is_invalid_legacy_scala_activation("HOME", "SCALA")
+
+
+def test_diagnostics_legacy_wrong_scala_mapping_count():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    db.scalar.side_effect = [0, 0, 2]
+    db.execute.return_value.all.return_value = []
+
+    diag = build_signal_diagnostics(db, date_from=date(2026, 6, 8), date_to=date(2026, 6, 8))
+
+    assert diag["legacy_wrong_scala_mapping_count"] == 2
+    assert any("Ricalcola mapping segnali" in w for w in diag["warnings"])
+
+
+def test_matrix_d48_formula_generates_home_excel_d():
+    matrix = build_signals_matrix(q1=1.20, qx=4.00, q2=8.00, sample_home_away_split=16)
+    rows = {row["key"]: row["signals"] for row in matrix["rows"]}
+    assert rows["one"]["excel_d"] == "SI"
+    assert rows["one_x"]["scala_1x"] == "SI"
+
+
+def test_matrix_d54_formula_generates_away_excel_d():
+    matrix = build_signals_matrix(q1=10.00, qx=6.00, q2=2.00, sample_home_away_split=16)
+    rows = {row["key"]: row["signals"] for row in matrix["rows"]}
+    assert rows["two"]["excel_d"] == "SI"
+    assert rows["x_two"]["scala_x2"] == "SI"
 
 
 def test_backfill_force_remap_rebuilds_activations_offline():
@@ -516,6 +679,9 @@ def test_backfill_force_remap_rebuilds_activations_offline():
     db.scalar.return_value = 0
 
     with patch(
+        "app.services.cecchino.cecchino_signal_backfill._ensure_signals_matrix_on_row",
+        return_value=True,
+    ) as mock_ensure, patch(
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
         return_value={"created": 2, "updated": 0, "deactivated": 1, "skipped": 0},
     ) as mock_sync, patch(
@@ -545,6 +711,7 @@ def test_backfill_force_remap_rebuilds_activations_offline():
     assert out["force_remap"] is True
     assert out["legacy_scala_deactivated"] == 3
     assert out["fixtures_with_signals"] == 1
+    mock_ensure.assert_called_once_with(fixture, force_rebuild=True)
     mock_remap.assert_called_once()
     mock_sync.assert_called_once_with(db, 99)
     mock_client.assert_not_called()
@@ -823,10 +990,11 @@ def test_diagnostics_detects_fixtures_without_activations():
     db = MagicMock()
     fixture = _fixture_row()
     db.scalars.return_value.all.return_value = [fixture]
-    db.scalar.side_effect = [0, 0]
+    db.scalar.side_effect = [0, 0, 0]
     db.execute.return_value.all.return_value = []
 
     diag = build_signal_diagnostics(db, date_from=date(2026, 6, 8), date_to=date(2026, 6, 8))
+    assert diag["legacy_wrong_scala_mapping_count"] == 0
     assert diag["today_fixtures_count"] == 1
     assert diag["fixtures_with_signal_matrix_count"] >= 1
     assert diag["signal_activations_count"] == 0

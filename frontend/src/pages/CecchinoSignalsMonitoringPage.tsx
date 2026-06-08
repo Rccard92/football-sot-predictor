@@ -365,6 +365,23 @@ export function CecchinoSignalsMonitoringPage() {
           </p>
         )}
 
+      {diagnostics && (diagnostics.legacy_wrong_scala_mapping_count ?? 0) > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+          <p>
+            Esistono {diagnostics.legacy_wrong_scala_mapping_count} activation legacy errate in
+            SCALA su righe 1/2. Eseguire Ricalcola mapping segnali.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleRemapMapping()}
+            disabled={actionLoading}
+            className="mt-2 rounded-md bg-amber-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            Ricalcola mapping segnali
+          </button>
+        </div>
+      )}
+
       {loading && !summary ? (
         <p className="text-sm text-slate-500">Caricamento...</p>
       ) : summary ? (

@@ -28,6 +28,19 @@ from app.services.cecchino.cecchino_selection_keys import (
 )
 
 REASON_MISSING_TARGET = "missing_target_market_mapping"
+LEGACY_WRONG_SCALA_REASON = "wrong_legacy_mapping_scala_belongs_to_1x_x2"
+VALID_SCALA_SIGNAL_GROUPS = frozenset({"ONE_X", "X_TWO"})
+
+
+def is_invalid_legacy_scala_activation(signal_group: str, source_column: str) -> bool:
+    return source_column == "SCALA" and signal_group in ("HOME", "AWAY")
+
+
+def is_valid_scala_activation(signal_group: str, source_column: str) -> bool:
+    if source_column != "SCALA":
+        return True
+    return signal_group in VALID_SCALA_SIGNAL_GROUPS
+
 
 ROW_KEY_TO_SIGNAL_GROUP: dict[str, str] = {
     "under_under_pt": "UNDER_UNDER_PT",
