@@ -6,11 +6,25 @@ CECCHINO_VERSION = "cecchino_v0_4_bookmaker_kpi"
 
 PROVIDER_API_FOOTBALL = "api_football"
 
+CECCHINO_BOOKMAKER: dict[str, str | int] = {
+    "provider_source": PROVIDER_API_FOOTBALL,
+    "provider_bookmaker_id": 3,
+    "name": "Betfair",
+}
+
+CECCHINO_REQUIRED_BOOKMAKER_IDS: list[int] = [3]
+
+CECCHINO_TODAY_BOOKMAKERS: list[dict[str, str | int]] = [CECCHINO_BOOKMAKER]
+
+# Cecchino classico / sync competizione (3 bookmaker)
 CECCHINO_BOOKMAKERS: list[dict[str, str | int]] = [
     {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "8", "name": "Bet365"},
     {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "3", "name": "Betfair"},
     {"provider_source": PROVIDER_API_FOOTBALL, "provider_bookmaker_id": "4", "name": "Pinnacle"},
 ]
+
+# Solo tab debug globale /bookmakers
+BOOKMAKER_DEBUG_IDS: list[int] = [8, 3, 4]
 
 PICCHETTO_KEY_HOME_AWAY = "home_away"
 PICCHETTO_KEY_TOTALS = "totals"

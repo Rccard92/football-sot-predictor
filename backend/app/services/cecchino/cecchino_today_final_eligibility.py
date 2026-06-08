@@ -47,7 +47,7 @@ from app.services.cecchino.cecchino_today_constants import (
     MIN_RECENT_TOTAL_6,
 )
 
-_REQUIRED_BOOKMAKERS = ("Bet365", "Betfair", "Pinnacle")
+_REQUIRED_BOOKMAKERS = ("Betfair",)
 _REQUIRED_SELECTIONS = ("HOME", "DRAW", "AWAY")
 _REQUIRED_PICCHETTI = (
     PICCHETTO_KEY_HOME_AWAY,
@@ -286,21 +286,33 @@ def _check_kpi_1x2_complete(kpi_panel: dict[str, Any] | None) -> tuple[bool, lis
     rows = kpi_panel.get("rows") or []
     row_by_key = {r.get("market_key"): r for r in rows if isinstance(r, dict)}
     missing_rows: list[str] = []
+    is_v2 = kpi_panel.get("version") == "cecchino_kpi_v2_betfair"
 
     for key in _KPI_1X2_KEYS:
         row = row_by_key.get(key)
         if row is None:
             missing_rows.append(key)
             continue
-        cec = _num(row.get("cecchino"))
-        book = _num(row.get("book"))
-        edge = row.get("edge")
-        if cec is None:
-            missing_rows.append(f"{key}:cecchino")
-        if book is None:
-            missing_rows.append(f"{key}:book")
-        if edge is None and (cec is None or book is None):
-            missing_rows.append(f"{key}:edge")
+        if is_v2:
+            cec = _num(row.get("quota_cecchino"))
+            book = _num(row.get("quota_book"))
+            edge = row.get("edge_pct")
+            if cec is None:
+                missing_rows.append(f"{key}:quota_cecchino")
+            if book is None:
+                missing_rows.append(f"{key}:quota_book")
+            if edge is None and (cec is None or book is None):
+                missing_rows.append(f"{key}:edge_pct")
+        else:
+            cec = _num(row.get("cecchino"))
+            book = _num(row.get("book"))
+            edge = row.get("edge")
+            if cec is None:
+                missing_rows.append(f"{key}:cecchino")
+            if book is None:
+                missing_rows.append(f"{key}:book")
+            if edge is None and (cec is None or book is None):
+                missing_rows.append(f"{key}:edge")
 
     if missing_rows:
         bm_status = kpi_panel.get("bookmaker_status") or "unknown"
@@ -352,7 +364,7 @@ def build_kpi_debug(kpi_panel: dict[str, Any] | None) -> dict[str, Any]:
 def _reason_message(status: str, blocking: list[str]) -> str:
     messages = {
         ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER: "Bookmaker obbligatorio mancante",
-        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Mercato 1X2 incompleto su uno o più bookmaker",
+        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Mercato 1X2 incompleto su Betfair",
         ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS: "Statistiche o campioni insufficienti",
         ELIGIBILITY_EXCLUDED_LEAKAGE_FAILED: "Leakage check non superato",
         ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO: "Picchetto Cecchino obbligatorio mancante o incompleto",

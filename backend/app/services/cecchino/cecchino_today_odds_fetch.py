@@ -1,4 +1,4 @@
-"""Fetch e cache quote bookmaker Cecchino Today."""
+"""Fetch e cache quote bookmaker Cecchino Today (Betfair-only)."""
 
 from __future__ import annotations
 
@@ -15,11 +15,16 @@ from app.models.cecchino_today_fixture import PROVIDER_API_FOOTBALL
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.cecchino.cecchino_api_football_odds import parse_api_football_odds_response
 from app.services.cecchino.cecchino_bookmaker_sync_service import SLEEP_BETWEEN_CALLS_S
-from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKERS
+from app.services.cecchino.cecchino_constants import (
+    CECCHINO_BOOKMAKER,
+    CECCHINO_REQUIRED_BOOKMAKER_IDS,
+)
 from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, SEL_AWAY, SEL_DRAW, SEL_HOME
 from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 
-_WANTED_BOOK_IDS = {int(b["provider_bookmaker_id"]) for b in CECCHINO_BOOKMAKERS}
+_WANTED_BOOK_IDS = set(CECCHINO_REQUIRED_BOOKMAKER_IDS)
+_BETFAIR_ID = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
+_BETFAIR_NAME = str(CECCHINO_BOOKMAKER["name"])
 
 
 def _utcnow() -> datetime:
@@ -27,24 +32,21 @@ def _utcnow() -> datetime:
 
 
 def _book_ids_complete(raw_by_book: dict[int, list[dict[str, Any]]]) -> bool:
-    for bid in _WANTED_BOOK_IDS:
-        raw = raw_by_book.get(bid)
-        if not raw:
-            return False
-        rows, _ = parse_api_football_odds_response(raw, requested_markets=[MARKET_1X2])
-        home = draw = away = None
-        for r in rows:
-            if r["normalized_market"] != MARKET_1X2:
-                continue
-            if r["selection_key"] == SEL_HOME:
-                home = r["odds_value"]
-            elif r["selection_key"] == SEL_DRAW:
-                draw = r["odds_value"]
-            elif r["selection_key"] == SEL_AWAY:
-                away = r["odds_value"]
-        if home is None or draw is None or away is None:
-            return False
-    return True
+    raw = raw_by_book.get(_BETFAIR_ID)
+    if not raw:
+        return False
+    rows, _ = parse_api_football_odds_response(raw, requested_markets=[MARKET_1X2])
+    home = draw = away = None
+    for r in rows:
+        if r["normalized_market"] != MARKET_1X2:
+            continue
+        if r["selection_key"] == SEL_HOME:
+            home = r["odds_value"]
+        elif r["selection_key"] == SEL_DRAW:
+            draw = r["odds_value"]
+        elif r["selection_key"] == SEL_AWAY:
+            away = r["odds_value"]
+    return home is not None and draw is not None and away is not None
 
 
 def load_cached_odds_for_fixture(
@@ -53,7 +55,7 @@ def load_cached_odds_for_fixture(
     scan_date: date,
     provider_fixture_id: int,
 ) -> dict[int, list[dict[str, Any]]] | None:
-    """Riusa odds_snapshot_json.raw_by_bookmaker_id se completo per la scan_date."""
+    """Riusa odds_snapshot_json.raw_by_bookmaker_id se Betfair 1X2 completo."""
     row = db.scalar(
         select(CecchinoTodayFixture).where(
             CecchinoTodayFixture.scan_date == scan_date,
@@ -139,7 +141,7 @@ def clear_negative_odds_cache(row: CecchinoTodayFixture | None) -> None:
 def _extract_odds_by_book_from_response(
     raw_items: list[dict[str, Any]],
 ) -> dict[int, list[dict[str, Any]]]:
-    """Estrae payload per-book da response API odds?fixture=X."""
+    """Estrae payload Betfair da response API odds?fixture=X."""
     odds_by_book: dict[int, list[dict[str, Any]]] = {}
     for item in raw_items:
         for bm in item.get("bookmakers") or []:
@@ -155,30 +157,22 @@ def _extract_odds_by_book_from_response(
     return odds_by_book
 
 
-def _fetch_per_bookmaker(
+def _fetch_betfair_only(
     client: ApiFootballClient,
     api_fixture_id: int,
     *,
     metrics: ScanRunMetrics | None,
-    only_bids: set[int] | None = None,
 ) -> tuple[dict[int, list[dict[str, Any]]], list[str]]:
     odds_by_book: dict[int, list[dict[str, Any]]] = {}
     warnings: list[str] = []
-    targets = [int(b["provider_bookmaker_id"]) for b in CECCHINO_BOOKMAKERS]
-    if only_bids is not None:
-        targets = [bid for bid in targets if bid in only_bids]
-    for idx, bid in enumerate(targets):
-        if idx > 0:
-            time.sleep(SLEEP_BETWEEN_CALLS_S)
-        name = next((b["name"] for b in CECCHINO_BOOKMAKERS if int(b["provider_bookmaker_id"]) == bid), str(bid))
-        try:
-            odds_by_book[bid] = client.get_fixture_odds(api_fixture_id, bid)
-            if metrics is not None:
-                metrics.api_calls["odds"] = metrics.api_calls.get("odds", 0) + 1
-                metrics.sync_api_calls_total()
-        except ApiFootballError as exc:
-            warnings.append(f"fixture {api_fixture_id} {name}: {exc}")
-            odds_by_book[bid] = []
+    try:
+        odds_by_book[_BETFAIR_ID] = client.get_fixture_odds(api_fixture_id, _BETFAIR_ID)
+        if metrics is not None:
+            metrics.api_calls["odds"] = metrics.api_calls.get("odds", 0) + 1
+            metrics.sync_api_calls_total()
+    except ApiFootballError as exc:
+        warnings.append(f"fixture {api_fixture_id} {_BETFAIR_NAME}: {exc}")
+        odds_by_book[_BETFAIR_ID] = []
     return odds_by_book, warnings
 
 
@@ -192,7 +186,7 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
     metrics: ScanRunMetrics | None = None,
 ) -> tuple[dict[int, list[dict[str, Any]]], list[str], str, bool]:
     """
-    Fetch odds Bet365/Betfair/Pinnacle con cache e single-call API quando possibile.
+    Fetch odds Betfair-only con cache e single-call API quando possibile.
     Ritorna (odds_by_book, warnings, strategy, negative_cache_hit).
     """
     settings = get_settings()
@@ -242,7 +236,6 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
             clear_negative_odds_cache(neg_row)
         return odds_by_book, warnings, "fixture_single_call", False
 
-    missing = _WANTED_BOOK_IDS - set(odds_by_book.keys())
     incomplete = not _book_ids_complete(odds_by_book) if odds_by_book else True
 
     if not settings.cecchino_odds_bookmaker_fallback:
@@ -256,14 +249,9 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
             )
         return odds_by_book, warnings + ["odds_incomplete_single_call"], "odds_incomplete_single_call", False
 
-    if raw_items and (missing or incomplete):
-        fallback_bids = missing if missing else _WANTED_BOOK_IDS
-        fb_odds, fb_warn = _fetch_per_bookmaker(
-            client,
-            api_fixture_id,
-            metrics=metrics,
-            only_bids=fallback_bids if missing else _WANTED_BOOK_IDS,
-        )
+    if raw_items and incomplete:
+        time.sleep(SLEEP_BETWEEN_CALLS_S)
+        fb_odds, fb_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
         warnings.extend(fb_warn)
         for bid, payload in fb_odds.items():
             if payload:
@@ -274,7 +262,7 @@ def fetch_fixture_odds_for_cecchino_bookmakers(
         return odds_by_book, warnings, strategy, False
 
     if not raw_items or not odds_by_book:
-        odds_by_book, fb_warn = _fetch_per_bookmaker(client, api_fixture_id, metrics=metrics)
+        odds_by_book, fb_warn = _fetch_betfair_only(client, api_fixture_id, metrics=metrics)
         warnings.extend(fb_warn)
         if metrics is not None:
             metrics.record_odds_strategy("bookmaker_per_fixture")

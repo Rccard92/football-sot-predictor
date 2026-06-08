@@ -21,6 +21,9 @@ from app.services.bookmakers.market_normalize import (
     SEL_OVER_2_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_UNDER_2_5,
+    SEL_UNDER_3_5,
+    SEL_UNDER_PT_1_5,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
@@ -81,14 +84,14 @@ def _map_dc_value(value: str) -> str | None:
 
 def _map_ou_value(value: str) -> str | None:
     sk = normalize_over_under_selection(value)
-    if sk in (SEL_OVER_1_5, SEL_OVER_2_5):
+    if sk in (SEL_OVER_1_5, SEL_OVER_2_5, SEL_UNDER_2_5, SEL_UNDER_3_5):
         return sk
     return None
 
 
 def _map_ou_pt_value(value: str) -> str | None:
     sk = normalize_first_half_over_under_selection(value)
-    if sk in (SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
+    if sk in (SEL_OVER_PT_0_5, SEL_OVER_PT_1_5, SEL_UNDER_PT_1_5):
         return sk
     return None
 

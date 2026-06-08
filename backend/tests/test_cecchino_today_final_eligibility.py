@@ -71,9 +71,7 @@ def _stats_snapshot(**overrides: int) -> dict:
 
 def _odds_snapshot(*, missing_book: str | None = None, missing_sel: tuple[str, str] | None = None) -> dict:
     books = {
-        "Bet365": {"HOME": 2.0, "DRAW": 3.2, "AWAY": 4.0},
         "Betfair": {"HOME": 2.0, "DRAW": 3.2, "AWAY": 4.0},
-        "Pinnacle": {"HOME": 2.0, "DRAW": 3.2, "AWAY": 4.0},
     }
     if missing_book:
         books.pop(missing_book, None)
@@ -81,7 +79,7 @@ def _odds_snapshot(*, missing_book: str | None = None, missing_sel: tuple[str, s
         bm, sel = missing_sel
         if bm in books:
             books[bm][sel] = None  # type: ignore[index]
-    return {"bookmakers": books, "raw_by_bookmaker_id": {"8": []}}
+    return {"bookmakers": books, "raw_by_bookmaker_id": {"3": []}}
 
 
 def _cecchino_output(**final_overrides) -> dict:
@@ -110,19 +108,23 @@ def _cecchino_output(**final_overrides) -> dict:
 
 
 def _kpi_panel(**row_overrides) -> dict:
-    def row(key: str, label: str, cec: float, book: float) -> dict:
+    def row(key: str, segno: str, cec: float, book: float) -> dict:
+        edge = round((book / cec - 1) * 100, 2)
         base = {
             "market_key": key,
-            "label": label,
-            "cecchino": cec,
-            "book": book,
-            "edge": round((book / cec - 1) * 100, 2),
+            "segno": segno,
+            "quota_book": book,
+            "quota_cecchino": cec,
+            "prob_book": round(1 / book, 4),
+            "prob_cecchino": round(1 / cec, 4),
+            "edge_pct": edge,
             "status": "available",
         }
         base.update(row_overrides.get(key, {}))
         return base
 
     return {
+        "version": "cecchino_kpi_v2_betfair",
         "bookmaker_status": "available",
         "rows": [
             row(SEL_HOME, "1", 2.1, 2.0),
@@ -154,16 +156,16 @@ def test_complete_pipeline_eligible():
 
 def test_missing_bookmaker_excluded():
     b = _eligible_baseline()
-    b["odds_snapshot"] = _odds_snapshot(missing_book="Bet365")
+    b["odds_snapshot"] = _odds_snapshot(missing_book="Betfair")
     result = validate_cecchino_today_final_eligibility(**b)
     assert not result.is_eligible
     assert result.eligibility_status == ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER
-    assert any("missing_bookmaker:Bet365" in r for r in result.blocking_reasons)
+    assert any("missing_bookmaker:Betfair" in r for r in result.blocking_reasons)
 
 
 def test_missing_1x2_market_excluded():
     b = _eligible_baseline()
-    b["odds_snapshot"] = _odds_snapshot(missing_sel=("Bet365", "DRAW"))
+    b["odds_snapshot"] = _odds_snapshot(missing_sel=("Betfair", "DRAW"))
     result = validate_cecchino_today_final_eligibility(**b)
     assert not result.is_eligible
     assert result.eligibility_status == ELIGIBILITY_EXCLUDED_MISSING_1X2
@@ -209,7 +211,7 @@ def test_final_odds_insufficient_data_excluded():
 
 def test_kpi_panel_1x2_insufficient_excluded():
     b = _eligible_baseline()
-    b["kpi_panel"] = _kpi_panel(**{SEL_DRAW: {"cecchino": None, "book": 3.1, "edge": None}})
+    b["kpi_panel"] = _kpi_panel(**{SEL_DRAW: {"quota_cecchino": None, "quota_book": 3.1, "edge_pct": None}})
     result = validate_cecchino_today_final_eligibility(**b)
     assert not result.is_eligible
     assert result.eligibility_status == ELIGIBILITY_EXCLUDED_KPI_NOT_CALCULABLE

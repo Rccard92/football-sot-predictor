@@ -131,7 +131,7 @@ def test_bookmaker_gate_fail_skips_bootstrap():
                                 ):
                                     with patch(
                                         "app.services.cecchino.cecchino_today_service.verify_complete_1x2_odds",
-                                        return_value=(False, {}, "missing_bookmaker", ["missing_bookmaker:Bet365"]),
+                                        return_value=(False, {}, "missing_bookmaker", ["missing_bookmaker:Betfair"]),
                                     ):
                                         with patch(
                                             "app.services.cecchino.cecchino_today_service.ensure_competition_and_history",
@@ -142,6 +142,33 @@ def test_bookmaker_gate_fail_skips_bootstrap():
     bootstrap.assert_not_called()
 
 
+def test_fetch_betfair_only_no_bookmaker_8_or_4():
+    client = MagicMock()
+    client.get_fixture_odds_by_fixture.return_value = [
+        {
+            "bookmakers": [
+                {"id": 3, "bets": [{"name": "Match Winner", "values": [
+                    {"value": "Home", "odd": "2"},
+                    {"value": "Draw", "odd": "3"},
+                    {"value": "Away", "odd": "4"},
+                ]}]},
+            ],
+        },
+    ]
+    with patch("app.services.cecchino.cecchino_today_odds_fetch.get_settings") as mock_settings:
+        mock_settings.return_value.cecchino_odds_bookmaker_fallback = False
+        odds, _w, strategy, _neg = fetch_fixture_odds_for_cecchino_bookmakers(
+            client,
+            999,
+            force_rescan=True,
+        )
+    assert 3 in odds
+    assert 8 not in odds
+    assert 4 not in odds
+    client.get_fixture_odds.assert_not_called()
+    assert strategy == "fixture_single_call"
+
+
 def test_odds_cache_skips_api_call():
     db = MagicMock()
     row = MagicMock()
@@ -149,7 +176,7 @@ def test_odds_cache_skips_api_call():
     db.scalar = MagicMock(return_value=row)
     client = MagicMock()
     metrics = ScanRunMetrics()
-    cached = {8: [{"bookmakers": []}], 3: [{"bookmakers": []}], 4: [{"bookmakers": []}]}
+    cached = {3: [{"bookmakers": []}]}
 
     with patch(
         "app.services.cecchino.cecchino_today_odds_fetch.load_cached_odds_for_fixture",
@@ -301,3 +328,4 @@ def test_scan_metrics_result_summary_funnel():
     assert summary["api_calls_total"] == 8
     assert summary["api_usage"]["estimated_remaining_daily_budget"] == 7492
     assert "excluded_funnel" in summary
+    assert summary["bookmaker_mode"] == "betfair_only"

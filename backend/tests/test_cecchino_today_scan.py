@@ -73,7 +73,7 @@ def test_excluded_admin_endpoint():
             {
                 "id": 1,
                 "eligibility_status": "excluded_cup",
-                "bookmaker_debug": {"Bet365": "missing"},
+                "bookmaker_debug": {"Betfair": "missing"},
                 "stats_debug": {"status": "insufficient"},
             },
         ],
@@ -81,7 +81,7 @@ def test_excluded_admin_endpoint():
     with patch("app.routes.cecchino_today.list_excluded_today", return_value=payload):
         resp = client.get("/api/admin/cecchino/today/excluded?date=2026-06-04")
     assert resp.status_code == 200
-    assert resp.json()["fixtures"][0]["bookmaker_debug"]["Bet365"] == "missing"
+    assert resp.json()["fixtures"][0]["bookmaker_debug"]["Betfair"] == "missing"
 
 
 def test_days_endpoint():

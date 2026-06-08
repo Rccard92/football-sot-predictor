@@ -13,11 +13,12 @@ type Props = {
   detail: CecchinoTodayDetailResponse
 }
 
-const BOOKMAKERS = ['Bet365', 'Betfair', 'Pinnacle'] as const
+const BETFAIR_NAME = 'Betfair'
 
 export function CecchinoTodayDetailHeader({ detail }: Props) {
   const odds = detail.odds_snapshot as { bookmakers?: Record<string, unknown> } | undefined
   const bmSnap = odds?.bookmakers || {}
+  const betfairOk = BETFAIR_NAME in bmSnap
 
   return (
     <header className={`${todayCard} ${todayCardPadding} space-y-4`}>
@@ -46,14 +47,7 @@ export function CecchinoTodayDetailHeader({ detail }: Props) {
       <CecchinoTodayTechnicalIds detail={detail} />
 
       <div className="flex flex-wrap gap-2">
-        {BOOKMAKERS.map((name) => (
-          <span
-            key={name}
-            className={name in bmSnap ? todayBadgeOk : todayBadgeMuted}
-          >
-            {name}
-          </span>
-        ))}
+        <span className={betfairOk ? todayBadgeOk : todayBadgeMuted}>{BETFAIR_NAME}</span>
         <span className={todayBadgeOk}>Statistiche OK</span>
       </div>
 
@@ -68,7 +62,7 @@ export function CecchinoTodayDetailHeader({ detail }: Props) {
         )}
         {detail.provider_fixture_id != null ? (
           <Link
-            to={`/bookmakers?provider_fixture_id=${detail.provider_fixture_id}`}
+            to={`/bookmakers?provider_fixture_id=${detail.provider_fixture_id}&bookmaker_ids=3`}
             className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-800 shadow-sm transition hover:bg-indigo-100"
           >
             Debug quote bookmaker

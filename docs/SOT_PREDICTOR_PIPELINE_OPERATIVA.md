@@ -32,6 +32,14 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 20 — KPI Betfair-only
+
+- **Bookmaker gate:** solo Betfair (id 3) con 1X2 HOME/DRAW/AWAY; `bookmaker_mode=betfair_only` nel job summary.
+- **Odds fetch:** `GET /odds?fixture=` + filtro id 3; fallback `bookmaker=3`; cache/negative cache solo su Betfair.
+- **KPI v2:** `build_cecchino_kpi_panel_v2_betfair` — 9 colonne, 13 righe, rating 0-100; nessuna media bookmaker.
+- **Dettaglio quote:** tabella Betfair-only con source `raw_betfair` / `derived_from_1x2` / `not_available`.
+- **Debug link:** `/bookmakers?provider_fixture_id=…&bookmaker_ids=3`.
+
 ## Fix Fase 19 — gate progressivi e consumo API
 
 - **Censimento:** tutte le fixture salvate come `discovered` dopo `GET fixtures?date=`.
@@ -80,26 +88,26 @@ Durante scan-day, se lega/squadra/fixture esistono già nel DB:
 
 ## Quote Over/Under (Fase 13–15)
 
-- **Full time:** Over 1.5/2.5 solo da `Goals Over/Under` bet_id=5 (Bet365/Betfair/Pinnacle).
+- **Full time:** Over/Under 1.5/2.5/3.5 solo da `Goals Over/Under` bet_id=5 (Betfair in pipeline Today).
 - **Primo tempo:** Over PT 0.5/1.5 solo da `Goals Over/Under First Half` (variante con trattino accettata).
 - **Esclusi dal feed principale:** Goal Line, Result/Total Goals, Total Home/Away, RTG_H1 e mercati combo.
 - **Scan-day** persiste 1X2/DC/OU/OU_FH; gate eleggibilità resta solo su 1X2.
-- **Media Over** calcolata solo da book whitelist con quote presenti; mai media orphan senza dettaglio.
+- **Fase 20:** nessuna media bookmaker nel KPI Today; quote singole Betfair.
 
 ## Strategia fetch odds (Fase 16)
 
 | Strategia | Quando |
 |-----------|--------|
-| `cached` | `force_rescan=false` e `odds_snapshot_json.raw_by_bookmaker_id` completo (3 book + 1X2) |
-| `fixture_single_call` | `GET /odds?fixture=` con filtro book 8/3/4 |
-| `fixture_single_call_with_bookmaker_fallback` | Single-call parziale → fallback solo book mancanti |
-| `bookmaker_per_fixture` | Response vuota → 3× `GET /odds?fixture=&bookmaker=` (legacy) |
+| `cached` | `force_rescan=false` e `odds_snapshot_json.raw_by_bookmaker_id` completo (Betfair 1X2) |
+| `fixture_single_call` | `GET /odds?fixture=` con filtro bookmaker_id=3 |
+| `fixture_single_call_with_bookmaker_fallback` | Single-call parziale → fallback `bookmaker=3` |
+| `bookmaker_per_fixture` | Response vuota → `GET /odds?fixture=&bookmaker=3` |
 
 Metriche in `result_summary_json`: `api_calls`, `odds_from_cache`, `odds_from_api`, `duration_seconds`.
 
 ## Fixture ID e debug JSON (Fase 14–15)
 
-- Dettaglio Today espone `fixture_ids` e link a `/bookmakers?provider_fixture_id=...`.
+- Dettaglio Today espone `fixture_ids` e link a `/bookmakers?provider_fixture_id=...&bookmaker_ids=3`.
 - Export JSON raw filtrato via `fixture-raw-odds` (copy/download in UI admin).
 - Debug Over separato FT/FH con mercati scartati (`rejected_from_markets`).
 

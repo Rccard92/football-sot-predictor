@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 20 — KPI Betfair-only e nuovo rating panel (2026-06-08)
+
+- Sostituito il vecchio Pannello KPI con lo schema a 9 colonne: Segno, Quota Book, Quota Cecchino, Prob. Book, Prob. Cecchino, Vantaggio Prob., Edge %, Score Acquisto, Rating 0-100.
+- Bookmaker di riferimento Cecchino Today diventato solo **Betfair** (API-Football id 3); rimossi Bet365 e Pinnacle dalla pipeline Today.
+- Rimossa media bookmaker dal KPI e dal dettaglio quote; gate bookmaker richiede solo Betfair 1X2 completo.
+- Ridotte chiamate API odds: single-call fixture + filtro bookmaker_id=3; fallback solo su Betfair.
+- Aggiunti mercati Under 2.5, Under 3.5 e Under PT1.5 nel dettaglio quote e nelle righe KPI (quota Cecchino `—` finché senza formula).
+- Rating 0-100 con label Elite/Premium/Forte/Buona/Sufficiente/Debole/Scarto; UI ottimizzata senza scrollbar orizzontale desktop.
+- Nessuna modifica ai modelli SOT v2.0/v2.1, formule Cecchino 1/X/2 né segnali SI/NO.
+
 ## Cecchino — Fase 19 — Gate progressivi e riduzione consumo API (2026-06-04)
 
 - Tutte le fixture della giornata vengono censite (`eligibility_status=discovered`) prima dei gate.

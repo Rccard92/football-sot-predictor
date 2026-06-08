@@ -60,10 +60,10 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     <div className="space-y-5">
       <CecchinoTodayDetailHeader detail={detail} />
 
-      {detail.kpi_panel && (
+      {(detail.kpi_panel_v2 ?? detail.kpi_panel) && (
         <CecchinoTodayKpiPanel
-          panel={detail.kpi_panel}
-          bookmakerStatus={detail.kpi_panel.bookmaker_status}
+          panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
+          bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
         />
       )}
 

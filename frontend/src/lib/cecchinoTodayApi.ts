@@ -287,11 +287,41 @@ export type CecchinoTodayUpdateResultsResponse = {
   warnings: string[]
 }
 
+export type CecchinoKpiV2Row = {
+  market_key: string
+  segno: string
+  quota_book: number | null
+  quota_cecchino: number | null
+  prob_book: number | null
+  prob_cecchino: number | null
+  vantaggio_prob: number | null
+  edge_pct: number | null
+  score_acquisto: number | null
+  rating: number | null
+  rating_label: string | null
+  status: string
+  book_source?: string
+  cecchino_source?: string | null
+}
+
+export type CecchinoKpiV2Panel = {
+  version: string
+  columns?: string[]
+  bookmaker?: {
+    name: string
+    provider_bookmaker_id: number
+    provider_source: string
+  }
+  bookmaker_status?: string
+  rows: CecchinoKpiV2Row[]
+  warnings?: string[]
+}
+
 export type CecchinoBookmakerOddsDetailRow = {
   market_key: string
   label: string
-  bookmakers: Record<string, number | null>
-  book_average: number | null
+  quota_betfair: number | null
+  source: string
   status: string
 }
 
@@ -326,7 +356,8 @@ export type CecchinoTodayDetailResponse = {
   stats_snapshot?: Record<string, unknown>
   cecchino_output?: Record<string, unknown>
   signals_matrix?: Record<string, unknown>
-  kpi_panel?: import('./cecchinoApi').CecchinoKpiPanel
+  kpi_panel?: CecchinoKpiV2Panel
+  kpi_panel_v2?: CecchinoKpiV2Panel
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]

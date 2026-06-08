@@ -48,14 +48,17 @@ from app.services.bookmakers.fixture_bookmaker_odds_repository import upsert_sel
 from app.services.cecchino.cecchino_bookmaker_odds_detail import build_bookmaker_odds_detail
 from app.services.cecchino.cecchino_api_football_odds import parse_api_football_odds_response
 from app.services.cecchino.cecchino_bookmaker_sync_service import SLEEP_BETWEEN_CALLS_S
+from app.services.cecchino.cecchino_bookmaker_odds_service import load_betfair_odds_payload
 from app.services.cecchino.cecchino_constants import (
-    CECCHINO_BOOKMAKERS,
+    CECCHINO_BOOKMAKER,
+    CECCHINO_TODAY_BOOKMAKERS,
     KEY_AWAY_CONTEXT,
     KEY_AWAY_TOTAL,
     KEY_HOME_CONTEXT,
     KEY_HOME_TOTAL,
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
 )
+from app.services.cecchino.cecchino_kpi_panel_v2_betfair import build_cecchino_kpi_panel_v2_betfair
 from app.services.cecchino.cecchino_fixture_history import build_fixture_contexts
 from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH
 from app.services.cecchino.cecchino_service import (
@@ -113,7 +116,7 @@ _COMPETITION_EXCLUDED_STATUSES = frozenset(
     },
 )
 
-_BOOKMAKER_NAMES = ("Bet365", "Betfair", "Pinnacle")
+_BOOKMAKER_NAMES = ("Betfair",)
 
 
 def _mapping_blocking_reasons(exc: Exception) -> list[str]:
@@ -271,18 +274,16 @@ def fetch_today_bookmaker_odds(
     client: ApiFootballClient,
     api_fixture_id: int,
 ) -> tuple[dict[int, list[dict[str, Any]]], list[str]]:
-    """Fetch quote 1X2 per tutti i book Cecchino con throttle."""
+    """Fetch quote 1X2 Betfair (legacy helper)."""
     odds_by_book: dict[int, list[dict[str, Any]]] = {}
     warnings: list[str] = []
-    for idx, bm in enumerate(CECCHINO_BOOKMAKERS):
-        if idx > 0:
-            time.sleep(SLEEP_BETWEEN_CALLS_S)
-        bid = int(bm["provider_bookmaker_id"])
-        try:
-            odds_by_book[bid] = client.get_fixture_odds(api_fixture_id, bid)
-        except ApiFootballError as exc:
-            warnings.append(f"fixture {api_fixture_id} {bm['name']}: {exc}")
-            odds_by_book[bid] = []
+    bid = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
+    name = str(CECCHINO_BOOKMAKER["name"])
+    try:
+        odds_by_book[bid] = client.get_fixture_odds(api_fixture_id, bid)
+    except ApiFootballError as exc:
+        warnings.append(f"fixture {api_fixture_id} {name}: {exc}")
+        odds_by_book[bid] = []
     return odds_by_book, warnings
 
 
@@ -298,7 +299,7 @@ def sync_today_bookmaker_odds(
     saved = 0
     now = datetime.now(timezone.utc)
     wanted = [MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH]
-    for bm in CECCHINO_BOOKMAKERS:
+    for bm in CECCHINO_TODAY_BOOKMAKERS:
         bid = int(bm["provider_bookmaker_id"])
         raw = odds_by_bookmaker.get(bid) or []
         parsed, _ = parse_api_football_odds_response(raw, requested_markets=wanted)
@@ -846,7 +847,14 @@ def run_scan(
 
                 _emit_progress(progress, current_step="validating_eligibility")
                 cecchino_output = calc.get("output")
-                kpi_panel = calc.get("kpi_panel")
+                kpi_panel = build_cecchino_kpi_panel_v2_betfair(
+                    final_odds=(cecchino_output or {}).get("final") or {},
+                    betfair_payload=load_betfair_odds_payload(
+                        db,
+                        competition_id=int(comp.id),
+                        fixture_id=int(local_fx.id),
+                    ),
+                )
                 _emit_progress(progress, current_step="saving_snapshots")
                 _, eligibility_status = _persist_post_calc_snapshot(
                     db,
@@ -1374,6 +1382,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "cecchino_output": output,
         "signals_matrix": output.get("signals_matrix"),
         "kpi_panel": kpi_panel,
+        "kpi_panel_v2": kpi_panel,
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (
             f"/cecchino?competition_id={row.competition_id}&fixture_id={row.local_fixture_id}"
@@ -1476,7 +1485,7 @@ def build_exclusion_reason_message(row: CecchinoTodayFixture) -> str | None:
         if missing:
             return f"Esclusa perché manca {' / '.join(missing)}"
     labels = {
-        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Esclusa perché manca mercato 1X2 completo su uno o più bookmaker",
+        ELIGIBILITY_EXCLUDED_MISSING_1X2: "Esclusa perché manca mercato 1X2 completo su Betfair",
         ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS: "Esclusa perché statistiche insufficienti",
         ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO: "Esclusa perché un picchetto Cecchino obbligatorio non è calcolabile",
         ELIGIBILITY_EXCLUDED_ZERO_PROBABILITY: "Esclusa per probabilità zero su 1/X/2",

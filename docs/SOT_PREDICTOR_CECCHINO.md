@@ -303,6 +303,25 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 20 — KPI Betfair-only e nuovo rating panel (v0.14)
+
+Versione KPI `cecchino_kpi_v2_betfair`: bookmaker unico Betfair e pannello rating.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Bookmaker | Solo Betfair (API-Football id 3); gate 1X2 HOME/DRAW/AWAY |
+| Odds fetch | `GET /odds?fixture=` + filtro id 3; fallback `bookmaker=3` |
+| KPI colonne | Segno, Quota Book, Quota Cecchino, Prob. Book/Cecchino, Vantaggio Prob., Edge %, Score Acquisto, Rating |
+| KPI righe | 13 righe fisse: 1/X/2, 1X/X2/12, Over/Under FT e PT |
+| Rating | Formula Excel: `(prob_cecchino_pct×0,5)+(vantaggio_prob_pct×2)+edge_pct`, clamp 0-100 |
+| Quote Cecchino | 1/X/2 da final odds; DC derivate; Over/Under senza formula → `—` |
+| Dettaglio book | Tabella Betfair-only: Mercato, Quota, Source, Status |
+| Debug link | `/bookmakers?provider_fixture_id=…&bookmaker_ids=3` |
+
+**UI:** tabella KPI full-width desktop senza scroll orizzontale; card compatte su mobile.
+
+**Invariato:** modelli SOT v2.0/v2.1, formule Cecchino 1/X/2, segnali SI/NO, Cecchino classico (`/cecchino`).
+
 ## Cecchino Today — Fase 19 — Gate progressivi e riduzione consumo API (v0.13)
 
 Versione `cecchino_today_v0_13_api_gates`: ottimizzazione consumo API-Football con gate progressivi e tracking.

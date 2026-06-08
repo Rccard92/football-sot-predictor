@@ -56,7 +56,7 @@ export function CecchinoTodayTechnicalIds({ detail }: Props) {
                 {copied ? 'Copiato' : 'Copia'}
               </button>
               <Link
-                to={`/bookmakers?provider_fixture_id=${providerId}`}
+                to={`/bookmakers?provider_fixture_id=${providerId}&bookmaker_ids=3`}
                 className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-800 hover:bg-indigo-100"
               >
                 Apri debug bookmakers

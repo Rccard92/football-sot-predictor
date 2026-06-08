@@ -68,8 +68,10 @@ SEL_OVER_1_5 = "OVER_1_5"
 SEL_UNDER_1_5 = "UNDER_1_5"
 SEL_OVER_2_5 = "OVER_2_5"
 SEL_UNDER_2_5 = "UNDER_2_5"
+SEL_UNDER_3_5 = "UNDER_3_5"
 SEL_OVER_PT_0_5 = "OVER_PT_0_5"
 SEL_OVER_PT_1_5 = "OVER_PT_1_5"
+SEL_UNDER_PT_1_5 = "UNDER_PT_1_5"
 SEL_UNKNOWN = "UNKNOWN"
 
 MAIN_FT_OU_RAW_NAME = "Goals Over/Under"
@@ -85,6 +87,7 @@ _OU_VALUE_HINT = re.compile(r"\b(?:over|under|o/u)\b", re.IGNORECASE)
 _LINE_05 = re.compile(r"0[,.]5")
 _LINE_15 = re.compile(r"1[,.]5")
 _LINE_25 = re.compile(r"2[,.]5")
+_LINE_35 = re.compile(r"3[,.]5")
 
 
 def is_main_full_time_goals_over_under(raw_market_name: str | None, bet_id: Any) -> bool:
@@ -108,6 +111,7 @@ def normalize_over_under_selection(raw_value: str | None) -> str:
         return SEL_UNKNOWN
     has_15 = bool(_LINE_15.search(n))
     has_25 = bool(_LINE_25.search(n))
+    has_35 = bool(_LINE_35.search(n))
     if is_over and has_15:
         return SEL_OVER_1_5
     if is_under and has_15:
@@ -116,22 +120,28 @@ def normalize_over_under_selection(raw_value: str | None) -> str:
         return SEL_OVER_2_5
     if is_under and has_25:
         return SEL_UNDER_2_5
+    if is_under and has_35:
+        return SEL_UNDER_3_5
     return SEL_UNKNOWN
 
 
 def normalize_first_half_over_under_selection(raw_value: str | None) -> str:
-    """Mappa value grezzo API-Football a selection enum Over primo tempo."""
+    """Mappa value grezzo API-Football a selection enum Over/Under primo tempo."""
     if not raw_value or not str(raw_value).strip():
         return SEL_UNKNOWN
     n = _norm(str(raw_value))
-    if "over" not in n:
+    is_over = "over" in n
+    is_under = "under" in n
+    if not is_over and not is_under:
         return SEL_UNKNOWN
     has_05 = bool(_LINE_05.search(n))
     has_15 = bool(_LINE_15.search(n))
-    if has_05:
+    if is_over and has_05:
         return SEL_OVER_PT_0_5
-    if has_15:
+    if is_over and has_15:
         return SEL_OVER_PT_1_5
+    if is_under and has_15:
+        return SEL_UNDER_PT_1_5
     return SEL_UNKNOWN
 
 

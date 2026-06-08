@@ -119,4 +119,5 @@ class ScanRunMetrics:
             "odds_strategy": dict(self.odds_strategy),
             "duration_seconds": round(duration_seconds, 2),
             "api_usage": api_usage or {},
+            "bookmaker_mode": "betfair_only",
         }

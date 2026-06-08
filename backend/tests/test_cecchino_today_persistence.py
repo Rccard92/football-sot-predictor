@@ -60,7 +60,7 @@ def _make_row(
     row.bookmaker_status = "missing"
     row.stats_status = "insufficient"
     row.cecchino_status = None
-    row.odds_snapshot_json = {"bookmakers": {}, "missing": ["Bet365"]}
+    row.odds_snapshot_json = {"bookmakers": {}, "missing": ["Betfair"]}
     row.stats_snapshot_json = {}
     row.warnings_json = []
     row.blocking_reasons_json = []
@@ -207,7 +207,7 @@ def test_list_excluded_today_enriched_includes_debug_blocks():
     assert "bookmaker_debug" in fx
     assert "stats_debug" in fx
     assert "competition_filter_debug" in fx
-    assert fx["bookmaker_debug"]["Bet365"] == "missing"
+    assert fx["bookmaker_debug"]["Betfair"] == "missing"
 
 
 def test_debug_search_finds_excluded_with_reason():
@@ -247,11 +247,8 @@ def test_build_bookmaker_debug_available():
     row = _make_row(scan_date=date(2026, 6, 4), status=ELIGIBILITY_ELIGIBLE)
     row.odds_snapshot_json = {
         "bookmakers": {
-            "Bet365": {"HOME": 2.0, "DRAW": 3.0, "AWAY": 4.0},
             "Betfair": {"HOME": 2.1, "DRAW": 3.1, "AWAY": 4.1},
-            "Pinnacle": {"HOME": 2.2, "DRAW": 3.2, "AWAY": 4.2},
         },
     }
     dbg = build_bookmaker_debug(row)
-    assert dbg["Bet365"] == "available"
-    assert dbg["Pinnacle"] == "available"
+    assert dbg["Betfair"] == "available"
