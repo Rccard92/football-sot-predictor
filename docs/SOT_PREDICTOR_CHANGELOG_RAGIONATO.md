@@ -1,5 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 27 — Goal market Poisson + storico (2026-06-08)
+
+- Introdotto modello `goal_market_poisson_empirical_v2` per i 7 mercati Over/Under.
+- Sostituita Excel parity come formula principale KPI; soglie 1.5 / 2.5 / 3.5 ora producono quote distinte.
+- Calcolo basato su gol attesi (lambda da 4 contesti picchetti), distribuzione Poisson e hit-rate storico.
+- Blend 65% Poisson + 35% empirico con reliability shrinkage verso probabilità lega quando disponibile.
+- Mercati PT con lambda HT e hit-rate su fixture con score primo tempo valido.
+- Excel parity mantenuta solo come `legacy_excel_parity` nel debug (non usata nel KPI).
+- Debug Picchetti v3: card summary, tabella contesti, accordion dettaglio tecnico.
+- JSON KPI: `cecchino_goal_odds_used` con summary, contexts, legacy.
+- Nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 26 — Formule goal da fogli OVER/UNDER Excel (2026-06-08)
 
 - Analizzati fogli OVER e UNDER di `AutomazioneCecchino.xlsm` (riferimento esterno, non in repo).

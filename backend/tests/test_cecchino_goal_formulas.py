@@ -10,7 +10,7 @@ from app.services.cecchino.cecchino_goal_formulas import (
     FORMULA_FT_OVER,
     FORMULA_FT_UNDER,
     FORMULA_PT,
-    build_goal_market_cecchino_odds,
+    build_goal_market_cecchino_odds_legacy,
     calculate_first_half_rate_to_odd,
     calculate_over_fulltime_excel_parity,
     calculate_under_fulltime_excel_parity,
@@ -76,22 +76,22 @@ def _thin_slices() -> GoalFixtureSlices:
 
 
 def test_over_15_uses_excel_parity_formula():
-    markets = build_goal_market_cecchino_odds(_full_slices())
+    markets = build_goal_market_cecchino_odds_legacy(_full_slices())
     assert markets[SEL_OVER_1_5]["formula_version"] == FORMULA_FT_OVER
 
 
 def test_over_25_uses_excel_parity_formula():
-    markets = build_goal_market_cecchino_odds(_full_slices())
+    markets = build_goal_market_cecchino_odds_legacy(_full_slices())
     assert markets[SEL_OVER_2_5]["formula_version"] == FORMULA_FT_OVER
 
 
 def test_under_25_uses_excel_parity_formula():
-    markets = build_goal_market_cecchino_odds(_full_slices())
+    markets = build_goal_market_cecchino_odds_legacy(_full_slices())
     assert markets[SEL_UNDER_2_5]["formula_version"] == FORMULA_FT_UNDER
 
 
 def test_under_35_uses_excel_parity_formula():
-    markets = build_goal_market_cecchino_odds(_full_slices())
+    markets = build_goal_market_cecchino_odds_legacy(_full_slices())
     assert markets[SEL_UNDER_3_5]["formula_version"] == FORMULA_FT_UNDER
 
 
@@ -150,12 +150,12 @@ def test_ft_final_is_average_of_three_blocks():
 
 
 def test_over_15_and_over_25_same_odd():
-    markets = build_goal_market_cecchino_odds(_full_slices())
+    markets = build_goal_market_cecchino_odds_legacy(_full_slices())
     assert markets[SEL_OVER_1_5]["final_odd"] == markets[SEL_OVER_2_5]["final_odd"]
 
 
 def test_under_25_and_under_35_same_odd():
-    markets = build_goal_market_cecchino_odds(_full_slices())
+    markets = build_goal_market_cecchino_odds_legacy(_full_slices())
     assert markets[SEL_UNDER_2_5]["final_odd"] == markets[SEL_UNDER_3_5]["final_odd"]
 
 

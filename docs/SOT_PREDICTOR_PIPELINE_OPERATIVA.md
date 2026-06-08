@@ -32,6 +32,24 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 27 — Goal market Poisson + storico
+
+```mermaid
+flowchart LR
+  dbFixtures[fixtures DB PIT] --> contexts[build_goal_market_contexts]
+  contexts --> v2[goal_market_poisson_empirical_v2]
+  contexts --> legacy[legacy_excel_parity]
+  v2 --> goalMarkets[goal_markets.final_odd]
+  legacy --> debug[Debug Picchetti v3]
+  goalMarkets --> kpi[cecchino_kpi_panel_v2_betfair]
+```
+
+- **Formula KPI:** `goal_market_poisson_empirical_v2` — lambda + Poisson + hit-rate + blend 65/35.
+- **Contesti:** totals (tutte le partite), home_away, last6_totals, last5_home_away.
+- **Soglie distinte:** Over 1.5 ≠ Over 2.5; Under 2.5 ≠ Under 3.5 (per costruzione Poisson).
+- **Legacy:** Excel parity solo in `legacy_excel_parity.enabled_for_kpi=false`.
+- **Rescan:** fixture con goal_markets Fase 26 vanno riscansionate per v2.
+
 ## Fase 26 — Formule goal Over/Under
 
 ```mermaid

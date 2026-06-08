@@ -410,6 +410,38 @@ export type CecchinoGoalPtSideDebug = {
   rate?: number | null
 }
 
+export type CecchinoGoalMarketSummary = {
+  lambda?: number
+  poisson_probability?: number
+  empirical_probability?: number
+  league_event_probability?: number | null
+  final_probability_raw?: number
+  final_probability_capped?: number
+  final_probability?: number
+  final_odd?: number | null
+  overall_reliability?: number
+  reliability_badge?: string
+}
+
+export type CecchinoGoalMarketContextRow = {
+  name?: string
+  label?: string
+  weight?: number
+  sample_home?: number
+  sample_away?: number
+  lambda_total?: number
+  hit_rate_home?: number | null
+  hit_rate_away?: number | null
+  empirical_probability?: number | null
+  reliability?: number
+  status?: string
+}
+
+export type CecchinoGoalLegacyExcelParity = {
+  final_odd?: number | null
+  enabled_for_kpi?: boolean
+}
+
 export type CecchinoPicchettiMarketDebug = {
   market_key: string
   segno: string
@@ -432,6 +464,10 @@ export type CecchinoPicchettiMarketDebug = {
   status?: string
   warnings?: string[]
   skipped_missing_halftime_score?: number
+  summary?: CecchinoGoalMarketSummary
+  contexts?: CecchinoGoalMarketContextRow[]
+  legacy_excel_parity?: CecchinoGoalLegacyExcelParity
+  technical?: Record<string, unknown>
 }
 
 export type CecchinoPicchettiDebugResponse = {

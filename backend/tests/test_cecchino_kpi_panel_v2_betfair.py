@@ -12,6 +12,7 @@ from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
     rating_label,
 )
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE, STATUS_INSUFFICIENT_DATA
+from app.services.cecchino.cecchino_goal_poisson_v2 import FORMULA_V2
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -245,37 +246,37 @@ def test_book_ids_complete_betfair_only():
 def _goal_markets() -> dict:
     return {
         SEL_OVER_1_5: {
-            "formula_version": "over_under_fulltime_excel_parity_v1",
+            "formula_version": FORMULA_V2,
             "final_odd": 2.15,
             "status": STATUS_AVAILABLE,
         },
         SEL_OVER_2_5: {
-            "formula_version": "over_under_fulltime_excel_parity_v1",
-            "final_odd": 2.15,
+            "formula_version": FORMULA_V2,
+            "final_odd": 2.35,
             "status": STATUS_AVAILABLE,
         },
         SEL_UNDER_2_5: {
-            "formula_version": "over_under_fulltime_excel_parity_v1",
+            "formula_version": FORMULA_V2,
             "final_odd": 1.90,
             "status": STATUS_AVAILABLE,
         },
         SEL_UNDER_3_5: {
-            "formula_version": "over_under_fulltime_excel_parity_v1",
-            "final_odd": 1.90,
+            "formula_version": FORMULA_V2,
+            "final_odd": 1.72,
             "status": STATUS_AVAILABLE,
         },
         SEL_OVER_PT_0_5: {
-            "formula_version": "first_half_rate_to_odd_v1",
+            "formula_version": FORMULA_V2,
             "final_odd": 1.43,
             "status": STATUS_AVAILABLE,
         },
         SEL_OVER_PT_1_5: {
-            "formula_version": "first_half_rate_to_odd_v1",
+            "formula_version": FORMULA_V2,
             "final_odd": 3.10,
             "status": STATUS_AVAILABLE,
         },
         SEL_UNDER_PT_1_5: {
-            "formula_version": "first_half_rate_to_odd_v1",
+            "formula_version": FORMULA_V2,
             "final_odd": 1.55,
             "status": STATUS_AVAILABLE,
         },
@@ -293,14 +294,14 @@ def _build_with_goals():
 def test_kpi_populates_ou_ft_quota_cecchino():
     row = _row_by_key(_build_with_goals(), SEL_OVER_1_5)
     assert row["quota_cecchino"] == 2.15
-    assert row["cecchino_source"] == "over_under_fulltime_excel_parity_v1"
+    assert row["cecchino_source"] == FORMULA_V2
     assert row["prob_cecchino"] == pytest.approx(1 / 2.15, abs=0.0001)
 
 
 def test_kpi_populates_pt_quota_cecchino():
     row = _row_by_key(_build_with_goals(), SEL_OVER_PT_0_5)
     assert row["quota_cecchino"] == 1.43
-    assert row["cecchino_source"] == "first_half_rate_to_odd_v1"
+    assert row["cecchino_source"] == FORMULA_V2
 
 
 def test_kpi_ou_edge_score_rating_with_goals():
@@ -313,7 +314,7 @@ def test_kpi_ou_edge_score_rating_with_goals():
 def test_kpi_ou_insufficient_data_status():
     markets = {
         SEL_OVER_1_5: {
-            "formula_version": "over_under_fulltime_excel_parity_v1",
+            "formula_version": FORMULA_V2,
             "final_odd": None,
             "status": STATUS_INSUFFICIENT_DATA,
         },

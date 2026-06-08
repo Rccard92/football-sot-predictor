@@ -73,7 +73,7 @@ from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
 )
 from app.services.cecchino.cecchino_fixture_history import (
     build_fixture_contexts,
-    build_goal_fixture_slices,
+    build_goal_market_contexts,
 )
 from app.services.cecchino.cecchino_goal_formulas import build_goal_market_cecchino_odds
 from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH
@@ -871,8 +871,12 @@ def run_scan(
                 _emit_progress(progress, current_step="validating_eligibility")
                 cecchino_output = calc.get("output") or {}
                 if local_fx is not None:
-                    goal_slices = build_goal_fixture_slices(db, local_fx)
-                    cecchino_output["goal_markets"] = build_goal_market_cecchino_odds(goal_slices)
+                    goal_ctx = build_goal_market_contexts(db, local_fx)
+                    cecchino_output["goal_markets"] = build_goal_market_cecchino_odds(
+                        db,
+                        local_fx,
+                        goal_ctx,
+                    )
                 odds_source = "cached_betfair_odds" if odds_strategy == "cached" else "betfair"
                 teams = item.get("teams") or {}
                 home_name = (teams.get("home") or {}).get("name")

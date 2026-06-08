@@ -121,14 +121,17 @@ def _cecchino_goal_odds_used(output: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(block, dict):
             continue
         dbg = build_goal_market_debug(block)
+        dbg["summary"] = block.get("summary")
+        dbg["contexts"] = block.get("contexts")
+        dbg["legacy_excel_parity"] = block.get("legacy_excel_parity")
+        dbg["technical"] = block.get("technical")
         dbg["inputs"] = {
-            "blocks": block.get("blocks"),
-            "home": block.get("home"),
-            "away": block.get("away"),
-            "event": block.get("event"),
-            "sample_status": block.get("sample_status"),
+            "summary": block.get("summary"),
+            "contexts": block.get("contexts"),
+            "legacy_excel_parity": block.get("legacy_excel_parity"),
         }
-        dbg["intermediate_values"] = block.get("blocks") or {
+        dbg["intermediate_values"] = block.get("technical") or block.get("summary") or {
+            "blocks": block.get("blocks"),
             "home": block.get("home"),
             "away": block.get("away"),
             "probability": block.get("probability"),

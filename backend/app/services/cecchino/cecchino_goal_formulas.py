@@ -329,8 +329,8 @@ def calculate_first_half_goal_market_odds(
     return calculate_first_half_rate_to_odd(market_key, slices)
 
 
-def build_goal_market_cecchino_odds(slices: GoalFixtureSlices) -> dict[str, Any]:
-    """Calcola quote Cecchino per i 7 mercati Over/Under."""
+def build_goal_market_cecchino_odds_legacy(slices: GoalFixtureSlices) -> dict[str, Any]:
+    """Calcola quote Excel parity legacy (solo debug)."""
     over_ft = calculate_over_fulltime_excel_parity(slices)
     under_ft = calculate_under_fulltime_excel_parity(slices)
 
@@ -350,6 +350,23 @@ def build_goal_market_cecchino_odds(slices: GoalFixtureSlices) -> dict[str, Any]
     return markets
 
 
+def build_goal_market_cecchino_odds(
+    db,
+    target_fixture,
+    contexts=None,
+) -> dict[str, Any]:
+    """Calcola quote Cecchino v2 Poisson+empirico per i 7 mercati OU."""
+    from app.services.cecchino.cecchino_fixture_history import (
+        GoalMarketContexts,
+        build_goal_market_contexts,
+    )
+    from app.services.cecchino.cecchino_goal_poisson_v2 import build_goal_markets_v2
+
+    if contexts is None:
+        contexts = build_goal_market_contexts(db, target_fixture)
+    return build_goal_markets_v2(db, target_fixture, contexts)
+
+
 def build_goal_market_debug(market_result: dict[str, Any]) -> dict[str, Any]:
     """Payload debug compatto per un singolo mercato goal."""
     if not market_result:
@@ -361,6 +378,14 @@ def build_goal_market_debug(market_result: dict[str, Any]) -> dict[str, Any]:
         "status": market_result.get("status"),
         "warnings": list(market_result.get("warnings") or []),
     }
+    if market_result.get("summary"):
+        out["summary"] = market_result["summary"]
+    if market_result.get("contexts"):
+        out["contexts"] = market_result["contexts"]
+    if market_result.get("technical"):
+        out["technical"] = market_result["technical"]
+    if market_result.get("legacy_excel_parity"):
+        out["legacy_excel_parity"] = market_result["legacy_excel_parity"]
     if market_result.get("formula_note"):
         out["formula_note"] = market_result["formula_note"]
     if market_result.get("blocks"):

@@ -303,6 +303,23 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 27 — Goal market Poisson + storico (v0.21)
+
+Versione UI `cecchino_today_v0_21_goal_poisson_v2` — modello analitico OU distinto per soglia.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Formula principale | `goal_market_poisson_empirical_v2` |
+| Lambda FT/HT | 4 contesti (totals, casa/fuori, ultime 6, ultime 5) pesati 25/20/35/20 |
+| Poisson | Probabilità mercato da `lambda` (soglie distinte per 1.5 / 2.5 / 3.5) |
+| Empirico | Hit-rate ponderato per contesto |
+| Blend | 65% Poisson + 35% storico + shrinkage reliability verso lega |
+| Legacy | Excel parity in `legacy_excel_parity` (solo debug) |
+| Debug v3 | Summary card, tabella contesti, dettaglio tecnico chiuso |
+| KPI | `quota_cecchino` da v2; `insufficient_data` se campione basso |
+
+**Invariato:** engine 1X2, SOT v2.0/v2.1, Betfair-only, refresh quote.
+
 ## Cecchino Today — Fase 26 — Formule goal Over/Under Excel (v0.20)
 
 Versione UI `cecchino_today_v0_20_goal_formulas` — Quota Cecchino per 7 mercati goal.

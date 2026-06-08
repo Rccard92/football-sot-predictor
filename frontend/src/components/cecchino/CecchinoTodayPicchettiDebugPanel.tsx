@@ -23,11 +23,19 @@ const WEIGHT_LABELS: Array<{ key: string; pct: string }> = [
   { key: 'last5_home_away', pct: '20%' },
 ]
 
-type TabId = '1' | 'X' | '2' | 'dc' | 'over_ft' | 'under_ft' | 'pt' | 'missing'
+type TabId = '1' | 'X' | '2' | 'dc' | 'goals' | 'missing'
 
-const OU_FT_OVER_KEYS = ['OVER_1_5', 'OVER_2_5'] as const
-const OU_FT_UNDER_KEYS = ['UNDER_2_5', 'UNDER_3_5'] as const
-const OU_PT_KEYS = ['OVER_PT_0_5', 'OVER_PT_1_5', 'UNDER_PT_1_5'] as const
+const GOAL_MARKET_KEYS = [
+  'OVER_1_5',
+  'OVER_2_5',
+  'UNDER_2_5',
+  'UNDER_3_5',
+  'OVER_PT_0_5',
+  'OVER_PT_1_5',
+  'UNDER_PT_1_5',
+] as const
+
+type GoalMarketKey = (typeof GOAL_MARKET_KEYS)[number]
 
 const TAB_MARKET: Record<'1' | 'X' | '2', string> = {
   '1': 'HOME',
@@ -144,109 +152,230 @@ function DcTab({ markets }: { markets: Record<string, CecchinoPicchettiMarketDeb
   )
 }
 
-function OuBlockCard({
-  title,
-  block,
+function reliabilityBadgeClass(badge?: string): string {
+  if (badge === 'Alta') return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+  if (badge === 'Media') return 'bg-amber-100 text-amber-800 border-amber-200'
+  return 'bg-red-100 text-red-800 border-red-200'
+}
+
+function kpiRowForKey(kpiPanel: CecchinoKpiV2Panel | undefined, marketKey: string) {
+  return (kpiPanel?.rows ?? []).find((r) => r.market_key === marketKey)
+}
+
+function GoalMarketSummaryCard({
+  market,
+  kpiPanel,
 }: {
-  title: string
-  block?: Record<string, number | undefined>
+  market: CecchinoPicchettiMarketDebug
+  kpiPanel?: CecchinoKpiV2Panel
 }) {
-  if (!block || typeof block !== 'object') return null
-  const entries = Object.entries(block).filter(([, v]) => v != null)
-  if (!entries.length) return null
+  const s = market.summary
+  const kpi = kpiRowForKey(kpiPanel, market.market_key)
+  const lambdaLabel = market.market_key.includes('_PT_') ? 'Gol attesi PT' : 'Gol attesi FT'
+
+  if (!s && !market.final_odd) {
+    return (
+      <p className="text-sm text-slate-500">
+        Dati insufficienti per calcolare la Quota Cecchino ({market.segno}).
+      </p>
+    )
+  }
+
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-      <h4 className="mb-2 font-semibold text-slate-900">{title}</h4>
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums sm:grid-cols-3">
-        {entries.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-slate-500">{k}</dt>
-            <dd>{typeof v === 'number' ? fmtNum(v, 4) : String(v)}</dd>
-          </div>
-        ))}
+    <article className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-base font-semibold text-slate-900">{market.segno}</h4>
+        {s?.reliability_badge && (
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${reliabilityBadgeClass(s.reliability_badge)}`}
+          >
+            Affidabilità {s.reliability_badge}
+          </span>
+        )}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 tabular-nums sm:grid-cols-3">
+        <div>
+          <dt className="text-xs text-slate-500">Quota Cecchino</dt>
+          <dd className="font-bold text-emerald-800">{fmtNum(s?.final_odd ?? market.final_odd)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Probabilità finale</dt>
+          <dd>{s?.final_probability != null ? fmtPct(s.final_probability * 100) : '—'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Quota Betfair</dt>
+          <dd>{fmtNum(kpi?.quota_book)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Edge</dt>
+          <dd>{kpi?.edge_pct != null ? fmtPct(kpi.edge_pct) : '—'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Rating</dt>
+          <dd>
+            {kpi?.rating != null ? `${kpi.rating} ${kpi.rating_label ?? ''}` : '—'}
+          </dd>
+        </div>
       </dl>
+      <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
+        <p className="mb-1 font-semibold text-slate-700">Numeri chiave</p>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3">
+          <div>
+            <dt className="text-slate-500">{lambdaLabel}</dt>
+            <dd>{fmtNum(s?.lambda, 2)}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Prob. Poisson</dt>
+            <dd>{s?.poisson_probability != null ? fmtPct(s.poisson_probability * 100) : '—'}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Prob. storica</dt>
+            <dd>{s?.empirical_probability != null ? fmtPct(s.empirical_probability * 100) : '—'}</dd>
+          </div>
+        </dl>
+      </div>
+      {s?.reliability_badge === 'Bassa' && (
+        <p className="mt-2 text-xs text-amber-800">
+          Campione ridotto: quota da interpretare con cautela.
+        </p>
+      )}
     </article>
   )
 }
 
-function OuFullTimeTab({
-  keys,
-  markets,
-}: {
-  keys: readonly string[]
-  markets: Record<string, CecchinoPicchettiMarketDebug>
-}) {
-  const primary = markets[keys[0]]
-  if (!primary) {
-    return <p className="text-sm text-slate-500">Dati goal full time non disponibili.</p>
-  }
+function GoalContextTable({ contexts }: { contexts?: CecchinoPicchettiMarketDebug['contexts'] }) {
+  const rows = contexts ?? []
+  if (!rows.length) return null
   return (
-    <div className="space-y-3">
-      {primary.formula_note && (
-        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          {primary.formula_note}
-        </p>
-      )}
-      {primary.formula_version && (
-        <p className="text-xs text-slate-500">Versione: {primary.formula_version}</p>
-      )}
-      <OuBlockCard title="Blocco casa/fuori" block={primary.blocks?.home_away} />
-      <OuBlockCard title="Blocco totals" block={primary.blocks?.totals} />
-      <OuBlockCard title="Blocco mixed" block={primary.blocks?.mixed} />
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
-        <span className="font-semibold text-emerald-900">Quota Cecchino finale: </span>
-        <span className="tabular-nums font-bold text-emerald-900">{fmtNum(primary.final_odd)}</span>
-        {keys.length > 1 && (
-          <p className="mt-1 text-xs text-emerald-800">
-            Stessa quota per {keys.map((k) => markets[k]?.segno ?? k).join(' e ')} (parità Excel).
-          </p>
-        )}
-      </div>
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="min-w-full text-xs">
+        <thead className="bg-slate-50 text-slate-600">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium">Contesto</th>
+            <th className="px-3 py-2 text-left font-medium">Campione</th>
+            <th className="px-3 py-2 text-left font-medium">Gol attesi</th>
+            <th className="px-3 py-2 text-left font-medium">Hit-rate</th>
+            <th className="px-3 py-2 text-left font-medium">Peso</th>
+            <th className="px-3 py-2 text-left font-medium">Stato</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 tabular-nums">
+          {rows.map((r) => (
+            <tr key={r.name ?? r.label}>
+              <td className="px-3 py-2 text-slate-800">{r.label ?? r.name}</td>
+              <td className="px-3 py-2">
+                {(r.sample_home ?? '—')}+{(r.sample_away ?? '—')}
+              </td>
+              <td className="px-3 py-2">{fmtNum(r.lambda_total, 2)}</td>
+              <td className="px-3 py-2">
+                {r.empirical_probability != null
+                  ? fmtPct(r.empirical_probability * 100)
+                  : r.hit_rate_home != null && r.hit_rate_away != null
+                    ? fmtPct(((r.hit_rate_home + r.hit_rate_away) / 2) * 100)
+                    : '—'}
+              </td>
+              <td className="px-3 py-2">
+                {r.weight != null ? `${(r.weight * 100).toFixed(0)}%` : '—'}
+              </td>
+              <td className="px-3 py-2 capitalize">{r.status === 'low_sample' ? 'Basso campione' : 'OK'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
-function OuFirstHalfTab({ markets }: { markets: Record<string, CecchinoPicchettiMarketDebug> }) {
+function GoalTechnicalDetails({ market }: { market: CecchinoPicchettiMarketDebug }) {
+  const s = market.summary
+  const tech = market.technical
+  const legacy = market.legacy_excel_parity
+  return (
+    <details className="rounded-lg border border-slate-200 bg-slate-50 text-xs">
+      <summary className="cursor-pointer px-3 py-2 font-medium text-slate-700">Dettaglio tecnico</summary>
+      <div className="border-t border-slate-200 px-3 py-2">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
+          <dt className="text-slate-500">formula_version</dt>
+          <dd>{market.formula_version ?? '—'}</dd>
+          <dt className="text-slate-500">lambda</dt>
+          <dd>{fmtNum(s?.lambda, 4)}</dd>
+          <dt className="text-slate-500">poisson_probability</dt>
+          <dd>{s?.poisson_probability ?? '—'}</dd>
+          <dt className="text-slate-500">empirical_probability</dt>
+          <dd>{s?.empirical_probability ?? '—'}</dd>
+          <dt className="text-slate-500">league_event_probability</dt>
+          <dd>{s?.league_event_probability ?? '—'}</dd>
+          <dt className="text-slate-500">overall_reliability</dt>
+          <dd>{s?.overall_reliability ?? '—'}</dd>
+          <dt className="text-slate-500">final_probability_raw</dt>
+          <dd>{s?.final_probability_raw ?? '—'}</dd>
+          <dt className="text-slate-500">final_probability_capped</dt>
+          <dd>{s?.final_probability_capped ?? '—'}</dd>
+          {legacy?.final_odd != null && (
+            <>
+              <dt className="text-slate-500">legacy_excel_parity</dt>
+              <dd>{fmtNum(legacy.final_odd)} (non usata nel KPI)</dd>
+            </>
+          )}
+        </dl>
+        {tech && (
+          <pre className="mt-2 max-h-40 overflow-auto rounded bg-white p-2 text-[10px] text-slate-600">
+            {JSON.stringify(tech, null, 2)}
+          </pre>
+        )}
+        {(market.warnings ?? []).length > 0 && (
+          <ul className="mt-2 list-inside list-disc text-amber-800">
+            {(market.warnings ?? []).map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
+  )
+}
+
+function GoalsTab({
+  markets,
+  kpiPanel,
+}: {
+  markets: Record<string, CecchinoPicchettiMarketDebug>
+  kpiPanel?: CecchinoKpiV2Panel
+}) {
+  const [subTab, setSubTab] = useState<GoalMarketKey>(GOAL_MARKET_KEYS[0])
+  const market = markets[subTab]
+
   return (
     <div className="space-y-4">
-      {OU_PT_KEYS.map((key) => {
-        const m = markets[key]
-        if (!m) return null
-        return (
-          <article key={key} className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-            <h4 className="font-semibold text-slate-900">{m.segno}</h4>
-            {m.formula_version && (
-              <p className="mt-1 text-xs text-slate-500">Versione: {m.formula_version}</p>
-            )}
-            {m.event && <p className="mt-1 font-mono text-xs text-slate-600">Evento: {m.event}</p>}
-            <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular-nums sm:grid-cols-4">
-              <dt className="text-slate-500">Campione casa</dt>
-              <dd>{m.home?.sample ?? '—'}</dd>
-              <dt className="text-slate-500">Hit casa</dt>
-              <dd>{m.home?.hits ?? '—'}</dd>
-              <dt className="text-slate-500">Rate casa</dt>
-              <dd>{m.home?.rate != null ? fmtPct(m.home.rate * 100) : '—'}</dd>
-              <dt className="text-slate-500">Campione trasferta</dt>
-              <dd>{m.away?.sample ?? '—'}</dd>
-              <dt className="text-slate-500">Hit trasferta</dt>
-              <dd>{m.away?.hits ?? '—'}</dd>
-              <dt className="text-slate-500">Rate trasferta</dt>
-              <dd>{m.away?.rate != null ? fmtPct(m.away.rate * 100) : '—'}</dd>
-              <dt className="text-slate-500">Probabilità</dt>
-              <dd>{m.probability != null ? fmtPct(m.probability * 100) : '—'}</dd>
-            </dl>
-            <p className="mt-2">
-              <span className="text-slate-600">Quota Cecchino: </span>
-              <span className="font-bold tabular-nums text-slate-900">{fmtNum(m.final_odd)}</span>
-            </p>
-            {m.skipped_missing_halftime_score != null && m.skipped_missing_halftime_score > 0 && (
-              <p className="mt-1 text-xs text-amber-700">
-                Escluse {m.skipped_missing_halftime_score} partite senza score primo tempo.
-              </p>
-            )}
-          </article>
-        )
-      })}
+      <div className="flex flex-wrap gap-1">
+        {GOAL_MARKET_KEYS.map((key) => {
+          const m = markets[key]
+          const label = m?.segno ?? key.replace(/_/g, ' ')
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSubTab(key)}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                subTab === key
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      {market ? (
+        <>
+          <GoalMarketSummaryCard market={market} kpiPanel={kpiPanel} />
+          <GoalContextTable contexts={market.contexts} />
+          <GoalTechnicalDetails market={market} />
+        </>
+      ) : (
+        <p className="text-sm text-slate-500">Mercato goal non disponibile.</p>
+      )}
     </div>
   )
 }
@@ -284,6 +413,7 @@ export function CecchinoTodayPicchettiDebugPanel({
   todayFixtureId,
   providerFixtureId,
   summary,
+  kpiPanel,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<TabId>('1')
@@ -338,9 +468,7 @@ export function CecchinoTodayPicchettiDebugPanel({
     { id: 'X', label: 'X' },
     { id: '2', label: '2' },
     { id: 'dc', label: '1X/X2/12' },
-    { id: 'over_ft', label: 'Over FT' },
-    { id: 'under_ft', label: 'Under FT' },
-    { id: 'pt', label: 'Primo tempo' },
+    { id: 'goals', label: 'Goal OU' },
     ...(missingCount > 0 ? [{ id: 'missing' as TabId, label: 'Formule mancanti' }] : []),
   ]
 
@@ -412,9 +540,7 @@ export function CecchinoTodayPicchettiDebugPanel({
             {tab === 'X' && <Market1X2Tab market={markets[TAB_MARKET.X]} />}
             {tab === '2' && <Market1X2Tab market={markets[TAB_MARKET['2']]} />}
             {tab === 'dc' && <DcTab markets={markets} />}
-            {tab === 'over_ft' && <OuFullTimeTab keys={OU_FT_OVER_KEYS} markets={markets} />}
-            {tab === 'under_ft' && <OuFullTimeTab keys={OU_FT_UNDER_KEYS} markets={markets} />}
-            {tab === 'pt' && <OuFirstHalfTab markets={markets} />}
+            {tab === 'goals' && <GoalsTab markets={markets} kpiPanel={kpiPanel} />}
             {tab === 'missing' && <MissingFormulasTab items={data.missing_formulas} />}
 
             {(data.warnings ?? []).length > 0 && (

@@ -34,7 +34,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_X_TWO,
 )
 
-DEBUG_VERSION = "cecchino_picchetti_debug_v2"
+DEBUG_VERSION = "cecchino_picchetti_debug_v3"
 KPI_COHERENCE_TOLERANCE = 0.01
 
 _PICCHETTO_ORDER = (
@@ -274,7 +274,8 @@ def _check_kpi_coherence(
     ou_keys = [k for k, _ in _OU_MARKETS]
     for market_key in (SEL_HOME, SEL_DRAW, SEL_AWAY, SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO, *ou_keys):
         mkt = markets.get(market_key) or {}
-        debug_odd = _num(mkt.get("final_odd"))
+        summary = mkt.get("summary") if isinstance(mkt.get("summary"), dict) else {}
+        debug_odd = _num(summary.get("final_odd")) or _num(mkt.get("final_odd"))
         kpi_row = by_key.get(market_key) or {}
         kpi_odd = _num(kpi_row.get("quota_cecchino"))
         if debug_odd is None or kpi_odd is None:
@@ -339,6 +340,8 @@ def build_cecchino_picchetti_debug(
         if isinstance(block, dict) and block:
             dbg = build_goal_market_debug(block)
             dbg["segno"] = label
+            if block.get("formula_version") == "goal_market_poisson_empirical_v2":
+                dbg["formula_status"] = block.get("status")
             markets[market_key] = dbg
             for w in block.get("warnings") or []:
                 if isinstance(w, str) and w not in warnings:

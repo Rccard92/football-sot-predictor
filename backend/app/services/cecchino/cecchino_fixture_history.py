@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import FINISHED_STATUSES, LIVE_STATUSES, SCHEDULED_STATUSES
@@ -367,6 +368,26 @@ TARGET_GOAL_HT = 5
 MIN_GOAL_HOME_AWAY = 3
 MIN_GOAL_TOTAL = 6
 MIN_GOAL_HT = 3
+MIN_GOAL_LAST6 = 5
+
+CONTEXT_KEY_TOTALS = "totals"
+CONTEXT_KEY_HOME_AWAY = "home_away"
+CONTEXT_KEY_LAST6_TOTALS = "last6_totals"
+CONTEXT_KEY_LAST5_HOME_AWAY = "last5_home_away"
+
+CONTEXT_LABELS: dict[str, str] = {
+    CONTEXT_KEY_TOTALS: "Totali stagione",
+    CONTEXT_KEY_HOME_AWAY: "Casa/Fuori",
+    CONTEXT_KEY_LAST6_TOTALS: "Ultime 6 totali",
+    CONTEXT_KEY_LAST5_HOME_AWAY: "Ultime 5 casa/fuori",
+}
+
+CONTEXT_TARGETS: dict[str, tuple[int, int]] = {
+    CONTEXT_KEY_TOTALS: (10, MIN_GOAL_TOTAL),
+    CONTEXT_KEY_HOME_AWAY: (5, MIN_GOAL_HOME_AWAY),
+    CONTEXT_KEY_LAST6_TOTALS: (6, MIN_GOAL_LAST6),
+    CONTEXT_KEY_LAST5_HOME_AWAY: (5, MIN_GOAL_HOME_AWAY),
+}
 
 
 @dataclass
@@ -521,6 +542,289 @@ def _take_last_n_with_halftime(
         if len(valid) >= n:
             break
     return valid, skipped
+
+
+@dataclass
+class GoalContextSlice:
+    """Singolo contesto goal allineato ai picchetti Cecchino."""
+
+    name: str
+    label: str
+    home_fixtures: list[Fixture]
+    away_fixtures: list[Fixture]
+    home_totals: GoalTotals
+    away_totals: GoalTotals
+    target_sample: int
+    min_sample: int
+
+    @property
+    def sample_home(self) -> int:
+        return self.home_totals.sample
+
+    @property
+    def sample_away(self) -> int:
+        return self.away_totals.sample
+
+
+@dataclass
+class GoalMarketContexts:
+    """4 contesti FT + 4 contesti HT per modello Poisson v2."""
+
+    totals: GoalContextSlice
+    home_away: GoalContextSlice
+    last6_totals: GoalContextSlice
+    last5_home_away: GoalContextSlice
+    ht_totals: GoalContextSlice
+    ht_home_away: GoalContextSlice
+    ht_last6_totals: GoalContextSlice
+    ht_last5_home_away: GoalContextSlice
+    skipped_missing_halftime_score: int = 0
+    home_team_id: int = 0
+    away_team_id: int = 0
+
+    def ft_slices(self) -> list[GoalContextSlice]:
+        return [self.totals, self.home_away, self.last6_totals, self.last5_home_away]
+
+    def ht_slices(self) -> list[GoalContextSlice]:
+        return [
+            self.ht_totals,
+            self.ht_home_away,
+            self.ht_last6_totals,
+            self.ht_last5_home_away,
+        ]
+
+
+def team_halftime_goals_in_fixture(
+    fixture: Fixture,
+    team_id: int,
+) -> tuple[int | None, int | None]:
+    """Restituisce (ht_goals_for, ht_goals_against) dal POV squadra."""
+    raw = fixture.raw_json if isinstance(fixture.raw_json, dict) else {}
+    score = raw.get("score") if isinstance(raw.get("score"), dict) else {}
+    ht = score.get("halftime") if isinstance(score.get("halftime"), dict) else {}
+    h, a = ht.get("home"), ht.get("away")
+    if h is None or a is None:
+        return None, None
+    try:
+        gh, ga = int(h), int(a)
+    except (TypeError, ValueError):
+        return None, None
+    tid = int(team_id)
+    if int(fixture.home_team_id) == tid:
+        return gh, ga
+    if int(fixture.away_team_id) == tid:
+        return ga, gh
+    return None, None
+
+
+def _filter_halftime_fixtures(fixtures: list[Fixture]) -> tuple[list[Fixture], int]:
+    valid: list[Fixture] = []
+    skipped = 0
+    for f in fixtures:
+        if halftime_total_goals(f) is None:
+            skipped += 1
+        else:
+            valid.append(f)
+    return valid, skipped
+
+
+def aggregate_halftime_goal_totals(
+    fixtures: list[Fixture],
+    team_id: int,
+) -> GoalTotals:
+    """Aggrega goal HT da fixture con score primo tempo valido."""
+    gf = ga = tg = 0
+    o15 = o25 = u25 = u35 = 0
+    pt05 = pt15 = upt15 = 0
+    ids: list[int] = []
+    sample = 0
+
+    for f in fixtures:
+        goals_for, goals_against = team_halftime_goals_in_fixture(f, team_id)
+        if goals_for is None or goals_against is None:
+            continue
+        sample += 1
+        ids.append(int(f.id))
+        gf += goals_for
+        ga += goals_against
+        match_total = goals_for + goals_against
+        tg += match_total
+        if match_total >= 2:
+            o15 += 1
+        if match_total >= 3:
+            o25 += 1
+        if match_total <= 2:
+            u25 += 1
+        if match_total <= 3:
+            u35 += 1
+        if match_total >= 1:
+            pt05 += 1
+        if match_total >= 2:
+            pt15 += 1
+        if match_total <= 1:
+            upt15 += 1
+
+    return GoalTotals(
+        sample=sample,
+        goals_for=gf,
+        goals_against=ga,
+        total_goals=tg,
+        over_1_5_hits=o15,
+        over_2_5_hits=o25,
+        under_2_5_hits=u25,
+        under_3_5_hits=u35,
+        over_pt_0_5_hits=pt05,
+        over_pt_1_5_hits=pt15,
+        under_pt_1_5_hits=upt15,
+        fixture_ids=ids,
+    )
+
+
+def _make_context_slice(
+    *,
+    name: str,
+    home_fixtures: list[Fixture],
+    away_fixtures: list[Fixture],
+    home_team_id: int,
+    away_team_id: int,
+    use_halftime: bool = False,
+) -> GoalContextSlice:
+    target, min_s = CONTEXT_TARGETS[name]
+    agg = aggregate_halftime_goal_totals if use_halftime else aggregate_goal_totals
+    return GoalContextSlice(
+        name=name,
+        label=CONTEXT_LABELS[name],
+        home_fixtures=home_fixtures,
+        away_fixtures=away_fixtures,
+        home_totals=agg(home_fixtures, home_team_id),
+        away_totals=agg(away_fixtures, away_team_id),
+        target_sample=target,
+        min_sample=min_s,
+    )
+
+
+def load_league_finished_fixtures_before(
+    db: Session,
+    target_fixture: Fixture,
+) -> list[Fixture]:
+    """Fixture finite della competizione prima del kickoff target (PIT)."""
+    comp_id = int(target_fixture.competition_id or 0)
+    if comp_id <= 0:
+        return []
+    cutoff_ko = target_fixture.kickoff_at
+    cutoff_id = int(target_fixture.id)
+    if cutoff_ko is None:
+        return []
+
+    rows = db.scalars(
+        select(Fixture)
+        .where(
+            Fixture.competition_id == comp_id,
+            Fixture.status.in_(FINISHED_STATUSES),
+        )
+        .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
+    ).all()
+    return [
+        f
+        for f in rows
+        if f.kickoff_at is not None
+        and fixture_key_before(f.kickoff_at, int(f.id), cutoff_ko, cutoff_id)
+        and f.goals_home is not None
+        and f.goals_away is not None
+    ]
+
+
+def build_goal_market_contexts(db: Session, target_fixture: Fixture) -> GoalMarketContexts:
+    """Costruisce 4 contesti goal allineati ai picchetti + varianti HT."""
+    hid = int(target_fixture.home_team_id)
+    aid = int(target_fixture.away_team_id)
+
+    home_prior = load_finished_fixtures_for_team(db, target_fixture, hid)
+    away_prior = load_finished_fixtures_for_team(db, target_fixture, aid)
+    home_split = split_home_away(home_prior, hid, is_home=True)
+    away_split = split_home_away(away_prior, aid, is_home=False)
+
+    home_last6 = take_last_n(home_prior, TARGET_RECENT_TOTAL)
+    away_last6 = take_last_n(away_prior, TARGET_RECENT_TOTAL)
+    home_last5 = take_last_n(home_split, TARGET_RECENT_CONTEXT)
+    away_last5 = take_last_n(away_split, TARGET_RECENT_CONTEXT)
+
+    ht_skip = 0
+    ht_home_prior, s1 = _filter_halftime_fixtures(home_prior)
+    ht_away_prior, s2 = _filter_halftime_fixtures(away_prior)
+    ht_home_split, s3 = _filter_halftime_fixtures(home_split)
+    ht_away_split, s4 = _filter_halftime_fixtures(away_split)
+    ht_home_last6, s5 = _filter_halftime_fixtures(home_last6)
+    ht_away_last6, s6 = _filter_halftime_fixtures(away_last6)
+    ht_home_last5, s7 = _filter_halftime_fixtures(home_last5)
+    ht_away_last5, s8 = _filter_halftime_fixtures(away_last5)
+    ht_skip = s1 + s2 + s3 + s4 + s5 + s6 + s7 + s8
+
+    return GoalMarketContexts(
+        totals=_make_context_slice(
+            name=CONTEXT_KEY_TOTALS,
+            home_fixtures=home_prior,
+            away_fixtures=away_prior,
+            home_team_id=hid,
+            away_team_id=aid,
+        ),
+        home_away=_make_context_slice(
+            name=CONTEXT_KEY_HOME_AWAY,
+            home_fixtures=home_split,
+            away_fixtures=away_split,
+            home_team_id=hid,
+            away_team_id=aid,
+        ),
+        last6_totals=_make_context_slice(
+            name=CONTEXT_KEY_LAST6_TOTALS,
+            home_fixtures=home_last6,
+            away_fixtures=away_last6,
+            home_team_id=hid,
+            away_team_id=aid,
+        ),
+        last5_home_away=_make_context_slice(
+            name=CONTEXT_KEY_LAST5_HOME_AWAY,
+            home_fixtures=home_last5,
+            away_fixtures=away_last5,
+            home_team_id=hid,
+            away_team_id=aid,
+        ),
+        ht_totals=_make_context_slice(
+            name=CONTEXT_KEY_TOTALS,
+            home_fixtures=ht_home_prior,
+            away_fixtures=ht_away_prior,
+            home_team_id=hid,
+            away_team_id=aid,
+            use_halftime=True,
+        ),
+        ht_home_away=_make_context_slice(
+            name=CONTEXT_KEY_HOME_AWAY,
+            home_fixtures=ht_home_split,
+            away_fixtures=ht_away_split,
+            home_team_id=hid,
+            away_team_id=aid,
+            use_halftime=True,
+        ),
+        ht_last6_totals=_make_context_slice(
+            name=CONTEXT_KEY_LAST6_TOTALS,
+            home_fixtures=ht_home_last6,
+            away_fixtures=ht_away_last6,
+            home_team_id=hid,
+            away_team_id=aid,
+            use_halftime=True,
+        ),
+        ht_last5_home_away=_make_context_slice(
+            name=CONTEXT_KEY_LAST5_HOME_AWAY,
+            home_fixtures=ht_home_last5,
+            away_fixtures=ht_away_last5,
+            home_team_id=hid,
+            away_team_id=aid,
+            use_halftime=True,
+        ),
+        skipped_missing_halftime_score=ht_skip,
+        home_team_id=hid,
+        away_team_id=aid,
+    )
 
 
 def build_goal_fixture_slices(db: Session, target_fixture: Fixture) -> GoalFixtureSlices:

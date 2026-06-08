@@ -75,7 +75,7 @@ def _picchetto_prob(picchetti: dict, name: str, outcome: str) -> float | None:
 def test_debug_returns_correct_weights():
     debug = build_cecchino_picchetti_debug(cecchino_output=_output_dict())
     assert debug["weights"] == FINAL_QUOTA_WEIGHTS
-    assert debug["version"] == "cecchino_picchetti_debug_v2"
+    assert debug["version"] == "cecchino_picchetti_debug_v3"
 
 
 def test_home_away_prob_1():
@@ -291,18 +291,31 @@ def test_missing_formulas_listed_without_goal_markets():
 def test_missing_formulas_empty_when_goal_markets_present():
     out = _output_dict()
     out["goal_markets"] = {
-        "OVER_1_5": {"formula_version": "over_under_fulltime_excel_parity_v1", "final_odd": 2.1, "status": "available"},
-        "OVER_2_5": {"formula_version": "over_under_fulltime_excel_parity_v1", "final_odd": 2.1, "status": "available"},
-        "UNDER_2_5": {"formula_version": "over_under_fulltime_excel_parity_v1", "final_odd": 1.9, "status": "available"},
-        "UNDER_3_5": {"formula_version": "over_under_fulltime_excel_parity_v1", "final_odd": 1.9, "status": "available"},
-        "OVER_PT_0_5": {"formula_version": "first_half_rate_to_odd_v1", "final_odd": 1.4, "status": "available"},
-        "OVER_PT_1_5": {"formula_version": "first_half_rate_to_odd_v1", "final_odd": 3.0, "status": "available"},
-        "UNDER_PT_1_5": {"formula_version": "first_half_rate_to_odd_v1", "final_odd": 1.5, "status": "available"},
+        "OVER_1_5": {
+            "formula_version": "goal_market_poisson_empirical_v2",
+            "final_odd": 2.1,
+            "status": "available",
+            "summary": {"final_odd": 2.1, "final_probability": 0.476},
+            "legacy_excel_parity": {"final_odd": 1.6, "enabled_for_kpi": False},
+        },
+        "OVER_2_5": {
+            "formula_version": "goal_market_poisson_empirical_v2",
+            "final_odd": 2.4,
+            "status": "available",
+            "summary": {"final_odd": 2.4},
+        },
+        "UNDER_2_5": {"formula_version": "goal_market_poisson_empirical_v2", "final_odd": 1.9, "status": "available"},
+        "UNDER_3_5": {"formula_version": "goal_market_poisson_empirical_v2", "final_odd": 1.7, "status": "available"},
+        "OVER_PT_0_5": {"formula_version": "goal_market_poisson_empirical_v2", "final_odd": 1.4, "status": "available"},
+        "OVER_PT_1_5": {"formula_version": "goal_market_poisson_empirical_v2", "final_odd": 3.0, "status": "available"},
+        "UNDER_PT_1_5": {"formula_version": "goal_market_poisson_empirical_v2", "final_odd": 1.5, "status": "available"},
     }
     debug = build_cecchino_picchetti_debug(cecchino_output=out)
     assert debug["missing_formulas"] == []
     assert "OVER_1_5" in debug["markets"]
     assert debug["markets"]["OVER_1_5"]["final_odd"] == 2.1
+    assert debug["markets"]["OVER_1_5"]["legacy_excel_parity"]["final_odd"] == 1.6
+    assert debug["markets"]["OVER_2_5"]["final_odd"] == 2.4
 
 
 def test_summary_from_full_debug():
