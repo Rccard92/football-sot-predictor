@@ -347,6 +347,10 @@ export function CecchinoSignalsMonitoringPage() {
             <div className="mt-3">
               <SignalsHeatmapMatrix summary={summary} />
             </div>
+            <p className="mt-3 text-xs text-slate-500">
+              Nel monitoraggio aggregato, UNDER / UNDER PT viene valutato come Under 2.5 FT e OVER / OVER PT come
+              Over 2.5 FT.
+            </p>
           </section>
           <SignalsTopRanking summary={summary} />
           <section className="rounded-lg border border-slate-200 bg-white p-4">

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { SignalActivationRow } from '../../../lib/cecchinoSignalsApi'
-import { statusBadgeClass, statusLabel } from './signalsHeatmapUtils'
+import { formatTargetLabel, statusBadgeClass, statusLabel } from './signalsHeatmapUtils'
 
 type Props = {
   items: SignalActivationRow[]
@@ -47,17 +47,15 @@ export function SignalsActivationsTable({ items }: Props) {
                 <td className="px-2 py-2">{row.league_name ?? '—'}</td>
                 <td className="px-2 py-2">{row.signal_label}</td>
                 <td className="px-2 py-2">{row.source_column.replace('EXCEL_', 'Excel ')}</td>
-                <td className="px-2 py-2">{row.target_market_label ?? '—'}</td>
+                <td className="px-2 py-2">{formatTargetLabel(row)}</td>
                 <td className="px-2 py-2">
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(row.evaluation_status)}`}
                   >
                     {statusLabel(row.evaluation_status)}
                   </span>
-                  {row.evaluation_status === 'not_evaluable' && row.evaluation_reason && (
-                    <p className="mt-1 text-[10px] text-slate-500">
-                      Non valutabile: mapping mercato mancante
-                    </p>
+                  {row.evaluation_reason && (
+                    <p className="mt-1 text-[10px] text-slate-500">{row.evaluation_reason}</p>
                   )}
                 </td>
                 <td className="px-2 py-2 tabular-nums">{row.ft_score ?? '—'}</td>
@@ -94,9 +92,11 @@ export function SignalsActivationsTable({ items }: Props) {
               {row.scan_date} · {row.league_name ?? '—'}
             </p>
             <p className="mt-2">
-              {row.signal_label} · {row.source_column.replace('EXCEL_', 'Excel ')} ·{' '}
-              {row.target_market_label ?? '—'}
+              {row.signal_label} · {row.source_column.replace('EXCEL_', 'Excel ')} · {formatTargetLabel(row)}
             </p>
+            {row.evaluation_reason && (
+              <p className="mt-1 text-[10px] text-slate-500">{row.evaluation_reason}</p>
+            )}
             <p className="mt-1 tabular-nums text-xs text-slate-600">
               FT {row.ft_score ?? '—'} · PT {row.ht_score ?? '—'} · Edge{' '}
               {row.edge_pct != null ? `${row.edge_pct.toFixed(1)}%` : '—'}

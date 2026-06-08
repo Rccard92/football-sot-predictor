@@ -58,8 +58,8 @@ Selettore campionato (`CompetitionSelector`) in sidebar.
 - Spiegazione previsione (audit model-aware)
 - Prossima giornata (quick report, confronto v2.0 vs v2.1)
 - Cecchino — dashboard autonoma (picchetti, KPI DASHBOARD classico con 3 bookmaker; **non** influenza SOT)
-- Cecchino Today — dashboard giornaliera Betfair-only, KPI v2 unico riferimento quote (Fase 22), refresh quote Betfair on-demand singola fixture (Fase 23), export mercati JSON, debug JSON KPI, debug Picchetti (Fase 25), formule goal Poisson+storico v2 (Fase 27), pesi goal market 10/20/35/35 (Fase 28), sezione Equilibrio vs Squilibrio (Fase 29), Dominanza contestualizzata X vs 1/2 (Fase 30), legenda operativa equilibrio 18 righe (Fase 31), Monitoraggio Segnali storico SI/NO con valutazione esito e backfill giornate pregresse (Fase 32/33), card PT/FT, mapping strict Match Winner, layout 35/65, timeline ±7, scan async (`/cecchino-today`)
-- Monitoraggio Segnali — pagina aggregata `/monitoraggio-segnali` (heatmap, KPI, export CSV, backfill storico Fase 33)
+- Cecchino Today — dashboard giornaliera Betfair-only, KPI v2 unico riferimento quote (Fase 22), refresh quote Betfair on-demand singola fixture (Fase 23), export mercati JSON, debug JSON KPI, debug Picchetti (Fase 25), formule goal Poisson+storico v2 (Fase 27), pesi goal market 10/20/35/35 (Fase 28), sezione Equilibrio vs Squilibrio (Fase 29), Dominanza contestualizzata X vs 1/2 (Fase 30), legenda operativa equilibrio 18 righe (Fase 31), Monitoraggio Segnali storico SI/NO con valutazione esito, backfill giornate pregresse (Fase 32/33) e mapping Under/Over 2.5 FT (Fase 34), card PT/FT, mapping strict Match Winner, layout 35/65, timeline ±7, scan async (`/cecchino-today`)
+- Monitoraggio Segnali — pagina aggregata `/monitoraggio-segnali` (heatmap, KPI, export CSV, backfill storico, Under/Over 2.5 FT Fase 34)
 - Monitoraggio Giocate
 - Bookmakers — discovery provider/mercati, coverage e sync 1X2 per competizione (`fixture_bookmaker_odds`; non collegato a Cecchino/SOT)
 - Changelog

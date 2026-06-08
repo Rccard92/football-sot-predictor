@@ -21,6 +21,7 @@ from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoToda
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
+from app.services.cecchino.cecchino_signal_target_mapping import remap_under_over_activations_in_range
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
 logger = logging.getLogger(__name__)
@@ -254,8 +255,11 @@ def backfill_signal_activations(
         totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
         processed_fixture_ids.append(int(row.id))
 
-        if evaluate_after:
-            eval_counts = evaluate_activations_for_fixture(db, int(row.id))
+    remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
+
+    if evaluate_after:
+        for fid in processed_fixture_ids:
+            eval_counts = evaluate_activations_for_fixture(db, fid)
             totals["evaluated"] += eval_counts.get("evaluated", 0)
             totals["pending"] += eval_counts.get("pending", 0)
             totals["not_evaluable"] += eval_counts.get("not_evaluable", 0)
@@ -279,6 +283,7 @@ def backfill_signal_activations(
     return {
         "status": "ok",
         **totals,
+        "remapped": remapped,
         "warnings": warnings[:100],
     }
 

@@ -212,6 +212,14 @@ def list_signal_activations(
     return {"items": items, "total": int(total), "limit": limit, "offset": offset}
 
 
+def _format_target_market_label(row: CecchinoSignalActivation) -> str | None:
+    if row.signal_group == "UNDER_UNDER_PT":
+        return "Under 2.5 FT"
+    if row.signal_group == "OVER_OVER_PT":
+        return "Over 2.5 FT"
+    return row.target_market_label
+
+
 def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
     home = row.home_team_name or "?"
     away = row.away_team_name or "?"
@@ -232,7 +240,7 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
         "signal_group": row.signal_group,
         "signal_label": row.signal_label,
         "source_column": row.source_column,
-        "target_market_label": row.target_market_label,
+        "target_market_label": _format_target_market_label(row),
         "evaluation_status": row.evaluation_status,
         "evaluation_reason": row.evaluation_reason,
         "ft_score": ft_score,

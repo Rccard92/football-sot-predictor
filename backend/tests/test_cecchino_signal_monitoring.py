@@ -24,11 +24,13 @@ from app.models.cecchino_today_fixture import (
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_signal_aggregation import (
     _bucket_counts,
+    _serialize_activation_row,
     _success_rate,
     build_signals_summary,
     export_signals_csv,
 )
 from app.services.cecchino.cecchino_signal_evaluation import (
+    evaluate_activations_for_fixture,
     evaluate_signal_activation,
     revaluate_signal_activations,
 )
@@ -38,8 +40,10 @@ from app.services.cecchino.cecchino_signal_backfill import (
 )
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_signal_target_mapping import (
+    apply_under_over_target_to_activation,
     map_cecchino_signal_to_target,
     map_row_key_to_signal_group,
+    remap_under_over_activations_in_range,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
@@ -47,6 +51,8 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
+    SEL_OVER_2_5,
+    SEL_UNDER_2_5,
     SEL_X_TWO,
 )
 
@@ -118,12 +124,217 @@ def test_map_dc_targets():
     assert map_cecchino_signal_to_target("ONE_TWO", "EXCEL_D")["target_market_key"] == SEL_ONE_TWO
 
 
-def test_under_over_generic_not_evaluable():
+def test_under_over_maps_to_2_5_ft():
     under = map_cecchino_signal_to_target("UNDER_UNDER_PT", "EXCEL_D")
     over = map_cecchino_signal_to_target("OVER_OVER_PT", "EXCEL_E")
-    assert under["target_market_key"] is None
-    assert under["evaluation_status"] == EVAL_NOT_EVALUABLE
-    assert over["evaluation_status"] == EVAL_NOT_EVALUABLE
+    assert under["target_market_key"] == SEL_UNDER_2_5
+    assert under["target_market_label"] == "Under 2.5"
+    assert under["target_period"] == "FT"
+    assert under["evaluation_status"] == EVAL_PENDING
+    assert over["target_market_key"] == SEL_OVER_2_5
+    assert over["target_market_label"] == "Over 2.5"
+    assert over["evaluation_status"] == EVAL_PENDING
+
+
+@pytest.mark.parametrize(
+    ("total_goals", "expected"),
+    [
+        (0, EVAL_WON),
+        (1, EVAL_WON),
+        (2, EVAL_WON),
+        (3, EVAL_LOST),
+        (4, EVAL_LOST),
+        (5, EVAL_LOST),
+    ],
+)
+def test_evaluate_under_2_5_won_lost(total_goals, expected):
+    home = total_goals // 2
+    away = total_goals - home
+    result = evaluate_signal_activation(
+        {"target_market_key": SEL_UNDER_2_5, "target_period": "FT"},
+        {"fulltime": {"home": home, "away": away}, "halftime": {}},
+    )
+    assert result["evaluation_status"] == expected
+    if expected in (EVAL_WON, EVAL_LOST):
+        assert f"Totale gol FT {total_goals}" in (result["evaluation_reason"] or "")
+        assert "Under 2.5" in (result["evaluation_reason"] or "")
+
+
+@pytest.mark.parametrize(
+    ("total_goals", "expected"),
+    [
+        (0, EVAL_LOST),
+        (1, EVAL_LOST),
+        (2, EVAL_LOST),
+        (3, EVAL_WON),
+        (4, EVAL_WON),
+        (5, EVAL_WON),
+    ],
+)
+def test_evaluate_over_2_5_won_lost(total_goals, expected):
+    home = total_goals // 2
+    away = total_goals - home
+    result = evaluate_signal_activation(
+        {"target_market_key": SEL_OVER_2_5, "target_period": "FT"},
+        {"fulltime": {"home": home, "away": away}, "halftime": {}},
+    )
+    assert result["evaluation_status"] == expected
+    if expected in (EVAL_WON, EVAL_LOST):
+        assert f"Totale gol FT {total_goals}" in (result["evaluation_reason"] or "")
+        assert "Over 2.5" in (result["evaluation_reason"] or "")
+
+
+def test_apply_under_over_target_to_activation_remaps_not_evaluable():
+    activation = CecchinoSignalActivation(
+        today_fixture_id=1,
+        provider_fixture_id=1,
+        scan_date=date(2026, 6, 8),
+        signal_group="UNDER_UNDER_PT",
+        signal_label="UNDER / UNDER PT",
+        source_column="EXCEL_D",
+        signal_value=True,
+        evaluation_status=EVAL_NOT_EVALUABLE,
+        evaluation_reason="missing_target_market_mapping",
+    )
+    assert apply_under_over_target_to_activation(activation) is True
+    assert activation.target_market_key == SEL_UNDER_2_5
+    assert activation.target_period == "FT"
+    assert activation.evaluation_status == EVAL_PENDING
+    assert activation.evaluation_reason is None
+
+
+def test_remap_under_over_activations_in_range():
+    db = MagicMock()
+    under = CecchinoSignalActivation(
+        today_fixture_id=1,
+        provider_fixture_id=1,
+        scan_date=date(2026, 6, 8),
+        signal_group="UNDER_UNDER_PT",
+        signal_label="UNDER / UNDER PT",
+        source_column="EXCEL_D",
+        signal_value=True,
+        evaluation_status=EVAL_NOT_EVALUABLE,
+        is_current=True,
+    )
+    over = CecchinoSignalActivation(
+        today_fixture_id=2,
+        provider_fixture_id=2,
+        scan_date=date(2026, 6, 9),
+        signal_group="OVER_OVER_PT",
+        signal_label="OVER / OVER PT",
+        source_column="EXCEL_E",
+        signal_value=True,
+        target_market_key=None,
+        evaluation_status=EVAL_NOT_EVALUABLE,
+        is_current=True,
+    )
+    db.scalars.return_value.all.return_value = [under, over]
+    remapped = remap_under_over_activations_in_range(
+        db,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 30),
+    )
+    assert remapped == 2
+    assert under.target_market_key == SEL_UNDER_2_5
+    assert over.target_market_key == SEL_OVER_2_5
+    db.flush.assert_called_once()
+
+
+def test_evaluate_activations_for_fixture_remaps_ex_not_evaluable_under():
+    db = MagicMock()
+    fixture = _fixture_row(
+        score_fulltime_home=1,
+        score_fulltime_away=0,
+        match_display_status="finished",
+    )
+    activation = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        signal_group="UNDER_UNDER_PT",
+        signal_label="UNDER / UNDER PT",
+        source_column="EXCEL_D",
+        signal_value=True,
+        evaluation_status=EVAL_NOT_EVALUABLE,
+        evaluation_reason="missing_target_market_mapping",
+        is_current=True,
+    )
+    db.get.return_value = fixture
+    db.scalars.return_value.all.return_value = [activation]
+
+    counts = evaluate_activations_for_fixture(db, 99)
+
+    assert activation.target_market_key == SEL_UNDER_2_5
+    assert activation.evaluation_status == EVAL_WON
+    assert "Under 2.5 vinto" in (activation.evaluation_reason or "")
+    assert counts["evaluated"] == 1
+    assert counts["not_evaluable"] == 0
+
+
+def test_success_rate_includes_under_over_after_remap():
+    rows = [
+        CecchinoSignalActivation(
+            today_fixture_id=1,
+            provider_fixture_id=1,
+            scan_date=date(2026, 6, 8),
+            signal_group="UNDER_UNDER_PT",
+            signal_label="UNDER / UNDER PT",
+            source_column="EXCEL_D",
+            signal_value=True,
+            evaluation_status=EVAL_WON,
+            is_current=True,
+        ),
+        CecchinoSignalActivation(
+            today_fixture_id=2,
+            provider_fixture_id=2,
+            scan_date=date(2026, 6, 8),
+            signal_group="OVER_OVER_PT",
+            signal_label="OVER / OVER PT",
+            source_column="EXCEL_E",
+            signal_value=True,
+            evaluation_status=EVAL_LOST,
+            is_current=True,
+        ),
+    ]
+    bucket = _bucket_counts(rows)
+    assert bucket["success_rate"] == 50.0
+    assert bucket["not_evaluable"] == 0
+
+
+def test_serialize_activation_row_under_over_ft_labels():
+    under = CecchinoSignalActivation(
+        today_fixture_id=1,
+        provider_fixture_id=1,
+        scan_date=date(2026, 6, 8),
+        signal_group="UNDER_UNDER_PT",
+        signal_label="UNDER / UNDER PT",
+        source_column="EXCEL_D",
+        signal_value=True,
+        target_market_label="Under 2.5",
+        evaluation_status=EVAL_WON,
+        evaluation_reason="Totale gol FT 1: Under 2.5 vinto",
+        home_team_name="A",
+        away_team_name="B",
+        is_current=True,
+    )
+    under.id = 1
+    over = CecchinoSignalActivation(
+        today_fixture_id=2,
+        provider_fixture_id=2,
+        scan_date=date(2026, 6, 8),
+        signal_group="OVER_OVER_PT",
+        signal_label="OVER / OVER PT",
+        source_column="EXCEL_E",
+        signal_value=True,
+        target_market_label="Over 2.5",
+        evaluation_status=EVAL_LOST,
+        home_team_name="C",
+        away_team_name="D",
+        is_current=True,
+    )
+    over.id = 2
+    assert _serialize_activation_row(under)["target_market_label"] == "Under 2.5 FT"
+    assert _serialize_activation_row(over)["target_market_label"] == "Over 2.5 FT"
 
 
 def test_evaluate_draw_won_lost():
@@ -300,6 +511,9 @@ def test_revaluate_does_not_call_api():
     db = MagicMock()
     db.scalars.return_value.all.return_value = [99]
     with patch(
+        "app.services.cecchino.cecchino_signal_evaluation.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
         "app.services.cecchino.cecchino_signal_evaluation.evaluate_activations_for_fixture",
         return_value={"evaluated": 2, "pending": 1, "not_evaluable": 0},
     ) as mock_eval:
@@ -310,8 +524,67 @@ def test_revaluate_does_not_call_api():
         )
     assert out["fixtures"] == 1
     assert out["evaluated"] == 2
+    assert out["remapped"] == 0
     mock_eval.assert_called_once_with(db, 99)
     db.commit.assert_called_once()
+
+
+def test_revaluate_remaps_historical_not_evaluable_under_over():
+    db = MagicMock()
+    fixture = _fixture_row(
+        score_fulltime_home=2,
+        score_fulltime_away=2,
+        match_display_status="finished",
+    )
+    under = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        signal_group="UNDER_UNDER_PT",
+        signal_label="UNDER / UNDER PT",
+        source_column="EXCEL_D",
+        signal_value=True,
+        evaluation_status=EVAL_NOT_EVALUABLE,
+        is_current=True,
+    )
+    over = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        signal_group="OVER_OVER_PT",
+        signal_label="OVER / OVER PT",
+        source_column="EXCEL_E",
+        signal_value=True,
+        evaluation_status=EVAL_NOT_EVALUABLE,
+        is_current=True,
+    )
+
+    scalars_calls = {"n": 0}
+
+    def _scalars_side_effect(_stmt):
+        result = MagicMock()
+        scalars_calls["n"] += 1
+        if scalars_calls["n"] == 1:
+            result.all.return_value = [under, over]
+        elif scalars_calls["n"] == 2:
+            result.all.return_value = [99]
+        else:
+            result.all.return_value = [under, over]
+        return result
+
+    db.scalars.side_effect = _scalars_side_effect
+    db.get.return_value = fixture
+
+    out = revaluate_signal_activations(
+        db,
+        date_from=date(2026, 6, 1),
+        date_to=date(2026, 6, 30),
+    )
+
+    assert out["remapped"] == 2
+    assert under.evaluation_status == EVAL_LOST
+    assert over.evaluation_status == EVAL_WON
+    assert out["evaluated"] == 2
 
 
 def test_diagnostics_detects_fixtures_without_activations():
@@ -338,6 +611,9 @@ def test_backfill_creates_activations_offline():
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
         return_value={"created": 2, "updated": 0, "deactivated": 0, "skipped": 0},
     ) as mock_sync, patch(
+        "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
         "app.services.cecchino.cecchino_signal_backfill.evaluate_activations_for_fixture",
         return_value={"evaluated": 2, "pending": 0, "not_evaluable": 0},
     ), patch(
@@ -367,7 +643,10 @@ def test_backfill_idempotent_skips_when_only_missing():
 
     with patch(
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
-    ) as mock_sync:
+    ) as mock_sync, patch(
+        "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
+        return_value=0,
+    ):
         out = backfill_signal_activations(
             db,
             date_from=date(2026, 6, 8),
@@ -391,6 +670,9 @@ def test_backfill_does_not_call_api_football():
         "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
         return_value={"created": 1, "updated": 0, "deactivated": 0, "skipped": 0},
     ), patch(
+        "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
         "app.services.api_football_client.ApiFootballClient",
     ) as mock_client:
         backfill_signal_activations(
@@ -402,11 +684,44 @@ def test_backfill_does_not_call_api_football():
     mock_client.assert_not_called()
 
 
+def test_sync_under_over_creates_correct_target():
+    db = MagicMock()
+    row = _fixture_row()
+    row.cecchino_output_json = {
+        "signals_matrix": _signals_matrix(draw_d="NO", over_d="SI"),
+    }
+    row.kpi_panel_json = {
+        "rows": [
+            {
+                "market_key": SEL_OVER_2_5,
+                "segno": "Over 2.5",
+                "quota_book": 1.9,
+                "quota_cecchino": 1.75,
+                "edge_pct": 8.0,
+                "rating": 65,
+            }
+        ]
+    }
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    added = db.add.call_args[0][0]
+    assert added.signal_group == "OVER_OVER_PT"
+    assert added.target_market_key == SEL_OVER_2_5
+    assert added.evaluation_status == EVAL_RESULT_MISSING
+
+
 def test_revaluate_sync_missing_triggers_backfill():
     db = MagicMock()
     db.scalars.return_value.all.return_value = []
 
     with patch(
+        "app.services.cecchino.cecchino_signal_evaluation.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
         "app.services.cecchino.cecchino_signal_backfill.build_signal_diagnostics",
         return_value={
             "fixtures_with_signal_matrix_count": 3,

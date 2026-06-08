@@ -56,6 +56,8 @@ SIGNAL_GROUP_TO_MARKET_KEY: dict[str, str] = {
     "ONE_X": SEL_ONE_X,
     "X_TWO": SEL_X_TWO,
     "ONE_TWO": SEL_ONE_TWO,
+    "UNDER_UNDER_PT": SEL_UNDER_2_5,
+    "OVER_OVER_PT": SEL_OVER_2_5,
 }
 
 CECCHINO_SIGNAL_TARGET_MAPPING: dict[str, dict[str, Any]] = {
@@ -89,9 +91,18 @@ CECCHINO_SIGNAL_TARGET_MAPPING: dict[str, dict[str, Any]] = {
         "target_market_label": "12",
         "target_period": PERIOD_FT,
     },
-    # Placeholder — richiede mapping esplicito per colonna Excel
-    "UNDER_UNDER_PT": "requires explicit market mapping",
-    "OVER_OVER_PT": "requires explicit market mapping",
+    "UNDER_UNDER_PT": {
+        "target_market_key": SEL_UNDER_2_5,
+        "target_market_label": "Under 2.5",
+        "target_period": PERIOD_FT,
+        "evaluation_type": "fulltime_total_goals_under_2_5",
+    },
+    "OVER_OVER_PT": {
+        "target_market_key": SEL_OVER_2_5,
+        "target_market_label": "Over 2.5",
+        "target_period": PERIOD_FT,
+        "evaluation_type": "fulltime_total_goals_over_2_5",
+    },
 }
 
 _GOAL_MARKET_KEYS = {
@@ -160,13 +171,16 @@ def map_cecchino_signal_to_target(
 
     mapping = CECCHINO_SIGNAL_TARGET_MAPPING.get(signal_group)
     if isinstance(mapping, dict):
-        return {
+        result = {
             "target_market_key": mapping["target_market_key"],
             "target_market_label": mapping["target_market_label"],
             "target_period": mapping["target_period"],
             "evaluation_status": EVAL_PENDING,
             "evaluation_reason": None,
         }
+        if mapping.get("evaluation_type"):
+            result["evaluation_type"] = mapping["evaluation_type"]
+        return result
 
     return {
         "target_market_key": None,
@@ -175,3 +189,65 @@ def map_cecchino_signal_to_target(
         "evaluation_status": EVAL_NOT_EVALUABLE,
         "evaluation_reason": REASON_MISSING_TARGET,
     }
+
+
+def apply_under_over_target_to_activation(activation) -> bool:
+    """Applica mapping Under/Over 2.5 FT a activation esistenti. Ritorna True se modificata."""
+    signal_group = getattr(activation, "signal_group", None)
+    if not signal_group:
+        return False
+    mapping = None
+    if signal_group == "UNDER_UNDER_PT":
+        mapping = CECCHINO_SIGNAL_TARGET_MAPPING["UNDER_UNDER_PT"]
+    elif signal_group == "OVER_OVER_PT":
+        mapping = CECCHINO_SIGNAL_TARGET_MAPPING["OVER_OVER_PT"]
+    if not isinstance(mapping, dict):
+        return False
+
+    changed = False
+    if activation.target_market_key != mapping["target_market_key"]:
+        activation.target_market_key = mapping["target_market_key"]
+        changed = True
+    if activation.target_market_label != mapping["target_market_label"]:
+        activation.target_market_label = mapping["target_market_label"]
+        changed = True
+    if activation.target_period != PERIOD_FT:
+        activation.target_period = PERIOD_FT
+        changed = True
+    if activation.evaluation_status == EVAL_NOT_EVALUABLE or activation.evaluation_reason:
+        activation.evaluation_status = EVAL_PENDING
+        activation.evaluation_reason = None
+        changed = True
+    return changed
+
+
+def remap_under_over_activations_in_range(db, *, date_from, date_to) -> int:
+    """Rimap activation UNDER/OVER con target mancante o not_evaluable nel range scan_date."""
+    from sqlalchemy import or_, select
+
+    from app.models.cecchino_signal_activation import (
+        EVAL_NOT_EVALUABLE,
+        CecchinoSignalActivation,
+    )
+
+    rows = list(
+        db.scalars(
+            select(CecchinoSignalActivation).where(
+                CecchinoSignalActivation.scan_date >= date_from,
+                CecchinoSignalActivation.scan_date <= date_to,
+                CecchinoSignalActivation.signal_group.in_(("UNDER_UNDER_PT", "OVER_OVER_PT")),
+                CecchinoSignalActivation.is_current.is_(True),
+                or_(
+                    CecchinoSignalActivation.target_market_key.is_(None),
+                    CecchinoSignalActivation.evaluation_status == EVAL_NOT_EVALUABLE,
+                ),
+            ),
+        ).all(),
+    )
+    remapped = 0
+    for activation in rows:
+        if apply_under_over_target_to_activation(activation):
+            remapped += 1
+    if remapped:
+        db.flush()
+    return remapped

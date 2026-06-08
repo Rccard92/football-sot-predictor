@@ -32,6 +32,20 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 34 — Mapping Under/Over su 2.5 FT
+
+```mermaid
+flowchart TD
+  oldNE[Activation UNDER/OVER not_evaluable] --> remap[remap_under_over_activations_in_range]
+  remap --> target[UNDER_2_5 / OVER_2_5 FT]
+  target --> eval[evaluate_activations_for_fixture]
+  eval --> wl[WON / LOST con evaluation_reason]
+```
+
+- **Mapping:** `UNDER_UNDER_PT` → Under 2.5 FT; `OVER_OVER_PT` → Over 2.5 FT.
+- **Remap:** backfill e `POST revaluate` applicano target corretto prima della valutazione.
+- **Sync:** aggiorna target su activation esistenti; valuta se `target_market_key` presente.
+
 ## Fase 33 — Backfill Monitoraggio Segnali
 
 ```mermaid

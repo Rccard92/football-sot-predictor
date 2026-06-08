@@ -1,4 +1,4 @@
-import type { SignalsBucket } from '../../../lib/cecchinoSignalsApi'
+import type { SignalActivationRow, SignalsBucket } from '../../../lib/cecchinoSignalsApi'
 
 export function heatmapCellClass(bucket: SignalsBucket | undefined): string {
   if (!bucket || bucket.settled < 3) {
@@ -32,6 +32,12 @@ export function statusBadgeClass(status: string): string {
     default:
       return 'bg-slate-100 text-slate-700'
   }
+}
+
+export function formatTargetLabel(row: Pick<SignalActivationRow, 'signal_group' | 'target_market_label'>): string {
+  if (row.signal_group === 'UNDER_UNDER_PT') return 'Under 2.5 FT'
+  if (row.signal_group === 'OVER_OVER_PT') return 'Over 2.5 FT'
+  return row.target_market_label ?? '—'
 }
 
 export function statusLabel(status: string): string {

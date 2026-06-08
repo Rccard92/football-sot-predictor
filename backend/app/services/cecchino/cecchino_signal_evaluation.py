@@ -17,6 +17,10 @@ from app.models.cecchino_signal_activation import (
     CecchinoSignalActivation,
 )
 from app.models.cecchino_today_fixture import CecchinoTodayFixture, MATCH_FINISHED
+from app.services.cecchino.cecchino_signal_target_mapping import (
+    apply_under_over_target_to_activation,
+    remap_under_over_activations_in_range,
+)
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -64,14 +68,14 @@ def _evaluate_market(
     if target_key == SEL_ONE_TWO:
         return ft_home != ft_away
 
-    if ht_home is None or ht_away is None:
-        return None
-    ht_total = ht_home + ht_away
-    if target_key == SEL_UNDER_PT_1_5:
-        return ht_total <= 1
-    if target_key == SEL_OVER_PT_0_5:
-        return ht_total >= 1
-    if target_key == SEL_OVER_PT_1_5:
+    if target_key in (SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
+        if ht_home is None or ht_away is None:
+            return None
+        ht_total = ht_home + ht_away
+        if target_key == SEL_UNDER_PT_1_5:
+            return ht_total <= 1
+        if target_key == SEL_OVER_PT_0_5:
+            return ht_total >= 1
         return ht_total >= 2
 
     ft_total = ft_home + ft_away
@@ -83,6 +87,22 @@ def _evaluate_market(
         return ft_total >= 2
     if target_key == SEL_OVER_2_5:
         return ft_total >= 3
+    return None
+
+
+def _build_evaluation_reason(
+    target_key: str,
+    ft_home: int,
+    ft_away: int,
+    won: bool,
+) -> str | None:
+    ft_total = ft_home + ft_away
+    if target_key == SEL_UNDER_2_5:
+        outcome = "vinto" if won else "perso"
+        return f"Totale gol FT {ft_total}: Under 2.5 {outcome}"
+    if target_key == SEL_OVER_2_5:
+        outcome = "vinto" if won else "perso"
+        return f"Totale gol FT {ft_total}: Over 2.5 {outcome}"
     return None
 
 
@@ -132,9 +152,10 @@ def evaluate_signal_activation(
             "evaluated_at": datetime.now(timezone.utc),
         }
 
+    status = EVAL_WON if won else EVAL_LOST
     return {
-        "evaluation_status": EVAL_WON if won else EVAL_LOST,
-        "evaluation_reason": None,
+        "evaluation_status": status,
+        "evaluation_reason": _build_evaluation_reason(target_key, ft_home, ft_away, won),
         "evaluated_at": datetime.now(timezone.utc),
         "ht_home_goals": ht_home,
         "ht_away_goals": ht_away,
@@ -196,9 +217,7 @@ def evaluate_activations_for_fixture(db: Session, today_fixture_id: int) -> dict
 
     counts = {"evaluated": 0, "pending": 0, "not_evaluable": 0}
     for activation in activations:
-        if activation.evaluation_status == EVAL_NOT_EVALUABLE:
-            counts["not_evaluable"] += 1
-            continue
+        apply_under_over_target_to_activation(activation)
         eval_result = evaluate_signal_activation(activation, match_result)
         apply_evaluation_to_activation(activation, eval_result, result_status=result_status)
         if eval_result["evaluation_status"] in (EVAL_WON, EVAL_LOST):
@@ -220,6 +239,8 @@ def revaluate_signal_activations(
     force: bool = False,
     sync_missing: bool = False,
 ) -> dict[str, Any]:
+    remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
+
     backfill_summary: dict[str, Any] | None = None
     if sync_missing:
         from app.services.cecchino.cecchino_signal_backfill import (
@@ -261,6 +282,7 @@ def revaluate_signal_activations(
         totals["not_evaluable"] += counts["not_evaluable"]
 
     db.commit()
+    totals["remapped"] = remapped
     if backfill_summary is not None:
         totals["backfill_summary"] = backfill_summary
     return totals

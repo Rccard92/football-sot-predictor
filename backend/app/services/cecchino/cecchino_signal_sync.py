@@ -34,8 +34,8 @@ def _num(value: Any) -> Decimal | None:
         return None
 
 
-def _activation_key(signal_group: str, source_column: str, target_market_key: str | None) -> tuple[str, str, str]:
-    return (signal_group, source_column, target_market_key or "")
+def _activation_pair_key(signal_group: str, source_column: str) -> tuple[str, str]:
+    return (signal_group, source_column)
 
 
 def _iter_si_cells(signals_matrix: dict[str, Any]) -> list[dict[str, Any]]:
@@ -85,7 +85,7 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
     kpi_panel = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else None
     inputs = signals_matrix.get("inputs") or {}
     si_cells = _iter_si_cells(signals_matrix)
-    active_keys: set[tuple[str, str, str]] = set()
+    active_keys: set[tuple[str, str]] = set()
 
     existing = list(
         db.scalars(
@@ -94,9 +94,9 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
             ),
         ).all(),
     )
-    by_key: dict[tuple[str, str, str], CecchinoSignalActivation] = {}
+    by_key: dict[tuple[str, str], CecchinoSignalActivation] = {}
     for activation in existing:
-        by_key[_activation_key(activation.signal_group, activation.source_column, activation.target_market_key)] = activation
+        by_key[_activation_pair_key(activation.signal_group, activation.source_column)] = activation
 
     counts = {"created": 0, "updated": 0, "deactivated": 0, "skipped": 0}
     match_result = match_result_from_fixture(row)
@@ -104,7 +104,7 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
     for cell in si_cells:
         target = map_cecchino_signal_to_target(cell["signal_group"], cell["source_column"])
         kpi_ctx = extract_kpi_context(kpi_panel, cell["signal_group"])
-        key = _activation_key(cell["signal_group"], cell["source_column"], target["target_market_key"])
+        key = _activation_pair_key(cell["signal_group"], cell["source_column"])
         active_keys.add(key)
         activation = by_key.get(key)
 
@@ -152,6 +152,12 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
             activation.raw_signal_value = "SI"
             activation.is_current = True
             activation.deactivated_at = None
+            activation.target_market_key = target["target_market_key"]
+            activation.target_market_label = target["target_market_label"]
+            activation.target_period = target["target_period"]
+            if activation.evaluation_status == "not_evaluable" and target.get("target_market_key"):
+                activation.evaluation_status = target["evaluation_status"]
+                activation.evaluation_reason = target["evaluation_reason"]
             activation.f32 = _num(inputs.get("q1"))
             activation.f33 = _num(inputs.get("qx"))
             activation.f34 = _num(inputs.get("q2"))
@@ -165,13 +171,13 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
             activation.rating = int(kpi_ctx["rating"]) if kpi_ctx.get("rating") is not None else None
             counts["updated"] += 1
 
-        if activation.evaluation_status != "not_evaluable":
+        if activation.target_market_key:
             eval_result = evaluate_signal_activation(activation, match_result)
             apply_evaluation_to_activation(activation, eval_result, result_status=row.match_display_status)
 
     now = datetime.now(timezone.utc)
     for activation in existing:
-        key = _activation_key(activation.signal_group, activation.source_column, activation.target_market_key)
+        key = _activation_pair_key(activation.signal_group, activation.source_column)
         if key not in active_keys and activation.is_current:
             activation.is_current = False
             activation.deactivated_at = now

@@ -303,6 +303,20 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 34 — Mapping Under/Over su 2.5 FT (v0.28)
+
+Versione UI `cecchino_today_v0_28_under_over_mapping` — valutazione segnali UNDER/OVER aggregati.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Mapping | `UNDER_UNDER_PT` → `UNDER_2_5` FT; `OVER_OVER_PT` → `OVER_2_5` FT |
+| Remap storico | `remap_under_over_activations_in_range` su backfill/revaluate |
+| Valutazione | Won/lost da gol totali FT (Under ≤2, Over ≥3); `evaluation_reason` leggibile |
+| API/UI | Target serializzato come «Under 2.5 FT» / «Over 2.5 FT»; nota sotto heatmap |
+| Rivaluta | Ex-`not_evaluable` UNDER/OVER rivalutati senza API aggiuntive |
+
+**Escluso:** mercati PT (`UNDER_PT_1_5`, `OVER_PT_*`), formule OU KPI, SOT v2.0/v2.1.
+
 ## Cecchino Today — Fase 33 — Backfill Monitoraggio Segnali (v0.27)
 
 Versione UI `cecchino_today_v0_27_signal_backfill` — popolamento storico activations.

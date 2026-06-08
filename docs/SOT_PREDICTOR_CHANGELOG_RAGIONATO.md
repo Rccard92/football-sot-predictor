@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 34 — Mapping Under/Over su 2.5 FT (2026-06-08)
+
+- Mappati segnali aggregati `UNDER_UNDER_PT` e `OVER_OVER_PT` su Under/Over 2.5 FT nel monitoraggio.
+- Aggiunto remap automatico activation storiche `not_evaluable` prima di backfill/revaluate.
+- Rimosso early-skip in `evaluate_activations_for_fixture` per rivalutare record già persistiti.
+- Messaggi `evaluation_reason` leggibili (es. «Totale gol FT 3: Over 2.5 vinto»).
+- UI: target «Under 2.5 FT» / «Over 2.5 FT» e nota esplicativa sotto heatmap.
+- Zero chiamate API-Football aggiuntive; nessuna modifica a SOT v2.0/v2.1, KPI Betfair-only, mercati PT.
+
 ## Cecchino — Fase 33 — Backfill Monitoraggio Segnali (2026-06-08)
 
 - Corretta pagina Monitoraggio Segnali vuota su giornate già scansionate prima del deploy Fase 32.
