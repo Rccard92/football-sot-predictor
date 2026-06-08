@@ -1,4 +1,4 @@
-"""Test monitoraggio segnali Cecchino — Fase 32."""
+"""Test monitoraggio segnali Cecchino — Fase 32/33."""
 
 from __future__ import annotations
 
@@ -31,6 +31,10 @@ from app.services.cecchino.cecchino_signal_aggregation import (
 from app.services.cecchino.cecchino_signal_evaluation import (
     evaluate_signal_activation,
     revaluate_signal_activations,
+)
+from app.services.cecchino.cecchino_signal_backfill import (
+    backfill_signal_activations,
+    build_signal_diagnostics,
 )
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_signal_target_mapping import (
@@ -308,3 +312,136 @@ def test_revaluate_does_not_call_api():
     assert out["evaluated"] == 2
     mock_eval.assert_called_once_with(db, 99)
     db.commit.assert_called_once()
+
+
+def test_diagnostics_detects_fixtures_without_activations():
+    db = MagicMock()
+    fixture = _fixture_row()
+    db.scalars.return_value.all.return_value = [fixture]
+    db.scalar.side_effect = [0, 0]
+    db.execute.return_value.all.return_value = []
+
+    diag = build_signal_diagnostics(db, date_from=date(2026, 6, 8), date_to=date(2026, 6, 8))
+    assert diag["today_fixtures_count"] == 1
+    assert diag["fixtures_with_signal_matrix_count"] >= 1
+    assert diag["signal_activations_count"] == 0
+    assert diag["date_filter_field_used"] == "scan_date"
+
+
+def test_backfill_creates_activations_offline():
+    db = MagicMock()
+    fixture = _fixture_row(score_fulltime_home=2, score_fulltime_away=1, match_display_status="finished")
+    db.scalars.return_value.all.return_value = [fixture]
+    db.scalar.return_value = 0
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
+        return_value={"created": 2, "updated": 0, "deactivated": 0, "skipped": 0},
+    ) as mock_sync, patch(
+        "app.services.cecchino.cecchino_signal_backfill.evaluate_activations_for_fixture",
+        return_value={"evaluated": 2, "pending": 0, "not_evaluable": 0},
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill._activation_status_counts",
+        return_value={"won": 2, "lost": 0, "pending": 0, "not_evaluable": 0, "evaluated_count": 2},
+    ):
+        out = backfill_signal_activations(
+            db,
+            date_from=date(2026, 6, 8),
+            date_to=date(2026, 6, 8),
+            only_missing=True,
+            evaluate_after=True,
+        )
+
+    assert out["status"] == "ok"
+    assert out["fixtures_with_signals"] == 1
+    assert out["signals_created"] == 2
+    mock_sync.assert_called_once_with(db, 99)
+    db.commit.assert_called_once()
+
+
+def test_backfill_idempotent_skips_when_only_missing():
+    db = MagicMock()
+    fixture = _fixture_row()
+    db.scalars.return_value.all.return_value = [fixture]
+    db.scalar.return_value = 1
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
+    ) as mock_sync:
+        out = backfill_signal_activations(
+            db,
+            date_from=date(2026, 6, 8),
+            date_to=date(2026, 6, 8),
+            only_missing=True,
+            evaluate_after=False,
+        )
+
+    assert out["fixtures_skipped"] == 1
+    assert out["signals_created"] == 0
+    mock_sync.assert_not_called()
+
+
+def test_backfill_does_not_call_api_football():
+    db = MagicMock()
+    fixture = _fixture_row()
+    db.scalars.return_value.all.return_value = [fixture]
+    db.scalar.return_value = 0
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
+        return_value={"created": 1, "updated": 0, "deactivated": 0, "skipped": 0},
+    ), patch(
+        "app.services.api_football_client.ApiFootballClient",
+    ) as mock_client:
+        backfill_signal_activations(
+            db,
+            date_from=date(2026, 6, 8),
+            date_to=date(2026, 6, 8),
+            evaluate_after=False,
+        )
+    mock_client.assert_not_called()
+
+
+def test_revaluate_sync_missing_triggers_backfill():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_backfill.build_signal_diagnostics",
+        return_value={
+            "fixtures_with_signal_matrix_count": 3,
+            "current_signal_activations_count": 0,
+        },
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill.backfill_signal_activations",
+        return_value={"status": "ok", "signals_created": 5},
+    ) as mock_backfill:
+        out = revaluate_signal_activations(
+            db,
+            date_from=date(2026, 6, 1),
+            date_to=date(2026, 6, 30),
+            sync_missing=True,
+        )
+
+    mock_backfill.assert_called_once()
+    assert out["backfill_summary"]["signals_created"] == 5
+
+
+def test_summary_include_diagnostics():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    db.scalar.return_value = 0
+    db.execute.return_value.all.return_value = []
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_backfill.build_signal_diagnostics",
+        return_value={"today_fixtures_count": 5, "signal_activations_count": 0},
+    ):
+        summary = build_signals_summary(
+            db,
+            date_from=date(2026, 6, 1),
+            date_to=date(2026, 6, 30),
+            include_diagnostics=True,
+        )
+
+    assert summary["diagnostics"]["today_fixtures_count"] == 5

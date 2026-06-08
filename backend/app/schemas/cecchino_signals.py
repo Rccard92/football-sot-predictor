@@ -11,3 +11,11 @@ class CecchinoSignalsRevaluateBody(BaseModel):
     date_from: date
     date_to: date
     force: bool = False
+    sync_missing: bool = False
+
+
+class CecchinoSignalsBackfillBody(BaseModel):
+    date_from: date
+    date_to: date
+    only_missing: bool = True
+    evaluate_after: bool = True

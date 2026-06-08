@@ -218,7 +218,28 @@ def revaluate_signal_activations(
     date_from: date,
     date_to: date,
     force: bool = False,
+    sync_missing: bool = False,
 ) -> dict[str, Any]:
+    backfill_summary: dict[str, Any] | None = None
+    if sync_missing:
+        from app.services.cecchino.cecchino_signal_backfill import (
+            backfill_signal_activations,
+            build_signal_diagnostics,
+        )
+
+        diag = build_signal_diagnostics(db, date_from=date_from, date_to=date_to)
+        if (
+            diag.get("fixtures_with_signal_matrix_count", 0) > 0
+            and diag.get("current_signal_activations_count", 0) == 0
+        ) or force:
+            backfill_summary = backfill_signal_activations(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                only_missing=not force,
+                evaluate_after=False,
+            )
+
     query = select(CecchinoSignalActivation.today_fixture_id).where(
         CecchinoSignalActivation.scan_date >= date_from,
         CecchinoSignalActivation.scan_date <= date_to,
@@ -240,4 +261,6 @@ def revaluate_signal_activations(
         totals["not_evaluable"] += counts["not_evaluable"]
 
     db.commit()
+    if backfill_summary is not None:
+        totals["backfill_summary"] = backfill_summary
     return totals

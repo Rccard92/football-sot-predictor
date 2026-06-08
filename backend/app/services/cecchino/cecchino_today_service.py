@@ -64,6 +64,7 @@ from app.services.cecchino.cecchino_constants import (
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
+from app.services.cecchino.cecchino_signal_backfill import sync_signals_for_scan_date
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_picchetti_debug import (
     build_cecchino_picchetti_debug,
@@ -625,6 +626,14 @@ def run_scan(
             "errors": errors,
         }
 
+    signal_sync_summary = {
+        "fixtures": 0,
+        "created": 0,
+        "updated": 0,
+        "deactivated": 0,
+        "skipped": 0,
+    }
+
     for batch_start in range(0, total, SCAN_BATCH_SIZE):
         if budget_stopped:
             break
@@ -972,7 +981,9 @@ def run_scan(
             if budget_stopped:
                 break
 
-        db.commit()
+    db.commit()
+    signal_sync_summary = sync_signals_for_scan_date(db, resolved_date)
+    db.commit()
 
     cleanup_result = cleanup_cecchino_today_snapshots(
         db,
@@ -989,6 +1000,7 @@ def run_scan(
         errors=errors,
     )
     report["fixtures_processed"] = total
+    report["signal_sync_summary"] = signal_sync_summary
     report["cleanup"] = cleanup_result
     if job_id:
         report["job_id"] = job_id

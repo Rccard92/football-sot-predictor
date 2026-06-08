@@ -10,6 +10,23 @@ export type SignalsBucket = {
   success_rate: number | null
 }
 
+export type SignalsDiagnostics = {
+  date_from: string
+  date_to: string
+  today_fixtures_count: number
+  eligible_fixtures_count: number
+  fixtures_with_signal_matrix_count: number
+  signal_activations_count: number
+  current_signal_activations_count: number
+  evaluated_count: number
+  won: number
+  lost: number
+  pending: number
+  not_evaluable: number
+  date_filter_field_used: string
+  warnings: string[]
+}
+
 export type SignalsSummaryResponse = {
   filters: Record<string, unknown>
   overall: SignalsBucket
@@ -18,6 +35,23 @@ export type SignalsSummaryResponse = {
   by_signal_and_column: Array<
     SignalsBucket & { signal_group: string; signal_label: string; source_column: string }
   >
+  diagnostics?: SignalsDiagnostics
+}
+
+export type SignalsBackfillResponse = {
+  status: string
+  fixtures_found: number
+  fixtures_with_signals: number
+  fixtures_skipped: number
+  signals_created: number
+  signals_updated: number
+  signals_deactivated: number
+  evaluated: number
+  won: number
+  lost: number
+  pending: number
+  not_evaluable: number
+  warnings: string[]
 }
 
 export type SignalActivationRow = {
@@ -59,6 +93,7 @@ export type SignalsFilters = {
   country_name?: string
   evaluation_status?: string
   only_current?: boolean
+  include_diagnostics?: boolean
 }
 
 function qs(params: Record<string, string | number | boolean | undefined>): string {
@@ -83,8 +118,35 @@ export async function getCecchinoSignalsSummary(
       country_name: filters.country_name,
       evaluation_status: filters.evaluation_status,
       only_current: filters.only_current ?? true,
+      include_diagnostics: filters.include_diagnostics ?? false,
     })}`,
   )
+}
+
+export async function getCecchinoSignalsDiagnostics(params: {
+  date_from: string
+  date_to: string
+}): Promise<SignalsDiagnostics> {
+  return adminGetJson<SignalsDiagnostics>(
+    `/api/admin/cecchino/signals/diagnostics${qs({
+      date_from: params.date_from,
+      date_to: params.date_to,
+    })}`,
+  )
+}
+
+export async function backfillCecchinoSignals(params: {
+  date_from: string
+  date_to: string
+  only_missing?: boolean
+  evaluate_after?: boolean
+}): Promise<SignalsBackfillResponse> {
+  return adminPostJson<SignalsBackfillResponse>('/api/admin/cecchino/signals/backfill', {
+    date_from: params.date_from,
+    date_to: params.date_to,
+    only_missing: params.only_missing ?? true,
+    evaluate_after: params.evaluate_after ?? true,
+  })
 }
 
 export async function getCecchinoSignalsActivations(
@@ -125,11 +187,20 @@ export async function revaluateCecchinoSignals(params: {
   date_from: string
   date_to: string
   force?: boolean
-}): Promise<{ status: string; fixtures: number; evaluated: number; pending: number; not_evaluable: number }> {
+  sync_missing?: boolean
+}): Promise<{
+  status: string
+  fixtures: number
+  evaluated: number
+  pending: number
+  not_evaluable: number
+  backfill_summary?: SignalsBackfillResponse
+}> {
   return adminPostJson('/api/admin/cecchino/signals/revaluate', {
     date_from: params.date_from,
     date_to: params.date_to,
     force: params.force ?? false,
+    sync_missing: params.sync_missing ?? false,
   })
 }
 

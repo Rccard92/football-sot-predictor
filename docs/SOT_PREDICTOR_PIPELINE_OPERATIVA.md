@@ -32,6 +32,21 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 33 — Backfill Monitoraggio Segnali
+
+```mermaid
+flowchart TD
+  emptyUI[Pagina vuota su giornata storica] --> diag[GET signals/diagnostics]
+  diag -->|fixtures gt 0 activations 0| backfill[POST signals/backfill]
+  backfill --> sync[sync_cecchino_signal_activations]
+  sync --> eval[evaluate_activations_for_fixture]
+  eval --> summary[GET summary popolato]
+```
+
+- **Backfill:** legge `cecchino_output_json.signals_matrix`; fallback ricalcolo offline da quote finali.
+- **UI:** «Sincronizza segnali» + alert con CTA inline.
+- **Scan:** `sync_signals_for_scan_date` post-commit.
+
 ## Fase 32 — Monitoraggio Segnali Cecchino
 
 ```mermaid

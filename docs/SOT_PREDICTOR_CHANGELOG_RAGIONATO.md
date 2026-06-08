@@ -1,5 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 33 — Backfill Monitoraggio Segnali (2026-06-08)
+
+- Corretta pagina Monitoraggio Segnali vuota su giornate già scansionate prima del deploy Fase 32.
+- Aggiunto backfill offline `POST /admin/cecchino/signals/backfill` da `cecchino_today_fixtures`.
+- Aggiunto endpoint diagnostics per distinguere partite mancanti vs activations mancanti.
+- Pulsante UI «Sincronizza segnali» con alert intelligente quando servono activations.
+- `revaluate` supporta `sync_missing=true` per backfill automatico prima della valutazione.
+- `summary` supporta `include_diagnostics=true`.
+- Sync batch a fine scan giornaliero (`sync_signals_for_scan_date`).
+- Backfill/revaluate/diagnostics offline-only — zero API-Football.
+- Nessuna modifica a SOT v2.0/v2.1, KPI Betfair-only, Debug Picchetti, Equilibrio vs Squilibrio.
+
 ## Cecchino — Fase 32 — Monitoraggio Segnali Cecchino (2026-06-08)
 
 - Mantenuta matrice Segnali Cecchino nel dettaglio analisi partita.

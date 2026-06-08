@@ -303,6 +303,21 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 33 — Backfill Monitoraggio Segnali (v0.27)
+
+Versione UI `cecchino_today_v0_27_signal_backfill` — popolamento storico activations.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Causa pagina vuota | Giornate pre-Fase 32 senza materializzazione in `cecchino_signal_activations` |
+| Backfill | `POST /admin/cecchino/signals/backfill` — offline da `cecchino_output_json.signals_matrix` |
+| Diagnostics | `GET /admin/cecchino/signals/diagnostics` — confronto fixture vs activations |
+| UI | Pulsante «Sincronizza segnali» + alert se partite esistono ma activations = 0 |
+| Revaluate | `sync_missing=true` esegue backfill prima della rivalutazione |
+| Scan | `sync_signals_for_scan_date` a fine `run_scan` |
+
+**Invariato:** KPI Betfair-only, SOT v2.0/v2.1, matrice segnali nel dettaglio.
+
 ## Cecchino Today — Fase 32 — Monitoraggio Segnali Cecchino (v0.26)
 
 Versione UI `cecchino_today_v0_26_signal_monitoring` — persistenza e analisi storica segnali SI.

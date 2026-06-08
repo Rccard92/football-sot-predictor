@@ -94,6 +94,7 @@ def build_signals_summary(
     country_name: str | None = None,
     evaluation_status: str | None = None,
     only_current: bool = True,
+    include_diagnostics: bool = False,
 ) -> dict[str, Any]:
     filters = {
         "date_from": date_from.isoformat(),
@@ -154,13 +155,22 @@ def build_signals_summary(
         for (sg, label, col), items in sorted(by_combo_map.items())
     ]
 
-    return {
+    result = {
         "filters": filters,
         "overall": overall,
         "by_signal": by_signal,
         "by_column": by_column,
         "by_signal_and_column": by_signal_and_column,
     }
+    if include_diagnostics:
+        from app.services.cecchino.cecchino_signal_backfill import build_signal_diagnostics
+
+        result["diagnostics"] = build_signal_diagnostics(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    return result
 
 
 def list_signal_activations(
