@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
+from app.services.cecchino.cecchino_goal_formulas import build_goal_market_debug
 from app.services.cecchino.cecchino_constants import (
     FINAL_QUOTA_WEIGHTS,
     PICCHETTO_KEY_HOME_AWAY,
@@ -33,7 +34,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_X_TWO,
 )
 
-DEBUG_VERSION = "cecchino_picchetti_debug_v1"
+DEBUG_VERSION = "cecchino_picchetti_debug_v2"
 KPI_COHERENCE_TOLERANCE = 0.01
 
 _PICCHETTO_ORDER = (
@@ -61,7 +62,7 @@ _DC_MARKETS = (
     (SEL_ONE_TWO, "12", "1 / (prob_1 + prob_2)", ("prob_1", "prob_2"), ("quota_1", "quota_2")),
 )
 
-_MISSING_FORMULA_MARKETS: tuple[tuple[str, str], ...] = (
+_OU_MARKETS: tuple[tuple[str, str], ...] = (
     (SEL_OVER_1_5, "Over 1.5"),
     (SEL_OVER_2_5, "Over 2.5"),
     (SEL_UNDER_2_5, "Under 2.5"),
@@ -223,15 +224,23 @@ def _build_dc_market_debug(
     }
 
 
-def _missing_formula_markets() -> list[dict[str, Any]]:
-    return [
-        {
-            "market_key": key,
-            "label": label,
-            "formula_status": "missing_formula",
-        }
-        for key, label in _MISSING_FORMULA_MARKETS
-    ]
+def _missing_formula_markets(goal_markets: dict[str, Any] | None) -> list[dict[str, Any]]:
+    missing: list[dict[str, Any]] = []
+    gm = goal_markets if isinstance(goal_markets, dict) else {}
+    for key, label in _OU_MARKETS:
+        block = gm.get(key) if isinstance(gm.get(key), dict) else {}
+        if block.get("final_odd") is not None:
+            continue
+        if block.get("formula_version"):
+            continue
+        missing.append(
+            {
+                "market_key": key,
+                "label": label,
+                "formula_status": "missing_formula",
+            },
+        )
+    return missing
 
 
 def _collect_picchetti_warnings(picchetti: dict[str, Any], warnings: list[str]) -> None:
@@ -262,7 +271,8 @@ def _check_kpi_coherence(
         for r in (kpi_panel.get("rows") or [])
         if isinstance(r, dict) and r.get("market_key")
     }
-    for market_key in (SEL_HOME, SEL_DRAW, SEL_AWAY, SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO):
+    ou_keys = [k for k, _ in _OU_MARKETS]
+    for market_key in (SEL_HOME, SEL_DRAW, SEL_AWAY, SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO, *ou_keys):
         mkt = markets.get(market_key) or {}
         debug_odd = _num(mkt.get("final_odd"))
         kpi_row = by_key.get(market_key) or {}
@@ -321,7 +331,20 @@ def build_cecchino_picchetti_debug(
             final,
         )
 
-    missing = _missing_formula_markets()
+    goal_markets = cecchino_output.get("goal_markets") or {}
+    if not isinstance(goal_markets, dict):
+        goal_markets = {}
+    for market_key, label in _OU_MARKETS:
+        block = goal_markets.get(market_key)
+        if isinstance(block, dict) and block:
+            dbg = build_goal_market_debug(block)
+            dbg["segno"] = label
+            markets[market_key] = dbg
+            for w in block.get("warnings") or []:
+                if isinstance(w, str) and w not in warnings:
+                    warnings.append(w)
+
+    missing = _missing_formula_markets(goal_markets)
     _check_kpi_coherence(markets, kpi_panel, warnings=warnings)
 
     return {

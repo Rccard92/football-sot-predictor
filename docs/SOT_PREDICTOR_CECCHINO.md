@@ -303,6 +303,24 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 26 — Formule goal Over/Under Excel (v0.20)
+
+Versione UI `cecchino_today_v0_20_goal_formulas` — Quota Cecchino per 7 mercati goal.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Modulo formule | `cecchino_goal_formulas.py` — FT Excel parity + PT rate-to-odd |
+| Storico dati | `build_goal_fixture_slices` — slice PIT goal + halftime da fixture DB |
+| FT Over | Blocchi CF (÷6), totals (÷11), mixed (÷16); Over 1.5 = Over 2.5 |
+| FT Under | Blocchi CF (÷4), totals (÷9), mixed (÷14); Under 2.5 = Under 3.5 |
+| PT | Rate hit HT casa/fuori → prob media → quota = 1/prob |
+| Persistenza | `cecchino_output_json.goal_markets` |
+| KPI v2 | `quota_cecchino` OU popolata; `insufficient_data` se campione basso |
+| Debug picchetti v2 | Tab Over FT / Under FT / Primo tempo; formule mancanti dinamiche |
+| JSON KPI | `cecchino_goal_odds_used` con inputs e valori intermedi |
+
+**Invariato:** engine 1X2 (`cecchino_engine.py`), SOT v2.0/v2.1, gate Betfair-only, refresh quote.
+
 ## Cecchino Today — Fase 25 — Debug Picchetti Quota Cecchino (v0.19)
 
 Versione UI `cecchino_today_v0_19_picchetti_debug` — breakdown formule Quota Cecchino nel dettaglio.

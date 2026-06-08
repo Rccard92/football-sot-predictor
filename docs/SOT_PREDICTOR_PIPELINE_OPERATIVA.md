@@ -32,6 +32,24 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 26 — Formule goal Over/Under
+
+```mermaid
+flowchart LR
+  dbFixtures[fixtures DB PIT] --> slices[build_goal_fixture_slices]
+  slices --> formulas[cecchino_goal_formulas]
+  formulas --> goalMarkets[cecchino_output.goal_markets]
+  goalMarkets --> kpi[build_cecchino_kpi_panel_v2_betfair]
+  goalMarkets --> picchettiDbg[build_cecchino_picchetti_debug]
+  goalMarkets --> kpiJson[cecchino_goal_odds_used]
+```
+
+- **Scan:** dopo calcolo 1X2, `goal_markets` aggiunto a `cecchino_output_json` e passato al KPI.
+- **FT:** parità fogli OVER/UNDER Excel — media 3 blocchi con divisori 6/11/16 (Over) o 4/9/14 (Under).
+- **PT:** solo fixture con `raw_json.score.halftime` valido; soglia minima 3 partite casa/fuori.
+- **Dati insufficienti:** `quota_cecchino: null`, `status: insufficient_data` (no valori inventati).
+- **Rescan:** fixture già scansionate senza `goal_markets` finché non si riscansiona la giornata.
+
 ## Fase 25 — Debug Picchetti Quota Cecchino
 
 ```mermaid
@@ -46,7 +64,7 @@ flowchart LR
 - **Input:** `picchetti` + `final` già in `cecchino_output_json` (nessun ricalcolo da SOT).
 - **1/X/2:** contributi `odd * weight` per totals/home_away/last6_totals/last5_home_away.
 - **DC:** `1 / (prob_i + prob_j)` da quote finali Cecchino.
-- **OU:** solo `missing_formula` in debug; KPI mantiene `quota_cecchino: null`.
+- **OU (pre-Fase 26):** solo `missing_formula` in debug; KPI mantiene `quota_cecchino: null`. Dalla Fase 26 vedi sezione sopra.
 - **Coerenza:** confronto debug vs KPI con tolleranza 0.01.
 
 ## Fase 23 — Refresh quote Betfair singola fixture

@@ -390,6 +390,26 @@ export type CecchinoPicchettoContribution = {
   status?: string
 }
 
+export type CecchinoGoalOuBlockDebug = {
+  home_goals_for?: number
+  away_goals_against?: number
+  divisor_home?: number
+  divisor_away?: number
+  divisor?: number
+  home_component?: number
+  away_component?: number
+  block_value?: number
+  home_coeff?: number
+  away_coeff?: number
+  [key: string]: number | undefined
+}
+
+export type CecchinoGoalPtSideDebug = {
+  sample?: number
+  hits?: number
+  rate?: number | null
+}
+
 export type CecchinoPicchettiMarketDebug = {
   market_key: string
   segno: string
@@ -398,6 +418,20 @@ export type CecchinoPicchettiMarketDebug = {
   formula?: string
   inputs?: Record<string, number | null>
   formula_status?: string
+  formula_version?: string
+  formula_note?: string
+  blocks?: {
+    home_away?: CecchinoGoalOuBlockDebug
+    totals?: CecchinoGoalOuBlockDebug
+    mixed?: CecchinoGoalOuBlockDebug
+  }
+  event?: string
+  home?: CecchinoGoalPtSideDebug
+  away?: CecchinoGoalPtSideDebug
+  probability?: number | null
+  status?: string
+  warnings?: string[]
+  skipped_missing_halftime_score?: number
 }
 
 export type CecchinoPicchettiDebugResponse = {

@@ -146,6 +146,7 @@ def refresh_betfair_odds_for_fixture(
             kpi_panel = build_cecchino_kpi_panel_v2_betfair(
                 final_odds=(output.get("final") or {}) if isinstance(output, dict) else {},
                 betfair_payload=betfair_payload,
+                goal_markets=output.get("goal_markets") if isinstance(output, dict) else None,
             )
             meta = read_odds_meta(row.odds_snapshot_json)
             kpi_panel["odds_meta"] = meta

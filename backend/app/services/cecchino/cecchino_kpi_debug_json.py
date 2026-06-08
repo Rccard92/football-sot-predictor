@@ -16,6 +16,7 @@ from app.services.cecchino.cecchino_betfair_odds_payload import (
 )
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
 from app.services.cecchino.cecchino_today_odds_meta import bookmaker_meta_block, read_odds_meta
+from app.services.cecchino.cecchino_goal_formulas import build_goal_market_debug
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -102,6 +103,40 @@ def _extract_raw_markets_used(snapshot: dict[str, Any] | None) -> list[dict[str,
     return markets_out
 
 
+def _cecchino_goal_odds_used(output: dict[str, Any]) -> dict[str, Any]:
+    goal_markets = output.get("goal_markets") or {}
+    if not isinstance(goal_markets, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for sk in (
+        SEL_OVER_1_5,
+        SEL_OVER_2_5,
+        SEL_UNDER_2_5,
+        SEL_UNDER_3_5,
+        SEL_UNDER_PT_1_5,
+        SEL_OVER_PT_0_5,
+        SEL_OVER_PT_1_5,
+    ):
+        block = goal_markets.get(sk)
+        if not isinstance(block, dict):
+            continue
+        dbg = build_goal_market_debug(block)
+        dbg["inputs"] = {
+            "blocks": block.get("blocks"),
+            "home": block.get("home"),
+            "away": block.get("away"),
+            "event": block.get("event"),
+            "sample_status": block.get("sample_status"),
+        }
+        dbg["intermediate_values"] = block.get("blocks") or {
+            "home": block.get("home"),
+            "away": block.get("away"),
+            "probability": block.get("probability"),
+        }
+        out[sk] = dbg
+    return out
+
+
 def _cecchino_odds_used(output: dict[str, Any]) -> dict[str, Any]:
     final = output.get("final") or {}
     if final.get("status") != "available":
@@ -173,6 +208,7 @@ def build_kpi_debug_json(row: CecchinoTodayFixture, db: Session) -> dict[str, An
         "kpi_panel": kpi_panel,
         "betfair_odds_used": betfair_odds_used,
         "cecchino_odds_used": _cecchino_odds_used(output if isinstance(output, dict) else {}),
+        "cecchino_goal_odds_used": _cecchino_goal_odds_used(output if isinstance(output, dict) else {}),
         "raw_betfair_markets_used": _extract_raw_markets_used(row.odds_snapshot_json),
         "warnings": warnings,
     }

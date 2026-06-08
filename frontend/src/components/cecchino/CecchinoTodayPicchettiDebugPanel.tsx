@@ -23,9 +23,13 @@ const WEIGHT_LABELS: Array<{ key: string; pct: string }> = [
   { key: 'last5_home_away', pct: '20%' },
 ]
 
-type TabId = '1' | 'X' | '2' | 'dc' | 'missing'
+type TabId = '1' | 'X' | '2' | 'dc' | 'over_ft' | 'under_ft' | 'pt' | 'missing'
 
-const TAB_MARKET: Record<Exclude<TabId, 'dc' | 'missing'>, string> = {
+const OU_FT_OVER_KEYS = ['OVER_1_5', 'OVER_2_5'] as const
+const OU_FT_UNDER_KEYS = ['UNDER_2_5', 'UNDER_3_5'] as const
+const OU_PT_KEYS = ['OVER_PT_0_5', 'OVER_PT_1_5', 'UNDER_PT_1_5'] as const
+
+const TAB_MARKET: Record<'1' | 'X' | '2', string> = {
   '1': 'HOME',
   X: 'DRAW',
   '2': 'AWAY',
@@ -140,12 +144,126 @@ function DcTab({ markets }: { markets: Record<string, CecchinoPicchettiMarketDeb
   )
 }
 
+function OuBlockCard({
+  title,
+  block,
+}: {
+  title: string
+  block?: Record<string, number | undefined>
+}) {
+  if (!block || typeof block !== 'object') return null
+  const entries = Object.entries(block).filter(([, v]) => v != null)
+  if (!entries.length) return null
+  return (
+    <article className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+      <h4 className="mb-2 font-semibold text-slate-900">{title}</h4>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums sm:grid-cols-3">
+        {entries.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-slate-500">{k}</dt>
+            <dd>{typeof v === 'number' ? fmtNum(v, 4) : String(v)}</dd>
+          </div>
+        ))}
+      </dl>
+    </article>
+  )
+}
+
+function OuFullTimeTab({
+  keys,
+  markets,
+}: {
+  keys: readonly string[]
+  markets: Record<string, CecchinoPicchettiMarketDebug>
+}) {
+  const primary = markets[keys[0]]
+  if (!primary) {
+    return <p className="text-sm text-slate-500">Dati goal full time non disponibili.</p>
+  }
+  return (
+    <div className="space-y-3">
+      {primary.formula_note && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          {primary.formula_note}
+        </p>
+      )}
+      {primary.formula_version && (
+        <p className="text-xs text-slate-500">Versione: {primary.formula_version}</p>
+      )}
+      <OuBlockCard title="Blocco casa/fuori" block={primary.blocks?.home_away} />
+      <OuBlockCard title="Blocco totals" block={primary.blocks?.totals} />
+      <OuBlockCard title="Blocco mixed" block={primary.blocks?.mixed} />
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
+        <span className="font-semibold text-emerald-900">Quota Cecchino finale: </span>
+        <span className="tabular-nums font-bold text-emerald-900">{fmtNum(primary.final_odd)}</span>
+        {keys.length > 1 && (
+          <p className="mt-1 text-xs text-emerald-800">
+            Stessa quota per {keys.map((k) => markets[k]?.segno ?? k).join(' e ')} (parità Excel).
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function OuFirstHalfTab({ markets }: { markets: Record<string, CecchinoPicchettiMarketDebug> }) {
+  return (
+    <div className="space-y-4">
+      {OU_PT_KEYS.map((key) => {
+        const m = markets[key]
+        if (!m) return null
+        return (
+          <article key={key} className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+            <h4 className="font-semibold text-slate-900">{m.segno}</h4>
+            {m.formula_version && (
+              <p className="mt-1 text-xs text-slate-500">Versione: {m.formula_version}</p>
+            )}
+            {m.event && <p className="mt-1 font-mono text-xs text-slate-600">Evento: {m.event}</p>}
+            <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular-nums sm:grid-cols-4">
+              <dt className="text-slate-500">Campione casa</dt>
+              <dd>{m.home?.sample ?? '—'}</dd>
+              <dt className="text-slate-500">Hit casa</dt>
+              <dd>{m.home?.hits ?? '—'}</dd>
+              <dt className="text-slate-500">Rate casa</dt>
+              <dd>{m.home?.rate != null ? fmtPct(m.home.rate * 100) : '—'}</dd>
+              <dt className="text-slate-500">Campione trasferta</dt>
+              <dd>{m.away?.sample ?? '—'}</dd>
+              <dt className="text-slate-500">Hit trasferta</dt>
+              <dd>{m.away?.hits ?? '—'}</dd>
+              <dt className="text-slate-500">Rate trasferta</dt>
+              <dd>{m.away?.rate != null ? fmtPct(m.away.rate * 100) : '—'}</dd>
+              <dt className="text-slate-500">Probabilità</dt>
+              <dd>{m.probability != null ? fmtPct(m.probability * 100) : '—'}</dd>
+            </dl>
+            <p className="mt-2">
+              <span className="text-slate-600">Quota Cecchino: </span>
+              <span className="font-bold tabular-nums text-slate-900">{fmtNum(m.final_odd)}</span>
+            </p>
+            {m.skipped_missing_halftime_score != null && m.skipped_missing_halftime_score > 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                Escluse {m.skipped_missing_halftime_score} partite senza score primo tempo.
+              </p>
+            )}
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
 function MissingFormulasTab({
   items,
 }: {
   items: CecchinoPicchettiDebugResponse['missing_formulas']
 }) {
   const list = items ?? []
+  if (!list.length) {
+    return (
+      <p className="text-sm text-emerald-800">
+        Tutte le formule Quota Cecchino goal sono calcolate per questa partita.
+      </p>
+    )
+  }
   return (
     <div className="space-y-3 text-sm text-slate-700">
       <p className="font-semibold text-slate-900">Formule ancora mancanti:</p>
@@ -213,12 +331,17 @@ export function CecchinoTodayPicchettiDebugPanel({
   const weights = data?.weights ?? summary?.weights
   const markets = data?.markets ?? {}
 
+  const missingCount = data?.missing_formulas?.length ?? summary?.missing_formulas_count ?? 0
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: '1', label: '1' },
     { id: 'X', label: 'X' },
     { id: '2', label: '2' },
     { id: 'dc', label: '1X/X2/12' },
-    { id: 'missing', label: 'Formule mancanti' },
+    { id: 'over_ft', label: 'Over FT' },
+    { id: 'under_ft', label: 'Under FT' },
+    { id: 'pt', label: 'Primo tempo' },
+    ...(missingCount > 0 ? [{ id: 'missing' as TabId, label: 'Formule mancanti' }] : []),
   ]
 
   return (
@@ -289,6 +412,9 @@ export function CecchinoTodayPicchettiDebugPanel({
             {tab === 'X' && <Market1X2Tab market={markets[TAB_MARKET.X]} />}
             {tab === '2' && <Market1X2Tab market={markets[TAB_MARKET['2']]} />}
             {tab === 'dc' && <DcTab markets={markets} />}
+            {tab === 'over_ft' && <OuFullTimeTab keys={OU_FT_OVER_KEYS} markets={markets} />}
+            {tab === 'under_ft' && <OuFullTimeTab keys={OU_FT_UNDER_KEYS} markets={markets} />}
+            {tab === 'pt' && <OuFirstHalfTab markets={markets} />}
             {tab === 'missing' && <MissingFormulasTab items={data.missing_formulas} />}
 
             {(data.warnings ?? []).length > 0 && (

@@ -58,7 +58,7 @@ Selettore campionato (`CompetitionSelector`) in sidebar.
 - Spiegazione previsione (audit model-aware)
 - Prossima giornata (quick report, confronto v2.0 vs v2.1)
 - Cecchino — dashboard autonoma (picchetti, KPI DASHBOARD classico con 3 bookmaker; **non** influenza SOT)
-- Cecchino Today — dashboard giornaliera Betfair-only, KPI v2 unico riferimento quote (Fase 22), refresh quote Betfair on-demand singola fixture (Fase 23), export mercati JSON, debug JSON KPI, card PT/FT, mapping strict Match Winner, layout 35/65, timeline ±7, scan async (`/cecchino-today`)
+- Cecchino Today — dashboard giornaliera Betfair-only, KPI v2 unico riferimento quote (Fase 22), refresh quote Betfair on-demand singola fixture (Fase 23), export mercati JSON, debug JSON KPI, debug Picchetti (Fase 25), formule goal Over/Under da Excel (Fase 26), card PT/FT, mapping strict Match Winner, layout 35/65, timeline ±7, scan async (`/cecchino-today`)
 - Monitoraggio Giocate
 - Bookmakers — discovery provider/mercati, coverage e sync 1X2 per competizione (`fixture_bookmaker_odds`; non collegato a Cecchino/SOT)
 - Changelog

@@ -1,5 +1,18 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 26 — Formule goal da fogli OVER/UNDER Excel (2026-06-08)
+
+- Analizzati fogli OVER e UNDER di `AutomazioneCecchino.xlsm` (riferimento esterno, non in repo).
+- Aggiunte formule Quota Cecchino per Over 1.5 e Over 2.5 (`over_under_fulltime_excel_parity_v1`, divisori 6/11/16).
+- Aggiunte formule Quota Cecchino per Under 2.5 e Under 3.5 (divisori 4/9/14).
+- Formule full time: media di tre blocchi (casa/fuori, totals, mixed); Over 1.5 = Over 2.5; Under 2.5 = Under 3.5 (parità Excel).
+- Formule primo tempo `first_half_rate_to_odd_v1`: Over PT 0.5, Over PT 1.5, Under PT 1.5 (rate HT → prob → 1/prob).
+- Storico goal da fixture DB PIT (`build_goal_fixture_slices`); halftime da `raw_json.score.halftime`.
+- `goal_markets` persistito in `cecchino_output_json`; KPI Betfair-only popola `quota_cecchino` OU quando dati sufficienti.
+- Debug Picchetti v2: tab Over FT, Under FT, Primo tempo; `missing_formulas` dinamico.
+- JSON KPI: sezione `cecchino_goal_odds_used` con breakdown formule.
+- Nessuna modifica ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 25 — Debug Picchetti Quota Cecchino (2026-06-08)
 
 - Aggiunta sezione Debug Picchetti nel dettaglio analisi (accordion chiuso di default).

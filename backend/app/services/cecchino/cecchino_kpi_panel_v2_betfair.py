@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
+from app.services.cecchino.cecchino_constants import (
+    CECCHINO_BOOKMAKER,
+    PROVIDER_API_FOOTBALL,
+    STATUS_INSUFFICIENT_DATA,
+)
+from app.services.cecchino.cecchino_goal_formulas import goal_market_kpi_entry
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     MARKET_DC,
@@ -73,6 +78,15 @@ _MARKET_FOR_KEY: dict[str, str] = {
 
 _CECCHINO_1X2_KEYS = {SEL_HOME, SEL_DRAW, SEL_AWAY}
 _CECCHINO_DC_KEYS = {SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO}
+_CECCHINO_OU_KEYS = {
+    SEL_OVER_1_5,
+    SEL_OVER_2_5,
+    SEL_UNDER_2_5,
+    SEL_UNDER_3_5,
+    SEL_UNDER_PT_1_5,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
+}
 
 
 def _num(v: Any) -> float | None:
@@ -137,11 +151,15 @@ def _build_metrics_row(
     quota_cecchino: float | None,
     book_source: str,
     cecchino_source: str | None,
+    cecchino_market_status: str | None = None,
 ) -> dict[str, Any]:
     prob_book = _prob_from_odd(quota_book)
     prob_cecchino = _prob_from_odd(quota_cecchino)
 
     if quota_book is not None and quota_cecchino is None:
+        row_status = "book_only"
+        if cecchino_market_status == STATUS_INSUFFICIENT_DATA:
+            row_status = STATUS_INSUFFICIENT_DATA
         return {
             "market_key": market_key,
             "segno": segno,
@@ -155,7 +173,7 @@ def _build_metrics_row(
             "score_acquisto": None,
             "rating": None,
             "rating_label": None,
-            "status": "book_only" if quota_book is not None else "not_available",
+            "status": row_status if quota_book is not None else "not_available",
             "book_source": book_source,
             "cecchino_source": cecchino_source,
         }
@@ -285,23 +303,28 @@ def _cecchino_quota_for_key(
     final_odds: dict[str, Any],
     cec_ok: bool,
     cec_dc: dict[str, float | None],
-) -> tuple[float | None, str | None]:
+    goal_markets: dict[str, Any] | None = None,
+) -> tuple[float | None, str | None, str | None]:
+    if market_key in _CECCHINO_OU_KEYS:
+        q, src, st = goal_market_kpi_entry(goal_markets or {}, market_key)
+        return q, src, st
     if not cec_ok:
-        return None, None
+        return None, None, None
     if market_key in _CECCHINO_1X2_KEYS:
         key_map = {SEL_HOME: "quota_1", SEL_DRAW: "quota_x", SEL_AWAY: "quota_2"}
         q = _num(final_odds.get(key_map[market_key]))
-        return (round(q, 2) if q is not None else None, "final_odds" if q is not None else None)
+        return (round(q, 2) if q is not None else None, "final_odds" if q is not None else None, None)
     if market_key in _CECCHINO_DC_KEYS:
         q = cec_dc.get(market_key)
-        return (round(q, 2) if q is not None else None, "derived_from_1x2" if q is not None else None)
-    return None, None
+        return (round(q, 2) if q is not None else None, "derived_from_1x2" if q is not None else None, None)
+    return None, None, None
 
 
 def build_cecchino_kpi_panel_v2_betfair(
     *,
     final_odds: dict[str, Any],
     betfair_payload: dict[str, Any],
+    goal_markets: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     warnings: list[str] = list(betfair_payload.get("warnings") or [])
     bm_status = betfair_payload.get("status") or "not_available"
@@ -342,11 +365,12 @@ def build_cecchino_kpi_panel_v2_betfair(
             warnings.append(f"kpi_{market_key}:provenance_mancante")
             quota_book = None
 
-        quota_cecchino, cecchino_source = _cecchino_quota_for_key(
+        quota_cecchino, cecchino_source, cecchino_market_status = _cecchino_quota_for_key(
             market_key,
             final_odds=final_odds,
             cec_ok=cec_ok,
             cec_dc=cec_dc,
+            goal_markets=goal_markets,
         )
 
         rows.append(
@@ -357,6 +381,7 @@ def build_cecchino_kpi_panel_v2_betfair(
                 quota_cecchino=quota_cecchino,
                 book_source=book_source,
                 cecchino_source=cecchino_source,
+                cecchino_market_status=cecchino_market_status,
             ),
         )
 

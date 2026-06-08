@@ -71,7 +71,11 @@ from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
     build_cecchino_kpi_panel_v2_betfair,
     normalize_kpi_panel_rows,
 )
-from app.services.cecchino.cecchino_fixture_history import build_fixture_contexts
+from app.services.cecchino.cecchino_fixture_history import (
+    build_fixture_contexts,
+    build_goal_fixture_slices,
+)
+from app.services.cecchino.cecchino_goal_formulas import build_goal_market_cecchino_odds
 from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH
 from app.services.cecchino.cecchino_service import (
     build_calculation_input_for_fixture,
@@ -865,7 +869,10 @@ def run_scan(
                     continue
 
                 _emit_progress(progress, current_step="validating_eligibility")
-                cecchino_output = calc.get("output")
+                cecchino_output = calc.get("output") or {}
+                if local_fx is not None:
+                    goal_slices = build_goal_fixture_slices(db, local_fx)
+                    cecchino_output["goal_markets"] = build_goal_market_cecchino_odds(goal_slices)
                 odds_source = "cached_betfair_odds" if odds_strategy == "cached" else "betfair"
                 teams = item.get("teams") or {}
                 home_name = (teams.get("home") or {}).get("name")
@@ -890,8 +897,9 @@ def run_scan(
                         fixture_id=int(local_fx.id),
                     )
                 kpi_panel = build_cecchino_kpi_panel_v2_betfair(
-                    final_odds=(cecchino_output or {}).get("final") or {},
+                    final_odds=cecchino_output.get("final") or {},
                     betfair_payload=betfair_payload,
+                    goal_markets=cecchino_output.get("goal_markets"),
                 )
                 _emit_progress(progress, current_step="saving_snapshots")
                 _, eligibility_status = _persist_post_calc_snapshot(
@@ -1420,9 +1428,11 @@ def _resolve_kpi_panel_for_detail(row: CecchinoTodayFixture, db: Session) -> dic
     if betfair_payload.get("status") == "not_available" and kpi:
         return normalize_kpi_panel_rows(kpi)
 
+    goal_markets = output.get("goal_markets") if isinstance(output, dict) else None
     panel = build_cecchino_kpi_panel_v2_betfair(
         final_odds=final_odds,
         betfair_payload=betfair_payload,
+        goal_markets=goal_markets,
     )
     meta = read_odds_meta(row.odds_snapshot_json)
     if meta:

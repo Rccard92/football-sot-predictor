@@ -361,6 +361,198 @@ def contexts_to_calculation_input(ctx: CecchinoFixtureContexts) -> CecchinoCalcu
     )
 
 
+TARGET_GOAL_HOME_AWAY = 5
+TARGET_GOAL_TOTAL = 10
+TARGET_GOAL_HT = 5
+MIN_GOAL_HOME_AWAY = 3
+MIN_GOAL_TOTAL = 6
+MIN_GOAL_HT = 3
+
+
+@dataclass
+class GoalTotals:
+    """Aggregati goal da lista fixture dal POV di una squadra."""
+
+    sample: int
+    goals_for: int
+    goals_against: int
+    total_goals: int
+    over_1_5_hits: int
+    over_2_5_hits: int
+    under_2_5_hits: int
+    under_3_5_hits: int
+    over_pt_0_5_hits: int
+    over_pt_1_5_hits: int
+    under_pt_1_5_hits: int
+    fixture_ids: list[int] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sample": self.sample,
+            "goals_for": self.goals_for,
+            "goals_against": self.goals_against,
+            "total_goals": self.total_goals,
+            "over_1_5_hits": self.over_1_5_hits,
+            "over_2_5_hits": self.over_2_5_hits,
+            "under_2_5_hits": self.under_2_5_hits,
+            "under_3_5_hits": self.under_3_5_hits,
+            "over_pt_0_5_hits": self.over_pt_0_5_hits,
+            "over_pt_1_5_hits": self.over_pt_1_5_hits,
+            "under_pt_1_5_hits": self.under_pt_1_5_hits,
+            "fixture_ids": list(self.fixture_ids),
+        }
+
+
+@dataclass
+class GoalFixtureSlices:
+    """Slice storico goal per formule Over/Under Cecchino."""
+
+    home_home_5: GoalTotals
+    away_away_5: GoalTotals
+    home_total_10: GoalTotals
+    away_total_10: GoalTotals
+    home_home_ht_5: GoalTotals
+    away_away_ht_5: GoalTotals
+    skipped_missing_halftime_score: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "home_home_5": self.home_home_5.to_dict(),
+            "away_away_5": self.away_away_5.to_dict(),
+            "home_total_10": self.home_total_10.to_dict(),
+            "away_total_10": self.away_total_10.to_dict(),
+            "home_home_ht_5": self.home_home_ht_5.to_dict(),
+            "away_away_ht_5": self.away_away_ht_5.to_dict(),
+            "skipped_missing_halftime_score": self.skipped_missing_halftime_score,
+        }
+
+
+def team_goals_in_fixture(fixture: Fixture, team_id: int) -> tuple[int | None, int | None]:
+    """Restituisce (goals_for, goals_against) dal POV della squadra."""
+    tid = int(team_id)
+    if fixture.goals_home is None or fixture.goals_away is None:
+        return None, None
+    gh, ga = int(fixture.goals_home), int(fixture.goals_away)
+    if int(fixture.home_team_id) == tid:
+        return gh, ga
+    if int(fixture.away_team_id) == tid:
+        return ga, gh
+    return None, None
+
+
+def halftime_total_goals(fixture: Fixture) -> int | None:
+    """Totale gol primo tempo da raw_json.score.halftime; None se assente."""
+    raw = fixture.raw_json if isinstance(fixture.raw_json, dict) else {}
+    score = raw.get("score") if isinstance(raw.get("score"), dict) else {}
+    ht = score.get("halftime") if isinstance(score.get("halftime"), dict) else {}
+    h, a = ht.get("home"), ht.get("away")
+    if h is None or a is None:
+        return None
+    try:
+        return int(h) + int(a)
+    except (TypeError, ValueError):
+        return None
+
+
+def aggregate_goal_totals(fixtures: list[Fixture], team_id: int) -> GoalTotals:
+    """Aggrega metriche goal da fixture finite con score FT valido."""
+    gf = ga = tg = 0
+    o15 = o25 = u25 = u35 = 0
+    pt05 = pt15 = upt15 = 0
+    ids: list[int] = []
+    sample = 0
+
+    for f in fixtures:
+        goals_for, goals_against = team_goals_in_fixture(f, team_id)
+        if goals_for is None or goals_against is None:
+            continue
+        sample += 1
+        ids.append(int(f.id))
+        gf += goals_for
+        ga += goals_against
+        match_total = goals_for + goals_against
+        tg += match_total
+        if match_total >= 2:
+            o15 += 1
+        if match_total >= 3:
+            o25 += 1
+        if match_total <= 2:
+            u25 += 1
+        if match_total <= 3:
+            u35 += 1
+
+        ht_total = halftime_total_goals(f)
+        if ht_total is not None:
+            if ht_total >= 1:
+                pt05 += 1
+            if ht_total >= 2:
+                pt15 += 1
+            if ht_total <= 1:
+                upt15 += 1
+
+    return GoalTotals(
+        sample=sample,
+        goals_for=gf,
+        goals_against=ga,
+        total_goals=tg,
+        over_1_5_hits=o15,
+        over_2_5_hits=o25,
+        under_2_5_hits=u25,
+        under_3_5_hits=u35,
+        over_pt_0_5_hits=pt05,
+        over_pt_1_5_hits=pt15,
+        under_pt_1_5_hits=upt15,
+        fixture_ids=ids,
+    )
+
+
+def _take_last_n_with_halftime(
+    fixtures: list[Fixture],
+    n: int,
+) -> tuple[list[Fixture], int]:
+    """Ultime n fixture con HT valido; restituisce anche il conteggio escluse."""
+    valid: list[Fixture] = []
+    skipped = 0
+    for f in reversed(fixtures):
+        if halftime_total_goals(f) is None:
+            skipped += 1
+            continue
+        valid.insert(0, f)
+        if len(valid) >= n:
+            break
+    return valid, skipped
+
+
+def build_goal_fixture_slices(db: Session, target_fixture: Fixture) -> GoalFixtureSlices:
+    """Costruisce slice goal PIT per formule Over/Under."""
+    hid = int(target_fixture.home_team_id)
+    aid = int(target_fixture.away_team_id)
+
+    home_prior = load_finished_fixtures_for_team(db, target_fixture, hid)
+    away_prior = load_finished_fixtures_for_team(db, target_fixture, aid)
+
+    home_split = split_home_away(home_prior, hid, is_home=True)
+    away_split = split_home_away(away_prior, aid, is_home=False)
+
+    home_home_5 = take_last_n(home_split, TARGET_GOAL_HOME_AWAY)
+    away_away_5 = take_last_n(away_split, TARGET_GOAL_HOME_AWAY)
+    home_total_10 = take_last_n(home_prior, TARGET_GOAL_TOTAL)
+    away_total_10 = take_last_n(away_prior, TARGET_GOAL_TOTAL)
+
+    home_ht_fx, home_ht_skip = _take_last_n_with_halftime(home_split, TARGET_GOAL_HT)
+    away_ht_fx, away_ht_skip = _take_last_n_with_halftime(away_split, TARGET_GOAL_HT)
+
+    return GoalFixtureSlices(
+        home_home_5=aggregate_goal_totals(home_home_5, hid),
+        away_away_5=aggregate_goal_totals(away_away_5, aid),
+        home_total_10=aggregate_goal_totals(home_total_10, hid),
+        away_total_10=aggregate_goal_totals(away_total_10, aid),
+        home_home_ht_5=aggregate_goal_totals(home_ht_fx, hid),
+        away_away_ht_5=aggregate_goal_totals(away_ht_fx, aid),
+        skipped_missing_halftime_score=home_ht_skip + away_ht_skip,
+    )
+
+
 def picchetto_sample_meta(ctx: CecchinoFixtureContexts) -> dict[str, dict[str, int | None]]:
     """Metadati sample per i 4 picchetti dell'engine."""
     from app.services.cecchino.cecchino_constants import (
