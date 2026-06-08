@@ -16,6 +16,7 @@ from app.services.cecchino.cecchino_betfair_odds_payload import (
 )
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
 from app.services.cecchino.cecchino_today_odds_meta import bookmaker_meta_block, read_odds_meta
+from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
 from app.services.cecchino.cecchino_goal_formulas import build_goal_market_debug
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
@@ -212,6 +213,9 @@ def build_kpi_debug_json(row: CecchinoTodayFixture, db: Session) -> dict[str, An
         "betfair_odds_used": betfair_odds_used,
         "cecchino_odds_used": _cecchino_odds_used(output if isinstance(output, dict) else {}),
         "cecchino_goal_odds_used": _cecchino_goal_odds_used(output if isinstance(output, dict) else {}),
+        "balance_analysis": build_balance_analysis_from_final(
+            output.get("final") if isinstance(output, dict) else {},
+        ),
         "raw_betfair_markets_used": _extract_raw_markets_used(row.odds_snapshot_json),
         "warnings": warnings,
     }

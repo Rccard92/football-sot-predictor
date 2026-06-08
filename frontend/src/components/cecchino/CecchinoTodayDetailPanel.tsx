@@ -4,6 +4,7 @@ import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
+import { CecchinoTodayBalanceAnalysisPanel } from './CecchinoTodayBalanceAnalysisPanel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 
@@ -70,6 +71,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         summary={detail.picchetti_debug_summary}
         kpiPanel={detail.kpi_panel_v2 ?? detail.kpi_panel}
       />
+
+      <CecchinoTodayBalanceAnalysisPanel balanceAnalysis={detail.balance_analysis} />
 
       {signals && <CecchinoSignalsCard matrix={signals} />}
 

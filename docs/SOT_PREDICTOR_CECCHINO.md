@@ -303,6 +303,23 @@ Versione `cecchino_today_v0_10_async_scan`: scan giornaliera come job background
 
 **UI:** progress card con elapsed time; pulsante «Scansione in corso» disabilitato; nessun auto-scan al cambio giorno.
 
+## Cecchino Today — Fase 29 — Equilibrio vs Squilibrio (v0.23)
+
+Versione UI `cecchino_today_v0_23_balance_analysis` — lettura equilibrio partita da Cecchino 1/X/2.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Sezione UI | «Equilibrio vs Squilibrio» sotto Debug Picchetti Cecchino |
+| F36 | `quota_2 - quota_1` (assoluto) — indicatore equilibrio/squilibrio quote 1 vs 2 |
+| Dominanza | `prob_max - prob_seconda` (punti percentuali) su probabilità Cecchino |
+| Quota X | Classificazione pareggio forte/possibile/debole/poco probabile |
+| Lettura incrociata | F36 + Dominanza → equilibrio, falso equilibrio, anomalia, squilibrio confermato |
+| Lettura operativa | 12 regole decisionali X/Under, zona grigia, tendenza 1/2 |
+| Backend | `build_cecchino_balance_analysis` — `balance_analysis` nel detail e kpi-debug-json |
+| Dati | Solo Quota/Probabilità Cecchino 1/X/2 (`cecchino_output.final`) |
+
+**Invariato:** KPI Betfair-only, SOT v2.0/v2.1, `team_sot_predictions`, Debug Picchetti, engine 1X2.
+
 ## Cecchino Today — Fase 28 — Nuovi pesi goal market KPI confermato (v0.22)
 
 Versione UI `cecchino_today_v0_22_goal_weights` — pesi picchetti goal separati da 1X2.

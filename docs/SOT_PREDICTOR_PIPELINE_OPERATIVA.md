@@ -32,6 +32,22 @@ flowchart TD
 - **Stale:** `recover_stale_scan_jobs` su start/latest/status/days; job `queued`/`running` bloccati → `failed`.
 - **Runner:** eccezione non gestita → `failed` + `errors_json`; progress aggiorna `updated_at` ad ogni commit.
 
+## Fase 29 — Equilibrio vs Squilibrio
+
+```mermaid
+flowchart LR
+  final[cecchino_output.final] --> builder[build_cecchino_balance_analysis]
+  builder --> detail[GET today detail balance_analysis]
+  builder --> kpiJson[kpi-debug-json balance_analysis]
+  detail --> ui[Equilibrio vs Squilibrio panel]
+```
+
+- **Input:** `quota_1/x/2` e `prob_1/x/2` da `cecchino_output.final` (solo Cecchino).
+- **F36:** `abs(quota_2 - quota_1)` — score e classificazione equilibrio/squilibrio.
+- **Dominanza:** max(prob) − seconda(prob) in punti percentuali.
+- **Output:** lettura operativa, sintesi modello, dettaglio tecnico.
+- **UI:** sezione sotto Debug Picchetti; 3 card + box operativo + accordion.
+
 ## Fase 28 — Nuovi pesi goal market
 
 ```mermaid

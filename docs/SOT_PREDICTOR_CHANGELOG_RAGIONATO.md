@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 29 — Equilibrio vs Squilibrio (2026-06-08)
+
+- Aggiunta nuova sezione «Equilibrio vs Squilibrio» nel dettaglio analisi Cecchino Today (sotto Debug Picchetti).
+- Implementato calcolo F36 come quota 2 Cecchino meno quota 1 Cecchino; F36 assoluto come indicatore principale.
+- Implementata Dominanza modello come differenza tra probabilità Cecchino più alta e seconda più alta (in p.p.).
+- Implementata classificazione Quota X Cecchino (pareggio forte/possibile/debole/poco probabile).
+- Aggiunta lettura incrociata F36 + Dominanza e lettura operativa (12 regole: X/Under, falso equilibrio, zona grigia, squilibrio confermato).
+- Dettaglio tecnico in accordion con formule e tabella regole applicate.
+- Campo `balance_analysis` in GET detail e JSON kpi-debug; dati solo da Cecchino 1/X/2, senza Betfair né SOT.
+- Nessuna modifica a Betfair-only né ai modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 28 — Nuovi pesi goal market KPI confermato (2026-06-08)
 
 - Pannello KPI Betfair-only confermato nella struttura finale (colonne, layout, mapping quote invariati).

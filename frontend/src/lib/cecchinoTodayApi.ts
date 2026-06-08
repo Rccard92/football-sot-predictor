@@ -499,6 +499,81 @@ export type CecchinoBookmakerOddsDetail = {
   rows: CecchinoBookmakerOddsDetailRow[]
 }
 
+export type CecchinoBalanceAnalysisF36 = {
+  signed?: number
+  abs?: number
+  score?: number
+  label?: string
+  class_key?: string
+  direction_note?: string
+}
+
+export type CecchinoBalanceAnalysisDominance = {
+  value?: number
+  label?: string
+  stars?: number
+  class_key?: string
+  best_side?: string
+  second_side?: string
+  best_probability?: number
+  second_probability?: number
+}
+
+export type CecchinoBalanceAnalysisDraw = {
+  quota_x?: number
+  label?: string
+  class_key?: string
+}
+
+export type CecchinoBalanceAnalysisCrossReading = {
+  label?: string
+  description?: string
+}
+
+export type CecchinoBalanceAnalysisOperational = {
+  label?: string
+  detail?: string
+  class_key?: string
+  severity?: 'positive' | 'warning' | 'negative' | 'neutral' | string
+}
+
+export type CecchinoBalanceAnalysisSummary = {
+  main_label?: string
+  short_advice?: string
+  favorite_direction?: string
+  is_draw_under_candidate?: boolean
+  is_false_balance?: boolean
+  is_confirmed_imbalance?: boolean
+}
+
+export type CecchinoBalanceAnalysisTechnical = {
+  f36_formula?: string
+  dominance_formula?: string
+  rule_id?: number
+  operational_class_key?: string
+}
+
+export type CecchinoBalanceAnalysis = {
+  version?: string
+  status?: string
+  inputs?: {
+    quota_1?: number
+    quota_x?: number
+    quota_2?: number
+    prob_1?: number
+    prob_x?: number
+    prob_2?: number
+  }
+  f36?: CecchinoBalanceAnalysisF36
+  dominance?: CecchinoBalanceAnalysisDominance
+  draw?: CecchinoBalanceAnalysisDraw
+  cross_reading?: CecchinoBalanceAnalysisCrossReading
+  operational?: CecchinoBalanceAnalysisOperational
+  summary?: CecchinoBalanceAnalysisSummary
+  technical?: CecchinoBalanceAnalysisTechnical
+  warnings?: string[]
+}
+
 export type CecchinoTodayFixtureIds = {
   today_fixture_id: number
   local_fixture_id: number | null
@@ -529,6 +604,7 @@ export type CecchinoTodayDetailResponse = {
   kpi_panel?: CecchinoKpiV2Panel
   kpi_panel_v2?: CecchinoKpiV2Panel
   picchetti_debug_summary?: CecchinoPicchettiDebugSummary
+  balance_analysis?: CecchinoBalanceAnalysis
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]
