@@ -28,6 +28,7 @@ export const NAV_CECCHINO: NavItem[] = [
   { to: '/cecchino', label: 'Cecchino', icon: 'crosshair', section: 'cecchino' },
   { to: '/cecchino-today', label: 'Cecchino Today', icon: 'calendar', section: 'cecchino' },
   { to: '/monitoraggio-segnali', label: 'Monitoraggio Segnali', icon: 'target', section: 'cecchino' },
+  { to: '/monitoraggio-segnali-lab', label: 'Segnali Lab', icon: 'flask', section: 'cecchino' },
 ]
 
 export const NAV_MAIN: NavItem[] = [

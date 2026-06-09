@@ -63,6 +63,21 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 44 — Monitoraggio Segnali Lab
+
+```mermaid
+flowchart LR
+  api[cecchinoSignalsApi.ts] --> stable[/monitoraggio-segnali]
+  api --> lab[/monitoraggio-segnali-lab]
+  lab --> hook[useCecchinoSignalsLab]
+  lab --> ui[components/cecchino-lab]
+```
+
+- **Route:** `/monitoraggio-segnali-lab`; sidebar **Segnali Lab** (icona flask).
+- **Frontend only:** nessuna modifica backend; pagina stabile invariata.
+- **UI Lab:** card modelli A–F, ribbon metriche, ECharts, heatmap con drawer, top ranking, tabella partite, toast Sonner.
+- **Dipendenze:** `framer-motion`, `echarts`, `echarts-for-react`, `sonner`.
+
 ## Fase 43 — Backtest modelli pesi A-F
 
 ```mermaid

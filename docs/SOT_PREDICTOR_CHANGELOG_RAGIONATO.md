@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 44 — Monitoraggio Segnali Lab (2026-06-09)
+
+- Aggiunta pagina sperimentale **Segnali Lab** (`/monitoraggio-segnali-lab`) con UI premium isolata in `components/cecchino-lab/`.
+- Stessi endpoint e dati della pagina stabile `/monitoraggio-segnali` (models-summary, summary, activations, backtest, revaluate, export CSV).
+- UI Lab: card modelli A–F animate, ribbon metriche, grafici ECharts (confronto modelli, donut esiti, top segnali), heatmap con drawer dettaglio, ranking top segnali, tabella partite.
+- Dipendenze frontend: `framer-motion`, `echarts`, `echarts-for-react`, `sonner` (toast globali in `main.tsx`).
+- Voce sidebar **Segnali Lab** (icona flask); localStorage separato `cecchino_signals_lab_selected_model`.
+- **Invariato:** backend, pagina stabile Monitoraggio Segnali, componenti `cecchino/signals/*`, Cecchino Today, SOT v2.0/v2.1, Betfair-only.
+
 ## Cecchino — Fase 43 — Backtest modelli pesi A-F (2026-06-09)
 
 - Introdotto confronto modelli pesi A–F nel Monitoraggio Segnali; ogni modello ha pesi indipendenti sui picchetti 1X2.

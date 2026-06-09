@@ -353,6 +353,21 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino Today — Fase 44 — Monitoraggio Segnali Lab
+
+Pagina sperimentale frontend-only (`/monitoraggio-segnali-lab`).
+
+| Componente | Comportamento |
+|------------|---------------|
+| Route | `/monitoraggio-segnali-lab`; voce sidebar **Segnali Lab** |
+| Dati | Stessi endpoint Fase 43 (`models-summary`, `summary`, `activations`, `backtest-models`, `revaluate`, export CSV) |
+| UI | Card A–F, ribbon 11 metriche, ECharts, heatmap 8×6, top ranking, drawer dettaglio, tabella partite |
+| Stack | `framer-motion`, ECharts tree-shaken, Sonner toast; markup Tailwind custom |
+| Isolamento | Codice in `components/cecchino-lab/`; pagina stabile `/monitoraggio-segnali` invariata |
+| Persistenza | `cecchino_signals_lab_selected_model` (separato dalla pagina stabile) |
+
+**Invariato:** backend, Cecchino Today live, SOT v2.0/v2.1, Betfair-only.
+
 ## Cecchino Today — Fase 43 — Backtest modelli pesi A-F
 
 Confronto offline modelli pesi 1X2 nel Monitoraggio Segnali (`/monitoraggio-segnali`).
