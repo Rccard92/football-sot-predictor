@@ -18,6 +18,7 @@ import { Bookmakers } from './pages/Bookmakers'
 import { CecchinoPage } from './pages/CecchinoPage'
 import { CecchinoSignalsMonitoringPage } from './pages/CecchinoSignalsMonitoringPage'
 import { MonitoraggioSegnaliLab } from './pages/MonitoraggioSegnaliLab'
+import { SignalsLabErrorBoundary } from './components/cecchino-lab/SignalsLabErrorBoundary'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
@@ -30,7 +31,14 @@ export default function App() {
           <Route path="/cecchino" element={<CecchinoPage />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/monitoraggio-segnali" element={<CecchinoSignalsMonitoringPage />} />
-          <Route path="/monitoraggio-segnali-lab" element={<MonitoraggioSegnaliLab />} />
+          <Route
+            path="/monitoraggio-segnali-lab"
+            element={
+              <SignalsLabErrorBoundary>
+                <MonitoraggioSegnaliLab />
+              </SignalsLabErrorBoundary>
+            }
+          />
           <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
           <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />

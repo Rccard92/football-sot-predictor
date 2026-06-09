@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import ReactEChartsCore from 'echarts-for-react/lib/core'
+import LabEChartsCore from './LabEChartsCore'
 import * as echarts from 'echarts/core'
 import { BarChart, PieChart } from 'echarts/charts'
 import {
@@ -118,6 +118,14 @@ export function SignalsTrendChart({ models, summary }: Props) {
     [topRows],
   )
 
+  if (models.length === 0) {
+    return (
+      <p className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm text-slate-500 shadow-sm">
+        Grafici non disponibili — nessun modello nel periodo.
+      </p>
+    )
+  }
+
   return (
     <section className="grid gap-4 lg:grid-cols-2">
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
@@ -135,11 +143,11 @@ export function SignalsTrendChart({ models, summary }: Props) {
             ))}
           </select>
         </div>
-        <ReactEChartsCore echarts={echarts} option={compareOption} style={{ height: 280 }} notMerge lazyUpdate />
+        <LabEChartsCore echarts={echarts} option={compareOption} style={{ height: 280 }} notMerge lazyUpdate />
       </div>
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-800">Distribuzione esiti — modello selezionato</h3>
-        <ReactEChartsCore echarts={echarts} option={donutOption} style={{ height: 280 }} notMerge lazyUpdate />
+        <LabEChartsCore echarts={echarts} option={donutOption} style={{ height: 280 }} notMerge lazyUpdate />
       </div>
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -156,7 +164,7 @@ export function SignalsTrendChart({ models, summary }: Props) {
             ))}
           </select>
         </div>
-        <ReactEChartsCore
+        <LabEChartsCore
           echarts={echarts}
           option={topOption}
           style={{ height: Math.max(220, topRows.length * 36) }}

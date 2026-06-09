@@ -147,7 +147,7 @@ export function MonitoraggioSegnaliLab() {
                   modelKey={lab.selectedModelKey}
                 />
 
-                {lab.modelsSummary && (
+                {lab.modelsSummary?.models?.length && lab.summary?.overall && (
                   <SignalsTrendChart models={lab.modelsSummary.models} summary={lab.summary} />
                 )}
 
