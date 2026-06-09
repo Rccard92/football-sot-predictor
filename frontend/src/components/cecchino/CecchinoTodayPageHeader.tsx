@@ -4,11 +4,13 @@ type Props = {
   scanInProgress?: boolean
   updateResultsLoading: boolean
   revalidateLoading?: boolean
+  recomputeLoading?: boolean
   selectedFixtureId?: number | null
   refreshBetfairLoading?: boolean
   onScanDay: (forceRescan: boolean) => void
   onUpdateResults: () => void
   onRevalidateDay?: () => void
+  onRecomputeCecchino?: () => void
   onRefreshBetfairOdds?: () => void
 }
 
@@ -18,11 +20,13 @@ export function CecchinoTodayPageHeader({
   scanInProgress = false,
   updateResultsLoading,
   revalidateLoading = false,
+  recomputeLoading = false,
   selectedFixtureId = null,
   refreshBetfairLoading = false,
   onScanDay,
   onUpdateResults,
   onRevalidateDay,
+  onRecomputeCecchino,
   onRefreshBetfairOdds,
 }: Props) {
   const scanBusy = scanDayLoading || scanInProgress
@@ -74,6 +78,16 @@ export function CecchinoTodayPageHeader({
                 className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-900 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {revalidateLoading ? 'Rivalidazione…' : 'Rivalida eleggibilità'}
+              </button>
+            )}
+            {onRecomputeCecchino && (
+              <button
+                type="button"
+                onClick={() => onRecomputeCecchino()}
+                disabled={recomputeLoading || scanBusy}
+                className="inline-flex items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-5 py-2.5 text-sm font-semibold text-violet-900 shadow-sm transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {recomputeLoading ? 'Ricalcolo…' : 'Ricalcola Cecchino con nuovi pesi'}
               </button>
             )}
             {selectedFixtureId != null && onRefreshBetfairOdds && (

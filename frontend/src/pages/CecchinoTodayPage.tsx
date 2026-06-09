@@ -23,6 +23,7 @@ import {
   getCecchinoTodayScanJob,
   logCecchinoTodayDebug,
   refreshBetfairOdds,
+  recomputeCecchino,
   revalidateCecchinoTodayDay,
   SCAN_JOB_POLL_MS,
   startCecchinoTodayScanDay,
@@ -74,6 +75,7 @@ export function CecchinoTodayPage() {
   const [scanDayLoading, setScanDayLoading] = useState(false)
   const [updateResultsLoading, setUpdateResultsLoading] = useState(false)
   const [revalidateLoading, setRevalidateLoading] = useState(false)
+  const [recomputeLoading, setRecomputeLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -513,6 +515,38 @@ export function CecchinoTodayPage() {
     }
   }
 
+  const RECOMPUTE_WARNING =
+    'Il ricalcolo usa i nuovi pesi Cecchino e aggiorna KPI, segnali e monitoraggio usando i dati già presenti. Non consuma API se refresh quote è disattivato.'
+
+  const handleRecomputeCecchino = async () => {
+    if (!window.confirm(RECOMPUTE_WARNING)) return
+    setActionError(null)
+    setRecomputeLoading(true)
+    try {
+      const res = await recomputeCecchino({
+        date_from: selectedDay,
+        date_to: selectedDay,
+      })
+      setRefreshBetfairMsg({
+        tone: 'ok',
+        text: `Ricalcolo completato: ${res.fixtures_recomputed}/${res.fixtures_found} partite, ${res.signals_synced} segnali sincronizzati, ${res.signals_evaluated} rivalutati.`,
+      })
+      await loadDays()
+      await loadList(selectedDay)
+      if (selectedId != null) {
+        const data = await getCecchinoTodayDetail(selectedId)
+        setDetail(data)
+      }
+      if (excludedOpen) {
+        await loadExcludedRef.current?.()
+      }
+    } catch (e) {
+      setActionError(formatFetchError(e))
+    } finally {
+      setRecomputeLoading(false)
+    }
+  }
+
   const filteredCountries = useMemo((): CecchinoTodayListCountry[] => {
     if (!list) return []
     const q = searchQuery.trim().toLowerCase()
@@ -588,11 +622,13 @@ export function CecchinoTodayPage() {
         scanInProgress={scanInProgress}
         updateResultsLoading={updateResultsLoading}
         revalidateLoading={revalidateLoading}
+        recomputeLoading={recomputeLoading}
         selectedFixtureId={selectedId}
         refreshBetfairLoading={refreshBetfairLoading}
         onScanDay={(force) => void handleScanDay(force)}
         onUpdateResults={() => void handleUpdateResults()}
         onRevalidateDay={() => void handleRevalidateDay()}
+        onRecomputeCecchino={isScanned ? () => void handleRecomputeCecchino() : undefined}
         onRefreshBetfairOdds={() => void handleRefreshBetfairOdds()}
       />
 

@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 40 — Nuovi pesi globali 1X2 e Under/Over (2026-06-09)
+
+- Aggiornati i pesi dei picchetti per i segni 1X2: Totali stagione 30%, Casa/Fuori 30%, Ultime 6 totali 20%, Ultime 5 casa/fuori 20%.
+- Aggiornati i pesi dei picchetti per Under/Over: Totale stagione 20%, Casa/Fuori 30%, Ultime 6 20%, Ultime 5 casa/fuori 30%.
+- Separate e validate le costanti `CECCHINO_1X2_WEIGHTS` e `CECCHINO_GOAL_MARKET_WEIGHTS` (somma = 1.0).
+- Aggiornati KPI, Debug Picchetti, Equilibrio vs Squilibrio, Delta Forza e Segnali Cecchino (input da nuove quote).
+- Aggiunto endpoint `POST /api/admin/cecchino/recompute` per ricalcolo offline storico (no API-Football se `refresh_bookmaker_odds=false`).
+- Pulsante UI «Ricalcola Cecchino con nuovi pesi» su Cecchino Today e Monitoraggio Segnali.
+- Versioni debug: `1x2_weights_30_30_20_20`, `goal_weights_20_30_20_30`.
+- Nessuna modifica ai modelli SOT v2.0/v2.1, `team_sot_predictions`, Betfair-only.
+
 ## Cecchino — Fase 39 — Legenda formule Monitoraggio Segnali (2026-06-08)
 
 - Aggiunta sezione espandibile sotto la Heatmap Segnale × Colonna in Monitoraggio Segnali.

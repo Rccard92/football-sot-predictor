@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_goal_formulas import build_goal_market_debug
 from app.services.cecchino.cecchino_constants import (
+    CECCHINO_1X2_WEIGHTS,
+    CECCHINO_1X2_WEIGHTS_VERSION,
+    CECCHINO_GOAL_MARKET_WEIGHTS,
+    CECCHINO_GOAL_WEIGHTS_VERSION,
     FINAL_QUOTA_WEIGHTS,
     PICCHETTO_KEY_HOME_AWAY,
     PICCHETTO_KEY_LAST5_HOME_AWAY,
@@ -155,6 +159,36 @@ def _picchetto_contribution(
     }
 
 
+_PICCHETTO_FORMULA_LABELS: dict[str, str] = {
+    PICCHETTO_KEY_TOTALS: "quota_totals",
+    PICCHETTO_KEY_HOME_AWAY: "quota_home_away",
+    PICCHETTO_KEY_LAST6_TOTALS: "quota_last6_totals",
+    PICCHETTO_KEY_LAST5_HOME_AWAY: "quota_last5_home_away",
+}
+
+
+def _build_debug_weights_payload() -> dict[str, Any]:
+    return {
+        "1x2": {
+            **CECCHINO_1X2_WEIGHTS,
+            "version": CECCHINO_1X2_WEIGHTS_VERSION,
+        },
+        "goal_markets": {
+            **CECCHINO_GOAL_MARKET_WEIGHTS,
+            "version": CECCHINO_GOAL_WEIGHTS_VERSION,
+        },
+    }
+
+
+def _format_weighted_formula(weights: dict[str, float], prefix: str) -> str:
+    parts = [
+        f"({label} * {weights[key]:g})"
+        for key, label in _PICCHETTO_FORMULA_LABELS.items()
+        if key in weights
+    ]
+    return f"{prefix} = " + " + ".join(parts)
+
+
 def _build_1x2_market_debug(
     market_key: str,
     segno: str,
@@ -181,10 +215,9 @@ def _build_1x2_market_debug(
         "segno": segno,
         "picchetti": picchetto_rows,
         "final_odd": round(final_odd, 2) if final_odd is not None else None,
-        "formula": (
-            f"quota_cecchino_{segno.lower()} = "
-            "(quota_totals * 0.25) + (quota_home_away * 0.20) + "
-            "(quota_last6_totals * 0.35) + (quota_last5_home_away * 0.20)"
+        "formula": _format_weighted_formula(
+            FINAL_QUOTA_WEIGHTS,
+            f"quota_cecchino_{segno.lower()}",
         ),
     }
 
@@ -353,7 +386,7 @@ def build_cecchino_picchetti_debug(
     return {
         "version": DEBUG_VERSION,
         "formula_status": _formula_status_from_final(final),
-        "weights": dict(FINAL_QUOTA_WEIGHTS),
+        "weights": _build_debug_weights_payload(),
         "markets": markets,
         "missing_formulas": missing,
         "final": {

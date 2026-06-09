@@ -6,7 +6,14 @@ import type {
   CecchinoPicchettiMarketDebug,
   CecchinoPicchettoContribution,
 } from '../../lib/cecchinoTodayApi'
-import { getPicchettiDebugJson } from '../../lib/cecchinoTodayApi'
+import {
+  CECCHINO_1X2_WEIGHT_KEYS,
+  CECCHINO_GOAL_WEIGHT_KEYS,
+  extract1x2Weights,
+  extractGoalWeights,
+  formatWeightPct,
+  getPicchettiDebugJson,
+} from '../../lib/cecchinoTodayApi'
 import { todayCard } from './cecchinoTodayStyles'
 
 const PICCHETTO_LABELS: Record<string, string> = {
@@ -15,20 +22,6 @@ const PICCHETTO_LABELS: Record<string, string> = {
   last6_totals: 'Ultime 6 totali',
   last5_home_away: 'Ultime 5 casa/fuori',
 }
-
-const WEIGHT_LABELS_1X2: Array<{ key: string; pct: string }> = [
-  { key: 'totals', pct: '25%' },
-  { key: 'home_away', pct: '20%' },
-  { key: 'last6_totals', pct: '35%' },
-  { key: 'last5_home_away', pct: '20%' },
-]
-
-const GOAL_WEIGHT_LABELS: Array<{ key: string; pct: string }> = [
-  { key: 'totals', pct: '10%' },
-  { key: 'home_away', pct: '20%' },
-  { key: 'last6_totals', pct: '35%' },
-  { key: 'last5_home_away', pct: '35%' },
-]
 
 const GOAL_WEIGHT_LABEL_KEYS: Record<string, string> = {
   totals: 'Totali stagione',
@@ -371,13 +364,11 @@ function GoalsTab({
   const [subTab, setSubTab] = useState<GoalMarketKey>(GOAL_MARKET_KEYS[0])
   const market = markets[subTab]
 
-  const goalWeightBadges =
-    market?.weights != null
-      ? GOAL_WEIGHT_LABELS.map(({ key }) => {
-          const w = market.weights?.[key]
-          return w != null ? { key, pct: `${(w * 100).toFixed(0)}%` } : null
-        }).filter((x): x is { key: string; pct: string } => x != null)
-      : GOAL_WEIGHT_LABELS
+  const goalWeights = extractGoalWeights(market?.weights)
+  const goalWeightBadges = CECCHINO_GOAL_WEIGHT_KEYS.map((key) => ({
+    key,
+    pct: formatWeightPct(goalWeights[key] ?? 0),
+  }))
 
   return (
     <div className="space-y-4">
@@ -503,6 +494,7 @@ export function CecchinoTodayPicchettiDebugPanel({
   }
 
   const weights = data?.weights ?? summary?.weights
+  const weights1x2 = extract1x2Weights(weights)
   const markets = data?.markets ?? {}
 
   const missingCount = data?.missing_formulas?.length ?? summary?.missing_formulas_count ?? 0
@@ -528,12 +520,12 @@ export function CecchinoTodayPicchettiDebugPanel({
       <div className="border-t border-slate-200 px-4 py-4">
         {weights && (
           <div className="mb-4 flex flex-wrap gap-2">
-            {WEIGHT_LABELS_1X2.map(({ key, pct }) => (
+            {CECCHINO_1X2_WEIGHT_KEYS.map((key) => (
               <span
                 key={key}
                 className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700"
               >
-                {PICCHETTO_LABELS[key] ?? key} {pct}
+                {PICCHETTO_LABELS[key] ?? key} {formatWeightPct(weights1x2[key] ?? 0)}
               </span>
             ))}
           </div>

@@ -31,7 +31,7 @@ export function CecchinoFinalOddsCard({ final }: Props) {
         {cell('2', final.quota_2, final.prob_2_pct)}
       </div>
       <p className="mt-3 text-[11px] text-slate-600">
-        Pesi: casa/trasferta 20% · totali 25% · ultime 5 20% · ultime 6 35%
+        Pesi: totali 30% · casa/trasferta 30% · ultime 6 20% · ultime 5 20%
       </p>
     </div>
   )

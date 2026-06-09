@@ -12,7 +12,10 @@ os.environ.setdefault(
 )
 
 from app.services.cecchino.cecchino_constants import (
+    CECCHINO_1X2_WEIGHTS,
+    CECCHINO_1X2_WEIGHTS_VERSION,
     CECCHINO_GOAL_MARKET_WEIGHTS,
+    CECCHINO_GOAL_WEIGHTS_VERSION,
     FINAL_QUOTA_WEIGHTS,
     PICCHETTO_KEY_HOME_AWAY,
     PICCHETTO_KEY_LAST5_HOME_AWAY,
@@ -75,8 +78,24 @@ def _picchetto_prob(picchetti: dict, name: str, outcome: str) -> float | None:
 
 def test_debug_returns_correct_weights():
     debug = build_cecchino_picchetti_debug(cecchino_output=_output_dict())
-    assert debug["weights"] == FINAL_QUOTA_WEIGHTS
+    weights = debug["weights"]
+    assert weights["1x2"]["totals"] == 0.30
+    assert weights["1x2"]["home_away"] == 0.30
+    assert weights["1x2"]["last6_totals"] == 0.20
+    assert weights["1x2"]["last5_home_away"] == 0.20
+    assert weights["1x2"]["version"] == CECCHINO_1X2_WEIGHTS_VERSION
+    assert weights["goal_markets"]["totals"] == 0.20
+    assert weights["goal_markets"]["home_away"] == 0.30
+    assert weights["goal_markets"]["version"] == CECCHINO_GOAL_WEIGHTS_VERSION
     assert debug["version"] == "cecchino_picchetti_debug_v3"
+
+
+def test_debug_1x2_formula_uses_current_weights():
+    debug = build_cecchino_picchetti_debug(cecchino_output=_output_dict())
+    formula = debug["markets"][SEL_HOME]["formula"]
+    assert "0.3" in formula
+    assert "quota_totals" in formula
+    assert "0.25" not in formula
 
 
 def test_home_away_prob_1():
@@ -302,8 +321,8 @@ def test_missing_formulas_empty_when_goal_markets_present():
                 {
                     "name": "last5_home_away",
                     "label": "Ultime 5 casa/fuori",
-                    "original_weight": 0.35,
-                    "effective_weight": 0.35,
+                    "original_weight": 0.30,
+                    "effective_weight": 0.30,
                     "weight_renormalized": False,
                     "sample_home": 5,
                     "sample_away": 5,
@@ -330,12 +349,12 @@ def test_missing_formulas_empty_when_goal_markets_present():
     assert debug["markets"]["OVER_1_5"]["final_odd"] == 2.1
     assert debug["markets"]["OVER_1_5"]["weights"] == CECCHINO_GOAL_MARKET_WEIGHTS
     ctx0 = debug["markets"]["OVER_1_5"]["contexts"][0]
-    assert ctx0["original_weight"] == 0.35
-    assert ctx0["effective_weight"] == 0.35
+    assert ctx0["original_weight"] == 0.30
+    assert ctx0["effective_weight"] == 0.30
     assert ctx0["weight_renormalized"] is False
     assert debug["markets"]["OVER_1_5"]["legacy_excel_parity"]["final_odd"] == 1.6
     assert debug["markets"]["OVER_2_5"]["final_odd"] == 2.4
-    assert debug["weights"] == FINAL_QUOTA_WEIGHTS
+    assert debug["weights"]["1x2"] == {**CECCHINO_1X2_WEIGHTS, "version": CECCHINO_1X2_WEIGHTS_VERSION}
 
 
 def test_summary_from_full_debug():

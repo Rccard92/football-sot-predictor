@@ -70,7 +70,7 @@ export function CecchinoFinalOddsDashboard({ final, variant = 'default' }: Props
         Pesi picchetti:{' '}
         {Object.entries(final.weights ?? {})
           .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`)
-          .join(' · ') || 'casa/trasferta 20% · totali 25% · ultime 5 20% · ultime 6 35%'}
+          .join(' · ') || 'totali 30% · casa/trasferta 30% · ultime 6 20% · ultime 5 20%'}
       </p>
       {(final.warnings?.length ?? 0) > 0 && (
         <ul className="mt-2 list-inside list-disc text-[11px] text-amber-800">

@@ -69,22 +69,39 @@ CONTEXT_SLICE_LABELS: dict[str, str] = {
 TARGET_RECENT_CONTEXT = 5
 TARGET_RECENT_TOTAL = 6
 
+CECCHINO_1X2_WEIGHTS_VERSION = "1x2_weights_30_30_20_20"
+CECCHINO_GOAL_WEIGHTS_VERSION = "goal_weights_20_30_20_30"
+
 CECCHINO_1X2_WEIGHTS: dict[str, float] = {
-    PICCHETTO_KEY_HOME_AWAY: 0.20,
-    PICCHETTO_KEY_TOTALS: 0.25,
+    PICCHETTO_KEY_TOTALS: 0.30,
+    PICCHETTO_KEY_HOME_AWAY: 0.30,
+    PICCHETTO_KEY_LAST6_TOTALS: 0.20,
     PICCHETTO_KEY_LAST5_HOME_AWAY: 0.20,
-    PICCHETTO_KEY_LAST6_TOTALS: 0.35,
 }
 
 CECCHINO_GOAL_MARKET_WEIGHTS: dict[str, float] = {
-    PICCHETTO_KEY_HOME_AWAY: 0.20,
-    PICCHETTO_KEY_TOTALS: 0.10,
-    PICCHETTO_KEY_LAST5_HOME_AWAY: 0.35,
-    PICCHETTO_KEY_LAST6_TOTALS: 0.35,
+    PICCHETTO_KEY_TOTALS: 0.20,
+    PICCHETTO_KEY_HOME_AWAY: 0.30,
+    PICCHETTO_KEY_LAST6_TOTALS: 0.20,
+    PICCHETTO_KEY_LAST5_HOME_AWAY: 0.30,
 }
 
 # Alias retrocompatibile per engine 1X2 e debug picchetti 1/X/2
 FINAL_QUOTA_WEIGHTS: dict[str, float] = dict(CECCHINO_1X2_WEIGHTS)
+
+
+def validate_cecchino_weight_sets() -> None:
+    """Verifica che i pesi 1X2 e goal market sommino a 1.0."""
+    for name, weights in (
+        ("CECCHINO_1X2_WEIGHTS", CECCHINO_1X2_WEIGHTS),
+        ("CECCHINO_GOAL_MARKET_WEIGHTS", CECCHINO_GOAL_MARKET_WEIGHTS),
+    ):
+        total = sum(weights.values())
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(f"{name} must sum to 1.0, got {total}")
+
+
+validate_cecchino_weight_sets()
 
 STATUS_AVAILABLE = "available"
 STATUS_INSUFFICIENT_DATA = "insufficient_data"

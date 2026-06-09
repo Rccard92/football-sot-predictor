@@ -457,6 +457,21 @@ Versione UI `cecchino_today_v0_24_dominance_context` — correzione lettura Domi
 
 **Invariato:** F36, Quota X, KPI Betfair-only, SOT v2.0/v2.1.
 
+## Cecchino Today — Fase 40 — Nuovi pesi globali 1X2 e Under/Over
+
+Versione pesi `1x2_weights_30_30_20_20` / `goal_weights_20_30_20_30`.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Pesi 1X2 | totals 30%, home_away 30%, last6_totals 20%, last5_home_away 20% |
+| Pesi goal OU | totals 20%, home_away 30%, last6_totals 20%, last5_home_away 30% |
+| Costanti | `CECCHINO_1X2_WEIGHTS` e `CECCHINO_GOAL_MARKET_WEIGHTS` separate con validazione somma = 1 |
+| KPI / Equilibrio / Delta Forza / Segnali | Ricalcolati automaticamente dalle nuove quote Cecchino |
+| Debug Picchetti | Formula parlante dinamica; JSON `weights.1x2` e `weights.goal_markets` con version |
+| Ricalcolo storico | `POST /api/admin/cecchino/recompute` — offline, usa dati DB; pulsante UI su Today e Monitoraggio |
+
+**Invariato:** SOT v2.0/v2.1, `team_sot_predictions`, Betfair-only, refresh quote Betfair, struttura Pannello KPI.
+
 ## Cecchino Today — Fase 29 — Equilibrio vs Squilibrio (v0.23)
 
 Versione UI `cecchino_today_v0_23_balance_analysis` — lettura equilibrio partita da Cecchino 1/X/2.

@@ -19,7 +19,7 @@ import {
   type SignalsSummaryResponse,
   type SignalActivationRow,
 } from '../lib/cecchinoSignalsApi'
-import { updateCecchinoTodayResults } from '../lib/cecchinoTodayApi'
+import { recomputeCecchino, updateCecchinoTodayResults } from '../lib/cecchinoTodayApi'
 import { formatFetchError } from '../utils/formatFetchError'
 
 function isoDaysAgo(days: number): string {
@@ -177,6 +177,29 @@ export function CecchinoSignalsMonitoringPage() {
     window.open(buildCecchinoSignalsExportUrl(filters), '_blank')
   }
 
+  const RECOMPUTE_WARNING =
+    'Il ricalcolo usa i nuovi pesi Cecchino e aggiorna KPI, segnali e monitoraggio usando i dati già presenti. Non consuma API se refresh quote è disattivato.'
+
+  const handleRecomputeCecchino = async () => {
+    if (!window.confirm(RECOMPUTE_WARNING)) return
+    setActionLoading(true)
+    setActionMessage(null)
+    try {
+      const res = await recomputeCecchino({
+        date_from: dateFrom,
+        date_to: dateTo,
+      })
+      setActionMessage(
+        `Ricalcolo Cecchino: ${res.fixtures_recomputed}/${res.fixtures_found} partite, ${res.signals_synced} segnali sincronizzati, ${res.signals_deactivated} disattivati, ${res.signals_evaluated} rivalutati.`,
+      )
+      await loadData()
+    } catch (err) {
+      setError(formatFetchError(err))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
       <header>
@@ -310,6 +333,14 @@ export function CecchinoSignalsMonitoringPage() {
             className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
           >
             Rivaluta segnali
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRecomputeCecchino()}
+            disabled={actionLoading}
+            className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+          >
+            Ricalcola Cecchino con nuovi pesi
           </button>
           <button
             type="button"

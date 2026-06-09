@@ -222,26 +222,27 @@ def test_insufficient_contexts_returns_none_lambda():
 
 
 def test_goal_market_weights_constants():
-    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_TOTALS] == 0.10
-    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_HOME_AWAY] == 0.20
-    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_LAST6_TOTALS] == 0.35
-    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_LAST5_HOME_AWAY] == 0.35
+    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_TOTALS] == 0.20
+    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_HOME_AWAY] == 0.30
+    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_LAST6_TOTALS] == 0.20
+    assert CECCHINO_GOAL_MARKET_WEIGHTS[PICCHETTO_KEY_LAST5_HOME_AWAY] == 0.30
     assert sum(CECCHINO_GOAL_MARKET_WEIGHTS.values()) == pytest.approx(1.0)
 
 
-def test_1x2_weights_unchanged():
-    assert CECCHINO_1X2_WEIGHTS[PICCHETTO_KEY_TOTALS] == 0.25
-    assert CECCHINO_1X2_WEIGHTS[PICCHETTO_KEY_HOME_AWAY] == 0.20
-    assert CECCHINO_1X2_WEIGHTS[PICCHETTO_KEY_LAST6_TOTALS] == 0.35
+def test_1x2_weights_values():
+    assert CECCHINO_1X2_WEIGHTS[PICCHETTO_KEY_TOTALS] == 0.30
+    assert CECCHINO_1X2_WEIGHTS[PICCHETTO_KEY_HOME_AWAY] == 0.30
+    assert CECCHINO_1X2_WEIGHTS[PICCHETTO_KEY_LAST6_TOTALS] == 0.20
     assert CECCHINO_1X2_WEIGHTS[PICCHETTO_KEY_LAST5_HOME_AWAY] == 0.20
+    assert sum(CECCHINO_1X2_WEIGHTS.values()) == pytest.approx(1.0)
     assert CECCHINO_1X2_WEIGHTS == FINAL_QUOTA_WEIGHTS
 
 
 def test_context_weight_map_uses_goal_weights():
-    assert _CONTEXT_WEIGHT_MAP["totals"] == 0.10
-    assert _CONTEXT_WEIGHT_MAP["home_away"] == 0.20
-    assert _CONTEXT_WEIGHT_MAP["last6_totals"] == 0.35
-    assert _CONTEXT_WEIGHT_MAP["last5_home_away"] == 0.35
+    assert _CONTEXT_WEIGHT_MAP["totals"] == 0.20
+    assert _CONTEXT_WEIGHT_MAP["home_away"] == 0.30
+    assert _CONTEXT_WEIGHT_MAP["last6_totals"] == 0.20
+    assert _CONTEXT_WEIGHT_MAP["last5_home_away"] == 0.30
 
 
 def _four_usable_contexts() -> list[GoalContextSlice]:
@@ -307,10 +308,10 @@ def test_weight_renormalized_when_context_excluded():
     ha_row = next(r for r in rows if r["name"] == "home_away")
     assert totals_row["effective_weight"] == 0.0
     assert totals_row["weight_renormalized"] is True
-    assert ha_row["effective_weight"] == pytest.approx(0.20 / 0.90, abs=0.0001)
+    assert ha_row["effective_weight"] == pytest.approx(0.30 / 0.80, abs=0.0001)
     expected = sum(
         lambda_for_context(c.home_totals, c.away_totals)["lambda_total"]
-        * (CECCHINO_GOAL_MARKET_WEIGHTS[c.name] / 0.90)
+        * (CECCHINO_GOAL_MARKET_WEIGHTS[c.name] / 0.80)
         for c in contexts[1:]
     )
     assert lam == pytest.approx(expected, abs=0.0001)

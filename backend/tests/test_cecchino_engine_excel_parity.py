@@ -81,9 +81,9 @@ def test_picchetto_quotas_excel_parity(key, home, away, expected_quotas):
 def test_final_quotas_and_probs_excel_parity():
     out = build_full_cecchino_output(_san_lorenzo_riestra_input())
     assert out.status == STATUS_AVAILABLE
-    assert out.final.quota_1 == pytest.approx(2.4067, abs=0.01)
-    assert out.final.quota_x == pytest.approx(2.5133, abs=0.01)
-    assert out.final.quota_2 == pytest.approx(5.7667, abs=0.01)
-    assert out.final.prob_1 == pytest.approx(0.4155, abs=0.01)
-    assert out.final.prob_x == pytest.approx(0.3979, abs=0.01)
-    assert out.final.prob_2 == pytest.approx(0.1734, abs=0.01)
+    assert out.final.quota_1 == pytest.approx(2.381, abs=0.01)
+    assert out.final.quota_x == pytest.approx(2.579, abs=0.01)
+    assert out.final.quota_2 == pytest.approx(5.719, abs=0.01)
+    assert out.final.prob_1 == pytest.approx(0.4200, abs=0.01)
+    assert out.final.prob_x == pytest.approx(0.3877, abs=0.01)
+    assert out.final.prob_2 == pytest.approx(0.1749, abs=0.01)

@@ -186,7 +186,27 @@ flowchart LR
 - **Output:** lettura operativa, sintesi modello, dettaglio tecnico.
 - **UI:** sezione sotto Debug Picchetti; 3 card + box operativo + accordion.
 
-## Fase 28 — Nuovi pesi goal market
+## Fase 40 — Nuovi pesi globali 1X2 e Under/Over
+
+```mermaid
+flowchart LR
+  weights1X2[CECCHINO_1X2_WEIGHTS 30/30/20/20] --> engine[cecchino_engine 1X2]
+  weightsGoal[CECCHINO_GOAL_MARKET_WEIGHTS 20/30/20/30] --> v2[goal_market_poisson_empirical_v2]
+  engine --> output[cecchino_output_json]
+  v2 --> output
+  output --> kpi[cecchino_kpi_panel_v2_betfair]
+  output --> signals[signals_matrix]
+  recompute[POST admin/cecchino/recompute] --> engine
+  recompute --> v2
+```
+
+- **Pesi 1X2:** totals 30%, home_away 30%, last6_totals 20%, last5_home_away 20%.
+- **Pesi goal:** totals 20%, home_away 30%, last6_totals 20%, last5_home_away 30%.
+- **Ricalcolo offline:** `POST /api/admin/cecchino/recompute` — no API-Football se `refresh_bookmaker_odds=false`.
+- **UI:** pulsante «Ricalcola Cecchino con nuovi pesi» su Cecchino Today e Monitoraggio Segnali.
+- **Invariato:** SOT v2.0/v2.1, Betfair-only, struttura KPI.
+
+## Fase 28 — Nuovi pesi goal market (storico)
 
 ```mermaid
 flowchart LR
@@ -197,11 +217,8 @@ flowchart LR
   v2 --> debug[Debug Picchetti goal tab]
 ```
 
-- **Pesi goal:** totals 10%, home_away 20%, last6_totals 35%, last5_home_away 35%.
-- **Pesi 1X2:** invariati 25/20/35/20 (engine e badge header debug 1/X/2).
-- **KPI:** struttura Betfair-only invariata; `quota_cecchino` OU riflette nuova ponderazione dopo rescan.
-- **Debug:** pesi goal per tab OU; JSON con `original_weight` / `effective_weight`.
-- **Rescan:** necessario per ricalcolare quote OU con i nuovi pesi.
+- **Pesi goal (obsoleti post-Fase 40):** totals 10%, home_away 20%, last6_totals 35%, last5_home_away 35%.
+- **Pesi 1X2 (obsoleti post-Fase 40):** 25/20/35/20.
 
 ## Fase 27 — Goal market Poisson + storico
 

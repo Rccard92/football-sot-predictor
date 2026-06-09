@@ -372,11 +372,80 @@ export type CecchinoBetfairMarketsJsonResponse = {
   message?: string
 }
 
+export type CecchinoPicchettiWeightsBlock = Record<string, number | string>
+
+export type CecchinoPicchettiDebugWeights = {
+  '1x2'?: CecchinoPicchettiWeightsBlock
+  goal_markets?: CecchinoPicchettiWeightsBlock
+}
+
 export type CecchinoPicchettiDebugSummary = {
   version?: string
   formula_status?: string
-  weights?: Record<string, number>
+  weights?: CecchinoPicchettiDebugWeights | Record<string, number>
   missing_formulas_count?: number
+}
+
+export const CECCHINO_1X2_WEIGHT_KEYS = [
+  'totals',
+  'home_away',
+  'last6_totals',
+  'last5_home_away',
+] as const
+
+export const CECCHINO_GOAL_WEIGHT_KEYS = [
+  'totals',
+  'home_away',
+  'last6_totals',
+  'last5_home_away',
+] as const
+
+const DEFAULT_1X2_WEIGHTS: Record<string, number> = {
+  totals: 0.3,
+  home_away: 0.3,
+  last6_totals: 0.2,
+  last5_home_away: 0.2,
+}
+
+const DEFAULT_GOAL_WEIGHTS: Record<string, number> = {
+  totals: 0.2,
+  home_away: 0.3,
+  last6_totals: 0.2,
+  last5_home_away: 0.3,
+}
+
+export function extract1x2Weights(
+  weights?: CecchinoPicchettiDebugWeights | Record<string, number> | null,
+): Record<string, number> {
+  if (!weights) return DEFAULT_1X2_WEIGHTS
+  if ('1x2' in weights && weights['1x2'] && typeof weights['1x2'] === 'object') {
+    const block = weights['1x2'] as CecchinoPicchettiWeightsBlock
+    const out: Record<string, number> = {}
+    for (const key of CECCHINO_1X2_WEIGHT_KEYS) {
+      const v = block[key]
+      if (typeof v === 'number') out[key] = v
+    }
+    return Object.keys(out).length ? out : DEFAULT_1X2_WEIGHTS
+  }
+  const flat = weights as Record<string, number>
+  if (typeof flat.totals === 'number') return flat
+  return DEFAULT_1X2_WEIGHTS
+}
+
+export function extractGoalWeights(
+  weights?: Record<string, number> | CecchinoPicchettiWeightsBlock | null,
+): Record<string, number> {
+  if (!weights) return DEFAULT_GOAL_WEIGHTS
+  const out: Record<string, number> = {}
+  for (const key of CECCHINO_GOAL_WEIGHT_KEYS) {
+    const v = weights[key]
+    if (typeof v === 'number') out[key] = v
+  }
+  return Object.keys(out).length ? out : DEFAULT_GOAL_WEIGHTS
+}
+
+export function formatWeightPct(value: number): string {
+  return `${(value * 100).toFixed(0)}%`
 }
 
 export type CecchinoPicchettoContribution = {
@@ -481,7 +550,7 @@ export type CecchinoPicchettiDebugResponse = {
   status: string
   version?: string
   formula_status?: string
-  weights?: Record<string, number>
+  weights?: CecchinoPicchettiDebugWeights | Record<string, number>
   markets?: Record<string, CecchinoPicchettiMarketDebug>
   missing_formulas?: Array<{ market_key: string; label: string; formula_status: string }>
   warnings?: string[]
@@ -969,6 +1038,50 @@ export async function revalidateCecchinoTodayDay(params: {
 }): Promise<CecchinoTodayRevalidateDayResponse> {
   return adminPostJson<CecchinoTodayRevalidateDayResponse>('/api/admin/cecchino/today/revalidate-day', {
     date: params.date,
+  })
+}
+
+export type CecchinoRecomputeResponse = {
+  status: string
+  fixtures_found: number
+  fixtures_recomputed: number
+  kpi_recomputed: number
+  signals_synced: number
+  signals_deactivated: number
+  signals_evaluated: number
+  warnings: string[]
+}
+
+export type CecchinoRecomputeParams = {
+  date_from: string
+  date_to: string
+  scope?: string
+  recompute_kpi?: boolean
+  recompute_debug?: boolean
+  recompute_balance?: boolean
+  recompute_delta_force?: boolean
+  recompute_signals?: boolean
+  sync_signal_activations?: boolean
+  evaluate_signals_after?: boolean
+  force_remap_signals?: boolean
+  use_existing_bookmaker_odds?: boolean
+  refresh_bookmaker_odds?: boolean
+}
+
+export async function recomputeCecchino(params: CecchinoRecomputeParams): Promise<CecchinoRecomputeResponse> {
+  return adminPostJson<CecchinoRecomputeResponse>('/api/admin/cecchino/recompute', {
+    scope: 'cecchino',
+    recompute_kpi: true,
+    recompute_debug: true,
+    recompute_balance: true,
+    recompute_delta_force: true,
+    recompute_signals: true,
+    sync_signal_activations: true,
+    evaluate_signals_after: true,
+    force_remap_signals: true,
+    use_existing_bookmaker_odds: true,
+    refresh_bookmaker_odds: false,
+    ...params,
   })
 }
 
