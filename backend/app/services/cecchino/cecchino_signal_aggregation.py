@@ -19,6 +19,7 @@ from app.models.cecchino_signal_activation import (
     CecchinoSignalActivation,
 )
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
+from app.services.cecchino.cecchino_constants import CECCHINO_DEFAULT_WEIGHT_MODEL_KEY, format_model_weights_display
 
 
 def _success_rate(won: int, lost: int) -> float | None:
@@ -172,6 +173,7 @@ def _base_query(
     *,
     date_from: date,
     date_to: date,
+    model_key: str | None = None,
     source_column: str | None = None,
     signal_group: str | None = None,
     league_name: str | None = None,
@@ -184,6 +186,8 @@ def _base_query(
         CecchinoSignalActivation.scan_date <= date_to,
         CecchinoSignalActivation.signal_value.is_(True),
     )
+    if model_key:
+        query = query.where(CecchinoSignalActivation.model_key == str(model_key).upper())
     if only_current:
         query = query.where(CecchinoSignalActivation.is_current.is_(True))
     if source_column:
@@ -215,6 +219,7 @@ def build_signals_summary(
     *,
     date_from: date,
     date_to: date,
+    model_key: str | None = CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
     source_column: str | None = None,
     signal_group: str | None = None,
     league_name: str | None = None,
@@ -223,9 +228,11 @@ def build_signals_summary(
     only_current: bool = True,
     include_diagnostics: bool = False,
 ) -> dict[str, Any]:
+    mk = str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
     filters = {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
+        "model_key": mk,
         "source_column": source_column,
         "signal_group": signal_group,
         "league_name": league_name,
@@ -239,6 +246,7 @@ def build_signals_summary(
                 db,
                 date_from=date_from,
                 date_to=date_to,
+                model_key=mk,
                 source_column=source_column,
                 signal_group=signal_group,
                 league_name=league_name,
@@ -254,6 +262,7 @@ def build_signals_summary(
         .where(
             CecchinoSignalActivation.scan_date >= date_from,
             CecchinoSignalActivation.scan_date <= date_to,
+            CecchinoSignalActivation.model_key == mk,
             CecchinoSignalActivation.signal_value.is_(True),
             CecchinoSignalActivation.source_column == "SCALA",
             or_(
@@ -335,6 +344,7 @@ def list_signal_activations(
     *,
     date_from: date,
     date_to: date,
+    model_key: str | None = CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
     source_column: str | None = None,
     signal_group: str | None = None,
     league_name: str | None = None,
@@ -344,10 +354,12 @@ def list_signal_activations(
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
+    mk = str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
     query = _base_query(
         db,
         date_from=date_from,
         date_to=date_to,
+        model_key=mk,
         source_column=source_column,
         signal_group=signal_group,
         league_name=league_name,
@@ -393,6 +405,9 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
     return {
         "id": int(row.id),
         "today_fixture_id": int(row.today_fixture_id),
+        "model_key": row.model_key,
+        "model_label": row.model_label,
+        "weights_display": format_model_weights_display(row.model_key) if row.model_key else None,
         "scan_date": row.scan_date.isoformat(),
         "kickoff": row.kickoff.isoformat() if row.kickoff else None,
         "match": f"{home} vs {away}",
@@ -420,6 +435,7 @@ def export_signals_csv(
     *,
     date_from: date,
     date_to: date,
+    model_key: str | None = CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
     source_column: str | None = None,
     signal_group: str | None = None,
     league_name: str | None = None,
@@ -427,10 +443,12 @@ def export_signals_csv(
     evaluation_status: str | None = None,
     only_current: bool = True,
 ) -> str:
+    mk = str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
     payload = list_signal_activations(
         db,
         date_from=date_from,
         date_to=date_to,
+        model_key=mk,
         source_column=source_column,
         signal_group=signal_group,
         league_name=league_name,
@@ -440,6 +458,19 @@ def export_signals_csv(
         limit=100_000,
         offset=0,
     )
+    summary = build_signals_summary(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        model_key=mk,
+        source_column=source_column,
+        signal_group=signal_group,
+        league_name=league_name,
+        country_name=country_name,
+        evaluation_status=evaluation_status,
+        only_current=only_current,
+    )
+    overall = summary.get("overall") or {}
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -449,6 +480,8 @@ def export_signals_csv(
             "Match",
             "Nazione",
             "Campionato",
+            "Modello",
+            "Pesi modello",
             "Segnale",
             "Colonna",
             "Target",
@@ -487,6 +520,8 @@ def export_signals_csv(
                 item.get("match"),
                 item.get("country_name"),
                 item.get("league_name"),
+                item.get("model_label") or item.get("model_key"),
+                item.get("weights_display"),
                 item.get("signal_label"),
                 item.get("source_column"),
                 item.get("target_market_label"),
@@ -502,4 +537,29 @@ def export_signals_csv(
                 item.get("evaluation_reason"),
             ],
         )
+    writer.writerow([])
+    writer.writerow(
+        [
+            "SUMMARY",
+            "",
+            "",
+            "",
+            "",
+            mk,
+            format_model_weights_display(mk),
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            overall.get("avg_won_book_odds"),
+            overall.get("quota_void"),
+            overall.get("taken_profit_indicator"),
+            "",
+        ],
+    )
     return output.getvalue()

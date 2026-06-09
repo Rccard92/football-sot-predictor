@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -42,6 +43,11 @@ class CecchinoSignalActivation(Base, TimestampMixin):
     league_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     home_team_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     away_team_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    model_key: Mapped[str] = mapped_column(String(8), nullable=False, default="F", server_default="F", index=True)
+    model_label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    weights_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    weights_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     signal_group: Mapped[str] = mapped_column(String(64), nullable=False)
     signal_label: Mapped[str] = mapped_column(String(128), nullable=False)

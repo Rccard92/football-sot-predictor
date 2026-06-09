@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.models.cecchino_signal_activation import CecchinoSignalActivation
 from app.models.cecchino_today_fixture import CecchinoTodayFixture, PROVIDER_API_FOOTBALL
-from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
+from app.services.cecchino.cecchino_constants import (
+    CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
+    STATUS_AVAILABLE,
+    model_meta_for_key,
+)
 from app.services.cecchino.cecchino_signal_evaluation import (
     apply_evaluation_to_activation,
     evaluate_signal_activation,
@@ -36,8 +40,8 @@ def _num(value: Any) -> Decimal | None:
         return None
 
 
-def _activation_pair_key(signal_group: str, source_column: str) -> tuple[str, str]:
-    return (signal_group, source_column)
+def _activation_pair_key(model_key: str, signal_group: str, source_column: str) -> tuple[str, str, str]:
+    return (model_key, signal_group, source_column)
 
 
 def _iter_si_cells(signals_matrix: dict[str, Any]) -> list[dict[str, Any]]:
@@ -76,31 +80,45 @@ def _iter_si_cells(signals_matrix: dict[str, Any]) -> list[dict[str, Any]]:
     return cells
 
 
-def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict[str, int]:
+def sync_cecchino_signal_activations(
+    db: Session,
+    today_fixture_id: int,
+    *,
+    model_key: str = CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
+    signals_matrix: dict[str, Any] | None = None,
+    model_meta: dict[str, object] | None = None,
+) -> dict[str, int]:
     row = db.get(CecchinoTodayFixture, int(today_fixture_id))
     if row is None:
         return {"created": 0, "updated": 0, "deactivated": 0, "skipped": 1}
 
+    mk = str(model_key).upper()
+    meta = model_meta or model_meta_for_key(mk)
+
     output = row.cecchino_output_json or {}
-    signals_matrix = output.get("signals_matrix") if isinstance(output, dict) else None
+    if signals_matrix is None:
+        signals_matrix = output.get("signals_matrix") if isinstance(output, dict) else None
     if not isinstance(signals_matrix, dict) or signals_matrix.get("status") != STATUS_AVAILABLE:
         return {"created": 0, "updated": 0, "deactivated": 0, "skipped": 1}
 
     kpi_panel = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else None
     inputs = signals_matrix.get("inputs") or {}
     si_cells = _iter_si_cells(signals_matrix)
-    active_keys: set[tuple[str, str]] = set()
+    active_keys: set[tuple[str, str, str]] = set()
 
     existing = list(
         db.scalars(
             select(CecchinoSignalActivation).where(
                 CecchinoSignalActivation.today_fixture_id == int(today_fixture_id),
+                CecchinoSignalActivation.model_key == mk,
             ),
         ).all(),
     )
-    by_key: dict[tuple[str, str], CecchinoSignalActivation] = {}
+    by_key: dict[tuple[str, str, str], CecchinoSignalActivation] = {}
     for activation in existing:
-        by_key[_activation_pair_key(activation.signal_group, activation.source_column)] = activation
+        by_key[
+            _activation_pair_key(activation.model_key, activation.signal_group, activation.source_column)
+        ] = activation
 
     counts = {"created": 0, "updated": 0, "deactivated": 0, "skipped": 0}
     match_result = match_result_from_fixture(row)
@@ -112,7 +130,7 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
             signal_group=cell["signal_group"],
             target_market_key=target.get("target_market_key"),
         )
-        key = _activation_pair_key(cell["signal_group"], cell["source_column"])
+        key = _activation_pair_key(mk, cell["signal_group"], cell["source_column"])
         active_keys.add(key)
         activation = by_key.get(key)
 
@@ -128,6 +146,10 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
                 league_name=row.league_name,
                 home_team_name=row.home_team_name,
                 away_team_name=row.away_team_name,
+                model_key=mk,
+                model_label=str(meta.get("model_label") or ""),
+                weights_version=str(meta.get("weights_version") or ""),
+                weights_json=meta.get("weights_json") if isinstance(meta.get("weights_json"), dict) else None,
                 signal_group=cell["signal_group"],
                 signal_label=cell["signal_label"],
                 source_column=cell["source_column"],
@@ -160,6 +182,10 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
             activation.raw_signal_value = "SI"
             activation.is_current = True
             activation.deactivated_at = None
+            activation.model_label = str(meta.get("model_label") or activation.model_label or "")
+            activation.weights_version = str(meta.get("weights_version") or activation.weights_version or "")
+            if isinstance(meta.get("weights_json"), dict):
+                activation.weights_json = meta["weights_json"]
             activation.target_market_key = target["target_market_key"]
             activation.target_market_label = target["target_market_label"]
             activation.target_period = target["target_period"]
@@ -185,7 +211,7 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
 
     now = datetime.now(timezone.utc)
     for activation in existing:
-        key = _activation_pair_key(activation.signal_group, activation.source_column)
+        key = _activation_pair_key(activation.model_key, activation.signal_group, activation.source_column)
         if key not in active_keys and activation.is_current:
             activation.is_current = False
             activation.deactivated_at = now

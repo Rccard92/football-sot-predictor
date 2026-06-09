@@ -10,7 +10,12 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.cecchino_signals import CecchinoSignalsBackfillBody, CecchinoSignalsRevaluateBody
+from app.schemas.cecchino_signals import (
+    CecchinoSignalsBackfillBody,
+    CecchinoSignalsBacktestModelsBody,
+    CecchinoSignalsRevaluateBody,
+)
+from app.services.cecchino.cecchino_constants import CECCHINO_DEFAULT_WEIGHT_MODEL_KEY
 from app.services.cecchino.cecchino_signal_aggregation import (
     build_signals_summary,
     export_signals_csv,
@@ -21,6 +26,10 @@ from app.services.cecchino.cecchino_signal_backfill import (
     build_signal_diagnostics,
 )
 from app.services.cecchino.cecchino_signal_evaluation import revaluate_signal_activations
+from app.services.cecchino.cecchino_signal_model_backtest import (
+    backtest_cecchino_weight_models,
+    build_models_summary,
+)
 
 router = APIRouter(prefix="/admin/cecchino/signals", tags=["admin-cecchino-signals"])
 
@@ -51,10 +60,39 @@ def cecchino_signals_backfill(
     return JSONResponse(content=jsonable_encoder(payload))
 
 
+@router.post("/backtest-models")
+def cecchino_signals_backtest_models(
+    body: CecchinoSignalsBacktestModelsBody,
+    db: Session = Depends(get_db),
+):
+    payload = backtest_cecchino_weight_models(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        models=body.models,
+        force=body.force,
+        evaluate_after=body.evaluate_after,
+        use_existing_bookmaker_odds=body.use_existing_bookmaker_odds,
+        refresh_bookmaker_odds=body.refresh_bookmaker_odds,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/models-summary")
+def cecchino_signals_models_summary(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    db: Session = Depends(get_db),
+):
+    payload = build_models_summary(db, date_from=date_from, date_to=date_to)
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
 @router.get("/summary")
 def cecchino_signals_summary(
     date_from: date = Query(...),
     date_to: date = Query(...),
+    model_key: str = Query(default=CECCHINO_DEFAULT_WEIGHT_MODEL_KEY),
     source_column: str | None = Query(default=None),
     signal_group: str | None = Query(default=None),
     league_name: str | None = Query(default=None),
@@ -68,6 +106,7 @@ def cecchino_signals_summary(
         db,
         date_from=date_from,
         date_to=date_to,
+        model_key=model_key,
         source_column=source_column,
         signal_group=signal_group,
         league_name=league_name,
@@ -83,6 +122,7 @@ def cecchino_signals_summary(
 def cecchino_signals_activations(
     date_from: date = Query(...),
     date_to: date = Query(...),
+    model_key: str = Query(default=CECCHINO_DEFAULT_WEIGHT_MODEL_KEY),
     source_column: str | None = Query(default=None),
     signal_group: str | None = Query(default=None),
     league_name: str | None = Query(default=None),
@@ -97,6 +137,7 @@ def cecchino_signals_activations(
         db,
         date_from=date_from,
         date_to=date_to,
+        model_key=model_key,
         source_column=source_column,
         signal_group=signal_group,
         league_name=league_name,
@@ -113,6 +154,7 @@ def cecchino_signals_activations(
 def cecchino_signals_export_csv(
     date_from: date = Query(...),
     date_to: date = Query(...),
+    model_key: str = Query(default=CECCHINO_DEFAULT_WEIGHT_MODEL_KEY),
     source_column: str | None = Query(default=None),
     signal_group: str | None = Query(default=None),
     league_name: str | None = Query(default=None),
@@ -125,6 +167,7 @@ def cecchino_signals_export_csv(
         db,
         date_from=date_from,
         date_to=date_to,
+        model_key=model_key,
         source_column=source_column,
         signal_group=signal_group,
         league_name=league_name,

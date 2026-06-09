@@ -258,13 +258,88 @@ def compute_picchetto(
     return block
 
 
-def compute_final_odds(picchetti: dict[str, PicchettoBlock]) -> FinalOddsBlock:
+def picchetti_blocks_from_output_json(output: dict[str, Any]) -> dict[str, PicchettoBlock]:
+    """Ricostruisce PicchettoBlock da cecchino_output_json già persistito (solo quote/status)."""
+    raw_picchetti = output.get("picchetti") or {}
+    if not isinstance(raw_picchetti, dict):
+        return {}
+
+    def _outcome(block: dict[str, Any], attr: str) -> OutcomeOdds | None:
+        o = block.get(attr)
+        if not isinstance(o, dict):
+            return None
+        quota = o.get("quota")
+        if quota is None:
+            quota = (o.get("mathematical_odds") if isinstance(o.get("mathematical_odds"), (int, float)) else None)
+        prob = o.get("prob")
+        try:
+            q = float(quota) if quota is not None else None
+        except (TypeError, ValueError):
+            q = None
+        try:
+            p = float(prob) if prob is not None else None
+        except (TypeError, ValueError):
+            p = None
+        if q is None and p is None:
+            return None
+        return OutcomeOdds(prob=p, quota=q)
+
+    blocks: dict[str, PicchettoBlock] = {}
+    for pic_key in (
+        PICCHETTO_KEY_HOME_AWAY,
+        PICCHETTO_KEY_TOTALS,
+        PICCHETTO_KEY_LAST5_HOME_AWAY,
+        PICCHETTO_KEY_LAST6_TOTALS,
+    ):
+        block = raw_picchetti.get(pic_key)
+        if not isinstance(block, dict):
+            continue
+        home_ctx = block.get("home_context") or (block.get("input_records") or {}).get("home") or {}
+        away_ctx = block.get("away_context") or (block.get("input_records") or {}).get("away") or {}
+        if not isinstance(home_ctx, dict):
+            home_ctx = {}
+        if not isinstance(away_ctx, dict):
+            away_ctx = {}
+
+        def _wdl(ctx: dict[str, Any]) -> WDLRecord:
+            return WDLRecord(
+                wins=int(ctx.get("wins") or 0),
+                draws=int(ctx.get("draws") or 0),
+                losses=int(ctx.get("losses") or 0),
+            )
+
+        pb = PicchettoBlock(
+            key=pic_key,
+            label=str(block.get("label") or pic_key),
+            home_context=_wdl(home_ctx),
+            away_context=_wdl(away_ctx),
+            total_matches=int(block.get("total_matches") or 0),
+            outcome_1=_outcome(block, "outcome_1"),
+            outcome_x=_outcome(block, "outcome_x"),
+            outcome_2=_outcome(block, "outcome_2"),
+            status=str(block.get("status") or STATUS_INSUFFICIENT_DATA),
+            warnings=list(block.get("warnings") or []),
+            home_sample_count=block.get("sample_home"),
+            away_sample_count=block.get("sample_away"),
+            home_target_sample=block.get("target_sample_home"),
+            away_target_sample=block.get("target_sample_away"),
+        )
+        blocks[pic_key] = pb
+    return blocks
+
+
+def compute_final_odds(
+    picchetti: dict[str, PicchettoBlock],
+    *,
+    weights: dict[str, float] | None = None,
+) -> FinalOddsBlock:
     """Quota finale Cecchino = media ponderata delle quote dei picchetti."""
-    final = FinalOddsBlock()
+    w = weights or FINAL_QUOTA_WEIGHTS
+    final = FinalOddsBlock(weights=dict(w))
     missing_keys: list[str] = []
     weighted_warnings: list[str] = []
 
-    for pic_key, weight in FINAL_QUOTA_WEIGHTS.items():
+    for pic_key, weight in w.items():
         block = picchetti.get(pic_key)
         if block is None or block.status not in PICCHETTO_STATUSES_FOR_FINAL:
             missing_keys.append(pic_key)

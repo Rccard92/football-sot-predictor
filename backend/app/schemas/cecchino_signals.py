@@ -22,3 +22,13 @@ class CecchinoSignalsBackfillBody(BaseModel):
     only_missing: bool = True
     evaluate_after: bool = True
     force_remap: bool = False
+
+
+class CecchinoSignalsBacktestModelsBody(BaseModel):
+    date_from: date
+    date_to: date
+    models: list[str] = Field(default_factory=lambda: ["A", "B", "C", "D", "E", "F"])
+    force: bool = True
+    evaluate_after: bool = True
+    use_existing_bookmaker_odds: bool = True
+    refresh_bookmaker_odds: bool = False

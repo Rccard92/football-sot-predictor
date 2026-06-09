@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SignalsActivationsTable } from '../components/cecchino/signals/SignalsActivationsTable'
 import { SignalsFormulaLegendAccordion } from '../components/cecchino/signals/SignalsFormulaLegendAccordion'
@@ -6,19 +6,27 @@ import { SignalsHeatmapMatrix } from '../components/cecchino/signals/SignalsHeat
 import { SignalsMonitoringKpiCards } from '../components/cecchino/signals/SignalsMonitoringKpiCards'
 import { SignalsTopRanking } from '../components/cecchino/signals/SignalsTopRanking'
 import { SignalsTakenOddsLegend } from '../components/cecchino/signals/SignalsTakenOddsLegend'
+import { SignalsWeightModelCards } from '../components/cecchino/signals/SignalsWeightModelCards'
 import {
   backfillCecchinoSignals,
+  backtestCecchinoWeightModels,
   buildCecchinoSignalsExportUrl,
+  CECCHINO_WEIGHT_MODEL_KEYS,
+  DEFAULT_WEIGHT_MODEL_KEY,
   EVAL_STATUSES,
   getCecchinoSignalsActivations,
+  getCecchinoSignalsModelsSummary,
   getCecchinoSignalsSummary,
   revaluateCecchinoSignals,
+  SELECTED_MODEL_STORAGE_KEY,
   SIGNAL_GROUPS,
   SOURCE_COLUMNS,
+  type ModelsSummaryResponse,
   type SignalsDiagnostics,
   type SignalsFilters,
   type SignalsSummaryResponse,
   type SignalActivationRow,
+  type WeightModelSummary,
 } from '../lib/cecchinoSignalsApi'
 import { recomputeCecchino, updateCecchinoTodayResults } from '../lib/cecchinoTodayApi'
 import { formatFetchError } from '../utils/formatFetchError'
@@ -33,6 +41,22 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function readStoredModelKey(): string {
+  try {
+    return localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) || DEFAULT_WEIGHT_MODEL_KEY
+  } catch {
+    return DEFAULT_WEIGHT_MODEL_KEY
+  }
+}
+
+function resolveDefaultModelKey(models: WeightModelSummary[]): string {
+  const f = models.find((m) => m.model_key === DEFAULT_WEIGHT_MODEL_KEY)
+  if (f && f.activations > 0) return DEFAULT_WEIGHT_MODEL_KEY
+  const withData = models.find((m) => m.activations > 0)
+  if (withData) return withData.model_key
+  return 'A'
+}
+
 export function CecchinoSignalsMonitoringPage() {
   const [searchParams] = useSearchParams()
   const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') ?? isoDaysAgo(6))
@@ -42,17 +66,21 @@ export function CecchinoSignalsMonitoringPage() {
   const [evaluationStatus, setEvaluationStatus] = useState('')
   const [countryName, setCountryName] = useState('')
   const [leagueName, setLeagueName] = useState('')
+  const [selectedModelKey, setSelectedModelKey] = useState(readStoredModelKey)
+  const [modelsSummary, setModelsSummary] = useState<ModelsSummaryResponse | null>(null)
   const [summary, setSummary] = useState<SignalsSummaryResponse | null>(null)
   const [items, setItems] = useState<SignalActivationRow[]>([])
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const defaultModelResolved = useRef(false)
 
   const filters: SignalsFilters = useMemo(
     () => ({
       date_from: dateFrom,
       date_to: dateTo,
+      model_key: selectedModelKey,
       signal_group: signalGroup || undefined,
       source_column: sourceColumn || undefined,
       evaluation_status: evaluationStatus || undefined,
@@ -61,18 +89,59 @@ export function CecchinoSignalsMonitoringPage() {
       only_current: true,
       include_diagnostics: true,
     }),
-    [dateFrom, dateTo, signalGroup, sourceColumn, evaluationStatus, countryName, leagueName],
+    [
+      dateFrom,
+      dateTo,
+      selectedModelKey,
+      signalGroup,
+      sourceColumn,
+      evaluationStatus,
+      countryName,
+      leagueName,
+    ],
   )
 
+  const selectedModel = modelsSummary?.models.find((m) => m.model_key === selectedModelKey)
   const diagnostics: SignalsDiagnostics | undefined = summary?.diagnostics
+  const hasAnyModelData = (modelsSummary?.models ?? []).some((m) => m.activations > 0)
+  const hasFixturesInRange = (diagnostics?.today_fixtures_count ?? 0) > 0
+
+  const handleSelectModel = useCallback((modelKey: string) => {
+    setSelectedModelKey(modelKey)
+    try {
+      localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, modelKey)
+    } catch {
+      /* ignore storage errors */
+    }
+  }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
+      const modelsRes = await getCecchinoSignalsModelsSummary({
+        date_from: dateFrom,
+        date_to: dateTo,
+      })
+      setModelsSummary(modelsRes)
+
+      let modelKey = selectedModelKey
+      if (!defaultModelResolved.current) {
+        const stored = readStoredModelKey()
+        const storedHasData = modelsRes.models.some(
+          (m) => m.model_key === stored && m.activations > 0,
+        )
+        modelKey = storedHasData ? stored : resolveDefaultModelKey(modelsRes.models)
+        defaultModelResolved.current = true
+        if (modelKey !== selectedModelKey) {
+          setSelectedModelKey(modelKey)
+        }
+      }
+
+      const activeFilters: SignalsFilters = { ...filters, model_key: modelKey }
       const [summaryRes, listRes] = await Promise.all([
-        getCecchinoSignalsSummary(filters),
-        getCecchinoSignalsActivations({ ...filters, limit: 200, offset: 0 }),
+        getCecchinoSignalsSummary(activeFilters),
+        getCecchinoSignalsActivations({ ...activeFilters, limit: 200, offset: 0 }),
       ])
       setSummary(summaryRes)
       setItems(listRes.items)
@@ -81,11 +150,39 @@ export function CecchinoSignalsMonitoringPage() {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [dateFrom, dateTo, filters, selectedModelKey])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    defaultModelResolved.current = false
+  }, [dateFrom, dateTo])
+
+  const handleBacktestModels = async () => {
+    setActionLoading(true)
+    setActionMessage(null)
+    try {
+      const res = await backtestCecchinoWeightModels({
+        date_from: dateFrom,
+        date_to: dateTo,
+        models: [...CECCHINO_WEIGHT_MODEL_KEYS],
+        force: true,
+        evaluate_after: true,
+        refresh_bookmaker_odds: false,
+      })
+      const total = res.by_model.reduce((acc, m) => acc + m.signals_created, 0)
+      setActionMessage(
+        `Backtest modelli A–F completato: ${res.fixtures_found} partite, ${total} segnali elaborati.`,
+      )
+      await loadData()
+    } catch (err) {
+      setError(formatFetchError(err))
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   const handleUpdateResults = async () => {
     setActionLoading(true)
@@ -341,6 +438,14 @@ export function CecchinoSignalsMonitoringPage() {
           </button>
           <button
             type="button"
+            onClick={() => void handleBacktestModels()}
+            disabled={actionLoading}
+            className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            Ricalcola modelli A–F
+          </button>
+          <button
+            type="button"
             onClick={() => void handleRecomputeCecchino()}
             disabled={actionLoading}
             className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
@@ -355,6 +460,9 @@ export function CecchinoSignalsMonitoringPage() {
             Esporta CSV
           </button>
         </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Il backtest modelli usa solo dati già presenti nel DB e non consuma API.
+        </p>
       </section>
 
       {error && (
@@ -419,11 +527,57 @@ export function CecchinoSignalsMonitoringPage() {
         </div>
       )}
 
-      {summary && <SignalsMonitoringKpiCards overall={summary.overall} />}
+      {hasFixturesInRange && !hasAnyModelData && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+          <p>
+            Per questo intervallo non esiste ancora il backtest dei modelli. Clicca Ricalcola
+            modelli A–F.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleBacktestModels()}
+            disabled={actionLoading}
+            className="mt-2 rounded-md bg-indigo-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            Calcola modelli A–F
+          </button>
+        </div>
+      )}
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-800">Confronto modelli pesi</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Backtest comparativo offline sui pesi 1X2 — non modifica il Cecchino Today live.
+        </p>
+        <div className="mt-3">
+          <SignalsWeightModelCards
+            models={modelsSummary?.models ?? []}
+            selectedModelKey={selectedModelKey}
+            loading={loading}
+            onSelect={handleSelectModel}
+          />
+        </div>
+      </section>
+
+      {summary && (
+        <SignalsMonitoringKpiCards
+          overall={summary.overall}
+          title={`Statistiche modello selezionato: ${selectedModel?.short_label ?? `Modello ${selectedModelKey}`}`}
+        />
+      )}
       {summary && <SignalsTakenOddsLegend />}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-800">Heatmap Segnale × Colonna</h2>
+        <h2 className="text-sm font-semibold text-slate-800">
+          Heatmap Segnale × Colonna — {selectedModel?.short_label ?? `Modello ${selectedModelKey}`}
+        </h2>
+        {selectedModel && (
+          <p className="mt-1 text-xs text-slate-500">
+            Pesi: Totali {selectedModel.weights.split(' / ')[0]}%, Casa/Trasferta{' '}
+            {selectedModel.weights.split(' / ')[1]}%, Ultime 6 {selectedModel.weights.split(' / ')[2]}%,
+            Ultime 5 C/F {selectedModel.weights.split(' / ')[3]}%
+          </p>
+        )}
         <div className="mt-3">
           {summary ? (
             <SignalsHeatmapMatrix summary={summary} />

@@ -731,6 +731,7 @@ def test_sync_saves_only_si_and_is_idempotent():
         today_fixture_id=99,
         provider_fixture_id=12345,
         scan_date=date(2026, 6, 8),
+        model_key="F",
         signal_group="DRAW",
         signal_label="SEGNO X",
         source_column="EXCEL_D",

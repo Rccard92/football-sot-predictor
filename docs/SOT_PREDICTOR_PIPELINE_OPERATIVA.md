@@ -63,6 +63,24 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 43 — Backtest modelli pesi A-F
+
+```mermaid
+flowchart TD
+  picchetti[picchetti in cecchino_output_json] --> weights[CECCHINO_WEIGHT_MODELS A-F]
+  weights --> final[compute_final_odds]
+  final --> matrix[build_signals_matrix]
+  matrix --> sync[sync activations model_key]
+  kpi[kpi_panel_json] --> odds[quota_book]
+  sync --> monitor[Monitoraggio Segnali]
+  odds --> monitor
+```
+
+- **Modelli A–F:** backtest comparativo offline; ogni modello persiste activations con `model_key` distinto.
+- **Endpoints:** `POST /signals/backtest-models`, `GET /signals/models-summary`; filtro `model_key` su summary/activations/export.
+- **UI:** card cliccabili Confronto modelli pesi; pulsante «Ricalcola modelli A–F» (zero API-Football).
+- **Live:** sync storico/live tagga modello F; Cecchino Today non cambia modello automaticamente.
+
 ## Fase 42 — Quota media prese e Quota Void
 
 ```mermaid

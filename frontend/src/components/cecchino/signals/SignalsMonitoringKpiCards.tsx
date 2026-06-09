@@ -3,6 +3,7 @@ import { formatOdds, formatTakenProfit } from './signalsHeatmapUtils'
 
 type Props = {
   overall: SignalsBucket
+  title?: string
 }
 
 const cards: Array<{ key: keyof SignalsBucket; label: string }> = [
@@ -19,14 +20,10 @@ function formatAvgSignalsPerFixture(value: number | null | undefined): string {
   return value.toFixed(1)
 }
 
-function formatSuccessRate(rate: number | null | undefined): string {
-  if (rate == null) return '—'
-  return `${rate.toFixed(1)}%`
-}
-
-export function SignalsMonitoringKpiCards({ overall }: Props) {
+export function SignalsMonitoringKpiCards({ overall, title }: Props) {
   return (
     <div className="space-y-3">
+      {title && <h2 className="text-sm font-semibold text-slate-800">{title}</h2>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {cards.map((card) => (
           <div key={card.key} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
@@ -42,12 +39,6 @@ export function SignalsMonitoringKpiCards({ overall }: Props) {
             {formatAvgSignalsPerFixture(overall.avg_signals_per_fixture)}
           </p>
           <p className="mt-1 text-[10px] text-slate-500">su partite eleggibili</p>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 col-span-2 md:col-span-4">
-          <p className="text-xs text-slate-500">Success rate (won / settled)</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
-            {formatSuccessRate(overall.success_rate)}
-          </p>
         </div>
       </div>
 

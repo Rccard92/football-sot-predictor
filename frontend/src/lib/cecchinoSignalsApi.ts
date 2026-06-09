@@ -70,6 +70,9 @@ export type SignalsBackfillResponse = {
 export type SignalActivationRow = {
   id: number
   today_fixture_id: number
+  model_key?: string
+  model_label?: string | null
+  weights_display?: string | null
   scan_date: string
   kickoff: string | null
   match: string
@@ -101,6 +104,7 @@ export type SignalsActivationsResponse = {
 export type SignalsFilters = {
   date_from: string
   date_to: string
+  model_key?: string
   source_column?: string
   signal_group?: string
   league_name?: string
@@ -109,6 +113,53 @@ export type SignalsFilters = {
   only_current?: boolean
   include_diagnostics?: boolean
 }
+
+export type WeightModelSummary = {
+  model_key: string
+  label: string
+  short_label: string
+  weights: string
+  activations: number
+  settled: number
+  won: number
+  lost: number
+  pending: number
+  win_rate: number | null
+  avg_won_book_odds: number | null
+  quota_void: number | null
+  void_margin: number | null
+  taken_profit_indicator: number | null
+}
+
+export type ModelsSummaryResponse = {
+  date_from: string
+  date_to: string
+  default_model_key: string
+  models: WeightModelSummary[]
+}
+
+export type BacktestModelsResponse = {
+  status: string
+  fixtures_found: number
+  models_processed: string[]
+  by_model: Array<{
+    model_key: string
+    signals_created: number
+    signals_evaluated: number
+    won: number
+    lost: number
+    pending: number
+    win_rate: number | null
+    avg_won_book_odds: number | null
+    quota_void: number | null
+    taken_profit_indicator: number | null
+  }>
+  warnings: string[]
+}
+
+export const CECCHINO_WEIGHT_MODEL_KEYS = ['A', 'B', 'C', 'D', 'E', 'F'] as const
+export const DEFAULT_WEIGHT_MODEL_KEY = 'F'
+export const SELECTED_MODEL_STORAGE_KEY = 'cecchino_signals_selected_model'
 
 function qs(params: Record<string, string | number | boolean | undefined>): string {
   const parts: string[] = []
@@ -126,6 +177,7 @@ export async function getCecchinoSignalsSummary(
     `/api/admin/cecchino/signals/summary${qs({
       date_from: filters.date_from,
       date_to: filters.date_to,
+      model_key: filters.model_key ?? DEFAULT_WEIGHT_MODEL_KEY,
       source_column: filters.source_column,
       signal_group: filters.signal_group,
       league_name: filters.league_name,
@@ -172,6 +224,7 @@ export async function getCecchinoSignalsActivations(
     `/api/admin/cecchino/signals/activations${qs({
       date_from: filters.date_from,
       date_to: filters.date_to,
+      model_key: filters.model_key ?? DEFAULT_WEIGHT_MODEL_KEY,
       source_column: filters.source_column,
       signal_group: filters.signal_group,
       league_name: filters.league_name,
@@ -190,6 +243,7 @@ export function buildCecchinoSignalsExportUrl(filters: SignalsFilters): string {
   return `${prefix}/api/admin/cecchino/signals/export.csv${qs({
     date_from: filters.date_from,
     date_to: filters.date_to,
+    model_key: filters.model_key ?? DEFAULT_WEIGHT_MODEL_KEY,
     source_column: filters.source_column,
     signal_group: filters.signal_group,
     league_name: filters.league_name,
@@ -223,6 +277,38 @@ export async function revaluateCecchinoSignals(params: {
     sync_missing: params.sync_missing ?? false,
     force_remap: params.force_remap ?? false,
     refresh_signal_odds: params.refresh_signal_odds ?? false,
+  })
+}
+
+export async function getCecchinoSignalsModelsSummary(params: {
+  date_from: string
+  date_to: string
+}): Promise<ModelsSummaryResponse> {
+  return adminGetJson<ModelsSummaryResponse>(
+    `/api/admin/cecchino/signals/models-summary${qs({
+      date_from: params.date_from,
+      date_to: params.date_to,
+    })}`,
+  )
+}
+
+export async function backtestCecchinoWeightModels(params: {
+  date_from: string
+  date_to: string
+  models?: string[]
+  force?: boolean
+  evaluate_after?: boolean
+  use_existing_bookmaker_odds?: boolean
+  refresh_bookmaker_odds?: boolean
+}): Promise<BacktestModelsResponse> {
+  return adminPostJson<BacktestModelsResponse>('/api/admin/cecchino/signals/backtest-models', {
+    date_from: params.date_from,
+    date_to: params.date_to,
+    models: params.models ?? [...CECCHINO_WEIGHT_MODEL_KEYS],
+    force: params.force ?? true,
+    evaluate_after: params.evaluate_after ?? true,
+    use_existing_bookmaker_odds: params.use_existing_bookmaker_odds ?? true,
+    refresh_bookmaker_odds: params.refresh_bookmaker_odds ?? false,
   })
 }
 

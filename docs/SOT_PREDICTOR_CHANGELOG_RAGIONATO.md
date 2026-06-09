@@ -1,5 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 43 — Backtest modelli pesi A-F (2026-06-09)
+
+- Introdotto confronto modelli pesi A–F nel Monitoraggio Segnali; ogni modello ha pesi indipendenti sui picchetti 1X2.
+- Aggiunto `model_key` sulle signal activations (`model_label`, `weights_version`, `weights_json`).
+- Aggiunto backtest offline dei modelli su range date (`POST /api/admin/cecchino/signals/backtest-models`) — zero API-Football.
+- Aggiunta sezione **Confronto modelli pesi** con card cliccabili A–F (Win Rate, pesi, quota prese, quota void, rendimento).
+- Cliccando un modello si aggiornano summary, heatmap, top segnali e dettaglio partite (filtro `model_key`).
+- Aggiunto endpoint `GET /api/admin/cecchino/signals/models-summary` per le card comparativi.
+- Aggiornati summary, activations ed export CSV con filtro `model_key` (default F = modello conservativo / storico live).
+- I modelli A–F sono backtest comparativi in Monitoraggio Segnali; il Cecchino Today live resta sulle costanti attuali.
+- Nessuna modifica ai modelli SOT v2.0/v2.1, a Betfair-only, a formule segnali, ICM o KPI produzione live.
+
 ## Cecchino — Fase 42 — Quota media prese e Quota Void (2026-06-09)
 
 - Aggiunta metrica **Quota media prese** nel Monitoraggio Segnali: media quote book solo su segnali WON con quota disponibile.

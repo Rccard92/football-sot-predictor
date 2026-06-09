@@ -353,6 +353,21 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino Today — Fase 43 — Backtest modelli pesi A-F
+
+Confronto offline modelli pesi 1X2 nel Monitoraggio Segnali (`/monitoraggio-segnali`).
+
+| Componente | Comportamento |
+|------------|---------------|
+| Modelli A–F | Pesi indipendenti su Totali / Casa-Fuori / Ultime 6 / Ultime 5 C/F |
+| `model_key` | Colonna su `cecchino_signal_activations` (storico backfill → F) |
+| Backtest | `POST /signals/backtest-models` — ricalcolo offline da picchetti DB, zero API |
+| Models summary | `GET /signals/models-summary` — card comparativi Win Rate / quota prese / void / rendimento |
+| Filtro UI | `model_key` su summary, activations, export CSV; default F |
+| Live vs backtest | Cecchino Today live resta su `CECCHINO_1X2_WEIGHTS`; A–F sono solo comparativi monitoraggio |
+
+**Invariato:** Betfair-only, formule segnali, KPI Today, ICM, SOT v2.0/v2.1, goal market live.
+
 ## Cecchino Today — Fase 42 — Quota media prese e Quota Void
 
 Metriche Monitoraggio Segnali (`/monitoraggio-segnali`).
