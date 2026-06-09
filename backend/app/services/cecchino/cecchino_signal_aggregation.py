@@ -87,7 +87,7 @@ def _enrich_overall_metrics(
     }
 
 
-def _bucket_counts(rows: list[Any]) -> dict[str, int]:
+def _bucket_counts(rows: list[Any]) -> dict[str, Any]:
     won = lost = pending = not_evaluable = 0
     for row in rows:
         status = row.evaluation_status
@@ -100,7 +100,7 @@ def _bucket_counts(rows: list[Any]) -> dict[str, int]:
         elif status == EVAL_NOT_EVALUABLE:
             not_evaluable += 1
     settled = won + lost
-    return {
+    bucket = {
         "activations": len(rows),
         "settled": settled,
         "won": won,
@@ -108,6 +108,62 @@ def _bucket_counts(rows: list[Any]) -> dict[str, int]:
         "pending": pending,
         "not_evaluable": not_evaluable,
         "success_rate": _success_rate(won, lost),
+    }
+    return _enrich_taken_odds_metrics(bucket, rows)
+
+
+def _float_odds(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _enrich_taken_odds_metrics(bucket: dict[str, Any], rows: list[Any]) -> dict[str, Any]:
+    won = int(bucket.get("won") or 0)
+    lost = int(bucket.get("lost") or 0)
+    settled = won + lost
+
+    won_with_odds = 0
+    sum_won_book_odds = 0.0
+    for row in rows:
+        if row.evaluation_status != EVAL_WON:
+            continue
+        odds = _float_odds(getattr(row, "quota_book", None))
+        if odds is None:
+            continue
+        won_with_odds += 1
+        sum_won_book_odds += odds
+
+    avg_won_book_odds = (
+        round(sum_won_book_odds / won_with_odds, 2) if won_with_odds > 0 else None
+    )
+    win_rate = (won / settled) if settled > 0 else None
+    quota_void = round(1.0 / win_rate, 2) if win_rate and win_rate > 0 else None
+    void_margin = (
+        round(avg_won_book_odds - quota_void, 2)
+        if avg_won_book_odds is not None and quota_void is not None
+        else None
+    )
+    taken_yield_index = (
+        round(win_rate * avg_won_book_odds, 3)
+        if win_rate is not None and avg_won_book_odds is not None
+        else None
+    )
+    taken_profit_indicator = (
+        round(taken_yield_index - 1.0, 3) if taken_yield_index is not None else None
+    )
+
+    return {
+        **bucket,
+        "won_with_odds": won_with_odds,
+        "avg_won_book_odds": avg_won_book_odds,
+        "quota_void": quota_void,
+        "void_margin": void_margin,
+        "taken_yield_index": taken_yield_index,
+        "taken_profit_indicator": taken_profit_indicator,
     }
 
 
@@ -321,6 +377,10 @@ def _format_target_market_label(row: CecchinoSignalActivation) -> str | None:
     return row.target_market_label
 
 
+def _counts_in_avg_won_odds(row: CecchinoSignalActivation) -> bool:
+    return row.evaluation_status == EVAL_WON and row.quota_book is not None
+
+
 def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
     home = row.home_team_name or "?"
     away = row.away_team_name or "?"
@@ -351,6 +411,7 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
         "edge_pct": float(row.edge_pct) if row.edge_pct is not None else None,
         "rating": row.rating,
         "is_current": row.is_current,
+        "counts_in_avg_won_odds": _counts_in_avg_won_odds(row),
     }
 
 
@@ -396,6 +457,7 @@ def export_signals_csv(
             "HT",
             "FT",
             "Quota Book",
+            "Quota conteggiata in media prese",
             "Quota Cecchino",
             "Edge",
             "Rating",
@@ -417,6 +479,7 @@ def export_signals_csv(
             esito_label = "Non valutabile"
         else:
             esito_label = esito
+        counts_in_avg = "SI" if item.get("counts_in_avg_won_odds") else "NO"
         writer.writerow(
             [
                 kickoff_date,
@@ -432,6 +495,7 @@ def export_signals_csv(
                 item.get("ht_score"),
                 item.get("ft_score"),
                 item.get("quota_book"),
+                counts_in_avg,
                 item.get("quota_cecchino"),
                 item.get("edge_pct"),
                 item.get("rating"),

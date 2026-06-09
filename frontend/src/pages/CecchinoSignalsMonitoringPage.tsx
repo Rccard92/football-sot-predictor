@@ -5,6 +5,7 @@ import { SignalsFormulaLegendAccordion } from '../components/cecchino/signals/Si
 import { SignalsHeatmapMatrix } from '../components/cecchino/signals/SignalsHeatmapMatrix'
 import { SignalsMonitoringKpiCards } from '../components/cecchino/signals/SignalsMonitoringKpiCards'
 import { SignalsTopRanking } from '../components/cecchino/signals/SignalsTopRanking'
+import { SignalsTakenOddsLegend } from '../components/cecchino/signals/SignalsTakenOddsLegend'
 import {
   backfillCecchinoSignals,
   buildCecchinoSignalsExportUrl,
@@ -161,9 +162,13 @@ export function CecchinoSignalsMonitoringPage() {
         date_from: dateFrom,
         date_to: dateTo,
         sync_missing: true,
+        refresh_signal_odds: true,
       })
+      const oddsMsg = res.odds_refresh_summary
+        ? ` Quote aggiornate: ${res.odds_refresh_summary.odds_refreshed}.`
+        : ''
       setActionMessage(
-        `Rivalutazione completata: ${res.evaluated} valutati, ${res.pending} pending.`,
+        `Rivalutazione completata: ${res.evaluated} valutati, ${res.pending} pending.${oddsMsg}`,
       )
       await loadData()
     } catch (err) {
@@ -415,6 +420,7 @@ export function CecchinoSignalsMonitoringPage() {
       )}
 
       {summary && <SignalsMonitoringKpiCards overall={summary.overall} />}
+      {summary && <SignalsTakenOddsLegend />}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-slate-800">Heatmap Segnale × Colonna</h2>

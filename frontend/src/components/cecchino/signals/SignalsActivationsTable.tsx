@@ -6,6 +6,33 @@ type Props = {
   items: SignalActivationRow[]
 }
 
+function QuotaBookCell({ row }: { row: SignalActivationRow }) {
+  const isTaken = row.counts_in_avg_won_odds || (row.evaluation_status === 'won' && row.quota_book != null)
+  const title = isTaken
+    ? 'Quota presa — entra nella media prese'
+    : row.evaluation_status === 'lost'
+      ? 'La quota entra nella media prese solo se il segnale è WON'
+      : undefined
+
+  if (row.quota_book == null) {
+    return <span className="text-slate-400">—</span>
+  }
+
+  return (
+    <span
+      title={title}
+      className={
+        isTaken
+          ? 'inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-900'
+          : 'tabular-nums text-slate-700'
+      }
+    >
+      {row.quota_book.toFixed(2)}
+      {isTaken && <span className="text-[10px] font-normal text-emerald-700">presa</span>}
+    </span>
+  )
+}
+
 export function SignalsActivationsTable({ items }: Props) {
   if (items.length === 0) {
     return <p className="text-sm text-slate-500">Nessun segnale nel periodo selezionato.</p>
@@ -26,8 +53,8 @@ export function SignalsActivationsTable({ items }: Props) {
               <th className="px-2 py-2 text-left">Esito</th>
               <th className="px-2 py-2 text-left">FT</th>
               <th className="px-2 py-2 text-left">PT</th>
-              <th className="px-2 py-2 text-left">Quota Cec.</th>
               <th className="px-2 py-2 text-left">Quota Book</th>
+              <th className="px-2 py-2 text-left">Quota Cec.</th>
               <th className="px-2 py-2 text-left">Edge</th>
               <th className="px-2 py-2 text-left">Rating</th>
             </tr>
@@ -60,8 +87,10 @@ export function SignalsActivationsTable({ items }: Props) {
                 </td>
                 <td className="px-2 py-2 tabular-nums">{row.ft_score ?? '—'}</td>
                 <td className="px-2 py-2 tabular-nums">{row.ht_score ?? '—'}</td>
+                <td className="px-2 py-2">
+                  <QuotaBookCell row={row} />
+                </td>
                 <td className="px-2 py-2 tabular-nums">{row.quota_cecchino ?? '—'}</td>
-                <td className="px-2 py-2 tabular-nums">{row.quota_book ?? '—'}</td>
                 <td className="px-2 py-2 tabular-nums">
                   {row.edge_pct != null ? `${row.edge_pct.toFixed(1)}%` : '—'}
                 </td>
@@ -98,6 +127,9 @@ export function SignalsActivationsTable({ items }: Props) {
             {row.evaluation_reason && (
               <p className="mt-1 text-[10px] text-slate-500">{row.evaluation_reason}</p>
             )}
+            <p className="mt-2 text-xs text-slate-600">
+              Quota book: <QuotaBookCell row={row} />
+            </p>
             <p className="mt-1 tabular-nums text-xs text-slate-600">
               FT {row.ft_score ?? '—'} · PT {row.ht_score ?? '—'} · Edge{' '}
               {row.edge_pct != null ? `${row.edge_pct.toFixed(1)}%` : '—'}

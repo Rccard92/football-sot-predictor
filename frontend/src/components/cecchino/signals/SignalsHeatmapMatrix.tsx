@@ -4,7 +4,14 @@ import {
   type SignalsBucket,
   type SignalsSummaryResponse,
 } from '../../../lib/cecchinoSignalsApi'
-import { formatSuccessRate, heatmapCellClass } from './signalsHeatmapUtils'
+import {
+  formatOdds,
+  formatSuccessRate,
+  formatVoidMargin,
+  heatmapCellClass,
+  mergeTakenOddsBuckets,
+  voidMarginClass,
+} from './signalsHeatmapUtils'
 
 type Props = {
   summary: SignalsSummaryResponse
@@ -23,23 +30,28 @@ function findCell(
   )
 }
 
-function sumRow(summary: SignalsSummaryResponse, signalGroup: string) {
+function sumRow(summary: SignalsSummaryResponse, signalGroup: string): SignalsBucket {
   const cells = summary.by_signal_and_column.filter((row) => row.signal_group === signalGroup)
-  const won = cells.reduce((acc, c) => acc + c.won, 0)
-  const lost = cells.reduce((acc, c) => acc + c.lost, 0)
-  const pending = cells.reduce((acc, c) => acc + c.pending, 0)
-  const notEval = cells.reduce((acc, c) => acc + c.not_evaluable, 0)
-  const activations = cells.reduce((acc, c) => acc + c.activations, 0)
-  const settled = won + lost
-  return {
-    activations,
-    settled,
-    won,
-    lost,
-    pending,
-    not_evaluable: notEval,
-    success_rate: settled > 0 ? Math.round((won / settled) * 1000) / 10 : null,
-  }
+  return mergeTakenOddsBuckets(cells) as SignalsBucket
+}
+
+function TakenOddsCompact({ bucket }: { bucket: SignalsBucket | Partial<SignalsBucket> | undefined }) {
+  if (!bucket?.avg_won_book_odds && !bucket?.quota_void) return null
+  return (
+    <div className="mt-1 space-y-0.5 border-t border-slate-200/60 pt-1 text-[10px] leading-tight">
+      {bucket.avg_won_book_odds != null && (
+        <div className="tabular-nums">Quota prese: {formatOdds(bucket.avg_won_book_odds)}</div>
+      )}
+      {bucket.quota_void != null && (
+        <div className="tabular-nums">Void: {formatOdds(bucket.quota_void)}</div>
+      )}
+      {bucket.void_margin != null && (
+        <div className={`font-medium tabular-nums ${voidMarginClass(bucket.void_margin)}`}>
+          {formatVoidMargin(bucket.void_margin)}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function CellContent({ bucket }: { bucket: SignalsBucket | undefined }) {
@@ -63,6 +75,7 @@ function CellContent({ bucket }: { bucket: SignalsBucket | undefined }) {
       {bucket.not_evaluable > 0 && (
         <div className="text-slate-500">{bucket.not_evaluable} non valutabili</div>
       )}
+      <TakenOddsCompact bucket={bucket} />
     </div>
   )
 }

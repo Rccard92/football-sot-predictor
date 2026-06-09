@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 42 — Quota media prese e Quota Void (2026-06-09)
+
+- Aggiunta metrica **Quota media prese** nel Monitoraggio Segnali: media quote book solo su segnali WON con quota disponibile.
+- Segnali LOST e WON senza quota book esclusi dalla media.
+- Aggiunta **Quota Void** = 1 / Win Rate; **Margine Void** = quota prese − quota void; **Rendimento prese** = WR × quota prese − 1.
+- Summary API (`overall`, `by_signal`, `by_column`, `by_signal_and_column`) arricchito con le nuove metriche.
+- Heatmap, Top segnali (ordinamento per rendimento prese), dettaglio partite ed export CSV aggiornati.
+- `POST /revaluate` con `refresh_signal_odds=true` ripopola quote da `kpi_panel_json` salvato (offline, zero API).
+- Nessuna modifica a Betfair-only, SOT v2.0/v2.1, KPI, ICM, Equilibrio, formule segnali.
+
 ## Cecchino — Fase 41 — Indice di Convergenza Match ICM (2026-06-09)
 
 - Sostituito Delta Forza Match con ICM: convergenza interna degli indicatori Cecchino (non book vs Cecchino).

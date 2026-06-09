@@ -151,5 +151,6 @@ def cecchino_signals_revaluate(
         force=body.force,
         sync_missing=body.sync_missing,
         force_remap=body.force_remap,
+        refresh_signal_odds=body.refresh_signal_odds,
     )
     return JSONResponse(content=jsonable_encoder({"status": "ok", **payload}))

@@ -11,6 +11,12 @@ export type SignalsBucket = {
   eligible_fixtures_count?: number
   fixtures_with_signals_count?: number
   avg_signals_per_fixture?: number | null
+  won_with_odds?: number
+  avg_won_book_odds?: number | null
+  quota_void?: number | null
+  void_margin?: number | null
+  taken_yield_index?: number | null
+  taken_profit_indicator?: number | null
 }
 
 export type SignalsDiagnostics = {
@@ -82,6 +88,7 @@ export type SignalActivationRow = {
   edge_pct: number | null
   rating: number | null
   is_current: boolean
+  counts_in_avg_won_odds?: boolean
 }
 
 export type SignalsActivationsResponse = {
@@ -198,6 +205,7 @@ export async function revaluateCecchinoSignals(params: {
   force?: boolean
   sync_missing?: boolean
   force_remap?: boolean
+  refresh_signal_odds?: boolean
 }): Promise<{
   status: string
   fixtures: number
@@ -206,6 +214,7 @@ export async function revaluateCecchinoSignals(params: {
   not_evaluable: number
   force_remap?: boolean
   backfill_summary?: SignalsBackfillResponse
+  odds_refresh_summary?: { odds_refreshed: number; odds_still_missing: number; odds_skipped_no_kpi: number }
 }> {
   return adminPostJson('/api/admin/cecchino/signals/revaluate', {
     date_from: params.date_from,
@@ -213,6 +222,7 @@ export async function revaluateCecchinoSignals(params: {
     force: params.force ?? false,
     sync_missing: params.sync_missing ?? false,
     force_remap: params.force_remap ?? false,
+    refresh_signal_odds: params.refresh_signal_odds ?? false,
   })
 }
 

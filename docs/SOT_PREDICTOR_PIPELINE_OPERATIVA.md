@@ -63,6 +63,21 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 42 — Quota media prese e Quota Void
+
+```mermaid
+flowchart TD
+  kpiSaved[kpi_panel_json] --> refresh[refresh_activation_odds_from_kpi]
+  activations[cecchino_signal_activations] --> agg[_enrich_taken_odds_metrics]
+  refresh --> activations
+  agg --> summary[GET signals/summary]
+  summary --> ui[Monitoraggio Segnali]
+```
+
+- **Quota media prese:** media quote book solo WON con quota; LOST esclusi.
+- **Quota Void:** `1 / win_rate`; **Margine Void:** differenza vs quota prese; **Rendimento prese:** WR × quota prese − 1.
+- **Revaluate:** `refresh_signal_odds=true` ripopola quote offline da KPI salvato.
+
 ## Fase 41 — Indice di Convergenza Match (ICM)
 
 ```mermaid

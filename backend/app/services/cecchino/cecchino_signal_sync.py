@@ -19,12 +19,12 @@ from app.services.cecchino.cecchino_signal_evaluation import (
 )
 from app.services.cecchino.cecchino_signal_target_mapping import (
     LEGACY_WRONG_SCALA_REASON,
-    extract_kpi_context,
     is_valid_scala_activation,
     map_column_to_source,
     map_cecchino_signal_to_target,
     map_row_key_to_signal_group,
 )
+from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
 
 
 def _num(value: Any) -> Decimal | None:
@@ -107,7 +107,11 @@ def sync_cecchino_signal_activations(db: Session, today_fixture_id: int) -> dict
 
     for cell in si_cells:
         target = map_cecchino_signal_to_target(cell["signal_group"], cell["source_column"])
-        kpi_ctx = extract_kpi_context(kpi_panel, cell["signal_group"])
+        kpi_ctx = resolve_kpi_odds_for_activation(
+            kpi_panel,
+            signal_group=cell["signal_group"],
+            target_market_key=target.get("target_market_key"),
+        )
         key = _activation_pair_key(cell["signal_group"], cell["source_column"])
         active_keys.add(key)
         activation = by_key.get(key)

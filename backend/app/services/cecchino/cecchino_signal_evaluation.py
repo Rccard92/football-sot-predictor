@@ -239,8 +239,21 @@ def revaluate_signal_activations(
     force: bool = False,
     sync_missing: bool = False,
     force_remap: bool = False,
+    refresh_signal_odds: bool = False,
 ) -> dict[str, Any]:
     remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
+
+    odds_refresh_summary: dict[str, int] | None = None
+    if refresh_signal_odds:
+        from app.services.cecchino.cecchino_signal_odds_refresh import refresh_activation_odds_from_kpi
+
+        odds_refresh_summary = refresh_activation_odds_from_kpi(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            only_null=False,
+            only_current=not force,
+        )
 
     backfill_summary: dict[str, Any] | None = None
     if force_remap:
@@ -296,6 +309,8 @@ def revaluate_signal_activations(
     db.commit()
     totals["remapped"] = remapped
     totals["force_remap"] = force_remap
+    if odds_refresh_summary is not None:
+        totals["odds_refresh_summary"] = odds_refresh_summary
     if backfill_summary is not None:
         totals["backfill_summary"] = backfill_summary
     return totals

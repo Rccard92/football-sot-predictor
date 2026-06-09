@@ -353,6 +353,22 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino Today — Fase 42 — Quota media prese e Quota Void
+
+Metriche Monitoraggio Segnali (`/monitoraggio-segnali`).
+
+| Componente | Comportamento |
+|------------|---------------|
+| Quota media prese | Media `quota_book` solo su segnali `won` con quota valorizzata |
+| Quota Void | `1 / (won / settled)` — soglia pareggio teorica |
+| Margine Void | `avg_won_book_odds - quota_void` |
+| Rendimento prese | `(won/settled) × avg_won_book_odds - 1` (indicatore qualità prese, non ROI reale) |
+| Summary API | Campi in `overall`, `by_signal`, `by_column`, `by_signal_and_column` |
+| Refresh quote | `POST /revaluate` con `refresh_signal_odds=true` da `kpi_panel_json` (offline) |
+| UI | Card KPI, heatmap, top segnali, dettaglio partite, CSV, accordion spiegazione |
+
+**Invariato:** Betfair-only, formule segnali, KPI Today, ICM, SOT v2.0/v2.1.
+
 ## Cecchino Today — Fase 41 — Indice di Convergenza Match (ICM)
 
 Versione builder `cecchino_icm_v1` — sostituisce Delta Forza Match (Fase 36, deprecata in Today).

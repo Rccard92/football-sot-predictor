@@ -142,27 +142,10 @@ def market_key_for_signal_group(signal_group: str) -> str | None:
 
 
 def extract_kpi_context(kpi_panel: dict[str, Any] | None, signal_group: str) -> dict[str, Any]:
-    if not kpi_panel or not isinstance(kpi_panel, dict):
-        return {}
-    market_key = market_key_for_signal_group(signal_group)
-    if not market_key:
-        return {}
-    rows = kpi_panel.get("rows") or []
-    if not isinstance(rows, list):
-        return {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        if row.get("market_key") == market_key or row.get("segno") == market_key:
-            return {
-                "quota_book": row.get("quota_book"),
-                "quota_cecchino": row.get("quota_cecchino"),
-                "prob_book": row.get("prob_book"),
-                "prob_cecchino": row.get("prob_cecchino"),
-                "edge_pct": row.get("edge_pct"),
-                "rating": row.get("rating"),
-            }
-    return {}
+    """Compatibilità legacy — delega a resolve_kpi_odds_for_activation."""
+    from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
+
+    return resolve_kpi_odds_for_activation(kpi_panel, signal_group=signal_group)
 
 
 def map_cecchino_signal_to_target(

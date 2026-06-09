@@ -304,6 +304,16 @@ def backfill_signal_activations(
 
     remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
 
+    from app.services.cecchino.cecchino_signal_odds_refresh import refresh_activation_odds_from_kpi
+
+    odds_refresh = refresh_activation_odds_from_kpi(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        only_null=True,
+        only_current=True,
+    )
+
     if evaluate_after:
         for fid in processed_fixture_ids:
             eval_counts = evaluate_activations_for_fixture(db, fid)
@@ -333,6 +343,7 @@ def backfill_signal_activations(
         "remapped": remapped,
         "legacy_scala_deactivated": legacy_scala_deactivated,
         "force_remap": force_remap,
+        "odds_refresh_summary": odds_refresh,
         "warnings": warnings[:100],
     }
 
