@@ -12,43 +12,11 @@ export type BalanceOperationalLegendRow = {
 export const BALANCE_LEGEND_INTRO =
   'Questa tabella spiega come viene letta la partita combinando F36, Dominanza contestualizzata, segno dominante e Quota X Cecchino.'
 
-export const BALANCE_LEGEND_VERSION = 'balance_operational_legend_v3_delta_force'
+export const BALANCE_LEGEND_VERSION = 'balance_operational_legend_v4'
 
 export const BALANCE_LEGEND_NOTES = [
   'Nota: la Dominanza non viene letta da sola. Se domina la X, una Dominanza alta rafforza l\'equilibrio. Se domina 1 o 2, una Dominanza alta può indicare falso equilibrio o squilibrio confermato.',
   'F36 misura solo la distanza tra quota 1 e quota 2. La Dominanza misura invece quanto il modello preferisce il primo scenario rispetto al secondo, considerando anche la X.',
-]
-
-export type DeltaForceLegendRow = {
-  deltaRange: string
-  classLabel: string
-  reading: string
-  severity: BalanceLegendSeverity
-}
-
-export const DELTA_FORCE_LEGEND_NOTE =
-  'Il Delta Forza non sostituisce F36 e Dominanza. Serve a capire se la lettura del match è lineare o distorta rispetto al book.'
-
-export const DELTA_FORCE_LEGEND_ROWS: DeltaForceLegendRow[] = [
-  {
-    deltaRange: '< 17%',
-    classLabel: 'Partita statistica',
-    reading: 'Lettura lineare: il modello e il book sono relativamente allineati.',
-    severity: 'positive',
-  },
-  {
-    deltaRange: '17% - 31%',
-    classLabel: 'Partita non statistica',
-    reading:
-      'Lettura non lineare: attenzione agli esiti fissi, valutare doppie chance o mercati goal.',
-    severity: 'warning',
-  },
-  {
-    deltaRange: '> 31%',
-    classLabel: 'Forte favorita / forte distorsione',
-    reading: 'Disallineamento forte: il book sta comprimendo o allargando molto una quota.',
-    severity: 'negative',
-  },
 ]
 
 export const BALANCE_OPERATIONAL_LEGEND_RULES: BalanceOperationalLegendRow[] = [

@@ -16,6 +16,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.schemas.cecchino_recompute import CecchinoRecomputeBody
 from app.services.cecchino.cecchino_constants import (
     CECCHINO_1X2_WEIGHTS,
     CECCHINO_GOAL_MARKET_WEIGHTS,
@@ -23,6 +24,11 @@ from app.services.cecchino.cecchino_constants import (
 )
 
 client = TestClient(app)
+
+
+def test_recompute_schema_includes_icm_flag():
+    body = CecchinoRecomputeBody(date_from=date(2026, 6, 1), date_to=date(2026, 6, 7))
+    assert body.recompute_icm is True
 
 
 def test_weight_sets_sum_to_one():

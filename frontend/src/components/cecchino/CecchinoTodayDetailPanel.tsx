@@ -5,6 +5,7 @@ import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoTodayBalanceAnalysisPanel } from './CecchinoTodayBalanceAnalysisPanel'
+import { CecchinoIcmAnalysisPanel } from './CecchinoIcmAnalysisPanel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 
@@ -62,7 +63,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
-          deltaForceAnalysis={detail.delta_force_analysis}
         />
       )}
 
@@ -74,6 +74,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
       />
 
       <CecchinoTodayBalanceAnalysisPanel balanceAnalysis={detail.balance_analysis} />
+
+      <CecchinoIcmAnalysisPanel icmAnalysis={detail.icm_analysis} />
 
       {signals && (
         <CecchinoSignalsCard

@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 41 — Indice di Convergenza Match ICM (2026-06-09)
+
+- Sostituito Delta Forza Match con ICM: convergenza interna degli indicatori Cecchino (non book vs Cecchino).
+- Nuovo builder `build_cecchino_icm_analysis` con narrative scoring, classificazione 0–100, driver parlanti e dettaglio tecnico.
+- Rimosso Delta Forza da KPI panel, Equilibrio vs Squilibrio (griglia 4 card), legenda e payload API.
+- Balance analysis v4 (`cecchino_balance_analysis_v4`) senza embed `delta_force`.
+- Nuova sezione UI `CecchinoIcmAnalysisPanel` tra Equilibrio e Segnali.
+- API: `icm_analysis` al posto di `delta_force_analysis`; flag `recompute_icm` nello schema recompute (ricalcolo implicito via KPI).
+- Invariati: pesi Fase 40, Betfair-only, colonne KPI, formule Segnali, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 40 — Nuovi pesi globali 1X2 e Under/Over (2026-06-09)
 
 - Aggiornati i pesi dei picchetti per i segni 1X2: Totali stagione 30%, Casa/Fuori 30%, Ultime 6 totali 20%, Ultime 5 casa/fuori 20%.

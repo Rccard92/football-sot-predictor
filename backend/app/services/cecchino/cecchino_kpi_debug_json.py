@@ -17,7 +17,7 @@ from app.services.cecchino.cecchino_betfair_odds_payload import (
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
 from app.services.cecchino.cecchino_today_odds_meta import bookmaker_meta_block, read_odds_meta
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
-from app.services.cecchino.cecchino_delta_force_analysis import build_cecchino_delta_force_analysis
+from app.services.cecchino.cecchino_icm_analysis import build_cecchino_icm_analysis
 from app.services.cecchino.cecchino_goal_formulas import build_goal_market_debug
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
@@ -194,8 +194,12 @@ def build_kpi_debug_json(row: CecchinoTodayFixture, db: Session) -> dict[str, An
     output = row.cecchino_output_json or {}
     warnings = list(betfair_payload.get("warnings") or [])
     warnings.extend((kpi_panel or {}).get("warnings") or [])
-    delta_force_analysis = build_cecchino_delta_force_analysis(kpi_panel)
     final_block = output.get("final") if isinstance(output, dict) else {}
+    balance_analysis = build_balance_analysis_from_final(final_block)
+    icm_analysis = build_cecchino_icm_analysis(
+        balance_analysis=balance_analysis,
+        kpi_panel=kpi_panel,
+    )
 
     return {
         "fixture": {
@@ -216,11 +220,8 @@ def build_kpi_debug_json(row: CecchinoTodayFixture, db: Session) -> dict[str, An
         "betfair_odds_used": betfair_odds_used,
         "cecchino_odds_used": _cecchino_odds_used(output if isinstance(output, dict) else {}),
         "cecchino_goal_odds_used": _cecchino_goal_odds_used(output if isinstance(output, dict) else {}),
-        "delta_force_analysis": delta_force_analysis,
-        "balance_analysis": build_balance_analysis_from_final(
-            final_block,
-            delta_force=delta_force_analysis if delta_force_analysis.get("status") == "available" else None,
-        ),
+        "icm_analysis": icm_analysis,
+        "balance_analysis": balance_analysis,
         "raw_betfair_markets_used": _extract_raw_markets_used(row.odds_snapshot_json),
         "warnings": warnings,
     }

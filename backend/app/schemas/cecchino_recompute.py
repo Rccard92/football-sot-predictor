@@ -14,7 +14,7 @@ class CecchinoRecomputeBody(BaseModel):
     recompute_kpi: bool = True
     recompute_debug: bool = True
     recompute_balance: bool = True
-    recompute_delta_force: bool = True
+    recompute_icm: bool = True
     recompute_signals: bool = True
     sync_signal_activations: bool = True
     evaluate_signals_after: bool = True

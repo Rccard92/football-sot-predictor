@@ -1,9 +1,4 @@
-import type {
-  CecchinoDeltaForceAnalysis,
-  CecchinoKpiV2Panel,
-  CecchinoKpiV2Row,
-} from '../../lib/cecchinoTodayApi'
-import { CecchinoDeltaForceMatchCard } from './CecchinoDeltaForceMatchCard'
+import type { CecchinoKpiV2Panel, CecchinoKpiV2Row } from '../../lib/cecchinoTodayApi'
 import {
   edgeClassName,
   fmtKpiCell,
@@ -32,10 +27,9 @@ function fmtOddsTimestamp(iso?: string | null): string {
 type Props = {
   panel: CecchinoKpiV2Panel
   bookmakerStatus?: string
-  deltaForceAnalysis?: CecchinoDeltaForceAnalysis
 }
 
-export function CecchinoTodayKpiPanel({ panel, bookmakerStatus, deltaForceAnalysis }: Props) {
+export function CecchinoTodayKpiPanel({ panel, bookmakerStatus }: Props) {
   const status = bookmakerStatus || panel.bookmaker_status || 'not_available'
   const oddsMeta = panel.odds_meta
 
@@ -77,8 +71,6 @@ export function CecchinoTodayKpiPanel({ panel, bookmakerStatus, deltaForceAnalys
           </div>
         )}
       </div>
-
-      <CecchinoDeltaForceMatchCard deltaForceAnalysis={deltaForceAnalysis} />
 
       <div className="hidden bg-[#163352] md:block">
         <table className="w-full table-fixed border-collapse text-center text-xs text-white sm:text-[13px]">

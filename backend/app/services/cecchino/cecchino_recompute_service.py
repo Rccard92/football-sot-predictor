@@ -246,6 +246,7 @@ def recompute_cecchino_range(
 
     db.commit()
 
+    # ICM è derivato a read-time da kpi_panel + final: il ricalcolo KPI lo aggiorna implicitamente.
     return {
         "status": "ok",
         "fixtures_found": len(rows),
@@ -255,4 +256,5 @@ def recompute_cecchino_range(
         "signals_deactivated": signals_deactivated,
         "signals_evaluated": signals_evaluated,
         "warnings": warnings[:100],
+        "icm_note": "ICM ricalcolato implicitamente al successivo GET quando recompute_kpi=true",
     }

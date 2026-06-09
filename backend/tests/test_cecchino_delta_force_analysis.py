@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.cecchino.cecchino_balance_analysis import build_cecchino_balance_analysis
 from app.services.cecchino.cecchino_delta_force_analysis import (
     VERSION,
     build_cecchino_delta_force_analysis,
@@ -121,68 +120,6 @@ def test_missing_quota_cecchino_insufficient_data():
     }
     out = build_cecchino_delta_force_analysis(panel)
     assert out["status"] == "insufficient_data"
-
-
-def test_balance_analysis_includes_delta_force_embed():
-    panel = _kpi_panel(2.40, 2.00, 3.00, 3.00, 4.00, 4.00)
-    delta = build_cecchino_delta_force_analysis(panel)
-    balance = build_cecchino_balance_analysis(
-        quota_cecchino_1=2.50,
-        quota_cecchino_x=3.20,
-        quota_cecchino_2=2.90,
-        prob_cecchino_1=39.0,
-        prob_cecchino_x=23.0,
-        prob_cecchino_2=38.0,
-        delta_force=delta,
-    )
-    assert balance["delta_force"]["match"]["delta_forza_abs"] == pytest.approx(20.0)
-    assert balance["summary"]["delta_force_label"] == "Partita non statistica"
-
-
-def test_balance_linear_match_flag():
-    panel = _kpi_panel(2.05, 2.00, 3.05, 3.00, 4.05, 4.00)
-    delta = build_cecchino_delta_force_analysis(panel)
-    balance = build_cecchino_balance_analysis(
-        quota_cecchino_1=2.50,
-        quota_cecchino_x=3.20,
-        quota_cecchino_2=2.90,
-        prob_cecchino_1=31.0,
-        prob_cecchino_x=42.0,
-        prob_cecchino_2=27.0,
-        delta_force=delta,
-    )
-    assert balance["summary"]["is_linear_match"] is True
-    assert balance["summary"]["is_non_linear_match"] is False
-
-
-def test_balance_non_linear_match_flag():
-    panel = _kpi_panel(2.40, 2.00, 3.00, 3.00, 4.00, 4.00)
-    delta = build_cecchino_delta_force_analysis(panel)
-    balance = build_cecchino_balance_analysis(
-        quota_cecchino_1=2.50,
-        quota_cecchino_x=3.20,
-        quota_cecchino_2=2.90,
-        prob_cecchino_1=39.0,
-        prob_cecchino_x=23.0,
-        prob_cecchino_2=38.0,
-        delta_force=delta,
-    )
-    assert balance["summary"]["is_non_linear_match"] is True
-
-
-def test_balance_strong_distortion_flag():
-    panel = _kpi_panel(2.10, 2.80, 3.00, 3.00, 4.20, 3.00)
-    delta = build_cecchino_delta_force_analysis(panel)
-    balance = build_cecchino_balance_analysis(
-        quota_cecchino_1=2.50,
-        quota_cecchino_x=3.20,
-        quota_cecchino_2=2.90,
-        prob_cecchino_1=39.0,
-        prob_cecchino_x=23.0,
-        prob_cecchino_2=38.0,
-        delta_force=delta,
-    )
-    assert balance["summary"]["has_strong_delta_distortion"] is True
 
 
 def test_version_constant():

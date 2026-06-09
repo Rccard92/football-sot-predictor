@@ -63,21 +63,26 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
-## Fase 36 — Delta Forza e Linearità Match
+## Fase 41 — Indice di Convergenza Match (ICM)
 
 ```mermaid
 flowchart TD
-  kpiRows[KPI rows 1/X/2] --> edge[edge_pct book vs Cecchino]
-  edge --> delta[delta_forza_abs = abs edge]
-  delta --> matchMax[max match delta]
-  matchMax --> classify[linear / non_linear / strong_distortion]
-  classify --> balance[balance_analysis v3 enrichment]
-  classify --> ui[KPI mini-card + Equilibrio card]
+  final[cecchino_output.final] --> balance[balance_analysis v4]
+  kpi[kpi_panel_v2_betfair] --> icm[build_cecchino_icm_analysis]
+  balance --> icm
+  icm --> detail[GET today detail icm_analysis]
+  icm --> ui[CecchinoIcmAnalysisPanel]
 ```
 
-- **Formula:** `edge_pct = (quota_book / quota_cecchino - 1) * 100`; Delta = valore assoluto.
-- **Soglie:** 17% e 31% configurabili (`CECCHINO_DELTA_LINEAR_THRESHOLD`, `CECCHINO_DELTA_STRONG_THRESHOLD`).
-- **API:** `delta_force_analysis` + `balance_analysis.delta_force` in GET `/api/cecchino/today/{id}`.
+- **Formula:** narrative scoring su 5 pilastri (F36 20%, Dominanza 20%, Quota X 20%, Rating 25%, Vantaggio Prob. 15%).
+- **Classificazione:** 0–100 con penalità ambiguità (gap tra narrativa 1ª e 2ª).
+- **API:** `icm_analysis` in GET `/api/cecchino/today/{id}` e `kpi-debug-json`.
+- **Ricalcolo:** derivato a read-time; `recompute_kpi=true` aggiorna ICM implicitamente.
+- **Deprecato:** Delta Forza Match (Fase 36) rimosso da Today UI/API.
+
+## Fase 36 — Delta Forza e Linearità Match (deprecata)
+
+Sostituita da ICM (Fase 41). Modulo `cecchino_delta_force_analysis.py` mantenuto per legacy.
 
 ## Fase 35 — Sidebar Cecchino e metriche Monitoraggio Segnali
 

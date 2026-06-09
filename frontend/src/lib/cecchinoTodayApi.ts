@@ -628,50 +628,59 @@ export type CecchinoBalanceAnalysisOperational = {
   severity?: 'positive' | 'warning' | 'negative' | 'neutral' | string
 }
 
-export type CecchinoDeltaForceRow = {
-  market_key?: string
-  segno?: string
-  quota_book?: number
-  quota_cecchino?: number
-  edge_pct?: number
-  delta_forza_abs?: number
-  class_key?: string
-  label?: string
-  direction?: string
-  direction_label?: string
+export type CecchinoIcmDriver = {
+  key?: string
+  symbol?: string
+  status?: 'support' | 'partial' | 'conflict' | string
+  plain_text?: string
 }
 
-export type CecchinoDeltaForceMatch = {
-  delta_forza_abs?: number
+export type CecchinoIcmNarrative = {
+  key?: string
   label?: string
-  subtitle?: string
-  class_key?: string
-  severity?: 'positive' | 'warning' | 'negative' | string
-  responsible_side?: string
-  responsible_side_label?: string
-  responsible_edge_pct?: number
-  responsible_direction?: string
-  responsible_direction_label?: string
-  meaning?: string
   description?: string
 }
 
-export type CecchinoDeltaForceAnalysis = {
-  version?: string
-  status?: string
-  thresholds?: {
-    linear_max_pct?: number
-    strong_distortion_min_pct?: number
-  }
-  match?: CecchinoDeltaForceMatch
-  rows?: CecchinoDeltaForceRow[]
-  warnings?: string[]
+export type CecchinoIcmComposition = {
+  key?: string
+  label?: string
+  source?: string
+  plain_text?: string
 }
 
-export type CecchinoBalanceDeltaForceEmbed = {
-  match?: CecchinoDeltaForceMatch
-  rows?: CecchinoDeltaForceRow[]
-  thresholds?: CecchinoDeltaForceAnalysis['thresholds']
+export type CecchinoIcmCandidateNarrative = {
+  key?: string
+  label?: string
+  score?: number
+}
+
+export type CecchinoIcmTechnical = {
+  best_narrative?: string
+  best_score?: number
+  second_score?: number
+  gap?: number
+  ambiguity_penalty?: number
+  final_score?: number
+  driver_weights?: Record<string, number>
+  forced_contradictory?: boolean
+  driver_statuses_by_narrative?: Record<string, Record<string, string>>
+}
+
+export type CecchinoIcmAnalysis = {
+  version?: string
+  status?: string
+  score?: number | null
+  score_pct?: number | null
+  class_key?: string | null
+  label?: string
+  short_label?: string | null
+  severity?: 'positive' | 'warning' | 'negative' | 'neutral' | string | null
+  dominant_narrative?: CecchinoIcmNarrative | null
+  drivers?: CecchinoIcmDriver[]
+  composition?: CecchinoIcmComposition[]
+  candidate_narratives?: CecchinoIcmCandidateNarrative[]
+  technical?: CecchinoIcmTechnical | null
+  warnings?: string[]
 }
 
 export type CecchinoBalanceAnalysisSummary = {
@@ -682,10 +691,6 @@ export type CecchinoBalanceAnalysisSummary = {
   is_false_balance?: boolean
   is_confirmed_imbalance?: boolean
   is_x_dominance?: boolean
-  is_linear_match?: boolean
-  is_non_linear_match?: boolean
-  has_strong_delta_distortion?: boolean
-  delta_force_label?: string
 }
 
 export type CecchinoBalanceAnalysisTechnical = {
@@ -721,7 +726,6 @@ export type CecchinoBalanceAnalysis = {
   operational?: CecchinoBalanceAnalysisOperational
   summary?: CecchinoBalanceAnalysisSummary
   technical?: CecchinoBalanceAnalysisTechnical
-  delta_force?: CecchinoBalanceDeltaForceEmbed
   warnings?: string[]
 }
 
@@ -755,7 +759,7 @@ export type CecchinoTodayDetailResponse = {
   kpi_panel?: CecchinoKpiV2Panel
   kpi_panel_v2?: CecchinoKpiV2Panel
   picchetti_debug_summary?: CecchinoPicchettiDebugSummary
-  delta_force_analysis?: CecchinoDeltaForceAnalysis
+  icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
@@ -935,7 +939,7 @@ export type CecchinoKpiDebugJsonResponse = {
     name: string
   }
   kpi_panel?: CecchinoKpiV2Panel
-  delta_force_analysis?: CecchinoDeltaForceAnalysis
+  icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
   betfair_odds_used?: Record<string, unknown>
   cecchino_odds_used?: Record<string, unknown>
@@ -1059,7 +1063,7 @@ export type CecchinoRecomputeParams = {
   recompute_kpi?: boolean
   recompute_debug?: boolean
   recompute_balance?: boolean
-  recompute_delta_force?: boolean
+  recompute_icm?: boolean
   recompute_signals?: boolean
   sync_signal_activations?: boolean
   evaluate_signals_after?: boolean
@@ -1074,7 +1078,7 @@ export async function recomputeCecchino(params: CecchinoRecomputeParams): Promis
     recompute_kpi: true,
     recompute_debug: true,
     recompute_balance: true,
-    recompute_delta_force: true,
+    recompute_icm: true,
     recompute_signals: true,
     sync_signal_activations: true,
     evaluate_signals_after: true,

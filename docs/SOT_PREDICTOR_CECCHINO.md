@@ -353,7 +353,28 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
-## Cecchino Today — Fase 36 — Delta Forza e Linearità Match (v0.30)
+## Cecchino Today — Fase 41 — Indice di Convergenza Match (ICM)
+
+Versione builder `cecchino_icm_v1` — sostituisce Delta Forza Match (Fase 36, deprecata in Today).
+
+| Componente | Comportamento |
+|------------|---------------|
+| ICM | Score 0–100 da narrative scoring su 5 pilastri (F36, Dominanza, Quota X, Rating, Vantaggio Prob.) |
+| Narrative | `balance_under`, `balance_draw`, `imbalance_home/away`, `imbalance_over`, `contradictory_markets` |
+| Classificazione | ≤20 contraddittoria, ≤40 debole, ≤60 moderata, ≤80 forte, >80 totale |
+| Penalità ambiguità | Gap tra 1ª e 2ª narrativa: 0/5/10/20 punti |
+| API | `icm_analysis` in GET `/api/cecchino/today/{id}` e `kpi-debug-json` |
+| UI | Sezione dedicata tra Equilibrio vs Squilibrio e Segnali (`CecchinoIcmAnalysisPanel`) |
+| Balance v4 | `cecchino_balance_analysis_v4` senza embed `delta_force` |
+| Ricalcolo | ICM derivato a read-time; `recompute_kpi=true` aggiorna gli input implicitamente |
+
+**Rimosso da Today:** mini-card Delta Forza KPI, quinta card Equilibrio, legenda Delta Forza, `delta_force_analysis` nel payload.
+
+**Invariato:** pesi Cecchino Fase 40, Betfair-only, colonne KPI, formule Segnali, SOT v2.0/v2.1.
+
+## Cecchino Today — Fase 36 — Delta Forza e Linearità Match (v0.30) — deprecata
+
+> Sostituita da ICM (Fase 41). Il modulo `cecchino_delta_force_analysis.py` resta nel repo per compatibilità legacy.
 
 Versione UI `cecchino_today_v0_30_delta_force` — linearità match vs book Betfair.
 
@@ -466,7 +487,7 @@ Versione pesi `1x2_weights_30_30_20_20` / `goal_weights_20_30_20_30`.
 | Pesi 1X2 | totals 30%, home_away 30%, last6_totals 20%, last5_home_away 20% |
 | Pesi goal OU | totals 20%, home_away 30%, last6_totals 20%, last5_home_away 30% |
 | Costanti | `CECCHINO_1X2_WEIGHTS` e `CECCHINO_GOAL_MARKET_WEIGHTS` separate con validazione somma = 1 |
-| KPI / Equilibrio / Delta Forza / Segnali | Ricalcolati automaticamente dalle nuove quote Cecchino |
+| KPI / Equilibrio / ICM / Segnali | Ricalcolati automaticamente dalle nuove quote Cecchino |
 | Debug Picchetti | Formula parlante dinamica; JSON `weights.1x2` e `weights.goal_markets` con version |
 | Ricalcolo storico | `POST /api/admin/cecchino/recompute` — offline, usa dati DB; pulsante UI su Today e Monitoraggio |
 

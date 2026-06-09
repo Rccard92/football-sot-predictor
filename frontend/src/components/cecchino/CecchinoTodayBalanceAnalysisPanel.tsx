@@ -37,19 +37,6 @@ function severityIcon(severity?: string): string {
   }
 }
 
-function deltaForceCardStyles(severity?: string): string {
-  switch (severity) {
-    case 'positive':
-      return 'border-emerald-200 bg-emerald-50/70'
-    case 'warning':
-      return 'border-amber-200 bg-amber-50/70'
-    case 'negative':
-      return 'border-violet-300 bg-violet-50/70'
-    default:
-      return 'border-slate-200 bg-slate-50/70'
-  }
-}
-
 function dominanceCardStyles(effect?: string): string {
   switch (effect) {
     case 'reinforces_balance':
@@ -98,9 +85,7 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
     cross_reading,
     inputs,
     technical,
-    delta_force: deltaForce,
   } = balanceAnalysis
-  const deltaMatch = deltaForce?.match
   const ruleId = technical?.rule_id
   const effect = domCtx?.effect_on_balance
 
@@ -114,7 +99,7 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
         <article className="rounded-lg border border-sky-200 bg-sky-50/60 p-3 text-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">F36</p>
           <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
@@ -177,24 +162,6 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
             {side_probability_gap?.label ?? '—'}
           </p>
         </article>
-
-        <article className={`rounded-lg border p-3 text-sm ${deltaForceCardStyles(deltaMatch?.severity)}`}>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-            Delta Forza
-          </p>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-            {deltaMatch?.delta_forza_abs != null ? `${fmtNum(deltaMatch.delta_forza_abs, 1)}%` : '—'}
-          </p>
-          <p className="mt-1 font-medium text-slate-800">{deltaMatch?.label ?? '—'}</p>
-          {deltaMatch?.responsible_side_label && (
-            <p className="mt-2 text-xs text-slate-700">
-              Segno responsabile: {deltaMatch.responsible_side_label}
-            </p>
-          )}
-          {deltaMatch?.responsible_direction_label && (
-            <p className="mt-1 text-xs text-slate-600">{deltaMatch.responsible_direction_label}</p>
-          )}
-        </article>
       </div>
 
       <div className={`rounded-lg border px-4 py-3 ${severityStyles(operational?.severity)}`}>
@@ -248,22 +215,6 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
             <dt className="text-xs text-slate-500">Squilibrio confermato</dt>
             <dd>{summary?.is_confirmed_imbalance ? 'Sì' : 'No'}</dd>
           </div>
-          <div>
-            <dt className="text-xs text-slate-500">Partita lineare</dt>
-            <dd>{summary?.is_linear_match ? 'Sì' : 'No'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Partita non lineare</dt>
-            <dd>{summary?.is_non_linear_match ? 'Sì' : 'No'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Forte distorsione</dt>
-            <dd>{summary?.has_strong_delta_distortion ? 'Sì' : 'No'}</dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-xs text-slate-500">Delta Forza</dt>
-            <dd className="text-slate-800">{summary?.delta_force_label ?? '—'}</dd>
-          </div>
         </dl>
       </div>
 
@@ -305,47 +256,6 @@ export function CecchinoTodayBalanceAnalysisPanel({ balanceAnalysis }: Props) {
               <p>Legenda: {technical.legend_version}</p>
             )}
           </div>
-          {deltaForce?.rows && deltaForce.rows.length > 0 && (
-            <div className="mt-4 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Delta Forza 1X2
-              </p>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                  <thead className="bg-slate-100 text-slate-600">
-                    <tr>
-                      <th className="px-2 py-2 text-left">Segno</th>
-                      <th className="px-2 py-2 text-left">Quota Betfair</th>
-                      <th className="px-2 py-2 text-left">Quota Cecchino</th>
-                      <th className="px-2 py-2 text-left">Edge %</th>
-                      <th className="px-2 py-2 text-left">Delta Forza</th>
-                      <th className="px-2 py-2 text-left">Lettura</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {deltaForce.rows.map((row) => (
-                      <tr key={row.segno ?? row.market_key}>
-                        <td className="px-2 py-2 font-medium text-slate-800">{row.segno}</td>
-                        <td className="px-2 py-2 tabular-nums">{fmtNum(row.quota_book)}</td>
-                        <td className="px-2 py-2 tabular-nums">{fmtNum(row.quota_cecchino)}</td>
-                        <td className="px-2 py-2 tabular-nums">
-                          {row.edge_pct != null ? `${fmtNum(row.edge_pct, 1)}%` : '—'}
-                        </td>
-                        <td className="px-2 py-2 tabular-nums">
-                          {row.delta_forza_abs != null ? `${fmtNum(row.delta_forza_abs, 1)}%` : '—'}
-                        </td>
-                        <td className="px-2 py-2 text-slate-800">{row.label ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-xs text-slate-600">
-                Il Delta Forza è il valore assoluto dell&apos;Edge %. L&apos;Edge indica la direzione
-                del valore; il Delta indica la distanza tra quota matematica e quota Betfair.
-              </p>
-            </div>
-          )}
         </div>
       </details>
 
