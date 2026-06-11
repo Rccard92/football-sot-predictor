@@ -1,4 +1,4 @@
-"""Intensità Goal — Cecchino Today Fase 46/47 (motore interno OVER/UNDER Q44 + v2 calibrata)."""
+"""Intensità Goal — Cecchino Today Fase 48 (v3 OVER-only, percentile storico)."""
 
 from __future__ import annotations
 
@@ -14,17 +14,20 @@ from app.services.cecchino.cecchino_goal_formulas import (
     calculate_under_fulltime_excel_parity,
 )
 from app.services.cecchino.cecchino_goal_intensity_baselines import (
-    get_goal_intensity_baselines,
+    get_goal_intensity_over_baseline,
+    percentile_rank_percent,
 )
 
-VERSION = "cecchino_goal_intensity_v2"
+VERSION = "cecchino_goal_intensity_v3_over_only"
+METHOD = "over_percentile"
 STATUS_INSUFFICIENT_BASELINE = "insufficient_baseline"
 STATUS_AVAILABLE = "available"
 
 _OVER_FORMULA = "(Q39+R39)/2+(Q42+R42)/2"
-_UNDER_FORMULA = "(Q39+R39)/2+(Q42+R42)/2"
-_NORMALIZATION_FORMULA = "(OVER_Q44 / baseline_OVER_Q44) / (UNDER_Q44 / baseline_UNDER_Q44)"
-_DELTA_FORMULA = "(OVER_Q44 / baseline_OVER_Q44) - (UNDER_Q44 / baseline_UNDER_Q44)"
+_CLASSIFICATION_METHOD = "OVER Q44 percentile rank"
+_UNDER_DEPRECATED_NOTE = (
+    "UNDER Q44 non determina più la classificazione finale nella versione v3."
+)
 
 
 def _q44_from_blocks(blocks: dict[str, Any] | None) -> tuple[float | None, dict[str, float] | None]:
@@ -62,119 +65,81 @@ def _q44_from_ft_parity(
     return q44, sources, warnings
 
 
-def _classify_ratio(ratio: float) -> tuple[str, str]:
-    if ratio < 0.70:
+def _classify_over_percentile(percentile: float) -> tuple[str, str]:
+    if percentile < 20:
         return "very_defensive", "Molto Difensiva"
-    if ratio < 0.90:
+    if percentile < 40:
         return "defensive", "Difensiva"
-    if ratio <= 1.05:
+    if percentile <= 60:
         return "balanced", "Equilibrata"
-    if ratio <= 1.20:
+    if percentile <= 80:
         return "offensive", "Offensiva"
     return "very_offensive", "Molto Offensiva"
 
 
-def _classify_delta(delta: float) -> tuple[str, str]:
-    if delta > 0.50:
-        return "strong_offensive_push", "Forte Spinta Offensiva"
-    if delta >= 0.20:
-        return "moderate_offensive_push", "Moderata Spinta Offensiva"
-    if delta > -0.20:
-        return "neutral_zone", "Zona Neutra"
-    if delta >= -0.50:
-        return "moderate_defensive_push", "Moderata Spinta Difensiva"
-    return "strong_defensive_push", "Forte Spinta Difensiva"
-
-
-def _delta_confirms_ratio(ratio_class_key: str, delta_class_key: str) -> bool | None:
-    offensive_ratio = ratio_class_key in ("offensive", "very_offensive")
-    defensive_ratio = ratio_class_key in ("defensive", "very_defensive")
-    offensive_delta = delta_class_key in ("strong_offensive_push", "moderate_offensive_push")
-    defensive_delta = delta_class_key in ("strong_defensive_push", "moderate_defensive_push")
-    if delta_class_key == "neutral_zone":
-        return None
-    if offensive_ratio and offensive_delta:
-        return True
-    if defensive_ratio and defensive_delta:
-        return True
-    if offensive_ratio and defensive_delta:
-        return False
-    if defensive_ratio and offensive_delta:
-        return False
-    return None
-
-
-def _build_plain_summary_v2(
-    ratio_label: str,
-    delta_label: str,
-    *,
-    delta_confirms: bool | None,
-) -> str:
-    if ratio_label == "Equilibrata":
-        base = (
-            "Pressione offensiva e resistenza difensiva risultano vicine alle rispettive baseline: "
+def _build_plain_summary_v3(final_label: str) -> str:
+    if final_label == "Molto Difensiva":
+        return (
+            "La pressione goal della partita è molto bassa rispetto allo storico Cecchino: "
+            "il modello legge una gara a tendenza difensiva."
+        )
+    if final_label == "Difensiva":
+        return (
+            "La pressione goal della partita è sotto la media storica Cecchino: "
+            "il modello legge una gara con intensità goal contenuta."
+        )
+    if final_label == "Equilibrata":
+        return (
+            "La pressione goal della partita è nella media dello storico Cecchino: "
             "il modello legge una gara equilibrata sul piano dell'intensità goal."
         )
-    elif ratio_label == "Molto Offensiva":
-        base = (
-            "La pressione offensiva è nettamente sopra la sua baseline storica rispetto alla "
-            "resistenza difensiva: il modello legge una gara ad alta intensità goal."
-        )
-    elif ratio_label == "Offensiva":
-        base = (
-            "La pressione offensiva risulta superiore alla propria baseline rispetto alla "
-            "resistenza difensiva: la gara tende verso una lettura offensiva."
-        )
-    elif ratio_label == "Difensiva":
-        base = (
-            "La resistenza difensiva pesa più della pressione offensiva rispetto alle rispettive "
-            "baseline: il modello legge una gara a tendenza difensiva."
-        )
-    elif ratio_label == "Molto Difensiva":
-        base = (
-            "La resistenza difensiva domina nettamente la pressione offensiva normalizzata: "
-            "il modello legge una gara molto difensiva."
-        )
-    else:
-        base = f"Il rapporto di intensità calibrato indica una lettura {ratio_label.lower()}."
-
-    if delta_confirms is True:
-        return f"{base} Il Delta Intensità conferma la direzione della lettura."
-    if delta_confirms is False:
+    if final_label == "Offensiva":
         return (
-            f"{base} Il Delta Intensità non conferma pienamente la lettura principale, "
-            "quindi la classificazione va letta con cautela."
+            "La pressione goal della partita è superiore alla maggior parte dei valori storici "
+            "del Cecchino: il modello legge una gara a tendenza offensiva."
         )
-    return base
+    if final_label == "Molto Offensiva":
+        return (
+            "La pressione goal della partita è nettamente sopra lo storico Cecchino: "
+            "il modello legge una gara ad alta intensità goal."
+        )
+    return f"Il percentile OVER Q44 indica una lettura {final_label.lower()}."
+
+
+def _public_baseline(baseline: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": baseline.get("source"),
+        "sample_size": baseline.get("sample_size", 0),
+        "median_over_q44": baseline.get("median_over_q44"),
+        "p20_over_q44": baseline.get("p20_over_q44"),
+        "p40_over_q44": baseline.get("p40_over_q44"),
+        "p60_over_q44": baseline.get("p60_over_q44"),
+        "p80_over_q44": baseline.get("p80_over_q44"),
+        "method": baseline.get("method", "percentile_distribution"),
+    }
+
+
+def _debug_payload() -> dict[str, str]:
+    return {
+        "over_formula": _OVER_FORMULA,
+        "classification_method": _CLASSIFICATION_METHOD,
+        "note": _UNDER_DEPRECATED_NOTE,
+    }
 
 
 def _insufficient_data_payload(warnings: list[str]) -> dict[str, Any]:
     return {
         "version": VERSION,
         "status": STATUS_INSUFFICIENT_DATA,
+        "method": METHOD,
         "raw": None,
-        "baseline": {
-            "source": None,
-            "sample_size": 0,
-            "baseline_over_q44": None,
-            "baseline_under_q44": None,
-            "method": "median",
-        },
-        "normalized": None,
-        "ratio_class_key": None,
-        "ratio_label": None,
-        "delta_class_key": None,
-        "delta_label": None,
+        "baseline": None,
+        "over_analysis": None,
         "final_class_key": None,
         "final_label": "Dati insufficienti",
         "plain_summary": None,
         "sources": None,
-        "debug": {
-            "over_formula": _OVER_FORMULA,
-            "under_formula": _UNDER_FORMULA,
-            "normalization_formula": _NORMALIZATION_FORMULA,
-            "delta_formula": _DELTA_FORMULA,
-        },
+        "debug": _debug_payload(),
         "warnings": warnings,
     }
 
@@ -182,33 +147,24 @@ def _insufficient_data_payload(warnings: list[str]) -> dict[str, Any]:
 def _insufficient_baseline_payload(
     *,
     raw: dict[str, Any],
-    baseline: dict[str, Any],
     sources: dict[str, Any] | None,
     warnings: list[str],
 ) -> dict[str, Any]:
     warnings = list(warnings)
-    if "insufficient_goal_intensity_baseline" not in warnings:
-        warnings.append("insufficient_goal_intensity_baseline")
+    if "insufficient_goal_intensity_over_baseline" not in warnings:
+        warnings.append("insufficient_goal_intensity_over_baseline")
     return {
         "version": VERSION,
         "status": STATUS_INSUFFICIENT_BASELINE,
+        "method": METHOD,
         "raw": raw,
-        "baseline": baseline,
-        "normalized": None,
-        "ratio_class_key": None,
-        "ratio_label": None,
-        "delta_class_key": None,
-        "delta_label": None,
+        "baseline": None,
+        "over_analysis": None,
         "final_class_key": None,
         "final_label": "Baseline insufficiente",
         "plain_summary": None,
         "sources": sources,
-        "debug": {
-            "over_formula": _OVER_FORMULA,
-            "under_formula": _UNDER_FORMULA,
-            "normalization_formula": _NORMALIZATION_FORMULA,
-            "delta_formula": _DELTA_FORMULA,
-        },
+        "debug": _debug_payload(),
         "warnings": warnings,
     }
 
@@ -216,100 +172,77 @@ def _insufficient_baseline_payload(
 def build_cecchino_goal_intensity_analysis_from_parity(
     *,
     over_ft: dict[str, Any] | None,
-    under_ft: dict[str, Any] | None,
-    baseline: dict[str, Any] | None = None,
+    under_ft: dict[str, Any] | None = None,
+    over_baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Builder puro da risultati parità Excel OVER/UNDER FT + baseline opzionale."""
+    """Builder puro v3 — classificazione solo su percentile OVER Q44."""
     warnings: list[str] = []
-    raw_off, over_sources, over_warn = _q44_from_ft_parity(
+    raw_over, over_sources, over_warn = _q44_from_ft_parity(
         over_ft,
         missing_warning="missing_over_q44_sources",
     )
-    raw_def, under_sources, under_warn = _q44_from_ft_parity(
+    raw_under, _, under_warn = _q44_from_ft_parity(
         under_ft,
         missing_warning="missing_under_q44_sources",
     )
     warnings.extend(over_warn)
     warnings.extend(under_warn)
 
-    if raw_off is None or raw_def is None:
+    if raw_over is None:
         return _insufficient_data_payload(warnings)
 
-    raw_ratio = round(raw_off / raw_def, 2) if raw_def != 0 else 0.0
-    raw_delta = round(raw_off - raw_def, 2)
-    raw = {
-        "offensive_index": raw_off,
-        "defensive_index": raw_def,
-        "raw_ratio": raw_ratio,
-        "raw_delta": raw_delta,
-    }
+    raw: dict[str, Any] = {"over_q44": raw_over}
+    if raw_under is not None:
+        raw["under_q44_deprecated"] = raw_under
 
     sources: dict[str, Any] = {}
     if over_sources:
         sources["over"] = over_sources
-    if under_sources:
-        sources["under"] = under_sources
 
-    baseline_payload = baseline or {
+    baseline_payload = over_baseline or {
         "source": None,
         "sample_size": 0,
-        "baseline_over_q44": None,
-        "baseline_under_q44": None,
-        "method": "median",
+        "median_over_q44": None,
+        "over_values": [],
+        "method": "percentile_distribution",
     }
 
-    b_over = baseline_payload.get("baseline_over_q44")
-    b_under = baseline_payload.get("baseline_under_q44")
-    if b_over is None or b_under is None or b_over <= 0 or b_under <= 0:
+    over_values = list(baseline_payload.get("over_values") or [])
+    median = baseline_payload.get("median_over_q44")
+    if (
+        not over_values
+        or median is None
+        or float(median) <= 0
+        or baseline_payload.get("source") is None
+    ):
         return _insufficient_baseline_payload(
             raw=raw,
-            baseline=baseline_payload,
             sources=sources or None,
             warnings=warnings,
         )
 
-    over_norm = round(raw_off / float(b_over), 2)
-    under_norm = round(raw_def / float(b_under), 2)
-    if under_norm <= 0:
-        intensity_ratio = 0.0
-    else:
-        intensity_ratio = round(over_norm / under_norm, 2)
-    intensity_delta = round(over_norm - under_norm, 2)
+    over_percentile = percentile_rank_percent(over_values, raw_over)
+    over_index_vs_median = round(raw_over / float(median), 2)
+    final_class_key, final_label = _classify_over_percentile(over_percentile)
+    plain_summary = _build_plain_summary_v3(final_label)
 
-    ratio_class_key, ratio_label = _classify_ratio(intensity_ratio)
-    delta_class_key, delta_label = _classify_delta(intensity_delta)
-    delta_confirms = _delta_confirms_ratio(ratio_class_key, delta_class_key)
-    plain_summary = _build_plain_summary_v2(
-        ratio_label,
-        delta_label,
-        delta_confirms=delta_confirms,
-    )
+    public_baseline = _public_baseline(baseline_payload)
 
     return {
         "version": VERSION,
         "status": STATUS_AVAILABLE,
+        "method": METHOD,
         "raw": raw,
-        "baseline": baseline_payload,
-        "normalized": {
-            "offensive_index": over_norm,
-            "defensive_index": under_norm,
-            "intensity_ratio": intensity_ratio,
-            "intensity_delta": intensity_delta,
+        "baseline": public_baseline,
+        "over_analysis": {
+            "over_percentile": over_percentile,
+            "over_index_vs_median": over_index_vs_median,
         },
-        "ratio_class_key": ratio_class_key,
-        "ratio_label": ratio_label,
-        "delta_class_key": delta_class_key,
-        "delta_label": delta_label,
-        "final_class_key": ratio_class_key,
-        "final_label": ratio_label,
+        "final_class_key": final_class_key,
+        "final_label": final_label,
         "plain_summary": plain_summary,
         "sources": sources or None,
-        "debug": {
-            "over_formula": _OVER_FORMULA,
-            "under_formula": _UNDER_FORMULA,
-            "normalization_formula": _NORMALIZATION_FORMULA,
-            "delta_formula": _DELTA_FORMULA,
-        },
+        "debug": _debug_payload(),
         "warnings": warnings,
     }
 
@@ -321,11 +254,11 @@ def build_cecchino_goal_intensity_analysis(
     competition_id: int | None = None,
     country_name: str | None = None,
 ) -> dict[str, Any]:
-    """Calcola Intensità Goal v2 da storico goal fixture + baseline mediana."""
+    """Calcola Intensità Goal v3 da OVER Q44 e distribuzione storica."""
     slices = build_goal_fixture_slices(db, target_fixture)
     over_ft = calculate_over_fulltime_excel_parity(slices)
     under_ft = calculate_under_fulltime_excel_parity(slices)
-    baseline = get_goal_intensity_baselines(
+    over_baseline = get_goal_intensity_over_baseline(
         db,
         target_fixture,
         competition_id=competition_id,
@@ -334,7 +267,7 @@ def build_cecchino_goal_intensity_analysis(
     return build_cecchino_goal_intensity_analysis_from_parity(
         over_ft=over_ft,
         under_ft=under_ft,
-        baseline=baseline,
+        over_baseline=over_baseline,
     )
 
 

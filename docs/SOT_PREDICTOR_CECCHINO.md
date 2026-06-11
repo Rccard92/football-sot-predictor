@@ -353,7 +353,25 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
-## Cecchino — Fase 47 — Intensità Goal v2 calibrata
+## Cecchino — Fase 48 — Intensità Goal v3 OVER-only
+
+Evoluzione Fase 47: classificazione **solo** su percentile storico di OVER Q44. UNDER Q44 deprecato nel modulo.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Versione | `cecchino_goal_intensity_v3_over_only` |
+| Metodo | `over_percentile` — percentile rank (`proportion_leq`) |
+| Grezzo | `raw.over_q44`; `raw.under_q44_deprecated` opzionale (debug) |
+| Baseline | `get_goal_intensity_over_baseline` — distribuzione OVER-only con mediana e P20/P40/P60/P80 |
+| Fallback | league (≥30) → country (≥40) → global (≥50) |
+| Analisi | `over_analysis.over_percentile`, `over_analysis.over_index_vs_median` |
+| Classificazione | &lt;20 Molto Difensiva, 20–&lt;40 Difensiva, 40–60 Equilibrata, &gt;60–80 Offensiva, &gt;80 Molto Offensiva |
+| Stati | `available`, `insufficient_data`, `insufficient_baseline` |
+| UI | Badge v3 OVER-only, scala percentile, box baseline P20–P80 |
+
+**Invariato:** Equilibrio vs Squilibrio (lettura equilibrio/squilibrio), ICM, KPI, Segnali, Betfair-only, SOT.
+
+## Cecchino — Fase 47 — Intensità Goal v2 calibrata (sostituita da Fase 48)
 
 Evoluzione Fase 46: normalizzazione su baseline mediana storica.
 
@@ -370,7 +388,7 @@ Evoluzione Fase 46: normalizzazione su baseline mediana storica.
 
 **Invariato:** Equilibrio, ICM, KPI, Segnali, Betfair-only, SOT.
 
-## Cecchino — Fase 46 — Intensità Goal (sostituita da Fase 47)
+## Cecchino — Fase 46 — Intensità Goal (sostituita da Fase 47/48)
 
 Nuova sezione nel dettaglio Cecchino Today (`GET /api/cecchino/today/{id}`).
 

@@ -5,16 +5,16 @@ type Props = {
   goalIntensityAnalysis?: CecchinoGoalIntensityAnalysis
 }
 
-const RATIO_SCALE: Array<{
+const PERCENTILE_SCALE: Array<{
   key: string
   range: string
   label: string
 }> = [
-  { key: 'very_defensive', range: '< 0.70', label: 'Molto Difensiva' },
-  { key: 'defensive', range: '0.70 – <0.90', label: 'Difensiva' },
-  { key: 'balanced', range: '0.90 – 1.05', label: 'Equilibrata' },
-  { key: 'offensive', range: '> 1.05 – 1.20', label: 'Offensiva' },
-  { key: 'very_offensive', range: '> 1.20', label: 'Molto Offensiva' },
+  { key: 'very_defensive', range: '< 20°', label: 'Molto Difensiva' },
+  { key: 'defensive', range: '20° – <40°', label: 'Difensiva' },
+  { key: 'balanced', range: '40° – 60°', label: 'Equilibrata' },
+  { key: 'offensive', range: '> 60° – 80°', label: 'Offensiva' },
+  { key: 'very_offensive', range: '> 80°', label: 'Molto Offensiva' },
 ]
 
 const BASELINE_SOURCE_LABELS: Record<string, string> = {
@@ -28,10 +28,9 @@ function fmtNum(v: number | null | undefined, digits = 2): string {
   return v.toFixed(digits)
 }
 
-function fmtDelta(v: number | null | undefined): string {
+function fmtPercentile(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v)) return '—'
-  const sign = v > 0 ? '+' : ''
-  return `${sign}${v.toFixed(2)}`
+  return `${v.toFixed(1)}°`
 }
 
 function finalClassStyles(classKey?: string | null): string {
@@ -93,39 +92,37 @@ function MetricCard({
 }
 
 function TechnicalAccordion({ analysis }: { analysis: CecchinoGoalIntensityAnalysis }) {
-  const { debug, sources, warnings } = analysis
+  const { debug, sources, warnings, raw } = analysis
   return (
     <details className="rounded-lg border border-slate-200 bg-white text-sm">
       <summary className="cursor-pointer px-4 py-3 font-medium text-slate-700 hover:bg-slate-50">
-        Dettaglio tecnico Intensità Goal v2
+        Dettaglio tecnico Intensità Goal v3
       </summary>
       <div className="space-y-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600">
         <div className="space-y-1">
-          <p className="font-medium text-slate-700">Formula valori grezzi</p>
-          <p>OVER Q44 = (Q39+R39)/2 + (Q42+R42)/2</p>
-          <p>UNDER Q44 = (Q39+R39)/2 + (Q42+R42)/2</p>
+          <p className="font-medium text-slate-700">Formula OVER Q44</p>
+          <p>{debug?.over_formula ?? 'OVER Q44 = (Q39+R39)/2 + (Q42+R42)/2'}</p>
         </div>
         <div className="space-y-1">
-          <p className="font-medium text-slate-700">Formula normalizzazione</p>
-          <p>OVER normalizzato = OVER Q44 / Baseline OVER Q44</p>
-          <p>UNDER normalizzato = UNDER Q44 / Baseline UNDER Q44</p>
+          <p className="font-medium text-slate-700">Metodo classificazione</p>
+          <p>{debug?.classification_method ?? 'OVER Q44 percentile rank'}</p>
+          <p>Soglie percentile: 20 / 40 / 60 / 80</p>
         </div>
-        <div className="space-y-1">
-          <p className="font-medium text-slate-700">Formula rapporto calibrato</p>
-          <p>
-            Rapporto Intensità v2 ={' '}
-            {debug?.normalization_formula ??
-              'OVER normalizzato / UNDER normalizzato'}
+        {debug?.note && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+            {debug.note}
           </p>
-          <p>
-            Delta Intensità v2 ={' '}
-            {debug?.delta_formula ?? 'OVER normalizzato - UNDER normalizzato'}
-          </p>
-        </div>
+        )}
+        {raw?.under_q44_deprecated != null && (
+          <div>
+            <p className="font-medium text-slate-700">UNDER Q44 (deprecato, solo debug)</p>
+            <p className="tabular-nums">{fmtNum(raw.under_q44_deprecated)}</p>
+          </div>
+        )}
 
         {sources?.over && (
           <div>
-            <p className="font-medium text-slate-700">OVER — sorgenti</p>
+            <p className="font-medium text-slate-700">OVER — sorgenti Q39/R39/Q42/R42</p>
             <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 tabular-nums sm:grid-cols-4">
               <dt>Q39</dt>
               <dd>{fmtNum(sources.over.q39, 4)}</dd>
@@ -135,22 +132,6 @@ function TechnicalAccordion({ analysis }: { analysis: CecchinoGoalIntensityAnaly
               <dd>{fmtNum(sources.over.q42, 4)}</dd>
               <dt>R42</dt>
               <dd>{fmtNum(sources.over.r42, 4)}</dd>
-            </dl>
-          </div>
-        )}
-
-        {sources?.under && (
-          <div>
-            <p className="font-medium text-slate-700">UNDER — sorgenti</p>
-            <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 tabular-nums sm:grid-cols-4">
-              <dt>Q39</dt>
-              <dd>{fmtNum(sources.under.q39, 4)}</dd>
-              <dt>R39</dt>
-              <dd>{fmtNum(sources.under.r39, 4)}</dd>
-              <dt>Q42</dt>
-              <dd>{fmtNum(sources.under.q42, 4)}</dd>
-              <dt>R42</dt>
-              <dd>{fmtNum(sources.under.r42, 4)}</dd>
             </dl>
           </div>
         )}
@@ -169,7 +150,8 @@ function TechnicalAccordion({ analysis }: { analysis: CecchinoGoalIntensityAnaly
 
 export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Props) {
   const subtitle =
-    'Confronta pressione offensiva e resistenza difensiva dopo averle normalizzate sulle rispettive baseline storiche.'
+    'Misura la pressione goal (OVER Q44) rispetto allo storico Cecchino. ' +
+    'La lettura equilibrio/squilibrio resta nella sezione precedente.'
 
   if (!goalIntensityAnalysis) {
     return (
@@ -177,7 +159,7 @@ export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Pr
         <div className="flex flex-wrap items-center gap-2">
           <h3 className={todaySectionTitle}>INTENSITÀ GOAL</h3>
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">
-            v2 calibrata
+            v3 OVER-only
           </span>
         </div>
         <p className={todaySectionSubtitle}>{subtitle}</p>
@@ -186,7 +168,7 @@ export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Pr
     )
   }
 
-  const { status, raw, baseline, normalized, final_label, final_class_key, plain_summary, delta_label } =
+  const { status, raw, baseline, over_analysis, final_label, final_class_key, plain_summary } =
     goalIntensityAnalysis
 
   if (status === 'insufficient_data') {
@@ -195,13 +177,13 @@ export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Pr
         <div className="flex flex-wrap items-center gap-2">
           <h3 className={todaySectionTitle}>INTENSITÀ GOAL</h3>
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">
-            v2 calibrata
+            v3 OVER-only
           </span>
         </div>
         <p className={todaySectionSubtitle}>{subtitle}</p>
         <p className="mt-3 text-sm font-medium text-slate-600">Dati insufficienti</p>
         <p className="mt-1 text-sm text-slate-500">
-          Non sono disponibili tutti i valori interni necessari per calcolare OVER Q44 e UNDER Q44.
+          Non sono disponibili tutti i valori interni necessari per calcolare OVER Q44.
         </p>
         <TechnicalAccordion analysis={goalIntensityAnalysis} />
       </section>
@@ -214,21 +196,17 @@ export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Pr
         <div className="flex flex-wrap items-center gap-2">
           <h3 className={todaySectionTitle}>INTENSITÀ GOAL</h3>
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">
-            v2 calibrata
+            v3 OVER-only
           </span>
         </div>
         <p className={todaySectionSubtitle}>{subtitle}</p>
         <p className="text-sm font-medium text-amber-800">Baseline insufficiente</p>
         <p className="text-sm text-slate-600">
-          Il modulo ha calcolato i valori grezzi, ma non ha abbastanza storico per calibrare pressione
-          offensiva e resistenza difensiva.
+          Il modulo ha calcolato OVER Q44, ma non ha abbastanza storico per il percentile.
         </p>
         {raw && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <MetricCard label="OVER Q44 grezzo" value={fmtNum(raw.offensive_index)} />
-            <MetricCard label="UNDER Q44 grezzo" value={fmtNum(raw.defensive_index)} />
-            <MetricCard label="Rapporto grezzo" value={fmtNum(raw.raw_ratio)} />
-            <MetricCard label="Delta grezzo" value={fmtDelta(raw.raw_delta)} />
+            <MetricCard label="Pressione Goal (OVER Q44)" value={fmtNum(raw.over_q44)} />
           </div>
         )}
         <TechnicalAccordion analysis={goalIntensityAnalysis} />
@@ -236,7 +214,7 @@ export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Pr
     )
   }
 
-  if (status !== 'available' || !normalized) {
+  if (status !== 'available' || !over_analysis) {
     return null
   }
 
@@ -249,86 +227,49 @@ export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Pr
         <div className="flex flex-wrap items-center gap-2">
           <h3 className={todaySectionTitle}>INTENSITÀ GOAL</h3>
           <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">
-            v2 calibrata
+            v3 OVER-only
           </span>
         </div>
         <p className={todaySectionSubtitle}>{subtitle}</p>
       </div>
 
       <div className={`rounded-lg border px-4 py-4 ${finalClassStyles(final_class_key)}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-current/20 bg-white/60 px-2 py-0.5 text-xs font-medium">
-            Rapporto Intensità calibrato
-          </span>
-          <span className="text-sm tabular-nums opacity-80">
-            {fmtNum(normalized.intensity_ratio)}
-          </span>
-        </div>
-        <p className="mt-2 text-2xl font-bold">{final_label ?? '—'}</p>
+        <p className="text-2xl font-bold">{final_label ?? '—'}</p>
+        <p className="mt-1 text-sm tabular-nums opacity-90">
+          Percentile OVER: {fmtPercentile(over_analysis.over_percentile)}
+        </p>
         {plain_summary && <p className="mt-2 text-sm opacity-90">{plain_summary}</p>}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard
-          label="Pressione Offensiva"
-          value={fmtNum(normalized.offensive_index)}
-          sub="OVER Q44 calibrato sulla baseline storica"
+          label="Pressione Goal"
+          value={fmtNum(raw?.over_q44)}
+          sub="OVER Q44 grezzo"
         />
         <MetricCard
-          label="Resistenza Difensiva"
-          value={fmtNum(normalized.defensive_index)}
-          sub="UNDER Q44 calibrato sulla baseline storica"
+          label="Percentile OVER"
+          value={fmtPercentile(over_analysis.over_percentile)}
+          sub="rispetto allo storico Cecchino"
         />
         <MetricCard
-          label="Rapporto Intensità"
-          value={fmtNum(normalized.intensity_ratio)}
-          sub="indicatore principale"
+          label="Indice vs Mediana"
+          value={fmtNum(over_analysis.over_index_vs_median)}
+          sub="OVER Q44 / mediana storica"
         />
         <MetricCard
-          label="Delta Intensità"
-          value={fmtDelta(normalized.intensity_delta)}
-          sub="indicatore di conferma"
+          label="Baseline Mediana"
+          value={fmtNum(baseline?.median_over_q44)}
+          sub={baselineSourceLabel}
         />
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-          Valori grezzi e baseline
-        </p>
-        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm tabular-nums sm:grid-cols-3">
-          <div>
-            <dt className="text-xs text-slate-500">OVER Q44 grezzo</dt>
-            <dd className="font-medium">{fmtNum(raw?.offensive_index)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">UNDER Q44 grezzo</dt>
-            <dd className="font-medium">{fmtNum(raw?.defensive_index)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Baseline OVER Q44</dt>
-            <dd className="font-medium">{fmtNum(baseline?.baseline_over_q44)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Baseline UNDER Q44</dt>
-            <dd className="font-medium">{fmtNum(baseline?.baseline_under_q44)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Fonte baseline</dt>
-            <dd className="font-medium">{baselineSourceLabel}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Campione baseline</dt>
-            <dd className="font-medium">{baseline?.sample_size ?? '—'} partite</dd>
-          </div>
-        </dl>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-          Scala Rapporto Intensità
+          Scala percentile OVER
         </p>
         <ul className="mt-2 space-y-1.5 text-sm">
-          {RATIO_SCALE.map((row) => (
+          {PERCENTILE_SCALE.map((row) => (
             <li
               key={row.key}
               className={`flex items-center justify-between rounded-md border px-3 py-1.5 ${scaleRowStyles(
@@ -344,13 +285,39 @@ export function CecchinoGoalIntensityAnalysisPanel({ goalIntensityAnalysis }: Pr
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Conferma Delta</p>
-        <p className="mt-1 font-medium text-slate-800">
-          {delta_label ?? '—'} ({fmtDelta(normalized.intensity_delta)})
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+          Baseline usata
         </p>
-        <p className="mt-2 text-xs text-slate-600">
-          Il delta non decide da solo la classificazione, ma conferma o indebolisce la lettura del rapporto.
-        </p>
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm tabular-nums sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-slate-500">Fonte</dt>
+            <dd className="font-medium">{baselineSourceLabel}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">Campione</dt>
+            <dd className="font-medium">{baseline?.sample_size ?? '—'} partite</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">Mediana</dt>
+            <dd className="font-medium">{fmtNum(baseline?.median_over_q44)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">P20</dt>
+            <dd className="font-medium">{fmtNum(baseline?.p20_over_q44)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">P40</dt>
+            <dd className="font-medium">{fmtNum(baseline?.p40_over_q44)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">P60</dt>
+            <dd className="font-medium">{fmtNum(baseline?.p60_over_q44)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">P80</dt>
+            <dd className="font-medium">{fmtNum(baseline?.p80_over_q44)}</dd>
+          </div>
+        </dl>
       </div>
 
       <TechnicalAccordion analysis={goalIntensityAnalysis} />

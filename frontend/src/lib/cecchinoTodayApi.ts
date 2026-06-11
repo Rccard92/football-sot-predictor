@@ -714,49 +714,43 @@ export type CecchinoGoalIntensitySources = {
 }
 
 export type CecchinoGoalIntensityRaw = {
-  offensive_index?: number | null
-  defensive_index?: number | null
-  raw_ratio?: number | null
-  raw_delta?: number | null
+  over_q44?: number | null
+  under_q44_deprecated?: number | null
 }
 
 export type CecchinoGoalIntensityBaseline = {
   source?: string | null
   sample_size?: number
-  baseline_over_q44?: number | null
-  baseline_under_q44?: number | null
+  median_over_q44?: number | null
+  p20_over_q44?: number | null
+  p40_over_q44?: number | null
+  p60_over_q44?: number | null
+  p80_over_q44?: number | null
   method?: string
 }
 
-export type CecchinoGoalIntensityNormalized = {
-  offensive_index?: number | null
-  defensive_index?: number | null
-  intensity_ratio?: number | null
-  intensity_delta?: number | null
+export type CecchinoGoalIntensityOverAnalysis = {
+  over_percentile?: number | null
+  over_index_vs_median?: number | null
 }
 
 export type CecchinoGoalIntensityAnalysis = {
   version?: string
   status?: string
+  method?: string
   raw?: CecchinoGoalIntensityRaw | null
-  baseline?: CecchinoGoalIntensityBaseline
-  normalized?: CecchinoGoalIntensityNormalized | null
-  ratio_class_key?: string | null
-  ratio_label?: string | null
-  delta_class_key?: string | null
-  delta_label?: string | null
+  baseline?: CecchinoGoalIntensityBaseline | null
+  over_analysis?: CecchinoGoalIntensityOverAnalysis | null
   final_class_key?: string | null
   final_label?: string | null
   plain_summary?: string | null
   debug?: {
     over_formula?: string
-    under_formula?: string
-    normalization_formula?: string
-    delta_formula?: string
+    classification_method?: string
+    note?: string
   }
   sources?: {
     over?: CecchinoGoalIntensitySources
-    under?: CecchinoGoalIntensitySources
   } | null
   warnings?: string[]
 }

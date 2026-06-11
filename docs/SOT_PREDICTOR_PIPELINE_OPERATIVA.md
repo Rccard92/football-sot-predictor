@@ -63,7 +63,25 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
-## Fase 47 — Intensità Goal v2 calibrata
+## Fase 48 — Intensità Goal v3 OVER-only
+
+```mermaid
+flowchart TD
+  slices[build_goal_fixture_slices] --> rawOver[raw_over_q44 OVER Q44]
+  hist[fixtures PIT] --> dist[get_goal_intensity_over_baseline]
+  dist --> pct[over_percentile rank]
+  rawOver --> pct
+  dist --> idx[over_index_vs_median]
+  rawOver --> idx
+  pct --> class[final_class_key / final_label]
+  class --> ui[CecchinoGoalIntensityAnalysisPanel v3]
+```
+
+- **v3:** classificazione solo su percentile storico OVER Q44; UNDER deprecato.
+- **Baseline:** distribuzione OVER-only (mediana + P20/P40/P60/P80); fallback league → country → global.
+- **UI:** badge v3 OVER-only, scala percentile 20/40/60/80.
+
+## Fase 47 — Intensità Goal v2 calibrata (sostituita da Fase 48)
 
 ```mermaid
 flowchart TD

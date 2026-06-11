@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 48 — Intensità Goal v3 OVER-only (2026-06-09)
+
+- Aggiornata la sezione Intensità Goal alla versione **v3 OVER-only** (`cecchino_goal_intensity_v3_over_only`).
+- Classificazione basata sul **percentile rank** di OVER Q44 rispetto allo storico Cecchino (metodo `proportion_leq`).
+- Baseline OVER-only con mediana e percentili P20/P40/P60/P80; fallback league → country → global invariato.
+- UNDER Q44 non influenza più `final_label`, `plain_summary` né classificazione (deprecato nel payload).
+- Indice vs mediana: `over_index_vs_median = OVER Q44 / median_over_q44`.
+- UI: badge v3 OVER-only, metriche Pressione Goal / Percentile / Indice vs Mediana / Baseline Mediana, scala percentile, box baseline.
+- **Invariato:** Equilibrio vs Squilibrio, ICM, KPI, Segnali, Monitoraggio stabile/Lab, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 47 — Intensità Goal v2 calibrata (2026-06-09)
 
 - Aggiornata la sezione Intensità Goal alla versione **v2 calibrata** (`cecchino_goal_intensity_v2`).
