@@ -1,5 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 51 — API Raw Inspector per Expected Goal Engine (2026-06-09)
+
+- Aggiunto strumento **API Raw Inspector** per ispezionare dati raw/cache/API di una singola fixture.
+- Endpoint admin `GET /api/admin/cecchino/fixtures/{today_fixture_id}/api-raw-inspector` — solo invocazione manuale dalla UI.
+- Ricerca ricorsiva per keyword xG, expected, expected goals, xGA, npxg e simili.
+- Distinzione esplicita tra `today_fixture_id` interno e `provider_fixture_id` provider.
+- Sezione `suggested_xg_mapping` non invasiva (solo suggerimento, non modifica il diagnostics builder).
+- UI tecnica dentro **Expected Goal Engine — Diagnostica Variabili** con pulsanti Ispeziona cache / API live / JSON completo.
+- Warning consumo chiamate provider sull’ispezione API live.
+- Nessuna modifica al diagnostics builder ufficiale in questa fase.
+- **Invariato:** Equilibrio vs Squilibrio, Intensità Goal, ICM, Monitoraggio Segnali, Monitoraggio Segnali Lab, Betfair-only, modelli SOT v2.0/v2.1.
+
 ## Cecchino — Fase 50 — Expected Goal Engine Diagnostica Variabili (2026-06-09)
 
 - Introdotto payload `expected_goal_engine_diagnostics` nel dettaglio Cecchino Today.

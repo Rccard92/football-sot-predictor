@@ -81,6 +81,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
 
       <CecchinoExpectedGoalEngineDiagnosticsPanel
         diagnostics={detail.expected_goal_engine_diagnostics}
+        todayFixtureId={detail.today_fixture_id ?? detail.id}
       />
 
       <CecchinoIcmAnalysisPanel icmAnalysis={detail.icm_analysis} />

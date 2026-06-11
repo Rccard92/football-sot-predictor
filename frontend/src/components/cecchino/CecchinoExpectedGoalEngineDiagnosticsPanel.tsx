@@ -2,10 +2,12 @@ import type {
   CecchinoExpectedGoalEngineDiagnostics,
   CecchinoExpectedGoalEngineVariable,
 } from '../../lib/cecchinoTodayApi'
+import { CecchinoApiRawInspectorPanel } from './CecchinoApiRawInspectorPanel'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type Props = {
   diagnostics?: CecchinoExpectedGoalEngineDiagnostics
+  todayFixtureId?: number
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -120,13 +122,14 @@ function BlockAccordion({
   )
 }
 
-export function CecchinoExpectedGoalEngineDiagnosticsPanel({ diagnostics }: Props) {
+export function CecchinoExpectedGoalEngineDiagnosticsPanel({ diagnostics, todayFixtureId }: Props) {
   if (!diagnostics || diagnostics.status !== 'available' || !diagnostics.blocks) {
     return (
-      <section className={`${todayCard} ${todayCardPadding}`}>
+      <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
         <h3 className={todaySectionTitle}>Expected Goal Engine — Diagnostica Variabili</h3>
         <p className={todaySectionSubtitle}>Audit variabili per il futuro motore Expected Goal.</p>
         <p className="mt-3 text-sm text-slate-500">Dati diagnostici non disponibili.</p>
+        <CecchinoApiRawInspectorPanel todayFixtureId={todayFixtureId} />
       </section>
     )
   }
@@ -229,6 +232,8 @@ export function CecchinoExpectedGoalEngineDiagnosticsPanel({ diagnostics }: Prop
           {JSON.stringify(diagnostics, null, 2)}
         </pre>
       </details>
+
+      <CecchinoApiRawInspectorPanel todayFixtureId={todayFixtureId} />
     </section>
   )
 }

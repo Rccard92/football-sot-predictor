@@ -353,6 +353,23 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino — Fase 51 — API Raw Inspector per Expected Goal Engine
+
+Strumento tecnico/manuale per ispezionare dati raw/cache/API di una singola fixture e scoprire dove vivono i campi xG/expected.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Endpoint | `GET /api/admin/cecchino/fixtures/{today_fixture_id}/api-raw-inspector` |
+| Versione | `cecchino_api_raw_inspector_v1` |
+| Query | `force_refresh`, `include_raw`, `endpoints` |
+| Cache | `force_refresh=false` — solo DB/cache, zero chiamate provider |
+| Live | `force_refresh=true` — chiamate manuali ApiFootballClient (no odds/Betfair) |
+| Ricerca | `find_fields_by_keywords` — xG, expected, expected_goals, xGA, npxg, … |
+| Mapping | `suggested_xg_mapping` — solo suggerimento, non applicato al diagnostics builder |
+| UI | Blocco **API Raw Inspector** dentro Expected Goal Engine Diagnostica |
+
+**Invariato:** diagnostics builder ufficiale, Equilibrio, Intensità Goal v4, ICM, KPI, Segnali, Betfair-only, SOT.
+
 ## Cecchino — Fase 50 — Expected Goal Engine Diagnostica Variabili
 
 Step 1 audit-only: payload `expected_goal_engine_diagnostics` nel dettaglio Cecchino Today. **Nessun calcolo** di goal attesi, Over prob, GG/NG o scorelines.

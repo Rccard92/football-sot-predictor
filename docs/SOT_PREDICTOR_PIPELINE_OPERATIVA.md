@@ -63,6 +63,23 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 51 — API Raw Inspector per Expected Goal Engine
+
+```mermaid
+flowchart TD
+  ui[CecchinoApiRawInspectorPanel] -->|GET admin| route["/admin/cecchino/fixtures/id/api-raw-inspector"]
+  route --> svc[build_api_raw_inspector]
+  svc --> db[(CecchinoTodayFixture + FixtureTeamStat)]
+  svc -->|force_refresh| api[ApiFootballClient]
+  svc --> search[find_fields_by_keywords]
+  search --> map[suggested_xg_mapping]
+```
+
+- **Manuale only:** non collegato a scan-day, recompute, revaluate, backtest.
+- **Cache mode:** `force_refresh=false` legge solo DB/cache salvati.
+- **Live mode:** `force_refresh=true` chiama endpoint provider selezionati (statistics, events, lineups, players, fixture details).
+- **Output:** fonti controllate, match keyword, suggested xG mapping, JSON raw opzionale.
+
 ## Fase 50 — Expected Goal Engine Diagnostica Variabili
 
 ```mermaid

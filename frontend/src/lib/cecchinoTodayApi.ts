@@ -788,6 +788,88 @@ export type CecchinoExpectedGoalEngineDiagnostics = {
   warnings?: string[]
 }
 
+export type CecchinoApiRawInspectorTeam = {
+  id?: number | string | null
+  name?: string | null
+  side?: string | null
+}
+
+export type CecchinoApiRawInspectorMatch = {
+  endpoint?: string
+  source?: string
+  path?: string
+  key?: string
+  matched_keyword?: string
+  type?: string | number | null
+  value?: string | number | null
+  team?: CecchinoApiRawInspectorTeam | null
+  raw_item?: unknown
+}
+
+export type CecchinoApiRawInspectorSource = {
+  key?: string
+  label?: string
+  available?: boolean
+  origin?: string
+  records_count?: number
+  called?: boolean
+}
+
+export type CecchinoApiRawInspectorXgField = {
+  value?: number | null
+  source?: string | null
+  source_field?: string | null
+  confidence?: string
+  note?: string
+}
+
+export type CecchinoApiRawInspectorSuggestedMapping = {
+  status?: string
+  warnings?: string[]
+  home_xg_for?: CecchinoApiRawInspectorXgField
+  away_xg_for?: CecchinoApiRawInspectorXgField
+  home_xg_against?: CecchinoApiRawInspectorXgField
+  away_xg_against?: CecchinoApiRawInspectorXgField
+}
+
+export type CecchinoApiRawInspectorResponse = {
+  version?: string
+  status?: string
+  fixture?: {
+    today_fixture_id?: number
+    provider_fixture_id?: number | null
+    match?: string
+    league?: string | null
+    season?: number | null
+    home_team?: string | null
+    away_team?: string | null
+  }
+  ids?: {
+    today_fixture_id?: number
+    fixture_id?: number | null
+    provider_fixture_id?: number | null
+    league_id?: number | null
+    provider_league_id?: number | null
+    season?: number | null
+    home_team_id?: number | null
+    provider_home_team_id?: number | null
+    away_team_id?: number | null
+    provider_away_team_id?: number | null
+  }
+  api_usage?: {
+    force_refresh?: boolean
+    external_calls_made?: number
+    endpoints_called?: string[]
+    note?: string
+  }
+  searched_keywords?: string[]
+  sources_checked?: CecchinoApiRawInspectorSource[]
+  matches_found?: CecchinoApiRawInspectorMatch[]
+  suggested_xg_mapping?: CecchinoApiRawInspectorSuggestedMapping
+  raw_payloads?: Record<string, unknown>
+  warnings?: string[]
+}
+
 export type CecchinoBalanceAnalysis = {
   version?: string
   status?: string
@@ -1045,6 +1127,24 @@ export async function getPicchettiDebugJson(
 ): Promise<CecchinoPicchettiDebugResponse> {
   return requestJson<CecchinoPicchettiDebugResponse>(
     `/api/cecchino/today/${todayFixtureId}/picchetti-debug`,
+  )
+}
+
+export async function getApiRawInspector(
+  todayFixtureId: number,
+  params: {
+    forceRefresh?: boolean
+    includeRaw?: boolean
+    endpoints?: string
+  } = {},
+): Promise<CecchinoApiRawInspectorResponse> {
+  const qs = new URLSearchParams()
+  if (params.forceRefresh) qs.set('force_refresh', 'true')
+  if (params.includeRaw) qs.set('include_raw', 'true')
+  if (params.endpoints) qs.set('endpoints', params.endpoints)
+  const q = qs.toString()
+  return adminGetJson<CecchinoApiRawInspectorResponse>(
+    `/api/admin/cecchino/fixtures/${todayFixtureId}/api-raw-inspector${q ? `?${q}` : ''}`,
   )
 }
 
