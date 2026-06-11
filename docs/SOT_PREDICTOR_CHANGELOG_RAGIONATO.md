@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 50 — Expected Goal Engine Diagnostica Variabili (2026-06-09)
+
+- Introdotto payload `expected_goal_engine_diagnostics` nel dettaglio Cecchino Today.
+- Diagnostica variabili per il futuro Expected Goal Engine (audit only, nessun calcolo finale).
+- Mappati Blocco A Produzione Goal (8), Blocco B Distribuzione Temporale (7), Correttori Avanzati (5).
+- Aggiunto coverage variabili disponibili e readiness del motore (`can_compute_*` diagnostico).
+- UI: sezione **Expected Goal Engine — Diagnostica Variabili** tra Intensità Goal e ICM.
+- Tabella variabili con stato, valore, fonte, campo sorgente, campione; JSON raw/debug.
+- Nessun pronostico secco; nessun goal atteso calcolato in questa fase.
+- **Invariato:** Equilibrio vs Squilibrio, Intensità Goal, ICM, Segnali, Monitoraggio, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 49 — Intensità Goal v4 Goal Attesi (2026-06-09)
 
 - Aggiornata la sezione Intensità Goal alla versione **v4 Goal Attesi** (`cecchino_goal_intensity_v4_expected_goals`).

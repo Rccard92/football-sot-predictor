@@ -353,6 +353,22 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino — Fase 50 — Expected Goal Engine Diagnostica Variabili
+
+Step 1 audit-only: payload `expected_goal_engine_diagnostics` nel dettaglio Cecchino Today. **Nessun calcolo** di goal attesi, Over prob, GG/NG o scorelines.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Versione | `expected_goal_engine_diagnostics_v1` |
+| Blocco A | 8 variabili Produzione Goal (pesi = 1.00) |
+| Blocco B | 7 variabili Distribuzione Temporale (pesi = 1.00) |
+| Blocco C | 5 Correttori Avanzati (opzionali) |
+| Coverage | required 15, advanced 5, confidence high/medium/partial/insufficient |
+| Readiness | production_goal_ready, temporal_distribution_ready, can_compute_* (diagnostica) |
+| UI | Sezione tra Intensità Goal e ICM, accordion blocchi, readiness panel, JSON raw |
+
+**Invariato:** Equilibrio, Intensità Goal v4, ICM, KPI, Segnali, SOT, Betfair-only.
+
 ## Cecchino — Fase 49 — Intensità Goal v4 Goal Attesi
 
 Evoluzione Fase 48: classificazione su **Goal Attesi Cecchino interni** (`lambda_total` del motore Poisson goal) e soglie Over progressive.

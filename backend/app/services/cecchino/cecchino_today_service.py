@@ -66,6 +66,9 @@ from app.services.cecchino.cecchino_balance_analysis import build_balance_analys
 from app.services.cecchino.cecchino_goal_intensity_analysis import (
     build_goal_intensity_for_today_row,
 )
+from app.services.cecchino.cecchino_expected_goal_engine_diagnostics import (
+    build_expected_goal_engine_diagnostics_for_today_row,
+)
 from app.services.cecchino.cecchino_icm_analysis import build_cecchino_icm_analysis
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_backfill import sync_signals_for_scan_date
@@ -1497,6 +1500,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         output.get("final") if isinstance(output, dict) else {},
     )
     goal_intensity_analysis = build_goal_intensity_for_today_row(db, row)
+    expected_goal_engine_diagnostics = build_expected_goal_engine_diagnostics_for_today_row(db, row)
     icm_analysis = build_cecchino_icm_analysis(
         balance_analysis=balance_analysis,
         kpi_panel=kpi_panel,
@@ -1536,6 +1540,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "icm_analysis": icm_analysis,
         "balance_analysis": balance_analysis,
         "goal_intensity_analysis": goal_intensity_analysis,
+        "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (
             f"/cecchino?competition_id={row.competition_id}&fixture_id={row.local_fixture_id}"

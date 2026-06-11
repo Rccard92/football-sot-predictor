@@ -731,6 +731,63 @@ export type CecchinoGoalIntensityAnalysis = {
   warnings?: string[]
 }
 
+export type CecchinoExpectedGoalEngineVariable = {
+  key?: string
+  label?: string
+  block?: string
+  weight?: number | null
+  required?: boolean
+  role?: string
+  available?: boolean
+  availability_status?: string
+  value?: number | null
+  normalized_value?: number | null
+  source?: string | null
+  source_field?: string | null
+  sample_size?: number | null
+  scope?: string
+  period?: string
+  description?: string
+  warnings?: string[]
+}
+
+export type CecchinoExpectedGoalEngineCoverage = {
+  required_available?: number
+  required_total?: number
+  advanced_available?: number
+  advanced_total?: number
+  coverage_pct?: number
+  engine_ready?: boolean
+  confidence?: string
+}
+
+export type CecchinoExpectedGoalEngineReadiness = {
+  production_goal_ready?: boolean
+  temporal_distribution_ready?: boolean
+  advanced_correctors_ready?: string
+  can_compute_expected_goals_ft?: boolean
+  can_compute_expected_goals_ht?: boolean
+  can_compute_home_away_expected_goals?: boolean
+  can_compute_over_probabilities?: boolean
+  can_compute_gg_ng?: boolean
+  can_compute_scorelines?: boolean
+  missing_critical_fields?: string[]
+}
+
+export type CecchinoExpectedGoalEngineDiagnostics = {
+  version?: string
+  status?: string
+  fixture_id?: number | null
+  coverage?: CecchinoExpectedGoalEngineCoverage | null
+  engine_readiness?: CecchinoExpectedGoalEngineReadiness | null
+  blocks?: {
+    production_goal?: CecchinoExpectedGoalEngineVariable[]
+    temporal_distribution?: CecchinoExpectedGoalEngineVariable[]
+    advanced_correctors?: CecchinoExpectedGoalEngineVariable[]
+  } | null
+  warnings?: string[]
+}
+
 export type CecchinoBalanceAnalysis = {
   version?: string
   status?: string
@@ -787,6 +844,7 @@ export type CecchinoTodayDetailResponse = {
   icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
   goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
+  expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]

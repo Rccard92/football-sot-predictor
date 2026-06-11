@@ -63,6 +63,21 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 50 — Expected Goal Engine Diagnostica Variabili
+
+```mermaid
+flowchart TD
+  fixture[Fixture Cecchino Today] --> builder[build_expected_goal_engine_diagnostics]
+  slices[build_goal_fixture_slices] --> builder
+  teamStats[fixture_team_stats PIT] --> builder
+  builder --> payload[expected_goal_engine_diagnostics]
+  payload --> detail[GET /api/cecchino/today/id]
+  detail --> ui[CecchinoExpectedGoalEngineDiagnosticsPanel]
+```
+
+- **Audit only:** mappa 20 variabili, coverage e readiness; nessun output goal attesi.
+- **Posizione UI:** dopo Intensità Goal, prima di ICM.
+
 ## Fase 49 — Intensità Goal v4 Goal Attesi
 
 ```mermaid
