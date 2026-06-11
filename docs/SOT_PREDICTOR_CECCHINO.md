@@ -353,6 +353,25 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino — Fase 46 — Intensità Goal
+
+Nuova sezione nel dettaglio Cecchino Today (`GET /api/cecchino/today/{id}`).
+
+| Componente | Comportamento |
+|------------|---------------|
+| Posizione UI | Equilibrio vs Squilibrio → **Intensità Goal** → ICM |
+| Builder | `cecchino_goal_intensity_analysis.py` — `build_cecchino_goal_intensity_analysis` |
+| Indice Offensivo | OVER Q44 = (Q39+R39)/2 + (Q42+R42)/2 da parità Excel `calculate_over_fulltime_excel_parity` |
+| Indice Difensivo | UNDER Q44 = stessa struttura con `calculate_under_fulltime_excel_parity` |
+| Rapporto | OVER Q44 / UNDER Q44 (principale) |
+| Delta | OVER Q44 − UNDER Q44 (conferma) |
+| Payload | `goal_intensity_analysis` nel detail response |
+| UI | `CecchinoGoalIntensityAnalysisPanel` — card, metriche, scala, conferma delta, accordion tecnico |
+
+**Indipendente** da Equilibrio vs Squilibrio (F36/Dominanza/Quota X). **Non implementati:** Goal Attesi Totali/Casa/Ospite, Dominanza Offensiva, Risultati Compatibili.
+
+**Invariato:** balance_analysis, icm_analysis, KPI, Segnali, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 45 — Aggiornamento formule segnali 1, 2, 1X, X2 e 12
 
 Motore unico `build_signals_matrix` — valido per Monitoraggio Segnali stabile e Lab.

@@ -63,6 +63,22 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 46 — Intensità Goal (Cecchino Today)
+
+```mermaid
+flowchart TD
+  slices[build_goal_fixture_slices] --> overFT[calculate_over_fulltime_excel_parity]
+  slices --> underFT[calculate_under_fulltime_excel_parity]
+  overFT --> gi[build_cecchino_goal_intensity_analysis]
+  underFT --> gi
+  gi --> detail["GET /api/cecchino/today/{id}"]
+  detail --> ui[Equilibrio → Intensità Goal → ICM]
+```
+
+- **Modulo:** `cecchino_goal_intensity_analysis.py` — indipendente da Equilibrio e ICM.
+- **Q44:** somma blocchi `home_away` + `totals` (non `final_odd` KPI Poisson v2).
+- **Detail:** `goal_intensity_analysis` inserito tra `balance_analysis` e `icm_analysis`.
+
 ## Fase 45 — Aggiornamento formule segnali Cecchino
 
 ```mermaid

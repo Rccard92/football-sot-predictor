@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 46 — Intensità Goal (2026-06-09)
+
+- Aggiunta nuova sezione **Intensità Goal** nel dettaglio analisi Cecchino Today, tra Equilibrio vs Squilibrio e Indice di Convergenza Match.
+- Modulo indipendente `build_cecchino_goal_intensity_analysis`: Indice Offensivo da OVER Q44, Indice Difensivo da UNDER Q44 (parità Excel goal).
+- Rapporto Intensità = indicatore principale; Delta Intensità = conferma testuale.
+- Classificazione rapporto: &lt;0.70 Molto Difensiva, 0.70–&lt;0.90 Difensiva, 0.90–1.05 Equilibrata, &gt;1.05–1.20 Offensiva, &gt;1.20 Molto Offensiva.
+- Classificazione delta: Forte/Moderata Spinta Offensiva, Zona Neutra, Moderata/Forte Spinta Difensiva.
+- UI: card classificazione, 4 metriche, scala rapporto, conferma delta, accordion dettaglio tecnico.
+- **Non implementati:** Goal Attesi Totali, Goal Casa, Goal Ospite, Dominanza Offensiva, Risultati Compatibili.
+- **Invariato:** Equilibrio vs Squilibrio, ICM, KPI, Segnali, Monitoraggio stabile/Lab, Betfair-only, SOT v2.0/v2.1, `team_sot_predictions`.
+
 ## Cecchino — Fase 45 — Aggiornamento formule segnali 1, 2, 1X, X2 e 12 (2026-06-09)
 
 - Aggiornata formula D48 (segno 1): `G48=SI`, `F36>2`, `Dominanza>10`.

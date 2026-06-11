@@ -706,6 +706,46 @@ export type CecchinoBalanceAnalysisTechnical = {
   legend_version?: string
 }
 
+export type CecchinoGoalIntensitySources = {
+  q39?: number
+  r39?: number
+  q42?: number
+  r42?: number
+}
+
+export type CecchinoGoalIntensityAnalysis = {
+  version?: string
+  status?: string
+  offensive_index?: number | null
+  defensive_index?: number | null
+  intensity_ratio?: number | null
+  intensity_delta?: number | null
+  ratio_class_key?: string | null
+  ratio_label?: string | null
+  delta_class_key?: string | null
+  delta_label?: string | null
+  final_class_key?: string | null
+  final_label?: string | null
+  plain_summary?: string | null
+  components?: {
+    over_q44?: number | null
+    under_q44?: number | null
+    ratio?: number | null
+    delta?: number | null
+  }
+  debug?: {
+    over_formula?: string
+    under_formula?: string
+    ratio_formula?: string
+    delta_formula?: string
+  }
+  sources?: {
+    over?: CecchinoGoalIntensitySources
+    under?: CecchinoGoalIntensitySources
+  } | null
+  warnings?: string[]
+}
+
 export type CecchinoBalanceAnalysis = {
   version?: string
   status?: string
@@ -761,6 +801,7 @@ export type CecchinoTodayDetailResponse = {
   picchetti_debug_summary?: CecchinoPicchettiDebugSummary
   icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
+  goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]
