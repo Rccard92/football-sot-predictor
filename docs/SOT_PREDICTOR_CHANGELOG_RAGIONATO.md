@@ -1,9 +1,19 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 47 — Intensità Goal v2 calibrata (2026-06-09)
+
+- Aggiornata la sezione Intensità Goal alla versione **v2 calibrata** (`cecchino_goal_intensity_v2`).
+- Mantenuto il calcolo grezzo di OVER Q44 e UNDER Q44; introdotta normalizzazione su baseline storica mediana.
+- Il Rapporto Intensità usa ora OVER normalizzato / UNDER normalizzato; il Delta usa OVER norm − UNDER norm.
+- La classificazione finale usa il rapporto calibrato, non il rapporto grezzo.
+- Baseline con fallback: stesso campionato (≥30), stessa nazione (≥40), globale Cecchino (≥50).
+- UI: badge v2 calibrata, valori normalizzati, grezzi, baseline e fonte baseline; stato baseline insufficiente.
+- **Invariato:** Equilibrio vs Squilibrio, ICM, KPI, Segnali, Monitoraggio stabile/Lab, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 46 — Intensità Goal (2026-06-09)
 
 - Aggiunta nuova sezione **Intensità Goal** nel dettaglio analisi Cecchino Today, tra Equilibrio vs Squilibrio e Indice di Convergenza Match.
-- Modulo indipendente `build_cecchino_goal_intensity_analysis`: Indice Offensivo da OVER Q44, Indice Difensivo da UNDER Q44 (parità Excel goal).
+- Modulo indipendente `build_cecchino_goal_intensity_analysis` (v1, sostituita da Fase 47): Indice Offensivo da OVER Q44, Indice Difensivo da UNDER Q44 (parità Excel goal).
 - Rapporto Intensità = indicatore principale; Delta Intensità = conferma testuale.
 - Classificazione rapporto: &lt;0.70 Molto Difensiva, 0.70–&lt;0.90 Difensiva, 0.90–1.05 Equilibrata, &gt;1.05–1.20 Offensiva, &gt;1.20 Molto Offensiva.
 - Classificazione delta: Forte/Moderata Spinta Offensiva, Zona Neutra, Moderata/Forte Spinta Difensiva.

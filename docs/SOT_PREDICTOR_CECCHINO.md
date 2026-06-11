@@ -353,7 +353,24 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
-## Cecchino — Fase 46 — Intensità Goal
+## Cecchino — Fase 47 — Intensità Goal v2 calibrata
+
+Evoluzione Fase 46: normalizzazione su baseline mediana storica.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Versione | `cecchino_goal_intensity_v2` |
+| Grezzi | `raw.offensive_index` / `raw.defensive_index` (OVER/UNDER Q44) |
+| Baseline | `get_goal_intensity_baselines` — mediana, fallback league (≥30) → country (≥40) → global (≥50) |
+| Calibrato | `normalized.intensity_ratio` = (OVER/baseline_OVER) / (UNDER/baseline_UNDER) |
+| Delta | `normalized.intensity_delta` = OVER_norm − UNDER_norm (conferma) |
+| Classificazione | Solo su rapporto calibrato; soglie invariate v1 |
+| Stati | `available`, `insufficient_data`, `insufficient_baseline` |
+| Cache | In-process per scope/fixture |
+
+**Invariato:** Equilibrio, ICM, KPI, Segnali, Betfair-only, SOT.
+
+## Cecchino — Fase 46 — Intensità Goal (sostituita da Fase 47)
 
 Nuova sezione nel dettaglio Cecchino Today (`GET /api/cecchino/today/{id}`).
 
