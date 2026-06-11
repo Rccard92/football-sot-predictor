@@ -85,6 +85,9 @@ def build_signals_matrix_for_model(row: CecchinoTodayFixture, model_key: str) ->
         qx=final.quota_x,
         q2=final.quota_2,
         sample_home_away_split=_sample_from_stats(row.stats_snapshot_json),
+        prob_1=final.prob_1,
+        prob_x=final.prob_x,
+        prob_2=final.prob_2,
     )
 
 

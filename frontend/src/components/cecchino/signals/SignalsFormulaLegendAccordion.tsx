@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  CECCHINO_DOMINANCE_NOTE,
   CECCHINO_HEATMAP_FORMULA_INTRO,
   CECCHINO_SCALA_MAPPING_NOTE,
   COLUMN_DISPLAY_LABELS,
@@ -128,6 +129,10 @@ export function SignalsFormulaLegendAccordion() {
 
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
             {CECCHINO_SCALA_MAPPING_NOTE}
+          </div>
+
+          <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2.5 text-xs text-violet-900">
+            {CECCHINO_DOMINANCE_NOTE}
           </div>
 
           <div className="flex gap-1 overflow-x-auto pb-1">

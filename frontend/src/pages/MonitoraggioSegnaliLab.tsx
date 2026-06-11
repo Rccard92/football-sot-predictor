@@ -13,6 +13,7 @@ import {
 import { SignalsLabEmptyState } from '../components/cecchino-lab/SignalsLabEmptyState'
 import { SignalsLabFilters } from '../components/cecchino-lab/SignalsLabFilters'
 import { SignalsLabInfoPanel } from '../components/cecchino-lab/SignalsLabInfoPanel'
+import { SignalsFormulaLegendAccordion } from '../components/cecchino/signals/SignalsFormulaLegendAccordion'
 import { SignalsLabPageHeader } from '../components/cecchino-lab/SignalsLabPageHeader'
 import { SignalsLabSkeleton } from '../components/cecchino-lab/SignalsLabSkeleton'
 import { SignalsMetricRibbon } from '../components/cecchino-lab/SignalsMetricRibbon'
@@ -180,6 +181,8 @@ export function MonitoraggioSegnaliLab() {
                     />
                   </div>
                 </section>
+
+                <SignalsFormulaLegendAccordion />
 
                 <SignalsLabInfoPanel />
               </>

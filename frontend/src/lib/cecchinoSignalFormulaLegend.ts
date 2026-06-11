@@ -28,6 +28,9 @@ export const CECCHINO_HEATMAP_FORMULA_INTRO = {
 export const CECCHINO_SCALA_MAPPING_NOTE =
   'Nota importante: la colonna SCALA è prevista solo per 1X e X2. La cella G48 appartiene a 1X/SCALA, mentre G54 appartiene a X2/SCALA. Le righe 1 e 2 non hanno segnali SCALA.'
 
+export const CECCHINO_DOMINANCE_NOTE =
+  'La Dominanza è recuperata dalla sezione Equilibrio vs Squilibrio e misura quanto il modello è convinto dello scenario principale.'
+
 const INACTIVE_READABLE = 'Colonna non prevista per questo segnale'
 
 function inactive(
@@ -233,8 +236,8 @@ export const CECCHINO_SIGNAL_FORMULA_LEGEND: CecchinoSignalFormulaEntry[] = [
     '1',
     'EXCEL_D',
     'D48',
-    '=IF(AND(G48="SI",F32<F34-4,F32<F33-2.5),"SI","NO")',
-    'Si accende quando la scala 1X è attiva e la quota 1 Cecchino è molto più bassa sia della quota 2 sia della quota X.\n\nCondizione: G48 = SI AND F32 < F34 - 4 AND F32 < F33 - 2.5\n\nNota: G48 non è un segnale SCALA della riga 1. G48 appartiene alla riga 1X, colonna SCALA.',
+    '=SE(E(G48="SI";F36>2;Dominanza>10);"SI";"NO")',
+    'Si accende quando la scala 1X è attiva, F36 spinge verso il 2 e la Dominanza supera 10 punti percentuali.\n\nCondizione: G48 = SI AND F36 > 2 AND Dominanza > 10\n\nLa Dominanza proviene da Equilibrio vs Squilibrio.',
     HOME_TARGET,
     HOME_EVAL,
   ),
@@ -259,8 +262,8 @@ export const CECCHINO_SIGNAL_FORMULA_LEGEND: CecchinoSignalFormulaEntry[] = [
     '1X',
     'EXCEL_E',
     'E51',
-    '=IF(AND(G48="SI"),"SI","NO")',
-    'Si accende quando la scala 1X è attiva.\n\nCondizione: G48 = SI',
+    '=SE.ERRORE(SE(E(F32+0,4<F33;F33+0,5<F34;F32+0,6<F34);"SI";"NO");"NO")',
+    'Si accende quando le quote 1-X-2 sono in scaletta con tolleranze su F32, F33 e F34.\n\nCondizione: F32 + 0.4 < F33 AND F33 + 0.5 < F34 AND F32 + 0.6 < F34',
     ONE_X_TARGET,
     ONE_X_EVAL,
   ),
@@ -301,8 +304,8 @@ export const CECCHINO_SIGNAL_FORMULA_LEGEND: CecchinoSignalFormulaEntry[] = [
     '2',
     'EXCEL_D',
     'D54',
-    '=IF(AND(G54="SI",F34<F32-4.5,F34<F33-3),"SI","NO")',
-    'Si accende quando la scala X2 è attiva e la quota 2 Cecchino è molto più bassa sia della quota 1 sia della quota X.\n\nCondizione: G54 = SI AND F34 < F32 - 4.5 AND F34 < F33 - 3\n\nNota: G54 non è un segnale SCALA della riga 2. G54 appartiene alla riga X2, colonna SCALA.',
+    '=SE(E(G54="SI";F36<-2,3;Dominanza>10);"SI";"NO")',
+    'Si accende quando la scala X2 è attiva, F36 spinge verso l\'1 e la Dominanza supera 10 punti percentuali.\n\nCondizione: G54 = SI AND F36 < -2.3 AND Dominanza > 10\n\nLa Dominanza proviene da Equilibrio vs Squilibrio.',
     AWAY_TARGET,
     AWAY_EVAL,
   ),
@@ -347,8 +350,8 @@ export const CECCHINO_SIGNAL_FORMULA_LEGEND: CecchinoSignalFormulaEntry[] = [
     'X2',
     'EXCEL_G',
     'G57',
-    '=IF(AND(G54="SI"),"SI","NO")',
-    'Si accende quando la scala X2 è attiva.\n\nCondizione: G54 = SI',
+    '=SE.ERRORE(SE(E(F32+0,5>F33;F33+0,6>F34;F32+0,7>F34);"SI";"NO");"NO")',
+    'Si accende quando le quote sono in scaletta decrescente 2-X-1 con tolleranze su F32, F33 e F34.\n\nCondizione: F32 + 0.5 > F33 AND F33 + 0.6 > F34 AND F32 + 0.7 > F34',
     X_TWO_TARGET,
     X_TWO_EVAL,
   ),
@@ -369,8 +372,8 @@ export const CECCHINO_SIGNAL_FORMULA_LEGEND: CecchinoSignalFormulaEntry[] = [
     '12',
     'EXCEL_D',
     'D60',
-    '=IF(AND(F32<=1.8,F33>3.5),"SI",IF(AND(F34<1.7,F33>3.5),"SI","NO"))',
-    'Si accende quando uno dei due lati 1 o 2 è molto basso e la quota X è alta, quindi il pareggio è meno probabile.\n\nCondizione: (F32 <= 1.80 AND F33 > 3.50) OR (F34 < 1.70 AND F33 > 3.50)',
+    '=SE(O(E(F33>=4,8;F32<2,40;F36<-1,5);E(F33>=4,8;F34<2,40;F36>1,5));"SI";"NO")',
+    'Si accende quando la quota X è alta (>= 4.8) e uno dei due lati è favorito con F36 oltre soglia.\n\nCondizione A: F33 >= 4.8 AND F32 < 2.40 AND F36 < -1.5\nCondizione B: F33 >= 4.8 AND F34 < 2.40 AND F36 > 1.5',
     ONE_TWO_TARGET,
     ONE_TWO_EVAL,
   ),
@@ -379,8 +382,8 @@ export const CECCHINO_SIGNAL_FORMULA_LEGEND: CecchinoSignalFormulaEntry[] = [
     '12',
     'EXCEL_E',
     'E60',
-    '=IF(AND(F33>=5.5,F32<2.5,F36<-1.5),"SI",IF(AND(F33>=5.5,F34<2.3,F36>1.5),"SI","NO"))',
-    'Si accende quando la quota X è molto alta e uno dei due lati è nettamente favorito.\n\nCondizione: (F33 >= 5.50 AND F32 < 2.50 AND F36 < -1.50) OR (F33 >= 5.50 AND F34 < 2.30 AND F36 > 1.50)',
+    '=SE(E(F33>=4,8;Dominanza>=10;ASS(F36)>=1,5);"SI";"NO")',
+    'Si accende quando la quota X è alta, la Dominanza è almeno 10 e F36 mostra squilibrio netto.\n\nCondizione: F33 >= 4.8 AND Dominanza >= 10 AND |F36| >= 1.5\n\nLa Dominanza proviene da Equilibrio vs Squilibrio.',
     ONE_TWO_TARGET,
     ONE_TWO_EVAL,
   ),

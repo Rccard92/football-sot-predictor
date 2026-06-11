@@ -659,14 +659,30 @@ def test_diagnostics_legacy_wrong_scala_mapping_count():
 
 
 def test_matrix_d48_formula_generates_home_excel_d():
-    matrix = build_signals_matrix(q1=1.20, qx=4.00, q2=8.00, sample_home_away_split=16)
+    matrix = build_signals_matrix(
+        q1=1.20,
+        qx=4.00,
+        q2=8.00,
+        sample_home_away_split=16,
+        prob_1=0.55,
+        prob_x=0.25,
+        prob_2=0.20,
+    )
     rows = {row["key"]: row["signals"] for row in matrix["rows"]}
     assert rows["one"]["excel_d"] == "SI"
     assert rows["one_x"]["scala_1x"] == "SI"
 
 
 def test_matrix_d54_formula_generates_away_excel_d():
-    matrix = build_signals_matrix(q1=10.00, qx=6.00, q2=2.00, sample_home_away_split=16)
+    matrix = build_signals_matrix(
+        q1=10.00,
+        qx=6.00,
+        q2=2.00,
+        sample_home_away_split=16,
+        prob_1=0.15,
+        prob_x=0.20,
+        prob_2=0.65,
+    )
     rows = {row["key"]: row["signals"] for row in matrix["rows"]}
     assert rows["two"]["excel_d"] == "SI"
     assert rows["x_two"]["scala_x2"] == "SI"

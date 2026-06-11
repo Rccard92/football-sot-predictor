@@ -86,6 +86,9 @@ def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
         qx=qx,
         q2=q2,
         sample_home_away_split=_sample_from_stats(row.stats_snapshot_json),
+        prob_1=_num(final.get("prob_1")),
+        prob_x=_num(final.get("prob_x")),
+        prob_2=_num(final.get("prob_2")),
     )
     if matrix.get("status") != STATUS_AVAILABLE:
         return False

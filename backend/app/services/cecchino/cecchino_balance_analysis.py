@@ -65,6 +65,21 @@ def _classify_f36(f36_abs: float, f36_signed: float) -> dict[str, Any]:
     }
 
 
+def compute_dominance_pp(
+    prob_1: float | None,
+    prob_x: float | None,
+    prob_2: float | None,
+) -> float | None:
+    """Dominanza = prob_max - prob_seconda (punti percentuali), stessa logica Equilibrio vs Squilibrio."""
+    p1 = _prob_to_percent(_num(prob_1))
+    px = _prob_to_percent(_num(prob_x))
+    p2 = _prob_to_percent(_num(prob_2))
+    if None in (p1, px, p2):
+        return None
+    ordered = sorted([p1, px, p2], reverse=True)
+    return round(ordered[0] - ordered[1], 2)
+
+
 def _dominance_sides(probs_pct: dict[str, float]) -> tuple[str, str, float, float]:
     ordered = sorted(probs_pct.items(), key=lambda x: x[1], reverse=True)
     best_side, best_prob = ordered[0]
@@ -603,8 +618,8 @@ def build_cecchino_balance_analysis(
     f36_abs = abs(f36_signed)
     probs_pct = {"1": p1, "X": px, "2": p2}
     best_label, second_label, best_prob, second_prob = _dominance_sides(probs_pct)
-    ordered = sorted(probs_pct.values(), reverse=True)
-    dominance_pp = ordered[0] - ordered[1]
+    dominance_pp = compute_dominance_pp(prob_cecchino_1, prob_cecchino_x, prob_cecchino_2)
+    assert dominance_pp is not None
     best_enum = _side_label_to_enum(best_label)
     second_enum = _side_label_to_enum(second_label)
 

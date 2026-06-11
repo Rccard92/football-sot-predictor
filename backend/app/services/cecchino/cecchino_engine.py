@@ -450,6 +450,9 @@ def build_full_cecchino_output(
         qx=final.quota_x,
         q2=final.quota_2,
         sample_home_away_split=sample_split,
+        prob_1=final.prob_1,
+        prob_x=final.prob_x,
+        prob_2=final.prob_2,
     )
     all_warnings.extend(signals_matrix.get("warnings") or [])
 

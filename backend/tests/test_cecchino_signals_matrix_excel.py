@@ -40,7 +40,7 @@ def test_excel_example_parity():
     one_x = _signals_by_key(result, "one_x")
     assert one_x == {
         "excel_d": "NO",
-        "excel_e": "SI",
+        "excel_e": "NO",
         "excel_f": "NO",
         "excel_g": "NO",
         "scala_1x": "SI",

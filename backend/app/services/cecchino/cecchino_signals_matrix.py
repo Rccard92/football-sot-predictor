@@ -1,6 +1,6 @@
 """
 Matrice segnali SI/NO — parità formule foglio Excel CECCHINO (F32–F60).
-Funzione pura: solo quote finali Cecchino e sample casa/trasferta.
+Funzione pura: quote finali Cecchino, probabilità 1X2 e sample casa/trasferta.
 """
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from app.services.cecchino.cecchino_balance_analysis import compute_dominance_pp
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE, STATUS_INSUFFICIENT_DATA
 
 EXCEL_SOURCE = "AutomazioneCecchino.xlsm"
@@ -48,6 +49,9 @@ def build_signals_matrix(
     qx: float | None,
     q2: float | None,
     sample_home_away_split: int,
+    prob_1: float | None = None,
+    prob_x: float | None = None,
+    prob_2: float | None = None,
 ) -> dict[str, Any]:
     """
     Calcola matrice segnali SI/NO e indice affidabilità.
@@ -73,6 +77,7 @@ def build_signals_matrix(
                 "q2": q2,
                 "avg_q": None,
                 "diff_1_2": None,
+                "dominance_pp": None,
             },
             "rows": [],
             "reliability": _compute_reliability(sample_home_away_split),
@@ -82,18 +87,22 @@ def build_signals_matrix(
     assert q1 is not None and qx is not None and q2 is not None
     avg_q = (q1 + qx + q2) / 3.0
     diff_1_2 = q2 - q1
+    dominance_pp = compute_dominance_pp(prob_1, prob_x, prob_2)
 
     # --- Scalari (dipendenze) ---
     scala_1x = _si_no(q1 < qx and qx < q2 and q1 < q2)
     scala_x2 = _si_no(q1 > qx and qx > q2 and q1 > q2)
 
-    # 12 (prima di over_e)
+    # 12 (prima di over_e) — Fase 45
     twelve_d = _si_no(
-        (q1 <= 1.8 and qx > 3.5) or (q2 < 1.7 and qx > 3.5),
+        (qx >= 4.8 and q1 < 2.40 and diff_1_2 < -1.5)
+        or (qx >= 4.8 and q2 < 2.40 and diff_1_2 > 1.5),
     )
     twelve_e = _si_no(
-        (qx >= 5.5 and q1 < 2.5 and diff_1_2 < -1.5)
-        or (qx >= 5.5 and q2 < 2.3 and diff_1_2 > 1.5),
+        qx >= 4.8
+        and dominance_pp is not None
+        and dominance_pp >= 10
+        and abs(diff_1_2) >= 1.5,
     )
 
     # UNDER / UNDER PT
@@ -124,23 +133,33 @@ def build_signals_matrix(
     over_f = _si_no((qx >= 5 and diff_1_2 > 2) or (qx >= 5 and diff_1_2 < -2.1))
     over_g = _si_no((qx >= 4 and diff_1_2 > 2.55) or (qx >= 4 and diff_1_2 < -2.4))
 
-    # 1
-    one_d = _si_no(scala_1x == "SI" and q1 < q2 - 4 and q1 < qx - 2.5)
+    # 1 — Fase 45 D48
+    one_d = _si_no(
+        scala_1x == "SI"
+        and diff_1_2 > 2
+        and dominance_pp is not None
+        and dominance_pp > 10,
+    )
 
-    # 1X
+    # 1X — Fase 45 E51
     one_x_d = _si_no(q1 < 2.8 and qx <= 4 and avg_q > 4)
-    one_x_e = _si_no(scala_1x == "SI")
+    one_x_e = _si_no(q1 + 0.4 < qx and qx + 0.5 < q2 and q1 + 0.6 < q2)
     one_x_f = _si_no(q1 <= 1.8 and diff_1_2 >= 2.5 and q2 > qx)
     one_x_g = _si_no(q1 <= 2 and q2 >= 4)
 
-    # 2
-    two_d = _si_no(scala_x2 == "SI" and q2 < q1 - 4.5 and q2 < qx - 3)
+    # 2 — Fase 45 D54
+    two_d = _si_no(
+        scala_x2 == "SI"
+        and diff_1_2 < -2.3
+        and dominance_pp is not None
+        and dominance_pp > 10,
+    )
 
-    # X2
+    # X2 — Fase 45 G57
     x_two_d = _si_no(q2 <= 1.8 and q1 >= 3.5 and q2 < qx)
     x_two_e = _si_no(q2 + 3 < q1 and q2 < qx and qx < q1 and qx < 4)
     x_two_f = _si_no(q2 <= 2 and q1 >= 4)
-    x_two_g = _si_no(scala_x2 == "SI")
+    x_two_g = _si_no(q1 + 0.5 > qx and qx + 0.6 > q2 and q1 + 0.7 > q2)
 
     rows: list[dict[str, Any]] = [
         {
@@ -225,6 +244,7 @@ def build_signals_matrix(
             "key": "twelve",
             "label": "12",
             "signals": {"excel_d": twelve_d, "excel_e": twelve_e},
+            "excel_cells": {"excel_d": "D60", "excel_e": "E60"},
         },
     ]
 
@@ -244,6 +264,10 @@ def build_signals_matrix(
             "q2": q2,
             "avg_q": avg_q,
             "diff_1_2": diff_1_2,
+            "dominance_pp": dominance_pp,
+            "prob_1": prob_1,
+            "prob_x": prob_x,
+            "prob_2": prob_2,
         },
         "rows": rows,
         "reliability": _compute_reliability(sample_home_away_split),

@@ -353,6 +353,29 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino — Fase 45 — Aggiornamento formule segnali 1, 2, 1X, X2 e 12
+
+Motore unico `build_signals_matrix` — valido per Monitoraggio Segnali stabile e Lab.
+
+| Cella | Segnale | Nuova logica |
+|-------|---------|--------------|
+| D48 | 1 / Excel D | `G48=SI` AND `F36>2` AND `Dominanza>10` |
+| D54 | 2 / Excel D | `G54=SI` AND `F36<-2.3` AND `Dominanza>10` |
+| E51 | 1X / Excel E | `F32+0.4<F33` AND `F33+0.5<F34` AND `F32+0.6<F34` |
+| G57 | X2 / Excel G | `F32+0.5>F33` AND `F33+0.6>F34` AND `F32+0.7>F34` |
+| D60 | 12 / Excel D | `(F33>=4.8 & F32<2.40 & F36<-1.5)` OR `(F33>=4.8 & F34<2.40 & F36>1.5)` |
+| E60 | 12 / Excel E | `F33>=4.8` AND `Dominanza>=10` AND `|F36|>=1.5` |
+
+| Componente | Comportamento |
+|------------|---------------|
+| Dominanza | `compute_dominance_pp` in `cecchino_balance_analysis.py` — stessa scala Equilibrio vs Squilibrio (punti percentuali); se prob mancanti → formule che la richiedono = NO |
+| Call site | `cecchino_engine`, `cecchino_signal_backfill`, `cecchino_signal_model_backtest` passano `prob_1/x/2` da quote finali |
+| Recompute | `sync_cecchino_signal_activations`, backfill (`force_rebuild`/`force_remap`), `POST .../signals/revaluate`, `POST .../signals/backtest-models` |
+| UI stabile | Legenda formule aggiornata + nota Dominanza in `SignalsFormulaLegendAccordion` |
+| UI Lab | Stesso accordion riusato in `MonitoraggioSegnaliLab` |
+
+**Invariato:** G48/G54 SCALA, UNDER/OVER/X, altre celle 1X/X2 non elencate, Betfair-only, SOT v2.0/v2.1, `team_sot_predictions`, KPI, ICM.
+
 ## Cecchino Today — Fase 44 — Monitoraggio Segnali Lab
 
 Pagina sperimentale frontend-only (`/monitoraggio-segnali-lab`).

@@ -1,5 +1,18 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 45 — Aggiornamento formule segnali 1, 2, 1X, X2 e 12 (2026-06-09)
+
+- Aggiornata formula D48 (segno 1): `G48=SI`, `F36>2`, `Dominanza>10`.
+- Aggiornata formula D54 (segno 2): `G54=SI`, `F36<-2.3`, `Dominanza>10`.
+- Aggiornata formula E51 (1X): tolleranze su F32/F33/F34 (+0.4 / +0.5 / +0.6).
+- Aggiornata formula G57 (X2): tolleranze inverse su F32/F33/F34 (+0.5 / +0.6 / +0.7).
+- Aggiornata formula D60 (12): quota X alta con favorito 1 o 2 (soglia 4.8).
+- Aggiornata formula E60 (12): `F33>=4.8`, `Dominanza>=10`, `|F36|>=1.5`.
+- Introdotta Dominanza condivisa (`compute_dominance_pp`) dalla logica Equilibrio vs Squilibrio; scala in punti percentuali.
+- Legenda formule aggiornata in Monitoraggio Segnali stabile e Lab (componente condiviso).
+- Backtest modelli A–F, revaluate e backfill usano le nuove formule via `build_signals_matrix`.
+- **Invariato:** Betfair-only, modelli SOT v2.0/v2.1, `team_sot_predictions`, KPI, ICM, G48/G54 e altre formule non elencate.
+
 ## Cecchino — Fase 44 — Monitoraggio Segnali Lab (2026-06-09)
 
 - Aggiunta pagina sperimentale **Segnali Lab** (`/monitoraggio-segnali-lab`) con UI premium isolata in `components/cecchino-lab/`.

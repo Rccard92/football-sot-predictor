@@ -63,6 +63,25 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 45 — Aggiornamento formule segnali Cecchino
+
+```mermaid
+flowchart TD
+  final[quote finali + prob Cecchino] --> dominance[compute_dominance_pp]
+  dominance --> matrix[build_signals_matrix]
+  matrix --> engine[cecchino_engine]
+  matrix --> backfill[signal_backfill]
+  matrix --> backtest[signal_model_backtest A-F]
+  backfill --> sync[sync_cecchino_signal_activations]
+  sync --> stable[/monitoraggio-segnali]
+  sync --> lab[/monitoraggio-segnali-lab]
+```
+
+- **Formule aggiornate:** D48, D54, E51, G57, D60, E60 in `cecchino_signals_matrix.py`.
+- **Dominanza:** da `cecchino_balance_analysis.compute_dominance_pp` (stessa scala Equilibrio); prob mancanti → NO sulle formule che la richiedono.
+- **Rigenerazione storico:** «Rivaluta segnali», backfill `force_rebuild`/`force_remap`, «Ricalcola modelli A–F» — offline, zero API esterne.
+- **UI:** legenda formule condivisa stabile + Lab (`cecchinoSignalFormulaLegend.ts`, `SignalsFormulaLegendAccordion`).
+
 ## Fase 44 — Monitoraggio Segnali Lab
 
 ```mermaid
