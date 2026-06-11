@@ -15,6 +15,7 @@ from app.services.cecchino.cecchino_betfair_odds_payload import (
     build_betfair_payload_from_snapshot,
 )
 from app.services.cecchino.cecchino_bookmaker_odds_service import load_betfair_odds_payload
+from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
 from app.services.cecchino.cecchino_fixture_history import build_goal_market_contexts
 from app.services.cecchino.cecchino_goal_formulas import build_goal_market_cecchino_odds
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import build_cecchino_kpi_panel_v2_betfair
@@ -170,6 +171,9 @@ def recompute_today_fixture_offline(
     row.blocking_reasons_json = eligibility.blocking_reasons
     row.warnings_json = eligibility.warnings
     row.stats_status = "ok" if eligibility.is_eligible else row.stats_status
+
+    if eligibility.is_eligible:
+        maybe_ensure_xg_for_eligible_row(db, row)
 
     result["recomputed"] = True
     result["kpi_recomputed"] = True

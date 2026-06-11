@@ -63,6 +63,26 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 53 — xG storico automatico per fixture eleggibili
+
+```mermaid
+flowchart TD
+  eligible[Fixture eligible] --> ensure[ensure_current_season_xg_profile_for_fixture]
+  ensure --> prior[Prior fixtures stessa season/competition]
+  prior --> cacheCheck{FixtureTeamStat ha xG?}
+  cacheCheck -->|sì| profile[build_current_season_team_xg_profile]
+  cacheCheck -->|no| apiCall[get_fixture_statistics]
+  apiCall --> persist[Persist FixtureTeamStat]
+  persist --> profile
+  profile --> save[xg_profiles_json su CecchinoTodayFixture]
+  save --> diag[expected_goal_engine_diagnostics]
+```
+
+- **Hook automatici:** scan (`_persist_post_calc_snapshot`), recompute offline, revalidate-day, apertura dettaglio (lazy via diagnostics).
+- **Idempotenza:** skip refetch se `profile_version`, `local_fixture_id` e `fixtures_checked` invariati.
+- **Non blocca eleggibilità:** try/except su errori provider → warning `xg_provider_error` / `xg_api_rate_limited`.
+- **Backfill manuale opzionale:** stesso endpoint Fase 52 con `force_refresh=true`.
+
 ## Fase 52 — xG storico current season per Expected Goal Engine
 
 ```mermaid

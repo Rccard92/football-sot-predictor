@@ -1,14 +1,17 @@
-"""Profilo xG storico campionato corrente — anti-leakage per Expected Goal Engine (Fase 52)."""
+"""Profilo xG storico campionato corrente — anti-leakage per Expected Goal Engine (Fase 52/53)."""
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import CecchinoTodayFixture, Competition, Fixture, FixtureTeamStat, League, Season, Team
-from app.services.api_football_client import ApiFootballClient
+from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE
+from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.api_usage_context import ApiUsageContext
 from app.services.cecchino.cecchino_fixture_history import load_finished_fixtures_for_team
 from app.services.fixture_team_stats_mapping import (
@@ -19,12 +22,15 @@ from app.services.fixture_team_stats_mapping import (
 )
 from app.services.predictions_v10.v10_prior_context import _team_stats_map
 
-SOURCE_NAME = "current_season_fixture_statistics"
-SOURCE_FIELD_XG = "statistics[type=expected_goals].value"
+logger = logging.getLogger(__name__)
+
+PROFILE_VERSION = "cecchino_xg_profiles_v1"
+SOURCE_NAME = "current_season_historical_xg"
+SOURCE_FIELD_XG = "fixture_statistics.statistics[type=expected_goals].value"
 SOURCE_FIELD_FOR = f"{SOURCE_FIELD_XG} averaged as team xG For"
-SOURCE_FIELD_AGAINST = "opponent statistics[type=expected_goals].value averaged as team xG Against"
+SOURCE_FIELD_AGAINST = f"{SOURCE_FIELD_XG} averaged as team xG Against"
 ANTI_LEAKAGE_NOTE = (
-    "Calcolato solo su partite precedenti della stagione corrente. "
+    "Calcolato automaticamente sulle partite precedenti della stagione corrente. "
     "La partita analizzata è esclusa per evitare leakage."
 )
 MIN_XG_SAMPLE_AVAILABLE = 3
@@ -62,8 +68,11 @@ def extract_expected_goals_from_fixture_statistics(
     out: dict[str, Any] = {
         "home": None,
         "away": None,
+        "home_xg": None,
+        "away_xg": None,
         "home_team_id": None,
         "away_team_id": None,
+        "warning": None,
     }
 
     if fixture is not None:
@@ -123,6 +132,11 @@ def extract_expected_goals_from_fixture_statistics(
         only_val = team_xg[only_id]
         out["home"] = only_val
         out["home_team_id"] = only_id
+
+    out["home_xg"] = out["home"]
+    out["away_xg"] = out["away"]
+    if out["home"] is None and out["away"] is None:
+        out["warning"] = "expected_goals_not_found"
 
     return out
 
@@ -365,6 +379,232 @@ def _persist_fixture_statistics(
     return updated
 
 
+def _team_display_from_profile(profile: dict[str, Any], team_name: str | None) -> dict[str, Any]:
+    return {
+        "team": team_name,
+        "xg_for_avg": profile.get("xg_for_avg"),
+        "xg_against_avg": profile.get("xg_against_avg"),
+        "xg_for_total": profile.get("xg_for_total"),
+        "xg_against_total": profile.get("xg_against_total"),
+        "sample_size": profile.get("sample_size"),
+        "matches_checked": profile.get("matches_checked"),
+        "matches_with_xg": profile.get("matches_with_xg"),
+        "matches_missing_xg": profile.get("matches_missing_xg"),
+        "warnings": list(profile.get("warnings") or []),
+    }
+
+
+def _cached_team_to_profile(cached: dict[str, Any], anti_leakage: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        "xg_for_avg": cached.get("xg_for_avg"),
+        "xg_against_avg": cached.get("xg_against_avg"),
+        "xg_for_total": cached.get("xg_for_total"),
+        "xg_against_total": cached.get("xg_against_total"),
+        "sample_size": cached.get("sample_size"),
+        "matches_checked": cached.get("matches_checked"),
+        "matches_with_xg": cached.get("matches_with_xg"),
+        "matches_missing_xg": cached.get("matches_missing_xg"),
+        "source": SOURCE_NAME,
+        "source_field": SOURCE_FIELD_XG,
+        "warnings": list(cached.get("warnings") or []),
+        "anti_leakage": anti_leakage,
+    }
+
+
+def _profile_cache_fresh(
+    row: CecchinoTodayFixture,
+    *,
+    prior_count: int,
+    force_refresh: bool,
+) -> bool:
+    if force_refresh:
+        return False
+    cached = row.xg_profiles_json if isinstance(row.xg_profiles_json, dict) else None
+    if not cached:
+        return False
+    if cached.get("profile_version") != PROFILE_VERSION:
+        return False
+    if cached.get("local_fixture_id") != int(row.local_fixture_id or 0):
+        return False
+    usage = cached.get("xg_api_usage") or {}
+    if int(usage.get("fixtures_checked") or 0) != prior_count:
+        return False
+    return True
+
+
+def _backfill_prior_statistics(
+    db: Session,
+    prior: list[Fixture],
+    *,
+    force_refresh: bool,
+    client: ApiFootballClient,
+) -> tuple[int, int, int, list[str]]:
+    """Cache-first backfill FixtureTeamStat per fixture prior. Returns calls, hits, backfilled, warnings."""
+    external_calls = 0
+    cache_hits = 0
+    backfilled = 0
+    warnings: list[str] = []
+
+    for fx in prior:
+        has_xg = _fixture_has_xg(db, fx)
+        if has_xg and not force_refresh:
+            cache_hits += 1
+            continue
+        try:
+            stats_payload = client.get_fixture_statistics(int(fx.api_fixture_id))
+            external_calls += 1
+            if stats_payload:
+                _persist_fixture_statistics(db, fx, stats_payload)
+                backfilled += 1
+                db.flush()
+        except ApiFootballError as exc:
+            msg = str(exc).lower()
+            if "429" in msg or "rate" in msg:
+                warnings.append("xg_api_rate_limited")
+            else:
+                warnings.append("xg_provider_error")
+            logger.warning("xg stats fetch failed fixture=%s: %s", fx.id, exc)
+        except Exception as exc:
+            warnings.append("xg_provider_error")
+            logger.warning("xg stats fetch failed fixture=%s: %s", fx.id, exc)
+
+    if backfilled == 0 and external_calls == 0 and prior and cache_hits < len(prior):
+        if "missing_xg_in_current_season_history" not in warnings:
+            warnings.append("xg_partial_cache_only")
+
+    return external_calls, cache_hits, backfilled, warnings
+
+
+def ensure_current_season_xg_profile_for_fixture(
+    db: Session,
+    today_fixture_id: int,
+    *,
+    force_refresh: bool = False,
+    client: ApiFootballClient | None = None,
+) -> dict[str, Any]:
+    """Recupero automatico profilo xG storico current season (cache-first, idempotente)."""
+    row = db.get(CecchinoTodayFixture, int(today_fixture_id))
+    if row is None:
+        return {"status": "not_found", "message": f"CecchinoTodayFixture {today_fixture_id} not found"}
+    if row.eligibility_status != ELIGIBILITY_ELIGIBLE:
+        return {"status": "skipped", "reason": "not_eligible"}
+    if not row.local_fixture_id:
+        return {"status": "skipped", "reason": "missing_local_fixture_id"}
+
+    target = db.get(Fixture, int(row.local_fixture_id))
+    if target is None:
+        return {"status": "skipped", "reason": "local_fixture_not_found"}
+
+    exclude_api = int(row.provider_fixture_id) if row.provider_fixture_id else None
+    prior = _prior_fixtures_both_teams(db, target, exclude_provider_fixture_id=exclude_api)
+    prior_count = len(prior)
+
+    if _profile_cache_fresh(row, prior_count=prior_count, force_refresh=force_refresh):
+        cached = row.xg_profiles_json or {}
+        return {
+            "status": "cached",
+            "today_fixture_id": int(today_fixture_id),
+            "xg_profiles": cached,
+            "xg_api_usage": cached.get("xg_api_usage"),
+        }
+
+    api_client = client or ApiFootballClient(
+        usage_db=db,
+        usage_context=ApiUsageContext(record_events=False),
+    )
+
+    external_calls, cache_hits, backfilled, fetch_warnings = _backfill_prior_statistics(
+        db,
+        prior,
+        force_refresh=force_refresh,
+        client=api_client,
+    )
+
+    home_profile = build_current_season_team_xg_profile(
+        db,
+        target,
+        int(target.home_team_id),
+        exclude_provider_fixture_id=exclude_api,
+    )
+    away_profile = build_current_season_team_xg_profile(
+        db,
+        target,
+        int(target.away_team_id),
+        exclude_provider_fixture_id=exclude_api,
+    )
+
+    anti_leakage = home_profile.get("anti_leakage") or away_profile.get("anti_leakage") or {
+        "current_fixture_excluded": True,
+        "fixture_date_cutoff": target.kickoff_at.isoformat() if target.kickoff_at else None,
+        "scope": "current season matches before fixture",
+    }
+
+    all_warnings = list(fetch_warnings)
+    for p in (home_profile, away_profile):
+        for w in p.get("warnings") or []:
+            if w not in all_warnings:
+                all_warnings.append(w)
+    if home_profile.get("sample_size", 0) == 0:
+        all_warnings.append("missing_xg_in_current_season_history")
+    if away_profile.get("sample_size", 0) == 0 and "missing_xg_in_current_season_history" not in all_warnings:
+        all_warnings.append("missing_xg_in_current_season_history")
+    for p in (home_profile, away_profile):
+        ss = int(p.get("sample_size") or 0)
+        if 0 < ss < MIN_XG_SAMPLE_AVAILABLE and "insufficient_xg_sample" not in all_warnings:
+            all_warnings.append("insufficient_xg_sample")
+
+    xg_api_usage = {
+        "automatic": True,
+        "external_calls_made": external_calls,
+        "cache_hits": cache_hits,
+        "fixtures_checked": prior_count,
+        "fixtures_backfilled": backfilled,
+        "endpoint": "fixture_statistics",
+    }
+
+    profiles_payload = {
+        "profile_version": PROFILE_VERSION,
+        "local_fixture_id": int(row.local_fixture_id),
+        "home_team": _team_display_from_profile(home_profile, row.home_team_name),
+        "away_team": _team_display_from_profile(away_profile, row.away_team_name),
+        "anti_leakage": anti_leakage,
+        "xg_api_usage": xg_api_usage,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "warnings": all_warnings,
+    }
+
+    row.xg_profiles_json = profiles_payload
+    db.flush()
+
+    return {
+        "status": "ok",
+        "today_fixture_id": int(today_fixture_id),
+        "xg_profiles": profiles_payload,
+        "xg_api_usage": xg_api_usage,
+        "warnings": all_warnings,
+    }
+
+
+def maybe_ensure_xg_for_eligible_row(
+    db: Session,
+    row: CecchinoTodayFixture,
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any] | None:
+    """Hook pipeline: non blocca eleggibilità su errori provider."""
+    if row.eligibility_status != ELIGIBILITY_ELIGIBLE:
+        return None
+    try:
+        return ensure_current_season_xg_profile_for_fixture(
+            db,
+            int(row.id),
+            force_refresh=force_refresh,
+        )
+    except Exception as exc:
+        logger.exception("maybe_ensure_xg_for_eligible_row failed today_fixture_id=%s", row.id)
+        return {"status": "error", "warnings": ["xg_provider_error"], "message": str(exc)[:200]}
+
+
 def backfill_current_season_xg_for_today_fixture(
     db: Session,
     today_fixture_id: int,
@@ -372,59 +612,34 @@ def backfill_current_season_xg_for_today_fixture(
     force_refresh: bool = False,
     client: ApiFootballClient | None = None,
 ) -> dict[str, Any]:
-    """Backfill manuale statistiche xG per fixture prior del campionato corrente."""
-    row = db.get(CecchinoTodayFixture, int(today_fixture_id))
-    if row is None:
-        return {"status": "not_found", "message": f"CecchinoTodayFixture {today_fixture_id} not found"}
-    if not row.local_fixture_id:
-        return {"status": "error", "message": "missing_local_fixture_id"}
-
-    target = db.get(Fixture, int(row.local_fixture_id))
-    if target is None:
-        return {"status": "error", "message": "local_fixture_not_found"}
-
-    prior = _prior_fixtures_both_teams(
+    """Backfill/manuale — delega a ensure_current_season_xg_profile_for_fixture."""
+    result = ensure_current_season_xg_profile_for_fixture(
         db,
-        target,
-        exclude_provider_fixture_id=int(row.provider_fixture_id) if row.provider_fixture_id else None,
+        today_fixture_id,
+        force_refresh=force_refresh,
+        client=client,
     )
+    if result.get("status") in ("not_found", "skipped"):
+        return result
 
-    api_client = client
-    if api_client is None:
-        api_client = ApiFootballClient(
-            usage_db=db,
-            usage_context=ApiUsageContext(record_events=False),
-        )
-
-    fixtures_checked = len(prior)
-    fixtures_backfilled = 0
-    api_calls = 0
-    errors: list[str] = []
-
-    for fx in prior:
-        has_xg = _fixture_has_xg(db, fx)
-        if has_xg and not force_refresh:
-            continue
-        try:
-            stats_payload = api_client.get_fixture_statistics(int(fx.api_fixture_id))
-            api_calls += 1
-            if stats_payload:
-                _persist_fixture_statistics(db, fx, stats_payload)
-                fixtures_backfilled += 1
-        except Exception as exc:
-            errors.append(f"fixture_{fx.id}:{exc}")
+    usage = result.get("xg_api_usage") or {}
+    profiles = result.get("xg_profiles") or {}
+    home = profiles.get("home_team") or {}
+    away = profiles.get("away_team") or {}
 
     db.commit()
-    fixtures_with_xg = sum(1 for p in prior if _fixture_has_xg(db, p))
 
     return {
-        "status": "ok",
+        "status": result.get("status", "ok"),
         "today_fixture_id": int(today_fixture_id),
-        "fixtures_checked": fixtures_checked,
-        "fixtures_backfilled": fixtures_backfilled,
-        "fixtures_with_xg": fixtures_with_xg,
-        "api_calls_made": api_calls,
+        "fixtures_checked": usage.get("fixtures_checked", 0),
+        "fixtures_backfilled": usage.get("fixtures_backfilled", 0),
+        "fixtures_with_xg": int(home.get("matches_with_xg") or 0) + int(away.get("matches_with_xg") or 0),
+        "api_calls_made": usage.get("external_calls_made", 0),
+        "cache_hits": usage.get("cache_hits", 0),
         "force_refresh": bool(force_refresh),
-        "errors": errors,
-        "note": "Manual backfill only — current season prior fixtures",
+        "errors": [],
+        "warnings": result.get("warnings") or [],
+        "xg_profiles": profiles,
+        "note": "Manual or automatic xG ensure — current season prior fixtures",
     }

@@ -353,6 +353,22 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino — Fase 53 — xG storico automatico per fixture eleggibili
+
+Automatizzazione recupero xG current season per fixture `eligible` — profili persistiti, cache-first, hook pipeline.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Orchestratore | `ensure_current_season_xg_profile_for_fixture` (idempotente, cache-first) |
+| Persistenza | `CecchinoTodayFixture.xg_profiles_json` |
+| Cache stats | `FixtureTeamStat.expected_goals` (no tabella dedicata) |
+| Hook | Scan post-eligible, recompute, revalidate-day, detail lazy (diagnostics) |
+| Source | `current_season_historical_xg` |
+| API | Solo `get_fixture_statistics` su cache miss |
+| Backfill opzionale | `POST /api/admin/cecchino/fixtures/{id}/backfill-current-season-xg` (debug/admin) |
+
+**Invariato:** altre 16 variabili diagnostics, Equilibrio, Intensità Goal, ICM, Segnali, Betfair-only, SOT.
+
 ## Cecchino — Fase 52 — xG storico current season per Expected Goal Engine
 
 Aggiornamento recupero variabili xG nel diagnostics builder (`home_xg_for`, `home_xg_against`, `away_xg_for`, `away_xg_against`).

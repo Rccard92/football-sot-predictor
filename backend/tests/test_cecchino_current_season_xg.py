@@ -11,16 +11,22 @@ import pytest
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/test")
 
 from app.models import FixtureTeamStat
+from app.models import Fixture
 from app.services.cecchino.cecchino_current_season_xg import (
     MIN_XG_SAMPLE_AVAILABLE,
+    PROFILE_VERSION,
     SOURCE_NAME,
     build_current_season_team_xg_profile,
+    ensure_current_season_xg_profile_for_fixture,
     extract_expected_goals_from_fixture_statistics,
+    maybe_ensure_xg_for_eligible_row,
 )
 from app.services.cecchino.cecchino_expected_goal_engine_diagnostics import (
     _finalize_xg_entry,
     _resolve_variables,
+    build_expected_goal_engine_diagnostics_for_today_row,
 )
+from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, ELIGIBILITY_EXCLUDED_MISSING_1X2
 
 FIXTURE_STATS = [
     {
@@ -177,6 +183,8 @@ def test_finalize_xg_entry_availability(sample_size: int, value: float | None, e
     else:
         assert out["available"] is True
         assert out["value"] == pytest.approx(float(value))
+        if expected_status == "insufficient_sample":
+            assert "sample_below_3" in out["warnings"]
 
 
 def test_diagnostics_xg_variables_use_current_season_source():
@@ -232,3 +240,197 @@ def test_diagnostics_xg_variables_use_current_season_source():
     assert variables["home_xg_for"]["availability_status"] == "available"
     assert variables["home_xg_for"]["value"] == pytest.approx(1.42)
     assert variables["rolling_avg_goals_last_10"]["source"] is None or variables["rolling_avg_goals_last_10"]["source"] == "cecchino_fixture_history"
+
+
+def _make_today_row(*, eligible: bool = True, xg_profiles_json: dict | None = None) -> MagicMock:
+    row = MagicMock()
+    row.id = 501
+    row.eligibility_status = ELIGIBILITY_ELIGIBLE if eligible else ELIGIBILITY_EXCLUDED_MISSING_1X2
+    row.local_fixture_id = 200
+    row.provider_fixture_id = 8000
+    row.home_team_name = "Home FC"
+    row.away_team_name = "Away FC"
+    row.xg_profiles_json = xg_profiles_json
+    return row
+
+
+def test_ensure_skips_when_not_eligible():
+    db = MagicMock()
+    row = _make_today_row(eligible=False)
+    db.get.return_value = row
+    out = ensure_current_season_xg_profile_for_fixture(db, 501)
+    assert out["status"] == "skipped"
+    assert out["reason"] == "not_eligible"
+
+
+def test_ensure_cache_hit_zero_api_calls():
+    db = MagicMock()
+    target = _make_fixture(200, api_fixture_id=8000)
+    row = _make_today_row(
+        xg_profiles_json={
+            "profile_version": PROFILE_VERSION,
+            "local_fixture_id": 200,
+            "xg_api_usage": {"fixtures_checked": 2},
+            "home_team": {"sample_size": 3},
+            "away_team": {"sample_size": 3},
+        },
+    )
+    prior = [
+        _make_fixture(1, api_fixture_id=1001, kickoff=datetime(2026, 5, 1, tzinfo=timezone.utc)),
+        _make_fixture(2, api_fixture_id=1002, kickoff=datetime(2026, 5, 8, tzinfo=timezone.utc)),
+    ]
+
+    def _get(model, pk):
+        if pk == 501:
+            return row
+        if pk == 200:
+            return target
+        return None
+
+    db.get.side_effect = _get
+
+    with patch(
+        "app.services.cecchino.cecchino_current_season_xg._prior_fixtures_both_teams",
+        return_value=prior,
+    ), patch(
+        "app.services.cecchino.cecchino_current_season_xg.ApiFootballClient",
+    ) as client_cls:
+        out = ensure_current_season_xg_profile_for_fixture(db, 501)
+        client_cls.assert_not_called()
+
+    assert out["status"] == "cached"
+    assert out["xg_api_usage"]["fixtures_checked"] == 2
+
+
+def test_ensure_cache_miss_calls_only_fixture_statistics():
+    db = MagicMock()
+    target = _make_fixture(200, api_fixture_id=8000)
+    row = _make_today_row()
+    prior = [
+        _make_fixture(1, api_fixture_id=1001, kickoff=datetime(2026, 5, 1, tzinfo=timezone.utc)),
+    ]
+    client = MagicMock()
+    client.get_fixture_statistics.return_value = FIXTURE_STATS
+
+    def _get(model, pk):
+        if pk == 501:
+            return row
+        if pk == 200:
+            return target
+        return None
+
+    db.get.side_effect = _get
+
+    profile = {
+        "sample_size": 1,
+        "xg_for_avg": 1.1,
+        "xg_against_avg": 0.9,
+        "warnings": [],
+        "anti_leakage": {"current_fixture_excluded": True},
+    }
+
+    with patch(
+        "app.services.cecchino.cecchino_current_season_xg._prior_fixtures_both_teams",
+        return_value=prior,
+    ), patch(
+        "app.services.cecchino.cecchino_current_season_xg._fixture_has_xg",
+        return_value=False,
+    ), patch(
+        "app.services.cecchino.cecchino_current_season_xg._persist_fixture_statistics",
+        return_value=2,
+    ), patch(
+        "app.services.cecchino.cecchino_current_season_xg.build_current_season_team_xg_profile",
+        return_value=profile,
+    ):
+        out = ensure_current_season_xg_profile_for_fixture(db, 501, client=client)
+
+    client.get_fixture_statistics.assert_called_once_with(1001)
+    client.get_fixture_events.assert_not_called()
+    client.get_fixture_lineups.assert_not_called()
+    client.get_fixture_players.assert_not_called()
+    assert out["status"] == "ok"
+    assert row.xg_profiles_json["profile_version"] == PROFILE_VERSION
+    assert out["xg_api_usage"]["external_calls_made"] == 1
+
+
+def test_maybe_ensure_does_not_raise_on_provider_error():
+    db = MagicMock()
+    row = _make_today_row()
+    with patch(
+        "app.services.cecchino.cecchino_current_season_xg.ensure_current_season_xg_profile_for_fixture",
+        side_effect=RuntimeError("boom"),
+    ):
+        out = maybe_ensure_xg_for_eligible_row(db, row)
+    assert out is not None
+    assert out["status"] == "error"
+    assert "xg_provider_error" in out["warnings"]
+
+
+def test_diagnostics_payload_includes_xg_profiles():
+    db = MagicMock()
+    row = _make_today_row(
+        xg_profiles_json={
+            "home_team": {"sample_size": 4, "xg_for_avg": 1.2},
+            "away_team": {"sample_size": 4, "xg_for_avg": 0.8},
+            "anti_leakage": {"current_fixture_excluded": True},
+            "xg_api_usage": {"automatic": True, "cache_hits": 5, "external_calls_made": 0},
+            "warnings": [],
+        },
+    )
+    fixture = _make_fixture(200, api_fixture_id=8000)
+    db.get.return_value = fixture
+
+    with patch(
+        "app.services.cecchino.cecchino_expected_goal_engine_diagnostics.ensure_current_season_xg_profile_for_fixture",
+    ), patch(
+        "app.services.cecchino.cecchino_expected_goal_engine_diagnostics.build_expected_goal_engine_diagnostics",
+        return_value={"status": "available", "xg_profiles": {}, "blocks": {}},
+    ) as build_mock:
+        build_expected_goal_engine_diagnostics_for_today_row(db, row)
+        db.get.assert_called_with(Fixture, 200)
+        _, kwargs = build_mock.call_args
+        assert kwargs["xg_profiles_json"] == row.xg_profiles_json
+
+
+def test_diagnostics_resolve_variables_uses_cached_profiles():
+    db = MagicMock()
+    fixture = _make_fixture(200, api_fixture_id=8000)
+    cached = {
+        "home_team": {
+            "xg_for_avg": 1.5,
+            "xg_against_avg": 1.0,
+            "sample_size": 5,
+            "warnings": [],
+        },
+        "away_team": {
+            "xg_for_avg": 0.7,
+            "xg_against_avg": 1.3,
+            "sample_size": 5,
+            "warnings": [],
+        },
+        "anti_leakage": {"current_fixture_excluded": True},
+    }
+
+    with patch(
+        "app.services.cecchino.cecchino_expected_goal_engine_diagnostics.build_current_season_team_xg_profile",
+    ) as build_mock, patch(
+        "app.services.cecchino.cecchino_expected_goal_engine_diagnostics._resolve_context",
+    ) as ctx_mock:
+        ctx_mock.return_value = {
+            "slices": MagicMock(
+                home_total_10=MagicMock(over_2_5_hits=0, sample=0),
+                away_total_10=MagicMock(over_2_5_hits=0, sample=0),
+                home_home_5=MagicMock(total_goals=0, sample=0),
+                away_away_5=MagicMock(total_goals=0, sample=0),
+            ),
+            "home_home_10": [],
+            "away_away_10": [],
+            "combined_last_10": [],
+            "ht_home": MagicMock(sample=0, goals_for=0, over_pt_0_5_hits=0),
+            "ht_away": MagicMock(sample=0, goals_for=0, over_pt_0_5_hits=0),
+        }
+        variables = _resolve_variables(db, fixture, xg_profiles_json=cached)
+        build_mock.assert_not_called()
+
+    assert variables["home_xg_for"]["value"] == pytest.approx(1.5)
+    assert variables["away_xg_for"]["value"] == pytest.approx(0.7)

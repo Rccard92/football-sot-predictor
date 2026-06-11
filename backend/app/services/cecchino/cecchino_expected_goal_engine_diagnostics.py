@@ -9,13 +9,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import CecchinoTodayFixture, Fixture, FixtureTeamStat
+from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE
 from app.services.cecchino.cecchino_current_season_xg import (
     ANTI_LEAKAGE_NOTE,
     MIN_XG_SAMPLE_AVAILABLE,
     SOURCE_FIELD_AGAINST,
     SOURCE_FIELD_FOR,
     SOURCE_NAME,
+    _cached_team_to_profile,
     build_current_season_team_xg_profile,
+    ensure_current_season_xg_profile_for_fixture,
 )
 from app.services.cecchino.cecchino_fixture_history import (
     _take_last_n_with_halftime,
@@ -388,6 +391,8 @@ def _finalize_xg_entry(
     if sample_size < MIN_XG_SAMPLE_AVAILABLE:
         entry["availability_status"] = "insufficient_sample"
         entry["available"] = True
+        if "sample_below_3" not in entry["warnings"]:
+            entry["warnings"].append("sample_below_3")
     else:
         entry["availability_status"] = "available"
         entry["available"] = True
@@ -529,24 +534,31 @@ def _resolve_variables(
     fixture: Fixture,
     *,
     exclude_provider_fixture_id: int | None = None,
+    xg_profiles_json: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     ctx = _resolve_context(db, fixture)
     slices = ctx["slices"]
     hid = int(fixture.home_team_id)
     aid = int(fixture.away_team_id)
 
-    home_xg_profile = build_current_season_team_xg_profile(
-        db,
-        fixture,
-        hid,
-        exclude_provider_fixture_id=exclude_provider_fixture_id,
-    )
-    away_xg_profile = build_current_season_team_xg_profile(
-        db,
-        fixture,
-        aid,
-        exclude_provider_fixture_id=exclude_provider_fixture_id,
-    )
+    cached = xg_profiles_json if isinstance(xg_profiles_json, dict) else None
+    anti = (cached or {}).get("anti_leakage")
+    if cached and isinstance(cached.get("home_team"), dict) and isinstance(cached.get("away_team"), dict):
+        home_xg_profile = _cached_team_to_profile(cached["home_team"], anti)
+        away_xg_profile = _cached_team_to_profile(cached["away_team"], anti)
+    else:
+        home_xg_profile = build_current_season_team_xg_profile(
+            db,
+            fixture,
+            hid,
+            exclude_provider_fixture_id=exclude_provider_fixture_id,
+        )
+        away_xg_profile = build_current_season_team_xg_profile(
+            db,
+            fixture,
+            aid,
+            exclude_provider_fixture_id=exclude_provider_fixture_id,
+        )
 
     o25_val, o25_n = _combined_frequency(
         slices.home_total_10.over_2_5_hits,
@@ -745,12 +757,14 @@ def build_expected_goal_engine_diagnostics(
     fixture: Fixture,
     *,
     exclude_provider_fixture_id: int | None = None,
+    xg_profiles_json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Audit read-only variabili Expected Goal Engine — nessun calcolo goal attesi."""
     variables = _resolve_variables(
         db,
         fixture,
         exclude_provider_fixture_id=exclude_provider_fixture_id,
+        xg_profiles_json=xg_profiles_json,
     )
 
     required_total = sum(1 for s in _VARIABLE_SPECS if s["required"])
@@ -783,7 +797,19 @@ def build_expected_goal_engine_diagnostics(
         _BLOCK_ADVANCED: [variables[s["key"]] for s in _VARIABLE_SPECS if s["block"] == _BLOCK_ADVANCED],
     }
 
-    return {
+    xg_profiles_out: dict[str, Any] | None = None
+    xg_api_usage_out: dict[str, Any] | None = None
+    diag_warnings: list[str] = []
+    if isinstance(xg_profiles_json, dict):
+        xg_profiles_out = {
+            "home_team": xg_profiles_json.get("home_team"),
+            "away_team": xg_profiles_json.get("away_team"),
+            "anti_leakage": xg_profiles_json.get("anti_leakage"),
+        }
+        xg_api_usage_out = xg_profiles_json.get("xg_api_usage")
+        diag_warnings = list(xg_profiles_json.get("warnings") or [])
+
+    payload: dict[str, Any] = {
         "version": VERSION,
         "status": STATUS_AVAILABLE,
         "fixture_id": int(fixture.id),
@@ -798,8 +824,13 @@ def build_expected_goal_engine_diagnostics(
         },
         "engine_readiness": engine_readiness,
         "blocks": blocks,
-        "warnings": [],
+        "warnings": diag_warnings,
     }
+    if xg_profiles_out is not None:
+        payload["xg_profiles"] = xg_profiles_out
+    if xg_api_usage_out is not None:
+        payload["xg_api_usage"] = xg_api_usage_out
+    return payload
 
 
 def build_expected_goal_engine_diagnostics_for_today_row(
@@ -828,8 +859,14 @@ def build_expected_goal_engine_diagnostics_for_today_row(
             "blocks": None,
             "warnings": ["missing_local_fixture"],
         }
+
+    if row.eligibility_status == ELIGIBILITY_ELIGIBLE:
+        ensure_current_season_xg_profile_for_fixture(db, int(row.id), force_refresh=False)
+        db.refresh(row)
+
     return build_expected_goal_engine_diagnostics(
         db,
         fixture,
         exclude_provider_fixture_id=int(row.provider_fixture_id) if row.provider_fixture_id else None,
+        xg_profiles_json=row.xg_profiles_json if isinstance(row.xg_profiles_json, dict) else None,
     )

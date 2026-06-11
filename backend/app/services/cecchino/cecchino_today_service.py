@@ -63,6 +63,7 @@ from app.services.cecchino.cecchino_constants import (
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
+from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
 from app.services.cecchino.cecchino_goal_intensity_analysis import (
     build_goal_intensity_for_today_row,
 )
@@ -251,6 +252,8 @@ def _persist_post_calc_snapshot(
         warnings=stored_warnings,
         blocking_reasons=blocking_reasons,
     )
+    if eligibility_status == ELIGIBILITY_ELIGIBLE:
+        maybe_ensure_xg_for_eligible_row(db, row)
     return row, eligibility_status
 
 
@@ -414,6 +417,7 @@ def _upsert_today_snapshot(
     row.cecchino_output_json = cecchino_output
     row.kpi_panel_json = kpi_panel
     row.raw_fixture_json = api_item
+    # xg_profiles_json: non azzerare su upsert — preserva cache profili xG automatici (Fase 53)
     row.warnings_json = warnings or []
     row.blocking_reasons_json = blocking_reasons or []
     if odds_check_status is not None:
@@ -1152,6 +1156,7 @@ def revalidate_cecchino_today_day(
         if result.is_eligible:
             row.stats_status = "ok"
             kept_eligible += 1
+            maybe_ensure_xg_for_eligible_row(db, row)
         else:
             reasons[result.eligibility_status] += 1
             if was_eligible:

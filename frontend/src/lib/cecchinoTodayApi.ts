@@ -791,7 +791,29 @@ export type CecchinoExpectedGoalEngineDiagnostics = {
     temporal_distribution?: CecchinoExpectedGoalEngineVariable[]
     advanced_correctors?: CecchinoExpectedGoalEngineVariable[]
   } | null
+  xg_profiles?: {
+    home_team?: Record<string, unknown> | null
+    away_team?: Record<string, unknown> | null
+    anti_leakage?: Record<string, unknown> | null
+  } | null
+  xg_api_usage?: {
+    automatic?: boolean
+    external_calls_made?: number
+    cache_hits?: number
+    fixtures_checked?: number
+    fixtures_backfilled?: number
+    endpoint?: string
+  } | null
   warnings?: string[]
+}
+
+export type CecchinoBackfillCurrentSeasonXgResponse = {
+  status?: string
+  today_fixture_id?: number
+  xg_profiles?: Record<string, unknown>
+  xg_api_usage?: Record<string, unknown>
+  warnings?: string[]
+  message?: string
 }
 
 export type CecchinoApiRawInspectorTeam = {
@@ -1151,6 +1173,16 @@ export async function getApiRawInspector(
   const q = qs.toString()
   return adminGetJson<CecchinoApiRawInspectorResponse>(
     `/api/admin/cecchino/fixtures/${todayFixtureId}/api-raw-inspector${q ? `?${q}` : ''}`,
+  )
+}
+
+export async function backfillCurrentSeasonXg(
+  todayFixtureId: number,
+  params: { forceRefresh?: boolean } = {},
+): Promise<CecchinoBackfillCurrentSeasonXgResponse> {
+  return adminPostJson<CecchinoBackfillCurrentSeasonXgResponse>(
+    `/api/admin/cecchino/fixtures/${todayFixtureId}/backfill-current-season-xg`,
+    { force_refresh: params.forceRefresh ?? false },
   )
 }
 

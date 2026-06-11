@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 53 — xG storico automatico per fixture eleggibili (2026-06-09)
+
+- Automatizzato il recupero xG storico current season alla eleggibilità Cecchino (scan, recompute, revalidate, detail lazy).
+- Profili xG persistiti su `cecchino_today_fixtures.xg_profiles_json` (`cecchino_xg_profiles_v1`).
+- Cache-first su `FixtureTeamStat`; chiamate API solo `fixture_statistics` su cache miss.
+- Source diagnostics aggiornato a `current_season_historical_xg`; payload con `xg_profiles` e `xg_api_usage`.
+- Hook non bloccanti: errori/rate-limit non impattano eleggibilità.
+- UI: nota anti-leakage automatica, warning campione basso, pulsante opzionale «Ricalcola xG storico».
+- **Invariato:** variabili non-xG diagnostics, Equilibrio, Intensità Goal, ICM, Monitoraggio, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 52 — xG storico current season per Expected Goal Engine (2026-06-09)
 
 - Aggiornato il recupero delle variabili xG nel diagnostics builder Expected Goal Engine.

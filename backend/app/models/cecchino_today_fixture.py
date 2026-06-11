@@ -87,6 +87,7 @@ class CecchinoTodayFixture(Base, TimestampMixin):
     stats_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     cecchino_output_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     kpi_panel_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    xg_profiles_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     raw_fixture_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     warnings_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
     blocking_reasons_json: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)

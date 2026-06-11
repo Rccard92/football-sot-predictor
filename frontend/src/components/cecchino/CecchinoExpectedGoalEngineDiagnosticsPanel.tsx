@@ -1,14 +1,19 @@
+import { useCallback, useState } from 'react'
 import type {
   CecchinoExpectedGoalEngineDiagnostics,
   CecchinoExpectedGoalEngineVariable,
 } from '../../lib/cecchinoTodayApi'
+import { backfillCurrentSeasonXg } from '../../lib/cecchinoTodayApi'
 import { CecchinoApiRawInspectorPanel } from './CecchinoApiRawInspectorPanel'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type Props = {
   diagnostics?: CecchinoExpectedGoalEngineDiagnostics
   todayFixtureId?: number
+  onDiagnosticsRefresh?: () => void
 }
+
+const XG_SOURCE = 'current_season_historical_xg'
 
 const STATUS_LABELS: Record<string, string> = {
   available: 'Disponibile',
@@ -57,15 +62,19 @@ function readinessLabel(flag?: boolean): string {
   return '—'
 }
 
+function isXgRow(row: CecchinoExpectedGoalEngineVariable): boolean {
+  return Boolean(row.key?.includes('xg_') && row.source === XG_SOURCE)
+}
+
 function fmtSource(row: CecchinoExpectedGoalEngineVariable): string {
-  if (row.key?.includes('xg_') && row.source === 'current_season_fixture_statistics') {
-    return 'xG medio campionato corrente'
+  if (isXgRow(row)) {
+    return 'xG storico stagione corrente'
   }
   return row.source ?? '—'
 }
 
 function fmtSourceField(row: CecchinoExpectedGoalEngineVariable): string {
-  if (row.key?.includes('xg_') && row.source === 'current_season_fixture_statistics') {
+  if (isXgRow(row)) {
     return 'fixture_statistics → expected_goals'
   }
   return row.source_field ?? '—'
@@ -148,7 +157,33 @@ function BlockAccordion({
   )
 }
 
-export function CecchinoExpectedGoalEngineDiagnosticsPanel({ diagnostics, todayFixtureId }: Props) {
+export function CecchinoExpectedGoalEngineDiagnosticsPanel({
+  diagnostics,
+  todayFixtureId,
+  onDiagnosticsRefresh,
+}: Props) {
+  const [recalcLoading, setRecalcLoading] = useState(false)
+  const [recalcMessage, setRecalcMessage] = useState<string | null>(null)
+
+  const handleRecalcXg = useCallback(async () => {
+    if (!todayFixtureId) return
+    setRecalcLoading(true)
+    setRecalcMessage(null)
+    try {
+      const res = await backfillCurrentSeasonXg(todayFixtureId, { forceRefresh: true })
+      if (res.status === 'ok' || res.status === 'cached') {
+        setRecalcMessage('Profilo xG aggiornato.')
+        onDiagnosticsRefresh?.()
+      } else {
+        setRecalcMessage(res.message ?? 'Ricalcolo non riuscito.')
+      }
+    } catch (err) {
+      setRecalcMessage(err instanceof Error ? err.message : 'Errore di rete.')
+    } finally {
+      setRecalcLoading(false)
+    }
+  }, [todayFixtureId, onDiagnosticsRefresh])
+
   if (!diagnostics || diagnostics.status !== 'available' || !diagnostics.blocks) {
     return (
       <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
@@ -160,9 +195,14 @@ export function CecchinoExpectedGoalEngineDiagnosticsPanel({ diagnostics, todayF
     )
   }
 
-  const { coverage, engine_readiness, blocks } = diagnostics
+  const { coverage, engine_readiness, blocks, xg_profiles, xg_api_usage, warnings } = diagnostics
   const confidence = coverage?.confidence ?? 'insufficient'
   const overviewState = coverage?.engine_ready ? 'Pronto' : OVERVIEW_STATE[confidence] ?? 'Insufficiente'
+  const productionRows = blocks.production_goal ?? []
+  const xgRows = productionRows.filter(isXgRow)
+  const hasXgWarning = xgRows.some(
+    (r) => r.availability_status === 'missing' || r.availability_status === 'insufficient_sample',
+  )
 
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
@@ -205,7 +245,54 @@ export function CecchinoExpectedGoalEngineDiagnosticsPanel({ diagnostics, todayF
         </dl>
       </div>
 
-      <BlockAccordion title="Produzione Goal" rows={blocks.production_goal ?? []} />
+      <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide opacity-80">xG storico automatico</p>
+            <p className="mt-1 text-sm">
+              Calcolato automaticamente sulle partite precedenti della stagione corrente. La partita
+              analizzata è esclusa per evitare leakage.
+            </p>
+            {xg_api_usage && (
+              <p className="mt-2 text-xs opacity-80">
+                Cache: {xg_api_usage.cache_hits ?? 0} hit · API: {xg_api_usage.external_calls_made ?? 0}{' '}
+                chiamate · {xg_api_usage.fixtures_checked ?? 0} fixture controllate
+              </p>
+            )}
+          </div>
+          {todayFixtureId != null && (
+            <button
+              type="button"
+              onClick={() => void handleRecalcXg()}
+              disabled={recalcLoading}
+              className="shrink-0 rounded-md border border-teal-300 bg-white px-3 py-1.5 text-xs font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+            >
+              {recalcLoading ? 'Ricalcolo…' : 'Ricalcola xG storico'}
+            </button>
+          )}
+        </div>
+        {recalcMessage && <p className="mt-2 text-xs">{recalcMessage}</p>}
+        {hasXgWarning && (
+          <p className="mt-2 text-xs font-medium text-amber-800">
+            Attenzione: campione xG insufficiente o mancante — verificare storico partite e cache
+            statistiche.
+          </p>
+        )}
+        {(warnings?.length ?? 0) > 0 && (
+          <p className="mt-2 text-xs text-amber-800">Warning pipeline: {(warnings ?? []).join(', ')}</p>
+        )}
+        {xg_profiles?.anti_leakage && (
+          <p className="mt-2 text-xs opacity-80">
+            Anti-leakage: cutoff{' '}
+            {String(
+              (xg_profiles.anti_leakage as { fixture_date_cutoff?: string }).fixture_date_cutoff ??
+                '—',
+            )}
+          </p>
+        )}
+      </div>
+
+      <BlockAccordion title="Produzione Goal" rows={productionRows} />
       <BlockAccordion title="Distribuzione Temporale" rows={blocks.temporal_distribution ?? []} />
       <BlockAccordion title="Correttori Avanzati" rows={blocks.advanced_correctors ?? []} />
 
