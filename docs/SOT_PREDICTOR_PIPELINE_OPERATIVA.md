@@ -63,6 +63,20 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
+## Fase 52 — xG storico current season per Expected Goal Engine
+
+```mermaid
+flowchart TD
+  target[Fixture analizzata] --> prior[load_finished_fixtures_for_team]
+  prior --> stats[FixtureTeamStat expected_goals]
+  stats --> profile[build_current_season_team_xg_profile]
+  profile --> diag[expected_goal_engine_diagnostics xG only]
+```
+
+- **Anti-leakage:** media xG solo su partite prior stesso campionato/stagione; esclusa fixture corrente.
+- **Path:** `statistics[type=expected_goals].value` da cache DB.
+- **Backfill manuale:** `POST /admin/cecchino/fixtures/id/backfill-current-season-xg`.
+
 ## Fase 51 — API Raw Inspector per Expected Goal Engine
 
 ```mermaid

@@ -9,6 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import CecchinoTodayFixture, Fixture, FixtureTeamStat
+from app.services.cecchino.cecchino_current_season_xg import (
+    ANTI_LEAKAGE_NOTE,
+    MIN_XG_SAMPLE_AVAILABLE,
+    SOURCE_FIELD_AGAINST,
+    SOURCE_FIELD_FOR,
+    SOURCE_NAME,
+    build_current_season_team_xg_profile,
+)
 from app.services.cecchino.cecchino_fixture_history import (
     _take_last_n_with_halftime,
     aggregate_halftime_goal_totals,
@@ -18,7 +26,6 @@ from app.services.cecchino.cecchino_fixture_history import (
     take_last_n,
 )
 from app.services.fixture_team_stats_mapping import statistics_list_to_fields
-from app.services.predictions_v11.shared_stats import expected_goals_from_team_stat
 
 VERSION = "expected_goal_engine_diagnostics_v1"
 STATUS_AVAILABLE = "available"
@@ -36,8 +43,8 @@ _VARIABLE_SPECS: tuple[dict[str, Any], ...] = (
         "required": True,
         "role": "driver",
         "scope": "home_team",
-        "period": "full_time",
-        "description": "xG prodotti dalla squadra casa.",
+        "period": "current_season_before_fixture",
+        "description": "xG prodotti dalla squadra casa (media campionato corrente, pre-match).",
         "ideal_sample": 10,
     },
     {
@@ -48,8 +55,8 @@ _VARIABLE_SPECS: tuple[dict[str, Any], ...] = (
         "required": True,
         "role": "driver",
         "scope": "home_team",
-        "period": "full_time",
-        "description": "xG concessi dalla squadra casa.",
+        "period": "current_season_before_fixture",
+        "description": "xG concessi dalla squadra casa (media campionato corrente, pre-match).",
         "ideal_sample": 10,
     },
     {
@@ -60,8 +67,8 @@ _VARIABLE_SPECS: tuple[dict[str, Any], ...] = (
         "required": True,
         "role": "driver",
         "scope": "away_team",
-        "period": "full_time",
-        "description": "xG prodotti dalla squadra ospite.",
+        "period": "current_season_before_fixture",
+        "description": "xG prodotti dalla squadra ospite (media campionato corrente, pre-match).",
         "ideal_sample": 10,
     },
     {
@@ -72,8 +79,8 @@ _VARIABLE_SPECS: tuple[dict[str, Any], ...] = (
         "required": True,
         "role": "driver",
         "scope": "away_team",
-        "period": "full_time",
-        "description": "xG concessi dalla squadra ospite.",
+        "period": "current_season_before_fixture",
+        "description": "xG concessi dalla squadra ospite (media campionato corrente, pre-match).",
         "ideal_sample": 10,
     },
     {
@@ -344,6 +351,53 @@ def _finalize_entry(
     return entry
 
 
+def _finalize_xg_entry(
+    entry: dict[str, Any],
+    profile: dict[str, Any],
+    *,
+    value_key: str,
+    source_field: str,
+    ideal_sample: int | None,
+) -> dict[str, Any]:
+    """Finalizza variabile xG con soglie sample dedicate (0 missing, 1-2 insufficient, >=3 available)."""
+    sample_size = int(profile.get("sample_size") or 0)
+    value = profile.get(value_key)
+    entry["source"] = SOURCE_NAME
+    entry["source_field"] = source_field
+    entry["sample_size"] = sample_size if sample_size > 0 else None
+    entry["period"] = "current_season_before_fixture"
+    entry["note"] = ANTI_LEAKAGE_NOTE
+    entry["anti_leakage"] = profile.get("anti_leakage")
+
+    for w in profile.get("warnings") or []:
+        if w not in entry["warnings"]:
+            entry["warnings"].append(w)
+
+    if value is None or sample_size <= 0:
+        entry["availability_status"] = "missing"
+        entry["available"] = False
+        if "field_not_found" not in entry["warnings"]:
+            entry["warnings"].append("field_not_found")
+        if profile.get("matches_missing_xg"):
+            entry["warnings"].append("missing_xg_in_cache")
+        return entry
+
+    entry["value"] = round(float(value), 4)
+    entry["normalized_value"] = entry["value"]
+
+    if sample_size < MIN_XG_SAMPLE_AVAILABLE:
+        entry["availability_status"] = "insufficient_sample"
+        entry["available"] = True
+    else:
+        entry["availability_status"] = "available"
+        entry["available"] = True
+
+    if ideal_sample is not None and sample_size < ideal_sample:
+        entry["warnings"].append(f"sample_below_{ideal_sample}")
+
+    return entry
+
+
 def _team_stat_row(db: Session, fixture_id: int, team_id: int) -> FixtureTeamStat | None:
     return db.scalars(
         select(FixtureTeamStat).where(
@@ -351,57 +405,6 @@ def _team_stat_row(db: Session, fixture_id: int, team_id: int) -> FixtureTeamSta
             FixtureTeamStat.team_id == int(team_id),
         ),
     ).first()
-
-
-def _opponent_id(fixture: Fixture, team_id: int) -> int | None:
-    tid = int(team_id)
-    if int(fixture.home_team_id) == tid:
-        return int(fixture.away_team_id)
-    if int(fixture.away_team_id) == tid:
-        return int(fixture.home_team_id)
-    return None
-
-
-def _rolling_xg_pair(
-    db: Session,
-    fixtures: list[Fixture],
-    team_id: int,
-) -> tuple[float | None, float | None, int, str | None, str | None]:
-    xg_for_vals: list[float] = []
-    xg_against_vals: list[float] = []
-    source_name: str | None = None
-    source_field: str | None = None
-
-    for fx in fixtures:
-        st = _team_stat_row(db, int(fx.id), team_id)
-        if st is None:
-            continue
-        xg_for, src_for = expected_goals_from_team_stat(st)
-        opp_id = _opponent_id(fx, team_id)
-        xg_against = None
-        src_against = None
-        if opp_id is not None:
-            st_opp = _team_stat_row(db, int(fx.id), opp_id)
-            if st_opp is not None:
-                xg_against, src_against = expected_goals_from_team_stat(st_opp)
-        if xg_for is not None:
-            xg_for_vals.append(float(xg_for))
-            source_name = "fixture_team_stats"
-            source_field = src_for
-        if xg_against is not None:
-            xg_against_vals.append(float(xg_against))
-            if source_name is None:
-                source_name = "fixture_team_stats"
-            if source_field is None:
-                source_field = src_against
-
-    if not xg_for_vals and not xg_against_vals:
-        return None, None, 0, None, None
-
-    avg_for = sum(xg_for_vals) / len(xg_for_vals) if xg_for_vals else None
-    avg_against = sum(xg_against_vals) / len(xg_against_vals) if xg_against_vals else None
-    sample = max(len(xg_for_vals), len(xg_against_vals))
-    return avg_for, avg_against, sample, source_name, source_field
 
 
 def _combined_frequency(
@@ -521,17 +524,28 @@ def _resolve_context(db: Session, target: Fixture) -> dict[str, Any]:
     }
 
 
-def _resolve_variables(db: Session, fixture: Fixture) -> dict[str, dict[str, Any]]:
+def _resolve_variables(
+    db: Session,
+    fixture: Fixture,
+    *,
+    exclude_provider_fixture_id: int | None = None,
+) -> dict[str, dict[str, Any]]:
     ctx = _resolve_context(db, fixture)
     slices = ctx["slices"]
     hid = int(fixture.home_team_id)
     aid = int(fixture.away_team_id)
 
-    home_xg_for, home_xg_against, home_xg_n, home_xg_src, home_xg_field = _rolling_xg_pair(
-        db, ctx["home_home_10"], hid
+    home_xg_profile = build_current_season_team_xg_profile(
+        db,
+        fixture,
+        hid,
+        exclude_provider_fixture_id=exclude_provider_fixture_id,
     )
-    away_xg_for, away_xg_against, away_xg_n, away_xg_src, away_xg_field = _rolling_xg_pair(
-        db, ctx["away_away_10"], aid
+    away_xg_profile = build_current_season_team_xg_profile(
+        db,
+        fixture,
+        aid,
+        exclude_provider_fixture_id=exclude_provider_fixture_id,
     )
 
     o25_val, o25_n = _combined_frequency(
@@ -577,13 +591,37 @@ def _resolve_variables(db: Session, fixture: Fixture) -> dict[str, dict[str, Any
             continue
 
         if key == "home_xg_for":
-            resolved[key] = _finalize_entry(entry, value=home_xg_for, source=home_xg_src, source_field=home_xg_field, sample_size=home_xg_n or None, ideal_sample=ideal)
+            resolved[key] = _finalize_xg_entry(
+                entry,
+                home_xg_profile,
+                value_key="xg_for_avg",
+                source_field=SOURCE_FIELD_FOR,
+                ideal_sample=ideal,
+            )
         elif key == "home_xg_against":
-            resolved[key] = _finalize_entry(entry, value=home_xg_against, source=home_xg_src, source_field=home_xg_field, sample_size=home_xg_n or None, ideal_sample=ideal)
+            resolved[key] = _finalize_xg_entry(
+                entry,
+                home_xg_profile,
+                value_key="xg_against_avg",
+                source_field=SOURCE_FIELD_AGAINST,
+                ideal_sample=ideal,
+            )
         elif key == "away_xg_for":
-            resolved[key] = _finalize_entry(entry, value=away_xg_for, source=away_xg_src, source_field=away_xg_field, sample_size=away_xg_n or None, ideal_sample=ideal)
+            resolved[key] = _finalize_xg_entry(
+                entry,
+                away_xg_profile,
+                value_key="xg_for_avg",
+                source_field=SOURCE_FIELD_FOR,
+                ideal_sample=ideal,
+            )
         elif key == "away_xg_against":
-            resolved[key] = _finalize_entry(entry, value=away_xg_against, source=away_xg_src, source_field=away_xg_field, sample_size=away_xg_n or None, ideal_sample=ideal)
+            resolved[key] = _finalize_xg_entry(
+                entry,
+                away_xg_profile,
+                value_key="xg_against_avg",
+                source_field=SOURCE_FIELD_AGAINST,
+                ideal_sample=ideal,
+            )
         elif key == "over_2_5_frequency_last_10":
             resolved[key] = _finalize_entry(entry, value=o25_val, source="cecchino_fixture_history", source_field="GoalTotals.over_2_5_hits/sample", sample_size=o25_n or None, ideal_sample=ideal)
         elif key == "gg_frequency_last_10":
@@ -702,9 +740,18 @@ def _build_engine_readiness(
     }
 
 
-def build_expected_goal_engine_diagnostics(db: Session, fixture: Fixture) -> dict[str, Any]:
+def build_expected_goal_engine_diagnostics(
+    db: Session,
+    fixture: Fixture,
+    *,
+    exclude_provider_fixture_id: int | None = None,
+) -> dict[str, Any]:
     """Audit read-only variabili Expected Goal Engine — nessun calcolo goal attesi."""
-    variables = _resolve_variables(db, fixture)
+    variables = _resolve_variables(
+        db,
+        fixture,
+        exclude_provider_fixture_id=exclude_provider_fixture_id,
+    )
 
     required_total = sum(1 for s in _VARIABLE_SPECS if s["required"])
     advanced_total = sum(1 for s in _VARIABLE_SPECS if not s["required"])
@@ -781,4 +828,8 @@ def build_expected_goal_engine_diagnostics_for_today_row(
             "blocks": None,
             "warnings": ["missing_local_fixture"],
         }
-    return build_expected_goal_engine_diagnostics(db, fixture)
+    return build_expected_goal_engine_diagnostics(
+        db,
+        fixture,
+        exclude_provider_fixture_id=int(row.provider_fixture_id) if row.provider_fixture_id else None,
+    )

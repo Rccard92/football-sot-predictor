@@ -57,6 +57,34 @@ function readinessLabel(flag?: boolean): string {
   return '—'
 }
 
+function fmtSource(row: CecchinoExpectedGoalEngineVariable): string {
+  if (row.key?.includes('xg_') && row.source === 'current_season_fixture_statistics') {
+    return 'xG medio campionato corrente'
+  }
+  return row.source ?? '—'
+}
+
+function fmtSourceField(row: CecchinoExpectedGoalEngineVariable): string {
+  if (row.key?.includes('xg_') && row.source === 'current_season_fixture_statistics') {
+    return 'fixture_statistics → expected_goals'
+  }
+  return row.source_field ?? '—'
+}
+
+function fmtSample(row: CecchinoExpectedGoalEngineVariable): string {
+  if (row.key?.includes('xg_') && row.sample_size != null) {
+    return `${row.sample_size} partite precedenti con xG`
+  }
+  return row.sample_size != null ? String(row.sample_size) : '—'
+}
+
+function fmtNotes(row: CecchinoExpectedGoalEngineVariable): string {
+  const parts: string[] = []
+  if (row.note) parts.push(row.note)
+  if (row.warnings?.length) parts.push(...row.warnings)
+  return parts.join(' · ') || '—'
+}
+
 function VariableTable({ rows }: { rows: CecchinoExpectedGoalEngineVariable[] }) {
   if (!rows.length) return null
   return (
@@ -87,14 +115,12 @@ function VariableTable({ rows }: { rows: CecchinoExpectedGoalEngineVariable[] })
                 </span>
               </td>
               <td className="px-2 py-2 tabular-nums">{fmtVal(row.value)}</td>
-              <td className="px-2 py-2">{row.source ?? '—'}</td>
-              <td className="max-w-[160px] truncate px-2 py-2" title={row.source_field ?? undefined}>
-                {row.source_field ?? '—'}
+              <td className="px-2 py-2">{fmtSource(row)}</td>
+              <td className="max-w-[160px] truncate px-2 py-2" title={fmtSourceField(row)}>
+                {fmtSourceField(row)}
               </td>
-              <td className="px-2 py-2 tabular-nums">{row.sample_size ?? '—'}</td>
-              <td className="max-w-[140px] px-2 py-2 text-slate-600">
-                {(row.warnings ?? []).join(', ') || '—'}
-              </td>
+              <td className="px-2 py-2 tabular-nums">{fmtSample(row)}</td>
+              <td className="max-w-[200px] px-2 py-2 text-slate-600">{fmtNotes(row)}</td>
             </tr>
           ))}
         </tbody>

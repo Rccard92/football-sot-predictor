@@ -353,6 +353,21 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
+## Cecchino — Fase 52 — xG storico current season per Expected Goal Engine
+
+Aggiornamento recupero variabili xG nel diagnostics builder (`home_xg_for`, `home_xg_against`, `away_xg_for`, `away_xg_against`).
+
+| Componente | Comportamento |
+|------------|---------------|
+| Fonte | `current_season_fixture_statistics` |
+| Path | `statistics[type=expected_goals].value` |
+| Scope | Tutte le partite prior del campionato/stagione corrente (no N, no ultime 5/10) |
+| Anti-leakage | Partita analizzata esclusa; solo fixture con kickoff &lt; target |
+| Sample | `available` ≥3, `insufficient_sample` 1–2, `missing` 0 |
+| Backfill | `POST /api/admin/cecchino/fixtures/{id}/backfill-current-season-xg` (manuale) |
+
+**Invariato:** altre 16 variabili diagnostics, Equilibrio, Intensità Goal, ICM, Segnali, Betfair-only, SOT.
+
 ## Cecchino — Fase 51 — API Raw Inspector per Expected Goal Engine
 
 Strumento tecnico/manuale per ispezionare dati raw/cache/API di una singola fixture e scoprire dove vivono i campi xG/expected.

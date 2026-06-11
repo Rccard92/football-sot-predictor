@@ -749,6 +749,12 @@ export type CecchinoExpectedGoalEngineVariable = {
   period?: string
   description?: string
   warnings?: string[]
+  note?: string
+  anti_leakage?: {
+    current_fixture_excluded?: boolean
+    fixture_date_cutoff?: string | null
+    scope?: string
+  }
 }
 
 export type CecchinoExpectedGoalEngineCoverage = {

@@ -5,14 +5,20 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.cecchino_recompute import CecchinoRecomputeBody
 from app.services.cecchino.cecchino_api_raw_inspector import build_api_raw_inspector
+from app.services.cecchino.cecchino_current_season_xg import backfill_current_season_xg_for_today_fixture
 from app.services.cecchino.cecchino_recompute_service import recompute_cecchino_range
 
 router = APIRouter(prefix="/admin/cecchino", tags=["admin-cecchino"])
+
+
+class BackfillCurrentSeasonXgBody(BaseModel):
+    force_refresh: bool = False
 
 
 @router.post("/recompute")
@@ -56,4 +62,23 @@ def api_raw_inspector(
     )
     if payload.get("status") == "not_found":
         raise HTTPException(status_code=404, detail=payload.get("message"))
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/fixtures/{today_fixture_id}/backfill-current-season-xg")
+def backfill_current_season_xg(
+    today_fixture_id: int,
+    body: BackfillCurrentSeasonXgBody,
+    db: Session = Depends(get_db),
+):
+    """Backfill manuale xG fixture prior campionato corrente — non invocare da scan automatici."""
+    payload = backfill_current_season_xg_for_today_fixture(
+        db,
+        today_fixture_id,
+        force_refresh=body.force_refresh,
+    )
+    if payload.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=payload.get("message"))
+    if payload.get("status") == "error":
+        return JSONResponse(status_code=400, content=jsonable_encoder(payload))
     return JSONResponse(content=jsonable_encoder(payload))

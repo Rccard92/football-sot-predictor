@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 52 — xG storico current season per Expected Goal Engine (2026-06-09)
+
+- Aggiornato il recupero delle variabili xG nel diagnostics builder Expected Goal Engine.
+- Gli xG non usano più la partita corrente (anti-leakage esplicito).
+- Calcolo xG For e xG Against su tutte le partite precedenti disponibili del campionato/stagione corrente.
+- Escluse partite stagione precedente, coppe/competizioni diverse e fixture analizzata.
+- Mapping da `fixture_statistics` → `expected_goals` (case-insensitive).
+- Aggiunto `sample_size` xG con soglie availability dedicate (≥3 available).
+- Nota anti-leakage in UI diagnostica; endpoint admin backfill xG opzionale.
+- **Invariato:** variabili non-xG diagnostics, Equilibrio, Intensità Goal, ICM, Monitoraggio, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 51 — API Raw Inspector per Expected Goal Engine (2026-06-09)
 
 - Aggiunto strumento **API Raw Inspector** per ispezionare dati raw/cache/API di una singola fixture.
