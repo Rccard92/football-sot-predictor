@@ -1,4 +1,4 @@
-"""Intensità Goal — Cecchino Today Fase 48 (v3 OVER-only, percentile storico)."""
+"""Intensità Goal — Cecchino Today Fase 49 (v4 Goal Attesi + soglie Over)."""
 
 from __future__ import annotations
 
@@ -8,122 +8,118 @@ from sqlalchemy.orm import Session
 
 from app.models import CecchinoTodayFixture, Fixture
 from app.services.cecchino.cecchino_constants import STATUS_INSUFFICIENT_DATA
-from app.services.cecchino.cecchino_fixture_history import build_goal_fixture_slices
-from app.services.cecchino.cecchino_goal_formulas import (
-    calculate_over_fulltime_excel_parity,
-    calculate_under_fulltime_excel_parity,
+from app.services.cecchino.cecchino_fixture_history import build_goal_market_contexts
+from app.services.cecchino.cecchino_goal_poisson_v2 import (
+    poisson_cumulative,
+    poisson_pmf,
+    weighted_lambda,
 )
-from app.services.cecchino.cecchino_goal_intensity_baselines import (
-    get_goal_intensity_over_baseline,
-    percentile_rank_percent,
-)
+from app.services.cecchino.cecchino_selection_keys import SEL_OVER_1_5, SEL_OVER_2_5
 
-VERSION = "cecchino_goal_intensity_v3_over_only"
-METHOD = "over_percentile"
-STATUS_INSUFFICIENT_BASELINE = "insufficient_baseline"
+VERSION = "cecchino_goal_intensity_v4_expected_goals"
+METHOD = "expected_goals_thresholds"
 STATUS_AVAILABLE = "available"
 
-_OVER_FORMULA = "(Q39+R39)/2+(Q42+R42)/2"
-_CLASSIFICATION_METHOD = "OVER Q44 percentile rank"
-_UNDER_DEPRECATED_NOTE = (
-    "UNDER Q44 non determina più la classificazione finale nella versione v3."
+_DEBUG_SOURCE = "internal_cecchino_goal_engine"
+_CLASSIFICATION_METHOD = "expected_goals_total thresholds"
+_DEBUG_NOTE = (
+    "La classificazione usa i Goal Attesi Cecchino interni, non xG esterni e non risultato reale."
 )
 
+_THRESHOLD_LINES: tuple[tuple[str, float, str], ...] = (
+    ("over_0_5", 0.5, "Over 0.5"),
+    ("over_1_5", 1.5, "Over 1.5"),
+    ("over_2_5", 2.5, "Over 2.5"),
+    ("over_3_5", 3.5, "Over 3.5"),
+)
 
-def _q44_from_blocks(blocks: dict[str, Any] | None) -> tuple[float | None, dict[str, float] | None]:
-    if not blocks:
-        return None, None
-    ha = blocks.get("home_away") or {}
-    tot = blocks.get("totals") or {}
-    q39 = ha.get("home_component")
-    r39 = ha.get("away_component")
-    q42 = tot.get("home_component")
-    r42 = tot.get("away_component")
-    if None in (q39, r39, q42, r42):
-        return None, None
-    q44 = round(float(ha["block_value"]) + float(tot["block_value"]), 2)
-    return q44, {
-        "q39": round(float(q39), 4),
-        "r39": round(float(r39), 4),
-        "q42": round(float(q42), 4),
-        "r42": round(float(r42), 4),
-    }
+_FT_MARKET_KEYS = (SEL_OVER_1_5, SEL_OVER_2_5)
 
 
-def _q44_from_ft_parity(
-    ft_result: dict[str, Any] | None,
-    *,
-    missing_warning: str,
-) -> tuple[float | None, dict[str, float] | None, list[str]]:
-    warnings: list[str] = []
-    if not ft_result or ft_result.get("status") == STATUS_INSUFFICIENT_DATA:
-        warnings.append(missing_warning)
-        return None, None, warnings
-    q44, sources = _q44_from_blocks(ft_result.get("blocks"))
-    if q44 is None:
-        warnings.append(missing_warning)
-    return q44, sources, warnings
+def _poisson_prob_over_line(lambda_value: float, line: float) -> float:
+    if line <= 0.5:
+        return 1.0 - poisson_pmf(0, lambda_value)
+    if line <= 1.5:
+        return 1.0 - poisson_cumulative(lambda_value, 1)
+    if line <= 2.5:
+        return 1.0 - poisson_cumulative(lambda_value, 2)
+    return 1.0 - poisson_cumulative(lambda_value, 3)
 
 
-def _classify_over_percentile(percentile: float) -> tuple[str, str]:
-    if percentile < 20:
+def _classify_expected_goals(expected_goals_total: float) -> tuple[str, str]:
+    if expected_goals_total < 0.5:
         return "very_defensive", "Molto Difensiva"
-    if percentile < 40:
+    if expected_goals_total < 1.5:
         return "defensive", "Difensiva"
-    if percentile <= 60:
+    if expected_goals_total < 2.5:
         return "balanced", "Equilibrata"
-    if percentile <= 80:
+    if expected_goals_total < 3.5:
         return "offensive", "Offensiva"
     return "very_offensive", "Molto Offensiva"
 
 
-def _build_plain_summary_v3(final_label: str) -> str:
+def _active_threshold_labels(thresholds: dict[str, Any]) -> list[str]:
+    return [
+        str(entry["label"])
+        for entry in thresholds.values()
+        if isinstance(entry, dict) and entry.get("active")
+    ]
+
+
+def _build_plain_summary(expected_goals_total: float, final_label: str) -> str:
+    eg = f"{expected_goals_total:.2f}"
+    active = _active_threshold_labels(_build_thresholds(expected_goals_total, expected_goals_total))
+    active_text = ", ".join(active) if active else "nessuna soglia Over principale"
+
     if final_label == "Molto Difensiva":
         return (
-            "La pressione goal della partita è molto bassa rispetto allo storico Cecchino: "
-            "il modello legge una gara a tendenza difensiva."
+            f"Il modello stima meno di 0.5 goal attesi interni: {active_text} si accende. "
+            "La partita viene letta come molto difensiva."
         )
     if final_label == "Difensiva":
         return (
-            "La pressione goal della partita è sotto la media storica Cecchino: "
-            "il modello legge una gara con intensità goal contenuta."
+            f"Il modello stima un'intensità goal bassa: si accende solo Over 0.5. "
+            "La partita viene letta come difensiva."
         )
     if final_label == "Equilibrata":
         return (
-            "La pressione goal della partita è nella media dello storico Cecchino: "
-            "il modello legge una gara equilibrata sul piano dell'intensità goal."
+            f"Il modello stima {eg} goal attesi interni: si accendono Over 0.5 e Over 1.5, "
+            "ma non Over 2.5. La partita viene letta come equilibrata."
         )
     if final_label == "Offensiva":
         return (
-            "La pressione goal della partita è superiore alla maggior parte dei valori storici "
-            "del Cecchino: il modello legge una gara a tendenza offensiva."
+            f"Il modello stima {eg} goal attesi interni: si accendono Over 0.5, Over 1.5 e Over 2.5. "
+            "La partita viene letta come offensiva."
         )
     if final_label == "Molto Offensiva":
         return (
-            "La pressione goal della partita è nettamente sopra lo storico Cecchino: "
-            "il modello legge una gara ad alta intensità goal."
+            f"Il modello stima un'intensità goal molto alta: si accendono tutte le soglie principali "
+            f"fino a Over 3.5 ({eg} goal attesi). La partita viene letta come molto offensiva."
         )
-    return f"Il percentile OVER Q44 indica una lettura {final_label.lower()}."
+    return f"Il modello stima {eg} goal attesi interni ({final_label.lower()})."
 
 
-def _public_baseline(baseline: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source": baseline.get("source"),
-        "sample_size": baseline.get("sample_size", 0),
-        "median_over_q44": baseline.get("median_over_q44"),
-        "p20_over_q44": baseline.get("p20_over_q44"),
-        "p40_over_q44": baseline.get("p40_over_q44"),
-        "p60_over_q44": baseline.get("p60_over_q44"),
-        "p80_over_q44": baseline.get("p80_over_q44"),
-        "method": baseline.get("method", "percentile_distribution"),
-    }
+def _build_thresholds(
+    expected_goals_total: float,
+    lambda_value: float,
+) -> dict[str, dict[str, Any]]:
+    thresholds: dict[str, dict[str, Any]] = {}
+    for key, line, label in _THRESHOLD_LINES:
+        active = expected_goals_total >= line
+        thresholds[key] = {
+            "line": line,
+            "active": active,
+            "label": label,
+            "probability": round(_poisson_prob_over_line(lambda_value, line), 2),
+        }
+    return thresholds
 
 
 def _debug_payload() -> dict[str, str]:
     return {
-        "over_formula": _OVER_FORMULA,
+        "source": _DEBUG_SOURCE,
         "classification_method": _CLASSIFICATION_METHOD,
-        "note": _UNDER_DEPRECATED_NOTE,
+        "note": _DEBUG_NOTE,
     }
 
 
@@ -132,118 +128,76 @@ def _insufficient_data_payload(warnings: list[str]) -> dict[str, Any]:
         "version": VERSION,
         "status": STATUS_INSUFFICIENT_DATA,
         "method": METHOD,
-        "raw": None,
-        "baseline": None,
-        "over_analysis": None,
+        "expected_goals_total": None,
+        "thresholds": None,
+        "active_thresholds_count": None,
         "final_class_key": None,
         "final_label": "Dati insufficienti",
         "plain_summary": None,
-        "sources": None,
         "debug": _debug_payload(),
         "warnings": warnings,
     }
 
 
-def _insufficient_baseline_payload(
-    *,
-    raw: dict[str, Any],
-    sources: dict[str, Any] | None,
-    warnings: list[str],
-) -> dict[str, Any]:
-    warnings = list(warnings)
-    if "insufficient_goal_intensity_over_baseline" not in warnings:
-        warnings.append("insufficient_goal_intensity_over_baseline")
-    return {
-        "version": VERSION,
-        "status": STATUS_INSUFFICIENT_BASELINE,
-        "method": METHOD,
-        "raw": raw,
-        "baseline": None,
-        "over_analysis": None,
-        "final_class_key": None,
-        "final_label": "Baseline insufficiente",
-        "plain_summary": None,
-        "sources": sources,
-        "debug": _debug_payload(),
-        "warnings": warnings,
-    }
+def _lambda_from_goal_markets(goal_markets: dict[str, Any] | None) -> float | None:
+    if not goal_markets or not isinstance(goal_markets, dict):
+        return None
+    for mk in _FT_MARKET_KEYS:
+        block = goal_markets.get(mk)
+        if not isinstance(block, dict):
+            continue
+        summary = block.get("summary")
+        if not isinstance(summary, dict):
+            continue
+        lam = summary.get("lambda")
+        if lam is not None and float(lam) > 0:
+            return float(lam)
+    return None
 
 
-def build_cecchino_goal_intensity_analysis_from_parity(
-    *,
-    over_ft: dict[str, Any] | None,
-    under_ft: dict[str, Any] | None = None,
-    over_baseline: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Builder puro v3 — classificazione solo su percentile OVER Q44."""
+def _resolve_internal_expected_goals_total(
+    db: Session,
+    fixture: Fixture,
+    goal_markets: dict[str, Any] | None = None,
+) -> tuple[float | None, list[str]]:
     warnings: list[str] = []
-    raw_over, over_sources, over_warn = _q44_from_ft_parity(
-        over_ft,
-        missing_warning="missing_over_q44_sources",
-    )
-    raw_under, _, under_warn = _q44_from_ft_parity(
-        under_ft,
-        missing_warning="missing_under_q44_sources",
-    )
-    warnings.extend(over_warn)
-    warnings.extend(under_warn)
+    lam = _lambda_from_goal_markets(goal_markets)
+    if lam is not None and lam > 0:
+        return round(lam, 2), warnings
 
-    if raw_over is None:
-        return _insufficient_data_payload(warnings)
+    contexts = build_goal_market_contexts(db, fixture)
+    computed, _, _, lam_warnings = weighted_lambda(contexts.ft_slices())
+    warnings.extend(lam_warnings)
+    if computed is None or computed <= 0:
+        return None, warnings
+    return round(float(computed), 2), warnings
 
-    raw: dict[str, Any] = {"over_q44": raw_over}
-    if raw_under is not None:
-        raw["under_q44_deprecated"] = raw_under
 
-    sources: dict[str, Any] = {}
-    if over_sources:
-        sources["over"] = over_sources
+def build_cecchino_goal_intensity_analysis_from_expected_goals(
+    expected_goals_total: float | None,
+) -> dict[str, Any]:
+    """Builder puro v4 — classificazione su Goal Attesi Cecchino e soglie Over."""
+    if expected_goals_total is None or expected_goals_total <= 0:
+        return _insufficient_data_payload(["missing_internal_expected_goals_total"])
 
-    baseline_payload = over_baseline or {
-        "source": None,
-        "sample_size": 0,
-        "median_over_q44": None,
-        "over_values": [],
-        "method": "percentile_distribution",
-    }
-
-    over_values = list(baseline_payload.get("over_values") or [])
-    median = baseline_payload.get("median_over_q44")
-    if (
-        not over_values
-        or median is None
-        or float(median) <= 0
-        or baseline_payload.get("source") is None
-    ):
-        return _insufficient_baseline_payload(
-            raw=raw,
-            sources=sources or None,
-            warnings=warnings,
-        )
-
-    over_percentile = percentile_rank_percent(over_values, raw_over)
-    over_index_vs_median = round(raw_over / float(median), 2)
-    final_class_key, final_label = _classify_over_percentile(over_percentile)
-    plain_summary = _build_plain_summary_v3(final_label)
-
-    public_baseline = _public_baseline(baseline_payload)
+    eg = float(expected_goals_total)
+    thresholds = _build_thresholds(eg, eg)
+    active_count = sum(1 for t in thresholds.values() if t["active"])
+    final_class_key, final_label = _classify_expected_goals(eg)
+    plain_summary = _build_plain_summary(eg, final_label)
 
     return {
         "version": VERSION,
         "status": STATUS_AVAILABLE,
         "method": METHOD,
-        "raw": raw,
-        "baseline": public_baseline,
-        "over_analysis": {
-            "over_percentile": over_percentile,
-            "over_index_vs_median": over_index_vs_median,
-        },
+        "expected_goals_total": eg,
+        "thresholds": thresholds,
+        "active_thresholds_count": active_count,
         "final_class_key": final_class_key,
         "final_label": final_label,
         "plain_summary": plain_summary,
-        "sources": sources or None,
         "debug": _debug_payload(),
-        "warnings": warnings,
+        "warnings": [],
     }
 
 
@@ -251,24 +205,23 @@ def build_cecchino_goal_intensity_analysis(
     db: Session,
     target_fixture: Fixture,
     *,
-    competition_id: int | None = None,
-    country_name: str | None = None,
+    goal_markets: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Calcola Intensità Goal v3 da OVER Q44 e distribuzione storica."""
-    slices = build_goal_fixture_slices(db, target_fixture)
-    over_ft = calculate_over_fulltime_excel_parity(slices)
-    under_ft = calculate_under_fulltime_excel_parity(slices)
-    over_baseline = get_goal_intensity_over_baseline(
+    """Calcola Intensità Goal v4 da lambda interna del motore goal Cecchino."""
+    expected, warnings = _resolve_internal_expected_goals_total(
         db,
         target_fixture,
-        competition_id=competition_id,
-        country_name=country_name,
+        goal_markets=goal_markets,
     )
-    return build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over_ft,
-        under_ft=under_ft,
-        over_baseline=over_baseline,
-    )
+    if expected is None:
+        payload = _insufficient_data_payload(warnings)
+        if "missing_internal_expected_goals_total" not in payload["warnings"]:
+            payload["warnings"].append("missing_internal_expected_goals_total")
+        return payload
+    result = build_cecchino_goal_intensity_analysis_from_expected_goals(expected)
+    if warnings:
+        result["warnings"] = list(warnings)
+    return result
 
 
 def build_goal_intensity_for_today_row(
@@ -281,9 +234,12 @@ def build_goal_intensity_for_today_row(
     fixture = db.get(Fixture, int(row.local_fixture_id))
     if fixture is None:
         return _insufficient_data_payload(["missing_local_fixture"])
+
+    output = row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else {}
+    goal_markets = output.get("goal_markets") if isinstance(output, dict) else None
+
     return build_cecchino_goal_intensity_analysis(
         db,
         fixture,
-        competition_id=row.competition_id,
-        country_name=row.country_name,
+        goal_markets=goal_markets if isinstance(goal_markets, dict) else None,
     )

@@ -1,4 +1,4 @@
-"""Test Intensità Goal — Cecchino Fase 48 (v3 OVER-only)."""
+"""Test Intensità Goal — Cecchino Fase 49 (v4 Goal Attesi)."""
 
 from __future__ import annotations
 
@@ -10,172 +10,98 @@ import pytest
 from app.services.cecchino.cecchino_constants import STATUS_INSUFFICIENT_DATA
 from app.services.cecchino.cecchino_goal_intensity_analysis import (
     STATUS_AVAILABLE,
-    STATUS_INSUFFICIENT_BASELINE,
     VERSION,
-    _classify_over_percentile,
-    build_cecchino_goal_intensity_analysis_from_parity,
+    _classify_expected_goals,
+    _poisson_prob_over_line,
+    build_cecchino_goal_intensity_analysis_from_expected_goals,
 )
-from app.services.cecchino.cecchino_goal_intensity_baselines import percentile_rank_percent
-
-
-def _blocks(q39: float, r39: float, q42: float, r42: float) -> dict:
-    ha_val = round((q39 + r39) / 2, 4)
-    tot_val = round((q42 + r42) / 2, 4)
-    return {
-        "home_away": {
-            "home_component": q39,
-            "away_component": r39,
-            "block_value": ha_val,
-        },
-        "totals": {
-            "home_component": q42,
-            "away_component": r42,
-            "block_value": tot_val,
-        },
-    }
-
-
-def _ft_parity(blocks: dict) -> dict:
-    return {
-        "status": STATUS_AVAILABLE,
-        "blocks": blocks,
-    }
-
-
-def _over_baseline(
-    over_values: list[float],
-    *,
-    source: str = "league",
-    sample: int | None = None,
-) -> dict:
-    from app.services.cecchino.cecchino_goal_intensity_baselines import _over_distribution
-
-    dist = _over_distribution(over_values)
-    return {
-        "source": source,
-        "sample_size": sample if sample is not None else len(over_values),
-        "method": "percentile_distribution",
-        "over_values": over_values,
-        **dist,
-    }
-
-
-def test_raw_over_q44_from_spec():
-    over = _ft_parity(_blocks(2, 4, 1, 3))
-    under = _ft_parity(_blocks(2, 2, 1, 1))
-    result = build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over,
-        under_ft=under,
-        over_baseline=_over_baseline([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
-    )
-
-    assert result["status"] == STATUS_AVAILABLE
-    assert result["raw"]["over_q44"] == pytest.approx(5.0)
-    assert result["raw"]["under_q44_deprecated"] == pytest.approx(3.0)
-
-
-def test_percentile_rank_proportion_leq():
-    values = [1.0, 2.0, 3.0, 4.0, 5.0]
-    assert percentile_rank_percent(values, 4.0) == pytest.approx(80.0)
 
 
 @pytest.mark.parametrize(
-    ("percentile", "expected_key", "expected_label"),
+    ("eg", "expected_key", "expected_label"),
     [
-        (19.9, "very_defensive", "Molto Difensiva"),
-        (20.0, "defensive", "Difensiva"),
-        (39.9, "defensive", "Difensiva"),
-        (40.0, "balanced", "Equilibrata"),
-        (60.0, "balanced", "Equilibrata"),
-        (60.1, "offensive", "Offensiva"),
-        (80.0, "offensive", "Offensiva"),
-        (80.1, "very_offensive", "Molto Offensiva"),
+        (0.49, "very_defensive", "Molto Difensiva"),
+        (0.50, "defensive", "Difensiva"),
+        (1.49, "defensive", "Difensiva"),
+        (1.50, "balanced", "Equilibrata"),
+        (2.49, "balanced", "Equilibrata"),
+        (2.50, "offensive", "Offensiva"),
+        (3.49, "offensive", "Offensiva"),
+        (3.50, "very_offensive", "Molto Offensiva"),
     ],
 )
-def test_percentile_thresholds(percentile: float, expected_key: str, expected_label: str):
-    key, label = _classify_over_percentile(percentile)
+def test_classification_thresholds(eg: float, expected_key: str, expected_label: str):
+    key, label = _classify_expected_goals(eg)
     assert key == expected_key
     assert label == expected_label
 
 
-def test_index_vs_median():
-    over = _ft_parity(_blocks(1.2, 1.2, 1.2, 1.2))  # raw over = 2.4
-    result = build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over,
-        over_baseline=_over_baseline([1.0, 2.0, 2.0, 3.0]),
-    )
-
-    assert result["raw"]["over_q44"] == pytest.approx(2.4)
-    assert result["over_analysis"]["over_index_vs_median"] == pytest.approx(1.20)
-
-
-def test_insufficient_baseline_when_baseline_null():
-    over = _ft_parity(_blocks(2, 4, 1, 3))
-    result = build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over,
-        over_baseline={
-            "source": None,
-            "sample_size": 0,
-            "median_over_q44": None,
-            "over_values": [],
-            "method": "percentile_distribution",
-        },
-    )
-
-    assert result["status"] == STATUS_INSUFFICIENT_BASELINE
-    assert result["over_analysis"] is None
-    assert result["final_label"] == "Baseline insufficiente"
-    assert "insufficient_goal_intensity_over_baseline" in result["warnings"]
-    assert result["raw"]["over_q44"] == pytest.approx(5.0)
+@pytest.mark.parametrize(
+    ("eg", "active_keys"),
+    [
+        (0.49, []),
+        (0.50, ["over_0_5"]),
+        (1.49, ["over_0_5"]),
+        (1.50, ["over_0_5", "over_1_5"]),
+        (2.49, ["over_0_5", "over_1_5"]),
+        (2.50, ["over_0_5", "over_1_5", "over_2_5"]),
+        (3.49, ["over_0_5", "over_1_5", "over_2_5"]),
+        (3.50, ["over_0_5", "over_1_5", "over_2_5", "over_3_5"]),
+    ],
+)
+def test_active_thresholds(eg: float, active_keys: list[str]):
+    result = build_cecchino_goal_intensity_analysis_from_expected_goals(eg)
+    thresholds = result["thresholds"]
+    for key in ("over_0_5", "over_1_5", "over_2_5", "over_3_5"):
+        assert thresholds[key]["active"] == (key in active_keys)
+    assert result["active_thresholds_count"] == len(active_keys)
 
 
-def test_missing_over_sources_insufficient_data():
-    over = {"status": STATUS_INSUFFICIENT_DATA, "blocks": None}
-    result = build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over,
-        over_baseline=_over_baseline([1.0, 2.0, 3.0]),
-    )
+def test_poisson_probabilities_monotonic():
+    lam = 2.5
+    p05 = _poisson_prob_over_line(lam, 0.5)
+    p15 = _poisson_prob_over_line(lam, 1.5)
+    p25 = _poisson_prob_over_line(lam, 2.5)
+    p35 = _poisson_prob_over_line(lam, 3.5)
+    assert p05 > p15 > p25 > p35
 
+    result = build_cecchino_goal_intensity_analysis_from_expected_goals(lam)
+    th = result["thresholds"]
+    assert th["over_0_5"]["probability"] > th["over_1_5"]["probability"]
+    assert th["over_1_5"]["probability"] > th["over_2_5"]["probability"]
+    assert th["over_2_5"]["probability"] > th["over_3_5"]["probability"]
+
+
+def test_insufficient_data_when_expected_goals_null():
+    result = build_cecchino_goal_intensity_analysis_from_expected_goals(None)
     assert result["status"] == STATUS_INSUFFICIENT_DATA
-    assert result["raw"] is None
+    assert result["expected_goals_total"] is None
+    assert result["thresholds"] is None
     assert result["final_label"] == "Dati insufficienti"
+    assert "missing_internal_expected_goals_total" in result["warnings"]
 
 
-def test_under_independence():
-    over = _ft_parity(_blocks(2, 4, 1, 3))
-    under_low = _ft_parity(_blocks(1, 1, 1, 1))
-    under_high = _ft_parity(_blocks(5, 5, 5, 5))
-    baseline = _over_baseline([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-
-    result_low = build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over,
-        under_ft=under_low,
-        over_baseline=baseline,
-    )
-    result_high = build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over,
-        under_ft=under_high,
-        over_baseline=baseline,
-    )
-
-    assert result_low["final_label"] == result_high["final_label"]
-    assert result_low["final_class_key"] == result_high["final_class_key"]
-    assert result_low["over_analysis"] == result_high["over_analysis"]
+def test_available_payload_structure():
+    result = build_cecchino_goal_intensity_analysis_from_expected_goals(2.72)
+    assert result["status"] == STATUS_AVAILABLE
+    assert result["version"] == VERSION
+    assert result["method"] == "expected_goals_thresholds"
+    assert result["expected_goals_total"] == pytest.approx(2.72)
+    assert result["final_class_key"] == "offensive"
+    assert result["debug"]["source"] == "internal_cecchino_goal_engine"
+    assert "thresholds" in result
+    assert result["plain_summary"]
 
 
-def test_independence_from_balance_analysis():
+def test_independence_from_other_modules():
     mod = importlib.import_module("app.services.cecchino.cecchino_goal_intensity_analysis")
     source = inspect.getsource(mod)
     assert "cecchino_balance_analysis" not in source
+    assert "cecchino_icm_analysis" not in source
+    assert "team_sot_predictions" not in source
     assert "build_cecchino_balance_analysis" not in source
 
 
-def test_version_v3():
-    over = _ft_parity(_blocks(2, 4, 1, 3))
-    result = build_cecchino_goal_intensity_analysis_from_parity(
-        over_ft=over,
-        over_baseline=_over_baseline([1.0, 2.0, 3.0, 4.0, 5.0]),
-    )
-    assert result["version"] == VERSION
-    assert result["version"] == "cecchino_goal_intensity_v3_over_only"
-    assert result["method"] == "over_percentile"
+def test_version_v4():
+    result = build_cecchino_goal_intensity_analysis_from_expected_goals(2.0)
+    assert result["version"] == "cecchino_goal_intensity_v4_expected_goals"

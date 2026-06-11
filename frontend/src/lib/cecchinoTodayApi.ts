@@ -706,52 +706,28 @@ export type CecchinoBalanceAnalysisTechnical = {
   legend_version?: string
 }
 
-export type CecchinoGoalIntensitySources = {
-  q39?: number
-  r39?: number
-  q42?: number
-  r42?: number
-}
-
-export type CecchinoGoalIntensityRaw = {
-  over_q44?: number | null
-  under_q44_deprecated?: number | null
-}
-
-export type CecchinoGoalIntensityBaseline = {
-  source?: string | null
-  sample_size?: number
-  median_over_q44?: number | null
-  p20_over_q44?: number | null
-  p40_over_q44?: number | null
-  p60_over_q44?: number | null
-  p80_over_q44?: number | null
-  method?: string
-}
-
-export type CecchinoGoalIntensityOverAnalysis = {
-  over_percentile?: number | null
-  over_index_vs_median?: number | null
+export type CecchinoGoalIntensityThreshold = {
+  line?: number
+  active?: boolean
+  label?: string
+  probability?: number | null
 }
 
 export type CecchinoGoalIntensityAnalysis = {
   version?: string
   status?: string
   method?: string
-  raw?: CecchinoGoalIntensityRaw | null
-  baseline?: CecchinoGoalIntensityBaseline | null
-  over_analysis?: CecchinoGoalIntensityOverAnalysis | null
+  expected_goals_total?: number | null
+  thresholds?: Record<string, CecchinoGoalIntensityThreshold> | null
+  active_thresholds_count?: number | null
   final_class_key?: string | null
   final_label?: string | null
   plain_summary?: string | null
   debug?: {
-    over_formula?: string
+    source?: string
     classification_method?: string
     note?: string
   }
-  sources?: {
-    over?: CecchinoGoalIntensitySources
-  } | null
   warnings?: string[]
 }
 

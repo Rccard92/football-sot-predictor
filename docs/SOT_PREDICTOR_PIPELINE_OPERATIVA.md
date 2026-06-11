@@ -63,7 +63,24 @@ flowchart LR
 - **Backfill:** `POST /admin/cecchino/signals/backfill` con `force_remap=true` — offline, zero API-Football.
 - **UI:** pulsante «Ricalcola mapping segnali» su Monitoraggio Segnali.
 
-## Fase 48 — Intensità Goal v3 OVER-only
+## Fase 49 — Intensità Goal v4 Goal Attesi
+
+```mermaid
+flowchart TD
+  fixture[Fixture Cecchino Today] --> ctx[build_goal_market_contexts]
+  ctx --> wl[weighted_lambda FT]
+  wl --> eg[expected_goals_total]
+  eg --> thr[soglie Over 0.5/1.5/2.5/3.5]
+  eg --> pois[prob Over Poisson]
+  thr --> class[final_class_key / final_label]
+  class --> ui[CecchinoGoalIntensityAnalysisPanel v4]
+```
+
+- **v4:** classificazione su Goal Attesi Cecchino interni; soglie Over progressive.
+- **Fonte:** `lambda_total` motore goal Poisson v2 (non xG API-Football).
+- **UI:** badge v4 Goal Attesi, scala soglie Over, scala intensità goal.
+
+## Fase 48 — Intensità Goal v3 OVER-only (sostituita da Fase 49)
 
 ```mermaid
 flowchart TD

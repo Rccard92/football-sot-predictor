@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fase 49 — Intensità Goal v4 Goal Attesi (2026-06-09)
+
+- Aggiornata la sezione Intensità Goal alla versione **v4 Goal Attesi** (`cecchino_goal_intensity_v4_expected_goals`).
+- Rimossa la classificazione basata su percentile OVER Q44 (v3).
+- Introdotta classificazione basata sui Goal Attesi Cecchino interni (`lambda_total` motore Poisson goal).
+- Aggiunte soglie progressive Over 0.5, Over 1.5, Over 2.5 e Over 3.5.
+- Molto Difensiva = goal attesi sotto 0.5; Difensiva = solo Over 0.5; Equilibrata = Over 0.5+1.5; Offensiva = fino a Over 2.5; Molto Offensiva = fino a Over 3.5.
+- Chiarito che non vengono usati xG esterni, risultati reali o quote bookmaker.
+- UI: badge v4 Goal Attesi, Goal Attesi Cecchino, soglie Over accese/spente, scala intensità, dettaglio tecnico v4.
+- **Invariato:** Equilibrio vs Squilibrio, ICM, KPI, Segnali, Monitoraggio stabile/Lab, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Fase 48 — Intensità Goal v3 OVER-only (2026-06-09)
 
 - Aggiornata la sezione Intensità Goal alla versione **v3 OVER-only** (`cecchino_goal_intensity_v3_over_only`).

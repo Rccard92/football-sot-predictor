@@ -353,7 +353,24 @@ Versione UI `cecchino_today_v0_31_scala_mapping` — SCALA su righe 1X/X2.
 
 **Invariato:** formule SI/NO, Betfair-only, SOT v2.0/v2.1, Under/Over 2.5 FT (Fase 34).
 
-## Cecchino — Fase 48 — Intensità Goal v3 OVER-only
+## Cecchino — Fase 49 — Intensità Goal v4 Goal Attesi
+
+Evoluzione Fase 48: classificazione su **Goal Attesi Cecchino interni** (`lambda_total` del motore Poisson goal) e soglie Over progressive.
+
+| Componente | Comportamento |
+|------------|---------------|
+| Versione | `cecchino_goal_intensity_v4_expected_goals` |
+| Metodo | `expected_goals_thresholds` |
+| Fonte | `weighted_lambda` / `goal_markets.summary.lambda` — motore goal Cecchino v2 (non xG API) |
+| Soglie | Over 0.5 / 1.5 / 2.5 / 3.5 accese se `expected_goals_total >= linea` |
+| Classificazione | &lt;0.5 Molto Difensiva, 0.5–&lt;1.5 Difensiva, 1.5–&lt;2.5 Equilibrata, 2.5–&lt;3.5 Offensiva, ≥3.5 Molto Offensiva |
+| Probabilità | Poisson opzionali su ogni soglia (non sostituiscono classificazione) |
+| Stati | `available`, `insufficient_data` |
+| UI | Badge v4 Goal Attesi, soglie Over visive, scala intensità per goal attesi |
+
+**Invariato:** Equilibrio vs Squilibrio, ICM, KPI, Segnali, Betfair-only, SOT.
+
+## Cecchino — Fase 48 — Intensità Goal v3 OVER-only (sostituita da Fase 49)
 
 Evoluzione Fase 47: classificazione **solo** su percentile storico di OVER Q44. UNDER Q44 deprecato nel modulo.
 
