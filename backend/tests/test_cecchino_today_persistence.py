@@ -19,6 +19,7 @@ from app.models.cecchino_today_fixture import (
     ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER,
     CecchinoTodayFixture,
 )
+from app.services.cecchino.cecchino_today_constants import CECCHINO_TODAY_TIMELINE_WINDOW_DAYS
 from app.services.cecchino.cecchino_today_service import (
     build_cecchino_today_report,
     build_bookmaker_debug,
@@ -155,7 +156,7 @@ def test_list_available_days_includes_timeline_window():
     ):
         payload = list_available_days(db)
     dates = [d["date"] for d in payload["days"]]
-    assert len(dates) == 15
+    assert len(dates) == CECCHINO_TODAY_TIMELINE_WINDOW_DAYS * 2 + 1
     assert "2026-06-04" in dates
     assert "2026-06-05" in dates
     assert payload["selected_default"] == "2026-06-04"

@@ -21,7 +21,7 @@ from app.models.cecchino_today_fixture import (
     MATCH_UPCOMING,
     CecchinoTodayFixture,
 )
-from app.services.cecchino.cecchino_today_constants import TIMELINE_WINDOW_DAYS
+from app.services.cecchino.cecchino_today_constants import CECCHINO_TODAY_TIMELINE_WINDOW_DAYS
 from app.services.cecchino.cecchino_today_service import (
     build_exclusion_reason_message,
     build_fixture_status_debug,
@@ -78,7 +78,7 @@ def _eligible_row(**kwargs) -> CecchinoTodayFixture:
     return row
 
 
-def test_days_endpoint_includes_plus_minus_7():
+def test_days_endpoint_includes_plus_minus_window():
     db = MagicMock()
     with (
         patch("app.routes.cecchino_today.list_available_days") as mock_days,
@@ -113,7 +113,7 @@ def test_list_available_days_window_and_is_today():
         patch("app.services.cecchino.cecchino_today_service._aggregate_scan_dates", return_value=agg),
     ):
         payload = list_available_days(db)
-    assert len(payload["days"]) == TIMELINE_WINDOW_DAYS * 2 + 1
+    assert len(payload["days"]) == CECCHINO_TODAY_TIMELINE_WINDOW_DAYS * 2 + 1
     today_entry = next(d for d in payload["days"] if d["date"] == "2026-06-04")
     assert today_entry["is_today"] is True
     assert today_entry["eligible_count"] == 11

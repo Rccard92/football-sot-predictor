@@ -425,7 +425,7 @@ POST /api/admin/cecchino/today/scan-tomorrow
 POST /api/admin/cecchino/today/cleanup
 ```
 
-Lettura: `GET /api/cecchino/today/days` (timeline ±7), `GET /api/cecchino/today?date=` (summary, filters, score). Debug: `GET .../excluded`, `GET .../debug-search`. UI: `/cecchino-today`.
+Lettura: `GET /api/cecchino/today/days` (timeline ±30), `GET /api/cecchino/today?date=` (summary, filters, score). Debug: `GET .../excluded`, `GET .../debug-search`. UI: `/cecchino-today`.
 
 **Fase 2 (dati reali):** i record W/D/L derivano solo da fixture **finite** prima del kickoff target, filtrate per `competition_id`. La risposta API include `data_quality` (sample count, `leakage_check`). Dopo deploy, eseguire `recalculate` per aggiornare righe già in cache con il nuovo schema.
 

@@ -100,7 +100,7 @@ from app.services.cecchino.cecchino_today_constants import (
     CECCHINO_TODAY_VERSION,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_TODAY_TIMEZONE,
-    TIMELINE_WINDOW_DAYS,
+    CECCHINO_TODAY_TIMELINE_WINDOW_DAYS,
 )
 from app.services.cecchino.cecchino_today_display import (
     apply_display_from_api,
@@ -1809,7 +1809,7 @@ def list_available_days(
     db: Session,
     *,
     timezone: str = DEFAULT_TODAY_TIMEZONE,
-    window_days: int = TIMELINE_WINDOW_DAYS,
+    window_days: int = CECCHINO_TODAY_TIMELINE_WINDOW_DAYS,
 ) -> dict[str, Any]:
     from app.services.cecchino.cecchino_today_scan_job_service import (
         get_active_jobs_by_dates,

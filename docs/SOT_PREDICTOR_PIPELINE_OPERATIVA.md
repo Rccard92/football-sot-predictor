@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Timeline Cecchino Today — finestra ±30 giorni
+
+- Costante backend: `CECCHINO_TODAY_TIMELINE_WINDOW_DAYS = 30` in `cecchino_today_constants.py`.
+- Endpoint: `GET /api/cecchino/today/days` restituisce 61 giorni (oggi ±30) con conteggi scan/eleggibili.
+- UI: frecce e card visibili 3/5/7 invariati; scorrimento nel range esteso.
+- **Non modifica:** cleanup retention (`DEFAULT_RETENTION_DAYS`), Monitoraggio Segnali/Lab, backtest A–F.
+
 ## Flusso scan giornaliero (Fase 16 — async)
 
 ```mermaid

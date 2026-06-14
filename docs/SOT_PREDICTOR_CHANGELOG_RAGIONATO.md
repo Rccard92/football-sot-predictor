@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Timeline estesa ±30 giorni (2026-06-11)
+
+- Estesa la finestra navigabile della timeline Cecchino Today da ±7 a ±30 giorni (`CECCHINO_TODAY_TIMELINE_WINDOW_DAYS`).
+- La modifica riguarda solo la visualizzazione/navigazione della timeline (`GET /api/cecchino/today/days`).
+- Nessun dato storico viene cancellato; cleanup retention (`DEFAULT_RETENTION_DAYS`) invariato.
+- Monitoraggio Segnali e Monitoraggio Segnali Lab restano invariati.
+- Backtest modelli A–F e statistiche storiche restano invariati.
+- Nessuna modifica a Expected Goal Engine, ICM, Intensità Goal, Equilibrio, Betfair-only o moduli SOT.
+
 ## Cecchino — Fase 53 — xG storico automatico per fixture eleggibili (2026-06-09)
 
 - Automatizzato il recupero xG storico current season alla eleggibilità Cecchino (scan, recompute, revalidate, detail lazy).

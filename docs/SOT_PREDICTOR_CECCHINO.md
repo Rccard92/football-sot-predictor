@@ -210,11 +210,11 @@ Route `/cecchino` — voce menu principale. Modulo separato da SOT v2.0/v2.1 (ne
 
 ## Cecchino Today — discovery giornaliera v0.3 (timeline, filtri, risultati)
 
-Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timeline ±7 giorni, scan per giornata selezionata, aggiornamento risultati post-kickoff, filtri client-side, card arricchite (stato, score, loghi).
+Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timeline ±30 giorni, scan per giornata selezionata, aggiornamento risultati post-kickoff, filtri client-side, card arricchite (stato, score, loghi).
 
 | Metodo | Path | Scopo |
 |--------|------|--------|
-| GET | `/api/cecchino/today/days` | Timeline ±7: oggi, futuro, storico; counts per stato |
+| GET | `/api/cecchino/today/days` | Timeline ±30: oggi, futuro, storico; counts per stato |
 | GET | `/api/cecchino/today?date=` | Eleggibili + summary + filters + score/loghi |
 | POST | `/api/admin/cecchino/today/scan-day` | Avvia scan async (wrapper → `/scan-day/start`; `sync=true` solo debug) |
 | POST | `/api/admin/cecchino/today/update-results` | Aggiorna stato/score eleggibili salvate |
