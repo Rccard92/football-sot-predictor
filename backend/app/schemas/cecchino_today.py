@@ -64,6 +64,8 @@ class CecchinoTodayUpdateResultsBody(BaseModel):
 class CecchinoTodayCleanupBody(BaseModel):
     retention_days: int = Field(default=7, ge=1, le=90)
     timezone: str = Field(default=DEFAULT_TODAY_TIMEZONE)
+    dry_run: bool = True
+    confirm: str | None = None
 
 
 class CecchinoTodayRevalidateDayBody(BaseModel):

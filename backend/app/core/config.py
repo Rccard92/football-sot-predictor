@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     prematch_refresh_window_minutes: int = 10
     prematch_refresh_skip_recent_minutes: int = 8
 
+    cecchino_allow_destructive_cleanup: bool = False
+
     @property
     def admin_cron_secret(self) -> str:
         """Retrocompatibilità: stesso valore di cron_secret."""

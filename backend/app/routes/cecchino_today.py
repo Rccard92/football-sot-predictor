@@ -270,7 +270,9 @@ def cecchino_today_cleanup(
         db,
         retention_days=req.retention_days,
         timezone=req.timezone,
-        commit=True,
+        dry_run=req.dry_run,
+        confirm=req.confirm,
+        commit=not req.dry_run,
     )
     return jsonable_encoder(payload)
 

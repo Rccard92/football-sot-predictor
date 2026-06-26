@@ -1,11 +1,22 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Disabilitazione cleanup automatico storico
+
+- `run_scan` e scan-job **non** invocano più `cleanup_cecchino_today_snapshots`.
+- Storico snapshot e signal activations preservati dopo ogni scan/rescan.
+- Cleanup distruttivo solo via `POST /api/admin/cecchino/today/cleanup` con guardie:
+  - `dry_run` default `true` (body opzionale);
+  - env `CECCHINO_ALLOW_DESTRUCTIVE_CLEANUP=true`;
+  - `confirm: "DELETE_CECCHINO_HISTORY"`.
+- `DEFAULT_RETENTION_DAYS=7` usato solo per calcolo cutoff nel cleanup manuale.
+- CASCADE su `cecchino_signal_activations` documentato — motivo della disabilitazione automatica.
+
 ## Timeline Cecchino Today — finestra ±30 giorni
 
 - Costante backend: `CECCHINO_TODAY_TIMELINE_WINDOW_DAYS = 30` in `cecchino_today_constants.py`.
 - Endpoint: `GET /api/cecchino/today/days` restituisce 61 giorni (oggi ±30) con conteggi scan/eleggibili.
 - UI: frecce e card visibili 3/5/7 invariati; scorrimento nel range esteso.
-- **Non modifica:** cleanup retention (`DEFAULT_RETENTION_DAYS`), Monitoraggio Segnali/Lab, backtest A–F.
+- **Non modifica:** Monitoraggio Segnali/Lab, backtest A–F; non esegue DELETE su fixture.
 
 ## Flusso scan giornaliero (Fase 16 — async)
 

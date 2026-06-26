@@ -98,6 +98,7 @@ from app.services.cecchino.cecchino_today_bootstrap import ensure_competition_an
 from app.services.cecchino.cecchino_today_competition_filter import is_cecchino_allowed_competition
 from app.services.cecchino.cecchino_today_constants import (
     CECCHINO_TODAY_VERSION,
+    CECCHINO_CLEANUP_CONFIRM_TOKEN,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_TODAY_TIMEZONE,
     CECCHINO_TODAY_TIMELINE_WINDOW_DAYS,
@@ -996,12 +997,7 @@ def run_scan(
     signal_sync_summary = sync_signals_for_scan_date(db, resolved_date)
     db.commit()
 
-    cleanup_result = cleanup_cecchino_today_snapshots(
-        db,
-        retention_days=DEFAULT_RETENTION_DAYS,
-        timezone=timezone,
-        commit=True,
-    )
+    logger.info("Cecchino retention cleanup disabled: historical data is preserved")
     warnings.extend([w for w in warnings if w])
     report = build_cecchino_today_report(
         scan_date=resolved_date,
@@ -1012,7 +1008,6 @@ def run_scan(
     )
     report["fixtures_processed"] = total
     report["signal_sync_summary"] = signal_sync_summary
-    report["cleanup"] = cleanup_result
     if job_id:
         report["job_id"] = job_id
 
@@ -1890,10 +1885,65 @@ def cleanup_cecchino_today_snapshots(
     *,
     retention_days: int = DEFAULT_RETENTION_DAYS,
     timezone: str = DEFAULT_TODAY_TIMEZONE,
+    dry_run: bool = True,
+    confirm: str | None = None,
     commit: bool = False,
 ) -> dict[str, Any]:
+    """Cleanup manuale/admin — mai invocare da scan automatici.
+
+    ATTENZIONE: DELETE su cecchino_today_fixtures cascada su cecchino_signal_activations
+    (FK ondelete=CASCADE). Richiede dry_run=false, CECCHINO_ALLOW_DESTRUCTIVE_CLEANUP=true
+    e confirm=DELETE_CECCHINO_HISTORY.
+    """
+    from app.core.config import get_settings
+
     today = rome_today(timezone)
     cutoff = today - timedelta(days=retention_days)
+    base = {
+        "cutoff_date": cutoff.isoformat(),
+        "retention_days": retention_days,
+        "protected_from": today.isoformat(),
+        "dry_run": dry_run,
+    }
+
+    count_stmt = (
+        select(func.count())
+        .select_from(CecchinoTodayFixture)
+        .where(CecchinoTodayFixture.scan_date < cutoff)
+    )
+    would_delete = int(db.scalar(count_stmt) or 0)
+
+    if dry_run:
+        return {
+            **base,
+            "status": "ok",
+            "deleted": 0,
+            "would_delete": would_delete,
+            "message": "Dry run only — no rows deleted",
+        }
+
+    if not get_settings().cecchino_allow_destructive_cleanup:
+        logger.warning(
+            "Cecchino destructive cleanup blocked: CECCHINO_ALLOW_DESTRUCTIVE_CLEANUP is false",
+        )
+        return {
+            **base,
+            "status": "blocked",
+            "reason": "env_flag_disabled",
+            "deleted": 0,
+            "would_delete": would_delete,
+        }
+
+    if confirm != CECCHINO_CLEANUP_CONFIRM_TOKEN:
+        logger.warning("Cecchino destructive cleanup blocked: confirm token required")
+        return {
+            **base,
+            "status": "blocked",
+            "reason": "confirm_required",
+            "deleted": 0,
+            "would_delete": would_delete,
+        }
+
     result = db.execute(
         delete(CecchinoTodayFixture).where(CecchinoTodayFixture.scan_date < cutoff),
     )
@@ -1903,11 +1953,10 @@ def cleanup_cecchino_today_snapshots(
     else:
         db.flush()
     return {
+        **base,
         "status": "ok",
         "deleted": deleted,
-        "cutoff_date": cutoff.isoformat(),
-        "retention_days": retention_days,
-        "protected_from": today.isoformat(),
+        "would_delete": would_delete,
     }
 
 

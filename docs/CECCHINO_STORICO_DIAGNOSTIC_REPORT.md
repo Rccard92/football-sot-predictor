@@ -103,6 +103,14 @@ Opzioni (scegliere una):
 
 **Non modificare** finché non si decide restore vs accettazione perdita.
 
+## 11b. Fix applicato (2026-06-09)
+
+**Opzione A implementata** nel codice:
+
+- `run_scan` non chiama più `cleanup_cecchino_today_snapshots`.
+- Cleanup admin gated: `dry_run` default, `CECCHINO_ALLOW_DESTRUCTIVE_CLEANUP=false`, `confirm=DELETE_CECCHINO_HISTORY`.
+- Nuovi scan non cancelleranno più lo storico; i dati 1–17 giugno persi **non** si recuperano senza restore Railway.
+
 ## 12. Modifiche distruttive eseguite in questa diagnostica
 
 **Nessuna.**

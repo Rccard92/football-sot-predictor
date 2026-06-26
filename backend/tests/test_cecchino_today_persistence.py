@@ -79,6 +79,8 @@ def _make_row(
     row.score_fulltime_away = None
     row.elapsed_minutes = None
     row.raw_fixture_json = {}
+    row.cache_hit = False
+    row.negative_cache_hit = False
     return row
 
 
@@ -135,10 +137,6 @@ def test_scan_tomorrow_does_not_touch_today_rows():
     tomorrow = date(2026, 6, 5)
     with (
         patch("app.services.cecchino.cecchino_today_service._upsert_today_snapshot", side_effect=capture_upsert),
-        patch(
-            "app.services.cecchino.cecchino_today_service.cleanup_cecchino_today_snapshots",
-            return_value={"deleted": 0},
-        ),
         patch("app.services.cecchino.cecchino_today_service.ZoneInfo", return_value=timezone.utc),
     ):
         run_scan(db, scan_date=tomorrow, client=client_mock)
@@ -162,19 +160,17 @@ def test_list_available_days_includes_timeline_window():
     assert payload["selected_default"] == "2026-06-04"
 
 
-def test_cleanup_does_not_touch_today_tomorrow_future():
+def test_cleanup_dry_run_counts_without_delete():
     db = MagicMock()
-    mock_result = MagicMock()
-    mock_result.rowcount = 3
-    db.execute.return_value = mock_result
+    db.scalar.return_value = 3
 
     with patch("app.services.cecchino.cecchino_today_service.rome_today", return_value=date(2026, 6, 4)):
-        result = cleanup_cecchino_today_snapshots(db, retention_days=7, commit=True)
+        result = cleanup_cecchino_today_snapshots(db, retention_days=7, dry_run=True)
 
-    assert result["deleted"] == 3
+    assert result["deleted"] == 0
+    assert result["would_delete"] == 3
     assert result["cutoff_date"] == "2026-05-28"
-    assert result["protected_from"] == "2026-06-04"
-    db.execute.assert_called_once()
+    db.execute.assert_not_called()
 
 
 def test_list_eligible_today_filters_scan_date_and_eligible():
@@ -193,14 +189,29 @@ def test_list_eligible_today_filters_scan_date_and_eligible():
     assert payload["scan_meta"]["day_status"] == "available"
 
 
+_EMPTY_API_USAGE_DEBUG = {
+    "calls": 0,
+    "cache_hits": 0,
+    "negative_cache_hits": 0,
+    "by_endpoint": {},
+    "recent": [],
+}
+
+
 def test_list_excluded_today_enriched_includes_debug_blocks():
     db = MagicMock()
     row = _make_row(row_id=2, scan_date=date(2026, 6, 4), status=ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER)
     db.scalars.return_value.all.return_value = [row]
 
-    with patch(
-        "app.services.cecchino.cecchino_today_service.get_day_scan_meta",
-        return_value={"has_scan": True, "day_status": "available", "eligible_count": 0, "excluded_count": 1},
+    with (
+        patch(
+            "app.services.cecchino.cecchino_today_service.get_day_scan_meta",
+            return_value={"has_scan": True, "day_status": "available", "eligible_count": 0, "excluded_count": 1},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_today_service.build_api_usage_debug_for_fixture",
+            return_value=_EMPTY_API_USAGE_DEBUG,
+        ),
     ):
         payload = list_excluded_today_enriched(db, scan_date=date(2026, 6, 4))
 
@@ -222,7 +233,11 @@ def test_debug_search_finds_excluded_with_reason():
     )
     db.scalars.return_value.all.return_value = [row]
 
-    payload = debug_search(db, scan_date=date(2026, 6, 4), q="Juventus")
+    with patch(
+        "app.services.cecchino.cecchino_today_service.build_api_usage_debug_for_fixture",
+        return_value=_EMPTY_API_USAGE_DEBUG,
+    ):
+        payload = debug_search(db, scan_date=date(2026, 6, 4), q="Juventus")
     assert payload["results"][0]["match_type"] == "excluded"
     assert "excluded_cup" in payload["results"][0]["message"]
 

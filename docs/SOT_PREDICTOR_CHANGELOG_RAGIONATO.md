@@ -1,10 +1,23 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Disabilitazione cleanup automatico storico (2026-06-09)
+
+- Rimosso `cleanup_cecchino_today_snapshots` da `run_scan`: nessuna DELETE automatica post-scan.
+- Log post-scan: `Cecchino retention cleanup disabled: historical data is preserved`.
+- Cleanup manuale admin (`POST /api/admin/cecchino/today/cleanup`) protetto da:
+  - `dry_run=true` di default (solo conteggio `would_delete`, nessuna DELETE);
+  - `CECCHINO_ALLOW_DESTRUCTIVE_CLEANUP=false` di default (env `cecchino_allow_destructive_cleanup`);
+  - token `confirm=DELETE_CECCHINO_HISTORY` obbligatorio per delete reale.
+- `DEFAULT_RETENTION_DAYS=7` resta solo parametro del cleanup manuale (cutoff), non più usato in scan.
+- Timeline ±30 (`CECCHINO_TODAY_TIMELINE_WINDOW_DAYS`) invariata — solo navigazione UI, non cancella dati.
+- ATTENZIONE CASCADE: DELETE su `cecchino_today_fixtures` elimina `cecchino_signal_activations` collegate.
+- **Invariato:** revalidate, recompute, update-results, backtest segnali, Equilibrio, Intensità Goal, ICM, EGE, KPI, Monitoraggio/Lab, Betfair-only, SOT v2.0/v2.1, `team_sot_predictions`.
+
 ## Cecchino — Timeline estesa ±30 giorni (2026-06-11)
 
 - Estesa la finestra navigabile della timeline Cecchino Today da ±7 a ±30 giorni (`CECCHINO_TODAY_TIMELINE_WINDOW_DAYS`).
 - La modifica riguarda solo la visualizzazione/navigazione della timeline (`GET /api/cecchino/today/days`).
-- Nessun dato storico viene cancellato; cleanup retention (`DEFAULT_RETENTION_DAYS`) invariato.
+- Nessun dato storico viene cancellato dalla timeline; il cleanup automatico post-scan è stato disabilitato (vedi sezione sopra).
 - Monitoraggio Segnali e Monitoraggio Segnali Lab restano invariati.
 - Backtest modelli A–F e statistiche storiche restano invariati.
 - Nessuna modifica a Expected Goal Engine, ICM, Intensità Goal, Equilibrio, Betfair-only o moduli SOT.

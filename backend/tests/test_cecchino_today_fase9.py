@@ -75,6 +75,8 @@ def _eligible_row(**kwargs) -> CecchinoTodayFixture:
     row.bookmaker_status = "ok"
     row.stats_status = "ok"
     row.cecchino_status = "ok"
+    row.cache_hit = kwargs.get("cache_hit", False)
+    row.negative_cache_hit = kwargs.get("negative_cache_hit", False)
     return row
 
 
@@ -202,7 +204,7 @@ def test_list_eligible_includes_finished_and_logos():
     fx = payload["countries"][0]["leagues"][0]["fixtures"][0]
     assert fx["status"] == MATCH_FINISHED
     assert fx["home_team_logo_url"] == "https://media/logo-home.png"
-    assert fx["score"]["available"] is True
+    assert fx["score"]["fulltime"]["available"] is True
     assert "bookmakers" not in fx
 
 
@@ -217,24 +219,36 @@ def test_excluded_debug_includes_fixture_status_and_reason():
     assert msg is not None
 
 
+_EMPTY_API_USAGE_DEBUG = {
+    "calls": 0,
+    "cache_hits": 0,
+    "negative_cache_hits": 0,
+    "by_endpoint": {},
+    "recent": [],
+}
+
+
 def test_debug_search_finds_excluded():
     db = MagicMock()
     row = _eligible_row()
     row.eligibility_status = ELIGIBILITY_EXCLUDED_CUP
     row.home_team_name = "Roma"
     db.scalars.return_value.all.return_value = [row]
-    payload = debug_search(db, scan_date=date(2026, 6, 4), q="Roma")
+    with patch(
+        "app.services.cecchino.cecchino_today_service.build_api_usage_debug_for_fixture",
+        return_value=_EMPTY_API_USAGE_DEBUG,
+    ):
+        payload = debug_search(db, scan_date=date(2026, 6, 4), q="Roma")
     assert payload["results"][0]["match_type"] == "excluded"
 
 
-def test_cleanup_does_not_touch_today():
+def test_cleanup_dry_run_reports_protected_from():
     db = MagicMock()
-    mock_result = MagicMock()
-    mock_result.rowcount = 2
-    db.execute.return_value = mock_result
+    db.scalar.return_value = 2
     with patch("app.services.cecchino.cecchino_today_service.rome_today", return_value=date(2026, 6, 4)):
-        result = cleanup_cecchino_today_snapshots(db, retention_days=7, commit=True)
+        result = cleanup_cecchino_today_snapshots(db, retention_days=7, dry_run=True)
     assert result["protected_from"] == "2026-06-04"
+    assert result["deleted"] == 0
 
 
 def test_scan_day_endpoint():
@@ -274,9 +288,15 @@ def test_list_excluded_enriched_has_fixture_status_debug():
     row = _eligible_row()
     row.eligibility_status = ELIGIBILITY_EXCLUDED_CUP
     db.scalars.return_value.all.return_value = [row]
-    with patch(
-        "app.services.cecchino.cecchino_today_service.get_day_scan_meta",
-        return_value={"has_scan": True, "eligible_count": 0, "excluded_count": 1},
+    with (
+        patch(
+            "app.services.cecchino.cecchino_today_service.get_day_scan_meta",
+            return_value={"has_scan": True, "eligible_count": 0, "excluded_count": 1},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_today_service.build_api_usage_debug_for_fixture",
+            return_value=_EMPTY_API_USAGE_DEBUG,
+        ),
     ):
         payload = list_excluded_today_enriched(db, scan_date=date(2026, 6, 4))
     assert "fixture_status_debug" in payload["fixtures"][0]

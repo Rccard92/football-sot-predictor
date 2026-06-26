@@ -221,7 +221,7 @@ Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timel
 | POST | `/api/admin/cecchino/today/scan-today` | Alias scan oggi (mantenuto) |
 | POST | `/api/admin/cecchino/today/scan-tomorrow` | Alias scan domani (mantenuto) |
 
-**Persistenza post-kickoff:** le eleggibili restano in lista; `update-results` aggiorna `match_display_status`, score e loghi. Cleanup retention 7 giorni invariato.
+**Persistenza post-kickoff:** le eleggibili restano in lista; `update-results` aggiorna `match_display_status`, score e loghi. **Nessun cleanup automatico post-scan:** lo storico è preservato; DELETE solo manuale admin con `dry_run=false`, `CECCHINO_ALLOW_DESTRUCTIVE_CLEANUP=true` e `confirm=DELETE_CECCHINO_HISTORY`.
 
 **UI:** timeline a frecce (finestra paginata 3/5/7 giorni, no scrollbar), filtri stato/nazione/campionato/ricerca, card senza badge bookmaker, lista sticky su desktop, dettaglio KPI → Quote → Segnali (verticale).
 
