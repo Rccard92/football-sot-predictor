@@ -2,9 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
+
+- Helper datetime spostato in [`datetime_utils.py`](../backend/app/services/datetime_utils.py) (modulo neutro, non sotto `cecchino/`).
+- `cecchino.__init__` side-effect free: nessun import di `cecchino_fixture_history` al caricamento del package.
+- Fix startup Railway senza modifiche a formule, KPI o pipeline Today.
+
 ## Robustezza datetime Cecchino Today (2026-07-03)
 
-- Modulo [`cecchino_datetime.py`](../backend/app/services/cecchino/cecchino_datetime.py) per normalizzazione kickoff e timestamp UTC.
+- Modulo [`datetime_utils.py`](../backend/app/services/datetime_utils.py) per normalizzazione kickoff e timestamp UTC.
 - Scansione Today: nessuna esclusione per `'str' object has no attribute 'utc'`; motivi espliciti per date invalide.
 - Nessuna modifica alle formule picchetti, KPI, ICM, Intensità Goal, Expected Goal Engine (formule), segnali o Betfair-only.
 

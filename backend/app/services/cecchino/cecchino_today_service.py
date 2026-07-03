@@ -64,7 +64,7 @@ from app.services.cecchino.cecchino_constants import (
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
 from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
-from app.services.cecchino.cecchino_datetime import (
+from app.services.datetime_utils import (
     build_datetime_debug,
     classify_datetime_blocking_reason,
     ensure_datetime_utc,

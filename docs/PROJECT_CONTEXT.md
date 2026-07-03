@@ -38,9 +38,13 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
+
+Helper datetime in `app.services.datetime_utils` (non più sotto `cecchino/`). `cecchino.__init__` senza re-export per evitare circular import con `v10_prior_context` al startup Railway.
+
 ## Cecchino Today — datetime (2026-07-03)
 
-Kickoff e cutoff PIT in Cecchino Today passano da `cecchino_datetime.ensure_datetime_utc`. Il debug partite escluse distingue errori datetime da KPI mancanti reali.
+Kickoff e cutoff PIT in Cecchino Today passano da `datetime_utils.ensure_datetime_utc`. Il debug partite escluse distingue errori datetime da KPI mancanti reali.
 
 ## Modelli attivi
 

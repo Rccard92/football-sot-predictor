@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 from app.core.constants import FINISHED_STATUSES
 from app.models import Competition, Fixture, FixtureTeamStat, League, Season
 from app.services.predictions_v10.v10_league_offensive_baselines import compute_league_offensive_baselines
-from app.services.cecchino.cecchino_datetime import ensure_datetime_utc, fixture_key_before_safe
+from app.services.datetime_utils import ensure_datetime_utc, fixture_key_before_safe
 from app.services.sot_feature_math import PriorMatch, league_avg_sot_from_prior_fixtures
 
 

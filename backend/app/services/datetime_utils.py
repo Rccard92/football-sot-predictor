@@ -1,4 +1,4 @@
-"""Normalizzazione datetime centralizzata per pipeline Cecchino."""
+"""Normalizzazione datetime condivisa (Cecchino, predictions_v10, ingestion)."""
 
 from __future__ import annotations
 
@@ -42,21 +42,21 @@ def ensure_datetime_utc(value: Any, *, field_name: str = "datetime") -> datetime
     if isinstance(value, str):
         s = value.strip()
         if not s:
-            logger.warning("cecchino_datetime invalid empty string field=%s", field_name)
+            logger.warning("datetime_utils invalid empty string field=%s", field_name)
             return None
         normalized = s.replace("Z", "+00:00")
         try:
             parsed = datetime.fromisoformat(normalized)
         except (TypeError, ValueError):
-            logger.warning("cecchino_datetime unparseable field=%s value=%r", field_name, value)
+            logger.warning("datetime_utils unparseable field=%s value=%r", field_name, value)
             return None
-        logger.debug("cecchino_datetime normalized string field=%s value=%r", field_name, value)
+        logger.debug("datetime_utils normalized string field=%s value=%r", field_name, value)
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc)
 
     logger.warning(
-        "cecchino_datetime unsupported type field=%s type=%s",
+        "datetime_utils unsupported type field=%s type=%s",
         field_name,
         type(value).__name__,
     )

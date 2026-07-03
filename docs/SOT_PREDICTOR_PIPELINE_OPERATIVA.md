@@ -1,8 +1,14 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
+
+- Helper datetime in `backend/app/services/datetime_utils.py` (fuori dal package `cecchino`) per evitare circular import con `v10_prior_context`.
+- `cecchino.__init__` senza re-export: import diretti dai sotto-moduli (`cecchino_today_service`, `cecchino_fixture_history`, ecc.).
+- Startup verificato: `app.main`, `v10_prior_context`, `cecchino_today_service`, `datetime_utils`.
+
 ## Cecchino — Robustezza datetime (2026-07-03)
 
-- Helper unico: `backend/app/services/cecchino/cecchino_datetime.py`.
+- Helper unico: `backend/app/services/datetime_utils.py`.
 - Parsing kickoff API (`fixture.date`) normalizzato a UTC in ingest, filtri Today e bootstrap.
 - Confronti PIT (`fixture_key_before`, leakage, prior xG) usano wrapper safe; kickoff stringa non crasha la pipeline.
 - Debug partite escluse: `datetime_debug` + KPI non etichettato `kpi_panel_missing` se l'errore è solo datetime.

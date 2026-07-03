@@ -14,7 +14,7 @@ from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.api_usage_context import ApiUsageContext
 from app.services.cecchino.cecchino_fixture_history import load_finished_fixtures_for_team
-from app.services.cecchino.cecchino_datetime import ensure_datetime_utc, safe_isoformat, utc_now
+from app.services.datetime_utils import ensure_datetime_utc, safe_isoformat, utc_now
 from app.services.fixture_team_stats_mapping import (
     _parse_float,
     apply_parsed_to_row,

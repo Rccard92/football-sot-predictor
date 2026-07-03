@@ -17,7 +17,7 @@ from app.models.cecchino_today_fixture import (
     ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO,
     ELIGIBILITY_EXCLUDED_ZERO_PROBABILITY,
 )
-from app.services.cecchino.cecchino_datetime import (
+from app.services.datetime_utils import (
     classify_datetime_blocking_reason,
     is_datetime_error_message,
 )

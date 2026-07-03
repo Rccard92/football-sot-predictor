@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from app.core.constants import SCHEDULED_STATUSES
-from app.services.cecchino.cecchino_datetime import ensure_datetime_utc
+from app.services.datetime_utils import ensure_datetime_utc
 
 
 def _parse_kickoff(item: dict[str, Any]) -> datetime | None:

@@ -12,7 +12,7 @@ import pytest
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/test")
 
 from app.models.cecchino_today_fixture import ELIGIBILITY_ERROR
-from app.services.cecchino.cecchino_datetime import (
+from app.services.datetime_utils import (
     ensure_datetime,
     ensure_datetime_utc,
     fixture_key_before_safe,

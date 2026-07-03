@@ -29,7 +29,7 @@ from app.models import (
 )
 from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES, fixture_eligible_for_upcoming_sot
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
-from app.services.cecchino.cecchino_datetime import ensure_datetime_utc
+from app.services.datetime_utils import ensure_datetime_utc
 from app.services.fixture_team_stats_mapping import (
     apply_parsed_to_row,
     backfill_shot_columns_from_raw_json_if_null,

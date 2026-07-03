@@ -1,9 +1,17 @@
 # SOT Predictor — Changelog ragionato
 
+## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
+
+- Risolto `ImportError` al startup Railway: catena `v10_prior_context` → `cecchino.cecchino_datetime` → `cecchino.__init__` → `cecchino_fixture_history` → `v10_prior_context`.
+- Helper datetime spostato da `cecchino/cecchino_datetime.py` a modulo neutro [`datetime_utils.py`](../backend/app/services/datetime_utils.py) (stesse funzioni: `utc_now`, `ensure_datetime_utc`, `ensure_datetime`, `safe_isoformat`, `fixture_key_before_safe`, ecc.).
+- `app.services.cecchino.__init__` reso side-effect free: rimossi re-export pesanti da `cecchino_constants`, `cecchino_engine`, `cecchino_fixture_history`.
+- Import aggiornati in 8 file (v10, ingestion, moduli Cecchino Today, test).
+- **Invariato:** formule Cecchino, KPI, ICM, Intensità Goal, EGE (formule), segnali, Monitoraggio/Lab, backtest A–F, Betfair-only, SOT v2.0/v2.1, `team_sot_predictions`, database.
+
 ## Cecchino — Fix robustezza datetime in scansione Today (2026-07-03)
 
 - Risolto bug tecnico `'str' object has no attribute 'utc'` causato da shadowing del parametro `timezone: str` su `datetime.timezone` in `run_scan` (path esclusione bookmaker).
-- Aggiunto helper centralizzato [`cecchino_datetime.py`](../backend/app/services/cecchino/cecchino_datetime.py): `ensure_datetime_utc`, `ensure_datetime`, `safe_isoformat`, `utc_now`, `fixture_key_before_safe`.
+- Aggiunto helper centralizzato [`datetime_utils.py`](../backend/app/services/datetime_utils.py): `ensure_datetime_utc`, `ensure_datetime`, `safe_isoformat`, `utc_now`, `fixture_key_before_safe`.
 - La pipeline Cecchino Today ora gestisce datetime aware/naive, stringhe ISO con `Z`, offset `+00:00` e date senza timezone.
 - Una partita non viene più esclusa per bug tecnico data/orario; date invalide tracciate con motivi espliciti (`target_kickoff_invalid`, `prior_fixture_kickoff_invalid`, `datetime_normalization_error`).
 - KPI missing non nasconde più errori datetime: debug `kpi_status=skipped_due_to_datetime_error` + `datetime_debug` su partite escluse.

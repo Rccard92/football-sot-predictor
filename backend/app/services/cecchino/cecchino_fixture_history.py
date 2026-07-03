@@ -33,7 +33,7 @@ from app.services.cecchino.cecchino_constants import (
     WARNING_LOW_SAMPLE,
 )
 from app.services.cecchino.cecchino_engine import CecchinoCalculationInput, WDLRecord
-from app.services.cecchino.cecchino_datetime import (
+from app.services.datetime_utils import (
     fixture_key_before_safe,
     safe_isoformat,
     utc_now,
