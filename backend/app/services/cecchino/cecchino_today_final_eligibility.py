@@ -17,6 +17,10 @@ from app.models.cecchino_today_fixture import (
     ELIGIBILITY_EXCLUDED_MISSING_PICCHETTO,
     ELIGIBILITY_EXCLUDED_ZERO_PROBABILITY,
 )
+from app.services.cecchino.cecchino_datetime import (
+    classify_datetime_blocking_reason,
+    is_datetime_error_message,
+)
 from app.services.cecchino.cecchino_constants import (
     KEY_AWAY_CONTEXT,
     KEY_AWAY_RECENT_CONTEXT_5,
@@ -353,7 +357,33 @@ def build_cecchino_debug(cecchino_output: dict[str, Any] | None) -> dict[str, An
     }
 
 
-def build_kpi_debug(kpi_panel: dict[str, Any] | None) -> dict[str, Any]:
+def build_kpi_debug(
+    kpi_panel: dict[str, Any] | None,
+    *,
+    eligibility_status: str | None = None,
+    eligibility_reason: str | None = None,
+    blocking_reasons: list[str] | None = None,
+) -> dict[str, Any]:
+    blocking = list(blocking_reasons or [])
+    datetime_blocking = [
+        r
+        for r in blocking
+        if str(r).startswith(("target_kickoff_", "prior_fixture_kickoff_", "datetime_"))
+    ]
+    if eligibility_status == ELIGIBILITY_ERROR and (
+        is_datetime_error_message(eligibility_reason)
+        or datetime_blocking
+        or any(is_datetime_error_message(r) for r in blocking)
+    ):
+        skip_reason = datetime_blocking[0] if datetime_blocking else classify_datetime_blocking_reason(
+            eligibility_reason,
+        )
+        return {
+            "kpi_status": "skipped_due_to_datetime_error",
+            "missing_rows": [],
+            "skip_reason": skip_reason,
+        }
+
     ok, missing_rows, kpi_status = _check_kpi_1x2_complete(kpi_panel)
     return {
         "kpi_status": "available" if ok else (kpi_status if kpi_status != "available" else "insufficient_data"),

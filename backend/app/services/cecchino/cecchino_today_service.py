@@ -64,6 +64,14 @@ from app.services.cecchino.cecchino_constants import (
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
 from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
+from app.services.cecchino.cecchino_datetime import (
+    build_datetime_debug,
+    classify_datetime_blocking_reason,
+    ensure_datetime_utc,
+    is_datetime_error_message,
+    safe_isoformat,
+    utc_now,
+)
 from app.services.cecchino.cecchino_goal_intensity_analysis import (
     build_goal_intensity_for_today_row,
 )
@@ -211,8 +219,14 @@ def _persist_post_calc_snapshot(
 
     if calc.get("status") != "ok":
         eligibility_status = ELIGIBILITY_ERROR
-        eligibility_reason = str(calc.get("message") or calc.get("code") or "calculation_error")[:500]
-        blocking_reasons = [str(calc.get("code") or "calculation_error")]
+        raw_reason = str(calc.get("message") or calc.get("code") or "calculation_error")[:500]
+        if is_datetime_error_message(raw_reason):
+            blocking_code = classify_datetime_blocking_reason(raw_reason)
+            eligibility_reason = raw_reason
+            blocking_reasons = [blocking_code]
+        else:
+            eligibility_reason = raw_reason
+            blocking_reasons = [str(calc.get("code") or "calculation_error")]
         stored_warnings: list[str] = []
     else:
         eligibility = validate_cecchino_today_final_eligibility(
@@ -277,10 +291,7 @@ def _parse_kickoff(item: dict[str, Any]) -> datetime | None:
     raw = fx.get("date")
     if not raw:
         return None
-    try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
+    return ensure_datetime_utc(raw, field_name="fixture.date")
 
 
 def _item_brief(item: dict[str, Any]) -> dict[str, Any]:
@@ -329,7 +340,7 @@ def sync_today_bookmaker_odds(
 ) -> int:
     """Persiste quote 1X2/DC/OU parsed in fixture_bookmaker_odds."""
     saved = 0
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     wanted = [MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH]
     for bm in CECCHINO_TODAY_BOOKMAKERS:
         bid = int(bm["provider_bookmaker_id"])
@@ -765,7 +776,7 @@ def run_scan(
                         warnings=row_warnings,
                         blocking_reasons=bm_blocking,
                         odds_check_status=bm_reason or "missing_bookmaker",
-                        odds_checked_at=datetime.now(timezone.utc),
+                        odds_checked_at=utc_now(),
                     )
                     by_status[status] += 1
                     continue
@@ -958,6 +969,10 @@ def run_scan(
                 err_msg = str(exc)[:200]
                 errors.append(err_msg)
                 by_status[ELIGIBILITY_ERROR] += 1
+                if is_datetime_error_message(err_msg):
+                    blocking = [classify_datetime_blocking_reason(err_msg)]
+                else:
+                    blocking = ["calculation_error"]
                 if api_fid is not None:
                     try:
                         _upsert_today_snapshot(
@@ -967,6 +982,7 @@ def run_scan(
                             eligibility_status=ELIGIBILITY_ERROR,
                             eligibility_reason=err_msg,
                             warnings=[err_msg],
+                            blocking_reasons=blocking,
                         )
                     except Exception:
                         logger.exception(
@@ -1670,14 +1686,20 @@ def _excluded_fixture_payload(row: CecchinoTodayFixture, db: Session | None = No
         "away_team_name": row.away_team_name,
         "league_name": row.league_name,
         "country_name": row.country_name,
-        "kickoff": row.kickoff.isoformat() if row.kickoff else None,
+        "kickoff": safe_isoformat(row.kickoff, field_name="kickoff"),
         "eligibility_status": row.eligibility_status,
         "eligibility_reason": reason_msg or row.eligibility_reason,
         "blocking_reasons": list(row.blocking_reasons_json or []),
         "bookmaker_debug": build_bookmaker_debug(row),
         "stats_debug": build_stats_debug(row),
         "cecchino_debug": build_cecchino_debug(row.cecchino_output_json),
-        "kpi_debug": build_kpi_debug(row.kpi_panel_json),
+        "kpi_debug": build_kpi_debug(
+            row.kpi_panel_json,
+            eligibility_status=row.eligibility_status,
+            eligibility_reason=row.eligibility_reason,
+            blocking_reasons=list(row.blocking_reasons_json or []),
+        ),
+        "datetime_debug": build_datetime_debug(row.kickoff, raw_fixture=row.raw_fixture_json),
         "import_info": list(stats_snap.get("import_info") or []),
         "competition_filter_debug": build_competition_filter_debug(row),
         "fixture_status_debug": build_fixture_status_debug(row),

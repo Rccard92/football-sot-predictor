@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -32,13 +33,20 @@ from app.services.cecchino.cecchino_constants import (
     WARNING_LOW_SAMPLE,
 )
 from app.services.cecchino.cecchino_engine import CecchinoCalculationInput, WDLRecord
+from app.services.cecchino.cecchino_datetime import (
+    fixture_key_before_safe,
+    safe_isoformat,
+    utc_now,
+    ensure_datetime_utc,
+)
 from app.services.predictions_v10.v10_prior_context import (
     _prior_fixtures_for_team,
     _resolve_fixture_season_id,
 )
 from app.services.predictions_v11.split_fixtures import team_split_fixtures
 from app.services.predictions_v11.v11_shared import last_n
-from app.services.sot_feature_math import fixture_key_before
+
+logger = logging.getLogger(__name__)
 
 
 def _slice_status(sample_count: int, target_sample: int | None) -> str:
@@ -131,10 +139,17 @@ def load_finished_fixtures_for_team(
     """Partite finite della squadra prima del kickoff target, scoped per competition."""
     season_id = _resolve_fixture_season_id(db, target_fixture)
     comp_id = int(target_fixture.competition_id) if target_fixture.competition_id is not None else None
+    cutoff_ko = ensure_datetime_utc(target_fixture.kickoff_at, field_name="target.kickoff_at")
+    if cutoff_ko is None and target_fixture.kickoff_at is not None:
+        logger.warning(
+            "load_finished_fixtures_for_team target_kickoff_invalid fixture_id=%s",
+            target_fixture.id,
+        )
+        return []
     return _prior_fixtures_for_team(
         db,
         season_id=season_id,
-        cutoff_kickoff=target_fixture.kickoff_at,
+        cutoff_kickoff=cutoff_ko,
         cutoff_fixture_id=int(target_fixture.id),
         team_id=int(team_id),
         competition_id=comp_id,
@@ -166,10 +181,21 @@ def audit_leakage(
     """Verifica PIT/competition scope; restituisce oggetto leakage_check + motivi."""
     reasons: list[str] = []
     target_comp = int(target.competition_id or 0)
-    cutoff_ko = target.kickoff_at
+    cutoff_ko = ensure_datetime_utc(target.kickoff_at, field_name="target.kickoff_at")
     cutoff_id = int(target.id)
-    target_kickoff = cutoff_ko.isoformat() if cutoff_ko is not None else None
-    checked_at = datetime.now(timezone.utc).isoformat()
+    target_kickoff = safe_isoformat(cutoff_ko, field_name="target.kickoff_at")
+    checked_at = utc_now().isoformat()
+
+    if target.kickoff_at is None:
+        return (
+            {
+                "status": LEAKAGE_UNDEFINED,
+                "target_kickoff": None,
+                "max_source_fixture_date": None,
+                "checked_at": checked_at,
+            },
+            ["target:missing_kickoff"],
+        )
 
     if cutoff_ko is None:
         return (
@@ -179,7 +205,7 @@ def audit_leakage(
                 "max_source_fixture_date": None,
                 "checked_at": checked_at,
             },
-            ["target:missing_kickoff"],
+            ["target:target_kickoff_invalid"],
         )
 
     max_ko: datetime | None = None
@@ -193,12 +219,28 @@ def audit_leakage(
         if f.kickoff_at is None:
             reasons.append(f"fixture_{fid}:missing_kickoff")
             continue
-        if not fixture_key_before(f.kickoff_at, fid, cutoff_ko, cutoff_id):
+        prior_ko = ensure_datetime_utc(f.kickoff_at, field_name=f"prior_fixture_{fid}.kickoff_at")
+        if prior_ko is None:
+            reasons.append(f"prior_fixture_kickoff_invalid:{fid}")
+            logger.warning("audit_leakage skip prior fixture_id=%s invalid kickoff", fid)
+            continue
+        prior_before = fixture_key_before_safe(
+            prior_ko,
+            fid,
+            cutoff_ko,
+            cutoff_id,
+            field_name_a=f"prior_fixture_{fid}.kickoff_at",
+            field_name_b="target.kickoff_at",
+        )
+        if prior_before is None:
+            reasons.append(f"prior_fixture_kickoff_invalid:{fid}")
+            continue
+        if not prior_before:
             reasons.append(f"fixture_{fid}:kickoff_not_before_target")
         if st in LIVE_STATUSES or st in SCHEDULED_STATUSES:
             reasons.append(f"fixture_{fid}:live_or_scheduled:{st}")
-        if f.kickoff_at is not None and (max_ko is None or f.kickoff_at > max_ko):
-            max_ko = f.kickoff_at
+        if max_ko is None or prior_ko > max_ko:
+            max_ko = prior_ko
 
     max_source = max_ko.isoformat() if max_ko is not None else None
 
@@ -711,7 +753,7 @@ def load_league_finished_fixtures_before(
     comp_id = int(target_fixture.competition_id or 0)
     if comp_id <= 0:
         return []
-    cutoff_ko = target_fixture.kickoff_at
+    cutoff_ko = ensure_datetime_utc(target_fixture.kickoff_at, field_name="target.kickoff_at")
     cutoff_id = int(target_fixture.id)
     if cutoff_ko is None:
         return []
@@ -724,14 +766,26 @@ def load_league_finished_fixtures_before(
         )
         .order_by(Fixture.kickoff_at.asc(), Fixture.id.asc()),
     ).all()
-    return [
-        f
-        for f in rows
-        if f.kickoff_at is not None
-        and fixture_key_before(f.kickoff_at, int(f.id), cutoff_ko, cutoff_id)
-        and f.goals_home is not None
-        and f.goals_away is not None
-    ]
+    out: list[Fixture] = []
+    for f in rows:
+        if f.kickoff_at is None or f.goals_home is None or f.goals_away is None:
+            continue
+        prior_before = fixture_key_before_safe(
+            f.kickoff_at,
+            int(f.id),
+            cutoff_ko,
+            cutoff_id,
+            field_name_a=f"prior_fixture_{f.id}.kickoff_at",
+            field_name_b="target.kickoff_at",
+        )
+        if prior_before is True:
+            out.append(f)
+        elif prior_before is None:
+            logger.warning(
+                "load_league_finished_fixtures_before skip fixture_id=%s invalid kickoff",
+                f.id,
+            )
+    return out
 
 
 def build_goal_market_contexts(db: Session, target_fixture: Fixture) -> GoalMarketContexts:

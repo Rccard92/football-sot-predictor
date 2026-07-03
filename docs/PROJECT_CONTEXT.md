@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino Today — datetime (2026-07-03)
+
+Kickoff e cutoff PIT in Cecchino Today passano da `cecchino_datetime.ensure_datetime_utc`. Il debug partite escluse distingue errori datetime da KPI mancanti reali.
+
 ## Modelli attivi
 
 | Modello | Slug | Ruolo |

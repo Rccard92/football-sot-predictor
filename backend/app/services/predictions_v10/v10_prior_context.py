@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 from app.core.constants import FINISHED_STATUSES
 from app.models import Competition, Fixture, FixtureTeamStat, League, Season
 from app.services.predictions_v10.v10_league_offensive_baselines import compute_league_offensive_baselines
-from app.services.sot_feature_math import PriorMatch, fixture_key_before, league_avg_sot_from_prior_fixtures
+from app.services.cecchino.cecchino_datetime import ensure_datetime_utc, fixture_key_before_safe
+from app.services.sot_feature_math import PriorMatch, league_avg_sot_from_prior_fixtures
 
 
 @dataclass
@@ -74,10 +75,42 @@ def _prior_fixtures_for_team(
     competition_scoped_only: bool = False,
     strict_kickoff_only: bool = False,
 ) -> list[Fixture]:
+    cutoff_ko = ensure_datetime_utc(cutoff_kickoff, field_name="cutoff_kickoff")
+    if cutoff_ko is None:
+        logger.warning(
+            "prior_fixtures target_kickoff_invalid season_id=%s team_id=%s cutoff=%r",
+            season_id,
+            team_id,
+            cutoff_kickoff,
+        )
+        return []
+
     def _is_prior(f: Fixture) -> bool:
+        prior_ko = ensure_datetime_utc(f.kickoff_at, field_name=f"prior_fixture_{f.id}.kickoff_at")
+        if prior_ko is None:
+            if f.kickoff_at is not None:
+                logger.warning(
+                    "prior_fixtures skip fixture_id=%s prior_fixture_kickoff_invalid",
+                    f.id,
+                )
+            return False
         if strict_kickoff_only:
-            return f.kickoff_at < cutoff_kickoff
-        return fixture_key_before(f.kickoff_at, f.id, cutoff_kickoff, cutoff_fixture_id)
+            return prior_ko < cutoff_ko
+        prior_before = fixture_key_before_safe(
+            prior_ko,
+            int(f.id),
+            cutoff_ko,
+            cutoff_fixture_id,
+            field_name_a=f"prior_fixture_{f.id}.kickoff_at",
+            field_name_b="cutoff_kickoff",
+        )
+        if prior_before is None:
+            logger.warning(
+                "prior_fixtures skip fixture_id=%s prior_fixture_kickoff_invalid",
+                f.id,
+            )
+            return False
+        return prior_before
 
     def _query(*, use_season_filter: bool) -> list[Fixture]:
         clauses = [

@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.core.constants import FINISHED_STATUSES, SCHEDULED_STATUSES, fixture_eligible_for_upcoming_sot
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
+from app.services.cecchino.cecchino_datetime import ensure_datetime_utc
 from app.services.fixture_team_stats_mapping import (
     apply_parsed_to_row,
     backfill_shot_columns_from_raw_json_if_null,
@@ -50,10 +51,10 @@ def _utcnow() -> datetime:
 def _parse_dt(value: str | None) -> datetime:
     if not value:
         raise ValueError("data partita mancante")
-    s = str(value).strip()
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    return datetime.fromisoformat(s)
+    parsed = ensure_datetime_utc(value, field_name="fixture.date")
+    if parsed is None:
+        raise ValueError("data partita mancante")
+    return parsed
 
 
 def _parse_int(val: Any) -> int | None:

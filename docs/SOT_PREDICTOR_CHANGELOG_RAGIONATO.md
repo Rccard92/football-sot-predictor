@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Fix robustezza datetime in scansione Today (2026-07-03)
+
+- Risolto bug tecnico `'str' object has no attribute 'utc'` causato da shadowing del parametro `timezone: str` su `datetime.timezone` in `run_scan` (path esclusione bookmaker).
+- Aggiunto helper centralizzato [`cecchino_datetime.py`](../backend/app/services/cecchino/cecchino_datetime.py): `ensure_datetime_utc`, `ensure_datetime`, `safe_isoformat`, `utc_now`, `fixture_key_before_safe`.
+- La pipeline Cecchino Today ora gestisce datetime aware/naive, stringhe ISO con `Z`, offset `+00:00` e date senza timezone.
+- Una partita non viene più esclusa per bug tecnico data/orario; date invalide tracciate con motivi espliciti (`target_kickoff_invalid`, `prior_fixture_kickoff_invalid`, `datetime_normalization_error`).
+- KPI missing non nasconde più errori datetime: debug `kpi_status=skipped_due_to_datetime_error` + `datetime_debug` su partite escluse.
+- **Invariato:** formule Cecchino, Pannello KPI (logiche), ICM, Intensità Goal, Expected Goal Engine (formule), Segnali Cecchino, Monitoraggio Segnali, Monitoraggio Segnali Lab, backtest modelli A–F, Betfair-only, modelli SOT v2.0/v2.1, `team_sot_predictions`.
+
 ## Cecchino — Disabilitazione cleanup automatico storico (2026-06-09)
 
 - Rimosso `cleanup_cecchino_today_snapshots` da `run_scan`: nessuna DELETE automatica post-scan.

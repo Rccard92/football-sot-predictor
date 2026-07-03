@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from app.core.constants import SCHEDULED_STATUSES
+from app.services.cecchino.cecchino_datetime import ensure_datetime_utc
 
 
 def _parse_kickoff(item: dict[str, Any]) -> datetime | None:
@@ -13,10 +14,7 @@ def _parse_kickoff(item: dict[str, Any]) -> datetime | None:
     raw = fx.get("date")
     if not raw:
         return None
-    try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
+    return ensure_datetime_utc(raw, field_name="fixture.date")
 
 
 def is_fixture_not_started(item: dict[str, Any], now: datetime) -> bool:

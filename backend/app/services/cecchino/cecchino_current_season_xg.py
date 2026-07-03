@@ -14,6 +14,7 @@ from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE
 from app.services.api_football_client import ApiFootballClient, ApiFootballError
 from app.services.api_usage_context import ApiUsageContext
 from app.services.cecchino.cecchino_fixture_history import load_finished_fixtures_for_team
+from app.services.cecchino.cecchino_datetime import ensure_datetime_utc, safe_isoformat, utc_now
 from app.services.fixture_team_stats_mapping import (
     _parse_float,
     apply_parsed_to_row,
@@ -265,7 +266,7 @@ def build_current_season_team_xg_profile(
     xg_for_avg = sum(xg_for_vals) / len(xg_for_vals) if xg_for_vals else None
     xg_against_avg = sum(xg_against_vals) / len(xg_against_vals) if xg_against_vals else None
 
-    cutoff = target_fixture.kickoff_at.isoformat() if target_fixture.kickoff_at else None
+    cutoff = safe_isoformat(target_fixture.kickoff_at, field_name="target.kickoff_at")
 
     return {
         "xg_for_avg": round(xg_for_avg, 4) if xg_for_avg is not None else None,
@@ -320,7 +321,13 @@ def _prior_fixtures_both_teams(
             continue
         seen.add(fid)
         out.append(fx)
-    out.sort(key=lambda f: (f.kickoff_at, f.id))
+    out.sort(
+        key=lambda f: (
+            ensure_datetime_utc(f.kickoff_at, field_name=f"prior_fixture_{f.id}.kickoff_at")
+            or datetime.min.replace(tzinfo=timezone.utc),
+            f.id,
+        ),
+    )
     return out
 
 
@@ -535,7 +542,7 @@ def ensure_current_season_xg_profile_for_fixture(
 
     anti_leakage = home_profile.get("anti_leakage") or away_profile.get("anti_leakage") or {
         "current_fixture_excluded": True,
-        "fixture_date_cutoff": target.kickoff_at.isoformat() if target.kickoff_at else None,
+        "fixture_date_cutoff": safe_isoformat(target.kickoff_at, field_name="target.kickoff_at"),
         "scope": "current season matches before fixture",
     }
 
@@ -569,7 +576,7 @@ def ensure_current_season_xg_profile_for_fixture(
         "away_team": _team_display_from_profile(away_profile, row.away_team_name),
         "anti_leakage": anti_leakage,
         "xg_api_usage": xg_api_usage,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": utc_now().isoformat(),
         "warnings": all_warnings,
     }
 

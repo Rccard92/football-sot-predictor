@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Robustezza datetime (2026-07-03)
+
+- Helper unico: `backend/app/services/cecchino/cecchino_datetime.py`.
+- Parsing kickoff API (`fixture.date`) normalizzato a UTC in ingest, filtri Today e bootstrap.
+- Confronti PIT (`fixture_key_before`, leakage, prior xG) usano wrapper safe; kickoff stringa non crasha la pipeline.
+- Debug partite escluse: `datetime_debug` + KPI non etichettato `kpi_panel_missing` se l'errore è solo datetime.
+- Fix shadowing: in `run_scan` usare `utc_now()` invece di `datetime.now(timezone.utc)` quando il parametro si chiama `timezone`.
+
 ## Cecchino — Disabilitazione cleanup automatico storico
 
 - `run_scan` e scan-job **non** invocano più `cleanup_cecchino_today_snapshots`.
