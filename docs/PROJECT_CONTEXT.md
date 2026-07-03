@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Backend — Merge Alembic heads dopo Segnali KPI (2026-07-04)
+
+Risolto «Multiple head revisions» su Railway con merge migration `dd07defcb335` (KPI + merge precedente). Nessuna DDL distruttiva; formule Cecchino, Segnali KPI e Monitoraggio Segnali invariati. Singola head Alembic per deploy `alembic upgrade head`.
+
 ## Cecchino — Segnali KPI (2026-07-04)
 
 Nuova pagina `/segnali-kpi` (sidebar Cecchino): monitoraggio quote di valore dal Pannello KPI, bucket rating 50–100, valutazione PT/FT offline, tabella `cecchino_kpi_signal_activations`.

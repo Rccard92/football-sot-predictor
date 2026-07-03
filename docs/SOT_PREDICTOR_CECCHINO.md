@@ -2,6 +2,12 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Backend — Merge Alembic heads dopo Segnali KPI (2026-07-04)
+
+- Fix deploy Railway: merge Alembic `dd07defcb335` unisce le head KPI (`20260704120000`) e merge precedente (`5e0e69b60bde`).
+- Nessuna modifica schema distruttiva; formule Cecchino, Segnali KPI e Monitoraggio Segnali invariati.
+- Repository con una sola head Alembic per `alembic upgrade head`.
+
 ## Cecchino — Segnali KPI (2026-07-04)
 
 - Pagina `/segnali-kpi`: analisi righe Pannello KPI con rating ≥ 50 e quota book.

@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Backend — Merge Alembic heads dopo Segnali KPI (2026-07-04)
+
+- Risolto errore Railway «Multiple head revisions are present» dopo migration tabella `cecchino_kpi_signal_activations`.
+- Merge migration `dd07defcb335_merge_alembic_heads_after_kpi_signals.py`: raccordo `20260704120000` + `5e0e69b60bde`, senza DDL.
+- Deploy: `alembic upgrade head` (singola head); nessun downgrade/reset DB.
+- Invariato: formule Cecchino, Segnali KPI, Monitoraggio Segnali, pipeline operativa.
+
 ## Cecchino — Segnali KPI (2026-07-04)
 
 - Modulo separato da Monitoraggio Segnali / Segnali Lab.

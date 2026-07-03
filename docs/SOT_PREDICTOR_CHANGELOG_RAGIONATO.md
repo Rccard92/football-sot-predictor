@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Backend — Merge Alembic heads dopo Segnali KPI (2026-07-04)
+
+- Risolto errore Railway «Multiple head revisions are present for given argument 'head'».
+- Aggiunta merge migration Alembic `dd07defcb335` (`down_revision`: `20260704120000`, `5e0e69b60bde`); `upgrade()`/`downgrade()` pass — nessuna DDL.
+- Nessuna modifica schema distruttiva; nessuna migration esistente cancellata.
+- Nessuna modifica formule Cecchino, Segnali KPI (logica), Monitoraggio Segnali, Betfair-only, SOT v2.0/v2.1.
+- Una sola Alembic head verificata (`dd07defcb335`); Railway continua con `alembic upgrade head`.
+
 ## Cecchino — Segnali KPI (2026-07-04)
 
 - Introdotta nuova pagina **Segnali KPI** (`/segnali-kpi`) per monitorare righe Pannello KPI con rating ≥ 50 e quota book presente.
