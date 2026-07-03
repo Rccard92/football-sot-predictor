@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Segnali KPI (2026-07-04)
+
+- Modulo separato da Monitoraggio Segnali / Segnali Lab.
+- Sync offline da `kpi_panel_json` eleggibili → `cecchino_kpi_signal_activations`.
+- Valutazione won/lost/pending da score FT/HT su `cecchino_today_fixtures`.
+- Backfill admin: `POST /api/admin/cecchino/kpi-signals/backfill`; UI `/segnali-kpi`.
+
 ## Cecchino Today — Gate locale data fixture (2026-07-03)
 
 - Subito dopo `get_fixtures_by_date`, `run_scan` partiziona le fixture con `fixture_belongs_to_scan_date`.

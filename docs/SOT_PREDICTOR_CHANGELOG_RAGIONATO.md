@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Segnali KPI (2026-07-04)
+
+- Introdotta nuova pagina **Segnali KPI** (`/segnali-kpi`) per monitorare righe Pannello KPI con rating ≥ 50 e quota book presente.
+- Scaglioni rating: 50–59, 60–69, 70–79, 80–89, 90–99, 100.
+- Valutazione esito su risultati PT/FT già salvati; stake fisso 1; metriche win rate, quota media, quota void, profitto e ROI.
+- Nuova tabella `cecchino_kpi_signal_activations` (FK RESTRICT, separata da `cecchino_signal_activations`).
+- Endpoint: summary, activations, export CSV, backfill e revaluate admin — **nessuna chiamata API esterna**.
+- **Invariato:** formule KPI/Cecchino, Monitoraggio Segnali, Segnali Lab, Betfair-only, SOT v2.0/v2.1, cleanup/retention.
+
 ## Cecchino Today — Gate locale data fixture (2026-07-03)
 
 - Aggiunto controllo locale di coerenza tra `scan_date` e kickoff locale fixture (timezone default `Europe/Rome`).

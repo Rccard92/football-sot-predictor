@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Segnali KPI (2026-07-04)
+
+Nuova pagina `/segnali-kpi` (sidebar Cecchino): monitoraggio quote di valore dal Pannello KPI, bucket rating 50–100, valutazione PT/FT offline, tabella `cecchino_kpi_signal_activations`.
+
 ## Cecchino Today — Gate locale data fixture (2026-07-03)
 
 Scansione Today: solo fixture con kickoff locale uguale a `scan_date` (timezone `Europe/Rome`). Fuori data → skip pre-salvataggio; contatori `provider_out_of_scan_date_skipped` nel report job.

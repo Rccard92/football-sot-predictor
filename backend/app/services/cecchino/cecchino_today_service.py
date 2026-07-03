@@ -272,7 +272,17 @@ def _persist_post_calc_snapshot(
     )
     if eligibility_status == ELIGIBILITY_ELIGIBLE:
         maybe_ensure_xg_for_eligible_row(db, row)
+        _maybe_sync_kpi_signals_for_fixture(db, int(row.id))
     return row, eligibility_status
+
+
+def _maybe_sync_kpi_signals_for_fixture(db: Session, today_fixture_id: int) -> None:
+    try:
+        from app.services.cecchino.cecchino_kpi_signals import sync_kpi_signals_for_fixture
+
+        sync_kpi_signals_for_fixture(db, today_fixture_id)
+    except Exception:
+        logger.exception("KPI signals sync skipped fixture_id=%s", today_fixture_id)
 
 
 def rome_today(tz_name: str = DEFAULT_TODAY_TIMEZONE) -> date:
@@ -1470,6 +1480,12 @@ def update_today_fixture_results(
         eval_counts = evaluate_activations_for_fixture(db, int(row.id))
         signals_evaluated += eval_counts.get("evaluated", 0)
         signals_pending += eval_counts.get("pending", 0)
+        try:
+            from app.services.cecchino.cecchino_kpi_signals import revaluate_kpi_signals_for_fixture
+
+            revaluate_kpi_signals_for_fixture(db, int(row.id))
+        except Exception:
+            logger.exception("KPI signals revaluate skipped fixture_id=%s", row.id)
 
     db.commit()
     return {

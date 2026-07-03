@@ -2,6 +2,13 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — Segnali KPI (2026-07-04)
+
+- Pagina `/segnali-kpi`: analisi righe Pannello KPI con rating ≥ 50 e quota book.
+- Storico dedicato in `cecchino_kpi_signal_activations` (non tocca segnali matrice).
+- Metriche stake 1: profitto, ROI, quota void; heatmap pronostico × bucket rating.
+- Nessuna modifica formule KPI o Cecchino; nessuna API esterna in sync/valutazione.
+
 ## Cecchino Today — Gate locale data fixture (2026-07-03)
 
 - Gate post-fetch in `run_scan`: kickoff convertito in data locale (`Europe/Rome` di default) e confrontato con `scan_date`.

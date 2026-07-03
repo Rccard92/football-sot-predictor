@@ -2,6 +2,7 @@ from app.models.base import Base
 from app.models.api_usage_event import ApiUsageEvent
 from app.models.cecchino_league_stats_cache import CecchinoLeagueStatsCache
 from app.models.cecchino_prediction import CecchinoPrediction
+from app.models.cecchino_kpi_signal_activation import CecchinoKpiSignalActivation
 from app.models.cecchino_signal_activation import CecchinoSignalActivation
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.models.cecchino_today_scan_job import CecchinoTodayScanJob
@@ -62,6 +63,7 @@ __all__ = [
     "Base",
     "CecchinoLeagueStatsCache",
     "CecchinoPrediction",
+    "CecchinoKpiSignalActivation",
     "CecchinoSignalActivation",
     "CecchinoTodayFixture",
     "CecchinoTodayScanJob",

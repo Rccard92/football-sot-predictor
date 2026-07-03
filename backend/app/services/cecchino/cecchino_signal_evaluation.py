@@ -90,6 +90,57 @@ def _evaluate_market(
     return None
 
 
+def evaluate_market_selection(selection_key: str, match_result: dict[str, Any]) -> dict[str, Any]:
+    """Valuta esito mercato (won/lost/pending) riusabile da Segnali KPI."""
+    if not selection_key:
+        return {
+            "evaluation_status": EVAL_NOT_EVALUABLE,
+            "evaluation_reason": "missing_selection_key",
+            "evaluated_at": datetime.now(timezone.utc),
+        }
+
+    pt_keys = {SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5}
+    if selection_key in pt_keys:
+        if not _ht_available(match_result):
+            return {
+                "evaluation_status": EVAL_RESULT_MISSING,
+                "evaluation_reason": "halftime_result_missing",
+                "evaluated_at": None,
+            }
+    elif not _ft_available(match_result):
+        return {
+            "evaluation_status": EVAL_RESULT_MISSING,
+            "evaluation_reason": "fulltime_result_missing",
+            "evaluated_at": None,
+        }
+
+    ft = match_result.get("fulltime") or {}
+    ht = match_result.get("halftime") or {}
+    ft_home = int(ft.get("home"))
+    ft_away = int(ft.get("away"))
+    ht_home = int(ht["home"]) if ht.get("home") is not None else None
+    ht_away = int(ht["away"]) if ht.get("away") is not None else None
+
+    won = _evaluate_market(selection_key, ft_home, ft_away, ht_home, ht_away)
+    if won is None:
+        return {
+            "evaluation_status": EVAL_NOT_EVALUABLE,
+            "evaluation_reason": "unsupported_selection_key",
+            "evaluated_at": datetime.now(timezone.utc),
+        }
+
+    status = EVAL_WON if won else EVAL_LOST
+    return {
+        "evaluation_status": status,
+        "evaluation_reason": _build_evaluation_reason(selection_key, ft_home, ft_away, won),
+        "evaluated_at": datetime.now(timezone.utc),
+        "result_home_ft": ft_home,
+        "result_away_ft": ft_away,
+        "result_home_ht": ht_home,
+        "result_away_ht": ht_away,
+    }
+
+
 def _build_evaluation_reason(
     target_key: str,
     ft_home: int,
