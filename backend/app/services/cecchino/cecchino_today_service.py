@@ -119,7 +119,10 @@ from app.services.cecchino.cecchino_today_display import (
     row_score_payload,
     status_label_for_row,
 )
-from app.services.cecchino.cecchino_today_fixture_filter import is_fixture_not_started
+from app.services.cecchino.cecchino_today_fixture_filter import (
+    fixture_belongs_to_scan_date,
+    is_fixture_not_started,
+)
 from app.services.cecchino.league_ingest_helpers import recover_session_if_inactive
 from app.services.cecchino.cecchino_today_final_eligibility import (
     build_cecchino_debug,
@@ -500,6 +503,9 @@ def _emit_progress(
     excluded_summary: dict[str, int] | None = None,
     warnings: list[str] | None = None,
     errors: list[str] | None = None,
+    provider_items_received: int | None = None,
+    provider_out_of_scan_date_skipped: int | None = None,
+    fixtures_in_scan_date: int | None = None,
 ) -> None:
     if progress is None:
         return
@@ -544,6 +550,12 @@ def _emit_progress(
         payload["warnings_json"] = list(warnings)
     if errors is not None:
         payload["errors_json"] = list(errors)
+    if provider_items_received is not None:
+        payload["provider_items_received"] = provider_items_received
+    if provider_out_of_scan_date_skipped is not None:
+        payload["provider_out_of_scan_date_skipped"] = provider_out_of_scan_date_skipped
+    if fixtures_in_scan_date is not None:
+        payload["fixtures_in_scan_date"] = fixtures_in_scan_date
     if payload:
         progress(**payload)
 
@@ -602,7 +614,35 @@ def run_scan(
         _emit_progress(progress, current_step="completed", errors=[str(exc)])
         return err_report
 
-    total = len(raw_items)
+    provider_items_received = len(raw_items)
+    in_scope_items: list[dict[str, Any]] = []
+    out_of_scan_date_examples: list[dict[str, Any]] = []
+
+    for item in raw_items:
+        belongs, date_debug = fixture_belongs_to_scan_date(item, resolved_date, timezone)
+        if belongs:
+            in_scope_items.append(item)
+            continue
+        if date_debug.get("reason") != "fixture_out_of_scan_date":
+            continue
+        if len(out_of_scan_date_examples) >= 10:
+            continue
+        brief = _item_brief(item)
+        out_of_scan_date_examples.append(
+            {
+                "provider_fixture_id": brief["provider_fixture_id"],
+                "home": brief["home_team_name"],
+                "away": brief["away_team_name"],
+                "scan_date": resolved_date.isoformat(),
+                "fixture_local_date": date_debug.get("fixture_local_date"),
+                "timezone": timezone,
+            },
+        )
+
+    provider_out_of_scan_date_skipped = provider_items_received - len(in_scope_items)
+    fixtures_in_scan_date = len(in_scope_items)
+    raw_items = in_scope_items
+    total = fixtures_in_scan_date
     run_metrics.fixtures_found = total
     after_filter_count = 0
     fixtures_checked = 0
@@ -633,6 +673,9 @@ def run_scan(
         excluded_count = sum(v for k, v in by_status.items() if k != ELIGIBILITY_ELIGIBLE)
         return {
             "fixtures_found": total,
+            "provider_items_received": provider_items_received,
+            "provider_out_of_scan_date_skipped": provider_out_of_scan_date_skipped,
+            "fixtures_in_scan_date": fixtures_in_scan_date,
             "fixtures_checked": fixtures_checked,
             "fixtures_censused": run_metrics.fixtures_censused,
             "fixtures_after_competition_gate": run_metrics.fixtures_after_competition_gate,
@@ -1023,6 +1066,11 @@ def run_scan(
         errors=errors,
     )
     report["fixtures_processed"] = total
+    report["provider_items_received"] = provider_items_received
+    report["provider_out_of_scan_date_skipped"] = provider_out_of_scan_date_skipped
+    report["fixtures_in_scan_date"] = fixtures_in_scan_date
+    if out_of_scan_date_examples:
+        report["out_of_scan_date_examples"] = out_of_scan_date_examples
     report["signal_sync_summary"] = signal_sync_summary
     if job_id:
         report["job_id"] = job_id
@@ -1041,6 +1089,10 @@ def run_scan(
         excluded_summary=excluded_summary,
         duration_seconds=duration,
         api_usage=api_usage_summary,
+        provider_items_received=provider_items_received,
+        provider_out_of_scan_date_skipped=provider_out_of_scan_date_skipped,
+        fixtures_in_scan_date=fixtures_in_scan_date,
+        out_of_scan_date_examples=out_of_scan_date_examples,
     )
     if budget_stopped:
         report["status"] = budget_stop_status

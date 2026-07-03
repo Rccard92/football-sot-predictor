@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino Today — Gate locale data fixture (2026-07-03)
+
+- Aggiunto controllo locale di coerenza tra `scan_date` e kickoff locale fixture (timezone default `Europe/Rome`).
+- La scansione processa solo fixture con `fixture_local_date == scan_date` (`get_fixture_local_date`, `fixture_belongs_to_scan_date` in `cecchino_today_fixture_filter.py`).
+- Fixture restituite dal provider ma appartenenti ad altro giorno vengono saltate subito dopo il fetch, prima di qualsiasi upsert.
+- Le fixture fuori data non compaiono più nel debug escluse del giorno sbagliato e non chiamano Betfair/stats/KPI.
+- Aggiunti contatori report job: `provider_items_received`, `provider_out_of_scan_date_skipped`, `fixtures_in_scan_date`; opzionale `out_of_scan_date_examples` (max 10).
+- `fixtures_found` resta il conteggio in-scope (compatibilità UI).
+- **Invariato:** formule Cecchino, Pannello KPI, segnali, Monitoraggio Segnali, Monitoraggio Segnali Lab, backtest A–F, EGE, ICM, Intensità Goal, Equilibrio, Betfair-only, SOT v2.0/v2.1, `team_sot_predictions`, cleanup/retention, database.
+
 ## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
 
 - Risolto `ImportError` al startup Railway: catena `v10_prior_context` → `cecchino.cecchino_datetime` → `cecchino.__init__` → `cecchino_fixture_history` → `v10_prior_context`.

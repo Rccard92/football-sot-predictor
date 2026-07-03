@@ -2,6 +2,13 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Today — Gate locale data fixture (2026-07-03)
+
+- Gate post-fetch in `run_scan`: kickoff convertito in data locale (`Europe/Rome` di default) e confrontato con `scan_date`.
+- Fixture del giorno successivo/precedente restituite dall’API non vengono salvate né mostrate come escluse nel giorno sbagliato.
+- Report scan: `provider_items_received`, `provider_out_of_scan_date_skipped`, `fixtures_in_scan_date`.
+- Nessuna modifica a formule picchetti, KPI, segnali, Betfair-only o Monitoraggio.
+
 ## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
 
 - Helper datetime spostato in [`datetime_utils.py`](../backend/app/services/datetime_utils.py) (modulo neutro, non sotto `cecchino/`).

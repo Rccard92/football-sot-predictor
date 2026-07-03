@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Today — Gate locale data fixture (2026-07-03)
+
+- Subito dopo `get_fixtures_by_date`, `run_scan` partiziona le fixture con `fixture_belongs_to_scan_date`.
+- Solo le fixture in-scope passano al census `discovered` e alla pipeline (competition → Betfair → stats → KPI).
+- Fuori data: nessun upsert su `cecchino_today_fixtures`; conteggio in `provider_out_of_scan_date_skipped`.
+- Progress job basato su fixture in-scope, non sul totale grezzo API.
+- Timezone scansione: parametro `timezone` (default `Europe/Rome`).
+
 ## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
 
 - Helper datetime in `backend/app/services/datetime_utils.py` (fuori dal package `cecchino`) per evitare circular import con `v10_prior_context`.

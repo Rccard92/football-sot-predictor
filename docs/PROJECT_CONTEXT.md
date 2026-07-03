@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino Today — Gate locale data fixture (2026-07-03)
+
+Scansione Today: solo fixture con kickoff locale uguale a `scan_date` (timezone `Europe/Rome`). Fuori data → skip pre-salvataggio; contatori `provider_out_of_scan_date_skipped` nel report job.
+
 ## Backend — Fix circular import helper datetime Cecchino (2026-07-03)
 
 Helper datetime in `app.services.datetime_utils` (non più sotto `cecchino/`). `cecchino.__init__` senza re-export per evitare circular import con `v10_prior_context` al startup Railway.

@@ -68,9 +68,13 @@ class ScanRunMetrics:
         excluded_summary: dict[str, int],
         duration_seconds: float,
         api_usage: dict[str, Any] | None = None,
+        provider_items_received: int | None = None,
+        provider_out_of_scan_date_skipped: int | None = None,
+        fixtures_in_scan_date: int | None = None,
+        out_of_scan_date_examples: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         self.sync_api_calls_total()
-        return {
+        summary: dict[str, Any] = {
             "fixtures_found": fixtures_found,
             "fixtures_censused": self.fixtures_censused,
             "after_competition_filter": after_competition_filter,
@@ -121,3 +125,12 @@ class ScanRunMetrics:
             "api_usage": api_usage or {},
             "bookmaker_mode": "betfair_only",
         }
+        if provider_items_received is not None:
+            summary["provider_items_received"] = provider_items_received
+        if provider_out_of_scan_date_skipped is not None:
+            summary["provider_out_of_scan_date_skipped"] = provider_out_of_scan_date_skipped
+        if fixtures_in_scan_date is not None:
+            summary["fixtures_in_scan_date"] = fixtures_in_scan_date
+        if out_of_scan_date_examples:
+            summary["out_of_scan_date_examples"] = out_of_scan_date_examples
+        return summary
