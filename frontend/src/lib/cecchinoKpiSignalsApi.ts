@@ -118,6 +118,31 @@ export type KpiSignalsActivationsResponse = {
   activations: KpiSignalActivationRow[]
 }
 
+export type KpiSignalsBackfillError = {
+  today_fixture_id: number
+  provider_fixture_id: number
+  match: string
+  scan_date?: string
+  selection_key?: string
+  kpi_row_key?: string
+  error_type: string
+  error: string
+}
+
+export type KpiSignalsBackfillResponse = {
+  status: 'ok' | 'partial' | 'error'
+  fixtures: number
+  created: number
+  updated: number
+  deactivated: number
+  evaluated: number
+  skipped: number
+  failed: number
+  errors: KpiSignalsBackfillError[]
+  code?: string
+  message?: string
+}
+
 function qs(params: Record<string, string | number | boolean | undefined>): string {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
@@ -143,7 +168,7 @@ export async function backfillKpiSignals(body: {
   date_to: string
   only_missing?: boolean
   evaluate_after?: boolean
-}): Promise<Record<string, unknown>> {
+}): Promise<KpiSignalsBackfillResponse> {
   return adminPostJson('/api/admin/cecchino/kpi-signals/backfill', body)
 }
 

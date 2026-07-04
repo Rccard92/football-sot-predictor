@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -21,6 +22,7 @@ from app.models.cecchino_kpi_signal_activation import (
 )
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_VERSION
+from app.services.cecchino.league_ingest_helpers import recover_session_if_inactive
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
     MARKET_DC,
@@ -40,6 +42,8 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_UNDER_PT_1_5,
     SEL_X_TWO,
 )
+
+logger = logging.getLogger(__name__)
 
 MIN_KPI_RATING = 50
 
@@ -206,6 +210,40 @@ def compute_profit_units(evaluation_status: str, quota_book: Decimal | float | N
     if evaluation_status == KPI_EVAL_LOST:
         return Decimal("-1")
     return None
+
+
+def _fixture_match_label(fixture: CecchinoTodayFixture) -> str:
+    home = fixture.home_team_name or "?"
+    away = fixture.away_team_name or "?"
+    return f"{home} vs {away}"
+
+
+def _fixture_error_context(fixture: CecchinoTodayFixture) -> dict[str, Any]:
+    return {
+        "today_fixture_id": int(fixture.id),
+        "provider_fixture_id": int(fixture.provider_fixture_id),
+        "match": _fixture_match_label(fixture),
+        "scan_date": str(fixture.scan_date),
+    }
+
+
+def _build_sync_error_entry(
+    fixture: CecchinoTodayFixture,
+    exc: Exception,
+    *,
+    selection_key: str | None = None,
+    kpi_row_key: str | None = None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        **_fixture_error_context(fixture),
+        "error_type": type(exc).__name__,
+        "error": str(exc)[:500],
+    }
+    if selection_key:
+        entry["selection_key"] = selection_key
+    if kpi_row_key:
+        entry["kpi_row_key"] = kpi_row_key
+    return entry
 
 
 def evaluate_kpi_signal_activation(
@@ -387,7 +425,16 @@ def sync_kpi_signals_for_range(
             ),
         ).all(),
     )
-    totals = {"fixtures": 0, "created": 0, "updated": 0, "deactivated": 0, "evaluated": 0, "skipped": 0}
+    totals: dict[str, Any] = {
+        "fixtures": 0,
+        "created": 0,
+        "updated": 0,
+        "deactivated": 0,
+        "evaluated": 0,
+        "skipped": 0,
+        "failed": 0,
+        "errors": [],
+    }
     for fixture in fixtures:
         if only_missing:
             has_current = db.scalar(
@@ -402,16 +449,40 @@ def sync_kpi_signals_for_range(
                 totals["skipped"] += 1
                 continue
         totals["fixtures"] += 1
-        result = sync_kpi_signals_for_fixture(db, int(fixture.id))
-        totals["created"] += result["created"]
-        totals["updated"] += result["updated"]
-        totals["deactivated"] += result["deactivated"]
-        totals["evaluated"] += result["evaluated"]
+        ctx = _fixture_error_context(fixture)
+        try:
+            with db.begin_nested():
+                result = sync_kpi_signals_for_fixture(db, int(fixture.id))
+            totals["created"] += result["created"]
+            totals["updated"] += result["updated"]
+            totals["deactivated"] += result["deactivated"]
+            totals["evaluated"] += result["evaluated"]
+        except Exception as exc:
+            recover_session_if_inactive(db)
+            totals["failed"] += 1
+            error_entry = _build_sync_error_entry(fixture, exc)
+            totals["errors"].append(error_entry)
+            logger.exception(
+                "KPI sync failed today_fixture_id=%s provider_fixture_id=%s match=%s scan_date=%s",
+                ctx["today_fixture_id"],
+                ctx["provider_fixture_id"],
+                ctx["match"],
+                ctx["scan_date"],
+                extra={
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:500],
+                },
+            )
 
     if evaluate_after:
-        revaluate_kpi_signals_for_range(db, date_from=date_from, date_to=date_to)
+        revaluate_kpi_signals_for_range(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            commit=False,
+        )
     db.commit()
-    totals["status"] = "ok"
+    totals["status"] = "partial" if totals["failed"] > 0 else "ok"
     return totals
 
 
@@ -452,7 +523,13 @@ def revaluate_kpi_signals_for_fixture(db: Session, today_fixture_id: int) -> dic
     return {"evaluated": count}
 
 
-def revaluate_kpi_signals_for_range(db: Session, *, date_from: date, date_to: date) -> dict[str, Any]:
+def revaluate_kpi_signals_for_range(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    commit: bool = True,
+) -> dict[str, Any]:
     fixture_ids = list(
         db.scalars(
             select(CecchinoKpiSignalActivation.today_fixture_id)
@@ -468,7 +545,17 @@ def revaluate_kpi_signals_for_range(db: Session, *, date_from: date, date_to: da
     for fid in fixture_ids:
         if fid is None:
             continue
-        result = revaluate_kpi_signals_for_fixture(db, int(fid))
-        evaluated += result["evaluated"]
-    db.commit()
+        try:
+            with db.begin_nested():
+                result = revaluate_kpi_signals_for_fixture(db, int(fid))
+            evaluated += result["evaluated"]
+        except Exception as exc:
+            recover_session_if_inactive(db)
+            logger.exception(
+                "KPI revaluate failed today_fixture_id=%s error_type=%s",
+                fid,
+                type(exc).__name__,
+            )
+    if commit:
+        db.commit()
     return {"status": "ok", "fixtures": len(fixture_ids), "evaluated": evaluated}

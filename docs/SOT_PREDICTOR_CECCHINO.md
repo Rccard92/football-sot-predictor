@@ -2,6 +2,12 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — Robustezza backfill Segnali KPI (2026-07-04)
+
+- Fix backfill pagina `/segnali-kpi`: errori per fixture non propagano 500 globale.
+- Mercati PT (Under/Over PT) valutati con solo HT; pending senza crash.
+- Nessuna modifica formule KPI o Segnali Cecchino matrice.
+
 ## Backend — Merge Alembic heads dopo Segnali KPI (2026-07-04)
 
 - Fix deploy Railway: merge Alembic `dd07defcb335` unisce le head KPI (`20260704120000`) e merge precedente (`5e0e69b60bde`).

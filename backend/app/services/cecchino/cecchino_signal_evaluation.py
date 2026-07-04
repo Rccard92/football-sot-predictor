@@ -100,6 +100,9 @@ def evaluate_market_selection(selection_key: str, match_result: dict[str, Any]) 
         }
 
     pt_keys = {SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5}
+    ht = match_result.get("halftime") or {}
+    ft = match_result.get("fulltime") or {}
+
     if selection_key in pt_keys:
         if not _ht_available(match_result):
             return {
@@ -107,17 +110,35 @@ def evaluate_market_selection(selection_key: str, match_result: dict[str, Any]) 
                 "evaluation_reason": "halftime_result_missing",
                 "evaluated_at": None,
             }
-    elif not _ft_available(match_result):
+        ht_home = int(ht["home"])
+        ht_away = int(ht["away"])
+        won = _evaluate_market(selection_key, 0, 0, ht_home, ht_away)
+        if won is None:
+            return {
+                "evaluation_status": EVAL_NOT_EVALUABLE,
+                "evaluation_reason": "unsupported_selection_key",
+                "evaluated_at": datetime.now(timezone.utc),
+            }
+        status = EVAL_WON if won else EVAL_LOST
+        return {
+            "evaluation_status": status,
+            "evaluation_reason": None,
+            "evaluated_at": datetime.now(timezone.utc),
+            "result_home_ft": None,
+            "result_away_ft": None,
+            "result_home_ht": ht_home,
+            "result_away_ht": ht_away,
+        }
+
+    if not _ft_available(match_result):
         return {
             "evaluation_status": EVAL_RESULT_MISSING,
             "evaluation_reason": "fulltime_result_missing",
             "evaluated_at": None,
         }
 
-    ft = match_result.get("fulltime") or {}
-    ht = match_result.get("halftime") or {}
-    ft_home = int(ft.get("home"))
-    ft_away = int(ft.get("away"))
+    ft_home = int(ft["home"])
+    ft_away = int(ft["away"])
     ht_home = int(ht["home"]) if ht.get("home") is not None else None
     ht_away = int(ht["away"]) if ht.get("away") is not None else None
 

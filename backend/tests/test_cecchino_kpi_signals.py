@@ -28,9 +28,16 @@ from app.services.cecchino.cecchino_kpi_signals import (
     normalize_kpi_row,
     rating_bucket,
     sync_kpi_signals_for_fixture,
+    sync_kpi_signals_for_range,
 )
 from app.services.cecchino.cecchino_kpi_signals_aggregation import _profit_metrics
-from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_UNDER_PT_1_5, SEL_X_TWO
+from app.services.cecchino.cecchino_selection_keys import (
+    SEL_AWAY,
+    SEL_OVER_PT_0_5,
+    SEL_OVER_PT_1_5,
+    SEL_UNDER_PT_1_5,
+    SEL_X_TWO,
+)
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_market_selection
 
 
@@ -217,3 +224,128 @@ def test_sync_does_not_touch_signal_activations_table():
     assert len(added) == 1
     assert isinstance(added[0], CecchinoKpiSignalActivation)
     assert added[0].selection_key == SEL_AWAY
+
+
+def _match_ht_only(ht_home: int, ht_away: int):
+    return {
+        "fulltime": {"home": None, "away": None},
+        "halftime": {"home": ht_home, "away": ht_away},
+    }
+
+
+def test_eval_under_pt_15_with_ht_and_missing_ft_does_not_crash():
+    result = evaluate_market_selection(SEL_UNDER_PT_1_5, _match_ht_only(1, 0))
+    assert result["evaluation_status"] == KPI_EVAL_WON
+    assert result["result_home_ft"] is None
+    assert result["result_away_ft"] is None
+    assert result["result_home_ht"] == 1
+    assert result["result_away_ht"] == 0
+
+
+def test_eval_over_pt_05_with_ht_and_missing_ft_does_not_crash():
+    result = evaluate_market_selection(SEL_OVER_PT_0_5, _match_ht_only(0, 0))
+    assert result["evaluation_status"] == KPI_EVAL_LOST
+    assert result["result_home_ft"] is None
+
+
+def test_eval_over_pt_15_with_ht_and_missing_ft_does_not_crash():
+    result = evaluate_market_selection(SEL_OVER_PT_1_5, _match_ht_only(1, 1))
+    assert result["evaluation_status"] == KPI_EVAL_WON
+    assert result["result_home_ft"] is None
+
+
+def test_eval_pt_with_missing_ht_returns_result_missing():
+    result = evaluate_market_selection(
+        SEL_UNDER_PT_1_5,
+        {"fulltime": {"home": 2, "away": 1}, "halftime": {"home": None, "away": None}},
+    )
+    assert result["evaluation_status"] == "result_missing"
+
+
+def test_eval_ft_with_missing_ft_returns_result_missing():
+    result = evaluate_market_selection(
+        SEL_X_TWO,
+        {"fulltime": {"home": None, "away": None}, "halftime": {"home": 0, "away": 0}},
+    )
+    assert result["evaluation_status"] == "result_missing"
+
+
+def test_profit_pending_is_null():
+    assert compute_profit_units(KPI_EVAL_PENDING, Decimal("2.0")) is None
+    assert compute_profit_units("result_missing", Decimal("2.0")) is None
+
+
+def _make_fixture_mock(*, fid: int, home: str = "A", away: str = "B"):
+    fixture = MagicMock()
+    fixture.id = fid
+    fixture.provider_fixture_id = 1000 + fid
+    fixture.scan_date = date(2026, 7, 4)
+    fixture.home_team_name = home
+    fixture.away_team_name = away
+    fixture.eligibility_status = ELIGIBILITY_ELIGIBLE
+    fixture.kpi_panel_json = {"version": "cecchino_kpi_v2_betfair", "rows": [_kpi_row(rating=80)]}
+    return fixture
+
+
+def test_sync_range_continues_after_fixture_error():
+    db = MagicMock()
+    ok_fixture = _make_fixture_mock(fid=1)
+    bad_fixture = _make_fixture_mock(fid=2, home="C", away="D")
+    db.scalars.return_value.all.return_value = [bad_fixture, ok_fixture]
+    db.scalar.return_value = None
+    db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+    db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+    def _sync_side_effect(_db, today_fixture_id: int):
+        if today_fixture_id == 2:
+            raise ValueError("fixture sync failed")
+        return {"created": 1, "updated": 0, "deactivated": 0, "evaluated": 1}
+
+    with patch(
+        "app.services.cecchino.cecchino_kpi_signals.sync_kpi_signals_for_fixture",
+        side_effect=_sync_side_effect,
+    ):
+        with patch("app.services.cecchino.cecchino_kpi_signals.revaluate_kpi_signals_for_range", return_value={}):
+            result = sync_kpi_signals_for_range(
+                db,
+                date_from=date(2026, 7, 4),
+                date_to=date(2026, 7, 4),
+                only_missing=False,
+                evaluate_after=False,
+            )
+
+    assert result["status"] == "partial"
+    assert result["failed"] == 1
+    assert result["created"] == 1
+    assert len(result["errors"]) == 1
+    assert result["errors"][0]["today_fixture_id"] == 2
+    assert result["errors"][0]["provider_fixture_id"] == 1002
+    assert result["errors"][0]["match"] == "C vs D"
+    assert result["errors"][0]["error_type"] == "ValueError"
+    db.commit.assert_called_once()
+
+
+def test_sync_range_ok_when_all_fixtures_succeed():
+    db = MagicMock()
+    fixture = _make_fixture_mock(fid=1)
+    db.scalars.return_value.all.return_value = [fixture]
+    db.scalar.return_value = None
+    db.begin_nested.return_value.__enter__ = MagicMock(return_value=None)
+    db.begin_nested.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch(
+        "app.services.cecchino.cecchino_kpi_signals.sync_kpi_signals_for_fixture",
+        return_value={"created": 2, "updated": 0, "deactivated": 0, "evaluated": 2},
+    ):
+        result = sync_kpi_signals_for_range(
+            db,
+            date_from=date(2026, 7, 4),
+            date_to=date(2026, 7, 4),
+            only_missing=False,
+            evaluate_after=False,
+        )
+
+    assert result["status"] == "ok"
+    assert result["failed"] == 0
+    assert result["created"] == 2
+    db.commit.assert_called_once()

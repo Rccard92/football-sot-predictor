@@ -12,6 +12,7 @@ import {
 } from '../lib/cecchinoKpiSignalsApi'
 import { isoDaysAgo, todayIso } from '../components/cecchino-lab/signalsLabUtils'
 import { formatFetchError } from '../utils/formatFetchError'
+import { AdminHttpError } from '../lib/api'
 
 export function useCecchinoKpiSignals() {
   const [dateFrom, setDateFrom] = useState(isoDaysAgo(29))
@@ -77,9 +78,22 @@ export function useCecchinoKpiSignals() {
         only_missing: false,
         evaluate_after: true,
       })
-      toast.success(`Sincronizzazione KPI completata (${String(res.created ?? 0)} creati)`)
+      if (res.status === 'partial') {
+        toast.warning(
+          `Sincronizzazione KPI completata parzialmente: ${res.fixtures} fixture elaborate, ${res.failed} errori.`,
+        )
+      } else {
+        toast.success(`Sincronizzazione KPI completata (${String(res.created ?? 0)} creati)`)
+      }
       await loadAll()
     } catch (err) {
+      if (err instanceof AdminHttpError && err.body && typeof err.body === 'object') {
+        const body = err.body as { message?: string; code?: string }
+        if (body.message) {
+          toast.error(body.message)
+          return
+        }
+      }
       toast.error(formatFetchError(err))
     } finally {
       setActionLoading(false)

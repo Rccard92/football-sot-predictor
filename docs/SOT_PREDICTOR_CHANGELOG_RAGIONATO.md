@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Robustezza backfill Segnali KPI (2026-07-04)
+
+- Risolto 500 su `POST /api/admin/cecchino/kpi-signals/backfill` (errore mostrato in UI come CORS).
+- Il backfill KPI isola errori per singola fixture (`begin_nested` + savepoint); una fixture problematica non blocca più tutta la sincronizzazione.
+- Payload con `status: ok|partial`, contatori e `errors[]` diagnostici (`today_fixture_id`, `provider_fixture_id`, `match`, `error_type`).
+- Mercati PT valutati solo con risultato primo tempo; FT mancante non causa più `int(None)`.
+- Pending/result_missing non genera eccezione; `profit_units` resta null.
+- **Invariato:** formule KPI, Segnali Cecchino (`evaluate_signal_activation`), Monitoraggio Segnali, Segnali Lab, Betfair-only, SOT v2.0/v2.1.
+
 ## Backend — Merge Alembic heads dopo Segnali KPI (2026-07-04)
 
 - Risolto errore Railway «Multiple head revisions are present for given argument 'head'».

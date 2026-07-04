@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
@@ -26,6 +27,7 @@ from app.services.cecchino.cecchino_kpi_signals_aggregation import (
 
 router = APIRouter(prefix="/cecchino/kpi-signals", tags=["cecchino-kpi-signals"])
 admin_router = APIRouter(prefix="/admin/cecchino/kpi-signals", tags=["admin-cecchino-kpi-signals"])
+logger = logging.getLogger(__name__)
 
 
 def _summary_payload(
@@ -152,14 +154,26 @@ def kpi_signals_backfill(
     body: CecchinoKpiSignalsBackfillBody,
     db: Session = Depends(get_db),
 ):
-    payload = backfill_kpi_signals(
-        db,
-        date_from=body.date_from,
-        date_to=body.date_to,
-        only_missing=body.only_missing,
-        evaluate_after=body.evaluate_after,
-    )
-    return JSONResponse(content=jsonable_encoder(payload))
+    try:
+        payload = backfill_kpi_signals(
+            db,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            only_missing=body.only_missing,
+            evaluate_after=body.evaluate_after,
+        )
+        return JSONResponse(content=jsonable_encoder(payload))
+    except Exception as exc:
+        logger.exception("KPI signals backfill fatal error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "code": "kpi_signals_backfill_failed",
+                "message": str(exc)[:500],
+                "errors": [],
+            },
+        )
 
 
 @admin_router.post("/revaluate")

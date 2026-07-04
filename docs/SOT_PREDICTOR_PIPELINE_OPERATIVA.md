@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Robustezza backfill Segnali KPI (2026-07-04)
+
+- `sync_kpi_signals_for_range`: try/except per fixture, `failed`/`errors`, `status=partial` se almeno un errore.
+- Route admin backfill: JSON gestito anche su 500 (`code: kpi_signals_backfill_failed`).
+- Valutazione PT in `evaluate_market_selection`: solo HT richiesto; nessuna API esterna in sync.
+- **Invariato:** formule KPI, Monitoraggio Segnali, Segnali Lab, pipeline Today.
+
 ## Backend — Merge Alembic heads dopo Segnali KPI (2026-07-04)
 
 - Risolto errore Railway «Multiple head revisions are present» dopo migration tabella `cecchino_kpi_signal_activations`.
