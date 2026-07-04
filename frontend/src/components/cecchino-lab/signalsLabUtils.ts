@@ -126,14 +126,14 @@ export function rankTopSignals(
   return [...filtered].sort(sorter).slice(0, limit)
 }
 
+import { isoDaysAgoLocal, todayLocalIso } from '../../utils/dateLocal'
+
 export function isoDaysAgo(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString().slice(0, 10)
+  return isoDaysAgoLocal(days)
 }
 
 export function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  return todayLocalIso()
 }
 
 export const LAB_SELECTED_MODEL_KEY = 'cecchino_signals_lab_selected_model'

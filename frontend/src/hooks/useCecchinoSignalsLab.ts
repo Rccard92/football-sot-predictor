@@ -17,7 +17,6 @@ import {
 } from '../lib/cecchinoSignalsApi'
 import { formatFetchError } from '../utils/formatFetchError'
 import {
-  isoDaysAgo,
   LAB_SELECTED_MODEL_KEY,
   todayIso,
 } from '../components/cecchino-lab/signalsLabUtils'
@@ -39,7 +38,7 @@ function resolveDefaultModelKey(models: WeightModelSummary[]): string {
 }
 
 export function useCecchinoSignalsLab() {
-  const [dateFrom, setDateFrom] = useState(isoDaysAgo(6))
+  const [dateFrom, setDateFrom] = useState(todayIso())
   const [dateTo, setDateTo] = useState(todayIso())
   const [signalGroup, setSignalGroup] = useState('')
   const [sourceColumn, setSourceColumn] = useState('')

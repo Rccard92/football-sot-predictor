@@ -2,18 +2,27 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import type { KpiSignalActivationRow } from '../lib/cecchinoKpiSignalsApi'
 import { KpiRatingBucketCarousel } from '../components/cecchino-kpi-signals/KpiRatingBucketCarousel'
-import { KpiSignalDetailDrawer } from '../components/cecchino-kpi-signals/KpiSignalDetailDrawer'
-import { KpiSignalsEmptyState, KpiSignalsInfoPanel, KpiSignalsSkeleton } from '../components/cecchino-kpi-signals/KpiSignalsInfoPanel'
+import {
+  KpiSignalDetailDrawer,
+  type KpiDrawerState,
+} from '../components/cecchino-kpi-signals/KpiSignalDetailDrawer'
+import { KpiSignalsActivationsLab } from '../components/cecchino-kpi-signals/KpiSignalsActivationsLab'
+import { KpiSignalsEmptyState } from '../components/cecchino-kpi-signals/KpiSignalsEmptyState'
 import { KpiSignalsFilters } from '../components/cecchino-kpi-signals/KpiSignalsFilters'
-import { KpiSignalsHeatmap, type KpiHeatmapSelection } from '../components/cecchino-kpi-signals/KpiSignalsHeatmap'
+import {
+  KpiSignalsHeatmapLab,
+  type KpiHeatmapSelection,
+} from '../components/cecchino-kpi-signals/KpiSignalsHeatmapLab'
+import { KpiSignalsInfoPanel } from '../components/cecchino-kpi-signals/KpiSignalsInfoPanel'
 import { KpiSignalsMetricRibbon } from '../components/cecchino-kpi-signals/KpiSignalsMetricRibbon'
 import { KpiSignalsPageHeader } from '../components/cecchino-kpi-signals/KpiSignalsPageHeader'
-import { KpiSignalsTable } from '../components/cecchino-kpi-signals/KpiSignalsTable'
+import { KpiSignalsSkeleton } from '../components/cecchino-kpi-signals/KpiSignalsSkeleton'
+import { KpiSignalsTopRankingLab } from '../components/cecchino-kpi-signals/KpiSignalsTopRankingLab'
 import { useCecchinoKpiSignals } from '../hooks/useCecchinoKpiSignals'
 
 export function SegnaliKpiPage() {
   const kpi = useCecchinoKpiSignals()
-  const [drawerRow, setDrawerRow] = useState<KpiSignalActivationRow | null>(null)
+  const [drawer, setDrawer] = useState<KpiDrawerState>(null)
   const [heatmapFilter, setHeatmapFilter] = useState<KpiHeatmapSelection | null>(null)
 
   useEffect(() => {
@@ -23,6 +32,7 @@ export function SegnaliKpiPage() {
   const handleBucketSelect = useCallback(
     (bucket: string) => {
       kpi.setRatingBucket(bucket)
+      setHeatmapFilter(null)
       void kpi.loadAll()
     },
     [kpi],
@@ -36,6 +46,23 @@ export function SegnaliKpiPage() {
         a.rating_bucket === heatmapFilter.ratingBucket,
     )
   }, [kpi.activations, heatmapFilter])
+
+  const handleHeatmapCellClick = useCallback(
+    (cell: KpiHeatmapSelection) => {
+      setHeatmapFilter(cell)
+      kpi.setRatingBucket(cell.ratingBucket)
+      const related = kpi.activations.filter(
+        (a) =>
+          a.selection_label === cell.selectionLabel && a.rating_bucket === cell.ratingBucket,
+      )
+      setDrawer({ type: 'heatmap', cell, activations: related })
+    },
+    [kpi.activations, kpi.setRatingBucket],
+  )
+
+  const handleRowClick = useCallback((row: KpiSignalActivationRow) => {
+    setDrawer({ type: 'activation', row })
+  }, [])
 
   const emptyVariant = useMemo(() => {
     const diag = kpi.summary?.diagnostics
@@ -55,6 +82,7 @@ export function SegnaliKpiPage() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
       className="min-h-screen bg-gradient-to-b from-slate-50/90 via-white to-cyan-50/20"
     >
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
@@ -85,7 +113,11 @@ export function SegnaliKpiPage() {
         {kpi.loading && !kpi.summary ? <KpiSignalsSkeleton /> : null}
 
         {!kpi.loading && emptyVariant ? (
-          <KpiSignalsEmptyState variant={emptyVariant} onSync={() => void kpi.runSync()} />
+          <KpiSignalsEmptyState
+            variant={emptyVariant}
+            onSync={() => void kpi.runSync()}
+            actionLoading={kpi.actionLoading}
+          />
         ) : null}
 
         {kpi.summary && !emptyVariant ? (
@@ -94,26 +126,20 @@ export function SegnaliKpiPage() {
               buckets={kpi.summary.by_rating_bucket}
               selectedBucket={kpi.ratingBucket}
               onSelect={handleBucketSelect}
-            />
-            <KpiSignalsMetricRibbon overall={kpi.summary.overall} />
-            <KpiSignalsHeatmap
-              cells={kpi.summary.heatmap.cells}
-              onCellClick={(cell) => {
-                setHeatmapFilter(cell)
-                kpi.setRatingBucket(cell.ratingBucket)
-                kpi.setSelectionKey('')
+              onClearFilter={() => {
+                setHeatmapFilter(null)
+                void kpi.loadAll()
               }}
             />
-            <KpiSignalsTable rows={filteredActivations} onRowClick={setDrawerRow} />
+            <KpiSignalsMetricRibbon overall={kpi.summary.overall} />
+            <KpiSignalsHeatmapLab cells={kpi.summary.heatmap.cells} onCellClick={handleHeatmapCellClick} />
+            <KpiSignalsTopRankingLab top={kpi.summary.top} />
+            <KpiSignalsActivationsLab rows={filteredActivations} onRowClick={handleRowClick} />
             <KpiSignalsInfoPanel />
           </>
         ) : null}
 
-        <KpiSignalDetailDrawer
-          row={drawerRow}
-          open={drawerRow != null}
-          onClose={() => setDrawerRow(null)}
-        />
+        <KpiSignalDetailDrawer state={drawer} onClose={() => setDrawer(null)} />
       </div>
     </motion.div>
   )

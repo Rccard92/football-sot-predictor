@@ -1,5 +1,10 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
+
+- UI `/segnali-kpi` allineata a Segnali Lab; filtri data Cecchino partono da oggi (locale browser).
+- Nessuna modifica pipeline backend KPI o sync API.
+
 ## Cecchino — Robustezza backfill Segnali KPI (2026-07-04)
 
 - `sync_kpi_signals_for_range`: try/except per fixture, `failed`/`errors`, `status=partial` se almeno un errore.

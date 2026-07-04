@@ -30,16 +30,7 @@ import {
 } from '../lib/cecchinoSignalsApi'
 import { recomputeCecchino, updateCecchinoTodayResults } from '../lib/cecchinoTodayApi'
 import { formatFetchError } from '../utils/formatFetchError'
-
-function isoDaysAgo(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString().slice(0, 10)
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+import { todayLocalIso } from '../utils/dateLocal'
 
 function readStoredModelKey(): string {
   try {
@@ -59,8 +50,8 @@ function resolveDefaultModelKey(models: WeightModelSummary[]): string {
 
 export function CecchinoSignalsMonitoringPage() {
   const [searchParams] = useSearchParams()
-  const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') ?? isoDaysAgo(6))
-  const [dateTo, setDateTo] = useState(searchParams.get('date_to') ?? todayIso())
+  const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') ?? todayLocalIso())
+  const [dateTo, setDateTo] = useState(searchParams.get('date_to') ?? todayLocalIso())
   const [signalGroup, setSignalGroup] = useState(searchParams.get('signal_group') ?? '')
   const [sourceColumn, setSourceColumn] = useState(searchParams.get('source_column') ?? '')
   const [evaluationStatus, setEvaluationStatus] = useState('')

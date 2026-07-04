@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
+
+- Rifatta UI pagina `/segnali-kpi` in stile Segnali Lab (framer-motion, card animate, heatmap moderna, drawer, metric ribbon, top ranking).
+- Componenti dedicati in `frontend/src/components/cecchino-kpi-signals/` (KpiSignalsHeatmapLab, KpiSignalsActivationsLab, KpiRatingBucketCarousel, ecc.).
+- Pagina Segnali KPI resta separata da Monitoraggio Segnali e Segnali Lab (modulo e tabella DB distinti).
+- Default range data Cecchino: `date_from` e `date_to` = giornata odierna su Monitoraggio Segnali, Segnali Lab e Segnali KPI.
+- Helper `todayLocalIso` / `isoDaysAgoLocal` in `frontend/src/utils/dateLocal.ts` (no UTC per default UI).
+- **Invariato:** backend Segnali KPI, formule KPI/Cecchino, endpoint API, Betfair-only, SOT v2.0/v2.1.
+
 ## Cecchino — Robustezza backfill Segnali KPI (2026-07-04)
 
 - Risolto 500 su `POST /api/admin/cecchino/kpi-signals/backfill` (errore mostrato in UI come CORS).

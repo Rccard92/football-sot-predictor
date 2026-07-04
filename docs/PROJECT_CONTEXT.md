@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
+
+Segnali KPI restyled stile Lab; filtri data Cecchino (Monitoraggio, Lab, KPI) default oggi locale via `todayLocalIso`. Zero modifiche backend.
+
 ## Cecchino — Robustezza backfill Segnali KPI (2026-07-04)
 
 Backfill Segnali KPI resiliente: isolamento errori per fixture, payload `partial` con diagnostica, fix valutazione mercati PT. Formule KPI e Segnali Cecchino/Lab invariati.

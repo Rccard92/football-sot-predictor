@@ -1,19 +1,42 @@
+import { motion } from 'framer-motion'
+
 export function KpiSignalsPageHeader() {
   return (
-    <header className="rounded-2xl border border-cyan-100/80 bg-gradient-to-r from-white via-cyan-50/40 to-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <motion.header
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-br from-cyan-50/40 via-white to-teal-50/30 p-6 shadow-sm"
+    >
+      <div
+        className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-cyan-200/20 blur-3xl"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-teal-200/20 blur-3xl"
+        aria-hidden
+      />
+      <div className="relative flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-cyan-700">Cecchino</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">Segnali KPI</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-cyan-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-800">
+              Cecchino
+            </span>
+            <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200/80">
+              Modulo separato · Dati DB
+            </span>
+          </div>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">Segnali KPI</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600">
             Analisi delle quote di valore individuate dal Pannello KPI Cecchino, divise per rating e
             valutate con stake fisso 1.
           </p>
+          <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-500">
+            Ogni riga KPI con rating ≥ 50 diventa un segnale: viene valutata sul risultato reale e
+            trasformata in profitto/perdita con stake fisso 1.
+          </p>
         </div>
-        <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-medium text-cyan-800">
-          Modulo separato · Dati DB
-        </span>
       </div>
-    </header>
+    </motion.header>
   )
 }

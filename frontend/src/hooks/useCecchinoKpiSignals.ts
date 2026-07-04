@@ -10,12 +10,12 @@ import {
   type KpiSignalsFilters,
   type KpiSignalsSummaryResponse,
 } from '../lib/cecchinoKpiSignalsApi'
-import { isoDaysAgo, todayIso } from '../components/cecchino-lab/signalsLabUtils'
+import { todayIso } from '../components/cecchino-lab/signalsLabUtils'
 import { formatFetchError } from '../utils/formatFetchError'
 import { AdminHttpError } from '../lib/api'
 
 export function useCecchinoKpiSignals() {
-  const [dateFrom, setDateFrom] = useState(isoDaysAgo(29))
+  const [dateFrom, setDateFrom] = useState(todayIso())
   const [dateTo, setDateTo] = useState(todayIso())
   const [ratingBucket, setRatingBucket] = useState('')
   const [selectionKey, setSelectionKey] = useState('')

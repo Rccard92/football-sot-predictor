@@ -2,6 +2,11 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
+
+- Pagina `/segnali-kpi`: UX Lab (heatmap, drawer, card rating, top ranking); default filtri data = oggi.
+- Formule KPI e backend invariati; modulo separato da Monitoraggio Segnali matrice.
+
 ## Cecchino — Robustezza backfill Segnali KPI (2026-07-04)
 
 - Fix backfill pagina `/segnali-kpi`: errori per fixture non propagano 500 globale.
