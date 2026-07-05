@@ -27,6 +27,7 @@ export type SignalsDiagnostics = {
   fixtures_with_signal_matrix_count: number
   signal_activations_count: number
   current_signal_activations_count: number
+  value_eligible_activations_count?: number
   evaluated_count: number
   won: number
   lost: number
@@ -34,6 +35,7 @@ export type SignalsDiagnostics = {
   not_evaluable: number
   date_filter_field_used: string
   legacy_wrong_scala_mapping_count?: number
+  monitoring_note?: string
   warnings: string[]
 }
 
@@ -56,6 +58,14 @@ export type SignalsBackfillResponse = {
   signals_created: number
   signals_updated: number
   signals_deactivated: number
+  si_cells_seen?: number
+  value_passed?: number
+  no_value_skipped?: number
+  missing_book_quote_skipped?: number
+  missing_cecchino_quote_skipped?: number
+  invalid_quote_skipped?: number
+  deactivated_no_value?: number
+  missing_value_quote?: number
   evaluated: number
   won: number
   lost: number

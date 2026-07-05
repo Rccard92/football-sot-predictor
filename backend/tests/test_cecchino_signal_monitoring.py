@@ -86,6 +86,25 @@ def _signals_matrix(**row_signals):
     }
 
 
+def _kpi_panel_row(
+    market_key: str,
+    *,
+    book: float = 3.40,
+    cecchino: float = 3.20,
+) -> dict:
+    return {
+        "market_key": market_key,
+        "quota_book": book,
+        "quota_cecchino": cecchino,
+        "edge_pct": 5.0,
+        "rating": 70,
+    }
+
+
+def _kpi_panel(*market_keys: str, book: float = 3.40, cecchino: float = 3.20) -> dict:
+    return {"rows": [_kpi_panel_row(mk, book=book, cecchino=cecchino) for mk in market_keys]}
+
+
 def _fixture_row(**kwargs) -> CecchinoTodayFixture:
     row = CecchinoTodayFixture(
         scan_date=date(2026, 6, 8),
@@ -464,6 +483,7 @@ def test_sync_scala_on_one_x_not_home():
     }
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
+    row.kpi_panel_json = _kpi_panel(SEL_ONE_X)
 
     counts = sync_cecchino_signal_activations(db, 99)
 
@@ -545,6 +565,7 @@ def test_sync_home_from_d48_excel_d_only():
     }
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
+    row.kpi_panel_json = _kpi_panel(SEL_HOME)
 
     counts = sync_cecchino_signal_activations(db, 99)
 
@@ -566,6 +587,7 @@ def test_sync_away_from_d54_excel_d_only():
     }
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
+    row.kpi_panel_json = _kpi_panel(SEL_AWAY)
 
     counts = sync_cecchino_signal_activations(db, 99)
 
@@ -599,6 +621,7 @@ def test_sync_x_two_from_g54_scala():
     }
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
+    row.kpi_panel_json = _kpi_panel(SEL_X_TWO)
 
     counts = sync_cecchino_signal_activations(db, 99)
 
@@ -1177,3 +1200,197 @@ def test_summary_include_diagnostics():
         )
 
     assert summary["diagnostics"]["today_fixtures_count"] == 5
+
+
+def _draw_si_fixture_row(*, book: float = 3.40, cecchino: float = 3.20, **kwargs) -> CecchinoTodayFixture:
+    row = _fixture_row(**kwargs)
+    row.kpi_panel_json = _kpi_panel(SEL_DRAW, book=book, cecchino=cecchino)
+    return row
+
+
+def test_sync_value_gate_creates_when_book_above_cecchino():
+    db = MagicMock()
+    row = _draw_si_fixture_row(book=3.40, cecchino=3.20)
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    assert counts["value_passed"] == 1
+    assert counts["si_cells_seen"] == 1
+    assert counts["no_value_skipped"] == 0
+
+
+def test_sync_value_gate_creates_when_book_equals_cecchino():
+    db = MagicMock()
+    row = _draw_si_fixture_row(book=3.20, cecchino=3.20)
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    assert counts["value_passed"] == 1
+
+
+def test_sync_value_gate_skips_when_book_below_cecchino():
+    db = MagicMock()
+    row = _draw_si_fixture_row(book=2.90, cecchino=3.20)
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 0
+    assert counts["no_value_skipped"] == 1
+    assert counts["value_passed"] == 0
+    assert not db.add.called
+
+
+def test_sync_value_gate_deactivates_existing_no_value_without_delete():
+    db = MagicMock()
+    row = _draw_si_fixture_row(book=2.90, cecchino=3.20)
+    existing = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        model_key="F",
+        signal_group="DRAW",
+        signal_label="SEGNO X",
+        source_column="EXCEL_D",
+        signal_value=True,
+        target_market_key=SEL_DRAW,
+        target_period="FT",
+        evaluation_status=EVAL_WON,
+        is_current=True,
+    )
+    existing.id = 1
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = [existing]
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 0
+    assert counts["deactivated_no_value"] == 1
+    assert existing.is_current is False
+    assert existing.deactivated_at is not None
+    assert existing.evaluation_reason == "no_value_book_below_cecchino"
+    assert not db.add.called
+
+
+def test_sync_value_gate_skips_missing_kpi_panel():
+    db = MagicMock()
+    row = _draw_si_fixture_row()
+    row.kpi_panel_json = None
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 0
+    assert counts["missing_book_quote_skipped"] == 1
+    assert counts["no_value_skipped"] == 1
+
+
+def test_sync_value_gate_skips_missing_book_quote():
+    db = MagicMock()
+    row = _draw_si_fixture_row()
+    row.kpi_panel_json = {"rows": [{"market_key": SEL_DRAW, "quota_cecchino": 3.20}]}
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["missing_book_quote_skipped"] == 1
+    assert counts["no_value_skipped"] == 1
+
+
+def test_sync_value_gate_skips_missing_cecchino_quote():
+    db = MagicMock()
+    row = _draw_si_fixture_row()
+    row.kpi_panel_json = {"rows": [{"market_key": SEL_DRAW, "quota_book": 3.40}]}
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["missing_cecchino_quote_skipped"] == 1
+
+
+def test_sync_value_gate_no_evaluate_when_no_value():
+    db = MagicMock()
+    row = _draw_si_fixture_row(book=2.90, cecchino=3.20)
+    row.ft_home_goals = 1
+    row.ft_away_goals = 1
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_sync.evaluate_signal_activation",
+    ) as mock_eval:
+        sync_cecchino_signal_activations(db, 99)
+
+    mock_eval.assert_not_called()
+
+
+def test_backfill_aggregates_value_gate_counters():
+    db = MagicMock()
+    fixture = _fixture_row()
+    db.scalars.return_value.all.return_value = [fixture]
+    db.scalar.return_value = 0
+
+    sync_return = {
+        "created": 1,
+        "updated": 0,
+        "deactivated": 0,
+        "skipped": 0,
+        "si_cells_seen": 2,
+        "value_passed": 1,
+        "no_value_skipped": 1,
+        "missing_book_quote_skipped": 0,
+        "missing_cecchino_quote_skipped": 0,
+        "invalid_quote_skipped": 0,
+        "deactivated_no_value": 0,
+    }
+
+    with patch(
+        "app.services.cecchino.cecchino_signal_backfill.sync_cecchino_signal_activations",
+        return_value=sync_return,
+    ), patch(
+        "app.services.cecchino.cecchino_signal_backfill.remap_under_over_activations_in_range",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_signal_odds_refresh.refresh_activation_odds_from_kpi",
+        return_value={"odds_refreshed": 0},
+    ):
+        out = backfill_signal_activations(
+            db,
+            date_from=date(2026, 6, 8),
+            date_to=date(2026, 6, 8),
+            evaluate_after=False,
+        )
+
+    assert out["si_cells_seen"] == 2
+    assert out["value_passed"] == 1
+    assert out["no_value_skipped"] == 1
+    assert out["missing_value_quote"] == 0
+
+
+def test_diagnostics_includes_monitoring_note():
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    db.scalar.side_effect = [0, 0, 0]
+    db.execute.return_value.all.return_value = []
+
+    diag = build_signal_diagnostics(db, date_from=date(2026, 6, 8), date_to=date(2026, 6, 8))
+
+    assert "monitoring_note" in diag
+    assert "quota book >= quota Cecchino" in diag["monitoring_note"]
+    assert diag["value_eligible_activations_count"] == diag["current_signal_activations_count"]
+
+
+def test_matrix_unchanged_by_value_gate():
+    matrix = build_signals_matrix(q1=2.50, qx=3.20, q2=2.90, sample_home_away_split=16)
+    assert matrix["status"] == STATUS_AVAILABLE
+    assert isinstance(matrix["rows"], list)

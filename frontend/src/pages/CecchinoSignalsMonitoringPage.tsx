@@ -222,18 +222,25 @@ export function CecchinoSignalsMonitoringPage() {
     }
   }
 
+  const VALUE_FILTER_CONFIRM =
+    'Ricalcola il filtro valore su tutte le partite del periodo: restano monitorati solo i segnali SI con quota book ≥ quota Cecchino. Le activation senza valore verranno disattivate (nessuna cancellazione). Continuare?'
+
   const handleRemapMapping = async () => {
+    if (!window.confirm(VALUE_FILTER_CONFIRM)) return
     setActionLoading(true)
     setActionMessage(null)
     try {
-      await backfillCecchinoSignals({
+      const res = await backfillCecchinoSignals({
         date_from: dateFrom,
         date_to: dateTo,
         only_missing: false,
         evaluate_after: true,
         force_remap: true,
       })
-      setActionMessage('Mapping segnali ricalcolato correttamente.')
+      const missingQuotes = res.missing_value_quote ?? 0
+      setActionMessage(
+        `Filtro valore ricalcolato: ${res.si_cells_seen ?? 0} celle SI, ${res.value_passed ?? 0} a valore, ${res.no_value_skipped ?? 0} esclusi (quote mancanti: ${missingQuotes}, disattivati no-value: ${res.deactivated_no_value ?? 0}), ${res.evaluated ?? 0} rivalutati.`,
+      )
       await loadData()
     } catch (err) {
       setError(formatFetchError(err))
@@ -300,6 +307,10 @@ export function CecchinoSignalsMonitoringPage() {
         <p className="mt-1 text-sm text-slate-600">
           Analisi aggregata dei segnali SI/NO e verifica dell&apos;esito reale dopo il risultato
           delle partite.
+        </p>
+        <p className="mt-2 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
+          Monitoraggio = segnali comprabili: SI + quota book ≥ quota Cecchino. La matrice in dettaglio
+          partita resta invariata.
         </p>
       </header>
 
@@ -417,7 +428,7 @@ export function CecchinoSignalsMonitoringPage() {
             disabled={actionLoading}
             className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
           >
-            Ricalcola mapping segnali
+            Ricalcola filtro valore
           </button>
           <button
             type="button"
@@ -452,7 +463,8 @@ export function CecchinoSignalsMonitoringPage() {
           </button>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          Il backtest modelli usa solo dati già presenti nel DB e non consuma API.
+          Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino) già presenti nel DB
+          e non consuma API.
         </p>
       </section>
 
@@ -505,7 +517,7 @@ export function CecchinoSignalsMonitoringPage() {
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
           <p>
             Esistono {diagnostics.legacy_wrong_scala_mapping_count} activation legacy errate in
-            SCALA su righe 1/2. Eseguire Ricalcola mapping segnali.
+            SCALA su righe 1/2. Eseguire Ricalcola filtro valore.
           </p>
           <button
             type="button"
@@ -513,7 +525,7 @@ export function CecchinoSignalsMonitoringPage() {
             disabled={actionLoading}
             className="mt-2 rounded-md bg-amber-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
           >
-            Ricalcola mapping segnali
+            Ricalcola filtro valore
           </button>
         </div>
       )}

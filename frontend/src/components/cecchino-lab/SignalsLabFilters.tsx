@@ -137,7 +137,7 @@ export function SignalsLabFilters({
           className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-900 transition hover:bg-indigo-100 disabled:opacity-50"
         >
           {actionLoading ? <Spinner /> : null}
-          Ricalcola modelli A–F
+          Ricalcola modelli A–F su segnali a valore
         </button>
         <button
           type="button"
@@ -156,7 +156,8 @@ export function SignalsLabFilters({
         </button>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Il backtest modelli usa solo dati già presenti nel DB e non consuma API.
+        Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino) già presenti nel DB
+        e non consuma API.
       </p>
     </section>
   )

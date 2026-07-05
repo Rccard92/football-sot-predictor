@@ -24,6 +24,7 @@ from app.services.cecchino.cecchino_signal_sync import (
     remap_legacy_scala_activations_in_range,
     sync_cecchino_signal_activations,
 )
+from app.services.cecchino.cecchino_signal_value_gate import merge_sync_value_counters
 from app.services.cecchino.cecchino_signal_target_mapping import remap_under_over_activations_in_range
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
@@ -228,6 +229,7 @@ def build_signal_diagnostics(
         "fixtures_with_signal_matrix_count": len(with_matrix),
         "signal_activations_count": int(activations_total),
         "current_signal_activations_count": int(current_total),
+        "value_eligible_activations_count": int(current_total),
         "legacy_wrong_scala_mapping_count": legacy_wrong_scala_mapping_count,
         "evaluated_count": status_counts["evaluated_count"],
         "won": status_counts["won"],
@@ -235,6 +237,9 @@ def build_signal_diagnostics(
         "pending": status_counts["pending"],
         "not_evaluable": status_counts["not_evaluable"],
         "date_filter_field_used": DATE_FILTER_FIELD,
+        "monitoring_note": (
+            "Il monitoraggio include solo segnali SI con quota book >= quota Cecchino."
+        ),
         "warnings": warnings[:50],
     }
     logger.info(
@@ -265,6 +270,14 @@ def backfill_signal_activations(
         "signals_created": 0,
         "signals_updated": 0,
         "signals_deactivated": 0,
+        "si_cells_seen": 0,
+        "value_passed": 0,
+        "no_value_skipped": 0,
+        "missing_book_quote_skipped": 0,
+        "missing_cecchino_quote_skipped": 0,
+        "invalid_quote_skipped": 0,
+        "deactivated_no_value": 0,
+        "missing_value_quote": 0,
         "evaluated": 0,
         "won": 0,
         "lost": 0,
@@ -291,6 +304,7 @@ def backfill_signal_activations(
             totals["signals_created"] += sync_counts.get("created", 0)
             totals["signals_updated"] += sync_counts.get("updated", 0)
             totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
+            merge_sync_value_counters(totals, sync_counts)
 
     legacy_scala_deactivated = 0
     if force_remap:
@@ -304,6 +318,7 @@ def backfill_signal_activations(
             totals["signals_created"] += sync_counts.get("created", 0)
             totals["signals_updated"] += sync_counts.get("updated", 0)
             totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
+            merge_sync_value_counters(totals, sync_counts)
 
     remapped = remap_under_over_activations_in_range(db, date_from=date_from, date_to=date_to)
 
@@ -331,6 +346,10 @@ def backfill_signal_activations(
         totals["pending"] = status_counts["pending"]
         totals["not_evaluable"] = status_counts["not_evaluable"]
         totals["evaluated"] = status_counts["evaluated_count"]
+
+    totals["missing_value_quote"] = (
+        totals["missing_book_quote_skipped"] + totals["missing_cecchino_quote_skipped"]
+    )
 
     db.commit()
     logger.info(
@@ -360,7 +379,20 @@ def sync_signals_for_scan_date(db: Session, scan_date: date) -> dict[str, int]:
             ),
         ).all(),
     )
-    totals = {"fixtures": 0, "created": 0, "updated": 0, "deactivated": 0, "skipped": 0}
+    totals: dict[str, int] = {
+        "fixtures": 0,
+        "created": 0,
+        "updated": 0,
+        "deactivated": 0,
+        "skipped": 0,
+        "si_cells_seen": 0,
+        "value_passed": 0,
+        "no_value_skipped": 0,
+        "missing_book_quote_skipped": 0,
+        "missing_cecchino_quote_skipped": 0,
+        "invalid_quote_skipped": 0,
+        "deactivated_no_value": 0,
+    }
     for row in fixtures:
         if not _ensure_signals_matrix_on_row(row):
             totals["skipped"] += 1
@@ -370,5 +402,9 @@ def sync_signals_for_scan_date(db: Session, scan_date: date) -> dict[str, int]:
         totals["created"] += counts.get("created", 0)
         totals["updated"] += counts.get("updated", 0)
         totals["deactivated"] += counts.get("deactivated", 0)
+        merge_sync_value_counters(totals, counts)
+    totals["missing_value_quote"] = (
+        totals["missing_book_quote_skipped"] + totals["missing_cecchino_quote_skipped"]
+    )
     db.flush()
     return totals

@@ -27,6 +27,7 @@ from app.services.cecchino.cecchino_engine import (
 from app.services.cecchino.cecchino_signal_aggregation import _bucket_counts, _enrich_taken_odds_metrics
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
+from app.services.cecchino.cecchino_signal_value_gate import merge_sync_value_counters, SYNC_VALUE_COUNTER_KEYS
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,8 @@ def backtest_cecchino_weight_models(
 
     totals_created = 0
     totals_evaluated = 0
+    value_totals = {key: 0 for key in SYNC_VALUE_COUNTER_KEYS}
+    value_totals["missing_value_quote"] = 0
 
     for mk in model_keys:
         model_created = 0
@@ -192,6 +195,7 @@ def backtest_cecchino_weight_models(
             )
             if result.get("status") == "ok":
                 model_created += int(result.get("created") or 0) + int(result.get("updated") or 0)
+                merge_sync_value_counters(value_totals, result)
             else:
                 model_skipped += 1
 
@@ -224,6 +228,10 @@ def backtest_cecchino_weight_models(
     if not force:
         warnings.append("force=false: sync idempotente applicato comunque per fixture/modello")
 
+    value_totals["missing_value_quote"] = (
+        value_totals["missing_book_quote_skipped"] + value_totals["missing_cecchino_quote_skipped"]
+    )
+
     db.commit()
 
     return {
@@ -233,6 +241,7 @@ def backtest_cecchino_weight_models(
         "by_model": by_model,
         "signals_created_total": totals_created,
         "signals_evaluated_total": totals_evaluated,
+        **value_totals,
         "warnings": warnings,
     }
 

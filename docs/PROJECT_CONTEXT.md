@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
+
+Monitoraggio Segnali / Segnali Lab / backtest A–F: solo activation con matrice SI e `quota_book >= quota_cecchino` (KPI salvato). Matrice fixture detail e Segnali KPI invariati. Ricalcolo storico: **Ricalcola filtro valore** (`force_remap`).
+
 ## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
 
 Segnali KPI restyled stile Lab; filtri data Cecchino (Monitoraggio, Lab, KPI) default oggi locale via `todayLocalIso`. Zero modifiche backend.
@@ -88,7 +92,7 @@ Selettore campionato (`CompetitionSelector`) in sidebar.
 - Cecchino — dashboard autonoma (picchetti, KPI DASHBOARD classico con 3 bookmaker; **non** influenza SOT)
 - Cecchino — sezione sidebar dedicata in alto (Fase 35): Cecchino, Cecchino Today, Monitoraggio Segnali, **Segnali Lab (Fase 44)**
 - Cecchino Today — dashboard giornaliera Betfair-only, KPI v2 unico riferimento quote (Fase 22), refresh quote Betfair on-demand singola fixture (Fase 23), export mercati JSON, debug JSON KPI, debug Picchetti (Fase 25), formule goal Poisson+storico v2 (Fase 27), pesi globali 1X2 30/30/20/20 e goal 20/30/20/30 (Fase 40), ricalcolo offline `POST /api/admin/cecchino/recompute`, sezione Equilibrio vs Squilibrio (Fase 29), **Intensità Goal v4 Goal Attesi** nel dettaglio partita (Fase 46/47/48/49), **Expected Goal Engine Diagnostica Variabili** (Fase 50), **API Raw Inspector** manuale per esplorazione xG/expected (Fase 51), **xG storico current season** nel diagnostics EGE (Fase 52), **xG storico automatico** su fixture eleggibili con cache `xg_profiles_json` (Fase 53), Dominanza contestualizzata X vs 1/2 (Fase 30), legenda operativa equilibrio 18 righe (Fase 31), Monitoraggio Segnali storico SI/NO con valutazione esito, backfill giornate pregresse (Fase 32/33), mapping Under/Over 2.5 FT (Fase 34), Indice di Convergenza Match ICM (Fase 41, sostituisce Delta Forza Fase 36), mapping Scala su righe 1X/X2 (Fase 37), fix definitivo Scala heatmap/storico (Fase 38), card PT/FT, mapping strict Match Winner, layout 35/65, **timeline ±30** (navigazione, non retention), **nessun cleanup automatico post-scan** (storico preservato; DELETE solo admin gated), scan async (`/cecchino-today`)
-- Monitoraggio Segnali — pagina aggregata `/monitoraggio-segnali` (heatmap UNDER/OVER 2.5, KPI con media segnali/partita Fase 35, Quota media prese / Quota Void / Rendimento prese Fase 42, **Confronto modelli pesi A–F Fase 43**, **formule segnali aggiornate Fase 45** con Dominanza da Equilibrio, export CSV, backfill storico, pulsante «Ricalcola modelli A–F», pulsante «Ricalcola mapping segnali», diagnostics legacy SCALA Fase 38, legenda formule Excel espandibile Fase 39/45)
+- Monitoraggio Segnali — pagina aggregata `/monitoraggio-segnali` (heatmap UNDER/OVER 2.5, KPI con media segnali/partita Fase 35, Quota media prese / Quota Void / Rendimento prese Fase 42, **Confronto modelli pesi A–F Fase 43**, **formule segnali aggiornate Fase 45** con Dominanza da Equilibrio, export CSV, backfill storico, pulsante «Ricalcola modelli A–F», pulsante «Ricalcola filtro valore» (value gate quota book ≥ Cecchino), diagnostics legacy SCALA Fase 38, legenda formule Excel espandibile Fase 39/45)
 - **Segnali Lab** — pagina sperimentale `/monitoraggio-segnali-lab` (Fase 44): UI premium con framer-motion, ECharts, Sonner; stessi dati/endpoint della pagina stabile; codice isolato in `cecchino-lab/`; drawer dettaglio heatmap/partite; **legenda formule Fase 45** (accordion condiviso con pagina stabile)
 - Monitoraggio Giocate
 - Bookmakers — discovery provider/mercati, coverage e sync 1X2 per competizione (`fixture_bookmaker_odds`; non collegato a Cecchino/SOT)

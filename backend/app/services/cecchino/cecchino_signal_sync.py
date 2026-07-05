@@ -29,6 +29,10 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
     map_row_key_to_signal_group,
 )
 from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
+from app.services.cecchino.cecchino_signal_value_gate import (
+    empty_sync_value_counters,
+    signal_has_value_from_kpi_context,
+)
 
 
 def _num(value: Any) -> Decimal | None:
@@ -42,6 +46,37 @@ def _num(value: Any) -> Decimal | None:
 
 def _activation_pair_key(model_key: str, signal_group: str, source_column: str) -> tuple[str, str, str]:
     return (model_key, signal_group, source_column)
+
+
+def _empty_sync_counts() -> dict[str, int]:
+    return {
+        "created": 0,
+        "updated": 0,
+        "deactivated": 0,
+        "skipped": 0,
+        **empty_sync_value_counters(),
+    }
+
+
+def _deactivate_activation(
+    activation: CecchinoSignalActivation,
+    *,
+    reason: str,
+    now: datetime,
+) -> None:
+    activation.is_current = False
+    activation.deactivated_at = now
+    activation.evaluation_reason = reason
+
+
+def _record_no_value_skip(counts: dict[str, int], reason: str) -> None:
+    counts["no_value_skipped"] += 1
+    if reason == "missing_quota_book":
+        counts["missing_book_quote_skipped"] += 1
+    elif reason == "missing_quota_cecchino":
+        counts["missing_cecchino_quote_skipped"] += 1
+    elif reason in ("invalid_quota_book", "invalid_quota_cecchino"):
+        counts["invalid_quote_skipped"] += 1
 
 
 def _iter_si_cells(signals_matrix: dict[str, Any]) -> list[dict[str, Any]]:
@@ -90,7 +125,7 @@ def sync_cecchino_signal_activations(
 ) -> dict[str, int]:
     row = db.get(CecchinoTodayFixture, int(today_fixture_id))
     if row is None:
-        return {"created": 0, "updated": 0, "deactivated": 0, "skipped": 1}
+        return {**_empty_sync_counts(), "skipped": 1}
 
     mk = str(model_key).upper()
     meta = model_meta or model_meta_for_key(mk)
@@ -99,7 +134,7 @@ def sync_cecchino_signal_activations(
     if signals_matrix is None:
         signals_matrix = output.get("signals_matrix") if isinstance(output, dict) else None
     if not isinstance(signals_matrix, dict) or signals_matrix.get("status") != STATUS_AVAILABLE:
-        return {"created": 0, "updated": 0, "deactivated": 0, "skipped": 1}
+        return {**_empty_sync_counts(), "skipped": 1}
 
     kpi_panel = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else None
     inputs = signals_matrix.get("inputs") or {}
@@ -120,19 +155,31 @@ def sync_cecchino_signal_activations(
             _activation_pair_key(activation.model_key, activation.signal_group, activation.source_column)
         ] = activation
 
-    counts = {"created": 0, "updated": 0, "deactivated": 0, "skipped": 0}
+    counts = _empty_sync_counts()
     match_result = match_result_from_fixture(row)
+    now = datetime.now(timezone.utc)
 
     for cell in si_cells:
+        counts["si_cells_seen"] += 1
         target = map_cecchino_signal_to_target(cell["signal_group"], cell["source_column"])
         kpi_ctx = resolve_kpi_odds_for_activation(
             kpi_panel,
             signal_group=cell["signal_group"],
             target_market_key=target.get("target_market_key"),
         )
+        passed, value_reason, _value_meta = signal_has_value_from_kpi_context(kpi_ctx)
         key = _activation_pair_key(mk, cell["signal_group"], cell["source_column"])
-        active_keys.add(key)
         activation = by_key.get(key)
+
+        if not passed:
+            _record_no_value_skip(counts, value_reason)
+            if activation is not None and activation.is_current:
+                _deactivate_activation(activation, reason=value_reason, now=now)
+                counts["deactivated_no_value"] += 1
+            continue
+
+        counts["value_passed"] += 1
+        active_keys.add(key)
 
         if activation is None:
             activation = CecchinoSignalActivation(
@@ -209,7 +256,6 @@ def sync_cecchino_signal_activations(
             eval_result = evaluate_signal_activation(activation, match_result)
             apply_evaluation_to_activation(activation, eval_result, result_status=row.match_display_status)
 
-    now = datetime.now(timezone.utc)
     for activation in existing:
         key = _activation_pair_key(activation.model_key, activation.signal_group, activation.source_column)
         if key not in active_keys and activation.is_current:

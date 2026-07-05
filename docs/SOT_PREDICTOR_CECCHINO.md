@@ -2,6 +2,14 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
+
+- **Segnale tecnico** (matrice SI/NO) ≠ **segnale monitorato** (SI + valore quota).
+- Regola monitoraggio: `quota_book >= quota_cecchino` da Pannello KPI salvato; nessuna modifica formule KPI.
+- File: `cecchino_signal_value_gate.py`, integrazione in `cecchino_signal_sync.py`.
+- UI Monitoraggio + Lab: banner informativo, **Ricalcola filtro valore**, contatori post-backfill.
+- **Invariato:** `build_signals_matrix`, Segnali KPI, export matrice, Betfair-only.
+
 ## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
 
 - Pagina `/segnali-kpi`: UX Lab (heatmap, drawer, card rating, top ranking); default filtri data = oggi.

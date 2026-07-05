@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
+
+- Introdotto value gate nel sync activation: `quota_book >= quota_cecchino` (Decimal) da `kpi_panel_json`.
+- Monitoraggio Segnali, Segnali Lab e backtest modelli A–F mostrano solo segnali comprabili a valore.
+- Activation no-value: `is_current=false`, `deactivated_at` e `evaluation_reason` (nessuna DELETE).
+- Nuovo modulo `cecchino_signal_value_gate.py`; contatori backfill: `si_cells_seen`, `value_passed`, `no_value_skipped`, `deactivated_no_value`, quote mancanti.
+- Ricalcolo storico: pulsante **Ricalcola filtro valore** (backfill `force_remap=true`, `only_missing=false`).
+- **Invariato:** matrice SI/NO dettaglio partita, Pannello KPI, Segnali KPI, formule KPI/Cecchino, Betfair-only, SOT v2.0/v2.1.
+
 ## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
 
 - Rifatta UI pagina `/segnali-kpi` in stile Segnali Lab (framer-motion, card animate, heatmap moderna, drawer, metric ribbon, top ranking).

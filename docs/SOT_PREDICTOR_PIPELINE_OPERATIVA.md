@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
+
+- Sync activation (`sync_cecchino_signal_activations`): dopo matrice SI, verifica quote KPI; solo `quota_book >= quota_cecchino` entra in monitoraggio.
+- Backfill admin `/api/admin/cecchino/signals/backfill` con `force_remap=true` ricalcola filtro su range storico.
+- Diagnostics: `monitoring_note`, `value_eligible_activations_count` (= activation current a valore).
+- **Invariato:** pipeline Today KPI, matrice fixture detail, Segnali KPI, nessuna API esterna in backfill.
+
 ## Frontend — Restyling Segnali KPI e default date odierna (2026-07-04)
 
 - UI `/segnali-kpi` allineata a Segnali Lab; filtri data Cecchino partono da oggi (locale browser).

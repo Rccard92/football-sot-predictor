@@ -39,6 +39,7 @@ from app.services.cecchino.cecchino_signal_model_backtest import (
     build_signals_matrix_for_model,
     recompute_cecchino_signals_for_model,
 )
+from app.services.cecchino.cecchino_selection_keys import SEL_DRAW
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 
 
@@ -95,7 +96,15 @@ def _fixture_with_picchetti(**kwargs) -> CecchinoTodayFixture:
     row.id = 99
     row.cecchino_output_json = _cecchino_output_with_picchetti()
     row.stats_snapshot_json = {"input_snapshot": {"home_away": {"home_sample_count": 8, "away_sample_count": 8}}}
-    row.kpi_panel_json = {"rows": []}
+    row.kpi_panel_json = {
+        "rows": [
+            {
+                "market_key": SEL_DRAW,
+                "quota_book": 3.40,
+                "quota_cecchino": 3.20,
+            }
+        ]
+    }
     row.ft_home_goals = 1
     row.ft_away_goals = 0
     for key, value in kwargs.items():
@@ -148,6 +157,15 @@ def test_sync_sets_model_key_f_by_default():
         {"key": "draw", "label": "SEGNO X", "signals": {"excel_d": "SI"}},
     ]
     row.cecchino_output_json = {**row.cecchino_output_json, "signals_matrix": matrix}
+    row.kpi_panel_json = {
+        "rows": [
+            {
+                "market_key": SEL_DRAW,
+                "quota_book": 3.40,
+                "quota_cecchino": 3.20,
+            }
+        ]
+    }
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
