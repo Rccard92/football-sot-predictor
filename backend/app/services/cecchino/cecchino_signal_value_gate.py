@@ -52,6 +52,12 @@ SYNC_VALUE_COUNTER_KEYS: tuple[str, ...] = (
     "missing_cecchino_quote_skipped",
     "invalid_quote_skipped",
     "deactivated_no_value",
+    "draw_pt_created",
+    "draw_pt_updated",
+    "draw_pt_deactivated",
+    "draw_pt_evaluated",
+    "derived_observations_created",
+    "derived_observations_deactivated",
 )
 
 

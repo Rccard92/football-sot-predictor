@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
+
+Activation derivata X PT nel sync segnali: nasce da X finale a valore, valutata su HT, senza quota PT. Ordine UI 1→Over con X PT dopo 1/2. 1/2 non trasformati in 1X/X2. Segnali KPI e KPI panel invariati.
+
 ## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
 
 Monitoraggio Segnali / Segnali Lab / backtest A–F: solo activation con matrice SI e `quota_book >= quota_cecchino` (KPI salvato). Matrice fixture detail e Segnali KPI invariati. Ricalcolo storico: **Ricalcola filtro valore** (`force_remap`).

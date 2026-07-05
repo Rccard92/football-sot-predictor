@@ -57,6 +57,7 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -365,16 +366,18 @@ def test_serialize_activation_row_under_over_ft_labels():
     over_row = _serialize_activation_row(over)
     assert under_row["target_market_label"] == "Under 2.5 FT"
     assert over_row["target_market_label"] == "Over 2.5 FT"
-    assert under_row["signal_label"] == "UNDER 2.5"
-    assert over_row["signal_label"] == "OVER 2.5"
+    assert under_row["signal_label"] == "Under"
+    assert over_row["signal_label"] == "Over"
     assert under_row["signal_group"] == "UNDER_UNDER_PT"
     assert over_row["signal_group"] == "OVER_OVER_PT"
 
 
 def test_format_signal_display_label_under_over():
-    assert _format_signal_display_label("UNDER_UNDER_PT", "UNDER / UNDER PT") == "UNDER 2.5"
-    assert _format_signal_display_label("OVER_OVER_PT", "OVER / OVER PT") == "OVER 2.5"
-    assert _format_signal_display_label("DRAW", "SEGNO X") == "SEGNO X"
+    assert _format_signal_display_label("UNDER_UNDER_PT", "UNDER / UNDER PT") == "Under"
+    assert _format_signal_display_label("OVER_OVER_PT", "OVER / OVER PT") == "Over"
+    assert _format_signal_display_label("DRAW", "SEGNO X") == "X"
+    assert _format_signal_display_label("ONE_TWO", "12") == "1/2"
+    assert _format_signal_display_label("DRAW_PT", "X PT") == "X PT"
 
 
 def test_evaluate_draw_won_lost():
@@ -763,7 +766,7 @@ def test_sync_saves_only_si_and_is_idempotent():
     db.scalars.return_value.all.return_value = []
 
     counts1 = sync_cecchino_signal_activations(db, 99)
-    assert counts1["created"] == 1
+    assert counts1["created"] == 2
     assert db.add.called
 
     existing = CecchinoSignalActivation(
@@ -779,12 +782,26 @@ def test_sync_saves_only_si_and_is_idempotent():
         target_period="FT",
         evaluation_status=EVAL_PENDING,
     )
+    existing_pt = CecchinoSignalActivation(
+        today_fixture_id=99,
+        provider_fixture_id=12345,
+        scan_date=date(2026, 6, 8),
+        model_key="F",
+        signal_group="DRAW_PT",
+        signal_label="X PT",
+        source_column="EXCEL_D",
+        signal_value=True,
+        target_market_key=SEL_DRAW_PT,
+        target_period="HT",
+        evaluation_status=EVAL_PENDING,
+    )
     existing.id = 1
-    db.scalars.return_value.all.return_value = [existing]
+    existing_pt.id = 2
+    db.scalars.return_value.all.return_value = [existing, existing_pt]
     db.add.reset_mock()
 
     counts2 = sync_cecchino_signal_activations(db, 99)
-    assert counts2["updated"] == 1
+    assert counts2["updated"] == 2
     assert not db.add.called
 
 
@@ -913,8 +930,8 @@ def test_summary_under_over_display_labels():
         date_to=date(2026, 6, 30),
     )
     labels = {row["signal_group"]: row["signal_label"] for row in summary["by_signal"]}
-    assert labels["UNDER_UNDER_PT"] == "UNDER 2.5"
-    assert labels["OVER_OVER_PT"] == "OVER 2.5"
+    assert labels["UNDER_UNDER_PT"] == "Under"
+    assert labels["OVER_OVER_PT"] == "Over"
 
 
 def test_export_csv_respects_filters():
@@ -942,7 +959,7 @@ def test_export_csv_respects_filters():
         date_to=date(2026, 6, 30),
         signal_group="DRAW",
     )
-    assert "SEGNO X" in csv_text
+    assert ",X," in csv_text or ",X,EXCEL_D" in csv_text
     assert "EXCEL_D" in csv_text
 
 
@@ -1216,8 +1233,9 @@ def test_sync_value_gate_creates_when_book_above_cecchino():
 
     counts = sync_cecchino_signal_activations(db, 99)
 
-    assert counts["created"] == 1
+    assert counts["created"] == 2
     assert counts["value_passed"] == 1
+    assert counts["draw_pt_created"] == 1
     assert counts["si_cells_seen"] == 1
     assert counts["no_value_skipped"] == 0
 
@@ -1230,8 +1248,9 @@ def test_sync_value_gate_creates_when_book_equals_cecchino():
 
     counts = sync_cecchino_signal_activations(db, 99)
 
-    assert counts["created"] == 1
+    assert counts["created"] == 2
     assert counts["value_passed"] == 1
+    assert counts["draw_pt_created"] == 1
 
 
 def test_sync_value_gate_skips_when_book_below_cecchino():

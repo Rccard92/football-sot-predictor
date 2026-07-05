@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
+
+- Aggiunta activation derivata **X PT** (`DRAW_PT`): creata solo quando la X finale è SI e passa il filtro valore (`quota_book >= quota_cecchino`).
+- X PT valutata sul risultato primo tempo già in DB (HT pari = vinta); non richiede FT né quota X PT autonoma.
+- X PT è monitoraggio derivato: `quota_book`/`quota_cecchino` null; non altera metriche profitto quote prese.
+- **Invariato:** mapping 1/2/1X/X2, Pannello KPI, Segnali KPI, formule Cecchino/KPI, matrice dettaglio partita.
+- Ordine visualizzazione aggiornato: 1, X, 2, 1X, X2, 1/2, X PT, Under, Over.
+- Nessuna DELETE; nessuna migration obbligatoria.
+
 ## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
 
 - Introdotto value gate nel sync activation: `quota_book >= quota_cecchino` (Decimal) da `kpi_panel_json`.

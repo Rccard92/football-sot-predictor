@@ -20,6 +20,10 @@ from app.models.cecchino_signal_activation import (
 )
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_constants import CECCHINO_DEFAULT_WEIGHT_MODEL_KEY, format_model_weights_display
+from app.services.cecchino.cecchino_signal_display_order import (
+    display_label_for_signal_group,
+    signal_group_sort_key,
+)
 
 
 def _success_rate(won: int, lost: int) -> float | None:
@@ -30,11 +34,7 @@ def _success_rate(won: int, lost: int) -> float | None:
 
 
 def _format_signal_display_label(signal_group: str, signal_label: str) -> str:
-    if signal_group == "UNDER_UNDER_PT":
-        return "UNDER 2.5"
-    if signal_group == "OVER_OVER_PT":
-        return "OVER 2.5"
-    return signal_label
+    return display_label_for_signal_group(signal_group, signal_label)
 
 
 def _count_eligible_fixtures(
@@ -304,7 +304,7 @@ def build_signals_summary(
             "signal_label": _format_signal_display_label(sg, items[0].signal_label),
             **_bucket_counts(items),
         }
-        for sg, items in sorted(by_signal_map.items())
+        for sg, items in sorted(by_signal_map.items(), key=lambda item: signal_group_sort_key(item[0]))
     ]
     by_column = [
         {"source_column": col, **_bucket_counts(items)}
@@ -317,7 +317,10 @@ def build_signals_summary(
             "source_column": col,
             **_bucket_counts(items),
         }
-        for (sg, label, col), items in sorted(by_combo_map.items())
+        for (sg, label, col), items in sorted(
+            by_combo_map.items(),
+            key=lambda item: (signal_group_sort_key(item[0][0]), item[0][2]),
+        )
     ]
 
     result = {

@@ -22,10 +22,13 @@ from app.services.cecchino.cecchino_signal_evaluation import (
     match_result_from_fixture,
 )
 from app.services.cecchino.cecchino_signal_target_mapping import (
+    DRAW_PT_PARENT_DEACTIVATED_REASON,
     LEGACY_WRONG_SCALA_REASON,
+    build_draw_pt_derived_reason,
     is_valid_scala_activation,
     map_column_to_source,
     map_cecchino_signal_to_target,
+    map_draw_pt_derived_target,
     map_row_key_to_signal_group,
 )
 from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
@@ -77,6 +80,184 @@ def _record_no_value_skip(counts: dict[str, int], reason: str) -> None:
         counts["missing_cecchino_quote_skipped"] += 1
     elif reason in ("invalid_quota_book", "invalid_quota_cecchino"):
         counts["invalid_quote_skipped"] += 1
+
+
+def _deactivate_draw_pair(
+    *,
+    mk: str,
+    source_column: str,
+    by_key: dict[tuple[str, str, str], CecchinoSignalActivation],
+    counts: dict[str, int],
+    reason: str,
+    now: datetime,
+) -> None:
+    for signal_group in ("DRAW", "DRAW_PT"):
+        activation = by_key.get(_activation_pair_key(mk, signal_group, source_column))
+        if activation is None or not activation.is_current:
+            continue
+        pt_reason = DRAW_PT_PARENT_DEACTIVATED_REASON if signal_group == "DRAW_PT" else reason
+        _deactivate_activation(activation, reason=pt_reason, now=now)
+        if signal_group == "DRAW":
+            counts["deactivated_no_value"] += 1
+        else:
+            counts["draw_pt_deactivated"] += 1
+            counts["derived_observations_deactivated"] += 1
+
+
+def _upsert_activation(
+    *,
+    row: CecchinoTodayFixture,
+    mk: str,
+    meta: dict[str, object],
+    cell: dict[str, Any],
+    target: dict[str, Any],
+    kpi_ctx: dict[str, Any],
+    inputs: dict[str, Any],
+    by_key: dict[tuple[str, str, str], CecchinoSignalActivation],
+    db: Session,
+    counts: dict[str, int],
+    include_odds: bool = True,
+    derived_reason: str | None = None,
+) -> CecchinoSignalActivation:
+    key = _activation_pair_key(mk, cell["signal_group"], cell["source_column"])
+    activation = by_key.get(key)
+    quota_book = _num(kpi_ctx.get("quota_book")) if include_odds else None
+    quota_cecchino = _num(kpi_ctx.get("quota_cecchino")) if include_odds else None
+
+    if activation is None:
+        activation = CecchinoSignalActivation(
+            today_fixture_id=int(row.id),
+            local_fixture_id=row.local_fixture_id,
+            provider_source=row.provider_source or PROVIDER_API_FOOTBALL,
+            provider_fixture_id=int(row.provider_fixture_id),
+            scan_date=row.scan_date,
+            kickoff=row.kickoff,
+            country_name=row.country_name,
+            league_name=row.league_name,
+            home_team_name=row.home_team_name,
+            away_team_name=row.away_team_name,
+            model_key=mk,
+            model_label=str(meta.get("model_label") or ""),
+            weights_version=str(meta.get("weights_version") or ""),
+            weights_json=meta.get("weights_json") if isinstance(meta.get("weights_json"), dict) else None,
+            signal_group=cell["signal_group"],
+            signal_label=cell["signal_label"],
+            source_column=cell["source_column"],
+            signal_value=True,
+            raw_signal_value=cell["raw_signal_value"],
+            f32=_num(inputs.get("q1")),
+            f33=_num(inputs.get("qx")),
+            f34=_num(inputs.get("q2")),
+            f35=_num(inputs.get("avg_q")),
+            f36=_num(inputs.get("diff_1_2")),
+            target_market_key=target["target_market_key"],
+            target_market_label=target["target_market_label"],
+            target_period=target["target_period"],
+            evaluation_status=target["evaluation_status"],
+            evaluation_reason=derived_reason or target["evaluation_reason"],
+            quota_book=quota_book,
+            quota_cecchino=quota_cecchino,
+            prob_book=_num(kpi_ctx.get("prob_book")) if include_odds else None,
+            prob_cecchino=_num(kpi_ctx.get("prob_cecchino")) if include_odds else None,
+            edge_pct=_num(kpi_ctx.get("edge_pct")) if include_odds else None,
+            rating=int(kpi_ctx["rating"]) if include_odds and kpi_ctx.get("rating") is not None else None,
+            is_current=True,
+            deactivated_at=None,
+        )
+        db.add(activation)
+        by_key[key] = activation
+        counts["created"] += 1
+        if cell["signal_group"] == "DRAW_PT":
+            counts["draw_pt_created"] += 1
+            counts["derived_observations_created"] += 1
+        return activation
+
+    activation.signal_value = True
+    activation.raw_signal_value = "SI"
+    activation.is_current = True
+    activation.deactivated_at = None
+    activation.model_label = str(meta.get("model_label") or activation.model_label or "")
+    activation.weights_version = str(meta.get("weights_version") or activation.weights_version or "")
+    if isinstance(meta.get("weights_json"), dict):
+        activation.weights_json = meta["weights_json"]
+    activation.target_market_key = target["target_market_key"]
+    activation.target_market_label = target["target_market_label"]
+    activation.target_period = target["target_period"]
+    if activation.evaluation_status == "not_evaluable" and target.get("target_market_key"):
+        activation.evaluation_status = target["evaluation_status"]
+        activation.evaluation_reason = derived_reason or target["evaluation_reason"]
+    elif derived_reason:
+        activation.evaluation_reason = derived_reason
+    activation.f32 = _num(inputs.get("q1"))
+    activation.f33 = _num(inputs.get("qx"))
+    activation.f34 = _num(inputs.get("q2"))
+    activation.f35 = _num(inputs.get("avg_q"))
+    activation.f36 = _num(inputs.get("diff_1_2"))
+    if include_odds:
+        activation.quota_book = quota_book
+        activation.quota_cecchino = quota_cecchino
+        activation.prob_book = _num(kpi_ctx.get("prob_book"))
+        activation.prob_cecchino = _num(kpi_ctx.get("prob_cecchino"))
+        activation.edge_pct = _num(kpi_ctx.get("edge_pct"))
+        activation.rating = int(kpi_ctx["rating"]) if kpi_ctx.get("rating") is not None else None
+    else:
+        activation.quota_book = None
+        activation.quota_cecchino = None
+        activation.prob_book = None
+        activation.prob_cecchino = None
+        activation.edge_pct = None
+        activation.rating = None
+    counts["updated"] += 1
+    if cell["signal_group"] == "DRAW_PT":
+        counts["draw_pt_updated"] += 1
+    return activation
+
+
+def _sync_draw_pt_derived(
+    *,
+    row: CecchinoTodayFixture,
+    mk: str,
+    meta: dict[str, object],
+    cell: dict[str, Any],
+    kpi_ctx: dict[str, Any],
+    inputs: dict[str, Any],
+    by_key: dict[tuple[str, str, str], CecchinoSignalActivation],
+    db: Session,
+    counts: dict[str, int],
+    active_keys: set[tuple[str, str, str]],
+    match_result: dict[str, Any],
+) -> None:
+    pt_target = map_draw_pt_derived_target()
+    pt_cell = {
+        **cell,
+        "signal_group": "DRAW_PT",
+        "signal_label": "X PT",
+    }
+    pt_key = _activation_pair_key(mk, "DRAW_PT", cell["source_column"])
+    active_keys.add(pt_key)
+    derived_reason = build_draw_pt_derived_reason(
+        quota_book=kpi_ctx.get("quota_book"),
+        quota_cecchino=kpi_ctx.get("quota_cecchino"),
+    )
+    pt_activation = _upsert_activation(
+        row=row,
+        mk=mk,
+        meta=meta,
+        cell=pt_cell,
+        target=pt_target,
+        kpi_ctx={},
+        inputs=inputs,
+        by_key=by_key,
+        db=db,
+        counts=counts,
+        include_odds=False,
+        derived_reason=derived_reason,
+    )
+    if pt_activation.target_market_key:
+        eval_result = evaluate_signal_activation(pt_activation, match_result)
+        apply_evaluation_to_activation(pt_activation, eval_result, result_status=row.match_display_status)
+        if eval_result["evaluation_status"] in ("won", "lost"):
+            counts["draw_pt_evaluated"] = counts.get("draw_pt_evaluated", 0) + 1
 
 
 def _iter_si_cells(signals_matrix: dict[str, Any]) -> list[dict[str, Any]]:
@@ -169,6 +350,52 @@ def sync_cecchino_signal_activations(
         )
         passed, value_reason, _value_meta = signal_has_value_from_kpi_context(kpi_ctx)
         key = _activation_pair_key(mk, cell["signal_group"], cell["source_column"])
+
+        if cell["signal_group"] == "DRAW":
+            if not passed:
+                _record_no_value_skip(counts, value_reason)
+                _deactivate_draw_pair(
+                    mk=mk,
+                    source_column=cell["source_column"],
+                    by_key=by_key,
+                    counts=counts,
+                    reason=value_reason,
+                    now=now,
+                )
+                continue
+
+            counts["value_passed"] += 1
+            active_keys.add(key)
+            activation = _upsert_activation(
+                row=row,
+                mk=mk,
+                meta=meta,
+                cell=cell,
+                target=target,
+                kpi_ctx=kpi_ctx,
+                inputs=inputs,
+                by_key=by_key,
+                db=db,
+                counts=counts,
+            )
+            if activation.target_market_key:
+                eval_result = evaluate_signal_activation(activation, match_result)
+                apply_evaluation_to_activation(activation, eval_result, result_status=row.match_display_status)
+            _sync_draw_pt_derived(
+                row=row,
+                mk=mk,
+                meta=meta,
+                cell=cell,
+                kpi_ctx=kpi_ctx,
+                inputs=inputs,
+                by_key=by_key,
+                db=db,
+                counts=counts,
+                active_keys=active_keys,
+                match_result=match_result,
+            )
+            continue
+
         activation = by_key.get(key)
 
         if not passed:
@@ -180,78 +407,18 @@ def sync_cecchino_signal_activations(
 
         counts["value_passed"] += 1
         active_keys.add(key)
-
-        if activation is None:
-            activation = CecchinoSignalActivation(
-                today_fixture_id=int(row.id),
-                local_fixture_id=row.local_fixture_id,
-                provider_source=row.provider_source or PROVIDER_API_FOOTBALL,
-                provider_fixture_id=int(row.provider_fixture_id),
-                scan_date=row.scan_date,
-                kickoff=row.kickoff,
-                country_name=row.country_name,
-                league_name=row.league_name,
-                home_team_name=row.home_team_name,
-                away_team_name=row.away_team_name,
-                model_key=mk,
-                model_label=str(meta.get("model_label") or ""),
-                weights_version=str(meta.get("weights_version") or ""),
-                weights_json=meta.get("weights_json") if isinstance(meta.get("weights_json"), dict) else None,
-                signal_group=cell["signal_group"],
-                signal_label=cell["signal_label"],
-                source_column=cell["source_column"],
-                signal_value=True,
-                raw_signal_value=cell["raw_signal_value"],
-                f32=_num(inputs.get("q1")),
-                f33=_num(inputs.get("qx")),
-                f34=_num(inputs.get("q2")),
-                f35=_num(inputs.get("avg_q")),
-                f36=_num(inputs.get("diff_1_2")),
-                target_market_key=target["target_market_key"],
-                target_market_label=target["target_market_label"],
-                target_period=target["target_period"],
-                evaluation_status=target["evaluation_status"],
-                evaluation_reason=target["evaluation_reason"],
-                quota_book=_num(kpi_ctx.get("quota_book")),
-                quota_cecchino=_num(kpi_ctx.get("quota_cecchino")),
-                prob_book=_num(kpi_ctx.get("prob_book")),
-                prob_cecchino=_num(kpi_ctx.get("prob_cecchino")),
-                edge_pct=_num(kpi_ctx.get("edge_pct")),
-                rating=int(kpi_ctx["rating"]) if kpi_ctx.get("rating") is not None else None,
-                is_current=True,
-                deactivated_at=None,
-            )
-            db.add(activation)
-            by_key[key] = activation
-            counts["created"] += 1
-        else:
-            activation.signal_value = True
-            activation.raw_signal_value = "SI"
-            activation.is_current = True
-            activation.deactivated_at = None
-            activation.model_label = str(meta.get("model_label") or activation.model_label or "")
-            activation.weights_version = str(meta.get("weights_version") or activation.weights_version or "")
-            if isinstance(meta.get("weights_json"), dict):
-                activation.weights_json = meta["weights_json"]
-            activation.target_market_key = target["target_market_key"]
-            activation.target_market_label = target["target_market_label"]
-            activation.target_period = target["target_period"]
-            if activation.evaluation_status == "not_evaluable" and target.get("target_market_key"):
-                activation.evaluation_status = target["evaluation_status"]
-                activation.evaluation_reason = target["evaluation_reason"]
-            activation.f32 = _num(inputs.get("q1"))
-            activation.f33 = _num(inputs.get("qx"))
-            activation.f34 = _num(inputs.get("q2"))
-            activation.f35 = _num(inputs.get("avg_q"))
-            activation.f36 = _num(inputs.get("diff_1_2"))
-            activation.quota_book = _num(kpi_ctx.get("quota_book"))
-            activation.quota_cecchino = _num(kpi_ctx.get("quota_cecchino"))
-            activation.prob_book = _num(kpi_ctx.get("prob_book"))
-            activation.prob_cecchino = _num(kpi_ctx.get("prob_cecchino"))
-            activation.edge_pct = _num(kpi_ctx.get("edge_pct"))
-            activation.rating = int(kpi_ctx["rating"]) if kpi_ctx.get("rating") is not None else None
-            counts["updated"] += 1
-
+        activation = _upsert_activation(
+            row=row,
+            mk=mk,
+            meta=meta,
+            cell=cell,
+            target=target,
+            kpi_ctx=kpi_ctx,
+            inputs=inputs,
+            by_key=by_key,
+            db=db,
+            counts=counts,
+        )
         if activation.target_market_key:
             eval_result = evaluate_signal_activation(activation, match_result)
             apply_evaluation_to_activation(activation, eval_result, result_status=row.match_display_status)
@@ -262,6 +429,10 @@ def sync_cecchino_signal_activations(
             activation.is_current = False
             activation.deactivated_at = now
             counts["deactivated"] += 1
+            if activation.signal_group == "DRAW_PT":
+                counts["draw_pt_deactivated"] += 1
+                counts["derived_observations_deactivated"] += 1
+                activation.evaluation_reason = DRAW_PT_PARENT_DEACTIVATED_REASON
 
     db.flush()
     return counts

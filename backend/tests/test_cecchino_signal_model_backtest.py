@@ -170,7 +170,7 @@ def test_sync_sets_model_key_f_by_default():
     db.scalars.return_value.all.return_value = []
 
     counts = sync_cecchino_signal_activations(db, 99)
-    assert counts["created"] == 1
+    assert counts["created"] == 2
     added = db.add.call_args[0][0]
     assert added.model_key == "F"
     assert added.weights_version == "model_F_30_30_20_20"
@@ -475,7 +475,7 @@ def test_backtest_force_rebuilds_without_duplicate_per_model():
         recompute_cecchino_signals_for_model(db, 99, "A", evaluate_after=False)
         recompute_cecchino_signals_for_model(db, 99, "A", evaluate_after=False)
 
-    model_a = [a for a in stored if a.model_key == "A"]
+    model_a = [a for a in stored if a.model_key == "A" and a.signal_group == "DRAW"]
     assert len(model_a) == 1
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 SEL_HOME = "HOME"
 SEL_DRAW = "DRAW"
+SEL_DRAW_PT = "DRAW_PT"
 SEL_AWAY = "AWAY"
 SEL_ONE_X = "ONE_X"
 SEL_X_TWO = "X_TWO"

@@ -1,4 +1,5 @@
 import type { SignalActivationRow, SignalsBucket } from '../../../lib/cecchinoSignalsApi'
+import { SIGNAL_DISPLAY_ORDER } from '../../../lib/cecchinoSignalsApi'
 
 export function heatmapCellClass(bucket: SignalsBucket | undefined): string {
   if (!bucket || bucket.settled < 3) {
@@ -35,8 +36,8 @@ export function statusBadgeClass(status: string): string {
 }
 
 export function formatSignalLabel(signal_group: string, signal_label?: string): string {
-  if (signal_group === 'UNDER_UNDER_PT') return 'UNDER 2.5'
-  if (signal_group === 'OVER_OVER_PT') return 'OVER 2.5'
+  const fromOrder = SIGNAL_DISPLAY_ORDER.find((row) => row.group === signal_group)?.label
+  if (fromOrder) return fromOrder
   return signal_label ?? signal_group
 }
 

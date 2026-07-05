@@ -24,6 +24,7 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -68,6 +69,11 @@ def _evaluate_market(
     if target_key == SEL_ONE_TWO:
         return ft_home != ft_away
 
+    if target_key == SEL_DRAW_PT:
+        if ht_home is None or ht_away is None:
+            return None
+        return ht_home == ht_away
+
     if target_key in (SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
         if ht_home is None or ht_away is None:
             return None
@@ -99,7 +105,7 @@ def evaluate_market_selection(selection_key: str, match_result: dict[str, Any]) 
             "evaluated_at": datetime.now(timezone.utc),
         }
 
-    pt_keys = {SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5}
+    pt_keys = {SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5, SEL_DRAW_PT}
     ht = match_result.get("halftime") or {}
     ft = match_result.get("fulltime") or {}
 
@@ -196,6 +202,34 @@ def evaluate_signal_activation(
         }
 
     period = _get("target_period") or "FT"
+    if target_key == SEL_DRAW_PT or period == "HT":
+        if not _ht_available(match_result):
+            return {
+                "evaluation_status": EVAL_RESULT_MISSING,
+                "evaluation_reason": "halftime_result_missing",
+                "evaluated_at": None,
+            }
+        ht = match_result.get("halftime") or {}
+        ht_home = int(ht["home"])
+        ht_away = int(ht["away"])
+        won = _evaluate_market(target_key, 0, 0, ht_home, ht_away)
+        if won is None:
+            return {
+                "evaluation_status": EVAL_NOT_EVALUABLE,
+                "evaluation_reason": "unsupported_target_market",
+                "evaluated_at": datetime.now(timezone.utc),
+            }
+        status = EVAL_WON if won else EVAL_LOST
+        return {
+            "evaluation_status": status,
+            "evaluation_reason": None,
+            "evaluated_at": datetime.now(timezone.utc),
+            "ht_home_goals": ht_home,
+            "ht_away_goals": ht_away,
+            "ft_home_goals": None,
+            "ft_away_goals": None,
+        }
+
     if not _ft_available(match_result) and period == "FT":
         return {
             "evaluation_status": EVAL_RESULT_MISSING,
@@ -211,8 +245,8 @@ def evaluate_signal_activation(
 
     ft = match_result.get("fulltime") or {}
     ht = match_result.get("halftime") or {}
-    ft_home = int(ft.get("home"))
-    ft_away = int(ft.get("away"))
+    ft_home = int(ft["home"])
+    ft_away = int(ft["away"])
     ht_home = int(ht["home"]) if ht.get("home") is not None else None
     ht_away = int(ht["away"]) if ht.get("away") is not None else None
 

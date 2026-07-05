@@ -312,6 +312,10 @@ export function CecchinoSignalsMonitoringPage() {
           Monitoraggio = segnali comprabili: SI + quota book ≥ quota Cecchino. La matrice in dettaglio
           partita resta invariata.
         </p>
+        <p className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
+          X PT è un monitoraggio derivato: viene creato solo quando la X finale è accesa e passa il
+          filtro valore.
+        </p>
       </header>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">

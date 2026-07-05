@@ -66,6 +66,12 @@ export type SignalsBackfillResponse = {
   invalid_quote_skipped?: number
   deactivated_no_value?: number
   missing_value_quote?: number
+  draw_pt_created?: number
+  draw_pt_updated?: number
+  draw_pt_deactivated?: number
+  draw_pt_evaluated?: number
+  derived_observations_created?: number
+  derived_observations_deactivated?: number
   evaluated: number
   won: number
   lost: number
@@ -322,16 +328,21 @@ export async function backtestCecchinoWeightModels(params: {
   })
 }
 
+export const SIGNAL_DISPLAY_ORDER = [
+  { group: 'HOME', label: '1' },
+  { group: 'DRAW', label: 'X' },
+  { group: 'AWAY', label: '2' },
+  { group: 'ONE_X', label: '1X' },
+  { group: 'X_TWO', label: 'X2' },
+  { group: 'ONE_TWO', label: '1/2' },
+  { group: 'DRAW_PT', label: 'X PT' },
+  { group: 'UNDER_UNDER_PT', label: 'Under' },
+  { group: 'OVER_OVER_PT', label: 'Over' },
+] as const
+
 export const SIGNAL_GROUPS = [
   { value: '', label: 'Tutti' },
-  { value: 'UNDER_UNDER_PT', label: 'UNDER 2.5' },
-  { value: 'DRAW', label: 'SEGNO X' },
-  { value: 'OVER_OVER_PT', label: 'OVER 2.5' },
-  { value: 'HOME', label: '1' },
-  { value: 'ONE_X', label: '1X' },
-  { value: 'AWAY', label: '2' },
-  { value: 'X_TWO', label: 'X2' },
-  { value: 'ONE_TWO', label: '12' },
+  ...SIGNAL_DISPLAY_ORDER.map((row) => ({ value: row.group, label: row.label })),
 ] as const
 
 export const SOURCE_COLUMNS = [
@@ -351,15 +362,6 @@ export const EVAL_STATUSES = [
   { value: 'not_evaluable', label: 'Non valutabili' },
 ] as const
 
-export const HEATMAP_SIGNAL_ROWS = [
-  { group: 'UNDER_UNDER_PT', label: 'UNDER 2.5' },
-  { group: 'DRAW', label: 'SEGNO X' },
-  { group: 'OVER_OVER_PT', label: 'OVER 2.5' },
-  { group: 'HOME', label: '1' },
-  { group: 'ONE_X', label: '1X' },
-  { group: 'AWAY', label: '2' },
-  { group: 'X_TWO', label: 'X2' },
-  { group: 'ONE_TWO', label: '12' },
-] as const
+export const HEATMAP_SIGNAL_ROWS = SIGNAL_DISPLAY_ORDER
 
 export const HEATMAP_COLUMNS = ['EXCEL_D', 'EXCEL_E', 'EXCEL_F', 'EXCEL_G', 'SCALA'] as const

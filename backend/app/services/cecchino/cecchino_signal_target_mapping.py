@@ -14,6 +14,7 @@ from app.models.cecchino_signal_activation import (
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -29,6 +30,8 @@ from app.services.cecchino.cecchino_selection_keys import (
 
 REASON_MISSING_TARGET = "missing_target_market_mapping"
 LEGACY_WRONG_SCALA_REASON = "wrong_legacy_mapping_scala_belongs_to_1x_x2"
+DRAW_PT_DERIVED_REASON = "derived_draw_pt_observation"
+DRAW_PT_PARENT_DEACTIVATED_REASON = "deactivated_draw_pt_parent_not_value"
 VALID_SCALA_SIGNAL_GROUPS = frozenset({"ONE_X", "X_TWO"})
 
 
@@ -69,6 +72,7 @@ SIGNAL_GROUP_TO_MARKET_KEY: dict[str, str] = {
     "ONE_X": SEL_ONE_X,
     "X_TWO": SEL_X_TWO,
     "ONE_TWO": SEL_ONE_TWO,
+    "DRAW_PT": SEL_DRAW_PT,
     "UNDER_UNDER_PT": SEL_UNDER_2_5,
     "OVER_OVER_PT": SEL_OVER_2_5,
 }
@@ -146,6 +150,26 @@ def extract_kpi_context(kpi_panel: dict[str, Any] | None, signal_group: str) -> 
     from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
 
     return resolve_kpi_odds_for_activation(kpi_panel, signal_group=signal_group)
+
+
+def map_draw_pt_derived_target() -> dict[str, Any]:
+    """Target derivato X PT — creato solo quando DRAW FT passa value gate."""
+    return {
+        "target_market_key": SEL_DRAW_PT,
+        "target_market_label": "X PT",
+        "target_period": PERIOD_HT,
+        "evaluation_status": EVAL_PENDING,
+        "evaluation_reason": DRAW_PT_DERIVED_REASON,
+    }
+
+
+def build_draw_pt_derived_reason(*, quota_book: Any = None, quota_cecchino: Any = None) -> str:
+    parts = [DRAW_PT_DERIVED_REASON, "value_gate_source=DRAW"]
+    if quota_book is not None:
+        parts.append(f"value_gate_quota_book={quota_book}")
+    if quota_cecchino is not None:
+        parts.append(f"value_gate_quota_cecchino={quota_cecchino}")
+    return "; ".join(parts)
 
 
 def map_cecchino_signal_to_target(

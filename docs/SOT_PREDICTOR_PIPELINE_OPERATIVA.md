@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
+
+- Sync activation: quando DRAW FT passa value gate, crea anche `DRAW_PT` (X PT) con valutazione HT-only.
+- Backfill `force_remap=true` ricalcola X PT su storico; disattiva X PT se parent X perde valore.
+- Ordine heatmap/tabelle: 1, X, 2, 1X, X2, 1/2, X PT, Under, Over.
+- **Invariato:** scan Today, KPI panel, Segnali KPI, nessuna API esterna in sync.
+
 ## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
 
 - Sync activation (`sync_cecchino_signal_activations`): dopo matrice SI, verifica quote KPI; solo `quota_book >= quota_cecchino` entra in monitoraggio.

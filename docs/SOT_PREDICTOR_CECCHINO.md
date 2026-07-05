@@ -2,6 +2,13 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
+
+- **X PT** (`signal_group=DRAW_PT`, `SEL_DRAW_PT`): osservazione derivata quando X finale è comprabile a valore.
+- Valutazione: HT home == HT away; nessuna quota book X PT (non è un mercato giocabile tracciato).
+- 1 e 2 **non** trasformati in 1X/X2 (standby).
+- UI Monitoraggio + Lab: ordine righe 1, X, 2, 1X, X2, 1/2, X PT, Under, Over; note informative X PT derivata.
+
 ## Cecchino — Filtro valore quota sui segnali monitorati (2026-07-05)
 
 - **Segnale tecnico** (matrice SI/NO) ≠ **segnale monitorato** (SI + valore quota).

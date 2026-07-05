@@ -7,6 +7,10 @@ export function SignalsLabInfoPanel() {
         Un segnale tecnico SI senza valore quota è escluso anche se poi risultasse vincente.
       </p>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
+        X PT misura il pareggio a primo tempo quando la X finale era segnale a valore. Non usa una
+        quota primo tempo autonoma: è osservazione derivata dal filtro valore sulla X finale.
+      </p>
+      <p className="mt-2 text-sm leading-relaxed text-slate-600">
         La Quota media prese considera solo le quote dei segnali vinti. La Quota Void indica la quota
         minima di pareggio rispetto al Win Rate. Quando la quota media prese supera la quota void, il
         segnale mostra una qualità interessante.
