@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Modifica formula X F42 (2026-07-08)
+
+- `build_signals_matrix`: `draw.excel_f` richiede `qx <= 2.4`, `diff_1_2 > -1.7` e `q1 >= q2`.
+- Legenda Monitoraggio Segnali aggiornata (cella F42).
+- Nessun impatto su sync activation, KPI panel, Segnali KPI, soglie quota book, X PT, value gate.
+
 ## Cecchino — Soglie quota book configurabili (2026-07-08)
 
 - Tabella `cecchino_signal_min_book_odd_settings`; service load/save/list/reset con validazione (`> 1`, `<= 50`, 2 decimali).

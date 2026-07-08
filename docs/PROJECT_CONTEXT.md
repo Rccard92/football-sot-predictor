@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Modifica formula X F42 (2026-07-08)
+
+Formula F42 (SEGNO X, Excel F) aggiornata: `=IF(AND(F33<=2.4,F36>-1.7,F32>=F34),"SI","NO")`. F32/F33/F34/F36 = quote 1/X/2 e differenza q2−q1. Il segnale si accende solo con quota X bassa, F36 > -1.70 e quota 1 ≥ quota 2. Nessuna modifica D42/E42/G42, Pannello KPI, Segnali KPI, soglie quota book.
+
 ## Cecchino — Soglie quota book configurabili (2026-07-08)
 
 Soglie minime quota book editabili da admin e persistite in `cecchino_signal_min_book_odd_settings`. Default fallback in `cecchino_signal_min_odds.py` (X 3.00, X PT 1.90, 1X 1.37, X2 1.45, 1/2 1.37, Under 2.5 2.00, Over 2.5 1.85). API: `GET/PUT /api/admin/cecchino/signal-min-book-odds`, reset-defaults, save-and-backtest (backfill storico con ripescaggio). Pannello condiviso in `/monitoraggio-segnali` e Segnali Lab. Post-deploy: `alembic upgrade head`. Segnali KPI / formule Cecchino / rating KPI invariati.

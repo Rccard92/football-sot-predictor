@@ -2,6 +2,12 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — Modifica formula X F42 (2026-07-08)
+
+- Formula F42 (SEGNO X, Excel F): aggiunta condizione `F32 >= F34` (quota 1 ≥ quota 2).
+- Backend: `cecchino_signals_matrix.py`; frontend legenda: `cecchinoSignalFormulaLegend.ts`.
+- D42/E42/G42 e resto matrice invariati; nessuna modifica KPI, Segnali KPI, soglie book, X PT, value gate.
+
 ## Cecchino — Soglie quota book configurabili (2026-07-08)
 
 - Persistenza soglie in `cecchino_signal_min_book_odd_settings`; default in `cecchino_signal_min_odds.py`.
@@ -39,7 +45,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 
 - Formula D42 (SEGNO X, Excel D): aggiunta condizione `F32 >= F34` (quota 1 ≥ quota 2).
 - Backend: `cecchino_signals_matrix.py`; frontend legenda: `cecchinoSignalFormulaLegend.ts`.
-- E42/F42/G42 e resto matrice invariati; nessuna modifica KPI o monitoraggio valore.
+- E42/G42 e resto matrice invariati; nessuna modifica KPI o monitoraggio valore. *(F42 aggiornata in step successivo.)*
 
 ## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
 

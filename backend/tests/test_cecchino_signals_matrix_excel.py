@@ -125,3 +125,21 @@ def test_draw_excel_d_d42_formula(q1: float, q2: float, expected: str):
     draw = _signals_by_key(result, "draw")
     assert draw["excel_d"] == expected
     assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("q1", "qx", "q2", "expected"),
+    [
+        (2.00, 2.30, 2.40, "NO"),  # range OK ma q1 < q2
+        (2.40, 2.30, 2.00, "SI"),  # q1 >= q2, qx <= 2.4, diff > -1.7
+        (2.00, 2.30, 2.00, "SI"),  # parità quote
+        (2.40, 2.50, 2.00, "NO"),  # qx > 2.4
+        (4.00, 2.30, 2.00, "NO"),  # F36 fuori range (diff = -2.0)
+    ],
+)
+def test_draw_excel_f_f42_formula(q1: float, qx: float, q2: float, expected: str):
+    result = build_signals_matrix(q1=q1, qx=qx, q2=q2, sample_home_away_split=16)
+    assert result["status"] == STATUS_AVAILABLE
+    draw = _signals_by_key(result, "draw")
+    assert draw["excel_f"] == expected
+    assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
