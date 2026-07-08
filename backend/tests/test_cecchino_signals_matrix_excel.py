@@ -143,3 +143,57 @@ def test_draw_excel_f_f42_formula(q1: float, qx: float, q2: float, expected: str
     draw = _signals_by_key(result, "draw")
     assert draw["excel_f"] == expected
     assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("q1", "qx", "q2", "under_odd", "expected"),
+    [
+        (2.00, 2.80, 2.30, 1.80, "NO"),  # q1 < q2
+        (2.30, 2.80, 2.00, 1.80, "SI"),
+        (2.30, 2.80, 2.00, 2.10, "NO"),  # under_odd > 2
+        (2.30, 2.80, 2.00, None, "NO"),  # under_odd assente
+        (2.30, 3.10, 2.00, 1.80, "NO"),  # qx > 3
+    ],
+)
+def test_under_excel_f_f39_formula(
+    q1: float, qx: float, q2: float, under_odd: float | None, expected: str
+):
+    result = build_signals_matrix(
+        q1=q1,
+        qx=qx,
+        q2=q2,
+        sample_home_away_split=16,
+        under_2_5_cecchino_odd=under_odd,
+    )
+    assert result["status"] == STATUS_AVAILABLE
+    under = _signals_by_key(result, "under_under_pt")
+    assert under["excel_f"] == expected
+    assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+    assert result["inputs"]["under_2_5_cecchino_odd"] == under_odd
+
+
+@pytest.mark.parametrize(
+    ("q1", "qx", "q2", "under_odd", "expected"),
+    [
+        (2.00, 3.50, 2.30, 1.80, "NO"),  # q1 < q2
+        (2.30, 3.50, 2.00, 1.80, "SI"),
+        (2.30, 3.50, 2.00, 2.10, "NO"),  # under_odd > 2
+        (2.30, 3.50, 2.00, None, "NO"),  # under_odd assente
+        (2.30, 4.00, 2.00, 1.80, "NO"),  # qx >= 4
+    ],
+)
+def test_under_excel_g_g39_formula(
+    q1: float, qx: float, q2: float, under_odd: float | None, expected: str
+):
+    result = build_signals_matrix(
+        q1=q1,
+        qx=qx,
+        q2=q2,
+        sample_home_away_split=16,
+        under_2_5_cecchino_odd=under_odd,
+    )
+    assert result["status"] == STATUS_AVAILABLE
+    under = _signals_by_key(result, "under_under_pt")
+    assert under["excel_g"] == expected
+    assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+    assert result["inputs"]["under_2_5_cecchino_odd"] == under_odd

@@ -2,6 +2,14 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — Modifica formule Under F39 e G39 (2026-07-09)
+
+- Formula F39: `=IF(AND(F36<=1.53,F36>=-1.5,F33<=3,F32>=F34,UNDER2.5<=2),"SI","NO")`.
+- Formula G39: `=IF(AND(F36<=1.33,F36>=-1.23,F33<4,F32>=F34,UNDER2.5<=2),"SI","NO")`.
+- Backend: `cecchino_signals_matrix.py`; legenda: `cecchinoSignalFormulaLegend.ts`.
+- UNDER2.5 = `under_2_5_cecchino_odd` (KPI panel / goal markets); assente → NO.
+- **Invariato:** D39/E39, altre formule, Pannello KPI, Segnali KPI, soglie book, X PT, value gate.
+
 ## Cecchino — Modifica formula X F42 (2026-07-08)
 
 - Formula F42 (SEGNO X, Excel F): aggiunta condizione `F32 >= F34` (quota 1 ≥ quota 2).
@@ -39,7 +47,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 - Formula D39 (UNDER / UNDER PT, Excel D): aggiunte condizioni `F32 >= F34` e `UNDER2.5 <= 2`.
 - UNDER2.5 = quota Cecchino mercato Under 2.5; risolta da KPI panel (`quota_cecchino`) o `goal_markets.final_odd`.
 - Backend: `cecchino_signals_matrix.py`, `cecchino_signal_goal_refs.py`; legenda: `cecchinoSignalFormulaLegend.ts`.
-- E39/F39/G39 e resto matrice invariati; nessuna modifica KPI o monitoraggio valore.
+- E39 e resto matrice invariati; nessuna modifica KPI o monitoraggio valore. *(F39/G39 aggiornate in step successivo.)*
 
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 

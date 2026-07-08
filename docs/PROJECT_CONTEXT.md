@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Modifica formule Under F39 e G39 (2026-07-09)
+
+Formule Under F39 e G39 estese con `F32 >= F34` e `UNDER2.5 <= 2` (stesso parametro `under_2_5_cecchino_odd` di D39). Se UNDER2.5 assente → NO. D39/E39 invariati. Nessuna modifica Pannello KPI, Segnali KPI, soglie quota book.
+
 ## Cecchino — Modifica formula X F42 (2026-07-08)
 
 Formula F42 (SEGNO X, Excel F) aggiornata: `=IF(AND(F33<=2.4,F36>-1.7,F32>=F34),"SI","NO")`. F32/F33/F34/F36 = quote 1/X/2 e differenza q2−q1. Il segnale si accende solo con quota X bassa, F36 > -1.70 e quota 1 ≥ quota 2. Nessuna modifica D42/E42/G42, Pannello KPI, Segnali KPI, soglie quota book.

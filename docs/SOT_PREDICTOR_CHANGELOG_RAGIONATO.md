@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Modifica formule Under F39 e G39 (2026-07-09)
+
+- Aggiornata formula del segnale Under, colonna Excel F, cella F39.
+- Nuova formula F39: `=IF(AND(F36<=1.53,F36>=-1.5,F33<=3,F32>=F34,UNDER2.5<=2),"SI","NO")`.
+- Aggiornata formula del segnale Under, colonna Excel G, cella G39.
+- Nuova formula G39: `=IF(AND(F36<=1.33,F36>=-1.23,F33<4,F32>=F34,UNDER2.5<=2),"SI","NO")`.
+- F32/F33/F34/F36 = quote 1/X/2 e `diff_1_2`; UNDER2.5 = `under_2_5_cecchino_odd` (stesso riferimento D39).
+- F39 e G39 si accendono solo con F32 >= F34 e UNDER2.5 <= 2; se UNDER2.5 assente → NO.
+- **Invariato:** D39/E39, altre formule matrice, Pannello KPI, Segnali KPI, soglie minime quota book, X PT, value gate.
+
 ## Cecchino — Modifica formula X F42 (2026-07-08)
 
 - Aggiornata formula del segnale X, colonna Excel F, cella F42.
@@ -42,7 +52,7 @@
 - Nuova formula: `=IF(AND(F36<0.9,F36>-0.8,F32>=F34,UNDER2.5<=2),"SI","NO")`.
 - F32/F34 = quote Cecchino 1/2; F36 = `diff_1_2`; UNDER2.5 = quota Cecchino Under 2.5 (`SEL_UNDER_2_5`) da KPI panel o goal markets.
 - Se UNDER2.5 assente → `under_d = NO`. Rebuild matrice dopo `goal_markets` in Today/recompute.
-- **Invariato:** E39/F39/G39, altre formule matrice, Pannello KPI, Segnali KPI, value gate, X PT.
+- **Invariato:** E39, altre formule matrice, Pannello KPI, Segnali KPI, value gate, X PT. *(F39/G39 aggiornate in step successivo.)*
 
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 

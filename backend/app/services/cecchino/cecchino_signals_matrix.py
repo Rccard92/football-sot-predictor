@@ -125,8 +125,22 @@ def build_signals_matrix(
         )
     else:
         under_e = "NO"
-    under_f = _si_no(diff_1_2 <= 1.53 and diff_1_2 >= -1.5 and qx <= 3)
-    under_g = _si_no(diff_1_2 <= 1.33 and diff_1_2 >= -1.23 and qx < 4)
+    under_f = _si_no(
+        diff_1_2 <= 1.53
+        and diff_1_2 >= -1.5
+        and qx <= 3
+        and q1 >= q2
+        and under_2_5_cecchino_odd is not None
+        and under_2_5_cecchino_odd <= 2,
+    )
+    under_g = _si_no(
+        diff_1_2 <= 1.33
+        and diff_1_2 >= -1.23
+        and qx < 4
+        and q1 >= q2
+        and under_2_5_cecchino_odd is not None
+        and under_2_5_cecchino_odd <= 2,
+    )
 
     # SEGNO X
     x_d = _si_no(diff_1_2 < 0.6 and diff_1_2 > -0.57 and q1 >= q2)
