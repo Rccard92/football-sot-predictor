@@ -6,6 +6,7 @@ import { SignalsHeatmapMatrix } from '../components/cecchino/signals/SignalsHeat
 import { SignalsMonitoringKpiCards } from '../components/cecchino/signals/SignalsMonitoringKpiCards'
 import { SignalsTopRanking } from '../components/cecchino/signals/SignalsTopRanking'
 import { SignalsTakenOddsLegend } from '../components/cecchino/signals/SignalsTakenOddsLegend'
+import { SignalMinBookOddsPanel } from '../components/cecchino/SignalMinBookOddsPanel'
 import { SignalsWeightModelCards } from '../components/cecchino/signals/SignalsWeightModelCards'
 import {
   backfillCecchinoSignals,
@@ -223,7 +224,7 @@ export function CecchinoSignalsMonitoringPage() {
   }
 
   const VALUE_FILTER_CONFIRM =
-    'Ricalcola il filtro valore su tutte le partite del periodo: restano monitorati solo i segnali SI con quota book ≥ quota Cecchino. Le activation senza valore verranno disattivate (nessuna cancellazione). Continuare?'
+    'Ricalcola il filtro valore su tutte le partite del periodo: restano monitorati solo i segnali SI con quota book ≥ quota Cecchino e quota book ≥ soglia minima del segno. Le activation senza valore o sotto soglia verranno disattivate (nessuna cancellazione). Continuare?'
 
   const handleRemapMapping = async () => {
     if (!window.confirm(VALUE_FILTER_CONFIRM)) return
@@ -239,7 +240,7 @@ export function CecchinoSignalsMonitoringPage() {
       })
       const missingQuotes = res.missing_value_quote ?? 0
       setActionMessage(
-        `Filtro valore ricalcolato: ${res.si_cells_seen ?? 0} celle SI, ${res.value_passed ?? 0} a valore, ${res.no_value_skipped ?? 0} esclusi (quote mancanti: ${missingQuotes}, disattivati no-value: ${res.deactivated_no_value ?? 0}), ${res.evaluated ?? 0} rivalutati.`,
+        `Filtro valore ricalcolato: ${res.si_cells_seen ?? 0} celle SI, ${res.value_passed ?? 0} a valore, ${res.no_value_skipped ?? 0} esclusi (quote mancanti: ${missingQuotes}, sotto soglia min: ${res.min_book_odd_skipped ?? 0}, disattivati no-value: ${res.deactivated_no_value ?? 0}, disattivati sotto soglia: ${res.deactivated_min_book_odd ?? 0}), ${res.evaluated ?? 0} rivalutati.`,
       )
       await loadData()
     } catch (err) {
@@ -309,14 +310,16 @@ export function CecchinoSignalsMonitoringPage() {
           delle partite.
         </p>
         <p className="mt-2 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
-          Monitoraggio = segnali comprabili: SI + quota book ≥ quota Cecchino. La matrice in dettaglio
-          partita resta invariata.
+          Monitoraggio = segnali comprabili: SI + quota book ≥ quota Cecchino + soglia minima del segno.
+          La matrice in dettaglio partita resta invariata.
         </p>
         <p className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
           X PT usa quote reali dal Pannello KPI (mercato primo tempo). Viene creato solo quando la X
-          finale è accesa, passa il filtro valore e anche X PT ha quota book ≥ quota Cecchino.
+          finale è accesa, passa il filtro valore e anche X PT supera quota Cecchino e soglia minima 1.90.
         </p>
       </header>
+
+      <SignalMinBookOddsPanel />
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -467,7 +470,8 @@ export function CecchinoSignalsMonitoringPage() {
           </button>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino) già presenti nel DB
+          Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino e soglia minima)
+          già presenti nel DB
           e non consuma API.
         </p>
       </section>

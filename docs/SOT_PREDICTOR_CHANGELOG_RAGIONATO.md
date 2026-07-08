@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
+
+- Secondo filtro operativo sul monitoraggio: oltre a `quota_book >= quota_cecchino`, la quota book deve superare la soglia minima del mercato.
+- Soglie centralizzate backend (`cecchino_signal_min_odds.py`): X 3.00, X PT 1.90, 1X 1.37, X2 1.45, 1/2 1.37, Under 2.5 2.00, Over 2.5 1.85.
+- Monitoraggio classico e Segnali Lab condividono `signal_has_value_from_kpi_context` con `target_market_key`.
+- Segnali sotto soglia: esclusi in creazione o disattivati (`is_current=false`, no DELETE); reason `book_odd_below_min_threshold`.
+- Rebuild offline Pannello KPI da cache per recuperare X PT su giornate già scansionate (`rebuild-kpi-panels-from-cache`).
+- UI: pannello soglie read-only in Monitoring e Lab; contatori backfill aggiornati.
+- **Invariato:** Pannello KPI live, Segnali KPI, formula rating KPI, formule Cecchino, SOT, pannellino editabile (step 3).
+
 ## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
 
 - Aggiunto mercato **X PT** (pareggio primo tempo) come riga reale del Pannello KPI Cecchino.

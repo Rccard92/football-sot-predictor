@@ -24,6 +24,23 @@ from app.services.cecchino.cecchino_signal_display_order import (
     display_label_for_signal_group,
     signal_group_sort_key,
 )
+from app.services.cecchino.cecchino_signal_min_odds import get_min_book_odd
+from app.services.cecchino.cecchino_signal_value_gate import VALUE_REASON_OK, signal_has_value_from_kpi_context
+
+
+def _export_value_gate_fields(item: dict[str, Any]) -> tuple[Any, str, str]:
+    target_key = item.get("target_market_key")
+    min_odd = get_min_book_odd(target_key)
+    kpi_ctx = {
+        "quota_book": item.get("quota_book"),
+        "quota_cecchino": item.get("quota_cecchino"),
+    }
+    passed, reason, _meta = signal_has_value_from_kpi_context(
+        kpi_ctx,
+        target_market_key=target_key,
+    )
+    min_odd_display = float(min_odd) if min_odd is not None else ""
+    return min_odd_display, "SI" if passed else "NO", reason if reason != VALUE_REASON_OK else ""
 
 
 def _success_rate(won: int, lost: int) -> float | None:
@@ -420,6 +437,7 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
         "signal_label": _format_signal_display_label(row.signal_group, row.signal_label),
         "source_column": row.source_column,
         "target_market_label": _format_target_market_label(row),
+        "target_market_key": row.target_market_key,
         "evaluation_status": row.evaluation_status,
         "evaluation_reason": row.evaluation_reason,
         "ft_score": ft_score,
@@ -495,6 +513,9 @@ def export_signals_csv(
             "Quota Book",
             "Quota conteggiata in media prese",
             "Quota Cecchino",
+            "Soglia min book",
+            "Soglia min superata",
+            "Value gate reason",
             "Edge",
             "Rating",
             "Motivo valutazione",
@@ -516,6 +537,7 @@ def export_signals_csv(
         else:
             esito_label = esito
         counts_in_avg = "SI" if item.get("counts_in_avg_won_odds") else "NO"
+        min_odd_display, min_odd_passed, value_gate_reason = _export_value_gate_fields(item)
         writer.writerow(
             [
                 kickoff_date,
@@ -535,6 +557,9 @@ def export_signals_csv(
                 item.get("quota_book"),
                 counts_in_avg,
                 item.get("quota_cecchino"),
+                min_odd_display,
+                min_odd_passed,
+                value_gate_reason,
                 item.get("edge_pct"),
                 item.get("rating"),
                 item.get("evaluation_reason"),

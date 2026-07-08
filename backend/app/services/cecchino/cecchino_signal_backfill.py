@@ -24,6 +24,7 @@ from app.services.cecchino.cecchino_signal_sync import (
     remap_legacy_scala_activations_in_range,
     sync_cecchino_signal_activations,
 )
+from app.services.cecchino.cecchino_signal_min_odds import list_min_book_odds_for_api
 from app.services.cecchino.cecchino_signal_value_gate import merge_sync_value_counters
 from app.services.cecchino.cecchino_signal_target_mapping import remap_under_over_activations_in_range
 from app.services.cecchino.cecchino_signal_goal_refs import resolve_under_2_5_cecchino_odd_from_fixture
@@ -240,8 +241,10 @@ def build_signal_diagnostics(
         "not_evaluable": status_counts["not_evaluable"],
         "date_filter_field_used": DATE_FILTER_FIELD,
         "monitoring_note": (
-            "Il monitoraggio include solo segnali SI con quota book >= quota Cecchino."
+            "Il monitoraggio include solo segnali comprabili: quota book >= quota Cecchino "
+            "e quota book >= soglia minima del segno."
         ),
+        "min_book_odds_thresholds": list_min_book_odds_for_api(),
         "warnings": warnings[:50],
     }
     logger.info(
@@ -279,6 +282,9 @@ def backfill_signal_activations(
         "missing_cecchino_quote_skipped": 0,
         "invalid_quote_skipped": 0,
         "deactivated_no_value": 0,
+        "min_book_odd_skipped": 0,
+        "deactivated_min_book_odd": 0,
+        "min_book_odd_threshold_applied": 0,
         "missing_value_quote": 0,
         "evaluated": 0,
         "won": 0,

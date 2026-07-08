@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -12,6 +14,7 @@ from app.core.database import get_db
 from app.schemas.cecchino_recompute import CecchinoRecomputeBody
 from app.services.cecchino.cecchino_api_raw_inspector import build_api_raw_inspector
 from app.services.cecchino.cecchino_current_season_xg import backfill_current_season_xg_for_today_fixture
+from app.services.cecchino.cecchino_kpi_panel_rebuild_from_cache import rebuild_kpi_panels_from_cache
 from app.services.cecchino.cecchino_recompute_service import recompute_cecchino_range
 
 router = APIRouter(prefix="/admin/cecchino", tags=["admin-cecchino"])
@@ -19,6 +22,31 @@ router = APIRouter(prefix="/admin/cecchino", tags=["admin-cecchino"])
 
 class BackfillCurrentSeasonXgBody(BaseModel):
     force_refresh: bool = False
+
+
+class RebuildKpiPanelsFromCacheBody(BaseModel):
+    date_from: date
+    date_to: date
+    include_xpt: bool = True
+    rebuild_signals_after: bool = False
+    evaluate_after: bool = False
+
+
+@router.post("/rebuild-kpi-panels-from-cache")
+def cecchino_rebuild_kpi_panels_from_cache(
+    body: RebuildKpiPanelsFromCacheBody,
+    db: Session = Depends(get_db),
+):
+    """Rebuild offline Pannello KPI da snapshot/cache — nessuna API esterna."""
+    payload = rebuild_kpi_panels_from_cache(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        include_xpt=body.include_xpt,
+        rebuild_signals_after=body.rebuild_signals_after,
+        evaluate_after=body.evaluate_after,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
 
 
 @router.post("/recompute")

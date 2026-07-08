@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
+
+- Doppio filtro monitoraggio: valore matematico (`quota_book >= quota_cecchino`) + soglia minima quota book per mercato.
+- Soglie in `cecchino_signal_min_odds.py`; value gate esteso in `cecchino_signal_value_gate.py`.
+- X 3.00, X PT 1.90, 1X 1.37, X2 1.45, 1/2 1.37, Under 2.5 2.00, Over 2.5 1.85.
+- Sync/backfill: counters `min_book_odd_skipped`, `deactivated_min_book_odd`; reason `book_odd_below_min_threshold`.
+- Rebuild KPI offline: `cecchino_kpi_panel_rebuild_from_cache.py` + endpoint admin.
+- UI Monitoring + Lab: pannello soglie read-only; nessuna modifica Segnali KPI / Pannello KPI live / formule Cecchino.
+
 ## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
 
 - Riga KPI **X PT** con quota book FH 1X2 e quota Cecchino empirica HT draw.

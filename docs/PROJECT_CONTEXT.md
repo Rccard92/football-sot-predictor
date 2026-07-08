@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
+
+Il Monitoraggio Segnali applica due filtri: (1) `quota_book >= quota_cecchino`; (2) `quota_book >= soglia minima` per mercato. Soglie centralizzate in `cecchino_signal_min_odds.py`: X 3.00, X PT 1.90, 1X 1.37, X2 1.45, 1/2 1.37, Under 2.5 2.00, Over 2.5 1.85. Monitoraggio classico e Segnali Lab condividono la logica; segnali sotto soglia esclusi/disattivati (no DELETE). Rebuild offline KPI da cache: `POST /api/admin/cecchino/rebuild-kpi-panels-from-cache`. Pannellino editabile soglie rimandato allo step successivo. Segnali KPI / formule Cecchino / rating KPI invariati.
+
 ## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
 
 X PT nel Pannello KPI con quota book reale (FH 1X2 Betfair) e quota Cecchino da storico primo tempo. Monitoraggio usa quote proprie; nessuna modifica rating KPI / Segnali KPI / soglie book.

@@ -36,6 +36,11 @@ export type SignalsDiagnostics = {
   date_filter_field_used: string
   legacy_wrong_scala_mapping_count?: number
   monitoring_note?: string
+  min_book_odds_thresholds?: Array<{
+    target_market_key: string
+    label: string
+    min_book_odd: number
+  }>
   warnings: string[]
 }
 
@@ -65,6 +70,9 @@ export type SignalsBackfillResponse = {
   missing_cecchino_quote_skipped?: number
   invalid_quote_skipped?: number
   deactivated_no_value?: number
+  min_book_odd_skipped?: number
+  deactivated_min_book_odd?: number
+  min_book_odd_threshold_applied?: number
   missing_value_quote?: number
   draw_pt_created?: number
   draw_pt_updated?: number

@@ -1,5 +1,14 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
+
+- Value gate esteso: `quota_book >= quota_cecchino` **AND** `quota_book >= min_book_odd[target]`.
+- Soglie in `cecchino_signal_min_odds.py`: X 3.00, X PT 1.90, 1X 1.37, X2 1.45, 1/2 1.37, Under 2.5 2.00, Over 2.5 1.85.
+- Sync/backfill: counters `min_book_odd_skipped`, `deactivated_min_book_odd`; disattivazione `deactivated_book_odd_below_min_threshold`.
+- Rebuild offline KPI: `POST /api/admin/cecchino/rebuild-kpi-panels-from-cache` (snapshot + goal_markets, no API).
+- Ricalcolo storico: **Ricalcola filtro valore** (`force_remap=true`) applica anche soglie minime.
+- **Invariato:** Segnali KPI, formule Cecchino/KPI, scan Today live, pannellino editabile (step 3).
+
 ## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
 
 - Parser strict FH 1X2 → `MARKET_1X2_FH` / `DRAW_PT` con provenance `betfair_raw_first_half_match_winner`.

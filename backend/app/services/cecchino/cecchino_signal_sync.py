@@ -31,9 +31,12 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
     map_draw_pt_derived_target,
     map_row_key_to_signal_group,
 )
+from app.services.cecchino.cecchino_signal_min_odds import get_min_book_odd
 from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
 from app.services.cecchino.cecchino_selection_keys import SEL_DRAW_PT
 from app.services.cecchino.cecchino_signal_value_gate import (
+    VALUE_REASON_BOOK_BELOW_MIN,
+    deactivation_reason_for_value_gate,
     empty_sync_value_counters,
     signal_has_value_from_kpi_context,
 )
@@ -81,6 +84,20 @@ def _record_no_value_skip(counts: dict[str, int], reason: str) -> None:
         counts["missing_cecchino_quote_skipped"] += 1
     elif reason in ("invalid_quota_book", "invalid_quota_cecchino"):
         counts["invalid_quote_skipped"] += 1
+    elif reason == VALUE_REASON_BOOK_BELOW_MIN:
+        counts["min_book_odd_skipped"] += 1
+
+
+def _record_value_threshold_applied(counts: dict[str, int], target_market_key: str | None) -> None:
+    if get_min_book_odd(target_market_key) is not None:
+        counts["min_book_odd_threshold_applied"] += 1
+
+
+def _record_deactivation_for_value_reason(counts: dict[str, int], value_reason: str) -> None:
+    if value_reason == VALUE_REASON_BOOK_BELOW_MIN:
+        counts["deactivated_min_book_odd"] += 1
+    else:
+        counts["deactivated_no_value"] += 1
 
 
 def _deactivate_draw_pair(
@@ -92,14 +109,18 @@ def _deactivate_draw_pair(
     reason: str,
     now: datetime,
 ) -> None:
+    deactivation_reason = deactivation_reason_for_value_gate(reason)
     for signal_group in ("DRAW", "DRAW_PT"):
         activation = by_key.get(_activation_pair_key(mk, signal_group, source_column))
         if activation is None or not activation.is_current:
             continue
-        pt_reason = DRAW_PT_PARENT_DEACTIVATED_REASON if signal_group == "DRAW_PT" else reason
+        if signal_group == "DRAW_PT":
+            pt_reason = DRAW_PT_PARENT_DEACTIVATED_REASON
+        else:
+            pt_reason = deactivation_reason
         _deactivate_activation(activation, reason=pt_reason, now=now)
         if signal_group == "DRAW":
-            counts["deactivated_no_value"] += 1
+            _record_deactivation_for_value_reason(counts, reason)
         else:
             counts["draw_pt_deactivated"] += 1
             counts["derived_observations_deactivated"] += 1
@@ -233,16 +254,26 @@ def _sync_draw_pt_derived(
         signal_group="DRAW_PT",
         target_market_key=SEL_DRAW_PT,
     )
-    pt_passed, pt_reason, pt_value_meta = signal_has_value_from_kpi_context(pt_kpi_ctx)
+    pt_passed, pt_reason, pt_value_meta = signal_has_value_from_kpi_context(
+        pt_kpi_ctx,
+        target_market_key=SEL_DRAW_PT,
+    )
+    _record_value_threshold_applied(counts, SEL_DRAW_PT)
     pt_key = _activation_pair_key(mk, "DRAW_PT", cell["source_column"])
     existing_pt = by_key.get(pt_key)
 
     if not pt_passed:
         _record_no_value_skip(counts, pt_reason)
         if existing_pt is not None and existing_pt.is_current:
-            _deactivate_activation(existing_pt, reason=pt_reason, now=datetime.now(timezone.utc))
+            _deactivate_activation(
+                existing_pt,
+                reason=deactivation_reason_for_value_gate(pt_reason),
+                now=datetime.now(timezone.utc),
+            )
             counts["draw_pt_deactivated"] += 1
             counts["derived_observations_deactivated"] += 1
+            if pt_reason == VALUE_REASON_BOOK_BELOW_MIN:
+                counts["deactivated_min_book_odd"] += 1
         return
 
     counts["value_passed"] += 1
@@ -366,7 +397,12 @@ def sync_cecchino_signal_activations(
             signal_group=cell["signal_group"],
             target_market_key=target.get("target_market_key"),
         )
-        passed, value_reason, _value_meta = signal_has_value_from_kpi_context(kpi_ctx)
+        target_market_key = target.get("target_market_key")
+        passed, value_reason, _value_meta = signal_has_value_from_kpi_context(
+            kpi_ctx,
+            target_market_key=target_market_key,
+        )
+        _record_value_threshold_applied(counts, target_market_key)
         key = _activation_pair_key(mk, cell["signal_group"], cell["source_column"])
 
         if cell["signal_group"] == "DRAW":
@@ -419,8 +455,12 @@ def sync_cecchino_signal_activations(
         if not passed:
             _record_no_value_skip(counts, value_reason)
             if activation is not None and activation.is_current:
-                _deactivate_activation(activation, reason=value_reason, now=now)
-                counts["deactivated_no_value"] += 1
+                _deactivate_activation(
+                    activation,
+                    reason=deactivation_reason_for_value_gate(value_reason),
+                    now=now,
+                )
+                _record_deactivation_for_value_reason(counts, value_reason)
             continue
 
         counts["value_passed"] += 1

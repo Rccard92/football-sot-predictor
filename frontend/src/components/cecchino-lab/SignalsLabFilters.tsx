@@ -156,8 +156,8 @@ export function SignalsLabFilters({
         </button>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino) già presenti nel DB
-        e non consuma API.
+        Il backtest modelli usa solo segnali a valore (quota book ≥ quota Cecchino e soglia minima)
+        già presenti nel DB e non consuma API.
       </p>
     </section>
   )
