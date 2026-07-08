@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Condizione F32>=F34 su tutte le formule X (2026-07-09)
+
+- Aggiunta condizione `F32>=F34` (quota Cecchino 1 >= quota Cecchino 2) a **tutte** le formule del segno X.
+- D42: `=IF(AND(F36<0.6,F36>-0.57,F32>=F34),"SI","NO")`
+- E42: `=IF(AND(F33<3.3,F36<=1.47,F36>=-1.4,F32>=F34),"SI","NO")`
+- F42: `=IF(AND(F33<=2.4,F36>-1.7,F32>=F34),"SI","NO")`
+- G42: `=IF(AND(F33<=3,F36<2,F36>-1.6,F32>=F34),"SI","NO")`
+- Backend: `F32>=F34` → `q1 >= q2` in `cecchino_signals_matrix.py` (`x_d`, `x_e`, `x_f`, `x_g`).
+- **Invariato:** Under/Over/1/2/1X/X2/12, Pannello KPI, Segnali KPI, soglie minime quota book, X PT, value gate.
+
 ## Cecchino — Modifica formule Under F39 e G39 (2026-07-09)
 
 - Aggiornata formula del segnale Under, colonna Excel F, cella F39.
@@ -16,7 +26,7 @@
 - Nuova formula: `=IF(AND(F33<=2.4,F36>-1.7,F32>=F34),"SI","NO")`.
 - F32 = quota Cecchino 1 (`q1`); F33 = quota Cecchino X (`qx`); F34 = quota Cecchino 2 (`q2`); F36 = `diff_1_2` (= q2 − q1).
 - Il segnale X/F si accende solo quando F33 <= 2.40, F36 > -1.70 e quota Cecchino 1 >= quota Cecchino 2.
-- **Invariato:** D42/E42/G42, altre formule matrice, Pannello KPI, Segnali KPI, soglie minime quota book, X PT, value gate.
+- **Invariato:** D42/E42/G42, altre formule matrice, Pannello KPI, Segnali KPI, soglie minime quota book, X PT, value gate. *(E42/G42 uniformate in step successivo.)*
 
 ## Cecchino — Soglie quota book configurabili (2026-07-08)
 
@@ -60,7 +70,7 @@
 - Nuova formula: `=IF(AND(F36<0.6,F36>-0.57,F32>=F34),"SI","NO")`.
 - F32 = quota Cecchino 1 (`q1`); F34 = quota Cecchino 2 (`q2`); F36 = `diff_1_2` (= q2 − q1).
 - Il segnale X/D si accende solo con F36 in range equilibrio **e** quota 1 ≥ quota 2.
-- **Invariato:** E42/G42, altre formule matrice, Pannello KPI, Segnali KPI, value gate, X PT. *(F42 aggiornata in step successivo.)*
+- **Invariato:** E42/G42, altre formule matrice, Pannello KPI, Segnali KPI, value gate, X PT. *(F42 aggiornata in step successivo; E42/G42 uniformate dopo.)*
 
 ## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
 

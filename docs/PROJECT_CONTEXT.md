@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Condizione F32>=F34 su tutte le formule X (2026-07-09)
+
+Tutte le formule SEGNO X (D42/E42/F42/G42) richiedono quota Cecchino 1 >= quota Cecchino 2 (`F32>=F34` / `q1>=q2`). Nessuna modifica Under/Over, Pannello KPI, Segnali KPI, soglie quota book.
+
 ## Cecchino — Modifica formule Under F39 e G39 (2026-07-09)
 
 Formule Under F39 e G39 estese con `F32 >= F34` e `UNDER2.5 <= 2` (stesso parametro `under_2_5_cecchino_odd` di D39). Se UNDER2.5 assente → NO. D39/E39 invariati. Nessuna modifica Pannello KPI, Segnali KPI, soglie quota book.

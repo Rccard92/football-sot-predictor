@@ -135,6 +135,7 @@ def test_draw_excel_d_d42_formula(q1: float, q2: float, expected: str):
         (2.00, 2.30, 2.00, "SI"),  # parità quote
         (2.40, 2.50, 2.00, "NO"),  # qx > 2.4
         (4.00, 2.30, 2.00, "NO"),  # F36 fuori range (diff = -2.0)
+        (3.80, 2.30, 2.00, "NO"),  # F36 <= -1.7 (diff = -1.8)
     ],
 )
 def test_draw_excel_f_f42_formula(q1: float, qx: float, q2: float, expected: str):
@@ -142,6 +143,42 @@ def test_draw_excel_f_f42_formula(q1: float, qx: float, q2: float, expected: str
     assert result["status"] == STATUS_AVAILABLE
     draw = _signals_by_key(result, "draw")
     assert draw["excel_f"] == expected
+    assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("q1", "qx", "q2", "expected"),
+    [
+        (2.00, 3.00, 2.30, "NO"),  # q1 < q2
+        (2.30, 3.00, 2.00, "SI"),
+        (2.30, 3.30, 2.00, "NO"),  # qx >= 3.3
+        (3.80, 3.00, 2.00, "NO"),  # diff = -1.8, fuori range
+        (2.00, 3.00, 3.60, "NO"),  # diff = 1.6, fuori range
+    ],
+)
+def test_draw_excel_e_e42_formula(q1: float, qx: float, q2: float, expected: str):
+    result = build_signals_matrix(q1=q1, qx=qx, q2=q2, sample_home_away_split=16)
+    assert result["status"] == STATUS_AVAILABLE
+    draw = _signals_by_key(result, "draw")
+    assert draw["excel_e"] == expected
+    assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("q1", "qx", "q2", "expected"),
+    [
+        (2.00, 2.90, 2.30, "NO"),  # q1 < q2
+        (2.30, 2.90, 2.00, "SI"),
+        (2.30, 3.10, 2.00, "NO"),  # qx > 3
+        (3.70, 2.90, 2.00, "NO"),  # diff = -1.7, non > -1.6
+        (2.00, 2.90, 4.10, "NO"),  # diff = 2.1, non < 2
+    ],
+)
+def test_draw_excel_g_g42_formula(q1: float, qx: float, q2: float, expected: str):
+    result = build_signals_matrix(q1=q1, qx=qx, q2=q2, sample_home_away_split=16)
+    assert result["status"] == STATUS_AVAILABLE
+    draw = _signals_by_key(result, "draw")
+    assert draw["excel_g"] == expected
     assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
 
 

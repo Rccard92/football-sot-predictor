@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Condizione F32>=F34 su tutte le formule X (2026-07-09)
+
+- `build_signals_matrix`: tutte le colonne `draw` (D/E/F/G) richiedono `q1 >= q2`.
+- Legenda Monitoraggio Segnali aggiornata per E42 e G42 (D42/F42 già conformi).
+- **Invariato:** Under/Over, sync activation, KPI panel, Segnali KPI, soglie book, X PT, value gate.
+
 ## Cecchino — Modifica formule Under F39 e G39 (2026-07-09)
 
 - `build_signals_matrix`: `under_under_pt.excel_f` e `.excel_g` richiedono range F36/qx esistenti + `q1 >= q2` + `under_2_5_cecchino_odd <= 2`.
