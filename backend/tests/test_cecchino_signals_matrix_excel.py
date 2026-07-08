@@ -82,3 +82,20 @@ def test_low_sample_reliability():
     assert rel["index"] == pytest.approx(0.25, rel=1e-9)
     assert rel["status"] == "NO BET"
     assert rel["level"] == "BASSA"
+
+
+@pytest.mark.parametrize(
+    ("q1", "q2", "expected"),
+    [
+        (2.00, 2.30, "NO"),  # range OK ma q1 < q2
+        (2.30, 2.00, "SI"),  # range OK e q1 >= q2
+        (2.00, 2.00, "SI"),  # parità quote
+        (3.00, 2.00, "NO"),  # fuori range anche se q1 >= q2
+    ],
+)
+def test_draw_excel_d_d42_formula(q1: float, q2: float, expected: str):
+    result = build_signals_matrix(q1=q1, qx=3.2, q2=q2, sample_home_away_split=16)
+    assert result["status"] == STATUS_AVAILABLE
+    draw = _signals_by_key(result, "draw")
+    assert draw["excel_d"] == expected
+    assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)

@@ -122,7 +122,7 @@ def build_signals_matrix(
     under_g = _si_no(diff_1_2 <= 1.33 and diff_1_2 >= -1.23 and qx < 4)
 
     # SEGNO X
-    x_d = _si_no(diff_1_2 < 0.6 and diff_1_2 > -0.57)
+    x_d = _si_no(diff_1_2 < 0.6 and diff_1_2 > -0.57 and q1 >= q2)
     x_e = _si_no(qx < 3.3 and diff_1_2 <= 1.47 and diff_1_2 >= -1.4)
     x_f = _si_no(qx <= 2.4 and diff_1_2 > -1.7)
     x_g = _si_no(qx <= 3 and diff_1_2 < 2 and diff_1_2 > -1.6)

@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Modifica formula X D42 (2026-07-08)
+
+Formula D42 aggiornata: X Excel D richiede F36 in range e quota Cecchino 1 ≥ quota Cecchino 2. Solo matrice segnali + legenda; KPI/Segnali KPI/value gate/X PT invariati.
+
 ## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
 
 Activation derivata X PT nel sync segnali: nasce da X finale a valore, valutata su HT, senza quota PT. Ordine UI 1→Over con X PT dopo 1/2. 1/2 non trasformati in 1X/X2. Segnali KPI e KPI panel invariati.

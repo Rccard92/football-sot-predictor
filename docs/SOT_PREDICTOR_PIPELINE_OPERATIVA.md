@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Modifica formula X D42 (2026-07-08)
+
+- `build_signals_matrix`: `draw.excel_d` richiede `diff_1_2` in range e `q1 >= q2`.
+- Legenda Monitoraggio Segnali aggiornata (cella D42).
+- Nessun impatto su sync activation, KPI panel, Segnali KPI.
+
 ## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
 
 - Sync activation: quando DRAW FT passa value gate, crea anche `DRAW_PT` (X PT) con valutazione HT-only.

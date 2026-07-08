@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Modifica formula X D42 (2026-07-08)
+
+- Aggiornata formula segnale X, colonna Excel D, cella D42.
+- Nuova formula: `=IF(AND(F36<0.6,F36>-0.57,F32>=F34),"SI","NO")`.
+- F32 = quota Cecchino 1 (`q1`); F34 = quota Cecchino 2 (`q2`); F36 = `diff_1_2` (= q2 − q1).
+- Il segnale X/D si accende solo con F36 in range equilibrio **e** quota 1 ≥ quota 2.
+- **Invariato:** E42/F42/G42, altre formule matrice, Pannello KPI, Segnali KPI, value gate, X PT.
+
 ## Cecchino — X primo tempo nel Monitoraggio Segnali (2026-07-05)
 
 - Aggiunta activation derivata **X PT** (`DRAW_PT`): creata solo quando la X finale è SI e passa il filtro valore (`quota_book >= quota_cecchino`).
