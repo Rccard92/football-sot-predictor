@@ -1,5 +1,14 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Soglie quota book configurabili (2026-07-08)
+
+- Tabella `cecchino_signal_min_book_odd_settings`; service load/save/list/reset con validazione (`> 1`, `<= 50`, 2 decimali).
+- Admin: `GET/PUT /api/admin/cecchino/signal-min-book-odds`, `POST .../reset-defaults`, `POST .../save-and-backtest`.
+- Save-and-backtest: salva → opz. `rebuild_kpi_panels_from_cache` → `backfill_signal_activations(only_missing=false, force_remap=true, min_book_odds=DB)`.
+- Sync live (`cecchino_today_service`) e job storici caricano soglie DB via `load_signal_min_book_odds` quando non passate.
+- UI Monitoring + Lab: pannello editabile con conferma range > 7 giorni e sezione Avanzate (rebuild KPI offline).
+- **Invariato:** Segnali KPI, formule Cecchino/KPI, scan Today live (nessuna API esterna in backtest).
+
 ## Cecchino — Soglie minime quota book nel Monitoraggio Segnali (2026-07-08)
 
 - Value gate esteso: `quota_book >= quota_cecchino` **AND** `quota_book >= min_book_odd[target]`.
@@ -7,7 +16,7 @@
 - Sync/backfill: counters `min_book_odd_skipped`, `deactivated_min_book_odd`; disattivazione `deactivated_book_odd_below_min_threshold`.
 - Rebuild offline KPI: `POST /api/admin/cecchino/rebuild-kpi-panels-from-cache` (snapshot + goal_markets, no API).
 - Ricalcolo storico: **Ricalcola filtro valore** (`force_remap=true`) applica anche soglie minime.
-- **Invariato:** Segnali KPI, formule Cecchino/KPI, scan Today live, pannellino editabile (step 3).
+- **Invariato:** Segnali KPI, formule Cecchino/KPI, scan Today live. *(Step 3: pannello editabile + DB.)*
 
 ## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
 

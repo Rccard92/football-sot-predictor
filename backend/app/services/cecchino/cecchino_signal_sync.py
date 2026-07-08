@@ -31,6 +31,7 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
     map_draw_pt_derived_target,
     map_row_key_to_signal_group,
 )
+from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import load_signal_min_book_odds
 from app.services.cecchino.cecchino_signal_min_odds import get_min_book_odd
 from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
 from app.services.cecchino.cecchino_selection_keys import SEL_DRAW_PT
@@ -88,8 +89,13 @@ def _record_no_value_skip(counts: dict[str, int], reason: str) -> None:
         counts["min_book_odd_skipped"] += 1
 
 
-def _record_value_threshold_applied(counts: dict[str, int], target_market_key: str | None) -> None:
-    if get_min_book_odd(target_market_key) is not None:
+def _record_value_threshold_applied(
+    counts: dict[str, int],
+    target_market_key: str | None,
+    *,
+    min_book_odds: dict[str, Decimal] | None = None,
+) -> None:
+    if get_min_book_odd(target_market_key, min_book_odds=min_book_odds) is not None:
         counts["min_book_odd_threshold_applied"] += 1
 
 
@@ -248,6 +254,7 @@ def _sync_draw_pt_derived(
     counts: dict[str, int],
     active_keys: set[tuple[str, str, str]],
     match_result: dict[str, Any],
+    min_book_odds: dict[str, Decimal],
 ) -> None:
     pt_kpi_ctx = resolve_kpi_odds_for_activation(
         kpi_panel,
@@ -257,8 +264,9 @@ def _sync_draw_pt_derived(
     pt_passed, pt_reason, pt_value_meta = signal_has_value_from_kpi_context(
         pt_kpi_ctx,
         target_market_key=SEL_DRAW_PT,
+        min_book_odds=min_book_odds,
     )
-    _record_value_threshold_applied(counts, SEL_DRAW_PT)
+    _record_value_threshold_applied(counts, SEL_DRAW_PT, min_book_odds=min_book_odds)
     pt_key = _activation_pair_key(mk, "DRAW_PT", cell["source_column"])
     existing_pt = by_key.get(pt_key)
 
@@ -352,10 +360,14 @@ def sync_cecchino_signal_activations(
     model_key: str = CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
     signals_matrix: dict[str, Any] | None = None,
     model_meta: dict[str, object] | None = None,
+    min_book_odds: dict[str, Decimal] | None = None,
 ) -> dict[str, int]:
     row = db.get(CecchinoTodayFixture, int(today_fixture_id))
     if row is None:
         return {**_empty_sync_counts(), "skipped": 1}
+
+    if min_book_odds is None:
+        min_book_odds = load_signal_min_book_odds(db)
 
     mk = str(model_key).upper()
     meta = model_meta or model_meta_for_key(mk)
@@ -401,8 +413,9 @@ def sync_cecchino_signal_activations(
         passed, value_reason, _value_meta = signal_has_value_from_kpi_context(
             kpi_ctx,
             target_market_key=target_market_key,
+            min_book_odds=min_book_odds,
         )
-        _record_value_threshold_applied(counts, target_market_key)
+        _record_value_threshold_applied(counts, target_market_key, min_book_odds=min_book_odds)
         key = _activation_pair_key(mk, cell["signal_group"], cell["source_column"])
 
         if cell["signal_group"] == "DRAW":
@@ -447,6 +460,7 @@ def sync_cecchino_signal_activations(
                 counts=counts,
                 active_keys=active_keys,
                 match_result=match_result,
+                min_book_odds=min_book_odds,
             )
             continue
 

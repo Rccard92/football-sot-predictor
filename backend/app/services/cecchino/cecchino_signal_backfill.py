@@ -244,7 +244,7 @@ def build_signal_diagnostics(
             "Il monitoraggio include solo segnali comprabili: quota book >= quota Cecchino "
             "e quota book >= soglia minima del segno."
         ),
-        "min_book_odds_thresholds": list_min_book_odds_for_api(),
+        "min_book_odds_thresholds": list_min_book_odds_for_api(db=db),
         "warnings": warnings[:50],
     }
     logger.info(
@@ -265,7 +265,19 @@ def backfill_signal_activations(
     only_missing: bool = True,
     evaluate_after: bool = True,
     force_remap: bool = False,
+    min_book_odds: dict | None = None,
 ) -> dict[str, Any]:
+    from decimal import Decimal
+
+    from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
+        load_signal_min_book_odds,
+    )
+
+    if min_book_odds is None:
+        min_book_odds = load_signal_min_book_odds(db)
+    elif not isinstance(next(iter(min_book_odds.values()), None), Decimal):
+        min_book_odds = {k: Decimal(str(v)) for k, v in min_book_odds.items()}
+
     fixtures = _fixtures_in_range(db, date_from, date_to)
     warnings: list[str] = []
     totals = {
@@ -308,7 +320,9 @@ def backfill_signal_activations(
         totals["fixtures_with_signals"] += 1
         processed_fixture_ids.append(int(row.id))
         if not force_remap:
-            sync_counts = sync_cecchino_signal_activations(db, int(row.id))
+            sync_counts = sync_cecchino_signal_activations(
+                db, int(row.id), min_book_odds=min_book_odds,
+            )
             totals["signals_created"] += sync_counts.get("created", 0)
             totals["signals_updated"] += sync_counts.get("updated", 0)
             totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
@@ -322,7 +336,7 @@ def backfill_signal_activations(
             date_to=date_to,
         )
         for fid in processed_fixture_ids:
-            sync_counts = sync_cecchino_signal_activations(db, fid)
+            sync_counts = sync_cecchino_signal_activations(db, fid, min_book_odds=min_book_odds)
             totals["signals_created"] += sync_counts.get("created", 0)
             totals["signals_updated"] += sync_counts.get("updated", 0)
             totals["signals_deactivated"] += sync_counts.get("deactivated", 0)
@@ -379,6 +393,11 @@ def backfill_signal_activations(
 
 
 def sync_signals_for_scan_date(db: Session, scan_date: date) -> dict[str, int]:
+    from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
+        load_signal_min_book_odds,
+    )
+
+    min_book_odds = load_signal_min_book_odds(db)
     fixtures = list(
         db.scalars(
             select(CecchinoTodayFixture).where(
@@ -406,7 +425,7 @@ def sync_signals_for_scan_date(db: Session, scan_date: date) -> dict[str, int]:
             totals["skipped"] += 1
             continue
         totals["fixtures"] += 1
-        counts = sync_cecchino_signal_activations(db, int(row.id))
+        counts = sync_cecchino_signal_activations(db, int(row.id), min_book_odds=min_book_odds)
         totals["created"] += counts.get("created", 0)
         totals["updated"] += counts.get("updated", 0)
         totals["deactivated"] += counts.get("deactivated", 0)

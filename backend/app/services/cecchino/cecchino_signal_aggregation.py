@@ -28,9 +28,13 @@ from app.services.cecchino.cecchino_signal_min_odds import get_min_book_odd
 from app.services.cecchino.cecchino_signal_value_gate import VALUE_REASON_OK, signal_has_value_from_kpi_context
 
 
-def _export_value_gate_fields(item: dict[str, Any]) -> tuple[Any, str, str]:
+def _export_value_gate_fields(
+    item: dict[str, Any],
+    *,
+    min_book_odds: dict | None = None,
+) -> tuple[Any, str, str]:
     target_key = item.get("target_market_key")
-    min_odd = get_min_book_odd(target_key)
+    min_odd = get_min_book_odd(target_key, min_book_odds=min_book_odds)
     kpi_ctx = {
         "quota_book": item.get("quota_book"),
         "quota_cecchino": item.get("quota_cecchino"),
@@ -38,6 +42,7 @@ def _export_value_gate_fields(item: dict[str, Any]) -> tuple[Any, str, str]:
     passed, reason, _meta = signal_has_value_from_kpi_context(
         kpi_ctx,
         target_market_key=target_key,
+        min_book_odds=min_book_odds,
     )
     min_odd_display = float(min_odd) if min_odd is not None else ""
     return min_odd_display, "SI" if passed else "NO", reason if reason != VALUE_REASON_OK else ""
@@ -464,6 +469,11 @@ def export_signals_csv(
     evaluation_status: str | None = None,
     only_current: bool = True,
 ) -> str:
+    from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
+        load_signal_min_book_odds,
+    )
+
+    min_book_odds = load_signal_min_book_odds(db)
     mk = str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
     payload = list_signal_activations(
         db,
@@ -537,7 +547,10 @@ def export_signals_csv(
         else:
             esito_label = esito
         counts_in_avg = "SI" if item.get("counts_in_avg_won_odds") else "NO"
-        min_odd_display, min_odd_passed, value_gate_reason = _export_value_gate_fields(item)
+        min_odd_display, min_odd_passed, value_gate_reason = _export_value_gate_fields(
+            item,
+            min_book_odds=min_book_odds,
+        )
         writer.writerow(
             [
                 kickoff_date,

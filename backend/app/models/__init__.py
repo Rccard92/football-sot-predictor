@@ -4,6 +4,7 @@ from app.models.cecchino_league_stats_cache import CecchinoLeagueStatsCache
 from app.models.cecchino_prediction import CecchinoPrediction
 from app.models.cecchino_kpi_signal_activation import CecchinoKpiSignalActivation
 from app.models.cecchino_signal_activation import CecchinoSignalActivation
+from app.models.cecchino_signal_min_book_odd_setting import CecchinoSignalMinBookOddSetting
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.models.cecchino_today_scan_job import CecchinoTodayScanJob
 from app.models.competition import Competition
@@ -65,6 +66,7 @@ __all__ = [
     "CecchinoPrediction",
     "CecchinoKpiSignalActivation",
     "CecchinoSignalActivation",
+    "CecchinoSignalMinBookOddSetting",
     "CecchinoTodayFixture",
     "CecchinoTodayScanJob",
     "Competition",

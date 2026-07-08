@@ -14,6 +14,7 @@ import { SignalsLabEmptyState } from '../components/cecchino-lab/SignalsLabEmpty
 import { SignalsLabFilters } from '../components/cecchino-lab/SignalsLabFilters'
 import { SignalsLabInfoPanel } from '../components/cecchino-lab/SignalsLabInfoPanel'
 import { SignalsFormulaLegendAccordion } from '../components/cecchino/signals/SignalsFormulaLegendAccordion'
+import { SignalMinBookOddsPanel } from '../components/cecchino/SignalMinBookOddsPanel'
 import { SignalsLabPageHeader } from '../components/cecchino-lab/SignalsLabPageHeader'
 import { SignalsLabSkeleton } from '../components/cecchino-lab/SignalsLabSkeleton'
 import { SignalsMetricRibbon } from '../components/cecchino-lab/SignalsMetricRibbon'
@@ -114,6 +115,13 @@ export function MonitoraggioSegnaliLab() {
           onBacktest={() => void lab.runBacktest()}
           onRevaluate={() => void lab.runRevaluate()}
           onExport={lab.exportCsv}
+        />
+
+        <SignalMinBookOddsPanel
+          variant="lab"
+          dateFrom={lab.dateFrom}
+          dateTo={lab.dateTo}
+          onBacktestComplete={() => void lab.loadAll()}
         />
 
         {lab.loading && !lab.summary ? (

@@ -12,10 +12,23 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.cecchino_recompute import CecchinoRecomputeBody
+from app.schemas.cecchino_signal_min_book_odds import (
+    SignalMinBookOddsSaveAndBacktestBody,
+    SignalMinBookOddsUpdateBody,
+)
 from app.services.cecchino.cecchino_api_raw_inspector import build_api_raw_inspector
 from app.services.cecchino.cecchino_current_season_xg import backfill_current_season_xg_for_today_fixture
 from app.services.cecchino.cecchino_kpi_panel_rebuild_from_cache import rebuild_kpi_panels_from_cache
 from app.services.cecchino.cecchino_recompute_service import recompute_cecchino_range
+from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
+    SignalMinBookOddValidationError,
+    list_signal_min_book_odds_settings,
+    reset_signal_min_book_odds_defaults,
+    save_signal_min_book_odds,
+)
+from app.services.cecchino.cecchino_signal_min_book_odds_backtest_service import (
+    save_signal_min_book_odds_and_backtest,
+)
 
 router = APIRouter(prefix="/admin/cecchino", tags=["admin-cecchino"])
 
@@ -30,6 +43,62 @@ class RebuildKpiPanelsFromCacheBody(BaseModel):
     include_xpt: bool = True
     rebuild_signals_after: bool = False
     evaluate_after: bool = False
+
+
+@router.get("/signal-min-book-odds")
+def get_signal_min_book_odds_settings(db: Session = Depends(get_db)):
+    items = list_signal_min_book_odds_settings(db)
+    return JSONResponse(content=jsonable_encoder({"status": "ok", "items": items}))
+
+
+@router.put("/signal-min-book-odds")
+def put_signal_min_book_odds_settings(
+    body: SignalMinBookOddsUpdateBody,
+    db: Session = Depends(get_db),
+):
+    try:
+        payload = save_signal_min_book_odds(
+            db,
+            [item.model_dump() for item in body.items],
+        )
+        db.commit()
+    except SignalMinBookOddValidationError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": str(exc), "field": exc.field},
+        )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/signal-min-book-odds/reset-defaults")
+def post_signal_min_book_odds_reset_defaults(db: Session = Depends(get_db)):
+    payload = reset_signal_min_book_odds_defaults(db)
+    db.commit()
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/signal-min-book-odds/save-and-backtest")
+def post_signal_min_book_odds_save_and_backtest(
+    body: SignalMinBookOddsSaveAndBacktestBody,
+    db: Session = Depends(get_db),
+):
+    try:
+        payload = save_signal_min_book_odds_and_backtest(
+            db,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            items=[item.model_dump() for item in body.items],
+            rebuild_kpi_from_cache=body.rebuild_kpi_from_cache,
+            include_xpt=body.include_xpt,
+            force_remap_signals=body.force_remap_signals,
+            evaluate_after=body.evaluate_after,
+        )
+    except SignalMinBookOddValidationError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": str(exc), "field": exc.field},
+        )
+    return JSONResponse(content=jsonable_encoder(payload))
 
 
 @router.post("/rebuild-kpi-panels-from-cache")

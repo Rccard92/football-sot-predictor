@@ -16,6 +16,7 @@ from app.models.cecchino_today_fixture import (
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_selection_keys import SEL_DRAW, SEL_DRAW_PT, SEL_ONE_X
 from app.services.cecchino.cecchino_signal_backfill import backfill_signal_activations
+from app.services.cecchino.cecchino_signal_min_odds import DEFAULT_SIGNAL_MIN_BOOK_ODDS
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_signal_value_gate import (
     DEACTIVATION_REASON_BOOK_BELOW_MIN,
@@ -86,7 +87,9 @@ def test_sync_si_below_min_threshold_does_not_create_activation():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    counts = sync_cecchino_signal_activations(db, 100)
+    counts = sync_cecchino_signal_activations(
+        db, 100, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
 
     assert counts["created"] == 0
     assert counts["min_book_odd_skipped"] == 1
@@ -100,7 +103,9 @@ def test_sync_si_at_threshold_creates_activation():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    counts = sync_cecchino_signal_activations(db, 100)
+    counts = sync_cecchino_signal_activations(
+        db, 100, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
 
     assert counts["created"] == 1
     assert counts["value_passed"] == 1
@@ -125,7 +130,9 @@ def test_sync_deactivates_existing_current_below_min_threshold():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = [activation]
 
-    counts = sync_cecchino_signal_activations(db, 100)
+    counts = sync_cecchino_signal_activations(
+        db, 100, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
 
     assert activation.is_current is False
     assert activation.evaluation_reason == DEACTIVATION_REASON_BOOK_BELOW_MIN
@@ -151,7 +158,9 @@ def test_sync_above_threshold_keeps_current():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = [activation]
 
-    counts = sync_cecchino_signal_activations(db, 100)
+    counts = sync_cecchino_signal_activations(
+        db, 100, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
 
     assert activation.is_current is True
     assert counts["updated"] == 1
@@ -175,7 +184,7 @@ def test_sync_no_delete_on_deactivation():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = [activation]
 
-    sync_cecchino_signal_activations(db, 100)
+    sync_cecchino_signal_activations(db, 100, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
     db.delete.assert_not_called()
 
@@ -186,7 +195,9 @@ def test_draw_pt_below_min_threshold_skips_pt_but_draw_passes():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    counts = sync_cecchino_signal_activations(db, 101)
+    counts = sync_cecchino_signal_activations(
+        db, 101, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
 
     assert counts["created"] == 1
     assert counts["draw_pt_created"] == 0
@@ -201,7 +212,7 @@ def test_draw_pt_uses_real_x_pt_quotes():
     db.get.return_value = row
     db.scalars.return_value.all.return_value = []
 
-    sync_cecchino_signal_activations(db, 101)
+    sync_cecchino_signal_activations(db, 101, min_book_odds=DEFAULT_SIGNAL_MIN_BOOK_ODDS)
 
     pt = next(call.args[0] for call in db.add.call_args_list if call.args[0].signal_group == "DRAW_PT")
     assert float(pt.quota_book) == pytest.approx(1.95)
@@ -214,6 +225,10 @@ def test_backfill_merges_min_book_odd_counters(monkeypatch):
     row = _one_x_fixture_row(book=1.30, cecchino=1.20)
     row.eligibility_status = ELIGIBILITY_ELIGIBLE
 
+    monkeypatch.setattr(
+        "app.services.cecchino.cecchino_signal_min_book_odd_settings_service.load_signal_min_book_odds",
+        lambda _db: DEFAULT_SIGNAL_MIN_BOOK_ODDS,
+    )
     monkeypatch.setattr(
         "app.services.cecchino.cecchino_signal_backfill._fixtures_in_range",
         lambda _db, _f, _t: [row],

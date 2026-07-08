@@ -50,7 +50,14 @@ def get_min_book_odd(
 def list_min_book_odds_for_api(
     *,
     min_book_odds: dict[str, Decimal] | None = None,
+    db: Any | None = None,
 ) -> list[dict[str, Any]]:
+    if min_book_odds is None and db is not None:
+        from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
+            load_signal_min_book_odds,
+        )
+
+        min_book_odds = load_signal_min_book_odds(db)
     table = min_book_odds if min_book_odds is not None else DEFAULT_SIGNAL_MIN_BOOK_ODDS
     items: list[dict[str, Any]] = []
     for key in (

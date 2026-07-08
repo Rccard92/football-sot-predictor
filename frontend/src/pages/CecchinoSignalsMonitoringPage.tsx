@@ -319,7 +319,11 @@ export function CecchinoSignalsMonitoringPage() {
         </p>
       </header>
 
-      <SignalMinBookOddsPanel />
+      <SignalMinBookOddsPanel
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onBacktestComplete={() => void loadData()}
+      />
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">

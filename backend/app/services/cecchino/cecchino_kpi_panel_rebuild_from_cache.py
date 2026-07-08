@@ -72,6 +72,12 @@ def rebuild_kpi_panels_from_cache(
     }
     errors: list[str] = []
 
+    from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
+        load_signal_min_book_odds,
+    )
+
+    min_book_odds = load_signal_min_book_odds(db)
+
     for row in fixtures:
         counters["fixtures_seen"] += 1
         output = row.cecchino_output_json or {}
@@ -131,7 +137,9 @@ def rebuild_kpi_panels_from_cache(
                     errors.append(f"fixture_{row.id}:xpt_cecchino_missing")
 
         if rebuild_signals_after:
-            sync_counts = sync_cecchino_signal_activations(db, int(row.id))
+            sync_counts = sync_cecchino_signal_activations(
+                db, int(row.id), min_book_odds=min_book_odds,
+            )
             counters["signals_rebuilt"] += 1
             merge_sync_value_counters(counters, sync_counts)
             if evaluate_after:

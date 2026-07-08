@@ -373,3 +373,93 @@ export const EVAL_STATUSES = [
 export const HEATMAP_SIGNAL_ROWS = SIGNAL_DISPLAY_ORDER
 
 export const HEATMAP_COLUMNS = ['EXCEL_D', 'EXCEL_E', 'EXCEL_F', 'EXCEL_G', 'SCALA'] as const
+
+export type SignalMinBookOddSetting = {
+  target_market_key: string
+  label: string
+  min_book_odd: number
+  default_min_book_odd: number
+  is_default: boolean
+  is_enabled: boolean
+}
+
+export type SignalMinBookOddsSettingsResponse = {
+  status: string
+  items: SignalMinBookOddSetting[]
+}
+
+export type SignalMinBookOddsBacktestPayload = {
+  date_from: string
+  date_to: string
+  items: { target_market_key: string; min_book_odd: number }[]
+  rebuild_kpi_from_cache?: boolean
+  include_xpt?: boolean
+  force_remap_signals?: boolean
+  evaluate_after?: boolean
+}
+
+export type SignalMinBookOddsBacktestSummary = {
+  fixtures_seen: number
+  signals_rebuilt: number
+  si_cells_seen: number
+  value_passed: number
+  no_value_skipped: number
+  min_book_odd_skipped: number
+  deactivated_min_book_odd: number
+  missing_book_quote_skipped: number
+  missing_cecchino_quote_skipped: number
+  invalid_quote_skipped: number
+  deactivated_no_value: number
+  evaluated: number
+  won: number
+  lost: number
+  pending: number
+  not_evaluable: number
+}
+
+export type SignalMinBookOddsSaveAndBacktestResponse = {
+  status: 'ok' | 'partial' | 'error'
+  settings: SignalMinBookOddSetting[]
+  backtest: SignalMinBookOddsBacktestSummary
+  errors: string[]
+}
+
+export async function getSignalMinBookOddsSettings(): Promise<SignalMinBookOddsSettingsResponse> {
+  return adminGetJson<SignalMinBookOddsSettingsResponse>(
+    '/api/admin/cecchino/signal-min-book-odds',
+  )
+}
+
+export async function updateSignalMinBookOddsSettings(
+  items: { target_market_key: string; min_book_odd: number }[],
+): Promise<SignalMinBookOddsSettingsResponse & { updated?: number }> {
+  const base = import.meta.env.VITE_API_BASE_URL || ''
+  const prefix = String(base).replace(/\/$/, '')
+  const res = await fetch(`${prefix}/api/admin/cecchino/signal-min-book-odds`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  })
+  const parsed = await res.json()
+  if (!res.ok) {
+    throw new Error(parsed?.message || 'Errore salvataggio soglie')
+  }
+  return parsed
+}
+
+export async function resetSignalMinBookOddsDefaults(): Promise<SignalMinBookOddsSettingsResponse> {
+  return adminPostJson<SignalMinBookOddsSettingsResponse>(
+    '/api/admin/cecchino/signal-min-book-odds/reset-defaults',
+    {},
+  )
+}
+
+export async function saveSignalMinBookOddsAndBacktest(
+  payload: SignalMinBookOddsBacktestPayload,
+): Promise<SignalMinBookOddsSaveAndBacktestResponse> {
+  return adminPostJson<SignalMinBookOddsSaveAndBacktestResponse>(
+    '/api/admin/cecchino/signal-min-book-odds/save-and-backtest',
+    payload,
+    { timeoutMs: 300_000 },
+  )
+}
