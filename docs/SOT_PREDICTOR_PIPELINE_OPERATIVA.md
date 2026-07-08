@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — Modifica formula Under D39 (2026-07-08)
+
+- `build_signals_matrix`: `under_under_pt.excel_d` richiede F36 in range, `q1 >= q2` e quota Under 2.5 Cecchino ≤ 2.
+- Helper `cecchino_signal_goal_refs.py`: risoluzione UNDER2.5 da `kpi_panel_json` o `goal_markets`.
+- Today/recompute: rebuild `signals_matrix` dopo calcolo `goal_markets` (engine costruisce matrice prima dei goal).
+- Backfill e backtest modelli: under odd da fixture salvata.
+- **Invariato:** sync activation, KPI panel, Segnali KPI, E39/F39/G39.
+
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 
 - `build_signals_matrix`: `draw.excel_d` richiede `diff_1_2` in range e `q1 >= q2`.

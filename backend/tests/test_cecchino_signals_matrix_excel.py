@@ -85,6 +85,32 @@ def test_low_sample_reliability():
 
 
 @pytest.mark.parametrize(
+    ("q1", "q2", "under_odd", "expected"),
+    [
+        (2.00, 2.30, 1.80, "NO"),  # q1 < q2
+        (2.30, 2.00, 1.80, "SI"),
+        (2.00, 2.00, 2.00, "SI"),
+        (2.30, 2.00, 2.10, "NO"),  # under_odd > 2
+        (2.30, 2.00, None, "NO"),  # under_odd assente
+        (3.00, 2.00, 1.80, "NO"),  # F36 fuori range
+    ],
+)
+def test_under_excel_d_d39_formula(q1: float, q2: float, under_odd: float | None, expected: str):
+    result = build_signals_matrix(
+        q1=q1,
+        qx=3.2,
+        q2=q2,
+        sample_home_away_split=16,
+        under_2_5_cecchino_odd=under_odd,
+    )
+    assert result["status"] == STATUS_AVAILABLE
+    under = _signals_by_key(result, "under_under_pt")
+    assert under["excel_d"] == expected
+    assert result["inputs"]["diff_1_2"] == pytest.approx(q2 - q1, rel=1e-9)
+    assert result["inputs"]["under_2_5_cecchino_odd"] == under_odd
+
+
+@pytest.mark.parametrize(
     ("q1", "q2", "expected"),
     [
         (2.00, 2.30, "NO"),  # range OK ma q1 < q2

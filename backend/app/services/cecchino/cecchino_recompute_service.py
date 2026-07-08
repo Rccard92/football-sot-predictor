@@ -24,6 +24,10 @@ from app.services.cecchino.cecchino_signal_backfill import (
     _ensure_signals_matrix_on_row,
 )
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
+from app.services.cecchino.cecchino_signal_goal_refs import (
+    rebuild_signals_matrix_for_output,
+    sample_home_away_split_from_stats,
+)
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_signal_target_mapping import remap_under_over_activations_in_range
 from app.services.cecchino.cecchino_today_betfair_refresh import refresh_betfair_odds_for_fixture
@@ -129,6 +133,12 @@ def recompute_today_fixture_offline(
         local_fx,
         goal_ctx,
     )
+    rebuilt = rebuild_signals_matrix_for_output(
+        cecchino_output,
+        sample_home_away_split=sample_home_away_split_from_stats(row.stats_snapshot_json),
+    )
+    if isinstance(rebuilt, dict) and rebuilt.get("status") == "available":
+        cecchino_output["signals_matrix"] = rebuilt
 
     betfair_payload = _load_betfair_payload(
         db,

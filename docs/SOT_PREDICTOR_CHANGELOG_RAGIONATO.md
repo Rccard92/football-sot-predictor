@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — Modifica formula Under D39 (2026-07-08)
+
+- Aggiornata formula segnale Under / UNDER PT, colonna Excel D, cella D39.
+- Nuova formula: `=IF(AND(F36<0.9,F36>-0.8,F32>=F34,UNDER2.5<=2),"SI","NO")`.
+- F32/F34 = quote Cecchino 1/2; F36 = `diff_1_2`; UNDER2.5 = quota Cecchino Under 2.5 (`SEL_UNDER_2_5`) da KPI panel o goal markets.
+- Se UNDER2.5 assente → `under_d = NO`. Rebuild matrice dopo `goal_markets` in Today/recompute.
+- **Invariato:** E39/F39/G39, altre formule matrice, Pannello KPI, Segnali KPI, value gate, X PT.
+
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 
 - Aggiornata formula segnale X, colonna Excel D, cella D42.

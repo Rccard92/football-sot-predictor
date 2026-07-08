@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Cecchino — Modifica formula Under D39 (2026-07-08)
+
+Formula D39 aggiornata: Under Excel D richiede F36 in range, quota Cecchino 1 ≥ quota Cecchino 2 e quota Under 2.5 Cecchino ≤ 2. Modulo `cecchino_signal_goal_refs.py`; rebuild matrice post-goal_markets in Today. Solo matrice segnali + legenda; KPI/Segnali KPI/value gate/X PT invariati.
+
 ## Cecchino — Modifica formula X D42 (2026-07-08)
 
 Formula D42 aggiornata: X Excel D richiede F36 in range e quota Cecchino 1 ≥ quota Cecchino 2. Solo matrice segnali + legenda; KPI/Segnali KPI/value gate/X PT invariati.

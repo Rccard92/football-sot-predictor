@@ -61,6 +61,7 @@ from app.services.cecchino.cecchino_constants import (
     KEY_HOME_CONTEXT,
     KEY_HOME_TOTAL,
     PROVIDER_API_FOOTBALL as BM_PROVIDER,
+    STATUS_AVAILABLE,
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
 from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
@@ -79,6 +80,10 @@ from app.services.cecchino.cecchino_expected_goal_engine_diagnostics import (
     build_expected_goal_engine_diagnostics_for_today_row,
 )
 from app.services.cecchino.cecchino_icm_analysis import build_cecchino_icm_analysis
+from app.services.cecchino.cecchino_signal_goal_refs import (
+    rebuild_signals_matrix_for_output,
+    sample_home_away_split_from_stats,
+)
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_backfill import sync_signals_for_scan_date
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
@@ -967,6 +972,12 @@ def run_scan(
                         local_fx,
                         goal_ctx,
                     )
+                    rebuilt = rebuild_signals_matrix_for_output(
+                        cecchino_output,
+                        sample_home_away_split=sample_home_away_split_from_stats(stats_snapshot),
+                    )
+                    if isinstance(rebuilt, dict) and rebuilt.get("status") == STATUS_AVAILABLE:
+                        cecchino_output["signals_matrix"] = rebuilt
                 odds_source = "cached_betfair_odds" if odds_strategy == "cached" else "betfair"
                 teams = item.get("teams") or {}
                 home_name = (teams.get("home") or {}).get("name")

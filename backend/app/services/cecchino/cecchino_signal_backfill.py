@@ -26,6 +26,7 @@ from app.services.cecchino.cecchino_signal_sync import (
 )
 from app.services.cecchino.cecchino_signal_value_gate import merge_sync_value_counters
 from app.services.cecchino.cecchino_signal_target_mapping import remap_under_over_activations_in_range
+from app.services.cecchino.cecchino_signal_goal_refs import resolve_under_2_5_cecchino_odd_from_fixture
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ def _rebuild_signals_matrix_on_row(row: CecchinoTodayFixture) -> bool:
         prob_1=_num(final.get("prob_1")),
         prob_x=_num(final.get("prob_x")),
         prob_2=_num(final.get("prob_2")),
+        under_2_5_cecchino_odd=resolve_under_2_5_cecchino_odd_from_fixture(row),
     )
     if matrix.get("status") != STATUS_AVAILABLE:
         return False

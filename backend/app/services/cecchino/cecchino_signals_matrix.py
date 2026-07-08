@@ -52,6 +52,7 @@ def build_signals_matrix(
     prob_1: float | None = None,
     prob_x: float | None = None,
     prob_2: float | None = None,
+    under_2_5_cecchino_odd: float | None = None,
 ) -> dict[str, Any]:
     """
     Calcola matrice segnali SI/NO e indice affidabilità.
@@ -105,8 +106,14 @@ def build_signals_matrix(
         and abs(diff_1_2) >= 1.5,
     )
 
-    # UNDER / UNDER PT
-    under_d = _si_no(diff_1_2 < 0.9 and diff_1_2 > -0.8)
+    # UNDER / UNDER PT — D39: F36 range + F32>=F34 + UNDER2.5<=2
+    under_d = _si_no(
+        diff_1_2 < 0.9
+        and diff_1_2 > -0.8
+        and q1 >= q2
+        and under_2_5_cecchino_odd is not None
+        and under_2_5_cecchino_odd <= 2,
+    )
     if avg_q > 0:
         under_e = _si_no(
             q1 / avg_q > 0.88
@@ -257,6 +264,7 @@ def build_signals_matrix(
             "q2": "F34",
             "avg_q": "F35",
             "diff_1_2": "F36",
+            "under_2_5_cecchino_odd": "UNDER2.5",
         },
         "inputs": {
             "q1": q1,
@@ -268,6 +276,7 @@ def build_signals_matrix(
             "prob_1": prob_1,
             "prob_x": prob_x,
             "prob_2": prob_2,
+            "under_2_5_cecchino_odd": under_2_5_cecchino_odd,
         },
         "rows": rows,
         "reliability": _compute_reliability(sample_home_away_split),

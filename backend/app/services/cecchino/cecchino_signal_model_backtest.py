@@ -28,6 +28,7 @@ from app.services.cecchino.cecchino_signal_aggregation import _bucket_counts, _e
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_activations_for_fixture
 from app.services.cecchino.cecchino_signal_sync import sync_cecchino_signal_activations
 from app.services.cecchino.cecchino_signal_value_gate import merge_sync_value_counters, SYNC_VALUE_COUNTER_KEYS
+from app.services.cecchino.cecchino_signal_goal_refs import resolve_under_2_5_cecchino_odd_from_fixture
 from app.services.cecchino.cecchino_signals_matrix import build_signals_matrix
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ def build_signals_matrix_for_model(row: CecchinoTodayFixture, model_key: str) ->
         prob_1=final.prob_1,
         prob_x=final.prob_x,
         prob_2=final.prob_2,
+        under_2_5_cecchino_odd=resolve_under_2_5_cecchino_odd_from_fixture(row),
     )
 
 
