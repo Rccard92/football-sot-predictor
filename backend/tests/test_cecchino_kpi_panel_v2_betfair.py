@@ -16,6 +16,7 @@ from app.services.cecchino.cecchino_goal_poisson_v2 import FORMULA_V2
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -78,6 +79,9 @@ def _betfair_payload() -> dict:
                         "OVER_PT_0_5": 1.50,
                         "OVER_PT_1_5": 3.20,
                     },
+                    "MATCH_WINNER_1X2_FIRST_HALF": {
+                        "DRAW_PT": 2.05,
+                    },
                 },
             },
         ],
@@ -85,11 +89,23 @@ def _betfair_payload() -> dict:
     }
 
 
-def _build():
+def _build(*, goal_markets: dict | None = None):
     return build_cecchino_kpi_panel_v2_betfair(
         final_odds=_final_odds(),
         betfair_payload=_betfair_payload(),
+        goal_markets=goal_markets,
     )
+
+
+def _goal_markets_draw_pt() -> dict:
+    return {
+        "DRAW_PT": {
+            "market_key": "DRAW_PT",
+            "final_odd": 2.20,
+            "status": "available",
+            "formula_version": "first_half_draw_empirical_shrinkage_v1",
+        },
+    }
 
 
 def _row_by_key(panel: dict, key: str) -> dict:
@@ -128,7 +144,19 @@ def test_kpi_v2_columns_and_version():
     cols = panel["columns"]
     assert "quota_book" in cols
     assert "rating" in cols
-    assert len(panel["rows"]) == 13
+    assert len(panel["rows"]) == 14
+
+
+def test_draw_pt_row_available_with_book_and_cecchino():
+    panel = _build(goal_markets=_goal_markets_draw_pt())
+    row = _row_by_key(panel, SEL_DRAW_PT)
+    assert row["segno"] == "X PT"
+    assert row["quota_book"] == 2.05
+    assert row["quota_cecchino"] == 2.20
+    assert row["prob_book"] is not None
+    assert row["prob_cecchino"] is not None
+    assert row["edge_pct"] is not None
+    assert row["rating"] is not None
 
 
 def test_prob_book_formula():

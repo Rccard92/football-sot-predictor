@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
+
+- Parser strict FH 1X2 → `MARKET_1X2_FH` / `DRAW_PT` con provenance `betfair_raw_first_half_match_winner`.
+- `goal_markets[DRAW_PT]` calcolato da hit-rate pareggio HT + shrinkage lega.
+- KPI panel v2: riga X PT dopo X; book da payload, Cecchino da goal markets.
+- Sync DRAW_PT: quote reali + value gate proprio; richiede ancora X FT a valore come trigger.
+- **Invariato:** Segnali KPI, soglie minime, migration.
+
 ## Cecchino — Modifica formula Under D39 (2026-07-08)
 
 - `build_signals_matrix`: `under_under_pt.excel_d` richiede F36 in range, `q1 >= q2` e quota Under 2.5 Cecchino ≤ 2.

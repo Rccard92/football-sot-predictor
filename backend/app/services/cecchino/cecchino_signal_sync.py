@@ -32,6 +32,7 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
     map_row_key_to_signal_group,
 )
 from app.services.cecchino.cecchino_signal_odds_refresh import resolve_kpi_odds_for_activation
+from app.services.cecchino.cecchino_selection_keys import SEL_DRAW_PT
 from app.services.cecchino.cecchino_signal_value_gate import (
     empty_sync_value_counters,
     signal_has_value_from_kpi_context,
@@ -219,7 +220,7 @@ def _sync_draw_pt_derived(
     mk: str,
     meta: dict[str, object],
     cell: dict[str, Any],
-    kpi_ctx: dict[str, Any],
+    kpi_panel: dict[str, Any] | None,
     inputs: dict[str, Any],
     by_key: dict[tuple[str, str, str], CecchinoSignalActivation],
     db: Session,
@@ -227,17 +228,34 @@ def _sync_draw_pt_derived(
     active_keys: set[tuple[str, str, str]],
     match_result: dict[str, Any],
 ) -> None:
+    pt_kpi_ctx = resolve_kpi_odds_for_activation(
+        kpi_panel,
+        signal_group="DRAW_PT",
+        target_market_key=SEL_DRAW_PT,
+    )
+    pt_passed, pt_reason, pt_value_meta = signal_has_value_from_kpi_context(pt_kpi_ctx)
+    pt_key = _activation_pair_key(mk, "DRAW_PT", cell["source_column"])
+    existing_pt = by_key.get(pt_key)
+
+    if not pt_passed:
+        _record_no_value_skip(counts, pt_reason)
+        if existing_pt is not None and existing_pt.is_current:
+            _deactivate_activation(existing_pt, reason=pt_reason, now=datetime.now(timezone.utc))
+            counts["draw_pt_deactivated"] += 1
+            counts["derived_observations_deactivated"] += 1
+        return
+
+    counts["value_passed"] += 1
+    active_keys.add(pt_key)
     pt_target = map_draw_pt_derived_target()
     pt_cell = {
         **cell,
         "signal_group": "DRAW_PT",
         "signal_label": "X PT",
     }
-    pt_key = _activation_pair_key(mk, "DRAW_PT", cell["source_column"])
-    active_keys.add(pt_key)
     derived_reason = build_draw_pt_derived_reason(
-        quota_book=kpi_ctx.get("quota_book"),
-        quota_cecchino=kpi_ctx.get("quota_cecchino"),
+        quota_book=pt_value_meta.get("quota_book"),
+        quota_cecchino=pt_value_meta.get("quota_cecchino"),
     )
     pt_activation = _upsert_activation(
         row=row,
@@ -245,12 +263,12 @@ def _sync_draw_pt_derived(
         meta=meta,
         cell=pt_cell,
         target=pt_target,
-        kpi_ctx={},
+        kpi_ctx=pt_kpi_ctx,
         inputs=inputs,
         by_key=by_key,
         db=db,
         counts=counts,
-        include_odds=False,
+        include_odds=True,
         derived_reason=derived_reason,
     )
     if pt_activation.target_market_key:
@@ -386,7 +404,7 @@ def sync_cecchino_signal_activations(
                 mk=mk,
                 meta=meta,
                 cell=cell,
-                kpi_ctx=kpi_ctx,
+                kpi_panel=kpi_panel,
                 inputs=inputs,
                 by_key=by_key,
                 db=db,

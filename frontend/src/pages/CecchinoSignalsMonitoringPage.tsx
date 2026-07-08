@@ -313,8 +313,8 @@ export function CecchinoSignalsMonitoringPage() {
           partita resta invariata.
         </p>
         <p className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
-          X PT è un monitoraggio derivato: viene creato solo quando la X finale è accesa e passa il
-          filtro valore.
+          X PT usa quote reali dal Pannello KPI (mercato primo tempo). Viene creato solo quando la X
+          finale è accesa, passa il filtro valore e anche X PT ha quota book ≥ quota Cecchino.
         </p>
       </header>
 

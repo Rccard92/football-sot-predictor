@@ -39,6 +39,7 @@ from app.services.cecchino.cecchino_goal_formulas import (
     calculate_under_fulltime_excel_parity,
 )
 from app.services.cecchino.cecchino_selection_keys import (
+    SEL_DRAW_PT,
     SEL_OVER_1_5,
     SEL_OVER_2_5,
     SEL_OVER_PT_0_5,
@@ -49,6 +50,7 @@ from app.services.cecchino.cecchino_selection_keys import (
 )
 
 FORMULA_V2 = "goal_market_poisson_empirical_v2"
+FORMULA_DRAW_PT_V1 = "first_half_draw_empirical_shrinkage_v1"
 BLEND_POISSON = 0.65
 BLEND_EMPIRICAL = 0.35
 MIN_PROB = 0.03
@@ -251,6 +253,18 @@ def _hit_rates_for_context(
     away_team_id: int,
     is_ht: bool,
 ) -> tuple[float | None, float | None]:
+    if market_key == SEL_DRAW_PT and is_ht:
+        if not ctx.home_fixtures and ctx.home_totals.sample > 0:
+            rate_home = ctx.home_totals.halftime_draw_hits / ctx.home_totals.sample
+        else:
+            rate_home = None
+        if not ctx.away_fixtures and ctx.away_totals.sample > 0:
+            rate_away = ctx.away_totals.halftime_draw_hits / ctx.away_totals.sample
+        else:
+            rate_away = None
+        if rate_home is not None and rate_away is not None:
+            return rate_home, rate_away
+
     home_hits = away_hits = 0
     home_sample = away_sample = 0
 
@@ -264,7 +278,10 @@ def _hit_rates_for_context(
         home_sample += 1
         total = gf + ga
         if is_ht:
-            if _pt_event_hit(total, market_key):
+            if market_key == SEL_DRAW_PT:
+                if gf == ga:
+                    home_hits += 1
+            elif _pt_event_hit(total, market_key):
                 home_hits += 1
         elif _ft_event_hit(gf, ga, market_key):
             home_hits += 1
@@ -279,7 +296,10 @@ def _hit_rates_for_context(
         away_sample += 1
         total = gf + ga
         if is_ht:
-            if _pt_event_hit(total, market_key):
+            if market_key == SEL_DRAW_PT:
+                if gf == ga:
+                    away_hits += 1
+            elif _pt_event_hit(total, market_key):
                 away_hits += 1
         elif _ft_event_hit(gf, ga, market_key):
             away_hits += 1
@@ -379,12 +399,14 @@ def league_event_probabilities(
     league_fixtures: list[Fixture],
 ) -> dict[str, float | None]:
     """Rate evento su tutte le fixture lega finite."""
+    all_markets = _FT_MARKETS + _PT_MARKETS + (SEL_DRAW_PT,)
     if not league_fixtures:
-        return {m: None for m in _FT_MARKETS + _PT_MARKETS}
+        return {m: None for m in all_markets}
 
     ft_totals: dict[str, int] = {m: 0 for m in _FT_MARKETS}
     pt_totals: dict[str, int] = {m: 0 for m in _PT_MARKETS}
     ft_n = pt_n = 0
+    ht_draw_n = 0
 
     for f in league_fixtures:
         if f.goals_home is None or f.goals_away is None:
@@ -395,21 +417,33 @@ def league_event_probabilities(
             if _ft_event_hit(gh, ga, m):
                 ft_totals[m] += 1
 
-        ht = halftime_total_goals(f)
-        if ht is not None:
-            pt_n += 1
-            if ht >= 1:
-                pt_totals[SEL_OVER_PT_0_5] += 1
-            if ht >= 2:
-                pt_totals[SEL_OVER_PT_1_5] += 1
-            if ht <= 1:
-                pt_totals[SEL_UNDER_PT_1_5] += 1
+        raw = f.raw_json if isinstance(f.raw_json, dict) else {}
+        score = raw.get("score") if isinstance(raw.get("score"), dict) else {}
+        ht = score.get("halftime") if isinstance(score.get("halftime"), dict) else {}
+        hh, ha = ht.get("home"), ht.get("away")
+        if hh is not None and ha is not None:
+            try:
+                ht_home, ht_away = int(hh), int(ha)
+            except (TypeError, ValueError):
+                ht_home = ht_away = None
+            if ht_home is not None and ht_away is not None:
+                pt_n += 1
+                ht_total = ht_home + ht_away
+                if ht_total >= 1:
+                    pt_totals[SEL_OVER_PT_0_5] += 1
+                if ht_total >= 2:
+                    pt_totals[SEL_OVER_PT_1_5] += 1
+                if ht_total <= 1:
+                    pt_totals[SEL_UNDER_PT_1_5] += 1
+                if ht_home == ht_away:
+                    ht_draw_n += 1
 
     out: dict[str, float | None] = {}
     for m in _FT_MARKETS:
         out[m] = round(ft_totals[m] / ft_n, 4) if ft_n > 0 else None
     for m in _PT_MARKETS:
         out[m] = round(pt_totals[m] / pt_n, 4) if pt_n > 0 else None
+    out[SEL_DRAW_PT] = round(ht_draw_n / pt_n, 4) if pt_n > 0 else None
     return out
 
 
@@ -607,6 +641,132 @@ def _merge_context_rows(
     return merged
 
 
+def _overall_reliability_from_contexts(
+    contexts: list[GoalContextSlice],
+) -> tuple[float, list[dict[str, Any]], list[str]]:
+    warnings: list[str] = []
+    rows: list[dict[str, Any]] = []
+    rel_vals: list[tuple[float, float]] = []
+    _, weight_details = _context_weight_details(contexts)
+
+    for ctx in contexts:
+        wf = _weight_fields(ctx, weight_details)
+        rel = context_reliability(ctx.sample_home, ctx.sample_away, ctx.target_sample)
+        usable = _context_usable(ctx)
+        if not usable:
+            warnings.append(f"low_sample:{ctx.name}")
+        else:
+            rel_vals.append((rel, float(wf["effective_weight"])))
+        rows.append(
+            {
+                "name": ctx.name,
+                "label": ctx.label,
+                **wf,
+                "sample_home": ctx.sample_home,
+                "sample_away": ctx.sample_away,
+                "reliability": round(rel, 4),
+                "status": STATUS_AVAILABLE if usable else "low_sample",
+            },
+        )
+    overall_rel = _weighted_blend(rel_vals) or 0.0
+    return overall_rel, rows, warnings
+
+
+def shrink_empirical_only(
+    empirical_p: float,
+    overall_reliability: float,
+    league_p: float | None,
+) -> float:
+    if league_p is not None:
+        return overall_reliability * empirical_p + (1.0 - overall_reliability) * league_p
+    return empirical_p
+
+
+def calculate_first_half_draw_market_v1(
+    contexts: GoalMarketContexts,
+    league_probs: dict[str, float | None],
+) -> dict[str, Any]:
+    """Quota Cecchino X PT — hit-rate empirico HT draw + shrinkage lega."""
+    ctx_list = contexts.ht_slices()
+    warnings: list[str] = []
+
+    if _usable_context_count(ctx_list) == 0:
+        return {
+            "market_key": SEL_DRAW_PT,
+            "formula_version": FORMULA_DRAW_PT_V1,
+            "final_odd": None,
+            "status": STATUS_INSUFFICIENT_DATA,
+            "summary": None,
+            "contexts": [],
+            "legacy_excel_parity": {"final_odd": None, "enabled_for_kpi": False},
+            "warnings": ["insufficient_goal_sample:all_contexts"],
+        }
+
+    overall_rel, rel_rows, rel_warnings = _overall_reliability_from_contexts(ctx_list)
+    warnings.extend(rel_warnings)
+
+    emp_p, emp_rows, emp_warnings = weighted_empirical_probability(
+        ctx_list,
+        SEL_DRAW_PT,
+        home_team_id=contexts.home_team_id,
+        away_team_id=contexts.away_team_id,
+        is_ht=True,
+    )
+    warnings.extend(emp_warnings)
+
+    if emp_p is None:
+        return {
+            "market_key": SEL_DRAW_PT,
+            "formula_version": FORMULA_DRAW_PT_V1,
+            "final_odd": None,
+            "status": STATUS_INSUFFICIENT_DATA,
+            "summary": None,
+            "contexts": _merge_context_rows(rel_rows, emp_rows),
+            "legacy_excel_parity": {"final_odd": None, "enabled_for_kpi": False},
+            "warnings": warnings,
+        }
+
+    league_p = league_probs.get(SEL_DRAW_PT)
+    if league_p is None:
+        warnings.append("missing_league_halftime_draw_probability")
+
+    final_raw = shrink_empirical_only(emp_p, overall_rel, league_p)
+    final_odd, prob_raw, prob_capped, prob_warnings = probability_to_odd(final_raw)
+    warnings.extend(prob_warnings)
+
+    status = STATUS_AVAILABLE
+    if overall_rel < 1.0 or any("low_sample" in w for w in warnings):
+        status = STATUS_PARTIAL_LOW_SAMPLE
+    if final_odd is None:
+        status = STATUS_INSUFFICIENT_DATA
+
+    if contexts.skipped_missing_halftime_score > 0:
+        warnings.append(
+            f"skipped_missing_halftime_score:{contexts.skipped_missing_halftime_score}",
+        )
+
+    merged_ctx = _merge_context_rows(rel_rows, emp_rows)
+    summary = {
+        "empirical_probability": round(emp_p, 4),
+        "league_halftime_draw_probability": league_p,
+        "overall_reliability": round(overall_rel, 4),
+        "reliability_badge": _reliability_badge(overall_rel),
+        "probability_raw": round(prob_raw, 4),
+        "probability_capped": round(prob_capped, 4),
+    }
+
+    return {
+        "market_key": SEL_DRAW_PT,
+        "formula_version": FORMULA_DRAW_PT_V1,
+        "final_odd": final_odd,
+        "status": status,
+        "summary": summary,
+        "contexts": merged_ctx,
+        "legacy_excel_parity": {"final_odd": None, "enabled_for_kpi": False},
+        "warnings": warnings,
+    }
+
+
 def build_goal_markets_v2(
     db: Session,
     target_fixture: Fixture,
@@ -618,6 +778,7 @@ def build_goal_markets_v2(
     league_probs = league_event_probabilities(league_fx)
 
     markets: dict[str, Any] = {}
+    markets[SEL_DRAW_PT] = calculate_first_half_draw_market_v1(contexts, league_probs)
     for mk in _FT_MARKETS + _PT_MARKETS:
         markets[mk] = calculate_goal_market_v2(
             mk,

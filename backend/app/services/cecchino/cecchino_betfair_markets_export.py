@@ -13,12 +13,14 @@ from app.services.bookmakers.market_normalize import (
 )
 from app.services.cecchino.cecchino_betfair_odds_mapping import (
     is_strict_double_chance_market,
+    is_strict_first_half_match_winner_market,
     is_strict_match_winner_market,
     normalize_double_chance_selection,
+    normalize_first_half_match_winner_selection,
     normalize_match_winner_selection,
 )
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
-from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH
+from app.services.cecchino.cecchino_selection_keys import MARKET_1X2, MARKET_1X2_FH, MARKET_DC, MARKET_OU, MARKET_OU_FH
 
 _BETFAIR_ID = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
 
@@ -31,6 +33,8 @@ _MANUAL_NOTE = (
 def _normalize_market_label(bet_name: str, bet_id: Any) -> str | None:
     if is_strict_match_winner_market(bet_name, bet_id):
         return MARKET_1X2
+    if is_strict_first_half_match_winner_market(bet_name, bet_id):
+        return MARKET_1X2_FH
     if is_strict_double_chance_market(bet_name):
         return MARKET_DC
     if is_main_full_time_goals_over_under(bet_name, bet_id):
@@ -38,7 +42,7 @@ def _normalize_market_label(bet_name: str, bet_id: Any) -> str | None:
     if is_main_first_half_goals_over_under(bet_name):
         return MARKET_OU_FH
     norm = normalize_api_football_market(bet_name, [])
-    if norm in (MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH):
+    if norm in (MARKET_1X2, MARKET_1X2_FH, MARKET_DC, MARKET_OU, MARKET_OU_FH):
         return norm
     return None
 
@@ -53,6 +57,9 @@ def _normalize_selection(
 ) -> str | None:
     if is_strict_match_winner_market(bet_name, bet_id):
         sk = normalize_match_winner_selection(raw_value, home_team_name, away_team_name)
+        return None if sk == "UNKNOWN" else sk
+    if is_strict_first_half_match_winner_market(bet_name, bet_id):
+        sk = normalize_first_half_match_winner_selection(raw_value, home_team_name, away_team_name)
         return None if sk == "UNKNOWN" else sk
     if is_strict_double_chance_market(bet_name):
         sk = normalize_double_chance_selection(raw_value)

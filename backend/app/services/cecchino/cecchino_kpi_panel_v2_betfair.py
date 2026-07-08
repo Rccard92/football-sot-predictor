@@ -12,11 +12,13 @@ from app.services.cecchino.cecchino_constants import (
 from app.services.cecchino.cecchino_goal_formulas import goal_market_kpi_entry
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
+    MARKET_1X2_FH,
     MARKET_DC,
     MARKET_OU,
     MARKET_OU_FH,
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -47,6 +49,7 @@ KPI_V2_COLUMNS = [
 KPI_V2_ROW_DEFS: tuple[tuple[str, str], ...] = (
     (SEL_HOME, "1"),
     (SEL_DRAW, "X"),
+    (SEL_DRAW_PT, "X PT"),
     (SEL_AWAY, "2"),
     (SEL_ONE_X, "1X"),
     (SEL_X_TWO, "X2"),
@@ -63,6 +66,7 @@ KPI_V2_ROW_DEFS: tuple[tuple[str, str], ...] = (
 _MARKET_FOR_KEY: dict[str, str] = {
     SEL_HOME: MARKET_1X2,
     SEL_DRAW: MARKET_1X2,
+    SEL_DRAW_PT: MARKET_1X2_FH,
     SEL_AWAY: MARKET_1X2,
     SEL_ONE_X: MARKET_DC,
     SEL_X_TWO: MARKET_DC,
@@ -78,7 +82,7 @@ _MARKET_FOR_KEY: dict[str, str] = {
 
 _CECCHINO_1X2_KEYS = {SEL_HOME, SEL_DRAW, SEL_AWAY}
 _CECCHINO_DC_KEYS = {SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO}
-_CECCHINO_OU_KEYS = {
+_CECCHINO_GOAL_MARKET_KEYS = {
     SEL_OVER_1_5,
     SEL_OVER_2_5,
     SEL_UNDER_2_5,
@@ -86,6 +90,7 @@ _CECCHINO_OU_KEYS = {
     SEL_UNDER_PT_1_5,
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
+    SEL_DRAW_PT,
 }
 
 
@@ -274,6 +279,8 @@ def _book_source_for_row(
         return "betfair_raw_over_under"
     if market_key in (SEL_UNDER_PT_1_5, SEL_OVER_PT_0_5, SEL_OVER_PT_1_5):
         return "betfair_raw_over_under_first_half"
+    if market_key == SEL_DRAW_PT:
+        return "betfair_raw_first_half_match_winner"
     if odds_source == "cached_betfair_odds":
         return "cached_betfair_odds"
     return "betfair"
@@ -305,7 +312,7 @@ def _cecchino_quota_for_key(
     cec_dc: dict[str, float | None],
     goal_markets: dict[str, Any] | None = None,
 ) -> tuple[float | None, str | None, str | None]:
-    if market_key in _CECCHINO_OU_KEYS:
+    if market_key in _CECCHINO_GOAL_MARKET_KEYS:
         q, src, st = goal_market_kpi_entry(goal_markets or {}, market_key)
         return q, src, st
     if not cec_ok:

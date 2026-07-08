@@ -35,7 +35,12 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
 )
 
 
-def _kpi_panel(market_key: str, *, book: float = 3.40, cecchino: float = 3.20) -> dict:
+def _kpi_panel(
+    market_key: str,
+    *,
+    book: float = 3.40,
+    cecchino: float = 3.20,
+) -> dict:
     return {
         "rows": [
             {
@@ -47,7 +52,39 @@ def _kpi_panel(market_key: str, *, book: float = 3.40, cecchino: float = 3.20) -
     }
 
 
-def _draw_si_fixture_row(*, book: float = 3.40, cecchino: float = 3.20, **kwargs) -> CecchinoTodayFixture:
+def _full_kpi_panel(
+    *,
+    draw_book: float = 3.40,
+    draw_cecchino: float = 3.20,
+    pt_book: float | None = 2.10,
+    pt_cecchino: float | None = 2.00,
+) -> dict:
+    rows = [
+        {
+            "market_key": SEL_DRAW,
+            "quota_book": draw_book,
+            "quota_cecchino": draw_cecchino,
+        },
+    ]
+    if pt_book is not None and pt_cecchino is not None:
+        rows.append(
+            {
+                "market_key": SEL_DRAW_PT,
+                "quota_book": pt_book,
+                "quota_cecchino": pt_cecchino,
+            },
+        )
+    return {"rows": rows}
+
+
+def _draw_si_fixture_row(
+    *,
+    book: float = 3.40,
+    cecchino: float = 3.20,
+    pt_book: float | None = 2.10,
+    pt_cecchino: float | None = 2.00,
+    **kwargs,
+) -> CecchinoTodayFixture:
     row = CecchinoTodayFixture(
         scan_date=date(2026, 6, 8),
         provider_source=PROVIDER_API_FOOTBALL,
@@ -66,7 +103,12 @@ def _draw_si_fixture_row(*, book: float = 3.40, cecchino: float = 3.20, **kwargs
             "rows": [{"key": "draw", "label": "SEGNO X", "signals": {"excel_d": "SI"}}],
         },
     }
-    row.kpi_panel_json = _kpi_panel(SEL_DRAW, book=book, cecchino=cecchino)
+    row.kpi_panel_json = _full_kpi_panel(
+        draw_book=book,
+        draw_cecchino=cecchino,
+        pt_book=pt_book,
+        pt_cecchino=pt_cecchino,
+    )
     for key, value in kwargs.items():
         setattr(row, key, value)
     return row
@@ -103,10 +145,24 @@ def test_sync_draw_value_pass_creates_draw_and_draw_pt():
     groups = {call.args[0].signal_group for call in db.add.call_args_list}
     assert groups == {"DRAW", "DRAW_PT"}
     pt = next(call.args[0] for call in db.add.call_args_list if call.args[0].signal_group == "DRAW_PT")
-    assert pt.quota_book is None
-    assert pt.quota_cecchino is None
+    assert float(pt.quota_book) == pytest.approx(2.10)
+    assert float(pt.quota_cecchino) == pytest.approx(2.00)
     assert pt.target_market_key == SEL_DRAW_PT
     assert pt.target_period == "HT"
+
+
+def test_sync_draw_pass_without_draw_pt_quotes_skips_pt():
+    db = MagicMock()
+    row = _draw_si_fixture_row(pt_book=None, pt_cecchino=None)
+    db.get.return_value = row
+    db.scalars.return_value.all.return_value = []
+
+    counts = sync_cecchino_signal_activations(db, 99)
+
+    assert counts["created"] == 1
+    assert counts["draw_pt_created"] == 0
+    groups = {call.args[0].signal_group for call in db.add.call_args_list}
+    assert groups == {"DRAW"}
 
 
 def test_sync_draw_value_fail_creates_neither():

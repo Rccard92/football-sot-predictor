@@ -13,11 +13,13 @@ from app.services.cecchino.cecchino_bookmaker_derive import derive_double_chance
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKER, PROVIDER_API_FOOTBALL
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
+    MARKET_1X2_FH,
     MARKET_DC,
     MARKET_OU,
     MARKET_OU_FH,
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -25,7 +27,7 @@ from app.services.cecchino.cecchino_selection_keys import (
 )
 
 _BETFAIR_ID = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
-_WANTED_MARKETS = [MARKET_1X2, MARKET_DC, MARKET_OU, MARKET_OU_FH]
+_WANTED_MARKETS = [MARKET_1X2, MARKET_1X2_FH, MARKET_DC, MARKET_OU, MARKET_OU_FH]
 
 
 def _build_markets_from_parsed(
@@ -77,6 +79,9 @@ def _build_markets_from_parsed(
     ou_fh = markets_raw.get(MARKET_OU_FH, {})
     if ou_fh:
         markets[MARKET_OU_FH] = dict(ou_fh)
+    fh_1x2 = markets_raw.get(MARKET_1X2_FH, {})
+    if fh_1x2:
+        markets[MARKET_1X2_FH] = dict(fh_1x2)
 
     return markets, dc_derived, "available", prov_out
 

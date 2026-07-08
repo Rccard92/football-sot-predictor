@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
+
+- Aggiunto mercato **X PT** (pareggio primo tempo) come riga reale del Pannello KPI Cecchino.
+- Quota book da Betfair/API-Football (`MARKET_1X2_FH` / `DRAW_PT`) quando il mercato FH 1X2 è disponibile.
+- Quota Cecchino da storico HT DB (`first_half_draw_empirical_shrinkage_v1`), senza API esterne.
+- Monitoraggio Segnali: X PT usa quote proprie KPI + value gate; trigger parent X FT invariato.
+- **Invariato:** formula rating KPI, Segnali KPI, soglie minime book, 1→1X, 2→X2.
+
 ## Cecchino — Modifica formula Under D39 (2026-07-08)
 
 - Aggiornata formula segnale Under / UNDER PT, colonna Excel D, cella D39.

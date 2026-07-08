@@ -6,7 +6,7 @@ import {
   todayEdgePositive,
 } from './cecchinoTodayStyles'
 
-export const KPI_PRIMARY_LABELS = new Set(['1', 'X', '2', '1X', 'X2', '12'])
+export const KPI_PRIMARY_LABELS = new Set(['1', 'X', 'X PT', '2', '1X', 'X2', '12'])
 
 export const KPI_OVER_LABELS = new Set([
   'OVER 1.5',

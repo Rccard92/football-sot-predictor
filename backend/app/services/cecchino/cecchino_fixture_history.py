@@ -447,6 +447,7 @@ class GoalTotals:
     over_pt_0_5_hits: int
     over_pt_1_5_hits: int
     under_pt_1_5_hits: int
+    halftime_draw_hits: int = 0
     fixture_ids: list[int] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -462,6 +463,7 @@ class GoalTotals:
             "over_pt_0_5_hits": self.over_pt_0_5_hits,
             "over_pt_1_5_hits": self.over_pt_1_5_hits,
             "under_pt_1_5_hits": self.under_pt_1_5_hits,
+            "halftime_draw_hits": self.halftime_draw_hits,
             "fixture_ids": list(self.fixture_ids),
         }
 
@@ -522,6 +524,7 @@ def aggregate_goal_totals(fixtures: list[Fixture], team_id: int) -> GoalTotals:
     gf = ga = tg = 0
     o15 = o25 = u25 = u35 = 0
     pt05 = pt15 = upt15 = 0
+    ht_draw = 0
     ids: list[int] = []
     sample = 0
 
@@ -678,6 +681,7 @@ def aggregate_halftime_goal_totals(
     gf = ga = tg = 0
     o15 = o25 = u25 = u35 = 0
     pt05 = pt15 = upt15 = 0
+    ht_draw = 0
     ids: list[int] = []
     sample = 0
 
@@ -705,6 +709,8 @@ def aggregate_halftime_goal_totals(
             pt15 += 1
         if match_total <= 1:
             upt15 += 1
+        if goals_for == goals_against:
+            ht_draw += 1
 
     return GoalTotals(
         sample=sample,
@@ -718,6 +724,7 @@ def aggregate_halftime_goal_totals(
         over_pt_0_5_hits=pt05,
         over_pt_1_5_hits=pt15,
         under_pt_1_5_hits=upt15,
+        halftime_draw_hits=ht_draw,
         fixture_ids=ids,
     )
 

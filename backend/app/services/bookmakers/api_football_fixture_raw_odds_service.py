@@ -22,6 +22,7 @@ from app.services.bookmakers.market_normalize import (
     SEL_OVER_PT_0_5,
     SEL_OVER_PT_1_5,
 )
+from app.services.cecchino.cecchino_betfair_odds_mapping import is_strict_first_half_match_winner_market
 from app.services.cecchino.cecchino_constants import CECCHINO_BOOKMAKERS
 
 _BOOKMAKER_NAMES = {int(b["provider_bookmaker_id"]): str(b["name"]) for b in CECCHINO_BOOKMAKERS}
@@ -130,6 +131,7 @@ class ApiFootballFixtureRawOddsService:
         bookmakers_found: list[str] = []
         markets_found: set[str] = set()
         match_winner_found = False
+        draw_pt_found = False
         ft_debug: dict[str, Any] = {
             "OVER_1_5": _empty_ou_debug_entry(),
             "OVER_2_5": _empty_ou_debug_entry(),
@@ -175,6 +177,8 @@ class ApiFootballFixtureRawOddsService:
                     markets_found.add(normalized)
                 if normalized == MARKET_MATCH_WINNER_1X2:
                     match_winner_found = True
+                if is_strict_first_half_match_winner_market(bet_name, bet_id):
+                    draw_pt_found = True
 
                 is_ft_ou = is_main_full_time_goals_over_under(bet_name, bet_id)
                 is_fh_ou = is_main_first_half_goals_over_under(bet_name)
@@ -318,6 +322,7 @@ class ApiFootballFixtureRawOddsService:
                 "over_2_5_found": ft_debug["OVER_2_5"]["found"],
                 "over_pt_0_5_found": fh_debug["OVER_PT_0_5"]["found"],
                 "over_pt_1_5_found": fh_debug["OVER_PT_1_5"]["found"],
+                "draw_pt_found": draw_pt_found,
             },
             "over_under_full_time_debug": ft_debug,
             "over_under_first_half_debug": fh_debug,

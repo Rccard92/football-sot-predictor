@@ -2,6 +2,13 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino — X PT reale nel Pannello KPI (2026-07-08)
+
+- Riga KPI **X PT** con quota book FH 1X2 e quota Cecchino empirica HT draw.
+- File: `cecchino_betfair_odds_mapping.py`, `cecchino_goal_poisson_v2.py`, `cecchino_kpi_panel_v2_betfair.py`.
+- X PT non usa più la quota X finale come proxy nel monitoraggio.
+- Segnali KPI non includono DRAW_PT (`KPI_MARKET_FOR_KEY` invariato).
+
 ## Cecchino — Modifica formula Under D39 (2026-07-08)
 
 - Formula D39 (UNDER / UNDER PT, Excel D): aggiunte condizioni `F32 >= F34` e `UNDER2.5 <= 2`.

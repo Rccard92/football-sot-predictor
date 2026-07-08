@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE, CecchinoTodayFixture
 from app.services.cecchino.cecchino_betfair_odds_mapping import (
     is_strict_double_chance_market,
+    is_strict_first_half_match_winner_market,
     is_strict_match_winner_market,
 )
 from app.services.cecchino.cecchino_betfair_odds_payload import (
@@ -22,6 +23,7 @@ from app.services.cecchino.cecchino_goal_formulas import build_goal_market_debug
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -40,6 +42,7 @@ _BETFAIR_ID = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
 _DEBUG_SELECTIONS = (
     SEL_HOME,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_AWAY,
     SEL_ONE_X,
     SEL_X_TWO,
@@ -82,6 +85,7 @@ def _extract_raw_markets_used(snapshot: dict[str, Any] | None) -> list[dict[str,
                 bet_id = bet.get("id")
                 if not (
                     is_strict_match_winner_market(bet_name, bet_id)
+                    or is_strict_first_half_match_winner_market(bet_name, bet_id)
                     or is_strict_double_chance_market(bet_name)
                     or bet_name in ("Goals Over/Under", "Goals Over/Under First Half", "Goals Over/Under - First Half")
                 ):

@@ -1473,6 +1473,7 @@ export type BookmakerFixtureRawOddsResponse = {
     over_2_5_found: boolean
     over_pt_0_5_found: boolean
     over_pt_1_5_found: boolean
+    draw_pt_found: boolean
   }
   over_under_full_time_debug: BookmakerOverUnderFullTimeDebug
   over_under_first_half_debug: BookmakerOverUnderFirstHalfDebug

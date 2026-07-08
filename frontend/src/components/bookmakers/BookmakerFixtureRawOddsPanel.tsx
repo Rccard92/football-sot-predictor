@@ -178,6 +178,7 @@ export function BookmakerFixtureRawOddsPanel({
               <li>Over 2.5 trovato (strict FT): {result.summary.over_2_5_found ? 'sì' : 'no'}</li>
               <li>Over PT 0.5 trovato (strict FH): {result.summary.over_pt_0_5_found ? 'sì' : 'no'}</li>
               <li>Over PT 1.5 trovato (strict FH): {result.summary.over_pt_1_5_found ? 'sì' : 'no'}</li>
+              <li>X PT / FH 1X2 trovato (strict): {result.summary.draw_pt_found ? 'sì' : 'no'}</li>
             </ul>
             <p className="mt-3 font-semibold text-slate-800">Over/Under full time (strict)</p>
             <ul className="mt-1 list-inside list-disc space-y-0.5">

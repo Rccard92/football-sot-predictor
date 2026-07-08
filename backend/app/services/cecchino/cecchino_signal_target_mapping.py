@@ -164,11 +164,11 @@ def map_draw_pt_derived_target() -> dict[str, Any]:
 
 
 def build_draw_pt_derived_reason(*, quota_book: Any = None, quota_cecchino: Any = None) -> str:
-    parts = [DRAW_PT_DERIVED_REASON, "value_gate_source=DRAW"]
+    parts = [DRAW_PT_DERIVED_REASON, "value_gate_source=DRAW_PT"]
     if quota_book is not None:
-        parts.append(f"value_gate_quota_book={quota_book}")
+        parts.append(f"quota_book={quota_book}")
     if quota_cecchino is not None:
-        parts.append(f"value_gate_quota_cecchino={quota_cecchino}")
+        parts.append(f"quota_cecchino={quota_cecchino}")
     return "; ".join(parts)
 
 

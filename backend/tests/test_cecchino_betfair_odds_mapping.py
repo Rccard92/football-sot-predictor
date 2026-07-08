@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 from app.services.cecchino.cecchino_api_football_odds import parse_api_football_odds_response
 from app.services.cecchino.cecchino_betfair_odds_mapping import (
     is_strict_double_chance_market,
+    is_strict_first_half_match_winner_market,
     is_strict_match_winner_market,
     normalize_double_chance_selection,
+    normalize_first_half_match_winner_selection,
     normalize_match_winner_selection,
 )
 from app.services.cecchino.cecchino_betfair_odds_payload import build_betfair_payload_from_raw
@@ -18,8 +20,10 @@ from app.services.cecchino.cecchino_kpi_debug_json import build_kpi_debug_json, 
 from app.services.cecchino.cecchino_today_odds_meta import attach_scan_odds_meta
 from app.services.cecchino.cecchino_selection_keys import (
     MARKET_1X2,
+    MARKET_1X2_FH,
     SEL_AWAY,
     SEL_DRAW,
+    SEL_DRAW_PT,
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
@@ -46,6 +50,20 @@ def test_strict_match_winner_only():
     assert not is_strict_match_winner_market("Team To Score First", 14)
 
 
+def test_strict_first_half_match_winner_market():
+    assert is_strict_first_half_match_winner_market("First Half Winner", 13)
+    assert is_strict_first_half_match_winner_market("1st Half Winner", 13)
+    assert is_strict_first_half_match_winner_market("Half Time Result", 12)
+    assert not is_strict_first_half_match_winner_market("Match Winner", 1)
+    assert not is_strict_first_half_match_winner_market("Second Half Winner", 3)
+    assert not is_strict_first_half_match_winner_market("First Half Over/Under", 5)
+
+
+def test_normalize_fh_match_winner_draw():
+    assert normalize_first_half_match_winner_selection("Draw") == SEL_DRAW_PT
+    assert normalize_first_half_match_winner_selection("X") == SEL_DRAW_PT
+
+
 def test_normalize_match_winner_home_draw_away():
     assert normalize_match_winner_selection("Home") == SEL_HOME
     assert normalize_match_winner_selection("Draw") == SEL_DRAW
@@ -70,6 +88,46 @@ def test_first_half_winner_not_used_for_1x2():
     assert by_sk[SEL_HOME] == 2.0
     assert by_sk[SEL_DRAW] == 3.2
     assert by_sk[SEL_AWAY] == 4.0
+
+
+def test_first_half_winner_maps_draw_pt():
+    rows, _ = parse_api_football_odds_response(
+        _payload(
+            _bet("First Half Winner", 13, [("Home", "2.5"), ("Draw", "2.0"), ("Away", "3.0")]),
+        ),
+        strict_betfair_kpi=True,
+        requested_markets=[MARKET_1X2_FH],
+    )
+    draw_pt = next(r for r in rows if r["selection_key"] == SEL_DRAW_PT)
+    assert draw_pt["normalized_market"] == MARKET_1X2_FH
+    assert draw_pt["odds_value"] == 2.0
+    assert draw_pt["provenance"]["source"] == "betfair_raw_first_half_match_winner"
+
+
+def test_half_time_result_x_maps_draw_pt():
+    rows, _ = parse_api_football_odds_response(
+        _payload(_bet("Half Time Result", 12, [("X", "2.15")])),
+        strict_betfair_kpi=True,
+        requested_markets=[MARKET_1X2_FH],
+    )
+    assert rows[0]["selection_key"] == SEL_DRAW_PT
+    assert rows[0]["selection_label"] == "X PT"
+
+
+def test_fh_payload_includes_draw_pt():
+    bid = int(CECCHINO_BOOKMAKER["provider_bookmaker_id"])
+    payload = build_betfair_payload_from_raw(
+        {
+            bid: _payload(
+                _bet("Match Winner", 1, [("Home", "2.0"), ("Draw", "3.2"), ("Away", "4.0")]),
+                _bet("1st Half Winner", 13, [("Draw", "2.05")]),
+            ),
+        },
+    )
+    markets = payload["bookmakers"][0]["markets"]
+    assert markets["MATCH_WINNER_1X2_FIRST_HALF"][SEL_DRAW_PT] == 2.05
+    prov = payload["provenance_by_selection"][SEL_DRAW_PT]
+    assert prov["source"] == "betfair_raw_first_half_match_winner"
 
 
 def test_double_chance_raw_mapping():

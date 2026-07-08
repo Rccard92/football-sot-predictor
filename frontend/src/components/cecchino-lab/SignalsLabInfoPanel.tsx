@@ -7,8 +7,9 @@ export function SignalsLabInfoPanel() {
         Un segnale tecnico SI senza valore quota è escluso anche se poi risultasse vincente.
       </p>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
-        X PT misura il pareggio a primo tempo quando la X finale era segnale a valore. Non usa una
-        quota primo tempo autonoma: è osservazione derivata dal filtro valore sulla X finale.
+        X PT misura il pareggio a primo tempo con quote reali book e Cecchino dal Pannello KPI. Nel
+        monitoraggio viene creato solo quando la X finale era segnale a valore e anche X PT passa il
+        filtro valore sulle proprie quote.
       </p>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
         La Quota media prese considera solo le quote dei segnali vinti. La Quota Void indica la quota
