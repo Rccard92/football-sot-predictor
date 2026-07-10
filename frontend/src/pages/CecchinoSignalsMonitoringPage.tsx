@@ -19,6 +19,7 @@ import {
   getCecchinoSignalsModelsSummary,
   getCecchinoSignalsSummary,
   revaluateCecchinoSignals,
+  formatMinBookOddsBacktestMessage,
   SELECTED_MODEL_STORAGE_KEY,
   SIGNAL_GROUPS,
   SOURCE_COLUMNS,
@@ -322,7 +323,10 @@ export function CecchinoSignalsMonitoringPage() {
       <SignalMinBookOddsPanel
         dateFrom={dateFrom}
         dateTo={dateTo}
-        onBacktestComplete={() => void loadData()}
+        onBacktestComplete={async (summary) => {
+          await loadData()
+          if (summary) setActionMessage(formatMinBookOddsBacktestMessage(summary))
+        }}
       />
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">

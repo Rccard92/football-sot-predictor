@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
@@ -100,6 +101,7 @@ def recompute_cecchino_signals_for_model(
     model_key: str,
     *,
     evaluate_after: bool = True,
+    min_book_odds: dict[str, Decimal] | None = None,
 ) -> dict[str, Any]:
     """Ricalcola segnali 1X2 per un modello pesi senza modificare cecchino_output_json."""
     mk = str(model_key).upper()
@@ -123,6 +125,7 @@ def recompute_cecchino_signals_for_model(
         model_key=mk,
         signals_matrix=signals_matrix,
         model_meta=meta,
+        min_book_odds=min_book_odds,
     )
 
     eval_counts: dict[str, int] = {}
@@ -164,6 +167,7 @@ def backtest_cecchino_weight_models(
     evaluate_after: bool = True,
     use_existing_bookmaker_odds: bool = True,
     refresh_bookmaker_odds: bool = False,
+    min_book_odds: dict[str, Decimal] | None = None,
 ) -> dict[str, Any]:
     """Backtest offline modelli pesi su range date — zero API-Football."""
     if refresh_bookmaker_odds:
@@ -194,6 +198,7 @@ def backtest_cecchino_weight_models(
                 int(row.id),
                 mk,
                 evaluate_after=evaluate_after,
+                min_book_odds=min_book_odds,
             )
             if result.get("status") == "ok":
                 model_created += int(result.get("created") or 0) + int(result.get("updated") or 0)

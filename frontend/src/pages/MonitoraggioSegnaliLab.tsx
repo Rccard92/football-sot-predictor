@@ -121,7 +121,9 @@ export function MonitoraggioSegnaliLab() {
           variant="lab"
           dateFrom={lab.dateFrom}
           dateTo={lab.dateTo}
-          onBacktestComplete={() => void lab.loadAll()}
+          onBacktestComplete={async () => {
+            await lab.loadAll()
+          }}
         />
 
         {lab.loading && !lab.summary ? (

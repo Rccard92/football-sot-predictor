@@ -410,18 +410,89 @@ export type SignalMinBookOddsBacktestSummary = {
   missing_cecchino_quote_skipped: number
   invalid_quote_skipped: number
   deactivated_no_value: number
+  signals_created?: number
+  signals_updated?: number
+  signals_deactivated?: number
   evaluated: number
   won: number
   lost: number
   pending: number
   not_evaluable: number
+  models_processed?: string[]
+  models_value_passed?: number
+  models_min_book_odd_skipped?: number
+  models_deactivated_min_book_odd?: number
+}
+
+export type SignalMinBookOddsModelsBacktest = {
+  status: string
+  fixtures_found: number
+  models_processed: string[]
+  by_model: {
+    model_key: string
+    signals_created: number
+    sync_operations: number
+  }[]
+  value_passed?: number
+  min_book_odd_skipped?: number
+  deactivated_min_book_odd?: number
+  warnings?: string[]
 }
 
 export type SignalMinBookOddsSaveAndBacktestResponse = {
   status: 'ok' | 'partial' | 'error'
   settings: SignalMinBookOddSetting[]
   backtest: SignalMinBookOddsBacktestSummary
+  default_backtest?: SignalMinBookOddsBacktestSummary
+  models_backtest?: SignalMinBookOddsModelsBacktest
   errors: string[]
+}
+
+export function formatMinBookOddsBacktestMessage(
+  summary: SignalMinBookOddsBacktestSummary,
+): string {
+  const models = summary.models_processed?.length
+    ? ` Modelli ${summary.models_processed.join(', ')} ricalcolati.`
+    : ''
+  return (
+    `Ricalcolo completato: ${summary.si_cells_seen} celle SI, ` +
+    `${summary.value_passed} a valore (default), ` +
+    `${summary.min_book_odd_skipped} esclusi sotto soglia, ` +
+    `${summary.deactivated_min_book_odd} disattivati.` +
+  `${models}`
+  )
+}
+
+export function formatMinBookOddsBacktestPanelMessage(
+  summary: SignalMinBookOddsBacktestSummary,
+  status: 'ok' | 'partial' | 'error',
+): string {
+  const modelsLabel =
+    summary.models_processed && summary.models_processed.length > 0
+      ? ` Modelli ${summary.models_processed.join('-')} ricalcolati.`
+      : ''
+  const base =
+    `Ricalcolo completato: ${summary.si_cells_seen} celle SI, ` +
+    `${summary.value_passed} segnali a valore, ` +
+    `${summary.min_book_odd_skipped} esclusi sotto soglia minima, ` +
+    `${summary.deactivated_min_book_odd} disattivati.` +
+    modelsLabel
+  if (status === 'partial') {
+    return `${base} Completato con avvisi.`
+  }
+  if (
+    summary.si_cells_seen > 0 &&
+    summary.value_passed === 0 &&
+    summary.min_book_odd_skipped === 0 &&
+    summary.deactivated_min_book_odd === 0
+  ) {
+    return (
+      'Nessun nuovo segnale rientrato: le partite erano bloccate da formula NO, ' +
+      'quota book < quota Cecchino o quote mancanti.' +
+      modelsLabel
+    )
+  }
+  return base
 }
 
 export async function getSignalMinBookOddsSettings(): Promise<SignalMinBookOddsSettingsResponse> {

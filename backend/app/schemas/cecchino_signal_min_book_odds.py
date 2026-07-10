@@ -52,15 +52,24 @@ class SignalMinBookOddsBacktestSummary(BaseModel):
     missing_cecchino_quote_skipped: int = 0
     invalid_quote_skipped: int = 0
     deactivated_no_value: int = 0
+    signals_created: int = 0
+    signals_updated: int = 0
+    signals_deactivated: int = 0
     evaluated: int = 0
     won: int = 0
     lost: int = 0
     pending: int = 0
     not_evaluable: int = 0
+    models_processed: list[str] = Field(default_factory=list)
+    models_value_passed: int = 0
+    models_min_book_odd_skipped: int = 0
+    models_deactivated_min_book_odd: int = 0
 
 
 class SignalMinBookOddsSaveAndBacktestResponse(BaseModel):
     status: str
     settings: list[SignalMinBookOddSettingItem]
     backtest: SignalMinBookOddsBacktestSummary
+    default_backtest: SignalMinBookOddsBacktestSummary | None = None
+    models_backtest: dict | None = None
     errors: list[str] = []

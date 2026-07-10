@@ -4,6 +4,7 @@ import {
   resetSignalMinBookOddsDefaults,
   saveSignalMinBookOddsAndBacktest,
   updateSignalMinBookOddsSettings,
+  formatMinBookOddsBacktestPanelMessage,
   type SignalMinBookOddSetting,
   type SignalMinBookOddsBacktestSummary,
 } from '../../lib/cecchinoSignalsApi'
@@ -14,7 +15,7 @@ type SignalMinBookOddsPanelProps = {
   variant?: 'monitoring' | 'lab'
   dateFrom: string
   dateTo: string
-  onBacktestComplete?: (summary: SignalMinBookOddsBacktestSummary | null) => void
+  onBacktestComplete?: (summary: SignalMinBookOddsBacktestSummary | null) => void | Promise<void>
 }
 
 type EditableRow = SignalMinBookOddSetting & { inputValue: string }
@@ -190,14 +191,9 @@ export function SignalMinBookOddsPanel({
       setRows(editable)
       setSavedRows(editable)
       setLastBacktest(res.backtest)
-      onBacktestComplete?.(res.backtest)
-      const partial = res.status === 'partial'
-      setSuccess(
-        partial
-          ? `Ricalcolo completato con avvisi. A valore: ${res.backtest.value_passed}, sotto soglia: ${res.backtest.min_book_odd_skipped}.`
-          : `Ricalcolo completato. A valore: ${res.backtest.value_passed}, sotto soglia: ${res.backtest.min_book_odd_skipped}, disattivati: ${res.backtest.deactivated_min_book_odd}.`,
-      )
-      if (partial && res.errors.length > 0) {
+      await onBacktestComplete?.(res.backtest)
+      setSuccess(formatMinBookOddsBacktestPanelMessage(res.backtest, res.status))
+      if (res.status === 'partial' && res.errors.length > 0) {
         setError(res.errors.slice(0, 3).join(' · '))
       }
     } catch (err) {
@@ -222,6 +218,12 @@ export function SignalMinBookOddsPanel({
         <div>
           <h2 className="text-sm font-semibold text-slate-800">Soglie quota book</h2>
           <p className="mt-1 text-sm text-slate-600">{SIGNAL_VALUE_FILTER_NOTE}</p>
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Abbassare una soglia fa rientrare solo segnali che erano già SI nella matrice e già a
+            valore rispetto alla quota Cecchino. Non trasforma formule NO in SI. Se quota book &lt;
+            quota Cecchino o mancano quote, il segnale non entra comunque: la soglia minima è solo
+            il terzo filtro.
+          </p>
         </div>
         {dirty && (
           <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
@@ -344,9 +346,18 @@ export function SignalMinBookOddsPanel({
         <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           <p className="font-medium text-slate-800">Ultimo ricalcolo</p>
           <p className="mt-1">
-            A valore: {lastBacktest.value_passed} · Sotto soglia: {lastBacktest.min_book_odd_skipped}{' '}
-            · Disattivati soglia: {lastBacktest.deactivated_min_book_odd} · Quote mancanti book:{' '}
-            {lastBacktest.missing_book_quote_skipped} · cecchino:{' '}
+            A valore (default): {lastBacktest.value_passed} · Sotto soglia:{' '}
+            {lastBacktest.min_book_odd_skipped} · Disattivati soglia:{' '}
+            {lastBacktest.deactivated_min_book_odd} · Celle SI: {lastBacktest.si_cells_seen}
+            {lastBacktest.models_processed && lastBacktest.models_processed.length > 0
+              ? ` · Modelli ricalcolati: ${lastBacktest.models_processed.join(', ')}`
+              : ''}
+            {lastBacktest.models_value_passed != null
+              ? ` · A valore modelli A-F: ${lastBacktest.models_value_passed}`
+              : ''}
+          </p>
+          <p className="mt-1">
+            Quote mancanti book: {lastBacktest.missing_book_quote_skipped} · cecchino:{' '}
             {lastBacktest.missing_cecchino_quote_skipped}
           </p>
         </div>

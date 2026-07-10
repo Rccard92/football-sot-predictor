@@ -170,7 +170,7 @@ def test_sync_sets_model_key_f_by_default():
     db.scalars.return_value.all.return_value = []
 
     counts = sync_cecchino_signal_activations(db, 99)
-    assert counts["created"] == 2
+    assert counts["created"] == 1
     added = db.add.call_args[0][0]
     assert added.model_key == "F"
     assert added.weights_version == "model_F_30_30_20_20"
@@ -391,12 +391,16 @@ def test_export_csv_includes_model_columns():
     db.scalars.return_value.all.return_value = [row]
     db.scalar.return_value = 1
 
-    csv_text = export_signals_csv(
-        db,
-        date_from=date(2026, 6, 1),
-        date_to=date(2026, 6, 30),
-        model_key="E",
-    )
+    with patch(
+        "app.services.cecchino.cecchino_signal_min_book_odd_settings_service.load_signal_min_book_odds",
+        return_value={},
+    ):
+        csv_text = export_signals_csv(
+            db,
+            date_from=date(2026, 6, 1),
+            date_to=date(2026, 6, 30),
+            model_key="E",
+        )
     lines = csv_text.strip().splitlines()
     assert "Modello" in lines[0]
     assert "Pesi modello" in lines[0]
@@ -471,6 +475,9 @@ def test_backtest_force_rebuilds_without_duplicate_per_model():
     with patch(
         "app.services.cecchino.cecchino_signal_model_backtest.build_signals_matrix_for_model",
         return_value=matrix,
+    ), patch(
+        "app.services.cecchino.cecchino_signal_sync.load_signal_min_book_odds",
+        return_value={},
     ):
         recompute_cecchino_signals_for_model(db, 99, "A", evaluate_after=False)
         recompute_cecchino_signals_for_model(db, 99, "A", evaluate_after=False)
