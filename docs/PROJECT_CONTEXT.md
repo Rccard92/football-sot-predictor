@@ -38,6 +38,18 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
+
+Laboratorio offline Cecchino per misurare copertura dati storici prima di definire la formula Credibilità X.
+
+- Backend: `backend/app/services/cecchino/cecchino_draw_credibility_research.py`
+- Endpoint: `POST /api/admin/cecchino/research/draw-credibility/audit`
+- Frontend: `/cecchino/ricerca-credibilita-x` (sezione Cecchino sidebar)
+- Nessuna API esterna, nessuna migration, nessuna modifica al modello produttivo
+- Prossimo step: Fase 1B dataset storico
+
+Documentazione: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
+
 ## Cecchino — Condizione F32>=F34 su tutte le formule X (2026-07-09)
 
 Tutte le formule SEGNO X (D42/E42/F42/G42) richiedono quota Cecchino 1 >= quota Cecchino 2 (`F32>=F34` / `q1>=q2`). Nessuna modifica Under/Over, Pannello KPI, Segnali KPI, soglie quota book.

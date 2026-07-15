@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
+
+- Modulo di ricerca **indipendente** per audit copertura dati storici Credibilità X (`cecchino_draw_credibility_research.py`).
+- **Nessuna modifica produttiva**: F36, Dominanza, Gap, Credibilità X attuale, segnali, KPI, rating, value gate, ICM, Intensità Goal invariati.
+- **Nessuna API esterna**: solo SELECT su `cecchino_today_fixtures` + lettura JSON persistiti (`cecchino_output_json`, `kpi_panel_json`, `odds_snapshot_json`).
+- **Fonti Cecchino riutilizzate**: `resolve_under_2_5_cecchino_odd`, `goal_market_kpi_entry`, `normalize_kpi_panel_rows`, `build_betfair_payload_from_snapshot`.
+- **Definizioni**: `usable_internal_research` = FT valido + Cecchino 1X2 odds/prob + Under/Over 2.5 Cecchino; `usable_market_comparison` = internal + Book 1X2 + Book U/O 2.5.
+- **Endpoint**: `POST /api/admin/cecchino/research/draw-credibility/audit`.
+- **Frontend**: pagina `/cecchino/ricerca-credibilita-x` (sidebar Cecchino).
+- **Nessuna migration**. Prossimo step: dataset storico Fase 1B.
+
 ## Cecchino — Condizione F32>=F34 su tutte le formule X (2026-07-09)
 
 - Aggiunta condizione `F32>=F34` (quota Cecchino 1 >= quota Cecchino 2) a **tutte** le formule del segno X.

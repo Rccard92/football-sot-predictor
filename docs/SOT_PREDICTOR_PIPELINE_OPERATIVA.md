@@ -1,5 +1,14 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
+
+- Service offline `build_draw_credibility_coverage_audit`: legge fixture `cecchino_today_fixtures` per `scan_date` in range, opz. filtro `competition_id` e `only_eligible`.
+- Verifica per fixture: stato concluso, risultato FT, input Cecchino 1/X/2 (quote + prob), Under/Over 2.5 Cecchino, quote Book (kpi_panel → odds_snapshot fallback).
+- Output: summary, coverage funnel, motivi esclusione, distribuzione per campionato/mese, debug samples (max 20 per motivo).
+- Route admin: `POST /api/admin/cecchino/research/draw-credibility/audit` (body: date_from, date_to, competition_id?, only_eligible).
+- UI research: `/cecchino/ricerca-credibilita-x` — laboratorio, non tocca pipeline produttiva.
+- **Nessuna migration**. Prossimo step Fase 1B: export dataset storico per calibrazione Credibilità X.
+
 ## Cecchino — Condizione F32>=F34 su tutte le formule X (2026-07-09)
 
 - `build_signals_matrix`: tutte le colonne `draw` (D/E/F/G) richiedono `q1 >= q2`.

@@ -2,6 +2,26 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
+
+Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs Squilibrio). Completamente offline.
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Service | `cecchino_draw_credibility_research.py` → `build_draw_credibility_coverage_audit` |
+| Tabella | `cecchino_today_fixtures` (solo lettura) |
+| Input Cecchino | `cecchino_output_json.final` (quota/prob 1/X/2), `goal_markets` + `kpi_panel_json` per Under/Over 2.5 via `SEL_UNDER_2_5` / `SEL_OVER_2_5` |
+| Input Book | `kpi_panel_json.rows[].quota_book` → fallback `odds_snapshot_json` (Betfair payload) |
+| Target | `draw_ft = score_fulltime_home == score_fulltime_away` (solo fixture concluse con FT valido) |
+| Internal usable | FT + Cecchino 1X2 completo + Under/Over 2.5 Cecchino |
+| Market usable | Internal + Book 1X2 + Book Under/Over 2.5 |
+| API | `POST /api/admin/cecchino/research/draw-credibility/audit` |
+| UI | `/cecchino/ricerca-credibilita-x` |
+| Migration | Nessuna |
+| Prossimo step | Fase 1B — dataset storico per formula Credibilità X |
+
+**Non modificato:** `cecchino_balance_analysis.py`, formule F36/Dominanza/Gap, segnali, KPI panel produttivo, rating, value gate.
+
 ## Cecchino — Condizione F32>=F34 su tutte le formule X (2026-07-09)
 
 - Uniformate D42/E42/F42/G42 con `F32 >= F34` (backend `q1 >= q2`).

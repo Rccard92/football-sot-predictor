@@ -30,6 +30,12 @@ export const NAV_CECCHINO: NavItem[] = [
   { to: '/monitoraggio-segnali', label: 'Monitoraggio Segnali', icon: 'target', section: 'cecchino' },
   { to: '/monitoraggio-segnali-lab', label: 'Segnali Lab', icon: 'flask', section: 'cecchino' },
   { to: '/segnali-kpi', label: 'Segnali KPI', icon: 'bar-chart', section: 'cecchino' },
+  {
+    to: '/cecchino/ricerca-credibilita-x',
+    label: 'Ricerca Credibilità X',
+    icon: 'flask',
+    section: 'cecchino',
+  },
 ]
 
 export const NAV_MAIN: NavItem[] = [

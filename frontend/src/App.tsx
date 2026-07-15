@@ -20,6 +20,7 @@ import { CecchinoSignalsMonitoringPage } from './pages/CecchinoSignalsMonitoring
 import { MonitoraggioSegnaliLab } from './pages/MonitoraggioSegnaliLab'
 import { SignalsLabErrorBoundary } from './components/cecchino-lab/SignalsLabErrorBoundary'
 import { SegnaliKpiPage } from './pages/SegnaliKpiPage'
+import { RicercaCredibilitaXPage } from './pages/RicercaCredibilitaXPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
@@ -41,6 +42,7 @@ export default function App() {
             }
           />
           <Route path="/segnali-kpi" element={<SegnaliKpiPage />} />
+          <Route path="/cecchino/ricerca-credibilita-x" element={<RicercaCredibilitaXPage />} />
           <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
           <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />
