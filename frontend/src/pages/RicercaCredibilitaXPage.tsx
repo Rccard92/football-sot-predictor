@@ -11,6 +11,8 @@ import { DrawCredibilityDatasetKpiCards } from '../components/cecchino-draw-cred
 import { DrawCredibilityDatasetPreviewTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityDatasetPreviewTable'
 import { DrawCredibilityDebugPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityDebugPanel'
 import { DrawCredibilityExclusionTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityExclusionTable'
+import { DrawCredibilityGlobalExclusionsPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityGlobalExclusionsPanel'
+import { DrawCredibilityGlobalPipelinePanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityGlobalPipelinePanel'
 import { DrawCredibilityLeagueTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityLeagueTable'
 import { DrawCredibilityMonthlyTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityMonthlyTable'
 import { DrawCredibilityResearchEmptyState } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchEmptyState'
@@ -36,13 +38,6 @@ export function RicercaCredibilitaXPage() {
   const sharedFilters = { dateFrom, dateTo, competitionId }
   const research = useCecchinoDrawCredibilityResearch(sharedFilters)
   const datasetHook = useCecchinoDrawCredibilityDataset(sharedFilters)
-
-  const activeSummary =
-    datasetHook.dataset?.filters.cohort === 'all_usable_sensitivity'
-      ? datasetHook.dataset.sensitivity_summary
-      : datasetHook.dataset?.filters.cohort === 'market_subset'
-        ? datasetHook.dataset.market_summary
-        : datasetHook.dataset?.primary_summary
 
   return (
     <motion.div
@@ -138,10 +133,11 @@ export function RicercaCredibilitaXPage() {
             />
           ) : null}
 
-          {!datasetHook.loading && datasetHook.dataset && activeSummary ? (
+          {!datasetHook.loading && datasetHook.dataset ? (
             <div className="space-y-6">
+              <DrawCredibilityGlobalPipelinePanel pipeline={datasetHook.dataset.global_pipeline} />
               <DrawCredibilityDatasetKpiCards
-                summary={activeSummary}
+                summary={datasetHook.dataset.selected_cohort_summary}
                 drawRatePct={datasetHook.dataset.target_distribution.draw_rate_pct}
               />
               <DrawCredibilityCohortComparisonTable
@@ -150,13 +146,18 @@ export function RicercaCredibilitaXPage() {
                 market={datasetHook.dataset.market_summary}
               />
               <DrawCredibilityAntiLeakagePanel
-                safe={datasetHook.dataset.anti_leakage.safe}
-                unknown={datasetHook.dataset.anti_leakage.unknown}
-                unsafe={datasetHook.dataset.anti_leakage.unsafe}
-                excludedNoPreMatch={datasetHook.dataset.anti_leakage.excluded_no_pre_match_snapshot}
+                selected={datasetHook.dataset.anti_leakage_selected}
+                globalStats={datasetHook.dataset.anti_leakage_global}
               />
-              <DrawCredibilityConsistencyPanel checks={datasetHook.dataset.consistency_checks} />
-              <DrawCredibilityVersionTable distribution={datasetHook.dataset.version_distribution} />
+              <DrawCredibilityGlobalExclusionsPanel exclusions={datasetHook.dataset.global_exclusions} />
+              <DrawCredibilityConsistencyPanel
+                rows={datasetHook.dataset.cohort_consistency}
+                checks={datasetHook.dataset.consistency_checks}
+              />
+              <DrawCredibilityVersionTable
+                selected={datasetHook.dataset.version_distribution_selected}
+                globalDistribution={datasetHook.dataset.version_distribution_global}
+              />
               <DrawCredibilityDatasetPreviewTable
                 rows={datasetHook.dataset.rows}
                 page={datasetHook.dataset.pagination.page}

@@ -17,11 +17,16 @@ from app.models.cecchino_today_fixture import (
 )
 from app.services.cecchino.cecchino_constants import STATUS_AVAILABLE
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
+    CSV_COLUMNS,
     VERSION,
     build_draw_credibility_historical_dataset,
+    dataset_csv_filename,
+    rows_for_selected_cohort,
     stream_draw_credibility_dataset_csv,
+    _sanitize_csv_value,
 )
 from app.services.cecchino.cecchino_draw_credibility_research_common import (
+    COHORT_ALL_USABLE_SENSITIVITY,
     COHORT_ELIGIBLE_PRIMARY,
     COHORT_MARKET_SUBSET,
     LEAKAGE_SAFE,
@@ -114,7 +119,7 @@ def _dataset(rows: list, **kwargs) -> dict:
 
 
 def test_version_constant():
-    assert VERSION == "cecchino_draw_credibility_dataset_v1"
+    assert VERSION == "cecchino_draw_credibility_dataset_v1_1"
 
 
 def test_one_row_per_provider_fixture_id():
@@ -401,3 +406,177 @@ def test_consistency_checks_present():
     cc = result["consistency_checks"]
     assert "expected_primary_from_audit" in cc
     assert "difference_primary_vs_audit" in cc
+    assert "cohort_consistency" in result
+    assert len(result["cohort_consistency"]) == 3
+
+
+def test_global_pipeline_separate_from_cohort():
+    rows = [_row(id=i, provider_fixture_id=9000 + i) for i in range(3)]
+    result = _dataset(rows)
+    gp = result["global_pipeline"]
+    cs = result["selected_cohort_summary"]
+    assert gp["raw_database_rows"] == 3
+    assert gp["global_duplicates_collapsed"] == 0
+    assert cs["unique_provider_fixtures"] == 3
+    assert cs["final_dataset_rows"] == 3
+
+
+def test_selected_cohort_summary_uses_cohort_metrics_not_global():
+    rows = [_row(id=i, provider_fixture_id=9000 + i) for i in range(2)]
+    result = _dataset(rows, cohort=COHORT_ELIGIBLE_PRIMARY)
+    summary = result["selected_cohort_summary"]
+    assert summary["unique_provider_fixtures"] == 2
+    assert summary["final_dataset_rows"] == 2
+    assert summary["unique_provider_fixtures"] != result["global_pipeline"]["unique_provider_fixtures"] or (
+        result["global_pipeline"]["unique_provider_fixtures"] == 2
+    )
+
+
+def test_anti_leakage_selected_primary_vs_global():
+    eligible = _row(id=1, provider_fixture_id=9001)
+    non_eligible = _row(
+        id=2,
+        provider_fixture_id=9002,
+        eligibility_status=ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER,
+    )
+    result = _dataset([eligible, non_eligible], cohort=COHORT_ELIGIBLE_PRIMARY)
+    assert result["anti_leakage_selected"]["safe"] == 1
+    assert result["anti_leakage_global"]["safe"] == 2
+
+
+def test_version_distribution_selected_matches_cohort_size():
+    rows = [_row(id=i, provider_fixture_id=9000 + i) for i in range(3)]
+    result = _dataset(rows, cohort=COHORT_ELIGIBLE_PRIMARY)
+    total = sum(v["count"] for v in result["version_distribution_selected"]["balance_analysis"])
+    assert total == 3
+    assert result["version_distribution"]["balance_analysis"][0]["count"] == 3
+
+
+def test_csv_cohort_primary():
+    text = _csv_text([_row()], cohort=COHORT_ELIGIBLE_PRIMARY)
+    lines = text.strip().split("\n")
+    assert "eligible_primary" in lines[1]
+
+
+def test_csv_cohort_sensitivity():
+    text = _csv_text(
+        [_row(eligibility_status=ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER)],
+        cohort=COHORT_ALL_USABLE_SENSITIVITY,
+    )
+    assert "all_usable_sensitivity" in text
+
+
+def test_csv_cohort_market():
+    text = _csv_text([_row()], cohort=COHORT_MARKET_SUBSET)
+    assert "market_subset" in text
+
+
+def test_csv_negative_float_without_apostrophe():
+    row = _row(
+        cecchino_output_json={
+            "final": _final(quota_1=2.5, quota_2=2.0, prob_1=0.40, prob_x=0.30, prob_2=0.30),
+            "goal_markets": _goal_markets(),
+        },
+    )
+    text = _csv_text([row])
+    assert "'-" not in text.split("\n")[1]
+
+
+def test_sanitize_csv_negative_float():
+    assert _sanitize_csv_value(-1.5603) == "-1.5603"
+    assert _sanitize_csv_value(-3) == "-3"
+
+
+def test_sanitize_csv_injection_string():
+    assert _sanitize_csv_value("-cmd") == "'-cmd"
+    assert _sanitize_csv_value("=SUM(A1)") == "'=SUM(A1)"
+
+
+def test_csv_all_columns_present():
+    import csv
+    import io
+
+    text = _csv_text([_row()])
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+    assert reader.fieldnames == list(CSV_COLUMNS)
+
+
+def test_csv_numeric_fields_parseable():
+    import csv
+    import io
+
+    text = _csv_text([_row()])
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+    row = next(reader)
+    assert row["f36_signed"] == "" or float(row["f36_signed"]) or row["f36_signed"] == "0"
+
+
+def test_dataset_csv_filename_primary():
+    name = dataset_csv_filename(
+        cohort=COHORT_ELIGIBLE_PRIMARY,
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 7, 15),
+    )
+    assert name == "cecchino_draw_credibility_eligible_primary_2026-01-01_2026-07-15.csv"
+
+
+def test_dataset_csv_filename_market():
+    name = dataset_csv_filename(
+        cohort=COHORT_MARKET_SUBSET,
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 7, 15),
+    )
+    assert "market_subset" in name
+
+
+def test_global_exclusions_breakdown_present():
+    result = _dataset([_row(cecchino_output_json=None), _row()])
+    assert "global_exclusions" in result
+    assert result["global_exclusions"]["first_blocking_reason"] is True
+
+
+def test_cohort_consistency_per_cohort_explanation():
+    result = _dataset([_row()])
+    primary = next(c for c in result["cohort_consistency"] if c["cohort"] == COHORT_ELIGIBLE_PRIMARY)
+    assert "expected_from_audit" in primary
+    assert "duplicates_removed_within_cohort" in primary
+
+
+def test_rows_for_selected_cohort_does_not_mutate_source():
+    built = _dataset([_row()])
+    source_cohort = built["rows"][0]["cohort"]
+    assert source_cohort == COHORT_ELIGIBLE_PRIMARY
+
+
+def test_deduplication_within_cohort_from_audit_delta():
+    rows = [
+        _row(id=1, scan_date=date(2025, 6, 14)),
+        _row(id=2, scan_date=date(2025, 6, 16), score_fulltime_home=2, score_fulltime_away=0, goals_home=2, goals_away=0),
+    ]
+    result = _dataset(rows)
+    summary = result["cohort_summaries"][COHORT_ELIGIBLE_PRIMARY]
+    assert summary["final_dataset_rows"] == 1
+    assert summary["candidate_rows_before_dedup"] >= 1
+    assert summary["duplicates_removed_within_cohort"] == max(
+        0, summary["candidate_rows_before_dedup"] - summary["final_dataset_rows"]
+    )
+
+
+def test_legacy_fields_still_present():
+    result = _dataset([_row()])
+    assert "primary_summary" in result
+    assert "anti_leakage" in result
+    assert "version_distribution" in result
+    assert "consistency_checks" in result
+
+
+def _csv_text(rows: list, *, cohort: str = COHORT_ELIGIBLE_PRIMARY) -> str:
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = rows
+    chunks = list(stream_draw_credibility_dataset_csv(
+        db,
+        date_from=date(2025, 1, 1),
+        date_to=date(2025, 12, 31),
+        cohort=cohort,
+    ))
+    return "".join(chunks)

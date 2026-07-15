@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
+
+- Separazione metriche **globali** (`global_pipeline`) vs **coorte selezionata** (`selected_cohort_summary`, `cohort_summaries`).
+- Deduplica per coorte: `candidate_rows_before_dedup`, `duplicates_removed_within_cohort` (non più i 156 globali nelle KPI coorte).
+- Anti-leakage e versioni: `anti_leakage_selected` / `anti_leakage_global`, `version_distribution_selected` / `version_distribution_global`.
+- Export CSV: cohort corretta via `rows_for_selected_cohort`, ~96 colonne stabili, numeri negativi senza apostrofo, filename distinto per coorte/date.
+- Esclusioni globali con first blocking reason (`global_exclusions`); consistency per-coorte (`cohort_consistency`).
+- Versione dataset: `cecchino_draw_credibility_dataset_v1_1`. Campi legacy mantenuti per compatibilità.
+- Nessuna modifica produttiva. Prossimo step: Fase 1C analisi statistica.
+
 ## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
 
 - Service dataset `cecchino_draw_credibility_dataset.py` + helper condivisi `cecchino_draw_credibility_research_common.py` (refactor minimo Fase 1A).

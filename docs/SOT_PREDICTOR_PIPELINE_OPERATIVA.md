@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
+
+- Payload dataset esteso: `global_pipeline`, `selected_cohort_summary`, `anti_leakage_selected`, `version_distribution_selected`, `global_exclusions`, `cohort_consistency`.
+- UI tab Dataset: sezioni separate universo globale / coorte selezionata; export CSV con filename `cecchino_draw_credibility_<cohort>_<from>_<to>.csv`.
+- CORS: `expose_headers=Content-Disposition` per download filename lato browser.
+- Nessuna migration. Prossimo step Fase 1C.
+
 ## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
 
 - Service `build_draw_credibility_historical_dataset`: SELECT fixture in range → groupBy `provider_fixture_id` → feature row pre-match + target row post-match → classificazione leakage → feature Cecchino/Book → filtro coorte.

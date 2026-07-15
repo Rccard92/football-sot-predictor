@@ -18,9 +18,10 @@ const ROWS: Array<{
   { key: 'rows_with_market_features', label: 'Con Book' },
 ]
 
-function fmt(key: keyof DrawCredibilityCohortSummary, value: number): string {
-  if (key === 'draw_rate_pct') return `${value.toFixed(2)}%`
-  return String(value)
+function fmt(key: keyof DrawCredibilityCohortSummary, value: number | undefined): string {
+  const n = value ?? 0
+  if (key === 'draw_rate_pct') return `${n.toFixed(2)}%`
+  return String(n)
 }
 
 export function DrawCredibilityCohortComparisonTable({ primary, sensitivity, market }: Props) {

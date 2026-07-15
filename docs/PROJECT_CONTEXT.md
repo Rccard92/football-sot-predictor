@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
+
+Fix semantica metriche globali/coorte, anti-leakage selezionato, export CSV completo e filename distinto. Versione `cecchino_draw_credibility_dataset_v1_1`.
+
 ## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
 
 Laboratorio offline — seconda fase: costruzione dataset storico deduplicato con anti-leakage.

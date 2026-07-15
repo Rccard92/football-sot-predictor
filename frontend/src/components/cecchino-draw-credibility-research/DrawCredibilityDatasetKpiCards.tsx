@@ -11,19 +11,28 @@ const METRICS: Array<{
   label: string
   getValue: (s: DrawCredibilityCohortSummary, drawRate: number) => string | number
 }> = [
-  { key: 'raw', label: 'Righe raw', getValue: (s) => s.raw_rows_found },
-  { key: 'unique', label: 'Fixture uniche', getValue: (s) => s.unique_provider_fixtures },
-  { key: 'dup', label: 'Duplicati collassati', getValue: (s) => s.duplicate_rows_collapsed },
-  { key: 'leakage', label: 'Leakage safe', getValue: (s) => s.leakage_safe },
+  {
+    key: 'candidate_rows_before_dedup',
+    label: 'Candidati row-level',
+    getValue: (s) => s.candidate_rows_before_dedup,
+  },
+  { key: 'unique_provider_fixtures', label: 'Fixture uniche', getValue: (s) => s.unique_provider_fixtures },
+  {
+    key: 'duplicates_removed_within_cohort',
+    label: 'Duplicati rimossi',
+    getValue: (s) => s.duplicates_removed_within_cohort,
+  },
   { key: 'final', label: 'Righe finali', getValue: (s) => s.final_dataset_rows },
   { key: 'draws', label: 'Pareggi', getValue: (s) => s.draws },
   { key: 'rate', label: 'Draw rate %', getValue: (_s, drawRate) => `${drawRate.toFixed(2)}%` },
   { key: 'book', label: 'Con Book', getValue: (s) => s.rows_with_market_features },
+  { key: 'leakage', label: 'Leakage safe', getValue: (s) => s.leakage_safe },
 ]
 
 export function DrawCredibilityDatasetKpiCards({ summary, drawRatePct }: Props) {
   return (
     <section className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+      <h3 className="mb-3 text-sm font-semibold text-slate-800">Coorte selezionata</h3>
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}

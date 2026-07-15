@@ -21,10 +21,13 @@ from app.services.cecchino.cecchino_draw_credibility_research_common import (
     LEAKAGE_SAFE,
     LEAKAGE_UNSAFE,
     LEAKAGE_UNKNOWN,
+    cecchino_final,
+    cecchino_output,
     classify_leakage,
     evaluate_internal_features,
     feature_snapshot_at,
     fixtures_in_range,
+    is_supported_payload,
     normalize_implied_pair,
     normalize_implied_triple,
     normalize_prob_triple,
@@ -39,7 +42,29 @@ from app.services.cecchino.cecchino_draw_credibility_research_common import (
 from app.services.cecchino.cecchino_goal_formulas import goal_market_kpi_entry
 from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME, SEL_OVER_2_5, SEL_UNDER_2_5
 
-VERSION = "cecchino_draw_credibility_dataset_v1"
+VERSION = "cecchino_draw_credibility_dataset_v1_1"
+
+_BLOCKING_REASON_PRIORITY = (
+    "missing_cecchino_output",
+    "missing_cecchino_final",
+    "unsupported_payload_structure",
+    "incomplete_internal_features",
+    "missing_valid_target",
+    "missing_pre_match_snapshot",
+    "leakage_unknown",
+    "leakage_unsafe",
+)
+
+_BLOCKING_REASON_LABELS: dict[str, str] = {
+    "missing_cecchino_output": "Payload Cecchino assente",
+    "missing_cecchino_final": "Final Cecchino non disponibile",
+    "unsupported_payload_structure": "Struttura payload non supportata",
+    "incomplete_internal_features": "Feature interne incomplete",
+    "missing_valid_target": "Risultato finale non disponibile",
+    "missing_pre_match_snapshot": "Snapshot pre-match assente",
+    "leakage_unknown": "Leakage timestamp unknown",
+    "leakage_unsafe": "Leakage timestamp unsafe",
+}
 
 CSV_COLUMNS: tuple[str, ...] = (
     "provider_fixture_id",
@@ -49,9 +74,13 @@ CSV_COLUMNS: tuple[str, ...] = (
     "scan_date_feature",
     "scan_date_target",
     "kickoff",
+    "feature_snapshot_at",
+    "target_snapshot_at",
     "country_name",
     "league_name",
     "competition_id",
+    "provider_league_id",
+    "provider_season",
     "home_team_name",
     "away_team_name",
     "eligibility_status_feature",
@@ -64,22 +93,75 @@ CSV_COLUMNS: tuple[str, ...] = (
     "quota_cecchino_1",
     "quota_cecchino_x",
     "quota_cecchino_2",
+    "prob_1_raw",
+    "prob_x_raw",
+    "prob_2_raw",
+    "prob_1_pct",
+    "prob_x_pct",
+    "prob_2_pct",
+    "prob_1_norm",
     "prob_x_norm",
+    "prob_2_norm",
+    "probability_sum_before_normalization",
+    "probability_normalization_applied",
+    "x_rank",
+    "x_tied_for_top",
+    "x_vs_best_lateral_pp",
+    "x_vs_second_probability_pp",
+    "max_probability_pp",
+    "dominant_sign",
+    "dominant_probability",
+    "second_sign",
+    "second_probability",
+    "dominance_pp",
+    "conviction_index_candidate",
+    "conviction_class_candidate",
     "f36_signed",
     "f36_abs",
     "f36_score_existing",
-    "dominant_sign",
-    "dominance_pp",
-    "conviction_index_candidate",
+    "f36_class_existing",
     "probability_gap_1_2_pp",
+    "probability_balance_index",
     "gap_coherence_index_candidate",
+    "gap_coherence_class_candidate",
     "quota_under_2_5_cecchino",
     "quota_over_2_5_cecchino",
+    "prob_under_2_5_cecchino_pct",
+    "prob_over_2_5_cecchino_pct",
+    "under_minus_over_pp",
+    "goal_probability_source",
+    "quota_book_1",
     "quota_book_x",
+    "quota_book_2",
+    "book_1x2_source",
+    "prob_book_1_norm",
+    "prob_book_x_norm",
+    "prob_book_2_norm",
+    "book_1x2_overround",
+    "quota_book_under_2_5",
+    "quota_book_over_2_5",
+    "book_goal_source",
+    "prob_book_under_2_5_norm",
+    "prob_book_over_2_5_norm",
+    "book_goal_overround",
+    "deviation_1_pp",
     "deviation_x_pp",
+    "deviation_2_pp",
+    "deviation_under_pp",
+    "deviation_over_pp",
+    "market_deviation_mean_pp",
+    "market_deviation_max_pp",
+    "has_market_features",
+    "feature_before_kickoff",
     "leakage_status",
-    "feature_snapshot_at",
-    "target_snapshot_at",
+    "leakage_warning",
+    "cecchino_output_version",
+    "cecchino_final_version",
+    "balance_analysis_version",
+    "goal_market_version_under",
+    "goal_market_version_over",
+    "kpi_panel_version",
+    "payload_structure_key",
 )
 
 
@@ -428,27 +510,74 @@ def _cohort_membership(row: dict[str, Any]) -> set[str]:
     return cohorts
 
 
-def _summary_from_rows(rows: list[dict[str, Any]], *, raw_rows: int, unique: int) -> dict[str, Any]:
+def _filter_cohort(rows: list[dict[str, Any]], cohort: str) -> list[dict[str, Any]]:
+    if cohort == COHORT_ELIGIBLE_PRIMARY:
+        return [
+            r for r in rows
+            if r["eligibility_status_feature"] == ELIGIBILITY_ELIGIBLE
+            and r["leakage_status"] == LEAKAGE_SAFE
+        ]
+    if cohort == COHORT_ALL_USABLE_SENSITIVITY:
+        return [r for r in rows if r["leakage_status"] == LEAKAGE_SAFE]
+    if cohort == COHORT_MARKET_SUBSET:
+        return [
+            r for r in rows
+            if r["leakage_status"] == LEAKAGE_SAFE and r.get("has_market_features")
+        ]
+    return rows
+
+
+def rows_for_selected_cohort(rows: list[dict[str, Any]], cohort: str) -> list[dict[str, Any]]:
+    """Filtra la coorte e restituisce copie superficiali con cohort impostata."""
+    filtered = _filter_cohort(rows, cohort)
+    return [{**row, "cohort": cohort} for row in filtered]
+
+
+def _anti_leakage_stats(rows: list[dict[str, Any]], *, excluded_no_pre_match: int = 0) -> dict[str, int]:
+    return {
+        "safe": sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_SAFE),
+        "unknown": sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_UNKNOWN),
+        "unsafe": sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_UNSAFE),
+        "excluded_no_pre_match_snapshot": excluded_no_pre_match,
+    }
+
+
+def _cohort_summary_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    candidate_row_level_count: int,
+) -> dict[str, Any]:
     draws = sum(1 for r in rows if r.get("draw_ft") == 1)
     non_draws = len(rows) - draws
-    leakage_safe = sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_SAFE)
-    leakage_unknown = sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_UNKNOWN)
-    leakage_unsafe = sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_UNSAFE)
+    unique = len(rows)
+    dup_removed = max(0, candidate_row_level_count - unique)
     return {
-        "raw_rows_found": raw_rows,
+        "candidate_rows_before_dedup": candidate_row_level_count,
         "unique_provider_fixtures": unique,
-        "duplicate_rows_collapsed": max(0, raw_rows - unique),
+        "duplicates_removed_within_cohort": dup_removed,
         "rows_with_valid_target": len(rows),
         "rows_with_internal_features": len(rows),
         "rows_with_market_features": sum(1 for r in rows if r.get("has_market_features")),
-        "leakage_safe": leakage_safe,
-        "leakage_unknown": leakage_unknown,
-        "leakage_unsafe": leakage_unsafe,
+        "leakage_safe": sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_SAFE),
+        "leakage_unknown": sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_UNKNOWN),
+        "leakage_unsafe": sum(1 for r in rows if r.get("leakage_status") == LEAKAGE_UNSAFE),
+        "removed_no_target": 0,
+        "removed_no_pre_match_snapshot": 0,
+        "removed_leakage": 0,
+        "removed_invalid_features": 0,
         "final_dataset_rows": len(rows),
         "draws": draws,
         "non_draws": non_draws,
         "draw_rate_pct": pct(draws, len(rows)),
+        # legacy mirror fields (deprecated — use cohort-specific metrics above)
+        "raw_rows_found": candidate_row_level_count,
+        "duplicate_rows_collapsed": dup_removed,
     }
+
+
+def _summary_from_rows(rows: list[dict[str, Any]], *, candidate_row_level_count: int) -> dict[str, Any]:
+    """Legacy alias — populates cohort summary without global raw counts."""
+    return _cohort_summary_from_rows(rows, candidate_row_level_count=candidate_row_level_count)
 
 
 def _version_distribution(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -468,6 +597,194 @@ def _version_distribution(rows: list[dict[str, Any]]) -> dict[str, list[dict[str
             for ver, cnt in counter.most_common()
         ]
     return out
+
+
+def _classify_group_blocking_reason(group_rows: list[CecchinoTodayFixture]) -> str:
+    """First blocking reason per provider_fixture_id (mutually exclusive)."""
+    if not any(cecchino_output(r) for r in group_rows):
+        return "missing_cecchino_output"
+
+    if not any(evaluate_internal_features(r)["has_cecchino_final"] for r in group_rows):
+        return "missing_cecchino_final"
+
+    if not any(is_supported_payload(r) for r in group_rows):
+        return "unsupported_payload_structure"
+
+    if not any(evaluate_internal_features(r)["has_internal_features"] for r in group_rows):
+        return "incomplete_internal_features"
+
+    if _select_target_row(group_rows) is None:
+        return "missing_valid_target"
+
+    feature_row = _select_feature_row(group_rows, prefer_eligible=True)
+    if feature_row is None:
+        return "missing_pre_match_snapshot"
+
+    feat_at = feature_snapshot_at(feature_row)
+    leakage_status, _, _ = classify_leakage(feat_at, feature_row.kickoff)
+    if leakage_status == LEAKAGE_UNKNOWN:
+        return "leakage_unknown"
+    if leakage_status == LEAKAGE_UNSAFE:
+        return "leakage_unsafe"
+
+    return "incomplete_internal_features"
+
+
+def _global_exclusions_breakdown(
+    blocking_by_group: dict[str, int],
+    *,
+    unique_groups: int,
+) -> dict[str, Any]:
+    items = []
+    for reason in _BLOCKING_REASON_PRIORITY:
+        count = blocking_by_group.get(reason, 0)
+        if count <= 0:
+            continue
+        items.append({
+            "reason": reason,
+            "label": _BLOCKING_REASON_LABELS.get(reason, reason),
+            "count": count,
+            "pct_unique_fixtures": pct(count, unique_groups),
+        })
+    return {
+        "first_blocking_reason": True,
+        "priority_order": list(_BLOCKING_REASON_PRIORITY),
+        "items": items,
+        "total_excluded_groups": sum(blocking_by_group.values()),
+    }
+
+
+def _build_global_pipeline(
+    dedup_meta: dict[str, Any],
+    all_rows: list[dict[str, Any]],
+    *,
+    blocking_by_group: dict[str, int],
+    groups_with_built_row: int,
+) -> dict[str, Any]:
+    safe_rows = [r for r in all_rows if r.get("leakage_status") == LEAKAGE_SAFE]
+    return {
+        "raw_database_rows": dedup_meta["raw_rows"],
+        "unique_provider_fixtures": dedup_meta["unique_provider_fixtures"],
+        "global_duplicates_collapsed": dedup_meta["duplicates_collapsed"],
+        "groups_with_built_row": groups_with_built_row,
+        "groups_excluded": sum(blocking_by_group.values()),
+        "groups_with_internal_features": groups_with_built_row + blocking_by_group.get("missing_valid_target", 0)
+            + blocking_by_group.get("missing_pre_match_snapshot", 0)
+            + blocking_by_group.get("leakage_unknown", 0)
+            + blocking_by_group.get("leakage_unsafe", 0),
+        "groups_without_supported_cecchino_final": (
+            blocking_by_group.get("missing_cecchino_output", 0)
+            + blocking_by_group.get("missing_cecchino_final", 0)
+            + blocking_by_group.get("unsupported_payload_structure", 0)
+            + blocking_by_group.get("incomplete_internal_features", 0)
+        ),
+        "groups_without_target": blocking_by_group.get("missing_valid_target", 0),
+        "groups_without_pre_match_snapshot": blocking_by_group.get("missing_pre_match_snapshot", 0),
+        "groups_leakage_unknown": blocking_by_group.get("leakage_unknown", 0),
+        "groups_leakage_unsafe": blocking_by_group.get("leakage_unsafe", 0),
+        "all_internal_safe_rows": len(safe_rows),
+    }
+
+
+def _build_cohort_consistency(
+    *,
+    audit_primary: dict[str, Any],
+    audit_all: dict[str, Any],
+    primary_rows: list[dict[str, Any]],
+    sensitivity_rows: list[dict[str, Any]],
+    market_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    cohorts = [
+        {
+            "cohort": COHORT_ELIGIBLE_PRIMARY,
+            "label": "Primary",
+            "expected_from_audit": audit_primary["summary"]["usable_internal_research"],
+            "rows": primary_rows,
+        },
+        {
+            "cohort": COHORT_ALL_USABLE_SENSITIVITY,
+            "label": "Sensitivity",
+            "expected_from_audit": audit_all["summary"]["usable_internal_research"],
+            "rows": sensitivity_rows,
+        },
+        {
+            "cohort": COHORT_MARKET_SUBSET,
+            "label": "Market",
+            "expected_from_audit": audit_all["summary"]["usable_market_comparison"],
+            "rows": market_rows,
+        },
+    ]
+    out: list[dict[str, Any]] = []
+    for item in cohorts:
+        expected = item["expected_from_audit"]
+        final_rows = item["rows"]
+        unique_after = len(final_rows)
+        dup_removed = max(0, expected - unique_after)
+        delta = unique_after - expected
+        parts: list[str] = [f"{expected} righe audit"]
+        parts.append(f"{unique_after} fixture uniche")
+        if dup_removed > 0:
+            parts.append(f"{dup_removed} duplicato/i rimosso/i")
+        else:
+            parts.append("nessun duplicato rimosso")
+        removed_leakage = 0
+        removed_snapshot = 0
+        removed_target = 0
+        if delta == 0:
+            explanation = f"{item['label']}: allineato con audit 1A ({'; '.join(parts)})."
+        else:
+            explanation = f"{item['label']}: {' → '.join(parts)}."
+            if removed_leakage:
+                explanation += f" Leakage rimossi: {removed_leakage}."
+            if removed_snapshot:
+                explanation += f" Snapshot assenti: {removed_snapshot}."
+            if removed_target:
+                explanation += f" Target assenti: {removed_target}."
+        out.append({
+            "cohort": item["cohort"],
+            "label": item["label"],
+            "expected_from_audit": expected,
+            "row_level_candidates": expected,
+            "unique_after_dedup": unique_after,
+            "duplicates_removed_within_cohort": dup_removed,
+            "removed_for_no_target": removed_target,
+            "removed_for_no_snapshot": removed_snapshot,
+            "removed_for_leakage": removed_leakage,
+            "removed_for_invalid_internal_features": 0,
+            "final_dataset_rows": unique_after,
+            "delta_vs_audit": delta,
+            "explanation": explanation,
+        })
+    return out
+
+
+def _consistency_checks_legacy(
+    cohort_consistency: list[dict[str, Any]],
+    dedup_meta: dict[str, Any],
+) -> dict[str, Any]:
+    primary = next(c for c in cohort_consistency if c["cohort"] == COHORT_ELIGIBLE_PRIMARY)
+    sensitivity = next(c for c in cohort_consistency if c["cohort"] == COHORT_ALL_USABLE_SENSITIVITY)
+    market = next(c for c in cohort_consistency if c["cohort"] == COHORT_MARKET_SUBSET)
+    explanations = [c["explanation"] for c in cohort_consistency if c["delta_vs_audit"] != 0]
+    return {
+        "expected_primary_from_audit": primary["expected_from_audit"],
+        "expected_sensitivity_from_audit": sensitivity["expected_from_audit"],
+        "expected_market_from_audit": market["expected_from_audit"],
+        "actual_primary_rows": primary["final_dataset_rows"],
+        "actual_sensitivity_rows": sensitivity["final_dataset_rows"],
+        "actual_market_rows": market["final_dataset_rows"],
+        "difference_primary_vs_audit": primary["delta_vs_audit"],
+        "difference_sensitivity_vs_audit": sensitivity["delta_vs_audit"],
+        "difference_market_vs_audit": market["delta_vs_audit"],
+        "difference_reason": "; ".join(explanations) if explanations else "Allineato con audit 1A.",
+        "duplicates_removed": dedup_meta["duplicates_collapsed"],
+        "leakage_removed": dedup_meta.get("leakage_removed", 0),
+        "version_removed": dedup_meta.get("groups_without_supported_cecchino_final", 0),
+        "invalid_features_removed": (
+            dedup_meta.get("excluded_no_pre_match_snapshot", 0)
+            + dedup_meta.get("excluded_no_target", 0)
+        ),
+    }
 
 
 def _build_all_rows(
@@ -490,28 +807,28 @@ def _build_all_rows(
         groups[int(row.provider_fixture_id)].append(row)
 
     built: list[dict[str, Any]] = []
-    stats = {
-        "excluded_no_pre_match_snapshot": 0,
-        "excluded_no_target": 0,
-        "excluded_unsupported": 0,
-        "leakage_removed": 0,
-        "version_removed": 0,
-    }
+    blocking_by_group: dict[str, int] = defaultdict(int)
+    excluded_no_pre_match = 0
+    excluded_no_target = 0
+    leakage_removed = 0
+    groups_with_built_row = 0
 
     for _pid, group_rows in groups.items():
         if not any(evaluate_internal_features(r)["has_internal_features"] for r in group_rows):
-            if all(not evaluate_internal_features(r)["has_cecchino_final"] for r in group_rows):
-                stats["version_removed"] += 1
+            reason = _classify_group_blocking_reason(group_rows)
+            blocking_by_group[reason] += 1
             continue
 
         feature_row = _select_feature_row(group_rows, prefer_eligible=True)
         if feature_row is None:
-            stats["excluded_no_pre_match_snapshot"] += 1
+            blocking_by_group["missing_pre_match_snapshot"] += 1
+            excluded_no_pre_match += 1
             continue
 
         target_row = _select_target_row(group_rows)
         if target_row is None:
-            stats["excluded_no_target"] += 1
+            blocking_by_group["missing_valid_target"] += 1
+            excluded_no_target += 1
             continue
 
         dataset_row = _build_dataset_row(
@@ -519,93 +836,37 @@ def _build_all_rows(
             target_row=target_row,
             cohort_label=COHORT_ALL_USABLE_SENSITIVITY,
         )
-        if dataset_row["leakage_status"] != LEAKAGE_SAFE:
-            stats["leakage_removed"] += 1
+        if dataset_row["leakage_status"] == LEAKAGE_UNKNOWN:
+            blocking_by_group["leakage_unknown"] += 1
+            leakage_removed += 1
+            built.append(dataset_row)
+            continue
+        if dataset_row["leakage_status"] == LEAKAGE_UNSAFE:
+            blocking_by_group["leakage_unsafe"] += 1
+            leakage_removed += 1
+            built.append(dataset_row)
+            continue
+
+        groups_with_built_row += 1
         built.append(dataset_row)
 
     meta = {
         "raw_rows": raw_rows,
         "unique_provider_fixtures": len(groups),
         "duplicates_collapsed": max(0, raw_rows - len(groups)),
-        **stats,
+        "excluded_no_pre_match_snapshot": excluded_no_pre_match,
+        "excluded_no_target": excluded_no_target,
+        "leakage_removed": leakage_removed,
+        "blocking_by_group": dict(blocking_by_group),
+        "groups_with_built_row": groups_with_built_row,
+        "groups_without_supported_cecchino_final": (
+            blocking_by_group.get("missing_cecchino_output", 0)
+            + blocking_by_group.get("missing_cecchino_final", 0)
+            + blocking_by_group.get("unsupported_payload_structure", 0)
+            + blocking_by_group.get("incomplete_internal_features", 0)
+        ),
     }
     return built, meta
-
-
-def _consistency_checks(
-    db: Session,
-    *,
-    date_from: date,
-    date_to: date,
-    competition_id: int | None,
-    primary_rows: list[dict[str, Any]],
-    sensitivity_rows: list[dict[str, Any]],
-    market_rows: list[dict[str, Any]],
-    dedup_meta: dict[str, Any],
-) -> dict[str, Any]:
-    audit_primary = build_draw_credibility_coverage_audit(
-        db, date_from=date_from, date_to=date_to, competition_id=competition_id, only_eligible=True,
-    )
-    audit_all = build_draw_credibility_coverage_audit(
-        db, date_from=date_from, date_to=date_to, competition_id=competition_id, only_eligible=False,
-    )
-    expected_primary = audit_primary["summary"]["usable_internal_research"]
-    expected_sensitivity = audit_all["summary"]["usable_internal_research"]
-    expected_market = audit_all["summary"]["usable_market_comparison"]
-
-    final_primary = len(primary_rows)
-    final_sensitivity = len(sensitivity_rows)
-    final_market = len(market_rows)
-
-    diff_primary = final_primary - expected_primary
-    diff_sensitivity = final_sensitivity - expected_sensitivity
-    diff_market = final_market - expected_market
-
-    reasons: list[str] = []
-    if diff_primary != 0:
-        reasons.append(
-            f"Primary: deduplica (-{dedup_meta['duplicates_collapsed']}), "
-            f"leakage (-{dedup_meta['leakage_removed']}), "
-            f"no snapshot (-{dedup_meta['excluded_no_pre_match_snapshot']})"
-        )
-    if diff_sensitivity != 0:
-        reasons.append(
-            f"Sensitivity: stessi filtri deduplica/leakage rispetto audit row-level"
-        )
-
-    return {
-        "expected_primary_from_audit": expected_primary,
-        "expected_sensitivity_from_audit": expected_sensitivity,
-        "expected_market_from_audit": expected_market,
-        "actual_primary_rows": final_primary,
-        "actual_sensitivity_rows": final_sensitivity,
-        "actual_market_rows": final_market,
-        "difference_primary_vs_audit": diff_primary,
-        "difference_sensitivity_vs_audit": diff_sensitivity,
-        "difference_market_vs_audit": diff_market,
-        "difference_reason": "; ".join(reasons) if reasons else "Allineato con audit entro deduplica/leakage",
-        "duplicates_removed": dedup_meta["duplicates_collapsed"],
-        "leakage_removed": dedup_meta["leakage_removed"],
-        "version_removed": dedup_meta["version_removed"],
-        "invalid_features_removed": dedup_meta["excluded_no_pre_match_snapshot"] + dedup_meta["excluded_no_target"],
-    }
-
-
-def _filter_cohort(rows: list[dict[str, Any]], cohort: str) -> list[dict[str, Any]]:
-    if cohort == COHORT_ELIGIBLE_PRIMARY:
-        return [
-            r for r in rows
-            if r["eligibility_status_feature"] == ELIGIBILITY_ELIGIBLE
-            and r["leakage_status"] == LEAKAGE_SAFE
-        ]
-    if cohort == COHORT_ALL_USABLE_SENSITIVITY:
-        return [r for r in rows if r["leakage_status"] == LEAKAGE_SAFE]
-    if cohort == COHORT_MARKET_SUBSET:
-        return [
-            r for r in rows
-            if r["leakage_status"] == LEAKAGE_SAFE and r.get("has_market_features")
-        ]
-    return rows
 
 
 def build_draw_credibility_historical_dataset(
@@ -622,30 +883,71 @@ def build_draw_credibility_historical_dataset(
         db, date_from=date_from, date_to=date_to, competition_id=competition_id,
     )
 
+    audit_primary = build_draw_credibility_coverage_audit(
+        db, date_from=date_from, date_to=date_to, competition_id=competition_id, only_eligible=True,
+    )
+    audit_all = build_draw_credibility_coverage_audit(
+        db, date_from=date_from, date_to=date_to, competition_id=competition_id, only_eligible=False,
+    )
+
     primary_rows = _filter_cohort(all_rows, COHORT_ELIGIBLE_PRIMARY)
     sensitivity_rows = _filter_cohort(all_rows, COHORT_ALL_USABLE_SENSITIVITY)
     market_rows = _filter_cohort(all_rows, COHORT_MARKET_SUBSET)
 
-    for r in all_rows:
-        memberships = _cohort_membership(r)
-        if COHORT_ELIGIBLE_PRIMARY in memberships:
-            r["cohort"] = COHORT_ELIGIBLE_PRIMARY
-        elif COHORT_ALL_USABLE_SENSITIVITY in memberships:
-            r["cohort"] = COHORT_ALL_USABLE_SENSITIVITY
+    cohort_audit_counts = {
+        COHORT_ELIGIBLE_PRIMARY: audit_primary["summary"]["usable_internal_research"],
+        COHORT_ALL_USABLE_SENSITIVITY: audit_all["summary"]["usable_internal_research"],
+        COHORT_MARKET_SUBSET: audit_all["summary"]["usable_market_comparison"],
+    }
+    cohort_row_lists = {
+        COHORT_ELIGIBLE_PRIMARY: primary_rows,
+        COHORT_ALL_USABLE_SENSITIVITY: sensitivity_rows,
+        COHORT_MARKET_SUBSET: market_rows,
+    }
 
-    selected = _filter_cohort(all_rows, cohort)
+    cohort_summaries = {
+        key: _cohort_summary_from_rows(
+            rows,
+            candidate_row_level_count=cohort_audit_counts[key],
+        )
+        for key, rows in cohort_row_lists.items()
+    }
+
+    selected = rows_for_selected_cohort(all_rows, cohort)
     total_rows = len(selected)
     total_pages = max(1, math.ceil(total_rows / page_size)) if page_size > 0 else 1
     page = min(max(1, page), total_pages)
     start = (page - 1) * page_size
     page_rows = selected[start : start + page_size]
 
-    anti_leakage = {
-        "safe": sum(1 for r in all_rows if r["leakage_status"] == LEAKAGE_SAFE),
-        "unknown": sum(1 for r in all_rows if r["leakage_status"] == LEAKAGE_UNKNOWN),
-        "unsafe": sum(1 for r in all_rows if r["leakage_status"] == LEAKAGE_UNSAFE),
-        "excluded_no_pre_match_snapshot": dedup_meta["excluded_no_pre_match_snapshot"],
-    }
+    blocking_by_group = dedup_meta.get("blocking_by_group", {})
+    global_pipeline = _build_global_pipeline(
+        dedup_meta,
+        all_rows,
+        blocking_by_group=blocking_by_group,
+        groups_with_built_row=dedup_meta.get("groups_with_built_row", len(sensitivity_rows)),
+    )
+    global_exclusions = _global_exclusions_breakdown(
+        blocking_by_group,
+        unique_groups=dedup_meta["unique_provider_fixtures"],
+    )
+    cohort_consistency = _build_cohort_consistency(
+        audit_primary=audit_primary,
+        audit_all=audit_all,
+        primary_rows=primary_rows,
+        sensitivity_rows=sensitivity_rows,
+        market_rows=market_rows,
+    )
+    consistency_checks = _consistency_checks_legacy(cohort_consistency, dedup_meta)
+
+    anti_leakage_global = _anti_leakage_stats(
+        all_rows,
+        excluded_no_pre_match=dedup_meta["excluded_no_pre_match_snapshot"],
+    )
+    anti_leakage_selected = _anti_leakage_stats(selected)
+
+    version_distribution_global = _version_distribution(all_rows)
+    version_distribution_selected = _version_distribution(selected)
 
     warnings: list[str] = []
     if total_rows == 0:
@@ -662,44 +964,32 @@ def build_draw_credibility_historical_dataset(
             "page": page,
             "page_size": page_size,
         },
-        "primary_summary": _summary_from_rows(
-            primary_rows,
-            raw_rows=dedup_meta["raw_rows"],
-            unique=dedup_meta["unique_provider_fixtures"],
-        ),
-        "sensitivity_summary": _summary_from_rows(
-            sensitivity_rows,
-            raw_rows=dedup_meta["raw_rows"],
-            unique=dedup_meta["unique_provider_fixtures"],
-        ),
-        "market_summary": _summary_from_rows(
-            market_rows,
-            raw_rows=dedup_meta["raw_rows"],
-            unique=dedup_meta["unique_provider_fixtures"],
-        ),
+        "global_pipeline": global_pipeline,
+        "selected_cohort_summary": cohort_summaries[cohort],
+        "cohort_summaries": cohort_summaries,
+        "anti_leakage_global": anti_leakage_global,
+        "anti_leakage_selected": anti_leakage_selected,
+        "version_distribution_global": version_distribution_global,
+        "version_distribution_selected": version_distribution_selected,
+        "global_exclusions": global_exclusions,
+        "cohort_consistency": cohort_consistency,
+        "primary_summary": cohort_summaries[COHORT_ELIGIBLE_PRIMARY],
+        "sensitivity_summary": cohort_summaries[COHORT_ALL_USABLE_SENSITIVITY],
+        "market_summary": cohort_summaries[COHORT_MARKET_SUBSET],
         "deduplication": {
             "raw_rows": dedup_meta["raw_rows"],
             "unique_provider_fixtures": dedup_meta["unique_provider_fixtures"],
             "duplicates_collapsed": dedup_meta["duplicates_collapsed"],
         },
-        "anti_leakage": anti_leakage,
+        "anti_leakage": anti_leakage_global,
         "target_distribution": {
             "rows": total_rows,
             "draws": sum(1 for r in selected if r.get("draw_ft") == 1),
             "non_draws": sum(1 for r in selected if r.get("draw_ft") == 0),
             "draw_rate_pct": pct(sum(1 for r in selected if r.get("draw_ft") == 1), total_rows),
         },
-        "version_distribution": _version_distribution(all_rows),
-        "consistency_checks": _consistency_checks(
-            db,
-            date_from=date_from,
-            date_to=date_to,
-            competition_id=competition_id,
-            primary_rows=primary_rows,
-            sensitivity_rows=sensitivity_rows,
-            market_rows=market_rows,
-            dedup_meta=dedup_meta,
-        ),
+        "version_distribution": version_distribution_selected,
+        "consistency_checks": consistency_checks,
         "pagination": {
             "page": page,
             "page_size": page_size,
@@ -714,6 +1004,20 @@ def build_draw_credibility_historical_dataset(
 def _sanitize_csv_value(value: Any) -> str:
     if value is None:
         return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return str(value)
+        return ""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
     text = str(value)
     if text and text[0] in ("=", "+", "-", "@"):
         return "'" + text
@@ -735,7 +1039,7 @@ def stream_draw_credibility_dataset_csv(
     all_rows, _ = _build_all_rows(
         db, date_from=date_from, date_to=date_to, competition_id=competition_id,
     )
-    selected = _filter_cohort(all_rows, cohort)
+    selected = rows_for_selected_cohort(all_rows, cohort)
 
     yield "\ufeff"
     buffer = io.StringIO()

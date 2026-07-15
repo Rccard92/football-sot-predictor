@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
+
+Correzione semantica riepiloghi e export senza alterare composizione coorti né formule.
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_draw_credibility_dataset_v1_1` |
+| Global vs coorte | `global_pipeline` vs `selected_cohort_summary` |
+| CSV | ~96 colonne, cohort corretta, negativi numerici, filename distinto |
+| Compatibilità | Campi legacy (`primary_summary`, `anti_leakage`, …) ancora presenti |
+
 ## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
 
 Dataset analitico offline per calibrare la futura formula Credibilità X.

@@ -151,20 +151,82 @@ export type DrawCredibilityDatasetRequest = {
 }
 
 export type DrawCredibilityCohortSummary = {
-  raw_rows_found: number
+  candidate_rows_before_dedup: number
   unique_provider_fixtures: number
-  duplicate_rows_collapsed: number
+  duplicates_removed_within_cohort: number
   rows_with_valid_target: number
   rows_with_internal_features: number
   rows_with_market_features: number
   leakage_safe: number
   leakage_unknown: number
   leakage_unsafe: number
+  removed_no_target: number
+  removed_no_pre_match_snapshot: number
+  removed_leakage: number
+  removed_invalid_features: number
   final_dataset_rows: number
   draws: number
   non_draws: number
   draw_rate_pct: number
+  /** @deprecated legacy mirror */
+  raw_rows_found?: number
+  /** @deprecated legacy mirror */
+  duplicate_rows_collapsed?: number
 }
+
+export type GlobalPipelineSummary = {
+  raw_database_rows: number
+  unique_provider_fixtures: number
+  global_duplicates_collapsed: number
+  groups_with_built_row: number
+  groups_excluded: number
+  groups_with_internal_features: number
+  groups_without_supported_cecchino_final: number
+  groups_without_target: number
+  groups_without_pre_match_snapshot: number
+  groups_leakage_unknown: number
+  groups_leakage_unsafe: number
+  all_internal_safe_rows: number
+}
+
+export type CohortAntiLeakage = {
+  safe: number
+  unknown: number
+  unsafe: number
+  excluded_no_pre_match_snapshot: number
+}
+
+export type GlobalExclusionItem = {
+  reason: string
+  label: string
+  count: number
+  pct_unique_fixtures: number
+}
+
+export type GlobalExclusionBreakdown = {
+  first_blocking_reason: boolean
+  priority_order: string[]
+  items: GlobalExclusionItem[]
+  total_excluded_groups: number
+}
+
+export type CohortConsistencyRow = {
+  cohort: DrawCredibilityCohort
+  label: string
+  expected_from_audit: number
+  row_level_candidates: number
+  unique_after_dedup: number
+  duplicates_removed_within_cohort: number
+  removed_for_no_target: number
+  removed_for_no_snapshot: number
+  removed_for_leakage: number
+  removed_for_invalid_internal_features: number
+  final_dataset_rows: number
+  delta_vs_audit: number
+  explanation: string
+}
+
+export type VersionDistributionBlock = Record<string, DrawCredibilityVersionRow[]>
 
 export type DrawCredibilityVersionRow = {
   version: string
@@ -232,6 +294,15 @@ export type DrawCredibilityDatasetResponse = {
     page: number
     page_size: number
   }
+  global_pipeline: GlobalPipelineSummary
+  selected_cohort_summary: DrawCredibilityCohortSummary
+  cohort_summaries: Record<DrawCredibilityCohort, DrawCredibilityCohortSummary>
+  anti_leakage_global: CohortAntiLeakage
+  anti_leakage_selected: CohortAntiLeakage
+  version_distribution_global: VersionDistributionBlock
+  version_distribution_selected: VersionDistributionBlock
+  global_exclusions: GlobalExclusionBreakdown
+  cohort_consistency: CohortConsistencyRow[]
   primary_summary: DrawCredibilityCohortSummary
   sensitivity_summary: DrawCredibilityCohortSummary
   market_summary: DrawCredibilityCohortSummary
@@ -240,19 +311,16 @@ export type DrawCredibilityDatasetResponse = {
     unique_provider_fixtures: number
     duplicates_collapsed: number
   }
-  anti_leakage: {
-    safe: number
-    unknown: number
-    unsafe: number
-    excluded_no_pre_match_snapshot: number
-  }
+  /** @deprecated use anti_leakage_global */
+  anti_leakage: CohortAntiLeakage
   target_distribution: {
     rows: number
     draws: number
     non_draws: number
     draw_rate_pct: number
   }
-  version_distribution: Record<string, DrawCredibilityVersionRow[]>
+  /** @deprecated use version_distribution_selected */
+  version_distribution: VersionDistributionBlock
   consistency_checks: {
     expected_primary_from_audit: number
     expected_sensitivity_from_audit: number
@@ -277,6 +345,14 @@ export type DrawCredibilityDatasetResponse = {
   }
   rows: DrawCredibilityDatasetRow[]
   warnings: string[]
+}
+
+export function buildDrawCredibilityDatasetCsvFilename(
+  cohort: DrawCredibilityCohort,
+  dateFrom: string,
+  dateTo: string,
+): string {
+  return `cecchino_draw_credibility_${cohort}_${dateFrom}_${dateTo}.csv`
 }
 
 function getApiBase(): string {
@@ -341,7 +417,12 @@ export async function postDrawCredibilityDatasetExportCsv(
   }
   const disposition = res.headers.get('content-disposition') ?? ''
   const match = /filename="([^"]+)"/.exec(disposition)
-  return { blob: await res.blob(), filename: match?.[1] ?? 'cecchino_draw_credibility_export.csv' }
+  const fallback = buildDrawCredibilityDatasetCsvFilename(
+    body.cohort ?? 'eligible_primary',
+    body.date_from,
+    body.date_to,
+  )
+  return { blob: await res.blob(), filename: match?.[1] ?? fallback }
 }
 
 export const DRAW_CREDIBILITY_COHORT_LABELS: Record<DrawCredibilityCohort, string> = {
