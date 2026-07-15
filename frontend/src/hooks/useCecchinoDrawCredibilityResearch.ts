@@ -3,13 +3,15 @@ import {
   postDrawCredibilityAudit,
   type DrawCredibilityAuditResponse,
 } from '../lib/cecchinoDrawCredibilityResearchApi'
-import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
 import { formatFetchError } from '../utils/formatFetchError'
 
-export function useCecchinoDrawCredibilityResearch() {
-  const [dateFrom, setDateFrom] = useState(() => isoDaysAgoLocal(90))
-  const [dateTo, setDateTo] = useState(() => todayLocalIso())
-  const [competitionId, setCompetitionId] = useState('')
+type SharedFilters = {
+  dateFrom: string
+  dateTo: string
+  competitionId: string
+}
+
+export function useCecchinoDrawCredibilityResearch(filters: SharedFilters) {
   const [onlyEligible, setOnlyEligible] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -19,10 +21,10 @@ export function useCecchinoDrawCredibilityResearch() {
     setLoading(true)
     setError(null)
     try {
-      const compId = competitionId.trim() ? Number(competitionId) : null
+      const compId = filters.competitionId.trim() ? Number(filters.competitionId) : null
       const result = await postDrawCredibilityAudit({
-        date_from: dateFrom,
-        date_to: dateTo,
+        date_from: filters.dateFrom,
+        date_to: filters.dateTo,
         competition_id: compId != null && Number.isFinite(compId) && compId > 0 ? compId : null,
         only_eligible: onlyEligible,
       })
@@ -33,19 +35,13 @@ export function useCecchinoDrawCredibilityResearch() {
     } finally {
       setLoading(false)
     }
-  }, [competitionId, dateFrom, dateTo, onlyEligible])
+  }, [filters.competitionId, filters.dateFrom, filters.dateTo, onlyEligible])
 
   return {
-    dateFrom,
-    dateTo,
-    competitionId,
     onlyEligible,
     loading,
     error,
     audit,
-    setDateFrom,
-    setDateTo,
-    setCompetitionId,
     setOnlyEligible,
     runAudit,
   }

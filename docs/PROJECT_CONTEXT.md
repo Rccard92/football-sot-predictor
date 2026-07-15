@@ -38,6 +38,18 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
+
+Laboratorio offline — seconda fase: costruzione dataset storico deduplicato con anti-leakage.
+
+- Common: `backend/app/services/cecchino/cecchino_draw_credibility_research_common.py`
+- Dataset: `backend/app/services/cecchino/cecchino_draw_credibility_dataset.py`
+- Endpoint: `POST /api/admin/cecchino/research/draw-credibility/dataset`, export CSV su `.../dataset/export.csv`
+- Frontend: tab Dataset storico in `/cecchino/ricerca-credibilita-x`
+- Coorti primary/sensitivity/market; formule candidate solo nel service dataset
+- Nessuna API esterna, nessuna migration, nessuna modifica al modello produttivo
+- Prossimo step: Fase 1C analisi statistica
+
 ## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
 
 Laboratorio offline Cecchino per misurare copertura dati storici prima di definire la formula Credibilità X.

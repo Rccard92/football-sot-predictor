@@ -1,5 +1,14 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
+
+- Service `build_draw_credibility_historical_dataset`: SELECT fixture in range → groupBy `provider_fixture_id` → feature row pre-match + target row post-match → classificazione leakage → feature Cecchino/Book → filtro coorte.
+- Coorti: primary (eligible + internal + safe), sensitivity (internal + safe), market (sensitivity + Book 1X2/U-O completi).
+- Consistency checks diagnostici vs audit 1A (~720 / ~769 / ~447 attesi row-level, dataset ≤ per deduplica/leakage).
+- Route admin: `POST /api/admin/cecchino/research/draw-credibility/dataset`, `POST .../dataset/export.csv`.
+- UI: tab **Dataset storico** nella pagina research; filtri date/competition condivisi con audit.
+- **Nessuna migration**. Prossimo step Fase 1C: analisi statistica Credibilità X.
+
 ## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
 
 - Service offline `build_draw_credibility_coverage_audit`: legge fixture `cecchino_today_fixtures` per `scan_date` in range, opz. filtro `competition_id` e `only_eligible`.

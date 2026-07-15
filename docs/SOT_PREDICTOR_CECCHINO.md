@@ -2,6 +2,26 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
+
+Dataset analitico offline per calibrare la futura formula Credibilità X.
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Common | `cecchino_draw_credibility_research_common.py` — resolver, prob, leakage, fixtures_in_range |
+| Service | `cecchino_draw_credibility_dataset.py` → `build_draw_credibility_historical_dataset`, `stream_draw_credibility_dataset_csv` |
+| Deduplica | 1 riga per `provider_fixture_id`; feature pre-kickoff + target FT concluso |
+| Anti-leakage | `safe` / `unknown` / `unsafe`; solo `safe` nelle coorti |
+| Coorti | `eligible_primary`, `all_usable_sensitivity`, `market_subset` |
+| Feature produttive | F36, Dominanza via `build_balance_analysis_from_final` (read-only) |
+| Feature candidate | conviction_index, probability_balance, gap_coherence, x_rank (solo research) |
+| API | `POST .../draw-credibility/dataset`, `POST .../draw-credibility/dataset/export.csv` |
+| UI | Tab Dataset storico in `/cecchino/ricerca-credibilita-x` |
+| Migration | Nessuna |
+| Prossimo step | Fase 1C — analisi statistica |
+
+**Non modificato:** `cecchino_balance_analysis.py` (formule), segnali, KPI panel produttivo, rating, value gate.
+
 ## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
 
 Modulo di ricerca per il pilastro futuro **Credibilità della X** (Equilibrio vs Squilibrio). Completamente offline.

@@ -335,7 +335,7 @@ def test_payload_json_serializable():
 
 def test_no_external_api_calls():
     with patch(
-        "app.services.cecchino.cecchino_draw_credibility_research.build_betfair_payload_from_snapshot",
+        "app.services.cecchino.cecchino_draw_credibility_research_common.build_betfair_payload_from_snapshot",
     ) as mock_snapshot:
         mock_snapshot.return_value = {
             "bookmakers": [

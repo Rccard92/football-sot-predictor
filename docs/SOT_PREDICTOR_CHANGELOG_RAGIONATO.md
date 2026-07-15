@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Dataset storico Fase 1B (2026-07-15)
+
+- Service dataset `cecchino_draw_credibility_dataset.py` + helper condivisi `cecchino_draw_credibility_research_common.py` (refactor minimo Fase 1A).
+- **Deduplica** per `provider_fixture_id`: snapshot feature pre-match (più vicino al kickoff, tie-break eligible) + target row post-match (FT valido, scan più recente).
+- **Anti-leakage**: `feature_snapshot_at = min(created_at, odds_fetched_at/odds_cached_at)`; coorti dataset solo `leakage_status == safe`.
+- **Coorti**: `eligible_primary`, `all_usable_sensitivity`, `market_subset` con summary indipendenti e draw rate sulla coorte finale.
+- **Feature**: Cecchino 1X2 (raw/pct/norm), F36/Dominanza produttiva (`build_balance_analysis_from_final` read-only), formule candidate research (conviction, gap coherence, x_rank), Under/Over 2.5, Book opzionale con deviazioni.
+- **Endpoint**: `POST .../draw-credibility/dataset` (JSON paginato), `POST .../draw-credibility/dataset/export.csv` (UTF-8 BOM, `;`, sanitizzazione CSV injection).
+- **Frontend**: tab Dataset storico in `/cecchino/ricerca-credibilita-x` (filtri condivisi con audit, KPI coorti, anti-leakage, versioni, preview, export CSV).
+- **Nessuna modifica produttiva**, nessuna migration, nessuna scrittura DB. Prossimo step: Fase 1C analisi statistica.
+
 ## Credibilità X Research — Audit storico Fase 1A (2026-07-15)
 
 - Modulo di ricerca **indipendente** per audit copertura dati storici Credibilità X (`cecchino_draw_credibility_research.py`).

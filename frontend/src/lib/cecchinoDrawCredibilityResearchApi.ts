@@ -135,3 +135,217 @@ export async function postDrawCredibilityAudit(
     opts,
   )
 }
+
+export type DrawCredibilityCohort =
+  | 'eligible_primary'
+  | 'all_usable_sensitivity'
+  | 'market_subset'
+
+export type DrawCredibilityDatasetRequest = {
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  cohort?: DrawCredibilityCohort
+  page?: number
+  page_size?: number
+}
+
+export type DrawCredibilityCohortSummary = {
+  raw_rows_found: number
+  unique_provider_fixtures: number
+  duplicate_rows_collapsed: number
+  rows_with_valid_target: number
+  rows_with_internal_features: number
+  rows_with_market_features: number
+  leakage_safe: number
+  leakage_unknown: number
+  leakage_unsafe: number
+  final_dataset_rows: number
+  draws: number
+  non_draws: number
+  draw_rate_pct: number
+}
+
+export type DrawCredibilityVersionRow = {
+  version: string
+  count: number
+  pct: number
+}
+
+export type DrawCredibilityDatasetRow = {
+  provider_fixture_id: number
+  local_fixture_id: number | null
+  today_fixture_id_feature: number
+  today_fixture_id_target: number
+  scan_date_feature: string | null
+  scan_date_target: string | null
+  kickoff: string | null
+  country_name: string | null
+  league_name: string | null
+  competition_id: number | null
+  home_team_name: string | null
+  away_team_name: string | null
+  eligibility_status_feature: string | null
+  cohort: string
+  draw_ft: number
+  ft_home: number
+  ft_away: number
+  ft_score: string
+  result_1x2: string
+  quota_cecchino_1: number | null
+  quota_cecchino_x: number | null
+  quota_cecchino_2: number | null
+  prob_x_norm: number | null
+  x_rank: number | null
+  x_tied_for_top: boolean
+  f36_signed: number | null
+  f36_abs: number | null
+  f36_score_existing: number | null
+  f36_class_existing: string | null
+  dominant_sign: string | null
+  dominance_pp: number | null
+  conviction_index_candidate: number | null
+  conviction_class_candidate: string | null
+  probability_gap_1_2_pp: number | null
+  probability_balance_index: number | null
+  gap_coherence_index_candidate: number | null
+  gap_coherence_class_candidate: string | null
+  quota_under_2_5_cecchino: number | null
+  quota_over_2_5_cecchino: number | null
+  quota_book_x: number | null
+  deviation_x_pp: number | null
+  market_deviation_mean_pp: number | null
+  leakage_status: string
+  feature_snapshot_at: string | null
+  target_snapshot_at: string | null
+  has_market_features?: boolean
+}
+
+export type DrawCredibilityDatasetResponse = {
+  status: string
+  version: string
+  filters: {
+    date_from: string
+    date_to: string
+    competition_id: number | null
+    cohort: DrawCredibilityCohort
+    page: number
+    page_size: number
+  }
+  primary_summary: DrawCredibilityCohortSummary
+  sensitivity_summary: DrawCredibilityCohortSummary
+  market_summary: DrawCredibilityCohortSummary
+  deduplication: {
+    raw_rows: number
+    unique_provider_fixtures: number
+    duplicates_collapsed: number
+  }
+  anti_leakage: {
+    safe: number
+    unknown: number
+    unsafe: number
+    excluded_no_pre_match_snapshot: number
+  }
+  target_distribution: {
+    rows: number
+    draws: number
+    non_draws: number
+    draw_rate_pct: number
+  }
+  version_distribution: Record<string, DrawCredibilityVersionRow[]>
+  consistency_checks: {
+    expected_primary_from_audit: number
+    expected_sensitivity_from_audit: number
+    expected_market_from_audit: number
+    actual_primary_rows: number
+    actual_sensitivity_rows: number
+    actual_market_rows: number
+    difference_primary_vs_audit: number
+    difference_sensitivity_vs_audit: number
+    difference_market_vs_audit: number
+    difference_reason: string
+    duplicates_removed: number
+    leakage_removed: number
+    version_removed: number
+    invalid_features_removed: number
+  }
+  pagination: {
+    page: number
+    page_size: number
+    total_rows: number
+    total_pages: number
+  }
+  rows: DrawCredibilityDatasetRow[]
+  warnings: string[]
+}
+
+function getApiBase(): string {
+  const raw = import.meta.env.VITE_API_BASE_URL
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    throw new Error(
+      'VITE_API_BASE_URL non configurata. Aggiungila in .env locale o nelle variabili di build.',
+    )
+  }
+  return String(raw).replace(/\/+$/, '')
+}
+
+function datasetRequestBody(body: DrawCredibilityDatasetRequest) {
+  return {
+    date_from: body.date_from,
+    date_to: body.date_to,
+    competition_id: body.competition_id ?? null,
+    cohort: body.cohort ?? 'eligible_primary',
+    page: body.page ?? 1,
+    page_size: body.page_size ?? 100,
+  }
+}
+
+export async function postDrawCredibilityDataset(
+  body: DrawCredibilityDatasetRequest,
+  opts?: { signal?: AbortSignal },
+): Promise<DrawCredibilityDatasetResponse> {
+  return adminPostJson<DrawCredibilityDatasetResponse>(
+    '/api/admin/cecchino/research/draw-credibility/dataset',
+    datasetRequestBody(body),
+    opts,
+  )
+}
+
+export async function postDrawCredibilityDatasetExportCsv(
+  body: Omit<DrawCredibilityDatasetRequest, 'page' | 'page_size'>,
+  opts?: { signal?: AbortSignal },
+): Promise<{ blob: Blob; filename: string }> {
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/admin/cecchino/research/draw-credibility/dataset/export.csv`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datasetRequestBody({ ...body, page: 1, page_size: 100 })),
+    signal: opts?.signal,
+  })
+  if (!res.ok) {
+    let message = res.statusText
+    const ct = res.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        const parsed = (await res.json()) as { detail?: string; message?: string }
+        message = parsed.detail ?? parsed.message ?? message
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(message || `HTTP ${res.status}`)
+  }
+  const ct = res.headers.get('content-type') ?? ''
+  if (!ct.includes('text/csv')) {
+    throw new Error('Risposta non CSV: verifica VITE_API_BASE_URL e endpoint backend')
+  }
+  const disposition = res.headers.get('content-disposition') ?? ''
+  const match = /filename="([^"]+)"/.exec(disposition)
+  return { blob: await res.blob(), filename: match?.[1] ?? 'cecchino_draw_credibility_export.csv' }
+}
+
+export const DRAW_CREDIBILITY_COHORT_LABELS: Record<DrawCredibilityCohort, string> = {
+  eligible_primary: 'Primary (eligible + safe)',
+  all_usable_sensitivity: 'Sensitivity (interno + safe)',
+  market_subset: 'Market (Book completo + safe)',
+}

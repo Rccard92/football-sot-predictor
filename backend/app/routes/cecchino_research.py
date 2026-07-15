@@ -1,14 +1,23 @@
-"""Route admin ricerca Cecchino — audit Credibilità X (offline)."""
+"""Route admin ricerca Cecchino — audit e dataset Credibilità X (offline)."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.cecchino_draw_credibility_research import CecchinoDrawCredibilityAuditBody
+from app.schemas.cecchino_draw_credibility_research import (
+    CecchinoDrawCredibilityAuditBody,
+    CecchinoDrawCredibilityDatasetBody,
+    CecchinoDrawCredibilityDatasetExportBody,
+)
+from app.services.cecchino.cecchino_draw_credibility_dataset import (
+    build_draw_credibility_historical_dataset,
+    dataset_csv_filename,
+    stream_draw_credibility_dataset_csv,
+)
 from app.services.cecchino.cecchino_draw_credibility_research import (
     build_draw_credibility_coverage_audit,
 )
@@ -29,3 +38,49 @@ def post_draw_credibility_audit(
         only_eligible=body.only_eligible,
     )
     return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/draw-credibility/dataset")
+def post_draw_credibility_dataset(
+    body: CecchinoDrawCredibilityDatasetBody,
+    db: Session = Depends(get_db),
+):
+    payload = build_draw_credibility_historical_dataset(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        cohort=body.cohort,
+        page=body.page,
+        page_size=body.page_size,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/draw-credibility/dataset/export.csv")
+def post_draw_credibility_dataset_export_csv(
+    body: CecchinoDrawCredibilityDatasetExportBody,
+    db: Session = Depends(get_db),
+):
+    filename = dataset_csv_filename(
+        cohort=body.cohort,
+        date_from=body.date_from,
+        date_to=body.date_to,
+    )
+    stream = stream_draw_credibility_dataset_csv(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        cohort=body.cohort,
+    )
+
+    def _iter():
+        for chunk in stream:
+            yield chunk
+
+    return StreamingResponse(
+        _iter(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
