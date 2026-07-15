@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Correzione Pattern Market Fase 1C.2 (2026-07-15)
+
+- Matching pattern Market: boundaries Primary salvate nel pattern; `matches_candidate_pattern` senza ricalcolo.
+- ROI breakdown: sezione autonoma Market (`market_subset`) vs pattern Primary (`primary`).
+- Diagnostica: `pattern_market_matching`, `pattern_consistency_checks`.
+- **Nessuna migration**. Prossimo step Fase 1D.
+
 ## Credibilità X Research — Correzione e completamento Fase 1C.1 (2026-07-15)
 
 - `build_draw_credibility_statistical_analysis` esteso: enrich segni normalizzati, interazioni, pattern, temporal/league/market ROI breakdown.

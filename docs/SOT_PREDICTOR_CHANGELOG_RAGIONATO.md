@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Correzione Pattern Market Fase 1C.2 (2026-07-15)
+
+- ROI candidate pattern: soglie Primary propagate (niente ricalcolo quantile sul Market); matching strutturato via `matches_candidate_pattern` (no parsing description).
+- Metadati cella/pattern: bin index, bounds, inclusività, `boundary_source`.
+- Celle `suppressed`: `draw_rate` / Wilson / lift = null; UI solo N/pareggi/motivo.
+- Semantica leghe: `distinct_league_names_count` vs `distinct_country_league_pairs_count` vs paesi; HHI invariato su paese+campionato.
+- `pattern_consistency_checks` con `market_patterns_using_recomputed_boundaries` atteso 0.
+- Versione payload: `cecchino_draw_credibility_statistics_v1_2`.
+- Nessuna modifica produttiva, coorti o fasce ROI Market autonome.
+
 ## Credibilità X Research — Correzione e completamento Fase 1C.1 (2026-07-15)
 
 - Bugfix: `normalize_outcome_side` (HOME/DRAW/AWAY e 1/X/2); `x_directional_conviction_candidate` non più sempre null.

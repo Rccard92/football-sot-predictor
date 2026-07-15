@@ -267,6 +267,89 @@ def bin_label_from_boundaries(index: int, boundaries: list[float]) -> str:
     return f"{boundaries[index - 1]:.2f}–<{boundaries[index]:.2f}"
 
 
+def bin_bounds_meta(bin_index_0: int, boundaries: list[float]) -> dict[str, Any]:
+    """Metadati bound/inclusività per bin 0-based (convenzione apply_quantile_boundaries)."""
+    n_bins = len(boundaries) + 1 if boundaries else 1
+    if not boundaries or n_bins <= 1:
+        return {
+            "column_lower_bound": None,
+            "column_upper_bound": None,
+            "column_lower_inclusive": None,
+            "column_upper_inclusive": None,
+        }
+    if bin_index_0 <= 0:
+        return {
+            "column_lower_bound": None,
+            "column_upper_bound": round(boundaries[0], 4),
+            "column_lower_inclusive": False,
+            "column_upper_inclusive": False,
+        }
+    if bin_index_0 >= len(boundaries):
+        return {
+            "column_lower_bound": round(boundaries[-1], 4),
+            "column_upper_bound": None,
+            "column_lower_inclusive": True,
+            "column_upper_inclusive": True,
+        }
+    return {
+        "column_lower_bound": round(boundaries[bin_index_0 - 1], 4),
+        "column_upper_bound": round(boundaries[bin_index_0], 4),
+        "column_lower_inclusive": True,
+        "column_upper_inclusive": False,
+    }
+
+
+def _num_safe(row: dict[str, Any], key: str) -> float | None:
+    v = row.get(key)
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return f if math.isfinite(f) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_cat_canonical(row: dict[str, Any], dim: str) -> str:
+    v = row.get(dim)
+    return str(v) if v is not None else "null"
+
+
+def matches_candidate_pattern(row: dict[str, Any], pattern: dict[str, Any]) -> bool:
+    """Match strutturato: mai parsing di description."""
+    row_dim = pattern.get("row_dimension")
+    col_dim = pattern.get("column_dimension")
+    col_type = pattern.get("column_type")
+    row_cat = pattern.get("row_category")
+    col_cat = pattern.get("column_category")
+    if not row_dim or not col_dim or not col_type or row_cat is None or col_cat is None:
+        return False
+    if _row_cat_canonical(row, str(row_dim)) != str(row_cat):
+        return False
+
+    if col_type == "categorical":
+        return _row_cat_canonical(row, str(col_dim)) == str(col_cat)
+
+    if col_type == "quantile":
+        boundaries = pattern.get("column_boundaries")
+        bin_1 = pattern.get("column_bin_index")
+        if not isinstance(boundaries, list) or bin_1 is None:
+            return False
+        try:
+            bin_0 = int(bin_1) - 1
+        except (TypeError, ValueError):
+            return False
+        if bin_0 < 0:
+            return False
+        val = _num_safe(row, str(col_dim))
+        if val is None:
+            return False
+        assigned = apply_quantile_boundaries([val], [float(b) for b in boundaries])[0]
+        return assigned == bin_0
+
+    return False
+
+
 def classify_trend_with_diagnostics(
     rates: list[float | None],
     *,

@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Credibilità X Research — Correzione Pattern Market Fase 1C.2 (2026-07-15)
+
+Propagazione boundaries Primary → ROI pattern Market, metadati strutturati, celle soppresse, semantica conteggio leghe. Versione `cecchino_draw_credibility_statistics_v1_2`. Pronto per Fase 1D esplorativa.
+
 ## Credibilità X Research — Correzione e completamento Fase 1C.1 (2026-07-15)
 
 Correzione segni HOME/DRAW/AWAY, convinzione direzionale, trend/bootstrap, interazioni/pattern, stabilità temporale/leghe, Market/ROI per fasce, famiglie feature. Versione `cecchino_draw_credibility_statistics_v1_1`.

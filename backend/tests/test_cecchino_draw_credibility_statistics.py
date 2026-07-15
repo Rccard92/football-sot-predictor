@@ -1,4 +1,4 @@
-"""Test analisi statistica Credibilità X — Fase 1C.1."""
+"""Test analisi statistica Credibilità X — Fase 1C.1 / 1C.2."""
 
 from __future__ import annotations
 
@@ -28,8 +28,10 @@ from app.services.cecchino.cecchino_draw_credibility_statistics import (
     wilson_ci,
 )
 from app.services.cecchino.cecchino_draw_credibility_statistics_helpers import (
+    bin_bounds_meta,
     herfindahl,
     hhi_concentration_status,
+    matches_candidate_pattern,
 )
 from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME, SEL_OVER_2_5, SEL_UNDER_2_5
 
@@ -561,8 +563,8 @@ class TestHHI:
 
 
 class TestIntegration:
-    def test_version_v1_1(self):
-        assert VERSION == "cecchino_draw_credibility_statistics_v1_1"
+    def test_version_v1_2(self):
+        assert VERSION == "cecchino_draw_credibility_statistics_v1_2"
         payload = _analysis(_many_rows(20), bootstrap_iterations=30, min_group_size=3)
         assert payload["version"] == VERSION
 
@@ -716,3 +718,308 @@ class TestIntegration:
         assert len(lb) > 0
         aucs = [x.get("discriminative_auc") or 0 for x in lb]
         assert aucs == sorted(aucs, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Fase 1C.2 — matches_candidate_pattern
+# ---------------------------------------------------------------------------
+
+
+def _quantile_pattern(*, bin_index: int, col_dim: str = "prob_x_norm", **overrides) -> dict:
+    boundaries = [30.0, 50.0, 70.0]
+    bin_0 = bin_index - 1
+    meta = bin_bounds_meta(bin_0, boundaries)
+    base = {
+        "row_dimension": "x_rank",
+        "row_category": "2",
+        "column_dimension": col_dim,
+        "column_type": "quantile",
+        "column_category": f"Q{bin_index}",
+        "column_bin_index": bin_index,
+        "column_boundaries": boundaries,
+        "boundary_source": "primary",
+        "description": f"x_rank=2 × {col_dim}=Q{bin_index}",
+        **meta,
+    }
+    base.update(overrides)
+    return base
+
+
+class TestMatchesCandidatePattern:
+    """Match strutturato: categorical / quantile via apply_quantile_boundaries (_assign_bins)."""
+
+    def test_categorical_match(self):
+        pattern = {
+            "row_dimension": "dominant_sign_normalized",
+            "row_category": "DRAW",
+            "column_dimension": "conviction_class_candidate",
+            "column_type": "categorical",
+            "column_category": "alta",
+            "description": "ignored",
+        }
+        row = {
+            "dominant_sign_normalized": "DRAW",
+            "conviction_class_candidate": "alta",
+        }
+        assert matches_candidate_pattern(row, pattern) is True
+
+    def test_categorical_no_match(self):
+        pattern = {
+            "row_dimension": "dominant_sign_normalized",
+            "row_category": "DRAW",
+            "column_dimension": "conviction_class_candidate",
+            "column_type": "categorical",
+            "column_category": "alta",
+        }
+        row = {
+            "dominant_sign_normalized": "DRAW",
+            "conviction_class_candidate": "bassa",
+        }
+        assert matches_candidate_pattern(row, pattern) is False
+
+    def test_quantile_first_bin(self):
+        # boundaries [30,50,70]: bin0 = v < 30 → column_bin_index 1
+        pattern = _quantile_pattern(bin_index=1)
+        row = {"x_rank": "2", "prob_x_norm": 10.0}
+        assert apply_quantile_boundaries([10.0], [30.0, 50.0, 70.0])[0] == 0
+        assert matches_candidate_pattern(row, pattern) is True
+
+    def test_quantile_middle_bin(self):
+        # bin1 = [30, 50) → column_bin_index 2
+        pattern = _quantile_pattern(bin_index=2)
+        row = {"x_rank": "2", "prob_x_norm": 40.0}
+        assert apply_quantile_boundaries([40.0], [30.0, 50.0, 70.0])[0] == 1
+        assert matches_candidate_pattern(row, pattern) is True
+
+    def test_quantile_last_bin(self):
+        # bin3 = v >= 70 → column_bin_index 4
+        pattern = _quantile_pattern(bin_index=4)
+        row = {"x_rank": "2", "prob_x_norm": 80.0}
+        assert apply_quantile_boundaries([80.0], [30.0, 50.0, 70.0])[0] == 3
+        assert matches_candidate_pattern(row, pattern) is True
+
+    def test_quantile_value_equals_lower_bound_middle(self):
+        # _assign_bins: bin0 v<e0; else v<e_i → i; else last.
+        # v=50: not <30, not <50, <70 → assigned bin 2 (0-based) = bin_index 3
+        pattern = _quantile_pattern(bin_index=3)
+        row = {"x_rank": "2", "prob_x_norm": 50.0}
+        assert apply_quantile_boundaries([50.0], [30.0, 50.0, 70.0])[0] == 2
+        assert matches_candidate_pattern(row, pattern) is True
+
+    def test_quantile_bound_equality_documented(self):
+        """Documenta uguaglianza sui bound di _assign_bins: e0 esclusivo a sinistra.
+
+        Con boundaries [30,50,70]:
+        - v < 30 → bin 0
+        - 30 <= v < 50 → bin 1  (v==30 entra nel bin successivo a bin0)
+        - 50 <= v < 70 → bin 2
+        - v >= 70 → bin 3
+        """
+        edges = [30.0, 50.0, 70.0]
+        labels = apply_quantile_boundaries([29.9, 30.0, 49.9, 50.0, 69.9, 70.0], edges)
+        assert labels == [0, 1, 1, 2, 2, 3]
+
+        # v=30 → bin 1 zero-based = column_bin_index 2
+        pattern = _quantile_pattern(bin_index=2)
+        assert matches_candidate_pattern({"x_rank": "2", "prob_x_norm": 30.0}, pattern) is True
+        assert matches_candidate_pattern({"x_rank": "2", "prob_x_norm": 29.9}, pattern) is False
+
+        meta = bin_bounds_meta(1, edges)
+        assert meta["column_lower_bound"] == 30.0
+        assert meta["column_lower_inclusive"] is True
+        assert meta["column_upper_bound"] == 50.0
+        assert meta["column_upper_inclusive"] is False
+
+    def test_missing_value_false(self):
+        pattern = _quantile_pattern(bin_index=1)
+        row = {"x_rank": "2", "prob_x_norm": None}
+        assert matches_candidate_pattern(row, pattern) is False
+
+    def test_incomplete_metadata_false(self):
+        pattern = {
+            "row_dimension": "x_rank",
+            "row_category": "2",
+            "column_dimension": "prob_x_norm",
+            "column_type": "quantile",
+            "column_category": "Q1",
+            # manca column_bin_index / column_boundaries
+        }
+        row = {"x_rank": "2", "prob_x_norm": 10.0}
+        assert matches_candidate_pattern(row, pattern) is False
+
+        incomplete_cat = {
+            "row_dimension": "x_rank",
+            "row_category": "2",
+            "column_dimension": "conviction_class_candidate",
+            "column_type": "categorical",
+            # manca column_category
+        }
+        assert matches_candidate_pattern(
+            {"x_rank": "2", "conviction_class_candidate": "alta"},
+            incomplete_cat,
+        ) is False
+
+    def test_description_change_does_not_affect_match(self):
+        pattern_a = _quantile_pattern(bin_index=1, description="alpha")
+        pattern_b = {**pattern_a, "description": "beta completamente diversa"}
+        row = {"x_rank": "2", "prob_x_norm": 10.0}
+        assert matches_candidate_pattern(row, pattern_a) is True
+        assert matches_candidate_pattern(row, pattern_b) is True
+        assert matches_candidate_pattern(row, pattern_a) == matches_candidate_pattern(row, pattern_b)
+
+
+# ---------------------------------------------------------------------------
+# Fase 1C.2 — celle soppresse e pattern
+# ---------------------------------------------------------------------------
+
+
+class TestSuppressedCells:
+    def test_suppressed_cell_clears_rates_keeps_counts(self):
+        # min_group_size alto → molte celle unreliable/suppressed
+        payload = _analysis(_many_rows(36), bootstrap_iterations=30, min_group_size=50)
+        suppressed = []
+        for ix in payload["interaction_analysis"]:
+            for cell in ix.get("primary_cells") or []:
+                if cell.get("suppressed"):
+                    suppressed.append(cell)
+        assert suppressed, "attesa almeno una cella soppressa con min_group_size alto"
+        cell = suppressed[0]
+        assert cell["draw_rate_pct"] is None
+        assert cell["lift_vs_baseline_pp"] is None
+        assert cell["wilson_ci_95"] is None
+        assert isinstance(cell["count"], int)
+        assert isinstance(cell["draws"], int)
+        assert cell["count"] >= 0
+        assert cell["draws"] >= 0
+
+    def test_suppressed_cells_not_in_candidate_patterns(self):
+        payload = _analysis(_many_rows(36), bootstrap_iterations=30, min_group_size=5)
+        suppressed_keys = set()
+        for ix in payload["interaction_analysis"]:
+            for cell in ix.get("primary_cells") or []:
+                if cell.get("suppressed"):
+                    suppressed_keys.add(
+                        (
+                            ix["interaction_key"],
+                            cell["row_category"],
+                            cell["column_category"],
+                        )
+                    )
+        assert suppressed_keys, "attese celle soppresse nel campione di test"
+        for pat in payload["candidate_patterns"]:
+            key = (
+                pat["interaction_key"],
+                pat["row_category"],
+                pat["column_category"],
+            )
+            assert key not in suppressed_keys
+
+
+# ---------------------------------------------------------------------------
+# Fase 1C.2 — ROI pattern con boundary primary
+# ---------------------------------------------------------------------------
+
+
+class TestRoiPatternPrimaryBoundaries:
+    def test_primary_boundaries_and_no_recompute(self):
+        assert VERSION == "cecchino_draw_credibility_statistics_v1_2"
+        payload = _analysis(_many_rows(48), bootstrap_iterations=30, min_group_size=3)
+        assert payload["version"] == VERSION
+
+        for pat in payload["candidate_patterns"]:
+            if pat.get("column_type") == "quantile":
+                assert pat.get("boundary_source") == "primary"
+
+        checks = payload["pattern_consistency_checks"]
+        assert checks["market_patterns_using_recomputed_boundaries"] == 0
+
+        for entry in payload["pattern_market_matching"]:
+            assert entry.get("using_recomputed_boundaries") is False
+
+        for group in payload["market_analysis"]["roi_breakdown"]:
+            gk = group.get("group_key") or ""
+            if gk.startswith("pattern__"):
+                assert group.get("boundary_source") == "primary"
+
+
+# ---------------------------------------------------------------------------
+# Fase 1C.2 — semantica leghe paese+campionato
+# ---------------------------------------------------------------------------
+
+
+class TestLeagueSemantics:
+    def test_distinct_names_vs_country_league_pairs(self):
+        # Stesso league_name in due paesi + due leghe nello stesso paese
+        rows = [
+            _row(
+                id=1,
+                provider_fixture_id=1,
+                local_fixture_id=1,
+                country_name="England",
+                league_name="Premier League",
+                competition_id=39,
+            ),
+            _row(
+                id=2,
+                provider_fixture_id=2,
+                local_fixture_id=2,
+                country_name="Wales",
+                league_name="Premier League",
+                competition_id=110,
+            ),
+            _row(
+                id=3,
+                provider_fixture_id=3,
+                local_fixture_id=3,
+                country_name="England",
+                league_name="Championship",
+                competition_id=40,
+            ),
+            _row(
+                id=4,
+                provider_fixture_id=4,
+                local_fixture_id=4,
+                country_name="England",
+                league_name="League One",
+                competition_id=41,
+            ),
+        ]
+        # Replica per volume minimo analitico
+        expanded = []
+        for i in range(12):
+            base = rows[i % len(rows)]
+            expanded.append(
+                _row(
+                    id=100 + i,
+                    provider_fixture_id=9200 + i,
+                    local_fixture_id=700 + i,
+                    country_name=base.country_name,
+                    league_name=base.league_name,
+                    competition_id=base.competition_id,
+                    score_fulltime_home=1 if i % 3 == 0 else 2,
+                    score_fulltime_away=1 if i % 3 == 0 else 0,
+                    goals_home=1 if i % 3 == 0 else 2,
+                    goals_away=1 if i % 3 == 0 else 0,
+                )
+            )
+        payload = _analysis(expanded, bootstrap_iterations=20, min_group_size=2)
+        primary = payload["dataset_summary"]["primary"]
+        # "Premier League" condiviso → meno nomi distinti delle coppie paese+lega
+        assert primary["distinct_league_names_count"] < primary["distinct_country_league_pairs_count"]
+
+        league = payload["league_stability"]
+        pairs = {
+            (lg["country_name"], lg["league_name"])
+            for lg in league["leagues"]
+            if not lg.get("is_others")
+        }
+        assert ("England", "Premier League") in pairs
+        assert ("Wales", "Premier League") in pairs
+        assert league["distinct_country_league_pairs_count"] == primary["distinct_country_league_pairs_count"]
+        # Raggruppamento per (country, league): due voci "Premier League" distinte
+        premier = [
+            lg for lg in league["leagues"]
+            if lg.get("league_name") == "Premier League" and not lg.get("is_others")
+        ]
+        assert len(premier) == 2
+        assert {lg["country_name"] for lg in premier} == {"England", "Wales"}

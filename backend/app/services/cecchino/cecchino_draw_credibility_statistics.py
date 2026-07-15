@@ -29,6 +29,7 @@ from app.services.cecchino.cecchino_draw_credibility_statistics_helpers import (
     WILSON_Z,
     apply_quantile_boundaries,
     auc_mann_whitney,
+    bin_bounds_meta,
     bin_label_from_boundaries,
     bootstrap_auc,
     bootstrap_roi,
@@ -41,12 +42,13 @@ from app.services.cecchino.cecchino_draw_credibility_statistics_helpers import (
     herfindahl,
     hhi_concentration_status,
     log_loss_score,
+    matches_candidate_pattern,
     pearson_r,
     spearman_rho,
     wilson_ci,
 )
 
-VERSION = "cecchino_draw_credibility_statistics_v1_1"
+VERSION = "cecchino_draw_credibility_statistics_v1_2"
 
 NUMERIC_FEATURES = (
     "prob_x_norm",
@@ -321,11 +323,18 @@ def _cohort_target_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     kickoffs = [_parse_kickoff(r) for r in rows]
     kickoffs = [k for k in kickoffs if k is not None]
     days = {k.date().isoformat() for k in kickoffs}
-    leagues = {r.get("league_name") for r in rows if r.get("league_name")}
+    league_names = {r.get("league_name") for r in rows if r.get("league_name")}
     countries = {r.get("country_name") for r in rows if r.get("country_name")}
+    country_league_pairs = {
+        (str(r.get("country_name") or ""), str(r.get("league_name") or ""))
+        for r in rows
+        if r.get("league_name")
+    }
     span = 0
     if kickoffs:
         span = (max(kickoffs) - min(kickoffs)).days
+    distinct_league_names = len(league_names)
+    distinct_countries = len(countries)
     return {
         "rows": n,
         "draws": draws,
@@ -336,8 +345,12 @@ def _cohort_target_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "last_kickoff": max(kickoffs).isoformat() if kickoffs else None,
         "time_span_days": span,
         "distinct_match_days": len(days),
-        "league_count": len(leagues),
-        "country_count": len(countries),
+        "distinct_league_names_count": distinct_league_names,
+        "distinct_country_league_pairs_count": len(country_league_pairs),
+        "distinct_countries_count": distinct_countries,
+        # alias retrocompatibili
+        "league_count": distinct_league_names,
+        "country_count": distinct_countries,
     }
 
 
@@ -749,6 +762,22 @@ def _column_category_for_row(
     return bin_label_from_boundaries(lab, boundaries)
 
 
+def _column_bin_index_for_category(
+    column_category: str,
+    *,
+    column_type: str,
+    boundaries: list[float],
+) -> int | None:
+    """Restituisce bin index one-based per quantile; None se categoriale."""
+    if column_type != "quantile":
+        return None
+    n_bins = len(boundaries) + 1 if boundaries else 1
+    for i in range(n_bins):
+        if bin_label_from_boundaries(i, boundaries) == column_category:
+            return i + 1
+    return None
+
+
 def _build_interaction_cells(
     rows: list[dict],
     *,
@@ -758,6 +787,7 @@ def _build_interaction_cells(
     boundaries: list[float],
     baseline: float,
     min_group_size: int,
+    boundary_source: str,
 ) -> list[dict[str, Any]]:
     buckets: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for r in rows:
@@ -772,6 +802,7 @@ def _build_interaction_cells(
             continue
         buckets[(row_cat, col_cat)].append(r)
 
+    rounded_bounds = [round(b, 4) for b in boundaries]
     cells: list[dict[str, Any]] = []
     for (row_cat, col_cat), grp in sorted(
         buckets.items(),
@@ -787,28 +818,44 @@ def _build_interaction_cells(
                 reason = "count_below_min_group_size"
             elif d < 5:
                 reason = "draws_below_5"
-        dr = pct(d, n)
+        bin_1 = _column_bin_index_for_category(
+            col_cat, column_type=column_type, boundaries=boundaries,
+        )
+        if column_type == "quantile" and bin_1 is not None:
+            bounds_meta = bin_bounds_meta(bin_1 - 1, boundaries)
+        else:
+            bounds_meta = {
+                "column_lower_bound": None,
+                "column_upper_bound": None,
+                "column_lower_inclusive": None,
+                "column_upper_inclusive": None,
+            }
         cell: dict[str, Any] = {
+            "row_dimension": row_dimension,
             "row_category": row_cat,
+            "column_dimension": column_dimension,
             "column_category": col_cat,
+            "column_type": column_type,
+            "column_bin_index": bin_1,
+            **bounds_meta,
+            "boundary_source": boundary_source,
+            "column_boundaries": list(rounded_bounds) if column_type == "quantile" else [],
             "count": n,
             "draws": d,
             "non_draws": n - d,
             "reliable": reliable,
             "suppressed": suppressed,
             "suppression_reason": reason,
+            "draw_rate_pct": None,
+            "wilson_ci_95": None,
+            "lift_vs_baseline_pp": None,
         }
         if not suppressed:
+            dr = pct(d, n)
             cell.update({
                 "draw_rate_pct": dr,
                 "wilson_ci_95": wilson_ci(d, n),
                 "lift_vs_baseline_pp": round(dr - baseline, 2),
-            })
-        else:
-            cell.update({
-                "draw_rate_pct": dr if n > 0 else None,
-                "wilson_ci_95": wilson_ci(d, n) if n > 0 else None,
-                "lift_vs_baseline_pp": round(dr - baseline, 2) if n > 0 else None,
             })
         cells.append(cell)
     return cells
@@ -845,6 +892,7 @@ def _interaction_analysis(
             boundaries=boundaries,
             baseline=baseline_primary,
             min_group_size=min_group_size,
+            boundary_source=boundary_source,
         )
         s_cells = _build_interaction_cells(
             sensitivity,
@@ -854,6 +902,7 @@ def _interaction_analysis(
             boundaries=boundaries,
             baseline=baseline_sensitivity,
             min_group_size=min_group_size,
+            boundary_source=boundary_source,
         )
         reliable_p = sum(1 for c in p_cells if c["reliable"])
         suppressed_p = sum(1 for c in p_cells if c["suppressed"])
@@ -960,6 +1009,20 @@ def _candidate_patterns(
                     f"{ix['row_dimension']}={cell['row_category']} × "
                     f"{ix['column_dimension']}={cell['column_category']}"
                 ),
+                "row_dimension": cell.get("row_dimension") or ix["row_dimension"],
+                "row_category": cell["row_category"],
+                "column_dimension": cell.get("column_dimension") or ix["column_dimension"],
+                "column_type": cell.get("column_type") or (
+                    "quantile" if ix.get("column_boundaries") else "categorical"
+                ),
+                "column_category": cell["column_category"],
+                "column_bin_index": cell.get("column_bin_index"),
+                "column_lower_bound": cell.get("column_lower_bound"),
+                "column_upper_bound": cell.get("column_upper_bound"),
+                "column_lower_inclusive": cell.get("column_lower_inclusive"),
+                "column_upper_inclusive": cell.get("column_upper_inclusive"),
+                "column_boundaries": list(cell.get("column_boundaries") or []),
+                "boundary_source": cell.get("boundary_source") or ix.get("boundary_source"),
                 "primary_count": n,
                 "primary_draws": d,
                 "primary_draw_rate_pct": cell.get("draw_rate_pct"),
@@ -1323,7 +1386,11 @@ def _league_stability(primary: list[dict], *, min_group_size: int) -> dict[str, 
         "fragmented_leagues": len(ranked) > 15,
         "reliable_league_count": reliable,
         "league_count": len(ranked),
-        "note": "campionato non usato come feature predittiva",
+        "distinct_country_league_pairs_count": len(ranked),
+        "note": (
+            "Il raggruppamento considera la coppia paese + campionato. "
+            "Il campionato non è usato come feature predittiva."
+        ),
     }
 
 
@@ -1425,10 +1492,26 @@ def _roi_breakdown(
     bin_count: int,
     bootstrap_iterations: int,
     seed: int,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     bets = _bet_profits(market)
     if not bets:
-        return []
+        empty_diags = []
+        for pat in patterns:
+            empty_diags.append({
+                "pattern_key": pat.get("pattern_key"),
+                "interaction_key": pat.get("interaction_key"),
+                "boundary_source": pat.get("boundary_source") or "primary",
+                "applied_boundaries": list(pat.get("column_boundaries") or []),
+                "applied_bin_index": pat.get("column_bin_index"),
+                "primary_pattern_count": pat.get("primary_count"),
+                "market_rows_examined": 0,
+                "market_rows_matched": 0,
+                "market_match_rate_pct": None,
+                "match_status": "no_market_rows",
+                "warnings": ["no_market_rows_for_primary_pattern"],
+                "using_recomputed_boundaries": False,
+            })
+        return [], empty_diags
 
     dimensions: list[dict[str, Any]] = []
 
@@ -1487,49 +1570,135 @@ def _roi_breakdown(
                 )
             )
 
-    # Pattern ROI su Market: match cella via dimensioni note dove possibile
+    pattern_match_diags: list[dict[str, Any]] = []
     for pi, pat in enumerate(patterns):
-        ix_key = pat["interaction_key"]
-        spec = next((s for s in INTERACTION_SPECS if s["interaction_key"] == ix_key), None)
-        if not spec:
-            continue
-        # description contains row=… × col=…
-        row_cat = pat["description"].split(" × ")[0].split("=", 1)[-1]
-        col_cat = pat["description"].split(" × ")[1].split("=", 1)[-1] if " × " in pat["description"] else ""
-        matched: list[tuple[dict, float, float]] = []
-        if spec["column_type"] == "quantile":
-            vals = [v for v in (_num(r, spec["column_dimension"]) for r, _, _ in bets) if v is not None]
-            boundaries = build_quantile_boundaries(vals, bin_count)
-            for r, odd, profit in bets:
-                if _row_cat_value(r, spec["row_dimension"]) != row_cat:
-                    continue
-                col = _column_category_for_row(
-                    r,
-                    column_dimension=spec["column_dimension"],
-                    column_type="quantile",
-                    boundaries=boundaries,
-                )
-                if col == col_cat:
-                    matched.append((r, odd, profit))
-        else:
-            for r, odd, profit in bets:
-                if (
-                    _row_cat_value(r, spec["row_dimension"]) == row_cat
-                    and _row_cat_value(r, spec["column_dimension"]) == col_cat
-                ):
-                    matched.append((r, odd, profit))
-        dimensions.append(
-            _roi_from_bets(
-                matched,
-                group_key=f"pattern__{pat['pattern_key']}",
-                label=f"pattern: {pat['description']}",
-                boundary_source="market_subset",
-                bootstrap_iterations=bootstrap_iterations,
-                seed=seed + 500 + pi,
-            )
+        diag, roi_row = _roi_pattern_primary_boundaries(
+            bets,
+            pat,
+            bootstrap_iterations=bootstrap_iterations,
+            seed=seed + 500 + pi,
         )
+        pattern_match_diags.append(diag)
+        dimensions.append(roi_row)
 
-    return dimensions
+    return dimensions, pattern_match_diags
+
+
+def _pattern_metadata_complete(pat: dict[str, Any]) -> bool:
+    required = ("row_dimension", "row_category", "column_dimension", "column_type", "column_category")
+    if any(pat.get(k) is None for k in required):
+        return False
+    if pat.get("column_type") == "quantile":
+        return (
+            isinstance(pat.get("column_boundaries"), list)
+            and pat.get("column_bin_index") is not None
+            and pat.get("boundary_source") == "primary"
+        )
+    return pat.get("column_type") == "categorical"
+
+
+def _roi_pattern_primary_boundaries(
+    bets: list[tuple[dict, float, float]],
+    pat: dict[str, Any],
+    *,
+    bootstrap_iterations: int,
+    seed: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    examined = len(bets)
+    warnings: list[str] = []
+    complete = _pattern_metadata_complete(pat)
+    if not complete:
+        match_status = "incomplete_pattern_metadata"
+        warnings.append("incomplete_pattern_metadata")
+        matched: list[tuple[dict, float, float]] = []
+    elif pat.get("column_type") not in ("quantile", "categorical"):
+        match_status = "unsupported_pattern_type"
+        warnings.append("unsupported_pattern_type")
+        matched = []
+    else:
+        if pat.get("column_type") == "quantile" and pat.get("boundary_source") != "primary":
+            warnings.append("pattern_boundary_source_not_primary")
+        matched = [(r, o, p) for r, o, p in bets if matches_candidate_pattern(r, pat)]
+        if not matched:
+            match_status = "no_market_rows"
+            warnings.append("no_market_rows_for_primary_pattern")
+        else:
+            match_status = "matched"
+            if len(matched) < 50:
+                warnings.append("small_market_pattern_sample")
+
+    matched_n = len(matched)
+    match_rate = pct(matched_n, examined) if examined else None
+    applied_bounds = list(pat.get("column_boundaries") or [])
+    diag = {
+        "pattern_key": pat.get("pattern_key"),
+        "interaction_key": pat.get("interaction_key"),
+        "boundary_source": pat.get("boundary_source") or "primary",
+        "applied_boundaries": applied_bounds,
+        "applied_bin_index": pat.get("column_bin_index"),
+        "primary_pattern_count": pat.get("primary_count"),
+        "market_rows_examined": examined,
+        "market_rows_matched": matched_n,
+        "market_match_rate_pct": match_rate,
+        "match_status": match_status,
+        "warnings": warnings,
+        "using_recomputed_boundaries": False,
+    }
+
+    if matched_n == 0:
+        roi_row = {
+            "group_key": f"pattern__{pat.get('pattern_key')}",
+            "label": f"pattern: {pat.get('description')}",
+            "boundary_source": "primary",
+            "count": 0,
+            "bets": 0,
+            "wins": 0,
+            "losses": 0,
+            "roi_pct": None,
+            "reliable": False,
+            "warnings": list(dict.fromkeys(warnings + ["theoretical_historical_roi"])),
+            "pattern_matching": diag,
+        }
+    else:
+        roi_row = _roi_from_bets(
+            matched,
+            group_key=f"pattern__{pat.get('pattern_key')}",
+            label=f"pattern: {pat.get('description')}",
+            boundary_source="primary",
+            bootstrap_iterations=bootstrap_iterations,
+            seed=seed,
+        )
+        roi_row["warnings"] = list(dict.fromkeys((roi_row.get("warnings") or []) + warnings))
+        roi_row["pattern_matching"] = diag
+
+    return diag, roi_row
+
+
+def _pattern_consistency_checks(
+    patterns: list[dict[str, Any]],
+    match_diags: list[dict[str, Any]],
+) -> dict[str, Any]:
+    quant = sum(1 for p in patterns if p.get("column_type") == "quantile")
+    cats = sum(1 for p in patterns if p.get("column_type") == "categorical")
+    with_primary = sum(
+        1 for p in patterns
+        if p.get("boundary_source") == "primary"
+        or p.get("column_type") == "categorical"
+    )
+    missing = sum(1 for p in patterns if not _pattern_metadata_complete(p))
+    matched = sum(1 for d in match_diags if d.get("match_status") == "matched")
+    without = sum(1 for d in match_diags if d.get("match_status") == "no_market_rows")
+    recomputed = sum(1 for d in match_diags if d.get("using_recomputed_boundaries"))
+    return {
+        "patterns_total": len(patterns),
+        "quantitative_patterns": quant,
+        "categorical_patterns": cats,
+        "patterns_with_primary_boundaries": with_primary,
+        "patterns_missing_metadata": missing,
+        "market_patterns_matched": matched,
+        "market_patterns_without_rows": without,
+        "market_patterns_using_recomputed_boundaries": recomputed,
+    }
 
 
 def _market_analysis(
@@ -1585,25 +1754,50 @@ def _market_analysis(
     }
 
     roi = _roi_global(market, bootstrap_iterations=bootstrap_iterations, seed=seed)
-    roi_breakdown = _roi_breakdown(
+    roi_breakdown, pattern_match_diags = _roi_breakdown(
         market,
         patterns,
         bin_count=bin_count,
         bootstrap_iterations=bootstrap_iterations,
         seed=seed + 17,
     )
+    # Arricchisci pattern in-place con diagnostica Market / ROI
+    diag_by_key = {d["pattern_key"]: d for d in pattern_match_diags}
+    roi_by_key = {
+        r["group_key"].removeprefix("pattern__"): r
+        for r in roi_breakdown
+        if str(r.get("group_key", "")).startswith("pattern__")
+    }
+    for pat in patterns:
+        d = diag_by_key.get(pat.get("pattern_key"), {})
+        r = roi_by_key.get(pat.get("pattern_key"), {})
+        pat["market_rows_examined"] = d.get("market_rows_examined")
+        pat["market_rows_matched"] = d.get("market_rows_matched")
+        pat["market_match_rate_pct"] = d.get("market_match_rate_pct")
+        pat["match_status"] = d.get("match_status")
+        pat["market_roi_pct"] = r.get("roi_pct")
+        pat["market_roi_ci"] = r.get("bootstrap_roi_ci_95")
+        pat["market_roi_reliable"] = r.get("reliable")
+        pat["market_match_warnings"] = d.get("warnings") or []
+
     return {
         "cecchino": cal_c,
         "book": cal_b,
         "comparison": comparison,
         "roi": roi,
         "roi_breakdown": roi_breakdown,
+        "pattern_market_matching": pattern_match_diags,
         "warnings": [
             "theoretical_historical_roi",
             "no_transaction_costs",
             "no_slippage",
             "multiple_comparisons_risk",
             "exploratory_not_production",
+        ],
+        "methodological_warnings": [
+            "ROI storico teorico — non rappresenta una previsione futura.",
+            "ROI pattern: soglie definite sulla coorte Primary e applicate senza ricalcolo al Market subset.",
+            "Breakdown autonomi Market usano boundary_source=market_subset.",
         ],
     }
 
@@ -1884,6 +2078,10 @@ def build_draw_credibility_statistical_analysis(
     )
     t_after_mkt = time.perf_counter()
 
+    consistency = _pattern_consistency_checks(
+        patterns, market_block.get("pattern_market_matching") or [],
+    )
+
     t_conc0 = time.perf_counter()
     conclusions = _research_conclusions(leaderboard, redundancy, maturity, pvs, patterns)
     t_after_conc = time.perf_counter()
@@ -1895,6 +2093,8 @@ def build_draw_credibility_statistical_analysis(
         "exploratory_not_production",
         "multiple_comparisons_risk",
     ])
+    if consistency.get("market_patterns_using_recomputed_boundaries", 0) > 0:
+        warnings.append("market_patterns_using_recomputed_boundaries")
 
     t_end = time.perf_counter()
     payload = {
@@ -1940,6 +2140,14 @@ def build_draw_credibility_statistical_analysis(
         "league_stability": league,
         "interaction_analysis": interactions,
         "candidate_patterns": patterns,
+        "pattern_consistency_checks": consistency,
+        "pattern_market_matching": market_block.get("pattern_market_matching") or [],
+        "league_count_semantics": {
+            "distinct_league_names_count": "numero di league_name distinti (ignora paese)",
+            "distinct_country_league_pairs_count": "numero di coppie distinte (country_name, league_name)",
+            "distinct_countries_count": "numero di country_name distinti",
+            "league_stability_grouping": "country_name + league_name",
+        },
         "market_analysis": market_block,
         "research_conclusions": conclusions,
         "warnings": warnings,

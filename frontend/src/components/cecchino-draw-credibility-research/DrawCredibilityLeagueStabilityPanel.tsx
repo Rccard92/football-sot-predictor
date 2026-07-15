@@ -26,15 +26,24 @@ function ShareBar({ pct }: { pct: number | null | undefined }) {
 
 export function DrawCredibilityLeagueStabilityPanel({ league }: Props) {
   const rows = league.leagues ?? []
+  const competitionCount =
+    typeof league.distinct_country_league_pairs_count === 'number'
+      ? league.distinct_country_league_pairs_count
+      : league.league_count
 
   return (
     <section className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
-      <h3 className="mb-3 text-sm font-semibold text-slate-800">Stabilità per lega</h3>
+      <h3 className="mb-3 text-sm font-semibold text-slate-800">Stabilità per competizione</h3>
+
+      <p className="mb-3 text-[11px] text-slate-500">
+        {league.note ??
+          'Il raggruppamento considera la coppia paese + campionato. Il campionato non è usato come feature predittiva.'}
+      </p>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-lg border border-slate-100 px-3 py-2 text-xs">
-          <p className="text-[10px] uppercase text-slate-500">Leghe</p>
-          <p className="text-sm font-semibold tabular-nums text-slate-900">{league.league_count}</p>
+          <p className="text-[10px] uppercase text-slate-500">Competizioni paese/campionato</p>
+          <p className="text-sm font-semibold tabular-nums text-slate-900">{competitionCount}</p>
         </div>
         <div className="rounded-lg border border-slate-100 px-3 py-2 text-xs">
           <p className="text-[10px] uppercase text-slate-500">Share top 5</p>
@@ -58,7 +67,7 @@ export function DrawCredibilityLeagueStabilityPanel({ league }: Props) {
           <p className="text-[11px] text-slate-600">{league.concentration_status}</p>
         </div>
         <div className="rounded-lg border border-slate-100 px-3 py-2 text-xs">
-          <p className="text-[10px] uppercase text-slate-500">Leghe affidabili</p>
+          <p className="text-[10px] uppercase text-slate-500">Competizioni affidabili</p>
           <p className="text-sm font-semibold tabular-nums text-slate-900">
             {league.reliable_league_count}
           </p>
@@ -69,17 +78,17 @@ export function DrawCredibilityLeagueStabilityPanel({ league }: Props) {
       </div>
 
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-700">
-        Top leghe
+        Top competizioni paese/campionato
       </h4>
       {rows.length === 0 ? (
-        <p className="text-xs text-slate-500">Nessuna riga per lega.</p>
+        <p className="text-xs text-slate-500">Nessuna riga per competizione.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
                 <th className="px-2 py-2 text-left">Paese</th>
-                <th className="px-2 py-2 text-left">Lega</th>
+                <th className="px-2 py-2 text-left">Campionato</th>
                 <th className="px-2 py-2 text-left">N</th>
                 <th className="px-2 py-2 text-left">% dataset</th>
                 <th className="px-2 py-2 text-left">Draw %</th>
@@ -104,7 +113,6 @@ export function DrawCredibilityLeagueStabilityPanel({ league }: Props) {
           </table>
         </div>
       )}
-      {league.note ? <p className="mt-2 text-[11px] text-slate-500">{league.note}</p> : null}
     </section>
   )
 }

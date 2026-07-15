@@ -12,6 +12,9 @@ type Props = {
 
 type CellSource = 'primary' | 'sensitivity'
 
+const SUPPRESSED_TOOLTIP =
+  'Cella esclusa dall’interpretazione statistica: il campione non raggiunge i criteri minimi.'
+
 function fmt(n: number | null | undefined, digits = 1): string {
   return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(digits) : '—'
 }
@@ -111,28 +114,55 @@ export function DrawCredibilityInteractionPanel({ interactions }: Props) {
                   return (
                     <tr
                       key={`${c.row_category}__${c.column_category}`}
-                      className={`border-b border-slate-100 ${suppressed ? 'bg-slate-50/80 text-slate-400' : ''}`}
+                      className={`border-b border-slate-100 ${
+                        suppressed ? 'bg-slate-50/80 text-slate-500' : ''
+                      }`}
+                      title={suppressed ? SUPPRESSED_TOOLTIP : undefined}
                     >
                       <td className="px-2 py-1.5">{c.row_category}</td>
                       <td className="px-2 py-1.5">{c.column_category}</td>
                       <td className="px-2 py-1.5 tabular-nums">{c.count}</td>
                       <td className="px-2 py-1.5 tabular-nums">{c.draws}</td>
-                      <td className="px-2 py-1.5 tabular-nums">
-                        {suppressed ? '—' : fmt(c.draw_rate_pct)}
-                      </td>
-                      <td className="px-2 py-1.5 tabular-nums">
-                        {suppressed ? '—' : fmt(c.lift_vs_baseline_pp)}
-                      </td>
-                      <td className="px-2 py-1.5 tabular-nums">
-                        {suppressed ? '—' : wilsonTxt(c.wilson_ci_95)}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {suppressed
-                          ? `Soppressa${c.suppression_reason ? ` (${c.suppression_reason})` : ''}`
-                          : c.reliable
-                            ? 'Affidabile'
-                            : 'Non affidabile'}
-                      </td>
+                      {suppressed ? (
+                        <>
+                          <td className="px-2 py-1.5" colSpan={3}>
+                            <span
+                              className="inline-flex rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600"
+                              title={SUPPRESSED_TOOLTIP}
+                            >
+                              Campione insufficiente
+                            </span>
+                            {c.suppression_reason ? (
+                              <span className="ml-2 text-[11px] text-slate-500">
+                                {c.suppression_reason}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-500">—</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-2 py-1.5 tabular-nums">{fmt(c.draw_rate_pct)}</td>
+                          <td
+                            className={`px-2 py-1.5 tabular-nums ${
+                              typeof c.lift_vs_baseline_pp === 'number' && c.lift_vs_baseline_pp > 0
+                                ? 'text-emerald-700'
+                                : typeof c.lift_vs_baseline_pp === 'number' &&
+                                    c.lift_vs_baseline_pp < 0
+                                  ? 'text-rose-700'
+                                  : ''
+                            }`}
+                          >
+                            {fmt(c.lift_vs_baseline_pp)}
+                          </td>
+                          <td className="px-2 py-1.5 tabular-nums">
+                            {wilsonTxt(c.wilson_ci_95)}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {c.reliable ? 'Affidabile' : 'Non affidabile'}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )
                 })}

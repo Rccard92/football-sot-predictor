@@ -232,6 +232,7 @@ export function RicercaCredibilitaXPage() {
               <DrawCredibilityResearchMaturityPanel
                 maturity={statisticsHook.lastAnalysis.research_maturity}
                 performance={statisticsHook.lastAnalysis.performance}
+                primarySummary={statisticsHook.lastAnalysis.dataset_summary.primary}
               />
               <DrawCredibilityStatisticsBaselinePanel
                 primary={statisticsHook.lastAnalysis.dataset_summary.primary}

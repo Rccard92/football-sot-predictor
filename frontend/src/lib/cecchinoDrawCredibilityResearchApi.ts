@@ -456,7 +456,12 @@ export type DrawCredibilityCohortTargetSummary = {
   last_kickoff: string | null
   time_span_days: number
   distinct_match_days: number
+  distinct_league_names_count?: number
+  distinct_country_league_pairs_count?: number
+  distinct_countries_count?: number
+  /** @deprecated prefer distinct_league_names_count */
   league_count: number
+  /** @deprecated prefer distinct_countries_count */
   country_count: number
 }
 
@@ -507,17 +512,40 @@ export type DrawCredibilityFeatureFamilyMeta = {
   [key: string]: unknown
 }
 
+export type DrawCredibilityBoundarySource =
+  | 'primary'
+  | 'market_subset'
+  | 'categorical'
+  | 'cohort'
+  | string
+
+export type DrawCredibilityColumnType = 'quantile' | 'categorical' | string
+
 export type DrawCredibilityInteractionCell = {
+  row_dimension?: string
   row_category: string
+  column_dimension?: string
   column_category: string
+  column_type?: DrawCredibilityColumnType
+  /** Indice bin 1-based per colonne quantile; null se categoriale. */
+  column_bin_index?: number | null
+  column_lower_bound?: number | null
+  column_upper_bound?: number | null
+  column_lower_inclusive?: boolean | null
+  column_upper_inclusive?: boolean | null
+  boundary_source?: DrawCredibilityBoundarySource
+  column_boundaries?: number[]
   count: number
   draws: number
   non_draws?: number
   reliable: boolean
   suppressed: boolean
   suppression_reason?: string | null
+  /** Null quando suppressed=true. */
   draw_rate_pct?: number | null
+  /** Null quando suppressed=true. */
   wilson_ci_95?: WilsonCi | null
+  /** Null quando suppressed=true. */
   lift_vs_baseline_pp?: number | null
   [key: string]: unknown
 }
@@ -527,7 +555,8 @@ export type DrawCredibilityInteractionBlock = {
   label: string
   row_dimension: string
   column_dimension: string
-  boundary_source?: string
+  column_type?: DrawCredibilityColumnType
+  boundary_source?: DrawCredibilityBoundarySource
   column_boundaries?: number[]
   primary_cells: DrawCredibilityInteractionCell[]
   sensitivity_cells: DrawCredibilityInteractionCell[]
@@ -535,10 +564,53 @@ export type DrawCredibilityInteractionBlock = {
   [key: string]: unknown
 }
 
+export type DrawCredibilityBootstrapRoiCi = {
+  lower_pct?: number | null
+  upper_pct?: number | null
+  crosses_zero?: boolean | null
+  /** @deprecated */
+  lower?: number | null
+  /** @deprecated */
+  upper?: number | null
+  /** @deprecated */
+  ci_lower?: number | null
+  /** @deprecated */
+  ci_upper?: number | null
+  [key: string]: unknown
+}
+
+export type DrawCredibilityPatternMarketMatching = {
+  pattern_key?: string | null
+  interaction_key?: string | null
+  boundary_source?: DrawCredibilityBoundarySource
+  applied_boundaries?: number[]
+  applied_bin_index?: number | null
+  primary_pattern_count?: number | null
+  market_rows_examined?: number | null
+  market_rows_matched?: number | null
+  market_match_rate_pct?: number | null
+  match_status?: string | null
+  warnings?: string[]
+  using_recomputed_boundaries?: boolean
+  [key: string]: unknown
+}
+
 export type DrawCredibilityCandidatePattern = {
   pattern_key: string
   interaction_key: string
   description: string
+  row_dimension?: string
+  row_category?: string
+  column_dimension?: string
+  column_type?: DrawCredibilityColumnType
+  column_category?: string
+  column_bin_index?: number | null
+  column_lower_bound?: number | null
+  column_upper_bound?: number | null
+  column_lower_inclusive?: boolean | null
+  column_upper_inclusive?: boolean | null
+  column_boundaries?: number[]
+  boundary_source?: DrawCredibilityBoundarySource
   primary_count: number
   primary_draws: number
   primary_draw_rate_pct?: number | null
@@ -552,6 +624,34 @@ export type DrawCredibilityCandidatePattern = {
   evidence_status?: string
   stability_status?: string
   warnings?: string[]
+  market_rows_examined?: number | null
+  market_rows_matched?: number | null
+  market_match_rate_pct?: number | null
+  match_status?: string | null
+  market_roi_pct?: number | null
+  market_roi_ci?: DrawCredibilityBootstrapRoiCi | null
+  market_roi_reliable?: boolean | null
+  market_match_warnings?: string[]
+  [key: string]: unknown
+}
+
+export type DrawCredibilityPatternConsistencyChecks = {
+  patterns_total?: number
+  quantitative_patterns?: number
+  categorical_patterns?: number
+  patterns_with_primary_boundaries?: number
+  patterns_missing_metadata?: number
+  market_patterns_matched?: number
+  market_patterns_without_rows?: number
+  market_patterns_using_recomputed_boundaries?: number
+  [key: string]: unknown
+}
+
+export type DrawCredibilityLeagueCountSemantics = {
+  distinct_league_names_count?: string
+  distinct_country_league_pairs_count?: string
+  distinct_countries_count?: string
+  league_stability_grouping?: string
   [key: string]: unknown
 }
 
@@ -609,6 +709,7 @@ export type DrawCredibilityLeagueStability = {
   fragmented_leagues: boolean
   reliable_league_count: number
   league_count: number
+  distinct_country_league_pairs_count?: number
   note?: string
   [key: string]: unknown
 }
@@ -616,6 +717,7 @@ export type DrawCredibilityLeagueStability = {
 export type DrawCredibilityRoiBlock = {
   group_key?: string
   label?: string
+  boundary_source?: DrawCredibilityBoundarySource
   count?: number
   bets?: number
   wins?: number
@@ -624,7 +726,8 @@ export type DrawCredibilityRoiBlock = {
   roi_pct?: number | null
   reliable?: boolean
   ci_crosses_zero?: boolean | null
-  bootstrap_roi_ci_95?: Record<string, unknown> | null
+  bootstrap_roi_ci_95?: DrawCredibilityBootstrapRoiCi | null
+  pattern_matching?: DrawCredibilityPatternMarketMatching
   warnings?: string[]
   [key: string]: unknown
 }
@@ -652,6 +755,7 @@ export type DrawCredibilityMarketAnalysis = {
   comparison: DrawCredibilityMarketComparison
   roi: DrawCredibilityRoiBlock
   roi_breakdown: DrawCredibilityRoiBlock[]
+  pattern_market_matching?: DrawCredibilityPatternMarketMatching[]
   warnings?: string[]
   methodological_warnings?: string[]
   [key: string]: unknown
@@ -762,6 +866,9 @@ export type DrawCredibilityStatisticsResponse = {
   league_stability: DrawCredibilityLeagueStability
   interaction_analysis: DrawCredibilityInteractionBlock[]
   candidate_patterns: DrawCredibilityCandidatePattern[]
+  pattern_consistency_checks?: DrawCredibilityPatternConsistencyChecks
+  pattern_market_matching?: DrawCredibilityPatternMarketMatching[]
+  league_count_semantics?: DrawCredibilityLeagueCountSemantics
   market_analysis: DrawCredibilityMarketAnalysis
   research_conclusions: DrawCredibilityResearchConclusions
   /** Alias top-level opzionale delle raccomandazioni fase successiva. */
