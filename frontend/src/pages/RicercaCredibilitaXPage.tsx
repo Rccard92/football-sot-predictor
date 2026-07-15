@@ -23,6 +23,7 @@ import { DrawCredibilityResearchPageHeader } from '../components/cecchino-draw-c
 import { DrawCredibilityResearchSkeleton } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchSkeleton'
 import { DrawCredibilityResearchTabs } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchTabs'
 import { DrawCredibilityVersionTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityVersionTable'
+import { DrawCredibilityCandidatePatternsPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityCandidatePatternsPanel'
 import { DrawCredibilityFeatureDetailPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityFeatureDetailPanel'
 import { DrawCredibilityFeatureLeaderboardTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityFeatureLeaderboardTable'
 import { DrawCredibilityInteractionPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityInteractionPanel'
@@ -244,6 +245,10 @@ export function RicercaCredibilitaXPage() {
                 features={
                   statisticsHook.lastAnalysis.numeric_feature_analysis.eligible_primary ?? []
                 }
+                sensitivityFeatures={
+                  statisticsHook.lastAnalysis.numeric_feature_analysis
+                    .all_usable_sensitivity ?? []
+                }
                 primaryVsSensitivity={
                   statisticsHook.lastAnalysis.primary_vs_sensitivity.feature_comparisons
                 }
@@ -256,9 +261,9 @@ export function RicercaCredibilitaXPage() {
               />
               <DrawCredibilityInteractionPanel
                 interactions={statisticsHook.lastAnalysis.interaction_analysis}
-                categorical={
-                  statisticsHook.lastAnalysis.categorical_feature_analysis.eligible_primary ?? []
-                }
+              />
+              <DrawCredibilityCandidatePatternsPanel
+                patterns={statisticsHook.lastAnalysis.candidate_patterns}
               />
               <DrawCredibilityTemporalStabilityPanel
                 temporal={statisticsHook.lastAnalysis.temporal_stability}
@@ -272,6 +277,11 @@ export function RicercaCredibilitaXPage() {
               />
               <DrawCredibilityResearchConclusionsPanel
                 conclusions={statisticsHook.lastAnalysis.research_conclusions}
+                nextPhaseRecommendations={
+                  statisticsHook.lastAnalysis.next_phase_feature_recommendations ??
+                  statisticsHook.lastAnalysis.research_conclusions
+                    .next_phase_feature_recommendations
+                }
               />
             </div>
           ) : null}

@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Credibilità X Research — Correzione e completamento Fase 1C.1 (2026-07-15)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_draw_credibility_statistics_v1_1` |
+| Bug segni | dominant_sign HOME/DRAW/AWAY (non 1/X/2) → `normalize_outcome_side` |
+| Directional | +/− conviction su DRAW / HOME·AWAY |
+| Analisi | interazioni×7, pattern, temporal, league HHI, market/ROI fasce |
+| Conclusioni | modest + famiglie + next_phase strutturato |
+| Produttivo | invariato (F36, Dominanza, segnali, KPI, rating) |
+
 ## Credibilità X Research — Analisi statistica Fase 1C (2026-07-15)
 
 Analisi esplorativa offline sul dataset Credibilità X (non modifica segnali/KPI produttivi).

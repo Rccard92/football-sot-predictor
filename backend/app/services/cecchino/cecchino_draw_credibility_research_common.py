@@ -540,6 +540,28 @@ def payload_structure_key(output: dict[str, Any] | None) -> str | None:
     return "|".join(keys) if keys else "empty"
 
 
+def normalize_outcome_side(value: Any) -> str | None:
+    """Normalizza il segno dominante a HOME / DRAW / AWAY."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if value == 1:
+            return "HOME"
+        if value == 2:
+            return "AWAY"
+        return None
+    s = str(value).strip().upper()
+    if not s:
+        return None
+    if s in ("HOME", "1"):
+        return "HOME"
+    if s in ("DRAW", "X"):
+        return "DRAW"
+    if s in ("AWAY", "2"):
+        return "AWAY"
+    return None
+
+
 def resolve_cecchino_final_version(final: dict[str, Any] | None) -> str | None:
     """Legge un vero campo versione da final, mai il dict weights."""
     if not final or not isinstance(final, dict):

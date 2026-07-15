@@ -1,14 +1,12 @@
-"""Analisi statistica Credibilità X — Fase 1C (stdlib only)."""
+"""Analisi statistica Credibilità X — Fase 1C.1 (stdlib only)."""
 
 from __future__ import annotations
 
 import math
-import random
 import statistics
 import time
-from bisect import bisect_left
 from collections import Counter, defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -21,39 +19,108 @@ from app.services.cecchino.cecchino_draw_credibility_research_common import (
     COHORT_ALL_USABLE_SENSITIVITY,
     COHORT_ELIGIBLE_PRIMARY,
     COHORT_MARKET_SUBSET,
-    ELIGIBILITY_ELIGIBLE,
     _parse_iso_dt,
+    normalize_outcome_side,
     pct,
 )
+from app.services.cecchino.cecchino_draw_credibility_statistics_helpers import (
+    FEATURE_FAMILIES,
+    TREND_TOLERANCE_PP,
+    WILSON_Z,
+    apply_quantile_boundaries,
+    auc_mann_whitney,
+    bin_label_from_boundaries,
+    bootstrap_auc,
+    bootstrap_roi,
+    brier_score,
+    build_quantile_boundaries,
+    classify_trend,
+    classify_trend_with_diagnostics,
+    clamp_prob,
+    feature_family,
+    herfindahl,
+    hhi_concentration_status,
+    log_loss_score,
+    pearson_r,
+    spearman_rho,
+    wilson_ci,
+)
 
-VERSION = "cecchino_draw_credibility_statistics_v1"
-WILSON_Z = 1.959963984540054
-TREND_TOLERANCE_PP = 2.0
-PROB_CLAMP_LO = 1e-15
-PROB_CLAMP_HI = 1.0 - 1e-15
+VERSION = "cecchino_draw_credibility_statistics_v1_1"
 
 NUMERIC_FEATURES = (
-    "prob_x_norm", "quota_cecchino_x", "x_vs_best_lateral_pp", "x_vs_second_probability_pp",
-    "f36_abs", "f36_score_existing", "dominance_pp", "dominance_normalized_pp",
-    "conviction_index_candidate", "x_directional_conviction_candidate",
-    "probability_gap_1_2_pp", "probability_balance_index", "gap_coherence_index_candidate",
-    "prob_under_2_5_cecchino_pct", "under_minus_over_pp", "under_strength_pp", "hours_to_kickoff",
+    "prob_x_norm",
+    "quota_cecchino_x",
+    "x_vs_best_lateral_pp",
+    "x_vs_second_probability_pp",
+    "f36_abs",
+    "f36_score_existing",
+    "dominance_pp",
+    "dominance_normalized_pp",
+    "conviction_index_candidate",
+    "x_directional_conviction_candidate",
+    "probability_gap_1_2_pp",
+    "probability_balance_index",
+    "gap_coherence_index_candidate",
+    "prob_under_2_5_cecchino_pct",
+    "under_minus_over_pp",
+    "under_strength_pp",
+    "hours_to_kickoff",
 )
 CATEGORICAL_FEATURES = (
-    "x_rank", "x_tied_for_top", "x_is_top", "x_is_last", "dominant_sign",
-    "conviction_class_candidate", "f36_class_existing", "gap_coherence_class_candidate",
-    "goal_probability_source", "hours_to_kickoff_class",
+    "x_rank",
+    "x_tied_for_top",
+    "x_is_top",
+    "x_is_last",
+    "dominant_sign",
+    "dominant_sign_normalized",
+    "x_conviction_direction",
+    "x_direction_bucket",
+    "conviction_class_candidate",
+    "f36_class_existing",
+    "gap_coherence_class_candidate",
+    "goal_probability_source",
+    "hours_to_kickoff_class",
+)
+PVS_CATEGORICAL_FEATURES = (
+    "x_rank",
+    "dominant_sign_normalized",
+    "x_conviction_direction",
+    "conviction_class_candidate",
+    "f36_class_existing",
+    "gap_coherence_class_candidate",
+    "hours_to_kickoff_class",
 )
 BOOK_NUMERIC = (
-    "prob_book_x_norm", "quota_book_x", "deviation_x_pp", "market_deviation_mean_pp",
-    "prob_book_under_2_5_norm", "book_1x2_overround", "book_goal_overround",
+    "prob_book_x_norm",
+    "quota_book_x",
+    "deviation_x_pp",
+    "market_deviation_mean_pp",
+    "prob_book_under_2_5_norm",
+    "book_1x2_overround",
+    "book_goal_overround",
 )
 CORRELATION_FEATURES = NUMERIC_FEATURES
+TEMPORAL_AUC_FEATURES = (
+    "prob_x_norm",
+    "prob_under_2_5_cecchino_pct",
+    "f36_abs",
+    "x_directional_conviction_candidate",
+    "probability_gap_1_2_pp",
+    "hours_to_kickoff",
+)
 
 CONVICTION_ORDER = ("Molto Debole", "Debole", "Moderata", "Forte", "Molto Forte")
 F36_ORDER = ("Equilibrio forte", "Equilibrio", "Transizione", "Squilibrio")
 GAP_COH_ORDER = ("Non Confermato", "Debole", "Parziale", "Confermato", "Fortemente Confermato")
 HOURS_CLASS_ORDER = ("<=24h", ">24-72h", ">72-120h", ">120h")
+X_DIRECTION_ORDER = (
+    "draw_above_laterals",
+    "draw_near_laterals",
+    "draw_below_laterals",
+    "unknown",
+)
+SIGN_ORDER = ("HOME", "DRAW", "AWAY", "null")
 
 EXPECTED_REDUNDANCY_GROUPS = (
     ("quota_cecchino_x", "prob_x_norm"),
@@ -61,6 +128,58 @@ EXPECTED_REDUNDANCY_GROUPS = (
     ("f36_abs", "probability_gap_1_2_pp"),
     ("probability_gap_1_2_pp", "probability_balance_index"),
     ("prob_under_2_5_cecchino_pct", "under_minus_over_pp"),
+)
+
+INTERACTION_SPECS: tuple[dict[str, Any], ...] = (
+    {
+        "interaction_key": "x_rank_x_under_q",
+        "label": "x_rank × Under 2.5 quintile",
+        "row_dimension": "x_rank",
+        "column_dimension": "prob_under_2_5_cecchino_pct",
+        "column_type": "quantile",
+    },
+    {
+        "interaction_key": "dominant_sign_x_conviction_class",
+        "label": "dominant_sign_normalized × conviction_class_candidate",
+        "row_dimension": "dominant_sign_normalized",
+        "column_dimension": "conviction_class_candidate",
+        "column_type": "categorical",
+    },
+    {
+        "interaction_key": "f36_class_x_rank",
+        "label": "f36_class_existing × x_rank",
+        "row_dimension": "f36_class_existing",
+        "column_dimension": "x_rank",
+        "column_type": "categorical",
+    },
+    {
+        "interaction_key": "f36_class_x_under_q",
+        "label": "f36_class_existing × Under 2.5 quintile",
+        "row_dimension": "f36_class_existing",
+        "column_dimension": "prob_under_2_5_cecchino_pct",
+        "column_type": "quantile",
+    },
+    {
+        "interaction_key": "x_direction_bucket_x_under_q",
+        "label": "x_direction_bucket × Under 2.5 quintile",
+        "row_dimension": "x_direction_bucket",
+        "column_dimension": "prob_under_2_5_cecchino_pct",
+        "column_type": "quantile",
+    },
+    {
+        "interaction_key": "dominant_sign_x_f36_class",
+        "label": "dominant_sign_normalized × f36_class_existing",
+        "row_dimension": "dominant_sign_normalized",
+        "column_dimension": "f36_class_existing",
+        "column_type": "categorical",
+    },
+    {
+        "interaction_key": "hours_class_x_prob_x_q",
+        "label": "hours_to_kickoff_class × prob_x_norm quintile",
+        "row_dimension": "hours_to_kickoff_class",
+        "column_dimension": "prob_x_norm",
+        "column_type": "quantile",
+    },
 )
 
 
@@ -74,215 +193,6 @@ def _round_out(obj: Any, ndigits: int = 4) -> Any:
     if isinstance(obj, list):
         return [_round_out(v, ndigits) for v in obj]
     return obj
-
-
-def wilson_ci(successes: int, n: int, z: float = WILSON_Z) -> dict[str, float | None]:
-    if n <= 0:
-        return {"lower_pct": None, "upper_pct": None}
-    p_hat = successes / n
-    z2 = z * z
-    denom = 1 + z2 / n
-    center = (p_hat + z2 / (2 * n)) / denom
-    margin = z * math.sqrt((p_hat * (1 - p_hat) + z2 / (4 * n)) / n) / denom
-    return {
-        "lower_pct": round(max(0.0, center - margin) * 100, 2),
-        "upper_pct": round(min(1.0, center + margin) * 100, 2),
-    }
-
-
-def _rank_with_ties(values: list[float]) -> list[float]:
-    indexed = sorted(enumerate(values), key=lambda x: x[1])
-    ranks = [0.0] * len(values)
-    i = 0
-    while i < len(indexed):
-        j = i
-        while j < len(indexed) and indexed[j][1] == indexed[i][1]:
-            j += 1
-        avg_rank = (i + 1 + j) / 2.0
-        for k in range(i, j):
-            ranks[indexed[k][0]] = avg_rank
-        i = j
-    return ranks
-
-
-def auc_mann_whitney(y_true: list[int], scores: list[float]) -> float | None:
-    if len(y_true) != len(scores) or len(y_true) < 2:
-        return None
-    pos = [s for y, s in zip(y_true, scores) if y == 1]
-    neg = [s for y, s in zip(y_true, scores) if y == 0]
-    if not pos or not neg:
-        return None
-    ranks = _rank_with_ties(scores)
-    rank_sum_pos = sum(r for y, r in zip(y_true, ranks) if y == 1)
-    n_pos = len(pos)
-    n_neg = len(neg)
-    u = rank_sum_pos - n_pos * (n_pos + 1) / 2
-    return u / (n_pos * n_neg)
-
-
-def pearson_r(xs: list[float], ys: list[float]) -> float | None:
-    n = len(xs)
-    if n < 2 or len(ys) != n:
-        return None
-    mx = statistics.mean(xs)
-    my = statistics.mean(ys)
-    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    den_x = math.sqrt(sum((x - mx) ** 2 for x in xs))
-    den_y = math.sqrt(sum((y - my) ** 2 for y in ys))
-    if den_x == 0 or den_y == 0:
-        return None
-    return num / (den_x * den_y)
-
-
-def spearman_rho(xs: list[float], ys: list[float]) -> float | None:
-    if len(xs) != len(ys) or len(xs) < 2:
-        return None
-    return pearson_r(_rank_with_ties(xs), _rank_with_ties(ys))
-
-
-def bootstrap_auc(
-    y_true: list[int],
-    scores: list[float],
-    *,
-    iterations: int,
-    seed: int,
-) -> dict[str, Any]:
-    rng = random.Random(seed)
-    n = len(y_true)
-    aucs: list[float] = []
-    for _ in range(iterations):
-        idx = [rng.randrange(n) for _ in range(n)]
-        yt = [y_true[i] for i in idx]
-        sc = [scores[i] for i in idx]
-        a = auc_mann_whitney(yt, sc)
-        if a is not None:
-            aucs.append(a)
-    if len(aucs) < 10:
-        return {"auc": None, "auc_ci_lower": None, "auc_ci_upper": None, "valid_bootstrap_iterations": len(aucs)}
-    aucs.sort()
-    lo = aucs[int(0.025 * len(aucs))]
-    hi = aucs[min(len(aucs) - 1, int(0.975 * len(aucs)))]
-    return {
-        "auc": round(statistics.mean(aucs), 4),
-        "auc_ci_lower": round(lo, 4),
-        "auc_ci_upper": round(hi, 4),
-        "valid_bootstrap_iterations": len(aucs),
-    }
-
-
-def _quantile_bins(values: list[float], bin_count: int) -> list[dict[str, Any]]:
-    if not values:
-        return []
-    sorted_vals = sorted(values)
-    n = len(sorted_vals)
-    actual_bins = min(bin_count, len(set(sorted_vals)))
-    if actual_bins <= 0:
-        return []
-    edges: list[float] = []
-    for i in range(1, actual_bins):
-        q_idx = int(i * n / actual_bins)
-        q_idx = min(q_idx, n - 1)
-        edges.append(sorted_vals[q_idx])
-    unique_edges: list[float] = []
-    for e in edges:
-        if not unique_edges or e != unique_edges[-1]:
-            unique_edges.append(e)
-    bounds = [-math.inf] + unique_edges + [math.inf]
-    bins: list[dict[str, Any]] = []
-    for i in range(len(bounds) - 1):
-        lo, hi = bounds[i], bounds[i + 1]
-        lo_inc = i > 0
-        hi_inc = i == len(bounds) - 2
-        in_bin = []
-        for v in values:
-            if lo_inc:
-                ok_lo = v >= lo
-            else:
-                ok_lo = v > lo
-            if hi_inc:
-                ok_hi = v <= hi
-            else:
-                ok_hi = v < hi
-            if ok_lo and ok_hi:
-                in_bin.append(v)
-        if not in_bin and i < len(bounds) - 2:
-            continue
-        label = f"Q{i + 1}"
-        if math.isfinite(lo) and math.isfinite(hi):
-            label = f"{lo:.2f}–{hi:.2f}" if hi_inc else f"{lo:.2f}–<{hi:.2f}"
-        bins.append({
-            "index": len(bins) + 1,
-            "label": label,
-            "lower_bound": None if not math.isfinite(lo) else round(lo, 4),
-            "upper_bound": None if not math.isfinite(hi) else round(hi, 4),
-            "lower_inclusive": lo_inc,
-            "upper_inclusive": hi_inc,
-            "values": in_bin,
-        })
-    return bins
-
-
-def classify_trend(rates: list[float | None], *, tolerance_pp: float = TREND_TOLERANCE_PP) -> str:
-    valid = [r for r in rates if r is not None]
-    if len(valid) < 3:
-        return "insufficient_data"
-    if max(valid) - min(valid) <= tolerance_pp:
-        return "flat"
-    diffs = [valid[i + 1] - valid[i] for i in range(len(valid) - 1)]
-    inc = sum(1 for d in diffs if d > tolerance_pp)
-    dec = sum(1 for d in diffs if d < -tolerance_pp)
-    if inc >= len(diffs) - 1 and dec == 0:
-        return "increasing"
-    if dec >= len(diffs) - 1 and inc == 0:
-        return "decreasing"
-    mid = len(valid) // 2
-    if valid[0] > valid[-1] and max(valid[mid:]) > valid[0] + tolerance_pp:
-        return "u_shaped"
-    if valid[0] < valid[-1] and min(valid[mid:]) < valid[0] - tolerance_pp:
-        return "inverted_u"
-    return "irregular"
-
-
-def _clamp_prob(p: float) -> float:
-    return max(PROB_CLAMP_LO, min(PROB_CLAMP_HI, p))
-
-
-def brier_score(probs: list[float], y_true: list[int]) -> float | None:
-    if not probs or len(probs) != len(y_true):
-        return None
-    return sum((p - y) ** 2 for p, y in zip(probs, y_true)) / len(probs)
-
-
-def log_loss_score(probs: list[float], y_true: list[int]) -> float | None:
-    if not probs or len(probs) != len(y_true):
-        return None
-    total = 0.0
-    for p, y in zip(probs, y_true):
-        pc = _clamp_prob(p)
-        total += -(y * math.log(pc) + (1 - y) * math.log(1 - pc))
-    return total / len(probs)
-
-
-def expected_calibration_error(probs: list[float], y_true: list[float], weights: list[int] | None = None) -> float | None:
-    if not probs:
-        return None
-    bins = _quantile_bins(probs, 5)
-    if not bins:
-        return None
-    total_w = 0
-    ece = 0.0
-    for b in bins:
-        idx_vals = b["values"]
-        if not idx_vals:
-            continue
-        w = len(idx_vals)
-        total_w += w
-        actual = statistics.mean(
-            [y_true[i] for i, p in enumerate(probs) if p in idx_vals]
-        ) if any(p in idx_vals for p in probs) else 0
-        pred = statistics.mean(idx_vals)
-        ece += w * abs(pred - actual)
-    return ece / total_w if total_w else None
 
 
 def _num(row: dict, key: str) -> float | None:
@@ -300,11 +210,55 @@ def _parse_kickoff(row: dict) -> datetime | None:
     return _parse_iso_dt(row.get("kickoff"))
 
 
+def _mean_or_none(vals: list[float]) -> float | None:
+    return round(statistics.mean(vals), 4) if vals else None
+
+
+def _quantile_bins(values: list[float], bin_count: int) -> list[dict[str, Any]]:
+    """Compatibilità test: costruisce bin da boundaries Primary-style."""
+    boundaries = build_quantile_boundaries(values, bin_count)
+    if not values:
+        return []
+    if not boundaries:
+        return [{
+            "index": 1,
+            "label": "Q1",
+            "lower_bound": None,
+            "upper_bound": None,
+            "lower_inclusive": False,
+            "upper_inclusive": True,
+            "values": list(values),
+        }]
+    labels = apply_quantile_boundaries(values, boundaries)
+    n_bins = len(boundaries) + 1
+    bins: list[dict[str, Any]] = []
+    for i in range(n_bins):
+        in_bin = [v for v, lab in zip(values, labels) if lab == i]
+        if i == 0:
+            lo, hi = None, boundaries[0]
+            lo_inc, hi_inc = False, False
+        elif i == n_bins - 1:
+            lo, hi = boundaries[-1], None
+            lo_inc, hi_inc = True, True
+        else:
+            lo, hi = boundaries[i - 1], boundaries[i]
+            lo_inc, hi_inc = True, False
+        bins.append({
+            "index": i + 1,
+            "label": bin_label_from_boundaries(i, boundaries),
+            "lower_bound": round(lo, 4) if lo is not None else None,
+            "upper_bound": round(hi, 4) if hi is not None else None,
+            "lower_inclusive": lo_inc,
+            "upper_inclusive": hi_inc,
+            "values": in_bin,
+        })
+    return bins
+
+
 def _enrich_research_features(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     feat_at = _parse_iso_dt(row.get("feature_snapshot_at"))
     kickoff = _parse_kickoff(row)
-    hours = None
     if feat_at and kickoff and kickoff >= feat_at:
         hours = round((kickoff - feat_at).total_seconds() / 3600.0, 2)
         out["hours_to_kickoff"] = hours
@@ -324,24 +278,40 @@ def _enrich_research_features(row: dict[str, Any]) -> dict[str, Any]:
     valid_probs = [p for p in probs if p is not None]
     if len(valid_probs) >= 2:
         ordered = sorted(valid_probs, reverse=True)
-        out["dominance_normalized_pp"] = round(ordered[0] - ordered[1], 2)
+        out["dominance_normalized_pp"] = round(max(0.0, ordered[0] - ordered[1]), 2)
     else:
         out["dominance_normalized_pp"] = None
 
     conv = _num(row, "conviction_index_candidate")
-    dom = row.get("dominant_sign")
-    if conv is not None and dom == "X":
+    dom_norm = normalize_outcome_side(row.get("dominant_sign"))
+    out["dominant_sign_normalized"] = dom_norm
+    if conv is not None and dom_norm == "DRAW":
         out["x_directional_conviction_candidate"] = conv
-    elif conv is not None and dom in ("1", "2"):
+        out["x_conviction_direction"] = "toward_draw"
+    elif conv is not None and dom_norm in ("HOME", "AWAY"):
         out["x_directional_conviction_candidate"] = -conv
+        out["x_conviction_direction"] = "against_draw"
     else:
         out["x_directional_conviction_candidate"] = None
+        out["x_conviction_direction"] = "unknown"
 
     pu = _num(row, "prob_under_2_5_cecchino_pct")
     out["under_strength_pp"] = round(pu - 50, 2) if pu is not None else None
     xr = row.get("x_rank")
     out["x_is_top"] = 1 if xr == 1 else 0 if xr is not None else None
     out["x_is_last"] = 1 if xr == 3 else 0 if xr is not None else None
+
+    x_vs = _num(row, "x_vs_best_lateral_pp")
+    if x_vs is None:
+        out["x_direction_bucket"] = "unknown"
+    elif x_vs > 0:
+        out["x_direction_bucket"] = "draw_above_laterals"
+    elif -3 <= x_vs <= 0:
+        out["x_direction_bucket"] = "draw_near_laterals"
+    elif x_vs < -3:
+        out["x_direction_bucket"] = "draw_below_laterals"
+    else:
+        out["x_direction_bucket"] = "unknown"
     return out
 
 
@@ -353,7 +323,6 @@ def _cohort_target_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     days = {k.date().isoformat() for k in kickoffs}
     leagues = {r.get("league_name") for r in rows if r.get("league_name")}
     countries = {r.get("country_name") for r in rows if r.get("country_name")}
-    ci = wilson_ci(draws, n)
     span = 0
     if kickoffs:
         span = (max(kickoffs) - min(kickoffs)).days
@@ -362,7 +331,7 @@ def _cohort_target_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "draws": draws,
         "non_draws": n - draws,
         "draw_rate_pct": pct(draws, n),
-        "wilson_ci_95": ci,
+        "wilson_ci_95": wilson_ci(draws, n),
         "first_kickoff": min(kickoffs).isoformat() if kickoffs else None,
         "last_kickoff": max(kickoffs).isoformat() if kickoffs else None,
         "time_span_days": span,
@@ -407,7 +376,14 @@ def _descriptive_numeric(rows: list[dict], feature: str) -> dict[str, Any]:
     n = len(rows)
     missing = n - len(valid)
     if not valid:
-        return {"feature": feature, "count": 0, "missing_count": missing, "missing_pct": pct(missing, n), "constant_feature": True}
+        return {
+            "feature": feature,
+            "count": 0,
+            "missing_count": missing,
+            "missing_pct": pct(missing, n),
+            "constant_feature": True,
+            "feature_family": feature_family(feature),
+        }
     unique = len(set(valid))
     q = statistics.quantiles(valid, n=4, method="inclusive") if len(valid) >= 4 else [valid[0], valid[0], valid[-1]]
     return {
@@ -425,6 +401,7 @@ def _descriptive_numeric(rows: list[dict], feature: str) -> dict[str, Any]:
         "iqr": round(q[2] - q[0], 4) if len(q) >= 3 else None,
         "unique_values": unique,
         "constant_feature": unique <= 1,
+        "feature_family": feature_family(feature),
     }
 
 
@@ -450,6 +427,46 @@ def _reliability_status(
     return "potentially_useful"
 
 
+def _build_bins_from_boundaries(
+    valid_pairs: list[tuple[int, float]],
+    boundaries: list[float],
+    *,
+    baseline_rate: float,
+    min_group_size: int,
+) -> tuple[list[dict[str, Any]], list[float | None]]:
+    scores = [x for _, x in valid_pairs]
+    labels = apply_quantile_boundaries(scores, boundaries)
+    n_bins = len(boundaries) + 1 if boundaries else 1
+    bin_rows: list[dict[str, Any]] = []
+    rates: list[float | None] = []
+    for i in range(n_bins):
+        in_bin = [(y, x) for (y, x), lab in zip(valid_pairs, labels) if lab == i]
+        if not in_bin:
+            rates.append(None)
+            continue
+        d = sum(1 for y, _ in in_bin if y == 1)
+        cnt = len(in_bin)
+        dr = pct(d, cnt)
+        rates.append(dr)
+        lo = boundaries[i - 1] if i > 0 and boundaries else None
+        hi = boundaries[i] if i < len(boundaries) else None
+        bin_rows.append({
+            "index": i + 1,
+            "label": bin_label_from_boundaries(i, boundaries),
+            "lower_bound": round(lo, 4) if lo is not None else None,
+            "upper_bound": round(hi, 4) if hi is not None else None,
+            "count": cnt,
+            "draws": d,
+            "non_draws": cnt - d,
+            "draw_rate_pct": dr,
+            "wilson_ci_95": wilson_ci(d, cnt),
+            "lift_vs_baseline_pp": round(dr - baseline_rate, 2),
+            "reliable": cnt >= min_group_size,
+            "mean_feature_value": round(statistics.mean([x for _, x in in_bin]), 4),
+        })
+    return bin_rows, rates
+
+
 def _analyze_numeric_feature(
     rows: list[dict],
     feature: str,
@@ -459,53 +476,50 @@ def _analyze_numeric_feature(
     min_group_size: int,
     bootstrap_iterations: int,
     random_seed: int,
+    boundaries: list[float] | None = None,
+    boundary_source: str = "cohort",
+    timing_acc: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     pairs = [(r.get("draw_ft", 0), _num(r, feature)) for r in rows]
-    valid_pairs = [(y, x) for y, x in pairs if x is not None and y in (0, 1)]
+    valid_pairs = [(int(y), x) for y, x in pairs if x is not None and y in (0, 1)]
     desc = _descriptive_numeric(rows, feature)
     if len(valid_pairs) < 2:
-        return {**desc, "auc": None, "directional_auc": None, "discriminative_auc": None, "bins": [], "trend": "insufficient_data"}
+        return {
+            **desc,
+            "auc": None,
+            "directional_auc": None,
+            "discriminative_auc": None,
+            "bins": [],
+            "trend": "insufficient_data",
+            "trend_diagnostics": {"reason": "too_few_valid_pairs"},
+            "boundaries": boundaries or [],
+            "boundary_source": boundary_source,
+        }
 
-    y_true = [int(y) for y, _ in valid_pairs]
+    y_true = [y for y, _ in valid_pairs]
     scores = [x for _, x in valid_pairs]
+    if boundaries is None:
+        boundaries = build_quantile_boundaries(scores, bin_count)
+        boundary_source = "cohort" if boundary_source == "cohort" else boundary_source
+
     auc = auc_mann_whitney(y_true, scores)
     disc = max(auc, 1 - auc) if auc is not None else None
+    t_boot0 = time.perf_counter()
     boot = bootstrap_auc(y_true, scores, iterations=bootstrap_iterations, seed=random_seed)
+    if timing_acc is not None:
+        timing_acc["bootstrap_ms"] = timing_acc.get("bootstrap_ms", 0.0) + (time.perf_counter() - t_boot0) * 1000
     pear = pearson_r(scores, [float(y) for y in y_true])
     spear = spearman_rho(scores, [float(y) for y in y_true])
 
-    raw_bins = _quantile_bins(scores, bin_count)
-    bin_rows: list[dict] = []
-    rates: list[float | None] = []
-    for b in raw_bins:
-        vals = set(b["values"])
-        in_bin = [(y, x) for y, x in valid_pairs if x in vals]
-        if not in_bin:
-            continue
-        d = sum(1 for y, _ in in_bin if y == 1)
-        cnt = len(in_bin)
-        dr = pct(d, cnt)
-        rates.append(dr)
-        ci = wilson_ci(d, cnt)
-        bin_rows.append({
-            "index": b["index"],
-            "label": b["label"],
-            "lower_bound": b["lower_bound"],
-            "upper_bound": b["upper_bound"],
-            "count": cnt,
-            "draws": d,
-            "non_draws": cnt - d,
-            "draw_rate_pct": dr,
-            "wilson_ci_95": ci,
-            "lift_vs_baseline_pp": round(dr - baseline_rate, 2),
-            "reliable": cnt >= min_group_size,
-            "mean_feature_value": round(statistics.mean([x for _, x in in_bin]), 4),
-        })
-
-    trend = classify_trend(rates)
+    bin_rows, rates = _build_bins_from_boundaries(
+        valid_pairs, boundaries, baseline_rate=baseline_rate, min_group_size=min_group_size,
+    )
+    trend, trend_diag = classify_trend_with_diagnostics(rates)
     best_dr = max((b["draw_rate_pct"] for b in bin_rows), default=None)
     worst_dr = min((b["draw_rate_pct"] for b in bin_rows), default=None)
     spread = round(best_dr - worst_dr, 2) if best_dr is not None and worst_dr is not None else None
+    best_bin = max(bin_rows, key=lambda b: b["draw_rate_pct"], default=None)
+    worst_bin = min(bin_rows, key=lambda b: b["draw_rate_pct"], default=None)
 
     return {
         **desc,
@@ -516,16 +530,21 @@ def _analyze_numeric_feature(
         "bootstrap": boot,
         "bins": bin_rows,
         "actual_bin_count": len(bin_rows),
+        "boundaries": [round(b, 4) for b in boundaries],
+        "boundary_source": boundary_source,
         "trend": trend,
+        "trend_diagnostics": trend_diag,
         "best_bin_draw_rate": best_dr,
         "worst_bin_draw_rate": worst_dr,
+        "best_bin_index": best_bin["index"] if best_bin else None,
+        "worst_bin_index": worst_bin["index"] if worst_bin else None,
         "spread_pp": spread,
         "reliability_status": _reliability_status(
             len(valid_pairs),
             sum(y_true),
             disc,
-            boot.get("auc_ci_lower"),
-            boot.get("auc_ci_upper"),
+            boot.get("discriminative_auc_ci_lower"),
+            boot.get("discriminative_auc_ci_upper"),
         ),
     }
 
@@ -542,13 +561,22 @@ def _cat_sort_key(feature: str, val: Any) -> tuple:
         ("f36_class_existing", F36_ORDER),
         ("gap_coherence_class_candidate", GAP_COH_ORDER),
         ("hours_to_kickoff_class", HOURS_CLASS_ORDER),
+        ("x_direction_bucket", X_DIRECTION_ORDER),
+        ("dominant_sign_normalized", SIGN_ORDER),
+        ("x_conviction_direction", ("toward_draw", "against_draw", "unknown")),
     ):
         if feature == order and s in seq:
             return (0, seq.index(s))
     return (1, s)
 
 
-def _analyze_categorical(rows: list[dict], feature: str, *, baseline: float, min_group_size: int) -> dict[str, Any]:
+def _analyze_categorical(
+    rows: list[dict],
+    feature: str,
+    *,
+    baseline: float,
+    min_group_size: int,
+) -> dict[str, Any]:
     groups: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
         v = r.get(feature)
@@ -572,16 +600,39 @@ def _analyze_categorical(rows: list[dict], feature: str, *, baseline: float, min
     reliable = [c for c in cats if c["reliable"]]
     spread = None
     if len(reliable) >= 2:
-        spread = round(max(c["draw_rate_pct"] for c in reliable) - min(c["draw_rate_pct"] for c in reliable), 2)
+        spread = round(
+            max(c["draw_rate_pct"] for c in reliable) - min(c["draw_rate_pct"] for c in reliable),
+            2,
+        )
     return {"feature": feature, "categories": cats, "reliable_spread_pp": spread}
 
 
+def _expected_calibration_error(probs: list[float], y_true: list[int], bin_count: int = 5) -> float | None:
+    if len(probs) < 2:
+        return None
+    boundaries = build_quantile_boundaries(probs, bin_count)
+    labels = apply_quantile_boundaries(probs, boundaries)
+    n_bins = len(boundaries) + 1 if boundaries else 1
+    total = 0
+    ece = 0.0
+    for i in range(n_bins):
+        idx = [j for j, lab in enumerate(labels) if lab == i]
+        if not idx:
+            continue
+        w = len(idx)
+        total += w
+        pred = statistics.mean([probs[j] for j in idx])
+        actual = statistics.mean([y_true[j] for j in idx])
+        ece += w * abs(pred - actual)
+    return ece / total if total else None
+
+
 def _calibration_block(rows: list[dict], prob_key: str, label: str) -> dict[str, Any]:
-    pairs = []
+    pairs: list[tuple[float, int]] = []
     for r in rows:
         p = _num(r, prob_key)
         if p is not None:
-            pairs.append((_clamp_prob(p / 100.0 if p > 1 else p), int(r.get("draw_ft", 0))))
+            pairs.append((clamp_prob(p / 100.0 if p > 1 else p), int(r.get("draw_ft", 0))))
     if not pairs:
         return {"label": label, "rows": 0}
     probs = [p for p, _ in pairs]
@@ -592,18 +643,22 @@ def _calibration_block(rows: list[dict], prob_key: str, label: str) -> dict[str,
     bss = 1 - (brier / brier_base) if brier is not None and brier_base > 0 else None
     ll = log_loss_score(probs, y)
     auc = auc_mann_whitney(y, probs)
-    ece = expected_calibration_error(probs, y)
+    ece = _expected_calibration_error(probs, y)
     cal_bins = []
-    for b in _quantile_bins(probs, 5):
-        vals = b["values"]
-        if not vals:
+    boundaries = build_quantile_boundaries(probs, 5)
+    labels = apply_quantile_boundaries(probs, boundaries)
+    n_bins = len(boundaries) + 1 if boundaries else 1
+    for i in range(n_bins):
+        idx = [j for j, lab in enumerate(labels) if lab == i]
+        if not idx:
             continue
-        in_y = [t for p, t in pairs if p in vals]
+        pred = statistics.mean([probs[j] for j in idx])
+        actual = statistics.mean([y[j] for j in idx])
         cal_bins.append({
-            "predicted_mean": round(statistics.mean(vals), 4),
-            "actual_rate": round(statistics.mean(in_y), 4) if in_y else None,
-            "count": len(in_y),
-            "calibration_gap": round(abs(statistics.mean(vals) - statistics.mean(in_y)), 4) if in_y else None,
+            "predicted_mean": round(pred, 4),
+            "actual_rate": round(actual, 4),
+            "count": len(idx),
+            "calibration_gap": round(abs(pred - actual), 4),
         })
     return {
         "label": label,
@@ -623,7 +678,7 @@ def _redundancy_analysis(rows: list[dict]) -> dict[str, Any]:
     matrix_p: dict[str, dict[str, float | None]] = {}
     matrix_s: dict[str, dict[str, float | None]] = {}
     pairs: list[dict] = []
-    for i, fa in enumerate(features):
+    for fa in features:
         matrix_p[fa] = {}
         matrix_s[fa] = {}
         for fb in features:
@@ -660,45 +715,921 @@ def _redundancy_analysis(rows: list[dict]) -> dict[str, Any]:
                     "common_rows": len(common),
                     "redundancy_level": level,
                     "recommendation": rec,
+                    "feature_a_family": feature_family(fa),
+                    "feature_b_family": feature_family(fb),
                 })
     groups = [{"features": list(g), "expected": True} for g in EXPECTED_REDUNDANCY_GROUPS]
-    return {"pearson_matrix": matrix_p, "spearman_matrix": matrix_s, "pairs": pairs, "candidate_groups": groups}
+    return {
+        "pearson_matrix": matrix_p,
+        "spearman_matrix": matrix_s,
+        "pairs": pairs,
+        "candidate_groups": groups,
+        "feature_families": FEATURE_FAMILIES,
+    }
 
 
-def _roi_analysis(rows: list[dict], *, min_group_size: int, bootstrap_iterations: int, seed: int) -> dict[str, Any]:
-    profits: list[float] = []
+def _row_cat_value(row: dict, dim: str) -> str:
+    v = row.get(dim)
+    return str(v) if v is not None else "null"
+
+
+def _column_category_for_row(
+    row: dict,
+    *,
+    column_dimension: str,
+    column_type: str,
+    boundaries: list[float],
+) -> str | None:
+    if column_type == "categorical":
+        return _row_cat_value(row, column_dimension)
+    val = _num(row, column_dimension)
+    if val is None:
+        return None
+    lab = apply_quantile_boundaries([val], boundaries)[0]
+    return bin_label_from_boundaries(lab, boundaries)
+
+
+def _build_interaction_cells(
+    rows: list[dict],
+    *,
+    row_dimension: str,
+    column_dimension: str,
+    column_type: str,
+    boundaries: list[float],
+    baseline: float,
+    min_group_size: int,
+) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for r in rows:
+        row_cat = _row_cat_value(r, row_dimension)
+        col_cat = _column_category_for_row(
+            r,
+            column_dimension=column_dimension,
+            column_type=column_type,
+            boundaries=boundaries,
+        )
+        if col_cat is None:
+            continue
+        buckets[(row_cat, col_cat)].append(r)
+
+    cells: list[dict[str, Any]] = []
+    for (row_cat, col_cat), grp in sorted(
+        buckets.items(),
+        key=lambda x: (_cat_sort_key(row_dimension, x[0][0]), x[0][1]),
+    ):
+        n = len(grp)
+        d = sum(1 for r in grp if r.get("draw_ft") == 1)
+        reliable = n >= min_group_size and d >= 5
+        suppressed = not reliable
+        reason = None
+        if suppressed:
+            if n < min_group_size:
+                reason = "count_below_min_group_size"
+            elif d < 5:
+                reason = "draws_below_5"
+        dr = pct(d, n)
+        cell: dict[str, Any] = {
+            "row_category": row_cat,
+            "column_category": col_cat,
+            "count": n,
+            "draws": d,
+            "non_draws": n - d,
+            "reliable": reliable,
+            "suppressed": suppressed,
+            "suppression_reason": reason,
+        }
+        if not suppressed:
+            cell.update({
+                "draw_rate_pct": dr,
+                "wilson_ci_95": wilson_ci(d, n),
+                "lift_vs_baseline_pp": round(dr - baseline, 2),
+            })
+        else:
+            cell.update({
+                "draw_rate_pct": dr if n > 0 else None,
+                "wilson_ci_95": wilson_ci(d, n) if n > 0 else None,
+                "lift_vs_baseline_pp": round(dr - baseline, 2) if n > 0 else None,
+            })
+        cells.append(cell)
+    return cells
+
+
+def _interaction_analysis(
+    primary: list[dict],
+    sensitivity: list[dict],
+    *,
+    primary_boundaries: dict[str, list[float]],
+    baseline_primary: float,
+    baseline_sensitivity: float,
+    min_group_size: int,
+    bin_count: int,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for spec in INTERACTION_SPECS:
+        col = spec["column_dimension"]
+        if spec["column_type"] == "quantile":
+            boundaries = primary_boundaries.get(col)
+            if boundaries is None:
+                vals = [v for v in (_num(r, col) for r in primary) if v is not None]
+                boundaries = build_quantile_boundaries(vals, bin_count)
+            boundary_source = "primary"
+        else:
+            boundaries = []
+            boundary_source = "categorical"
+
+        p_cells = _build_interaction_cells(
+            primary,
+            row_dimension=spec["row_dimension"],
+            column_dimension=col,
+            column_type=spec["column_type"],
+            boundaries=boundaries,
+            baseline=baseline_primary,
+            min_group_size=min_group_size,
+        )
+        s_cells = _build_interaction_cells(
+            sensitivity,
+            row_dimension=spec["row_dimension"],
+            column_dimension=col,
+            column_type=spec["column_type"],
+            boundaries=boundaries,
+            baseline=baseline_sensitivity,
+            min_group_size=min_group_size,
+        )
+        reliable_p = sum(1 for c in p_cells if c["reliable"])
+        suppressed_p = sum(1 for c in p_cells if c["suppressed"])
+        out.append({
+            "interaction_key": spec["interaction_key"],
+            "label": spec["label"],
+            "row_dimension": spec["row_dimension"],
+            "column_dimension": col,
+            "boundary_source": boundary_source,
+            "column_boundaries": [round(b, 4) for b in boundaries],
+            "primary_cells": p_cells,
+            "sensitivity_cells": s_cells,
+            "summary": {
+                "primary_cell_count": len(p_cells),
+                "sensitivity_cell_count": len(s_cells),
+                "primary_reliable_cells": reliable_p,
+                "primary_suppressed_cells": suppressed_p,
+            },
+        })
+    return out
+
+
+def _candidate_patterns(
+    interactions: list[dict[str, Any]],
+    *,
+    baseline_primary: float,
+    min_group_size: int,
+) -> list[dict[str, Any]]:
+    patterns: list[dict[str, Any]] = []
+    for ix in interactions:
+        sens_map = {
+            (c["row_category"], c["column_category"]): c
+            for c in ix.get("sensitivity_cells", [])
+        }
+        for cell in ix.get("primary_cells", []):
+            if cell.get("suppressed"):
+                continue
+            n = cell["count"]
+            d = cell["draws"]
+            lift = cell.get("lift_vs_baseline_pp")
+            ci = cell.get("wilson_ci_95") or {}
+            if n < min_group_size or d < 10 or lift is None or abs(lift) < 5:
+                continue
+            if ci.get("lower_pct") is None or ci.get("upper_pct") is None:
+                continue
+
+            sc = sens_map.get((cell["row_category"], cell["column_category"]))
+            warnings: list[str] = []
+            direction_consistent = False
+            rate_delta = None
+            sens_count = 0
+            sens_dr = None
+            sens_lift = None
+
+            if sc is None:
+                warnings.append("missing_sensitivity_cell")
+                stability = "insufficient"
+            else:
+                sens_count = sc["count"]
+                sens_dr = sc.get("draw_rate_pct")
+                sens_lift = sc.get("lift_vs_baseline_pp")
+                primary_dr = cell.get("draw_rate_pct")
+                if primary_dr is not None and sens_dr is not None:
+                    rate_delta = round(primary_dr - sens_dr, 2)
+                same_dir = (
+                    sens_lift is not None
+                    and ((lift > 0 and sens_lift > 0) or (lift < 0 and sens_lift < 0))
+                )
+                direction_consistent = bool(same_dir)
+                count_ok = sens_count >= min_group_size or (n > 0 and sens_count >= 0.8 * n)
+                if not direction_consistent:
+                    stability = "unstable"
+                    warnings.append("sensitivity_lift_direction_mismatch")
+                elif rate_delta is not None and abs(rate_delta) > 7:
+                    stability = "unstable"
+                    warnings.append("rate_delta_above_7pp")
+                elif not count_ok:
+                    stability = "insufficient"
+                    warnings.append("sensitivity_count_insufficient")
+                else:
+                    lo = ci.get("lower_pct")
+                    hi = ci.get("upper_pct")
+                    baseline_outside = (
+                        lo is not None and hi is not None and not (lo <= baseline_primary <= hi)
+                    )
+                    if baseline_outside:
+                        stability = "stronger_candidate"
+                    else:
+                        stability = "exploratory_candidate"
+
+            lo = ci.get("lower_pct")
+            hi = ci.get("upper_pct")
+            evidence = (
+                "baseline_outside_ci"
+                if lo is not None and hi is not None and not (lo <= baseline_primary <= hi)
+                else "overlapping_ci"
+            )
+            patterns.append({
+                "pattern_key": (
+                    f"{ix['interaction_key']}__{cell['row_category']}__{cell['column_category']}"
+                ),
+                "interaction_key": ix["interaction_key"],
+                "description": (
+                    f"{ix['row_dimension']}={cell['row_category']} × "
+                    f"{ix['column_dimension']}={cell['column_category']}"
+                ),
+                "primary_count": n,
+                "primary_draws": d,
+                "primary_draw_rate_pct": cell.get("draw_rate_pct"),
+                "primary_lift_pp": lift,
+                "primary_ci": ci,
+                "sensitivity_count": sens_count,
+                "sensitivity_draw_rate_pct": sens_dr,
+                "sensitivity_lift_pp": sens_lift,
+                "direction_consistent": direction_consistent,
+                "rate_delta_pp": rate_delta,
+                "evidence_status": evidence,
+                "stability_status": stability,
+                "warnings": warnings,
+            })
+    return patterns
+
+
+def _auc_direction(auc: float | None) -> str | None:
+    if auc is None:
+        return None
+    if auc > 0.5:
+        return "positive"
+    if auc < 0.5:
+        return "negative"
+    return "neutral"
+
+
+def _pvs_stability(
+    *,
+    primary_auc: float | None,
+    sens_auc: float | None,
+    primary_trend: str | None,
+    sens_trend: str | None,
+) -> str:
+    if primary_auc is None or sens_auc is None:
+        return "insufficient"
+    delta = abs(sens_auc - primary_auc)
+    same_dir = _auc_direction(primary_auc) == _auc_direction(sens_auc)
+    nonlinear = {"u_shaped", "inverted_u", "irregular"}
+    trend_ok = (
+        primary_trend == sens_trend
+        or (primary_trend in nonlinear and sens_trend in nonlinear)
+    )
+    if not same_dir or delta > 0.04 or (
+        primary_trend and sens_trend and primary_trend != sens_trend
+        and not (primary_trend in nonlinear and sens_trend in nonlinear)
+        and delta > 0.02
+    ):
+        if not same_dir or delta > 0.04:
+            return "unstable"
+    if delta <= 0.02 and same_dir and trend_ok:
+        return "stable"
+    if delta <= 0.04 and same_dir:
+        return "mostly_stable"
+    if not same_dir or delta > 0.04:
+        return "unstable"
+    return "mostly_stable"
+
+
+def _primary_vs_sensitivity(
+    primary_numeric: list[dict],
+    sens_numeric: list[dict],
+    primary_cat: list[dict],
+    sens_cat: list[dict],
+    sens_only: list[dict],
+    primary: list[dict],
+) -> dict[str, Any]:
+    pmap = {x["feature"]: x for x in primary_numeric}
+    smap = {x["feature"]: x for x in sens_numeric}
+    comparisons: list[dict[str, Any]] = []
+    for f in NUMERIC_FEATURES:
+        pa = pmap.get(f, {})
+        sa = smap.get(f, {})
+        p_auc = pa.get("directional_auc")
+        s_auc = sa.get("directional_auc")
+        auc_delta = round(s_auc - p_auc, 4) if p_auc is not None and s_auc is not None else None
+        p_dir = _auc_direction(p_auc)
+        s_dir = _auc_direction(s_auc)
+        best_dir_ok = None
+        if pa.get("best_bin_index") is not None and sa.get("best_bin_index") is not None:
+            best_dir_ok = pa.get("best_bin_index") == sa.get("best_bin_index")
+        spread_delta = None
+        if pa.get("spread_pp") is not None and sa.get("spread_pp") is not None:
+            spread_delta = round(sa["spread_pp"] - pa["spread_pp"], 2)
+        status = _pvs_stability(
+            primary_auc=p_auc,
+            sens_auc=s_auc,
+            primary_trend=pa.get("trend"),
+            sens_trend=sa.get("trend"),
+        )
+        comparisons.append({
+            "feature": f,
+            "type": "numeric",
+            "primary_count": pa.get("count"),
+            "sensitivity_count": sa.get("count"),
+            "primary_missing_pct": pa.get("missing_pct"),
+            "sensitivity_missing_pct": sa.get("missing_pct"),
+            "primary_directional_auc": p_auc,
+            "sensitivity_directional_auc": s_auc,
+            "primary_discriminative_auc": pa.get("discriminative_auc"),
+            "sensitivity_discriminative_auc": sa.get("discriminative_auc"),
+            "auc_delta": auc_delta,
+            "primary_auc": p_auc,
+            "sensitivity_auc": s_auc,
+            "primary_trend": pa.get("trend"),
+            "sensitivity_trend": sa.get("trend"),
+            "direction_consistent": p_dir == s_dir if p_dir and s_dir else None,
+            "trend_consistent": pa.get("trend") == sa.get("trend"),
+            "spread_delta": spread_delta,
+            "best_bin_direction_consistent": best_dir_ok,
+            "stability_status": status,
+            "boundary_source": "primary",
+            "feature_family": feature_family(f),
+            "notes": [],
+        })
+
+    pcmap = {x["feature"]: x for x in primary_cat}
+    scmap = {x["feature"]: x for x in sens_cat}
+    for f in PVS_CATEGORICAL_FEATURES:
+        pa = pcmap.get(f, {})
+        sa = scmap.get(f, {})
+        p_spread = pa.get("reliable_spread_pp")
+        s_spread = sa.get("reliable_spread_pp")
+        comparisons.append({
+            "feature": f,
+            "type": "categorical",
+            "primary_reliable_spread_pp": p_spread,
+            "sensitivity_reliable_spread_pp": s_spread,
+            "spread_delta": round(s_spread - p_spread, 2) if p_spread is not None and s_spread is not None else None,
+            "stability_status": (
+                "stable"
+                if p_spread is not None and s_spread is not None and abs(s_spread - p_spread) <= 3
+                else "mostly_stable"
+                if p_spread is not None and s_spread is not None and abs(s_spread - p_spread) <= 7
+                else "insufficient"
+                if p_spread is None or s_spread is None
+                else "unstable"
+            ),
+            "notes": [],
+        })
+
+    so_draws = sum(1 for r in sens_only if r.get("draw_ft") == 1)
+    so_n = len(sens_only)
+    elig = Counter(str(r.get("eligibility_status_feature") or r.get("eligibility_status") or "null") for r in sens_only)
+    elig_reason = Counter(
+        str(r.get("eligibility_reason") or r.get("eligibility_reason_feature") or "null")
+        for r in sens_only
+        if r.get("eligibility_reason") is not None or r.get("eligibility_reason_feature") is not None
+    )
+    p_means = {
+        "mean_prob_x_norm": _mean_or_none([v for v in (_num(r, "prob_x_norm") for r in primary) if v is not None]),
+        "mean_under": _mean_or_none(
+            [v for v in (_num(r, "prob_under_2_5_cecchino_pct") for r in primary) if v is not None]
+        ),
+        "mean_f36_abs": _mean_or_none([v for v in (_num(r, "f36_abs") for r in primary) if v is not None]),
+        "mean_directional_conviction": _mean_or_none(
+            [v for v in (_num(r, "x_directional_conviction_candidate") for r in primary) if v is not None]
+        ),
+    }
+    so_means = {
+        "mean_prob_x_norm": _mean_or_none(
+            [v for v in (_num(r, "prob_x_norm") for r in sens_only) if v is not None]
+        ),
+        "mean_under": _mean_or_none(
+            [v for v in (_num(r, "prob_under_2_5_cecchino_pct") for r in sens_only) if v is not None]
+        ),
+        "mean_f36_abs": _mean_or_none([v for v in (_num(r, "f36_abs") for r in sens_only) if v is not None]),
+        "mean_directional_conviction": _mean_or_none(
+            [v for v in (_num(r, "x_directional_conviction_candidate") for r in sens_only) if v is not None]
+        ),
+    }
+    return {
+        "feature_comparisons": comparisons,
+        "sensitivity_only_fixtures": {
+            "count": so_n,
+            "draws": so_draws,
+            "non_draws": so_n - so_draws,
+            "draw_rate_pct": pct(so_draws, so_n),
+            "wilson_ci_95": wilson_ci(so_draws, so_n),
+            "eligibility_status_distribution": dict(elig),
+            "eligibility_reason_distribution": dict(elig_reason) if elig_reason else None,
+            "means": so_means,
+            "primary_means_for_comparison": p_means,
+        },
+    }
+
+
+def _feature_means(rows: list[dict]) -> dict[str, float | None]:
+    keys = (
+        "prob_x_norm",
+        "prob_under_2_5_cecchino_pct",
+        "f36_abs",
+        "x_directional_conviction_candidate",
+    )
+    return {
+        f"mean_{k}": _mean_or_none([v for v in (_num(r, k) for r in rows) if v is not None])
+        for k in keys
+    }
+
+
+def _block_aucs(rows: list[dict]) -> dict[str, float | None]:
+    n = len(rows)
+    draws = sum(1 for r in rows if r.get("draw_ft") == 1)
+    if n < 50 or draws < 10 or draws == n:
+        return {f: None for f in TEMPORAL_AUC_FEATURES}
+    out: dict[str, float | None] = {}
+    for f in TEMPORAL_AUC_FEATURES:
+        pairs = [(int(r.get("draw_ft", 0)), _num(r, f)) for r in rows]
+        valid = [(y, x) for y, x in pairs if x is not None and y in (0, 1)]
+        if len(valid) < 2:
+            out[f] = None
+            continue
+        y = [a for a, _ in valid]
+        s = [b for _, b in valid]
+        if len(set(y)) < 2:
+            out[f] = None
+            continue
+        a = auc_mann_whitney(y, s)
+        out[f] = round(a, 4) if a is not None else None
+    return out
+
+
+def _temporal_stability(primary: list[dict], time_span: int) -> dict[str, Any]:
+    dated = [(r, _parse_kickoff(r)) for r in primary]
+    dated = [(r, k) for r, k in dated if k is not None]
+    dated.sort(key=lambda x: x[1])
+
+    weeks: dict[str, list[dict]] = defaultdict(list)
+    for r, k in dated:
+        iso = k.isocalendar()
+        week_key = f"{iso.year}-W{iso.week:02d}"
+        weeks[week_key].append(r)
+
+    week_rows = []
+    for week_key in sorted(weeks.keys()):
+        grp = weeks[week_key]
+        kicks = [_parse_kickoff(r) for r in grp]
+        kicks = [k for k in kicks if k is not None]
+        d = sum(1 for r in grp if r.get("draw_ft") == 1)
+        n = len(grp)
+        week_rows.append({
+            "week_key": week_key,
+            "first_date": min(kicks).date().isoformat() if kicks else None,
+            "last_date": max(kicks).date().isoformat() if kicks else None,
+            "rows": n,
+            "draws": d,
+            "draw_rate_pct": pct(d, n),
+            "wilson_ci_95": wilson_ci(d, n),
+            **_feature_means(grp),
+        })
+
+    blocks: list[dict[str, Any]] = []
+    n = len(dated)
+    if n:
+        cuts = [0, n // 3, (2 * n) // 3, n]
+        names = ("early", "middle", "late")
+        for i, name in enumerate(names):
+            chunk = [r for r, _ in dated[cuts[i]:cuts[i + 1]]]
+            if not chunk:
+                continue
+            kicks = [_parse_kickoff(r) for r in chunk]
+            kicks = [k for k in kicks if k is not None]
+            d = sum(1 for r in chunk if r.get("draw_ft") == 1)
+            cn = len(chunk)
+            aucs = _block_aucs(chunk)
+            blocks.append({
+                "block": name,
+                "rows": cn,
+                "date_from": min(kicks).date().isoformat() if kicks else None,
+                "date_to": max(kicks).date().isoformat() if kicks else None,
+                "draws": d,
+                "draw_rate_pct": pct(d, cn),
+                "wilson_ci_95": wilson_ci(d, cn),
+                **_feature_means(chunk),
+                "feature_aucs": aucs,
+            })
+
+    consistency: dict[str, Any] = {}
+    for f in TEMPORAL_AUC_FEATURES:
+        vals = [b["feature_aucs"].get(f) for b in blocks if b["feature_aucs"].get(f) is not None]
+        if len(vals) < 2:
+            consistency[f] = {
+                "temporal_direction_consistency": None,
+                "temporal_auc_range": None,
+                "interpretation": "insufficient_block_auc",
+            }
+            continue
+        dirs = [_auc_direction(v) for v in vals]
+        consistency[f] = {
+            "temporal_direction_consistency": len(set(dirs)) == 1,
+            "temporal_auc_range": round(max(vals) - min(vals), 4),
+            "interpretation": "consistent_direction" if len(set(dirs)) == 1 else "direction_varies",
+        }
+
+    return {
+        "short_observation_window": time_span < 90,
+        "time_span_days": time_span,
+        "iso_weeks": week_rows,
+        "chronological_blocks": blocks,
+        "feature_temporal_consistency": consistency,
+        "note": "analisi descrittiva within-sample, non out-of-sample",
+    }
+
+
+def _league_stability(primary: list[dict], *, min_group_size: int) -> dict[str, Any]:
+    by_league: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for r in primary:
+        league = str(r.get("league_name") or "unknown")
+        country = str(r.get("country_name") or "unknown")
+        by_league[(country, league)].append(r)
+
+    ranked = sorted(by_league.items(), key=lambda x: (-len(x[1]), x[0][1]))
+    total = len(primary)
+    counts = [len(v) for _, v in ranked]
+    hhi = herfindahl(counts) if counts else 0.0
+    top5 = pct(sum(counts[:5]), total) if counts else 0.0
+    top10 = pct(sum(counts[:10]), total) if counts else 0.0
+
+    top15 = ranked[:15]
+    others_rows: list[dict] = []
+    for _, rows in ranked[15:]:
+        others_rows.extend(rows)
+
+    league_rows = []
+    for (country, league), rows in top15:
+        d = sum(1 for r in rows if r.get("draw_ft") == 1)
+        n = len(rows)
+        league_rows.append({
+            "country_name": country,
+            "league_name": league,
+            "rows": n,
+            "percentage_dataset": pct(n, total),
+            "draws": d,
+            "draw_rate_pct": pct(d, n),
+            "wilson_ci_95": wilson_ci(d, n),
+            **_feature_means(rows),
+            "is_others": False,
+        })
+    if others_rows:
+        d = sum(1 for r in others_rows if r.get("draw_ft") == 1)
+        n = len(others_rows)
+        league_rows.append({
+            "country_name": "Altri",
+            "league_name": "Altri",
+            "rows": n,
+            "percentage_dataset": pct(n, total),
+            "draws": d,
+            "draw_rate_pct": pct(d, n),
+            "wilson_ci_95": wilson_ci(d, n),
+            **_feature_means(others_rows),
+            "is_others": True,
+        })
+
+    reliable = sum(1 for _, rows in ranked if len(rows) >= min_group_size)
+    return {
+        "leagues": league_rows,
+        "top_5_share_pct": top5,
+        "top_10_share_pct": top10,
+        "hhi": round(hhi, 6),
+        "concentration_status": hhi_concentration_status(hhi),
+        "fragmented_leagues": len(ranked) > 15,
+        "reliable_league_count": reliable,
+        "league_count": len(ranked),
+        "note": "campionato non usato come feature predittiva",
+    }
+
+
+def _bet_profits(rows: list[dict]) -> list[tuple[dict, float, float]]:
+    out: list[tuple[dict, float, float]] = []
     for r in rows:
         odd = _num(r, "quota_book_x")
         if odd is None or odd <= 1:
             continue
-        if r.get("draw_ft") == 1:
-            profits.append(odd - 1)
-        else:
-            profits.append(-1.0)
-    if not profits:
-        return {"bets": 0, "roi_pct": None}
+        profit = (odd - 1.0) if r.get("draw_ft") == 1 else -1.0
+        out.append((r, odd, profit))
+    return out
+
+
+def _roi_from_bets(
+    bets: list[tuple[dict, float, float]],
+    *,
+    group_key: str,
+    label: str,
+    boundary_source: str,
+    bootstrap_iterations: int,
+    seed: int,
+) -> dict[str, Any]:
+    if not bets:
+        return {
+            "group_key": group_key,
+            "label": label,
+            "boundary_source": boundary_source,
+            "count": 0,
+            "roi_pct": None,
+            "reliable": False,
+            "warnings": ["no_bets"],
+        }
+    profits = [p for _, _, p in bets]
+    odds = [o for _, o, _ in bets]
     wins = sum(1 for p in profits if p > 0)
+    losses = sum(1 for p in profits if p <= 0)
     stake = len(profits)
     net = sum(profits)
+    gross = sum(o if p > 0 else 0.0 for (_, o, p) in bets)
     roi = pct(net, stake)
-    boot_ci = None
-    if stake >= 50:
-        rng = random.Random(seed)
-        rois = []
-        for _ in range(bootstrap_iterations):
-            sample = [profits[rng.randrange(len(profits))] for _ in range(len(profits))]
-            rois.append(100 * sum(sample) / len(sample))
-        rois.sort()
-        boot_ci = {"lower_pct": round(rois[int(0.025 * len(rois))], 2), "upper_pct": round(rois[int(0.975 * len(rois))], 2)}
+    boot = bootstrap_roi(profits, iterations=bootstrap_iterations, seed=seed) if stake >= 50 else None
+    crosses = bool(boot["crosses_zero"]) if boot else None
+    reliable = stake >= 50 and boot is not None and not boot["crosses_zero"]
+    warnings = ["theoretical_historical_roi", "multiple_comparisons_risk"]
+    if stake < 50:
+        warnings.append("sample_below_50")
+    if crosses:
+        warnings.append("ci_crosses_zero")
     return {
+        "group_key": group_key,
+        "label": label,
+        "boundary_source": boundary_source,
+        "count": stake,
         "bets": stake,
         "wins": wins,
+        "losses": losses,
         "win_rate_pct": pct(wins, stake),
+        "average_book_odd": round(statistics.mean(odds), 4),
+        "median_book_odd": round(statistics.median(odds), 4),
+        "minimum_book_odd": round(min(odds), 4),
+        "maximum_book_odd": round(max(odds), 4),
         "total_stake": stake,
-        "net_profit": round(net, 2),
+        "gross_return": round(gross, 4),
+        "net_profit": round(net, 4),
         "roi_pct": roi,
-        "bootstrap_roi_ci_95": boot_ci,
-        "warnings": ["theoretical_historical_roi", "no_transaction_costs", "short_sample"],
+        "bootstrap_roi_ci_95": boot,
+        "ci_crosses_zero": crosses,
+        "reliable": reliable,
+        "warnings": warnings,
+    }
+
+
+def _roi_global(
+    market: list[dict],
+    *,
+    bootstrap_iterations: int,
+    seed: int,
+) -> dict[str, Any]:
+    bets = _bet_profits(market)
+    base = _roi_from_bets(
+        bets,
+        group_key="market_global",
+        label="Market ROI globale (quota_book_x)",
+        boundary_source="market_subset",
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+    base["warnings"] = list(dict.fromkeys(
+        base.get("warnings", []) + ["theoretical_historical_roi", "no_transaction_costs", "short_sample"]
+    ))
+    return base
+
+
+def _roi_breakdown(
+    market: list[dict],
+    patterns: list[dict[str, Any]],
+    *,
+    bin_count: int,
+    bootstrap_iterations: int,
+    seed: int,
+) -> list[dict[str, Any]]:
+    bets = _bet_profits(market)
+    if not bets:
+        return []
+
+    dimensions: list[dict[str, Any]] = []
+
+    def add_quantile_dim(feature: str, dim_key: str) -> None:
+        vals = [v for v in (_num(r, feature) for r, _, _ in bets) if v is not None]
+        boundaries = build_quantile_boundaries(vals, bin_count)
+        groups: dict[int, list[tuple[dict, float, float]]] = defaultdict(list)
+        for r, odd, profit in bets:
+            v = _num(r, feature)
+            if v is None:
+                continue
+            lab = apply_quantile_boundaries([v], boundaries)[0]
+            groups[lab].append((r, odd, profit))
+        n_bins = len(boundaries) + 1 if boundaries else 1
+        for i in range(n_bins):
+            label = bin_label_from_boundaries(i, boundaries)
+            dimensions.append(
+                _roi_from_bets(
+                    groups.get(i, []),
+                    group_key=f"{dim_key}__q{i + 1}",
+                    label=f"{feature} {label}",
+                    boundary_source="market_subset",
+                    bootstrap_iterations=bootstrap_iterations,
+                    seed=seed + i + (sum(ord(c) for c in dim_key) % 1000),
+                )
+            )
+
+    add_quantile_dim("prob_x_norm", "prob_x_norm")
+    add_quantile_dim("prob_under_2_5_cecchino_pct", "prob_under")
+    add_quantile_dim("deviation_x_pp", "deviation_x")
+
+    for cat_feature, order in (
+        ("x_rank", None),
+        ("dominant_sign_normalized", SIGN_ORDER),
+        ("conviction_class_candidate", CONVICTION_ORDER),
+        ("f36_class_existing", F36_ORDER),
+        ("hours_to_kickoff_class", HOURS_CLASS_ORDER),
+    ):
+        groups: dict[str, list[tuple[dict, float, float]]] = defaultdict(list)
+        for r, odd, profit in bets:
+            groups[_row_cat_value(r, cat_feature)].append((r, odd, profit))
+        keys = list(groups.keys())
+        if order:
+            keys = sorted(keys, key=lambda k: _cat_sort_key(cat_feature, k))
+        else:
+            keys = sorted(keys, key=lambda k: _cat_sort_key(cat_feature, k))
+        for j, key in enumerate(keys):
+            dimensions.append(
+                _roi_from_bets(
+                    groups[key],
+                    group_key=f"{cat_feature}__{key}",
+                    label=f"{cat_feature}={key}",
+                    boundary_source="categorical",
+                    bootstrap_iterations=bootstrap_iterations,
+                    seed=seed + 200 + j,
+                )
+            )
+
+    # Pattern ROI su Market: match cella via dimensioni note dove possibile
+    for pi, pat in enumerate(patterns):
+        ix_key = pat["interaction_key"]
+        spec = next((s for s in INTERACTION_SPECS if s["interaction_key"] == ix_key), None)
+        if not spec:
+            continue
+        # description contains row=… × col=…
+        row_cat = pat["description"].split(" × ")[0].split("=", 1)[-1]
+        col_cat = pat["description"].split(" × ")[1].split("=", 1)[-1] if " × " in pat["description"] else ""
+        matched: list[tuple[dict, float, float]] = []
+        if spec["column_type"] == "quantile":
+            vals = [v for v in (_num(r, spec["column_dimension"]) for r, _, _ in bets) if v is not None]
+            boundaries = build_quantile_boundaries(vals, bin_count)
+            for r, odd, profit in bets:
+                if _row_cat_value(r, spec["row_dimension"]) != row_cat:
+                    continue
+                col = _column_category_for_row(
+                    r,
+                    column_dimension=spec["column_dimension"],
+                    column_type="quantile",
+                    boundaries=boundaries,
+                )
+                if col == col_cat:
+                    matched.append((r, odd, profit))
+        else:
+            for r, odd, profit in bets:
+                if (
+                    _row_cat_value(r, spec["row_dimension"]) == row_cat
+                    and _row_cat_value(r, spec["column_dimension"]) == col_cat
+                ):
+                    matched.append((r, odd, profit))
+        dimensions.append(
+            _roi_from_bets(
+                matched,
+                group_key=f"pattern__{pat['pattern_key']}",
+                label=f"pattern: {pat['description']}",
+                boundary_source="market_subset",
+                bootstrap_iterations=bootstrap_iterations,
+                seed=seed + 500 + pi,
+            )
+        )
+
+    return dimensions
+
+
+def _market_analysis(
+    market: list[dict],
+    patterns: list[dict[str, Any]],
+    *,
+    bin_count: int,
+    bootstrap_iterations: int,
+    seed: int,
+) -> dict[str, Any]:
+    cal_c = _calibration_block(market, "prob_x_norm", "Cecchino X Market")
+    cal_b = _calibration_block(market, "prob_book_x_norm", "Book X Market")
+
+    signed: list[float] = []
+    abs_dev: list[float] = []
+    gt = lt = eq = 0
+    compared = 0
+    for r in market:
+        cx = _num(r, "prob_x_norm")
+        bx = _num(r, "prob_book_x_norm")
+        if cx is None or bx is None:
+            continue
+        compared += 1
+        diff = cx - bx
+        signed.append(diff)
+        abs_dev.append(abs(diff))
+        if abs(diff) <= 0.5:
+            eq += 1
+        elif diff > 0:
+            gt += 1
+        else:
+            lt += 1
+
+    def _delta(a: float | None, b: float | None) -> float | None:
+        if a is None or b is None:
+            return None
+        return round(a - b, 4)
+
+    comparison = {
+        "rows_compared": compared,
+        "delta_brier": _delta(cal_c.get("brier_score"), cal_b.get("brier_score")),
+        "delta_brier_skill_score": _delta(cal_c.get("brier_skill_score"), cal_b.get("brier_skill_score")),
+        "delta_log_loss": _delta(cal_c.get("log_loss"), cal_b.get("log_loss")),
+        "delta_auc": _delta(cal_c.get("auc"), cal_b.get("auc")),
+        "delta_ece": _delta(cal_c.get("ece"), cal_b.get("ece")),
+        "pct_cecchino_gt_book": pct(gt, compared),
+        "pct_cecchino_lt_book": pct(lt, compared),
+        "pct_approximately_equal_0_5pp": pct(eq, compared),
+        "mean_signed_deviation_x": _mean_or_none(signed),
+        "median_signed_deviation_x": round(statistics.median(signed), 4) if signed else None,
+        "mean_absolute_deviation_x": _mean_or_none(abs_dev),
+        "median_absolute_deviation_x": round(statistics.median(abs_dev), 4) if abs_dev else None,
+    }
+
+    roi = _roi_global(market, bootstrap_iterations=bootstrap_iterations, seed=seed)
+    roi_breakdown = _roi_breakdown(
+        market,
+        patterns,
+        bin_count=bin_count,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed + 17,
+    )
+    return {
+        "cecchino": cal_c,
+        "book": cal_b,
+        "comparison": comparison,
+        "roi": roi,
+        "roi_breakdown": roi_breakdown,
+        "warnings": [
+            "theoretical_historical_roi",
+            "no_transaction_costs",
+            "no_slippage",
+            "multiple_comparisons_risk",
+            "exploratory_not_production",
+        ],
+    }
+
+
+def _leaderboard_row(na: dict[str, Any], stability: str | None = None) -> dict[str, Any]:
+    return {
+        "feature": na["feature"],
+        "type": "numeric",
+        "count": na.get("count"),
+        "missing_pct": na.get("missing_pct"),
+        "directional_auc": na.get("directional_auc"),
+        "discriminative_auc": na.get("discriminative_auc"),
+        "bootstrap": na.get("bootstrap"),
+        "pearson": na.get("pearson"),
+        "spearman": na.get("spearman"),
+        "trend": na.get("trend"),
+        "trend_diagnostics": na.get("trend_diagnostics"),
+        "best_bin_draw_rate": na.get("best_bin_draw_rate"),
+        "worst_bin_draw_rate": na.get("worst_bin_draw_rate"),
+        "spread_pp": na.get("spread_pp"),
+        "reliability_status": na.get("reliability_status"),
+        "stability_status": stability,
+        "feature_family": feature_family(na["feature"]),
+        "interpretation": (
+            f"Trend {na.get('trend')}, discriminative AUC {na.get('discriminative_auc')}"
+        ),
     }
 
 
@@ -706,20 +1637,113 @@ def _research_conclusions(
     leaderboard: list[dict],
     redundancy: dict,
     maturity: dict,
-) -> dict[str, list[str]]:
+    pvs: dict,
+    patterns: list[dict],
+) -> dict[str, Any]:
     useful = [x["feature"] for x in leaderboard if x.get("reliability_status") == "potentially_useful"]
-    weak = [x["feature"] for x in leaderboard if x.get("reliability_status") in ("weak", "uncertain", "insufficient_sample")]
-    redundant = [p["feature_a"] + "↔" + p["feature_b"] for p in redundancy.get("pairs", []) if p.get("redundancy_level") in ("high", "very_high")]
-    nonlinear = [x["feature"] for x in leaderboard if x.get("trend") in ("u_shaped", "inverted_u", "irregular")]
-    limits = maturity.get("warnings", [])
-    next_feats = [f for f in useful if f not in redundant][:8]
+    modest = [x["feature"] for x in leaderboard if x.get("reliability_status") == "modest"]
+    weak = [
+        x["feature"]
+        for x in leaderboard
+        if x.get("reliability_status") in ("weak", "uncertain", "insufficient_sample")
+    ]
+    nonlinear = [
+        x["feature"]
+        for x in leaderboard
+        if x.get("trend") in ("u_shaped", "inverted_u", "irregular")
+    ]
+    unstable = [
+        c["feature"]
+        for c in pvs.get("feature_comparisons", [])
+        if c.get("stability_status") == "unstable"
+    ]
+    redundant_groups: list[dict[str, Any]] = []
+    for p in redundancy.get("pairs", []):
+        if p.get("redundancy_level") in ("high", "very_high"):
+            redundant_groups.append({
+                "features": [p["feature_a"], p["feature_b"]],
+                "pearson": p.get("pearson"),
+                "spearman": p.get("spearman"),
+                "level": p.get("redundancy_level"),
+            })
+
+    recommended: list[dict[str, Any]] = []
+    for fam, meta in FEATURE_FAMILIES.items():
+        pref = meta.get("preferred_representative")
+        if fam == "dominance_family":
+            pref = meta.get("directional_preferred") or "x_directional_conviction_candidate"
+        if pref:
+            recommended.append({
+                "family": fam,
+                "representative": pref,
+                "members": list(meta.get("members", ())),
+                "note": meta.get("note"),
+            })
+
+    candidate_interactions = [
+        p["pattern_key"]
+        for p in patterns
+        if p.get("stability_status") in ("stronger_candidate", "exploratory_candidate")
+    ][:15]
+
+    next_recs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    unstable_set = set(unstable)
+
+    def _add(feature: str, reason: str, preferred_form: str, representation: str) -> None:
+        if feature in seen or feature in unstable_set or len(next_recs) >= 10:
+            return
+        fam = feature_family(feature)
+        if fam:
+            for rec in recommended:
+                if rec["family"] == fam and rec["representative"] != feature:
+                    # prefer family representative if listed
+                    if rec["representative"] not in seen and rec["representative"] not in unstable_set:
+                        feature = rec["representative"]
+                        reason = f"{reason}; rappresentante famiglia {fam}"
+                    break
+        seen.add(feature)
+        next_recs.append({
+            "feature": feature,
+            "representation": representation,
+            "family": fam,
+            "reason": reason,
+            "preferred_form": preferred_form,
+        })
+
+    for f in useful:
+        form = "continuous"
+        if f in ("x_rank",) or f.endswith("_class") or f.endswith("_class_existing") or f.endswith("_class_candidate"):
+            form = "categorical"
+        elif f in nonlinear:
+            form = "spline_or_bins"
+        _add(f, "potentially_useful on Primary", form, "univariate")
+    for f in modest:
+        form = "spline_or_bins" if f in nonlinear else "continuous"
+        _add(f, "modest reliability — keep for 1D", form, "univariate")
+    _add(
+        "x_directional_conviction_candidate",
+        "directional conviction corrected for HOME/DRAW/AWAY",
+        "continuous",
+        "directional",
+    )
+    for f in nonlinear:
+        _add(f, "non-linear trend — test categorical/binned form", "spline_or_bins", "binned")
+    _add("x_rank", "categorical position of X", "categorical", "categorical")
+    _add("f36_class_existing", "F36 class for interaction tests", "categorical", "categorical")
+
     return {
         "potentially_useful": useful[:10],
-        "weak_or_uncertain": weak[:10],
-        "redundant": redundant[:10],
+        "modest_candidates": modest[:10],
+        "weak_or_uncertain": weak[:15],
+        "redundant_groups": redundant_groups[:15],
+        "recommended_representatives": recommended,
         "non_linear_candidates": nonlinear[:10],
-        "requires_more_history": limits,
-        "next_phase_features": next_feats,
+        "candidate_interactions": candidate_interactions,
+        "unstable_features": unstable[:15],
+        "requires_more_history": list(maturity.get("warnings", [])),
+        "next_phase_features": [x["feature"] for x in next_recs],
+        "next_phase_feature_recommendations": next_recs,
     }
 
 
@@ -746,6 +1770,7 @@ def build_draw_credibility_statistical_analysis(
         COHORT_MARKET_SUBSET: rows_for_selected_cohort(all_rows, COHORT_MARKET_SUBSET),
     }
     cohorts = {k: [_enrich_research_features(r) for r in v] for k, v in cohorts_raw.items()}
+    t_after_enrich = time.perf_counter()
 
     primary = cohorts[COHORT_ELIGIBLE_PRIMARY]
     sensitivity = cohorts[COHORT_ALL_USABLE_SENSITIVITY]
@@ -756,75 +1781,120 @@ def build_draw_credibility_statistical_analysis(
     maturity = _research_maturity(ds_summary[COHORT_ELIGIBLE_PRIMARY], time_span)
 
     baseline_p = ds_summary[COHORT_ELIGIBLE_PRIMARY]["draw_rate_pct"]
-    numeric_analysis = {
-        COHORT_ELIGIBLE_PRIMARY: [
-            _analyze_numeric_feature(primary, f, baseline_rate=baseline_p, bin_count=bin_count,
-                                     min_group_size=min_group_size, bootstrap_iterations=bootstrap_iterations,
-                                     random_seed=random_seed)
-            for f in NUMERIC_FEATURES
-        ],
-    }
-    cat_analysis = {
-        COHORT_ELIGIBLE_PRIMARY: [
-            _analyze_categorical(primary, f, baseline=baseline_p, min_group_size=min_group_size)
-            for f in CATEGORICAL_FEATURES
-        ],
+    baseline_s = ds_summary[COHORT_ALL_USABLE_SENSITIVITY]["draw_rate_pct"]
+
+    timing_acc: dict[str, float] = {"bootstrap_ms": 0.0}
+    t_univ0 = time.perf_counter()
+
+    primary_boundaries: dict[str, list[float]] = {}
+    primary_numeric: list[dict[str, Any]] = []
+    for i, f in enumerate(NUMERIC_FEATURES):
+        vals = [v for v in (_num(r, f) for r in primary) if v is not None]
+        boundaries = build_quantile_boundaries(vals, bin_count)
+        primary_boundaries[f] = boundaries
+        primary_numeric.append(
+            _analyze_numeric_feature(
+                primary,
+                f,
+                baseline_rate=baseline_p,
+                bin_count=bin_count,
+                min_group_size=min_group_size,
+                bootstrap_iterations=bootstrap_iterations,
+                random_seed=random_seed + i,
+                boundaries=boundaries,
+                boundary_source="primary",
+                timing_acc=timing_acc,
+            )
+        )
+
+    sens_numeric: list[dict[str, Any]] = []
+    for i, f in enumerate(NUMERIC_FEATURES):
+        sens_numeric.append(
+            _analyze_numeric_feature(
+                sensitivity,
+                f,
+                baseline_rate=baseline_s,
+                bin_count=bin_count,
+                min_group_size=min_group_size,
+                bootstrap_iterations=bootstrap_iterations,
+                random_seed=random_seed + 100 + i,
+                boundaries=primary_boundaries[f],
+                boundary_source="primary",
+                timing_acc=timing_acc,
+            )
+        )
+
+    primary_cat = [
+        _analyze_categorical(primary, f, baseline=baseline_p, min_group_size=min_group_size)
+        for f in CATEGORICAL_FEATURES
+    ]
+    sens_cat = [
+        _analyze_categorical(sensitivity, f, baseline=baseline_s, min_group_size=min_group_size)
+        for f in CATEGORICAL_FEATURES
+    ]
+    t_after_univ = time.perf_counter()
+
+    primary_ids = {r["provider_fixture_id"] for r in primary}
+    sens_only = [r for r in sensitivity if r["provider_fixture_id"] not in primary_ids]
+    pvs = _primary_vs_sensitivity(
+        primary_numeric, sens_numeric, primary_cat, sens_cat, sens_only, primary,
+    )
+    stab_map = {
+        c["feature"]: c.get("stability_status")
+        for c in pvs["feature_comparisons"]
+        if c.get("type") == "numeric"
     }
 
-    leaderboard = []
-    for na in numeric_analysis[COHORT_ELIGIBLE_PRIMARY]:
-        leaderboard.append({
-            "feature": na["feature"],
-            "type": "numeric",
-            "count": na.get("count"),
-            "missing_pct": na.get("missing_pct"),
-            "directional_auc": na.get("directional_auc"),
-            "discriminative_auc": na.get("discriminative_auc"),
-            "bootstrap": na.get("bootstrap"),
-            "pearson": na.get("pearson"),
-            "spearman": na.get("spearman"),
-            "trend": na.get("trend"),
-            "best_bin_draw_rate": na.get("best_bin_draw_rate"),
-            "worst_bin_draw_rate": na.get("worst_bin_draw_rate"),
-            "spread_pp": na.get("spread_pp"),
-            "reliability_status": na.get("reliability_status"),
-            "interpretation": f"Trend {na.get('trend')}, discriminative AUC {na.get('discriminative_auc')}",
-        })
+    leaderboard = [_leaderboard_row(na, stab_map.get(na["feature"])) for na in primary_numeric]
     leaderboard.sort(key=lambda x: (-(x.get("discriminative_auc") or 0), x.get("missing_pct") or 0))
 
     redundancy = _redundancy_analysis(primary)
     cal_primary = _calibration_block(primary, "prob_x_norm", "Cecchino X Primary")
-    cal_market_c = _calibration_block(market, "prob_x_norm", "Cecchino X Market")
-    cal_market_b = _calibration_block(market, "prob_book_x_norm", "Book X Market")
 
-    primary_ids = {r["provider_fixture_id"] for r in primary}
-    sens_only = [r for r in sensitivity if r["provider_fixture_id"] not in primary_ids]
+    t_ix0 = time.perf_counter()
+    interactions = _interaction_analysis(
+        primary,
+        sensitivity,
+        primary_boundaries=primary_boundaries,
+        baseline_primary=baseline_p,
+        baseline_sensitivity=baseline_s,
+        min_group_size=min_group_size,
+        bin_count=bin_count,
+    )
+    patterns = _candidate_patterns(
+        interactions, baseline_primary=baseline_p, min_group_size=min_group_size,
+    )
+    t_after_ix = time.perf_counter()
 
-    pva = []
-    pmap = {na["feature"]: na for na in numeric_analysis[COHORT_ELIGIBLE_PRIMARY]}
-    for f in NUMERIC_FEATURES[:8]:
-        sens_na = _analyze_numeric_feature(
-            sensitivity, f, baseline_rate=ds_summary[COHORT_ALL_USABLE_SENSITIVITY]["draw_rate_pct"],
-            bin_count=bin_count, min_group_size=min_group_size,
-            bootstrap_iterations=bootstrap_iterations, random_seed=random_seed,
-        )
-        pa = pmap.get(f, {})
-        auc_d = None
-        if pa.get("directional_auc") is not None and sens_na.get("directional_auc") is not None:
-            auc_d = round(sens_na["directional_auc"] - pa["directional_auc"], 4)
-        pva.append({
-            "feature": f,
-            "primary_auc": pa.get("directional_auc"),
-            "sensitivity_auc": sens_na.get("directional_auc"),
-            "auc_delta": auc_d,
-            "trend_consistent": pa.get("trend") == sens_na.get("trend"),
-            "stability_status": "stable" if pa.get("trend") == sens_na.get("trend") else "mostly_stable",
-        })
+    t_temp0 = time.perf_counter()
+    temporal = _temporal_stability(primary, time_span)
+    t_after_temp = time.perf_counter()
+
+    t_league0 = time.perf_counter()
+    league = _league_stability(primary, min_group_size=min_group_size)
+    t_after_league = time.perf_counter()
+
+    t_mkt0 = time.perf_counter()
+    market_block = _market_analysis(
+        market,
+        patterns,
+        bin_count=bin_count,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=random_seed,
+    )
+    t_after_mkt = time.perf_counter()
+
+    t_conc0 = time.perf_counter()
+    conclusions = _research_conclusions(leaderboard, redundancy, maturity, pvs, patterns)
+    t_after_conc = time.perf_counter()
 
     warnings = list(maturity.get("warnings", []))
-    warnings.extend(["theoretical_historical_roi", "no_slippage", "exploratory_not_production"])
-
-    conclusions = _research_conclusions(leaderboard, redundancy, maturity)
+    warnings.extend([
+        "theoretical_historical_roi",
+        "no_slippage",
+        "exploratory_not_production",
+        "multiple_comparisons_risk",
+    ])
 
     t_end = time.perf_counter()
     payload = {
@@ -847,42 +1917,42 @@ def build_draw_credibility_statistical_analysis(
         "research_maturity": maturity,
         "target_baseline": {
             "primary_draw_rate_pct": baseline_p,
-            "sensitivity_draw_rate_pct": ds_summary[COHORT_ALL_USABLE_SENSITIVITY]["draw_rate_pct"],
+            "sensitivity_draw_rate_pct": baseline_s,
             "market_draw_rate_pct": ds_summary[COHORT_MARKET_SUBSET]["draw_rate_pct"],
         },
         "descriptive_statistics": {
             "numeric": [_descriptive_numeric(primary, f) for f in NUMERIC_FEATURES],
         },
         "probability_calibration": {"primary_cecchino_x": cal_primary},
-        "numeric_feature_analysis": numeric_analysis,
-        "categorical_feature_analysis": cat_analysis,
+        "numeric_feature_analysis": {
+            COHORT_ELIGIBLE_PRIMARY: primary_numeric,
+            COHORT_ALL_USABLE_SENSITIVITY: sens_numeric,
+        },
+        "categorical_feature_analysis": {
+            COHORT_ELIGIBLE_PRIMARY: primary_cat,
+            COHORT_ALL_USABLE_SENSITIVITY: sens_cat,
+        },
         "feature_leaderboard": leaderboard,
+        "feature_families": FEATURE_FAMILIES,
         "redundancy_analysis": redundancy,
-        "primary_vs_sensitivity": {
-            "feature_comparisons": pva,
-            "sensitivity_only_fixtures": {
-                "count": len(sens_only),
-                "draws": sum(1 for r in sens_only if r.get("draw_ft") == 1),
-                "draw_rate_pct": pct(sum(1 for r in sens_only if r.get("draw_ft") == 1), len(sens_only)),
-            },
-        },
-        "temporal_stability": {"short_observation_window": time_span < 90, "time_span_days": time_span},
-        "league_stability": {"fragmented_leagues": maturity.get("fragmented_leagues", False)},
-        "interaction_analysis": [],
-        "candidate_patterns": [],
-        "market_analysis": {
-            "cecchino": cal_market_c,
-            "book": cal_market_b,
-            "comparison": {
-                "delta_brier": round((cal_market_c.get("brier_score") or 0) - (cal_market_b.get("brier_score") or 0), 4)
-                if cal_market_c.get("brier_score") is not None and cal_market_b.get("brier_score") is not None else None,
-            },
-            "roi": _roi_analysis(market, min_group_size=min_group_size, bootstrap_iterations=bootstrap_iterations, seed=random_seed),
-        },
+        "primary_vs_sensitivity": pvs,
+        "temporal_stability": temporal,
+        "league_stability": league,
+        "interaction_analysis": interactions,
+        "candidate_patterns": patterns,
+        "market_analysis": market_block,
         "research_conclusions": conclusions,
         "warnings": warnings,
         "performance": {
             "dataset_build_ms": round((t_after_dataset - t_start) * 1000, 1),
+            "enrichment_ms": round((t_after_enrich - t_after_dataset) * 1000, 1),
+            "univariate_ms": round((t_after_univ - t_univ0) * 1000, 1),
+            "bootstrap_ms": round(timing_acc.get("bootstrap_ms", 0.0), 1),
+            "interactions_ms": round((t_after_ix - t_ix0) * 1000, 1),
+            "temporal_ms": round((t_after_temp - t_temp0) * 1000, 1),
+            "league_ms": round((t_after_league - t_league0) * 1000, 1),
+            "market_ms": round((t_after_mkt - t_mkt0) * 1000, 1),
+            "conclusions_ms": round((t_after_conc - t_conc0) * 1000, 1),
             "statistics_compute_ms": round((t_end - t_after_dataset) * 1000, 1),
             "total_ms": round((t_end - t_start) * 1000, 1),
         },

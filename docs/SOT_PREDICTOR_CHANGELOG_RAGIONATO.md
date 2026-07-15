@@ -1,5 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Correzione e completamento Fase 1C.1 (2026-07-15)
+
+- Bugfix: `normalize_outcome_side` (HOME/DRAW/AWAY e 1/X/2); `x_directional_conviction_candidate` non più sempre null.
+- Trend conservativo con `trend_diagnostics`; bootstrap AUC con CI directional/discriminative esplicite.
+- Quantili Primary riusati su Sensitivity (`boundary_source=primary`).
+- Interazioni ×7, `candidate_patterns`, PvS su tutte le numeriche, stabilità temporale (ISO week + early/mid/late), leghe (HHI/top share), Market completo + ROI per fasce.
+- Famiglie feature, `modest_candidates`, rappresentanti e `next_phase_feature_recommendations`.
+- Versione payload: `cecchino_draw_credibility_statistics_v1_1`; helper in `cecchino_draw_credibility_statistics_helpers.py`.
+- UI tab Analisi statistica: leaderboard/dir-CI, interazioni, pattern, temporal/league/market espansi.
+- Nessuna modifica produttiva, nessuna migration, nessuna dipendenza scientifica nuova.
+
 ## Credibilità X Research — Analisi statistica Fase 1C (2026-07-15)
 
 - Service `cecchino_draw_credibility_statistics.py` (stdlib only: Wilson, AUC Mann-Whitney, bootstrap, Pearson/Spearman, quantile bins, trend, Brier/ECE, ROI teorico, HHI).

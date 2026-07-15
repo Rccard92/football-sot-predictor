@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Correzione e completamento Fase 1C.1 (2026-07-15)
+
+- `build_draw_credibility_statistical_analysis` esteso: enrich segni normalizzati, interazioni, pattern, temporal/league/market ROI breakdown.
+- Timing granulare (`dataset_build_ms` … `conclusions_ms`); boundaries Primary cacheati.
+- Route invariata: `POST .../draw-credibility/statistical-analysis`.
+- UI aggiornata su tab Analisi statistica (pattern candidati, ROI fasce, stabilità completa).
+- **Nessuna migration**, nessuna scrittura DB.
+
 ## Credibilità X Research — Analisi statistica Fase 1C (2026-07-15)
 
 - Service `build_draw_credibility_statistical_analysis`: `build_draw_credibility_all_rows` → filtro coorti → `_enrich_research_features` → analisi univariata/calibrazione/ridondanze/market.

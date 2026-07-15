@@ -460,19 +460,34 @@ export type DrawCredibilityCohortTargetSummary = {
   country_count: number
 }
 
+export type DrawCredibilityBootstrapAuc = {
+  original_directional_auc: number | null
+  bootstrap_mean_directional_auc: number | null
+  directional_auc_ci_lower: number | null
+  directional_auc_ci_upper: number | null
+  original_discriminative_auc: number | null
+  discriminative_auc_ci_lower: number | null
+  discriminative_auc_ci_upper: number | null
+  valid_bootstrap_iterations: number
+  /** @deprecated legacy alias of bootstrap_mean_directional_auc */
+  auc?: number | null
+  /** @deprecated legacy alias of directional_auc_ci_lower */
+  auc_ci_lower?: number | null
+  /** @deprecated legacy alias of directional_auc_ci_upper */
+  auc_ci_upper?: number | null
+}
+
 export type DrawCredibilityFeatureLeaderboardRow = {
   feature: string
   type: string
   count: number | null
   missing_pct: number | null
+  /** Alias opzionale; il backend invia tipicamente `feature_family`. */
+  family?: string | null
+  feature_family?: string | null
   directional_auc: number | null
   discriminative_auc: number | null
-  bootstrap: {
-    auc: number | null
-    auc_ci_lower: number | null
-    auc_ci_upper: number | null
-    valid_bootstrap_iterations: number
-  } | null
+  bootstrap: DrawCredibilityBootstrapAuc | null
   pearson: number | null
   spearman: number | null
   trend: string
@@ -480,7 +495,223 @@ export type DrawCredibilityFeatureLeaderboardRow = {
   worst_bin_draw_rate: number | null
   spread_pp: number | null
   reliability_status: string
+  stability_status?: string | null
   interpretation: string
+}
+
+export type DrawCredibilityFeatureFamilyMeta = {
+  members?: string[]
+  preferred_representative?: string | null
+  directional_preferred?: string | null
+  note?: string
+  [key: string]: unknown
+}
+
+export type DrawCredibilityInteractionCell = {
+  row_category: string
+  column_category: string
+  count: number
+  draws: number
+  non_draws?: number
+  reliable: boolean
+  suppressed: boolean
+  suppression_reason?: string | null
+  draw_rate_pct?: number | null
+  wilson_ci_95?: WilsonCi | null
+  lift_vs_baseline_pp?: number | null
+  [key: string]: unknown
+}
+
+export type DrawCredibilityInteractionBlock = {
+  interaction_key: string
+  label: string
+  row_dimension: string
+  column_dimension: string
+  boundary_source?: string
+  column_boundaries?: number[]
+  primary_cells: DrawCredibilityInteractionCell[]
+  sensitivity_cells: DrawCredibilityInteractionCell[]
+  summary?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export type DrawCredibilityCandidatePattern = {
+  pattern_key: string
+  interaction_key: string
+  description: string
+  primary_count: number
+  primary_draws: number
+  primary_draw_rate_pct?: number | null
+  primary_lift_pp?: number | null
+  primary_ci?: WilsonCi | null
+  sensitivity_count?: number
+  sensitivity_draw_rate_pct?: number | null
+  sensitivity_lift_pp?: number | null
+  direction_consistent?: boolean
+  rate_delta_pp?: number | null
+  evidence_status?: string
+  stability_status?: string
+  warnings?: string[]
+  [key: string]: unknown
+}
+
+export type DrawCredibilityIsoWeekRow = {
+  week_key: string
+  first_date?: string | null
+  last_date?: string | null
+  rows: number
+  draws: number
+  draw_rate_pct: number | null
+  wilson_ci_95?: WilsonCi
+  [key: string]: unknown
+}
+
+export type DrawCredibilityChronologicalBlock = {
+  block: string
+  rows: number
+  date_from?: string | null
+  date_to?: string | null
+  draws: number
+  draw_rate_pct: number | null
+  wilson_ci_95?: WilsonCi
+  feature_aucs?: Record<string, number | null>
+  [key: string]: unknown
+}
+
+export type DrawCredibilityTemporalStability = {
+  short_observation_window: boolean
+  time_span_days: number
+  iso_weeks: DrawCredibilityIsoWeekRow[]
+  chronological_blocks: DrawCredibilityChronologicalBlock[]
+  feature_temporal_consistency?: Record<string, unknown>
+  note?: string
+  [key: string]: unknown
+}
+
+export type DrawCredibilityLeagueRowStats = {
+  country_name: string
+  league_name: string
+  rows: number
+  percentage_dataset: number | null
+  draws: number
+  draw_rate_pct: number | null
+  wilson_ci_95?: WilsonCi
+  is_others?: boolean
+  [key: string]: unknown
+}
+
+export type DrawCredibilityLeagueStability = {
+  leagues: DrawCredibilityLeagueRowStats[]
+  top_5_share_pct: number | null
+  top_10_share_pct: number | null
+  hhi: number
+  concentration_status: string
+  fragmented_leagues: boolean
+  reliable_league_count: number
+  league_count: number
+  note?: string
+  [key: string]: unknown
+}
+
+export type DrawCredibilityRoiBlock = {
+  group_key?: string
+  label?: string
+  count?: number
+  bets?: number
+  wins?: number
+  losses?: number
+  win_rate_pct?: number | null
+  roi_pct?: number | null
+  reliable?: boolean
+  ci_crosses_zero?: boolean | null
+  bootstrap_roi_ci_95?: Record<string, unknown> | null
+  warnings?: string[]
+  [key: string]: unknown
+}
+
+export type DrawCredibilityMarketComparison = {
+  rows_compared?: number
+  delta_brier?: number | null
+  delta_brier_skill_score?: number | null
+  delta_log_loss?: number | null
+  delta_auc?: number | null
+  delta_ece?: number | null
+  pct_cecchino_gt_book?: number | null
+  pct_cecchino_lt_book?: number | null
+  pct_approximately_equal_0_5pp?: number | null
+  mean_signed_deviation_x?: number | null
+  median_signed_deviation_x?: number | null
+  mean_absolute_deviation_x?: number | null
+  median_absolute_deviation_x?: number | null
+  [key: string]: unknown
+}
+
+export type DrawCredibilityMarketAnalysis = {
+  cecchino: Record<string, unknown>
+  book: Record<string, unknown>
+  comparison: DrawCredibilityMarketComparison
+  roi: DrawCredibilityRoiBlock
+  roi_breakdown: DrawCredibilityRoiBlock[]
+  warnings?: string[]
+  methodological_warnings?: string[]
+  [key: string]: unknown
+}
+
+export type DrawCredibilityNextPhaseRecommendation = {
+  feature: string
+  reason: string
+  preferred_form: string
+  representation?: string
+  family?: string | null
+  [key: string]: unknown
+}
+
+export type DrawCredibilityRedundantGroup = {
+  features: string[]
+  pearson?: number | null
+  spearman?: number | null
+  level?: string
+  [key: string]: unknown
+}
+
+export type DrawCredibilityRecommendedRepresentative = {
+  family: string
+  representative: string
+  members?: string[]
+  note?: string
+  [key: string]: unknown
+}
+
+export type DrawCredibilityResearchConclusions = {
+  potentially_useful: string[]
+  modest_candidates?: string[]
+  weak_or_uncertain: string[]
+  /** @deprecated prefer redundant_groups */
+  redundant?: string[]
+  redundant_groups?: DrawCredibilityRedundantGroup[]
+  recommended_representatives?: DrawCredibilityRecommendedRepresentative[]
+  non_linear_candidates: string[]
+  candidate_interactions?: string[]
+  unstable_features?: string[]
+  requires_more_history: string[]
+  next_phase_features: string[]
+  next_phase_feature_recommendations?: DrawCredibilityNextPhaseRecommendation[]
+  [key: string]: unknown
+}
+
+export type DrawCredibilityStatisticsPerformance = {
+  dataset_build_ms: number
+  enrichment_ms?: number
+  univariate_ms?: number
+  bootstrap_ms?: number
+  interactions_ms?: number
+  temporal_ms?: number
+  league_ms?: number
+  market_ms?: number
+  conclusions_ms?: number
+  statistics_compute_ms: number
+  total_ms: number
+  [key: string]: number | undefined
 }
 
 export type DrawCredibilityStatisticsResponse = {
@@ -515,40 +746,28 @@ export type DrawCredibilityStatisticsResponse = {
   numeric_feature_analysis: Record<string, Array<Record<string, unknown>>>
   categorical_feature_analysis: Record<string, Array<Record<string, unknown>>>
   feature_leaderboard: DrawCredibilityFeatureLeaderboardRow[]
+  feature_families?: Record<string, DrawCredibilityFeatureFamilyMeta>
   redundancy_analysis: {
     pearson_matrix: Record<string, Record<string, number | null>>
     spearman_matrix: Record<string, Record<string, number | null>>
     pairs: Array<Record<string, unknown>>
     candidate_groups: Array<{ features: string[]; expected: boolean }>
+    feature_families?: Record<string, DrawCredibilityFeatureFamilyMeta>
   }
   primary_vs_sensitivity: {
     feature_comparisons: Array<Record<string, unknown>>
     sensitivity_only_fixtures: Record<string, unknown>
   }
-  temporal_stability: Record<string, unknown>
-  league_stability: Record<string, unknown>
-  interaction_analysis: Array<Record<string, unknown>>
-  candidate_patterns: Array<Record<string, unknown>>
-  market_analysis: {
-    cecchino: Record<string, unknown>
-    book: Record<string, unknown>
-    comparison: Record<string, unknown>
-    roi: Record<string, unknown>
-  }
-  research_conclusions: {
-    potentially_useful: string[]
-    weak_or_uncertain: string[]
-    redundant: string[]
-    non_linear_candidates: string[]
-    requires_more_history: string[]
-    next_phase_features: string[]
-  }
+  temporal_stability: DrawCredibilityTemporalStability
+  league_stability: DrawCredibilityLeagueStability
+  interaction_analysis: DrawCredibilityInteractionBlock[]
+  candidate_patterns: DrawCredibilityCandidatePattern[]
+  market_analysis: DrawCredibilityMarketAnalysis
+  research_conclusions: DrawCredibilityResearchConclusions
+  /** Alias top-level opzionale delle raccomandazioni fase successiva. */
+  next_phase_feature_recommendations?: DrawCredibilityNextPhaseRecommendation[]
   warnings: string[]
-  performance: {
-    dataset_build_ms: number
-    statistics_compute_ms: number
-    total_ms: number
-  }
+  performance: DrawCredibilityStatisticsPerformance
 }
 
 export async function postDrawCredibilityStatisticalAnalysis(
