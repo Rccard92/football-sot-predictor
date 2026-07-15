@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Analisi statistica Fase 1C (2026-07-15)
+
+- Service `build_draw_credibility_statistical_analysis`: `build_draw_credibility_all_rows` → filtro coorti → `_enrich_research_features` → analisi univariata/calibrazione/ridondanze/market.
+- Parametri request: `bin_count`, `min_group_size`, `bootstrap_iterations`, `random_seed`.
+- Route admin: `POST /api/admin/cecchino/research/draw-credibility/statistical-analysis`.
+- UI tab **Analisi statistica** con banner esplorativo; filtri date/competition condivisi con audit/dataset.
+- **Nessuna migration**, nessuna scrittura DB, nessuna API esterna.
+
 ## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
 
 - Payload dataset esteso: `global_pipeline`, `selected_cohort_summary`, `anti_leakage_selected`, `version_distribution_selected`, `global_exclusions`, `cohort_consistency`.

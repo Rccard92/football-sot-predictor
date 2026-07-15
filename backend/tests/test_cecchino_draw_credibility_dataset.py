@@ -33,9 +33,11 @@ from app.services.cecchino.cecchino_draw_credibility_research_common import (
     LEAKAGE_UNSAFE,
     LEAKAGE_UNKNOWN,
     classify_leakage,
+    extract_final_weight_fields,
     normalize_prob_triple,
     num,
     prob_to_percent,
+    resolve_cecchino_final_version,
 )
 from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME, SEL_OVER_2_5, SEL_UNDER_2_5
 
@@ -580,3 +582,81 @@ def _csv_text(rows: list, *, cohort: str = COHORT_ELIGIBLE_PRIMARY) -> str:
         cohort=cohort,
     ))
     return "".join(chunks)
+
+
+def test_cecchino_final_version_reads_version_not_weights():
+    final = {
+        "version": "cecchino_final_v3",
+        "weights": {"totals": 0.4, "home_away": 0.6},
+    }
+    assert resolve_cecchino_final_version(final) == "cecchino_final_v3"
+
+
+def test_cecchino_final_version_formula_fallback():
+    final = {"formula_version": "formula_x", "weights": {"totals": 1.0}}
+    assert resolve_cecchino_final_version(final) == "formula_x"
+
+
+def test_cecchino_final_version_null_when_only_weights():
+    final = {"weights": {"totals": 0.5, "home_away": 0.5}}
+    assert resolve_cecchino_final_version(final) is None
+
+
+def test_extract_final_weight_fields_maps_known_keys():
+    final = {
+        "weights": {
+            "totals": 0.25,
+            "home_away": 0.35,
+            "last6_totals": 0.2,
+            "last5_home_away": 0.2,
+            "unknown_key": 99,
+        }
+    }
+    weights = extract_final_weight_fields(final)
+    assert weights["final_weight_totals"] == 0.25
+    assert weights["final_weight_home_away"] == 0.35
+    assert weights["final_weight_last6_totals"] == 0.2
+    assert weights["final_weight_last5_home_away"] == 0.2
+
+
+def test_dataset_row_includes_final_version_and_weight_columns():
+    result = _dataset([
+        _row(cecchino_output_json={
+            "version": "cecchino_v1",
+            "final": {
+                "version": "cecchino_final_v2",
+                "weights": {"totals": 0.3, "home_away": 0.7},
+                **_final(),
+            },
+            "goal_markets": _goal_markets(),
+        }),
+    ])
+    row = result["rows"][0]
+    assert row["cecchino_final_version"] == "cecchino_final_v2"
+    assert row["final_weight_totals"] == 0.3
+    assert row["final_weight_home_away"] == 0.7
+    for col in (
+        "final_weight_totals",
+        "final_weight_home_away",
+        "final_weight_last6_totals",
+        "final_weight_last5_home_away",
+    ):
+        assert col in CSV_COLUMNS
+
+
+def test_csv_includes_final_weight_columns():
+    text = _csv_text([
+        _row(cecchino_output_json={
+            "version": "cecchino_v1",
+            "final": {
+                "version": "cecchino_final_v2",
+                "weights": {"totals": 0.4},
+                **_final(),
+            },
+            "goal_markets": _goal_markets(),
+        }),
+    ])
+    header = text.splitlines()[0]
+    assert "final_weight_totals" in header
+    assert "cecchino_final_version" in header
+

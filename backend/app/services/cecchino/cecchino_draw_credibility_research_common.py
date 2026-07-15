@@ -538,3 +538,40 @@ def payload_structure_key(output: dict[str, Any] | None) -> str | None:
         return None
     keys = sorted(str(k) for k in output.keys())
     return "|".join(keys) if keys else "empty"
+
+
+def resolve_cecchino_final_version(final: dict[str, Any] | None) -> str | None:
+    """Legge un vero campo versione da final, mai il dict weights."""
+    if not final or not isinstance(final, dict):
+        return None
+    for key in ("version", "formula_version", "model_version"):
+        val = final.get(key)
+        if val is not None and str(val).strip():
+            return str(val)
+    return None
+
+
+def extract_final_weight_fields(final: dict[str, Any] | None) -> dict[str, float | None]:
+    """Estrae pesi final noti; chiavi sconosciute ignorate."""
+    out: dict[str, float | None] = {
+        "final_weight_totals": None,
+        "final_weight_home_away": None,
+        "final_weight_last6_totals": None,
+        "final_weight_last5_home_away": None,
+    }
+    if not final or not isinstance(final, dict):
+        return out
+    weights = final.get("weights")
+    if not isinstance(weights, dict):
+        return out
+    mapping = {
+        "totals": "final_weight_totals",
+        "home_away": "final_weight_home_away",
+        "last6_totals": "final_weight_last6_totals",
+        "last5_home_away": "final_weight_last5_home_away",
+    }
+    for src, dst in mapping.items():
+        val = num(weights.get(src))
+        if val is not None and math.isfinite(val):
+            out[dst] = val
+    return out

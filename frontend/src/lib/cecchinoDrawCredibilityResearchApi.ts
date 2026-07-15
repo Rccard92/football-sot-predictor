@@ -430,3 +430,142 @@ export const DRAW_CREDIBILITY_COHORT_LABELS: Record<DrawCredibilityCohort, strin
   all_usable_sensitivity: 'Sensitivity (interno + safe)',
   market_subset: 'Market (Book completo + safe)',
 }
+
+export type DrawCredibilityStatisticsRequest = {
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  bin_count?: number
+  min_group_size?: number
+  bootstrap_iterations?: number
+  random_seed?: number
+}
+
+export type WilsonCi = {
+  lower_pct: number | null
+  upper_pct: number | null
+}
+
+export type DrawCredibilityCohortTargetSummary = {
+  rows: number
+  draws: number
+  non_draws: number
+  draw_rate_pct: number
+  wilson_ci_95: WilsonCi
+  first_kickoff: string | null
+  last_kickoff: string | null
+  time_span_days: number
+  distinct_match_days: number
+  league_count: number
+  country_count: number
+}
+
+export type DrawCredibilityFeatureLeaderboardRow = {
+  feature: string
+  type: string
+  count: number | null
+  missing_pct: number | null
+  directional_auc: number | null
+  discriminative_auc: number | null
+  bootstrap: {
+    auc: number | null
+    auc_ci_lower: number | null
+    auc_ci_upper: number | null
+    valid_bootstrap_iterations: number
+  } | null
+  pearson: number | null
+  spearman: number | null
+  trend: string
+  best_bin_draw_rate: number | null
+  worst_bin_draw_rate: number | null
+  spread_pp: number | null
+  reliability_status: string
+  interpretation: string
+}
+
+export type DrawCredibilityStatisticsResponse = {
+  status: string
+  version: string
+  filters: DrawCredibilityStatisticsRequest & { random_seed: number }
+  dataset_summary: {
+    primary: DrawCredibilityCohortTargetSummary
+    sensitivity: DrawCredibilityCohortTargetSummary
+    market: DrawCredibilityCohortTargetSummary
+  }
+  research_maturity: {
+    status: string
+    sample_size: number
+    positive_events: number
+    time_span_days: number
+    short_time_span: boolean
+    fragmented_leagues: boolean
+    warnings: string[]
+  }
+  target_baseline: {
+    primary_draw_rate_pct: number
+    sensitivity_draw_rate_pct: number
+    market_draw_rate_pct: number
+  }
+  descriptive_statistics: {
+    numeric: Array<Record<string, unknown>>
+  }
+  probability_calibration: {
+    primary_cecchino_x: Record<string, unknown>
+  }
+  numeric_feature_analysis: Record<string, Array<Record<string, unknown>>>
+  categorical_feature_analysis: Record<string, Array<Record<string, unknown>>>
+  feature_leaderboard: DrawCredibilityFeatureLeaderboardRow[]
+  redundancy_analysis: {
+    pearson_matrix: Record<string, Record<string, number | null>>
+    spearman_matrix: Record<string, Record<string, number | null>>
+    pairs: Array<Record<string, unknown>>
+    candidate_groups: Array<{ features: string[]; expected: boolean }>
+  }
+  primary_vs_sensitivity: {
+    feature_comparisons: Array<Record<string, unknown>>
+    sensitivity_only_fixtures: Record<string, unknown>
+  }
+  temporal_stability: Record<string, unknown>
+  league_stability: Record<string, unknown>
+  interaction_analysis: Array<Record<string, unknown>>
+  candidate_patterns: Array<Record<string, unknown>>
+  market_analysis: {
+    cecchino: Record<string, unknown>
+    book: Record<string, unknown>
+    comparison: Record<string, unknown>
+    roi: Record<string, unknown>
+  }
+  research_conclusions: {
+    potentially_useful: string[]
+    weak_or_uncertain: string[]
+    redundant: string[]
+    non_linear_candidates: string[]
+    requires_more_history: string[]
+    next_phase_features: string[]
+  }
+  warnings: string[]
+  performance: {
+    dataset_build_ms: number
+    statistics_compute_ms: number
+    total_ms: number
+  }
+}
+
+export async function postDrawCredibilityStatisticalAnalysis(
+  body: DrawCredibilityStatisticsRequest,
+  opts?: { signal?: AbortSignal },
+): Promise<DrawCredibilityStatisticsResponse> {
+  return adminPostJson<DrawCredibilityStatisticsResponse>(
+    '/api/admin/cecchino/research/draw-credibility/statistical-analysis',
+    {
+      date_from: body.date_from,
+      date_to: body.date_to,
+      competition_id: body.competition_id ?? null,
+      bin_count: body.bin_count ?? 5,
+      min_group_size: body.min_group_size ?? 20,
+      bootstrap_iterations: body.bootstrap_iterations ?? 500,
+      random_seed: body.random_seed ?? 42,
+    },
+    opts,
+  )
+}

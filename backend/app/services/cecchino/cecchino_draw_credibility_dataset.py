@@ -36,6 +36,8 @@ from app.services.cecchino.cecchino_draw_credibility_research_common import (
     pct,
     resolve_fulltime_score,
     resolve_result_1x2,
+    extract_final_weight_fields,
+    resolve_cecchino_final_version,
     target_snapshot_at,
     valid_cecchino_odd,
 )
@@ -157,6 +159,10 @@ CSV_COLUMNS: tuple[str, ...] = (
     "leakage_warning",
     "cecchino_output_version",
     "cecchino_final_version",
+    "final_weight_totals",
+    "final_weight_home_away",
+    "final_weight_last6_totals",
+    "final_weight_last5_home_away",
     "balance_analysis_version",
     "goal_market_version_under",
     "goal_market_version_over",
@@ -411,6 +417,7 @@ def _build_dataset_row(
     _, over_ver, _ = goal_market_kpi_entry(goal_markets or {}, SEL_OVER_2_5)
 
     draw_ft = 1 if home == away else 0
+    weight_fields = extract_final_weight_fields(final)
 
     return {
         "today_fixture_id_feature": feature_row.id,
@@ -488,7 +495,8 @@ def _build_dataset_row(
         "leakage_status": leakage_status,
         "leakage_warning": leakage_warning,
         "cecchino_output_version": output.get("version"),
-        "cecchino_final_version": final.get("weights"),
+        "cecchino_final_version": resolve_cecchino_final_version(final),
+        **weight_fields,
         "balance_analysis_version": balance.get("version"),
         "goal_market_version_under": under_ver,
         "goal_market_version_over": over_ver,
@@ -787,6 +795,22 @@ def _consistency_checks_legacy(
     }
 
 
+def build_draw_credibility_all_rows(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Costruisce tutte le righe dataset deduplicate (usata da dataset, CSV e statistics)."""
+    return _build_all_rows(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
+
+
 def _build_all_rows(
     db: Session,
     *,
@@ -879,7 +903,7 @@ def build_draw_credibility_historical_dataset(
     page: int = 1,
     page_size: int = 100,
 ) -> dict[str, Any]:
-    all_rows, dedup_meta = _build_all_rows(
+    all_rows, dedup_meta = build_draw_credibility_all_rows(
         db, date_from=date_from, date_to=date_to, competition_id=competition_id,
     )
 
@@ -1036,7 +1060,7 @@ def stream_draw_credibility_dataset_csv(
     competition_id: int | None = None,
     cohort: str = COHORT_ELIGIBLE_PRIMARY,
 ) -> Iterator[str]:
-    all_rows, _ = _build_all_rows(
+    all_rows, _ = build_draw_credibility_all_rows(
         db, date_from=date_from, date_to=date_to, competition_id=competition_id,
     )
     selected = rows_for_selected_cohort(all_rows, cohort)

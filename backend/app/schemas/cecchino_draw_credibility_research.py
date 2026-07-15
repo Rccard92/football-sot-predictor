@@ -36,6 +36,13 @@ class CecchinoDrawCredibilityDatasetExportBody(_DateRangeMixin):
     cohort: Literal["eligible_primary", "all_usable_sensitivity", "market_subset"] = "eligible_primary"
 
 
+class CecchinoDrawCredibilityStatisticsBody(_DateRangeMixin):
+    bin_count: int = Field(default=5, ge=3, le=10)
+    min_group_size: int = Field(default=20, ge=10, le=100)
+    bootstrap_iterations: int = Field(default=500, ge=100, le=2000)
+    random_seed: int = 42
+
+
 class DrawCredibilityExclusionReasonRow(BaseModel):
     reason: str
     count: int

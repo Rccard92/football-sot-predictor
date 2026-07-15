@@ -2,6 +2,20 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Credibilità X Research — Analisi statistica Fase 1C (2026-07-15)
+
+Analisi esplorativa offline sul dataset Credibilità X (non modifica segnali/KPI produttivi).
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Service | `cecchino_draw_credibility_statistics.py` → `build_draw_credibility_statistical_analysis` |
+| Versione | `cecchino_draw_credibility_statistics_v1` |
+| Math | stdlib only (Wilson, AUC, bootstrap, correlazioni, calibrazione, ROI teorico) |
+| Dataset | Riutilizza `build_draw_credibility_all_rows` + coorti esistenti |
+| Fix dataset | `cecchino_final_version` + colonne `final_weight_*` |
+| API | `POST .../draw-credibility/statistical-analysis` |
+| UI | Tab Analisi statistica in `/cecchino/ricerca-credibilita-x` |
+
 ## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
 
 Correzione semantica riepiloghi e export senza alterare composizione coorti né formule.

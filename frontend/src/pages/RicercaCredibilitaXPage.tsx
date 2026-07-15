@@ -23,11 +23,24 @@ import { DrawCredibilityResearchPageHeader } from '../components/cecchino-draw-c
 import { DrawCredibilityResearchSkeleton } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchSkeleton'
 import { DrawCredibilityResearchTabs } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchTabs'
 import { DrawCredibilityVersionTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityVersionTable'
+import { DrawCredibilityFeatureDetailPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityFeatureDetailPanel'
+import { DrawCredibilityFeatureLeaderboardTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityFeatureLeaderboardTable'
+import { DrawCredibilityInteractionPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityInteractionPanel'
+import { DrawCredibilityLeagueStabilityPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityLeagueStabilityPanel'
+import { DrawCredibilityMarketAnalysisPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityMarketAnalysisPanel'
+import { DrawCredibilityProbabilityCalibrationPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityProbabilityCalibrationPanel'
+import { DrawCredibilityRedundancyPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityRedundancyPanel'
+import { DrawCredibilityResearchConclusionsPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchConclusionsPanel'
+import { DrawCredibilityResearchMaturityPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchMaturityPanel'
+import { DrawCredibilityStatisticsBaselinePanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityStatisticsBaselinePanel'
+import { DrawCredibilityStatisticsFilters } from '../components/cecchino-draw-credibility-research/DrawCredibilityStatisticsFilters'
+import { DrawCredibilityTemporalStabilityPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityTemporalStabilityPanel'
 import { useCecchinoDrawCredibilityDataset } from '../hooks/useCecchinoDrawCredibilityDataset'
 import { useCecchinoDrawCredibilityResearch } from '../hooks/useCecchinoDrawCredibilityResearch'
+import { useCecchinoDrawCredibilityStatistics } from '../hooks/useCecchinoDrawCredibilityStatistics'
 import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
 
-type TabId = 'audit' | 'dataset'
+type TabId = 'audit' | 'dataset' | 'statistics'
 
 export function RicercaCredibilitaXPage() {
   const [activeTab, setActiveTab] = useState<TabId>('audit')
@@ -38,6 +51,7 @@ export function RicercaCredibilitaXPage() {
   const sharedFilters = { dateFrom, dateTo, competitionId }
   const research = useCecchinoDrawCredibilityResearch(sharedFilters)
   const datasetHook = useCecchinoDrawCredibilityDataset(sharedFilters)
+  const statisticsHook = useCecchinoDrawCredibilityStatistics(sharedFilters)
 
   return (
     <motion.div
@@ -96,7 +110,7 @@ export function RicercaCredibilitaXPage() {
             </div>
           ) : null}
         </>
-      ) : (
+      ) : activeTab === 'dataset' ? (
         <>
           <DrawCredibilityDatasetFilters
             dateFrom={dateFrom}
@@ -166,6 +180,99 @@ export function RicercaCredibilitaXPage() {
                 onPageChange={(p) => void datasetHook.loadDataset(p)}
               />
               <DrawCredibilityCandidateFormulasLegend />
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <CecchinoStatusMessage
+            variant="info"
+            title="Analisi esplorativa"
+            message="Questa analisi non modifica il modello produttivo Cecchino. I risultati sono diagnostici e soggetti a multiple comparisons."
+          />
+
+          <DrawCredibilityStatisticsFilters
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            competitionId={competitionId}
+            binCount={statisticsHook.binCount}
+            minGroupSize={statisticsHook.minGroupSize}
+            bootstrapIterations={statisticsHook.bootstrapIterations}
+            loading={statisticsHook.loading}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+            onCompetitionIdChange={setCompetitionId}
+            onBinCountChange={statisticsHook.setBinCount}
+            onMinGroupSizeChange={statisticsHook.setMinGroupSize}
+            onBootstrapIterationsChange={statisticsHook.setBootstrapIterations}
+            onRunAnalysis={() => void statisticsHook.runAnalysis()}
+          />
+
+          {statisticsHook.error ? (
+            <CecchinoStatusMessage
+              variant="error"
+              title="Errore analisi"
+              message={statisticsHook.error}
+            />
+          ) : null}
+
+          {statisticsHook.loading ? <DrawCredibilityResearchSkeleton /> : null}
+
+          {!statisticsHook.loading && !statisticsHook.lastAnalysis && !statisticsHook.error ? (
+            <DrawCredibilityResearchEmptyState
+              onRunAudit={() => void statisticsHook.runAnalysis()}
+              message='Seleziona il periodo e premi "Esegui analisi" per calcolare statistiche univariate, calibrazione e ridondanze.'
+              buttonLabel="Esegui analisi"
+            />
+          ) : null}
+
+          {!statisticsHook.loading && statisticsHook.lastAnalysis ? (
+            <div className="space-y-6">
+              <DrawCredibilityResearchMaturityPanel
+                maturity={statisticsHook.lastAnalysis.research_maturity}
+                performance={statisticsHook.lastAnalysis.performance}
+              />
+              <DrawCredibilityStatisticsBaselinePanel
+                primary={statisticsHook.lastAnalysis.dataset_summary.primary}
+                sensitivity={statisticsHook.lastAnalysis.dataset_summary.sensitivity}
+                market={statisticsHook.lastAnalysis.dataset_summary.market}
+              />
+              <DrawCredibilityFeatureLeaderboardTable
+                rows={statisticsHook.lastAnalysis.feature_leaderboard}
+              />
+              <DrawCredibilityFeatureDetailPanel
+                features={
+                  statisticsHook.lastAnalysis.numeric_feature_analysis.eligible_primary ?? []
+                }
+                primaryVsSensitivity={
+                  statisticsHook.lastAnalysis.primary_vs_sensitivity.feature_comparisons
+                }
+              />
+              <DrawCredibilityProbabilityCalibrationPanel
+                calibration={statisticsHook.lastAnalysis.probability_calibration.primary_cecchino_x}
+              />
+              <DrawCredibilityRedundancyPanel
+                redundancy={statisticsHook.lastAnalysis.redundancy_analysis}
+              />
+              <DrawCredibilityInteractionPanel
+                interactions={statisticsHook.lastAnalysis.interaction_analysis}
+                categorical={
+                  statisticsHook.lastAnalysis.categorical_feature_analysis.eligible_primary ?? []
+                }
+              />
+              <DrawCredibilityTemporalStabilityPanel
+                temporal={statisticsHook.lastAnalysis.temporal_stability}
+              />
+              <DrawCredibilityLeagueStabilityPanel
+                league={statisticsHook.lastAnalysis.league_stability}
+                marketSummary={statisticsHook.lastAnalysis.dataset_summary.primary}
+              />
+              <DrawCredibilityMarketAnalysisPanel
+                market={statisticsHook.lastAnalysis.market_analysis}
+              />
+              <DrawCredibilityResearchConclusionsPanel
+                conclusions={statisticsHook.lastAnalysis.research_conclusions}
+              />
             </div>
           ) : null}
         </>

@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Credibilità X Research — Analisi statistica Fase 1C (2026-07-15)
+
+Modulo statistico offline (`cecchino_draw_credibility_statistics.py`) con endpoint `statistical-analysis` e tab UI dedicato. Solo stdlib Python; conclusioni derivate dalle metriche, non hardcoded.
+
 ## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
 
 Fix semantica metriche globali/coorte, anti-leakage selezionato, export CSV completo e filename distinto. Versione `cecchino_draw_credibility_dataset_v1_1`.

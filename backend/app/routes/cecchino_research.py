@@ -12,6 +12,7 @@ from app.schemas.cecchino_draw_credibility_research import (
     CecchinoDrawCredibilityAuditBody,
     CecchinoDrawCredibilityDatasetBody,
     CecchinoDrawCredibilityDatasetExportBody,
+    CecchinoDrawCredibilityStatisticsBody,
 )
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
     build_draw_credibility_historical_dataset,
@@ -20,6 +21,9 @@ from app.services.cecchino.cecchino_draw_credibility_dataset import (
 )
 from app.services.cecchino.cecchino_draw_credibility_research import (
     build_draw_credibility_coverage_audit,
+)
+from app.services.cecchino.cecchino_draw_credibility_statistics import (
+    build_draw_credibility_statistical_analysis,
 )
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
@@ -84,3 +88,21 @@ def post_draw_credibility_dataset_export_csv(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/draw-credibility/statistical-analysis")
+def post_draw_credibility_statistical_analysis(
+    body: CecchinoDrawCredibilityStatisticsBody,
+    db: Session = Depends(get_db),
+):
+    payload = build_draw_credibility_statistical_analysis(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        bin_count=body.bin_count,
+        min_group_size=body.min_group_size,
+        bootstrap_iterations=body.bootstrap_iterations,
+        random_seed=body.random_seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))

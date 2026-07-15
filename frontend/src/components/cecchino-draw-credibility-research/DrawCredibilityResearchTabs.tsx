@@ -1,4 +1,4 @@
-type TabId = 'audit' | 'dataset'
+type TabId = 'audit' | 'dataset' | 'statistics'
 
 type Props = {
   activeTab: TabId
@@ -8,6 +8,7 @@ type Props = {
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'audit', label: 'Audit copertura' },
   { id: 'dataset', label: 'Dataset storico' },
+  { id: 'statistics', label: 'Analisi statistica' },
 ]
 
 export function DrawCredibilityResearchTabs({ activeTab, onTabChange }: Props) {

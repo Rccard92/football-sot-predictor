@@ -1,5 +1,15 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Analisi statistica Fase 1C (2026-07-15)
+
+- Service `cecchino_draw_credibility_statistics.py` (stdlib only: Wilson, AUC Mann-Whitney, bootstrap, Pearson/Spearman, quantile bins, trend, Brier/ECE, ROI teorico, HHI).
+- Riutilizza `build_draw_credibility_all_rows` + `rows_for_selected_cohort` — nessuna seconda pipeline dataset.
+- Fix semantico `cecchino_final_version` (solo `version`/`formula_version`/`model_version`; pesi in `final_weight_*`).
+- **Endpoint**: `POST /api/admin/cecchino/research/draw-credibility/statistical-analysis`.
+- **Payload**: summary coorti, research_maturity, calibrazione, leaderboard, ridondanze, Primary vs Sensitivity, stabilità temporale/leghe, market analysis, conclusioni esplorative, timing performance.
+- **Frontend**: terzo tab «Analisi statistica» in `/cecchino/ricerca-credibilita-x` con filtri avanzati e 11 pannelli diagnostici.
+- Nessuna modifica produttiva, nessuna migration, nessuna scrittura DB.
+
 ## Credibilità X Research — Correzione Dataset Fase 1B.1 (2026-07-15)
 
 - Separazione metriche **globali** (`global_pipeline`) vs **coorte selezionata** (`selected_cohort_summary`, `cohort_summaries`).
