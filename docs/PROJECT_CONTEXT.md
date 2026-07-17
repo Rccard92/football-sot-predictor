@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal v5 Research — Fase 1C statistica (2026-07-17)
+
+Statistiche read-only sul dataset Today eleggibile Fase 1B.1: descrittive, correlazioni/bootstrap, quintili, ridondanza/VIF, PSI/KS e confronto xG temporale. Versione `cecchino_goal_intensity_v5_statistics_v1`; export streaming e benchmark <30s/<2 MB. Limite dichiarato `legacy_pre_utc_fix`: nessuna riclassificazione delle esclusioni UTC storiche; non è un blocco automatico della readiness. Nessuna formula o peso produttivo; v4 invariata.
+
 ## Obiettivo
 
 **SOT Predictor** è un tool full-stack per stimare i **tiri in porta attesi (Shots on Target / SOT)** delle partite di calcio, con focus sui mercati **Over/Under SOT** (squadra e totale match).

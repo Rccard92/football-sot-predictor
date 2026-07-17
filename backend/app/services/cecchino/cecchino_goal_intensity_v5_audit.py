@@ -621,7 +621,20 @@ def build_goal_intensity_v5_audit(
                 "primary_feature_keys": primaries,
             }
         )
-        if fixtures_total > 0 and cov["coverage_complete_pct"] < 30:
+        if not primaries:
+            cov["fixtures_with_all_primary"] = None
+            cov["coverage_complete_pct"] = None
+            cov["coverage_partial_pct"] = None
+            if pillar == "defensive_solidity" and any_feat > 0:
+                pillar_warnings.append(
+                    "Feature difensive disponibili; nessuna feature primaria ancora selezionata statisticamente."
+                )
+            else:
+                pillar_warnings.append(
+                    "nessuna feature primaria configurata: la copertura primaria non è applicabile"
+                )
+            cov["warnings"] = pillar_warnings
+        elif fixtures_total > 0 and cov["coverage_complete_pct"] < 30:
             pillar_warnings.append("copertura primaria completa sotto il 30%")
             cov["warnings"] = pillar_warnings
         pillar_coverage[pillar] = cov
@@ -647,16 +660,21 @@ def build_goal_intensity_v5_audit(
             in ("exclude_low_coverage", "exclude_leakage", "exclude_redundant", "unavailable")
         ]
         coverages = [inv_by_key[k]["coverage_pct"] for k in primary if k in inv_by_key]
+        no_primary = not primary
         return {
             "primary_features": primary,
             "secondary_features": secondary,
             "excluded_features": excluded,
             "motivations": {
-                "primary": "copertura e semantica allineate al fenomeno del pilastro",
+                "primary": (
+                    "nessuna feature primaria configurata per questo pilastro; "
+                    "la selezione resta da validare nella fase statistica"
+                    if no_primary else "copertura e semantica allineate al fenomeno del pilastro"
+                ),
                 "secondary": "supporto o ridondanza controllata",
                 "excluded": "copertura bassa, leakage o ridondanza",
             },
-            "expected_coverage_pct": round(sum(coverages) / len(coverages), 2) if coverages else 0.0,
+            "expected_coverage_pct": round(sum(coverages) / len(coverages), 2) if coverages else None,
             "dependencies": ["fixtures (storico FT)", "xg_profiles_json / FixtureTeamStat"],
             "risks": ["copertura xG non uniforme", "sample size rolling basso a inizio stagione"],
             "phase_1b_1c_needed": [

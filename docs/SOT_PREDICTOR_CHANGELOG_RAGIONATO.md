@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Fase 1C statistica (2026-07-17)
+
+- Aggiunta analisi read-only `cecchino_goal_intensity_v5_statistics_v1` sulla coorte Today eligible Fase 1B.1: descrittive, Pearson/Spearman bootstrap, AUC, quintili, ridondanza/VIF, PSI/KS/direzione e confronto xG temporale.
+- Export CSV/JSON e benchmark reale <30s / payload <2 MB; risultati esplorativi con raccomandazioni, senza formula, training o pesi produttivi.
+- Limite esplicito `legacy_pre_utc_fix`: nessun backfill/ricalcolo delle esclusioni UTC storiche; non blocca da solo la readiness. v4 invariata.
+
 ## Intensità Goal v5 Research — Coorte Today eleggibile (2026-07-17)
 
 - Coorte research: solo `CecchinoTodayFixture` con `eligibility_status=eligible` (campo persistito); floor `scan_date` 2026-06-19.

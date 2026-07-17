@@ -184,6 +184,107 @@ export function postGoalIntensityV5Dataset(
   return adminPostJson('/api/admin/cecchino/research/goal-intensity-v5/dataset', body)
 }
 
+export type GoalIntensityV5StatisticsRequest = GoalIntensityV5AuditRequest & {
+  minimum_history_sample?: 10 | 20
+  bootstrap_iterations?: number
+  random_seed?: number
+}
+
+export type GoalIntensityV5StatisticsResponse = Record<string, unknown> & {
+  status: string
+  version: string
+  filters?: Record<string, unknown>
+  research_limitations?: Record<string, unknown>
+  cohort_summary?: Record<string, unknown>
+  target_summary?: Record<string, unknown>
+  feature_signal_summary?: Array<Record<string, unknown>>
+  redundancy_summary?: Record<string, unknown>
+  rolling_window_comparison?: Record<string, unknown>
+  stability_metric_comparison?: Record<string, unknown>
+  temporal_stability_summary?: Record<string, unknown>
+  xg_value_summary?: Record<string, unknown>
+  xg_availability_bias_report?: Record<string, unknown>
+  pillar_recommendations?: Record<string, Record<string, unknown>>
+  feature_recommendations?: Array<Record<string, unknown>>
+  phase_1d_readiness?: Record<string, unknown>
+  warnings?: string[]
+  performance?: Record<string, unknown>
+  error?: string
+}
+
+export type GoalIntensityStatisticsExportKind =
+  | 'summary'
+  | 'feature_signal'
+  | 'redundancy_matrix'
+  | 'redundancy_clusters'
+  | 'temporal_stability'
+  | 'rolling_comparison'
+  | 'stability_metrics'
+  | 'xg_value'
+  | 'feature_recommendations'
+
+const STATISTICS_EXPORT_PATH: Record<GoalIntensityStatisticsExportKind, string> = {
+  summary: '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/summary',
+  feature_signal: '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/feature-signal',
+  redundancy_matrix: '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/redundancy-matrix',
+  redundancy_clusters:
+    '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/redundancy-clusters',
+  temporal_stability:
+    '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/temporal-stability',
+  rolling_comparison:
+    '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/rolling-comparison',
+  stability_metrics:
+    '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/stability-metrics',
+  xg_value: '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/xg-value',
+  feature_recommendations:
+    '/api/admin/cecchino/research/goal-intensity-v5/statistics/export/feature-recommendations',
+}
+
+export function postGoalIntensityV5Statistics(
+  body: GoalIntensityV5StatisticsRequest,
+): Promise<GoalIntensityV5StatisticsResponse> {
+  return adminPostJson('/api/admin/cecchino/research/goal-intensity-v5/statistics', body)
+}
+
+export async function postGoalIntensityV5StatisticsExport(
+  kind: GoalIntensityStatisticsExportKind,
+  body: GoalIntensityV5StatisticsRequest,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<{ blob: Blob; filename: string }> {
+  const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 300_000)
+  const onOuterAbort = () => controller.abort()
+  opts?.signal?.addEventListener('abort', onOuterAbort)
+  try {
+    const res = await fetch(`${base}${STATISTICS_EXPORT_PATH[kind]}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      let message = res.statusText
+      if ((res.headers.get('content-type') ?? '').includes('application/json')) {
+        try {
+          const parsed = (await res.json()) as { detail?: string; message?: string }
+          message = parsed.detail ?? parsed.message ?? message
+        } catch {
+          /* Ignora una risposta non leggibile. */
+        }
+      }
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    const disposition = res.headers.get('content-disposition') ?? ''
+    const match = /filename="([^"]+)"/.exec(disposition)
+    const fallback = `cecchino_goal_intensity_v5_statistics_${kind}_${sanitizeFilenameFragment(body.date_from)}_${sanitizeFilenameFragment(body.date_to)}.${kind === 'summary' ? 'json' : 'csv'}`
+    return { blob: await res.blob(), filename: match?.[1] ?? fallback }
+  } finally {
+    clearTimeout(timer)
+    opts?.signal?.removeEventListener('abort', onOuterAbort)
+  }
+}
+
 export type GoalIntensityDatasetExportKind =
   | 'all'
   | 'core_min5'

@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Fase 1C statistica (2026-07-17)
+
+1. Costruire il dataset Today eleggibile Fase 1B.1 sul range `scan_date` ≥ 19/06/2026.
+2. Eseguire `POST .../goal-intensity-v5/statistics` con history minima 10 (oppure 20) e seed 42; leggere segnali, ridondanza, stabilità e valutazione xG come evidenza esplorativa.
+3. Scaricare gli export CSV/JSON se serve revisione; eseguire `cd backend && python -m scripts.benchmark_goal_intensity_v5_statistics`.
+4. Verificare PASS <30s e <2 MB. Il flag `legacy_pre_utc_fix` documenta esclusioni UTC non riclassificate e non blocca da solo la readiness.
+5. Non trasferire risultati in formule/pesi produttivi: v4 rimane invariata fino a una fase successiva approvata.
+
 ## Intensità Goal v5 Research — Coorte Today eleggibile (2026-07-17)
 
 1. Lab «Ricerca Intensità Goal»: coorte = solo eleggibili Cecchino Today (`scan_date` ≥ 19/06/2026)

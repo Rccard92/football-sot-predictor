@@ -18,6 +18,7 @@ from app.schemas.cecchino_draw_credibility_research import (
 from app.schemas.cecchino_goal_intensity_v5_research import (
     CecchinoGoalIntensityV5AuditBody,
     CecchinoGoalIntensityV5DatasetBody,
+    CecchinoGoalIntensityV5StatisticsBody,
 )
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
     build_draw_credibility_historical_dataset,
@@ -42,6 +43,11 @@ from app.services.cecchino.cecchino_goal_intensity_v5_dataset import (
     dataset_export_filename,
     stream_goal_intensity_v5_dataset_csv,
     stream_goal_intensity_v5_dataset_summary_json,
+)
+from app.services.cecchino.cecchino_goal_intensity_v5_statistics import (
+    build_goal_intensity_v5_statistics,
+    statistics_export_filename,
+    stream_goal_intensity_v5_statistics_export,
 )
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
@@ -261,3 +267,77 @@ def post_goal_intensity_v5_dataset_export_summary(
         media_type="application/json; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/goal-intensity-v5/statistics")
+def post_goal_intensity_v5_statistics(
+    body: CecchinoGoalIntensityV5StatisticsBody,
+    db: Session = Depends(get_db),
+):
+    payload = build_goal_intensity_v5_statistics(
+        db, date_from=body.date_from, date_to=body.date_to,
+        competition_id=body.competition_id, minimum_history_sample=body.minimum_history_sample,
+        bootstrap_iterations=body.bootstrap_iterations, random_seed=body.random_seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+def _goal_intensity_statistics_export(kind: str, body: CecchinoGoalIntensityV5StatisticsBody, db):
+    filename = statistics_export_filename(
+        kind=kind, date_from=body.date_from, date_to=body.date_to,  # type: ignore[arg-type]
+    )
+    stream = stream_goal_intensity_v5_statistics_export(
+        db, kind=kind, date_from=body.date_from, date_to=body.date_to,  # type: ignore[arg-type]
+        competition_id=body.competition_id, minimum_history_sample=body.minimum_history_sample,
+        bootstrap_iterations=body.bootstrap_iterations, random_seed=body.random_seed,
+    )
+    media = "application/json; charset=utf-8" if kind == "summary" else "text/csv; charset=utf-8"
+    return StreamingResponse(
+        stream, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/goal-intensity-v5/statistics/export/summary")
+def post_goal_intensity_v5_statistics_export_summary(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("summary", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/feature-signal")
+def post_goal_intensity_v5_statistics_export_feature_signal(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("feature_signal", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/redundancy-matrix")
+def post_goal_intensity_v5_statistics_export_redundancy_matrix(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("redundancy_matrix", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/redundancy-clusters")
+def post_goal_intensity_v5_statistics_export_redundancy_clusters(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("redundancy_clusters", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/temporal-stability")
+def post_goal_intensity_v5_statistics_export_temporal_stability(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("temporal_stability", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/rolling-comparison")
+def post_goal_intensity_v5_statistics_export_rolling_comparison(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("rolling_comparison", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/stability-metrics")
+def post_goal_intensity_v5_statistics_export_stability_metrics(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("stability_metrics", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/xg-value")
+def post_goal_intensity_v5_statistics_export_xg_value(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("xg_value", body, db)
+
+
+@router.post("/goal-intensity-v5/statistics/export/feature-recommendations")
+def post_goal_intensity_v5_statistics_export_feature_recommendations(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
+    return _goal_intensity_statistics_export("feature_recommendations", body, db)

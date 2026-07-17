@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { CecchinoStatusMessage } from '../components/cecchino/CecchinoStatusMessage'
 import { useCecchinoGoalIntensityV5Audit } from '../hooks/useCecchinoGoalIntensityV5Audit'
 import { useCecchinoGoalIntensityV5Dataset } from '../hooks/useCecchinoGoalIntensityV5Dataset'
+import { useCecchinoGoalIntensityV5Statistics } from '../hooks/useCecchinoGoalIntensityV5Statistics'
 import {
   buildGoalIntensityAuditJsonFilename,
   buildGoalIntensityFeatureInventoryCsvFilename,
@@ -14,18 +15,21 @@ import {
   isGoalIntensityAuditDegraded,
   isGoalIntensityAuditUnusable,
   postGoalIntensityV5DatasetExport,
+  postGoalIntensityV5StatisticsExport,
   type GoalIntensityDatasetExportKind,
   type GoalIntensityDatasetRow,
   type GoalIntensityFixtureAuditRow,
   type GoalIntensityV5AuditResponse,
   type GoalIntensityV5AvailabilityResponse,
   type GoalIntensityV5DatasetResponse,
+  type GoalIntensityV5StatisticsResponse,
+  type GoalIntensityStatisticsExportKind,
 } from '../lib/cecchinoGoalIntensityV5ResearchApi'
 import { downloadJsonFile, downloadTextFile } from '../lib/downloadJsonFile'
 import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
 import { formatFetchError } from '../utils/formatFetchError'
 
-type LabTab = 'audit' | 'dataset'
+type LabTab = 'audit' | 'dataset' | 'statistics'
 
 const PILLAR_LABELS: Record<string, string> = {
   offensive_production: 'Produzione offensiva',
@@ -306,6 +310,14 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
               <Kv label="Tutte le primarie" value={block.fixtures_with_all_primary} />
               <Kv label="Copertura completa %" value={block.coverage_complete_pct} />
               <Kv label="Sample size medio" value={block.sample_size_mean} />
+              {key === 'defensive_solidity' &&
+              Array.isArray(block.primary_feature_keys) &&
+              block.primary_feature_keys.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-600">
+                  Feature difensive disponibili; nessuna feature primaria ancora selezionata
+                  statisticamente.
+                </p>
+              ) : null}
             </div>
           ))}
         </div>
@@ -695,6 +707,221 @@ function DatasetBody({
   )
 }
 
+const STATISTICS_EXPORTS: ReadonlyArray<[GoalIntensityStatisticsExportKind, string]> = [
+  ['summary', 'JSON riepilogo'],
+  ['feature_signal', 'CSV segnali feature'],
+  ['redundancy_matrix', 'CSV matrice ridondanza'],
+  ['redundancy_clusters', 'CSV cluster ridondanza'],
+  ['temporal_stability', 'CSV stabilità temporale'],
+  ['rolling_comparison', 'CSV confronto finestre'],
+  ['stability_metrics', 'CSV metriche stabilità'],
+  ['xg_value', 'CSV valore xG'],
+  ['feature_recommendations', 'CSV raccomandazioni feature'],
+]
+
+function RecommendationBadge({ recommendation }: { recommendation: unknown }) {
+  const map: Record<string, { label: string; className: string }> = {
+    candidate_core: { label: 'Core candidate', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+    candidate_secondary: { label: 'Secondary candidate', className: 'border-sky-200 bg-sky-50 text-sky-800' },
+    candidate_optional_xg: { label: 'Optional xG', className: 'border-violet-200 bg-violet-50 text-violet-800' },
+    redundant_candidate: { label: 'Redundant', className: 'border-amber-200 bg-amber-50 text-amber-800' },
+    unstable_candidate: { label: 'Unstable', className: 'border-red-200 bg-red-50 text-red-800' },
+    insufficient_evidence: { label: 'Insufficient evidence', className: 'border-slate-200 bg-slate-100 text-slate-700' },
+  }
+  const cfg = map[String(recommendation)] ?? {
+    label: String(recommendation ?? '—'),
+    className: 'border-slate-200 bg-slate-100 text-slate-700',
+  }
+  return (
+    <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function StatisticsBody({
+  statistics,
+  onExport,
+  exportBusy,
+  exportError,
+}: {
+  statistics: GoalIntensityV5StatisticsResponse
+  onExport: (kind: GoalIntensityStatisticsExportKind) => void
+  exportBusy: boolean
+  exportError: string | null
+}) {
+  const limitations = statistics.research_limitations ?? {}
+  const cohort = statistics.cohort_summary ?? {}
+  const targets = statistics.target_summary ?? {}
+  const signals = statistics.feature_signal_summary ?? []
+  const redundancy = statistics.redundancy_summary ?? {}
+  const rolling = statistics.rolling_window_comparison ?? {}
+  const stability = statistics.stability_metric_comparison ?? {}
+  const temporal = statistics.temporal_stability_summary ?? {}
+  const xg = statistics.xg_value_summary ?? {}
+  const recommendations = statistics.feature_recommendations ?? []
+  const pillarRecommendations = statistics.pillar_recommendations ?? {}
+  const readiness = statistics.phase_1d_readiness ?? {}
+
+  return (
+    <div className="space-y-4">
+      <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+        Coorte legacy pre UTC fix: le esclusioni tecniche storiche non sono state rivalutate.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {STATISTICS_EXPORTS.map(([kind, label]) => (
+          <button
+            key={kind}
+            type="button"
+            disabled={exportBusy}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => onExport(kind)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {exportError ? <CecchinoStatusMessage variant="error" title="Errore export" message={exportError} /> : null}
+      {exportBusy ? <p className="text-xs text-slate-500">Export in corso dal backend…</p> : null}
+
+      <Section title="Limiti della ricerca">
+        <Kv label="Versione motore eleggibilità" value={limitations.eligibility_engine_version} />
+        <Kv label="Riclassificazione UTC storica" value={limitations.utc_historical_exclusions_not_reclassified ? 'non eseguita' : '—'} />
+        <Kv label="Backfill" value={limitations.no_backfill ? 'non eseguito' : '—'} />
+        {limitations.note ? <p className="mt-2 text-xs text-slate-600">{String(limitations.note)}</p> : null}
+      </Section>
+
+      <Section title="Riepilogo coorte">
+        {Object.entries(cohort).map(([label, value]) => <Kv key={label} label={label} value={value} />)}
+      </Section>
+
+      <Section title="Riepilogo target">
+        <JsonBlock data={targets} />
+      </Section>
+
+      <Section title="Feature con segnale">
+        {!signals.length ? (
+          <p className="text-xs text-slate-500">Nessun segnale disponibile.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead className="text-slate-500">
+                <tr>
+                  <th className="py-1 pr-2">Feature</th>
+                  <th className="py-1 pr-2">Pilastro</th>
+                  <th className="py-1 pr-2">Copertura</th>
+                  <th className="py-1 pr-2">Spearman goal totali</th>
+                  <th className="py-1 pr-2">AUC goal ≥2</th>
+                  <th className="py-1 pr-2">Monotonia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {signals.map((feature) => (
+                  <tr key={String(feature.feature_key)} className="border-t border-slate-100">
+                    <td className="py-1.5 pr-2 font-medium text-slate-800">{String(feature.feature_key ?? '—')}</td>
+                    <td className="py-1.5 pr-2">{PILLAR_LABELS[String(feature.pillar)] ?? String(feature.pillar ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.coverage ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.spearman_total_goals ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.auc_goals_ge_2 ?? '—')}</td>
+                    <td className="py-1.5 pr-2">{String(feature.monotonic_direction ?? '—')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section title="Raccomandazioni per pilastro">
+        <div className="grid gap-3 md:grid-cols-2">
+          {Object.entries(pillarRecommendations).map(([pillar, data]) => {
+            const primary = Array.isArray(data.candidate_core) ? data.candidate_core : []
+            const secondary = Array.isArray(data.candidate_secondary) ? data.candidate_secondary : []
+            return (
+              <div key={pillar} className="rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+                <h3 className="text-xs font-semibold text-slate-900">{PILLAR_LABELS[pillar] ?? pillar}</h3>
+                <Kv label="Candidate core" value={primary.join(', ') || '—'} />
+                <Kv label="Candidate secondarie" value={secondary.join(', ') || '—'} />
+                {pillar === 'defensive_solidity' && primary.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-600">
+                    Feature difensive disponibili; nessuna feature primaria ancora selezionata statisticamente.
+                  </p>
+                ) : null}
+                {data.note ? <p className="mt-2 text-xs text-slate-600">{String(data.note)}</p> : null}
+              </div>
+            )
+          })}
+        </div>
+      </Section>
+
+      <Section title="Ridondanza">
+        <p className="mb-2 text-xs font-medium text-slate-500">Conteggio cluster per soglia</p>
+        {Object.entries((redundancy.cluster_counts ?? {}) as Record<string, unknown>).map(([threshold, count]) => (
+          <Kv key={threshold} label={threshold} value={count} />
+        ))}
+      </Section>
+
+      <Section title="Confronto finestre rolling">
+        <JsonBlock data={rolling.groups} />
+      </Section>
+
+      <Section title="Confronto metriche di stabilità">
+        <JsonBlock data={stability} />
+      </Section>
+
+      <Section title="Stabilità temporale">
+        <Kv label="Blocco di riferimento" value={temporal.reference_block} />
+        <Kv label="Feature coerenti" value={(temporal.direction_consistent_features as unknown[] | undefined)?.join(', ')} />
+        <Kv label="Feature instabili" value={(temporal.unstable_features as unknown[] | undefined)?.join(', ')} />
+        <JsonBlock data={temporal.block_sizes} />
+      </Section>
+
+      <Section title="Valore xG e bias di disponibilità">
+        <Kv label="Stato" value={xg.status} />
+        <Kv label="Coppie xG" value={xg.paired_n} />
+        <Kv label="Valutazione xG" value={xg.xg_value_assessment} />
+        <Kv label="Livello evidenza" value={xg.evidence_level} />
+        {xg.note ? <p className="mt-2 text-xs text-slate-600">{String(xg.note)}</p> : null}
+        <p className="mb-1 mt-3 text-[11px] font-medium uppercase tracking-wide text-slate-400">Bias di disponibilità</p>
+        <JsonBlock data={statistics.xg_availability_bias_report} />
+      </Section>
+
+      <Section title="Raccomandazioni feature">
+        {!recommendations.length ? (
+          <p className="text-xs text-slate-500">Nessuna raccomandazione disponibile.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead className="text-slate-500">
+                <tr><th className="py-1 pr-2">Feature</th><th className="py-1 pr-2">Pilastro</th><th className="py-1 pr-2">Segnale</th><th className="py-1 pr-2">Stabilità</th><th className="py-1 pr-2">Esito</th></tr>
+              </thead>
+              <tbody>
+                {recommendations.map((feature) => (
+                  <tr key={String(feature.feature_key)} className="border-t border-slate-100">
+                    <td className="py-1.5 pr-2 font-medium text-slate-800">{String(feature.feature_key ?? '—')}</td>
+                    <td className="py-1.5 pr-2">{PILLAR_LABELS[String(feature.pillar)] ?? String(feature.pillar ?? '—')}</td>
+                    <td className="py-1.5 pr-2">{String((feature.signal_summary as Record<string, unknown> | undefined)?.spearman_total_goals ?? '—')}</td>
+                    <td className="py-1.5 pr-2">{String(feature.temporal_stability ?? '—')}</td>
+                    <td className="py-1.5 pr-2"><RecommendationBadge recommendation={feature.recommendation} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section title="Readiness Fase 1D">
+        <JsonBlock data={readiness} />
+      </Section>
+
+      <Section title="Performance">
+        <JsonBlock data={statistics.performance} />
+      </Section>
+    </div>
+  )
+}
+
 export function RicercaIntensitaGoalPage() {
   const [tab, setTab] = useState<LabTab>('audit')
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgoLocal(90))
@@ -710,6 +937,12 @@ export function RicercaIntensitaGoalPage() {
     dataset,
     runDataset,
   } = useCecchinoGoalIntensityV5Dataset(filters)
+  const {
+    loading: statisticsLoading,
+    error: statisticsError,
+    statistics,
+    runStatistics,
+  } = useCecchinoGoalIntensityV5Statistics(filters)
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
 
@@ -731,6 +964,29 @@ export function RicercaIntensitaGoalPage() {
       URL.revokeObjectURL(url)
     } catch (err) {
       setExportError(classifyGoalIntensityFetchError(err, 'export'))
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  const handleStatisticsExport = async (kind: GoalIntensityStatisticsExportKind) => {
+    setExportBusy(true)
+    setExportError(null)
+    try {
+      const compId = competitionId.trim() ? Number(competitionId) : null
+      const { blob, filename } = await postGoalIntensityV5StatisticsExport(kind, {
+        date_from: dateFrom,
+        date_to: dateTo,
+        competition_id: compId != null && Number.isFinite(compId) && compId > 0 ? compId : null,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setExportError(formatFetchError(err))
     } finally {
       setExportBusy(false)
     }
@@ -766,7 +1022,7 @@ export function RicercaIntensitaGoalPage() {
       ? `Scansioni Cecchino Today eleggibili dal ${availability.earliest_kickoff_date} al ${availability.latest_kickoff_date} (minimo assoluto 19/06/2026)`
       : 'La ricerca Intensità Goal utilizza le scansioni Cecchino Today disponibili dal 19/06/2026.'
 
-  const busy = tab === 'audit' ? loading : datasetLoading
+  const busy = tab === 'audit' ? loading : tab === 'dataset' ? datasetLoading : statisticsLoading
 
   return (
     <motion.div
@@ -820,6 +1076,15 @@ export function RicercaIntensitaGoalPage() {
         >
           Dataset Fase 1B
         </button>
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            tab === 'statistics' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+          onClick={() => setTab('statistics')}
+        >
+          Analisi Fase 1C
+        </button>
       </div>
 
       <section className="sticky top-0 z-20 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm">
@@ -869,7 +1134,7 @@ export function RicercaIntensitaGoalPage() {
               ) : null}
               Esegui audit
             </button>
-          ) : (
+          ) : tab === 'dataset' ? (
             <button
               type="button"
               disabled={busy}
@@ -880,6 +1145,18 @@ export function RicercaIntensitaGoalPage() {
                 <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
               ) : null}
               Costruisci dataset
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runStatistics()}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {busy ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : null}
+              Esegui analisi Fase 1C
             </button>
           )}
         </div>
@@ -903,7 +1180,7 @@ export function RicercaIntensitaGoalPage() {
           ) : null}
           {!loading && audit ? <AuditBody audit={audit} /> : null}
         </>
-      ) : (
+      ) : tab === 'dataset' ? (
         <>
           {datasetError ? (
             <CecchinoStatusMessage variant="error" title="Errore dataset" message={datasetError} />
@@ -917,6 +1194,29 @@ export function RicercaIntensitaGoalPage() {
             <DatasetBody
               dataset={dataset}
               onExport={(kind) => void handleDatasetExport(kind)}
+              exportBusy={exportBusy}
+              exportError={exportError}
+            />
+          ) : null}
+        </>
+      ) : (
+        <>
+          {statisticsError ? (
+            <CecchinoStatusMessage
+              variant="error"
+              title="Errore analisi Fase 1C"
+              message={statisticsError}
+            />
+          ) : null}
+          {!statisticsLoading && !statisticsError && !statistics ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+              Imposta il periodo e premi «Esegui analisi Fase 1C» per avviare l’analisi statistica.
+            </p>
+          ) : null}
+          {!statisticsLoading && statistics ? (
+            <StatisticsBody
+              statistics={statistics}
+              onExport={(kind) => void handleStatisticsExport(kind)}
               exportBusy={exportBusy}
               exportError={exportError}
             />

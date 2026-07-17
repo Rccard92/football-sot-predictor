@@ -2,6 +2,14 @@
 
 Modulo di ricerca per rifondare **Intensità Goal** su quattro pilastri indipendenti. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
+## Fase 1C — Statistiche esplorative (2026-07-17)
+
+La Fase 1C riusa esclusivamente il dataset Fase 1B.1: coorte Today persistita `eligible`, floor `scan_date` 2026-06-19, righe `row_feature_safe` e core disponibili con soglia history 10 o 20. Produce descrittive, Pearson/Spearman con bootstrap deterministico (seed 42), point-biserial/AUC, quintili, correlazioni/ridondanza/VIF, stabilità temporale (PSI, KS e direzione) e confronto xG temporale quando la coorte paired è sufficiente.
+
+L'engine di eligibility è marcato `legacy_pre_utc_fix`: le esclusioni UTC storiche non vengono riclassificate né mutate. È quindi una limitazione esplicita di ricerca, ma non blocca autonomamente la readiness. I risultati sono descrittivi/esplorativi, senza formula, indice, pesi o training produttivo; v4 resta invariata.
+
+Endpoint: `POST .../goal-intensity-v5/statistics`; export CSV/JSON per segnali, ridondanza, stabilità, rolling, xG e raccomandazioni. Benchmark reale: `python -m scripts.benchmark_goal_intensity_v5_statistics` (PASS <30s e payload <2 MB).
+
 ## Coorte research (Today eleggibile)
 
 Source of truth: campo persistito `CecchinoTodayFixture.eligibility_status` (prodotto in scan/revalidate). Range su `scan_date` ≥ **2026-06-19**. Mapping: `eligible` → model-ready; status `ELIGIBILITY_*` noti → ineligible (solo diagnostica); null/sconosciuto → **unknown** (fail-closed, fuori model-ready). Storico `Fixture` locale solo come prior per feature pre-match.
