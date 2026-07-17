@@ -966,12 +966,32 @@ export type CecchinoBalanceV5MarketDeviation = {
 }
 
 export type CecchinoBalanceV5Preview = {
+  status?: 'ok' | 'unavailable' | string
   version: string
   pillars: CecchinoBalanceV5Pillar[]
   market_deviation: CecchinoBalanceV5MarketDeviation
   research_note: string
   production_changes: boolean
   research_candidates?: Record<string, unknown>
+  warnings?: string[]
+}
+
+export type CecchinoFixtureIdentityConsistency = {
+  status: 'consistent' | 'inconsistent' | 'unavailable' | string
+  today_fixture_id?: number
+  local_fixture_id?: number | null
+  provider_fixture_id?: number
+  local_api_fixture_id?: number
+  today_kickoff?: string | null
+  local_fixture_kickoff?: string | null
+  calculation_target_kickoff?: string | null
+  xg_cutoff?: string | null
+  provider_match?: boolean
+  teams_match?: boolean
+  competition_match?: boolean
+  kickoff_match?: boolean
+  snapshot_match?: boolean
+  warnings?: string[]
 }
 
 export type CecchinoTodayFixtureIds = {
@@ -1007,6 +1027,7 @@ export type CecchinoTodayDetailResponse = {
   icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
   balance_v5_preview?: CecchinoBalanceV5Preview
+  fixture_identity_consistency?: CecchinoFixtureIdentityConsistency
   goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
   expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail

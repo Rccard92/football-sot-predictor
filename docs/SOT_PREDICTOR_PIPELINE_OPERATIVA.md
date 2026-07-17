@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Equilibrio vs Squilibrio — Identità fixture Fase 2A.2 (2026-07-17)
+
+- Detail costruisce `fixture_identity_consistency` (Today ↔ Fixture locale ↔ leakage/xG cutoff); tolleranza kickoff 6h.
+- `build_balance_v5_preview(..., identity_consistency=)` blocca preview se inconsistent (`v1_1`).
+- Realign kickoff Today→Fixture o flag stale snapshot solo se provider match; no truncate / sync di massa.
+
 ## Equilibrio vs Squilibrio — Preview v5 Fase 2A.1 (2026-07-17)
 
 - Solo presentazione: letture F36/Gap, versioni research, formattazione it-IT. Nessun ricalcolo indici.

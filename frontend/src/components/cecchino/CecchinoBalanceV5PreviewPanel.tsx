@@ -2,13 +2,18 @@ import { useState } from 'react'
 import type {
   CecchinoBalanceV5Pillar,
   CecchinoBalanceV5Preview,
+  CecchinoFixtureIdentityConsistency,
 } from '../../lib/cecchinoTodayApi'
 import { formatBalanceNumber } from '../../utils/formatBalanceNumber'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type Props = {
   preview?: CecchinoBalanceV5Preview | null
+  identityConsistency?: CecchinoFixtureIdentityConsistency | null
 }
+
+const IDENTITY_MISMATCH_ALERT =
+  'Analisi non disponibile: i dati calcolati non risultano allineati alla fixture visualizzata.'
 
 const PILLAR_ORDER = ['f36', 'dominance', 'draw_credibility', 'gap_coherence'] as const
 
@@ -48,6 +53,18 @@ function fmtValue(value: number | string | null | undefined, unit: string): stri
     return formatBalanceNumber(value, unit)
   }
   return formatBalanceNumber(value, 'index')
+}
+
+function isIdentityMismatch(
+  preview?: CecchinoBalanceV5Preview | null,
+  identityConsistency?: CecchinoFixtureIdentityConsistency | null,
+): boolean {
+  if (identityConsistency?.status === 'inconsistent') return true
+  if (preview?.status === 'unavailable') {
+    const warnings = preview.warnings ?? []
+    if (warnings.includes('fixture_identity_mismatch')) return true
+  }
+  return false
 }
 
 function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; number: number }) {
@@ -108,12 +125,26 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
   )
 }
 
-export function CecchinoBalanceV5PreviewPanel({ preview }: Props) {
+export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: Props) {
   if (!preview) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
         <h3 className={todaySectionTitle}>Equilibrio vs Squilibrio — Preview v5</h3>
         <p className={`mt-2 ${todaySectionSubtitle}`}>Anteprima non disponibile per questa partita.</p>
+      </section>
+    )
+  }
+
+  if (isIdentityMismatch(preview, identityConsistency)) {
+    return (
+      <section className={`${todayCard} ${todayCardPadding}`}>
+        <h3 className={todaySectionTitle}>Equilibrio vs Squilibrio — Preview v5</h3>
+        <p
+          role="alert"
+          className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+        >
+          {IDENTITY_MISMATCH_ALERT}
+        </p>
       </section>
     )
   }

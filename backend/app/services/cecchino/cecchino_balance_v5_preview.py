@@ -21,7 +21,8 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_UNDER_2_5,
 )
 
-VERSION = "balance_v5_preview_v1"
+VERSION = "balance_v5_preview_v1_1"
+
 
 RESEARCH_NOTE = (
     "F36 è il pilastro produttivo attuale. "
@@ -483,12 +484,80 @@ def _build_market_deviation(
     }
 
 
+def _unavailable_pillar(key: str, title: str, question: str) -> dict[str, Any]:
+    return {
+        "key": key,
+        "title": title,
+        "question": question,
+        "status": "unavailable",
+        "index": None,
+        "class_label": None,
+        "reading": "Analisi non disponibile per mismatch di identità fixture.",
+        "direction": None,
+        "source_version": None,
+        "components": [],
+        "warnings": ["fixture_identity_mismatch"],
+    }
+
+
+def _unavailable_preview(*, extra_warnings: list[str] | None = None) -> dict[str, Any]:
+    warnings = ["fixture_identity_mismatch"]
+    if extra_warnings:
+        warnings.extend(extra_warnings)
+    return {
+        "status": "unavailable",
+        "version": VERSION,
+        "pillars": [
+            _unavailable_pillar(
+                "f36",
+                "Geometria della partita",
+                "Quanto è equilibrata la struttura della partita?",
+            ),
+            _unavailable_pillar(
+                "dominance",
+                "Convinzione del modello",
+                "Quanto il modello è convinto dello scenario principale?",
+            ),
+            _unavailable_pillar(
+                "draw_credibility",
+                "Credibilità della X",
+                "Quanto il pareggio è credibile secondo il modello Cecchino?",
+            ),
+            _unavailable_pillar(
+                "gap_coherence",
+                "Coerenza matematica 1/2",
+                "Le probabilità confermano la geometria descritta da F36?",
+            ),
+        ],
+        "market_deviation": {
+            "title": "Scostamento dal mercato",
+            "subtitle": "Il mercato non modifica la Credibilità X.",
+            "status": "unavailable",
+            "index": None,
+            "class_label": None,
+            "pairs": [],
+            "reading": "Sezione non disponibile: identità fixture non allineata.",
+            "warnings": ["fixture_identity_mismatch"],
+            "has_book_data": False,
+        },
+        "research_note": RESEARCH_NOTE,
+        "production_changes": False,
+        "warnings": warnings,
+    }
+
+
 def build_balance_v5_preview(
     *,
     balance_analysis: dict[str, Any] | None,
     kpi_panel: dict[str, Any] | None = None,
     cecchino_final: dict[str, Any] | None = None,
+    identity_consistency: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if isinstance(identity_consistency, dict) and identity_consistency.get("status") == "inconsistent":
+        return _unavailable_preview(
+            extra_warnings=list(identity_consistency.get("warnings") or []),
+        )
+
     balance = balance_analysis if isinstance(balance_analysis, dict) else {}
     inputs = balance.get("inputs") or {}
     f36 = balance.get("f36") or {}
@@ -524,6 +593,7 @@ def build_balance_v5_preview(
     ]
 
     return {
+        "status": "ok",
         "version": VERSION,
         "pillars": pillars,
         "market_deviation": _build_market_deviation(
@@ -537,4 +607,5 @@ def build_balance_v5_preview(
         "research_note": RESEARCH_NOTE,
         "production_changes": False,
         "research_candidates": candidates,
+        "warnings": [],
     }

@@ -65,7 +65,13 @@ from app.services.cecchino.cecchino_constants import (
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
 from app.services.cecchino.cecchino_balance_v5_preview import build_balance_v5_preview
+from app.services.cecchino.cecchino_fixture_identity_consistency import (
+    apply_minimal_kickoff_realignment,
+    build_fixture_identity_consistency,
+    flag_stale_calculation_snapshot,
+)
 from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
+from app.models.team import Team
 from app.services.datetime_utils import (
     build_datetime_debug,
     classify_datetime_blocking_reason,
@@ -1595,13 +1601,58 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
     balance_analysis = build_balance_analysis_from_final(
         output.get("final") if isinstance(output, dict) else {},
     )
+    goal_intensity_analysis = build_goal_intensity_for_today_row(db, row)
+    expected_goal_engine_diagnostics = build_expected_goal_engine_diagnostics_for_today_row(db, row)
+
+    local_fixture: Fixture | None = None
+    local_home_name: str | None = None
+    local_away_name: str | None = None
+    if row.local_fixture_id:
+        local_fixture = db.get(Fixture, int(row.local_fixture_id))
+        if local_fixture is not None:
+            home_team = db.get(Team, int(local_fixture.home_team_id)) if local_fixture.home_team_id else None
+            away_team = db.get(Team, int(local_fixture.away_team_id)) if local_fixture.away_team_id else None
+            local_home_name = home_team.name if home_team else None
+            local_away_name = away_team.name if away_team else None
+
+    fixture_identity_consistency = build_fixture_identity_consistency(
+        today_row=row,
+        local_fixture=local_fixture,
+        cecchino_output=output if isinstance(output, dict) else None,
+        expected_goal_diagnostics=expected_goal_engine_diagnostics
+        if isinstance(expected_goal_engine_diagnostics, dict)
+        else None,
+        local_home_team_name=local_home_name,
+        local_away_team_name=local_away_name,
+    )
+
+    # Correzione minima post-check (Fase 2A.2): solo realign kickoff o flag stale.
+    identity_fix_meta: dict[str, Any] | None = None
+    if local_fixture is not None and fixture_identity_consistency.get("status") == "inconsistent":
+        realign = apply_minimal_kickoff_realignment(row, local_fixture, fixture_identity_consistency)
+        stale = flag_stale_calculation_snapshot(row, fixture_identity_consistency)
+        if realign.get("applied") or stale.get("applied"):
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            identity_fix_meta = {"kickoff_realign": realign, "stale_snapshot": stale}
+            fixture_identity_consistency = build_fixture_identity_consistency(
+                today_row=row,
+                local_fixture=local_fixture,
+                cecchino_output=output if isinstance(output, dict) else None,
+                expected_goal_diagnostics=expected_goal_engine_diagnostics
+                if isinstance(expected_goal_engine_diagnostics, dict)
+                else None,
+                local_home_team_name=local_home_name,
+                local_away_team_name=local_away_name,
+            )
+
     balance_v5_preview = build_balance_v5_preview(
         balance_analysis=balance_analysis,
         kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
         cecchino_final=output.get("final") if isinstance(output, dict) else None,
+        identity_consistency=fixture_identity_consistency,
     )
-    goal_intensity_analysis = build_goal_intensity_for_today_row(db, row)
-    expected_goal_engine_diagnostics = build_expected_goal_engine_diagnostics_for_today_row(db, row)
     icm_analysis = build_cecchino_icm_analysis(
         balance_analysis=balance_analysis,
         kpi_panel=kpi_panel,
@@ -1610,6 +1661,9 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
     today_id = int(row.id)
     provider_fid = int(row.provider_fixture_id)
     local_fid = int(row.local_fixture_id) if row.local_fixture_id else None
+    detail_warnings = list(row.warnings_json or [])
+    if identity_fix_meta is not None:
+        detail_warnings.append("fixture_identity_minimal_fix_applied")
     return {
         "status": "ok",
         "version": CECCHINO_TODAY_VERSION,
@@ -1641,6 +1695,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "icm_analysis": icm_analysis,
         "balance_analysis": balance_analysis,
         "balance_v5_preview": balance_v5_preview,
+        "fixture_identity_consistency": fixture_identity_consistency,
         "goal_intensity_analysis": goal_intensity_analysis,
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
@@ -1649,7 +1704,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
             if row.competition_id and row.local_fixture_id
             else None
         ),
-        "warnings": row.warnings_json or [],
+        "warnings": detail_warnings,
     }
 
 

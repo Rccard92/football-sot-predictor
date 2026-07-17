@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Equilibrio vs Squilibrio — Identità fixture Fase 2A.2 (2026-07-17)
+
+Protezione read-only `fixture_identity_consistency` + blocco Preview v5 (`balance_v5_preview_v1_1`) su mismatch. Tolleranza kickoff 6h. Nessuna formula cambiata.
+
 ## Equilibrio vs Squilibrio — Preview v5 Fase 2A.1 (2026-07-17)
 
 Pulizia semantica F36/Gap, fonti research corrette, formattazione italiana. Nessuna modifica alle formule.

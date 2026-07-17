@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio — Identità fixture Fase 2A.2 (2026-07-17)
+
+- Helper `build_fixture_identity_consistency` + campo detail `fixture_identity_consistency`.
+- Preview bump a `balance_v5_preview_v1_1`: se identity inconsistent → payload unavailable (`fixture_identity_mismatch`).
+- UI: alert unico, nessuna card research su mismatch. Correzione minima kickoff/stale flag con warning espliciti.
+- Nessuna modifica a formule F36/Dominanza/Gap/Credibilità X.
+
 ## Equilibrio vs Squilibrio — Preview v5 Fase 2A.1 (2026-07-17)
 
 - Lettura F36 strutturale (niente «il modello tende»); Gap collegato alla classe F36; label Market semplificate.

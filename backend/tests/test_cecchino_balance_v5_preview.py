@@ -50,6 +50,27 @@ def _kpi_with_book():
     }
 
 
+def test_version_is_v1_1():
+    assert VERSION == "balance_v5_preview_v1_1"
+    preview = build_balance_v5_preview(balance_analysis=_balance())
+    assert preview["version"] == VERSION
+    assert preview["status"] == "ok"
+
+
+def test_identity_inconsistent_blocks_preview():
+    preview = build_balance_v5_preview(
+        balance_analysis=_balance(),
+        identity_consistency={"status": "inconsistent", "warnings": ["fixture_kickoff_mismatch"]},
+    )
+    assert preview["status"] == "unavailable"
+    assert preview["version"] == VERSION
+    assert preview["production_changes"] is False
+    assert "fixture_identity_mismatch" in preview["warnings"]
+    assert all(p["status"] == "unavailable" and p["index"] is None for p in preview["pillars"])
+    assert preview["market_deviation"]["status"] == "unavailable"
+    assert preview["market_deviation"]["pairs"] == []
+
+
 def test_f36_uses_productive_value_not_recalculated():
     bal = _balance()
     preview = build_balance_v5_preview(balance_analysis=bal)

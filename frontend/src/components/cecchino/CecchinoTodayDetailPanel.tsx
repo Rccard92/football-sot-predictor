@@ -78,7 +78,10 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         kpiPanel={detail.kpi_panel_v2 ?? detail.kpi_panel}
       />
 
-      <CecchinoBalanceV5PreviewPanel preview={detail.balance_v5_preview} />
+      <CecchinoBalanceV5PreviewPanel
+        preview={detail.balance_v5_preview}
+        identityConsistency={detail.fixture_identity_consistency}
+      />
 
       <CecchinoGoalIntensityAnalysisPanel goalIntensityAnalysis={detail.goal_intensity_analysis} />
 
