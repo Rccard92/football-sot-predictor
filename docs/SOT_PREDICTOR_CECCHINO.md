@@ -2,6 +2,19 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `balance_v5_v1` (alias top-level `balance_v5` = `balance_v5_preview`) |
+| UI | Pannello ufficiale «Equilibrio vs Squilibrio v5»; sottotitolo quattro letture indipendenti |
+| Stati | F36 `official`; Dominanza/Gap `research`; Credibilità X `calibration_pending` |
+| Identity / xG | Blocco su mismatch (2A.x); GET detail read-only; nessun auto-realign |
+| Book | Solo nella sezione Scostamento mercato; assente da Credibilità X |
+| ICM | Backend invariato; UI non montata |
+| Lab | Link secondario → `/cecchino/ricerca-credibilita-x` (nessun trigger analisi) |
+| Formule | Nessuna nuova; solo labeling/selezione campi esistenti |
+
 ## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
 
 | Aspetto | Dettaglio |

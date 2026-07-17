@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
+
+- Detail espone `balance_v5_preview` e alias `balance_v5` (`balance_v5_v1`).
+- FE monta `CecchinoBalanceV5PreviewPanel` con `detail.balance_v5 ?? detail.balance_v5_preview`.
+- Credibilità X: link a `/cecchino/ricerca-credibilita-x`. ICM e vecchio BalanceAnalysisPanel non montati.
+- Identity mismatch → alert, zero indici; GET senza write.
+
 ## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
 
 Dopo Case A: `python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-only --case A` → cutoff xG = kickoff 16/07; audit consistent; Preview v1_2.

@@ -1,4 +1,4 @@
-"""Test Preview v5 Equilibrio vs Squilibrio — Fase 2A."""
+"""Test Equilibrio vs Squilibrio v5 — Fase 2B."""
 
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ def _kpi_with_book():
     }
 
 
-def test_version_is_v1_2():
-    assert VERSION == "balance_v5_preview_v1_2"
+def test_version_is_balance_v5_v1():
+    assert VERSION == "balance_v5_v1"
     preview = build_balance_v5_preview(balance_analysis=_balance())
     assert preview["version"] == VERSION
     assert preview["status"] == "ok"
@@ -143,10 +143,65 @@ def test_market_separated_from_pillars():
     assert "market_deviation" in preview
     assert preview["market_deviation"]["title"] == "Scostamento dal mercato"
     assert "mercato non modifica" in preview["market_deviation"]["subtitle"].lower()
+    reading = preview["market_deviation"]["reading"].lower()
+    assert "distanza" in reading
+    assert "non stabilisce" in reading
     pillar_keys = {p["key"] for p in preview["pillars"]}
     assert "market" not in pillar_keys
     assert "market_deviation" not in pillar_keys
     assert any(p.get("quota_book") for p in preview["market_deviation"]["pairs"])
+
+
+def test_pillar_component_keys_aligned():
+    bal = _balance()
+    preview = build_balance_v5_preview(balance_analysis=bal, kpi_panel=_kpi_with_book())
+    by_key = {p["key"]: p for p in preview["pillars"]}
+    assert [c["key"] for c in by_key["f36"]["components"]] == [
+        "quota_1",
+        "quota_2",
+        "f36_diff",
+        "f36_class",
+        "source_version",
+    ]
+    assert [c["key"] for c in by_key["dominance"]["components"]] == [
+        "prob_1",
+        "prob_x",
+        "prob_2",
+        "dominant_sign",
+        "dominance_pp",
+        "conviction_index_candidate",
+        "source_version",
+    ]
+    dc_keys = [c["key"] for c in by_key["draw_credibility"]["components"]]
+    assert "prob_x" in dc_keys
+    assert "quota_x" in dc_keys
+    assert "quota_under_2_5" in dc_keys
+    assert "quota_over_2_5" in dc_keys
+    assert "x_rank" in dc_keys
+    assert "data_coverage" in dc_keys
+    assert all("book" not in k for k in dc_keys)
+    assert [c["key"] for c in by_key["gap_coherence"]["components"]] == [
+        "prob_1",
+        "prob_2",
+        "probability_gap_1_2_pp",
+        "f36_score",
+        "gap_coherence_index_candidate",
+        "source_version",
+    ]
+
+
+def test_pillar_titles_and_status():
+    bal = _balance()
+    preview = build_balance_v5_preview(balance_analysis=bal)
+    by_key = {p["key"]: p for p in preview["pillars"]}
+    assert by_key["f36"]["title"] == "Geometria della partita"
+    assert by_key["f36"]["status"] == "official"
+    assert by_key["dominance"]["title"] == "Convinzione del modello"
+    assert by_key["dominance"]["status"] == "research"
+    assert by_key["draw_credibility"]["title"] == "Credibilità della X"
+    assert by_key["draw_credibility"]["status"] == "calibration_pending"
+    assert by_key["gap_coherence"]["title"] == "Coerenza matematica 1/2"
+    assert by_key["gap_coherence"]["status"] == "research"
 
 
 def test_no_new_formula_f36_unchanged_and_production_false():

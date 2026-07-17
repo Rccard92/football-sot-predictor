@@ -232,7 +232,7 @@ def test_10_preview_bloccata():
         prob_cecchino_2=0.30,
     )
     preview = build_balance_v5_preview(balance_analysis=bal, identity_consistency=consistency)
-    assert VERSION == "balance_v5_preview_v1_2"
+    assert VERSION == "balance_v5_v1"
     assert preview["status"] == "unavailable"
     assert all(p["index"] is None for p in preview["pillars"])
     assert preview["market_deviation"]["status"] == "unavailable"
@@ -413,7 +413,7 @@ def test_15_formule_invariate():
     f36 = next(p for p in preview["pillars"] if p["key"] == "f36")
     assert f36["index"] == bal["f36"]["score"]
     assert preview["production_changes"] is False
-    assert preview["version"] == "balance_v5_preview_v1_2"
+    assert preview["version"] == "balance_v5_v1"
     encoded = jsonable_encoder(preview)
     assert encoded["version"] == VERSION
 

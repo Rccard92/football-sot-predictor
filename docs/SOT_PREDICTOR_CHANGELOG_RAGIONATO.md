@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
+
+- Contratto ufficiale `balance_v5_v1`; alias detail `balance_v5` = `balance_v5_preview`.
+- UI: titolo senza Preview; link laboratorio Credibilità X; preferenza wire `balance_v5`.
+- Stati pilastro invariati; Book solo in market; ICM nascosto; nessuna formula nuova.
+
 ## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
 
 - `_profile_cache_fresh` invalida se cutoff ≠ kickoff UTC (±1m).

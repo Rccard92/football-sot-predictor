@@ -1669,6 +1669,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "icm_analysis": icm_analysis,
         "balance_analysis": balance_analysis,
         "balance_v5_preview": balance_v5_preview,
+        "balance_v5": balance_v5_preview,
         "fixture_identity_consistency": fixture_identity_consistency,
         "goal_intensity_analysis": goal_intensity_analysis,
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,

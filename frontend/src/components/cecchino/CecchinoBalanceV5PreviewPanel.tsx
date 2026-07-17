@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import type {
   CecchinoBalanceV5Pillar,
   CecchinoBalanceV5Preview,
@@ -12,8 +13,13 @@ type Props = {
   identityConsistency?: CecchinoFixtureIdentityConsistency | null
 }
 
+const PANEL_TITLE = 'Equilibrio vs Squilibrio v5'
+const PANEL_SUBTITLE = 'Quattro letture indipendenti della struttura della partita.'
+
 const IDENTITY_MISMATCH_ALERT =
   'Analisi non disponibile: data, stato o snapshot della fixture non risultano coerenti.'
+
+const LAB_HREF = '/cecchino/ricerca-credibilita-x'
 
 const PILLAR_ORDER = ['f36', 'dominance', 'draw_credibility', 'gap_coherence'] as const
 
@@ -118,6 +124,14 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
           ))}
         </ul>
       ) : null}
+      {pillar.key === 'draw_credibility' ? (
+        <Link
+          to={LAB_HREF}
+          className="self-start text-xs font-medium text-slate-600 underline-offset-2 hover:underline"
+        >
+          Apri laboratorio Credibilità X
+        </Link>
+      ) : null}
       {pillar.source_version ? (
         <p className="text-[10px] text-slate-400">Fonte: {pillar.source_version}</p>
       ) : null}
@@ -129,8 +143,8 @@ export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: 
   if (!preview) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
-        <h3 className={todaySectionTitle}>Equilibrio vs Squilibrio — Preview v5</h3>
-        <p className={`mt-2 ${todaySectionSubtitle}`}>Anteprima non disponibile per questa partita.</p>
+        <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
+        <p className={`mt-2 ${todaySectionSubtitle}`}>Analisi non disponibile per questa partita.</p>
       </section>
     )
   }
@@ -138,7 +152,7 @@ export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: 
   if (isIdentityMismatch(preview, identityConsistency)) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
-        <h3 className={todaySectionTitle}>Equilibrio vs Squilibrio — Preview v5</h3>
+        <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
         <p
           role="alert"
           className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
@@ -158,10 +172,8 @@ export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: 
   return (
     <section className="space-y-4">
       <div>
-        <h3 className={todaySectionTitle}>Equilibrio vs Squilibrio — Preview v5</h3>
-        <p className={todaySectionSubtitle}>
-          Quattro pilastri descrittivi indipendenti. Nessuna promozione di formule sperimentali.
-        </p>
+        <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
+        <p className={todaySectionSubtitle}>{PANEL_SUBTITLE}</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">

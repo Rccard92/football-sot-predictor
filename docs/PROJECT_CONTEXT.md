@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
+
+Pannello ufficiale «Equilibrio vs Squilibrio v5» (`balance_v5_v1` + alias `balance_v5`). Stati pilastro invariati; link laboratorio Credibilità X; ICM nascosto; nessuna formula nuova.
+
 ## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
 
 Cache xG stale se cutoff ≠ kickoff; rebuild cache-only senza API; script `--refresh-xg-cache-only`.
@@ -60,7 +64,7 @@ Pulizia semantica F36/Gap, fonti research corrette, formattazione italiana. Ness
 
 ## Equilibrio vs Squilibrio — Preview v5 Fase 2A (2026-07-17)
 
-Pannello a quattro pilastri descrittivi su Cecchino Today (`balance_v5_preview`). F36 ufficiale; altri in ricerca/calibrazione; Book separato; ICM nascosto in UI. Nessuna nuova formula. Prossimo: Fase 2B.
+Pannello a quattro pilastri descrittivi su Cecchino Today (`balance_v5_preview`). F36 ufficiale; altri in ricerca/calibrazione; Book separato; ICM nascosto in UI. Nessuna nuova formula. Consolidato in Fase 2B.
 
 ## Credibilità X Research — Confronto modelli Fase 1D (2026-07-17)
 

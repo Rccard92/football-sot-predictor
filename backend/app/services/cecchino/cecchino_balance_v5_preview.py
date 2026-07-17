@@ -1,4 +1,4 @@
-"""Equilibrio vs Squilibrio — Preview v5 (Fase 2A).
+"""Equilibrio vs Squilibrio v5 (Fase 2B).
 
 Adapter read-only: riusa balance_analysis v4 + candidati research già definiti.
 Nessuna nuova formula produttiva; production_changes sempre false.
@@ -21,12 +21,12 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_UNDER_2_5,
 )
 
-VERSION = "balance_v5_preview_v1_2"
+VERSION = "balance_v5_v1"
 
 
 RESEARCH_NOTE = (
-    "F36 è il pilastro produttivo attuale. "
-    "Gli altri indici sono mostrati come ricerca o in calibrazione. "
+    "Quattro letture indipendenti della struttura della partita. "
+    "F36 è produttivo; Dominanza e Gap restano ricerca; Credibilità X in calibrazione. "
     "Il Book è separato e non modifica la valutazione interna."
 )
 
@@ -153,6 +153,8 @@ def _f36_structural_reading(f36: dict[str, Any]) -> str:
 
 def _pillar_f36(balance: dict[str, Any]) -> dict[str, Any]:
     f36 = balance.get("f36") or {}
+    inputs = balance.get("inputs") or {}
+    source_version = balance.get("version")
     if not f36 or balance.get("status") != "available":
         return {
             "key": "f36",
@@ -163,7 +165,7 @@ def _pillar_f36(balance: dict[str, Any]) -> dict[str, Any]:
             "class_label": None,
             "reading": "Dati F36 non disponibili.",
             "direction": None,
-            "source_version": balance.get("version"),
+            "source_version": source_version,
             "components": [],
             "warnings": ["f36_unavailable"],
         }
@@ -176,11 +178,13 @@ def _pillar_f36(balance: dict[str, Any]) -> dict[str, Any]:
         "class_label": f36.get("label"),
         "reading": _f36_structural_reading(f36),
         "direction": _f36_side_from_signed(f36.get("signed")),
-        "source_version": balance.get("version"),
+        "source_version": source_version,
         "components": [
-            _component("f36_abs", "Distanza geometrica |F36|", f36.get("abs"), unit="index"),
-            _component("f36_signed", "F36 firmato", f36.get("signed"), unit="index"),
-            _component("f36_class_key", "Classe tecnica", f36.get("class_key"), unit="text"),
+            _component("quota_1", "Quota 1 Cecchino", inputs.get("quota_1"), unit="quota"),
+            _component("quota_2", "Quota 2 Cecchino", inputs.get("quota_2"), unit="quota"),
+            _component("f36_diff", "Differenza F36 |q1−q2|", f36.get("abs"), unit="index"),
+            _component("f36_class", "Classe", f36.get("label"), unit="text"),
+            _component("source_version", "Versione", source_version, unit="text"),
         ],
         "warnings": [],
     }
@@ -197,6 +201,7 @@ def _dominance_reading(market_label: str | None, conviction: float | None, class
 def _pillar_dominance(balance: dict[str, Any], candidates: dict[str, Any]) -> dict[str, Any]:
     dom = balance.get("dominance") or {}
     ctx = balance.get("dominance_context") or {}
+    inputs = balance.get("inputs") or {}
     best = dom.get("best_side") or ctx.get("best_side")
     market = dominant_side_to_market_label(best)
     conviction = candidates.get("conviction_index_candidate")
@@ -210,16 +215,19 @@ def _pillar_dominance(balance: dict[str, Any], candidates: dict[str, Any]) -> di
         index = None
         class_label = None
     components = [
+        _component("prob_1", "Probabilità 1", inputs.get("prob_1"), unit="pct"),
+        _component("prob_x", "Probabilità X", inputs.get("prob_x"), unit="pct"),
+        _component("prob_2", "Probabilità 2", inputs.get("prob_2"), unit="pct"),
         _component("dominant_sign", "Segno dominante", market, unit="text"),
-        _component("dominance_pp", "Dominanza", dom.get("value"), unit="pp"),
+        _component("dominance_pp", "Dominanza pp", dom.get("value"), unit="pp"),
         _component(
             "conviction_index_candidate",
-            "Indice di convinzione (ricerca)",
+            "Indice candidato (ricerca)",
             conviction,
             unit="index",
             status="research" if conviction is not None else "missing",
         ),
-        _component("best_probability", "Prob. scenario principale", dom.get("best_probability"), unit="pct"),
+        _component("source_version", "Versione Research", RESEARCH_CANDIDATES_VERSION, unit="text"),
     ]
     return {
         "key": "dominance",
@@ -249,18 +257,12 @@ def _pillar_draw_credibility(
     components = [
         _component("prob_x", "Probabilità X Cecchino", inputs.get("prob_x"), unit="pct"),
         _component("quota_x", "Quota X Cecchino", inputs.get("quota_x"), unit="quota"),
-        _component("prob_under_2_5", "Under 2.5 Cecchino", under_pct, unit="pct"),
-        _component("prob_over_2_5", "Over 2.5 Cecchino", over_pct, unit="pct"),
-        _component("quota_under_2_5", "Quota Under 2.5 Cecchino", under_odd, unit="quota"),
-        _component("quota_over_2_5", "Quota Over 2.5 Cecchino", over_odd, unit="quota"),
-        _component("x_rank", "Posizione X nel ranking", candidates.get("x_rank"), unit="text"),
-        _component(
-            "conviction_direction",
-            "Direzione convinzione",
-            dominant_side_to_market_label((balance.get("dominance") or {}).get("best_side")),
-            unit="text",
-        ),
-        _component("data_coverage", "Stato copertura dati", balance.get("status"), unit="text"),
+        _component("quota_under_2_5", "Under 2.5 Cecchino", under_odd, unit="quota"),
+        _component("quota_over_2_5", "Over 2.5 Cecchino", over_odd, unit="quota"),
+        _component("prob_under_2_5", "Prob. Under 2.5 Cecchino", under_pct, unit="pct"),
+        _component("prob_over_2_5", "Prob. Over 2.5 Cecchino", over_pct, unit="pct"),
+        _component("x_rank", "X rank", candidates.get("x_rank"), unit="text"),
+        _component("data_coverage", "Stato copertura", balance.get("status"), unit="text"),
     ]
     # Garantisce assenza Book nei componenti del pilastro
     components = [c for c in components if "book" not in c["key"].lower() and "book" not in c["label"].lower()]
@@ -358,21 +360,18 @@ def _pillar_gap(balance: dict[str, Any], candidates: dict[str, Any]) -> dict[str
         "direction": None,
         "source_version": RESEARCH_CANDIDATES_VERSION,
         "components": [
+            _component("prob_1", "Probabilità 1", (balance.get("inputs") or {}).get("prob_1"), unit="pct"),
+            _component("prob_2", "Probabilità 2", (balance.get("inputs") or {}).get("prob_2"), unit="pct"),
+            _component("probability_gap_1_2_pp", "Gap 1/2", gap_pp, unit="pp"),
+            _component("f36_score", "F36", f36.get("score"), unit="index"),
             _component(
                 "gap_coherence_index_candidate",
-                "Indice coerenza (ricerca)",
+                "Indice candidato (ricerca)",
                 gap_coh,
                 unit="index",
                 status="research" if gap_coh is not None else "missing",
             ),
-            _component("probability_gap_1_2_pp", "Gap probabilistico 1/2", gap_pp, unit="pp"),
-            _component(
-                "probability_balance_index",
-                "Indice equilibrio 1/2",
-                candidates.get("probability_balance_index"),
-                unit="index",
-            ),
-            _component("side_gap_label", "Lettura gap produttiva", side.get("label"), unit="text"),
+            _component("source_version", "Versione Research", RESEARCH_CANDIDATES_VERSION, unit="text"),
         ],
         "warnings": ["research_index"] if status == "research" else ["calibration_pending"],
     }

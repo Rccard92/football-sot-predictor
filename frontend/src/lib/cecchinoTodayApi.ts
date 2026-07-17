@@ -1035,6 +1035,7 @@ export type CecchinoTodayDetailResponse = {
   icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
   balance_v5_preview?: CecchinoBalanceV5Preview
+  balance_v5?: CecchinoBalanceV5Preview
   fixture_identity_consistency?: CecchinoFixtureIdentityConsistency
   goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
   expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics

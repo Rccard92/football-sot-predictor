@@ -79,7 +79,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
       />
 
       <CecchinoBalanceV5PreviewPanel
-        preview={detail.balance_v5_preview}
+        preview={detail.balance_v5 ?? detail.balance_v5_preview}
         identityConsistency={detail.fixture_identity_consistency}
       />
 

@@ -384,7 +384,7 @@ def test_16_preview_available_after_repair():
     )
     preview = build_balance_v5_preview(balance_analysis=bal, identity_consistency=consistency)
     assert preview["status"] == "ok"
-    assert preview["version"] == "balance_v5_preview_v1_2"
+    assert preview["version"] == "balance_v5_v1"
     assert "fixture_identity_mismatch" not in (preview.get("warnings") or [])
     assert jsonable_encoder(preview)["production_changes"] is False
 
