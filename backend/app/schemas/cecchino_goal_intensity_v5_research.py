@@ -1,4 +1,4 @@
-"""Schemi API audit / dataset Intensità Goal v5 — Fase 1A/1B."""
+"""Schemi API audit / dataset Intensità Goal v5 — Fase 1A/1B / coorte Today."""
 
 from __future__ import annotations
 
@@ -6,8 +6,13 @@ from datetime import date
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+    MIN_GOAL_INTENSITY_TODAY_SCAN_DATE,
+    RANGE_ERROR_MESSAGE,
+)
 
-class CecchinoGoalIntensityV5AuditBody(BaseModel):
+
+class _GoalIntensityScanDateRangeMixin(BaseModel):
     date_from: date
     date_to: date
     competition_id: int | None = Field(default=None, gt=0)
@@ -18,18 +23,14 @@ class CecchinoGoalIntensityV5AuditBody(BaseModel):
             raise ValueError("date_from deve essere <= date_to")
         if (self.date_to - self.date_from).days > 365 * 5:
             raise ValueError("Il range massimo consentito è 5 anni")
+        if self.date_to < MIN_GOAL_INTENSITY_TODAY_SCAN_DATE:
+            raise ValueError(RANGE_ERROR_MESSAGE)
         return self
 
 
-class CecchinoGoalIntensityV5DatasetBody(BaseModel):
-    date_from: date
-    date_to: date
-    competition_id: int | None = Field(default=None, gt=0)
+class CecchinoGoalIntensityV5AuditBody(_GoalIntensityScanDateRangeMixin):
+    pass
 
-    @model_validator(mode="after")
-    def validate_date_range(self):
-        if self.date_from > self.date_to:
-            raise ValueError("date_from deve essere <= date_to")
-        if (self.date_to - self.date_from).days > 365 * 5:
-            raise ValueError("Il range massimo consentito è 5 anni")
-        return self
+
+class CecchinoGoalIntensityV5DatasetBody(_GoalIntensityScanDateRangeMixin):
+    pass

@@ -137,6 +137,10 @@ export type GoalIntensityV5DatasetRequest = GoalIntensityV5AuditRequest
 
 export type GoalIntensityDatasetRow = Record<string, unknown> & {
   local_fixture_id: number
+  today_fixture_id?: number
+  scan_date?: string
+  eligibility_status?: string
+  eligibility_source?: string
   sample_size?: number
   core_feature_status?: string
   xg_status?: string
@@ -163,6 +167,13 @@ export type GoalIntensityV5DatasetResponse = {
   dataset_preview_rows?: GoalIntensityDatasetRow[]
   /** @deprecated v1 only */
   dataset_rows?: GoalIntensityDatasetRow[]
+  eligibility_diagnostics?: Record<string, unknown>
+  diagnostic_examples?: Array<Record<string, unknown>>
+  cohort_basis?: string
+  target_source?: string
+  result_source?: string
+  historical_feature_source?: string
+  error?: string
   warnings: string[]
   performance: Record<string, unknown>
 }
@@ -179,6 +190,7 @@ export type GoalIntensityDatasetExportKind =
   | 'core_min10'
   | 'xg_paired'
   | 'summary'
+  | 'ineligible_diagnostics'
 
 const EXPORT_PATH: Record<GoalIntensityDatasetExportKind, string> = {
   all: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/all',
@@ -186,6 +198,8 @@ const EXPORT_PATH: Record<GoalIntensityDatasetExportKind, string> = {
   core_min10: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/core-min10',
   xg_paired: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/xg-paired',
   summary: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/summary',
+  ineligible_diagnostics:
+    '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/ineligible-diagnostics',
 }
 
 export async function postGoalIntensityV5DatasetExport(
@@ -424,12 +438,15 @@ const DATASET_CSV_HEADERS = [
 ] as const
 
 export function buildGoalIntensityDatasetCsvFilename(
-  kind: 'all' | 'core_min5' | 'core_min10' | 'xg_paired',
+  kind: 'all' | 'core_min5' | 'core_min10' | 'xg_paired' | 'ineligible_diagnostics',
   dateFrom: string,
   dateTo: string,
 ): string {
   const from = sanitizeFilenameFragment(dateFrom)
   const to = sanitizeFilenameFragment(dateTo)
+  if (kind === 'ineligible_diagnostics') {
+    return `cecchino_goal_intensity_v5_ineligible_diagnostics_${from}_${to}.csv`
+  }
   const map = {
     all: 'dataset_all',
     core_min5: 'dataset_core_min5',

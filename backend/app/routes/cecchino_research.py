@@ -232,6 +232,14 @@ def post_goal_intensity_v5_dataset_export_xg_paired(
     return _goal_intensity_dataset_csv_export("xg_paired", body, db)
 
 
+@router.post("/goal-intensity-v5/dataset/export/ineligible-diagnostics")
+def post_goal_intensity_v5_dataset_export_ineligible(
+    body: CecchinoGoalIntensityV5DatasetBody,
+    db: Session = Depends(get_db),
+):
+    return _goal_intensity_dataset_csv_export("ineligible_diagnostics", body, db)
+
+
 @router.post("/goal-intensity-v5/dataset/export/summary")
 def post_goal_intensity_v5_dataset_export_summary(
     body: CecchinoGoalIntensityV5DatasetBody,

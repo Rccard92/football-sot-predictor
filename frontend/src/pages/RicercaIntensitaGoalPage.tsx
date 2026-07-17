@@ -15,6 +15,7 @@ import {
   isGoalIntensityAuditUnusable,
   postGoalIntensityV5DatasetExport,
   type GoalIntensityDatasetExportKind,
+  type GoalIntensityDatasetRow,
   type GoalIntensityFixtureAuditRow,
   type GoalIntensityV5AuditResponse,
   type GoalIntensityV5AvailabilityResponse,
@@ -494,9 +495,47 @@ function DatasetBody({
   const bias = dataset.exclusion_bias_report ?? {}
   const cohortCounts = (summary.cohort_counts ?? {}) as Record<string, number>
   const preview = dataset.dataset_preview_rows ?? []
+  const elig = dataset.eligibility_diagnostics ?? {}
+  const cohortBasis = String(dataset.cohort_basis ?? summary.cohort_basis ?? '')
+  const unknownCount = Number(elig.today_eligibility_unknown ?? 0)
+  const hasIneligibleRows = (preview as GoalIntensityDatasetRow[]).some(
+    (r) => r.eligibility_status != null && String(r.eligibility_status) !== 'eligible',
+  )
+  const badScanDate = (preview as GoalIntensityDatasetRow[]).some((r) => {
+    const sd = r.scan_date
+    return typeof sd === 'string' && sd < '2026-06-19'
+  })
+  const blocking =
+    unknownCount > 0 ||
+    hasIneligibleRows ||
+    (cohortBasis !== '' && cohortBasis !== 'cecchino_today_eligible_scan_date') ||
+    badScanDate ||
+    dataset.status === 'error'
 
   return (
     <div className="space-y-4">
+      <p className="text-sm font-medium text-slate-800">
+        Coorte research: solo partite eleggibili Cecchino Today.
+      </p>
+      {blocking ? (
+        <CecchinoStatusMessage
+          variant="error"
+          title="Coorte non valida"
+          message={
+            dataset.error ||
+            (unknownCount > 0
+              ? `Eleggibilità sconosciuta: ${unknownCount} partite (fail-closed).`
+              : hasIneligibleRows
+                ? 'Il dataset contiene righe non eleggibili.'
+                : badScanDate
+                  ? 'Esistono target con scan_date precedente al 19/06/2026.'
+                  : cohortBasis !== 'cecchino_today_eligible_scan_date'
+                    ? `cohort_basis non valido: ${cohortBasis || 'mancante'}`
+                    : 'Errore di coorte.')
+          }
+        />
+      ) : null
+      }
       <div className="flex flex-wrap gap-2">
         {(
           [
@@ -504,6 +543,7 @@ function DatasetBody({
             ['core_min5', 'CSV core ≥5'],
             ['core_min10', 'CSV core ≥10'],
             ['xg_paired', 'CSV paired xG'],
+            ['ineligible_diagnostics', 'CSV non eleggibili (diagnostica)'],
             ['summary', 'JSON summary'],
           ] as const
         ).map(([kind, label]) => (
@@ -524,6 +564,23 @@ function DatasetBody({
       {exportBusy ? (
         <p className="text-xs text-slate-500">Export in corso dal backend…</p>
       ) : null}
+
+      <Section title="Diagnostica eleggibilità Cecchino Today">
+        <Kv label="Scansioni Today raw" value={elig.today_rows_raw} />
+        <Kv label="Partite uniche" value={elig.today_unique_matches} />
+        <Kv label="Eleggibili" value={elig.today_eligible_matches} />
+        <Kv label="Non eleggibili" value={elig.today_ineligible_matches} />
+        <Kv label="Eleggibilità sconosciuta" value={elig.today_eligibility_unknown} />
+        <Kv label="Eleggibili concluse" value={elig.eligible_finished_matches} />
+        <Kv label="Eleggibili pending" value={elig.eligible_pending_matches} />
+        <Kv label="Eleggibili non risolte" value={elig.eligible_unresolved_matches} />
+        <Kv label="Eleggibili feature-safe" value={elig.eligible_feature_safe_matches} />
+        <Kv label="Eleggibili escluse identity" value={elig.eligible_identity_excluded_matches} />
+        <p className="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+          Motivi non eleggibilità
+        </p>
+        <JsonBlock data={elig.ineligible_by_reason} />
+      </Section>
 
       <Section title="Riepilogo dataset">
         <Kv label="Versione" value={dataset.version} />
@@ -706,8 +763,8 @@ export function RicercaIntensitaGoalPage() {
 
   const rangeLabel =
     availability?.earliest_kickoff_date && availability?.latest_kickoff_date
-      ? `Dati locali disponibili dal ${availability.earliest_kickoff_date} al ${availability.latest_kickoff_date}`
-      : null
+      ? `Scansioni Cecchino Today eleggibili dal ${availability.earliest_kickoff_date} al ${availability.latest_kickoff_date} (minimo assoluto 19/06/2026)`
+      : 'La ricerca Intensità Goal utilizza le scansioni Cecchino Today disponibili dal 19/06/2026.'
 
   const busy = tab === 'audit' ? loading : datasetLoading
 
@@ -768,20 +825,22 @@ export function RicercaIntensitaGoalPage() {
       <section className="sticky top-0 z-20 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="text-xs font-medium text-slate-600">
-            Data da
+            Scan date da
             <input
               type="date"
               className={inputClass}
               value={dateFrom}
+              min="2026-06-19"
               onChange={(e) => setDateFrom(e.target.value)}
             />
           </label>
           <label className="text-xs font-medium text-slate-600">
-            Data a
+            Scan date a
             <input
               type="date"
               className={inputClass}
               value={dateTo}
+              min="2026-06-19"
               onChange={(e) => setDateTo(e.target.value)}
             />
           </label>

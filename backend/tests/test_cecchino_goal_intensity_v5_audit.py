@@ -210,6 +210,16 @@ def _audit(
     date_to: date | None = None,
     include_xg_stats: bool = True,
 ):
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        COHORT_BASIS,
+        ELIGIBILITY_SOURCE_PERSISTED,
+        HISTORICAL_FEATURE_SOURCE,
+        RESULT_SOURCE,
+        TARGET_SOURCE,
+        GoalIntensityTarget,
+        GoalIntensityTodayCohort,
+    )
+
     db = MagicMock()
     todays = today_rows if today_rows is not None else []
     if todays and xg_profiles_override is not None:
@@ -227,21 +237,87 @@ def _audit(
     elif identity_payload is not None:
         id_patch_kwargs["return_value"] = identity_payload
     else:
-        # usa implementazione reale via side_effect wrapper
         id_patch_kwargs["side_effect"] = build_historical_fixture_identity_consistency
 
     load_hist = MagicMock(side_effect=AssertionError("N+1: load_finished_fixtures_for_team nel loop"))
     build_xg = MagicMock(side_effect=AssertionError("N+1: build_current_season_team_xg_profile nel loop"))
     db.get = MagicMock(side_effect=AssertionError("N+1: db.get nel loop"))
 
+    targets = []
+    selected_today = []
+    for fx in fixtures:
+        today = None
+        for t in todays:
+            if getattr(t, "local_fixture_id", None) is not None and int(t.local_fixture_id) == int(fx.id):
+                today = t
+                break
+            if (
+                getattr(t, "provider_fixture_id", None) is not None
+                and getattr(fx, "api_fixture_id", None) is not None
+                and int(t.provider_fixture_id) == int(fx.api_fixture_id)
+            ):
+                today = t
+                break
+        if today is None:
+            today = _today(
+                id=100 + int(fx.id),
+                local_fixture_id=int(fx.id),
+                provider_fixture_id=int(fx.api_fixture_id) if fx.api_fixture_id is not None else 8000 + int(fx.id),
+                competition_id=int(fx.competition_id) if fx.competition_id is not None else 39,
+                kickoff=fx.kickoff_at,
+                xg_profiles_json=_xg_profiles() if include_xg_stats else None,
+            )
+            today.eligibility_status = "eligible"
+            today.scan_date = date(2026, 6, 20)
+        selected_today.append(today)
+        targets.append(
+            GoalIntensityTarget(
+                today_row=today,
+                local_fixture=fx,
+                eligibility_status="eligible",
+                eligibility_source=ELIGIBILITY_SOURCE_PERSISTED,
+                eligibility_reason_codes=[],
+                scan_date=getattr(today, "scan_date", None) or date(2026, 6, 20),
+                selection={},
+            )
+        )
+
+    fake_cohort = GoalIntensityTodayCohort(
+        date_from=date(2026, 6, 19),
+        date_to=date_to or date(2026, 7, 17),
+        date_from_clamped=True,
+        warnings=[],
+        error=None,
+        today_rows_raw=list(todays) or selected_today,
+        targets=targets,
+        eligible_pending=[],
+        eligible_unresolved=[],
+        eligibility_diagnostics={
+            "today_rows_raw": len(todays) or len(selected_today),
+            "today_unique_matches": len(targets),
+            "today_eligible_matches": len(targets),
+            "today_ineligible_matches": 0,
+            "today_eligibility_unknown": 0,
+            "eligible_finished_matches": len(targets),
+            "eligible_pending_matches": 0,
+            "eligible_unresolved_matches": 0,
+            "ineligible_by_reason": {},
+            "ineligible_by_competition": {},
+            "ineligible_by_scan_date": {},
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        },
+        diagnostic_examples=[],
+        local_fixtures=[t.local_fixture for t in targets],
+        selected_today_rows=selected_today,
+    )
+
     with (
         patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_audit.finished_local_fixtures_in_kickoff_range",
-            return_value=list(fixtures),
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_audit.load_today_snapshots_for_fixtures",
-            return_value=list(todays),
+            "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_goal_intensity_today_cohort",
+            return_value=fake_cohort,
         ),
         patch(
             "app.services.cecchino.cecchino_goal_intensity_v5_audit.preload_audit_indexes",
@@ -262,7 +338,7 @@ def _audit(
     ):
         payload = build_goal_intensity_v5_audit(
             db,
-            date_from=date_from or date(2026, 1, 1),
+            date_from=date_from or date(2026, 6, 19),
             date_to=date_to or date(2026, 7, 17),
         )
     return payload, db, id_mock, preload_mock, load_hist, build_xg
@@ -281,13 +357,14 @@ def _approx_eq(a, b, tol=FLOAT_TOL) -> bool:
 
 
 def test_version_and_v4_unchanged():
-    assert VERSION == "cecchino_goal_intensity_v5_audit_v1_4"
+    assert VERSION == "cecchino_goal_intensity_v5_audit_v1_5"
     assert V4_VERSION == "cecchino_goal_intensity_v4_expected_goals"
     local = _fx(500, api=8500)
     today = _today(local_fixture_id=500, provider_fixture_id=8500)
     payload, _, _, _, _, _ = _audit([local], today_rows=[today])
     assert payload["version"] == VERSION
     assert payload["current_v4_inventory"]["production_unchanged"] is True
+    assert payload.get("cohort_basis") == "cecchino_today_eligible_scan_date"
 
 
 def test_loop_does_not_call_history_xg_or_db_get():
@@ -362,39 +439,95 @@ def test_static_provider_mismatch_excluded():
 
 
 def test_local_fixture_is_historical_base_not_scan_date():
-    jan = _fx(1, api=1, ko=datetime(2026, 1, 20, 18, 0, tzinfo=timezone.utc), competition_id=39)
-    feb = _fx(2, api=2, ko=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc), competition_id=40)
-    payload, _, _, _, _, _ = _audit([jan, feb], today_rows=[])
+    """La distribuzione temporale usa kickoff locale, non scan_date Today."""
+    june = _fx(1, api=1, ko=datetime(2026, 6, 20, 18, 0, tzinfo=timezone.utc), competition_id=39)
+    july = _fx(2, api=2, ko=datetime(2026, 7, 10, 18, 0, tzinfo=timezone.utc), competition_id=40)
+    t1 = _today(
+        id=101,
+        local_fixture_id=1,
+        provider_fixture_id=1,
+        competition_id=39,
+        kickoff=june.kickoff_at,
+        scan_date=date(2026, 6, 20),
+    )
+    t1.eligibility_status = "eligible"
+    t2 = _today(
+        id=102,
+        local_fixture_id=2,
+        provider_fixture_id=2,
+        competition_id=40,
+        kickoff=july.kickoff_at,
+        scan_date=date(2026, 6, 20),  # stesso mese scan: se usasse scan_date entrambi in giugno
+    )
+    t2.eligibility_status = "eligible"
+    payload, _, _, _, _, _ = _audit(
+        [june, july],
+        today_rows=[t1, t2],
+        date_from=date(2026, 6, 19),
+        date_to=date(2026, 7, 17),
+    )
     temporal = payload["dataset_summary"]["temporal_distribution"]
-    assert temporal["2026-01"]["count"] == 1
-    assert temporal["2026-02"]["count"] == 1
-    assert payload["dataset_summary"]["cohort_basis"] == "fixture_kickoff_at"
+    assert temporal["2026-06"]["count"] == 1
+    assert temporal["2026-07"]["count"] == 1
+    assert payload["dataset_summary"]["cohort_basis"] == "cecchino_today_eligible_scan_date"
     assert payload["dataset_summary"]["competitions"] == 2
 
 
-def test_january_february_present_when_fixtures_exist():
-    fixtures = [
-        _fx(i, api=i, ko=datetime(2026, m, 10, 18, 0, tzinfo=timezone.utc), competition_id=39)
-        for i, m in enumerate((1, 2), start=1)
-    ]
-    payload, _, _, _, _, _ = _audit(fixtures, today_rows=[])
-    assert payload["dataset_summary"]["temporal_distribution"]["2026-01"]["count"] == 1
-    assert payload["dataset_summary"]["temporal_distribution"]["2026-02"]["count"] == 1
-
-
-def test_empty_months_marked():
-    only_jul = [_fx(1, api=1, ko=datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc))]
-    payload, _, _, _, _, _ = _audit(only_jul, today_rows=[])
-    assert payload["dataset_summary"]["temporal_distribution"]["2026-01"]["note"] == "no_local_fixtures_in_month"
-
-
 def test_today_snapshot_optional_goal_features_without_today():
+    """Senza Today eleggibile la riga non entra nella coorte model-ready."""
     local = _fx(500, api=8500)
-    payload, _, id_mock, _, _, _ = _audit([local], today_rows=[])
-    assert not id_mock.called
-    assert payload["dataset_summary"]["today_snapshots_missing"] == 1
-    assert payload["anti_leakage"]["static_identity_unavailable"] == 1
-    assert _inv(payload, "home_goals_scored_rolling_5")["rows_available"] == 1
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        COHORT_BASIS,
+        GoalIntensityTodayCohort,
+        TARGET_SOURCE,
+        RESULT_SOURCE,
+        HISTORICAL_FEATURE_SOURCE,
+    )
+
+    empty = GoalIntensityTodayCohort(
+        date_from=date(2026, 6, 19),
+        date_to=date(2026, 7, 17),
+        date_from_clamped=False,
+        warnings=[],
+        error=None,
+        today_rows_raw=[],
+        targets=[],
+        eligible_pending=[],
+        eligible_unresolved=[],
+        eligibility_diagnostics={
+            "today_rows_raw": 0,
+            "today_unique_matches": 0,
+            "today_eligible_matches": 0,
+            "today_ineligible_matches": 0,
+            "today_eligibility_unknown": 0,
+            "eligible_finished_matches": 0,
+            "eligible_pending_matches": 0,
+            "eligible_unresolved_matches": 0,
+            "ineligible_by_reason": {},
+            "ineligible_by_competition": {},
+            "ineligible_by_scan_date": {},
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        },
+        diagnostic_examples=[],
+        local_fixtures=[],
+        selected_today_rows=[],
+    )
+    db = MagicMock()
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_goal_intensity_today_cohort",
+        return_value=empty,
+    ), patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_audit.preload_audit_indexes",
+        return_value=_indexes_from_priors([local], []),
+    ):
+        payload = build_goal_intensity_v5_audit(
+            db, date_from=date(2026, 6, 19), date_to=date(2026, 7, 17)
+        )
+    assert payload["dataset_summary"]["row_feature_safe"] == 0
+    assert payload["eligibility_diagnostics"]["eligible_finished_matches"] == 0
 
 
 def test_missing_teams_excluded():
@@ -462,7 +595,14 @@ def test_xg_without_current_fixture_excluded_falls_back_to_stats():
 
 def test_xg_from_fixture_team_stats_when_no_snapshot():
     local = _fx(500, api=8500)
-    payload, _, _, _, _, _ = _audit([local], today_rows=[])
+    today = _today(
+        local_fixture_id=500,
+        provider_fixture_id=8500,
+        xg_profiles_json=None,
+        scan_date=date(2026, 6, 20),
+    )
+    today.eligibility_status = "eligible"
+    payload, _, _, _, _, _ = _audit([local], today_rows=[today])
     assert payload["anti_leakage"]["xg_from_fixture_team_stats"] == 1
 
 
@@ -658,8 +798,8 @@ def test_availability_payload_shape():
     db = MagicMock()
     db.scalar.side_effect = [
         42,
-        datetime(2025, 8, 1, 12, 0, tzinfo=timezone.utc),
-        datetime(2026, 7, 10, 18, 0, tzinfo=timezone.utc),
+        date(2026, 6, 19),
+        date(2026, 7, 10),
     ]
     db.scalars.return_value.all.side_effect = [
         [39, 140],
@@ -667,8 +807,10 @@ def test_availability_payload_shape():
     ]
     payload = build_goal_intensity_v5_availability(db)
     assert payload["status"] == "ok"
-    assert payload["earliest_kickoff_date"] == "2025-08-01"
+    assert payload["cohort_basis"] == "cecchino_today_eligible_scan_date"
+    assert payload["earliest_kickoff_date"] == "2026-06-19"
     assert payload["latest_kickoff_date"] == "2026-07-10"
+    assert payload["min_scan_date"] == "2026-06-19"
 
 
 def test_xg_status_available_complete():

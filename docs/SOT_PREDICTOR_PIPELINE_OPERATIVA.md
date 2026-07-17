@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Coorte Today eleggibile (2026-07-17)
+
+1. Lab «Ricerca Intensità Goal»: coorte = solo eleggibili Cecchino Today (`scan_date` ≥ 19/06/2026)
+2. Verificare pannello diagnostica eleggibilità + banner bloccante se unknown / cohort_basis errato
+3. Dataset/export: CSV model-ready solo `eligible`; diagnostica non eleggibili separata
+4. Benchmark: `cd backend && python -m scripts.benchmark_goal_intensity_v5_dataset` (richiede `DATABASE_URL`)
+5. v4 e regole eligibility Today invariate
+
 ## Intensità Goal v5 Research — Dataset Fase 1B.1 (2026-07-17)
 
 1. Lab «Costruisci dataset» → summary compatto (<60s target; timeout app 180s invariato)

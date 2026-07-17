@@ -2,6 +2,12 @@
 
 Modulo di ricerca per rifondare **Intensità Goal** su quattro pilastri indipendenti. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
+## Coorte research (Today eleggibile)
+
+Source of truth: campo persistito `CecchinoTodayFixture.eligibility_status` (prodotto in scan/revalidate). Range su `scan_date` ≥ **2026-06-19**. Mapping: `eligible` → model-ready; status `ELIGIBILITY_*` noti → ineligible (solo diagnostica); null/sconosciuto → **unknown** (fail-closed, fuori model-ready). Storico `Fixture` locale solo come prior per feature pre-match.
+
+`cohort_basis = cecchino_today_eligible_scan_date` · audit `v1_5` · dataset `v1_2`
+
 ## Comprensione del fenomeno
 
 | Punto | Contenuto |
@@ -50,27 +56,27 @@ Per ogni riga: identity consistency statica, esclusione fixture corrente/futura 
 
 **xG (1A.4):** facoltativo per ammissibilità, obbligatorio se completo e anti-leakage. Stati `available` / `partial` / `missing` / `excluded_unsafe`. Cutoff o xG unsafe azzerano solo i campi xG (mai imputazione a 0); la Fixture resta feature-safe se identity/goal OK. Coorti su feature-safe; readiness paired per confronto futuro con/senza xG (soglia ≥50). Feature xG: `recommended_status = optional_enrichment` (non `exclude_low_coverage` per copertura globale bassa).
 
-## Dataset Fase 1B / 1B.1
+## Dataset Fase 1B / 1B.1 / coorte Today
 
-Una riga = una partita feature-safe. Dedupe a due livelli (provider + composita competition/home/away/kickoff±60s) in **O(n log n)** (bucket + cluster adiacenti). Report identity/exclusion bias solo aggregati nel summary HTTP. Coorti history e core min 1/5/10/20; paired xG con hash SHA-256 (stessi ID/target). Split temporale solo metadati candidati. Nessuna formula, peso, indice o training.
+Una riga = una partita **eleggibile Today** feature-safe. Dedupe residua provider/composita. Report identity/exclusion bias aggregati. Coorti history e paired xG. Nessuna formula/training.
 
-**1B.1:** payload `cecchino_goal_intensity_v5_dataset_v1_1` = summary + `dataset_preview_rows` (max 100); export completi via StreamingResponse.
+**1B.1:** payload summary + preview ≤100; export StreamingResponse.
+
+**Coorte Today:** entry da scan eleggibili; CSV con `today_fixture_id`, `scan_date`, `eligibility_*`; export diagnostica non eleggibili separato.
 
 ## Endpoint
 
-`GET /api/admin/cecchino/research/goal-intensity-v5/availability` — range kickoff locale disponibile.
+`GET /api/admin/cecchino/research/goal-intensity-v5/availability` — range Today eleggibile `scan_date` ≥ MIN.
 
-`POST /api/admin/cecchino/research/goal-intensity-v5/audit`
+`POST /api/admin/cecchino/research/goal-intensity-v5/audit` — `cecchino_goal_intensity_v5_audit_v1_5`
 
-Versione payload audit: `cecchino_goal_intensity_v5_audit_v1_4`
+`POST .../goal-intensity-v5/dataset` — `cecchino_goal_intensity_v5_dataset_v1_2`
 
-Versione dataset: `cecchino_goal_intensity_v5_dataset_v1_1` — `POST .../goal-intensity-v5/dataset` (summary)
-
-Export: `POST .../dataset/export/all|core-min5|core-min10|xg-paired` (CSV stream) e `.../export/summary` (JSON stream)
+Export: `.../dataset/export/all|core-min5|core-min10|xg-paired|ineligible-diagnostics|summary`
 
 ## Frontend
 
-`/cecchino/ricerca-intensita-goal` — tab Audit + Dataset; anteprima ≤100; export CSV/JSON **server-side**; Copertura xG; filtri client-side.
+`/cecchino/ricerca-intensita-goal` — copy coorte Today; diagnostica eleggibilità; banner bloccante (unknown / ineligible / cohort_basis / scan_date &lt; MIN).
 
 ## Roadmap
 
@@ -84,10 +90,11 @@ Export: `POST .../dataset/export/all|core-min5|core-min10|xg-paired` (CSV stream
 | **1A.4** | xG opzionale ma obbligatorio se available; coorti; fixture audit; FE filtri/CSV |
 | **1B** | Dataset storico feature↔target, dedupe composita, paired xG, exclusion bias |
 | **1B.1** | Timeout fix: dedupe O(n log n), summary compatto, export stream |
+| **Coorte Today** | Solo eleggibili Cecchino Today; floor scan_date; fail-closed unknown |
 | **1C** | Analisi statistica / ridondanza / scelta stabilità |
 | **2A** | Preview UI a quattro pilastri (senza promuovere formula) |
 | **2B** | Consolidamento pannello ufficiale (v4 resta rollback) |
 
 ## Invarianti
 
-Non modificare: formula v4, Goal Engine, EGE, Segnali, KPI, Balance v5, Credibilità X, SOT, migration, API esterne.
+Non modificare: formula v4, Goal Engine, EGE, Segnali, KPI, Balance v5, Credibilità X, SOT, migration, API esterne, regole eligibility Today.

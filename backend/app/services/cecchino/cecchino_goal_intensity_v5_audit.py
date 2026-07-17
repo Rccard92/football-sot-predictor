@@ -24,13 +24,9 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     PILLARS,
     append_debug_sample,
     current_v4_inventory,
-    dedupe_local_fixtures,
     descriptive_stats,
     empty_pillar_coverage,
     extract_features_from_indexes,
-    finished_local_fixtures_in_kickoff_range,
-    load_today_snapshots_for_fixtures,
-    match_today_snapshot_indexed,
     month_key_from_dt,
     months_in_range,
     pct,
@@ -39,11 +35,18 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     snapshot_time_status,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import preload_audit_indexes
+from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+    COHORT_BASIS,
+    HISTORICAL_FEATURE_SOURCE,
+    RESULT_SOURCE,
+    TARGET_SOURCE,
+    build_goal_intensity_today_cohort,
+)
 from app.services.datetime_utils import ensure_datetime_utc, safe_isoformat
 
 logger = logging.getLogger(__name__)
 
-VERSION = "cecchino_goal_intensity_v5_audit_v1_4"
+VERSION = "cecchino_goal_intensity_v5_audit_v1_5"
 _PROGRESS_EVERY = 500
 _PAIRED_XG_MIN_SAMPLE = 50
 
@@ -78,18 +81,39 @@ def build_goal_intensity_v5_audit(
     warnings: list[str] = []
 
     t_cohort = time.perf_counter()
-    raw_fixtures = finished_local_fixtures_in_kickoff_range(
+    today_cohort = build_goal_intensity_today_cohort(
         db,
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
     )
-    fixtures, duplicates_removed = dedupe_local_fixtures(raw_fixtures)
     cohort_ms = round((time.perf_counter() - t_cohort) * 1000.0, 2)
+    warnings.extend(today_cohort.warnings)
 
-    t_today = time.perf_counter()
-    today_candidates = load_today_snapshots_for_fixtures(db, fixtures)
-    today_load_ms = round((time.perf_counter() - t_today) * 1000.0, 2)
+    if today_cohort.error:
+        return {
+            "status": "error",
+            "version": VERSION,
+            "error": today_cohort.error,
+            "filters": {
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "competition_id": competition_id,
+            },
+            "eligibility_diagnostics": today_cohort.eligibility_diagnostics,
+            "warnings": warnings,
+            "dataset_summary": {
+                "cohort_basis": COHORT_BASIS,
+                "audit_usable": False,
+            },
+        }
+
+    fixtures = today_cohort.local_fixtures
+    targets = today_cohort.targets
+    duplicates_removed = 0
+    raw_fixtures = fixtures
+    today_candidates = today_cohort.selected_today_rows
+    today_load_ms = 0.0
 
     t_preload = time.perf_counter()
     indexes = preload_audit_indexes(db, fixtures, today_candidates)
@@ -190,10 +214,13 @@ def build_goal_intensity_v5_audit(
     by_month: dict[str, int] = defaultdict(int)
 
     t_calc = time.perf_counter()
-    total_targets = len(fixtures)
+    total_targets = len(targets)
+    today_by_local_id = {int(t.local_fixture.id): t for t in targets}
 
     for i, local in enumerate(fixtures, start=1):
         anti["rows_checked"] += 1
+        target = today_by_local_id.get(int(local.id))
+        today_row = target.today_row if target is not None else None
         lid = int(local.id)
         api_id = int(local.api_fixture_id) if local.api_fixture_id is not None else None
         ko = ensure_datetime_utc(local.kickoff_at, field_name="local.kickoff_at")
@@ -206,7 +233,7 @@ def build_goal_intensity_v5_audit(
             append_debug_sample(
                 debug_samples,
                 "missing_teams",
-                today_fixture_id=None,
+                today_fixture_id=int(today_row.id) if today_row else None,
                 local_fixture_id=lid,
                 provider_fixture_id=api_id,
                 kickoff=ko_iso,
@@ -220,7 +247,7 @@ def build_goal_intensity_v5_audit(
             append_debug_sample(
                 debug_samples,
                 "missing_kickoff",
-                today_fixture_id=None,
+                today_fixture_id=int(today_row.id) if today_row else None,
                 local_fixture_id=lid,
                 provider_fixture_id=api_id,
                 kickoff=None,
@@ -233,11 +260,18 @@ def build_goal_intensity_v5_audit(
             append_debug_sample(
                 debug_samples,
                 "missing_result",
-                today_fixture_id=None,
+                today_fixture_id=int(today_row.id) if today_row else None,
                 local_fixture_id=lid,
                 provider_fixture_id=api_id,
                 kickoff=ko_iso,
             )
+            continue
+
+        # Fail-closed: target senza Today eligible non entra nelle metriche
+        if today_row is None or target is None or target.eligibility_status != "eligible":
+            today_snapshots_missing += 1
+            anti["rows_failed"] += 1
+            exclusion_reasons["not_today_eligible"] += 1
             continue
 
         gh, ga = int(local.goals_home), int(local.goals_away)
@@ -250,24 +284,15 @@ def build_goal_intensity_v5_audit(
         if gh > 0 and ga > 0:
             target_btts += 1
 
-        today_row = match_today_snapshot_indexed(
-            local,
-            indexes.today_by_local_fixture_id,
-            indexes.today_by_provider_fixture_id,
-        )
-        today_id = int(today_row.id) if today_row is not None else None
+        today_id = int(today_row.id)
         snap_status = snapshot_time_status(today_row, ko)
         if snap_status == "snapshot_time_verified":
             anti["snapshot_time_verified"] += 1
         else:
             anti["snapshot_time_unknown"] += 1
 
-        if today_row is None:
-            today_snapshots_missing += 1
-            today_snapshot_status = "missing"
-        else:
-            today_snapshots_matched += 1
-            today_snapshot_status = "matched"
+        today_snapshots_matched += 1
+        today_snapshot_status = "matched"
 
         identity_status = "static_identity_unavailable"
         identity_mismatch = False
@@ -707,10 +732,13 @@ def build_goal_intensity_v5_audit(
         "audit_quality": audit_quality,
         "audit_quality_rule": AUDIT_QUALITY_RULE,
         "audit_usable": audit_usable,
-        "cohort_basis": "fixture_kickoff_at",
+        "cohort_basis": COHORT_BASIS,
+        "target_source": TARGET_SOURCE,
+        "result_source": RESULT_SOURCE,
+        "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
         "cohort_notes": {
-            "targets": "Fixture FT con risultato nel range kickoff",
-            "features": "Solo righe row_feature_safe (identity statica + anti-leakage goal); xG opzionale",
+            "targets": "Solo partite eleggibili Cecchino Today (scan_date ≥ 2026-06-19), concluse e feature-safe",
+            "features": "Storico locale pre-kickoff solo come supporto; xG opzionale",
         },
         "xg_cohorts": {**xg_cohorts_safe, **xg_cohorts_pct},
         "xg_value_research_readiness": {
@@ -734,6 +762,12 @@ def build_goal_intensity_v5_audit(
         "finished_with_result": target_total_goals_available,
     }
 
+    eligibility_diagnostics = dict(today_cohort.eligibility_diagnostics)
+    eligibility_diagnostics["eligible_feature_safe_matches"] = anti["row_feature_safe"]
+    eligibility_diagnostics["eligible_identity_excluded_matches"] = anti.get("static_identity_failed", 0)
+    if eligibility_diagnostics.get("today_eligibility_unknown", 0) > 0:
+        warnings.append("eligibility_unknown_present_fail_closed_excluded_from_model")
+
     elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
     rows_processed = anti["rows_checked"]
     fixtures_per_second = round(rows_processed / (elapsed_ms / 1000.0), 2) if elapsed_ms > 0 else None
@@ -745,7 +779,16 @@ def build_goal_intensity_v5_audit(
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "competition_id": competition_id,
+            "date_from_effective": today_cohort.date_from.isoformat(),
+            "date_to_effective": today_cohort.date_to.isoformat(),
+            "date_from_clamped": today_cohort.date_from_clamped,
         },
+        "cohort_basis": COHORT_BASIS,
+        "target_source": TARGET_SOURCE,
+        "result_source": RESULT_SOURCE,
+        "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        "eligibility_diagnostics": eligibility_diagnostics,
+        "diagnostic_examples": today_cohort.diagnostic_examples,
         "current_v4_inventory": current_v4_inventory(),
         "dataset_summary": dataset_summary,
         "pillar_coverage": pillar_coverage,

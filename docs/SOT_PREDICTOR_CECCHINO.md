@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — Coorte Today eleggibile (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Fonte | `CecchinoTodayFixture.eligibility_status` persistito (`persisted_today_field`) |
+| Floor | `scan_date` ≥ 2026-06-19 |
+| Versioni | audit `v1_5`, dataset `v1_2` |
+| `cohort_basis` | `cecchino_today_eligible_scan_date` |
+| Export | + `.../export/ineligible-diagnostics` |
+| Benchmark | default `2026-06-19`→oggi; PASS &lt;30s / &lt;2MB / zero unknown in model |
+
 ## Intensità Goal v5 Research — Dataset Fase 1B.1 (2026-07-17)
 
 | Aspetto | Dettaglio |

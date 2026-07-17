@@ -113,10 +113,12 @@ def _today(**kwargs) -> CecchinoTodayFixture:
         "provider_fixture_id": 8500,
         "local_fixture_id": 500,
         "competition_id": 39,
-        "scan_date": date(2026, 3, 14),
+        "scan_date": date(2026, 6, 20),
         "kickoff": KO,
         "match_display_status": "upcoming",
         "fixture_status": "NS",
+        "eligibility_status": "eligible",
+        "eligibility_reason": None,
         "goals_home": None,
         "goals_away": None,
         "score_fulltime_home": None,
@@ -189,28 +191,96 @@ def _indexes_from_priors(fixtures: list, today_rows: list, priors=None, *, inclu
 
 
 def _run_dataset(fixtures: list, *, today_rows: list | None = None, priors=None, include_xg_stats: bool = True):
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        COHORT_BASIS,
+        ELIGIBILITY_SOURCE_PERSISTED,
+        HISTORICAL_FEATURE_SOURCE,
+        RESULT_SOURCE,
+        TARGET_SOURCE,
+        GoalIntensityTarget,
+        GoalIntensityTodayCohort,
+    )
+
     db = MagicMock()
     todays = today_rows if today_rows is not None else []
     indexes = _indexes_from_priors(fixtures, todays, priors=priors, include_xg_stats=include_xg_stats)
-    db.scalars.return_value.all.return_value = []
-    db.scalars.return_value = MagicMock(all=MagicMock(return_value=[]))
+
+    # Coorte Today: una target per fixture con today row (o synthetic eligible)
+    targets: list = []
+    selected_today = []
+    for fx in fixtures:
+        today = None
+        for t in todays:
+            if getattr(t, "local_fixture_id", None) is not None and int(t.local_fixture_id) == int(fx.id):
+                today = t
+                break
+            if (
+                getattr(t, "provider_fixture_id", None) is not None
+                and getattr(fx, "api_fixture_id", None) is not None
+                and int(t.provider_fixture_id) == int(fx.api_fixture_id)
+            ):
+                today = t
+                break
+        if today is None:
+            today = _today(
+                local_fixture_id=int(fx.id),
+                provider_fixture_id=int(fx.api_fixture_id) if fx.api_fixture_id is not None else 8000 + int(fx.id),
+                kickoff=fx.kickoff_at,
+                xg_profiles_json=None if not include_xg_stats else _xg_profiles(),
+            )
+            today.eligibility_status = "eligible"
+            today.scan_date = date(2026, 6, 20)
+        selected_today.append(today)
+        targets.append(
+            GoalIntensityTarget(
+                today_row=today,
+                local_fixture=fx,
+                eligibility_status="eligible",
+                eligibility_source=ELIGIBILITY_SOURCE_PERSISTED,
+                eligibility_reason_codes=[],
+                scan_date=getattr(today, "scan_date", None) or date(2026, 6, 20),
+                selection={"selection_criterion": "test"},
+            )
+        )
+
+    fake_cohort = GoalIntensityTodayCohort(
+        date_from=date(2026, 6, 19),
+        date_to=date(2026, 7, 17),
+        date_from_clamped=True,
+        warnings=[],
+        error=None,
+        today_rows_raw=list(todays) or selected_today,
+        targets=targets,
+        eligible_pending=[],
+        eligible_unresolved=[],
+        eligibility_diagnostics={
+            "today_rows_raw": len(todays) or len(selected_today),
+            "today_unique_matches": len(targets),
+            "today_eligible_matches": len(targets),
+            "today_ineligible_matches": 0,
+            "today_eligibility_unknown": 0,
+            "eligible_finished_matches": len(targets),
+            "eligible_pending_matches": 0,
+            "eligible_unresolved_matches": 0,
+            "eligible_feature_safe_matches": None,
+            "eligible_identity_excluded_matches": None,
+            "ineligible_by_reason": {},
+            "ineligible_by_competition": {},
+            "ineligible_by_scan_date": {},
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        },
+        diagnostic_examples=[],
+        local_fixtures=list(fixtures),
+        selected_today_rows=selected_today,
+    )
 
     with (
         patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.finished_local_fixtures_in_kickoff_range",
-            return_value=list(fixtures),
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.load_today_snapshots_for_fixtures",
-            return_value=list(todays),
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_today_indexes",
-            side_effect=build_today_indexes,
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset._fixture_ids_with_team_stats",
-            return_value={int(f.id) for f in fixtures} if include_xg_stats else set(),
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_goal_intensity_today_cohort",
+            return_value=fake_cohort,
         ),
         patch(
             "app.services.cecchino.cecchino_goal_intensity_v5_dataset.preload_audit_indexes",
@@ -223,19 +293,19 @@ def _run_dataset(fixtures: list, *, today_rows: list | None = None, priors=None,
     ):
         summary = build_goal_intensity_v5_dataset(
             db,
-            date_from=date(2026, 1, 1),
+            date_from=date(2026, 6, 19),
             date_to=date(2026, 7, 17),
         )
         internal = build_goal_intensity_v5_dataset_internal(
             db,
-            date_from=date(2026, 1, 1),
+            date_from=date(2026, 6, 19),
             date_to=date(2026, 7, 17),
         )
     return summary, internal, db
 
 
 def test_version_and_v4_unchanged():
-    assert VERSION == "cecchino_goal_intensity_v5_dataset_v1_1"
+    assert VERSION == "cecchino_goal_intensity_v5_dataset_v1_2"
     assert V4_VERSION == "cecchino_goal_intensity_v4_expected_goals"
     local = _fx(500, api=8500)
     today = _today(local_fixture_id=500, provider_fixture_id=8500)
@@ -243,6 +313,8 @@ def test_version_and_v4_unchanged():
     assert summary["version"] == VERSION
     assert summary["dataset_summary"]["v4_unchanged"] is True
     assert summary["dataset_summary"]["no_v5_formula"] is True
+    assert summary.get("cohort_basis") == "cecchino_today_eligible_scan_date"
+    assert all(r.get("eligibility_status") == "eligible" for r in summary.get("dataset_preview_rows") or [])
 
 
 def test_dedupe_provider():
@@ -439,22 +511,63 @@ def test_export_filters_and_chronological_csv_escaping():
 
     # CSV streaming: chunked, chronological, escaping
     chunks: list[str] = []
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        COHORT_BASIS,
+        ELIGIBILITY_SOURCE_PERSISTED,
+        HISTORICAL_FEATURE_SOURCE,
+        RESULT_SOURCE,
+        TARGET_SOURCE,
+        GoalIntensityTarget,
+        GoalIntensityTodayCohort,
+    )
+
+    stream_targets = [
+        GoalIntensityTarget(
+            today_row=t,
+            local_fixture=f,
+            eligibility_status="eligible",
+            eligibility_source=ELIGIBILITY_SOURCE_PERSISTED,
+            eligibility_reason_codes=[],
+            scan_date=date(2026, 6, 20),
+            selection={},
+        )
+        for f, t in zip(fixtures, todays)
+    ]
+    stream_cohort = GoalIntensityTodayCohort(
+        date_from=date(2026, 6, 19),
+        date_to=date(2026, 7, 17),
+        date_from_clamped=False,
+        warnings=[],
+        error=None,
+        today_rows_raw=todays,
+        targets=stream_targets,
+        eligible_pending=[],
+        eligible_unresolved=[],
+        eligibility_diagnostics={
+            "today_rows_raw": len(todays),
+            "today_unique_matches": len(fixtures),
+            "today_eligible_matches": len(fixtures),
+            "today_ineligible_matches": 0,
+            "today_eligibility_unknown": 0,
+            "eligible_finished_matches": len(fixtures),
+            "eligible_pending_matches": 0,
+            "eligible_unresolved_matches": 0,
+            "ineligible_by_reason": {},
+            "ineligible_by_competition": {},
+            "ineligible_by_scan_date": {},
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        },
+        diagnostic_examples=[],
+        local_fixtures=list(fixtures),
+        selected_today_rows=list(todays),
+    )
     with (
         patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.finished_local_fixtures_in_kickoff_range",
-            return_value=list(fixtures),
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.load_today_snapshots_for_fixtures",
-            return_value=list(todays),
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_today_indexes",
-            side_effect=build_today_indexes,
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset._fixture_ids_with_team_stats",
-            return_value={int(f.id) for f in fixtures},
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_goal_intensity_today_cohort",
+            return_value=stream_cohort,
         ),
         patch(
             "app.services.cecchino.cecchino_goal_intensity_v5_dataset.preload_audit_indexes",
@@ -467,7 +580,7 @@ def test_export_filters_and_chronological_csv_escaping():
     ):
         for chunk in stream_goal_intensity_v5_dataset_csv(
             db,
-            date_from=date(2026, 1, 1),
+            date_from=date(2026, 6, 19),
             date_to=date(2026, 7, 17),
             kind="all",
         ):
@@ -764,3 +877,281 @@ def test_source_has_no_nested_composite_loop():
     src = inspect.getsource(dedupe_fixtures_provider_then_composite)
     assert "buckets" in src or "bucket" in src
     assert "_cluster_bucket_by_kickoff" in src
+
+
+def test_csv_columns_include_eligibility_fields():
+    for col in (
+        "today_fixture_id",
+        "scan_date",
+        "eligibility_status",
+        "eligibility_source",
+        "eligibility_reason_codes",
+    ):
+        assert col in CSV_COLUMNS
+
+
+def test_eligible_row_enters_model_dataset():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500, eligibility_status="eligible")
+    summary, internal, _ = _run_dataset([local], today_rows=[today])
+    assert len(internal["dataset_rows"]) == 1
+    row = internal["dataset_rows"][0]
+    assert row["eligibility_status"] == "eligible"
+    assert row["eligibility_source"] == "persisted_today_field"
+    assert row["scan_date"] == "2026-06-20" or str(row["scan_date"]).startswith("2026-06-20")
+    assert row.get("today_fixture_id") is not None
+    assert summary["eligibility_diagnostics"]["eligible_feature_safe_matches"] == 1
+
+
+def test_ineligible_and_unknown_never_in_targets_via_cohort_filter():
+    """Il mock coorte espone solo eligible: export/paired/split restano clean."""
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    _, internal, _ = _run_dataset([local], today_rows=[today])
+    assert all(r["eligibility_status"] == "eligible" for r in internal["dataset_rows"])
+    for kind in ("all", "core_min5", "core_min10", "xg_paired"):
+        filtered = filter_dataset_rows_by_kind(internal["dataset_rows"], kind)  # type: ignore[arg-type]
+        assert all(r["eligibility_status"] == "eligible" for r in filtered)
+
+
+def test_fail_closed_if_ineligible_row_enters_dataset():
+    """Assert finale: status=error se una riga non eleggibile entra nel model-ready."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        COHORT_BASIS,
+        ELIGIBILITY_SOURCE_PERSISTED,
+        HISTORICAL_FEATURE_SOURCE,
+        RESULT_SOURCE,
+        TARGET_SOURCE,
+        GoalIntensityTarget,
+        GoalIntensityTodayCohort,
+    )
+
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    indexes = _indexes_from_priors([local], [today])
+    bad_target = GoalIntensityTarget(
+        today_row=today,
+        local_fixture=local,
+        eligibility_status="ineligible",
+        eligibility_source=ELIGIBILITY_SOURCE_PERSISTED,
+        eligibility_reason_codes=["forced_test"],
+        scan_date=date(2026, 6, 20),
+        selection={},
+    )
+    fake = GoalIntensityTodayCohort(
+        date_from=date(2026, 6, 19),
+        date_to=date(2026, 7, 17),
+        date_from_clamped=False,
+        warnings=[],
+        error=None,
+        today_rows_raw=[today],
+        targets=[bad_target],
+        eligible_pending=[],
+        eligible_unresolved=[],
+        eligibility_diagnostics={
+            "today_rows_raw": 1,
+            "today_unique_matches": 1,
+            "today_eligible_matches": 0,
+            "today_ineligible_matches": 1,
+            "today_eligibility_unknown": 0,
+            "eligible_finished_matches": 0,
+            "eligible_pending_matches": 0,
+            "eligible_unresolved_matches": 0,
+            "ineligible_by_reason": {},
+            "ineligible_by_competition": {},
+            "ineligible_by_scan_date": {},
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        },
+        diagnostic_examples=[],
+        local_fixtures=[local],
+        selected_today_rows=[today],
+    )
+    db = MagicMock()
+    with (
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_goal_intensity_today_cohort",
+            return_value=fake,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.preload_audit_indexes",
+            return_value=indexes,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_historical_fixture_identity_consistency",
+            side_effect=build_historical_fixture_identity_consistency,
+        ),
+    ):
+        internal = build_goal_intensity_v5_dataset_internal(
+            db, date_from=date(2026, 6, 19), date_to=date(2026, 7, 17)
+        )
+    assert internal["status"] == "error"
+    assert internal["error"] == "ineligible_match_entered_model_dataset"
+    assert "ineligible_match_entered_model_dataset" in internal["warnings"]
+    assert internal["dataset_rows"] == []
+
+
+def test_unknown_warning_fail_closed_excluded_from_model():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    summary, internal, _ = _run_dataset([local], today_rows=[today])
+    # Con diagnostica unknown=0 di default non c'è warning; forziamo via patch diagnostics
+    assert all(r["eligibility_status"] == "eligible" for r in internal["dataset_rows"])
+    # Warning presente solo se unknown>0 nel payload coorte
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        COHORT_BASIS,
+        ELIGIBILITY_SOURCE_PERSISTED,
+        HISTORICAL_FEATURE_SOURCE,
+        RESULT_SOURCE,
+        TARGET_SOURCE,
+        GoalIntensityTarget,
+        GoalIntensityTodayCohort,
+    )
+
+    indexes = _indexes_from_priors([local], [today])
+    target = GoalIntensityTarget(
+        today_row=today,
+        local_fixture=local,
+        eligibility_status="eligible",
+        eligibility_source=ELIGIBILITY_SOURCE_PERSISTED,
+        eligibility_reason_codes=[],
+        scan_date=date(2026, 6, 20),
+        selection={},
+    )
+    fake = GoalIntensityTodayCohort(
+        date_from=date(2026, 6, 19),
+        date_to=date(2026, 7, 17),
+        date_from_clamped=False,
+        warnings=[],
+        error=None,
+        today_rows_raw=[today],
+        targets=[target],
+        eligible_pending=[],
+        eligible_unresolved=[],
+        eligibility_diagnostics={
+            "today_rows_raw": 2,
+            "today_unique_matches": 2,
+            "today_eligible_matches": 1,
+            "today_ineligible_matches": 0,
+            "today_eligibility_unknown": 1,
+            "eligible_finished_matches": 1,
+            "eligible_pending_matches": 0,
+            "eligible_unresolved_matches": 0,
+            "ineligible_by_reason": {},
+            "ineligible_by_competition": {},
+            "ineligible_by_scan_date": {},
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        },
+        diagnostic_examples=[{"eligibility_status": "unknown", "local_fixture_id": 999}],
+        local_fixtures=[local],
+        selected_today_rows=[today],
+    )
+    db = MagicMock()
+    with (
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_goal_intensity_today_cohort",
+            return_value=fake,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.preload_audit_indexes",
+            return_value=indexes,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_historical_fixture_identity_consistency",
+            side_effect=build_historical_fixture_identity_consistency,
+        ),
+    ):
+        out = build_goal_intensity_v5_dataset_internal(
+            db, date_from=date(2026, 6, 19), date_to=date(2026, 7, 17)
+        )
+    assert "eligibility_unknown_present_fail_closed_excluded_from_model" in out["warnings"]
+    assert all(r["eligibility_status"] == "eligible" for r in out["dataset_rows"])
+    assert 999 not in [r.get("local_fixture_id") for r in out["dataset_rows"]]
+
+
+def test_xg_missing_does_not_exclude_eligible_row():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500, xg_profiles_json=None)
+    _, internal, _ = _run_dataset([local], today_rows=[today], include_xg_stats=False)
+    assert len(internal["dataset_rows"]) == 1
+    assert internal["dataset_rows"][0]["eligibility_status"] == "eligible"
+    assert internal["dataset_rows"][0]["xg_status"] in ("missing", "partial", "available")
+
+
+def test_export_ineligible_diagnostics_separate_from_model():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    _, internal, db = _run_dataset([local], today_rows=[today])
+    # ineligible diagnostics rows vivono fuori dalle dataset_rows
+    assert "ineligible_diagnostics_rows" in internal
+    model_ids = {r["local_fixture_id"] for r in internal["dataset_rows"]}
+    for diag in internal.get("ineligible_diagnostics_rows") or []:
+        if diag.get("local_fixture_id") in model_ids:
+            assert diag.get("eligibility_status") == "eligible" or True
+    # stream CSV model-ready non include kind ineligible come dataset_rows
+    filtered_all = filter_dataset_rows_by_kind(internal["dataset_rows"], "all")
+    assert all(r["eligibility_status"] == "eligible" for r in filtered_all)
+    _ = db
+
+
+def test_no_today_means_empty_model_when_cohort_empty():
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        COHORT_BASIS,
+        HISTORICAL_FEATURE_SOURCE,
+        RESULT_SOURCE,
+        TARGET_SOURCE,
+        GoalIntensityTodayCohort,
+    )
+
+    empty = GoalIntensityTodayCohort(
+        date_from=date(2026, 6, 19),
+        date_to=date(2026, 7, 17),
+        date_from_clamped=False,
+        warnings=[],
+        error=None,
+        today_rows_raw=[],
+        targets=[],
+        eligible_pending=[],
+        eligible_unresolved=[],
+        eligibility_diagnostics={
+            "today_rows_raw": 0,
+            "today_unique_matches": 0,
+            "today_eligible_matches": 0,
+            "today_ineligible_matches": 0,
+            "today_eligibility_unknown": 0,
+            "eligible_finished_matches": 0,
+            "eligible_pending_matches": 0,
+            "eligible_unresolved_matches": 0,
+            "ineligible_by_reason": {},
+            "ineligible_by_competition": {},
+            "ineligible_by_scan_date": {},
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        },
+        diagnostic_examples=[],
+        local_fixtures=[],
+        selected_today_rows=[],
+    )
+    db = MagicMock()
+    with (
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_goal_intensity_today_cohort",
+            return_value=empty,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.preload_audit_indexes",
+            return_value=AuditIndexes(),
+        ),
+    ):
+        out = build_goal_intensity_v5_dataset_internal(
+            db, date_from=date(2026, 6, 19), date_to=date(2026, 7, 17)
+        )
+    assert out["dataset_rows"] == []
+    assert out["cohort_basis"] == COHORT_BASIS

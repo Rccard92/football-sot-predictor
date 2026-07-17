@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Coorte Today eleggibile (2026-07-17)
+
+- Coorte research: solo `CecchinoTodayFixture` con `eligibility_status=eligible` (campo persistito); floor `scan_date` 2026-06-19.
+- Audit `v1_5` + dataset `v1_2`; diagnostica eleggibilità; export CSV non eleggibili; banner FE bloccante.
+- Storico Fixture locale solo per feature pre-match; v4 e regole Today invariate.
+
 ## Intensità Goal v5 Research — Dataset Fase 1B.1 (2026-07-17)
 
 - Fix timeout ~15k FT: dedupe O(n log n), paired set una sola volta, payload summary compatto v1_1.

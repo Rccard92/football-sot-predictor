@@ -1,13 +1,15 @@
-"""Benchmark reale / sintetico dataset Intensità Goal v5 (Fase 1B.1).
+"""Benchmark dataset Intensità Goal v5 — coorte Today eleggibile.
 
 Uso reale (richiede DATABASE_URL o backend/.env):
-  cd backend && python -m scripts.benchmark_goal_intensity_v5_dataset \\
-    --date-from 2025-06-01 --date-to 2026-07-17 --summary-only
+  cd backend && python -m scripts.benchmark_goal_intensity_v5_dataset --summary-only
 
-Stress sintetico (no DB, ~15k fixture):
+Default range: scan_date 2026-06-19 → oggi, competition_id=null.
+
+Stress sintetico (solo dedupe O(n log n), no coorte Today):
   cd backend && python -m scripts.benchmark_goal_intensity_v5_dataset --synthetic --n 14979
 
-PASS reale: elapsed < 60s, payload summary < 2MB, nessuna scrittura DB.
+PASS reale: elapsed < 30s, payload < 2MB, zero pre-MIN / ineligible / unknown / no-Today,
+cohort_basis=cecchino_today_eligible_scan_date.
 """
 
 from __future__ import annotations
@@ -20,9 +22,12 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+MIN_SCAN = date(2026, 6, 19)
+COHORT_BASIS = "cecchino_today_eligible_scan_date"
 
 
 def _load_dotenv() -> None:
@@ -44,13 +49,9 @@ def _synthetic_benchmark(n: int) -> dict[str, Any]:
     from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
         dedupe_fixtures_provider_then_composite,
     )
-    from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import AuditIndexes
-    from app.services.cecchino.cecchino_goal_intensity_v5_dataset import (
-        VERSION,
-        build_goal_intensity_v5_dataset,
-    )
+    from app.services.cecchino.cecchino_goal_intensity_v5_dataset import VERSION
 
-    ko0 = datetime(2025, 6, 1, 15, 0, tzinfo=timezone.utc)
+    ko0 = datetime(2026, 6, 19, 15, 0, tzinfo=timezone.utc)
     fixtures: list[Any] = []
     for i in range(n):
         fx = MagicMock()
@@ -69,47 +70,8 @@ def _synthetic_benchmark(n: int) -> dict[str, Any]:
     retained, dedupe_report = dedupe_fixtures_provider_then_composite(fixtures)
     dedupe_s = time.perf_counter() - t_dedupe
 
-    db = MagicMock()
-    db.scalars.return_value = MagicMock(all=MagicMock(return_value=[]))
-    db.commit = MagicMock()
-    db.add = MagicMock()
-    sample = retained[:200]
-
-    def _empty_indexes(*_a, **_k):
-        return AuditIndexes()
-
-    with (
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.finished_local_fixtures_in_kickoff_range",
-            return_value=list(sample),
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.load_today_snapshots_for_fixtures",
-            return_value=[],
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset._fixture_ids_with_team_stats",
-            return_value=set(),
-        ),
-        patch(
-            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.preload_audit_indexes",
-            side_effect=_empty_indexes,
-        ),
-    ):
-        t_sum = time.perf_counter()
-        payload = build_goal_intensity_v5_dataset(
-            db,
-            date_from=date(2025, 6, 1),
-            date_to=date(2026, 7, 17),
-        )
-        summary_s = time.perf_counter() - t_sum
-
-    payload_bytes = int(payload["performance"].get("response_payload_bytes") or 0)
-    time_ok = dedupe_s < 60.0
-    bytes_ok = payload_bytes < 2 * 1024 * 1024
-    passed = time_ok and bytes_ok and len(retained) > 0
-    db.commit.assert_not_called()
-    db.add.assert_not_called()
+    time_ok = dedupe_s < 30.0
+    passed = time_ok and len(retained) > 0
 
     return {
         "mode": "synthetic",
@@ -118,17 +80,14 @@ def _synthetic_benchmark(n: int) -> dict[str, Any]:
         "n_retained": len(retained),
         "dedupe_s": round(dedupe_s, 4),
         "dedupe_timings_ms": dedupe_report.get("timings_ms"),
-        "summary_sample_rows": len(sample),
-        "summary_build_s": round(summary_s, 4),
-        "payload_bytes": payload_bytes,
-        "preview_rows": len(payload.get("dataset_preview_rows") or []),
         "criteria": {
-            "dedupe_lt_60s": time_ok,
-            "payload_lt_2mb": bytes_ok,
-            "no_db_writes": True,
+            "dedupe_lt_30s": time_ok,
         },
         "result": "PASS" if passed else "FAIL",
-        "note": "Stress dedupe O(n log n) senza DB. Per PASS reale sul range completo serve DATABASE_URL.",
+        "note": (
+            "Stress dedupe O(n log n) senza DB/coorte Today. "
+            "Per PASS reale sulla coorte eleggibile serve DATABASE_URL."
+        ),
     }
 
 
@@ -145,6 +104,9 @@ def _real_benchmark(
         build_goal_intensity_v5_dataset,
         build_goal_intensity_v5_dataset_internal,
     )
+    from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+        MIN_GOAL_INTENSITY_TODAY_SCAN_DATE,
+    )
 
     db = SessionLocal()
     try:
@@ -156,13 +118,21 @@ def _real_benchmark(
                 date_to=date_to,
                 competition_id=competition_id,
             )
-            rows = payload["performance"].get("estimated_full_dataset_rows")
-            payload_bytes = payload["performance"].get("response_payload_bytes")
-            phases = payload["performance"].get("calculation_phases") or {}
-            db_phases = payload["performance"].get("db_query_phases") or {}
-            elapsed_ms = payload["performance"].get("elapsed_ms")
-            fps = payload["performance"].get("fixtures_per_second")
-            preview = payload["performance"].get("response_preview_rows")
+            elig = payload.get("eligibility_diagnostics") or {}
+            summary = payload.get("dataset_summary") or {}
+            rows = payload.get("performance", {}).get("estimated_full_dataset_rows")
+            payload_bytes = payload.get("performance", {}).get("response_payload_bytes")
+            phases = payload.get("performance", {}).get("calculation_phases") or {}
+            db_phases = payload.get("performance", {}).get("db_query_phases") or {}
+            elapsed_ms = payload.get("performance", {}).get("elapsed_ms")
+            fps = payload.get("performance", {}).get("fixtures_per_second")
+            preview = payload.get("dataset_preview_rows") or []
+            cohort_basis = payload.get("cohort_basis") or summary.get("cohort_basis")
+            status = payload.get("status")
+            warnings = list(payload.get("warnings") or [])
+            feature_safe = summary.get("leakage_safe_rows") or elig.get("eligible_feature_safe_matches")
+            xg = payload.get("xg_cohorts") or summary.get("xg_cohorts") or {}
+            history = payload.get("history_quality") or {}
         else:
             internal = build_goal_intensity_v5_dataset_internal(
                 db,
@@ -170,24 +140,57 @@ def _real_benchmark(
                 date_to=date_to,
                 competition_id=competition_id,
             )
-            rows = len(internal["dataset_rows"])
+            elig = internal.get("eligibility_diagnostics") or {}
+            rows = len(internal.get("dataset_rows") or [])
             payload_bytes = None
-            phases = internal["phases"]
+            phases = internal.get("phases") or {}
             db_phases = {
                 "cohort_ms": phases.get("cohort_ms"),
-                "today_load_ms": phases.get("today_load_ms"),
-                "fts_lookup_ms": phases.get("fts_lookup_ms"),
                 "preload_ms": phases.get("preload_ms"),
             }
-            elapsed_ms = internal["elapsed_ms"]
-            fps = internal["fixtures_per_second"]
-            preview = None
+            elapsed_ms = internal.get("elapsed_ms")
+            fps = internal.get("fixtures_per_second")
+            preview = internal.get("dataset_rows") or []
+            cohort_basis = internal.get("cohort_basis")
+            status = internal.get("status")
+            warnings = list(internal.get("warnings") or [])
+            feature_safe = len(internal.get("dataset_rows") or [])
+            xg = internal.get("xg_cohorts") or {}
+            history = internal.get("history_quality") or {}
 
         wall_s = time.perf_counter() - t0
         elapsed_s = float(elapsed_ms or 0) / 1000.0
+        if elapsed_s <= 0:
+            elapsed_s = wall_s
+
+        unknown = int(elig.get("today_eligibility_unknown") or 0)
+        ineligible = int(elig.get("today_ineligible_matches") or 0)
+        # Model-ready devono essere solo eligible finished; pending/unresolved fuori
+        preview_bad = [
+            r
+            for r in preview
+            if isinstance(r, dict) and r.get("eligibility_status") not in (None, "eligible")
+        ]
+        pre_min = [
+            r
+            for r in preview
+            if isinstance(r, dict)
+            and r.get("scan_date")
+            and str(r["scan_date"]) < MIN_GOAL_INTENSITY_TODAY_SCAN_DATE.isoformat()
+        ]
+
         bytes_ok = payload_bytes is None or int(payload_bytes) < 2 * 1024 * 1024
-        time_ok = elapsed_s < 60.0
-        passed = bool(time_ok and bytes_ok)
+        time_ok = elapsed_s < 30.0
+        basis_ok = cohort_basis == COHORT_BASIS
+        # Criterio brief: zero unknown + nessun ineligible nel model-ready
+        model_ok = (
+            status != "error"
+            and len(preview_bad) == 0
+            and len(pre_min) == 0
+            and basis_ok
+        )
+        strict_unknown_ok = unknown == 0
+        passed = bool(time_ok and bytes_ok and model_ok and strict_unknown_ok)
 
         return {
             "mode": "real",
@@ -196,8 +199,24 @@ def _real_benchmark(
             "date_to": date_to.isoformat(),
             "competition_id": competition_id,
             "summary_only": summary_only,
+            "cohort_basis": cohort_basis,
+            "status": status,
             "rows": rows,
-            "preview_rows": preview,
+            "preview_rows": len(preview) if isinstance(preview, list) else preview,
+            "feature_safe_matches": feature_safe,
+            "eligibility_diagnostics": {
+                "today_rows_raw": elig.get("today_rows_raw"),
+                "today_unique_matches": elig.get("today_unique_matches"),
+                "today_eligible_matches": elig.get("today_eligible_matches"),
+                "today_ineligible_matches": ineligible,
+                "today_eligibility_unknown": unknown,
+                "eligible_finished_matches": elig.get("eligible_finished_matches"),
+                "eligible_pending_matches": elig.get("eligible_pending_matches"),
+                "eligible_unresolved_matches": elig.get("eligible_unresolved_matches"),
+                "eligible_feature_safe_matches": elig.get("eligible_feature_safe_matches"),
+            },
+            "xg_cohorts": xg,
+            "history_quality": history,
             "elapsed_ms": elapsed_ms,
             "elapsed_s": round(elapsed_s, 3),
             "wall_clock_s": round(wall_s, 3),
@@ -208,9 +227,15 @@ def _real_benchmark(
             else None,
             "db_query_phases": db_phases,
             "calculation_phases": phases,
+            "warnings": warnings,
             "criteria": {
-                "elapsed_lt_60s": time_ok,
+                "elapsed_lt_30s": time_ok,
                 "payload_lt_2mb": bytes_ok,
+                "cohort_basis_ok": basis_ok,
+                "zero_pre_min_scan_date": len(pre_min) == 0,
+                "zero_ineligible_in_model": len(preview_bad) == 0,
+                "zero_unknown": strict_unknown_ok,
+                "status_not_error": status != "error",
                 "no_external_api": True,
                 "no_db_writes": True,
             },
@@ -222,11 +247,21 @@ def _real_benchmark(
 
 def main() -> int:
     _load_dotenv()
-    parser = argparse.ArgumentParser(description="Benchmark goal intensity v5 dataset")
+    parser = argparse.ArgumentParser(description="Benchmark goal intensity v5 dataset (Today eligible)")
     parser.add_argument("--date-from", type=date.fromisoformat, default=None)
     parser.add_argument("--date-to", type=date.fromisoformat, default=None)
     parser.add_argument("--competition-id", type=int, default=None)
-    parser.add_argument("--summary-only", action="store_true")
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        default=True,
+        help="Summary HTTP (default). Usa --full per dataset interno completo.",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Esegue build_goal_intensity_v5_dataset_internal (no summary-only).",
+    )
     parser.add_argument("--synthetic", action="store_true", help="Stress dedupe senza DB")
     parser.add_argument("--n", type=int, default=14979, help="Fixture sintetiche")
     args = parser.parse_args()
@@ -236,17 +271,9 @@ def main() -> int:
         print(json.dumps(report, indent=2, default=str))
         return 0 if report["result"] == "PASS" else 1
 
-    if not args.date_from or not args.date_to:
-        print(
-            json.dumps(
-                {
-                    "result": "FAIL",
-                    "error": "date_from/date_to richiesti per benchmark reale (o usa --synthetic)",
-                },
-                indent=2,
-            )
-        )
-        return 1
+    date_from = args.date_from or MIN_SCAN
+    date_to = args.date_to or date.today()
+    summary_only = not bool(args.full)
 
     if not os.environ.get("DATABASE_URL"):
         print(
@@ -255,8 +282,10 @@ def main() -> int:
                     "result": "FAIL",
                     "error": "DATABASE_URL assente: impossibile eseguire benchmark reale. "
                     "Imposta DATABASE_URL o crea backend/.env, oppure usa --synthetic.",
-                    "date_from": args.date_from.isoformat(),
-                    "date_to": args.date_to.isoformat(),
+                    "date_from": date_from.isoformat(),
+                    "date_to": date_to.isoformat(),
+                    "competition_id": args.competition_id,
+                    "note": "Non chiudere come PASS senza run reale quando il DB è disponibile.",
                 },
                 indent=2,
             )
@@ -264,10 +293,10 @@ def main() -> int:
         return 2
 
     report = _real_benchmark(
-        date_from=args.date_from,
-        date_to=args.date_to,
+        date_from=date_from,
+        date_to=date_to,
         competition_id=args.competition_id,
-        summary_only=args.summary_only,
+        summary_only=summary_only,
     )
     print(json.dumps(report, indent=2, default=str))
     return 0 if report["result"] == "PASS" else 1

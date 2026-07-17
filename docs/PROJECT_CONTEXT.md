@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Intensità Goal v5 Research — Coorte Today eleggibile (2026-07-17)
+
+Audit/dataset Intensità Goal v5 solo su partite **eleggibili Cecchino Today** (`eligibility_status` persistito), range `scan_date` ≥ 2026-06-19. Storico locale solo come supporto feature. Versioni `audit_v1_5` / `dataset_v1_2`; `cohort_basis=cecchino_today_eligible_scan_date`. Fail-closed su unknown/ineligible nel model-ready.
+
 ## Intensità Goal v5 Research — Dataset Fase 1B.1 (2026-07-17)
 
 Dataset storico research: dedupe composita O(n log n), summary HTTP compatto (`preview` ≤100, hash paired), export StreamingResponse CSV/JSON. Versione `cecchino_goal_intensity_v5_dataset_v1_1`. Timeout globale invariato.

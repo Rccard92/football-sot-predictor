@@ -28,29 +28,33 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     append_debug_sample,
     dedupe_fixtures_provider_then_composite,
     extract_features_from_indexes,
-    finished_local_fixtures_in_kickoff_range,
-    load_today_snapshots_for_fixtures,
-    match_today_snapshot_indexed,
     month_key_from_dt,
     pct,
     sanitize_exception_message,
     snapshot_time_status,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import (
-    build_today_indexes,
     preload_audit_indexes,
+)
+from app.services.cecchino.cecchino_goal_intensity_v5_today_cohort import (
+    COHORT_BASIS,
+    HISTORICAL_FEATURE_SOURCE,
+    RESULT_SOURCE,
+    TARGET_SOURCE,
+    build_goal_intensity_today_cohort,
+    build_ineligible_diagnostics_rows,
 )
 from app.services.datetime_utils import ensure_datetime_utc, safe_isoformat
 
 logger = logging.getLogger(__name__)
 
-VERSION = "cecchino_goal_intensity_v5_dataset_v1_1"
+VERSION = "cecchino_goal_intensity_v5_dataset_v1_2"
 _PROGRESS_EVERY = 500
 _PAIRED_XG_MIN_SAMPLE = 50
 _PREVIEW_MAX_ROWS = 100
 _SUMMARY_PAYLOAD_SOFT_LIMIT_BYTES = 2 * 1024 * 1024
 
-ExportKind = Literal["all", "core_min5", "core_min10", "xg_paired"]
+ExportKind = Literal["all", "core_min5", "core_min10", "xg_paired", "ineligible_diagnostics"]
 
 XG_FEATURE_KEYS = (
     "home_xg_for_avg",
@@ -104,6 +108,11 @@ DATASET_FEATURE_KEYS = (
 )
 
 CSV_COLUMNS: tuple[str, ...] = (
+    "today_fixture_id",
+    "scan_date",
+    "eligibility_status",
+    "eligibility_source",
+    "eligibility_reason_codes",
     "local_fixture_id",
     "provider_fixture_id",
     "competition_id",
@@ -251,16 +260,19 @@ def _core_ready(r: dict[str, Any], min_sample: int) -> bool:
 
 
 def filter_dataset_rows_by_kind(rows: list[dict[str, Any]], kind: ExportKind) -> list[dict[str, Any]]:
-    if kind == "all":
+    if kind == "ineligible_diagnostics":
         return rows
+    if kind == "all":
+        return [r for r in rows if r.get("eligibility_status") == "eligible"]
     if kind == "core_min5":
-        return [r for r in rows if _core_ready(r, 5)]
+        return [r for r in rows if r.get("eligibility_status") == "eligible" and _core_ready(r, 5)]
     if kind == "core_min10":
-        return [r for r in rows if _core_ready(r, 10)]
+        return [r for r in rows if r.get("eligibility_status") == "eligible" and _core_ready(r, 10)]
     return [
         r
         for r in rows
-        if _core_ready(r, 1)
+        if r.get("eligibility_status") == "eligible"
+        and _core_ready(r, 1)
         and r.get("xg_status") == "available"
         and all(r.get(k) is not None for k in XG_FEATURE_KEYS)
     ]
@@ -292,42 +304,94 @@ def build_goal_intensity_v5_dataset_internal(
     phases: dict[str, float] = {}
 
     t_cohort = time.perf_counter()
-    raw_fixtures = finished_local_fixtures_in_kickoff_range(
+    cohort = build_goal_intensity_today_cohort(
         db,
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
     )
     phases["cohort_ms"] = round((time.perf_counter() - t_cohort) * 1000.0, 2)
-    rows_initial = len(raw_fixtures)
+    warnings.extend(cohort.warnings)
 
-    t_today = time.perf_counter()
-    today_all = load_today_snapshots_for_fixtures(db, raw_fixtures)
-    by_local, by_provider = build_today_indexes(today_all)
-    has_today: dict[int, bool] = {}
-    for fx in raw_fixtures:
-        has_today[int(fx.id)] = match_today_snapshot_indexed(fx, by_local, by_provider) is not None
-    phases["today_load_ms"] = round((time.perf_counter() - t_today) * 1000.0, 2)
+    if cohort.error:
+        return {
+            "version": VERSION,
+            "status": "error",
+            "error": cohort.error,
+            "filters": {
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "competition_id": competition_id,
+                "date_from_effective": cohort.date_from.isoformat(),
+                "date_to_effective": cohort.date_to.isoformat(),
+            },
+            "rows_initial": 0,
+            "deduplication": {
+                "duplicates_provider_removed": 0,
+                "duplicates_composite_removed": 0,
+                "rows_after_provider": 0,
+                "rows_after_composite": 0,
+                "duplicate_groups_count": 0,
+                "duplicate_groups": [],
+            },
+            "dataset_rows": [],
+            "identity_excluded": [],
+            "identity_fail_by_reason": {},
+            "identity_fail_by_month": {},
+            "identity_fail_by_comp": {},
+            "identity_fail_by_country": {},
+            "identity_fail_goals_mean": None,
+            "cohort_ids": {},
+            "cohort_counts": {},
+            "history_quality": {},
+            "xg_cohorts": {},
+            "paired_ids": [],
+            "paired_targets": [],
+            "fixture_ids_hash": None,
+            "targets_hash": None,
+            "paired_first_kickoff": None,
+            "paired_last_kickoff": None,
+            "exclusion_bias_report": {},
+            "feature_definitions": [],
+            "warnings": warnings,
+            "debug_samples": {},
+            "phases": phases,
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+            "rows_processed": 0,
+            "fixtures_per_second": None,
+            "index_sizes": {},
+            "v4_version": V4_VERSION,
+            "eligibility_diagnostics": cohort.eligibility_diagnostics,
+            "diagnostic_examples": cohort.diagnostic_examples,
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        }
 
-    t_fts = time.perf_counter()
-    fts_ids = _fixture_ids_with_team_stats(db, [int(f.id) for f in raw_fixtures])
-    has_fts = {fid: True for fid in fts_ids}
-    phases["fts_lookup_ms"] = round((time.perf_counter() - t_fts) * 1000.0, 2)
+    fixtures = cohort.local_fixtures
+    targets = cohort.targets
+    rows_initial = cohort.eligibility_diagnostics.get("today_rows_raw", 0)
+    today_candidates = cohort.selected_today_rows
+    phases["today_load_ms"] = 0.0
+    phases["fts_lookup_ms"] = 0.0
 
+    # Dedupe locale residua (es. 4305/4306) sulla coorte Today → Fixture
     t_dedupe = time.perf_counter()
+    has_today = {int(t.local_fixture.id): True for t in targets}
     fixtures, dedupe_report = dedupe_fixtures_provider_then_composite(
-        raw_fixtures,
+        fixtures,
         has_today_by_id=has_today,
-        has_fts_by_id=has_fts,
+        has_fts_by_id={},
     )
+    retained_ids = {int(f.id) for f in fixtures}
+    targets = [t for t in targets if int(t.local_fixture.id) in retained_ids]
+    today_candidates = [t.today_row for t in targets]
     phases["dedupe_ms"] = round((time.perf_counter() - t_dedupe) * 1000.0, 2)
     dedupe_timings = dedupe_report.get("timings_ms") or {}
     phases["provider_dedupe_ms"] = float(dedupe_timings.get("provider_dedupe_ms") or 0)
     phases["composite_bucket_build_ms"] = float(dedupe_timings.get("composite_bucket_build_ms") or 0)
     phases["composite_cluster_ms"] = float(dedupe_timings.get("composite_cluster_ms") or 0)
-
-    # Riuso snapshot Today già caricati (niente seconda query)
-    today_candidates = _filter_today_for_retained(today_all, fixtures)
 
     t_preload = time.perf_counter()
     indexes = preload_audit_indexes(db, fixtures, today_candidates)
@@ -346,9 +410,11 @@ def build_goal_intensity_v5_dataset_internal(
     identity_fail_goals: list[float] = []
 
     t_feat = time.perf_counter()
-    total = len(fixtures)
+    total = len(targets)
 
-    for i, local in enumerate(fixtures, start=1):
+    for i, target in enumerate(targets, start=1):
+        local = target.local_fixture
+        today_row = target.today_row
         lid = int(local.id)
         api_id = int(local.api_fixture_id) if local.api_fixture_id is not None else None
         ko = ensure_datetime_utc(local.kickoff_at, field_name="local.kickoff_at")
@@ -374,11 +440,6 @@ def build_goal_intensity_v5_dataset_internal(
         home_name = indexes.team_name_by_id.get(int(local.home_team_id))
         away_name = indexes.team_name_by_id.get(int(local.away_team_id))
 
-        today_row = match_today_snapshot_indexed(
-            local,
-            indexes.today_by_local_fixture_id,
-            indexes.today_by_provider_fixture_id,
-        )
         snap_status = snapshot_time_status(today_row, ko)
 
         identity_status = "static_identity_unavailable"
@@ -392,51 +453,50 @@ def build_goal_intensity_v5_dataset_internal(
         kickoff_match = False
         failure_reasons: list[str] = []
 
-        if today_row is not None:
-            try:
-                identity_payload = build_historical_fixture_identity_consistency(
-                    today_row=today_row,
-                    local_fixture=local,
-                    local_home_team_name=home_name,
-                    local_away_team_name=away_name,
-                )
-                identity_status = str(identity_payload.get("status") or "static_identity_unavailable")
-                local_fixture_id_match = bool(identity_payload.get("local_fixture_id_match"))
-                provider_fixture_id_match = bool(identity_payload.get("provider_match"))
-                competition_id_match = bool(identity_payload.get("competition_match"))
-                kickoff_match = bool(identity_payload.get("kickoff_match"))
-                home_team_match = _names_close(getattr(today_row, "home_team_name", None), home_name)
-                away_team_match = _names_close(getattr(today_row, "away_team_name", None), away_name)
-                if not getattr(today_row, "home_team_name", None) and not getattr(today_row, "away_team_name", None):
-                    home_team_match = True
-                    away_team_match = True
-                if identity_status == "static_identity_failed":
-                    identity_mismatch = True
-                    failure_reasons = [
-                        w
-                        for w in (identity_payload.get("warnings") or [])
-                        if w
-                        not in (
-                            "today_upcoming_vs_local_ft",
-                            "today_no_score_vs_local_score",
-                            "today_local_status_mismatch",
-                            "today_local_score_mismatch",
-                        )
-                    ]
-            except Exception as exc:
-                identity_check_error = True
-                identity_status = "static_identity_failed"
-                failure_reasons = ["identity_check_error"]
-                append_debug_sample(
-                    debug_samples,
-                    "identity_check_error",
-                    today_fixture_id=int(today_row.id),
-                    local_fixture_id=lid,
-                    provider_fixture_id=api_id,
-                    kickoff=ko_iso,
-                    exception_type=type(exc).__name__,
-                    exception_message=sanitize_exception_message(exc),
-                )
+        try:
+            identity_payload = build_historical_fixture_identity_consistency(
+                today_row=today_row,
+                local_fixture=local,
+                local_home_team_name=home_name,
+                local_away_team_name=away_name,
+            )
+            identity_status = str(identity_payload.get("status") or "static_identity_unavailable")
+            local_fixture_id_match = bool(identity_payload.get("local_fixture_id_match"))
+            provider_fixture_id_match = bool(identity_payload.get("provider_match"))
+            competition_id_match = bool(identity_payload.get("competition_match"))
+            kickoff_match = bool(identity_payload.get("kickoff_match"))
+            home_team_match = _names_close(getattr(today_row, "home_team_name", None), home_name)
+            away_team_match = _names_close(getattr(today_row, "away_team_name", None), away_name)
+            if not getattr(today_row, "home_team_name", None) and not getattr(today_row, "away_team_name", None):
+                home_team_match = True
+                away_team_match = True
+            if identity_status == "static_identity_failed":
+                identity_mismatch = True
+                failure_reasons = [
+                    w
+                    for w in (identity_payload.get("warnings") or [])
+                    if w
+                    not in (
+                        "today_upcoming_vs_local_ft",
+                        "today_no_score_vs_local_score",
+                        "today_local_status_mismatch",
+                        "today_local_score_mismatch",
+                    )
+                ]
+        except Exception as exc:
+            identity_check_error = True
+            identity_status = "static_identity_failed"
+            failure_reasons = ["identity_check_error"]
+            append_debug_sample(
+                debug_samples,
+                "identity_check_error",
+                today_fixture_id=int(today_row.id),
+                local_fixture_id=lid,
+                provider_fixture_id=api_id,
+                kickoff=ko_iso,
+                exception_type=type(exc).__name__,
+                exception_message=sanitize_exception_message(exc),
+            )
 
         features, leak_meta = extract_features_from_indexes(local, today_row, indexes)
 
@@ -451,6 +511,9 @@ def build_goal_intensity_v5_dataset_internal(
         c_status = core_feature_status(features, sample_size)
 
         base_diag = {
+            "today_fixture_id": int(today_row.id),
+            "scan_date": target.scan_date.isoformat(),
+            "eligibility_status": target.eligibility_status,
             "local_fixture_id": lid,
             "provider_fixture_id": api_id,
             "competition_id": comp_id,
@@ -492,6 +555,11 @@ def build_goal_intensity_v5_dataset_internal(
             continue
 
         row: dict[str, Any] = {
+            "today_fixture_id": int(today_row.id),
+            "scan_date": target.scan_date.isoformat(),
+            "eligibility_status": target.eligibility_status,
+            "eligibility_source": target.eligibility_source,
+            "eligibility_reason_codes": list(target.eligibility_reason_codes),
             "local_fixture_id": lid,
             "provider_fixture_id": api_id,
             "competition_id": comp_id,
@@ -505,12 +573,12 @@ def build_goal_intensity_v5_dataset_internal(
             "row_feature_safe": True,
             "static_identity_status": identity_status,
             "snapshot_time_status": snap_status,
-            "local_fixture_id_match": local_fixture_id_match if today_row else None,
-            "provider_fixture_id_match": provider_fixture_id_match if today_row else None,
-            "competition_id_match": competition_id_match if today_row else None,
-            "home_team_match": home_team_match if today_row else None,
-            "away_team_match": away_team_match if today_row else None,
-            "kickoff_match": kickoff_match if today_row else None,
+            "local_fixture_id_match": local_fixture_id_match,
+            "provider_fixture_id_match": provider_fixture_id_match,
+            "competition_id_match": competition_id_match,
+            "home_team_match": home_team_match,
+            "away_team_match": away_team_match,
+            "kickoff_match": kickoff_match,
             "static_identity_failure_reasons": [],
             "sample_size": sample_size,
             "history_quality_tier": tier,
@@ -520,6 +588,7 @@ def build_goal_intensity_v5_dataset_internal(
             "xg_available_fields": list(leak_meta.get("xg_available_fields") or []),
             "xg_missing_fields": list(leak_meta.get("xg_missing_fields") or []),
             "xg_exclusion_reasons": list(leak_meta.get("xg_exclusion_reasons") or []),
+            "selection": target.selection,
         }
         for key in DATASET_FEATURE_KEYS:
             row[key] = features.get(key)
@@ -536,6 +605,76 @@ def build_goal_intensity_v5_dataset_internal(
             _log_progress(i, total, t_feat)
 
     phases["feature_calculation_ms"] = round((time.perf_counter() - t_feat) * 1000.0, 2)
+
+    # Fail-closed: nessuna riga non eleggibile nel model-ready
+    bad_ids = [
+        r.get("today_fixture_id") or r.get("local_fixture_id")
+        for r in dataset_rows
+        if r.get("eligibility_status") != "eligible"
+    ]
+    if bad_ids:
+        warnings.append("ineligible_match_entered_model_dataset")
+        return {
+            "version": VERSION,
+            "status": "error",
+            "error": "ineligible_match_entered_model_dataset",
+            "ineligible_ids": bad_ids,
+            "filters": {
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "competition_id": competition_id,
+                "date_from_effective": cohort.date_from.isoformat(),
+                "date_to_effective": cohort.date_to.isoformat(),
+            },
+            "rows_initial": rows_initial,
+            "deduplication": {
+                "duplicates_provider_removed": 0,
+                "duplicates_composite_removed": 0,
+                "rows_after_provider": len(fixtures),
+                "rows_after_composite": len(fixtures),
+                "duplicate_groups_count": 0,
+                "duplicate_groups": [],
+            },
+            "dataset_rows": [],
+            "identity_excluded": identity_excluded,
+            "identity_fail_by_reason": dict(identity_fail_by_reason),
+            "identity_fail_by_month": {},
+            "identity_fail_by_comp": {},
+            "identity_fail_by_country": {},
+            "identity_fail_goals_mean": None,
+            "cohort_ids": {},
+            "cohort_counts": {},
+            "history_quality": {},
+            "xg_cohorts": {},
+            "paired_ids": [],
+            "paired_targets": [],
+            "fixture_ids_hash": None,
+            "targets_hash": None,
+            "paired_first_kickoff": None,
+            "paired_last_kickoff": None,
+            "exclusion_bias_report": {},
+            "feature_definitions": [],
+            "warnings": warnings,
+            "debug_samples": debug_samples,
+            "phases": phases,
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+            "rows_processed": len(targets),
+            "fixtures_per_second": None,
+            "index_sizes": {},
+            "v4_version": V4_VERSION,
+            "eligibility_diagnostics": cohort.eligibility_diagnostics,
+            "diagnostic_examples": cohort.diagnostic_examples,
+            "cohort_basis": COHORT_BASIS,
+            "target_source": TARGET_SOURCE,
+            "result_source": RESULT_SOURCE,
+            "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
+        }
+
+    eligibility_diagnostics = dict(cohort.eligibility_diagnostics)
+    eligibility_diagnostics["eligible_feature_safe_matches"] = len(dataset_rows)
+    eligibility_diagnostics["eligible_identity_excluded_matches"] = len(identity_excluded)
+    if eligibility_diagnostics.get("today_eligibility_unknown", 0) > 0:
+        warnings.append("eligibility_unknown_present_fail_closed_excluded_from_model")
 
     t_cohort_calc = time.perf_counter()
     dataset_rows.sort(key=lambda r: (str(r.get("kickoff") or ""), int(r["local_fixture_id"])))
@@ -701,15 +840,19 @@ def build_goal_intensity_v5_dataset_internal(
         warnings.append("xg_exclude_low_coverage_unexpected")
 
     elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-    rows_processed = len(fixtures)
+    rows_processed = len(targets)
     fixtures_per_second = round(rows_processed / (elapsed_ms / 1000.0), 2) if elapsed_ms > 0 else None
 
     return {
         "version": VERSION,
+        "status": "ok",
         "filters": {
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "competition_id": competition_id,
+            "date_from_effective": cohort.date_from.isoformat(),
+            "date_to_effective": cohort.date_to.isoformat(),
+            "date_from_clamped": cohort.date_from_clamped,
         },
         "rows_initial": rows_initial,
         "deduplication": {
@@ -718,7 +861,6 @@ def build_goal_intensity_v5_dataset_internal(
             "rows_after_provider": dedupe_report["rows_after_provider"],
             "rows_after_composite": dedupe_report["rows_after_composite"],
             "duplicate_groups_count": len(dedupe_report.get("duplicate_groups") or []),
-            # gruppi completi solo in internal (export summary li omette)
             "duplicate_groups": dedupe_report.get("duplicate_groups") or [],
         },
         "dataset_rows": dataset_rows,
@@ -758,11 +900,45 @@ def build_goal_intensity_v5_dataset_internal(
             "competition_names": len(indexes.competition_name_by_id),
         },
         "v4_version": V4_VERSION,
+        "eligibility_diagnostics": eligibility_diagnostics,
+        "diagnostic_examples": cohort.diagnostic_examples,
+        "ineligible_diagnostics_rows": build_ineligible_diagnostics_rows(cohort),
+        "cohort_basis": COHORT_BASIS,
+        "target_source": TARGET_SOURCE,
+        "result_source": RESULT_SOURCE,
+        "historical_feature_source": HISTORICAL_FEATURE_SOURCE,
     }
 
 
 def build_goal_intensity_v5_dataset_summary_from_internal(internal: dict[str, Any]) -> dict[str, Any]:
     t_sum = time.perf_counter()
+    if internal.get("status") == "error":
+        return {
+            "status": "error",
+            "version": VERSION,
+            "error": internal.get("error"),
+            "ineligible_ids": internal.get("ineligible_ids"),
+            "filters": internal.get("filters") or {},
+            "dataset_summary": {
+                "rows_feature_safe": 0,
+                "v4_unchanged": True,
+                "v4_version": internal.get("v4_version") or V4_VERSION,
+                "no_v5_formula": True,
+                "cohort_basis": internal.get("cohort_basis") or COHORT_BASIS,
+                "target_source": internal.get("target_source") or TARGET_SOURCE,
+                "result_source": internal.get("result_source") or RESULT_SOURCE,
+                "historical_feature_source": internal.get("historical_feature_source")
+                or HISTORICAL_FEATURE_SOURCE,
+            },
+            "eligibility_diagnostics": internal.get("eligibility_diagnostics") or {},
+            "diagnostic_examples": (internal.get("diagnostic_examples") or [])[:100],
+            "warnings": list(internal.get("warnings") or []),
+            "performance": {
+                "elapsed_ms": internal.get("elapsed_ms"),
+                "response_payload_bytes": 0,
+            },
+        }
+
     rows = internal["dataset_rows"]
     preview = rows[:_PREVIEW_MAX_ROWS]
     dedupe = internal["deduplication"]
@@ -772,6 +948,11 @@ def build_goal_intensity_v5_dataset_summary_from_internal(internal: dict[str, An
         "status": "ok",
         "version": VERSION,
         "filters": internal["filters"],
+        "cohort_basis": internal.get("cohort_basis") or COHORT_BASIS,
+        "target_source": internal.get("target_source") or TARGET_SOURCE,
+        "result_source": internal.get("result_source") or RESULT_SOURCE,
+        "historical_feature_source": internal.get("historical_feature_source")
+        or HISTORICAL_FEATURE_SOURCE,
         "dataset_summary": {
             "rows_initial": internal["rows_initial"],
             "rows_after_provider_dedupe": dedupe["rows_after_provider"],
@@ -784,7 +965,15 @@ def build_goal_intensity_v5_dataset_summary_from_internal(internal: dict[str, An
             "no_v5_formula": True,
             "preview_rows": len(preview),
             "preview_note": "Anteprima limitata a 100 righe. Gli export completi vengono generati dal backend.",
+            "cohort_basis": internal.get("cohort_basis") or COHORT_BASIS,
+            "target_source": internal.get("target_source") or TARGET_SOURCE,
+            "result_source": internal.get("result_source") or RESULT_SOURCE,
+            "historical_feature_source": internal.get("historical_feature_source")
+            or HISTORICAL_FEATURE_SOURCE,
+            "cohort_note": "Coorte research: solo partite eleggibili Cecchino Today.",
         },
+        "eligibility_diagnostics": internal.get("eligibility_diagnostics") or {},
+        "diagnostic_examples": (internal.get("diagnostic_examples") or [])[:100],
         "deduplication": {
             "duplicates_provider_removed": dedupe["duplicates_provider_removed"],
             "duplicates_composite_removed": dedupe["duplicates_composite_removed"],
@@ -883,6 +1072,22 @@ def build_goal_intensity_v5_dataset(
     return build_goal_intensity_v5_dataset_summary_from_internal(internal)
 
 
+INELIGIBLE_CSV_COLUMNS: tuple[str, ...] = (
+    "today_fixture_id",
+    "local_fixture_id",
+    "provider_fixture_id",
+    "scan_date",
+    "kickoff",
+    "competition_id",
+    "home_team",
+    "away_team",
+    "eligibility_status",
+    "eligibility_reason",
+    "eligibility_reason_codes",
+    "eligibility_source",
+)
+
+
 def stream_goal_intensity_v5_dataset_csv(
     db: Session,
     *,
@@ -897,16 +1102,30 @@ def stream_goal_intensity_v5_dataset_csv(
         date_to=date_to,
         competition_id=competition_id,
     )
-    selected = filter_dataset_rows_by_kind(internal["dataset_rows"], kind)
+    if kind == "ineligible_diagnostics":
+        selected = list(internal.get("ineligible_diagnostics_rows") or internal.get("diagnostic_examples") or [])
+        columns = list(INELIGIBLE_CSV_COLUMNS)
+    else:
+        selected = filter_dataset_rows_by_kind(internal.get("dataset_rows") or [], kind)
+        columns = list(CSV_COLUMNS)
     yield "\ufeff"
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=list(CSV_COLUMNS), lineterminator="\n")
+    writer = csv.DictWriter(buffer, fieldnames=columns, lineterminator="\n", extrasaction="ignore")
     writer.writeheader()
     yield buffer.getvalue()
     buffer.seek(0)
     buffer.truncate(0)
     for row in selected:
-        writer.writerow(_row_to_csv_dict(row))
+        out = {col: row.get(col) for col in columns}
+        for col in columns:
+            val = out.get(col)
+            if isinstance(val, list):
+                out[col] = "|".join(str(x) for x in val)
+            elif isinstance(val, bool):
+                out[col] = "true" if val else "false"
+            elif val is None:
+                out[col] = ""
+        writer.writerow(out)
         yield buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)
@@ -938,6 +1157,8 @@ def dataset_export_filename(
     to_s = date_to.isoformat()
     if kind == "summary":
         return f"cecchino_goal_intensity_v5_dataset_summary_{from_s}_{to_s}.json"
+    if kind == "ineligible_diagnostics":
+        return f"cecchino_goal_intensity_v5_ineligible_diagnostics_{from_s}_{to_s}.csv"
     map_kind = {
         "all": "all",
         "core_min5": "core_min5",
