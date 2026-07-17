@@ -31,6 +31,9 @@ from app.services.cecchino.cecchino_draw_credibility_statistics import (
     build_draw_credibility_statistical_analysis,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_audit import build_goal_intensity_v5_audit
+from app.services.cecchino.cecchino_goal_intensity_v5_availability import (
+    build_goal_intensity_v5_availability,
+)
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
 
@@ -129,6 +132,14 @@ def post_draw_credibility_model_comparison(
         bootstrap_iterations=body.bootstrap_iterations,
         random_seed=body.random_seed,
     )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/goal-intensity-v5/availability")
+def get_goal_intensity_v5_availability(
+    db: Session = Depends(get_db),
+):
+    payload = build_goal_intensity_v5_availability(db)
     return JSONResponse(content=jsonable_encoder(payload))
 
 

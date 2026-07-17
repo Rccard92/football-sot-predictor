@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Audit Fase 1A.3 (2026-07-17)
+
+- Preload indici (Fixture history, Today, Team/Competition, FixtureTeamStat); loop audit DB-free.
+- `GET /api/admin/cecchino/research/goal-intensity-v5/availability`; FE init range reale.
+- Versione `cecchino_goal_intensity_v5_audit_v1_2`; formule e timeout 180s invariati.
+
 ## Intensità Goal v5 Research — Audit Fase 1A.2 (2026-07-17)
 
 - Coorte su `Fixture.kickoff_at` (non `scan_date`); Today snapshot opzionale.

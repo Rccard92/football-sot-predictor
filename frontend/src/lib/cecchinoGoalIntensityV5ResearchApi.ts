@@ -1,10 +1,24 @@
-import { adminPostJson } from './api'
+import { adminGetJson, adminPostJson } from './api'
 import { sanitizeFilenameFragment } from './downloadJsonFile'
 
 export type GoalIntensityV5AuditRequest = {
   date_from: string
   date_to: string
   competition_id?: number | null
+}
+
+export type GoalIntensityV5AvailabilityResponse = {
+  status: string
+  finished_fixtures_with_result: number
+  earliest_kickoff: string | null
+  latest_kickoff: string | null
+  earliest_kickoff_date: string | null
+  latest_kickoff_date: string | null
+  competitions_count: number
+  competition_ids: number[]
+  countries_count: number
+  countries: string[]
+  cohort_basis: string
 }
 
 export type GoalIntensityFeatureInventoryRow = {
@@ -77,6 +91,10 @@ export function isGoalIntensityAuditUnusable(audit: GoalIntensityV5AuditResponse
   if (safeRows > 0 && sampleMean === 0) return true
   if (inventory.length > 0 && inventory.every((f) => Number(f.coverage_pct) === 0)) return true
   return false
+}
+
+export function fetchGoalIntensityV5Availability(): Promise<GoalIntensityV5AvailabilityResponse> {
+  return adminGetJson('/api/admin/cecchino/research/goal-intensity-v5/availability')
 }
 
 export function postGoalIntensityV5Audit(

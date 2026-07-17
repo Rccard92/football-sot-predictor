@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { CecchinoStatusMessage } from '../components/cecchino/CecchinoStatusMessage'
 import { useCecchinoGoalIntensityV5Audit } from '../hooks/useCecchinoGoalIntensityV5Audit'
@@ -6,11 +6,14 @@ import {
   buildGoalIntensityAuditJsonFilename,
   buildGoalIntensityFeatureInventoryCsvFilename,
   featureInventoryToCsv,
+  fetchGoalIntensityV5Availability,
   isGoalIntensityAuditUnusable,
   type GoalIntensityV5AuditResponse,
+  type GoalIntensityV5AvailabilityResponse,
 } from '../lib/cecchinoGoalIntensityV5ResearchApi'
 import { downloadJsonFile, downloadTextFile } from '../lib/downloadJsonFile'
 import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
+import { formatFetchError } from '../utils/formatFetchError'
 
 const PILLAR_LABELS: Record<string, string> = {
   offensive_production: 'Produzione offensiva',
@@ -255,14 +258,43 @@ export function RicercaIntensitaGoalPage() {
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgoLocal(90))
   const [dateTo, setDateTo] = useState(() => todayLocalIso())
   const [competitionId, setCompetitionId] = useState('')
+  const [availability, setAvailability] = useState<GoalIntensityV5AvailabilityResponse | null>(null)
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
   const { loading, error, audit, runAudit } = useCecchinoGoalIntensityV5Audit({
     dateFrom,
     dateTo,
     competitionId,
   })
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const avail = await fetchGoalIntensityV5Availability()
+        if (cancelled) return
+        setAvailability(avail)
+        setAvailabilityError(null)
+        if (avail.earliest_kickoff_date && avail.latest_kickoff_date) {
+          setDateFrom(avail.earliest_kickoff_date)
+          setDateTo(avail.latest_kickoff_date)
+        }
+      } catch (err) {
+        if (cancelled) return
+        setAvailabilityError(formatFetchError(err))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const inputClass =
     'mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-100'
+
+  const rangeLabel =
+    availability?.earliest_kickoff_date && availability?.latest_kickoff_date
+      ? `Dati locali disponibili dal ${availability.earliest_kickoff_date} al ${availability.latest_kickoff_date}`
+      : null
 
   return (
     <motion.div
@@ -280,6 +312,21 @@ export function RicercaIntensitaGoalPage() {
         >
           Audit preliminare: nessuna formula produttiva viene modificata.
         </p>
+        {rangeLabel ? (
+          <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+            {rangeLabel}
+            {availability?.finished_fixtures_with_result != null
+              ? ` (${availability.finished_fixtures_with_result} fixture FT).`
+              : '.'}
+          </p>
+        ) : null}
+        {availabilityError ? (
+          <CecchinoStatusMessage
+            variant="error"
+            title="Disponibilità dati"
+            message={availabilityError}
+          />
+        ) : null}
       </header>
 
       <section className="sticky top-0 z-20 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm">

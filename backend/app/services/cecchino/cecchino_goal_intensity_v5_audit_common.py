@@ -1,11 +1,11 @@
-"""Helper read-only audit Intensità Goal v5 — Fase 1A.2."""
+"""Helper read-only audit Intensità Goal v5 — Fase 1A.3."""
 
 from __future__ import annotations
 
 import math
 import statistics
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -22,7 +22,14 @@ from app.services.cecchino.cecchino_current_season_xg import (
 from app.services.cecchino.cecchino_fixture_history import load_finished_fixtures_for_team, take_last_n
 from app.services.cecchino.cecchino_goal_intensity_analysis import METHOD as V4_METHOD
 from app.services.cecchino.cecchino_goal_intensity_analysis import VERSION as V4_VERSION
+from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import (
+    priors_for_team_from_index,
+    xg_avg_from_index,
+)
 from app.services.datetime_utils import ensure_datetime_utc
+
+if TYPE_CHECKING:
+    from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import AuditIndexes
 
 PILLAR_OFFENSIVE = "offensive_production"
 PILLAR_DEFENSIVE = "defensive_solidity"
@@ -267,6 +274,21 @@ def match_today_snapshot(
     return scored[0][1]
 
 
+def match_today_snapshot_indexed(
+    target: Fixture,
+    today_by_local: dict[int, list[CecchinoTodayFixture]],
+    today_by_provider: dict[int, list[CecchinoTodayFixture]],
+) -> CecchinoTodayFixture | None:
+    tid = int(target.id)
+    tapi = int(target.api_fixture_id) if target.api_fixture_id is not None else None
+    candidates = list(today_by_local.get(tid) or [])
+    if not candidates and tapi is not None:
+        candidates = list(today_by_provider.get(tapi) or [])
+    if not candidates:
+        return None
+    return match_today_snapshot(target, candidates)
+
+
 def goals_scored_conceded(fx: Fixture, team_id: int) -> tuple[int | None, int | None]:
     if fx.goals_home is None or fx.goals_away is None:
         return None, None
@@ -490,7 +512,7 @@ def extract_features_for_local_fixture(
     target: Fixture,
     today_row: CecchinoTodayFixture | None,
 ) -> tuple[dict[str, float | None], dict[str, Any]]:
-    """Feature pre-match da Fixture prior (+ xG snapshot/team_stats). Non richiede Today per i goal."""
+    """Path v1_1 (DB per target) — conservato per equivalenza/test. Preferire extract_features_from_indexes."""
     features: dict[str, float | None] = {spec["feature_key"]: None for spec in FEATURE_SPECS}
     meta: dict[str, Any] = {
         "current_fixture_included": False,
@@ -578,6 +600,111 @@ def extract_features_for_local_fixture(
     away_prior = _sanitize(away_prior_raw)
     meta["sample_size"] = len(set(meta["source_fixture_ids"]))
 
+    _fill_goal_features(features, home_prior, away_prior, hid, aid)
+    return features, meta
+
+
+def extract_features_from_indexes(
+    target: Fixture,
+    today_row: CecchinoTodayFixture | None,
+    indexes: "AuditIndexes",
+) -> tuple[dict[str, float | None], dict[str, Any]]:
+    """Feature pre-match da indici in memoria — zero Session (path caldo 1A.3)."""
+    features: dict[str, float | None] = {spec["feature_key"]: None for spec in FEATURE_SPECS}
+    meta: dict[str, Any] = {
+        "current_fixture_included": False,
+        "future_fixture_included": False,
+        "cutoff_mismatch": False,
+        "max_source_kickoff": None,
+        "source_fixture_ids": [],
+        "xg_source": "missing",
+        "sample_size": 0,
+    }
+
+    target_ko = ensure_datetime_utc(target.kickoff_at, field_name="target.kickoff_at")
+    hid = int(target.home_team_id)
+    aid = int(target.away_team_id)
+    target_id = int(target.id)
+    target_api = int(target.api_fixture_id) if target.api_fixture_id is not None else None
+    comp_id = int(target.competition_id) if target.competition_id is not None else None
+
+    profiles = parse_xg_profiles(today_row)
+    home_xg_for = profile_team_avg(profiles, "home", "xg_for_avg")
+    away_xg_for = profile_team_avg(profiles, "away", "xg_for_avg")
+    home_xg_against = profile_team_avg(profiles, "home", "xg_against_avg")
+    away_xg_against = profile_team_avg(profiles, "away", "xg_against_avg")
+    cutoff = parse_iso(xg_cutoff_iso(profiles))
+    if profiles and cutoff is not None and target_ko is not None and not kickoffs_within_one_minute(cutoff, target_ko):
+        meta["cutoff_mismatch"] = True
+        meta["xg_source"] = "snapshot_cutoff_mismatch"
+        home_xg_for = away_xg_for = home_xg_against = away_xg_against = None
+    elif any(v is not None for v in (home_xg_for, away_xg_for, home_xg_against, away_xg_against)):
+        meta["xg_source"] = "today_snapshot"
+
+    if meta["xg_source"] in ("missing", "snapshot_cutoff_mismatch") and not meta["cutoff_mismatch"]:
+        home_xg_for, home_xg_against = xg_avg_from_index(
+            indexes.xg_by_comp_team,
+            competition_id=comp_id,
+            team_id=hid,
+            target_ko=target_ko,
+            target_id=target_id,
+            target_api=target_api,
+        )
+        away_xg_for, away_xg_against = xg_avg_from_index(
+            indexes.xg_by_comp_team,
+            competition_id=comp_id,
+            team_id=aid,
+            target_ko=target_ko,
+            target_id=target_id,
+            target_api=target_api,
+        )
+        if any(v is not None for v in (home_xg_for, away_xg_for, home_xg_against, away_xg_against)):
+            meta["xg_source"] = "fixture_team_stats"
+
+    features["home_xg_for_avg"] = home_xg_for
+    features["away_xg_for_avg"] = away_xg_for
+    features["home_xg_against_avg"] = home_xg_against
+    features["away_xg_against_avg"] = away_xg_against
+    if home_xg_for is not None and away_xg_for is not None:
+        features["pair_xg_for_avg"] = round((home_xg_for + away_xg_for) / 2.0, 6)
+    if home_xg_against is not None and away_xg_against is not None:
+        features["pair_xg_against_avg"] = round((home_xg_against + away_xg_against) / 2.0, 6)
+
+    home_prior, home_cur, home_fut, home_max, home_ids = priors_for_team_from_index(
+        indexes.fixtures_by_comp_team,
+        competition_id=comp_id,
+        team_id=hid,
+        target_ko=target_ko,
+        target_id=target_id,
+        target_api=target_api,
+    )
+    away_prior, away_cur, away_fut, away_max, away_ids = priors_for_team_from_index(
+        indexes.fixtures_by_comp_team,
+        competition_id=comp_id,
+        team_id=aid,
+        target_ko=target_ko,
+        target_id=target_id,
+        target_api=target_api,
+    )
+    meta["current_fixture_included"] = home_cur or away_cur
+    meta["future_fixture_included"] = home_fut or away_fut
+    meta["source_fixture_ids"] = list(dict.fromkeys(home_ids + away_ids))
+    meta["sample_size"] = len(set(meta["source_fixture_ids"]))
+    for mk in (home_max, away_max):
+        if mk is not None and (meta["max_source_kickoff"] is None or mk > str(meta["max_source_kickoff"])):
+            meta["max_source_kickoff"] = mk
+
+    _fill_goal_features(features, home_prior, away_prior, hid, aid)
+    return features, meta
+
+
+def _fill_goal_features(
+    features: dict[str, float | None],
+    home_prior: list[Fixture],
+    away_prior: list[Fixture],
+    hid: int,
+    aid: int,
+) -> None:
     home_scored = team_goal_series(home_prior, hid)
     away_scored = team_goal_series(away_prior, aid)
     home_conc = team_conceded_series(home_prior, hid)
@@ -641,8 +768,6 @@ def extract_features_for_local_fixture(
     r10 = features["pair_goals_scored_rolling_10"]
     if r5 is not None and r10 is not None:
         features["goals_rolling_5_vs_10_delta"] = round(r5 - r10, 6)
-
-    return features, meta
 
 
 def append_debug_sample(

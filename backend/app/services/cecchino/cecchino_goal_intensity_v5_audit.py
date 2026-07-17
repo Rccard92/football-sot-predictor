@@ -1,7 +1,8 @@
-"""Audit storico Intensità Goal v5 — Fase 1A.2 (Fixture kickoff, read-only)."""
+"""Audit storico Intensità Goal v5 — Fase 1A.3 (preload indici, loop DB-free)."""
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
 from datetime import date
@@ -24,21 +25,23 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     dedupe_local_fixtures,
     descriptive_stats,
     empty_pillar_coverage,
-    extract_features_for_local_fixture,
+    extract_features_from_indexes,
     finished_local_fixtures_in_kickoff_range,
     load_today_snapshots_for_fixtures,
-    match_today_snapshot,
+    match_today_snapshot_indexed,
     month_key_from_dt,
     months_in_range,
     pct,
     primary_keys_for_pillar,
-    resolve_country,
-    resolve_team_names,
     sanitize_exception_message,
 )
+from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import preload_audit_indexes
 from app.services.datetime_utils import ensure_datetime_utc, safe_isoformat
 
-VERSION = "cecchino_goal_intensity_v5_audit_v1_1"
+logger = logging.getLogger(__name__)
+
+VERSION = "cecchino_goal_intensity_v5_audit_v1_2"
+_PROGRESS_EVERY = 500
 
 
 def build_goal_intensity_v5_audit(
@@ -51,6 +54,7 @@ def build_goal_intensity_v5_audit(
     t0 = time.perf_counter()
     warnings: list[str] = []
 
+    t_cohort = time.perf_counter()
     raw_fixtures = finished_local_fixtures_in_kickoff_range(
         db,
         date_from=date_from,
@@ -58,8 +62,15 @@ def build_goal_intensity_v5_audit(
         competition_id=competition_id,
     )
     fixtures, duplicates_removed = dedupe_local_fixtures(raw_fixtures)
+    cohort_ms = round((time.perf_counter() - t_cohort) * 1000.0, 2)
 
+    t_today = time.perf_counter()
     today_candidates = load_today_snapshots_for_fixtures(db, fixtures)
+    today_load_ms = round((time.perf_counter() - t_today) * 1000.0, 2)
+
+    t_preload = time.perf_counter()
+    indexes = preload_audit_indexes(db, fixtures, today_candidates)
+    preload_ms = round((time.perf_counter() - t_preload) * 1000.0, 2)
 
     anti: dict[str, Any] = {
         "rows_checked": 0,
@@ -105,7 +116,10 @@ def build_goal_intensity_v5_audit(
     countries: set[str] = set()
     by_month: dict[str, int] = defaultdict(int)
 
-    for local in fixtures:
+    t_calc = time.perf_counter()
+    total_targets = len(fixtures)
+
+    for i, local in enumerate(fixtures, start=1):
         anti["rows_checked"] += 1
         lid = int(local.id)
         api_id = int(local.api_fixture_id) if local.api_fixture_id is not None else None
@@ -162,7 +176,11 @@ def build_goal_intensity_v5_audit(
         if gh > 0 and ga > 0:
             target_btts += 1
 
-        today_row = match_today_snapshot(local, today_candidates)
+        today_row = match_today_snapshot_indexed(
+            local,
+            indexes.today_by_local_fixture_id,
+            indexes.today_by_provider_fixture_id,
+        )
         today_id = int(today_row.id) if today_row is not None else None
         if today_row is None:
             today_snapshots_missing += 1
@@ -171,13 +189,13 @@ def build_goal_intensity_v5_audit(
             today_snapshots_matched += 1
             today_snapshot_status = "matched"
 
-        # Identity: only when Today present; keyword-only
         identity_status = "identity_not_available"
         identity_mismatch = False
         identity_check_error = False
         if today_row is not None:
             try:
-                home_name, away_name = resolve_team_names(db, local)
+                home_name = indexes.team_name_by_id.get(int(local.home_team_id))
+                away_name = indexes.team_name_by_id.get(int(local.away_team_id))
                 output = today_row.cecchino_output_json if isinstance(today_row.cecchino_output_json, dict) else None
                 ege = None
                 if isinstance(output, dict):
@@ -212,7 +230,7 @@ def build_goal_intensity_v5_audit(
                     exception_message=sanitize_exception_message(exc),
                 )
 
-        features, leak_meta = extract_features_for_local_fixture(db, local, today_row)
+        features, leak_meta = extract_features_from_indexes(local, today_row, indexes)
 
         failed = False
         if identity_mismatch:
@@ -275,22 +293,23 @@ def build_goal_intensity_v5_audit(
         elif xg_src == "fixture_team_stats":
             anti["xg_from_fixture_team_stats"] += 1
         elif xg_src == "snapshot_cutoff_mismatch":
-            pass  # already counted
+            pass
         else:
             anti["xg_missing"] += 1
 
         if failed:
             anti["rows_failed"] += 1
+            if i % _PROGRESS_EVERY == 0 or i == total_targets:
+                _log_progress(i, total_targets, t_calc)
             continue
 
-        # Feature-safe even without Today identity
         anti["rows_passed"] += 1
         anti["row_feature_safe"] += 1
 
         comp_id = int(local.competition_id) if local.competition_id is not None else None
         if comp_id is not None:
             competitions.add(comp_id)
-        cname = resolve_country(db, comp_id)
+        cname = indexes.country_by_competition_id.get(comp_id) if comp_id is not None else None
         if not cname and today_row is not None and getattr(today_row, "country_name", None):
             cname = str(today_row.country_name)
         if cname:
@@ -317,6 +336,11 @@ def build_goal_intensity_v5_audit(
             else:
                 feature_available[key] += 1
                 feature_values[key].append(float(val))
+
+        if i % _PROGRESS_EVERY == 0 or i == total_targets:
+            _log_progress(i, total_targets, t_calc)
+
+    calculation_ms = round((time.perf_counter() - t_calc) * 1000.0, 2)
 
     rows_safe = len(safe_rows_meta)
     if anti["rows_checked"] == 0:
@@ -366,7 +390,6 @@ def build_goal_intensity_v5_audit(
             }
         )
 
-    # Temporal: include empty months in requested range
     temporal_distribution: dict[str, Any] = {}
     for mk in months_in_range(date_from, date_to):
         count = by_month.get(mk, 0)
@@ -509,7 +532,6 @@ def build_goal_intensity_v5_audit(
             "btts_ft_rate_pct": pct(target_btts, target_total_goals_available),
             "note": "I target diagnostici non sono output del modulo Intensità.",
         },
-        # retrocompatibilità chiavi 1A
         "rows_raw": len(raw_fixtures),
         "rows_deduped": len(fixtures),
         "finished_fixtures": len(fixtures),
@@ -517,6 +539,8 @@ def build_goal_intensity_v5_audit(
     }
 
     elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+    rows_processed = anti["rows_checked"]
+    fixtures_per_second = round(rows_processed / (elapsed_ms / 1000.0), 2) if elapsed_ms > 0 else None
 
     return {
         "status": "ok",
@@ -577,5 +601,36 @@ def build_goal_intensity_v5_audit(
             "history_feature_max_coverage_pct": max(history_cov) if history_cov else 0.0,
         },
         "warnings": warnings,
-        "performance": {"elapsed_ms": elapsed_ms, "rows_processed": anti["rows_checked"]},
+        "performance": {
+            "elapsed_ms": elapsed_ms,
+            "rows_processed": rows_processed,
+            "calculation_ms": calculation_ms,
+            "fixtures_per_second": fixtures_per_second,
+            "db_query_phases": {
+                "cohort_ms": cohort_ms,
+                "today_load_ms": today_load_ms,
+                "preload_ms": preload_ms,
+                **indexes.timings_ms,
+            },
+            "index_sizes": {
+                "history_index_teams": indexes.history_index_teams,
+                "today_index_local_keys": indexes.today_index_local_keys,
+                "today_index_provider_keys": indexes.today_index_provider_keys,
+                "xg_index_teams": indexes.xg_index_teams,
+                "team_names": len(indexes.team_name_by_id),
+                "countries": len(indexes.country_by_competition_id),
+            },
+        },
     }
+
+
+def _log_progress(done: int, total: int, t_calc_start: float) -> None:
+    elapsed = max(time.perf_counter() - t_calc_start, 1e-9)
+    rate = done / elapsed
+    logger.info(
+        "goal_intensity_v5_audit progress elaborated=%s total=%s elapsed_s=%.1f rate=%.1f/s",
+        done,
+        total,
+        elapsed,
+        rate,
+    )

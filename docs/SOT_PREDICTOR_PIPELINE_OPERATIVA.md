@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Audit Fase 1A.3 (2026-07-17)
+
+1. Lab: `/cecchino/ricerca-intensita-goal` (banner range da availability)
+2. `GET /api/admin/cecchino/research/goal-intensity-v5/availability`
+3. `POST /api/admin/cecchino/research/goal-intensity-v5/audit` (v1_2, preload; timeout 180s)
+4. Export JSON/CSV; v4 invariata
+
 ## Intensità Goal v5 Research — Audit Fase 1A.2 (2026-07-17)
 
 Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su goal history; banner se audit non utilizzabile.
