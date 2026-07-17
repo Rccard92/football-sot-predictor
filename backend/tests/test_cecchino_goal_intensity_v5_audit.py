@@ -105,7 +105,7 @@ def _priors_home_away():
     return home, away
 
 
-def _audit(rows: list, *, local=None, identity=None, priors=None, patch_identity=True):
+def _audit(rows: list, *, local=None, identity=None, priors=None, patch_identity=True, identity_error=None):
     db = MagicMock()
     db.scalars.return_value.all.return_value = rows
     loc = local if local is not None else _local()
@@ -127,12 +127,20 @@ def _audit(rows: list, *, local=None, identity=None, priors=None, patch_identity
         ),
     ]
     if patch_identity:
-        patches.append(
-            patch(
-                "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_fixture_identity_consistency",
-                return_value=identity_payload,
+        if identity_error is not None:
+            patches.append(
+                patch(
+                    "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_fixture_identity_consistency",
+                    side_effect=identity_error,
+                )
             )
-        )
+        else:
+            patches.append(
+                patch(
+                    "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_fixture_identity_consistency",
+                    return_value=identity_payload,
+                )
+            )
 
     with patches[0]:
         if len(patches) > 1:
@@ -195,6 +203,7 @@ def test_anti_leakage_block_shape():
         "rows_passed",
         "rows_failed",
         "fixture_identity_mismatch",
+        "identity_check_errors",
         "cutoff_mismatch",
         "current_fixture_included",
         "future_fixture_included",
@@ -203,6 +212,7 @@ def test_anti_leakage_block_shape():
         assert key in anti
     assert anti["rows_passed"] == 1
     assert anti["rows_failed"] == 0
+    assert anti["identity_check_errors"] == 0
 
 
 def test_target_fixture_excluded_from_priors():
@@ -237,6 +247,22 @@ def test_identity_mismatch_excluded():
     assert payload["anti_leakage"]["fixture_identity_mismatch"] == 1
     assert payload["anti_leakage"]["rows_failed"] == 1
     assert payload["dataset_summary"]["leakage_safe_rows"] == 0
+
+
+def test_identity_check_exception_fail_closed():
+    payload, db = _audit([_row()], identity_error=RuntimeError("identity boom"))
+    anti = payload["anti_leakage"]
+    assert anti["rows_checked"] == 1
+    assert anti["rows_failed"] == 1
+    assert anti["rows_passed"] == 0
+    assert anti["identity_check_errors"] == 1
+    assert anti["fixture_identity_mismatch"] == 0
+    assert "fixture_identity_check_failed" in anti["warnings"]
+    assert payload["dataset_summary"]["leakage_safe_rows"] == 0
+    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 0
+    assert payload["current_v4_inventory"]["production_unchanged"] is True
+    db.commit.assert_not_called()
+    db.add.assert_not_called()
 
 
 def test_cutoff_xg_mismatch_excluded():

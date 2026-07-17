@@ -61,6 +61,7 @@ def build_goal_intensity_v5_audit(
         "rows_passed": 0,
         "rows_failed": 0,
         "fixture_identity_mismatch": 0,
+        "identity_check_errors": 0,
         "cutoff_mismatch": 0,
         "current_fixture_included": 0,
         "future_fixture_included": 0,
@@ -112,15 +113,16 @@ def build_goal_intensity_v5_audit(
         if gh > 0 and ga > 0:
             target_btts += 1
 
-        # Identity check (read-only)
+        # Identity check (read-only, fail-closed su eccezione)
         identity_mismatch = False
+        identity_check_error = False
         if local is not None:
             try:
                 identity = build_fixture_identity_consistency(row, local)
                 if identity.get("status") == "inconsistent":
                     identity_mismatch = True
             except Exception:
-                identity_mismatch = False
+                identity_check_error = True
 
         features, leak_meta, _priors = extract_row_features(db, row, local)
 
@@ -128,6 +130,11 @@ def build_goal_intensity_v5_audit(
         failed = False
         if identity_mismatch:
             anti["fixture_identity_mismatch"] += 1
+            failed = True
+        if identity_check_error:
+            anti["identity_check_errors"] += 1
+            if "fixture_identity_check_failed" not in anti["warnings"]:
+                anti["warnings"].append("fixture_identity_check_failed")
             failed = True
         if leak_meta.get("cutoff_mismatch"):
             anti["cutoff_mismatch"] += 1
