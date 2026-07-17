@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Export JSON analisi statistica (2026-07-17)
+
+- Dopo `POST .../statistical-analysis`, lo stato hook `lastAnalysis` è scaricabile dal tab Analisi statistica.
+- Completo: Blob UTF-8 del payload response invariato; filename `cecchino_draw_credibility_statistics_<version>_<from>_<to>.json`.
+- Sezione: wrapper con `data` = chiave payload scelta; filename `cecchino_draw_credibility_<section>_<from>_<to>.json`.
+- Solo frontend; nessun ricalcolo server-side.
+
 ## Credibilità X Research — Correzione Pattern Market Fase 1C.2 (2026-07-15)
 
 - Matching pattern Market: boundaries Primary salvate nel pattern; `matches_candidate_pattern` senza ricalcolo.

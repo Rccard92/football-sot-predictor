@@ -27,6 +27,7 @@ import { DrawCredibilityCandidatePatternsPanel } from '../components/cecchino-dr
 import { DrawCredibilityFeatureDetailPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityFeatureDetailPanel'
 import { DrawCredibilityFeatureLeaderboardTable } from '../components/cecchino-draw-credibility-research/DrawCredibilityFeatureLeaderboardTable'
 import { DrawCredibilityInteractionPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityInteractionPanel'
+import { DrawCredibilityJsonExportPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityJsonExportPanel'
 import { DrawCredibilityLeagueStabilityPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityLeagueStabilityPanel'
 import { DrawCredibilityMarketAnalysisPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityMarketAnalysisPanel'
 import { DrawCredibilityProbabilityCalibrationPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityProbabilityCalibrationPanel'
@@ -207,6 +208,11 @@ export function RicercaCredibilitaXPage() {
             onMinGroupSizeChange={statisticsHook.setMinGroupSize}
             onBootstrapIterationsChange={statisticsHook.setBootstrapIterations}
             onRunAnalysis={() => void statisticsHook.runAnalysis()}
+          />
+
+          <DrawCredibilityJsonExportPanel
+            analysis={statisticsHook.lastAnalysis}
+            lastExecutedAt={statisticsHook.lastExecutedAt}
           />
 
           {statisticsHook.error ? (

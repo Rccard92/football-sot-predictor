@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Credibilità X Research — Export JSON analisi statistica (2026-07-17)
+
+Export frontend del payload statistico (`lastAnalysis`) completo o per sezione, senza trasformazione. Helper `downloadJsonFile.ts` + pannello nel tab Analisi statistica. Nessun impatto produttivo.
+
 ## Credibilità X Research — Correzione Pattern Market Fase 1C.2 (2026-07-15)
 
 Propagazione boundaries Primary → ROI pattern Market, metadati strutturati, celle soppresse, semantica conteggio leghe. Versione `cecchino_draw_credibility_statistics_v1_2`. Pronto per Fase 1D esplorativa.

@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Credibilità X Research — Export JSON analisi statistica (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| UI | Pannello Export JSON nel tab Analisi statistica |
+| Completo | `lastAnalysis` serializzato senza trasformazione |
+| Sezione | Wrapper con `exported_section` + `data` per riferimento |
+| Helper | `frontend/src/lib/downloadJsonFile.ts` |
+| Produttivo | invariato |
+
 ## Credibilità X Research — Correzione Pattern Market Fase 1C.2 (2026-07-15)
 
 | Aspetto | Dettaglio |

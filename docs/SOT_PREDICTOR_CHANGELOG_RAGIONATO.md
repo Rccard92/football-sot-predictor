@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Export JSON analisi statistica (2026-07-17)
+
+- Tab Analisi statistica: pannello **Export JSON** subito dopo i filtri (`DrawCredibilityJsonExportPanel`).
+- Download completo = serializzazione esatta di `lastAnalysis` (`JSON.stringify(..., null, 2)`), senza ricostruzione/filtro campi.
+- Download sezione = wrapper `status` / `version` / `filters` / `exported_section` / `exported_at` / `data` (riferimento sezione originale).
+- Helper riusabile `frontend/src/lib/downloadJsonFile.ts`; hook espone `lastExecutedAt`.
+- Test unitari filename/round-trip/wrapper/errore ciclico in `downloadJsonFile.test.ts` (Vitest non è nello script npm del frontend; file pronto senza nuove dipendenze); verifica UI download/revokeObjectURL manuale in browser.
+- Nessuna modifica backend, coorti, formule produttive o dipendenze.
+
 ## Credibilità X Research — Correzione Pattern Market Fase 1C.2 (2026-07-15)
 
 - ROI candidate pattern: soglie Primary propagate (niente ricalcolo quantile sul Market); matching strutturato via `matches_candidate_pattern` (no parsing description).

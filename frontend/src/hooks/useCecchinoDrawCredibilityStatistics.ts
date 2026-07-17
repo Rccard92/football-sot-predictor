@@ -18,6 +18,7 @@ export function useCecchinoDrawCredibilityStatistics(shared: SharedFilters) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastAnalysis, setLastAnalysis] = useState<DrawCredibilityStatisticsResponse | null>(null)
+  const [lastExecutedAt, setLastExecutedAt] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const parseCompetitionId = useCallback(() => {
@@ -29,6 +30,7 @@ export function useCecchinoDrawCredibilityStatistics(shared: SharedFilters) {
     abortRef.current?.abort()
     abortRef.current = null
     setLastAnalysis(null)
+    setLastExecutedAt(null)
     setError(null)
   }, [])
 
@@ -51,10 +53,12 @@ export function useCecchinoDrawCredibilityStatistics(shared: SharedFilters) {
         { signal: controller.signal },
       )
       setLastAnalysis(result)
+      setLastExecutedAt(new Date().toISOString())
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       setError(formatFetchError(err))
       setLastAnalysis(null)
+      setLastExecutedAt(null)
     } finally {
       if (abortRef.current === controller) {
         setLoading(false)
@@ -77,6 +81,7 @@ export function useCecchinoDrawCredibilityStatistics(shared: SharedFilters) {
     loading,
     error,
     lastAnalysis,
+    lastExecutedAt,
     setBinCount,
     setMinGroupSize,
     setBootstrapIterations,
