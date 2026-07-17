@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Identity storica + qualità (2026-07-17)
+
+1. Lab: verificare banner quality + feature-safe rate
+2. Audit su 2026-07-01→03: identity statica verified, no mismatch massivi status/score
+3. `audit_usable` solo se `audit_quality=usable` (rate ≥70%)
+
 ## Intensità Goal v5 Research — Audit Fase 1A.3 (2026-07-17)
 
 1. Lab: `/cecchino/ricerca-intensita-goal` (banner range da availability)

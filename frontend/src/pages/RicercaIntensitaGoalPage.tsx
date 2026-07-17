@@ -7,6 +7,7 @@ import {
   buildGoalIntensityFeatureInventoryCsvFilename,
   featureInventoryToCsv,
   fetchGoalIntensityV5Availability,
+  isGoalIntensityAuditDegraded,
   isGoalIntensityAuditUnusable,
   type GoalIntensityV5AuditResponse,
   type GoalIntensityV5AvailabilityResponse,
@@ -58,6 +59,7 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
   const anti = audit.anti_leakage ?? {}
   const rec = audit.implementation_recommendation ?? {}
   const unusable = isGoalIntensityAuditUnusable(audit)
+  const degraded = isGoalIntensityAuditDegraded(audit)
   const temporal = (summary.temporal_distribution ?? {}) as Record<string, unknown>
   const exclusionReasons = audit.exclusion_reasons ?? {}
   const debugSamples = audit.debug_samples ?? {}
@@ -69,7 +71,23 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
           role="alert"
           className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-950"
         >
-          Audit non utilizzabile: correggere la pipeline dati prima della Fase 1B.
+          Audit non utilizzabile (quality=unusable
+          {summary.feature_safe_rate_pct != null
+            ? `; feature-safe ${String(summary.feature_safe_rate_pct)}%`
+            : ''}
+          ): correggere la pipeline dati prima della Fase 1B.
+        </p>
+      ) : null}
+      {!unusable && degraded ? (
+        <p
+          role="status"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+        >
+          Audit degradato (quality=degraded
+          {summary.feature_safe_rate_pct != null
+            ? `; feature-safe ${String(summary.feature_safe_rate_pct)}%`
+            : ''}
+          ): risultati parziali, usare con cautela.
         </p>
       ) : null}
 
@@ -122,10 +140,15 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
         <Kv label="Snapshot Today associati" value={summary.today_snapshots_matched} />
         <Kv label="Snapshot Today mancanti" value={summary.today_snapshots_missing} />
         <Kv label="Righe feature-safe" value={summary.row_feature_safe ?? summary.leakage_safe_rows} />
-        <Kv label="Campionati" value={summary.competitions} />
+        <Kv label="Feature-safe rate %" value={summary.feature_safe_rate_pct} />
+        <Kv label="Audit quality" value={summary.audit_quality} />
+        <Kv label="Targets FT" value={summary.targets_all_finished} />
+        <Kv label="Targets feature-safe" value={summary.targets_feature_safe} />
+        <Kv label="Competizioni" value={summary.competitions} />
         <Kv label="Paesi" value={summary.countries} />
         <Kv label="Sample size medio" value={summary.sample_size_mean} />
-        <Kv label="Base coorte" value={summary.cohort_basis} />
+        <Kv label="Audit usable" value={summary.audit_usable ? 'sì' : 'no'} />
+        <Kv label="Coorte" value={summary.cohort_basis} />
         <div className="mt-2">
           <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
             Distribuzione mensile (kickoff)

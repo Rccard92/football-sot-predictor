@@ -26,6 +26,7 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import (
     priors_for_team_from_index,
     xg_avg_from_index,
 )
+from app.services.cecchino.cecchino_today_odds_meta import read_odds_meta
 from app.services.datetime_utils import ensure_datetime_utc
 
 if TYPE_CHECKING:
@@ -223,24 +224,57 @@ def load_today_snapshots_for_fixtures(
     return list(db.scalars(select(CecchinoTodayFixture).where(or_(*clauses))).all())
 
 
+def _as_utc_dt(raw: Any, *, field_name: str) -> datetime | None:
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return ensure_datetime_utc(raw, field_name=field_name)
+    return parse_iso(raw)
+
+
 def _snapshot_pre_kickoff_score(row: CecchinoTodayFixture, target_ko: datetime) -> datetime | None:
-    """Timestamp usato per scegliere lo snapshot più recente ma ≤ kickoff."""
+    """Timestamp di acquisizione snapshot più recente ma ≤ kickoff.
+
+    Non usa row.kickoff (orario gara) né updated_at da solo (può essere post-match).
+    Ordine candidati: meta esplicita odds → created_at → odds_checked_at → scan_date.
+    """
     candidates: list[datetime] = []
-    for attr in ("kickoff", "created_at", "updated_at"):
-        raw = getattr(row, attr, None)
-        dt = ensure_datetime_utc(raw, field_name=attr) if isinstance(raw, datetime) else None
-        if dt is None and attr == "kickoff" and raw is not None:
-            dt = parse_iso(raw)
+
+    odds_snap = getattr(row, "odds_snapshot_json", None)
+    meta = read_odds_meta(odds_snap if isinstance(odds_snap, dict) else None)
+    for key in ("odds_fetched_at", "odds_cached_at", "last_betfair_refresh_at"):
+        dt = _as_utc_dt(meta.get(key), field_name=key)
         if dt is not None and dt <= target_ko:
             candidates.append(dt)
+
+    created = _as_utc_dt(getattr(row, "created_at", None), field_name="created_at")
+    if created is not None and created <= target_ko:
+        candidates.append(created)
+
+    odds_checked = _as_utc_dt(getattr(row, "odds_checked_at", None), field_name="odds_checked_at")
+    if odds_checked is not None and odds_checked <= target_ko:
+        candidates.append(odds_checked)
+
     scan = getattr(row, "scan_date", None)
     if isinstance(scan, date):
         scan_dt = datetime(scan.year, scan.month, scan.day, tzinfo=timezone.utc)
         if scan_dt <= target_ko:
             candidates.append(scan_dt)
+
     if not candidates:
         return None
     return max(candidates)
+
+
+def snapshot_time_status(
+    row: CecchinoTodayFixture | None,
+    target_ko: datetime | None,
+) -> str:
+    if row is None or target_ko is None:
+        return "snapshot_time_unknown"
+    if _snapshot_pre_kickoff_score(row, target_ko) is None:
+        return "snapshot_time_unknown"
+    return "snapshot_time_verified"
 
 
 def match_today_snapshot(
@@ -367,6 +401,85 @@ def xg_cutoff_iso(profiles: dict[str, Any]) -> str | None:
             if isinstance(a, dict) and a.get("fixture_date_cutoff"):
                 return str(a["fixture_date_cutoff"])
     return None
+
+
+def _xg_anti_leakage_blocks(profiles: dict[str, Any]) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    top = profiles.get("anti_leakage")
+    if isinstance(top, dict):
+        blocks.append(top)
+    for side in ("home", "away", "home_profile", "away_profile", "home_team", "away_team"):
+        block = profiles.get(side)
+        if isinstance(block, dict):
+            a = block.get("anti_leakage")
+            if isinstance(a, dict):
+                blocks.append(a)
+    return blocks
+
+
+def evaluate_xg_snapshot_anti_leakage(
+    profiles: dict[str, Any],
+    *,
+    target_ko: datetime | None,
+    target_api: int | None,
+) -> dict[str, Any]:
+    """Gate per usare xg_profiles_json. cutoff mismatch = hard; altri fail = soft (fallback stats)."""
+    result: dict[str, Any] = {
+        "usable": False,
+        "cutoff_mismatch": False,
+        "xg_anti_leakage_verified": False,
+        "reasons": [],
+    }
+    if not profiles:
+        result["reasons"].append("missing_xg_profiles")
+        return result
+
+    blocks = _xg_anti_leakage_blocks(profiles)
+    if not blocks:
+        result["reasons"].append("missing_anti_leakage")
+        return result
+
+    cutoff_raw = xg_cutoff_iso(profiles)
+    cutoff = parse_iso(cutoff_raw)
+    if cutoff is None:
+        result["reasons"].append("missing_fixture_date_cutoff")
+        return result
+    if target_ko is None or not kickoffs_within_one_minute(cutoff, target_ko):
+        result["cutoff_mismatch"] = True
+        result["reasons"].append("fixture_date_cutoff_mismatch")
+        return result
+
+    excluded_flags = [b.get("current_fixture_excluded") for b in blocks if "current_fixture_excluded" in b]
+    if not excluded_flags or not all(bool(v) is True for v in excluded_flags):
+        result["reasons"].append("current_fixture_not_excluded")
+        return result
+
+    for b in blocks:
+        if "future_fixture_included" in b and bool(b.get("future_fixture_included")):
+            result["reasons"].append("future_fixture_included_in_xg")
+            return result
+        if "future_fixtures_included" in b and bool(b.get("future_fixtures_included")):
+            result["reasons"].append("future_fixture_included_in_xg")
+            return result
+
+    if target_api is not None:
+        for b in blocks:
+            excl = b.get("excluded_provider_fixture_ids") or b.get("excluded_provider_fixture_id")
+            if excl is None:
+                continue
+            if isinstance(excl, (list, tuple, set)):
+                ids = {int(x) for x in excl if x is not None}
+                if target_api not in ids:
+                    result["reasons"].append("provider_fixture_target_not_excluded")
+                    return result
+            else:
+                if int(excl) != target_api:
+                    result["reasons"].append("provider_fixture_target_not_excluded")
+                    return result
+
+    result["usable"] = True
+    result["xg_anti_leakage_verified"] = True
+    return result
 
 
 def kickoffs_within_one_minute(a: datetime | None, b: datetime | None) -> bool:
@@ -521,6 +634,7 @@ def extract_features_for_local_fixture(
         "max_source_kickoff": None,
         "source_fixture_ids": [],
         "xg_source": "missing",
+        "xg_anti_leakage_verified": False,
         "sample_size": 0,
     }
 
@@ -530,21 +644,27 @@ def extract_features_for_local_fixture(
     target_id = int(target.id)
     target_api = int(target.api_fixture_id) if target.api_fixture_id is not None else None
 
-    # --- xG: snapshot Today first ---
+    # --- xG: snapshot Today first (stesso gate anti-leakage del path indici) ---
     profiles = parse_xg_profiles(today_row)
     home_xg_for = profile_team_avg(profiles, "home", "xg_for_avg")
     away_xg_for = profile_team_avg(profiles, "away", "xg_for_avg")
     home_xg_against = profile_team_avg(profiles, "home", "xg_against_avg")
     away_xg_against = profile_team_avg(profiles, "away", "xg_against_avg")
-    cutoff = parse_iso(xg_cutoff_iso(profiles))
-    if profiles and cutoff is not None and target_ko is not None and not kickoffs_within_one_minute(cutoff, target_ko):
-        meta["cutoff_mismatch"] = True
-        meta["xg_source"] = "snapshot_cutoff_mismatch"
-        home_xg_for = away_xg_for = home_xg_against = away_xg_against = None
-    elif any(v is not None for v in (home_xg_for, away_xg_for, home_xg_against, away_xg_against)):
-        meta["xg_source"] = "today_snapshot"
+    has_xg_vals = any(v is not None for v in (home_xg_for, away_xg_for, home_xg_against, away_xg_against))
+    if profiles and has_xg_vals:
+        gate = evaluate_xg_snapshot_anti_leakage(profiles, target_ko=target_ko, target_api=target_api)
+        if gate["cutoff_mismatch"]:
+            meta["cutoff_mismatch"] = True
+            meta["xg_source"] = "snapshot_cutoff_mismatch"
+            home_xg_for = away_xg_for = home_xg_against = away_xg_against = None
+        elif gate["usable"]:
+            meta["xg_source"] = "today_snapshot"
+            meta["xg_anti_leakage_verified"] = True
+        else:
+            home_xg_for = away_xg_for = home_xg_against = away_xg_against = None
+            meta["xg_source"] = "missing"
 
-    if meta["xg_source"] in ("missing", "snapshot_cutoff_mismatch") and not meta["cutoff_mismatch"]:
+    if meta["xg_source"] == "missing" and not meta["cutoff_mismatch"]:
         # Fallback FixtureTeamStat via profile builder (DB-only, no API)
         try:
             home_prof = build_current_season_team_xg_profile(
@@ -618,6 +738,7 @@ def extract_features_from_indexes(
         "max_source_kickoff": None,
         "source_fixture_ids": [],
         "xg_source": "missing",
+        "xg_anti_leakage_verified": False,
         "sample_size": 0,
     }
 
@@ -633,15 +754,23 @@ def extract_features_from_indexes(
     away_xg_for = profile_team_avg(profiles, "away", "xg_for_avg")
     home_xg_against = profile_team_avg(profiles, "home", "xg_against_avg")
     away_xg_against = profile_team_avg(profiles, "away", "xg_against_avg")
-    cutoff = parse_iso(xg_cutoff_iso(profiles))
-    if profiles and cutoff is not None and target_ko is not None and not kickoffs_within_one_minute(cutoff, target_ko):
-        meta["cutoff_mismatch"] = True
-        meta["xg_source"] = "snapshot_cutoff_mismatch"
-        home_xg_for = away_xg_for = home_xg_against = away_xg_against = None
-    elif any(v is not None for v in (home_xg_for, away_xg_for, home_xg_against, away_xg_against)):
-        meta["xg_source"] = "today_snapshot"
+    has_xg_vals = any(v is not None for v in (home_xg_for, away_xg_for, home_xg_against, away_xg_against))
 
-    if meta["xg_source"] in ("missing", "snapshot_cutoff_mismatch") and not meta["cutoff_mismatch"]:
+    if profiles and has_xg_vals:
+        gate = evaluate_xg_snapshot_anti_leakage(profiles, target_ko=target_ko, target_api=target_api)
+        if gate["cutoff_mismatch"]:
+            meta["cutoff_mismatch"] = True
+            meta["xg_source"] = "snapshot_cutoff_mismatch"
+            home_xg_for = away_xg_for = home_xg_against = away_xg_against = None
+        elif gate["usable"]:
+            meta["xg_source"] = "today_snapshot"
+            meta["xg_anti_leakage_verified"] = True
+        else:
+            # soft fail: non usare snapshot; fallback stats sotto
+            home_xg_for = away_xg_for = home_xg_against = away_xg_against = None
+            meta["xg_source"] = "missing"
+
+    if meta["xg_source"] in ("missing",) and not meta["cutoff_mismatch"]:
         home_xg_for, home_xg_against = xg_avg_from_index(
             indexes.xg_by_comp_team,
             competition_id=comp_id,

@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Intensità Goal v5 Research — Identity storica + qualità (2026-07-17)
+
+Identity statica storica (no status/score bloccanti); gate xG anti-leakage; `audit_quality` usable/degraded/unusable; feature-safe rate. Versione `cecchino_goal_intensity_v5_audit_v1_3`.
+
 ## Intensità Goal v5 Research — Audit Fase 1A.3 (2026-07-17)
 
 Perf audit: preload indici Fixture/Today/Team/Competition/xG; loop DB-free; `GET .../availability`; versione `cecchino_goal_intensity_v5_audit_v1_2`. Timeout FE 180s invariato.

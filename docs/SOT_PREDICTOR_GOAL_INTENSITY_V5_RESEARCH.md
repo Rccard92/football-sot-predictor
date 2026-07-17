@@ -54,11 +54,11 @@ Per ogni riga: identity consistency, cutoff xG, esclusione fixture corrente/futu
 
 `POST /api/admin/cecchino/research/goal-intensity-v5/audit`
 
-Versione payload: `cecchino_goal_intensity_v5_audit_v1_2`
+Versione payload: `cecchino_goal_intensity_v5_audit_v1_3`
 
 ## Frontend
 
-`/cecchino/ricerca-intensita-goal` — laboratorio audit con export JSON/CSV; banner range dati locali; init filtri sul range reale.
+`/cecchino/ricerca-intensita-goal` — laboratorio audit con export JSON/CSV; banner range dati locali; init filtri sul range reale; quality usable/degraded/unusable.
 
 ## Roadmap
 
@@ -68,6 +68,7 @@ Versione payload: `cecchino_goal_intensity_v5_audit_v1_2`
 | **1A.1** | Identity fail-closed su eccezione |
 | **1A.2** | Coorte `Fixture.kickoff_at`, identity keyword-only, feature goal senza Today, xG snapshot/team_stats |
 | **1A.3** | Perf: preload indici in memoria, loop DB-free, availability, timeout 180s invariato |
+| **1A.3-fix** | Identity storica statica (no status/score bloccanti); gate xG; `audit_quality` + feature-safe rate |
 | **1B** | Dataset storico feature↔target |
 | **1C** | Analisi statistica / ridondanza / scelta stabilità |
 | **2A** | Preview UI a quattro pilastri (senza promuovere formula) |

@@ -78,6 +78,7 @@ export type GoalIntensityV5AuditResponse = {
 
 export function isGoalIntensityAuditUnusable(audit: GoalIntensityV5AuditResponse): boolean {
   const summary = audit.dataset_summary ?? {}
+  if (summary.audit_quality === 'unusable') return true
   if (summary.audit_usable === false) return true
   const anti = audit.anti_leakage ?? {}
   const identityErrors = Number(anti.identity_check_errors ?? 0)
@@ -90,7 +91,13 @@ export function isGoalIntensityAuditUnusable(audit: GoalIntensityV5AuditResponse
   const safeRows = Number(summary.leakage_safe_rows ?? 0)
   if (safeRows > 0 && sampleMean === 0) return true
   if (inventory.length > 0 && inventory.every((f) => Number(f.coverage_pct) === 0)) return true
+  const rate = Number(summary.feature_safe_rate_pct ?? -1)
+  if (rate >= 0 && rate < 20) return true
   return false
+}
+
+export function isGoalIntensityAuditDegraded(audit: GoalIntensityV5AuditResponse): boolean {
+  return (audit.dataset_summary ?? {}).audit_quality === 'degraded'
 }
 
 export function fetchGoalIntensityV5Availability(): Promise<GoalIntensityV5AvailabilityResponse> {

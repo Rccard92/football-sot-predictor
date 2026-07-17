@@ -10,7 +10,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.services.cecchino.cecchino_fixture_identity_consistency import build_fixture_identity_consistency
+from app.services.cecchino.cecchino_fixture_identity_consistency import (
+    build_historical_fixture_identity_consistency,
+)
 from app.services.cecchino.cecchino_goal_intensity_analysis import VERSION as V4_VERSION
 from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     EXCLUDED_ADVANCED,
@@ -34,14 +36,24 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     pct,
     primary_keys_for_pillar,
     sanitize_exception_message,
+    snapshot_time_status,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import preload_audit_indexes
 from app.services.datetime_utils import ensure_datetime_utc, safe_isoformat
 
 logger = logging.getLogger(__name__)
 
-VERSION = "cecchino_goal_intensity_v5_audit_v1_2"
+VERSION = "cecchino_goal_intensity_v5_audit_v1_3"
 _PROGRESS_EVERY = 500
+
+AUDIT_QUALITY_RULE = (
+    "feature_safe_rate_pct = pct(row_feature_safe, rows_checked); "
+    "unusable: rate<20% OR identity_check_errors>0 OR (fixtures>0 e competitions==0) "
+    "OR (safe>0 e coverage tutte 0); "
+    "usable: rate>=70% AND sample_size_mean>0 AND competitions>0 AND no identity_check_errors "
+    "AND non coverage tutte 0; "
+    "degraded: resto; audit_usable=(audit_quality==usable)"
+)
 
 
 def build_goal_intensity_v5_audit(
@@ -77,6 +89,13 @@ def build_goal_intensity_v5_audit(
         "rows_passed": 0,
         "rows_failed": 0,
         "row_feature_safe": 0,
+        "static_identity_verified": 0,
+        "static_identity_failed": 0,
+        "static_identity_unavailable": 0,
+        "snapshot_time_verified": 0,
+        "snapshot_time_unknown": 0,
+        "xg_anti_leakage_verified": 0,
+        # alias retrocompatibilità
         "identity_verified": 0,
         "identity_not_available": 0,
         "identity_failed": 0,
@@ -93,6 +112,20 @@ def build_goal_intensity_v5_audit(
         "xg_from_fixture_team_stats": 0,
         "xg_missing": 0,
         "xg_snapshot_cutoff_mismatch": 0,
+        "xg_source_all_checked": {
+            "today_snapshot": 0,
+            "fixture_team_stats": 0,
+            "missing": 0,
+            "snapshot_cutoff_mismatch": 0,
+        },
+        "xg_source_feature_safe": {
+            "today_snapshot": 0,
+            "fixture_team_stats": 0,
+            "missing": 0,
+            "snapshot_cutoff_mismatch": 0,
+        },
+        "targets_all_finished": 0,
+        "targets_feature_safe": 0,
         "warnings": [],
     }
 
@@ -169,6 +202,7 @@ def build_goal_intensity_v5_audit(
 
         gh, ga = int(local.goals_home), int(local.goals_away)
         target_total_goals_available += 1
+        anti["targets_all_finished"] += 1
         if gh + ga >= 2:
             target_ge2 += 1
         if gh + ga >= 3:
@@ -182,6 +216,12 @@ def build_goal_intensity_v5_audit(
             indexes.today_by_provider_fixture_id,
         )
         today_id = int(today_row.id) if today_row is not None else None
+        snap_status = snapshot_time_status(today_row, ko)
+        if snap_status == "snapshot_time_verified":
+            anti["snapshot_time_verified"] += 1
+        else:
+            anti["snapshot_time_unknown"] += 1
+
         if today_row is None:
             today_snapshots_missing += 1
             today_snapshot_status = "missing"
@@ -189,35 +229,41 @@ def build_goal_intensity_v5_audit(
             today_snapshots_matched += 1
             today_snapshot_status = "matched"
 
-        identity_status = "identity_not_available"
+        identity_status = "static_identity_unavailable"
         identity_mismatch = False
         identity_check_error = False
         if today_row is not None:
             try:
                 home_name = indexes.team_name_by_id.get(int(local.home_team_id))
                 away_name = indexes.team_name_by_id.get(int(local.away_team_id))
-                output = today_row.cecchino_output_json if isinstance(today_row.cecchino_output_json, dict) else None
-                ege = None
-                if isinstance(output, dict):
-                    maybe = output.get("expected_goal_engine_diagnostics")
-                    if isinstance(maybe, dict):
-                        ege = maybe
-                identity = build_fixture_identity_consistency(
+                identity = build_historical_fixture_identity_consistency(
                     today_row=today_row,
                     local_fixture=local,
-                    cecchino_output=output,
-                    expected_goal_diagnostics=ege,
                     local_home_team_name=home_name,
                     local_away_team_name=away_name,
                 )
-                if identity.get("status") == "inconsistent":
+                st = identity.get("status")
+                if st == "static_identity_failed":
                     identity_mismatch = True
-                    identity_status = "identity_failed"
+                    identity_status = "static_identity_failed"
+                elif st == "static_identity_verified":
+                    identity_status = "static_identity_verified"
                 else:
-                    identity_status = "identity_verified"
+                    identity_status = "static_identity_unavailable"
+                # Status/score diagnostici: non bloccanti
+                for w in identity.get("warnings") or []:
+                    if w in ("today_upcoming_vs_local_ft", "today_no_score_vs_local_score", "today_local_status_mismatch", "today_local_score_mismatch"):
+                        append_debug_sample(
+                            debug_samples,
+                            w,
+                            today_fixture_id=today_id,
+                            local_fixture_id=lid,
+                            provider_fixture_id=api_id,
+                            kickoff=ko_iso,
+                        )
             except Exception as exc:
                 identity_check_error = True
-                identity_status = "identity_failed"
+                identity_status = "static_identity_failed"
                 exclusion_reasons["identity_check_error"] += 1
                 append_debug_sample(
                     debug_samples,
@@ -234,6 +280,7 @@ def build_goal_intensity_v5_audit(
 
         failed = False
         if identity_mismatch:
+            anti["static_identity_failed"] += 1
             anti["fixture_identity_mismatch"] += 1
             anti["identity_failed"] += 1
             exclusion_reasons["identity_mismatch"] += 1
@@ -247,14 +294,17 @@ def build_goal_intensity_v5_audit(
             )
             failed = True
         elif identity_check_error:
+            anti["static_identity_failed"] += 1
             anti["identity_check_errors"] += 1
             anti["identity_failed"] += 1
             if "fixture_identity_check_failed" not in anti["warnings"]:
                 anti["warnings"].append("fixture_identity_check_failed")
             failed = True
-        elif identity_status == "identity_verified":
+        elif identity_status == "static_identity_verified":
+            anti["static_identity_verified"] += 1
             anti["identity_verified"] += 1
         else:
+            anti["static_identity_unavailable"] += 1
             anti["identity_not_available"] += 1
 
         if leak_meta.get("cutoff_mismatch"):
@@ -287,15 +337,21 @@ def build_goal_intensity_v5_audit(
             )
             failed = True
 
-        xg_src = leak_meta.get("xg_source")
+        xg_src = str(leak_meta.get("xg_source") or "missing")
         if xg_src == "today_snapshot":
             anti["xg_from_today_snapshot"] += 1
+            anti["xg_source_all_checked"]["today_snapshot"] += 1
         elif xg_src == "fixture_team_stats":
             anti["xg_from_fixture_team_stats"] += 1
+            anti["xg_source_all_checked"]["fixture_team_stats"] += 1
         elif xg_src == "snapshot_cutoff_mismatch":
-            pass
+            anti["xg_source_all_checked"]["snapshot_cutoff_mismatch"] += 1
         else:
             anti["xg_missing"] += 1
+            anti["xg_source_all_checked"]["missing"] += 1
+
+        if leak_meta.get("xg_anti_leakage_verified"):
+            anti["xg_anti_leakage_verified"] += 1
 
         if failed:
             anti["rows_failed"] += 1
@@ -305,6 +361,11 @@ def build_goal_intensity_v5_audit(
 
         anti["rows_passed"] += 1
         anti["row_feature_safe"] += 1
+        anti["targets_feature_safe"] += 1
+        if xg_src in anti["xg_source_feature_safe"]:
+            anti["xg_source_feature_safe"][xg_src] += 1
+        else:
+            anti["xg_source_feature_safe"]["missing"] += 1
 
         comp_id = int(local.competition_id) if local.competition_id is not None else None
         if comp_id is not None:
@@ -501,15 +562,30 @@ def build_goal_intensity_v5_audit(
         for f in feature_inventory
         if f["source_version"] == "fixture_history"
     ]
-    audit_usable = True
-    if rows_safe > 0 and all(f["coverage_pct"] == 0 for f in feature_inventory):
-        audit_usable = False
-    if len(fixtures) > 0 and len(competitions) == 0:
-        audit_usable = False
-    if rows_safe > 0 and overall_sample_mean == 0:
-        audit_usable = False
-    if anti["identity_check_errors"] > 0:
-        audit_usable = False
+    feature_safe_rate_pct = pct(anti["row_feature_safe"], anti["rows_checked"])
+    all_coverage_zero = rows_safe > 0 and all(f["coverage_pct"] == 0 for f in feature_inventory)
+    no_competitions = len(fixtures) > 0 and len(competitions) == 0
+    identity_errors = anti["identity_check_errors"] > 0
+
+    if (
+        feature_safe_rate_pct < 20.0
+        or identity_errors
+        or no_competitions
+        or all_coverage_zero
+    ):
+        audit_quality = "unusable"
+    elif (
+        feature_safe_rate_pct >= 70.0
+        and overall_sample_mean > 0
+        and len(competitions) > 0
+        and not identity_errors
+        and not all_coverage_zero
+    ):
+        audit_quality = "usable"
+    else:
+        audit_quality = "degraded"
+
+    audit_usable = audit_quality == "usable"
 
     dataset_summary = {
         "local_fixtures_raw": len(raw_fixtures),
@@ -519,12 +595,21 @@ def build_goal_intensity_v5_audit(
         "today_snapshots_missing": today_snapshots_missing,
         "leakage_safe_rows": rows_safe,
         "row_feature_safe": anti["row_feature_safe"],
+        "feature_safe_rate_pct": feature_safe_rate_pct,
+        "targets_all_finished": anti["targets_all_finished"],
+        "targets_feature_safe": anti["targets_feature_safe"],
         "competitions": len(competitions),
         "countries": len(countries),
         "temporal_distribution": temporal_distribution,
         "sample_size_mean": overall_sample_mean,
+        "audit_quality": audit_quality,
+        "audit_quality_rule": AUDIT_QUALITY_RULE,
         "audit_usable": audit_usable,
         "cohort_basis": "fixture_kickoff_at",
+        "cohort_notes": {
+            "targets": "Fixture FT con risultato nel range kickoff",
+            "features": "Solo righe row_feature_safe (identity statica + anti-leakage)",
+        },
         "targets": {
             "total_goals_ft_available": target_total_goals_available,
             "goals_ge_2_rate_pct": pct(target_ge2, target_total_goals_available),

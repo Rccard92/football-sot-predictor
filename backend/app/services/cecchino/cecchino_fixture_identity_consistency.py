@@ -361,3 +361,140 @@ def build_fixture_identity_consistency(
         "chronological_status_valid": chronological_status_valid,
         "warnings": warnings,
     }
+
+
+def build_historical_fixture_identity_consistency(
+    *,
+    today_row: CecchinoTodayFixture,
+    local_fixture: Fixture | None,
+    local_home_team_name: str | None = None,
+    local_away_team_name: str | None = None,
+) -> dict[str, Any]:
+    """Identity statica per audit storico: status/score solo diagnostici, non bloccanti.
+
+    Verifica: local_fixture_id, provider/api id, competition_id, home/away, kickoff UTC.
+    Today upcoming vs Local FT / Today senza score vs Local con risultato non sono mismatch.
+    """
+    warnings: list[str] = []
+    today_id = int(today_row.id)
+    today_local_id = int(today_row.local_fixture_id) if today_row.local_fixture_id else None
+    provider_id = int(today_row.provider_fixture_id) if today_row.provider_fixture_id is not None else None
+
+    today_ko = ensure_datetime_utc(today_row.kickoff, field_name="today.kickoff") if today_row.kickoff else None
+    today_ko_iso = safe_isoformat(today_ko, field_name="today.kickoff") if today_ko else None
+    today_status_raw = _norm_status(today_row.match_display_status, today_row.fixture_status)
+    today_gh, today_ga = _today_score(today_row)
+
+    if local_fixture is None:
+        warnings.append("missing_local_fixture")
+        return {
+            "status": "static_identity_unavailable",
+            "today_fixture_id": today_id,
+            "local_fixture_id": today_local_id,
+            "provider_fixture_id": provider_id,
+            "local_fixture_id_match": False,
+            "provider_match": False,
+            "competition_match": False,
+            "teams_match": False,
+            "kickoff_match": False,
+            "status_match": False,
+            "score_match": False,
+            "today_kickoff": today_ko_iso,
+            "local_fixture_kickoff": None,
+            "warnings": warnings,
+        }
+
+    local_ko = ensure_datetime_utc(local_fixture.kickoff_at, field_name="fixture.kickoff_at")
+    local_ko_iso = safe_isoformat(local_ko, field_name="fixture.kickoff_at") if local_ko else None
+    local_status_raw = _norm_status(local_fixture.status, getattr(local_fixture, "status_long", None))
+    local_gh = int(local_fixture.goals_home) if local_fixture.goals_home is not None else None
+    local_ga = int(local_fixture.goals_away) if local_fixture.goals_away is not None else None
+
+    local_fixture_id_match = today_local_id is not None and today_local_id == int(local_fixture.id)
+    if today_local_id is None:
+        warnings.append("missing_today_local_fixture_id")
+    elif not local_fixture_id_match:
+        warnings.append("local_fixture_id_mismatch")
+
+    provider_match = (
+        provider_id is not None
+        and local_fixture.api_fixture_id is not None
+        and int(local_fixture.api_fixture_id) == provider_id
+    )
+    if not provider_match:
+        warnings.append("provider_fixture_id_mismatch")
+
+    competition_match = (
+        today_row.competition_id is not None
+        and local_fixture.competition_id is not None
+        and int(today_row.competition_id) == int(local_fixture.competition_id)
+    )
+    if not competition_match:
+        warnings.append("competition_mismatch")
+
+    if local_home_team_name is None and local_away_team_name is None:
+        teams_match = True
+    elif not today_row.home_team_name and not today_row.away_team_name:
+        teams_match = True
+        warnings.append("teams_names_unavailable_on_today")
+    else:
+        teams_match = _names_close(today_row.home_team_name, local_home_team_name) and _names_close(
+            today_row.away_team_name, local_away_team_name
+        )
+        if not teams_match:
+            warnings.append("teams_mismatch")
+
+    kickoff_match = _kickoffs_match(today_ko, local_ko)
+    if today_ko and local_ko and not kickoff_match:
+        warnings.append("today_local_kickoff_mismatch")
+        if today_ko.date() != local_ko.date():
+            warnings.append("fixture_kickoff_calendar_day_mismatch")
+    elif today_ko is None or local_ko is None:
+        warnings.append("kickoff_unavailable")
+        kickoff_match = False
+
+    # Diagnostici non bloccanti
+    today_bucket = _status_bucket(today_status_raw)
+    local_bucket = _status_bucket(local_status_raw)
+    status_match = today_bucket is not None and today_bucket == local_bucket
+    if not status_match:
+        warnings.append("today_local_status_mismatch")
+        if today_bucket == "upcoming" and local_bucket == "finished":
+            warnings.append("today_upcoming_vs_local_ft")
+
+    score_match = today_gh == local_gh and today_ga == local_ga
+    if not score_match:
+        warnings.append("today_local_score_mismatch")
+        if not _has_score(today_gh, today_ga) and _has_score(local_gh, local_ga):
+            warnings.append("today_no_score_vs_local_score")
+
+    static_ok = (
+        local_fixture_id_match
+        and provider_match
+        and competition_match
+        and kickoff_match
+    )
+    if not teams_match and (local_home_team_name or local_away_team_name):
+        static_ok = False
+
+    # Se Today non ha local_fixture_id ma provider+competition+kickoff+teams ok, ancora fail
+    # (piano richiede local_fixture_id). Mantieni fail-closed.
+
+    status = "static_identity_verified" if static_ok else "static_identity_failed"
+    return {
+        "status": status,
+        "today_fixture_id": today_id,
+        "local_fixture_id": int(local_fixture.id),
+        "provider_fixture_id": provider_id,
+        "local_api_fixture_id": int(local_fixture.api_fixture_id) if local_fixture.api_fixture_id is not None else None,
+        "today_kickoff": today_ko_iso,
+        "local_fixture_kickoff": local_ko_iso,
+        "local_fixture_id_match": local_fixture_id_match,
+        "provider_match": provider_match,
+        "competition_match": competition_match,
+        "teams_match": teams_match,
+        "kickoff_match": kickoff_match,
+        "status_match": status_match,
+        "score_match": score_match,
+        "warnings": warnings,
+    }

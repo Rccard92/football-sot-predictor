@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Identity storica + qualità (2026-07-17)
+
+- Identity storica statica: non esclude per status/score Today vs Fixture FT.
+- Gate `xg_profiles_json` (cutoff + `current_fixture_excluded`); snapshot time senza kickoff/updated_at.
+- `audit_quality` usable/degraded/unusable + contatori coorte/xG; versione `v1_3`.
+
 ## Intensità Goal v5 Research — Audit Fase 1A.3 (2026-07-17)
 
 - Preload indici (Fixture history, Today, Team/Competition, FixtureTeamStat); loop audit DB-free.
