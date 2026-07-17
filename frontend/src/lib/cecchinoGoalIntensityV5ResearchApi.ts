@@ -133,6 +133,43 @@ export function postGoalIntensityV5Audit(
   return adminPostJson('/api/admin/cecchino/research/goal-intensity-v5/audit', body)
 }
 
+export type GoalIntensityV5DatasetRequest = GoalIntensityV5AuditRequest
+
+export type GoalIntensityDatasetRow = Record<string, unknown> & {
+  local_fixture_id: number
+  sample_size?: number
+  core_feature_status?: string
+  xg_status?: string
+  history_quality_tier?: string
+}
+
+export type GoalIntensityV5DatasetResponse = {
+  status: string
+  version: string
+  filters: {
+    date_from: string
+    date_to: string
+    competition_id: number | null
+  }
+  dataset_summary: Record<string, unknown>
+  deduplication: Record<string, unknown>
+  identity_diagnostics: Record<string, unknown>
+  exclusion_bias_report: Record<string, unknown>
+  history_quality: Record<string, unknown>
+  xg_cohorts: Record<string, unknown>
+  paired_xg_readiness: Record<string, unknown>
+  feature_definitions: Array<Record<string, unknown>>
+  dataset_rows: GoalIntensityDatasetRow[]
+  warnings: string[]
+  performance: Record<string, unknown>
+}
+
+export function postGoalIntensityV5Dataset(
+  body: GoalIntensityV5DatasetRequest,
+): Promise<GoalIntensityV5DatasetResponse> {
+  return adminPostJson('/api/admin/cecchino/research/goal-intensity-v5/dataset', body)
+}
+
 export function buildGoalIntensityAuditJsonFilename(dateFrom: string, dateTo: string): string {
   const from = sanitizeFilenameFragment(dateFrom)
   const to = sanitizeFilenameFragment(dateTo)
@@ -231,4 +268,163 @@ export function fixtureAuditToCsv(rows: GoalIntensityFixtureAuditRow[]): string 
     lines.push(cells.join(','))
   }
   return lines.join('\n')
+}
+
+const DATASET_CSV_HEADERS = [
+  'local_fixture_id',
+  'provider_fixture_id',
+  'competition_id',
+  'country',
+  'league_name',
+  'kickoff',
+  'home_team_id',
+  'home_team',
+  'away_team_id',
+  'away_team',
+  'row_feature_safe',
+  'static_identity_status',
+  'snapshot_time_status',
+  'sample_size',
+  'history_quality_tier',
+  'core_feature_status',
+  'xg_status',
+  'xg_source',
+  'xg_available_fields',
+  'xg_missing_fields',
+  'xg_exclusion_reasons',
+  'home_goals_scored_avg',
+  'away_goals_scored_avg',
+  'home_goals_scored_rolling_5',
+  'away_goals_scored_rolling_5',
+  'home_goals_scored_rolling_10',
+  'away_goals_scored_rolling_10',
+  'home_xg_for_avg',
+  'away_xg_for_avg',
+  'pair_xg_for_avg',
+  'home_goals_conceded_avg',
+  'away_goals_conceded_avg',
+  'home_clean_sheet_freq',
+  'away_clean_sheet_freq',
+  'home_xg_against_avg',
+  'away_xg_against_avg',
+  'pair_xg_against_avg',
+  'over_2_5_frequency_last_10',
+  'gg_frequency_last_10',
+  'total_goals_avg',
+  'total_goals_rolling_5',
+  'total_goals_rolling_10',
+  'goals_ge_2_frequency_last_10',
+  'goals_ge_3_frequency_last_10',
+  'pair_goals_scored_rolling_5',
+  'pair_goals_scored_rolling_10',
+  'goals_scored_std_last_10',
+  'goals_scored_mad_last_10',
+  'goals_scored_cv_last_10',
+  'goals_rolling_5_vs_10_delta',
+  'goals_home_ft',
+  'goals_away_ft',
+  'total_goals_ft',
+  'goals_ge_2',
+  'goals_ge_3',
+  'btts_ft',
+  'kickoff_month',
+  'chronological_index',
+  'temporal_fold_candidate',
+  'train_candidate',
+  'validation_candidate',
+  'test_candidate',
+] as const
+
+export function buildGoalIntensityDatasetCsvFilename(
+  kind: 'all' | 'core_min5' | 'core_min10' | 'xg_paired',
+  dateFrom: string,
+  dateTo: string,
+): string {
+  const from = sanitizeFilenameFragment(dateFrom)
+  const to = sanitizeFilenameFragment(dateTo)
+  const map = {
+    all: 'dataset_all',
+    core_min5: 'dataset_core_min5',
+    core_min10: 'dataset_core_min10',
+    xg_paired: 'dataset_xg_paired',
+  } as const
+  return `cecchino_goal_intensity_v5_${map[kind]}_${from}_${to}.csv`
+}
+
+export function buildGoalIntensityDatasetSummaryJsonFilename(
+  dateFrom: string,
+  dateTo: string,
+): string {
+  const from = sanitizeFilenameFragment(dateFrom)
+  const to = sanitizeFilenameFragment(dateTo)
+  return `cecchino_goal_intensity_v5_dataset_summary_${from}_${to}.json`
+}
+
+export function datasetRowsToCsv(rows: GoalIntensityDatasetRow[]): string {
+  const lines = [DATASET_CSV_HEADERS.join(',')]
+  for (const row of rows) {
+    const cells = DATASET_CSV_HEADERS.map((h) => {
+      const raw = row[h]
+      if (Array.isArray(raw)) return escapeCsvCell(raw.join('|'))
+      return escapeCsvCell(raw)
+    })
+    lines.push(cells.join(','))
+  }
+  return lines.join('\n')
+}
+
+export function filterDatasetRowsForExport(
+  rows: GoalIntensityDatasetRow[],
+  kind: 'all' | 'core_min5' | 'core_min10' | 'xg_paired',
+): GoalIntensityDatasetRow[] {
+  if (kind === 'all') return rows
+  if (kind === 'core_min5') {
+    return rows.filter(
+      (r) => r.core_feature_status === 'available' && Number(r.sample_size ?? 0) >= 5,
+    )
+  }
+  if (kind === 'core_min10') {
+    return rows.filter(
+      (r) => r.core_feature_status === 'available' && Number(r.sample_size ?? 0) >= 10,
+    )
+  }
+  return rows.filter(
+    (r) =>
+      r.core_feature_status === 'available' &&
+      Number(r.sample_size ?? 0) >= 1 &&
+      r.xg_status === 'available',
+  )
+}
+
+export function datasetSummaryExportPayload(dataset: GoalIntensityV5DatasetResponse): Record<string, unknown> {
+  return {
+    status: dataset.status,
+    version: dataset.version,
+    filters: dataset.filters,
+    dataset_summary: dataset.dataset_summary,
+    deduplication: dataset.deduplication,
+    identity_diagnostics: {
+      ...dataset.identity_diagnostics,
+      identity_excluded_diagnostics: undefined,
+    },
+    exclusion_bias_report: dataset.exclusion_bias_report,
+    history_quality: dataset.history_quality,
+    xg_cohorts: dataset.xg_cohorts,
+    paired_xg_readiness: {
+      ...dataset.paired_xg_readiness,
+      paired_fixture_ids: undefined,
+      paired_core_without_xg: {
+        ...(dataset.paired_xg_readiness?.paired_core_without_xg as object),
+        targets: undefined,
+      },
+      paired_enriched_with_xg: {
+        ...(dataset.paired_xg_readiness?.paired_enriched_with_xg as object),
+        targets: undefined,
+      },
+    },
+    feature_definitions: dataset.feature_definitions,
+    warnings: dataset.warnings,
+    performance: dataset.performance,
+    rows_exported: (dataset.dataset_rows ?? []).length,
+  }
 }

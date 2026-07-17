@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Intensità Goal v5 Research — Dataset Fase 1B (2026-07-17)
+
+Dataset storico research: dedupe composita, coorti history/xG paired, exclusion bias, identity diagnostics. Versione `cecchino_goal_intensity_v5_dataset_v1`.
+
 ## Intensità Goal v5 Research — xG opzionale (1A.4) (2026-07-17)
 
 xG opzionale per ammissibilità, obbligatorio quando completo/sicuro; stati available/partial/missing/excluded_unsafe; coorti + fixture audit + FE. Versione `cecchino_goal_intensity_v5_audit_v1_4`.

@@ -41,6 +41,7 @@ class AuditIndexes:
     today_by_provider_fixture_id: dict[int, list[CecchinoTodayFixture]] = field(default_factory=dict)
     team_name_by_id: dict[int, str] = field(default_factory=dict)
     country_by_competition_id: dict[int, str] = field(default_factory=dict)
+    competition_name_by_id: dict[int, str] = field(default_factory=dict)
     xg_by_comp_team: dict[tuple[int | None, int], list[XgEvent]] = field(default_factory=dict)
     timings_ms: dict[str, float] = field(default_factory=dict)
 
@@ -290,8 +291,11 @@ def preload_audit_indexes(
             idx.team_name_by_id[int(team.id)] = str(team.name)
     if comp_ids:
         for comp in db.scalars(select(Competition).where(Competition.id.in_(list(comp_ids)))).all():
+            cid = int(comp.id)
             if comp.country:
-                idx.country_by_competition_id[int(comp.id)] = str(comp.country)
+                idx.country_by_competition_id[cid] = str(comp.country)
+            if comp.name:
+                idx.competition_name_by_id[cid] = str(comp.name)
     idx.timings_ms["teams_competitions_ms"] = round((time.perf_counter() - t2) * 1000, 2)
 
     # --- FixtureTeamStat batch ---

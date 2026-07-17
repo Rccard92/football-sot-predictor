@@ -502,7 +502,13 @@ def build_goal_intensity_v5_audit(
         missing = feature_missing[key]
         total = rows_safe
         status = spec["recommended_status"]
-        if total > 0 and pct(avail, total) < 20.0 and status in ("primary_candidate", "secondary_candidate"):
+        is_xg = key in XG_FEATURE_KEYS
+        if (
+            not is_xg
+            and total > 0
+            and pct(avail, total) < 20.0
+            and status in ("primary_candidate", "secondary_candidate")
+        ):
             status = "exclude_low_coverage"
         feature_inventory.append(
             {

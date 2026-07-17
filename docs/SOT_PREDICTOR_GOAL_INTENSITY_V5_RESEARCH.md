@@ -48,7 +48,11 @@ La v4 resta disponibile come **legacy_reference** (nessuna sostituzione in 1A).
 
 Per ogni riga: identity consistency statica, esclusione fixture corrente/futura dalle feature goal, max source kickoff &lt; target. Solo righe `row_feature_safe` nelle statistiche di copertura.
 
-**xG (1A.4):** facoltativo per ammissibilità, obbligatorio se completo e anti-leakage. Stati `available` / `partial` / `missing` / `excluded_unsafe`. Cutoff o xG unsafe azzerano solo i campi xG (mai imputazione a 0); la Fixture resta feature-safe se identity/goal OK. Coorti su feature-safe; readiness paired per confronto futuro con/senza xG (soglia ≥50).
+**xG (1A.4):** facoltativo per ammissibilità, obbligatorio se completo e anti-leakage. Stati `available` / `partial` / `missing` / `excluded_unsafe`. Cutoff o xG unsafe azzerano solo i campi xG (mai imputazione a 0); la Fixture resta feature-safe se identity/goal OK. Coorti su feature-safe; readiness paired per confronto futuro con/senza xG (soglia ≥50). Feature xG: `recommended_status = optional_enrichment` (non `exclude_low_coverage` per copertura globale bassa).
+
+## Dataset Fase 1B
+
+Una riga = una partita feature-safe. Dedupe a due livelli (provider + composita competition/home/away/kickoff±1min). Report `identity_excluded_diagnostics` e `exclusion_bias_report` (solo diagnostica). Coorti history quality e core min 1/5/10/20; viste paired `paired_core_without_xg` / `paired_enriched_with_xg` (stessi ID e target). Split temporale solo metadati candidati (70/15/15). Nessuna formula, peso, indice o training.
 
 ## Endpoint
 
@@ -56,11 +60,13 @@ Per ogni riga: identity consistency statica, esclusione fixture corrente/futura 
 
 `POST /api/admin/cecchino/research/goal-intensity-v5/audit`
 
-Versione payload: `cecchino_goal_intensity_v5_audit_v1_4`
+Versione payload audit: `cecchino_goal_intensity_v5_audit_v1_4`
+
+Versione dataset: `cecchino_goal_intensity_v5_dataset_v1` — `POST .../goal-intensity-v5/dataset`
 
 ## Frontend
 
-`/cecchino/ricerca-intensita-goal` — laboratorio audit con export JSON/CSV inventario + CSV Fixture audit; sezione Copertura xG (coorti, badge, sorgenti); filtri client-side Stato xG / Competition; banner range dati locali; quality usable/degraded/unusable.
+`/cecchino/ricerca-intensita-goal` — tab Audit + Dataset Fase 1B; export JSON/CSV inventario/fixture audit; dataset CSV (all/core≥5/core≥10/paired) + JSON summary; Copertura xG; filtri client-side.
 
 ## Roadmap
 
@@ -72,7 +78,7 @@ Versione payload: `cecchino_goal_intensity_v5_audit_v1_4`
 | **1A.3** | Perf: preload indici in memoria, loop DB-free, availability, timeout 180s invariato |
 | **1A.3-fix** | Identity storica statica (no status/score bloccanti); gate xG; `audit_quality` + feature-safe rate |
 | **1A.4** | xG opzionale ma obbligatorio se available; coorti; fixture audit; FE filtri/CSV |
-| **1B** | Dataset storico feature↔target |
+| **1B** | Dataset storico feature↔target, dedupe composita, paired xG, exclusion bias |
 | **1C** | Analisi statistica / ridondanza / scelta stabilità |
 | **2A** | Preview UI a quattro pilastri (senza promuovere formula) |
 | **2B** | Consolidamento pannello ufficiale (v4 resta rollback) |

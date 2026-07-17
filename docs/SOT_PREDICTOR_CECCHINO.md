@@ -2,6 +2,18 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — Dataset Fase 1B (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_goal_intensity_v5_dataset_v1` |
+| Endpoint | `POST /api/admin/cecchino/research/goal-intensity-v5/dataset` |
+| Dedupe | provider `api_fixture_id` + composita competition/teams/kickoff±1min |
+| Coorti | history quality, core min 1/5/10/20, xG paired |
+| xG | `optional_enrichment`; paired core vs enriched stessa coorte |
+| FE | tab Dataset Fase 1B + export CSV/JSON |
+| Formule | Nessuna; v4 invariata |
+
 ## Intensità Goal v5 Research — xG opzionale (1A.4) (2026-07-17)
 
 | Aspetto | Dettaglio |

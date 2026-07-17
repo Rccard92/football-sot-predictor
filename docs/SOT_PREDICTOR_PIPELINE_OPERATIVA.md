@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Dataset Fase 1B (2026-07-17)
+
+1. Lab tab «Dataset Fase 1B»: costruire dataset sul range kickoff
+2. Verificare dedupe provider/composita, coorti history, paired xG
+3. Export CSV (all / core≥5 / core≥10 / paired) + JSON summary
+4. Nessuna formula; readiness per Fase 1C statistica
+
 ## Intensità Goal v5 Research — xG opzionale (1A.4) (2026-07-17)
 
 1. Lab: sezione Copertura xG + badge + filtri Stato xG / Competition (client-side)

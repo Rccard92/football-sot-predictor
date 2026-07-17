@@ -15,7 +15,10 @@ from app.schemas.cecchino_draw_credibility_research import (
     CecchinoDrawCredibilityModelComparisonBody,
     CecchinoDrawCredibilityStatisticsBody,
 )
-from app.schemas.cecchino_goal_intensity_v5_research import CecchinoGoalIntensityV5AuditBody
+from app.schemas.cecchino_goal_intensity_v5_research import (
+    CecchinoGoalIntensityV5AuditBody,
+    CecchinoGoalIntensityV5DatasetBody,
+)
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
     build_draw_credibility_historical_dataset,
     dataset_csv_filename,
@@ -34,6 +37,7 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit import build_goal_in
 from app.services.cecchino.cecchino_goal_intensity_v5_availability import (
     build_goal_intensity_v5_availability,
 )
+from app.services.cecchino.cecchino_goal_intensity_v5_dataset import build_goal_intensity_v5_dataset
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
 
@@ -149,6 +153,20 @@ def post_goal_intensity_v5_audit(
     db: Session = Depends(get_db),
 ):
     payload = build_goal_intensity_v5_audit(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/goal-intensity-v5/dataset")
+def post_goal_intensity_v5_dataset(
+    body: CecchinoGoalIntensityV5DatasetBody,
+    db: Session = Depends(get_db),
+):
+    payload = build_goal_intensity_v5_dataset(
         db,
         date_from=body.date_from,
         date_to=body.date_to,

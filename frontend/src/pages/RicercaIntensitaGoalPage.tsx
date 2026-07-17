@@ -2,22 +2,31 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { CecchinoStatusMessage } from '../components/cecchino/CecchinoStatusMessage'
 import { useCecchinoGoalIntensityV5Audit } from '../hooks/useCecchinoGoalIntensityV5Audit'
+import { useCecchinoGoalIntensityV5Dataset } from '../hooks/useCecchinoGoalIntensityV5Dataset'
 import {
   buildGoalIntensityAuditJsonFilename,
+  buildGoalIntensityDatasetCsvFilename,
+  buildGoalIntensityDatasetSummaryJsonFilename,
   buildGoalIntensityFeatureInventoryCsvFilename,
   buildGoalIntensityFixtureAuditCsvFilename,
+  datasetRowsToCsv,
+  datasetSummaryExportPayload,
   featureInventoryToCsv,
   fetchGoalIntensityV5Availability,
+  filterDatasetRowsForExport,
   fixtureAuditToCsv,
   isGoalIntensityAuditDegraded,
   isGoalIntensityAuditUnusable,
   type GoalIntensityFixtureAuditRow,
   type GoalIntensityV5AuditResponse,
   type GoalIntensityV5AvailabilityResponse,
+  type GoalIntensityV5DatasetResponse,
 } from '../lib/cecchinoGoalIntensityV5ResearchApi'
 import { downloadJsonFile, downloadTextFile } from '../lib/downloadJsonFile'
 import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
 import { formatFetchError } from '../utils/formatFetchError'
+
+type LabTab = 'audit' | 'dataset'
 
 const PILLAR_LABELS: Record<string, string> = {
   offensive_production: 'Produzione offensiva',
@@ -467,17 +476,165 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
   )
 }
 
+function DatasetBody({ dataset }: { dataset: GoalIntensityV5DatasetResponse }) {
+  const summary = dataset.dataset_summary ?? {}
+  const dedupe = dataset.deduplication ?? {}
+  const history = dataset.history_quality ?? {}
+  const xg = dataset.xg_cohorts ?? {}
+  const paired = dataset.paired_xg_readiness ?? {}
+  const identity = dataset.identity_diagnostics ?? {}
+  const bias = dataset.exclusion_bias_report ?? {}
+  const cohortCounts = (summary.cohort_counts ?? {}) as Record<string, number>
+  const from = dataset.filters.date_from
+  const to = dataset.filters.date_to
+  const rows = dataset.dataset_rows ?? []
+
+  const downloadCsv = (kind: 'all' | 'core_min5' | 'core_min10' | 'xg_paired') => {
+    downloadTextFile(
+      buildGoalIntensityDatasetCsvFilename(kind, from, to),
+      datasetRowsToCsv(filterDatasetRowsForExport(rows, kind)),
+      'text/csv;charset=utf-8',
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+          onClick={() => downloadCsv('all')}
+        >
+          CSV dataset completo
+        </button>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+          onClick={() => downloadCsv('core_min5')}
+        >
+          CSV core ≥5
+        </button>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+          onClick={() => downloadCsv('core_min10')}
+        >
+          CSV core ≥10
+        </button>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+          onClick={() => downloadCsv('xg_paired')}
+        >
+          CSV paired xG
+        </button>
+        <button
+          type="button"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+          onClick={() =>
+            downloadJsonFile(
+              buildGoalIntensityDatasetSummaryJsonFilename(from, to),
+              datasetSummaryExportPayload(dataset),
+            )
+          }
+        >
+          JSON summary
+        </button>
+      </div>
+
+      <Section title="Riepilogo dataset">
+        <Kv label="Versione" value={dataset.version} />
+        <Kv label="Righe iniziali" value={summary.rows_initial} />
+        <Kv label="Righe feature-safe" value={summary.rows_feature_safe} />
+        <Kv label="Identity excluded" value={summary.rows_identity_excluded} />
+        <Kv label="v4 invariata" value={summary.v4_unchanged ? 'sì' : 'no'} />
+        <Kv label="Nessuna formula v5" value={summary.no_v5_formula ? 'sì' : 'no'} />
+      </Section>
+
+      <Section title="Deduplicazione">
+        <Kv label="Duplicati provider rimossi" value={dedupe.duplicates_provider_removed} />
+        <Kv label="Duplicati compositi rimossi" value={dedupe.duplicates_composite_removed} />
+        <Kv label="Dopo provider" value={dedupe.rows_after_provider} />
+        <Kv label="Dopo composita" value={dedupe.rows_after_composite} />
+        <Kv
+          label="Gruppi duplicati"
+          value={Array.isArray(dedupe.duplicate_groups) ? dedupe.duplicate_groups.length : 0}
+        />
+      </Section>
+
+      <Section title="History quality">
+        <Kv label="none" value={history.none} />
+        <Kv label="very_low" value={history.very_low} />
+        <Kv label="low" value={history.low} />
+        <Kv label="standard" value={history.standard} />
+        <Kv label="robust" value={history.robust} />
+        <Kv label="history_any (≥1)" value={history.history_any} />
+        <Kv label="history_min_5" value={history.history_min_5} />
+        <Kv label="history_min_10" value={history.history_min_10} />
+        <Kv label="history_min_20" value={history.history_min_20} />
+      </Section>
+
+      <Section title="Coorti core / xG">
+        <Kv label="all_feature_safe" value={cohortCounts.all_feature_safe} />
+        <Kv label="core_history_any" value={cohortCounts.core_history_any} />
+        <Kv label="core_history_min_5" value={cohortCounts.core_history_min_5} />
+        <Kv label="core_history_min_10" value={cohortCounts.core_history_min_10} />
+        <Kv label="core_history_min_20" value={cohortCounts.core_history_min_20} />
+        <Kv label="xg_complete_paired" value={cohortCounts.xg_complete_paired} />
+        <Kv label="xg_partial_diagnostic" value={cohortCounts.xg_partial_diagnostic} />
+        <Kv label="xG available" value={xg.xg_available} />
+        <Kv label="xG partial" value={xg.xg_partial} />
+        <Kv label="xG missing" value={xg.xg_missing} />
+        <Kv label="Paired fixture count" value={paired.paired_fixture_count} />
+        <Kv label="Sample minimo paired (≥50)" value={paired.minimum_recommended_sample_reached ? 'sì' : 'no'} />
+      </Section>
+
+      <Section title="Identity failure">
+        <Kv label="Escluse" value={identity.identity_excluded_count} />
+        <p className="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+          Per motivo
+        </p>
+        <JsonBlock data={identity.by_reason} />
+      </Section>
+
+      <Section title="Exclusion bias (diagnostica)">
+        <JsonBlock data={bias} />
+      </Section>
+
+      <Section title="Performance">
+        <JsonBlock data={dataset.performance} />
+      </Section>
+
+      <Section title="Warning">
+        {(dataset.warnings ?? []).length === 0 ? (
+          <p className="text-xs text-slate-500">Nessun warning.</p>
+        ) : (
+          <ul className="list-disc space-y-1 pl-5 text-xs text-amber-900">
+            {dataset.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        )}
+      </Section>
+    </div>
+  )
+}
+
 export function RicercaIntensitaGoalPage() {
+  const [tab, setTab] = useState<LabTab>('audit')
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgoLocal(90))
   const [dateTo, setDateTo] = useState(() => todayLocalIso())
   const [competitionId, setCompetitionId] = useState('')
   const [availability, setAvailability] = useState<GoalIntensityV5AvailabilityResponse | null>(null)
   const [availabilityError, setAvailabilityError] = useState<string | null>(null)
-  const { loading, error, audit, runAudit } = useCecchinoGoalIntensityV5Audit({
-    dateFrom,
-    dateTo,
-    competitionId,
-  })
+  const filters = { dateFrom, dateTo, competitionId }
+  const { loading, error, audit, runAudit } = useCecchinoGoalIntensityV5Audit(filters)
+  const {
+    loading: datasetLoading,
+    error: datasetError,
+    dataset,
+    runDataset,
+  } = useCecchinoGoalIntensityV5Dataset(filters)
 
   useEffect(() => {
     let cancelled = false
@@ -509,6 +666,8 @@ export function RicercaIntensitaGoalPage() {
       ? `Dati locali disponibili dal ${availability.earliest_kickoff_date} al ${availability.latest_kickoff_date}`
       : null
 
+  const busy = tab === 'audit' ? loading : datasetLoading
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -523,7 +682,7 @@ export function RicercaIntensitaGoalPage() {
           role="status"
           className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
         >
-          Audit preliminare: nessuna formula produttiva viene modificata.
+          Lab research: nessuna formula produttiva viene modificata.
         </p>
         {rangeLabel ? (
           <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
@@ -541,6 +700,27 @@ export function RicercaIntensitaGoalPage() {
           />
         ) : null}
       </header>
+
+      <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-1">
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            tab === 'audit' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+          onClick={() => setTab('audit')}
+        >
+          Audit copertura
+        </button>
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            tab === 'dataset' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+          onClick={() => setTab('dataset')}
+        >
+          Dataset Fase 1B
+        </button>
+      </div>
 
       <section className="sticky top-0 z-20 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -575,21 +755,35 @@ export function RicercaIntensitaGoalPage() {
           </label>
         </div>
         <div className="mt-4">
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => void runAudit()}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            {loading ? (
-              <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            ) : null}
-            Esegui audit
-          </button>
+          {tab === 'audit' ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runAudit()}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {busy ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : null}
+              Esegui audit
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runDataset()}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {busy ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : null}
+              Costruisci dataset
+            </button>
+          )}
         </div>
       </section>
 
-      {loading ? (
+      {busy ? (
         <div className="space-y-3" aria-busy="true">
           <div className="h-24 animate-pulse rounded-xl bg-slate-100" />
           <div className="h-40 animate-pulse rounded-xl bg-slate-100" />
@@ -597,15 +791,29 @@ export function RicercaIntensitaGoalPage() {
         </div>
       ) : null}
 
-      {error ? <CecchinoStatusMessage variant="error" title="Errore audit" message={error} /> : null}
-
-      {!loading && !error && !audit ? (
-        <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
-          Imposta il periodo e premi «Esegui audit» per avviare l’analisi storica.
-        </p>
-      ) : null}
-
-      {!loading && audit ? <AuditBody audit={audit} /> : null}
+      {tab === 'audit' ? (
+        <>
+          {error ? <CecchinoStatusMessage variant="error" title="Errore audit" message={error} /> : null}
+          {!loading && !error && !audit ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+              Imposta il periodo e premi «Esegui audit» per avviare l’analisi storica.
+            </p>
+          ) : null}
+          {!loading && audit ? <AuditBody audit={audit} /> : null}
+        </>
+      ) : (
+        <>
+          {datasetError ? (
+            <CecchinoStatusMessage variant="error" title="Errore dataset" message={datasetError} />
+          ) : null}
+          {!datasetLoading && !datasetError && !dataset ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+              Imposta il periodo e premi «Costruisci dataset» per la Fase 1B.
+            </p>
+          ) : null}
+          {!datasetLoading && dataset ? <DatasetBody dataset={dataset} /> : null}
+        </>
+      )}
     </motion.div>
   )
 }

@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Dataset Fase 1B (2026-07-17)
+
+- Dataset storico `cecchino_goal_intensity_v5_dataset_v1`: dedupe provider+composita, coorti history/xG paired, exclusion bias, identity diagnostics.
+- xG `optional_enrichment` (no `exclude_low_coverage` automatico); POST `/goal-intensity-v5/dataset`; tab FE Dataset + export CSV/JSON.
+- Nessuna formula/indice/training; v4 invariata.
+
 ## Intensità Goal v5 Research — xG opzionale (1A.4) (2026-07-17)
 
 - xG facoltativo per ammissibilità, obbligatorio se completo/sicuro; stati `available|partial|missing|excluded_unsafe`.

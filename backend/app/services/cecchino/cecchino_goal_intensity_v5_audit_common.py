@@ -210,6 +210,131 @@ def dedupe_local_fixtures(fixtures: list[Fixture]) -> tuple[list[Fixture], int]:
     return out, removed
 
 
+def _composite_group_key(fx: Fixture) -> tuple[int | None, int, int] | None:
+    if fx.home_team_id is None or fx.away_team_id is None:
+        return None
+    comp = int(fx.competition_id) if fx.competition_id is not None else None
+    return (comp, int(fx.home_team_id), int(fx.away_team_id))
+
+
+def _kickoff_in_group(a: Fixture, b: Fixture) -> bool:
+    return kickoffs_within_one_minute(
+        ensure_datetime_utc(a.kickoff_at, field_name="a.ko"),
+        ensure_datetime_utc(b.kickoff_at, field_name="b.ko"),
+    )
+
+
+def score_fixture_for_composite_retention(
+    fx: Fixture,
+    *,
+    has_today_snapshot: bool,
+    has_fixture_team_stats: bool,
+    feature_non_null_hint: int = 0,
+) -> tuple[int, int, int, int]:
+    """Ordine deterministico: today > completezza > FTS > id minore (negato)."""
+    completeness = 0
+    if fx.api_fixture_id is not None:
+        completeness += 2
+    if fx.goals_home is not None and fx.goals_away is not None:
+        completeness += 2
+    if fx.competition_id is not None:
+        completeness += 1
+    completeness += max(0, int(feature_non_null_hint))
+    return (
+        1 if has_today_snapshot else 0,
+        completeness,
+        1 if has_fixture_team_stats else 0,
+        -int(fx.id),
+    )
+
+
+def dedupe_fixtures_provider_then_composite(
+    fixtures: list[Fixture],
+    *,
+    has_today_by_id: dict[int, bool] | None = None,
+    has_fts_by_id: dict[int, bool] | None = None,
+) -> tuple[list[Fixture], dict[str, Any]]:
+    """Due livelli: provider/api id, poi composita competition+teams+kickoff±1min."""
+    provider_kept, provider_removed = dedupe_local_fixtures(fixtures)
+    today_map = has_today_by_id or {}
+    fts_map = has_fts_by_id or {}
+
+    # Raggruppa per chiave composita + cluster kickoff
+    remaining = list(provider_kept)
+    retained: list[Fixture] = []
+    duplicate_groups: list[dict[str, Any]] = []
+    composite_removed = 0
+    consumed: set[int] = set()
+
+    for i, fx in enumerate(remaining):
+        fid = int(fx.id)
+        if fid in consumed:
+            continue
+        key = _composite_group_key(fx)
+        if key is None:
+            retained.append(fx)
+            consumed.add(fid)
+            continue
+        group = [fx]
+        for other in remaining[i + 1 :]:
+            oid = int(other.id)
+            if oid in consumed:
+                continue
+            okey = _composite_group_key(other)
+            if okey != key:
+                continue
+            if _kickoff_in_group(fx, other):
+                group.append(other)
+        if len(group) == 1:
+            retained.append(fx)
+            consumed.add(fid)
+            continue
+        ranked = sorted(
+            group,
+            key=lambda g: score_fixture_for_composite_retention(
+                g,
+                has_today_snapshot=bool(today_map.get(int(g.id))),
+                has_fixture_team_stats=bool(fts_map.get(int(g.id))),
+            ),
+            reverse=True,
+        )
+        winner = ranked[0]
+        excluded = [int(g.id) for g in ranked[1:]]
+        for g in group:
+            consumed.add(int(g.id))
+        retained.append(winner)
+        composite_removed += len(excluded)
+        duplicate_groups.append(
+            {
+                "competition_id": key[0],
+                "home_team_id": key[1],
+                "away_team_id": key[2],
+                "kickoff": ensure_datetime_utc(winner.kickoff_at, field_name="winner.ko").isoformat()
+                if ensure_datetime_utc(winner.kickoff_at, field_name="winner.ko")
+                else None,
+                "retained_fixture_id": int(winner.id),
+                "excluded_fixture_ids": excluded,
+                "reason": "composite_competition_teams_kickoff",
+            }
+        )
+
+    # Ordine stabile per kickoff
+    retained.sort(
+        key=lambda f: (
+            ensure_datetime_utc(f.kickoff_at, field_name="f.ko") or datetime.min.replace(tzinfo=timezone.utc),
+            int(f.id),
+        )
+    )
+    report = {
+        "duplicates_provider_removed": provider_removed,
+        "duplicates_composite_removed": composite_removed,
+        "duplicate_groups": duplicate_groups,
+        "rows_after_provider": len(provider_kept),
+        "rows_after_composite": len(retained),
+    }
+    return retained, report
+
+
 def load_today_snapshots_for_fixtures(
     db: Session,
     fixtures: list[Fixture],
@@ -679,18 +804,18 @@ def parse_iso(value: Any) -> datetime | None:
 
 
 FEATURE_SPECS: list[dict[str, Any]] = [
-    {"feature_key": "home_xg_for_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media xG For casa (pre-match)", "source_table_or_payload": "cecchino_today_fixtures.xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_for", "pre_match_safe": True, "recommended_status": "primary_candidate"},
-    {"feature_key": "away_xg_for_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media xG For trasferta (pre-match)", "source_table_or_payload": "cecchino_today_fixtures.xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_for", "pre_match_safe": True, "recommended_status": "primary_candidate"},
-    {"feature_key": "pair_xg_for_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media xG For casa+ospite", "source_table_or_payload": "derived", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_for", "pre_match_safe": True, "recommended_status": "primary_candidate"},
+    {"feature_key": "home_xg_for_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media xG For casa (pre-match)", "source_table_or_payload": "cecchino_today_fixtures.xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_for", "pre_match_safe": True, "recommended_status": "optional_enrichment"},
+    {"feature_key": "away_xg_for_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media xG For trasferta (pre-match)", "source_table_or_payload": "cecchino_today_fixtures.xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_for", "pre_match_safe": True, "recommended_status": "optional_enrichment"},
+    {"feature_key": "pair_xg_for_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media xG For casa+ospite", "source_table_or_payload": "derived", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_for", "pre_match_safe": True, "recommended_status": "optional_enrichment"},
     {"feature_key": "home_goals_scored_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media goal segnati casa (stagione prior)", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_scored", "pre_match_safe": True, "recommended_status": "secondary_candidate"},
     {"feature_key": "away_goals_scored_avg", "pillar": PILLAR_OFFENSIVE, "description": "Media goal segnati trasferta (stagione prior)", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_scored", "pre_match_safe": True, "recommended_status": "secondary_candidate"},
     {"feature_key": "home_goals_scored_rolling_5", "pillar": PILLAR_OFFENSIVE, "description": "Media goal segnati casa last 5", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_scored_rolling", "pre_match_safe": True, "recommended_status": "primary_candidate"},
     {"feature_key": "away_goals_scored_rolling_5", "pillar": PILLAR_OFFENSIVE, "description": "Media goal segnati ospite last 5", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_scored_rolling", "pre_match_safe": True, "recommended_status": "primary_candidate"},
     {"feature_key": "home_goals_scored_rolling_10", "pillar": PILLAR_OFFENSIVE, "description": "Media goal segnati casa last 10", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_scored_rolling", "pre_match_safe": True, "recommended_status": "secondary_candidate"},
     {"feature_key": "away_goals_scored_rolling_10", "pillar": PILLAR_OFFENSIVE, "description": "Media goal segnati ospite last 10", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_scored_rolling", "pre_match_safe": True, "recommended_status": "secondary_candidate"},
-    {"feature_key": "home_xg_against_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media xG Against casa (pre-match)", "source_table_or_payload": "xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_against", "pre_match_safe": True, "recommended_status": "primary_candidate"},
-    {"feature_key": "away_xg_against_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media xG Against trasferta (pre-match)", "source_table_or_payload": "xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_against", "pre_match_safe": True, "recommended_status": "primary_candidate"},
-    {"feature_key": "pair_xg_against_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media xG Against casa+ospite", "source_table_or_payload": "derived", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_against", "pre_match_safe": True, "recommended_status": "primary_candidate"},
+    {"feature_key": "home_xg_against_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media xG Against casa (pre-match)", "source_table_or_payload": "xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_against", "pre_match_safe": True, "recommended_status": "optional_enrichment"},
+    {"feature_key": "away_xg_against_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media xG Against trasferta (pre-match)", "source_table_or_payload": "xg_profiles_json / FixtureTeamStat", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_against", "pre_match_safe": True, "recommended_status": "optional_enrichment"},
+    {"feature_key": "pair_xg_against_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media xG Against casa+ospite", "source_table_or_payload": "derived", "source_version": PROFILE_VERSION, "value_type": "float", "redundancy_family": "xg_against", "pre_match_safe": True, "recommended_status": "optional_enrichment"},
     {"feature_key": "home_goals_conceded_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media goal subiti casa", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_conceded", "pre_match_safe": True, "recommended_status": "secondary_candidate"},
     {"feature_key": "away_goals_conceded_avg", "pillar": PILLAR_DEFENSIVE, "description": "Media goal subiti trasferta", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "goals_conceded", "pre_match_safe": True, "recommended_status": "secondary_candidate"},
     {"feature_key": "home_clean_sheet_freq", "pillar": PILLAR_DEFENSIVE, "description": "Frequenza clean sheet casa (prior)", "source_table_or_payload": "fixtures", "source_version": "fixture_history", "value_type": "float", "redundancy_family": "clean_sheet", "pre_match_safe": True, "recommended_status": "secondary_candidate"},
