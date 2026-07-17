@@ -151,3 +151,51 @@ export function downloadJsonFile(filename: string, data: unknown): void {
     URL.revokeObjectURL(url)
   }
 }
+
+export function downloadTextFile(
+  filename: string,
+  text: string,
+  mime: string = 'text/plain;charset=utf-8',
+): void {
+  const blob = new Blob([text], { type: mime })
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+export function csvEscapeCell(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  const s = String(value)
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+export function buildCsvContent(headers: string[], rows: Array<Array<unknown>>): string {
+  const lines = [headers.map(csvEscapeCell).join(',')]
+  for (const row of rows) {
+    lines.push(row.map(csvEscapeCell).join(','))
+  }
+  return lines.join('\n')
+}
+
+export function downloadCsvFile(filename: string, headers: string[], rows: Array<Array<unknown>>): void {
+  downloadTextFile(filename, buildCsvContent(headers, rows), 'text/csv;charset=utf-8')
+}
+
+export function buildModelComparisonFullFilename(dateFrom: string, dateTo: string): string {
+  const from = sanitizeFilenameFragment(dateFrom)
+  const to = sanitizeFilenameFragment(dateTo)
+  return `cecchino_draw_credibility_model_comparison_${from}_${to}.json`
+}
+
+export function buildModelComparisonOofCsvFilename(dateFrom: string, dateTo: string): string {
+  const from = sanitizeFilenameFragment(dateFrom)
+  const to = sanitizeFilenameFragment(dateTo)
+  return `cecchino_draw_credibility_model_comparison_oof_${from}_${to}.csv`
+}

@@ -30,6 +30,19 @@ import { DrawCredibilityInteractionPanel } from '../components/cecchino-draw-cre
 import { DrawCredibilityJsonExportPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityJsonExportPanel'
 import { DrawCredibilityLeagueStabilityPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityLeagueStabilityPanel'
 import { DrawCredibilityMarketAnalysisPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityMarketAnalysisPanel'
+import { DrawCredibilityModelComparisonExportPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityModelComparisonExportPanel'
+import { DrawCredibilityModelComparisonFilters } from '../components/cecchino-draw-credibility-research/DrawCredibilityModelComparisonFilters'
+import {
+  DrawCredibilityMarginalContributionsPanel,
+  DrawCredibilityMarketOofPanel,
+  DrawCredibilityModelCalibrationPanel,
+  DrawCredibilityModelDecisionPanel,
+  DrawCredibilityModelDetailPanel,
+  DrawCredibilityModelLeaderboardTable,
+  DrawCredibilityReducedModelPanel,
+  DrawCredibilityTemporalFoldsPanel,
+  DrawCredibilityTemporalStructurePanel,
+} from '../components/cecchino-draw-credibility-research/DrawCredibilityModelComparisonPanels'
 import { DrawCredibilityProbabilityCalibrationPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityProbabilityCalibrationPanel'
 import { DrawCredibilityRedundancyPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityRedundancyPanel'
 import { DrawCredibilityResearchConclusionsPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityResearchConclusionsPanel'
@@ -38,22 +51,25 @@ import { DrawCredibilityStatisticsBaselinePanel } from '../components/cecchino-d
 import { DrawCredibilityStatisticsFilters } from '../components/cecchino-draw-credibility-research/DrawCredibilityStatisticsFilters'
 import { DrawCredibilityTemporalStabilityPanel } from '../components/cecchino-draw-credibility-research/DrawCredibilityTemporalStabilityPanel'
 import { useCecchinoDrawCredibilityDataset } from '../hooks/useCecchinoDrawCredibilityDataset'
+import { useCecchinoDrawCredibilityModelComparison } from '../hooks/useCecchinoDrawCredibilityModelComparison'
 import { useCecchinoDrawCredibilityResearch } from '../hooks/useCecchinoDrawCredibilityResearch'
 import { useCecchinoDrawCredibilityStatistics } from '../hooks/useCecchinoDrawCredibilityStatistics'
 import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
 
-type TabId = 'audit' | 'dataset' | 'statistics'
+type TabId = 'audit' | 'dataset' | 'statistics' | 'model-comparison'
 
 export function RicercaCredibilitaXPage() {
   const [activeTab, setActiveTab] = useState<TabId>('audit')
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgoLocal(90))
   const [dateTo, setDateTo] = useState(() => todayLocalIso())
   const [competitionId, setCompetitionId] = useState('')
+  const [selectedModelKey, setSelectedModelKey] = useState('M4_X_PLUS_UNDER')
 
   const sharedFilters = { dateFrom, dateTo, competitionId }
   const research = useCecchinoDrawCredibilityResearch(sharedFilters)
   const datasetHook = useCecchinoDrawCredibilityDataset(sharedFilters)
   const statisticsHook = useCecchinoDrawCredibilityStatistics(sharedFilters)
+  const modelHook = useCecchinoDrawCredibilityModelComparison(sharedFilters)
 
   return (
     <motion.div
@@ -185,7 +201,7 @@ export function RicercaCredibilitaXPage() {
             </div>
           ) : null}
         </>
-      ) : (
+      ) : activeTab === 'statistics' ? (
         <>
           <CecchinoStatusMessage
             variant="info"
@@ -290,6 +306,79 @@ export function RicercaCredibilitaXPage() {
                     .next_phase_feature_recommendations
                 }
               />
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <CecchinoStatusMessage
+            variant="info"
+            title="Validazione temporale esplorativa"
+            message="Validazione temporale esplorativa — non modifica il modello produttivo."
+          />
+
+          <DrawCredibilityModelComparisonFilters
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            competitionId={competitionId}
+            finalHoldoutPct={modelHook.finalHoldoutPct}
+            innerSplits={modelHook.innerSplits}
+            bootstrapIterations={modelHook.bootstrapIterations}
+            loading={modelHook.loading}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+            onCompetitionIdChange={setCompetitionId}
+            onFinalHoldoutPctChange={modelHook.setFinalHoldoutPct}
+            onInnerSplitsChange={modelHook.setInnerSplits}
+            onBootstrapIterationsChange={modelHook.setBootstrapIterations}
+            onRunComparison={() => void modelHook.runComparison()}
+          />
+
+          <DrawCredibilityModelComparisonExportPanel
+            analysis={modelHook.lastAnalysis}
+            lastExecutedAt={modelHook.lastExecutedAt}
+          />
+
+          {modelHook.error ? (
+            <CecchinoStatusMessage variant="error" title="Errore confronto" message={modelHook.error} />
+          ) : null}
+
+          {modelHook.loading ? <DrawCredibilityResearchSkeleton /> : null}
+
+          {!modelHook.loading && !modelHook.lastAnalysis && !modelHook.error ? (
+            <DrawCredibilityResearchEmptyState
+              onRunAudit={() => void modelHook.runComparison()}
+              message='Seleziona il periodo e premi "Confronta modelli" per la validazione temporale 1D.'
+              buttonLabel="Confronta modelli"
+            />
+          ) : null}
+
+          {!modelHook.loading && modelHook.lastAnalysis ? (
+            <div className="space-y-6">
+              {(modelHook.lastAnalysis.warnings ?? []).map((w) => (
+                <CecchinoStatusMessage key={w} variant="warning" title="Avviso" message={w} />
+              ))}
+              <DrawCredibilityTemporalStructurePanel analysis={modelHook.lastAnalysis} />
+              <DrawCredibilityModelLeaderboardTable
+                rows={modelHook.lastAnalysis.model_leaderboard as Array<Record<string, unknown>>}
+              />
+              <DrawCredibilityModelDetailPanel
+                analysis={modelHook.lastAnalysis}
+                selectedKey={selectedModelKey}
+                onSelect={setSelectedModelKey}
+              />
+              <DrawCredibilityModelCalibrationPanel analysis={modelHook.lastAnalysis} />
+              <DrawCredibilityMarginalContributionsPanel
+                rows={modelHook.lastAnalysis.marginal_contributions}
+              />
+              <DrawCredibilityTemporalFoldsPanel
+                rows={modelHook.lastAnalysis.development_cv_results}
+              />
+              <DrawCredibilityMarketOofPanel market={modelHook.lastAnalysis.market_oof_analysis} />
+              <DrawCredibilityReducedModelPanel
+                reduced={modelHook.lastAnalysis.reduced_model_analysis}
+              />
+              <DrawCredibilityModelDecisionPanel decision={modelHook.lastAnalysis.decision} />
             </div>
           ) : null}
         </>

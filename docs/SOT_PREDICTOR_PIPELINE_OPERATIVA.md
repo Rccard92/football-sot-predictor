@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Credibilità X Research — Confronto modelli Fase 1D (2026-07-17)
+
+- `build_draw_credibility_model_comparison`: dataset condiviso → enrich → split temporale → CV expanding → OOF → fit development → holdout unico.
+- Route: `POST /api/admin/cecchino/research/draw-credibility/model-comparison`.
+- UI tab Confronto modelli 1D; export JSON/CSV OOF client-side.
+- Nessuna migration, nessuna scrittura DB, nessuna promozione produttiva.
+
 ## Credibilità X Research — Export JSON analisi statistica (2026-07-17)
 
 - Dopo `POST .../statistical-analysis`, lo stato hook `lastAnalysis` è scaricabile dal tab Analisi statistica.

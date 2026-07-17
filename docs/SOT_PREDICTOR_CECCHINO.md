@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Credibilità X Research — Confronto modelli Fase 1D (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_draw_credibility_model_comparison_v1` |
+| Split | Cronologico per data kickoff UTC; holdout ~25% intatto |
+| CV | Expanding-window train-only preprocess |
+| Modelli | M0–M12 + BOOK_X_BENCHMARK |
+| OOF / ROI | Solo out-of-fold; Book escluso dal training |
+| Produttivo | `production_change_allowed: false` |
+
 ## Credibilità X Research — Export JSON analisi statistica (2026-07-17)
 
 | Aspetto | Dettaglio |

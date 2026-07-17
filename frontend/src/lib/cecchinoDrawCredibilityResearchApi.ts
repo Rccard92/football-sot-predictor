@@ -877,6 +877,85 @@ export type DrawCredibilityStatisticsResponse = {
   performance: DrawCredibilityStatisticsPerformance
 }
 
+export type DrawCredibilityModelComparisonRequest = {
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  final_holdout_pct?: number
+  inner_splits?: number
+  bootstrap_iterations?: number
+  random_seed?: number
+}
+
+export type DrawCredibilityOofPrediction = {
+  provider_fixture_id: number | string | null
+  kickoff: string | null
+  draw_ft: number
+  model_key: string
+  fold_id: string
+  predicted_draw_probability: number
+  predicted_credibility_0_100: number
+  is_market_row: boolean
+  quota_book_x?: number | null
+  prob_book_x_norm?: number | null
+}
+
+export type DrawCredibilityModelLeaderboardRow = {
+  model_key: string
+  model_label: string
+  eligibility: string
+  control_only?: boolean
+  selected_C?: number | null
+  development_mean_brier?: number | null
+  development_brier_skill?: number | null
+  development_log_loss?: number | null
+  development_auc?: number | null
+  holdout_brier?: number | null
+  holdout_brier_skill?: number | null
+  holdout_log_loss?: number | null
+  holdout_auc?: number | null
+  holdout_ece?: number | null
+  top_quintile_lift?: number | null
+  temporal_stability?: string
+  coefficient_stability?: string
+  complexity?: Record<string, unknown>
+  warnings?: string[]
+}
+
+export type DrawCredibilityModelComparisonResponse = {
+  status: string
+  version: string
+  filters: Record<string, unknown>
+  dataset_summary: Record<string, unknown>
+  feature_manifest: Record<string, unknown>
+  split_definition?: Record<string, unknown>
+  split_consistency_checks?: Record<string, unknown>
+  model_definitions?: Array<Record<string, unknown>>
+  best_C_by_model?: Record<string, { C?: number | null; mean_brier?: number | null }>
+  development_cv_results?: Array<Record<string, unknown>>
+  model_leaderboard?: DrawCredibilityModelLeaderboardRow[]
+  final_holdout_results?: Array<Record<string, unknown>>
+  coefficient_stability?: Record<string, Array<Record<string, unknown>>>
+  calibration_analysis?: Record<string, Record<string, unknown>>
+  marginal_contributions?: Array<Record<string, unknown>>
+  oof_consistency_checks?: Record<string, unknown>
+  oof_predictions?: DrawCredibilityOofPrediction[]
+  primary_vs_sensitivity?: Record<string, unknown>
+  market_oof_analysis?: Record<string, unknown>
+  reduced_model_analysis?: Record<string, unknown>
+  decision?: {
+    status: string
+    leading_model?: string | null
+    reduced_model?: string | null
+    reasons?: string[]
+    limitations?: string[]
+    required_next_history_days?: number
+    production_change_allowed: boolean
+  }
+  warnings?: string[]
+  performance?: Record<string, number>
+}
+
 export async function postDrawCredibilityStatisticalAnalysis(
   body: DrawCredibilityStatisticsRequest,
   opts?: { signal?: AbortSignal },
@@ -889,6 +968,25 @@ export async function postDrawCredibilityStatisticalAnalysis(
       competition_id: body.competition_id ?? null,
       bin_count: body.bin_count ?? 5,
       min_group_size: body.min_group_size ?? 20,
+      bootstrap_iterations: body.bootstrap_iterations ?? 500,
+      random_seed: body.random_seed ?? 42,
+    },
+    opts,
+  )
+}
+
+export async function postDrawCredibilityModelComparison(
+  body: DrawCredibilityModelComparisonRequest,
+  opts?: { signal?: AbortSignal },
+): Promise<DrawCredibilityModelComparisonResponse> {
+  return adminPostJson<DrawCredibilityModelComparisonResponse>(
+    '/api/admin/cecchino/research/draw-credibility/model-comparison',
+    {
+      date_from: body.date_from,
+      date_to: body.date_to,
+      competition_id: body.competition_id ?? null,
+      final_holdout_pct: body.final_holdout_pct ?? 0.25,
+      inner_splits: body.inner_splits ?? 3,
       bootstrap_iterations: body.bootstrap_iterations ?? 500,
       random_seed: body.random_seed ?? 42,
     },

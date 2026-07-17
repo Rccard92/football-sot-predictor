@@ -43,6 +43,13 @@ class CecchinoDrawCredibilityStatisticsBody(_DateRangeMixin):
     random_seed: int = 42
 
 
+class CecchinoDrawCredibilityModelComparisonBody(_DateRangeMixin):
+    final_holdout_pct: float = Field(default=0.25, ge=0.20, le=0.35)
+    inner_splits: int = Field(default=3, ge=2, le=5)
+    bootstrap_iterations: int = Field(default=500, ge=100, le=2000)
+    random_seed: int = 42
+
+
 class DrawCredibilityExclusionReasonRow(BaseModel):
     reason: str
     count: int

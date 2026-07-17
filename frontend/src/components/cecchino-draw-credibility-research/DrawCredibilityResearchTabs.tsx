@@ -1,4 +1,4 @@
-type TabId = 'audit' | 'dataset' | 'statistics'
+type TabId = 'audit' | 'dataset' | 'statistics' | 'model-comparison'
 
 type Props = {
   activeTab: TabId
@@ -9,7 +9,9 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'audit', label: 'Audit copertura' },
   { id: 'dataset', label: 'Dataset storico' },
   { id: 'statistics', label: 'Analisi statistica' },
+  { id: 'model-comparison', label: 'Confronto modelli 1D' },
 ]
+
 
 export function DrawCredibilityResearchTabs({ activeTab, onTabChange }: Props) {
   return (

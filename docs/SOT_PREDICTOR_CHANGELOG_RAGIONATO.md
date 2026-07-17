@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Credibilità X Research — Confronto modelli Fase 1D (2026-07-17)
+
+- Service `cecchino_draw_credibility_model_comparison.py` + helpers modeling: split temporale per kickoff date, expanding-window CV, preprocessing train-only (scaler/OHE/quantile bins), modelli M0–M12 + Book benchmark.
+- Feature curate (Under/X/rank/directional/F36/gap binned); escluse ridondanze e Book dal training; `hours_to_kickoff` solo control_only (M12).
+- OOF predictions, final holdout dopo scelta C, coefficient stability, calibrazione, Market ROI OOF con CI cluster per data.
+- Endpoint `POST .../draw-credibility/model-comparison`; versione `cecchino_draw_credibility_model_comparison_v1`.
+- UI tab **Confronto modelli 1D**; export JSON completo + CSV OOF.
+- `production_change_allowed: false` sempre. Dipendenze: `numpy==2.5.1`, `scikit-learn==1.9.0` (solo path ricerca).
+
 ## Credibilità X Research — Export JSON analisi statistica (2026-07-17)
 
 - Tab Analisi statistica: pannello **Export JSON** subito dopo i filtri (`DrawCredibilityJsonExportPanel`).

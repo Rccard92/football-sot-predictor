@@ -12,12 +12,16 @@ from app.schemas.cecchino_draw_credibility_research import (
     CecchinoDrawCredibilityAuditBody,
     CecchinoDrawCredibilityDatasetBody,
     CecchinoDrawCredibilityDatasetExportBody,
+    CecchinoDrawCredibilityModelComparisonBody,
     CecchinoDrawCredibilityStatisticsBody,
 )
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
     build_draw_credibility_historical_dataset,
     dataset_csv_filename,
     stream_draw_credibility_dataset_csv,
+)
+from app.services.cecchino.cecchino_draw_credibility_model_comparison import (
+    build_draw_credibility_model_comparison,
 )
 from app.services.cecchino.cecchino_draw_credibility_research import (
     build_draw_credibility_coverage_audit,
@@ -102,6 +106,24 @@ def post_draw_credibility_statistical_analysis(
         competition_id=body.competition_id,
         bin_count=body.bin_count,
         min_group_size=body.min_group_size,
+        bootstrap_iterations=body.bootstrap_iterations,
+        random_seed=body.random_seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/draw-credibility/model-comparison")
+def post_draw_credibility_model_comparison(
+    body: CecchinoDrawCredibilityModelComparisonBody,
+    db: Session = Depends(get_db),
+):
+    payload = build_draw_credibility_model_comparison(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        final_holdout_pct=body.final_holdout_pct,
+        inner_splits=body.inner_splits,
         bootstrap_iterations=body.bootstrap_iterations,
         random_seed=body.random_seed,
     )
