@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Fase 1C.1 statistica completa (2026-07-17)
+
+- Completata analisi `cecchino_goal_intensity_v5_statistics_v1_1`: signal/CI su total_goals, goals_ge_2/3 e BTTS; ranking e `target_specific_strengths`; decisioni rolling e metrica di stabilità; duplicati/dipendenze; VIF full-rank o `singular_design`.
+- xG univariata sulla coorte paired valorizzata; model value con fold temporali expanding; readiness 1D solo se tutti i gate sono true; profiling per fase e warning >45s.
+- Nessuna formula/indice/peso produttivo; dataset 1B e v4 invariati; nessun backfill eligibility.
+
 ## Intensità Goal v5 Research — Fase 1C statistica (2026-07-17)
 
 - Aggiunta analisi read-only `cecchino_goal_intensity_v5_statistics_v1` sulla coorte Today eligible Fase 1B.1: descrittive, Pearson/Spearman bootstrap, AUC, quintili, ridondanza/VIF, PSI/KS/direzione e confronto xG temporale.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import random
 import statistics
 from typing import Any
 
@@ -153,14 +152,49 @@ def mann_whitney_u(pos: list[float], neg: list[float]) -> float | None:
     return rank_sum - n1 * (n1 + 1) / 2.0
 
 
+def _average_rank_rows(matrix: np.ndarray) -> np.ndarray:
+    """Ranghi medi per riga (gestione tie), shape (B, n)."""
+    order = np.argsort(matrix, axis=1, kind="mergesort")
+    ranks = np.empty_like(matrix, dtype=float)
+    b_count, n = matrix.shape
+    for i in range(b_count):
+        sorted_vals = matrix[i, order[i]]
+        row_ranks = np.empty(n, dtype=float)
+        j = 0
+        while j < n:
+            k = j
+            while k + 1 < n and sorted_vals[k + 1] == sorted_vals[j]:
+                k += 1
+            avg = 0.5 * (j + k) + 1.0
+            row_ranks[j : k + 1] = avg
+            j = k + 1
+        ranks[i, order[i]] = row_ranks
+    return ranks
+
+
+def _spearman_from_arrays(x: np.ndarray, y: np.ndarray) -> float | None:
+    if len(x) < 3:
+        return None
+    rx = _average_rank_rows(x.reshape(1, -1))[0]
+    ry = _average_rank_rows(y.reshape(1, -1))[0]
+    rx = rx - rx.mean()
+    ry = ry - ry.mean()
+    den = math.sqrt(float(np.dot(rx, rx) * np.dot(ry, ry)))
+    if den <= 1e-15:
+        return None
+    return float(np.dot(rx, ry) / den)
+
+
 def bootstrap_spearman_ci(
     xs: list[float],
     ys: list[float],
     *,
     iterations: int,
-    seed: int,
+    seed: int = 42,
+    indices: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    original = spearman_rho(xs, ys)
+    x_arr, y_arr = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+    original = _spearman_from_arrays(x_arr, y_arr)
     empty = {
         "spearman": round(original, 6) if original is not None else None,
         "ci_lower": None,
@@ -169,14 +203,17 @@ def bootstrap_spearman_ci(
     }
     if original is None or len(xs) < 3:
         return empty
-    rng = random.Random(seed)
-    n = len(xs)
-    samples: list[float] = []
-    for _ in range(iterations):
-        idx = [rng.randrange(n) for _ in range(n)]
-        r = spearman_rho([xs[i] for i in idx], [ys[i] for i in idx])
-        if r is not None:
-            samples.append(r)
+    index_matrix = indices if indices is not None else bootstrap_index_matrix(len(xs), iterations, seed)
+    sampled_x = x_arr[index_matrix]
+    sampled_y = y_arr[index_matrix]
+    rx = _average_rank_rows(sampled_x)
+    ry = _average_rank_rows(sampled_y)
+    rx = rx - rx.mean(axis=1, keepdims=True)
+    ry = ry - ry.mean(axis=1, keepdims=True)
+    num = np.sum(rx * ry, axis=1)
+    den = np.sqrt(np.sum(rx * rx, axis=1) * np.sum(ry * ry, axis=1))
+    valid = den > 1e-15
+    samples = (num[valid] / den[valid]).tolist()
     if len(samples) < 10:
         empty["valid_bootstrap_iterations"] = len(samples)
         return empty
@@ -195,22 +232,54 @@ def bootstrap_paired_delta_ci(
     deltas: list[float],
     *,
     iterations: int,
-    seed: int,
+    seed: int = 42,
+    indices: np.ndarray | None = None,
 ) -> dict[str, Any]:
     if not deltas:
         return {"mean": None, "ci_lower": None, "ci_upper": None, "valid_bootstrap_iterations": 0}
-    rng = random.Random(seed)
-    n = len(deltas)
-    means: list[float] = []
-    for _ in range(iterations):
-        idx = [rng.randrange(n) for _ in range(n)]
-        means.append(statistics.mean(deltas[i] for i in idx))
-    means.sort()
+    values = np.asarray(deltas, dtype=float)
+    index_matrix = indices if indices is not None else bootstrap_index_matrix(len(values), iterations, seed)
+    means = np.mean(values[index_matrix], axis=1)
     return {
-        "mean": round(statistics.mean(deltas), 6),
-        "ci_lower": round(means[int(0.025 * len(means))], 6),
-        "ci_upper": round(means[min(len(means) - 1, int(0.975 * len(means)))], 6),
+        "mean": round(float(np.mean(values)), 6),
+        "ci_lower": round(float(np.quantile(means, 0.025)), 6),
+        "ci_upper": round(float(np.quantile(means, 0.975)), 6),
         "valid_bootstrap_iterations": len(means),
+    }
+
+
+def bootstrap_index_matrix(n: int, iterations: int = 1000, seed: int = 42) -> np.ndarray:
+    """Matrice condivisibile di indici bootstrap, deterministica per dimensione."""
+    if n <= 0 or iterations <= 0:
+        return np.empty((0, 0), dtype=np.intp)
+    return np.random.default_rng(seed).integers(0, n, size=(iterations, n), dtype=np.intp)
+
+
+def bootstrap_auc_ci(
+    binary: np.ndarray, values: np.ndarray, indices: np.ndarray
+) -> dict[str, Any]:
+    """AUC e IC bootstrap riutilizzando la matrice di indici condivisa."""
+    original = auc_mann_whitney(binary.tolist(), values.tolist())
+    if original is None or len(binary) < 3:
+        return {"auc": None, "ci_lower": None, "ci_upper": None, "valid_bootstrap_iterations": 0}
+    sampled_y = binary[indices].astype(float)
+    sampled_x = values[indices]
+    positive = sampled_y.sum(axis=1)
+    negative = sampled_y.shape[1] - positive
+    valid = (positive > 0) & (negative > 0)
+    ranks = _average_rank_rows(sampled_x)
+    rank_sum_pos = np.sum(ranks * sampled_y, axis=1)
+    u = rank_sum_pos - positive * (positive + 1.0) / 2.0
+    denom = positive * negative
+    auc_rows = np.full(len(positive), np.nan, dtype=float)
+    ok = valid & (denom > 0)
+    auc_rows[ok] = u[ok] / denom[ok]
+    samples = [float(v) for v in auc_rows[ok] if np.isfinite(v)]
+    return {
+        "auc": round(float(original), 6),
+        "ci_lower": round(float(np.quantile(samples, 0.025)), 6) if len(samples) >= 10 else None,
+        "ci_upper": round(float(np.quantile(samples, 0.975)), 6) if len(samples) >= 10 else None,
+        "valid_bootstrap_iterations": len(samples),
     }
 
 
@@ -338,15 +407,21 @@ def vif_scores(feature_vectors: dict[str, list[float | None]]) -> dict[str, Any]
                 "vif": {},
                 "note": "VIF non calcolabile: colonne costanti o non finite",
             }
-        inv = np.linalg.pinv(corr)
-        if not np.isfinite(inv).all():
+        rank = int(np.linalg.matrix_rank(X))
+        if rank < X.shape[1]:
             return {
-                "status": "failed",
+                "status": "singular_design",
                 "vif": {},
-                "note": "VIF fail-safe: matrice non finita",
+                "full_matrix_rank": rank,
+                "independent_feature_count": X.shape[1],
+                "note": "VIF non calcolato: disegno singolare",
             }
+        inv = np.linalg.inv(corr)
         vif = {used[i]: round(float(inv[i, i]), 4) for i in range(len(used))}
-        return {"status": "ok", "vif": vif, "note": "VIF via pseudo-inversa correlazione"}
+        return {
+            "status": "ok", "vif": vif, "full_matrix_rank": rank,
+            "independent_feature_count": len(used), "note": "VIF su disegno a rango pieno",
+        }
     except Exception as exc:  # noqa: BLE001
         return {"status": "failed", "vif": {}, "note": f"VIF fail-safe: {type(exc).__name__}"}
 

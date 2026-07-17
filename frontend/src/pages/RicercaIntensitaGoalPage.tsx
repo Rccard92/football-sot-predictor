@@ -754,6 +754,7 @@ function StatisticsBody({
   const cohort = statistics.cohort_summary ?? {}
   const targets = statistics.target_summary ?? {}
   const signals = statistics.feature_signal_summary ?? []
+  const xgSignals = statistics.xg_univariate_summary ?? []
   const redundancy = statistics.redundancy_summary ?? {}
   const rolling = statistics.rolling_window_comparison ?? {}
   const stability = statistics.stability_metric_comparison ?? {}
@@ -762,6 +763,34 @@ function StatisticsBody({
   const recommendations = statistics.feature_recommendations ?? []
   const pillarRecommendations = statistics.pillar_recommendations ?? {}
   const readiness = statistics.phase_1d_readiness ?? {}
+  const performance = statistics.performance ?? {}
+  const deps = (redundancy.dependencies ?? {}) as Record<string, Record<string, unknown>>
+  const exactDuplicates = Object.entries(deps).filter(([, d]) => d.dependency_type === 'exact_duplicate')
+  const derived = Object.entries(deps).filter(([, d]) => d.dependency_type === 'derived_linear')
+  const clusterMeta = (redundancy.cluster_meta ?? {}) as Record<string, Record<string, unknown>>
+  const representatives = Object.entries(clusterMeta).filter(([, m]) => m.representative_of_cluster)
+  const rankingKeys = [
+    ['ranking_total_goals_ft', 'Goal totali'],
+    ['ranking_goals_ge_2', 'Goal ≥2'],
+    ['ranking_goals_ge_3', 'Goal ≥3'],
+    ['ranking_btts_ft', 'BTTS'],
+  ] as const
+  const readinessFlags = [
+    'rolling_window_decision_available',
+    'stability_metric_decision_available',
+    'target_specific_analysis_complete',
+    'xg_univariate_analysis_complete',
+    'redundancy_representatives_selected',
+  ] as const
+  const readyFor1d =
+    readiness.recommended_next_step === 'phase_1d_candidate_indices' &&
+    readinessFlags.every((key) => readiness[key] === true)
+
+  const topByTarget = (key: (typeof rankingKeys)[number][0]) =>
+    [...recommendations]
+      .filter((r) => !String(r.feature_key ?? '').includes('xg'))
+      .sort((a, b) => Number(b[key] ?? 0) - Number(a[key] ?? 0))
+      .slice(0, 5)
 
   return (
     <div className="space-y-4">
@@ -799,7 +828,7 @@ function StatisticsBody({
         <JsonBlock data={targets} />
       </Section>
 
-      <Section title="Feature con segnale">
+      <Section title="Feature signal (4 target)">
         {!signals.length ? (
           <p className="text-xs text-slate-500">Nessun segnale disponibile.</p>
         ) : (
@@ -809,9 +838,10 @@ function StatisticsBody({
                 <tr>
                   <th className="py-1 pr-2">Feature</th>
                   <th className="py-1 pr-2">Pilastro</th>
-                  <th className="py-1 pr-2">Copertura</th>
-                  <th className="py-1 pr-2">Spearman goal totali</th>
-                  <th className="py-1 pr-2">AUC goal ≥2</th>
+                  <th className="py-1 pr-2">Spearman TG</th>
+                  <th className="py-1 pr-2">AUC ≥2</th>
+                  <th className="py-1 pr-2">AUC ≥3</th>
+                  <th className="py-1 pr-2">AUC BTTS</th>
                   <th className="py-1 pr-2">Monotonia</th>
                 </tr>
               </thead>
@@ -820,10 +850,63 @@ function StatisticsBody({
                   <tr key={String(feature.feature_key)} className="border-t border-slate-100">
                     <td className="py-1.5 pr-2 font-medium text-slate-800">{String(feature.feature_key ?? '—')}</td>
                     <td className="py-1.5 pr-2">{PILLAR_LABELS[String(feature.pillar)] ?? String(feature.pillar ?? '—')}</td>
-                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.coverage ?? '—')}</td>
-                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.spearman_total_goals ?? '—')}</td>
-                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.auc_goals_ge_2 ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.spearman_total_goals ?? feature.total_goals_ft_spearman ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.auc_goals_ge_2 ?? feature.goals_ge_2_auc ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.auc_goals_ge_3 ?? feature.goals_ge_3_auc ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.auc_btts_ft ?? feature.btts_ft_auc ?? '—')}</td>
                     <td className="py-1.5 pr-2">{String(feature.monotonic_direction ?? '—')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section title="Ranking per target">
+        <div className="grid gap-3 md:grid-cols-2">
+          {rankingKeys.map(([key, label]) => (
+            <div key={key} className="rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+              <h3 className="mb-2 text-xs font-semibold text-slate-900">{label}</h3>
+              <ol className="space-y-1 text-xs text-slate-700">
+                {topByTarget(key).map((item, index) => (
+                  <li key={`${key}-${String(item.feature_key)}`}>
+                    {index + 1}. {String(item.feature_key)} ({String(item[key] ?? '—')})
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="xG univariata (paired)">
+        {!xgSignals.length ? (
+          <p className="text-xs text-slate-500">Nessuna metrica xG paired.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead className="text-slate-500">
+                <tr>
+                  <th className="py-1 pr-2">Feature</th>
+                  <th className="py-1 pr-2">coverage_paired</th>
+                  <th className="py-1 pr-2">coverage_global</th>
+                  <th className="py-1 pr-2">Spearman TG</th>
+                  <th className="py-1 pr-2">AUC ≥2</th>
+                  <th className="py-1 pr-2">AUC ≥3</th>
+                  <th className="py-1 pr-2">AUC BTTS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {xgSignals.map((feature) => (
+                  <tr key={String(feature.feature_key)} className="border-t border-slate-100">
+                    <td className="py-1.5 pr-2 font-medium text-slate-800">{String(feature.feature_key ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.coverage_paired ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.coverage_global ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.total_goals_ft_spearman ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.goals_ge_2_auc ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.goals_ge_3_auc ?? '—')}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{String(feature.btts_ft_auc ?? '—')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -842,48 +925,71 @@ function StatisticsBody({
                 <h3 className="text-xs font-semibold text-slate-900">{PILLAR_LABELS[pillar] ?? pillar}</h3>
                 <Kv label="Candidate core" value={primary.join(', ') || '—'} />
                 <Kv label="Candidate secondarie" value={secondary.join(', ') || '—'} />
-                {pillar === 'defensive_solidity' && primary.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-600">
-                    Feature difensive disponibili; nessuna feature primaria ancora selezionata statisticamente.
-                  </p>
-                ) : null}
-                {data.note ? <p className="mt-2 text-xs text-slate-600">{String(data.note)}</p> : null}
               </div>
             )
           })}
         </div>
       </Section>
 
-      <Section title="Ridondanza">
-        <p className="mb-2 text-xs font-medium text-slate-500">Conteggio cluster per soglia</p>
-        {Object.entries((redundancy.cluster_counts ?? {}) as Record<string, unknown>).map(([threshold, count]) => (
-          <Kv key={threshold} label={threshold} value={count} />
-        ))}
+      <Section title="Dipendenze e ridondanza">
+        <Kv label="VIF status" value={(redundancy.vif as Record<string, unknown> | undefined)?.status} />
+        <Kv label="Cluster |ρ|≥0.80" value={(redundancy.cluster_counts as Record<string, unknown> | undefined)?.['0.8']} />
+        <p className="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">Duplicati esatti</p>
+        {exactDuplicates.length ? exactDuplicates.map(([key, d]) => (
+          <Kv key={key} label={key} value={`== ${Array.isArray(d.source_features) ? d.source_features.join(', ') : '—'}`} />
+        )) : <p className="text-xs text-slate-500">Nessuno.</p>}
+        <p className="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">Feature derivate</p>
+        {derived.length ? derived.map(([key, d]) => (
+          <Kv key={key} label={key} value={`da ${Array.isArray(d.source_features) ? d.source_features.join(' + ') : '—'}`} />
+        )) : <p className="text-xs text-slate-500">Nessuna.</p>}
+        <p className="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">Rappresentanti cluster</p>
+        {representatives.length ? representatives.map(([key, m]) => (
+          <Kv key={key} label={String(m.redundancy_cluster_id ?? key)} value={key} />
+        )) : <p className="text-xs text-slate-500">Nessun cluster ρ≥0.80.</p>}
       </Section>
 
-      <Section title="Confronto finestre rolling">
-        <JsonBlock data={rolling.groups} />
+      <Section title="Decisione finestre rolling">
+        <div className="space-y-2">
+          {Array.isArray(rolling.groups) ? rolling.groups.map((group) => {
+            const g = group as Record<string, unknown>
+            return (
+              <div key={String(g.group)} className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 text-xs">
+                <Kv label="Gruppo" value={g.group} />
+                <Kv label="Raccomandazione" value={g.recommendation} />
+                <Kv label="Selezionata" value={g.selected_feature} />
+                <Kv label="Secondaria" value={g.secondary_feature} />
+                <Kv label="Escluse" value={Array.isArray(g.excluded_redundant_features) ? g.excluded_redundant_features.join(', ') : '—'} />
+                <Kv label="Evidenza" value={g.evidence_level} />
+                {g.motivation ? <p className="mt-1 text-slate-600">{String(g.motivation)}</p> : null}
+              </div>
+            )
+          }) : <JsonBlock data={rolling} />}
+        </div>
       </Section>
 
-      <Section title="Confronto metriche di stabilità">
-        <JsonBlock data={stability} />
+      <Section title="Decisione metrica di stabilità">
+        <Kv label="Preferred" value={stability.preferred_stability_metric} />
+        <Kv label="Secondary" value={stability.secondary_stability_metric} />
+        <Kv label="Excluded" value={Array.isArray(stability.excluded_or_unstable_metrics) ? stability.excluded_or_unstable_metrics.join(', ') : '—'} />
+        <Kv label="Raccomandazione" value={stability.recommendation} />
+        <Kv label="Evidenza" value={stability.evidence_level} />
+        {stability.motivation ? <p className="mt-2 text-xs text-slate-600">{String(stability.motivation)}</p> : null}
       </Section>
 
       <Section title="Stabilità temporale">
-        <Kv label="Blocco di riferimento" value={temporal.reference_block} />
-        <Kv label="Feature coerenti" value={(temporal.direction_consistent_features as unknown[] | undefined)?.join(', ')} />
-        <Kv label="Feature instabili" value={(temporal.unstable_features as unknown[] | undefined)?.join(', ')} />
         <JsonBlock data={temporal.block_sizes} />
       </Section>
 
       <Section title="Valore xG e bias di disponibilità">
         <Kv label="Stato" value={xg.status} />
         <Kv label="Coppie xG" value={xg.paired_n} />
-        <Kv label="Valutazione xG" value={xg.xg_value_assessment} />
+        <Kv label="Valutazione xG" value={xg.xg_value_assessment ?? xg.assessment} />
         <Kv label="Livello evidenza" value={xg.evidence_level} />
-        {xg.note ? <p className="mt-2 text-xs text-slate-600">{String(xg.note)}</p> : null}
+        <Kv label="Fold temporali" value={(xg.temporal_cv as Record<string, unknown> | undefined)?.fold_count} />
         <p className="mb-1 mt-3 text-[11px] font-medium uppercase tracking-wide text-slate-400">Bias di disponibilità</p>
         <JsonBlock data={statistics.xg_availability_bias_report} />
+        <p className="mb-1 mt-3 text-[11px] font-medium uppercase tracking-wide text-slate-400">Metriche modello</p>
+        <JsonBlock data={xg.models} />
       </Section>
 
       <Section title="Raccomandazioni feature">
@@ -893,15 +999,21 @@ function StatisticsBody({
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-xs">
               <thead className="text-slate-500">
-                <tr><th className="py-1 pr-2">Feature</th><th className="py-1 pr-2">Pilastro</th><th className="py-1 pr-2">Segnale</th><th className="py-1 pr-2">Stabilità</th><th className="py-1 pr-2">Esito</th></tr>
+                <tr>
+                  <th className="py-1 pr-2">Feature</th>
+                  <th className="py-1 pr-2">Pilastro</th>
+                  <th className="py-1 pr-2">Dep</th>
+                  <th className="py-1 pr-2">Ridondanza</th>
+                  <th className="py-1 pr-2">Esito</th>
+                </tr>
               </thead>
               <tbody>
                 {recommendations.map((feature) => (
                   <tr key={String(feature.feature_key)} className="border-t border-slate-100">
                     <td className="py-1.5 pr-2 font-medium text-slate-800">{String(feature.feature_key ?? '—')}</td>
                     <td className="py-1.5 pr-2">{PILLAR_LABELS[String(feature.pillar)] ?? String(feature.pillar ?? '—')}</td>
-                    <td className="py-1.5 pr-2">{String((feature.signal_summary as Record<string, unknown> | undefined)?.spearman_total_goals ?? '—')}</td>
-                    <td className="py-1.5 pr-2">{String(feature.temporal_stability ?? '—')}</td>
+                    <td className="py-1.5 pr-2">{String(feature.dependency_type ?? '—')}</td>
+                    <td className="py-1.5 pr-2">{String(feature.redundancy_summary ?? '—')}</td>
                     <td className="py-1.5 pr-2"><RecommendationBadge recommendation={feature.recommendation} /></td>
                   </tr>
                 ))}
@@ -912,11 +1024,20 @@ function StatisticsBody({
       </Section>
 
       <Section title="Readiness Fase 1D">
-        <JsonBlock data={readiness} />
+        <div className={`rounded-lg border px-3 py-2 text-sm ${readyFor1d ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-950'}`}>
+          {readyFor1d ? 'Pronto per Fase 1D (candidate indices)' : 'Analisi Fase 1C incompleta — non pronto per Fase 1D'}
+        </div>
+        <Kv label="Passo consigliato" value={readiness.recommended_next_step} />
+        {readinessFlags.map((key) => (
+          <Kv key={key} label={key} value={readiness[key] === true ? 'true' : 'false'} />
+        ))}
+        <Kv label="Blocking issues" value={Array.isArray(readiness.blocking_issues) ? readiness.blocking_issues.join(', ') || '—' : '—'} />
       </Section>
 
-      <Section title="Performance">
-        <JsonBlock data={statistics.performance} />
+      <Section title="Performance per fase">
+        {Object.entries(performance).map(([label, value]) => (
+          <Kv key={label} label={label} value={value} />
+        ))}
       </Section>
     </div>
   )

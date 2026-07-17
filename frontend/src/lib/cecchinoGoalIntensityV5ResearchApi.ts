@@ -198,6 +198,7 @@ export type GoalIntensityV5StatisticsResponse = Record<string, unknown> & {
   cohort_summary?: Record<string, unknown>
   target_summary?: Record<string, unknown>
   feature_signal_summary?: Array<Record<string, unknown>>
+  xg_univariate_summary?: Array<Record<string, unknown>>
   redundancy_summary?: Record<string, unknown>
   rolling_window_comparison?: Record<string, unknown>
   stability_metric_comparison?: Record<string, unknown>

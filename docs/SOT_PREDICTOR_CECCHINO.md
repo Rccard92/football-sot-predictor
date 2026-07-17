@@ -2,11 +2,21 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — Fase 1C.1 statistica completa (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_goal_intensity_v5_statistics_v1_1` |
+| Metodo | Signal su 4 target, ranking/target-specific strengths, rolling/stability decisions, dipendenze, VIF full-rank, xG paired univariata + fold temporali |
+| Readiness | `phase_1d_candidate_indices` solo se tutti i gate 1C sono true; altrimenti `complete_phase_1c_analysis` |
+| Performance | Profiling per fase; warning se >45s; target preferibile <30s / payload <2 MB |
+| Formule | Nessuna formula/peso/indice produttivo; v4 invariata |
+
 ## Intensità Goal v5 Research — Fase 1C statistica (2026-07-17)
 
 | Aspetto | Dettaglio |
 |---------|-----------|
-| Versione | `cecchino_goal_intensity_v5_statistics_v1` |
+| Versione | `cecchino_goal_intensity_v5_statistics_v1` (superseded by v1_1) |
 | Metodo | Coorte Today eligible, descrittive/correlazioni/bootstrap, quintili, ridondanza/VIF, PSI/KS e xG temporale |
 | Limite UTC | `legacy_pre_utc_fix`: esclusioni storiche non riclassificate; non blocca da solo la readiness |
 | Output | Raccomandazioni esplorative, export streaming CSV/JSON, benchmark <30s / <2 MB |

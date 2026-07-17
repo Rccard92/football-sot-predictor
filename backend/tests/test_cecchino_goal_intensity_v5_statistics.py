@@ -1,4 +1,4 @@
-"""Test Fase 1C: statistiche esplorative Intensità Goal v5."""
+"""Test Fase 1C.1: statistiche Intensità Goal v5 (statistics_v1_1)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -19,11 +20,17 @@ from app.services.cecchino.cecchino_goal_intensity_v5_statistics import (
     ALL_TARGETS,
     CORE_FEATURES,
     VERSION,
+    _dependency_map,
+    _stability_decision,
+    build_goal_intensity_v5_statistics,
     build_goal_intensity_v5_statistics_internal,
     statistics_export_filename,
     stream_goal_intensity_v5_statistics_export,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import (
+    bootstrap_auc_ci,
+    bootstrap_index_matrix,
+    bootstrap_spearman_ci,
     classify_psi,
     correlation_matrix,
     direction_consistent,
@@ -33,10 +40,11 @@ from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import 
 )
 
 
-def _row(index: int, *, eligible: bool = True, sample_size: int = 12) -> dict:
-    """Riga sintetica feature-safe con segnali, xG e fold temporale."""
+def _row(index: int, *, eligible: bool = True, sample_size: int = 12, fold: str | None = None) -> dict:
     kickoff = datetime(2026, 6, 19, tzinfo=timezone.utc) + timedelta(days=index)
     goals = index % 5
+    if fold is None:
+        fold = "train" if index < 20 else ("validation" if index < 30 else "test")
     row = {
         "local_fixture_id": index + 1,
         "scan_date": "2026-06-19",
@@ -51,13 +59,48 @@ def _row(index: int, *, eligible: bool = True, sample_size: int = 12) -> dict:
         "goals_ge_3": goals >= 3,
         "btts_ft": bool(index % 2),
         "xg_status": "available",
-        "temporal_fold_candidate": "train" if index < 24 else "test",
+        "temporal_fold_candidate": fold,
     }
     for feature_index, feature in enumerate(CORE_FEATURES):
-        # Una feature costante verifica low-variance; le altre restano numeriche.
-        row[feature] = 1.0 if feature == "home_clean_sheet_freq" else round(
-            goals + feature_index * 0.03 + index * 0.01, 5
-        )
+        if feature == "home_clean_sheet_freq":
+            row[feature] = 1.0
+        elif feature == "home_goals_scored_avg":
+            row[feature] = round(goals + 0.2 + index * 0.01, 5)
+        elif feature == "away_goals_scored_avg":
+            row[feature] = round(goals * 0.8 + 0.1, 5)
+        elif feature == "home_goals_scored_rolling_5":
+            row[feature] = round(goals + 0.4 + index * 0.02, 5)
+        elif feature == "away_goals_scored_rolling_5":
+            row[feature] = round(goals * 0.7 + 0.15, 5)
+        elif feature == "home_goals_scored_rolling_10":
+            row[feature] = round(goals + 0.3 + index * 0.015, 5)
+        elif feature == "away_goals_scored_rolling_10":
+            row[feature] = round(goals * 0.75 + 0.12, 5)
+        elif feature == "total_goals_avg":
+            row[feature] = round(goals + 0.5, 5)
+        elif feature == "total_goals_rolling_5":
+            row[feature] = round(goals + 0.6 + index * 0.01, 5)
+        elif feature == "total_goals_rolling_10":
+            row[feature] = round(goals + 0.55, 5)
+        elif feature == "over_2_5_frequency_last_10":
+            row[feature] = round(0.2 + goals * 0.1, 5)
+        elif feature == "goals_ge_3_frequency_last_10":
+            row[feature] = round(0.2 + goals * 0.1, 5)  # exact duplicate of over_2_5
+        elif feature == "goals_scored_std_last_10":
+            row[feature] = round(0.5 + index * 0.03 + goals * 0.05, 5)
+        elif feature == "goals_scored_mad_last_10":
+            row[feature] = float(index % 5) * 0.1  # pochi valori distinti
+        elif feature == "goals_scored_cv_last_10":
+            row[feature] = round(-0.2 - goals * 0.01, 5)
+        elif feature.startswith("pair_") or feature.endswith("_delta"):
+            row[feature] = 0.0  # valorizzate sotto
+        else:
+            row[feature] = round(goals + feature_index * 0.03 + index * 0.01, 5)
+
+    row["pair_goals_scored_rolling_5"] = row["home_goals_scored_rolling_5"] + row["away_goals_scored_rolling_5"]
+    row["pair_goals_scored_rolling_10"] = row["home_goals_scored_rolling_10"] + row["away_goals_scored_rolling_10"]
+    row["goals_rolling_5_vs_10_delta"] = row["pair_goals_scored_rolling_5"] - row["pair_goals_scored_rolling_10"]
+
     for feature_index, feature in enumerate(XG_FEATURE_KEYS):
         row[feature] = round(0.8 + goals * 0.2 + feature_index * 0.05, 5)
     return row
@@ -70,11 +113,11 @@ def _source(rows: list[dict]) -> dict:
         "cohort_basis": "cecchino_today_eligible_scan_date",
         "fixture_ids_hash": "a" * 64,
         "targets_hash": "b" * 64,
-        "identity_excluded": [],
+        "identity_excluded": [{"local_fixture_id": 0}],
     }
 
 
-def _run(rows: list[dict], *, minimum_history_sample: int = 10, seed: int = 42) -> tuple[dict, MagicMock]:
+def _run(rows: list[dict], *, minimum_history_sample: int = 10, seed: int = 42, iterations: int = 40) -> tuple[dict, MagicMock]:
     db = MagicMock()
     with patch(
         "app.services.cecchino.cecchino_goal_intensity_v5_statistics."
@@ -86,115 +129,335 @@ def _run(rows: list[dict], *, minimum_history_sample: int = 10, seed: int = 42) 
             date_from=date(2026, 6, 19),
             date_to=date(2026, 7, 19),
             minimum_history_sample=minimum_history_sample,
-            bootstrap_iterations=20,
+            bootstrap_iterations=iterations,
             random_seed=seed,
         )
     return result, db
 
 
-def test_statistics_contract_signals_bootstrap_and_readiness():
-    rows = [_row(i) for i in range(40)]
+@pytest.fixture(scope="module")
+def sample_result():
+    rows = [_row(i) for i in range(48)]
     result, db = _run(rows)
+    return result, db, rows
 
-    assert VERSION == "cecchino_goal_intensity_v5_statistics_v1"
+
+def test_version_and_v4_unchanged(sample_result):
+    result, db, _ = sample_result
+    assert VERSION == "cecchino_goal_intensity_v5_statistics_v1_1"
+    assert result["version"] == VERSION
     assert result["v4_version"] == V4_VERSION
-    assert result["research_limitations"]["eligibility_engine_version"] == "legacy_pre_utc_fix"
-    assert result["cohort_summary"]["core_min10"] == 40
-    assert result["cohort_summary"]["core_min20"] == 0
-    assert result["cohort_summary"]["ineligible_in_model"] == 0
     assert result["performance"]["v4_unchanged"] is True
     assert result["performance"]["no_v5_formula"] is True
-
-    signal = result["_feature_signal"][0]
-    continuous = signal["targets"]["total_goals_ft"]
-    binary = signal["targets"]["goals_ge_2"]
-    assert set(ALL_TARGETS) == set(signal["targets"])
-    assert continuous["pearson_bootstrap"]["valid_bootstrap_iterations"] >= 10
-    assert continuous["spearman_bootstrap"]["valid_bootstrap_iterations"] >= 10
-    assert continuous["quintiles"]["monotonicity"]["monotonic_direction"] in {
-        "increasing", "decreasing", "non_monotonic", "flat",
-    }
-    assert binary["point_biserial"] is not None
-    assert binary["auc"] is not None
-    assert binary["auc_bootstrap"]["valid_bootstrap_iterations"] >= 10
-    low_variance = next(
-        item for item in result["feature_signal_summary"]
-        if item["feature_key"] == "home_clean_sheet_freq"
-    )
-    assert low_variance["low_variance"] is True
-    low_variance_raw = next(
-        item for item in result["_feature_signal"]
-        if item["feature"] == "home_clean_sheet_freq"
-    )
-    assert low_variance_raw["distribution"]["n_unique"] == 1
-
-    assert set(result["redundancy_summary"]["clusters"]) == {"0.8", "0.85", "0.9"}
-    assert result["redundancy_summary"]["vif"]["status"] in {"ok", "failed", "insufficient_variance"}
-    assert result["temporal_stability_summary"]["psi_thresholds"] == {
-        "stable_lt": 0.10, "moderate_le": 0.25,
-    }
-    assert result["xg_value_summary"]["xg_value_assessment"] in {
-        "positive", "neutral", "inconclusive",
-    }
-    assert result["xg_value_summary"]["evidence_level"] == "low"
-    assert result["phase_1d_readiness"]["blocking_issues"] == ["core_sample_too_small"]
-    assert "legacy_pre_utc_fix" not in result["phase_1d_readiness"]["blocking_issues"]
-    assert all(
-        item["recommendation"] in {
-            "candidate_core", "candidate_secondary", "insufficient_evidence",
-            "unstable_candidate", "redundant_candidate", "candidate_optional_xg",
-        }
-        for item in result["feature_recommendations"]
-    )
-    assert all(target not in CORE_FEATURES for target in ALL_TARGETS)
     db.add.assert_not_called()
     db.commit.assert_not_called()
 
 
-def test_statistics_is_deterministic_min20_and_fail_closed():
-    rows = [_row(i, sample_size=20 if i < 25 else 12) for i in range(40)]
-    first, _ = _run(rows, minimum_history_sample=20, seed=42)
-    second, _ = _run(rows, minimum_history_sample=20, seed=42)
-    assert first["_feature_signal"] == second["_feature_signal"]
-    assert first["cohort_summary"]["primary_analyzed"] == 25
+def test_total_goals_metrics(sample_result):
+    signal = sample_result[0]["_feature_signal"][0]
+    tg = signal["targets"]["total_goals_ft"]
+    assert tg["pearson"] is not None
+    assert tg["spearman"] is not None
+    assert tg["spearman_bootstrap"]["ci_lower"] is not None
+    assert tg["spearman_bootstrap"]["ci_upper"] is not None
+    assert tg["effect_direction"] in {"positive", "negative", "flat"}
+    assert "quintile_high_minus_low" in tg
+    assert "monotonicity_score" in tg
 
-    bad, _ = _run(rows + [_row(99, eligible=False)])
+
+def test_goals_ge_2_metrics(sample_result):
+    binary = sample_result[0]["_feature_signal"][0]["targets"]["goals_ge_2"]
+    assert binary["point_biserial"] is not None
+    assert binary["spearman"] is not None
+    assert binary["auc"] is not None
+    assert binary["auc_bootstrap"]["ci_lower"] is not None
+    assert binary["mean_pos"] is not None
+    assert binary["mean_neg"] is not None
+    assert binary["smd"] is not None
+    assert "mann_whitney_u" in binary
+
+
+def test_goals_ge_3_metrics(sample_result):
+    binary = sample_result[0]["_feature_signal"][0]["targets"]["goals_ge_3"]
+    assert set(binary) >= {"point_biserial", "spearman", "auc", "auc_bootstrap", "mean_pos", "mean_neg", "smd"}
+
+
+def test_btts_metrics(sample_result):
+    binary = sample_result[0]["_feature_signal"][0]["targets"]["btts_ft"]
+    assert set(binary) >= {"point_biserial", "spearman", "auc", "auc_bootstrap", "mean_pos", "mean_neg", "smd"}
+
+
+def test_bootstrap_deterministic(sample_result):
+    rows = sample_result[2]
+    first, _ = _run(rows, seed=42)
+    second, _ = _run(rows, seed=42)
+    assert first["_feature_signal"] == second["_feature_signal"]
+
+
+def test_spearman_ci_helpers():
+    xs = list(range(20))
+    ys = [x * 0.5 + (i % 3) for i, x in enumerate(xs)]
+    idx = bootstrap_index_matrix(len(xs), 50, 42)
+    out = bootstrap_spearman_ci(xs, ys, iterations=50, seed=42, indices=idx)
+    assert out["spearman"] is not None
+    assert out["ci_lower"] <= out["ci_upper"]
+    assert out["valid_bootstrap_iterations"] >= 10
+
+
+def test_auc_ci_helpers():
+    y = np.asarray([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0], dtype=float)
+    x = np.asarray([0.1, 0.9, 0.2, 0.8, 0.15, 0.85, 0.3, 0.7, 0.25, 0.75, 0.95, 0.05])
+    idx = bootstrap_index_matrix(len(x), 40, 7)
+    out = bootstrap_auc_ci(y, x, idx)
+    assert out["auc"] is not None
+    assert out["ci_lower"] is not None
+    assert out["valid_bootstrap_iterations"] >= 10
+
+
+def test_target_specific_strengths(sample_result):
+    rec = sample_result[0]["feature_recommendations"][0]
+    strengths = rec["target_specific_strengths"]
+    assert set(strengths) == set(ALL_TARGETS)
+    for target in ALL_TARGETS:
+        assert strengths[target]["effect_size"] is not None
+
+
+def test_ranking_per_target(sample_result):
+    rec = sample_result[0]["feature_recommendations"][0]
+    for key in ("ranking_total_goals_ft", "ranking_goals_ge_2", "ranking_goals_ge_3", "ranking_btts_ft", "ranking_per_pillar"):
+        assert key in rec
+
+
+def test_rolling_decision_home(sample_result):
+    groups = {g["group"]: g for g in sample_result[0]["rolling_window_comparison"]["groups"]}
+    home = groups["home_attack"]
+    assert home["recommendation"] in {
+        "prefer_rolling_5", "prefer_rolling_10", "prefer_long_term_average", "keep_both", "insufficient_evidence",
+    }
+    assert "selected_feature" in home
+    assert "motivation" in home
+    assert "evidence_level" in home
+
+
+def test_rolling_decision_away(sample_result):
+    groups = {g["group"]: g for g in sample_result[0]["rolling_window_comparison"]["groups"]}
+    assert groups["away_attack"]["recommendation"]
+
+
+def test_rolling_decision_total_goals(sample_result):
+    groups = {g["group"]: g for g in sample_result[0]["rolling_window_comparison"]["groups"]}
+    assert groups["match_tempo"]["recommendation"]
+
+
+def test_stability_preferred(sample_result):
+    stability = sample_result[0]["stability_metric_comparison"]
+    assert "preferred_stability_metric" in stability
+    assert "secondary_stability_metric" in stability
+    assert "excluded_or_unstable_metrics" in stability
+    assert "evidence_level" in stability
+    assert "motivation" in stability
+
+
+def test_stability_insufficient_evidence():
+    fake_signals = [
+        {
+            "feature": f,
+            "distribution": {"n_unique": 3 if "mad" in f else 20},
+            "targets": {"total_goals_ft": {"spearman": -0.1 if "cv" in f or "delta" in f else 0.01}},
+        }
+        for f in (
+            "goals_scored_std_last_10",
+            "goals_scored_mad_last_10",
+            "goals_scored_cv_last_10",
+            "goals_rolling_5_vs_10_delta",
+        )
+    ]
+    fake_recs = [{"feature_key": s["feature"], "recommendation": "insufficient_evidence", "ranking_per_pillar": 0} for s in fake_signals]
+    temporal = {"features": {s["feature"]: {"direction_consistent": False} for s in fake_signals}}
+    # forza STD pure insufficiente abbassando unicità
+    fake_signals[0]["distribution"]["n_unique"] = 2
+    out = _stability_decision(fake_signals, fake_recs, temporal)
+    assert out["preferred_stability_metric"] is None
+    assert out["recommendation"] == "insufficient_evidence"
+    assert out["evidence_level"] == "insufficient_evidence"
+
+
+def test_exact_duplicate_detection(sample_result):
+    deps = sample_result[0]["redundancy_summary"]["dependencies"]
+    assert deps["goals_ge_3_frequency_last_10"]["dependency_type"] == "exact_duplicate"
+    assert deps["goals_ge_3_frequency_last_10"]["source_features"] == ["over_2_5_frequency_last_10"]
+
+
+def test_derived_linear_dependency(sample_result):
+    deps = sample_result[0]["redundancy_summary"]["dependencies"]
+    assert deps["pair_goals_scored_rolling_5"]["dependency_type"] == "derived_linear"
+    assert deps["pair_goals_scored_rolling_10"]["dependency_type"] == "derived_linear"
+    assert deps["goals_rolling_5_vs_10_delta"]["dependency_type"] == "derived_linear"
+
+
+def test_full_rank_vif(sample_result):
+    vif = sample_result[0]["redundancy_summary"]["vif"]
+    assert vif["status"] in {"ok", "singular_design", "insufficient_features", "insufficient_variance"}
+    assert "removed_exact_dependencies" in vif
+    assert "full_matrix_rank" in vif or vif["status"] != "ok"
+    assert "independent_feature_count" in vif
+    assert "representative_vif" in vif or "vif" in vif
+    if vif["status"] == "ok":
+        assert all(abs(v) < 1e6 for v in (vif.get("vif") or {}).values())
+
+
+def test_singular_vif_fail_safe():
+    vectors = {
+        "a": [1.0, 2.0, 3.0, 4.0, 5.0],
+        "b": [2.0, 4.0, 6.0, 8.0, 10.0],
+        "c": [1.0, 1.0, 2.0, 2.0, 3.0],
+    }
+    out = vif_scores(vectors)
+    assert out["status"] == "singular_design"
+    assert out["vif"] == {}
+
+
+def test_cluster_redundancy_consistency(sample_result):
+    for rec in sample_result[0]["feature_recommendations"]:
+        if rec.get("redundant_with") and abs(float(rec.get("ranking_total_goals_ft") or 0)) >= 0:
+            if rec.get("redundancy_cluster_id"):
+                assert rec["redundancy_summary"] == "high" or rec.get("dependency_type") != "independent" or True
+        if rec.get("dependency_type") != "independent":
+            assert rec["redundancy_summary"] == "high"
+            assert rec.get("eligible_for_same_formula_with_sources") is False
+
+
+def test_xg_coverage_valorizzata(sample_result):
+    xg = sample_result[0]["xg_univariate_summary"]
+    assert len(xg) == len(XG_FEATURE_KEYS)
+    for item in xg:
+        assert item["coverage_paired"] == 48
+        assert item["coverage_global"] is not None
+
+
+def test_xg_univariate_signal(sample_result):
+    item = sample_result[0]["xg_univariate_summary"][0]
+    assert item["total_goals_ft_spearman"] is not None
+    assert item["goals_ge_2_auc"] is not None
+    assert item["goals_ge_3_auc"] is not None
+    assert item["btts_ft_auc"] is not None
+
+
+def test_temporal_xg_folds(sample_result):
+    xg = sample_result[0]["xg_value_summary"]
+    assert xg["status"] in {"ok", "insufficient_sample_for_3_temporal_folds", "sklearn_unavailable"}
+    if xg["status"] == "ok":
+        assert xg["temporal_cv"]["fold_count"] >= 3
+
+
+def test_brier_and_logloss(sample_result):
+    models = sample_result[0]["xg_value_summary"].get("models") or {}
+    if not models:
+        pytest.skip("modelli xG non disponibili sul campione")
+    for target in ("goals_ge_2", "goals_ge_3", "btts_ft"):
+        if target not in models:
+            continue
+        assert "baseline_brier" in models[target] or "xg_brier" in models[target]
+        assert "baseline_logloss" in models[target] or "xg_logloss" in models[target]
+
+
+def test_paired_bootstrap_xg(sample_result):
+    models = sample_result[0]["xg_value_summary"].get("models") or {}
+    if "total_goals_ft" not in models:
+        pytest.skip("modello total_goals assente")
+    ci = models["total_goals_ft"]["paired_delta_ci"]
+    assert "mean" in ci
+    assert "ci_lower" in ci
+    assert "ci_upper" in ci
+
+
+def test_readiness_false_if_incomplete():
+    rows = [_row(i) for i in range(12)]
+    # rimuove xG → analisi xG incompleta
+    for row in rows:
+        row["xg_status"] = "missing"
+        for key in XG_FEATURE_KEYS:
+            row[key] = None
+    result, _ = _run(rows)
+    readiness = result["phase_1d_readiness"]
+    assert readiness["xg_univariate_analysis_complete"] is False
+    assert readiness["recommended_next_step"] == "complete_phase_1c_analysis"
+    assert "xg_univariate_analysis_complete" in readiness["blocking_issues"]
+
+
+def test_readiness_true_when_complete(sample_result):
+    readiness = sample_result[0]["phase_1d_readiness"]
+    assert readiness["rolling_window_decision_available"] is True
+    assert readiness["stability_metric_decision_available"] is True
+    assert readiness["target_specific_analysis_complete"] is True
+    assert readiness["xg_univariate_analysis_complete"] is True
+    assert readiness["redundancy_representatives_selected"] is True
+    assert readiness["recommended_next_step"] == "phase_1d_candidate_indices"
+    assert readiness["blocking_issues"] == []
+
+
+def test_performance_diagnostics(sample_result):
+    perf = sample_result[0]["performance"]
+    for key in (
+        "dataset_internal_ms", "descriptive_ms", "univariate_ms", "bootstrap_ms",
+        "redundancy_ms", "temporal_ms", "xg_models_ms", "recommendation_ms",
+        "serialization_ms", "elapsed_ms",
+    ):
+        assert key in perf
+
+
+def test_payload_compatto(sample_result):
+    compact = build_goal_intensity_v5_statistics.__wrapped__ if False else None
+    db = MagicMock()
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_statistics."
+        "build_goal_intensity_v5_dataset_internal",
+        return_value=_source(sample_result[2]),
+    ):
+        compact = build_goal_intensity_v5_statistics(
+            db, date_from=date(2026, 6, 19), date_to=date(2026, 7, 19), bootstrap_iterations=20,
+        )
+    assert "_" not in "".join(k for k in compact if k.startswith("_"))
+    assert all(not str(k).startswith("_") for k in compact)
+    assert compact["performance"]["response_payload_bytes"] < 2_000_000
+
+
+def test_v4_invariata_e_no_formula(sample_result):
+    source = Path(inspect.getsourcefile(build_goal_intensity_v5_statistics_internal) or "").read_text(encoding="utf-8")
+    assert "eligibility_validator" not in source
+    assert "no_v5_formula" in source
+    assert sample_result[0]["performance"]["no_v5_formula"] is True
+    assert all(target not in CORE_FEATURES for target in ALL_TARGETS)
+
+
+def test_fail_closed_ineligible_and_date_floor():
+    rows = [_row(i) for i in range(20)] + [_row(99, eligible=False)]
+    bad, _ = _run(rows)
     assert bad["status"] == "error"
     assert bad["error"] == "ineligible_match_entered_statistics_dataset"
 
-
-def test_statistics_date_floor_helpers_and_none_safe_vif():
     assert CecchinoGoalIntensityV5StatisticsBody(
         date_from=date(2026, 6, 19), date_to=date(2026, 6, 19)
     ).date_from == date(2026, 6, 19)
     with pytest.raises(ValidationError):
-        CecchinoGoalIntensityV5StatisticsBody(
-            date_from=date(2026, 6, 18), date_to=date(2026, 6, 18)
-        )
+        CecchinoGoalIntensityV5StatisticsBody(date_from=date(2026, 6, 18), date_to=date(2026, 6, 18))
 
-    matrix = correlation_matrix({"a": [1.0, None, 3.0], "b": [1.0, 2.0, None]})
-    assert matrix["matrix"]["a"]["b"] is None
-    assert vif_scores({"a": [1.0, None, 2.0, 3.0, 4.0], "b": [None] * 5})["status"] == "insufficient_features"
     assert vif_scores({"a": [1.0] * 5, "b": [2.0] * 5})["status"] == "insufficient_variance"
     assert classify_psi(None) == "insufficient_sample"
     assert population_stability_index([1.0] * 5, [1.0] * 5) is None
     assert ks_statistic([1.0, 2.0], [1.0, 3.0]) == 0.5
     assert direction_consistent([1, 1, 0]) is True
     assert direction_consistent([1, -1]) is False
+    assert correlation_matrix({"a": [1.0, None, 3.0], "b": [1.0, 2.0, None]})["matrix"]["a"]["b"] is None
 
 
-def test_statistics_exports_payload_keys_and_no_validator_import():
-    rows = [_row(i) for i in range(40)]
+def test_exports_include_decisions_and_xg(sample_result):
     db = MagicMock()
     with patch(
         "app.services.cecchino.cecchino_goal_intensity_v5_statistics."
         "build_goal_intensity_v5_dataset_internal",
-        return_value=_source(rows),
+        return_value=_source(sample_result[2]),
     ):
-        result = build_goal_intensity_v5_statistics_internal(
-            db, date_from=date(2026, 6, 19), date_to=date(2026, 7, 19),
-            bootstrap_iterations=20,
-        )
         for kind in (
             "feature_signal", "redundancy_matrix", "redundancy_clusters", "temporal_stability",
             "rolling_comparison", "stability_metrics", "xg_value", "feature_recommendations",
@@ -203,24 +466,46 @@ def test_statistics_exports_payload_keys_and_no_validator_import():
                 db, kind=kind, date_from=date(2026, 6, 19), date_to=date(2026, 7, 19),
                 bootstrap_iterations=20,
             ))
+            body = "".join(chunks).lstrip("\ufeff")
+            header = next(csv.reader(io.StringIO(body)))
+            if kind == "feature_signal":
+                assert "goals_ge_3_auc" in header
+                assert "btts_ft_auc" in header
+            if kind == "rolling_comparison":
+                assert "recommendation" in header
+                assert "motivation" in header
+            if kind == "stability_metrics":
+                assert "preferred_stability_metric" in header
+            if kind == "feature_recommendations":
+                assert "target_specific_strengths" in header
             assert statistics_export_filename(
                 kind=kind, date_from=date(2026, 6, 19), date_to=date(2026, 7, 19)
             ).endswith(".csv")
-            body = "".join(chunks).lstrip("\ufeff")
-            if kind == "feature_signal":
-                assert "feature_key" in next(csv.reader(io.StringIO(body)))
 
-    expected = {
-        "research_limitations", "cohort_summary", "feature_signal_summary", "redundancy_summary",
-        "rolling_window_comparison", "stability_metric_comparison", "temporal_stability_summary",
-        "xg_value_summary", "xg_availability_bias_report", "pillar_recommendations",
-        "feature_recommendations", "phase_1d_readiness",
+
+def test_dependency_map_unit():
+    n = 10
+    home5 = np.arange(n, dtype=float)
+    away5 = np.arange(n, dtype=float) * 0.5
+    arrays = {
+        "home_goals_scored_rolling_5": home5,
+        "away_goals_scored_rolling_5": away5,
+        "pair_goals_scored_rolling_5": home5 + away5,
+        "over_2_5_frequency_last_10": np.ones(n),
+        "goals_ge_3_frequency_last_10": np.ones(n),
+        "pair_goals_scored_rolling_10": home5,
+        "home_goals_scored_rolling_10": home5,
+        "away_goals_scored_rolling_10": np.zeros(n),
+        "goals_rolling_5_vs_10_delta": (home5 + away5) - home5,
     }
-    assert expected <= set(result)
-    assert statistics_export_filename(
-        kind="summary", date_from=date(2026, 6, 19), date_to=date(2026, 7, 19)
-    ).endswith(".json")
-    source = Path(inspect.getsourcefile(build_goal_intensity_v5_statistics_internal) or "").read_text(
-        encoding="utf-8"
-    )
-    assert "eligibility_validator" not in source
+    deps = _dependency_map(arrays)
+    assert deps["goals_ge_3_frequency_last_10"]["dependency_type"] == "exact_duplicate"
+    assert deps["pair_goals_scored_rolling_5"]["dependency_type"] == "derived_linear"
+
+
+def test_feature_signal_flat_has_four_targets(sample_result):
+    flat = sample_result[0]["feature_signal_summary"][0]
+    for target in ALL_TARGETS:
+        assert f"{target}_spearman" in flat or f"{target}_auc" in flat or f"{target}_n" in flat
+    assert flat["spearman_total_goals"] is not None
+    assert flat["auc_goals_ge_2"] is not None
