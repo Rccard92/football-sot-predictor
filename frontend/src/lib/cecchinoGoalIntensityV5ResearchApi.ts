@@ -51,6 +51,8 @@ export type GoalIntensityV5AuditResponse = {
   feature_inventory: GoalIntensityFeatureInventoryRow[]
   excluded_advanced_features: Array<Record<string, unknown>>
   anti_leakage: Record<string, unknown>
+  exclusion_reasons?: Record<string, number>
+  debug_samples?: Record<string, Array<Record<string, unknown>>>
   api_availability: Record<string, unknown>
   legacy_dependencies: Record<string, unknown>
   potential_conflicts: Array<Record<string, unknown>>
@@ -58,6 +60,23 @@ export type GoalIntensityV5AuditResponse = {
   implementation_recommendation: Record<string, unknown>
   warnings: string[]
   performance: Record<string, unknown>
+}
+
+export function isGoalIntensityAuditUnusable(audit: GoalIntensityV5AuditResponse): boolean {
+  const summary = audit.dataset_summary ?? {}
+  if (summary.audit_usable === false) return true
+  const anti = audit.anti_leakage ?? {}
+  const identityErrors = Number(anti.identity_check_errors ?? 0)
+  if (identityErrors > 0) return true
+  const inventory = audit.feature_inventory ?? []
+  const localCount = Number(summary.local_fixtures_deduped ?? summary.rows_deduped ?? 0)
+  const competitions = Number(summary.competitions ?? 0)
+  if (localCount > 0 && competitions === 0) return true
+  const sampleMean = Number(summary.sample_size_mean ?? 0)
+  const safeRows = Number(summary.leakage_safe_rows ?? 0)
+  if (safeRows > 0 && sampleMean === 0) return true
+  if (inventory.length > 0 && inventory.every((f) => Number(f.coverage_pct) === 0)) return true
+  return false
 }
 
 export function postGoalIntensityV5Audit(

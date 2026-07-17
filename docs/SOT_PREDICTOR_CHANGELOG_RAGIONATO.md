@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Audit Fase 1A.2 (2026-07-17)
+
+- Coorte su `Fixture.kickoff_at` (non `scan_date`); Today snapshot opzionale.
+- Identity keyword-only; feature goal da storico locale; xG da snapshot o FixtureTeamStat.
+- Versione `cecchino_goal_intensity_v5_audit_v1_1`; v4 invariata.
+
 ## Intensità Goal v5 Research — Audit Fase 1A (2026-07-17)
 
 - Audit storico read-only `cecchino_goal_intensity_v5_audit_v1` (quattro pilastri, inventario feature, anti-leakage).

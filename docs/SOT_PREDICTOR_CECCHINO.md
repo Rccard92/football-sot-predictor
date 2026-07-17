@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — Audit Fase 1A.2 (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_goal_intensity_v5_audit_v1_1` |
+| Coorte | `Fixture.kickoff_at` conclusa + risultato |
+| Today | Snapshot opzionale; identity solo se presente (kwargs) |
+| Feature goal | Calcolate senza Today |
+| xG | Snapshot pre-match → FixtureTeamStat → missing |
+
 ## Intensità Goal v5 Research — Audit Fase 1A (2026-07-17)
 
 | Aspetto | Dettaglio |

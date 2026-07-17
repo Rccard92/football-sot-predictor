@@ -6,6 +6,7 @@ import {
   buildGoalIntensityAuditJsonFilename,
   buildGoalIntensityFeatureInventoryCsvFilename,
   featureInventoryToCsv,
+  isGoalIntensityAuditUnusable,
   type GoalIntensityV5AuditResponse,
 } from '../lib/cecchinoGoalIntensityV5ResearchApi'
 import { downloadJsonFile, downloadTextFile } from '../lib/downloadJsonFile'
@@ -53,9 +54,22 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
   const v4 = audit.current_v4_inventory ?? {}
   const anti = audit.anti_leakage ?? {}
   const rec = audit.implementation_recommendation ?? {}
+  const unusable = isGoalIntensityAuditUnusable(audit)
+  const temporal = (summary.temporal_distribution ?? {}) as Record<string, unknown>
+  const exclusionReasons = audit.exclusion_reasons ?? {}
+  const debugSamples = audit.debug_samples ?? {}
 
   return (
     <div className="space-y-4">
+      {unusable ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-950"
+        >
+          Audit non utilizzabile: correggere la pipeline dati prima della Fase 1B.
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -98,17 +112,35 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
         </p>
       </Section>
 
-      <Section title="2. Copertura dataset">
-        <Kv label="Righe raw" value={summary.rows_raw} />
-        <Kv label="Dopo dedupe" value={summary.rows_deduped} />
-        <Kv label="Finite" value={summary.finished_fixtures} />
-        <Kv label="Con risultato" value={summary.finished_with_result} />
-        <Kv label="Leakage-safe" value={summary.leakage_safe_rows} />
+      <Section title="2. Copertura dataset (Fixture kickoff)">
+        <Kv label="Fixture locali raw" value={summary.local_fixtures_raw ?? summary.rows_raw} />
+        <Kv label="Fixture locali deduped" value={summary.local_fixtures_deduped ?? summary.rows_deduped} />
+        <Kv label="Duplicati rimossi" value={summary.duplicates_removed} />
+        <Kv label="Snapshot Today associati" value={summary.today_snapshots_matched} />
+        <Kv label="Snapshot Today mancanti" value={summary.today_snapshots_missing} />
+        <Kv label="Righe feature-safe" value={summary.row_feature_safe ?? summary.leakage_safe_rows} />
         <Kv label="Campionati" value={summary.competitions} />
         <Kv label="Paesi" value={summary.countries} />
+        <Kv label="Sample size medio" value={summary.sample_size_mean} />
+        <Kv label="Base coorte" value={summary.cohort_basis} />
         <div className="mt-2">
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">Target</p>
-          <JsonBlock data={summary.targets} />
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+            Distribuzione mensile (kickoff)
+          </p>
+          <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(temporal).map(([month, val]) => {
+              const block = val as { count?: number; note?: string }
+              return (
+                <div key={month} className="rounded border border-slate-100 px-2 py-1 text-xs">
+                  <span className="font-medium text-slate-800">{month}</span>
+                  <span className="ml-2 tabular-nums text-slate-600">{block.count ?? 0}</span>
+                  {block.note ? (
+                    <span className="ml-2 text-[10px] text-amber-700">{block.note}</span>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </Section>
 
@@ -123,8 +155,7 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
               <Kv label="Con almeno una feature" value={block.fixtures_with_any_feature} />
               <Kv label="Tutte le primarie" value={block.fixtures_with_all_primary} />
               <Kv label="Copertura completa %" value={block.coverage_complete_pct} />
-              <Kv label="Parziale %" value={block.coverage_partial_pct} />
-              <Kv label="Nulla %" value={block.coverage_none_pct} />
+              <Kv label="Sample size medio" value={block.sample_size_mean} />
             </div>
           ))}
         </div>
@@ -165,38 +196,44 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
         <JsonBlock data={audit.excluded_advanced_features} />
       </Section>
 
-      <Section title="6. Anti-leakage">
+      <Section title="6. Anti-leakage e identity">
         <Kv label="Checked" value={anti.rows_checked} />
-        <Kv label="Passed" value={anti.rows_passed} />
+        <Kv label="Feature-safe / passed" value={anti.row_feature_safe ?? anti.rows_passed} />
         <Kv label="Failed" value={anti.rows_failed} />
+        <Kv label="Identity verificata" value={anti.identity_verified} />
+        <Kv label="Identity non disponibile" value={anti.identity_not_available} />
+        <Kv label="Identity fallita" value={anti.identity_failed} />
+        <Kv label="Identity check errors" value={anti.identity_check_errors} />
         <Kv label="Identity mismatch" value={anti.fixture_identity_mismatch} />
         <Kv label="Cutoff mismatch" value={anti.cutoff_mismatch} />
-        <Kv label="Current included" value={anti.current_fixture_included} />
-        <Kv label="Future included" value={anti.future_fixture_included} />
+        <Kv label="xG da snapshot" value={anti.xg_from_today_snapshot} />
+        <Kv label="xG da FixtureTeamStat" value={anti.xg_from_fixture_team_stats} />
+        <Kv label="xG missing" value={anti.xg_missing} />
       </Section>
 
-      <Section title="7. Disponibilità API/DB">
+      <Section title="7. Motivi di esclusione ed esempi">
+        <JsonBlock data={exclusionReasons} />
+        <p className="mb-1 mt-3 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+          Esempi diagnostici (max 20 / motivo)
+        </p>
+        <JsonBlock data={debugSamples} />
+      </Section>
+
+      <Section title="8. Disponibilità API/DB">
         <JsonBlock data={audit.api_availability} />
       </Section>
 
-      <Section title="8. Dipendenze e conflitti">
-        <p className="mb-2 text-xs font-medium text-slate-500">Dipendenze legacy</p>
+      <Section title="9. Dipendenze e conflitti">
         <JsonBlock data={audit.legacy_dependencies} />
         <p className="mb-2 mt-3 text-xs font-medium text-slate-500">Conflitti</p>
         <JsonBlock data={audit.potential_conflicts} />
-        <p className="mb-2 mt-3 text-xs font-medium text-slate-500">Dubbi interpretativi</p>
-        <ul className="list-disc space-y-1 pl-5 text-xs">
-          {(audit.interpretative_questions ?? []).map((q) => (
-            <li key={q}>{q}</li>
-          ))}
-        </ul>
       </Section>
 
-      <Section title="9. Piano consigliato per Fase 1B">
+      <Section title="10. Piano consigliato per Fase 1B">
         <JsonBlock data={rec} />
       </Section>
 
-      <Section title="10. Warning">
+      <Section title="11. Warning">
         {(audit.warnings ?? []).length === 0 ? (
           <p className="text-xs text-slate-500">Nessun warning.</p>
         ) : (

@@ -52,7 +52,7 @@ Per ogni riga: identity consistency, cutoff xG, esclusione fixture corrente/futu
 
 `POST /api/admin/cecchino/research/goal-intensity-v5/audit`
 
-Versione payload: `cecchino_goal_intensity_v5_audit_v1`
+Versione payload: `cecchino_goal_intensity_v5_audit_v1_1`
 
 ## Frontend
 
@@ -62,7 +62,9 @@ Versione payload: `cecchino_goal_intensity_v5_audit_v1`
 
 | Fase | Obiettivo |
 |------|-----------|
-| **1A** (questa) | Audit copertura, inventario, anti-leakage, piano |
+| **1A** | Audit copertura, inventario, anti-leakage, piano |
+| **1A.1** | Identity fail-closed su eccezione |
+| **1A.2** | Coorte `Fixture.kickoff_at`, identity keyword-only, feature goal senza Today, xG snapshot/team_stats |
 | **1B** | Dataset storico feature↔target |
 | **1C** | Analisi statistica / ridondanza / scelta stabilità |
 | **2A** | Preview UI a quattro pilastri (senza promuovere formula) |

@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Intensità Goal v5 Research — Audit Fase 1A.2 (2026-07-17)
+
+Fix audit: coorte kickoff, identity keyword-only, feature goal reali senza Today. Versione `cecchino_goal_intensity_v5_audit_v1_1`.
+
 ## Intensità Goal v5 Research — Audit Fase 1A (2026-07-17)
 
 Audit storico offline a quattro pilastri (produzione, solidità, ritmo, stabilità). v4 resta legacy_reference. Lab `/cecchino/ricerca-intensita-goal`. Docs: [SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md](./SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md).

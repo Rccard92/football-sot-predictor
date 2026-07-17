@@ -1,5 +1,9 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Audit Fase 1A.2 (2026-07-17)
+
+Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su goal history; banner se audit non utilizzabile.
+
 ## Intensità Goal v5 Research — Audit Fase 1A (2026-07-17)
 
 1. Lab: `/cecchino/ricerca-intensita-goal`

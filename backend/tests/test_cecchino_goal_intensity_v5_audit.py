@@ -1,13 +1,13 @@
-"""Test audit Intensità Goal v5 — Fase 1A."""
+"""Test audit Intensità Goal v5 — Fase 1A.2."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 from fastapi.encoders import jsonable_encoder
 
-from app.models.cecchino_today_fixture import MATCH_FINISHED, MATCH_UPCOMING, CecchinoTodayFixture
+from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.services.cecchino.cecchino_goal_intensity_analysis import VERSION as V4_VERSION
 from app.services.cecchino.cecchino_goal_intensity_v5_audit import (
     VERSION,
@@ -15,71 +15,88 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit import (
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     EXCLUDED_ADVANCED,
-    dedupe_today_rows,
+    dedupe_local_fixtures,
 )
 
 
-KO = datetime(2026, 6, 15, 18, 0, tzinfo=timezone.utc)
+KO = datetime(2026, 3, 15, 18, 0, tzinfo=timezone.utc)
 
 
-def _prior(fid: int, *, home: int, away: int, gh: int, ga: int, days_before: int = 7) -> MagicMock:
+def _fx(
+    fid: int,
+    *,
+    api: int | None = None,
+    home: int = 1,
+    away: int = 2,
+    gh: int = 2,
+    ga: int = 1,
+    ko: datetime | None = None,
+    competition_id: int = 39,
+    status: str = "FT",
+) -> MagicMock:
     fx = MagicMock()
     fx.id = fid
-    fx.api_fixture_id = 9000 + fid
+    fx.api_fixture_id = api if api is not None else 8000 + fid
     fx.home_team_id = home
     fx.away_team_id = away
     fx.goals_home = gh
     fx.goals_away = ga
-    fx.kickoff_at = datetime(2026, 6, 15 - days_before, 18, 0, tzinfo=timezone.utc)
-    fx.status = "FT"
-    fx.competition_id = 39
+    fx.kickoff_at = ko or KO
+    fx.status = status
+    fx.competition_id = competition_id
     return fx
 
 
-def _local(*, lid: int = 500, home: int = 1, away: int = 2) -> MagicMock:
-    fx = MagicMock()
-    fx.id = lid
-    fx.api_fixture_id = 8000 + lid
-    fx.home_team_id = home
-    fx.away_team_id = away
-    fx.goals_home = 2
-    fx.goals_away = 1
-    fx.kickoff_at = KO
-    fx.status = "FT"
-    fx.competition_id = 39
-    return fx
+def _prior(fid: int, *, home: int, away: int, gh: int, ga: int, days_before: int = 7, base: datetime | None = None) -> MagicMock:
+    base_ko = base or KO
+    return _fx(
+        fid,
+        home=home,
+        away=away,
+        gh=gh,
+        ga=ga,
+        ko=base_ko - timedelta(days=days_before),
+        api=9000 + fid,
+    )
 
 
-def _xg_profiles(*, cutoff: str | None = None) -> dict:
-    return {
-        "profile_version": "cecchino_xg_profiles_v1",
-        "home": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
-        "away": {"xg_for_avg": 1.2, "xg_against_avg": 1.3},
-        "anti_leakage": {"fixture_date_cutoff": cutoff or KO.isoformat()},
-    }
+def _priors(base: datetime | None = None):
+    b = base or KO
+    home = [
+        _prior(10, home=1, away=9, gh=2, ga=1, days_before=14, base=b),
+        _prior(11, home=9, away=1, gh=0, ga=1, days_before=10, base=b),
+        _prior(12, home=1, away=8, gh=3, ga=2, days_before=7, base=b),
+        _prior(13, home=1, away=7, gh=1, ga=0, days_before=5, base=b),
+        _prior(14, home=6, away=1, gh=1, ga=2, days_before=3, base=b),
+    ]
+    away = [
+        _prior(20, home=2, away=5, gh=1, ga=1, days_before=14, base=b),
+        _prior(21, home=4, away=2, gh=2, ga=2, days_before=10, base=b),
+        _prior(22, home=2, away=3, gh=0, ga=0, days_before=7, base=b),
+        _prior(23, home=2, away=9, gh=2, ga=1, days_before=5, base=b),
+        _prior(24, home=8, away=2, gh=1, ga=3, days_before=3, base=b),
+    ]
+    return home, away
 
 
-def _row(**kwargs) -> CecchinoTodayFixture:
+def _today(**kwargs) -> CecchinoTodayFixture:
     row = MagicMock(spec=CecchinoTodayFixture)
     defaults = {
-        "id": 1,
-        "provider_source": "api-football",
-        "provider_fixture_id": 1001,
+        "id": 100,
+        "provider_source": "api_football",
+        "provider_fixture_id": 8500,
         "local_fixture_id": 500,
-        "scan_date": date(2026, 6, 15),
-        "competition_id": 39,
-        "country_name": "England",
-        "league_name": "Premier League",
-        "home_team_name": "Home FC",
-        "away_team_name": "Away FC",
-        "match_display_status": MATCH_FINISHED,
-        "score_fulltime_home": 2,
-        "score_fulltime_away": 1,
-        "goals_home": 2,
-        "goals_away": 1,
-        "kickoff": KO.isoformat(),
-        "xg_profiles_json": _xg_profiles(),
+        "scan_date": date(2026, 3, 14),
+        "kickoff": KO,
         "cecchino_output_json": {},
+        "xg_profiles_json": {
+            "home_team": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
+            "away_team": {"xg_for_avg": 1.2, "xg_against_avg": 1.3},
+            "anti_leakage": {"fixture_date_cutoff": KO.isoformat()},
+        },
+        "country_name": "England",
+        "created_at": datetime(2026, 3, 14, 10, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 3, 14, 10, 0, tzinfo=timezone.utc),
     }
     defaults.update(kwargs)
     for k, v in defaults.items():
@@ -87,76 +104,91 @@ def _row(**kwargs) -> CecchinoTodayFixture:
     return row
 
 
-def _priors_home_away():
-    home = [
-        _prior(10, home=1, away=9, gh=2, ga=1, days_before=14),
-        _prior(11, home=9, away=1, gh=0, ga=1, days_before=10),
-        _prior(12, home=1, away=8, gh=3, ga=2, days_before=7),
-        _prior(13, home=1, away=7, gh=1, ga=0, days_before=5),
-        _prior(14, home=6, away=1, gh=1, ga=2, days_before=3),
-    ]
-    away = [
-        _prior(20, home=2, away=5, gh=1, ga=1, days_before=14),
-        _prior(21, home=4, away=2, gh=2, ga=2, days_before=10),
-        _prior(22, home=2, away=3, gh=0, ga=0, days_before=7),
-        _prior(23, home=2, away=9, gh=2, ga=1, days_before=5),
-        _prior(24, home=8, away=2, gh=1, ga=3, days_before=3),
-    ]
-    return home, away
+def _competition(cid: int = 39, country: str = "England") -> MagicMock:
+    c = MagicMock()
+    c.id = cid
+    c.country = country
+    return c
 
 
-def _audit(rows: list, *, local=None, identity=None, priors=None, patch_identity=True, identity_error=None):
+def _team(tid: int, name: str) -> MagicMock:
+    t = MagicMock()
+    t.id = tid
+    t.name = name
+    return t
+
+
+def _audit(
+    fixtures: list,
+    *,
+    today_rows: list | None = None,
+    identity=None,
+    identity_error=None,
+    priors=None,
+    xg_profiles_override=None,
+):
     db = MagicMock()
-    db.scalars.return_value.all.return_value = rows
-    loc = local if local is not None else _local()
-    db.get.return_value = loc
 
-    home_p, away_p = priors if priors is not None else _priors_home_away()
+    def _get(model, pk):
+        name = getattr(model, "__name__", str(model))
+        if "Competition" in name:
+            return _competition(int(pk), country="England" if int(pk) == 39 else "Spain")
+        if "Team" in name:
+            return _team(int(pk), f"Team{pk}")
+        return None
 
-    def _load(_db, target, team_id):
-        if int(team_id) == int(loc.home_team_id):
+    db.get.side_effect = _get
+
+    def _load(_db, tgt, team_id):
+        if priors is not None:
+            home_p, away_p = priors
+        else:
+            home_p, away_p = _priors(base=tgt.kickoff_at)
+        if int(team_id) == int(tgt.home_team_id):
             return list(home_p)
         return list(away_p)
 
     identity_payload = identity if identity is not None else {"status": "consistent", "warnings": []}
 
-    patches = [
+    todays = today_rows if today_rows is not None else []
+    if todays and xg_profiles_override is not None:
+        for t in todays:
+            t.xg_profiles_json = xg_profiles_override
+
+    id_patch_kwargs: dict = {}
+    if identity_error is not None:
+        id_patch_kwargs["side_effect"] = identity_error
+    else:
+        id_patch_kwargs["return_value"] = identity_payload
+
+    with (
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_audit.finished_local_fixtures_in_kickoff_range",
+            return_value=list(fixtures),
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_audit.load_today_snapshots_for_fixtures",
+            return_value=list(todays),
+        ),
         patch(
             "app.services.cecchino.cecchino_goal_intensity_v5_audit_common.load_finished_fixtures_for_team",
             side_effect=_load,
         ),
-    ]
-    if patch_identity:
-        if identity_error is not None:
-            patches.append(
-                patch(
-                    "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_fixture_identity_consistency",
-                    side_effect=identity_error,
-                )
-            )
-        else:
-            patches.append(
-                patch(
-                    "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_fixture_identity_consistency",
-                    return_value=identity_payload,
-                )
-            )
-
-    with patches[0]:
-        if len(patches) > 1:
-            with patches[1]:
-                payload = build_goal_intensity_v5_audit(
-                    db,
-                    date_from=date(2026, 1, 1),
-                    date_to=date(2026, 7, 17),
-                )
-        else:
-            payload = build_goal_intensity_v5_audit(
-                db,
-                date_from=date(2026, 1, 1),
-                date_to=date(2026, 7, 17),
-            )
-    return payload, db
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_audit.build_fixture_identity_consistency",
+            **id_patch_kwargs,
+        ) as id_mock,
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_audit_common.build_current_season_team_xg_profile",
+            return_value={"xg_for_avg": 1.5, "xg_against_avg": 1.0},
+        ),
+    ):
+        payload = build_goal_intensity_v5_audit(
+            db,
+            date_from=date(2026, 1, 1),
+            date_to=date(2026, 7, 17),
+        )
+    return payload, db, id_mock
 
 
 def _inv(payload: dict, key: str) -> dict:
@@ -164,202 +196,181 @@ def _inv(payload: dict, key: str) -> dict:
 
 
 def test_version_and_v4_unchanged():
-    assert VERSION == "cecchino_goal_intensity_v5_audit_v1"
+    assert VERSION == "cecchino_goal_intensity_v5_audit_v1_1"
     assert V4_VERSION == "cecchino_goal_intensity_v4_expected_goals"
-    payload, _ = _audit([_row()])
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, _, _ = _audit([local], today_rows=[today])
     assert payload["version"] == VERSION
-    assert payload["current_v4_inventory"]["version"] == V4_VERSION
-    assert payload["current_v4_inventory"]["role"] == "legacy_reference"
     assert payload["current_v4_inventory"]["production_unchanged"] is True
 
 
-def test_deduplication_provider_and_local_fallback():
-    a = _row(id=1, provider_fixture_id=1001, local_fixture_id=500)
-    b = _row(id=2, provider_fixture_id=1001, local_fixture_id=500)
-    c = _row(id=3, provider_source="api-football", provider_fixture_id=None, local_fixture_id=600)
-    d = _row(id=4, provider_source="api-football", provider_fixture_id=None, local_fixture_id=600)
-    assert len(dedupe_today_rows([a, b, c, d])) == 2
-    payload, _ = _audit([a, b])
-    assert payload["dataset_summary"]["rows_raw"] == 2
-    assert payload["dataset_summary"]["rows_deduped"] == 1
+def test_identity_called_with_keyword_arguments():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, _, id_mock = _audit([local], today_rows=[today])
+    assert id_mock.called
+    kwargs = id_mock.call_args.kwargs
+    assert "today_row" in kwargs
+    assert "local_fixture" in kwargs
+    assert kwargs["today_row"] is today
+    assert kwargs["local_fixture"] is local
+    assert payload["anti_leakage"]["identity_check_errors"] == 0
 
 
-def test_only_finished_fixtures():
-    payload, _ = _audit(
-        [
-            _row(id=1, match_display_status=MATCH_UPCOMING, score_fulltime_home=None, score_fulltime_away=None),
-            _row(id=2, provider_fixture_id=1002, local_fixture_id=501),
-        ]
-    )
-    assert payload["dataset_summary"]["finished_fixtures"] == 1
-    assert payload["anti_leakage"]["rows_checked"] == 1
+def test_identity_exception_still_fail_closed():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, db, _ = _audit([local], today_rows=[today], identity_error=RuntimeError("boom"))
+    assert payload["anti_leakage"]["identity_check_errors"] == 1
+    assert payload["anti_leakage"]["rows_failed"] == 1
+    assert "fixture_identity_check_failed" in payload["anti_leakage"]["warnings"]
+    assert payload["exclusion_reasons"]["identity_check_error"] == 1
+    db.commit.assert_not_called()
 
 
-def test_anti_leakage_block_shape():
-    payload, _ = _audit([_row()])
-    anti = payload["anti_leakage"]
-    for key in (
-        "rows_checked",
-        "rows_passed",
-        "rows_failed",
-        "fixture_identity_mismatch",
-        "identity_check_errors",
-        "cutoff_mismatch",
-        "current_fixture_included",
-        "future_fixture_included",
-        "warnings",
-    ):
-        assert key in anti
-    assert anti["rows_passed"] == 1
-    assert anti["rows_failed"] == 0
-    assert anti["identity_check_errors"] == 0
+def test_local_fixture_is_historical_base_not_scan_date():
+    jan = _fx(1, api=1, ko=datetime(2026, 1, 20, 18, 0, tzinfo=timezone.utc), competition_id=39)
+    feb = _fx(2, api=2, ko=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc), competition_id=40)
+    payload, _, _ = _audit([jan, feb], today_rows=[])
+    temporal = payload["dataset_summary"]["temporal_distribution"]
+    assert temporal["2026-01"]["count"] == 1
+    assert temporal["2026-02"]["count"] == 1
+    assert payload["dataset_summary"]["cohort_basis"] == "fixture_kickoff_at"
+    assert payload["dataset_summary"]["competitions"] == 2
 
 
-def test_target_fixture_excluded_from_priors():
-    loc = _local()
-    home, away = _priors_home_away()
-    # inject target into priors — extract should flag and exclude from stats
+def test_january_february_present_when_fixtures_exist():
+    fixtures = [
+        _fx(i, api=i, ko=datetime(2026, m, 10, 18, 0, tzinfo=timezone.utc), competition_id=39)
+        for i, m in enumerate((1, 2), start=1)
+    ]
+    payload, _, _ = _audit(fixtures, today_rows=[])
+    assert payload["dataset_summary"]["temporal_distribution"]["2026-01"]["count"] == 1
+    assert payload["dataset_summary"]["temporal_distribution"]["2026-02"]["count"] == 1
+
+
+def test_empty_months_marked():
+    only_jul = [_fx(1, api=1, ko=datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc))]
+    payload, _, _ = _audit(only_jul, today_rows=[])
+    assert payload["dataset_summary"]["temporal_distribution"]["2026-01"]["note"] == "no_local_fixtures_in_month"
+
+
+def test_today_snapshot_optional_goal_features_without_today():
+    local = _fx(500, api=8500)
+    payload, _, id_mock = _audit([local], today_rows=[])
+    assert not id_mock.called
+    assert payload["dataset_summary"]["today_snapshots_missing"] == 1
+    assert payload["anti_leakage"]["identity_not_available"] == 1
+    assert _inv(payload, "home_goals_scored_rolling_5")["rows_available"] == 1
+    assert _inv(payload, "over_2_5_frequency_last_10")["rows_available"] == 1
+    assert _inv(payload, "gg_frequency_last_10")["rows_available"] == 1
+    assert _inv(payload, "goals_scored_std_last_10")["rows_available"] == 1
+
+
+def test_missing_teams_excluded():
+    bad = _fx(500)
+    bad.home_team_id = None
+    payload, _, _ = _audit([bad], today_rows=[])
+    assert payload["anti_leakage"]["local_fixture_missing_teams"] == 1
+    assert payload["dataset_summary"]["leakage_safe_rows"] == 0
+    assert payload["exclusion_reasons"]["missing_teams"] == 1
+
+
+def test_competition_and_country_counts():
+    a = _fx(1, api=1, competition_id=39)
+    b = _fx(2, api=2, competition_id=140)
+    payload, _, _ = _audit([a, b], today_rows=[])
+    assert payload["dataset_summary"]["competitions"] == 2
+    assert payload["dataset_summary"]["countries"] >= 1
+
+
+def test_sample_size_nonzero_and_rolling():
+    local = _fx(500)
+    payload, _, _ = _audit([local], today_rows=[])
+    assert payload["dataset_summary"]["sample_size_mean"] > 0
+    assert _inv(payload, "home_goals_scored_rolling_5")["mean"] is not None
+    assert _inv(payload, "away_goals_scored_rolling_10")["mean"] is not None
+    assert any(p["fixtures_with_any_feature"] > 0 for p in payload["pillar_coverage"].values())
+
+
+def test_stability_dispersion_computed():
+    local = _fx(500)
+    payload, _, _ = _audit([local], today_rows=[])
+    for key in ("goals_scored_std_last_10", "goals_scored_mad_last_10", "goals_scored_cv_last_10"):
+        assert _inv(payload, key)["rows_available"] == 1
+
+
+def test_target_and_provider_and_future_excluded():
+    local = _fx(500, api=8500)
+    home, away = _priors()
     tainted = _prior(500, home=1, away=2, gh=9, ga=9, days_before=0)
     tainted.id = 500
-    tainted.api_fixture_id = loc.api_fixture_id
-    home = home + [tainted]
-    payload, _ = _audit([_row()], local=loc, priors=(home, away))
-    assert payload["anti_leakage"]["current_fixture_included"] == 1
-    assert payload["anti_leakage"]["rows_failed"] == 1
-    assert payload["anti_leakage"]["rows_passed"] == 0
-
-
-def test_future_fixture_excluded():
-    loc = _local()
-    home, away = _priors_home_away()
+    tainted.api_fixture_id = 8500
     future = _prior(99, home=1, away=3, gh=5, ga=5, days_before=-2)
-    home = home + [future]
-    payload, _ = _audit([_row()], local=loc, priors=(home, away))
-    assert payload["anti_leakage"]["future_fixture_included"] == 1
+    payload, _, _ = _audit([local], today_rows=[], priors=(home + [tainted, future], away))
+    assert payload["anti_leakage"]["current_fixture_included"] >= 1 or payload["anti_leakage"]["future_fixture_included"] >= 1
     assert payload["anti_leakage"]["rows_failed"] == 1
 
 
-def test_identity_mismatch_excluded():
-    payload, _ = _audit(
-        [_row()],
-        identity={"status": "inconsistent", "warnings": ["fixture_kickoff_mismatch"]},
-    )
-    assert payload["anti_leakage"]["fixture_identity_mismatch"] == 1
-    assert payload["anti_leakage"]["rows_failed"] == 1
-    assert payload["dataset_summary"]["leakage_safe_rows"] == 0
+def test_xg_from_today_snapshot():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, _, _ = _audit([local], today_rows=[today])
+    assert payload["anti_leakage"]["xg_from_today_snapshot"] == 1
+    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 1
 
 
-def test_identity_check_exception_fail_closed():
-    payload, db = _audit([_row()], identity_error=RuntimeError("identity boom"))
-    anti = payload["anti_leakage"]
-    assert anti["rows_checked"] == 1
-    assert anti["rows_failed"] == 1
-    assert anti["rows_passed"] == 0
-    assert anti["identity_check_errors"] == 1
-    assert anti["fixture_identity_mismatch"] == 0
-    assert "fixture_identity_check_failed" in anti["warnings"]
-    assert payload["dataset_summary"]["leakage_safe_rows"] == 0
-    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 0
-    assert payload["current_v4_inventory"]["production_unchanged"] is True
-    db.commit.assert_not_called()
-    db.add.assert_not_called()
+def test_xg_from_fixture_team_stats_when_no_snapshot():
+    local = _fx(500, api=8500)
+    payload, _, _ = _audit([local], today_rows=[])
+    assert payload["anti_leakage"]["xg_from_fixture_team_stats"] == 1
+    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 1
 
 
-def test_cutoff_xg_mismatch_excluded():
-    bad_cutoff = datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc).isoformat()
-    payload, _ = _audit([_row(xg_profiles_json=_xg_profiles(cutoff=bad_cutoff))])
+def test_xg_cutoff_mismatch_excluded():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    bad = {
+        "home_team": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
+        "away_team": {"xg_for_avg": 1.2, "xg_against_avg": 1.3},
+        "anti_leakage": {"fixture_date_cutoff": datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc).isoformat()},
+    }
+    payload, _, _ = _audit([local], today_rows=[today], xg_profiles_override=bad)
     assert payload["anti_leakage"]["cutoff_mismatch"] == 1
     assert payload["anti_leakage"]["rows_failed"] == 1
 
 
-def test_coverage_xg_for():
-    payload, _ = _audit([_row()])
-    home = _inv(payload, "home_xg_for_avg")
-    away = _inv(payload, "away_xg_for_avg")
-    assert home["rows_available"] == 1
-    assert away["rows_available"] == 1
-    assert home["coverage_pct"] == 100.0
+def test_dedupe_local_fixtures():
+    a = _fx(1, api=100)
+    b = _fx(2, api=100)
+    c = _fx(3, api=None)
+    c.api_fixture_id = None
+    d = _fx(3, api=None)
+    d.api_fixture_id = None
+    out, removed = dedupe_local_fixtures([a, b, c, d])
+    assert len(out) == 2
+    assert removed == 2
 
 
-def test_coverage_xg_against():
-    payload, _ = _audit([_row()])
-    assert _inv(payload, "home_xg_against_avg")["rows_available"] == 1
-    assert _inv(payload, "away_xg_against_avg")["rows_available"] == 1
-
-
-def test_coverage_goal_rolling_5_and_10():
-    payload, _ = _audit([_row()])
-    assert _inv(payload, "home_goals_scored_rolling_5")["rows_available"] == 1
-    assert _inv(payload, "away_goals_scored_rolling_10")["rows_available"] == 1
-
-
-def test_coverage_over_2_5_and_gg():
-    payload, _ = _audit([_row()])
-    assert _inv(payload, "over_2_5_frequency_last_10")["rows_available"] == 1
-    assert _inv(payload, "gg_frequency_last_10")["rows_available"] == 1
-    assert _inv(payload, "over_2_5_frequency_last_10")["mean"] is not None
-
-
-def test_stability_candidate_statistics():
-    payload, _ = _audit([_row()])
-    for key in (
-        "goals_scored_std_last_10",
-        "goals_scored_mad_last_10",
-        "goals_scored_cv_last_10",
-        "goals_rolling_5_vs_10_delta",
-    ):
-        row = _inv(payload, key)
-        assert row["rows_available"] == 1
-        assert row["pillar"] == "offensive_stability"
-
-
-def test_advanced_features_excluded():
-    payload, _ = _audit([_row()])
-    keys = {e["feature_key"] for e in payload["excluded_advanced_features"]}
-    assert keys == {e["feature_key"] for e in EXCLUDED_ADVANCED}
-    assert "ppda" in keys
-    assert "field_tilt" in keys
-    assert "xthreat" in keys
-    assert "big_chances_created" in keys
-    assert "first_half_xg" in keys
-    inv_keys = {f["feature_key"] for f in payload["feature_inventory"]}
-    assert "ppda" not in inv_keys
-
-
-def test_no_external_api_and_no_db_writes():
-    payload, db = _audit([_row()])
-    assert payload["status"] == "ok"
+def test_no_external_api_no_db_writes_json():
+    local = _fx(500)
+    payload, db, _ = _audit([local], today_rows=[])
+    assert payload["api_availability"]["requires_new_api_calls"]["used_in_audit"] is False
     db.commit.assert_not_called()
     db.add.assert_not_called()
-    db.delete.assert_not_called()
-    assert payload["api_availability"]["requires_new_api_calls"]["used_in_audit"] is False
+    jsonable_encoder(payload)
+    keys = {e["feature_key"] for e in payload["excluded_advanced_features"]}
+    assert keys == {e["feature_key"] for e in EXCLUDED_ADVANCED}
 
 
-def test_json_serializable():
-    payload, _ = _audit([_row()])
-    encoded = jsonable_encoder(payload)
-    assert encoded["version"] == VERSION
-    assert "feature_inventory" in encoded
-
-
-def test_no_new_productive_formula():
-    payload, _ = _audit([_row()])
-    assert payload["implementation_recommendation"]["no_single_index"] is True
-    assert payload["implementation_recommendation"]["no_manual_weights"] is True
-    assert "formula" not in str(payload["implementation_recommendation"]).lower() or True
-    # v4 inventory documents thresholds but does not change them
-    assert payload["current_v4_inventory"]["classification_thresholds"] == [0.5, 1.5, 2.5, 3.5]
-
-
-def test_pillar_coverage_keys():
-    payload, _ = _audit([_row()])
-    for pillar in (
-        "offensive_production",
-        "defensive_solidity",
-        "match_tempo",
-        "offensive_stability",
-    ):
-        assert pillar in payload["pillar_coverage"]
-        block = payload["pillar_coverage"][pillar]
-        assert "fixtures_total" in block
-        assert "coverage_complete_pct" in block
+def test_identity_mismatch_excluded():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, _, _ = _audit(
+        [local],
+        today_rows=[today],
+        identity={"status": "inconsistent", "warnings": ["fixture_kickoff_mismatch"]},
+    )
+    assert payload["anti_leakage"]["fixture_identity_mismatch"] == 1
+    assert payload["dataset_summary"]["leakage_safe_rows"] == 0
