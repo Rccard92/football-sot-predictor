@@ -1,4 +1,4 @@
-"""Test audit Intensità Goal v5 — identity storica + qualità (v1_3)."""
+"""Test audit Intensità Goal v5 — xG opzionale (v1_4)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_common import (
     dedupe_local_fixtures,
     extract_features_for_local_fixture,
     extract_features_from_indexes,
+    resolve_xg_feature_bundle,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import (
     AuditIndexes,
@@ -145,6 +146,7 @@ def _indexes_from_priors(
     *,
     xg_for: float = 1.5,
     xg_against: float = 1.0,
+    include_xg_stats: bool = True,
 ) -> AuditIndexes:
     idx = AuditIndexes()
     by_local, by_provider = build_today_indexes(today_rows)
@@ -159,15 +161,16 @@ def _indexes_from_priors(
         for tid in (int(fx.home_team_id), int(fx.away_team_id)):
             key = (comp, tid)
             by_comp_team.setdefault(key, []).append(fx)
-            xg_by.setdefault(key, []).append(
-                XgEvent(
-                    kickoff=fx.kickoff_at,
-                    fixture_id=int(fx.id),
-                    api_fixture_id=int(fx.api_fixture_id) if fx.api_fixture_id is not None else None,
-                    xg_for=xg_for,
-                    xg_against=xg_against,
+            if include_xg_stats:
+                xg_by.setdefault(key, []).append(
+                    XgEvent(
+                        kickoff=fx.kickoff_at,
+                        fixture_id=int(fx.id),
+                        api_fixture_id=int(fx.api_fixture_id) if fx.api_fixture_id is not None else None,
+                        xg_for=xg_for,
+                        xg_against=xg_against,
+                    )
                 )
-            )
 
     for local in fixtures:
         if local.home_team_id is None or local.away_team_id is None:
@@ -205,6 +208,7 @@ def _audit(
     xg_profiles_override=None,
     date_from: date | None = None,
     date_to: date | None = None,
+    include_xg_stats: bool = True,
 ):
     db = MagicMock()
     todays = today_rows if today_rows is not None else []
@@ -212,7 +216,9 @@ def _audit(
         for t in todays:
             t.xg_profiles_json = xg_profiles_override
 
-    indexes = _indexes_from_priors(fixtures, todays, priors=priors)
+    indexes = _indexes_from_priors(
+        fixtures, todays, priors=priors, include_xg_stats=include_xg_stats
+    )
     identity_payload = identity if identity is not None else None
 
     id_patch_kwargs: dict = {}
@@ -275,7 +281,7 @@ def _approx_eq(a, b, tol=FLOAT_TOL) -> bool:
 
 
 def test_version_and_v4_unchanged():
-    assert VERSION == "cecchino_goal_intensity_v5_audit_v1_3"
+    assert VERSION == "cecchino_goal_intensity_v5_audit_v1_4"
     assert V4_VERSION == "cecchino_goal_intensity_v4_expected_goals"
     local = _fx(500, api=8500)
     today = _today(local_fixture_id=500, provider_fixture_id=8500)
@@ -461,12 +467,25 @@ def test_xg_from_fixture_team_stats_when_no_snapshot():
 
 
 def test_xg_cutoff_mismatch_excluded():
+    """Cutoff unsafe + niente stats → excluded_unsafe, riga resta feature-safe, xG null."""
     local = _fx(500, api=8500)
     today = _today(local_fixture_id=500, provider_fixture_id=8500)
     bad = _xg_profiles(cutoff=datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc).isoformat())
-    payload, _, _, _, _, _ = _audit([local], today_rows=[today], xg_profiles_override=bad)
+    payload, _, _, _, _, _ = _audit(
+        [local],
+        today_rows=[today],
+        xg_profiles_override=bad,
+        include_xg_stats=False,
+    )
     assert payload["anti_leakage"]["cutoff_mismatch"] == 1
-    assert payload["anti_leakage"]["rows_failed"] == 1
+    assert payload["anti_leakage"]["rows_failed"] == 0
+    assert payload["dataset_summary"]["leakage_safe_rows"] == 1
+    assert payload["dataset_summary"]["xg_cohorts"]["xg_excluded_unsafe"] == 1
+    row = payload["fixture_audit_rows"][0]
+    assert row["xg_status"] == "excluded_unsafe"
+    assert row["row_feature_safe"] is True
+    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 0
+    assert _inv(payload, "home_goals_scored_rolling_5")["rows_available"] == 1
 
 
 def test_snapshot_score_ignores_kickoff_and_updated_at():
@@ -650,3 +669,223 @@ def test_availability_payload_shape():
     assert payload["status"] == "ok"
     assert payload["earliest_kickoff_date"] == "2025-08-01"
     assert payload["latest_kickoff_date"] == "2026-07-10"
+
+
+def test_xg_status_available_complete():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, _, _, _, _, _ = _audit([local], today_rows=[today])
+    row = payload["fixture_audit_rows"][0]
+    assert row["xg_status"] == "available"
+    assert row["xg_source"] == "today_snapshot"
+    assert set(row["xg_available_fields"]) == {
+        "home_xg_for_avg",
+        "away_xg_for_avg",
+        "home_xg_against_avg",
+        "away_xg_against_avg",
+    }
+    assert payload["dataset_summary"]["xg_cohorts"]["xg_available"] == 1
+    assert payload["dataset_summary"]["xg_value_research_readiness"]["paired_fixture_count"] == 1
+    assert payload["dataset_summary"]["xg_value_research_readiness"]["paired_comparison_possible"] is True
+    assert payload["dataset_summary"]["xg_value_research_readiness"]["minimum_recommended_sample_reached"] is False
+
+
+def test_xg_status_partial_no_fake_pairs():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    partial = {
+        "home_team": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
+        "away_team": {},
+        "anti_leakage": {
+            "fixture_date_cutoff": KO.isoformat(),
+            "current_fixture_excluded": True,
+        },
+    }
+    indexes = _indexes_from_priors([local], [today], include_xg_stats=False)
+    today.xg_profiles_json = partial
+    bundle = resolve_xg_feature_bundle(target=local, today_row=today, indexes=indexes)
+    assert bundle["xg_status"] == "partial"
+    assert bundle["home_xg_for_avg"] == 1.4
+    assert bundle["away_xg_for_avg"] is None
+    assert bundle["pair_xg_for_avg"] is None
+    assert bundle["pair_xg_against_avg"] is None
+
+    payload, _, _, _, _, _ = _audit(
+        [local],
+        today_rows=[today],
+        xg_profiles_override=partial,
+        include_xg_stats=False,
+    )
+    assert payload["fixture_audit_rows"][0]["xg_status"] == "partial"
+    assert payload["dataset_summary"]["leakage_safe_rows"] == 1
+    assert _inv(payload, "pair_xg_for_avg")["rows_available"] == 0
+    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 1
+
+
+def test_xg_status_missing_keeps_row_feature_safe_and_null_not_zero():
+    local = _fx(500, api=8500)
+    payload, _, _, _, _, _ = _audit([local], today_rows=[], include_xg_stats=False)
+    row = payload["fixture_audit_rows"][0]
+    assert row["xg_status"] == "missing"
+    assert row["row_feature_safe"] is True
+    assert payload["dataset_summary"]["leakage_safe_rows"] == 1
+    assert payload["dataset_summary"]["xg_cohorts"]["xg_missing"] == 1
+    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 0
+    assert _inv(payload, "home_xg_for_avg")["mean"] is None
+    assert _inv(payload, "home_goals_scored_avg")["rows_available"] == 1
+    assert payload["dataset_summary"]["audit_usable"] is True or payload["dataset_summary"]["audit_quality"] != "unusable"
+
+
+def test_xg_provider_target_not_excluded_unsafe():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    bad = {
+        "home_team": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
+        "away_team": {"xg_for_avg": 1.2, "xg_against_avg": 1.3},
+        "anti_leakage": {
+            "fixture_date_cutoff": KO.isoformat(),
+            "current_fixture_excluded": True,
+            "excluded_provider_fixture_ids": [9999],
+        },
+    }
+    payload, _, _, _, _, _ = _audit(
+        [local],
+        today_rows=[today],
+        xg_profiles_override=bad,
+        include_xg_stats=False,
+    )
+    row = payload["fixture_audit_rows"][0]
+    assert row["xg_status"] == "excluded_unsafe"
+    assert "provider_fixture_target_not_excluded" in row["xg_exclusion_reasons"]
+    assert row["row_feature_safe"] is True
+    assert _inv(payload, "home_xg_for_avg")["rows_available"] == 0
+
+
+def test_xg_future_fixture_included_unsafe():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    bad = {
+        "home_team": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
+        "away_team": {"xg_for_avg": 1.2, "xg_against_avg": 1.3},
+        "anti_leakage": {
+            "fixture_date_cutoff": KO.isoformat(),
+            "current_fixture_excluded": True,
+            "future_fixture_included": True,
+        },
+    }
+    payload, _, _, _, _, _ = _audit(
+        [local],
+        today_rows=[today],
+        xg_profiles_override=bad,
+        include_xg_stats=False,
+    )
+    row = payload["fixture_audit_rows"][0]
+    assert row["xg_status"] == "excluded_unsafe"
+    assert "future_fixture_included_in_xg" in row["xg_exclusion_reasons"]
+    assert row["row_feature_safe"] is True
+
+
+def test_xg_source_mixed_snapshot_plus_stats():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    partial_snap = {
+        "home_team": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
+        "away_team": {},
+        "anti_leakage": {
+            "fixture_date_cutoff": KO.isoformat(),
+            "current_fixture_excluded": True,
+        },
+    }
+    payload, _, _, _, _, _ = _audit(
+        [local],
+        today_rows=[today],
+        xg_profiles_override=partial_snap,
+        include_xg_stats=True,
+    )
+    row = payload["fixture_audit_rows"][0]
+    assert row["xg_source"] == "mixed"
+    assert row["xg_status"] == "available"
+    assert payload["anti_leakage"]["xg_sources_feature_safe"]["mixed"] == 1
+
+
+def test_xg_sources_counters_all_checked_and_feature_safe():
+    a = _fx(1, api=1)
+    b = _fx(2, api=2)
+    today_ok = _today(id=10, local_fixture_id=1, provider_fixture_id=1)
+    today_bad = _today(
+        id=11,
+        local_fixture_id=2,
+        provider_fixture_id=999,
+        home_team_name="Team1",
+        away_team_name="Team2",
+    )
+    payload, _, _, _, _, _ = _audit([a, b], today_rows=[today_ok, today_bad])
+    anti = payload["anti_leakage"]
+    assert "xg_sources_all_checked" in anti
+    assert "xg_sources_feature_safe" in anti
+    assert sum(anti["xg_sources_all_checked"].values()) == 2
+    assert sum(anti["xg_sources_feature_safe"].values()) == anti["row_feature_safe"]
+
+
+def test_fixture_audit_rows_light_payload_no_raw_history():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, _, _, _, _, _ = _audit([local], today_rows=[today])
+    rows = payload["fixture_audit_rows"]
+    assert len(rows) == 1
+    expected = {
+        "local_fixture_id",
+        "provider_fixture_id",
+        "competition_id",
+        "country",
+        "kickoff",
+        "home_team",
+        "away_team",
+        "row_feature_safe",
+        "static_identity_status",
+        "snapshot_time_status",
+        "xg_status",
+        "xg_source",
+        "xg_available_fields",
+        "xg_missing_fields",
+        "xg_exclusion_reasons",
+        "sample_size",
+        "target_total_goals_ft",
+    }
+    assert set(rows[0].keys()) == expected
+    assert "history" not in rows[0]
+    assert "features" not in rows[0]
+    assert "priors" not in rows[0]
+
+
+def test_core_and_enriched_feature_lists_and_readiness():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    payload, _, _, _, _, _ = _audit([local], today_rows=[today])
+    core = payload["dataset_summary"]["core_features_without_xg"]
+    enriched = payload["dataset_summary"]["enriched_features_with_xg"]
+    assert "home_goals_scored_avg" in core
+    assert "home_xg_for_avg" not in core
+    assert "home_xg_for_avg" in enriched
+    assert all(k in enriched for k in core)
+
+
+def test_xg_low_coverage_does_not_force_unusable():
+    """xG missing non degrada da solo a unusable se core feature-safe ok."""
+    fixtures = [_fx(i, api=i, competition_id=39) for i in range(1, 6)]
+    payload, _, _, _, _, _ = _audit(fixtures, today_rows=[], include_xg_stats=False)
+    assert payload["dataset_summary"]["xg_cohorts"]["xg_missing"] == 5
+    assert payload["dataset_summary"]["feature_safe_rate_pct"] >= 70
+    assert payload["dataset_summary"]["audit_quality"] != "unusable"
+
+
+def test_performance_payload_compatible_v1_2():
+    local = _fx(500)
+    payload, _, _, _, _, _ = _audit([local], today_rows=[])
+    perf = payload["performance"]
+    assert "elapsed_ms" in perf
+    assert "calculation_ms" in perf
+    assert "db_query_phases" in perf
+    assert "index_sizes" in perf
+    assert "cohort_ms" in perf["db_query_phases"]
+    assert "preload_ms" in perf["db_query_phases"]

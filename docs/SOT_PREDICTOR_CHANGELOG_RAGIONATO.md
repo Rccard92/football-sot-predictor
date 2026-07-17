@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — xG opzionale (1A.4) (2026-07-17)
+
+- xG facoltativo per ammissibilità, obbligatorio se completo/sicuro; stati `available|partial|missing|excluded_unsafe`.
+- Cutoff/unsafe non escludono la riga; `fixture_audit_rows`, coorti, readiness paired (≥50); FE Copertura xG + filtri + CSV.
+- Versione `cecchino_goal_intensity_v5_audit_v1_4`; v4 e formule invariate.
+
 ## Intensità Goal v5 Research — Identity storica + qualità (2026-07-17)
 
 - Identity storica statica: non esclude per status/score Today vs Fixture FT.

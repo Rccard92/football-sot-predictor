@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — xG opzionale (1A.4) (2026-07-17)
+
+1. Lab: sezione Copertura xG + badge + filtri Stato xG / Competition (client-side)
+2. Export CSV Fixture audit; verificare coorti e readiness paired
+3. xG missing/unsafe non deve azzerare feature-safe; versione `v1_4`
+
 ## Intensità Goal v5 Research — Identity storica + qualità (2026-07-17)
 
 1. Lab: verificare banner quality + feature-safe rate

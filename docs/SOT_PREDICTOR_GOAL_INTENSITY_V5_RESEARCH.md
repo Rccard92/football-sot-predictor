@@ -46,7 +46,9 @@ La v4 resta disponibile come **legacy_reference** (nessuna sostituzione in 1A).
 
 ## Anti-leakage
 
-Per ogni riga: identity consistency, cutoff xG, esclusione fixture corrente/futura, max source kickoff &lt; target. Solo righe `passed` nelle statistiche.
+Per ogni riga: identity consistency statica, esclusione fixture corrente/futura dalle feature goal, max source kickoff &lt; target. Solo righe `row_feature_safe` nelle statistiche di copertura.
+
+**xG (1A.4):** facoltativo per ammissibilità, obbligatorio se completo e anti-leakage. Stati `available` / `partial` / `missing` / `excluded_unsafe`. Cutoff o xG unsafe azzerano solo i campi xG (mai imputazione a 0); la Fixture resta feature-safe se identity/goal OK. Coorti su feature-safe; readiness paired per confronto futuro con/senza xG (soglia ≥50).
 
 ## Endpoint
 
@@ -54,11 +56,11 @@ Per ogni riga: identity consistency, cutoff xG, esclusione fixture corrente/futu
 
 `POST /api/admin/cecchino/research/goal-intensity-v5/audit`
 
-Versione payload: `cecchino_goal_intensity_v5_audit_v1_3`
+Versione payload: `cecchino_goal_intensity_v5_audit_v1_4`
 
 ## Frontend
 
-`/cecchino/ricerca-intensita-goal` — laboratorio audit con export JSON/CSV; banner range dati locali; init filtri sul range reale; quality usable/degraded/unusable.
+`/cecchino/ricerca-intensita-goal` — laboratorio audit con export JSON/CSV inventario + CSV Fixture audit; sezione Copertura xG (coorti, badge, sorgenti); filtri client-side Stato xG / Competition; banner range dati locali; quality usable/degraded/unusable.
 
 ## Roadmap
 
@@ -69,6 +71,7 @@ Versione payload: `cecchino_goal_intensity_v5_audit_v1_3`
 | **1A.2** | Coorte `Fixture.kickoff_at`, identity keyword-only, feature goal senza Today, xG snapshot/team_stats |
 | **1A.3** | Perf: preload indici in memoria, loop DB-free, availability, timeout 180s invariato |
 | **1A.3-fix** | Identity storica statica (no status/score bloccanti); gate xG; `audit_quality` + feature-safe rate |
+| **1A.4** | xG opzionale ma obbligatorio se available; coorti; fixture audit; FE filtri/CSV |
 | **1B** | Dataset storico feature↔target |
 | **1C** | Analisi statistica / ridondanza / scelta stabilità |
 | **2A** | Preview UI a quattro pilastri (senza promuovere formula) |

@@ -43,8 +43,18 @@ from app.services.datetime_utils import ensure_datetime_utc, safe_isoformat
 
 logger = logging.getLogger(__name__)
 
-VERSION = "cecchino_goal_intensity_v5_audit_v1_3"
+VERSION = "cecchino_goal_intensity_v5_audit_v1_4"
 _PROGRESS_EVERY = 500
+_PAIRED_XG_MIN_SAMPLE = 50
+
+XG_FEATURE_KEYS = (
+    "home_xg_for_avg",
+    "away_xg_for_avg",
+    "pair_xg_for_avg",
+    "home_xg_against_avg",
+    "away_xg_against_avg",
+    "pair_xg_against_avg",
+)
 
 AUDIT_QUALITY_RULE = (
     "feature_safe_rate_pct = pct(row_feature_safe, rows_checked); "
@@ -52,7 +62,8 @@ AUDIT_QUALITY_RULE = (
     "OR (safe>0 e coverage tutte 0); "
     "usable: rate>=70% AND sample_size_mean>0 AND competitions>0 AND no identity_check_errors "
     "AND non coverage tutte 0; "
-    "degraded: resto; audit_usable=(audit_quality==usable)"
+    "degraded: resto; audit_usable=(audit_quality==usable); "
+    "xG missing/partial/excluded_unsafe non determina da solo unusable"
 )
 
 
@@ -112,21 +123,50 @@ def build_goal_intensity_v5_audit(
         "xg_from_fixture_team_stats": 0,
         "xg_missing": 0,
         "xg_snapshot_cutoff_mismatch": 0,
+        "xg_partial": 0,
+        "xg_excluded_unsafe": 0,
+        "xg_available": 0,
+        "xg_sources_all_checked": {
+            "today_snapshot": 0,
+            "fixture_team_stats": 0,
+            "mixed": 0,
+            "missing": 0,
+            "excluded_unsafe": 0,
+        },
+        "xg_sources_feature_safe": {
+            "today_snapshot": 0,
+            "fixture_team_stats": 0,
+            "mixed": 0,
+            "missing": 0,
+            "excluded_unsafe": 0,
+        },
+        # alias legacy
         "xg_source_all_checked": {
             "today_snapshot": 0,
             "fixture_team_stats": 0,
+            "mixed": 0,
             "missing": 0,
-            "snapshot_cutoff_mismatch": 0,
+            "excluded_unsafe": 0,
         },
         "xg_source_feature_safe": {
             "today_snapshot": 0,
             "fixture_team_stats": 0,
+            "mixed": 0,
             "missing": 0,
-            "snapshot_cutoff_mismatch": 0,
+            "excluded_unsafe": 0,
         },
         "targets_all_finished": 0,
         "targets_feature_safe": 0,
         "warnings": [],
+    }
+
+    fixture_audit_rows: list[dict[str, Any]] = []
+    xg_cohorts_safe = {
+        "all_feature_safe": 0,
+        "xg_available": 0,
+        "xg_partial": 0,
+        "xg_missing": 0,
+        "xg_excluded_unsafe": 0,
     }
 
     exclusion_reasons: dict[str, int] = defaultdict(int)
@@ -307,19 +347,6 @@ def build_goal_intensity_v5_audit(
             anti["static_identity_unavailable"] += 1
             anti["identity_not_available"] += 1
 
-        if leak_meta.get("cutoff_mismatch"):
-            anti["cutoff_mismatch"] += 1
-            anti["xg_snapshot_cutoff_mismatch"] += 1
-            exclusion_reasons["cutoff_mismatch"] += 1
-            append_debug_sample(
-                debug_samples,
-                "cutoff_mismatch",
-                today_fixture_id=today_id,
-                local_fixture_id=lid,
-                provider_fixture_id=api_id,
-                kickoff=ko_iso,
-            )
-            failed = True
         if leak_meta.get("current_fixture_included"):
             anti["current_fixture_included"] += 1
             exclusion_reasons["current_fixture_included"] += 1
@@ -337,24 +364,75 @@ def build_goal_intensity_v5_audit(
             )
             failed = True
 
+        xg_status = str(leak_meta.get("xg_status") or "missing")
         xg_src = str(leak_meta.get("xg_source") or "missing")
+        if xg_src not in anti["xg_sources_all_checked"]:
+            xg_src = "missing"
+        anti["xg_sources_all_checked"][xg_src] += 1
+        anti["xg_source_all_checked"][xg_src] += 1
         if xg_src == "today_snapshot":
             anti["xg_from_today_snapshot"] += 1
-            anti["xg_source_all_checked"]["today_snapshot"] += 1
         elif xg_src == "fixture_team_stats":
             anti["xg_from_fixture_team_stats"] += 1
-            anti["xg_source_all_checked"]["fixture_team_stats"] += 1
-        elif xg_src == "snapshot_cutoff_mismatch":
-            anti["xg_source_all_checked"]["snapshot_cutoff_mismatch"] += 1
+        elif xg_src == "mixed":
+            pass
+        elif xg_src == "excluded_unsafe":
+            pass
         else:
             anti["xg_missing"] += 1
-            anti["xg_source_all_checked"]["missing"] += 1
+
+        if xg_status == "available":
+            anti["xg_available"] += 1
+        elif xg_status == "partial":
+            anti["xg_partial"] += 1
+        elif xg_status == "excluded_unsafe":
+            anti["xg_excluded_unsafe"] += 1
+            if "fixture_date_cutoff_mismatch" in (leak_meta.get("xg_exclusion_reasons") or []):
+                anti["xg_snapshot_cutoff_mismatch"] += 1
+                anti["cutoff_mismatch"] += 1
+                append_debug_sample(
+                    debug_samples,
+                    "xg_excluded_unsafe_cutoff",
+                    today_fixture_id=today_id,
+                    local_fixture_id=lid,
+                    provider_fixture_id=api_id,
+                    kickoff=ko_iso,
+                )
 
         if leak_meta.get("xg_anti_leakage_verified"):
             anti["xg_anti_leakage_verified"] += 1
 
+        comp_id = int(local.competition_id) if local.competition_id is not None else None
+        cname = indexes.country_by_competition_id.get(comp_id) if comp_id is not None else None
+        if not cname and today_row is not None and getattr(today_row, "country_name", None):
+            cname = str(today_row.country_name)
+        home_name = indexes.team_name_by_id.get(int(local.home_team_id))
+        away_name = indexes.team_name_by_id.get(int(local.away_team_id))
+        total_goals_ft = gh + ga
+
+        row_audit = {
+            "local_fixture_id": lid,
+            "provider_fixture_id": api_id,
+            "competition_id": comp_id,
+            "country": cname,
+            "kickoff": ko_iso,
+            "home_team": home_name,
+            "away_team": away_name,
+            "row_feature_safe": False,
+            "static_identity_status": identity_status,
+            "snapshot_time_status": snap_status,
+            "xg_status": xg_status,
+            "xg_source": xg_src,
+            "xg_available_fields": list(leak_meta.get("xg_available_fields") or []),
+            "xg_missing_fields": list(leak_meta.get("xg_missing_fields") or []),
+            "xg_exclusion_reasons": list(leak_meta.get("xg_exclusion_reasons") or []),
+            "sample_size": int(leak_meta.get("sample_size") or 0),
+            "target_total_goals_ft": total_goals_ft,
+        }
+
         if failed:
             anti["rows_failed"] += 1
+            fixture_audit_rows.append(row_audit)
             if i % _PROGRESS_EVERY == 0 or i == total_targets:
                 _log_progress(i, total_targets, t_calc)
             continue
@@ -362,17 +440,23 @@ def build_goal_intensity_v5_audit(
         anti["rows_passed"] += 1
         anti["row_feature_safe"] += 1
         anti["targets_feature_safe"] += 1
-        if xg_src in anti["xg_source_feature_safe"]:
-            anti["xg_source_feature_safe"][xg_src] += 1
+        anti["xg_sources_feature_safe"][xg_src] += 1
+        anti["xg_source_feature_safe"][xg_src] += 1
+        xg_cohorts_safe["all_feature_safe"] += 1
+        if xg_status == "available":
+            xg_cohorts_safe["xg_available"] += 1
+        elif xg_status == "partial":
+            xg_cohorts_safe["xg_partial"] += 1
+        elif xg_status == "excluded_unsafe":
+            xg_cohorts_safe["xg_excluded_unsafe"] += 1
         else:
-            anti["xg_source_feature_safe"]["missing"] += 1
+            xg_cohorts_safe["xg_missing"] += 1
 
-        comp_id = int(local.competition_id) if local.competition_id is not None else None
+        row_audit["row_feature_safe"] = True
+        fixture_audit_rows.append(row_audit)
+
         if comp_id is not None:
             competitions.add(comp_id)
-        cname = indexes.country_by_competition_id.get(comp_id) if comp_id is not None else None
-        if not cname and today_row is not None and getattr(today_row, "country_name", None):
-            cname = str(today_row.country_name)
         if cname:
             countries.add(cname)
         by_month[month_key_from_dt(ko)] += 1
@@ -386,6 +470,7 @@ def build_goal_intensity_v5_audit(
                 "month": month_key_from_dt(ko),
                 "today_snapshot_status": today_snapshot_status,
                 "identity_status": identity_status,
+                "xg_status": xg_status,
             }
         )
 
@@ -587,6 +672,17 @@ def build_goal_intensity_v5_audit(
 
     audit_usable = audit_quality == "usable"
 
+    safe_n = xg_cohorts_safe["all_feature_safe"]
+    xg_cohorts_pct = {
+        "xg_available_pct": pct(xg_cohorts_safe["xg_available"], safe_n),
+        "xg_partial_pct": pct(xg_cohorts_safe["xg_partial"], safe_n),
+        "xg_missing_pct": pct(xg_cohorts_safe["xg_missing"], safe_n),
+        "xg_excluded_unsafe_pct": pct(xg_cohorts_safe["xg_excluded_unsafe"], safe_n),
+    }
+    paired_count = xg_cohorts_safe["xg_available"]
+    core_without_xg = [s["feature_key"] for s in FEATURE_SPECS if s["feature_key"] not in XG_FEATURE_KEYS]
+    enriched_with_xg = [s["feature_key"] for s in FEATURE_SPECS]
+
     dataset_summary = {
         "local_fixtures_raw": len(raw_fixtures),
         "local_fixtures_deduped": len(fixtures),
@@ -608,8 +704,17 @@ def build_goal_intensity_v5_audit(
         "cohort_basis": "fixture_kickoff_at",
         "cohort_notes": {
             "targets": "Fixture FT con risultato nel range kickoff",
-            "features": "Solo righe row_feature_safe (identity statica + anti-leakage)",
+            "features": "Solo righe row_feature_safe (identity statica + anti-leakage goal); xG opzionale",
         },
+        "xg_cohorts": {**xg_cohorts_safe, **xg_cohorts_pct},
+        "xg_value_research_readiness": {
+            "paired_comparison_possible": paired_count > 0,
+            "paired_fixture_count": paired_count,
+            "minimum_recommended_sample_reached": paired_count >= _PAIRED_XG_MIN_SAMPLE,
+            "note": "Il valore xG verrà misurato sulla stessa coorte con e senza feature xG.",
+        },
+        "core_features_without_xg": core_without_xg,
+        "enriched_features_with_xg": enriched_with_xg,
         "targets": {
             "total_goals_ft_available": target_total_goals_available,
             "goals_ge_2_rate_pct": pct(target_ge2, target_total_goals_available),
@@ -639,6 +744,7 @@ def build_goal_intensity_v5_audit(
         "dataset_summary": dataset_summary,
         "pillar_coverage": pillar_coverage,
         "feature_inventory": feature_inventory,
+        "fixture_audit_rows": fixture_audit_rows,
         "excluded_advanced_features": EXCLUDED_ADVANCED,
         "anti_leakage": anti,
         "exclusion_reasons": dict(exclusion_reasons),

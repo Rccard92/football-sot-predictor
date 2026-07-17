@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — xG opzionale (1A.4) (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_goal_intensity_v5_audit_v1_4` |
+| xG | Opzionale per ammissibilità; obbligatorio se available+safe |
+| Stati | `available` / `partial` / `missing` / `excluded_unsafe` |
+| FE | Copertura xG, badge, filtri client, CSV Fixture audit |
+| Formule | Nessuna; v4 invariata |
+
 ## Intensità Goal v5 Research — Identity storica + qualità (2026-07-17)
 
 | Aspetto | Dettaglio |

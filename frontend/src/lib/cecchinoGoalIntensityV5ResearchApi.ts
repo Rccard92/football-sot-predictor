@@ -51,6 +51,28 @@ export type GoalIntensityFeatureInventoryRow = {
   recommended_status: string
 }
 
+export type GoalIntensityXgStatus = 'available' | 'partial' | 'missing' | 'excluded_unsafe'
+
+export type GoalIntensityFixtureAuditRow = {
+  local_fixture_id: number
+  provider_fixture_id: number | null
+  competition_id: number | null
+  country: string | null
+  kickoff: string | null
+  home_team: string | null
+  away_team: string | null
+  row_feature_safe: boolean
+  static_identity_status: string
+  snapshot_time_status: string
+  xg_status: GoalIntensityXgStatus | string
+  xg_source: string
+  xg_available_fields: string[]
+  xg_missing_fields: string[]
+  xg_exclusion_reasons: string[]
+  sample_size: number
+  target_total_goals_ft: number | null
+}
+
 export type GoalIntensityV5AuditResponse = {
   status: string
   version: string
@@ -63,6 +85,7 @@ export type GoalIntensityV5AuditResponse = {
   dataset_summary: Record<string, unknown>
   pillar_coverage: Record<string, Record<string, unknown>>
   feature_inventory: GoalIntensityFeatureInventoryRow[]
+  fixture_audit_rows?: GoalIntensityFixtureAuditRow[]
   excluded_advanced_features: Array<Record<string, unknown>>
   anti_leakage: Record<string, unknown>
   exclusion_reasons?: Record<string, number>
@@ -125,6 +148,21 @@ export function buildGoalIntensityFeatureInventoryCsvFilename(
   return `cecchino_goal_intensity_v5_feature_inventory_${from}_${to}.csv`
 }
 
+export function buildGoalIntensityFixtureAuditCsvFilename(
+  dateFrom: string,
+  dateTo: string,
+): string {
+  const from = sanitizeFilenameFragment(dateFrom)
+  const to = sanitizeFilenameFragment(dateTo)
+  return `cecchino_goal_intensity_v5_fixture_audit_${from}_${to}.csv`
+}
+
+function escapeCsvCell(v: unknown): string {
+  const s = v == null ? '' : String(v)
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
 export function featureInventoryToCsv(rows: GoalIntensityFeatureInventoryRow[]): string {
   const headers = [
     'feature_key',
@@ -155,14 +193,42 @@ export function featureInventoryToCsv(rows: GoalIntensityFeatureInventoryRow[]):
     'redundancy_family',
     'recommended_status',
   ]
-  const escape = (v: unknown) => {
-    const s = v == null ? '' : String(v)
-    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-    return s
-  }
   const lines = [headers.join(',')]
   for (const row of rows) {
-    lines.push(headers.map((h) => escape((row as Record<string, unknown>)[h])).join(','))
+    lines.push(headers.map((h) => escapeCsvCell((row as Record<string, unknown>)[h])).join(','))
+  }
+  return lines.join('\n')
+}
+
+const FIXTURE_AUDIT_CSV_HEADERS = [
+  'local_fixture_id',
+  'provider_fixture_id',
+  'competition_id',
+  'country',
+  'kickoff',
+  'home_team',
+  'away_team',
+  'row_feature_safe',
+  'static_identity_status',
+  'snapshot_time_status',
+  'xg_status',
+  'xg_source',
+  'xg_available_fields',
+  'xg_missing_fields',
+  'xg_exclusion_reasons',
+  'sample_size',
+  'target_total_goals_ft',
+] as const
+
+export function fixtureAuditToCsv(rows: GoalIntensityFixtureAuditRow[]): string {
+  const lines = [FIXTURE_AUDIT_CSV_HEADERS.join(',')]
+  for (const row of rows) {
+    const cells = FIXTURE_AUDIT_CSV_HEADERS.map((h) => {
+      const raw = (row as Record<string, unknown>)[h]
+      if (Array.isArray(raw)) return escapeCsvCell(raw.join('|'))
+      return escapeCsvCell(raw)
+    })
+    lines.push(cells.join(','))
   }
   return lines.join('\n')
 }
