@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.cecchino.cecchino_balance_research_candidates import (
+    RESEARCH_CANDIDATES_VERSION,
     dominant_side_to_market_label,
     research_candidates_from_probs,
 )
@@ -111,6 +112,44 @@ def _goal_probs_from_odds(under: float | None, over: float | None) -> tuple[floa
     return up, op
 
 
+def _f36_side_from_signed(signed: Any) -> str | None:
+    s = _num(signed)
+    if s is None or s == 0:
+        return None
+    # convention produttiva: signed > 0 → struttura verso 1; < 0 → verso 2
+    return "1" if s > 0 else "2"
+
+
+def _f36_structural_reading(f36: dict[str, Any]) -> str:
+    """Lettura geometrica: nessuna formulazione predittiva sul modello."""
+    class_key = str(f36.get("class_key") or "")
+    side = _f36_side_from_signed(f36.get("signed"))
+
+    if class_key == "imbalance":
+        if side:
+            return (
+                f"La distanza tra le quote laterali descrive una struttura "
+                f"sbilanciata verso il lato {side}."
+            )
+        return "La distanza tra le quote laterali descrive una struttura sbilanciata."
+
+    if class_key == "transition":
+        if side:
+            return (
+                "Le quote laterali mostrano una distanza intermedia, "
+                f"con inclinazione strutturale verso il lato {side}."
+            )
+        return "Le quote laterali mostrano una distanza intermedia tra equilibrio e squilibrio."
+
+    # strong_balance / balance / default
+    if side:
+        return (
+            "Le quote laterali risultano relativamente vicine, "
+            f"con una lieve inclinazione verso il lato {side}."
+        )
+    return "Le quote laterali risultano vicine e la struttura della partita appare equilibrata."
+
+
 def _pillar_f36(balance: dict[str, Any]) -> dict[str, Any]:
     f36 = balance.get("f36") or {}
     if not f36 or balance.get("status") != "available":
@@ -134,8 +173,8 @@ def _pillar_f36(balance: dict[str, Any]) -> dict[str, Any]:
         "status": "official",
         "index": f36.get("score"),
         "class_label": f36.get("label"),
-        "reading": f36.get("direction_note") or f36.get("label") or "",
-        "direction": None,
+        "reading": _f36_structural_reading(f36),
+        "direction": _f36_side_from_signed(f36.get("signed")),
         "source_version": balance.get("version"),
         "components": [
             _component("f36_abs", "Distanza geometrica |F36|", f36.get("abs"), unit="index"),
@@ -190,7 +229,7 @@ def _pillar_dominance(balance: dict[str, Any], candidates: dict[str, Any]) -> di
         "class_label": class_label,
         "reading": _dominance_reading(market, conviction, conv_class),
         "direction": market,
-        "source_version": balance.get("version"),
+        "source_version": RESEARCH_CANDIDATES_VERSION,
         "components": components,
         "warnings": ["research_index"] if status == "research" else ["calibration_pending"],
     }
@@ -239,18 +278,51 @@ def _pillar_draw_credibility(
     }
 
 
-def _gap_reading(gap_coh: float | None, class_label: str | None, gap_pp: float | None) -> str:
+def _format_gap_pp_it(gap_pp: float | None) -> str:
+    if gap_pp is None:
+        return "n/d"
+    # presentation only: Italian decimal comma, max 2 decimals, no trailing zeros forced
+    text = f"{float(gap_pp):.2f}".rstrip("0").rstrip(".")
+    return text.replace(".", ",")
+
+
+def _gap_coherence_is_low(class_label: str | None) -> bool:
+    if not class_label:
+        return False
+    low = class_label.lower()
+    return low in ("non confermato", "debole") or "non confermato" in low
+
+
+def _gap_reading(
+    gap_coh: float | None,
+    gap_class: str | None,
+    gap_pp: float | None,
+    *,
+    f36_class_key: str | None,
+) -> str:
     if gap_coh is None:
         return (
             "La coerenza tra probabilità 1/2 e geometria F36 è in calibrazione. "
             "I componenti disponibili sono mostrati senza indice aggregato."
         )
-    conf = class_label or "parziale"
-    gap_txt = f"{gap_pp} pp" if gap_pp is not None else "n/d"
-    return (
-        f"Le probabilità 1/2 (gap {gap_txt}) e la geometria F36 risultano in coerenza «{conf}». "
-        "Lettura descrittiva, non un suggerimento di mercato."
-    )
+    if _gap_coherence_is_low(gap_class):
+        return "Il gap probabilistico non conferma pienamente la geometria descritta da F36."
+
+    gap_txt = _format_gap_pp_it(gap_pp)
+    f36_key = str(f36_class_key or "")
+    if f36_key == "imbalance":
+        return f"Il gap probabilistico di {gap_txt} pp conferma lo squilibrio rilevato da F36."
+    if f36_key in ("strong_balance", "balance"):
+        return (
+            f"Il gap probabilistico di {gap_txt} pp è coerente con la struttura "
+            "equilibrata rilevata da F36."
+        )
+    if f36_key == "transition":
+        return (
+            f"Il gap probabilistico di {gap_txt} pp è coerente con la struttura "
+            "di transizione rilevata da F36."
+        )
+    return f"Il gap probabilistico di {gap_txt} pp è coerente con la geometria descritta da F36."
 
 
 def _pillar_gap(balance: dict[str, Any], candidates: dict[str, Any]) -> dict[str, Any]:
@@ -258,6 +330,7 @@ def _pillar_gap(balance: dict[str, Any], candidates: dict[str, Any]) -> dict[str
     gap_class = candidates.get("gap_coherence_class_candidate")
     gap_pp = candidates.get("probability_gap_1_2_pp")
     side = balance.get("side_probability_gap") or {}
+    f36 = balance.get("f36") or {}
     if gap_pp is None:
         gap_pp = side.get("value")
     if gap_coh is not None:
@@ -275,9 +348,14 @@ def _pillar_gap(balance: dict[str, Any], candidates: dict[str, Any]) -> dict[str
         "status": status,
         "index": index,
         "class_label": class_label,
-        "reading": _gap_reading(gap_coh, gap_class, gap_pp),
+        "reading": _gap_reading(
+            gap_coh,
+            gap_class,
+            gap_pp,
+            f36_class_key=f36.get("class_key"),
+        ),
         "direction": None,
-        "source_version": balance.get("version"),
+        "source_version": RESEARCH_CANDIDATES_VERSION,
         "components": [
             _component(
                 "gap_coherence_index_candidate",
@@ -350,35 +428,35 @@ def _build_market_deviation(
     pairs = [
         _market_pair(
             "x",
-            "X Book vs X Cecchino",
+            "Segno X",
             quota_cecchino=cec_q(SEL_DRAW, inputs.get("quota_x")),
             quota_book=book_q(SEL_DRAW),
             prob_cecchino=_num(inputs.get("prob_x")),
         ),
         _market_pair(
             "1",
-            "1 Book vs 1 Cecchino",
+            "Segno 1",
             quota_cecchino=cec_q(SEL_HOME, inputs.get("quota_1")),
             quota_book=book_q(SEL_HOME),
             prob_cecchino=_num(inputs.get("prob_1")),
         ),
         _market_pair(
             "2",
-            "2 Book vs 2 Cecchino",
+            "Segno 2",
             quota_cecchino=cec_q(SEL_AWAY, inputs.get("quota_2")),
             quota_book=book_q(SEL_AWAY),
             prob_cecchino=_num(inputs.get("prob_2")),
         ),
         _market_pair(
             "under_2_5",
-            "Under Book vs Under Cecchino",
+            "Under 2.5",
             quota_cecchino=cec_q(SEL_UNDER_2_5, under_odd),
             quota_book=book_q(SEL_UNDER_2_5),
             prob_cecchino=under_pct,
         ),
         _market_pair(
             "over_2_5",
-            "Over Book vs Over Cecchino",
+            "Over 2.5",
             quota_cecchino=cec_q(SEL_OVER_2_5, over_odd),
             quota_book=book_q(SEL_OVER_2_5),
             prob_cecchino=over_pct,

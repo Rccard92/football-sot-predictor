@@ -6,8 +6,12 @@ from unittest.mock import MagicMock
 
 from fastapi.encoders import jsonable_encoder
 
-from app.services.cecchino.cecchino_balance_analysis import build_cecchino_balance_analysis
+from app.services.cecchino.cecchino_balance_analysis import (
+    VERSION as BALANCE_VERSION,
+    build_cecchino_balance_analysis,
+)
 from app.services.cecchino.cecchino_balance_research_candidates import (
+    RESEARCH_CANDIDATES_VERSION,
     conviction_index_candidate,
     dominant_side_to_market_label,
     gap_coherence_index_candidate,
@@ -147,3 +151,71 @@ def test_pillar_order():
     preview = build_balance_v5_preview(balance_analysis=_balance())
     keys = [p["key"] for p in preview["pillars"]]
     assert keys == ["f36", "dominance", "draw_credibility", "gap_coherence"]
+
+
+def test_f36_reading_not_predictive():
+    bal = _balance()
+    preview = build_balance_v5_preview(balance_analysis=bal)
+    f36 = next(p for p in preview["pillars"] if p["key"] == "f36")
+    reading = f36["reading"].lower()
+    assert "il modello tende" not in reading
+    assert "prevede" not in reading
+    assert "favorito" not in reading
+    assert "tende a vincere" not in reading
+
+
+def test_f36_imbalance_structural_reading():
+    # |F36| > 1.5 → Squilibrio; signed > 0 → lato 1
+    bal = _balance(quota_cecchino_1=2.0, quota_cecchino_2=4.0, quota_cecchino_x=3.2)
+    assert bal["f36"]["class_key"] == "imbalance"
+    preview = build_balance_v5_preview(balance_analysis=bal)
+    f36 = next(p for p in preview["pillars"] if p["key"] == "f36")
+    assert "sbilanciata verso il lato 1" in f36["reading"]
+    assert f36["index"] == bal["f36"]["score"]
+
+
+def test_f36_balance_structural_reading():
+    bal = _balance(quota_cecchino_1=2.05, quota_cecchino_2=2.10, quota_cecchino_x=3.40)
+    assert bal["f36"]["class_key"] in ("strong_balance", "balance")
+    preview = build_balance_v5_preview(balance_analysis=bal)
+    f36 = next(p for p in preview["pillars"] if p["key"] == "f36")
+    assert "relativamente vicine" in f36["reading"] or "appare equilibrata" in f36["reading"]
+    assert "il modello tende" not in f36["reading"].lower()
+
+
+def test_source_versions_research_vs_balance_v4():
+    bal = _balance()
+    preview = build_balance_v5_preview(balance_analysis=bal)
+    by_key = {p["key"]: p for p in preview["pillars"]}
+    assert by_key["f36"]["source_version"] == BALANCE_VERSION
+    assert by_key["f36"]["source_version"] == "cecchino_balance_analysis_v4"
+    assert by_key["dominance"]["source_version"] == RESEARCH_CANDIDATES_VERSION
+    assert by_key["gap_coherence"]["source_version"] == RESEARCH_CANDIDATES_VERSION
+    assert by_key["draw_credibility"]["source_version"] is None
+
+
+def test_market_labels_simplified():
+    preview = build_balance_v5_preview(balance_analysis=_balance(), kpi_panel=_kpi_with_book())
+    labels = [p["label"] for p in preview["market_deviation"]["pairs"]]
+    assert labels == ["Segno X", "Segno 1", "Segno 2", "Under 2.5", "Over 2.5"]
+
+
+def test_gap_reading_no_market_disclaimer_and_linked_to_f36():
+    bal = _balance(quota_cecchino_1=2.0, quota_cecchino_2=4.0)
+    preview = build_balance_v5_preview(balance_analysis=bal)
+    gap = next(p for p in preview["pillars"] if p["key"] == "gap_coherence")
+    assert "suggerimento di mercato" not in gap["reading"].lower()
+    if bal["f36"]["class_key"] == "imbalance" and gap["status"] == "research":
+        assert "squilibrio" in gap["reading"].lower() or "non conferma" in gap["reading"].lower()
+
+
+def test_indices_unchanged_vs_candidates():
+    bal = _balance()
+    preview = build_balance_v5_preview(balance_analysis=bal)
+    f36 = next(p for p in preview["pillars"] if p["key"] == "f36")
+    dom = next(p for p in preview["pillars"] if p["key"] == "dominance")
+    gap = next(p for p in preview["pillars"] if p["key"] == "gap_coherence")
+    assert f36["index"] == bal["f36"]["score"]
+    assert abs(dom["index"] - conviction_index_candidate(42.0, 28.0, 30.0)) < 0.01
+    pb = probability_balance_index(42.0, 30.0)
+    assert abs(gap["index"] - gap_coherence_index_candidate(bal["f36"]["score"], pb)) < 0.01

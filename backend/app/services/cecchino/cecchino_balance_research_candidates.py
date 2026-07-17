@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+RESEARCH_CANDIDATES_VERSION = "cecchino_balance_research_candidates_v1"
+
 
 def clamp_index(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return round(max(lo, min(hi, value)), 2)

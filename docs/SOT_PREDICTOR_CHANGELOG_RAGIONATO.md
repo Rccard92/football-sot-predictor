@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio — Preview v5 Fase 2A.1 (2026-07-17)
+
+- Lettura F36 strutturale (niente «il modello tende»); Gap collegato alla classe F36; label Market semplificate.
+- `source_version`: F36 → `cecchino_balance_analysis_v4`; Dominanza/Gap → `cecchino_balance_research_candidates_v1`.
+- Formattazione numerica it-IT (`formatBalanceNumber`); `unavailable` ≠ «In calibrazione».
+- Nessuna modifica a formule o indici.
+
 ## Equilibrio vs Squilibrio — Preview v5 Fase 2A (2026-07-17)
 
 - Nuova sezione UI su Cecchino Today: quattro pilastri (F36 official, Dominanza research, Credibilità X in calibrazione, Gap research) + Scostamento mercato separato.

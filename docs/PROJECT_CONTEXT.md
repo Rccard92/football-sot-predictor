@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Equilibrio vs Squilibrio — Preview v5 Fase 2A.1 (2026-07-17)
+
+Pulizia semantica F36/Gap, fonti research corrette, formattazione italiana. Nessuna modifica alle formule.
+
 ## Equilibrio vs Squilibrio — Preview v5 Fase 2A (2026-07-17)
 
 Pannello a quattro pilastri descrittivi su Cecchino Today (`balance_v5_preview`). F36 ufficiale; altri in ricerca/calibrazione; Book separato; ICM nascosto in UI. Nessuna nuova formula. Prossimo: Fase 2B.

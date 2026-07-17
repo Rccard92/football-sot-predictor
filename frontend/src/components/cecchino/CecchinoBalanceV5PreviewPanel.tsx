@@ -3,6 +3,7 @@ import type {
   CecchinoBalanceV5Pillar,
   CecchinoBalanceV5Preview,
 } from '../../lib/cecchinoTodayApi'
+import { formatBalanceNumber } from '../../utils/formatBalanceNumber'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type Props = {
@@ -32,23 +33,21 @@ function badgeClass(status: string): string {
 }
 
 function fmtIndex(index: number | null | undefined): string {
-  if (index === null || index === undefined) return '—'
-  return Number.isFinite(index) ? String(index) : '—'
+  return formatBalanceNumber(index, 'index')
 }
 
 function fmtClass(label: string | null | undefined, status: string): string {
   if (label) return label
-  if (status === 'calibration_pending' || status === 'unavailable') return 'In calibrazione'
+  if (status === 'calibration_pending') return 'In calibrazione'
+  if (status === 'unavailable') return 'Dato non disponibile'
   return '—'
 }
 
 function fmtValue(value: number | string | null | undefined, unit: string): string {
-  if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'number') {
-    if (unit === 'pct' || unit === 'pp') return `${value}`
-    return String(value)
+  if (unit === 'pct' || unit === 'pp' || unit === 'quota' || unit === 'index' || unit === 'text') {
+    return formatBalanceNumber(value, unit)
   }
-  return String(value)
+  return formatBalanceNumber(value, 'index')
 }
 
 function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; number: number }) {

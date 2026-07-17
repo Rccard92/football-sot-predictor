@@ -1,5 +1,9 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Equilibrio vs Squilibrio — Preview v5 Fase 2A.1 (2026-07-17)
+
+- Solo presentazione: letture F36/Gap, versioni research, formattazione it-IT. Nessun ricalcolo indici.
+
 ## Equilibrio vs Squilibrio — Preview v5 Fase 2A (2026-07-17)
 
 - Detail `GET /api/cecchino/today/:id` espone `balance_v5_preview` derivato da `balance_analysis` + KPI (read-only).
