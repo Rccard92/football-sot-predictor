@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Equilibrio vs Squilibrio — Identity false-positive Fase 2A.3 (2026-07-17)
+
+- Detail GET solo lettura: confronta Today raw vs Fixture/calc senza sovrascrivere kickoff.
+- `GET /api/admin/cecchino/audit/fixture-identity/{today_fixture_id}` per audit Railway.
+- Script `audit_fixture_identity_9510.py`: default dry-run; apply solo con flag + case.
+
 ## Equilibrio vs Squilibrio — Identità fixture Fase 2A.2 (2026-07-17)
 
 - Detail costruisce `fixture_identity_consistency` (Today ↔ Fixture locale ↔ leakage/xG cutoff); tolleranza kickoff 6h.

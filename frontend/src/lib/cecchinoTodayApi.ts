@@ -982,6 +982,11 @@ export type CecchinoFixtureIdentityConsistency = {
   local_fixture_id?: number | null
   provider_fixture_id?: number
   local_api_fixture_id?: number
+  raw_sources?: {
+    today?: Record<string, unknown> | null
+    local_fixture?: Record<string, unknown> | null
+    calculation_snapshot?: Record<string, unknown> | null
+  }
   today_kickoff?: string | null
   local_fixture_kickoff?: string | null
   calculation_target_kickoff?: string | null
@@ -990,7 +995,10 @@ export type CecchinoFixtureIdentityConsistency = {
   teams_match?: boolean
   competition_match?: boolean
   kickoff_match?: boolean
+  status_match?: boolean
+  score_match?: boolean
   snapshot_match?: boolean
+  chronological_status_valid?: boolean
   warnings?: string[]
 }
 

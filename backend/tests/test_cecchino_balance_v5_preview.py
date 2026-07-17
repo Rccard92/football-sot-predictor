@@ -50,8 +50,8 @@ def _kpi_with_book():
     }
 
 
-def test_version_is_v1_1():
-    assert VERSION == "balance_v5_preview_v1_1"
+def test_version_is_v1_2():
+    assert VERSION == "balance_v5_preview_v1_2"
     preview = build_balance_v5_preview(balance_analysis=_balance())
     assert preview["version"] == VERSION
     assert preview["status"] == "ok"

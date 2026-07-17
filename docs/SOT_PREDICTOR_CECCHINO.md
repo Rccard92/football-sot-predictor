@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Equilibrio vs Squilibrio — Identity false-positive Fase 2A.3 (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| GET detail | read-only (nessun auto-realign kickoff) |
+| Check | raw_sources Today / Local / calc + status/score/cronologia |
+| Preview | `balance_v5_preview_v1_2` bloccata se inconsistent |
+| Audit | `GET /api/admin/cecchino/audit/fixture-identity/{id}` |
+| Fix | solo script `--apply-confirmed-fix --case A\|B` |
+
 ## Equilibrio vs Squilibrio — Identità fixture Fase 2A.2 (2026-07-17)
 
 | Aspetto | Dettaglio |

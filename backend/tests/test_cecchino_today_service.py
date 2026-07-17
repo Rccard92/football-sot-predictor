@@ -1,4 +1,4 @@
-"""Smoke test get_today_fixture_detail — identity + preview block (Fase 2A.2)."""
+"""Smoke test get_today_fixture_detail — identity read-only (Fase 2A.3)."""
 
 from __future__ import annotations
 
@@ -26,7 +26,12 @@ def _eligible_row(**kwargs):
         home_team_name="Botafogo",
         away_team_name="Santos",
         kickoff=KO,
-        fixture_status="NS",
+        fixture_status="FT",
+        match_display_status="finished",
+        goals_home=2,
+        goals_away=1,
+        score_fulltime_home=2,
+        score_fulltime_away=1,
         scan_date=date(2026, 7, 16),
         odds_snapshot_json={},
         stats_snapshot_json={},
@@ -59,6 +64,10 @@ def _local_fixture(**kwargs):
         home_team_id=1,
         away_team_id=2,
         kickoff_at=KO,
+        status="FT",
+        status_long="Match Finished",
+        goals_home=2,
+        goals_away=1,
     )
     base.update(kwargs)
     return SimpleNamespace(**base)
@@ -95,7 +104,7 @@ def test_detail_includes_identity_and_preview_ok(
 
     def _get(model, pk):
         name = getattr(model, "__name__", str(model))
-        if "CecchinoTodayFixture" in name or name == "CecchinoTodayFixture":
+        if "CecchinoTodayFixture" in name:
             return row
         if "Fixture" in name and "Today" not in name:
             return local
@@ -106,12 +115,12 @@ def test_detail_includes_identity_and_preview_ok(
     db.get.side_effect = _get
 
     detail = get_today_fixture_detail(db, 9510)
-    assert detail is not None
     assert detail["status"] == "ok"
-    assert "fixture_identity_consistency" in detail
+    assert detail["kickoff"].startswith("2026-07-16")
     assert detail["fixture_identity_consistency"]["status"] == "consistent"
     assert detail["balance_v5_preview"]["status"] == "ok"
-    assert detail["balance_v5_preview"]["version"] == "balance_v5_preview_v1_1"
+    assert detail["balance_v5_preview"]["version"] == "balance_v5_preview_v1_2"
+    db.commit.assert_not_called()
 
 
 @patch("app.services.cecchino.cecchino_today_service.sync_cecchino_signal_activations")
@@ -124,7 +133,7 @@ def test_detail_includes_identity_and_preview_ok(
 @patch("app.services.cecchino.cecchino_today_service._resolve_kpi_panel_for_detail", return_value={"rows": []})
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_picchetti_debug", return_value={})
 @patch("app.services.cecchino.cecchino_today_service.build_picchetti_debug_summary", return_value={})
-def test_detail_preview_blocked_on_identity_mismatch(
+def test_detail_preview_blocked_on_identity_mismatch_no_write(
     _sum,
     _debug,
     _kpi,
@@ -154,8 +163,7 @@ def test_detail_preview_blocked_on_identity_mismatch(
             "signals_matrix": {},
         },
     )
-    # Local matches Today kickoff → stale snapshot path (no kickoff realign)
-    local = _local_fixture(kickoff_at=KO)
+    local = _local_fixture(kickoff_at=KO_BAD, status="NS", goals_home=None, goals_away=None)
     home = SimpleNamespace(name="Botafogo")
     away = SimpleNamespace(name="Santos")
     db = MagicMock()
@@ -173,11 +181,16 @@ def test_detail_preview_blocked_on_identity_mismatch(
     db.get.side_effect = _get
 
     detail = get_today_fixture_detail(db, 9510)
+    assert detail["kickoff"].startswith("2026-07-16")
+    assert row.kickoff == KO
     assert detail["fixture_identity_consistency"]["status"] == "inconsistent"
+    assert detail["fixture_identity_consistency"]["raw_sources"]["today"]["kickoff"].startswith("2026-07-16")
+    assert detail["fixture_identity_consistency"]["raw_sources"]["local_fixture"]["kickoff"].startswith(
+        "2026-07-22"
+    )
     preview = detail["balance_v5_preview"]
     assert preview["status"] == "unavailable"
+    assert preview["version"] == "balance_v5_preview_v1_2"
     assert "fixture_identity_mismatch" in preview["warnings"]
-    assert all(p["index"] is None for p in preview["pillars"])
-    assert preview["market_deviation"]["status"] == "unavailable"
-    # stale flag applied
-    assert any("stale_calculation_snapshot_requires_recalc" in str(w) for w in (row.warnings_json or []))
+    db.commit.assert_not_called()
+    assert "fixture_identity_minimal_fix_applied" not in (detail["warnings"] or [])

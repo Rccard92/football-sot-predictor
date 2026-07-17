@@ -18,6 +18,7 @@ from app.schemas.cecchino_signal_min_book_odds import (
 )
 from app.services.cecchino.cecchino_api_raw_inspector import build_api_raw_inspector
 from app.services.cecchino.cecchino_current_season_xg import backfill_current_season_xg_for_today_fixture
+from app.services.cecchino.cecchino_fixture_identity_audit import build_fixture_identity_audit
 from app.services.cecchino.cecchino_kpi_panel_rebuild_from_cache import rebuild_kpi_panels_from_cache
 from app.services.cecchino.cecchino_recompute_service import recompute_cecchino_range
 from app.services.cecchino.cecchino_signal_min_book_odd_settings_service import (
@@ -138,6 +139,18 @@ def cecchino_recompute(
         sync_signal_activations=body.sync_signal_activations,
         evaluate_signals_after=body.evaluate_signals_after,
     )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/audit/fixture-identity/{today_fixture_id}")
+def audit_fixture_identity(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Audit read-only Today ↔ Fixture locale ↔ snapshot. Nessuna scrittura DB."""
+    payload = build_fixture_identity_audit(db, today_fixture_id)
+    if payload.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=payload.get("message"))
     return JSONResponse(content=jsonable_encoder(payload))
 
 

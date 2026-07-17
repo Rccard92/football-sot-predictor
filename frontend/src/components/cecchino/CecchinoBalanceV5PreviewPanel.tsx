@@ -13,7 +13,7 @@ type Props = {
 }
 
 const IDENTITY_MISMATCH_ALERT =
-  'Analisi non disponibile: i dati calcolati non risultano allineati alla fixture visualizzata.'
+  'Analisi non disponibile: data, stato o snapshot della fixture non risultano coerenti.'
 
 const PILLAR_ORDER = ['f36', 'dominance', 'draw_credibility', 'gap_coherence'] as const
 

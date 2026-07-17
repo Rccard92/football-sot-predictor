@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio — Identity false-positive Fase 2A.3 (2026-07-17)
+
+- Rimosso auto-realign/stale write da `GET /api/cecchino/today/:id` (falso `consistent`).
+- Consistency su raw_sources + status/score/chronological; Preview `balance_v5_preview_v1_2`.
+- Audit admin read-only Railway; script dry-run default + apply gated `--case A|B`.
+- Nessuna formula modificata.
+
 ## Equilibrio vs Squilibrio — Identità fixture Fase 2A.2 (2026-07-17)
 
 - Helper `build_fixture_identity_consistency` + campo detail `fixture_identity_consistency`.

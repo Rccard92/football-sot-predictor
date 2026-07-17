@@ -21,7 +21,7 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_UNDER_2_5,
 )
 
-VERSION = "balance_v5_preview_v1_1"
+VERSION = "balance_v5_preview_v1_2"
 
 
 RESEARCH_NOTE = (
