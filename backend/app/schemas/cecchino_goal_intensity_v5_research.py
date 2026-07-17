@@ -46,3 +46,15 @@ class CecchinoGoalIntensityV5StatisticsBody(_GoalIntensityScanDateRangeMixin):
         if self.minimum_history_sample not in (10, 20):
             raise ValueError("minimum_history_sample deve essere 10 o 20")
         return self
+
+
+class CecchinoGoalIntensityV5CandidateIndicesBody(_GoalIntensityScanDateRangeMixin):
+    minimum_history_sample: int = Field(default=10)
+    bootstrap_iterations: int = Field(default=1000, ge=10, le=10000)
+    random_seed: int = Field(default=42, ge=0)
+
+    @model_validator(mode="after")
+    def validate_candidate_indices_parameters(self):
+        if self.minimum_history_sample not in (10, 20):
+            raise ValueError("minimum_history_sample deve essere 10 o 20")
+        return self

@@ -2,6 +2,19 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — Fase 1D candidate indices (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_goal_intensity_v5_candidate_indices_v1` |
+| Endpoint | `POST /api/admin/cecchino/research/goal-intensity-v5/candidate-indices` |
+| Normalizzazione | ECDF midrank train-only (`train_ecdf_midrank`) |
+| Primary | `GI_A_STRICT_CORE` (equal weight); challenger Pareto |
+| xG | `optional_research_enrichment` (non core) |
+| Readiness | `phase_2a_preview` se gate OK; selection-informed blocca claim produttivo |
+| FE | Tab «Indici Fase 1D» |
+| v4 | Invariata |
+
 ## Intensità Goal v5 Research — Fase 1C.2 normalizzazione readiness (2026-07-17)
 
 | Aspetto | Dettaglio |

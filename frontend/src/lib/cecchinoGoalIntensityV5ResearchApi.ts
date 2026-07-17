@@ -286,6 +286,127 @@ export async function postGoalIntensityV5StatisticsExport(
   }
 }
 
+export type GoalIntensityV5CandidateIndicesRequest = GoalIntensityV5StatisticsRequest
+
+export type GoalIntensityV5CandidateIndicesResponse = Record<string, unknown> & {
+  status: string
+  version: string
+  filters?: Record<string, unknown>
+  research_limitations?: Record<string, unknown>
+  cohort_summary?: Record<string, unknown>
+  normalization_summary?: Record<string, unknown>
+  candidate_definitions?: Record<string, unknown>
+  pillar_metrics?: Record<string, unknown>
+  pillar_redundancy?: Record<string, unknown>
+  composite_metrics?: Record<string, unknown>
+  baseline_metrics?: Record<string, unknown>
+  ablation_summary?: Record<string, unknown>
+  paired_candidate_comparisons?: Record<string, unknown>
+  temporal_metrics?: Record<string, unknown>
+  pareto_analysis?: Record<string, unknown>
+  xg_optional_analysis?: Record<string, unknown>
+  primary_candidate?: string | null
+  challenger_candidate?: string | null
+  prospective_validation_protocol?: Record<string, unknown>
+  phase_2a_readiness?: Record<string, unknown>
+  warnings?: string[]
+  performance?: Record<string, unknown>
+  preview_rows?: Array<Record<string, unknown>>
+  error?: string
+}
+
+export type GoalIntensityCandidateIndicesExportKind =
+  | 'summary'
+  | 'candidate_definitions'
+  | 'candidate_scores'
+  | 'pillar_metrics'
+  | 'composite_metrics'
+  | 'temporal_metrics'
+  | 'decile_calibration'
+  | 'ablation_analysis'
+  | 'paired_candidate_comparison'
+  | 'pillar_redundancy'
+  | 'xg_optional_enrichment'
+  | 'prospective_validation_protocol'
+
+const CANDIDATE_INDICES_EXPORT_PATH: Record<GoalIntensityCandidateIndicesExportKind, string> = {
+  summary: '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/summary',
+  candidate_definitions:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/candidate-definitions',
+  candidate_scores:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/candidate-scores',
+  pillar_metrics:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/pillar-metrics',
+  composite_metrics:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/composite-metrics',
+  temporal_metrics:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/temporal-metrics',
+  decile_calibration:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/decile-calibration',
+  ablation_analysis:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/ablation-analysis',
+  paired_candidate_comparison:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/paired-candidate-comparison',
+  pillar_redundancy:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/pillar-redundancy',
+  xg_optional_enrichment:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/xg-optional-enrichment',
+  prospective_validation_protocol:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/prospective-validation-protocol',
+}
+
+const CANDIDATE_INDICES_JSON_EXPORTS = new Set<GoalIntensityCandidateIndicesExportKind>([
+  'summary',
+  'candidate_definitions',
+  'prospective_validation_protocol',
+])
+
+export function postGoalIntensityV5CandidateIndices(
+  body: GoalIntensityV5CandidateIndicesRequest,
+): Promise<GoalIntensityV5CandidateIndicesResponse> {
+  return adminPostJson('/api/admin/cecchino/research/goal-intensity-v5/candidate-indices', body)
+}
+
+export async function postGoalIntensityV5CandidateIndicesExport(
+  kind: GoalIntensityCandidateIndicesExportKind,
+  body: GoalIntensityV5CandidateIndicesRequest,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<{ blob: Blob; filename: string }> {
+  const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 300_000)
+  const onOuterAbort = () => controller.abort()
+  opts?.signal?.addEventListener('abort', onOuterAbort)
+  try {
+    const res = await fetch(`${base}${CANDIDATE_INDICES_EXPORT_PATH[kind]}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      let message = res.statusText
+      if ((res.headers.get('content-type') ?? '').includes('application/json')) {
+        try {
+          const parsed = (await res.json()) as { detail?: string; message?: string }
+          message = parsed.detail ?? parsed.message ?? message
+        } catch {
+          /* Ignora una risposta non leggibile. */
+        }
+      }
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    const disposition = res.headers.get('content-disposition') ?? ''
+    const match = /filename="([^"]+)"/.exec(disposition)
+    const ext = CANDIDATE_INDICES_JSON_EXPORTS.has(kind) ? 'json' : 'csv'
+    const fallback = `cecchino_goal_intensity_v5_candidate_indices_${kind}_${sanitizeFilenameFragment(body.date_from)}_${sanitizeFilenameFragment(body.date_to)}.${ext}`
+    return { blob: await res.blob(), filename: match?.[1] ?? fallback }
+  } finally {
+    clearTimeout(timer)
+    opts?.signal?.removeEventListener('abort', onOuterAbort)
+  }
+}
+
 export type GoalIntensityDatasetExportKind =
   | 'all'
   | 'core_min5'

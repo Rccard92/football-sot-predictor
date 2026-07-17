@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Fase 1D candidate indices (2026-07-17)
+
+1. Coorte Today eleggibile `scan_date` 2026-06-19→2026-07-19 (o range dichiarato).
+2. `POST .../goal-intensity-v5/candidate-indices` (history 10, seed 42): leggere ECDF, GI_A–D, Pareto primary/challenger, xG optional, readiness 2A.
+3. Export streaming (summary / scores / metrics / ablation / protocol); FE tab «Indici Fase 1D».
+4. Benchmark: `cd backend && python -m scripts.benchmark_goal_intensity_v5_candidate_indices` (<30s preferibile, <45s max, <2 MB).
+5. Nessuna scrittura DB; nessuna promozione formula; v4 invariata.
+
 ## Intensità Goal v5 Research — Fase 1C statistica (2026-07-17)
 
 1. Costruire il dataset Today eleggibile Fase 1B.1 sul range `scan_date` ≥ 19/06/2026.

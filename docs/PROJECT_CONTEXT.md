@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal v5 Research — Fase 1D candidate indices (2026-07-17)
+
+Indici candidati research `cecchino_goal_intensity_v5_candidate_indices_v1`: ECDF train-only, pilastri/compositi GI_A–D equal weight, ablation/Pareto/xG optional, readiness 2A. Riusa dataset 1B; statistics `v1_2` e v4 invariati. Nessuna formula produttiva.
+
 ## Intensità Goal v5 Research — Fase 1C.2 normalizzazione readiness (2026-07-17)
 
 Normalizzazione raccomandazioni/readiness senza ricalcolo metriche: dipendenze da formule di costruzione (`derived_aggregate` pair), rolling selected∉excluded, regole candidate_core, gate consistency. Versione `cecchino_goal_intensity_v5_statistics_v1_2`. Nessuna formula v5; v4 invariata.

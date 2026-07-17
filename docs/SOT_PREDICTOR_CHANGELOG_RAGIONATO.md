@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Fase 1D candidate indices (2026-07-17)
+
+- Aggiunto modulo research `cecchino_goal_intensity_v5_candidate_indices_v1`: ECDF midrank train-only, score pilastro/compositi GI_A–D, metriche 4 target, ablation, paired bootstrap, Pareto, xG optional paired, protocollo prospettico e readiness 2A.
+- Endpoint `POST .../goal-intensity-v5/candidate-indices` + 12 export; tab FE «Indici Fase 1D»; benchmark reale. Nessuna formula produttiva; statistics v1_2 e v4 invariati.
+
 ## Intensità Goal v5 Research — Fase 1C.2 normalizzazione readiness (2026-07-17)
 
 - `cecchino_goal_intensity_v5_statistics_v1_2`: corrige contraddizioni rolling (selected/secondary ∉ excluded), tipizza pair come `derived_aggregate` dalle formule `_fill_goal_features`, raffina candidate_core/pillar e aggiunge gate di consistency.

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { CecchinoStatusMessage } from '../components/cecchino/CecchinoStatusMessage'
 import { useCecchinoGoalIntensityV5Audit } from '../hooks/useCecchinoGoalIntensityV5Audit'
+import { useCecchinoGoalIntensityV5CandidateIndices } from '../hooks/useCecchinoGoalIntensityV5CandidateIndices'
 import { useCecchinoGoalIntensityV5Dataset } from '../hooks/useCecchinoGoalIntensityV5Dataset'
 import { useCecchinoGoalIntensityV5Statistics } from '../hooks/useCecchinoGoalIntensityV5Statistics'
 import {
@@ -14,13 +15,16 @@ import {
   fixtureAuditToCsv,
   isGoalIntensityAuditDegraded,
   isGoalIntensityAuditUnusable,
+  postGoalIntensityV5CandidateIndicesExport,
   postGoalIntensityV5DatasetExport,
   postGoalIntensityV5StatisticsExport,
+  type GoalIntensityCandidateIndicesExportKind,
   type GoalIntensityDatasetExportKind,
   type GoalIntensityDatasetRow,
   type GoalIntensityFixtureAuditRow,
   type GoalIntensityV5AuditResponse,
   type GoalIntensityV5AvailabilityResponse,
+  type GoalIntensityV5CandidateIndicesResponse,
   type GoalIntensityV5DatasetResponse,
   type GoalIntensityV5StatisticsResponse,
   type GoalIntensityStatisticsExportKind,
@@ -29,7 +33,7 @@ import { downloadJsonFile, downloadTextFile } from '../lib/downloadJsonFile'
 import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
 import { formatFetchError } from '../utils/formatFetchError'
 
-type LabTab = 'audit' | 'dataset' | 'statistics'
+type LabTab = 'audit' | 'dataset' | 'statistics' | 'indices'
 
 const PILLAR_LABELS: Record<string, string> = {
   offensive_production: 'Produzione offensiva',
@@ -1057,6 +1061,180 @@ function StatisticsBody({
   )
 }
 
+function IndicesBody({
+  indices,
+  onExport,
+  exportBusy,
+  exportError,
+}: {
+  indices: GoalIntensityV5CandidateIndicesResponse
+  onExport: (kind: GoalIntensityCandidateIndicesExportKind) => void
+  exportBusy: boolean
+  exportError: string | null
+}) {
+  const limitations = indices.research_limitations ?? {}
+  const cohort = indices.cohort_summary ?? {}
+  const normalization = indices.normalization_summary ?? {}
+  const definitions = indices.candidate_definitions ?? {}
+  const composites = indices.composite_metrics ?? {}
+  const pillars = indices.pillar_metrics ?? {}
+  const temporal = indices.temporal_metrics ?? {}
+  const ablation = indices.ablation_summary ?? {}
+  const redundancy = indices.pillar_redundancy ?? {}
+  const pareto = indices.pareto_analysis ?? {}
+  const xg = indices.xg_optional_analysis ?? {}
+  const protocol = indices.prospective_validation_protocol ?? {}
+  const readiness = indices.phase_2a_readiness ?? {}
+  const performance = indices.performance ?? {}
+  const exportKinds: GoalIntensityCandidateIndicesExportKind[] = [
+    'summary',
+    'candidate_definitions',
+    'candidate_scores',
+    'pillar_metrics',
+    'composite_metrics',
+    'temporal_metrics',
+    'decile_calibration',
+    'ablation_analysis',
+    'paired_candidate_comparison',
+    'pillar_redundancy',
+    'xg_optional_enrichment',
+    'prospective_validation_protocol',
+  ]
+
+  return (
+    <div className="space-y-4">
+      <Section title="Limitazioni research">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Kv label="Eligibility engine" value={String(limitations.eligibility_engine_version ?? '—')} />
+          <Kv label="Validation status" value={String(limitations.validation_status ?? '—')} />
+        </div>
+        <p className="mt-2 text-xs text-slate-600">{String(limitations.note ?? '')}</p>
+      </Section>
+
+      <Section title="Coorte">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <Kv label="Core min10" value={String(cohort.core_min10 ?? '—')} />
+          <Kv label="Core min20" value={String(cohort.core_min20 ?? '—')} />
+          <Kv label="Analizzate" value={String(cohort.primary_analyzed ?? '—')} />
+          <Kv label="xG paired" value={String(cohort.xg_complete_paired ?? '—')} />
+        </div>
+      </Section>
+
+      <Section title="Normalizzazione ECDF (train-only)">
+        <Kv label="Metodo" value={String(normalization.method ?? '—')} />
+        <Kv label="Fit split" value={String(normalization.fit_split ?? '—')} />
+        <p className="mt-2 text-xs text-slate-600">
+          Hard excluded: {Array.isArray(normalization.hard_excluded_features)
+            ? (normalization.hard_excluded_features as string[]).join(', ')
+            : '—'}
+        </p>
+        <JsonBlock data={normalization.features} />
+      </Section>
+
+      <Section title="Semantica pilastri">
+        <p className="text-xs text-slate-600">
+          Alto = più intensità potenziale. Solidità display = 100 − DV; stabilità display = 100 − OV.
+          I display non entrano nei compositi.
+        </p>
+        <JsonBlock data={definitions} />
+      </Section>
+
+      <Section title="Primary / Challenger / Pareto">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Kv label="Primary" value={String(indices.primary_candidate ?? '—')} />
+          <Kv label="Challenger" value={String(indices.challenger_candidate ?? '—')} />
+          <Kv label="Evidence" value={String(pareto.selection_evidence_level ?? '—')} />
+          <Kv
+            label="Pareto front"
+            value={
+              Array.isArray(pareto.pareto_front_candidates)
+                ? (pareto.pareto_front_candidates as string[]).join(', ')
+                : '—'
+            }
+          />
+        </div>
+        <p className="mt-2 text-xs text-slate-600">{String(pareto.selection_motivation ?? '')}</p>
+      </Section>
+
+      <Section title="Metriche compositi">
+        <JsonBlock data={composites} />
+      </Section>
+
+      <Section title="Metriche pilastri">
+        <JsonBlock data={pillars} />
+      </Section>
+
+      <Section title="Temporale">
+        <JsonBlock data={temporal} />
+      </Section>
+
+      <Section title="Ablation leave-one-pillar-out">
+        <JsonBlock data={ablation} />
+      </Section>
+
+      <Section title="Ridondanza pilastri">
+        <JsonBlock data={redundancy} />
+      </Section>
+
+      <Section title="xG optional (paired)">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Kv label="Status" value={String(xg.xg_status ?? '—')} />
+          <Kv label="Assessment" value={String(xg.xg_value_assessment ?? '—')} />
+          <Kv label="Paired n" value={String(xg.paired_n ?? '—')} />
+          <Kv label="Promoted to core" value={String(xg.promoted_to_core ?? false)} />
+        </div>
+        <JsonBlock data={xg} />
+      </Section>
+
+      <Section title="Protocollo prospettico">
+        <JsonBlock data={protocol} />
+      </Section>
+
+      <Section title="Readiness Fase 2A">
+        <Kv label="Next step" value={String(readiness.recommended_next_step ?? '—')} />
+        <p className="mt-2 text-xs text-slate-600">
+          Blocking:{' '}
+          {Array.isArray(readiness.blocking_issues)
+            ? (readiness.blocking_issues as string[]).join(', ') || 'nessuno'
+            : '—'}
+        </p>
+        <JsonBlock data={readiness} />
+      </Section>
+
+      <Section title="Performance">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <Kv label="Elapsed ms" value={String(performance.elapsed_ms ?? '—')} />
+          <Kv label="Payload bytes" value={String(performance.response_payload_bytes ?? '—')} />
+          <Kv label="v4 unchanged" value={String(performance.v4_unchanged ?? '—')} />
+        </div>
+      </Section>
+
+      <Section title="Export">
+        <div className="flex flex-wrap gap-2">
+          {exportKinds.map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              disabled={exportBusy}
+              onClick={() => onExport(kind)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {kind}
+            </button>
+          ))}
+        </div>
+        {exportError ? (
+          <p className="mt-2 text-xs text-red-700">{exportError}</p>
+        ) : null}
+      </Section>
+
+      <Section title="Preview score (≤100)">
+        <JsonBlock data={indices.preview_rows} />
+      </Section>
+    </div>
+  )
+}
+
 export function RicercaIntensitaGoalPage() {
   const [tab, setTab] = useState<LabTab>('audit')
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgoLocal(90))
@@ -1078,6 +1256,12 @@ export function RicercaIntensitaGoalPage() {
     statistics,
     runStatistics,
   } = useCecchinoGoalIntensityV5Statistics(filters)
+  const {
+    loading: indicesLoading,
+    error: indicesError,
+    indices,
+    runCandidateIndices,
+  } = useCecchinoGoalIntensityV5CandidateIndices(filters)
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
 
@@ -1127,6 +1311,29 @@ export function RicercaIntensitaGoalPage() {
     }
   }
 
+  const handleIndicesExport = async (kind: GoalIntensityCandidateIndicesExportKind) => {
+    setExportBusy(true)
+    setExportError(null)
+    try {
+      const compId = competitionId.trim() ? Number(competitionId) : null
+      const { blob, filename } = await postGoalIntensityV5CandidateIndicesExport(kind, {
+        date_from: dateFrom,
+        date_to: dateTo,
+        competition_id: compId != null && Number.isFinite(compId) && compId > 0 ? compId : null,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setExportError(formatFetchError(err))
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -1157,7 +1364,14 @@ export function RicercaIntensitaGoalPage() {
       ? `Scansioni Cecchino Today eleggibili dal ${availability.earliest_kickoff_date} al ${availability.latest_kickoff_date} (minimo assoluto 19/06/2026)`
       : 'La ricerca Intensità Goal utilizza le scansioni Cecchino Today disponibili dal 19/06/2026.'
 
-  const busy = tab === 'audit' ? loading : tab === 'dataset' ? datasetLoading : statisticsLoading
+  const busy =
+    tab === 'audit'
+      ? loading
+      : tab === 'dataset'
+        ? datasetLoading
+        : tab === 'statistics'
+          ? statisticsLoading
+          : indicesLoading
 
   return (
     <motion.div
@@ -1220,6 +1434,15 @@ export function RicercaIntensitaGoalPage() {
         >
           Analisi Fase 1C
         </button>
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            tab === 'indices' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+          onClick={() => setTab('indices')}
+        >
+          Indici Fase 1D
+        </button>
       </div>
 
       <section className="sticky top-0 z-20 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm">
@@ -1281,7 +1504,7 @@ export function RicercaIntensitaGoalPage() {
               ) : null}
               Costruisci dataset
             </button>
-          ) : (
+          ) : tab === 'statistics' ? (
             <button
               type="button"
               disabled={busy}
@@ -1292,6 +1515,18 @@ export function RicercaIntensitaGoalPage() {
                 <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
               ) : null}
               Esegui analisi Fase 1C
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runCandidateIndices()}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {busy ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : null}
+              Esegui indici Fase 1D
             </button>
           )}
         </div>
@@ -1334,7 +1569,7 @@ export function RicercaIntensitaGoalPage() {
             />
           ) : null}
         </>
-      ) : (
+      ) : tab === 'statistics' ? (
         <>
           {statisticsError ? (
             <CecchinoStatusMessage
@@ -1352,6 +1587,29 @@ export function RicercaIntensitaGoalPage() {
             <StatisticsBody
               statistics={statistics}
               onExport={(kind) => void handleStatisticsExport(kind)}
+              exportBusy={exportBusy}
+              exportError={exportError}
+            />
+          ) : null}
+        </>
+      ) : (
+        <>
+          {indicesError ? (
+            <CecchinoStatusMessage
+              variant="error"
+              title="Errore indici Fase 1D"
+              message={indicesError}
+            />
+          ) : null}
+          {!indicesLoading && !indicesError && !indices ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+              Imposta il periodo e premi «Esegui indici Fase 1D» per costruire i candidati 0–100.
+            </p>
+          ) : null}
+          {!indicesLoading && indices ? (
+            <IndicesBody
+              indices={indices}
+              onExport={(kind) => void handleIndicesExport(kind)}
               exportBusy={exportBusy}
               exportError={exportError}
             />

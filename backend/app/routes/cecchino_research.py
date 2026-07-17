@@ -17,6 +17,7 @@ from app.schemas.cecchino_draw_credibility_research import (
 )
 from app.schemas.cecchino_goal_intensity_v5_research import (
     CecchinoGoalIntensityV5AuditBody,
+    CecchinoGoalIntensityV5CandidateIndicesBody,
     CecchinoGoalIntensityV5DatasetBody,
     CecchinoGoalIntensityV5StatisticsBody,
 )
@@ -43,6 +44,11 @@ from app.services.cecchino.cecchino_goal_intensity_v5_dataset import (
     dataset_export_filename,
     stream_goal_intensity_v5_dataset_csv,
     stream_goal_intensity_v5_dataset_summary_json,
+)
+from app.services.cecchino.cecchino_goal_intensity_v5_candidate_indices import (
+    build_goal_intensity_v5_candidate_indices,
+    candidate_indices_export_filename,
+    stream_goal_intensity_v5_candidate_indices_export,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_statistics import (
     build_goal_intensity_v5_statistics,
@@ -341,3 +347,134 @@ def post_goal_intensity_v5_statistics_export_xg_value(body: CecchinoGoalIntensit
 @router.post("/goal-intensity-v5/statistics/export/feature-recommendations")
 def post_goal_intensity_v5_statistics_export_feature_recommendations(body: CecchinoGoalIntensityV5StatisticsBody, db: Session = Depends(get_db)):
     return _goal_intensity_statistics_export("feature_recommendations", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices")
+def post_goal_intensity_v5_candidate_indices(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody,
+    db: Session = Depends(get_db),
+):
+    payload = build_goal_intensity_v5_candidate_indices(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        minimum_history_sample=body.minimum_history_sample,
+        bootstrap_iterations=body.bootstrap_iterations,
+        random_seed=body.random_seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+def _goal_intensity_candidate_indices_export(
+    kind: str, body: CecchinoGoalIntensityV5CandidateIndicesBody, db
+):
+    filename = candidate_indices_export_filename(
+        kind=kind,  # type: ignore[arg-type]
+        date_from=body.date_from,
+        date_to=body.date_to,
+    )
+    stream = stream_goal_intensity_v5_candidate_indices_export(
+        db,
+        kind=kind,  # type: ignore[arg-type]
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        minimum_history_sample=body.minimum_history_sample,
+        bootstrap_iterations=body.bootstrap_iterations,
+        random_seed=body.random_seed,
+    )
+    media = (
+        "application/json; charset=utf-8"
+        if kind in ("summary", "candidate_definitions", "prospective_validation_protocol")
+        else "text/csv; charset=utf-8"
+    )
+    return StreamingResponse(
+        stream,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/summary")
+def post_goal_intensity_v5_candidate_indices_export_summary(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("summary", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/candidate-definitions")
+def post_goal_intensity_v5_candidate_indices_export_definitions(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("candidate_definitions", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/candidate-scores")
+def post_goal_intensity_v5_candidate_indices_export_scores(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("candidate_scores", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/pillar-metrics")
+def post_goal_intensity_v5_candidate_indices_export_pillar_metrics(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("pillar_metrics", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/composite-metrics")
+def post_goal_intensity_v5_candidate_indices_export_composite_metrics(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("composite_metrics", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/temporal-metrics")
+def post_goal_intensity_v5_candidate_indices_export_temporal_metrics(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("temporal_metrics", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/decile-calibration")
+def post_goal_intensity_v5_candidate_indices_export_decile_calibration(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("decile_calibration", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/ablation-analysis")
+def post_goal_intensity_v5_candidate_indices_export_ablation(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("ablation_analysis", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/paired-candidate-comparison")
+def post_goal_intensity_v5_candidate_indices_export_paired(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("paired_candidate_comparison", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/pillar-redundancy")
+def post_goal_intensity_v5_candidate_indices_export_pillar_redundancy(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("pillar_redundancy", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/xg-optional-enrichment")
+def post_goal_intensity_v5_candidate_indices_export_xg(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("xg_optional_enrichment", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/prospective-validation-protocol")
+def post_goal_intensity_v5_candidate_indices_export_prospective(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("prospective_validation_protocol", body, db)

@@ -2,6 +2,8 @@
 
 Registro delle variabili usate nei modelli SOT. **Parte principale: v2.1** (`baseline_v2_1_weighted_components`). Sezioni brevi su v1.1 (base v2.0) e v2.0.
 
+> **Nota research Intensità Goal v5 (Fase 1D):** gli indici candidati `GI_A`–`GI_D` e gli score pilastro OP/DV/MT/OV sono definizioni research fisse (`cecchino_goal_intensity_v5_candidate_indices_v1`), normalizzate con ECDF train-only. **Non** sono feature del registry produttivo SOT né della formula Intensità Goal v4.
+
 Fonte codice: `backend/app/services/predictions_v21/v21_manifest_definitions.py`, `v21_feature_collectors.py`, `v21_macro_aggregators.py`, `v21_feature_context.py`.
 
 Legenda modelli: [MODEL_LEGEND.md](./MODEL_LEGEND.md).

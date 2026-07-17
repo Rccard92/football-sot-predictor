@@ -2,6 +2,17 @@
 
 Modulo di ricerca per rifondare **Intensità Goal** su quattro pilastri indipendenti. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
+## Fase 1D — Indici candidati (2026-07-17)
+
+Modulo `cecchino_goal_intensity_v5_candidate_indices_v1`: riusa il dataset Fase 1B, normalizza feature con ECDF midrank **train-only**, costruisce score pilastro/compositi fissi (GI_A–D, equal weight), metriche sui 4 target, ablation, paired bootstrap, Pareto, xG optional paired e readiness Fase 2A.
+
+- Primary default: `GI_A_STRICT_CORE`; challenger = miglior non dominato; `selection_evidence_level=low`
+- Hard exclusion: MAD, CV, delta, ge3 frequency, pair rolling — mai negli score
+- Display solidità/stabilità = 100 − DV/OV (non entrano nei compositi)
+- `validation_status=retrospective_selection_informed`; nessuna claim produttiva; v4 invariata
+- Endpoint: `POST .../goal-intensity-v5/candidate-indices` + 12 export streaming
+- Benchmark: `python -m scripts.benchmark_goal_intensity_v5_candidate_indices` (<30s preferibile, <45s max, payload <2 MB)
+
 ## Fase 1C — Statistiche esplorative (2026-07-17)
 
 La Fase 1C riusa esclusivamente il dataset Fase 1B.1: coorte Today persistita `eligible`, floor `scan_date` 2026-06-19, righe `row_feature_safe` e core disponibili con soglia history 10 o 20. Produce descrittive, Pearson/Spearman con bootstrap deterministico (seed 42), point-biserial/AUC, quintili, correlazioni/ridondanza/VIF, stabilità temporale (PSI, KS e direzione) e confronto xG temporale quando la coorte paired è sufficiente.
@@ -84,7 +95,7 @@ Export: `.../dataset/export/all|core-min5|core-min10|xg-paired|ineligible-diagno
 
 ## Frontend
 
-`/cecchino/ricerca-intensita-goal` — copy coorte Today; diagnostica eleggibilità; banner bloccante (unknown / ineligible / cohort_basis / scan_date &lt; MIN).
+`/cecchino/ricerca-intensita-goal` — tab Audit / Dataset 1B / Analisi 1C / **Indici Fase 1D**; copy coorte Today; diagnostica eleggibilità; banner bloccante (unknown / ineligible / cohort_basis / scan_date &lt; MIN). Nessun pick/betting/quote/ROI.
 
 ## Roadmap
 
@@ -100,6 +111,7 @@ Export: `.../dataset/export/all|core-min5|core-min10|xg-paired|ineligible-diagno
 | **1B.1** | Timeout fix: dedupe O(n log n), summary compatto, export stream |
 | **Coorte Today** | Solo eleggibili Cecchino Today; floor scan_date; fail-closed unknown |
 | **1C** | Analisi statistica / ridondanza / scelta stabilità |
+| **1D** | Indici candidati 0–100 (ECDF train-only, GI_A–D, Pareto) |
 | **2A** | Preview UI a quattro pilastri (senza promuovere formula) |
 | **2B** | Consolidamento pannello ufficiale (v4 resta rollback) |
 
