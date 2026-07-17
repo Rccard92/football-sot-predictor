@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Audit Fase 1A (2026-07-17)
+
+- Audit storico read-only `cecchino_goal_intensity_v5_audit_v1` (quattro pilastri, inventario feature, anti-leakage).
+- Endpoint `POST /api/admin/cecchino/research/goal-intensity-v5/audit`; lab FE `/cecchino/ricerca-intensita-goal`.
+- v4 resta `legacy_reference`; nessuna formula/indice produttivo nuovo.
+
 ## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
 
 - Contratto ufficiale `balance_v5_v1`; alias detail `balance_v5` = `balance_v5_preview`.

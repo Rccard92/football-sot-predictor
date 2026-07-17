@@ -2,6 +2,19 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — Audit Fase 1A (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_goal_intensity_v5_audit_v1` |
+| Scopo | Audit storico variabili candidate a quattro pilastri |
+| Endpoint | `POST /api/admin/cecchino/research/goal-intensity-v5/audit` |
+| UI | `/cecchino/ricerca-intensita-goal` |
+| v4 | Conservata come `legacy_reference` (`cecchino_goal_intensity_v4_expected_goals`) |
+| Formule | Nessuna nuova; nessun indice aggregato |
+
+Dettaglio: [SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md](./SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md).
+
 ## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
 
 | Aspetto | Dettaglio |

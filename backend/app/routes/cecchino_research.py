@@ -1,4 +1,4 @@
-"""Route admin ricerca Cecchino — audit e dataset Credibilità X (offline)."""
+"""Route admin ricerca Cecchino — audit Credibilità X / Intensità Goal v5 (offline)."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from app.schemas.cecchino_draw_credibility_research import (
     CecchinoDrawCredibilityModelComparisonBody,
     CecchinoDrawCredibilityStatisticsBody,
 )
+from app.schemas.cecchino_goal_intensity_v5_research import CecchinoGoalIntensityV5AuditBody
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
     build_draw_credibility_historical_dataset,
     dataset_csv_filename,
@@ -29,6 +30,7 @@ from app.services.cecchino.cecchino_draw_credibility_research import (
 from app.services.cecchino.cecchino_draw_credibility_statistics import (
     build_draw_credibility_statistical_analysis,
 )
+from app.services.cecchino.cecchino_goal_intensity_v5_audit import build_goal_intensity_v5_audit
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
 
@@ -126,5 +128,19 @@ def post_draw_credibility_model_comparison(
         inner_splits=body.inner_splits,
         bootstrap_iterations=body.bootstrap_iterations,
         random_seed=body.random_seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/goal-intensity-v5/audit")
+def post_goal_intensity_v5_audit(
+    body: CecchinoGoalIntensityV5AuditBody,
+    db: Session = Depends(get_db),
+):
+    payload = build_goal_intensity_v5_audit(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
     )
     return JSONResponse(content=jsonable_encoder(payload))

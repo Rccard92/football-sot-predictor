@@ -36,6 +36,12 @@ export const NAV_CECCHINO: NavItem[] = [
     icon: 'flask',
     section: 'cecchino',
   },
+  {
+    to: '/cecchino/ricerca-intensita-goal',
+    label: 'Ricerca Intensità Goal',
+    icon: 'flask',
+    section: 'cecchino',
+  },
 ]
 
 export const NAV_MAIN: NavItem[] = [

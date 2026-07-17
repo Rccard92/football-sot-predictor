@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Audit Fase 1A (2026-07-17)
+
+1. Lab: `/cecchino/ricerca-intensita-goal`
+2. `POST /api/admin/cecchino/research/goal-intensity-v5/audit` con `date_from` / `date_to` / `competition_id`
+3. Export JSON audit + CSV inventario feature
+4. v4 operativa invariata; docs: `SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md`
+
 ## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
 
 - Detail espone `balance_v5_preview` e alias `balance_v5` (`balance_v5_v1`).
