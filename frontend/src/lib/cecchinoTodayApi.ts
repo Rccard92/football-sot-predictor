@@ -921,6 +921,59 @@ export type CecchinoBalanceAnalysis = {
   warnings?: string[]
 }
 
+export type CecchinoBalanceV5Component = {
+  key: string
+  label: string
+  value: number | string | null
+  unit: string
+  status: string
+}
+
+export type CecchinoBalanceV5Pillar = {
+  key: string
+  title: string
+  question: string
+  status: 'official' | 'research' | 'calibration_pending' | 'unavailable' | string
+  index: number | null
+  class_label: string | null
+  reading: string
+  direction: string | null
+  source_version: string | null
+  components: CecchinoBalanceV5Component[]
+  warnings: string[]
+}
+
+export type CecchinoBalanceV5MarketPair = {
+  key: string
+  label: string
+  quota_cecchino?: number | null
+  quota_book?: number | null
+  prob_cecchino_pct?: number | null
+  prob_book_pct?: number | null
+  deviation_pp?: number | null
+}
+
+export type CecchinoBalanceV5MarketDeviation = {
+  title: string
+  subtitle: string
+  status: string
+  index?: number | null
+  class_label?: string | null
+  pairs: CecchinoBalanceV5MarketPair[]
+  reading: string
+  warnings?: string[]
+  has_book_data?: boolean
+}
+
+export type CecchinoBalanceV5Preview = {
+  version: string
+  pillars: CecchinoBalanceV5Pillar[]
+  market_deviation: CecchinoBalanceV5MarketDeviation
+  research_note: string
+  production_changes: boolean
+  research_candidates?: Record<string, unknown>
+}
+
 export type CecchinoTodayFixtureIds = {
   today_fixture_id: number
   local_fixture_id: number | null
@@ -953,6 +1006,7 @@ export type CecchinoTodayDetailResponse = {
   picchetti_debug_summary?: CecchinoPicchettiDebugSummary
   icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
+  balance_v5_preview?: CecchinoBalanceV5Preview
   goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
   expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail

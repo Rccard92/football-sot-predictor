@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Equilibrio vs Squilibrio — Preview v5 Fase 2A (2026-07-17)
+
+Pannello a quattro pilastri descrittivi su Cecchino Today (`balance_v5_preview`). F36 ufficiale; altri in ricerca/calibrazione; Book separato; ICM nascosto in UI. Nessuna nuova formula. Prossimo: Fase 2B.
+
 ## Credibilità X Research — Confronto modelli Fase 1D (2026-07-17)
 
 Validazione temporale esplorativa (M0–M12, OOF, holdout, calibrazione, ROI Market OOF). Versione `cecchino_draw_credibility_model_comparison_v1`. Nessuna promozione produttiva.

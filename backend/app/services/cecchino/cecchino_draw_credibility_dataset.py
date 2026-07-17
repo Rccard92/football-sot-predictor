@@ -172,35 +172,21 @@ CSV_COLUMNS: tuple[str, ...] = (
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
-    return round(max(lo, min(hi, value)), 2)
+    from app.services.cecchino.cecchino_balance_research_candidates import clamp_index
+
+    return clamp_index(value, lo, hi)
 
 
 def _classify_conviction(value: float | None) -> str | None:
-    if value is None:
-        return None
-    if value < 20:
-        return "Molto Debole"
-    if value < 40:
-        return "Debole"
-    if value < 60:
-        return "Moderata"
-    if value < 80:
-        return "Forte"
-    return "Molto Forte"
+    from app.services.cecchino.cecchino_balance_research_candidates import classify_conviction
+
+    return classify_conviction(value)
 
 
 def _classify_gap_coherence(value: float | None) -> str | None:
-    if value is None:
-        return None
-    if value < 20:
-        return "Non Confermato"
-    if value < 40:
-        return "Debole"
-    if value < 60:
-        return "Parziale"
-    if value < 80:
-        return "Confermato"
-    return "Fortemente Confermato"
+    from app.services.cecchino.cecchino_balance_research_candidates import classify_gap_coherence
+
+    return classify_gap_coherence(value)
 
 
 def _x_rank(prob_norm: dict[str, float | None]) -> tuple[int | None, bool]:

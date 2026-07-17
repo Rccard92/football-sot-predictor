@@ -4,10 +4,13 @@ import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
-import { CecchinoTodayBalanceAnalysisPanel } from './CecchinoTodayBalanceAnalysisPanel'
+import { CecchinoBalanceV5PreviewPanel } from './CecchinoBalanceV5PreviewPanel'
+// Legacy Equilibrio vs Squilibrio (v4 operativo) conservato per rollback:
+// import { CecchinoTodayBalanceAnalysisPanel } from './CecchinoTodayBalanceAnalysisPanel'
 import { CecchinoGoalIntensityAnalysisPanel } from './CecchinoGoalIntensityAnalysisPanel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
-import { CecchinoIcmAnalysisPanel } from './CecchinoIcmAnalysisPanel'
+// ICM hidden until the four descriptive pillars are consolidated.
+// import { CecchinoIcmAnalysisPanel } from './CecchinoIcmAnalysisPanel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 
@@ -75,7 +78,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         kpiPanel={detail.kpi_panel_v2 ?? detail.kpi_panel}
       />
 
-      <CecchinoTodayBalanceAnalysisPanel balanceAnalysis={detail.balance_analysis} />
+      <CecchinoBalanceV5PreviewPanel preview={detail.balance_v5_preview} />
 
       <CecchinoGoalIntensityAnalysisPanel goalIntensityAnalysis={detail.goal_intensity_analysis} />
 
@@ -84,7 +87,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         todayFixtureId={detail.today_fixture_id ?? detail.id}
       />
 
-      <CecchinoIcmAnalysisPanel icmAnalysis={detail.icm_analysis} />
+      {/* ICM hidden until the four descriptive pillars are consolidated. */}
 
       {signals && (
         <CecchinoSignalsCard

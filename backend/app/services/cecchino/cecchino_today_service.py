@@ -64,6 +64,7 @@ from app.services.cecchino.cecchino_constants import (
     STATUS_AVAILABLE,
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
+from app.services.cecchino.cecchino_balance_v5_preview import build_balance_v5_preview
 from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
 from app.services.datetime_utils import (
     build_datetime_debug,
@@ -1594,6 +1595,11 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
     balance_analysis = build_balance_analysis_from_final(
         output.get("final") if isinstance(output, dict) else {},
     )
+    balance_v5_preview = build_balance_v5_preview(
+        balance_analysis=balance_analysis,
+        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+        cecchino_final=output.get("final") if isinstance(output, dict) else None,
+    )
     goal_intensity_analysis = build_goal_intensity_for_today_row(db, row)
     expected_goal_engine_diagnostics = build_expected_goal_engine_diagnostics_for_today_row(db, row)
     icm_analysis = build_cecchino_icm_analysis(
@@ -1634,6 +1640,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "picchetti_debug_summary": picchetti_debug_summary,
         "icm_analysis": icm_analysis,
         "balance_analysis": balance_analysis,
+        "balance_v5_preview": balance_v5_preview,
         "goal_intensity_analysis": goal_intensity_analysis,
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),

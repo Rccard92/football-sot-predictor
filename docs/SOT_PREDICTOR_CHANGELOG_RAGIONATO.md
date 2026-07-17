@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio — Preview v5 Fase 2A (2026-07-17)
+
+- Nuova sezione UI su Cecchino Today: quattro pilastri (F36 official, Dominanza research, Credibilità X in calibrazione, Gap research) + Scostamento mercato separato.
+- Blocco read-only `balance_v5_preview` (`balance_v5_preview_v1`) sul detail; riuso formule candidate già nel dataset (nessuna formula nuova).
+- ICM nascosto nel frontend detail (backend ICM invariato). Vecchio pannello operativo v4 non montato (file conservato).
+- Book mai nella card Credibilità X. `production_changes: false`. Prossimo step: Fase 2B.
+
 ## Credibilità X Research — Confronto modelli Fase 1D (2026-07-17)
 
 - Service `cecchino_draw_credibility_model_comparison.py` + helpers modeling: split temporale per kickoff date, expanding-window CV, preprocessing train-only (scaler/OHE/quantile bins), modelli M0–M12 + Book benchmark.

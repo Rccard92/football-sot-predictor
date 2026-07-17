@@ -1,5 +1,10 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Equilibrio vs Squilibrio — Preview v5 Fase 2A (2026-07-17)
+
+- Detail `GET /api/cecchino/today/:id` espone `balance_v5_preview` derivato da `balance_analysis` + KPI (read-only).
+- UI: `CecchinoBalanceV5PreviewPanel`; ICM non renderizzato. Nessuna migration / scrittura DB / ML.
+
 ## Credibilità X Research — Confronto modelli Fase 1D (2026-07-17)
 
 - `build_draw_credibility_model_comparison`: dataset condiviso → enrich → split temporale → CV expanding → OOF → fit development → holdout unico.
