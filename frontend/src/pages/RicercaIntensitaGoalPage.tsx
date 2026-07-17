@@ -5,18 +5,16 @@ import { useCecchinoGoalIntensityV5Audit } from '../hooks/useCecchinoGoalIntensi
 import { useCecchinoGoalIntensityV5Dataset } from '../hooks/useCecchinoGoalIntensityV5Dataset'
 import {
   buildGoalIntensityAuditJsonFilename,
-  buildGoalIntensityDatasetCsvFilename,
-  buildGoalIntensityDatasetSummaryJsonFilename,
   buildGoalIntensityFeatureInventoryCsvFilename,
   buildGoalIntensityFixtureAuditCsvFilename,
-  datasetRowsToCsv,
-  datasetSummaryExportPayload,
+  classifyGoalIntensityFetchError,
   featureInventoryToCsv,
   fetchGoalIntensityV5Availability,
-  filterDatasetRowsForExport,
   fixtureAuditToCsv,
   isGoalIntensityAuditDegraded,
   isGoalIntensityAuditUnusable,
+  postGoalIntensityV5DatasetExport,
+  type GoalIntensityDatasetExportKind,
   type GoalIntensityFixtureAuditRow,
   type GoalIntensityV5AuditResponse,
   type GoalIntensityV5AvailabilityResponse,
@@ -476,7 +474,17 @@ function AuditBody({ audit }: { audit: GoalIntensityV5AuditResponse }) {
   )
 }
 
-function DatasetBody({ dataset }: { dataset: GoalIntensityV5DatasetResponse }) {
+function DatasetBody({
+  dataset,
+  onExport,
+  exportBusy,
+  exportError,
+}: {
+  dataset: GoalIntensityV5DatasetResponse
+  onExport: (kind: GoalIntensityDatasetExportKind) => void
+  exportBusy: boolean
+  exportError: string | null
+}) {
   const summary = dataset.dataset_summary ?? {}
   const dedupe = dataset.deduplication ?? {}
   const history = dataset.history_quality ?? {}
@@ -485,66 +493,42 @@ function DatasetBody({ dataset }: { dataset: GoalIntensityV5DatasetResponse }) {
   const identity = dataset.identity_diagnostics ?? {}
   const bias = dataset.exclusion_bias_report ?? {}
   const cohortCounts = (summary.cohort_counts ?? {}) as Record<string, number>
-  const from = dataset.filters.date_from
-  const to = dataset.filters.date_to
-  const rows = dataset.dataset_rows ?? []
-
-  const downloadCsv = (kind: 'all' | 'core_min5' | 'core_min10' | 'xg_paired') => {
-    downloadTextFile(
-      buildGoalIntensityDatasetCsvFilename(kind, from, to),
-      datasetRowsToCsv(filterDatasetRowsForExport(rows, kind)),
-      'text/csv;charset=utf-8',
-    )
-  }
+  const preview = dataset.dataset_preview_rows ?? []
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
-          onClick={() => downloadCsv('all')}
-        >
-          CSV dataset completo
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
-          onClick={() => downloadCsv('core_min5')}
-        >
-          CSV core ≥5
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
-          onClick={() => downloadCsv('core_min10')}
-        >
-          CSV core ≥10
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
-          onClick={() => downloadCsv('xg_paired')}
-        >
-          CSV paired xG
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
-          onClick={() =>
-            downloadJsonFile(
-              buildGoalIntensityDatasetSummaryJsonFilename(from, to),
-              datasetSummaryExportPayload(dataset),
-            )
-          }
-        >
-          JSON summary
-        </button>
+        {(
+          [
+            ['all', 'CSV dataset completo'],
+            ['core_min5', 'CSV core ≥5'],
+            ['core_min10', 'CSV core ≥10'],
+            ['xg_paired', 'CSV paired xG'],
+            ['summary', 'JSON summary'],
+          ] as const
+        ).map(([kind, label]) => (
+          <button
+            key={kind}
+            type="button"
+            disabled={exportBusy}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => onExport(kind)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+      {exportError ? (
+        <CecchinoStatusMessage variant="error" title="Errore export" message={exportError} />
+      ) : null}
+      {exportBusy ? (
+        <p className="text-xs text-slate-500">Export in corso dal backend…</p>
+      ) : null}
 
       <Section title="Riepilogo dataset">
         <Kv label="Versione" value={dataset.version} />
         <Kv label="Righe iniziali" value={summary.rows_initial} />
+        <Kv label="Dopo dedupe" value={summary.rows_after_composite_dedupe} />
         <Kv label="Righe feature-safe" value={summary.rows_feature_safe} />
         <Kv label="Identity excluded" value={summary.rows_identity_excluded} />
         <Kv label="v4 invariata" value={summary.v4_unchanged ? 'sì' : 'no'} />
@@ -556,10 +540,7 @@ function DatasetBody({ dataset }: { dataset: GoalIntensityV5DatasetResponse }) {
         <Kv label="Duplicati compositi rimossi" value={dedupe.duplicates_composite_removed} />
         <Kv label="Dopo provider" value={dedupe.rows_after_provider} />
         <Kv label="Dopo composita" value={dedupe.rows_after_composite} />
-        <Kv
-          label="Gruppi duplicati"
-          value={Array.isArray(dedupe.duplicate_groups) ? dedupe.duplicate_groups.length : 0}
-        />
+        <Kv label="Gruppi duplicati" value={dedupe.duplicate_groups_count} />
       </Section>
 
       <Section title="History quality">
@@ -587,9 +568,10 @@ function DatasetBody({ dataset }: { dataset: GoalIntensityV5DatasetResponse }) {
         <Kv label="xG missing" value={xg.xg_missing} />
         <Kv label="Paired fixture count" value={paired.paired_fixture_count} />
         <Kv label="Sample minimo paired (≥50)" value={paired.minimum_recommended_sample_reached ? 'sì' : 'no'} />
+        <Kv label="fixture_ids_hash" value={paired.fixture_ids_hash} />
       </Section>
 
-      <Section title="Identity failure">
+      <Section title="Identity failure (aggregati)">
         <Kv label="Escluse" value={identity.identity_excluded_count} />
         <p className="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
           Per motivo
@@ -599,6 +581,42 @@ function DatasetBody({ dataset }: { dataset: GoalIntensityV5DatasetResponse }) {
 
       <Section title="Exclusion bias (diagnostica)">
         <JsonBlock data={bias} />
+      </Section>
+
+      <Section title="Anteprima righe">
+        <p className="mb-2 text-xs text-slate-600">
+          Anteprima limitata a 100 righe. Gli export completi vengono generati dal backend.
+        </p>
+        {!preview.length ? (
+          <p className="text-xs text-slate-500">Nessuna riga in anteprima.</p>
+        ) : (
+          <div className="max-h-72 overflow-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead className="sticky top-0 bg-white text-slate-500">
+                <tr>
+                  <th className="py-1 pr-2">ID</th>
+                  <th className="py-1 pr-2">Kickoff</th>
+                  <th className="py-1 pr-2">Sample</th>
+                  <th className="py-1 pr-2">Tier</th>
+                  <th className="py-1 pr-2">xG</th>
+                  <th className="py-1 pr-2">Goals</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((row) => (
+                  <tr key={String(row.local_fixture_id)} className="border-t border-slate-100">
+                    <td className="py-1 pr-2 tabular-nums">{String(row.local_fixture_id)}</td>
+                    <td className="py-1 pr-2 whitespace-nowrap">{String(row.kickoff ?? '—')}</td>
+                    <td className="py-1 pr-2 tabular-nums">{String(row.sample_size ?? '—')}</td>
+                    <td className="py-1 pr-2">{String(row.history_quality_tier ?? '—')}</td>
+                    <td className="py-1 pr-2">{String(row.xg_status ?? '—')}</td>
+                    <td className="py-1 pr-2 tabular-nums">{String(row.total_goals_ft ?? '—')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
 
       <Section title="Performance">
@@ -635,6 +653,31 @@ export function RicercaIntensitaGoalPage() {
     dataset,
     runDataset,
   } = useCecchinoGoalIntensityV5Dataset(filters)
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  const handleDatasetExport = async (kind: GoalIntensityDatasetExportKind) => {
+    setExportBusy(true)
+    setExportError(null)
+    try {
+      const compId = competitionId.trim() ? Number(competitionId) : null
+      const { blob, filename } = await postGoalIntensityV5DatasetExport(kind, {
+        date_from: dateFrom,
+        date_to: dateTo,
+        competition_id: compId != null && Number.isFinite(compId) && compId > 0 ? compId : null,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setExportError(classifyGoalIntensityFetchError(err, 'export'))
+    } finally {
+      setExportBusy(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -811,7 +854,14 @@ export function RicercaIntensitaGoalPage() {
               Imposta il periodo e premi «Costruisci dataset» per la Fase 1B.
             </p>
           ) : null}
-          {!datasetLoading && dataset ? <DatasetBody dataset={dataset} /> : null}
+          {!datasetLoading && dataset ? (
+            <DatasetBody
+              dataset={dataset}
+              onExport={(kind) => void handleDatasetExport(kind)}
+              exportBusy={exportBusy}
+              exportError={exportError}
+            />
+          ) : null}
         </>
       )}
     </motion.div>

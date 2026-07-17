@@ -248,80 +248,108 @@ def score_fixture_for_composite_retention(
     )
 
 
+def _cluster_bucket_by_kickoff(
+    group: list[Fixture],
+) -> list[list[Fixture]]:
+    """Cluster adiacenti entro 60s dopo sort kickoff — O(g log g)."""
+    if not group:
+        return []
+    annotated: list[tuple[datetime | None, Fixture]] = []
+    for fx in group:
+        ko = ensure_datetime_utc(fx.kickoff_at, field_name="cluster.ko")
+        annotated.append((ko, fx))
+    annotated.sort(
+        key=lambda item: (
+            item[0] or datetime.min.replace(tzinfo=timezone.utc),
+            int(item[1].id),
+        )
+    )
+    clusters: list[list[Fixture]] = []
+    current: list[Fixture] = [annotated[0][1]]
+    prev_ko = annotated[0][0]
+    for ko, fx in annotated[1:]:
+        if (
+            prev_ko is not None
+            and ko is not None
+            and abs((ko - prev_ko).total_seconds()) <= 60.0
+        ):
+            current.append(fx)
+        else:
+            clusters.append(current)
+            current = [fx]
+        prev_ko = ko
+    clusters.append(current)
+    return clusters
+
+
 def dedupe_fixtures_provider_then_composite(
     fixtures: list[Fixture],
     *,
     has_today_by_id: dict[int, bool] | None = None,
     has_fts_by_id: dict[int, bool] | None = None,
 ) -> tuple[list[Fixture], dict[str, Any]]:
-    """Due livelli: provider/api id, poi composita competition+teams+kickoff±1min."""
-    provider_kept, provider_removed = dedupe_local_fixtures(fixtures)
+    """Due livelli O(n log n): provider, poi bucket composita + cluster kickoff±60s."""
+    import time as _time
+
     today_map = has_today_by_id or {}
     fts_map = has_fts_by_id or {}
 
-    # Raggruppa per chiave composita + cluster kickoff
-    remaining = list(provider_kept)
-    retained: list[Fixture] = []
-    duplicate_groups: list[dict[str, Any]] = []
-    composite_removed = 0
-    consumed: set[int] = set()
+    t0 = _time.perf_counter()
+    provider_kept, provider_removed = dedupe_local_fixtures(fixtures)
+    provider_dedupe_ms = round((_time.perf_counter() - t0) * 1000.0, 2)
 
-    for i, fx in enumerate(remaining):
-        fid = int(fx.id)
-        if fid in consumed:
-            continue
+    t1 = _time.perf_counter()
+    buckets: dict[tuple[int | None, int, int], list[Fixture]] = {}
+    no_key: list[Fixture] = []
+    for fx in provider_kept:
         key = _composite_group_key(fx)
         if key is None:
-            retained.append(fx)
-            consumed.add(fid)
+            no_key.append(fx)
             continue
-        group = [fx]
-        for other in remaining[i + 1 :]:
-            oid = int(other.id)
-            if oid in consumed:
-                continue
-            okey = _composite_group_key(other)
-            if okey != key:
-                continue
-            if _kickoff_in_group(fx, other):
-                group.append(other)
-        if len(group) == 1:
-            retained.append(fx)
-            consumed.add(fid)
-            continue
-        ranked = sorted(
-            group,
-            key=lambda g: score_fixture_for_composite_retention(
-                g,
-                has_today_snapshot=bool(today_map.get(int(g.id))),
-                has_fixture_team_stats=bool(fts_map.get(int(g.id))),
-            ),
-            reverse=True,
-        )
-        winner = ranked[0]
-        excluded = [int(g.id) for g in ranked[1:]]
-        for g in group:
-            consumed.add(int(g.id))
-        retained.append(winner)
-        composite_removed += len(excluded)
-        duplicate_groups.append(
-            {
-                "competition_id": key[0],
-                "home_team_id": key[1],
-                "away_team_id": key[2],
-                "kickoff": ensure_datetime_utc(winner.kickoff_at, field_name="winner.ko").isoformat()
-                if ensure_datetime_utc(winner.kickoff_at, field_name="winner.ko")
-                else None,
-                "retained_fixture_id": int(winner.id),
-                "excluded_fixture_ids": excluded,
-                "reason": "composite_competition_teams_kickoff",
-            }
-        )
+        buckets.setdefault(key, []).append(fx)
+    composite_bucket_build_ms = round((_time.perf_counter() - t1) * 1000.0, 2)
 
-    # Ordine stabile per kickoff
+    t2 = _time.perf_counter()
+    retained: list[Fixture] = list(no_key)
+    duplicate_groups: list[dict[str, Any]] = []
+    composite_removed = 0
+
+    for key, bucket in buckets.items():
+        for cluster in _cluster_bucket_by_kickoff(bucket):
+            if len(cluster) == 1:
+                retained.append(cluster[0])
+                continue
+            ranked = sorted(
+                cluster,
+                key=lambda g: score_fixture_for_composite_retention(
+                    g,
+                    has_today_snapshot=bool(today_map.get(int(g.id))),
+                    has_fixture_team_stats=bool(fts_map.get(int(g.id))),
+                ),
+                reverse=True,
+            )
+            winner = ranked[0]
+            excluded = [int(g.id) for g in ranked[1:]]
+            retained.append(winner)
+            composite_removed += len(excluded)
+            winner_ko = ensure_datetime_utc(winner.kickoff_at, field_name="winner.ko")
+            duplicate_groups.append(
+                {
+                    "competition_id": key[0],
+                    "home_team_id": key[1],
+                    "away_team_id": key[2],
+                    "kickoff": winner_ko.isoformat() if winner_ko else None,
+                    "retained_fixture_id": int(winner.id),
+                    "excluded_fixture_ids": excluded,
+                    "reason": "composite_competition_teams_kickoff",
+                }
+            )
+    composite_cluster_ms = round((_time.perf_counter() - t2) * 1000.0, 2)
+
     retained.sort(
         key=lambda f: (
-            ensure_datetime_utc(f.kickoff_at, field_name="f.ko") or datetime.min.replace(tzinfo=timezone.utc),
+            ensure_datetime_utc(f.kickoff_at, field_name="f.ko")
+            or datetime.min.replace(tzinfo=timezone.utc),
             int(f.id),
         )
     )
@@ -331,6 +359,11 @@ def dedupe_fixtures_provider_then_composite(
         "duplicate_groups": duplicate_groups,
         "rows_after_provider": len(provider_kept),
         "rows_after_composite": len(retained),
+        "timings_ms": {
+            "provider_dedupe_ms": provider_dedupe_ms,
+            "composite_bucket_build_ms": composite_bucket_build_ms,
+            "composite_cluster_ms": composite_cluster_ms,
+        },
     }
     return retained, report
 

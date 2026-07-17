@@ -159,7 +159,10 @@ export type GoalIntensityV5DatasetResponse = {
   xg_cohorts: Record<string, unknown>
   paired_xg_readiness: Record<string, unknown>
   feature_definitions: Array<Record<string, unknown>>
-  dataset_rows: GoalIntensityDatasetRow[]
+  /** Anteprima max 100 — non il dataset completo */
+  dataset_preview_rows?: GoalIntensityDatasetRow[]
+  /** @deprecated v1 only */
+  dataset_rows?: GoalIntensityDatasetRow[]
   warnings: string[]
   performance: Record<string, unknown>
 }
@@ -168,6 +171,91 @@ export function postGoalIntensityV5Dataset(
   body: GoalIntensityV5DatasetRequest,
 ): Promise<GoalIntensityV5DatasetResponse> {
   return adminPostJson('/api/admin/cecchino/research/goal-intensity-v5/dataset', body)
+}
+
+export type GoalIntensityDatasetExportKind =
+  | 'all'
+  | 'core_min5'
+  | 'core_min10'
+  | 'xg_paired'
+  | 'summary'
+
+const EXPORT_PATH: Record<GoalIntensityDatasetExportKind, string> = {
+  all: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/all',
+  core_min5: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/core-min5',
+  core_min10: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/core-min10',
+  xg_paired: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/xg-paired',
+  summary: '/api/admin/cecchino/research/goal-intensity-v5/dataset/export/summary',
+}
+
+export async function postGoalIntensityV5DatasetExport(
+  kind: GoalIntensityDatasetExportKind,
+  body: GoalIntensityV5DatasetRequest,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<{ blob: Blob; filename: string }> {
+  const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+  const timeoutMs = opts?.timeoutMs ?? 300_000
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const onOuterAbort = () => controller.abort()
+  opts?.signal?.addEventListener('abort', onOuterAbort)
+  try {
+    const res = await fetch(`${base}${EXPORT_PATH[kind]}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date_from: body.date_from,
+        date_to: body.date_to,
+        competition_id: body.competition_id ?? null,
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      let message = res.statusText
+      const ct = res.headers.get('content-type') ?? ''
+      if (ct.includes('application/json')) {
+        try {
+          const parsed = (await res.json()) as { detail?: string; message?: string }
+          message = parsed.detail ?? parsed.message ?? message
+        } catch {
+          /* ignore */
+        }
+      }
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    const disposition = res.headers.get('content-disposition') ?? ''
+    const match = /filename="([^"]+)"/.exec(disposition)
+    const fallback =
+      kind === 'summary'
+        ? buildGoalIntensityDatasetSummaryJsonFilename(body.date_from, body.date_to)
+        : buildGoalIntensityDatasetCsvFilename(kind, body.date_from, body.date_to)
+    return { blob: await res.blob(), filename: match?.[1] ?? fallback }
+  } finally {
+    clearTimeout(timer)
+    opts?.signal?.removeEventListener('abort', onOuterAbort)
+  }
+}
+
+export function classifyGoalIntensityFetchError(
+  err: unknown,
+  context: 'summary' | 'export',
+): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  const lower = msg.toLowerCase()
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return context === 'summary'
+      ? 'Timeout costruzione summary dataset'
+      : 'Timeout export dataset'
+  }
+  if (lower.includes('timeout') || lower.includes('abort')) {
+    return context === 'summary'
+      ? 'Timeout costruzione summary dataset'
+      : 'Timeout export dataset'
+  }
+  if (lower.includes('failed to fetch') || lower.includes('network')) {
+    return 'Errore di rete'
+  }
+  return `Errore backend: ${msg}`
 }
 
 export function buildGoalIntensityAuditJsonFilename(dateFrom: string, dateTo: string): string {

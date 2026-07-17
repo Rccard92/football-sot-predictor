@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Dataset Fase 1B.1 (2026-07-17)
+
+1. Lab «Costruisci dataset» → summary compatto (<60s target; timeout app 180s invariato)
+2. Anteprima ≤100 righe; export CSV/JSON dal backend (stream)
+3. Benchmark: `cd backend && python -m scripts.benchmark_goal_intensity_v5_dataset --date-from 2025-06-01 --date-to 2026-07-17 --summary-only`
+4. Nessuna formula; readiness per Fase 1C
+
 ## Intensità Goal v5 Research — Dataset Fase 1B (2026-07-17)
 
 1. Lab tab «Dataset Fase 1B»: costruire dataset sul range kickoff

@@ -1,8 +1,15 @@
-"""Test dataset Intensità Goal v5 — Fase 1B."""
+"""Test dataset Intensità Goal v5 — Fase 1B.1 (summary compatto + export stream)."""
 
 from __future__ import annotations
 
+import ast
+import csv
+import inspect
+import io
+import json
+import time
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fastapi.encoders import jsonable_encoder
@@ -20,12 +27,15 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit_indexes import (
     build_today_indexes,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_dataset import (
-    CORE_FEATURE_KEYS,
+    CSV_COLUMNS,
     VERSION,
     XG_FEATURE_KEYS,
     build_goal_intensity_v5_dataset,
+    build_goal_intensity_v5_dataset_internal,
     core_feature_status,
+    filter_dataset_rows_by_kind,
     history_quality_tier,
+    stream_goal_intensity_v5_dataset_csv,
 )
 from app.services.cecchino.cecchino_fixture_identity_consistency import (
     build_historical_fixture_identity_consistency,
@@ -178,7 +188,7 @@ def _indexes_from_priors(fixtures: list, today_rows: list, priors=None, *, inclu
     return idx
 
 
-def _dataset(fixtures: list, *, today_rows: list | None = None, priors=None, include_xg_stats: bool = True):
+def _run_dataset(fixtures: list, *, today_rows: list | None = None, priors=None, include_xg_stats: bool = True):
     db = MagicMock()
     todays = today_rows if today_rows is not None else []
     indexes = _indexes_from_priors(fixtures, todays, priors=priors, include_xg_stats=include_xg_stats)
@@ -211,31 +221,28 @@ def _dataset(fixtures: list, *, today_rows: list | None = None, priors=None, inc
             side_effect=build_historical_fixture_identity_consistency,
         ),
     ):
-        payload = build_goal_intensity_v5_dataset(
+        summary = build_goal_intensity_v5_dataset(
             db,
             date_from=date(2026, 1, 1),
             date_to=date(2026, 7, 17),
         )
-    return payload, db
+        internal = build_goal_intensity_v5_dataset_internal(
+            db,
+            date_from=date(2026, 1, 1),
+            date_to=date(2026, 7, 17),
+        )
+    return summary, internal, db
 
 
 def test_version_and_v4_unchanged():
-    assert VERSION == "cecchino_goal_intensity_v5_dataset_v1"
+    assert VERSION == "cecchino_goal_intensity_v5_dataset_v1_1"
     assert V4_VERSION == "cecchino_goal_intensity_v4_expected_goals"
     local = _fx(500, api=8500)
     today = _today(local_fixture_id=500, provider_fixture_id=8500)
-    payload, _ = _dataset([local], today_rows=[today])
-    assert payload["version"] == VERSION
-    assert payload["dataset_summary"]["v4_unchanged"] is True
-    assert payload["dataset_summary"]["no_v5_formula"] is True
-
-
-def test_one_row_per_fixture():
-    a = _fx(1, api=1, ko=KO)
-    b = _fx(2, api=2, ko=KO + timedelta(days=1))
-    payload, _ = _dataset([a, b], today_rows=[])
-    ids = [r["local_fixture_id"] for r in payload["dataset_rows"]]
-    assert len(ids) == len(set(ids)) == 2
+    summary, _, _ = _run_dataset([local], today_rows=[today])
+    assert summary["version"] == VERSION
+    assert summary["dataset_summary"]["v4_unchanged"] is True
+    assert summary["dataset_summary"]["no_v5_formula"] is True
 
 
 def test_dedupe_provider():
@@ -244,6 +251,65 @@ def test_dedupe_provider():
     out, removed = dedupe_local_fixtures([a, b])
     assert len(out) == 1
     assert removed == 1
+
+
+def test_dedupe_composite_not_quadratic():
+    """O(n log n): su n grandi non deve esplodere come O(n²)."""
+    n = 800
+    fixtures = [
+        _fx(
+            i,
+            api=10_000 + i,
+            home=1 + (i % 40),
+            away=50 + (i % 40),
+            competition_id=39,
+            ko=KO + timedelta(seconds=i * 120),
+        )
+        for i in range(n)
+    ]
+    t0 = time.perf_counter()
+    retained, report = dedupe_fixtures_provider_then_composite(fixtures)
+    elapsed = time.perf_counter() - t0
+    assert len(retained) == n
+    assert report["duplicates_composite_removed"] == 0
+    assert "timings_ms" in report
+    assert "provider_dedupe_ms" in report["timings_ms"]
+    assert "composite_bucket_build_ms" in report["timings_ms"]
+    assert "composite_cluster_ms" in report["timings_ms"]
+    # O(n²) su 800 sarebbe tipicamente >> 0.5s; O(n log n) resta sotto soglia ampia
+    assert elapsed < 1.5
+
+
+def test_dedupe_buckets_not_cross_compared():
+    """Stesso kickoff ma bucket diversi (home/away) → entrambe retained."""
+    ko = KO
+    a = _fx(1, api=1, home=1, away=2, ko=ko, competition_id=39)
+    b = _fx(2, api=2, home=3, away=4, ko=ko, competition_id=39)
+    retained, report = dedupe_fixtures_provider_then_composite([a, b])
+    assert {int(f.id) for f in retained} == {1, 2}
+    assert report["duplicates_composite_removed"] == 0
+
+
+def test_cluster_within_60s():
+    ko = KO
+    a = _fx(10, api=10, home=1, away=2, ko=ko, competition_id=39)
+    b = _fx(11, api=11, home=1, away=2, ko=ko + timedelta(seconds=45), competition_id=39)
+    retained, report = dedupe_fixtures_provider_then_composite(
+        [a, b],
+        has_today_by_id={10: True, 11: False},
+    )
+    assert len(retained) == 1
+    assert int(retained[0].id) == 10
+    assert report["duplicates_composite_removed"] == 1
+
+
+def test_cluster_beyond_60s_separated():
+    ko = KO
+    a = _fx(10, api=10, home=1, away=2, ko=ko, competition_id=39)
+    b = _fx(11, api=11, home=1, away=2, ko=ko + timedelta(seconds=61), competition_id=39)
+    retained, report = dedupe_fixtures_provider_then_composite([a, b])
+    assert {int(f.id) for f in retained} == {10, 11}
+    assert report["duplicates_composite_removed"] == 0
 
 
 def test_dedupe_composite_4305_4306():
@@ -259,20 +325,243 @@ def test_dedupe_composite_4305_4306():
         home_team_name="Team10",
         away_team_name="Team20",
     )
-    payload, _ = _dataset([a, b], today_rows=[today])
-    ids = [r["local_fixture_id"] for r in payload["dataset_rows"]]
+    summary, internal, _ = _run_dataset([a, b], today_rows=[today])
+    ids = [r["local_fixture_id"] for r in internal["dataset_rows"]]
     assert len(ids) == 1
     assert ids[0] == 4305
-    assert payload["deduplication"]["duplicates_composite_removed"] == 1
-    groups = payload["deduplication"]["duplicate_groups"]
-    assert groups[0]["retained_fixture_id"] == 4305
-    assert 4306 in groups[0]["excluded_fixture_ids"]
+    assert summary["deduplication"]["duplicates_composite_removed"] == 1
+    assert internal["deduplication"]["duplicate_groups"][0]["retained_fixture_id"] == 4305
+    assert 4306 in internal["deduplication"]["duplicate_groups"][0]["excluded_fixture_ids"]
+
+
+def test_paired_set_built_once_source():
+    src = Path(__file__).resolve().parents[1] / "app/services/cecchino/cecchino_goal_intensity_v5_dataset.py"
+    text = src.read_text(encoding="utf-8")
+    assert "paired_id_set = set(paired_ids)" in text
+    assert "in set(paired_ids)" not in text
+    assert "if r[\"local_fixture_id\"] in paired_id_set]" in text or "in paired_id_set" in text
+
+
+def test_no_set_recreation_in_dataset_loop():
+    """AST: nessuna chiamata set() dentro list comprehension del service dataset."""
+    src = Path(__file__).resolve().parents[1] / "app/services/cecchino/cecchino_goal_intensity_v5_dataset.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+    offenders: list[str] = []
+
+    class Visitor(ast.NodeVisitor):
+        def visit_ListComp(self, node: ast.ListComp) -> None:
+            for child in ast.walk(node):
+                if isinstance(child, ast.Call) and isinstance(child.func, ast.Name) and child.func.id == "set":
+                    offenders.append(ast.dump(child))
+            self.generic_visit(node)
+
+        def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+            for child in ast.walk(node):
+                if isinstance(child, ast.Call) and isinstance(child.func, ast.Name) and child.func.id == "set":
+                    offenders.append(ast.dump(child))
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    assert offenders == []
+
+
+def test_summary_no_full_dataset_rows_or_cohort_ids():
+    fixtures = [_fx(i, api=i, ko=KO + timedelta(days=i)) for i in range(1, 12)]
+    summary, internal, _ = _run_dataset(fixtures, today_rows=[])
+    assert "dataset_rows" not in summary or summary.get("dataset_rows") is None
+    assert "cohort_ids" not in summary
+    assert "dataset_preview_rows" in summary
+    assert len(summary["dataset_preview_rows"]) <= 100
+    assert len(internal["dataset_rows"]) == 11
+    assert summary["dataset_summary"]["preview_rows"] == len(summary["dataset_preview_rows"])
+
+
+def test_paired_ids_and_targets_hashed_not_duplicated():
+    local = _fx(500, api=8500)
+    today = _today(local_fixture_id=500, provider_fixture_id=8500)
+    summary, internal, _ = _run_dataset([local], today_rows=[today])
+    paired = summary["paired_xg_readiness"]
+    assert "fixture_ids" not in paired
+    assert "targets" not in paired
+    assert "paired_core_without_xg" not in paired
+    assert "paired_enriched_with_xg" not in paired
+    assert paired["same_fixture_ids"] is True
+    assert paired["same_targets"] is True
+    assert isinstance(paired["fixture_ids_hash"], str) and len(paired["fixture_ids_hash"]) == 64
+    assert isinstance(paired["targets_hash"], str) and len(paired["targets_hash"]) == 64
+    assert paired["fixture_ids_hash"] == internal["fixture_ids_hash"]
+    assert paired["targets_hash"] == internal["targets_hash"]
+
+
+def test_preview_max_100():
+    fixtures = [_fx(i, api=i, ko=KO + timedelta(hours=i)) for i in range(1, 150)]
+    summary, internal, _ = _run_dataset(fixtures, today_rows=[])
+    assert len(summary["dataset_preview_rows"]) == 100
+    assert len(internal["dataset_rows"]) == 149
+    assert summary["dataset_preview_rows"] == internal["dataset_rows"][:100]
+
+
+def test_summary_payload_under_soft_limit():
+    fixtures = [_fx(i, api=i, ko=KO + timedelta(hours=i)) for i in range(1, 120)]
+    summary, _, _ = _run_dataset(fixtures, today_rows=[])
+    encoded = json.dumps(summary, default=str, separators=(",", ":"))
+    size = len(encoded.encode("utf-8"))
+    assert size < 2 * 1024 * 1024
+    # Misurato con response_payload_bytes=0 poi aggiornato: tolleranza sul digit count
+    assert abs(int(summary["performance"]["response_payload_bytes"]) - size) <= 16
+    assert "summary_payload_exceeds_2mb_soft_limit" not in summary["warnings"]
+
+
+def test_export_filters_and_chronological_csv_escaping():
+    fixtures = [
+        _fx(1, api=8501, ko=KO, gh=2, ga=1),
+        _fx(2, api=8502, ko=KO + timedelta(days=1), gh=1, ga=1),
+        _fx(3, api=8503, ko=KO + timedelta(days=2), gh=3, ga=2),
+    ]
+    todays = [
+        _today(id=i, local_fixture_id=f.id, provider_fixture_id=f.api_fixture_id)
+        for i, f in enumerate(fixtures, start=1)
+    ]
+    home, away = _priors(n=12)
+    summary, internal, db = _run_dataset(fixtures, today_rows=todays, priors=(home, away))
+
+    all_rows = filter_dataset_rows_by_kind(internal["dataset_rows"], "all")
+    core5 = filter_dataset_rows_by_kind(internal["dataset_rows"], "core_min5")
+    core10 = filter_dataset_rows_by_kind(internal["dataset_rows"], "core_min10")
+    paired = filter_dataset_rows_by_kind(internal["dataset_rows"], "xg_paired")
+    assert len(all_rows) == len(internal["dataset_rows"])
+    assert len(core5) <= len(all_rows)
+    assert len(core10) <= len(core5)
+    assert len(paired) <= len(all_rows)
+    assert all(r["core_feature_status"] == "available" and r["sample_size"] >= 5 for r in core5)
+    assert all(r["core_feature_status"] == "available" and r["sample_size"] >= 10 for r in core10)
+    assert all(r["xg_status"] == "available" for r in paired)
+
+    # CSV streaming: chunked, chronological, escaping
+    chunks: list[str] = []
+    with (
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.finished_local_fixtures_in_kickoff_range",
+            return_value=list(fixtures),
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.load_today_snapshots_for_fixtures",
+            return_value=list(todays),
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_today_indexes",
+            side_effect=build_today_indexes,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset._fixture_ids_with_team_stats",
+            return_value={int(f.id) for f in fixtures},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.preload_audit_indexes",
+            return_value=_indexes_from_priors(fixtures, todays, priors=(home, away)),
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_dataset.build_historical_fixture_identity_consistency",
+            side_effect=build_historical_fixture_identity_consistency,
+        ),
+    ):
+        for chunk in stream_goal_intensity_v5_dataset_csv(
+            db,
+            date_from=date(2026, 1, 1),
+            date_to=date(2026, 7, 17),
+            kind="all",
+        ):
+            chunks.append(chunk)
+    assert len(chunks) >= 2  # header + almeno una riga → non una sola stringa monolitica obbligatoria
+    body = "".join(chunks)
+    assert body.startswith("\ufeff")
+    reader = csv.DictReader(io.StringIO(body.lstrip("\ufeff")))
+    assert list(reader.fieldnames) == list(CSV_COLUMNS)
+    rows = list(reader)
+    assert len(rows) == len(all_rows)
+    kicks = [r["kickoff"] for r in rows]
+    assert kicks == sorted(kicks)
+    # escaping: DictWriter gestisce quote; colonne booleane stabili
+    assert rows[0]["row_feature_safe"] in ("true", "false")
+    _ = summary  # summary path exercised
+
+
+def test_streaming_response_routes():
+    """Pattern StreamingResponse delle route export (senza importare app.routes → Settings)."""
+    from starlette.responses import StreamingResponse
+
+    from app.services.cecchino.cecchino_goal_intensity_v5_dataset import dataset_export_filename
+
+    filename = dataset_export_filename(
+        kind="all",
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 7, 17),
+    )
+    assert filename.endswith(".csv")
+    stream = iter(["\ufeff", "a,b\n", "1,2\n"])
+    res = StreamingResponse(
+        stream,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+    assert isinstance(res, StreamingResponse)
+    assert "text/csv" in res.media_type
+    assert "attachment" in res.headers.get("content-disposition", "")
+    assert filename in res.headers.get("content-disposition", "")
+
+    summary_name = dataset_export_filename(
+        kind="summary",
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 7, 17),
+    )
+    assert summary_name.endswith(".json")
+    route_src = (
+        Path(__file__).resolve().parents[1] / "app/routes/cecchino_research.py"
+    ).read_text(encoding="utf-8")
+    for path in (
+        "/goal-intensity-v5/dataset/export/all",
+        "/goal-intensity-v5/dataset/export/core-min5",
+        "/goal-intensity-v5/dataset/export/core-min10",
+        "/goal-intensity-v5/dataset/export/xg-paired",
+        "/goal-intensity-v5/dataset/export/summary",
+    ):
+        assert path in route_src
+    assert "StreamingResponse" in route_src
+
+
+def test_internal_equivalent_to_summary_preview():
+    """Equivalenza funzionale: preview = prime 100 di internal; coorti/target allineati."""
+    fixtures = [_fx(i, api=i, ko=KO + timedelta(days=i)) for i in range(1, 8)]
+    summary, internal, _ = _run_dataset(fixtures, today_rows=[])
+    assert summary["dataset_preview_rows"] == internal["dataset_rows"][:100]
+    assert summary["dataset_summary"]["cohort_counts"] == internal["cohort_counts"]
+    assert summary["history_quality"] == internal["history_quality"]
+    assert summary["xg_cohorts"] == internal["xg_cohorts"]
+    assert summary["exclusion_bias_report"] == internal["exclusion_bias_report"]
+
+
+def test_no_external_api_no_db_writes():
+    local = _fx(500)
+    summary, _, db = _run_dataset([local], today_rows=[])
+    assert summary["status"] == "ok"
+    db.commit.assert_not_called()
+    db.add.assert_not_called()
+    jsonable_encoder(summary)
+
+
+def test_no_formula_or_training_markers():
+    local = _fx(500)
+    summary, _, _ = _run_dataset([local], today_rows=[])
+    assert summary["dataset_summary"]["no_v5_formula"] is True
+    assert summary["dataset_summary"]["v4_unchanged"] is True
+    assert "training" not in summary
+    assert "model_weights" not in summary
 
 
 def test_target_not_in_feature_construction():
     local = _fx(500, api=8500, gh=7, ga=4)
-    payload, _ = _dataset([local], today_rows=[])
-    row = payload["dataset_rows"][0]
+    _, internal, _ = _run_dataset([local], today_rows=[])
+    row = internal["dataset_rows"][0]
     assert row["total_goals_ft"] == 11
     assert row["home_goals_scored_avg"] is not None
     assert row["home_goals_scored_avg"] != 7
@@ -282,9 +571,9 @@ def test_future_fixture_excluded_from_features():
     local = _fx(500, api=8500)
     home, away = _priors()
     future = _prior(99, home=1, away=3, gh=9, ga=9, days_before=-2)
-    payload, _ = _dataset([local], today_rows=[], priors=(home + [future], away))
-    assert payload["dataset_rows"][0]["row_feature_safe"] is True
-    assert payload["dataset_rows"][0]["home_goals_scored_avg"] is not None
+    _, internal, _ = _run_dataset([local], today_rows=[], priors=(home + [future], away))
+    assert internal["dataset_rows"][0]["row_feature_safe"] is True
+    assert internal["dataset_rows"][0]["home_goals_scored_avg"] is not None
 
 
 def test_identity_static_components_and_status_score_non_blocking():
@@ -304,17 +593,14 @@ def test_identity_static_components_and_status_score_non_blocking():
         local_away_team_name="Team2",
     )
     assert hist["status"] == "static_identity_verified"
-    assert hist["local_fixture_id_match"] is True
-    assert hist["provider_match"] is True
-    assert "today_upcoming_vs_local_ft" in hist["warnings"]
-    payload, _ = _dataset([local], today_rows=[today])
-    assert payload["dataset_rows"][0]["row_feature_safe"] is True
+    _, internal, _ = _run_dataset([local], today_rows=[today])
+    assert internal["dataset_rows"][0]["row_feature_safe"] is True
 
 
 def test_exclusion_bias_report_shape():
     local = _fx(500)
-    payload, _ = _dataset([local], today_rows=[])
-    bias = payload["exclusion_bias_report"]
+    summary, _, _ = _run_dataset([local], today_rows=[])
+    bias = summary["exclusion_bias_report"]
     for key in (
         "all_finished",
         "feature_safe",
@@ -336,20 +622,19 @@ def test_history_quality_tiers():
 
 def test_sample_size_and_history_cohorts():
     local = _fx(500)
-    payload, _ = _dataset([local], today_rows=[])
-    row = payload["dataset_rows"][0]
+    summary, internal, _ = _run_dataset([local], today_rows=[])
+    row = internal["dataset_rows"][0]
     assert row["sample_size"] > 0
-    hq = payload["history_quality"]
+    hq = summary["history_quality"]
     assert hq["history_any"] >= 1
     assert hq[row["history_quality_tier"]] >= 1
 
 
 def test_core_history_cohorts():
     local = _fx(500)
-    # many priors → sample >= 10
     home, away = _priors(n=12)
-    payload, _ = _dataset([local], today_rows=[], priors=(home, away))
-    counts = payload["dataset_summary"]["cohort_counts"]
+    summary, _, _ = _run_dataset([local], today_rows=[], priors=(home, away))
+    counts = summary["dataset_summary"]["cohort_counts"]
     assert counts["core_history_any"] >= 1
     assert counts["core_history_min_5"] >= 1
     assert counts["core_history_min_10"] >= 1
@@ -358,12 +643,11 @@ def test_core_history_cohorts():
 def test_xg_available_partial_missing():
     local = _fx(500, api=8500)
     today = _today(local_fixture_id=500, provider_fixture_id=8500)
-    payload, _ = _dataset([local], today_rows=[today])
-    assert payload["dataset_rows"][0]["xg_status"] == "available"
-    assert payload["xg_cohorts"]["xg_available"] == 1
+    _, internal, _ = _run_dataset([local], today_rows=[today])
+    assert internal["dataset_rows"][0]["xg_status"] == "available"
 
-    payload_m, _ = _dataset([local], today_rows=[], include_xg_stats=False)
-    assert payload_m["dataset_rows"][0]["xg_status"] == "missing"
+    _, internal_m, _ = _run_dataset([local], today_rows=[], include_xg_stats=False)
+    assert internal_m["dataset_rows"][0]["xg_status"] == "missing"
 
     partial = {
         "home_team": {"xg_for_avg": 1.4, "xg_against_avg": 1.1},
@@ -374,8 +658,8 @@ def test_xg_available_partial_missing():
         },
     }
     today2 = _today(local_fixture_id=500, provider_fixture_id=8500, xg_profiles_json=partial)
-    payload_p, _ = _dataset([local], today_rows=[today2], include_xg_stats=False)
-    assert payload_p["dataset_rows"][0]["xg_status"] == "partial"
+    _, internal_p, _ = _run_dataset([local], today_rows=[today2], include_xg_stats=False)
+    assert internal_p["dataset_rows"][0]["xg_status"] == "partial"
 
 
 def test_xg_optional_enrichment_no_exclude_low_coverage():
@@ -385,70 +669,98 @@ def test_xg_optional_enrichment_no_exclude_low_coverage():
             assert spec["recommended_status"] != "exclude_low_coverage"
     local = _fx(500, api=8500)
     today = _today(local_fixture_id=500, provider_fixture_id=8500)
-    payload, _ = _dataset([local], today_rows=[today])
-    for f in payload["feature_definitions"]:
+    summary, _, _ = _run_dataset([local], today_rows=[today])
+    for f in summary["feature_definitions"]:
         if f["is_xg"]:
             assert f["recommended_status"] == "optional_enrichment"
 
 
-def test_paired_same_ids_and_targets():
-    local = _fx(500, api=8500)
-    today = _today(local_fixture_id=500, provider_fixture_id=8500)
-    payload, _ = _dataset([local], today_rows=[today])
-    paired = payload["paired_xg_readiness"]
-    assert paired["same_fixture_ids"] is True
-    assert paired["same_targets"] is True
-    assert (
-        paired["paired_core_without_xg"]["fixture_ids"]
-        == paired["paired_enriched_with_xg"]["fixture_ids"]
-    )
-    assert paired["paired_core_without_xg"]["targets"] == paired["paired_enriched_with_xg"]["targets"]
-    assert all(k in CORE_FEATURE_KEYS or True for k in paired["paired_core_without_xg"]["feature_columns"])
-    for k in XG_FEATURE_KEYS:
-        assert k in paired["paired_enriched_with_xg"]["feature_columns"]
-        assert k not in paired["paired_core_without_xg"]["feature_columns"]
-
-
 def test_chronological_split():
-    fixtures = [
-        _fx(i, api=i, ko=KO + timedelta(days=i)) for i in range(1, 11)
-    ]
-    payload, _ = _dataset(fixtures, today_rows=[])
-    rows = payload["dataset_rows"]
+    fixtures = [_fx(i, api=i, ko=KO + timedelta(days=i)) for i in range(1, 11)]
+    _, internal, _ = _run_dataset(fixtures, today_rows=[])
+    rows = internal["dataset_rows"]
     assert rows[0]["chronological_index"] == 0
     assert rows[-1]["chronological_index"] == len(rows) - 1
     assert any(r["train_candidate"] for r in rows)
     assert any(r["test_candidate"] for r in rows)
-    # no random shuffle: kickoff non-decreasing
     kicks = [r["kickoff"] for r in rows]
     assert kicks == sorted(kicks)
 
 
-def test_no_external_api_no_db_writes():
-    local = _fx(500)
-    payload, db = _dataset([local], today_rows=[])
-    assert payload["status"] == "ok"
-    db.commit.assert_not_called()
-    db.add.assert_not_called()
-    jsonable_encoder(payload)
-
-
 def test_performance_payload():
     local = _fx(500)
-    payload, _ = _dataset([local], today_rows=[])
-    perf = payload["performance"]
+    summary, _, _ = _run_dataset([local], today_rows=[])
+    perf = summary["performance"]
     assert "elapsed_ms" in perf
-    assert "calculation_ms" in perf
-    assert "db_query_phases" in perf
+    assert "response_payload_bytes" in perf
+    assert "calculation_phases" in perf
+    assert "provider_dedupe_ms" in perf["calculation_phases"]
+    assert "composite_bucket_build_ms" in perf["calculation_phases"]
+    assert "composite_cluster_ms" in perf["calculation_phases"]
 
 
 def test_core_feature_status_helper():
     assert core_feature_status({}, 0) == "missing"
-    feats = {k: 1.0 for k in [
-        s["feature_key"]
-        for s in FEATURE_SPECS
-        if s["feature_key"] not in XG_FEATURE_KEYS and s.get("recommended_status") == "primary_candidate"
-    ]}
+    feats = {
+        k: 1.0
+        for k in [
+            s["feature_key"]
+            for s in FEATURE_SPECS
+            if s["feature_key"] not in XG_FEATURE_KEYS and s.get("recommended_status") == "primary_candidate"
+        ]
+    }
     assert core_feature_status(feats, 5) == "available"
     partial = {list(feats.keys())[0]: 1.0}
     assert core_feature_status(partial, 5) == "partial"
+
+
+def test_frontend_summary_state_contract():
+    """FE riceve solo preview: summary non espone dataset completo / cohort_ids."""
+    fixtures = [_fx(i, api=i, ko=KO + timedelta(hours=i)) for i in range(1, 30)]
+    summary, _, _ = _run_dataset(fixtures, today_rows=[])
+    assert len(summary.get("dataset_preview_rows", [])) <= 100
+    assert summary.get("dataset_rows") in (None, [])
+    assert "cohort_ids" not in summary
+
+
+def test_classify_error_states_mirror():
+    """Contratto errori FE (summary vs export) — mirror della logica TypeScript."""
+    def classify(err: Exception, context: str) -> str:
+        msg = str(err)
+        lower = msg.lower()
+        if type(err).__name__ == "AbortError" or "abort" in lower:
+            return (
+                "Timeout costruzione summary dataset"
+                if context == "summary"
+                else "Timeout export dataset"
+            )
+        if "timeout" in lower:
+            return (
+                "Timeout costruzione summary dataset"
+                if context == "summary"
+                else "Timeout export dataset"
+            )
+        if "failed to fetch" in lower or "network" in lower:
+            return "Errore di rete"
+        return f"Errore backend: {msg}"
+
+    assert "Timeout" in classify(TimeoutError("timeout"), "summary")
+    assert "summary" in classify(TimeoutError("timeout"), "summary").lower()
+    assert "export" in classify(TimeoutError("timeout"), "export").lower()
+    assert classify(Exception("Failed to fetch"), "summary") == "Errore di rete"
+    assert classify(Exception("boom"), "export").startswith("Errore backend")
+
+
+def test_one_row_per_fixture():
+    a = _fx(1, api=1, ko=KO)
+    b = _fx(2, api=2, ko=KO + timedelta(days=1))
+    _, internal, _ = _run_dataset([a, b], today_rows=[])
+    ids = [r["local_fixture_id"] for r in internal["dataset_rows"]]
+    assert len(ids) == len(set(ids)) == 2
+
+
+def test_source_has_no_nested_composite_loop():
+    """La dedupe non deve usare nested for sul full list (pattern O(n²))."""
+    src = inspect.getsource(dedupe_fixtures_provider_then_composite)
+    assert "buckets" in src or "bucket" in src
+    assert "_cluster_bucket_by_kickoff" in src

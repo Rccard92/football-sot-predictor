@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Intensità Goal v5 Research — Dataset Fase 1B.1 (2026-07-17)
+
+Dataset storico research: dedupe composita O(n log n), summary HTTP compatto (`preview` ≤100, hash paired), export StreamingResponse CSV/JSON. Versione `cecchino_goal_intensity_v5_dataset_v1_1`. Timeout globale invariato.
+
 ## Intensità Goal v5 Research — Dataset Fase 1B (2026-07-17)
 
 Dataset storico research: dedupe composita, coorti history/xG paired, exclusion bias, identity diagnostics. Versione `cecchino_goal_intensity_v5_dataset_v1`.

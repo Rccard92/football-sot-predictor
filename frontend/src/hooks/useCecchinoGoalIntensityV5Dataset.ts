@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react'
 import {
+  classifyGoalIntensityFetchError,
   postGoalIntensityV5Dataset,
   type GoalIntensityV5DatasetResponse,
 } from '../lib/cecchinoGoalIntensityV5ResearchApi'
-import { formatFetchError } from '../utils/formatFetchError'
 
 type SharedFilters = {
   dateFrom: string
@@ -28,7 +28,7 @@ export function useCecchinoGoalIntensityV5Dataset(filters: SharedFilters) {
       })
       setDataset(result)
     } catch (err) {
-      setError(formatFetchError(err))
+      setError(classifyGoalIntensityFetchError(err, 'summary'))
       setDataset(null)
     } finally {
       setLoading(false)

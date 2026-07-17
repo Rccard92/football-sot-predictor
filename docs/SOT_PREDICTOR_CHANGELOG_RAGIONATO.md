@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Dataset Fase 1B.1 (2026-07-17)
+
+- Fix timeout ~15k FT: dedupe O(n log n), paired set una sola volta, payload summary compatto v1_1.
+- Export server-side StreamingResponse (CSV coorti + JSON summary); FE anteprima ≤100 + download blob (timeout export 300s).
+- Benchmark `scripts/benchmark_goal_intensity_v5_dataset.py`; v4 e formule invariate.
+
 ## Intensità Goal v5 Research — Dataset Fase 1B (2026-07-17)
 
 - Dataset storico `cecchino_goal_intensity_v5_dataset_v1`: dedupe provider+composita, coorti history/xG paired, exclusion bias, identity diagnostics.

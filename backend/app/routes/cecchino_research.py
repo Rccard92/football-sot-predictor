@@ -37,7 +37,12 @@ from app.services.cecchino.cecchino_goal_intensity_v5_audit import build_goal_in
 from app.services.cecchino.cecchino_goal_intensity_v5_availability import (
     build_goal_intensity_v5_availability,
 )
-from app.services.cecchino.cecchino_goal_intensity_v5_dataset import build_goal_intensity_v5_dataset
+from app.services.cecchino.cecchino_goal_intensity_v5_dataset import (
+    build_goal_intensity_v5_dataset,
+    dataset_export_filename,
+    stream_goal_intensity_v5_dataset_csv,
+    stream_goal_intensity_v5_dataset_summary_json,
+)
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
 
@@ -173,3 +178,78 @@ def post_goal_intensity_v5_dataset(
         competition_id=body.competition_id,
     )
     return JSONResponse(content=jsonable_encoder(payload))
+
+
+def _goal_intensity_dataset_csv_export(kind: str, body: CecchinoGoalIntensityV5DatasetBody, db):
+    filename = dataset_export_filename(
+        kind=kind,  # type: ignore[arg-type]
+        date_from=body.date_from,
+        date_to=body.date_to,
+    )
+    stream = stream_goal_intensity_v5_dataset_csv(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        kind=kind,  # type: ignore[arg-type]
+    )
+    return StreamingResponse(
+        stream,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/goal-intensity-v5/dataset/export/all")
+def post_goal_intensity_v5_dataset_export_all(
+    body: CecchinoGoalIntensityV5DatasetBody,
+    db: Session = Depends(get_db),
+):
+    return _goal_intensity_dataset_csv_export("all", body, db)
+
+
+@router.post("/goal-intensity-v5/dataset/export/core-min5")
+def post_goal_intensity_v5_dataset_export_core_min5(
+    body: CecchinoGoalIntensityV5DatasetBody,
+    db: Session = Depends(get_db),
+):
+    return _goal_intensity_dataset_csv_export("core_min5", body, db)
+
+
+@router.post("/goal-intensity-v5/dataset/export/core-min10")
+def post_goal_intensity_v5_dataset_export_core_min10(
+    body: CecchinoGoalIntensityV5DatasetBody,
+    db: Session = Depends(get_db),
+):
+    return _goal_intensity_dataset_csv_export("core_min10", body, db)
+
+
+@router.post("/goal-intensity-v5/dataset/export/xg-paired")
+def post_goal_intensity_v5_dataset_export_xg_paired(
+    body: CecchinoGoalIntensityV5DatasetBody,
+    db: Session = Depends(get_db),
+):
+    return _goal_intensity_dataset_csv_export("xg_paired", body, db)
+
+
+@router.post("/goal-intensity-v5/dataset/export/summary")
+def post_goal_intensity_v5_dataset_export_summary(
+    body: CecchinoGoalIntensityV5DatasetBody,
+    db: Session = Depends(get_db),
+):
+    filename = dataset_export_filename(
+        kind="summary",
+        date_from=body.date_from,
+        date_to=body.date_to,
+    )
+    stream = stream_goal_intensity_v5_dataset_summary_json(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+    )
+    return StreamingResponse(
+        stream,
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
