@@ -766,7 +766,9 @@ function StatisticsBody({
   const performance = statistics.performance ?? {}
   const deps = (redundancy.dependencies ?? {}) as Record<string, Record<string, unknown>>
   const exactDuplicates = Object.entries(deps).filter(([, d]) => d.dependency_type === 'exact_duplicate')
-  const derived = Object.entries(deps).filter(([, d]) => d.dependency_type === 'derived_linear')
+  const derived = Object.entries(deps).filter(
+    ([, d]) => d.dependency_type === 'derived_linear' || d.dependency_type === 'derived_aggregate',
+  )
   const clusterMeta = (redundancy.cluster_meta ?? {}) as Record<string, Record<string, unknown>>
   const representatives = Object.entries(clusterMeta).filter(([, m]) => m.representative_of_cluster)
   const rankingKeys = [
@@ -781,6 +783,11 @@ function StatisticsBody({
     'target_specific_analysis_complete',
     'xg_univariate_analysis_complete',
     'redundancy_representatives_selected',
+    'recommendation_consistency_verified',
+    'dependency_consistency_verified',
+    'pillar_recommendations_consistent',
+    'rolling_selection_consistent',
+    'stability_recommendations_consistent',
   ] as const
   const readyFor1d =
     readiness.recommended_next_step === 'phase_1d_candidate_indices' &&
@@ -920,11 +927,13 @@ function StatisticsBody({
           {Object.entries(pillarRecommendations).map(([pillar, data]) => {
             const primary = Array.isArray(data.candidate_core) ? data.candidate_core : []
             const secondary = Array.isArray(data.candidate_secondary) ? data.candidate_secondary : []
+            const excluded = Array.isArray(data.excluded) ? data.excluded : []
             return (
               <div key={pillar} className="rounded-lg border border-slate-100 bg-slate-50/80 p-3">
                 <h3 className="text-xs font-semibold text-slate-900">{PILLAR_LABELS[pillar] ?? pillar}</h3>
                 <Kv label="Candidate core" value={primary.join(', ') || '—'} />
                 <Kv label="Candidate secondarie" value={secondary.join(', ') || '—'} />
+                <Kv label="Escluse / insufficient" value={excluded.join(', ') || '—'} />
               </div>
             )
           })}
@@ -1032,6 +1041,11 @@ function StatisticsBody({
           <Kv key={key} label={key} value={readiness[key] === true ? 'true' : 'false'} />
         ))}
         <Kv label="Blocking issues" value={Array.isArray(readiness.blocking_issues) ? readiness.blocking_issues.join(', ') || '—' : '—'} />
+        <Kv
+          label="Blocking details"
+          value={Array.isArray(readiness.blocking_details) ? readiness.blocking_details.join(', ') || '—' : '—'}
+        />
+        <Kv label="Versione statistics" value={statistics.version} />
       </Section>
 
       <Section title="Performance per fase">

@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal v5 Research — Fase 1C.2 normalizzazione readiness (2026-07-17)
+
+Normalizzazione raccomandazioni/readiness senza ricalcolo metriche: dipendenze da formule di costruzione (`derived_aggregate` pair), rolling selected∉excluded, regole candidate_core, gate consistency. Versione `cecchino_goal_intensity_v5_statistics_v1_2`. Nessuna formula v5; v4 invariata.
+
 ## Intensità Goal v5 Research — Fase 1C.1 statistica completa (2026-07-17)
 
 Completamento Fase 1C: metriche flat su quattro target, `target_specific_strengths`, decisioni rolling/stability, dipendenze exact/derived, VIF non fuorviante, xG paired valorizzata, readiness reale e profiling performance. Versione `cecchino_goal_intensity_v5_statistics_v1_1`. Nessuna formula v5; v4 invariata.

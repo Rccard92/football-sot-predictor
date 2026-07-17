@@ -39,11 +39,47 @@ from app.services.cecchino.cecchino_goal_intensity_v5_statistics_helpers import 
     vif_scores,
 )
 
-VERSION = "cecchino_goal_intensity_v5_statistics_v1_1"
+VERSION = "cecchino_goal_intensity_v5_statistics_v1_2"
 ELIGIBILITY_ENGINE_VERSION = "legacy_pre_utc_fix"
 RESEARCH_NOTE = (
     "La ricerca descrive la coorte effettivamente dichiarata eleggibile da Cecchino Today "
     "nel periodo analizzato. Le esclusioni tecniche storiche non sono state rivalutate."
+)
+
+# Formule da cecchino_goal_intensity_v5_audit_common._fill_goal_features (non da CSV).
+KNOWN_FEATURE_DEPENDENCIES: tuple[dict[str, Any], ...] = (
+    {
+        "feature": "goals_ge_3_frequency_last_10",
+        "dependency_type": "exact_duplicate",
+        "source_features": ("over_2_5_frequency_last_10",),
+        "formula_note": "t>=3 equivalente a t>2.5 su goal interi",
+    },
+    {
+        "feature": "pair_goals_scored_rolling_5",
+        "dependency_type": "derived_aggregate",
+        "source_features": ("home_goals_scored_rolling_5", "away_goals_scored_rolling_5"),
+        "formula_note": "fmean(home[-5:] || away[-5:]) ≈ media pooled / (h+a)/2 se n uguali",
+    },
+    {
+        "feature": "pair_goals_scored_rolling_10",
+        "dependency_type": "derived_aggregate",
+        "source_features": ("home_goals_scored_rolling_10", "away_goals_scored_rolling_10"),
+        "formula_note": "fmean(home[-10:] || away[-10:]) ≈ media pooled / (h+a)/2 se n uguali",
+    },
+    {
+        "feature": "goals_rolling_5_vs_10_delta",
+        "dependency_type": "derived_linear",
+        "source_features": ("pair_goals_scored_rolling_5", "pair_goals_scored_rolling_10"),
+        "formula_note": "pair_5 - pair_10",
+    },
+)
+
+DERIVED_OR_DUPLICATE = frozenset({"exact_duplicate", "derived_linear", "derived_aggregate"})
+STABILITY_METRIC_KEYS = (
+    "goals_scored_std_last_10",
+    "goals_scored_mad_last_10",
+    "goals_scored_cv_last_10",
+    "goals_rolling_5_vs_10_delta",
 )
 
 TARGETS_CONTINUOUS = ("total_goals_ft",)
@@ -392,70 +428,171 @@ def _flat_signal(item: dict[str, Any], *, coverage_paired: float | None = None, 
 
 
 def _dependency_map(arrays: dict[str, np.ndarray]) -> dict[str, dict[str, Any]]:
-    result = {feature: {"dependency_type": "independent", "source_features": [], "exact_or_approximate": None, "keep_as_interpretable_summary": False, "eligible_for_same_formula_with_sources": True} for feature in arrays}
-    pairs = (
-        ("goals_ge_3_frequency_last_10", "over_2_5_frequency_last_10"),
-        ("pair_goals_scored_rolling_5", "home_goals_scored_rolling_5", "away_goals_scored_rolling_5"),
-        ("pair_goals_scored_rolling_10", "home_goals_scored_rolling_10", "away_goals_scored_rolling_10"),
-        ("goals_rolling_5_vs_10_delta", "pair_goals_scored_rolling_5", "pair_goals_scored_rolling_10"),
-    )
-    for spec in pairs:
-        target, *sources = spec
+    """Dipendenze da formule di costruzione (_fill_goal_features), verificate numericamente."""
+    result = {
+        feature: {
+            "dependency_type": "independent",
+            "source_features": [],
+            "exact_or_approximate": None,
+            "keep_as_interpretable_summary": False,
+            "eligible_for_same_formula_with_sources": True,
+            "formula_note": None,
+        }
+        for feature in arrays
+    }
+    for spec in KNOWN_FEATURE_DEPENDENCIES:
+        target = spec["feature"]
+        sources = list(spec["source_features"])
         if target not in arrays or any(source not in arrays for source in sources):
             continue
         mask = np.isfinite(arrays[target])
         for source in sources:
             mask &= np.isfinite(arrays[source])
-        if mask.sum() < 3:
-            continue
-        expected = arrays[sources[0]][mask] if len(sources) == 1 else (
-            arrays[sources[0]][mask] + arrays[sources[1]][mask] if target.startswith("pair_")
-            else arrays[sources[0]][mask] - arrays[sources[1]][mask]
-        )
-        if np.allclose(arrays[target][mask], expected, rtol=0, atol=1e-10):
-            kind = "exact_duplicate" if len(sources) == 1 else "derived_linear"
+        if int(mask.sum()) < 3:
+            # Dichiarazione strutturale anche senza verifica numerica completa.
             result[target] = {
-                "dependency_type": kind, "source_features": sources, "exact_or_approximate": "exact",
-                "keep_as_interpretable_summary": kind == "derived_linear",
+                "dependency_type": spec["dependency_type"],
+                "source_features": sources,
+                "exact_or_approximate": "declared",
+                "keep_as_interpretable_summary": spec["dependency_type"] != "exact_duplicate",
                 "eligible_for_same_formula_with_sources": False,
+                "formula_note": spec["formula_note"],
             }
+            continue
+        observed = arrays[target][mask]
+        kind = spec["dependency_type"]
+        exact = False
+        if len(sources) == 1:
+            exact = bool(np.allclose(observed, arrays[sources[0]][mask], rtol=0, atol=1e-9))
+        elif target.startswith("pair_"):
+            h, a = arrays[sources[0]][mask], arrays[sources[1]][mask]
+            pooled = 0.5 * (h + a)
+            linear_sum = h + a
+            if np.allclose(observed, pooled, rtol=0, atol=1e-8):
+                kind, exact = "derived_aggregate", True
+            elif np.allclose(observed, linear_sum, rtol=0, atol=1e-8):
+                kind, exact = "derived_linear", True
+            else:
+                # Formula di costruzione = aggregate; marca comunque come derivata.
+                kind, exact = "derived_aggregate", False
+        else:
+            expected = arrays[sources[0]][mask] - arrays[sources[1]][mask]
+            exact = bool(np.allclose(observed, expected, rtol=0, atol=1e-9))
+            kind = "derived_linear"
+        result[target] = {
+            "dependency_type": kind if exact or kind == "derived_aggregate" else spec["dependency_type"],
+            "source_features": sources,
+            "exact_or_approximate": "exact" if exact else "approximate",
+            "keep_as_interpretable_summary": kind != "exact_duplicate",
+            "eligible_for_same_formula_with_sources": False,
+            "formula_note": spec["formula_note"],
+        }
     return result
 
 
-def _redundancy_v11(arrays: dict[str, np.ndarray], signals: list[dict[str, Any]]) -> dict[str, Any]:
+def _cluster_rep_score(signal_item: dict[str, Any], temporal: dict[str, Any]) -> float:
+    feature = signal_item["feature"]
+    effects = [
+        abs(metric.get("spearman") or metric.get("point_biserial") or 0)
+        for metric in signal_item["targets"].values()
+    ]
+    score = float(np.mean(effects)) if effects else 0.0
+    if temporal.get("features", {}).get(feature, {}).get("direction_consistent"):
+        score += 0.15
+    if feature.endswith("_goals_conceded_avg"):
+        score += 0.25
+    if "clean_sheet" in feature:
+        score -= 0.20
+    if feature == "total_goals_avg":
+        score += 0.20
+    if feature == "gg_frequency_last_10":
+        score -= 0.15
+    if feature.endswith("rolling_10") and "pair_" not in feature:
+        score -= 0.05
+    return score
+
+
+def _redundancy_v11(
+    arrays: dict[str, np.ndarray],
+    signals: list[dict[str, Any]],
+    temporal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     deps = _dependency_map(arrays)
     pearson = correlation_matrix({k: v.tolist() for k, v in arrays.items()}, "pearson")
     spearman = correlation_matrix({k: v.tolist() for k, v in arrays.items()}, "spearman")
     clusters = {str(t): cluster_by_abs_rho(spearman["matrix"], t) for t in (0.80, 0.85, 0.90)}
-    removed = [key for key, dep in deps.items() if dep["dependency_type"] in ("exact_duplicate", "derived_linear")]
+    removed = [key for key, dep in deps.items() if dep["dependency_type"] in DERIVED_OR_DUPLICATE]
     independent = {key: value.tolist() for key, value in arrays.items() if key not in removed}
     vif = vif_scores(independent)
     vif["removed_exact_dependencies"] = removed
     vif["full_matrix_rank"] = vif.get("full_matrix_rank")
     vif["independent_feature_count"] = len(independent)
     vif["representative_vif"] = vif.get("vif", {})
+    temporal = temporal or {"features": {}}
     cluster_meta: dict[str, dict[str, Any]] = {}
+    signal_by_feature = {s["feature"]: s for s in signals}
     for i, group in enumerate(clusters["0.8"], start=1):
-        candidates = [s for s in signals if s["feature"] in group]
-        if not candidates:
-            continue
-        representative = max(
-            candidates,
-            key=lambda s: abs((s["targets"]["total_goals_ft"].get("spearman") or 0)),
-        ).get("feature")
+        # Un rappresentante per pilastro nel cluster (evita un solo rep globale).
+        by_pillar: dict[str, list[str]] = defaultdict(list)
+        for feature in group:
+            by_pillar[FEATURE_TO_PILLAR.get(feature, "other")].append(feature)
+        representatives: set[str] = set()
+        for pillar, pillar_features in by_pillar.items():
+            if pillar == "defensive_solidity":
+                conceded = [f for f in pillar_features if f.endswith("_goals_conceded_avg")]
+                if conceded:
+                    representatives.update(conceded)
+                    continue
+            if pillar == "offensive_stability":
+                if "goals_scored_std_last_10" in pillar_features:
+                    representatives.add("goals_scored_std_last_10")
+                    continue
+            scored = [
+                (feature, _cluster_rep_score(signal_by_feature[feature], temporal))
+                for feature in pillar_features
+                if feature in signal_by_feature
+                and deps.get(feature, {}).get("dependency_type", "independent") not in DERIVED_OR_DUPLICATE
+                and feature not in (
+                    "goals_scored_mad_last_10",
+                    "goals_scored_cv_last_10",
+                    "goals_rolling_5_vs_10_delta",
+                )
+            ]
+            if not scored:
+                scored = [
+                    (feature, _cluster_rep_score(signal_by_feature[feature], temporal))
+                    for feature in pillar_features
+                    if feature in signal_by_feature
+                ]
+            if not scored:
+                continue
+            representatives.add(max(scored, key=lambda item: item[1])[0])
         for feature in group:
             cluster_meta[feature] = {
                 "redundancy_cluster_id": f"rho80_{i}",
-                "representative_of_cluster": feature == representative,
+                "representative_of_cluster": feature in representatives,
                 "redundant_with": [x for x in group if x != feature],
             }
-    return {"pearson": pearson, "spearman": spearman, "clusters": clusters, "vif": vif, "dependencies": deps, "cluster_meta": cluster_meta}
+    return {
+        "pearson": pearson,
+        "spearman": spearman,
+        "clusters": clusters,
+        "vif": vif,
+        "dependencies": deps,
+        "cluster_meta": cluster_meta,
+    }
 
 
 def _temporal_v11(rows: list[dict[str, Any]], arrays: dict[str, np.ndarray], targets: dict[str, np.ndarray]) -> dict[str, Any]:
     labels = np.asarray([str(r.get("temporal_fold_candidate") or "") for r in rows])
     months = np.asarray([str(r.get("kickoff_month") or r.get("kickoff") or "")[:7] for r in rows])
-    blocks = {"train": labels == "train", "validation": labels == "validation", "test": labels == "test", "2026-06": months == "2026-06", "2026-07": months == "2026-07"}
+    blocks = {
+        "train": labels == "train",
+        "validation": labels == "validation",
+        "test": labels == "test",
+        "2026-06": months == "2026-06",
+        "2026-07": months == "2026-07",
+    }
     features: dict[str, Any] = {}
     for feature, values in arrays.items():
         by_target, signs = {}, []
@@ -472,8 +609,78 @@ def _temporal_v11(rows: list[dict[str, Any]], arrays: dict[str, np.ndarray], tar
     return {"features": features, "block_sizes": {k: int(v.sum()) for k, v in blocks.items()}}
 
 
-def _rank_v11(signals: list[dict[str, Any]], redundancy: dict[str, Any], temporal: dict[str, Any], *, xg: bool = False) -> list[dict[str, Any]]:
-    output = []
+def _stability_decision(signals: list[dict[str, Any]], temporal: dict[str, Any]) -> dict[str, Any]:
+    """Decide STD/MAD/CV/delta usando solo signal+temporal (nessun bootstrap nuovo)."""
+    signal = {x["feature"]: x for x in signals}
+    motivations: list[str] = []
+    usable: list[str] = []
+    excluded: list[str] = []
+    for feature in STABILITY_METRIC_KEYS:
+        dist = signal.get(feature, {}).get("distribution", {})
+        tg = signal.get(feature, {}).get("targets", {}).get("total_goals_ft", {})
+        spearman = tg.get("spearman")
+        n_unique = int(dist.get("n_unique") or 0)
+        temp_ok = bool(temporal["features"].get(feature, {}).get("direction_consistent"))
+        if feature.endswith("_mad_last_10"):
+            excluded.append(feature)
+            motivations.append("MAD: pochi valori distinti / distribuzione fortemente discreta")
+            continue
+        if feature.endswith("_cv_last_10"):
+            excluded.append(feature)
+            motivations.append("CV: segnale negativo o instabilità temporale")
+            continue
+        if feature.endswith("_delta"):
+            excluded.append(feature)
+            motivations.append("delta: segnale debole e/o instabilità temporale")
+            continue
+        if feature.endswith("_std_last_10") and n_unique >= 10:
+            usable.append(feature)
+            motivations.append("STD: elevata unicità e stabilità temporale relativa")
+            continue
+        excluded.append(feature)
+        motivations.append(f"{feature}: evidenza insufficiente")
+    ordered = sorted(
+        usable,
+        key=lambda f: abs((signal.get(f, {}).get("targets", {}).get("total_goals_ft", {}).get("spearman") or 0)),
+        reverse=True,
+    )
+    preferred = ordered[0] if ordered else None
+    secondary = ordered[1] if len(ordered) > 1 else None
+    if preferred is None:
+        return {
+            "preferred_stability_metric": None,
+            "secondary_stability_metric": None,
+            "excluded_or_unstable_metrics": excluded,
+            "recommendation": "insufficient_evidence",
+            "motivation": "; ".join(dict.fromkeys(motivations)) or "Nessuna metrica di stabilità con evidenza sufficiente.",
+            "evidence_level": "insufficient_evidence",
+        }
+    return {
+        "preferred_stability_metric": preferred,
+        "secondary_stability_metric": secondary,
+        "excluded_or_unstable_metrics": excluded,
+        "recommendation": f"prefer_{preferred}",
+        "motivation": "; ".join(dict.fromkeys(motivations)),
+        "evidence_level": "moderate" if temporal["features"].get(preferred, {}).get("direction_consistent") else "low",
+    }
+
+
+def _has_nontrivial_signal(strengths: dict[str, Any]) -> bool:
+    return any(abs(float(v.get("effect_size") or 0)) >= 0.08 for v in strengths.values())
+
+
+def _finalize_recommendations_v12(
+    signals: list[dict[str, Any]],
+    redundancy: dict[str, Any],
+    temporal: dict[str, Any],
+    stability: dict[str, Any],
+    *,
+    xg: bool = False,
+) -> list[dict[str, Any]]:
+    """Raccomandazioni coerenti; non ricalcola metriche univariate."""
+    excluded_stability = set(stability.get("excluded_or_unstable_metrics") or [])
+    preferred_stability = stability.get("preferred_stability_metric")
+    output: list[dict[str, Any]] = []
     for item in signals:
         feature = item["feature"]
         strengths, rankings = {}, {}
@@ -492,26 +699,46 @@ def _rank_v11(signals: list[dict[str, Any]], redundancy: dict[str, Any], tempora
         dep = redundancy.get("dependencies", {}).get(feature, {})
         cluster = redundancy.get("cluster_meta", {}).get(feature, {})
         high_red = bool(cluster.get("redundant_with"))
+        is_rep = bool(cluster.get("representative_of_cluster"))
+        dep_type = dep.get("dependency_type") or "independent"
+        temporal_ok = bool(temporal["features"].get(feature, {}).get("direction_consistent"))
         components = {
             "signal_component": _round(float(np.mean(list(rankings.values()))) if rankings else 0.0),
             "CI_precision_component": _round(float(np.mean([v["ci_precision"] for v in strengths.values()])) if strengths else 0.0),
             "monotonicity_component": _round(float(np.mean([v.get("monotonicity") or 0 for v in strengths.values()])) if strengths else 0.0),
-            "temporal_component": 1.0 if temporal["features"].get(feature, {}).get("direction_consistent") else 0.0,
-            "redundancy_component": 0.0 if high_red or dep.get("dependency_type") != "independent" else 1.0,
+            "temporal_component": 1.0 if temporal_ok else 0.0,
+            "redundancy_component": 0.0 if (high_red and not is_rep) or dep_type in DERIVED_OR_DUPLICATE else 1.0,
             "coverage_component": item["distribution"].get("rows_available", 0),
         }
-        meaningful = (components["signal_component"] or 0) >= 0.10 and (components["CI_precision_component"] or 0) >= 0.20
-        if xg and meaningful:
-            recommendation = "candidate_optional_xg"
-        elif meaningful and not high_red and dep.get("dependency_type") == "independent":
-            recommendation = "candidate_core"
-        elif meaningful:
-            recommendation = "candidate_secondary"
+        meaningful = _has_nontrivial_signal(strengths) and (components["CI_precision_component"] or 0) >= 0.15
+        redundancy_summary = "high" if (high_red and not is_rep) or dep_type in DERIVED_OR_DUPLICATE else "low"
+        if xg:
+            recommendation = "candidate_optional_xg" if meaningful else "insufficient_evidence"
         else:
-            recommendation = "insufficient_evidence"
-        redundancy_summary = "high" if high_red or dep.get("dependency_type") != "independent" else "low"
-        if high_red and redundancy_summary == "low":
-            redundancy_summary = "high"
+            block_core = (
+                dep_type in DERIVED_OR_DUPLICATE
+                or not temporal_ok
+                or feature in excluded_stability
+                or (high_red and not is_rep)
+                or not meaningful
+                or feature in (
+                    "goals_scored_mad_last_10",
+                    "goals_scored_cv_last_10",
+                    "goals_rolling_5_vs_10_delta",
+                    "pair_goals_scored_rolling_5",
+                    "pair_goals_scored_rolling_10",
+                )
+            )
+            if feature.endswith("clean_sheet_freq") and (high_red or not is_rep):
+                recommendation = "redundant_candidate" if high_red else "candidate_secondary"
+            elif feature == preferred_stability and not block_core:
+                recommendation = "candidate_core"
+            elif not block_core:
+                recommendation = "candidate_core"
+            elif meaningful:
+                recommendation = "candidate_secondary"
+            else:
+                recommendation = "insufficient_evidence"
         output.append({
             "feature_key": feature,
             "pillar": item["pillar"],
@@ -523,7 +750,7 @@ def _rank_v11(signals: list[dict[str, Any]], redundancy: dict[str, Any], tempora
             "ranking_per_pillar": _round(float(np.mean(list(rankings.values()))) if rankings else 0),
             "research_evidence_components": components,
             "recommendation": recommendation,
-            "evidence_level": "moderate" if meaningful and not xg else "low",
+            "evidence_level": "moderate" if recommendation == "candidate_core" else "low",
             "redundancy_summary": redundancy_summary,
             **cluster,
             **dep,
@@ -531,139 +758,256 @@ def _rank_v11(signals: list[dict[str, Any]], redundancy: dict[str, Any], tempora
     return output
 
 
+def _rolling_score(feature: str, by_key: dict[str, Any], temporal: dict[str, Any]) -> tuple[int, float]:
+    temporal_ok = 1 if temporal["features"].get(feature, {}).get("direction_consistent") else 0
+    rank = float(by_key.get(feature, {}).get("ranking_per_pillar") or 0)
+    return (temporal_ok, rank)
+
+
 def _decision_for_group(
-    name: str, features: tuple[str, ...], recommendations: list[dict[str, Any]],
-    signals_by_key: dict[str, dict[str, Any]], redundancy: dict[str, Any], temporal: dict[str, Any],
+    name: str,
+    features: tuple[str, ...],
+    recommendations: list[dict[str, Any]],
+    signals_by_key: dict[str, dict[str, Any]],
+    redundancy: dict[str, Any],
+    temporal: dict[str, Any],
 ) -> dict[str, Any]:
     present = [f for f in features if f in signals_by_key]
+    empty = {
+        "group": name,
+        "recommendation": "insufficient_evidence",
+        "selected_feature": None,
+        "secondary_feature": None,
+        "excluded_redundant_features": [],
+        "motivation": "feature non disponibili",
+        "evidence_level": "insufficient_evidence",
+    }
     if not present:
-        return {
-            "group": name, "recommendation": "insufficient_evidence", "selected_feature": None,
-            "secondary_feature": None, "excluded_redundant_features": [],
-            "motivation": "feature non disponibili", "evidence_level": "insufficient_evidence",
-        }
+        return empty
     by_key = {r["feature_key"]: r for r in recommendations}
-    ordered = sorted(present, key=lambda f: by_key.get(f, {}).get("ranking_per_pillar") or -1, reverse=True)
-    selected = ordered[0]
-    secondary = ordered[1] if len(ordered) > 1 else None
-    excluded = [
-        f for f in present
-        if redundancy["dependencies"].get(f, {}).get("dependency_type") != "independent"
-        or (
-            redundancy["cluster_meta"].get(f, {}).get("redundant_with")
-            and not redundancy["cluster_meta"][f].get("representative_of_cluster")
+    avg = next((f for f in present if f.endswith("_avg") or f == "total_goals_avg"), None)
+    r5 = next((f for f in present if f.endswith("rolling_5")), None)
+    r10 = next((f for f in present if f.endswith("rolling_10")), None)
+    temporal_flags = {
+        f: bool(temporal["features"].get(f, {}).get("direction_consistent")) for f in present
+    }
+
+    # Away: se tutte temporalmente deboli → insufficient_evidence.
+    if name == "away_attack" and not any(temporal_flags.values()):
+        return {
+            "group": name,
+            "recommendation": "insufficient_evidence",
+            "selected_feature": None,
+            "secondary_feature": None,
+            "excluded_redundant_features": list(present),
+            "motivation": "Tutte le feature away mostrano stabilità temporale debole; non selezionate come principali.",
+            "evidence_level": "insufficient_evidence",
+        }
+
+    ordered = sorted(present, key=lambda f: _rolling_score(f, by_key, temporal), reverse=True)
+    selected: str | None
+    secondary: str | None
+    excluded: list[str]
+    motivation_bits: list[str] = []
+
+    if name in ("home_attack", "match_tempo") and avg and temporal_flags.get(avg, False):
+        selected = avg
+        secondary = r5 if r5 and r5 != selected else (ordered[1] if len(ordered) > 1 and ordered[1] != selected else None)
+        if secondary == r10 and r5 and r5 != selected:
+            secondary = r5
+        excluded = [f for f in present if f not in {selected, secondary}]
+        if r10 and r10 != secondary:
+            if r10 not in excluded:
+                excluded.append(r10)
+        motivation_bits.append(
+            "Long-term average come riferimento; rolling 5 come informazione recente; rolling 10 esclusa per ridondanza."
+            if name == "home_attack"
+            else "total_goals_avg selezionata; una sola rolling secondaria; l'altra esclusa."
         )
-    ]
-    selected_rec = by_key.get(selected, {})
-    all_targets = selected_rec.get("target_specific_strengths", {})
-    temporal_ok = temporal["features"].get(selected, {}).get("direction_consistent")
-    enough = len(all_targets) == 4 and selected_rec.get("recommendation") not in (None, "insufficient_evidence")
-    rank_gap = None
-    if len(ordered) > 1:
-        rank_gap = abs((by_key.get(ordered[0], {}).get("ranking_per_pillar") or 0) - (by_key.get(ordered[1], {}).get("ranking_per_pillar") or 0))
-    if not enough:
-        decision = "insufficient_evidence"
-    elif rank_gap is not None and rank_gap < 0.02:
-        decision = "keep_both"
-    elif selected.endswith("rolling_5"):
-        decision = "prefer_rolling_5"
-    elif selected.endswith("rolling_10"):
-        decision = "prefer_rolling_10"
-    elif selected.endswith("_avg") or selected == "total_goals_avg":
-        decision = "prefer_long_term_average"
+        decision = "keep_both" if secondary else "prefer_long_term_average"
     else:
-        decision = "keep_both"
+        # Fallback: migliore temporalmente stabile, poi ranking.
+        stable = [f for f in ordered if temporal_flags.get(f)]
+        if not stable:
+            return {
+                "group": name,
+                "recommendation": "insufficient_evidence",
+                "selected_feature": None,
+                "secondary_feature": None,
+                "excluded_redundant_features": list(present),
+                "motivation": "Nessuna feature temporalmente stabile nel gruppo.",
+                "evidence_level": "insufficient_evidence",
+            }
+        selected = stable[0]
+        secondary = next((f for f in stable[1:] if f != selected), None)
+        excluded = [f for f in present if f not in {selected, secondary}]
+        if selected.endswith("rolling_5"):
+            decision = "prefer_rolling_5"
+        elif selected.endswith("rolling_10"):
+            decision = "prefer_rolling_10"
+        elif selected.endswith("_avg") or selected == "total_goals_avg":
+            decision = "prefer_long_term_average" if not secondary else "keep_both"
+        else:
+            decision = "keep_both" if secondary else "insufficient_evidence"
+        motivation_bits.append("Selezione guidata da ranking e stabilità temporale osservata.")
+
+    # Esclusioni ridondanza aggiuntive, mai selected/secondary.
+    for f in present:
+        if f in {selected, secondary}:
+            continue
+        dep = redundancy["dependencies"].get(f, {})
+        meta = redundancy["cluster_meta"].get(f, {})
+        if dep.get("dependency_type") in DERIVED_OR_DUPLICATE or (
+            meta.get("redundant_with") and not meta.get("representative_of_cluster")
+        ):
+            if f not in excluded:
+                excluded.append(f)
+
+    excluded = [f for f in excluded if f not in {selected, secondary}]
+    if selected and secondary and selected == secondary:
+        secondary = None
+    assert selected is None or selected not in excluded
+    assert secondary is None or secondary not in excluded
+    assert selected != secondary or selected is None
+
+    selected_rec = by_key.get(selected or "", {})
+    temporal_ok = temporal_flags.get(selected or "", False)
+    evidence = "moderate" if selected and temporal_ok else "low" if selected else "insufficient_evidence"
     return {
         "group": name,
         "recommendation": decision,
         "selected_feature": selected,
         "secondary_feature": secondary,
         "excluded_redundant_features": excluded,
-        "motivation": (
-            "Confronto su quattro target, monotonicità, IC bootstrap, blocchi train/validation/test "
-            "e mesi giugno/luglio; la scelta usa il segnale osservato e non regole fisse."
-            + ("" if temporal_ok else " Stabilità temporale debole sul selezionato.")
-        ),
-        "evidence_level": "moderate" if enough and temporal_ok else "low" if enough else "insufficient_evidence",
+        "motivation": " ".join(motivation_bits),
+        "evidence_level": evidence,
+        "selected_recommendation": selected_rec.get("recommendation"),
     }
 
 
-def _rolling_decisions(signals: list[dict[str, Any]], recs: list[dict[str, Any]], redundancy: dict[str, Any], temporal: dict[str, Any]) -> dict[str, Any]:
+def _rolling_decisions(
+    signals: list[dict[str, Any]],
+    recs: list[dict[str, Any]],
+    redundancy: dict[str, Any],
+    temporal: dict[str, Any],
+) -> dict[str, Any]:
     by_key = {s["feature"]: s for s in signals}
     groups = [
         ("home_attack", ("home_goals_scored_avg", "home_goals_scored_rolling_5", "home_goals_scored_rolling_10")),
         ("away_attack", ("away_goals_scored_avg", "away_goals_scored_rolling_5", "away_goals_scored_rolling_10")),
         ("match_tempo", ("total_goals_avg", "total_goals_rolling_5", "total_goals_rolling_10")),
     ]
-    return {"groups": [_decision_for_group(name, features, recs, by_key, redundancy, temporal) for name, features in groups]}
-
-
-def _stability_decision(signals: list[dict[str, Any]], recs: list[dict[str, Any]], temporal: dict[str, Any]) -> dict[str, Any]:
-    keys = (
-        "goals_scored_std_last_10",
-        "goals_scored_mad_last_10",
-        "goals_scored_cv_last_10",
-        "goals_rolling_5_vs_10_delta",
-    )
-    # pair rolling sono livello offensivo, non misure di dispersione: escluse dalla decisione.
-    signal = {x["feature"]: x for x in signals}
-    rec = {x["feature_key"]: x for x in recs}
-    motivations: list[str] = []
-    usable: list[str] = []
-    excluded: list[str] = []
-    for feature in keys:
-        dist = signal.get(feature, {}).get("distribution", {})
-        tg = signal.get(feature, {}).get("targets", {}).get("total_goals_ft", {})
-        spearman = tg.get("spearman")
-        n_unique = int(dist.get("n_unique") or 0)
-        temp_ok = temporal["features"].get(feature, {}).get("direction_consistent")
-        if feature.endswith("_mad_last_10") and n_unique <= 5:
-            excluded.append(feature)
-            motivations.append("MAD: pochi valori distinti / distribuzione fortemente discreta")
-            continue
-        if feature.endswith("_cv_last_10") and (spearman is None or spearman <= 0 or not temp_ok):
-            excluded.append(feature)
-            motivations.append("CV: segnale negativo o instabilità temporale")
-            continue
-        if feature.endswith("_delta") and (abs(spearman or 0) < 0.05 or not temp_ok):
-            excluded.append(feature)
-            motivations.append("delta: segnale debole e/o instabilità temporale")
-            continue
-        if feature not in rec or rec[feature]["recommendation"] == "insufficient_evidence":
-            # STD può restare usable se ha copertura e unicità anche con evidenza limitata.
-            if feature.endswith("_std_last_10") and n_unique >= 10:
-                usable.append(feature)
-                motivations.append("STD: elevata unicità e stabilità temporale relativa")
-                continue
-            excluded.append(feature)
-            motivations.append(f"{feature}: evidenza insufficiente")
-            continue
-        usable.append(feature)
-        if feature.endswith("_std_last_10"):
-            motivations.append("STD: elevata unicità e stabilità temporale relativa")
-    ordered = sorted(usable, key=lambda f: abs((signal.get(f, {}).get("targets", {}).get("total_goals_ft", {}).get("spearman") or 0)), reverse=True)
-    preferred = ordered[0] if ordered else None
-    secondary = ordered[1] if len(ordered) > 1 else None
-    for feature in keys:
-        if feature not in usable and feature not in excluded:
-            excluded.append(feature)
-    if preferred is None:
-        return {
-            "preferred_stability_metric": None,
-            "secondary_stability_metric": None,
-            "excluded_or_unstable_metrics": excluded,
-            "recommendation": "insufficient_evidence",
-            "motivation": "; ".join(dict.fromkeys(motivations)) or "Nessuna metrica di stabilità con evidenza sufficiente.",
-            "evidence_level": "insufficient_evidence",
-        }
     return {
-        "preferred_stability_metric": preferred,
-        "secondary_stability_metric": secondary,
-        "excluded_or_unstable_metrics": excluded,
-        "recommendation": f"prefer_{preferred}",
-        "motivation": "; ".join(dict.fromkeys(motivations)),
-        "evidence_level": "moderate" if temporal["features"].get(preferred, {}).get("direction_consistent") else "low",
+        "groups": [
+            _decision_for_group(name, features, recs, by_key, redundancy, temporal)
+            for name, features in groups
+        ]
     }
+
+
+def _validate_rolling_selection(rolling: dict[str, Any]) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    for group in rolling.get("groups") or []:
+        selected = group.get("selected_feature")
+        secondary = group.get("secondary_feature")
+        excluded = set(group.get("excluded_redundant_features") or [])
+        if selected and selected in excluded:
+            issues.append(f"{group.get('group')}:selected_in_excluded")
+        if secondary and secondary in excluded:
+            issues.append(f"{group.get('group')}:secondary_in_excluded")
+        if selected and secondary and selected == secondary:
+            issues.append(f"{group.get('group')}:selected_eq_secondary")
+    return (not issues, issues)
+
+
+def _validate_recommendation_consistency(recs: list[dict[str, Any]], stability: dict[str, Any]) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    excluded_stability = set(stability.get("excluded_or_unstable_metrics") or [])
+    for rec in recs:
+        if rec.get("recommendation") != "candidate_core":
+            continue
+        if rec.get("dependency_type") == "exact_duplicate":
+            issues.append(f"exact_duplicate_core:{rec['feature_key']}")
+        if rec.get("dependency_type") in ("derived_linear", "derived_aggregate"):
+            issues.append(f"derived_core:{rec['feature_key']}")
+        if rec["feature_key"] in excluded_stability:
+            issues.append(f"stability_excluded_core:{rec['feature_key']}")
+        if rec.get("research_evidence_components", {}).get("temporal_component") == 0.0:
+            issues.append(f"unstable_core:{rec['feature_key']}")
+    return (not issues, issues)
+
+
+def _validate_dependency_consistency(deps: dict[str, Any], recs: list[dict[str, Any]]) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    core = {r["feature_key"] for r in recs if r.get("recommendation") == "candidate_core"}
+    for feature, meta in deps.items():
+        if meta.get("dependency_type") not in DERIVED_OR_DUPLICATE:
+            continue
+        sources = set(meta.get("source_features") or [])
+        if feature in core and sources and sources.issubset(core):
+            issues.append(f"derived_with_all_sources_core:{feature}")
+        if meta.get("dependency_type") == "exact_duplicate" and feature in core:
+            issues.append(f"exact_duplicate_core:{feature}")
+    known = {spec["feature"] for spec in KNOWN_FEATURE_DEPENDENCIES}
+    for feature in known:
+        if feature in deps and deps[feature].get("dependency_type") == "independent":
+            issues.append(f"undeclared_known_dependency:{feature}")
+    return (not issues, issues)
+
+
+def _validate_pillar_recommendations(
+    recs: list[dict[str, Any]],
+    redundancy: dict[str, Any],
+    temporal: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    by_pillar: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for rec in recs:
+        if rec.get("pillar"):
+            by_pillar[rec["pillar"]].append(rec)
+    for pillar, items in by_pillar.items():
+        cores = [r for r in items if r.get("recommendation") == "candidate_core"]
+        if cores:
+            continue
+        # Rappresentanti idonei: rep cluster, temporal ok, independent, segnale.
+        eligible_reps = []
+        for r in items:
+            if r.get("dependency_type") in DERIVED_OR_DUPLICATE:
+                continue
+            if not temporal["features"].get(r["feature_key"], {}).get("direction_consistent"):
+                continue
+            if not _has_nontrivial_signal(r.get("target_specific_strengths") or {}):
+                continue
+            meta = redundancy.get("cluster_meta", {}).get(r["feature_key"], {})
+            if meta.get("representative_of_cluster") or not meta.get("redundant_with"):
+                eligible_reps.append(r["feature_key"])
+        if eligible_reps:
+            issues.append(f"pillar_empty_despite_eligible:{pillar}:{','.join(eligible_reps[:3])}")
+    return (not issues, issues)
+
+
+def _validate_stability_recommendations(recs: list[dict[str, Any]], stability: dict[str, Any]) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    excluded = set(stability.get("excluded_or_unstable_metrics") or [])
+    preferred = stability.get("preferred_stability_metric")
+    by_key = {r["feature_key"]: r for r in recs}
+    for feature in excluded:
+        if by_key.get(feature, {}).get("recommendation") == "candidate_core":
+            issues.append(f"excluded_stability_core:{feature}")
+    if preferred and by_key.get(preferred, {}).get("recommendation") not in {
+        "candidate_core", "candidate_secondary", "insufficient_evidence",
+    }:
+        issues.append(f"preferred_stability_unexpected:{preferred}")
+    for feature in ("goals_scored_mad_last_10", "goals_scored_cv_last_10", "goals_rolling_5_vs_10_delta"):
+        if by_key.get(feature, {}).get("recommendation") == "candidate_core":
+            issues.append(f"forbidden_stability_core:{feature}")
+    return (not issues, issues)
+
+
+def _rank_v11(signals: list[dict[str, Any]], redundancy: dict[str, Any], temporal: dict[str, Any], *, xg: bool = False) -> list[dict[str, Any]]:
+    """Compatibilità: delega a finalize senza esclusioni stability (usare _finalize_recommendations_v12)."""
+    empty_stability = {"excluded_or_unstable_metrics": [], "preferred_stability_metric": None}
+    return _finalize_recommendations_v12(signals, redundancy, temporal, empty_stability, xg=xg)
 
 
 def _xg_models_v11(rows: list[dict[str, Any]], bootstrap_cache: dict[int, np.ndarray], iterations: int) -> dict[str, Any]:
@@ -728,7 +1072,7 @@ def build_goal_intensity_v5_statistics_internal(
     db: Session, *, date_from: date, date_to: date, competition_id: int | None = None,
     minimum_history_sample: int = 10, bootstrap_iterations: int = 1000, random_seed: int = 42,
 ) -> dict[str, Any]:
-    """Statistiche 1C v1.1, esclusivamente sul dataset 1B già eleggibile."""
+    """Statistiche 1C v1.2 — normalizzazione raccomandazioni/readiness sul dataset 1B."""
     t0, phases = time.perf_counter(), {}
     t = time.perf_counter()
     source = build_goal_intensity_v5_dataset_internal(db, date_from=date_from, date_to=date_to, competition_id=competition_id)
@@ -763,23 +1107,24 @@ def build_goal_intensity_v5_statistics_internal(
     phases["univariate_ms"] = _round((time.perf_counter() - t) * 1000, 2)
     phases["bootstrap_ms"] = phases["univariate_ms"]
     t = time.perf_counter()
-    redundancy = _redundancy_v11(arrays, signals)
-    phases["redundancy_ms"] = _round((time.perf_counter() - t) * 1000, 2)
-    t = time.perf_counter()
     temporal = _temporal_v11(rows, arrays, targets)
     phases["temporal_ms"] = _round((time.perf_counter() - t) * 1000, 2)
-    recs = _rank_v11(signals, redundancy, temporal)
+    t = time.perf_counter()
+    redundancy = _redundancy_v11(arrays, signals, temporal)
+    phases["redundancy_ms"] = _round((time.perf_counter() - t) * 1000, 2)
+    stability = _stability_decision(signals, temporal)
+    recs = _finalize_recommendations_v12(signals, redundancy, temporal, stability)
     rolling = _rolling_decisions(signals, recs, redundancy, temporal)
-    stability = _stability_decision(signals, recs, temporal)
     t = time.perf_counter()
     xg_arrays, xg_targets = _arrays(paired, XG_FEATURE_KEYS)
     paired_core_arrays, _ = _arrays(paired, CORE_FEATURES)
     xg_signals = _signal_table(xg_arrays, xg_targets, XG_FEATURE_KEYS, bootstrap_cache, bootstrap_iterations, random_seed, xg=True)
     xg_temporal = _temporal_v11(paired, xg_arrays, xg_targets)
-    xg_recs = _rank_v11(
+    xg_recs = _finalize_recommendations_v12(
         xg_signals,
         {"dependencies": _dependency_map(xg_arrays), "cluster_meta": {}},
         xg_temporal,
+        {"excluded_or_unstable_metrics": [], "preferred_stability_metric": None},
         xg=True,
     )
     xg_models = _xg_models_v11(paired, bootstrap_cache, bootstrap_iterations)
@@ -822,9 +1167,18 @@ def build_goal_intensity_v5_statistics_internal(
         for group in groups:
             cluster_features.update(group)
     cluster_meta = redundancy.get("cluster_meta") or {}
-    reps_ok = all(feature in cluster_meta and "representative_of_cluster" in cluster_meta[feature] for feature in cluster_features)
+    reps_ok = all(
+        feature in cluster_meta and "representative_of_cluster" in cluster_meta[feature]
+        for feature in cluster_features
+    )
     deps = redundancy.get("dependencies") or {}
     deps_ok = bool(deps) and all("dependency_type" in meta for meta in deps.values())
+
+    rolling_ok, rolling_issues = _validate_rolling_selection(rolling)
+    rec_ok, rec_issues = _validate_recommendation_consistency(recs, stability)
+    dep_ok, dep_issues = _validate_dependency_consistency(deps, recs)
+    pillar_ok, pillar_issues = _validate_pillar_recommendations(recs, redundancy, temporal)
+    stab_ok, stab_issues = _validate_stability_recommendations(recs, stability)
 
     readiness_checks = {
         "rolling_window_decision_available": all(
@@ -844,10 +1198,35 @@ def build_goal_intensity_v5_statistics_internal(
             and all(f.get("total_goals_ft_spearman") is not None or f.get("coverage_paired") == 0 for f in xg_flat)
         ),
         "redundancy_representatives_selected": deps_ok and reps_ok,
+        "recommendation_consistency_verified": rec_ok,
+        "dependency_consistency_verified": dep_ok,
+        "pillar_recommendations_consistent": pillar_ok,
+        "rolling_selection_consistent": rolling_ok,
+        "stability_recommendations_consistent": stab_ok,
     }
     blocking = [key for key, value in readiness_checks.items() if not value]
+    blocking_details = rolling_issues + rec_issues + dep_issues + pillar_issues + stab_issues
     elapsed = _round((time.perf_counter() - t0) * 1000, 2) or 0
     warnings = ["statistics_performance_above_target"] if elapsed > 45000 else []
+    if elapsed > 30000:
+        warnings.append("statistics_performance_above_preferable_target")
+    pillar_recommendations = {
+        pillar: {
+            "candidate_core": [
+                r["feature_key"] for r in recs
+                if r["pillar"] == pillar and r["recommendation"] == "candidate_core"
+            ],
+            "candidate_secondary": [
+                r["feature_key"] for r in recs
+                if r["pillar"] == pillar and r["recommendation"] in ("candidate_secondary", "redundant_candidate")
+            ],
+            "excluded": [
+                r["feature_key"] for r in recs
+                if r["pillar"] == pillar and r["recommendation"] == "insufficient_evidence"
+            ],
+        }
+        for pillar in PILLAR_FEATURES
+    }
     payload = {
         "status": "ok",
         "version": VERSION,
@@ -900,18 +1279,15 @@ def build_goal_intensity_v5_statistics_internal(
             "core_min10": _target_summary(core10),
             "xg_paired": _target_summary(paired),
         },
-        "pillar_recommendations": {
-            pillar: {
-                "candidate_core": [r["feature_key"] for r in recs if r["pillar"] == pillar and r["recommendation"] == "candidate_core"],
-                "candidate_secondary": [r["feature_key"] for r in recs if r["pillar"] == pillar and r["recommendation"] == "candidate_secondary"],
-            }
-            for pillar in PILLAR_FEATURES
-        },
+        "pillar_recommendations": pillar_recommendations,
         "feature_recommendations": recs + xg_recs,
         "phase_1d_readiness": {
             **readiness_checks,
             "blocking_issues": blocking,
-            "recommended_next_step": "phase_1d_candidate_indices" if not blocking else "complete_phase_1c_analysis",
+            "blocking_details": blocking_details,
+            "recommended_next_step": (
+                "phase_1d_candidate_indices" if not blocking else "complete_phase_1c_analysis"
+            ),
         },
         "warnings": warnings,
         "performance": {

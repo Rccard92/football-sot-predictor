@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Fase 1C.2 normalizzazione readiness (2026-07-17)
+
+- `cecchino_goal_intensity_v5_statistics_v1_2`: corrige contraddizioni rolling (selected/secondary ∉ excluded), tipizza pair come `derived_aggregate` dalle formule `_fill_goal_features`, raffina candidate_core/pillar e aggiunge gate di consistency.
+- Nessun nuovo bootstrap/modello/query; xG resta `neutral`/`low`/`candidate_optional_xg`; v4 e dataset 1B invariati.
+
 ## Intensità Goal v5 Research — Fase 1C.1 statistica completa (2026-07-17)
 
 - Completata analisi `cecchino_goal_intensity_v5_statistics_v1_1`: signal/CI su total_goals, goals_ge_2/3 e BTTS; ranking e `target_specific_strengths`; decisioni rolling e metrica di stabilità; duplicati/dipendenze; VIF full-rank o `singular_design`.

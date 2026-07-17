@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal v5 Research — Fase 1C.2 normalizzazione readiness (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | `cecchino_goal_intensity_v5_statistics_v1_2` |
+| Scope | Dipendenze (aggregate/linear/duplicate), rolling coerente, candidate_core per pilastro, gate di consistency |
+| Non tocca | Dataset, eligibility, bootstrap, metriche univariate, xG models/assessment |
+| Readiness | 5 gate v1_1 + 5 gate consistency; `phase_1d_candidate_indices` solo se tutti true |
+| Formule | Nessuna formula/peso produttivo; v4 invariata |
+
 ## Intensità Goal v5 Research — Fase 1C.1 statistica completa (2026-07-17)
 
 | Aspetto | Dettaglio |
