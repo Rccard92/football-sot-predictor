@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
+
+Cache xG stale se cutoff ≠ kickoff; rebuild cache-only senza API; script `--refresh-xg-cache-only`.
+
 ## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
 
 Kickoff canonico `2026-07-16T22:30Z`; script dry-run + apply gated; recompute offline senza API. Warning `fixture_identity_repaired_case_a`.

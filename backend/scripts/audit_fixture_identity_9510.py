@@ -1,10 +1,11 @@
-"""Riparazione gated Caso A — Today 9510 / Fixture 562.
+"""Riparazione gated Caso A — Today 9510 / Fixture 562 + refresh xG cache-only (2A.4).
 
 Uso:
   cd backend && python -m scripts.audit_fixture_identity_9510 --dry-run --case A
   cd backend && python -m scripts.audit_fixture_identity_9510 --apply-confirmed-fix --case A
+  cd backend && python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-only --case A
 
-Default: dry-run. Nessuna scrittura senza --apply-confirmed-fix --case A.
+Default: dry-run. Nessuna scrittura senza --apply-confirmed-fix / --refresh-xg-cache-only.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -202,6 +203,40 @@ def apply_case_a_mutations(today: Any, local: Any) -> dict[str, Any]:
     }
 
 
+def validate_post_repair_for_xg_refresh(
+    *,
+    today: Any,
+    local: Any,
+) -> list[str]:
+    """Verifica che Case A sia già applicato prima del refresh xG."""
+    errors: list[str] = []
+    today_ko = today.kickoff
+    local_ko = local.kickoff_at
+    if isinstance(today_ko, datetime):
+        if today_ko.tzinfo is None:
+            today_ko = today_ko.replace(tzinfo=timezone.utc)
+        if abs(today_ko.astimezone(timezone.utc) - CORRECT_KICKOFF) > timedelta(minutes=1):
+            errors.append(f"today_kickoff_not_corrected: {_iso(today.kickoff)}")
+    else:
+        errors.append("today_kickoff_missing")
+    if isinstance(local_ko, datetime):
+        if local_ko.tzinfo is None:
+            local_ko = local_ko.replace(tzinfo=timezone.utc)
+        if abs(local_ko.astimezone(timezone.utc) - CORRECT_KICKOFF) > timedelta(minutes=1):
+            errors.append(f"local_kickoff_not_corrected: {_iso(local.kickoff_at)}")
+    else:
+        errors.append("local_kickoff_missing")
+    if (today.fixture_status or "").upper() != TARGET_STATUS_FT:
+        errors.append(f"today_status_not_ft: {today.fixture_status}")
+    if (local.status or "").upper() != TARGET_STATUS_FT:
+        errors.append(f"local_status_not_ft: {local.status}")
+    if today.goals_home != TARGET_GOALS_HOME or today.goals_away != TARGET_GOALS_AWAY:
+        errors.append(f"today_score_not_2_1: {today.goals_home}-{today.goals_away}")
+    if local.goals_home != TARGET_GOALS_HOME or local.goals_away != TARGET_GOALS_AWAY:
+        errors.append(f"local_score_not_2_1: {local.goals_home}-{local.goals_away}")
+    return errors
+
+
 def format_rome_kickoff(iso_or_dt: Any) -> str:
     """Europe/Rome display: 17/07/2026 00:30 for CORRECT_KICKOFF."""
     if isinstance(iso_or_dt, datetime):
@@ -221,7 +256,7 @@ def format_rome_kickoff(iso_or_dt: Any) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Riparazione Caso A fixture 9510/562")
+    parser = argparse.ArgumentParser(description="Riparazione Caso A fixture 9510/562 + xG cache refresh")
     parser.add_argument("--dry-run", action="store_true", default=False, help="Solo piano (default se no apply)")
     parser.add_argument(
         "--apply-confirmed-fix",
@@ -229,20 +264,39 @@ def main(argv: list[str] | None = None) -> int:
         default=False,
         help="Applica fix Case A in transazione + recompute offline",
     )
+    parser.add_argument(
+        "--refresh-xg-cache-only",
+        action="store_true",
+        default=False,
+        help="Rigenera xg_profiles_json da DB (no API) + recompute; richiede Case A già applicato",
+    )
     parser.add_argument("--case", choices=["A", "B"], default=None)
     parser.add_argument("--today-id", type=int, default=TODAY_ID)
     parser.add_argument("--local-id", type=int, default=LOCAL_ID)
     args = parser.parse_args(argv)
 
-    dry_run = not args.apply_confirmed_fix
+    if args.refresh_xg_cache_only and args.apply_confirmed_fix:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "reason": "non combinare --refresh-xg-cache-only con --apply-confirmed-fix",
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return 2
+
+    dry_run = not args.apply_confirmed_fix and not args.refresh_xg_cache_only
     if args.dry_run:
         dry_run = True
-        if args.apply_confirmed_fix:
+        if args.apply_confirmed_fix or args.refresh_xg_cache_only:
             print(
                 json.dumps(
                     {
                         "status": "error",
-                        "reason": "non usare --dry-run insieme a --apply-confirmed-fix",
+                        "reason": "non usare --dry-run insieme a apply/refresh",
                     },
                     indent=2,
                     ensure_ascii=False,
@@ -256,6 +310,20 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "status": "error",
                     "reason": "--apply-confirmed-fix richiede --case A|B",
+                    "dry_run": True,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return 2
+
+    if args.refresh_xg_cache_only and args.case is None:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "reason": "--refresh-xg-cache-only richiede --case A",
                     "dry_run": True,
                 },
                 indent=2,
@@ -279,30 +347,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.case is None and dry_run:
-        # dry-run senza --case: mostra piano Case A se DB disponibile
         args.case = "A"
 
-    if not os.environ.get("DATABASE_URL") and not Path(".env").exists():
+    if not (os.environ.get("DATABASE_URL") or "").strip() and not Path(".env").exists():
         print(
             json.dumps(
                 {
                     "status": "skipped",
                     "dry_run": True,
                     "reason": "DATABASE_URL / backend/.env non disponibili",
-                    "case_a_plan_expected": {
-                        "today_kickoff": {
-                            "from": "2026-07-22T20:00:00Z",
-                            "to": _iso(CORRECT_KICKOFF),
-                        },
-                        "local_kickoff": {
-                            "from": "2026-07-22T20:00:00Z",
-                            "to": _iso(CORRECT_KICKOFF),
-                        },
-                        "local_status": {"from": "NS", "to": "FT"},
-                        "local_score": {"from": "null-null", "to": "2-1"},
-                        "europe_rome_display": format_rome_kickoff(CORRECT_KICKOFF),
-                    },
-                    "hint": "Su Railway: --dry-run --case A poi --apply-confirmed-fix --case A",
+                    "hint": (
+                        "Su Railway: --dry-run --case A | --apply-confirmed-fix --case A | "
+                        "--refresh-xg-cache-only --case A"
+                    ),
+                    "europe_rome_display": format_rome_kickoff(CORRECT_KICKOFF),
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -314,6 +372,9 @@ def main(argv: list[str] | None = None) -> int:
     from app.models.cecchino_today_fixture import CecchinoTodayFixture
     from app.models.fixture import Fixture
     from app.models.team import Team
+    from app.services.cecchino.cecchino_current_season_xg import (
+        rebuild_current_season_xg_profile_from_cache,
+    )
     from app.services.cecchino.cecchino_expected_goal_engine_diagnostics import (
         build_expected_goal_engine_diagnostics_for_today_row,
     )
@@ -352,8 +413,88 @@ def main(argv: list[str] | None = None) -> int:
             expected_today_id=args.today_id,
             expected_local_id=args.local_id,
         )
+
+        # --- REFRESH XG CACHE ONLY ---
+        if args.refresh_xg_cache_only:
+            post_errors = validate_post_repair_for_xg_refresh(today=today, local=local)
+            report: dict[str, Any] = {
+                "status": "ok",
+                "mode": "refresh_xg_cache_only",
+                "case": "A",
+                "guard_errors": guard_errors,
+                "post_repair_errors": post_errors,
+                "xg_rebuild": None,
+                "recompute": None,
+                "verification": None,
+            }
+            if guard_errors or post_errors:
+                report["status"] = "blocked"
+                print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+                return 1
+            try:
+                cutoff_before = None
+                old = today.xg_profiles_json if isinstance(today.xg_profiles_json, dict) else {}
+                if isinstance(old.get("anti_leakage"), dict):
+                    cutoff_before = old["anti_leakage"].get("fixture_date_cutoff")
+                xg_rebuild = rebuild_current_season_xg_profile_from_cache(db, int(today.id))
+                recompute_result = recompute_today_fixture_offline(
+                    db,
+                    today,
+                    refresh_bookmaker_odds=False,
+                    use_existing_bookmaker_odds=True,
+                    ensure_xg=False,
+                )
+                db.commit()
+                db.refresh(today)
+                db.refresh(local)
+                report["xg_rebuild"] = xg_rebuild
+                report["recompute"] = recompute_result
+                report["cutoff_before"] = cutoff_before
+                report["cutoff_after"] = (xg_rebuild.get("cutoff_after") if isinstance(xg_rebuild, dict) else None)
+            except Exception as exc:
+                db.rollback()
+                report["status"] = "error"
+                report["xg_rebuild"] = {"error": str(exc)}
+                print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+                return 1
+
+            diagnostics = build_expected_goal_engine_diagnostics_for_today_row(db, today)
+            consistency = build_fixture_identity_consistency(
+                today_row=today,
+                local_fixture=local,
+                cecchino_output=today.cecchino_output_json
+                if isinstance(today.cecchino_output_json, dict)
+                else None,
+                expected_goal_diagnostics=diagnostics if isinstance(diagnostics, dict) else None,
+                local_home_team_name=local_home.name if local_home else None,
+                local_away_team_name=local_away.name if local_away else None,
+            )
+            xg_cutoff = None
+            if isinstance(diagnostics, dict):
+                xg_cutoff = (
+                    ((diagnostics.get("xg_profiles") or {}).get("anti_leakage") or {}).get(
+                        "fixture_date_cutoff"
+                    )
+                )
+            cached_cutoff = None
+            if isinstance(today.xg_profiles_json, dict):
+                cached_cutoff = (today.xg_profiles_json.get("anti_leakage") or {}).get(
+                    "fixture_date_cutoff"
+                )
+            audit = build_fixture_identity_audit(db, int(today.id))
+            report["verification"] = {
+                "cached_fixture_date_cutoff": cached_cutoff,
+                "diagnostics_fixture_date_cutoff": xg_cutoff,
+                "fixture_identity_consistency": consistency,
+                "audit_status": audit.get("status"),
+                "external_calls_made": 0,
+                "europe_rome_display": format_rome_kickoff(today.kickoff),
+            }
+            print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+            return 0 if consistency.get("status") == "consistent" else 1
+
         plan = build_case_a_plan(today, local)
-        report: dict[str, Any] = {
+        report = {
             "status": "ok",
             "dry_run": dry_run,
             "case": "A",
@@ -450,11 +591,7 @@ def main(argv: list[str] | None = None) -> int:
             "external_api_called": False,
         }
         print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
-        ok = (
-            consistency.get("status") == "consistent"
-            and str(leak or "").startswith("2026-07-16T22:30")
-        )
-        return 0 if ok else 0  # apply riuscito anche se verify soft-fail; report contiene consistency
+        return 0
     finally:
         db.close()
 

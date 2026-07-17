@@ -2,6 +2,14 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Cache fresh | confronta `anti_leakage.fixture_date_cutoff` vs `Fixture.kickoff_at` (±1m UTC) |
+| Rebuild | `rebuild_current_season_xg_profile_from_cache` — zero API |
+| Script | `--refresh-xg-cache-only --case A` (dopo Case A) |
+
 ## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
 
 | Aspetto | Dettaglio |

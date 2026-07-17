@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -35,6 +35,19 @@ ANTI_LEAKAGE_NOTE = (
     "La partita analizzata è esclusa per evitare leakage."
 )
 MIN_XG_SAMPLE_AVAILABLE = 3
+CACHE_KICKOFF_TOLERANCE = timedelta(minutes=1)
+
+
+def _parse_cached_cutoff(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return ensure_datetime_utc(value, field_name="xg.fixture_date_cutoff")
+    try:
+        s = str(value).replace("Z", "+00:00")
+        return ensure_datetime_utc(datetime.fromisoformat(s), field_name="xg.fixture_date_cutoff")
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_expected_goals_type(raw_type: Any) -> bool:
@@ -423,6 +436,7 @@ def _profile_cache_fresh(
     *,
     prior_count: int,
     force_refresh: bool,
+    target_kickoff: datetime | None = None,
 ) -> bool:
     if force_refresh:
         return False
@@ -435,6 +449,15 @@ def _profile_cache_fresh(
         return False
     usage = cached.get("xg_api_usage") or {}
     if int(usage.get("fixtures_checked") or 0) != prior_count:
+        return False
+
+    # Cutoff vs kickoff corrente (UTC normalizzati, tolleranza 1 minuto)
+    anti = cached.get("anti_leakage") if isinstance(cached.get("anti_leakage"), dict) else {}
+    cached_cutoff = _parse_cached_cutoff(anti.get("fixture_date_cutoff") if anti else None)
+    target_ko = ensure_datetime_utc(target_kickoff, field_name="target.kickoff_at") if target_kickoff else None
+    if target_ko is None or cached_cutoff is None:
+        return False
+    if abs(target_ko - cached_cutoff) > CACHE_KICKOFF_TOLERANCE:
         return False
     return True
 
@@ -506,7 +529,12 @@ def ensure_current_season_xg_profile_for_fixture(
     prior = _prior_fixtures_both_teams(db, target, exclude_provider_fixture_id=exclude_api)
     prior_count = len(prior)
 
-    if _profile_cache_fresh(row, prior_count=prior_count, force_refresh=force_refresh):
+    if _profile_cache_fresh(
+        row,
+        prior_count=prior_count,
+        force_refresh=force_refresh,
+        target_kickoff=target.kickoff_at,
+    ):
         cached = row.xg_profiles_json or {}
         return {
             "status": "cached",
@@ -589,6 +617,164 @@ def ensure_current_season_xg_profile_for_fixture(
         "xg_profiles": profiles_payload,
         "xg_api_usage": xg_api_usage,
         "warnings": all_warnings,
+    }
+
+
+def _filtered_prior_fixture_ids_for_team(
+    db: Session,
+    target: Fixture,
+    team_id: int,
+    *,
+    exclude_provider_fixture_id: int | None,
+) -> list[int]:
+    """Stessa esclusione anti-leakage di build_current_season_team_xg_profile (solo id)."""
+    prior = load_finished_fixtures_for_team(db, target, int(team_id))
+    target_id = int(target.id)
+    target_api_id = int(target.api_fixture_id)
+    exclude_api = int(exclude_provider_fixture_id) if exclude_provider_fixture_id else None
+    ids: list[int] = []
+    for fx in prior:
+        if int(fx.id) == target_id:
+            continue
+        if exclude_api is not None and int(fx.api_fixture_id) == exclude_api:
+            continue
+        if int(fx.api_fixture_id) == target_api_id:
+            continue
+        ids.append(int(fx.id))
+    return ids
+
+
+def rebuild_current_season_xg_profile_from_cache(
+    db: Session,
+    today_fixture_id: int,
+) -> dict[str, Any]:
+    """Rigenera xg_profiles_json solo da FixtureTeamStat già in DB — zero API esterne."""
+    row = db.get(CecchinoTodayFixture, int(today_fixture_id))
+    if row is None:
+        return {"status": "not_found", "message": f"CecchinoTodayFixture {today_fixture_id} not found"}
+    if not row.local_fixture_id:
+        return {"status": "skipped", "reason": "missing_local_fixture_id"}
+
+    target = db.get(Fixture, int(row.local_fixture_id))
+    if target is None:
+        return {"status": "skipped", "reason": "local_fixture_not_found"}
+
+    exclude_api = int(row.provider_fixture_id) if row.provider_fixture_id else None
+    cutoff_before = None
+    old = row.xg_profiles_json if isinstance(row.xg_profiles_json, dict) else {}
+    if isinstance(old.get("anti_leakage"), dict):
+        cutoff_before = old["anti_leakage"].get("fixture_date_cutoff")
+
+    home_ids = _filtered_prior_fixture_ids_for_team(
+        db, target, int(target.home_team_id), exclude_provider_fixture_id=exclude_api
+    )
+    away_ids = _filtered_prior_fixture_ids_for_team(
+        db, target, int(target.away_team_id), exclude_provider_fixture_id=exclude_api
+    )
+
+    home_profile = build_current_season_team_xg_profile(
+        db,
+        target,
+        int(target.home_team_id),
+        exclude_provider_fixture_id=exclude_api,
+    )
+    away_profile = build_current_season_team_xg_profile(
+        db,
+        target,
+        int(target.away_team_id),
+        exclude_provider_fixture_id=exclude_api,
+    )
+
+    anti_leakage = {
+        "current_fixture_excluded": True,
+        "fixture_date_cutoff": safe_isoformat(target.kickoff_at, field_name="target.kickoff_at"),
+        "scope": "current season matches before fixture",
+    }
+    # Prefer explicit anti_leakage from profiles if present (same cutoff)
+    for p in (home_profile, away_profile):
+        al = p.get("anti_leakage")
+        if isinstance(al, dict) and al.get("fixture_date_cutoff"):
+            anti_leakage = {
+                "current_fixture_excluded": True,
+                "fixture_date_cutoff": al.get("fixture_date_cutoff"),
+                "scope": al.get("scope") or anti_leakage["scope"],
+            }
+            break
+
+    all_warnings: list[str] = []
+    for p in (home_profile, away_profile):
+        for w in p.get("warnings") or []:
+            if w not in all_warnings:
+                all_warnings.append(str(w))
+    if int(home_profile.get("matches_missing_xg") or 0) > 0 or int(
+        away_profile.get("matches_missing_xg") or 0
+    ) > 0:
+        if "cache_only_partial" not in all_warnings:
+            all_warnings.append("cache_only_partial")
+    if home_profile.get("sample_size", 0) == 0 or away_profile.get("sample_size", 0) == 0:
+        if "cache_only_partial" not in all_warnings:
+            all_warnings.append("cache_only_partial")
+        if "missing_xg_in_current_season_history" not in all_warnings:
+            all_warnings.append("missing_xg_in_current_season_history")
+    for p in (home_profile, away_profile):
+        ss = int(p.get("sample_size") or 0)
+        if 0 < ss < MIN_XG_SAMPLE_AVAILABLE and "insufficient_xg_sample" not in all_warnings:
+            all_warnings.append("insufficient_xg_sample")
+
+    prior_union = _prior_fixtures_both_teams(db, target, exclude_provider_fixture_id=exclude_api)
+    max_ko = None
+    for fx in prior_union:
+        ko = ensure_datetime_utc(fx.kickoff_at, field_name=f"prior_{fx.id}.kickoff_at")
+        if ko is not None and (max_ko is None or ko > max_ko):
+            max_ko = ko
+
+    xg_api_usage = {
+        "automatic": False,
+        "cache_only": True,
+        "external_calls_made": 0,
+        "cache_hits": len(prior_union),
+        "fixtures_checked": len(prior_union),
+        "fixtures_backfilled": 0,
+        "endpoint": None,
+    }
+
+    profiles_payload = {
+        "profile_version": PROFILE_VERSION,
+        "local_fixture_id": int(row.local_fixture_id),
+        "home_team": _team_display_from_profile(home_profile, row.home_team_name),
+        "away_team": _team_display_from_profile(away_profile, row.away_team_name),
+        "anti_leakage": anti_leakage,
+        "xg_api_usage": xg_api_usage,
+        "updated_at": utc_now().isoformat(),
+        "warnings": all_warnings,
+    }
+
+    row.xg_profiles_json = profiles_payload
+    db.flush()
+
+    excluded_ids = [int(target.id)]
+    excluded_provider = [int(exclude_api)] if exclude_api is not None else []
+
+    return {
+        "status": "ok",
+        "today_fixture_id": int(today_fixture_id),
+        "local_fixture_id": int(target.id),
+        "cutoff_before": cutoff_before,
+        "cutoff_after": anti_leakage.get("fixture_date_cutoff"),
+        "xg_profiles": profiles_payload,
+        "xg_api_usage": xg_api_usage,
+        "warnings": all_warnings,
+        "anti_leakage_report": {
+            "current_fixture_excluded": True,
+            "excluded_fixture_ids": excluded_ids,
+            "excluded_provider_fixture_ids": excluded_provider,
+            "home_fixture_ids_used": home_ids,
+            "away_fixture_ids_used": away_ids,
+            "max_historical_kickoff": safe_isoformat(max_ko, field_name="max_historical_kickoff")
+            if max_ko
+            else None,
+            "external_calls_made": 0,
+        },
     }
 
 

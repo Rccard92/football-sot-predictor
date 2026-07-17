@@ -271,6 +271,10 @@ def test_ensure_cache_hit_zero_api_calls():
             "profile_version": PROFILE_VERSION,
             "local_fixture_id": 200,
             "xg_api_usage": {"fixtures_checked": 2},
+            "anti_leakage": {
+                "current_fixture_excluded": True,
+                "fixture_date_cutoff": "2026-06-09T20:00:00+00:00",
+            },
             "home_team": {"sample_size": 3},
             "away_team": {"sample_size": 3},
         },
@@ -434,3 +438,200 @@ def test_diagnostics_resolve_variables_uses_cached_profiles():
 
     assert variables["home_xg_for"]["value"] == pytest.approx(1.5)
     assert variables["away_xg_for"]["value"] == pytest.approx(0.7)
+
+
+def test_profile_cache_fresh_same_kickoff():
+    from app.services.cecchino.cecchino_current_season_xg import _profile_cache_fresh
+
+    ko = datetime(2026, 7, 16, 22, 30, tzinfo=timezone.utc)
+    row = _make_today_row(
+        xg_profiles_json={
+            "profile_version": PROFILE_VERSION,
+            "local_fixture_id": 200,
+            "xg_api_usage": {"fixtures_checked": 3},
+            "anti_leakage": {"fixture_date_cutoff": "2026-07-16T22:30:00+00:00"},
+        },
+    )
+    assert _profile_cache_fresh(row, prior_count=3, force_refresh=False, target_kickoff=ko) is True
+
+
+def test_profile_cache_fresh_same_instant_different_timezone():
+    from app.services.cecchino.cecchino_current_season_xg import _profile_cache_fresh
+    from datetime import timedelta
+
+    # 22:30 UTC == 00:30+02:00 next calendar day
+    rome = timezone(timedelta(hours=2))
+    ko = datetime(2026, 7, 17, 0, 30, tzinfo=rome)
+    row = _make_today_row(
+        xg_profiles_json={
+            "profile_version": PROFILE_VERSION,
+            "local_fixture_id": 200,
+            "xg_api_usage": {"fixtures_checked": 1},
+            "anti_leakage": {"fixture_date_cutoff": "2026-07-16T22:30:00Z"},
+        },
+    )
+    assert _profile_cache_fresh(row, prior_count=1, force_refresh=False, target_kickoff=ko) is True
+
+
+def test_profile_cache_stale_when_kickoff_days_apart():
+    from app.services.cecchino.cecchino_current_season_xg import _profile_cache_fresh
+
+    ko = datetime(2026, 7, 16, 22, 30, tzinfo=timezone.utc)
+    row = _make_today_row(
+        xg_profiles_json={
+            "profile_version": PROFILE_VERSION,
+            "local_fixture_id": 200,
+            "xg_api_usage": {"fixtures_checked": 2},
+            "anti_leakage": {"fixture_date_cutoff": "2026-07-22T20:00:00Z"},
+        },
+    )
+    assert _profile_cache_fresh(row, prior_count=2, force_refresh=False, target_kickoff=ko) is False
+
+
+def test_rebuild_from_cache_zero_api_and_excludes_target():
+    from app.services.cecchino.cecchino_current_season_xg import (
+        rebuild_current_season_xg_profile_from_cache,
+    )
+
+    db = MagicMock()
+    target = _make_fixture(
+        562,
+        api_fixture_id=1492291,
+        kickoff=datetime(2026, 7, 16, 22, 30, tzinfo=timezone.utc),
+    )
+    row = _make_today_row(
+        xg_profiles_json={
+            "anti_leakage": {"fixture_date_cutoff": "2026-07-22T20:00:00Z"},
+        },
+    )
+    row.id = 9510
+    row.local_fixture_id = 562
+    row.provider_fixture_id = 1492291
+
+    prior_home = [
+        _make_fixture(10, api_fixture_id=1001, kickoff=datetime(2026, 7, 1, tzinfo=timezone.utc)),
+        _make_fixture(562, api_fixture_id=1492291, kickoff=datetime(2026, 7, 16, 22, 30, tzinfo=timezone.utc)),
+    ]
+    prior_away = [
+        _make_fixture(11, api_fixture_id=1002, kickoff=datetime(2026, 7, 2, tzinfo=timezone.utc)),
+    ]
+
+    def _get(model, pk):
+        if pk == 9510:
+            return row
+        if pk == 562:
+            return target
+        return None
+
+    db.get.side_effect = _get
+
+    home_profile = {
+        "sample_size": 1,
+        "matches_missing_xg": 0,
+        "xg_for_avg": 1.1,
+        "xg_against_avg": 0.9,
+        "warnings": ["current_fixture_xg_excluded_to_prevent_leakage"],
+        "anti_leakage": {
+            "current_fixture_excluded": True,
+            "fixture_date_cutoff": "2026-07-16T22:30:00+00:00",
+        },
+    }
+    away_profile = {
+        "sample_size": 1,
+        "matches_missing_xg": 0,
+        "xg_for_avg": 0.8,
+        "xg_against_avg": 1.2,
+        "warnings": [],
+        "anti_leakage": home_profile["anti_leakage"],
+    }
+
+    with (
+        patch(
+            "app.services.cecchino.cecchino_current_season_xg.load_finished_fixtures_for_team",
+            side_effect=[prior_home, prior_away, prior_home, prior_away],
+        ),
+        patch(
+            "app.services.cecchino.cecchino_current_season_xg.build_current_season_team_xg_profile",
+            side_effect=[home_profile, away_profile],
+        ),
+        patch(
+            "app.services.cecchino.cecchino_current_season_xg._prior_fixtures_both_teams",
+            return_value=[prior_home[0], prior_away[0]],
+        ),
+        patch(
+            "app.services.cecchino.cecchino_current_season_xg.ApiFootballClient",
+        ) as client_cls,
+    ):
+        out = rebuild_current_season_xg_profile_from_cache(db, 9510)
+        client_cls.assert_not_called()
+
+    assert out["status"] == "ok"
+    assert out["xg_api_usage"]["external_calls_made"] == 0
+    assert str(out["cutoff_after"]).startswith("2026-07-16T22:30")
+    assert out["anti_leakage_report"]["excluded_fixture_ids"] == [562]
+    assert out["anti_leakage_report"]["excluded_provider_fixture_ids"] == [1492291]
+    assert 562 not in out["anti_leakage_report"]["home_fixture_ids_used"]
+    assert 1492291 not in [
+        # home ids are local fixture ids not api ids; ensure target id excluded
+    ]
+    assert row.xg_profiles_json["anti_leakage"]["current_fixture_excluded"] is True
+    assert row.xg_profiles_json["xg_api_usage"]["external_calls_made"] == 0
+
+
+def test_ensure_stale_cutoff_triggers_rebuild_path():
+    """Cache con cutoff 22/07 e kickoff 16/07 non è fresh → passa al path API (client passato)."""
+    db = MagicMock()
+    target = _make_fixture(
+        200,
+        api_fixture_id=8000,
+        kickoff=datetime(2026, 7, 16, 22, 30, tzinfo=timezone.utc),
+    )
+    row = _make_today_row(
+        xg_profiles_json={
+            "profile_version": PROFILE_VERSION,
+            "local_fixture_id": 200,
+            "xg_api_usage": {"fixtures_checked": 1},
+            "anti_leakage": {"fixture_date_cutoff": "2026-07-22T20:00:00Z"},
+        },
+    )
+    prior = [_make_fixture(1, api_fixture_id=1001, kickoff=datetime(2026, 7, 1, tzinfo=timezone.utc))]
+    client = MagicMock()
+    client.get_fixture_statistics.return_value = FIXTURE_STATS
+
+    def _get(model, pk):
+        if pk == 501:
+            return row
+        if pk == 200:
+            return target
+        return None
+
+    db.get.side_effect = _get
+    profile = {
+        "sample_size": 1,
+        "xg_for_avg": 1.0,
+        "xg_against_avg": 1.0,
+        "warnings": [],
+        "anti_leakage": {
+            "current_fixture_excluded": True,
+            "fixture_date_cutoff": "2026-07-16T22:30:00+00:00",
+        },
+    }
+    with (
+        patch(
+            "app.services.cecchino.cecchino_current_season_xg._prior_fixtures_both_teams",
+            return_value=prior,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_current_season_xg._fixture_has_xg",
+            return_value=True,
+        ),
+        patch(
+            "app.services.cecchino.cecchino_current_season_xg.build_current_season_team_xg_profile",
+            return_value=profile,
+        ),
+    ):
+        out = ensure_current_season_xg_profile_for_fixture(db, 501, client=client)
+
+    assert out["status"] == "ok"
+    assert str(out["xg_profiles"]["anti_leakage"]["fixture_date_cutoff"]).startswith("2026-07-16")
+    client.get_fixture_statistics.assert_not_called()  # prior already has xG

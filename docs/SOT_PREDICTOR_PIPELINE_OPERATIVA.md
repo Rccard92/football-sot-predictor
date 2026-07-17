@@ -1,5 +1,9 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
+
+Dopo Case A: `python -m scripts.audit_fixture_identity_9510 --refresh-xg-cache-only --case A` → cutoff xG = kickoff 16/07; audit consistent; Preview v1_2.
+
 ## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
 
 1. `python -m scripts.audit_fixture_identity_9510 --dry-run --case A`

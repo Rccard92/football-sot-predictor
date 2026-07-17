@@ -359,19 +359,29 @@ def test_12_audit_endpoint_read_only():
     db.commit.assert_not_called()
 
 
-def test_13_script_default_dry_run(capsys):
+def test_13_script_default_dry_run(capsys, monkeypatch, tmp_path):
     import importlib.util
+    import os
     from pathlib import Path
+    from unittest.mock import patch
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
     path = Path(__file__).resolve().parents[1] / "scripts" / "audit_fixture_identity_9510.py"
     spec = importlib.util.spec_from_file_location("audit_fixture_identity_9510", path)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    code = mod.main([])
+
+    # Esegui dal tmp senza .env e senza DATABASE_URL
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with patch.dict(os.environ, {"DATABASE_URL": ""}, clear=False):
+        os.environ.pop("DATABASE_URL", None)
+        code = mod.main([])
     assert code == 0
     out = capsys.readouterr().out
-    assert "dry_run" in out or "skipped" in out
+    assert "skipped" in out or "dry_run" in out
 
 
 def test_14_no_fix_without_explicit_flag(capsys):

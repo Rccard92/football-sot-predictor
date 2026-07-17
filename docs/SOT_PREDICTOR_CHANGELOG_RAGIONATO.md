@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
+
+- `_profile_cache_fresh` invalida se cutoff ≠ kickoff UTC (±1m).
+- Helper cache-only `rebuild_current_season_xg_profile_from_cache` (no ApiFootballClient).
+- Script `--refresh-xg-cache-only --case A` per 9510. Nessuna formula xG cambiata.
+
 ## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
 
 - Script Case A: ripristino kickoff canonico 16/07 22:30Z su Today+Local; Local FT 2-1; warning `fixture_identity_repaired_case_a`.
