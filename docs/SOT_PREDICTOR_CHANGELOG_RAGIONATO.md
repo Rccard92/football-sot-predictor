@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
+
+- Script Case A: ripristino kickoff canonico 16/07 22:30Z su Today+Local; Local FT 2-1; warning `fixture_identity_repaired_case_a`.
+- Recompute offline `ensure_xg=False` (niente API esterne); guard su provider/teams/competition_id=2.
+- Nessuna formula modificata; sole record 9510/562.
+
 ## Equilibrio vs Squilibrio — Identity false-positive Fase 2A.3 (2026-07-17)
 
 - Rimosso auto-realign/stale write da `GET /api/cecchino/today/:id` (falso `consistent`).

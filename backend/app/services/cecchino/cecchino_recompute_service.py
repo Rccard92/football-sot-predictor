@@ -77,6 +77,7 @@ def recompute_today_fixture_offline(
     force_remap_signals: bool = False,
     sync_signal_activations: bool = True,
     evaluate_signals_after: bool = True,
+    ensure_xg: bool = True,
 ) -> dict[str, Any]:
     """Ricalcola output Cecchino per una riga Today usando solo dati DB."""
     result: dict[str, Any] = {
@@ -87,6 +88,7 @@ def recompute_today_fixture_offline(
         "signals_deactivated": 0,
         "signals_evaluated": 0,
         "warning": None,
+        "xg_ensured": False,
     }
 
     if row.local_fixture_id is None or row.competition_id is None:
@@ -182,8 +184,12 @@ def recompute_today_fixture_offline(
     row.warnings_json = eligibility.warnings
     row.stats_status = "ok" if eligibility.is_eligible else row.stats_status
 
-    if eligibility.is_eligible:
+    if eligibility.is_eligible and ensure_xg:
         maybe_ensure_xg_for_eligible_row(db, row)
+        result["xg_ensured"] = True
+    elif eligibility.is_eligible and not ensure_xg:
+        result["warning"] = (result.get("warning") or "") + ";xg_skipped_no_external_api"
+        result["warning"] = result["warning"].lstrip(";")
 
     result["recomputed"] = True
     result["kpi_recomputed"] = True

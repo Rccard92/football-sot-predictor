@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Kickoff canonico | `2026-07-16T22:30:00Z` (Europe/Rome 17/07 00:30) |
+| Script | `audit_fixture_identity_9510.py --dry-run --case A` poi `--apply-confirmed-fix --case A` |
+| Warning | rimuovere `kickoff_rescheduled_realigned…`; aggiungere `fixture_identity_repaired_case_a` |
+| Recompute | offline single-fixture, no Betfair/API-Football |
+
 ## Equilibrio vs Squilibrio — Identity false-positive Fase 2A.3 (2026-07-17)
 
 | Aspetto | Dettaglio |

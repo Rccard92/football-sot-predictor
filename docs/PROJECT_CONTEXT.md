@@ -38,6 +38,10 @@ Il sistema combina dati storici pre-match, profili giocatore, formazioni e indis
 
 Dettaglio: [API_DATA_CATALOG.md](./API_DATA_CATALOG.md).
 
+## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
+
+Kickoff canonico `2026-07-16T22:30Z`; script dry-run + apply gated; recompute offline senza API. Warning `fixture_identity_repaired_case_a`.
+
 ## Equilibrio vs Squilibrio — Identity false-positive Fase 2A.3 (2026-07-17)
 
 GET detail read-only; check su raw (kickoff/status/score/snapshot); Preview `v1_2` bloccata su mismatch; audit admin Railway. Nessuna formula cambiata.

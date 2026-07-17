@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Riparazione Caso A — Today 9510 / Fixture 562 (2026-07-17)
+
+1. `python -m scripts.audit_fixture_identity_9510 --dry-run --case A`
+2. Verificare piano before/after (kickoff 22→16, Local NS→FT, score →2-1)
+3. `python -m scripts.audit_fixture_identity_9510 --apply-confirmed-fix --case A`
+4. Audit: `GET /api/admin/cecchino/audit/fixture-identity/9510` → consistent
+
 ## Equilibrio vs Squilibrio — Identity false-positive Fase 2A.3 (2026-07-17)
 
 - Detail GET solo lettura: confronta Today raw vs Fixture/calc senza sovrascrivere kickoff.
