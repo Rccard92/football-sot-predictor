@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -29,12 +29,16 @@ from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
 from app.services.cecchino.cecchino_purchasability_statistical_research import (
     STAT_VERSION,
     TARGET_KEYS,
+    analyze_market,
     analyze_pooled,
     build_purchasability_statistical_research,
+    class_balance_from_y_win,
+    decide_features,
     engineer_row,
     filter_settled_cohort,
     fit_predict_oof_logistic,
     order_fixtures,
+    paired_comparison_key,
     resolve_spec_features,
     validate_spec_features,
 )
@@ -1083,4 +1087,275 @@ def test_v2a31_14_20_strict_json_version_invariants():
     assert "acquistabilità" not in json.dumps(payload).lower() or "produttivo" in (
         payload.get("research_banner") or ""
     ).lower()
+
+
+# --- Fase 2A.3.2: coorte fold, dedup paired, Rating benchmark ---
+
+
+def test_v2a32_01_class_balance_uses_y_win():
+    rows = [
+        {**engineer_row(_base_row(fid=1, won=True, day=1)), "selection_won": False, "selection_lost": False},
+        {**engineer_row(_base_row(fid=2, won=False, day=2, key="k2")), "selection_won": True, "selection_lost": True},
+        {**engineer_row(_base_row(fid=3, void=True, day=3, key="k3")), "selection_won": True, "selection_lost": True},
+    ]
+    rows = [r for r in rows if r is not None]
+    bal = class_balance_from_y_win(rows)
+    assert bal["won"] == 1
+    assert bal["lost"] == 1
+    assert bal["void"] == 1
+    assert bal["won"] + bal["lost"] + bal["void"] == len(rows)
+
+
+def test_v2a32_02_03_train_test_balance_sums_to_rows():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=8,
+        seed=40,
+    )
+    for f in payload.get("temporal_folds") or []:
+        cb = f["class_balance"]
+        assert cb["train_won"] + cb["train_lost"] + cb["train_void"] == f["train_rows"]
+        assert cb["test_won"] + cb["test_lost"] + cb["test_void"] == f["test_rows"]
+
+
+def test_v2a32_04_win_rate_excludes_void():
+    rows = [
+        engineer_row(_base_row(fid=1, won=True, day=1)),
+        engineer_row(_base_row(fid=2, won=True, day=2, key="k2")),
+        engineer_row(_base_row(fid=3, void=True, day=3, key="k3")),
+    ]
+    rows = [r for r in rows if r is not None]
+    bal = class_balance_from_y_win(rows)
+    assert bal["win_rate"] == pytest.approx(1.0)
+    assert bal["void"] == 1
+
+
+def test_v2a32_05_fold_not_all_zero_when_y_win_set():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=8,
+        seed=41,
+    )
+    folds = payload.get("temporal_folds") or []
+    assert folds
+    cb = folds[0]["class_balance"]
+    assert (cb["train_won"] + cb["train_lost"] + cb["test_won"] + cb["test_lost"]) > 0
+
+
+def test_v2a32_06_08_rating_pairs_reused_no_duplicate_rows():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=8,
+        seed=42,
+    )
+    marginal = payload["marginal_contribution"]
+    rating_book = [
+        m
+        for m in marginal
+        if m.get("spec") == "RATING_BASELINE" and m.get("vs") == "BOOK_BASELINE"
+    ]
+    rating_model = [
+        m
+        for m in marginal
+        if m.get("spec") == "RATING_BASELINE" and m.get("vs") == "MODEL_BASELINE"
+    ]
+    assert len(rating_book) == 1
+    assert len(rating_model) == 1
+    mr = next(m for m in payload["market_results"] if m.get("status") == "ok")
+    rp = mr.get("rating_prespecified_comparisons") or []
+    rb_keys = {
+        c["paired_comparison_key"]
+        for c in rp
+        if c.get("spec") == "RATING_BASELINE" and c.get("vs") == "BOOK_BASELINE"
+    }
+    assert rating_book[0]["paired_comparison_key"] in rb_keys
+    assert sum(
+        1
+        for m in marginal
+        if m.get("paired_comparison_key") == rating_book[0]["paired_comparison_key"]
+    ) == 1
+
+
+def test_v2a32_09_10_paired_keys_unique_and_duplicates_zero():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME", "DRAW")),
+        bootstrap_iterations=8,
+        seed=43,
+    )
+    keys = [m["paired_comparison_key"] for m in payload["marginal_contribution"]]
+    assert len(keys) == len(set(keys))
+    assert payload["paired_duplicates_removed"] == 0
+    assert payload["paired_comparisons_total"] == payload["paired_comparisons_unique"]
+    assert payload["paired_comparisons_unique"] == len(keys)
+    readiness = payload["phase_2b_readiness"]
+    assert "duplicate_paired_comparison_key" not in (
+        readiness.get("readiness_invariant_errors") or []
+    )
+
+
+def test_v2a32_11_no_double_bootstrap_same_key():
+    call_keys: list[str] = []
+
+    import app.services.cecchino.cecchino_purchasability_statistical_research as mod
+
+    real_build = mod._build_paired_entry
+
+    def tracking_build(**kwargs):
+        entry = real_build(**kwargs)
+        call_keys.append(entry["paired_comparison_key"])
+        return entry
+
+    with patch.object(mod, "_build_paired_entry", side_effect=tracking_build):
+        rows = [engineer_row(r) for r in _multi_fixture_rows(12, ("HOME",))]
+        rows = [r for r in rows if r is not None]
+        analyze_market(rows, "HOME", bootstrap_iterations=6, seed=44)
+
+    assert len(call_keys) == len(set(call_keys))
+    rating_book_key = paired_comparison_key(
+        "HOME", "RATING_BASELINE", "BOOK_BASELINE", "independent_vs_book"
+    )
+    assert call_keys.count(rating_book_key) == 1
+
+
+def test_v2a32_12_rating_counters_unique_only():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=8,
+        seed=45,
+    )
+    readiness = payload["phase_2b_readiness"]
+    rating_diag = [
+        m
+        for m in payload["marginal_contribution"]
+        if m.get("comparison_role") == "rating_diagnostic"
+        and m.get("classification") == "positive_stable_evidence"
+    ]
+    assert readiness["paired_positive_vs_rating"] == len(rating_diag)
+    for pm in payload["rating_benchmark"]["per_market"]:
+        assert "unique_prespecified_pairs" in pm
+        assert pm["unique_prespecified_pairs"] == len(pm.get("prespecified_comparisons") or [])
+
+
+def test_v2a32_13_market_specific_benchmark_not_candidate():
+    decisions = decide_features(
+        [{"feature": "rating", "coverage": 1.0, "n": 10, "auc_univariate": 0.55}],
+        [],
+        "market_specific_benchmark",
+    )
+    rating = next(d for d in decisions if d["feature_name"] == "rating")
+    assert rating["decision"] == "market_specific_benchmark"
+    assert rating["decision"] != "market_specific_candidate"
+    assert rating["decision_reason"] == "rating_market_specific_benchmark"
+
+
+def test_v2a32_14_rating_excluded_from_independent_candidates():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=8,
+        seed=46,
+    )
+    specs = payload["phase_2b_readiness"].get("independent_candidate_specs") or []
+    assert all("RATING" not in s and "PLUS_RATING" not in s for s in specs)
+    retained = payload["phase_2b_readiness"].get("features_with_positive_stable_evidence") or []
+    assert "rating" not in retained
+    rating_fd = next(
+        d for d in payload["feature_decisions"] if d["feature_name"] == "rating"
+    )
+    assert rating_fd["decision"] in {
+        "benchmark_only",
+        "market_specific_benchmark",
+        "redundant_exclude",
+        "unstable_benchmark",
+        "insufficient_evidence",
+    }
+
+
+def test_v2a32_15_rating_diagnostic_positive_does_not_enable_2b():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=8,
+        seed=47,
+    )
+    readiness = payload["phase_2b_readiness"]
+    if readiness.get("paired_positive_vs_rating", 0) > 0:
+        assert readiness.get("recommended_next_step") != "phase_2b_candidate_construction"
+    assert readiness.get("recommended_next_step") != "phase_2b_candidate_construction" or (
+        readiness.get("paired_positive_vs_book", 0) > 0
+        and readiness.get("features_with_positive_stable_evidence")
+    )
+
+
+def test_v2a32_16_export_marginal_deduplicated():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(12, ("HOME",)),
+        bootstrap_iterations=6,
+        seed=48,
+    )
+    keys = [
+        (m.get("market"), m.get("spec"), m.get("vs"), m.get("comparison_role"))
+        for m in payload["marginal_contribution"]
+    ]
+    assert len(keys) == len(set(keys))
+
+
+def test_v2a32_17_strict_json():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(12, ("HOME",)),
+        bootstrap_iterations=6,
+        seed=49,
+    )
+    json.dumps(make_json_safe(payload), allow_nan=False)
+
+
+def test_v2a32_18_readiness_has_paired_summary_counters():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(12, ("HOME",)),
+        bootstrap_iterations=6,
+        seed=50,
+    )
+    readiness = payload["phase_2b_readiness"]
+    assert readiness["paired_comparisons_total"] == readiness["paired_comparisons_unique"]
+    assert readiness["paired_duplicates_removed"] == 0
+    assert "paired_positive_comparisons" in readiness
+    assert "paired_negative_comparisons" in readiness
+    assert "paired_uncertain_comparisons" in readiness
+
+
+def test_v2a32_19_paired_metrics_present_and_finite():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(12, ("HOME",)),
+        bootstrap_iterations=6,
+        seed=51,
+    )
+    for m in payload["marginal_contribution"]:
+        if m.get("delta_auc") is not None:
+            assert math.isfinite(float(m["delta_auc"]))
+        assert "paired_comparison_key" in m
+
+
+def test_v2a32_20_no_purchasability_formula():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(10, ("HOME",)),
+        bootstrap_iterations=6,
+        seed=52,
+    )
+    assert payload["no_purchasability_formula"] is True
+    assert payload["version"] == "cecchino_purchasability_statistical_research_v2a_2"
+    blob = json.dumps(payload).lower()
+    assert "nessun indice di acquistabilità produttivo" in (
+        payload.get("research_banner") or ""
+    ).lower()
+    assert "formula_0_100" not in blob
 

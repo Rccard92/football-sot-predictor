@@ -236,6 +236,22 @@ export function PurchasabilityStatisticalResearchBody({
                       : '—'}
                 </dd>
               </div>
+              <div>
+                <dt className="text-slate-500">Paired unici</dt>
+                <dd className="font-medium">
+                  {data.paired_comparisons_unique ??
+                    readiness?.paired_comparisons_unique ??
+                    '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Duplicati rimossi</dt>
+                <dd className="font-medium">
+                  {data.paired_duplicates_removed ??
+                    readiness?.paired_duplicates_removed ??
+                    0}
+                </dd>
+              </div>
             </dl>
             {(readiness?.readiness_invariant_errors || []).length > 0 ? (
               <p className="mt-2 text-xs text-red-700">
@@ -465,9 +481,12 @@ export function PurchasabilityStatisticalResearchBody({
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-slate-900">Rating — confronti prespecificati</h3>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Rating — benchmark specifico per mercato
+            </h3>
             <p className="mt-2 text-sm text-slate-700">
-              Conclusione: <span className="font-medium">{rating?.conclusion || '—'}</span>
+              Conclusione benchmark:{' '}
+              <span className="font-medium">{rating?.conclusion || '—'}</span>
             </p>
             <p className="mt-1 text-xs text-slate-500">{rating?.note}</p>
             <ul className="mt-3 space-y-2 text-sm">
@@ -545,7 +564,7 @@ export function PurchasabilityStatisticalResearchBody({
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
             <h3 className="text-sm font-semibold text-slate-900">Fold temporali</h3>
-            <table className="mt-3 w-full min-w-[1000px] text-left text-sm">
+            <table className="mt-3 w-full min-w-[1200px] text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="py-1 pr-2">Fold</th>
@@ -554,13 +573,25 @@ export function PurchasabilityStatisticalResearchBody({
                   <th className="py-1 pr-2">Train/Test fixture</th>
                   <th className="py-1 pr-2">Train/Test rows</th>
                   <th className="py-1 pr-2">Overlap</th>
-                  <th className="py-1">Class balance (test W/L)</th>
+                  <th className="py-1 pr-2">Train W/L/Void</th>
+                  <th className="py-1 pr-2">Test W/L/Void</th>
+                  <th className="py-1 pr-2">Train WR</th>
+                  <th className="py-1">Test WR</th>
                 </tr>
               </thead>
               <tbody>
                 {(data.temporal_folds || []).map((f) => {
                   const cb = f.class_balance as
-                    | { test_won?: number; test_lost?: number }
+                    | {
+                        train_won?: number
+                        train_lost?: number
+                        train_void?: number
+                        test_won?: number
+                        test_lost?: number
+                        test_void?: number
+                        train_win_rate?: number | null
+                        test_win_rate?: number | null
+                      }
                     | undefined
                   return (
                     <tr key={String(f.fold)} className="border-b border-slate-100">
@@ -580,11 +611,18 @@ export function PurchasabilityStatisticalResearchBody({
                         {String(f.train_rows ?? '—')} / {String(f.test_rows ?? '—')}
                       </td>
                       <td className="py-1.5 pr-2">{String(f.fixture_overlap ?? 0)}</td>
-                      <td className="py-1.5">
+                      <td className="py-1.5 pr-2">
                         {cb
-                          ? `${cb.test_won ?? 0}/${cb.test_lost ?? 0}`
+                          ? `${cb.train_won ?? 0}/${cb.train_lost ?? 0}/${cb.train_void ?? 0}`
                           : '—'}
                       </td>
+                      <td className="py-1.5 pr-2">
+                        {cb
+                          ? `${cb.test_won ?? 0}/${cb.test_lost ?? 0}/${cb.test_void ?? 0}`
+                          : '—'}
+                      </td>
+                      <td className="py-1.5 pr-2">{fmt(cb?.train_win_rate)}</td>
+                      <td className="py-1.5">{fmt(cb?.test_win_rate)}</td>
                     </tr>
                   )
                 })}

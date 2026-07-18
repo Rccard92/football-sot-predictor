@@ -2,6 +2,15 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A.3.2 — Coorte fold, dedup paired, Rating benchmark
+
+Versione statistica invariata `cecchino_purchasability_statistical_research_v2a_2` (nessun cambio a OOF/bootstrap/metriche elementari).
+
+- **Class balance fold** da `y_win` (1/0/None), non da `selection_won`/`selection_lost`; W/L/Void + WR (void esclusi dal denominatore); blocking `fold_class_balance_mismatch` se somma ≠ rows.
+- **Dedup paired**: chiave `market|spec|vs|comparison_role`; i confronti Rating già presenti nel ciclo generale sono riusati (niente secondo bootstrap); summary `paired_comparisons_total/unique/duplicates_removed`; invariant `duplicate_paired_comparison_key`.
+- **Rating = benchmark**: decisioni ammesse `benchmark_only` / `market_specific_benchmark` / `redundant_exclude` / `unstable_benchmark` / `insufficient_evidence`; mai candidate indipendente; positivi diagnostici non abilitano Fase 2B.
+- Contatori post-dedup vs Book/Model/Rating per `comparison_role`; readiness tipicamente verso `phase_2a_residual_reliability_research`.
+
 ## Fase 2A.3.1 — Result completo FE + assi di classificazione
 
 Dopo il job async 2A.3:

@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A.3.2 (2026-07-18)
+
+1. Verificare fold W/L/Void e WR non più 0/0; absence di `fold_class_balance_mismatch`.
+2. Controllare `paired_comparisons_unique == total` e `duplicates_removed == 0`; una sola riga Rating vs Book/Model.
+3. Feature `rating` = benchmark (`market_specific_benchmark` / `benchmark_only`), non candidate; next step residual research se Book dominante.
+4. Non avviare ancora residual reliability né 1000 bootstrap.
+
 ## Indice di Acquistabilità — Fase 2A.3.1 (2026-07-18)
 
 1. Dopo job completed: verificare summary immediato + result con paired/mercati/fold.

@@ -940,6 +940,32 @@ def comparison_role_for(vs: str, spec: str) -> str:
     return "model_enrichment_diagnostic"
 
 
+def paired_comparison_key(market: str, spec: str, vs: str, role: str) -> str:
+    return f"{market}|{spec}|{vs}|{role}"
+
+
+def class_balance_from_y_win(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    won = sum(1 for r in rows if r.get("y_win") == 1)
+    lost = sum(1 for r in rows if r.get("y_win") == 0)
+    void = sum(1 for r in rows if r.get("y_win") is None)
+    denom = won + lost
+    return {
+        "won": won,
+        "lost": lost,
+        "void": void,
+        "win_rate": (float(won) / float(denom)) if denom else None,
+        "balance_ok": (won + lost + void) == len(rows),
+    }
+
+
+def _is_rating_spec(spec_name: str) -> bool:
+    return (
+        spec_name == "RATING_BASELINE"
+        or spec_name.startswith("RATING_")
+        or "PLUS_RATING" in spec_name
+    )
+
+
 def resolve_phase_2b_next_step(
     *,
     blocking: list[Any],
@@ -1225,19 +1251,20 @@ def decide_features(
         decision = forced
         reason = "default_policy"
         if name == "rating":
-            if rating_conclusion == "incremental_candidate":
-                # Rating incremental is still not independent retain
-                decision = "benchmark_only"
-                reason = "rating_incremental_but_not_independent_candidate"
-            elif rating_conclusion == "market_specific_benchmark":
-                decision = "market_specific_candidate"
+            if rating_conclusion == "market_specific_benchmark":
+                decision = "market_specific_benchmark"
                 reason = "rating_market_specific_benchmark"
-            elif rating_conclusion in ("redundant_exclude", "temporally_unstable"):
-                decision = (
-                    "redundant_exclude"
-                    if rating_conclusion == "redundant_exclude"
-                    else "unstable_exclude"
-                )
+            elif rating_conclusion == "incremental_candidate":
+                decision = "benchmark_only"
+                reason = "incremental_diagnostic_but_rating_not_independent"
+            elif rating_conclusion == "temporally_unstable":
+                decision = "unstable_benchmark"
+                reason = f"rating_conclusion={rating_conclusion}"
+            elif rating_conclusion == "redundant_exclude":
+                decision = "redundant_exclude"
+                reason = f"rating_conclusion={rating_conclusion}"
+            elif rating_conclusion == "insufficient_evidence":
+                decision = "insufficient_evidence"
                 reason = f"rating_conclusion={rating_conclusion}"
             else:
                 decision = "benchmark_only"
@@ -1373,11 +1400,13 @@ def _build_paired_entry(
     ci_auc = (paired.get("confidence_intervals") or {}).get("delta_auc") or {}
     effect = classify_effect(paired.get("delta_auc"), ci_auc)
     temporal = classify_temporal(fold_info.get("fold_signs") or [])
+    role = comparison_role_for(vs, spec)
     return {
         "market": market,
         "spec": spec,
         "vs": vs,
-        "comparison_role": comparison_role_for(vs, spec),
+        "comparison_role": role,
+        "paired_comparison_key": paired_comparison_key(market, spec, vs, role),
         "delta_auc": paired.get("delta_auc"),
         "delta_brier_improvement": paired.get("delta_brier_improvement"),
         "delta_log_loss_improvement": paired.get("delta_log_loss_improvement"),
@@ -1420,9 +1449,14 @@ def analyze_market(
     fixtures = order_fixtures(market_rows)
     folds, fold_lim = expanding_fixture_folds(fixtures)
     temporal_folds = []
+    fold_balance_mismatch = False
     for f in folds:
         tr = [r for r in market_rows if r["today_fixture_id"] in set(f["train_fixture_ids"])]
         te = [r for r in market_rows if r["today_fixture_id"] in set(f["test_fixture_ids"])]
+        tr_bal = class_balance_from_y_win(tr)
+        te_bal = class_balance_from_y_win(te)
+        if not tr_bal["balance_ok"] or not te_bal["balance_ok"]:
+            fold_balance_mismatch = True
         temporal_folds.append(
             {
                 "fold": f["fold"],
@@ -1438,10 +1472,14 @@ def analyze_market(
                 "test_date_max": max((r.get("scan_date") or "") for r in te) if te else None,
                 "fixture_overlap": 0,
                 "class_balance": {
-                    "train_won": sum(1 for r in tr if r.get("selection_won")),
-                    "train_lost": sum(1 for r in tr if r.get("selection_lost")),
-                    "test_won": sum(1 for r in te if r.get("selection_won")),
-                    "test_lost": sum(1 for r in te if r.get("selection_lost")),
+                    "train_won": tr_bal["won"],
+                    "train_lost": tr_bal["lost"],
+                    "train_void": tr_bal["void"],
+                    "test_won": te_bal["won"],
+                    "test_lost": te_bal["lost"],
+                    "test_void": te_bal["void"],
+                    "train_win_rate": tr_bal["win_rate"],
+                    "test_win_rate": te_bal["win_rate"],
                 },
                 "markets": [market],
             }
@@ -1462,8 +1500,8 @@ def analyze_market(
     model = results["MODEL_BASELINE"]
     rating = results["RATING_BASELINE"]
 
-    # Pass 1 paired comparisons (unclassified globally)
-    marginal: list[dict[str, Any]] = []
+    # Pass 1 paired comparisons — indexed by canonical key (no duplicates)
+    paired_by_key: dict[str, dict[str, Any]] = {}
     compare_specs = [
         s
         for s in CORE_SPECS
@@ -1482,39 +1520,45 @@ def analyze_market(
                 continue
             if "oof_prob" not in base:
                 continue
-            marginal.append(
-                _build_paired_entry(
-                    market=market,
-                    spec=spec,
-                    vs=base_name,
-                    rows=market_rows,
-                    folds=folds,
-                    pred_cand=r["oof_prob"],
-                    pred_base=base["oof_prob"],
-                    bootstrap_iterations=bootstrap_iterations,
-                    seed=seed,
-                )
+            entry = _build_paired_entry(
+                market=market,
+                spec=spec,
+                vs=base_name,
+                rows=market_rows,
+                folds=folds,
+                pred_cand=r["oof_prob"],
+                pred_base=base["oof_prob"],
+                bootstrap_iterations=bootstrap_iterations,
+                seed=seed,
             )
+            paired_by_key[entry["paired_comparison_key"]] = entry
 
-    rating_comparisons = []
+    rating_comparisons: list[dict[str, Any]] = []
     for cand_name, base_name in RATING_PAIRED_COMPARISONS:
         cand = results.get(cand_name) or {}
         base = results.get(base_name) or {}
         if "oof_prob" not in cand or "oof_prob" not in base:
             continue
-        entry = _build_paired_entry(
-            market=market,
-            spec=cand_name,
-            vs=base_name,
-            rows=market_rows,
-            folds=folds,
-            pred_cand=cand["oof_prob"],
-            pred_base=base["oof_prob"],
-            bootstrap_iterations=bootstrap_iterations,
-            seed=seed,
-        )
+        role = comparison_role_for(base_name, cand_name)
+        key = paired_comparison_key(market, cand_name, base_name, role)
+        if key in paired_by_key:
+            entry = paired_by_key[key]
+        else:
+            entry = _build_paired_entry(
+                market=market,
+                spec=cand_name,
+                vs=base_name,
+                rows=market_rows,
+                folds=folds,
+                pred_cand=cand["oof_prob"],
+                pred_base=base["oof_prob"],
+                bootstrap_iterations=bootstrap_iterations,
+                seed=seed,
+            )
+            paired_by_key[key] = entry
         rating_comparisons.append(entry)
-        marginal.append(entry)
+
+    marginal = list(paired_by_key.values())
 
     # Rating decision from prespecified pairs (no best-spec selection)
     rating_decision = _decide_rating_from_pairs(rating_comparisons)
@@ -1561,6 +1605,36 @@ def analyze_market(
 
     specs_public = {k: _strip_oof(v) for k, v in results.items()}
 
+    limitations = list(fold_lim)
+    if fold_balance_mismatch:
+        limitations.append("fold_class_balance_mismatch")
+
+    pos_cls = {"positive_stable_evidence", "positive_but_uncertain"}
+    neg_cls = {"negative_incremental_value", "negative_but_uncertain"}
+    rating_pos = sum(
+        1 for c in rating_comparisons if c.get("classification") in pos_cls
+    )
+    rating_neg = sum(
+        1 for c in rating_comparisons if c.get("classification") in neg_cls
+    )
+    rating_unc = len(rating_comparisons) - rating_pos - rating_neg
+    temporal_pos = sum(
+        1
+        for c in rating_comparisons
+        if c.get("temporal_classification") == "temporally_stable_positive"
+    )
+    temporal_neg = sum(
+        1
+        for c in rating_comparisons
+        if c.get("temporal_classification") == "temporally_stable_negative"
+    )
+    temporal_mixed = sum(
+        1
+        for c in rating_comparisons
+        if c.get("temporal_classification")
+        in ("temporally_mixed", "temporally_unstable")
+    )
+
     return {
         "market": market,
         "status": "ok",
@@ -1571,7 +1645,7 @@ def analyze_market(
         "roi": safe_div(sum(profits), len(profits)) if profits else None,
         "avg_odds": float(np.mean(odds_l)) if odds_l else None,
         "avg_break_even": float(np.mean([1.0 / o for o in odds_l])) if odds_l else None,
-        "limitations": fold_lim,
+        "limitations": limitations,
         "temporal_folds": temporal_folds,
         "candidate_specifications": specs_public,
         "best_spec_without_rating": display_best,
@@ -1585,12 +1659,21 @@ def analyze_market(
                 {
                     "spec": c["spec"],
                     "vs": c["vs"],
+                    "paired_comparison_key": c.get("paired_comparison_key"),
                     "delta_auc": c.get("delta_auc"),
                     "ci": (c.get("confidence_intervals") or {}).get("delta_auc"),
                     "temporal_classification": c.get("temporal_classification"),
+                    "classification": c.get("classification"),
                 }
                 for c in rating_comparisons
             ],
+            "unique_prespecified_pairs": len(rating_comparisons),
+            "positive_pairs": rating_pos,
+            "negative_pairs": rating_neg,
+            "uncertain_pairs": rating_unc,
+            "temporal_positive_pairs": temporal_pos,
+            "temporal_negative_pairs": temporal_neg,
+            "temporal_mixed_pairs": temporal_mixed,
             "decision": rating_decision,
             "note": "Rating pairs are prespecified; no OOF best-spec selection.",
         },
@@ -1820,6 +1903,33 @@ def build_purchasability_statistical_research(
     pooled = analyze_pooled(cohort, bootstrap_iterations=bootstrap_iterations, seed=seed)
     cv_ms = (time.perf_counter() - t_cv0) * 1000
 
+    # Dedup safety net across markets (market-level already unique)
+    paired_raw_total = len(all_marginal)
+    deduped: list[dict[str, Any]] = []
+    seen_keys: dict[str, dict[str, Any]] = {}
+    for m in all_marginal:
+        key = m.get("paired_comparison_key")
+        if not key:
+            role = m.get("comparison_role") or comparison_role_for(
+                str(m.get("vs") or ""), str(m.get("spec") or "")
+            )
+            key = paired_comparison_key(
+                str(m.get("market") or ""),
+                str(m.get("spec") or ""),
+                str(m.get("vs") or ""),
+                str(role),
+            )
+            m["paired_comparison_key"] = key
+            m["comparison_role"] = role
+        if key in seen_keys:
+            continue
+        seen_keys[key] = m
+        deduped.append(m)
+    paired_duplicates_removed = paired_raw_total - len(deduped)
+    all_marginal = deduped
+    paired_comparisons_unique = len(all_marginal)
+    paired_comparisons_total = paired_comparisons_unique
+
     # --- Pass 2: cross-market stability on identical (spec, vs) pairs ---
     _progress("cross_market_analysis", {"paired_entries": len(all_marginal)})
     by_key: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
@@ -1948,27 +2058,43 @@ def build_purchasability_statistical_research(
             d["temporal_stability"] = "stable"
         elif labels:
             d["temporal_stability"] = "uncertain"
+        if d["feature_name"] == "rating":
+            allowed_rating = {
+                "benchmark_only",
+                "market_specific_benchmark",
+                "redundant_exclude",
+                "unstable_benchmark",
+                "insufficient_evidence",
+            }
+            if d["decision"] not in allowed_rating:
+                d["decision"] = "benchmark_only"
+                d["decision_reason"] = "rating_forced_benchmark_only"
 
     retained = [
         d["feature_name"]
         for d in feature_decisions
         if d["decision"] == "retain_independent_candidate"
+        and d["feature_name"] != "rating"
     ]
     redundant = [
         d["feature_name"] for d in feature_decisions if d["decision"] == "redundant_exclude"
     ]
     unstable = [
-        d["feature_name"] for d in feature_decisions if d["decision"] == "unstable_exclude"
+        d["feature_name"]
+        for d in feature_decisions
+        if d["decision"] in ("unstable_exclude", "unstable_benchmark")
     ]
     market_spec_feats = [
         d["feature_name"]
         for d in feature_decisions
         if d["decision"] == "market_specific_candidate"
+        and d["feature_name"] != "rating"
     ]
     model_enrichment_feats = [
         d["feature_name"]
         for d in feature_decisions
         if d["decision"] == "model_enrichment_only"
+        and d["feature_name"] != "rating"
     ]
 
     candidate_specs = []
@@ -2084,7 +2210,7 @@ def build_purchasability_statistical_research(
 
         if spec_name == "BOOK_BASELINE":
             cand_decision = "benchmark_only"
-        elif spec_name in ("MODEL_BASELINE", "RATING_BASELINE"):
+        elif spec_name == "MODEL_BASELINE" or _is_rating_spec(spec_name):
             cand_decision = "benchmark_only"
         elif ind_status == "independent_positive":
             if cm.get("market_stability") == "market_specific_signal":
@@ -2161,6 +2287,9 @@ def build_purchasability_statistical_research(
 
     markets_ok = [mr["market"] for mr in market_results if mr.get("status") == "ok"]
     blocking = list(quality.get("blocking_issues") or [])
+    if "fold_class_balance_mismatch" in limitations:
+        if "fold_class_balance_mismatch" not in blocking:
+            blocking.append("fold_class_balance_mismatch")
     cohort_valid = len(cohort) > 0 and not blocking
     temporal_done = any(
         (mr.get("temporal_folds") or [])
@@ -2173,23 +2302,20 @@ def build_purchasability_statistical_research(
         if mr.get("status") == "ok"
     )
 
+    pos_cls = {"positive_stable_evidence", "positive_but_uncertain"}
+    neg_cls = {"negative_incremental_value", "negative_but_uncertain"}
+
     paired_positive_vs_book = [
         m
         for m in all_marginal
         if m.get("classification") == "positive_stable_evidence"
-        and (
-            m.get("comparison_role") == "independent_vs_book"
-            or m.get("vs") == "BOOK_BASELINE"
-        )
+        and m.get("comparison_role") == "independent_vs_book"
     ]
     paired_positive_vs_model = [
         m
         for m in all_marginal
         if m.get("classification") == "positive_stable_evidence"
-        and (
-            m.get("comparison_role") == "model_enrichment_diagnostic"
-            or m.get("vs") == "MODEL_BASELINE"
-        )
+        and m.get("comparison_role") == "model_enrichment_diagnostic"
     ]
     paired_positive_vs_rating = [
         m
@@ -2197,12 +2323,25 @@ def build_purchasability_statistical_research(
         if m.get("classification") == "positive_stable_evidence"
         and m.get("comparison_role") == "rating_diagnostic"
     ]
+    paired_positive_comparisons = [
+        m for m in all_marginal if m.get("classification") in pos_cls
+    ]
+    paired_negative_comparisons = [
+        m for m in all_marginal if m.get("classification") in neg_cls
+    ]
+    paired_uncertain_comparisons = [
+        m
+        for m in all_marginal
+        if m.get("classification") not in pos_cls
+        and m.get("classification") not in neg_cls
+    ]
 
     independent_candidate_specs = [
         c["configuration"]
         for c in candidate_specs
         if c.get("independent_evidence_status") == "independent_positive"
         and c.get("configuration") != "BOOK_BASELINE"
+        and not _is_rating_spec(str(c.get("configuration") or ""))
     ]
     model_enrichment_specs = [
         c["configuration"]
@@ -2210,6 +2349,7 @@ def build_purchasability_statistical_research(
         if c.get("configuration")
         not in independent_candidate_specs
         and c.get("configuration") != "BOOK_BASELINE"
+        and not _is_rating_spec(str(c.get("configuration") or ""))
         and any(
             m.get("spec") == c["configuration"]
             and m.get("vs") == "MODEL_BASELINE"
@@ -2371,6 +2511,11 @@ def build_purchasability_statistical_research(
     )
 
     invariant_errors: list[str] = []
+    published_keys = [m.get("paired_comparison_key") for m in all_marginal]
+    if len(published_keys) != len(set(published_keys)):
+        invariant_errors.append("duplicate_paired_comparison_key")
+        paired_comparisons_total = len(published_keys)
+        paired_comparisons_unique = len(set(published_keys))
     for m in all_marginal:
         d = m.get("delta_auc")
         cls = m.get("classification")
@@ -2424,6 +2569,12 @@ def build_purchasability_statistical_research(
         "paired_positive_vs_book": len(paired_positive_vs_book),
         "paired_positive_vs_model": len(paired_positive_vs_model),
         "paired_positive_vs_rating": len(paired_positive_vs_rating),
+        "paired_comparisons_total": paired_comparisons_total,
+        "paired_comparisons_unique": paired_comparisons_unique,
+        "paired_duplicates_removed": paired_duplicates_removed,
+        "paired_positive_comparisons": len(paired_positive_comparisons),
+        "paired_negative_comparisons": len(paired_negative_comparisons),
+        "paired_uncertain_comparisons": len(paired_uncertain_comparisons),
         "independent_candidate_specs": independent_candidate_specs,
         "model_enrichment_specs": model_enrichment_specs,
         "book_baseline_dominance": dom_status,
@@ -2466,6 +2617,9 @@ def build_purchasability_statistical_research(
         "univariate_evidence": list(uni_agg.values()),
         "candidate_specifications": candidate_specs,
         "marginal_contribution": all_marginal,
+        "paired_comparisons_total": paired_comparisons_total,
+        "paired_comparisons_unique": paired_comparisons_unique,
+        "paired_duplicates_removed": paired_duplicates_removed,
         "rating_benchmark": rating_benchmark,
         "book_baseline_assessment": book_baseline_assessment,
         "context_feature_evidence": {
@@ -2647,6 +2801,9 @@ def stream_statistical_export(
             "dataset_version": full.get("dataset_version"),
             "cohort_identity": full.get("cohort_identity"),
             "phase_2b_readiness": full.get("phase_2b_readiness"),
+            "paired_comparisons_total": full.get("paired_comparisons_total"),
+            "paired_comparisons_unique": full.get("paired_comparisons_unique"),
+            "paired_duplicates_removed": full.get("paired_duplicates_removed"),
             "limitations": full.get("limitations"),
             "elapsed_ms": full.get("elapsed_ms"),
             "status": full.get("status"),

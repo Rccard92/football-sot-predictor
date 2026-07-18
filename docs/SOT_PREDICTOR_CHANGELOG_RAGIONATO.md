@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A.3.2 coorte/dedup/Rating benchmark (2026-07-18)
+
+- Class balance fold su `y_win` + WR; dedup confronti paired con riuso Rating; Rating forzato a decisioni benchmark (non candidate).
+- Contatori e export su lista unica; versione `v2a_2` e metriche OOF invariate; nessuna formula 0–100.
+
 ## Indice di Acquistabilità — Fase 2A.3.1 result FE + classificazione (2026-07-18)
 
 - FE: summary → result completo; split effect/temporal/market; `candidate_decision`; elapsed formattato.

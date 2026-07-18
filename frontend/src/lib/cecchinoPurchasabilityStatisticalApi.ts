@@ -145,6 +145,9 @@ export type PurchasabilityStatisticalResearchResponse = {
   version: string
   dataset_version: string
   research_banner?: string
+  paired_comparisons_total?: number
+  paired_comparisons_unique?: number
+  paired_duplicates_removed?: number
   cohort_identity?: {
     settled_rows?: number
     unique_fixtures?: number
@@ -182,6 +185,12 @@ export type PurchasabilityStatisticalResearchResponse = {
     paired_positive_vs_book?: number
     paired_positive_vs_model?: number
     paired_positive_vs_rating?: number
+    paired_comparisons_total?: number
+    paired_comparisons_unique?: number
+    paired_duplicates_removed?: number
+    paired_positive_comparisons?: number
+    paired_negative_comparisons?: number
+    paired_uncertain_comparisons?: number
     independent_candidate_specs?: string[]
     model_enrichment_specs?: string[]
     book_baseline_dominance?: string

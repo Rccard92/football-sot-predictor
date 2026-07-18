@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — Fase 2A.3.2 coorte/dedup/Rating (2026-07-18)
+
+Class balance fold su `y_win`; confronti paired unici con riuso Rating; Rating resta benchmark diagnostico. Versione `v2a_2` invariata; readiness verso residual reliability research. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — Fase 2A.3.1 result FE (2026-07-18)
 
 FE carica summary poi result completo; classificazione effetto/temporale/mercato separata; `candidate_decision`. Versione `v2a_2` invariata. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
