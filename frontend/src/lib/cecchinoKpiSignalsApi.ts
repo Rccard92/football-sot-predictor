@@ -182,3 +182,55 @@ export async function revaluateKpiSignals(body: {
 export function buildKpiSignalsExportUrl(filters: KpiSignalsFilters): string {
   return `/api/cecchino/kpi-signals/export.csv${qs(filters)}`
 }
+
+export type EmpiricalPurchasabilityItem = {
+  version?: string
+  status: string
+  score: number | null
+  class: string
+  competition_id?: number | null
+  selection?: string | null
+  today_fixture_id?: number | null
+  rating?: number | null
+  rating_band?: { min: number; max: number; label: string } | null
+  sample_size?: number
+  wins?: number
+  losses?: number
+  voids?: number
+  win_rate?: number | null
+  average_odds?: number | null
+  average_break_even_probability?: number | null
+  realized_margin?: number | null
+  total_profit?: number | null
+  roi?: number | null
+  positive_periods?: number | null
+  total_periods?: number | null
+  stability_ratio?: number | null
+  sample_confidence?: number | null
+  historical_date_from?: string | null
+  historical_date_to?: string | null
+  reason_codes?: string[]
+  explanation?: string
+}
+
+export type EmpiricalPurchasabilityResponse = {
+  version: string
+  status: string
+  items: Record<string, EmpiricalPurchasabilityItem>
+  summary?: Record<string, unknown>
+}
+
+export async function getPurchasabilityEmpirical(params: {
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+}): Promise<EmpiricalPurchasabilityResponse> {
+  return adminGetJson(
+    `/api/cecchino/kpi-signals/purchasability-empirical${qs({
+      date_from: params.date_from,
+      date_to: params.date_to,
+      competition_id: params.competition_id ?? undefined,
+    })}`,
+    { timeoutMs: 120_000 },
+  )
+}

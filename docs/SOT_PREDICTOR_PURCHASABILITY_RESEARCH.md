@@ -2,6 +2,18 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Acquistabilità empirica v1 — Pannello KPI (`…_empirical_rating_v1`)
+
+Implementazione **produttiva read-only** nel Pannello KPI (colonna dopo Rating).
+
+- Coorte: stessa `competition_id` + selection + fascia Rating (50–59 … 90–100) + `kickoff` storico &lt; corrente
+- Metriche: win rate (void fuori), break-even = media `1/odds`, ROI stake 1, stabilità periodi
+- Score 0–100: media ROI/margin/stability components + shrink `min(1,n/100)`; se ROI e margine ≤0 → score ≤49
+- Soglia campione 30; Rating &lt;50 = Fuori perimetro
+- **Non** probabilità di vittoria, **non** stake consigliato, **non** ML/bootstrap
+- Dataset `v1_1` invariato; research Fase 2A / residual **congelata** (non modificata)
+- Endpoint: `GET /api/cecchino/kpi-signals/purchasability-empirical`
+
 ## Fase 2A.4.1 — Coorte DC, OOF comune, span temporale (`…_v2a_4_1`)
 
 Correzione post-run Railway su `v2a_4` (conclusioni **non** definitive).

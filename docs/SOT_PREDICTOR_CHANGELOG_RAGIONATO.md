@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
+
+- Colonna Acquistabilità nel Pannello KPI Today; servizio `cecchino_purchasability_empirical.py`; endpoint `GET …/kpi-signals/purchasability-empirical`.
+- Formula dichiarata ROI/margine/stabilità + confidence shrink; sample ≥30; research avanzata non modificata.
+
 ## Indice di Acquistabilità — Fase 2A.4.1 coorte DC / OOF / span (2026-07-18)
 
 - `…_residual_reliability_v2a_4_1`: DC↔1X2 senza `odds_source` nella chiave cross; OOF mask comune; span ≥90g / 3 mesi; FE aggiornato.

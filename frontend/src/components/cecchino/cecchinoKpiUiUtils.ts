@@ -108,3 +108,27 @@ export function ratingBadgeClass(label: string | null | undefined): string {
       return 'bg-slate-600 text-slate-200'
   }
 }
+
+export function purchasabilityBadgeClass(klass: string | null | undefined): string {
+  switch (klass) {
+    case 'Alta':
+      return 'bg-emerald-600 text-white'
+    case 'Buona':
+      return 'bg-sky-600 text-white'
+    case 'Incerta':
+      return 'bg-slate-500 text-white'
+    case 'Debole':
+      return 'bg-orange-500/90 text-white'
+    case 'Bassa':
+      return 'bg-rose-700/80 text-white'
+    default:
+      return 'bg-slate-600 text-slate-200'
+  }
+}
+
+export function fmtRoiPct(roi: number | null | undefined): string {
+  if (roi == null || Number.isNaN(Number(roi))) return '—'
+  const pct = Number(roi) * 100
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct.toFixed(1)}%`
+}

@@ -1,17 +1,18 @@
+import { useEffect, useMemo, useState } from 'react'
 import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
+import {
+  getPurchasabilityEmpirical,
+  type EmpiricalPurchasabilityItem,
+} from '../../lib/cecchinoKpiSignalsApi'
 import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
 import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoBalanceV5PreviewPanel } from './CecchinoBalanceV5PreviewPanel'
-// Legacy Equilibrio vs Squilibrio (v4 operativo) conservato per rollback:
-// import { CecchinoTodayBalanceAnalysisPanel } from './CecchinoTodayBalanceAnalysisPanel'
 import { CecchinoGoalIntensityAnalysisPanel } from './CecchinoGoalIntensityAnalysisPanel'
 import { CecchinoGoalIntensityV5PreviewPanel } from './CecchinoGoalIntensityV5PreviewPanel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
-// ICM hidden until the four descriptive pillars are consolidated.
-// import { CecchinoIcmAnalysisPanel } from './CecchinoIcmAnalysisPanel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
 
@@ -41,7 +42,68 @@ export function CecchinoTodayDetailSkeleton() {
   )
 }
 
+function mapPurchasabilityForFixture(
+  items: Record<string, EmpiricalPurchasabilityItem>,
+  todayFixtureId: number | null | undefined,
+): Record<string, EmpiricalPurchasabilityItem> {
+  const byMarket: Record<string, EmpiricalPurchasabilityItem> = {}
+  for (const item of Object.values(items)) {
+    if (
+      todayFixtureId != null &&
+      item.today_fixture_id != null &&
+      Number(item.today_fixture_id) !== Number(todayFixtureId)
+    ) {
+      continue
+    }
+    const sel = item.selection
+    if (sel) byMarket[sel] = item
+  }
+  return byMarket
+}
+
 export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
+  const [empByMarket, setEmpByMarket] = useState<Record<string, EmpiricalPurchasabilityItem>>({})
+  const [empLoading, setEmpLoading] = useState(false)
+  const [empError, setEmpError] = useState<string | null>(null)
+
+  const scanDate = detail.scan_date
+  const competitionId = detail.competition_id
+  const todayFixtureId = detail.today_fixture_id ?? detail.id
+  const hasKpi = Boolean(detail.kpi_panel_v2 ?? detail.kpi_panel)
+  const canFetch = hasKpi && Boolean(scanDate) && detail.status === 'ok'
+
+  useEffect(() => {
+    if (!canFetch || !scanDate) return
+    let cancelled = false
+    void (async () => {
+      setEmpLoading(true)
+      setEmpError(null)
+      try {
+        const res = await getPurchasabilityEmpirical({
+          date_from: scanDate,
+          date_to: scanDate,
+          competition_id: competitionId ?? null,
+        })
+        if (cancelled) return
+        setEmpByMarket(mapPurchasabilityForFixture(res.items || {}, todayFixtureId))
+      } catch {
+        if (cancelled) return
+        setEmpByMarket({})
+        setEmpError('Acquistabilità non disponibile')
+      } finally {
+        if (!cancelled) setEmpLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [canFetch, scanDate, competitionId, todayFixtureId])
+
+  const empMemo = useMemo(
+    () => (canFetch ? empByMarket : {}),
+    [canFetch, empByMarket],
+  )
+
   if (loading) {
     return <CecchinoTodayDetailSkeleton />
   }
@@ -58,7 +120,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
   const signals = (detail.signals_matrix ?? output?.signals_matrix) as
     | CecchinoSignalsMatrix
     | undefined
-  const importInfo = (detail.stats_snapshot?.import_info as string[] | undefined) ?? []
   const { notes: dataNotes, blocking: blockingWarnings } = partitionTodayDetailWarnings(detail.warnings)
 
   return (
@@ -69,6 +130,9 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
+          purchasabilityByMarketKey={empMemo}
+          purchasabilityLoading={empLoading}
+          purchasabilityError={empError}
         />
       )}
 
@@ -93,8 +157,6 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         todayFixtureId={detail.today_fixture_id ?? detail.id}
       />
 
-      {/* ICM hidden until the four descriptive pillars are consolidated. */}
-
       {signals && (
         <CecchinoSignalsCard
           matrix={signals}
@@ -103,28 +165,26 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         />
       )}
 
-      {(importInfo.length > 0 || dataNotes.length > 0) && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Note dati</p>
-          <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
-            {importInfo.map((info) => (
-              <li key={info}>{info}</li>
-            ))}
-            {dataNotes.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {blockingWarnings.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Avvisi</p>
-          <ul className="mt-2 list-inside list-disc text-sm text-amber-900/90">
-            {blockingWarnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
+      {(blockingWarnings.length > 0 || dataNotes.length > 0) && (
+        <div className="space-y-2 text-xs">
+          {blockingWarnings.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+              <ul className="list-disc pl-4">
+                {blockingWarnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {dataNotes.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
+              <ul className="list-disc pl-4">
+                {dataNotes.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

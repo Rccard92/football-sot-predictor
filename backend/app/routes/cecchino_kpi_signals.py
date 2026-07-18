@@ -24,6 +24,9 @@ from app.services.cecchino.cecchino_kpi_signals_aggregation import (
     export_kpi_signals_csv,
     list_kpi_signal_activations,
 )
+from app.services.cecchino.cecchino_purchasability_empirical import (
+    build_empirical_purchasability_for_panel,
+)
 
 router = APIRouter(prefix="/cecchino/kpi-signals", tags=["cecchino-kpi-signals"])
 admin_router = APIRouter(prefix="/admin/cecchino/kpi-signals", tags=["admin-cecchino-kpi-signals"])
@@ -117,6 +120,23 @@ def kpi_signals_activations(
         only_current=only_current,
         limit=limit,
         offset=offset,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/purchasability-empirical")
+def kpi_signals_purchasability_empirical(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Acquistabilità empirica v1 — read-only, batch per Pannello KPI."""
+    payload = build_empirical_purchasability_for_panel(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
