@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Fase 2A Preview (2026-07-18)
+
+1. Freeze bundle: `python -m scripts.freeze_goal_intensity_v5_preview_bundle --date-from 2026-06-19 --date-to 2026-07-19` (o `POST .../preview/freeze`).
+2. Migration: `alembic upgrade head` (tabelle bundle/snapshot).
+3. `POST .../preview/refresh` o pulsante FE «Aggiorna Preview».
+4. Monitor: `GET .../preview/monitoring`; sotto 200 → `continue_prospective_monitoring`.
+5. Export snapshot già salvati (no riesecuzione 1C/1D).
+
 ## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
 
 1. Eseguire `POST .../candidate-indices` (v1_1): verificare calibrazione logistic/lineare, paired vs MT1, expanding tutti i candidati.

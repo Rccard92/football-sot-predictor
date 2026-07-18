@@ -2,6 +2,23 @@
 
 Modulo di ricerca per rifondare **Intensità Goal** su quattro pilastri indipendenti. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
+## Fase 2A — Preview prospettica (2026-07-18)
+
+Versione `cecchino_goal_intensity_v5_preview_v1`. Bundle congelato da `candidate_indices_v1_1` (ECDF train + calibrazioni lineari/logistiche). Snapshot pre-match su Cecchino Today eleggibili con `scan_date >= first_prospective_scan_date` (2026-07-20). Lock post-kickoff; risultati FT collegati senza ricalcolo score.
+
+| Campo | Valore |
+|-------|--------|
+| Primary | `GI_A_STRICT_CORE` |
+| Challenger | `GI_B_RECENCY` |
+| Benchmark | `MT1_LONG_TERM` |
+| Diagnostico | `GI_A_without_volatility` |
+| Hash definition | `3c48413461490d9ad17c59f052e0543919e12a6013a04ca0bdccdddb316273ab` |
+| Min prospettico | 200 partite concluse |
+| Cache export 1D | `simple_export_cache_skipped=true` (rischio memoria/sessioni) |
+| v4 / betting | invariata / nessun segnale |
+
+Tabelle additive: `cecchino_goal_intensity_v5_preview_bundles`, `cecchino_goal_intensity_v5_preview_snapshots`. Script: `python -m scripts.freeze_goal_intensity_v5_preview_bundle`. FE tab «Preview Fase 2A». Phase 2B non automatica sotto 200 match.
+
 ## Fase 1D.1 — Calibrazione e valutazione corretta (2026-07-18)
 
 Versione `cecchino_goal_intensity_v5_candidate_indices_v1_1`. Score grezzi invariati (ECDF/formule). Corretti: Brier/logloss su probabilità logistic train-only (non score/100); paired/ablation su predizioni calibrate; expanding CV su GI_A–D, MT1 e LOO × 4 target; protocollo prospettico con `first_prospective_scan_date` = giorno dopo freeze; gate readiness v1_1; export `calibrated_predictions` e `temporal_fold_metrics`.

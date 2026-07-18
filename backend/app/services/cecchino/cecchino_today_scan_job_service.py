@@ -318,6 +318,48 @@ def _run_scan_job_thread(job_id: str) -> None:
             report.get("excluded_total"),
             (report.get("result_summary") or {}).get("duration_seconds"),
         )
+        # Preview Intensità Goal v5 — non bloccante, non altera eligibility/scan
+        try:
+            from app.models.cecchino_today_fixture import (
+                ELIGIBILITY_ELIGIBLE,
+                CecchinoTodayFixture,
+            )
+            from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
+                safe_preview_after_today_scan,
+            )
+
+            eligible_ids = list(
+                db.scalars(
+                    select(CecchinoTodayFixture.id).where(
+                        CecchinoTodayFixture.scan_date == job.scan_date,
+                        CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+                    )
+                ).all()
+            )
+            preview_ok = 0
+            preview_err = 0
+            for tid in eligible_ids:
+                try:
+                    out = safe_preview_after_today_scan(db, int(tid))
+                    if out.get("status") == "error":
+                        preview_err += 1
+                    else:
+                        preview_ok += 1
+                except Exception:
+                    preview_err += 1
+                    logger.exception(
+                        "Goal intensity v5 preview failed today_fixture_id=%s", tid
+                    )
+            logger.info(
+                "Goal intensity v5 preview post-scan job_id=%s ok=%s err=%s",
+                job_id,
+                preview_ok,
+                preview_err,
+            )
+        except Exception:
+            logger.exception(
+                "Goal intensity v5 preview post-scan skipped job_id=%s", job_id
+            )
     except Exception as exc:
         logger.exception(
             "Cecchino Today scan job failed job_id=%s scan_date=%s step=runner",

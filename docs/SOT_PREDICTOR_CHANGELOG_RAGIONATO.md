@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Fase 2A Preview (2026-07-18)
+
+- `cecchino_goal_intensity_v5_preview_v1`: bundle congelato, snapshot pre-match, monitoraggio prospettico GI_A/GI_B/MT1/diagnostico senza volatilità.
+- Tabelle additive bundle/snapshot; hook Today non-bloccante; FE tab Preview; v4 e segnali invariati.
+- `simple_export_cache_skipped=true` (cache in-memory 1D non implementata).
+
 ## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
 
 - `cecchino_goal_intensity_v5_candidate_indices_v1_1`: Brier/logloss su probabilità logistic train-only; paired/ablation su predizioni calibrate; expanding CV completo; protocollo prospettico dopo freeze; readiness gate aggiornati.

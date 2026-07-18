@@ -79,6 +79,10 @@ def _local_fixture(**kwargs):
 @patch(
     "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
 )
+@patch(
+    "app.services.cecchino.cecchino_goal_intensity_v5_preview.get_preview_detail",
+    return_value={"status": "unavailable", "error": "bundle_missing"},
+)
 @patch("app.services.cecchino.cecchino_today_service.build_goal_intensity_for_today_row", return_value={})
 @patch("app.services.cecchino.cecchino_today_service._resolve_kpi_panel_for_detail", return_value={"rows": []})
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_picchetti_debug", return_value={})
@@ -88,6 +92,7 @@ def test_detail_includes_identity_and_preview_ok(
     _debug,
     _kpi,
     _goal,
+    _v5_preview,
     mock_xg,
     _icm,
     _book,
@@ -131,6 +136,10 @@ def test_detail_includes_identity_and_preview_ok(
 @patch(
     "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
 )
+@patch(
+    "app.services.cecchino.cecchino_goal_intensity_v5_preview.get_preview_detail",
+    return_value={"status": "unavailable", "error": "bundle_missing"},
+)
 @patch("app.services.cecchino.cecchino_today_service.build_goal_intensity_for_today_row", return_value={})
 @patch("app.services.cecchino.cecchino_today_service._resolve_kpi_panel_for_detail", return_value={"rows": []})
 @patch("app.services.cecchino.cecchino_today_service.build_cecchino_picchetti_debug", return_value={})
@@ -140,6 +149,7 @@ def test_detail_preview_blocked_on_identity_mismatch_no_write(
     _debug,
     _kpi,
     _goal,
+    _v5_preview,
     mock_xg,
     _icm,
     _book,

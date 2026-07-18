@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from datetime import date
+
+from fastapi import APIRouter, Depends, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -19,6 +21,8 @@ from app.schemas.cecchino_goal_intensity_v5_research import (
     CecchinoGoalIntensityV5AuditBody,
     CecchinoGoalIntensityV5CandidateIndicesBody,
     CecchinoGoalIntensityV5DatasetBody,
+    CecchinoGoalIntensityV5PreviewFreezeBody,
+    CecchinoGoalIntensityV5PreviewRefreshBody,
     CecchinoGoalIntensityV5StatisticsBody,
 )
 from app.services.cecchino.cecchino_draw_credibility_dataset import (
@@ -49,6 +53,15 @@ from app.services.cecchino.cecchino_goal_intensity_v5_candidate_indices import (
     build_goal_intensity_v5_candidate_indices,
     candidate_indices_export_filename,
     stream_goal_intensity_v5_candidate_indices_export,
+)
+from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
+    build_prospective_monitoring,
+    freeze_preview_bundle,
+    get_preview_detail,
+    list_preview_snapshots,
+    preview_export_filename,
+    refresh_preview,
+    stream_preview_export,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_statistics import (
     build_goal_intensity_v5_statistics,
@@ -492,3 +505,123 @@ def post_goal_intensity_v5_candidate_indices_export_temporal_fold_metrics(
     body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
 ):
     return _goal_intensity_candidate_indices_export("temporal_fold_metrics", body, db)
+
+
+# ---------------------------------------------------------------------------
+# Preview Fase 2A
+# ---------------------------------------------------------------------------
+
+
+@router.post("/goal-intensity-v5/preview/freeze")
+def post_goal_intensity_v5_preview_freeze(
+    body: CecchinoGoalIntensityV5PreviewFreezeBody,
+    db: Session = Depends(get_db),
+):
+    payload = freeze_preview_bundle(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+        minimum_history_sample=body.minimum_history_sample,
+        bootstrap_iterations=body.bootstrap_iterations,
+        random_seed=body.random_seed,
+        enforce_expected_hashes=True,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.post("/goal-intensity-v5/preview/refresh")
+def post_goal_intensity_v5_preview_refresh(
+    body: CecchinoGoalIntensityV5PreviewRefreshBody,
+    db: Session = Depends(get_db),
+):
+    payload = refresh_preview(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/goal-intensity-v5/preview")
+def get_goal_intensity_v5_preview(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    payload = list_preview_snapshots(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/goal-intensity-v5/preview/monitoring")
+def get_goal_intensity_v5_preview_monitoring(db: Session = Depends(get_db)):
+    payload = build_prospective_monitoring(db)
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+def _goal_intensity_preview_export(kind: str, db: Session):
+    filename = preview_export_filename(kind)  # type: ignore[arg-type]
+    stream = stream_preview_export(db, kind=kind)  # type: ignore[arg-type]
+    media = "application/json" if filename.endswith(".json") else "text/csv; charset=utf-8"
+
+    def _iter():
+        for chunk in stream:
+            yield chunk
+
+    return StreamingResponse(
+        _iter(),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/goal-intensity-v5/preview/export/summary")
+def get_goal_intensity_v5_preview_export_summary(db: Session = Depends(get_db)):
+    return _goal_intensity_preview_export("preview_summary", db)
+
+
+@router.get("/goal-intensity-v5/preview/export/snapshots")
+def get_goal_intensity_v5_preview_export_snapshots(db: Session = Depends(get_db)):
+    return _goal_intensity_preview_export("preview_snapshots", db)
+
+
+@router.get("/goal-intensity-v5/preview/export/completed-results")
+def get_goal_intensity_v5_preview_export_completed(db: Session = Depends(get_db)):
+    return _goal_intensity_preview_export("preview_completed_results", db)
+
+
+@router.get("/goal-intensity-v5/preview/export/candidate-monitoring")
+def get_goal_intensity_v5_preview_export_monitoring(db: Session = Depends(get_db)):
+    return _goal_intensity_preview_export("preview_candidate_monitoring", db)
+
+
+@router.get("/goal-intensity-v5/preview/export/calibration")
+def get_goal_intensity_v5_preview_export_calibration(db: Session = Depends(get_db)):
+    return _goal_intensity_preview_export("preview_calibration", db)
+
+
+@router.get("/goal-intensity-v5/preview/export/bundle-definition")
+def get_goal_intensity_v5_preview_export_bundle(db: Session = Depends(get_db)):
+    return _goal_intensity_preview_export("preview_bundle_definition", db)
+
+
+@router.get("/goal-intensity-v5/preview/{today_fixture_id}")
+def get_goal_intensity_v5_preview_detail(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    payload = get_preview_detail(db, today_fixture_id)
+    return JSONResponse(content=jsonable_encoder(payload))

@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { CecchinoStatusMessage } from '../components/cecchino/CecchinoStatusMessage'
+import { GoalIntensityV5PreviewBody } from '../components/cecchino-goal-intensity-v5/GoalIntensityV5PreviewBody'
 import { useCecchinoGoalIntensityV5Audit } from '../hooks/useCecchinoGoalIntensityV5Audit'
 import { useCecchinoGoalIntensityV5CandidateIndices } from '../hooks/useCecchinoGoalIntensityV5CandidateIndices'
 import { useCecchinoGoalIntensityV5Dataset } from '../hooks/useCecchinoGoalIntensityV5Dataset'
+import { useCecchinoGoalIntensityV5Preview } from '../hooks/useCecchinoGoalIntensityV5Preview'
 import { useCecchinoGoalIntensityV5Statistics } from '../hooks/useCecchinoGoalIntensityV5Statistics'
 import {
   buildGoalIntensityAuditJsonFilename,
@@ -29,11 +31,12 @@ import {
   type GoalIntensityV5StatisticsResponse,
   type GoalIntensityStatisticsExportKind,
 } from '../lib/cecchinoGoalIntensityV5ResearchApi'
+import type { GoalIntensityV5PreviewExportKind } from '../lib/cecchinoGoalIntensityV5PreviewApi'
 import { downloadJsonFile, downloadTextFile } from '../lib/downloadJsonFile'
 import { isoDaysAgoLocal, todayLocalIso } from '../utils/dateLocal'
 import { formatFetchError } from '../utils/formatFetchError'
 
-type LabTab = 'audit' | 'dataset' | 'statistics' | 'indices'
+type LabTab = 'audit' | 'dataset' | 'statistics' | 'indices' | 'preview'
 
 const PILLAR_LABELS: Record<string, string> = {
   offensive_production: 'Produzione offensiva',
@@ -1323,6 +1326,7 @@ function IndicesBody({
 
 export function RicercaIntensitaGoalPage() {
   const [tab, setTab] = useState<LabTab>('audit')
+  const [previewStatusFilter, setPreviewStatusFilter] = useState('')
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgoLocal(90))
   const [dateTo, setDateTo] = useState(() => todayLocalIso())
   const [competitionId, setCompetitionId] = useState('')
@@ -1348,8 +1352,34 @@ export function RicercaIntensitaGoalPage() {
     indices,
     runCandidateIndices,
   } = useCecchinoGoalIntensityV5CandidateIndices(filters)
+  const {
+    loading: previewLoading,
+    refreshing: previewRefreshing,
+    error: previewError,
+    list: previewList,
+    monitoring: previewMonitoring,
+    lastRefresh: previewLastRefresh,
+    load: loadPreview,
+    refresh: refreshPreview,
+    exportKind: exportPreviewKind,
+  } = useCecchinoGoalIntensityV5Preview({
+    ...filters,
+    status: previewStatusFilter,
+  })
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+
+  const handlePreviewExport = async (kind: GoalIntensityV5PreviewExportKind) => {
+    setExportBusy(true)
+    setExportError(null)
+    try {
+      await exportPreviewKind(kind)
+    } catch (err) {
+      setExportError(classifyGoalIntensityFetchError(err, 'export'))
+    } finally {
+      setExportBusy(false)
+    }
+  }
 
   const handleDatasetExport = async (kind: GoalIntensityDatasetExportKind) => {
     setExportBusy(true)
@@ -1457,7 +1487,9 @@ export function RicercaIntensitaGoalPage() {
         ? datasetLoading
         : tab === 'statistics'
           ? statisticsLoading
-          : indicesLoading
+          : tab === 'indices'
+            ? indicesLoading
+            : previewLoading || previewRefreshing
 
   return (
     <motion.div
@@ -1528,6 +1560,18 @@ export function RicercaIntensitaGoalPage() {
           onClick={() => setTab('indices')}
         >
           Indici Fase 1D
+        </button>
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            tab === 'preview' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+          onClick={() => {
+            setTab('preview')
+            void loadPreview()
+          }}
+        >
+          Preview Fase 2A
         </button>
       </div>
 
@@ -1602,7 +1646,7 @@ export function RicercaIntensitaGoalPage() {
               ) : null}
               Esegui analisi Fase 1C
             </button>
-          ) : (
+          ) : tab === 'indices' ? (
             <button
               type="button"
               disabled={busy}
@@ -1613,6 +1657,18 @@ export function RicercaIntensitaGoalPage() {
                 <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
               ) : null}
               Esegui indici Fase 1D
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={previewRefreshing || previewLoading}
+              onClick={() => void refreshPreview()}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {previewRefreshing ? (
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : null}
+              Aggiorna Preview
             </button>
           )}
         </div>
@@ -1678,7 +1734,7 @@ export function RicercaIntensitaGoalPage() {
             />
           ) : null}
         </>
-      ) : (
+      ) : tab === 'indices' ? (
         <>
           {indicesError ? (
             <CecchinoStatusMessage
@@ -1701,6 +1757,24 @@ export function RicercaIntensitaGoalPage() {
             />
           ) : null}
         </>
+      ) : (
+        <GoalIntensityV5PreviewBody
+          list={previewList}
+          monitoring={previewMonitoring}
+          lastRefresh={previewLastRefresh}
+          loading={previewLoading}
+          refreshing={previewRefreshing}
+          error={previewError ?? exportError}
+          statusFilter={previewStatusFilter}
+          onStatusFilter={(v) => {
+            setPreviewStatusFilter(v)
+            void loadPreview(v)
+          }}
+          onLoad={() => void loadPreview()}
+          onRefresh={() => void refreshPreview()}
+          onExport={(kind) => void handlePreviewExport(kind)}
+          exportBusy={exportBusy}
+        />
       )}
     </motion.div>
   )

@@ -1,5 +1,9 @@
 from app.models.base import Base
 from app.models.api_usage_event import ApiUsageEvent
+from app.models.cecchino_goal_intensity_v5_preview import (
+    CecchinoGoalIntensityV5PreviewBundle,
+    CecchinoGoalIntensityV5PreviewSnapshot,
+)
 from app.models.cecchino_league_stats_cache import CecchinoLeagueStatsCache
 from app.models.cecchino_prediction import CecchinoPrediction
 from app.models.cecchino_kpi_signal_activation import CecchinoKpiSignalActivation
@@ -62,6 +66,8 @@ from app.models.sportapi_odds_provider import SportApiOddsProvider
 __all__ = [
     "ApiUsageEvent",
     "Base",
+    "CecchinoGoalIntensityV5PreviewBundle",
+    "CecchinoGoalIntensityV5PreviewSnapshot",
     "CecchinoLeagueStatsCache",
     "CecchinoPrediction",
     "CecchinoKpiSignalActivation",

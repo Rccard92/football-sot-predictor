@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal v5 Research — Fase 2A Preview (2026-07-18)
+
+Preview prospettica `cecchino_goal_intensity_v5_preview_v1`: bundle congelato (ECDF+calibrazioni 1D.1), snapshot pre-match Today eleggibili da 2026-07-20, lock/result attach, monitoraggio GI_A/GI_B/MT1/diagnostico, min 200. Nessuna sostituzione v4; nessun betting. Cache export 1D saltata.
+
 ## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
 
 Correzione layer valutazione `candidate_indices_v1_1`: calibrazione train-only, paired/ablation dimensionalmente validi, expanding multi-candidato, protocollo prospettico post-freeze. Score e dataset invariati; v4 invariata.

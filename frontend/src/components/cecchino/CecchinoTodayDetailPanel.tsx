@@ -8,6 +8,7 @@ import { CecchinoBalanceV5PreviewPanel } from './CecchinoBalanceV5PreviewPanel'
 // Legacy Equilibrio vs Squilibrio (v4 operativo) conservato per rollback:
 // import { CecchinoTodayBalanceAnalysisPanel } from './CecchinoTodayBalanceAnalysisPanel'
 import { CecchinoGoalIntensityAnalysisPanel } from './CecchinoGoalIntensityAnalysisPanel'
+import { CecchinoGoalIntensityV5PreviewPanel } from './CecchinoGoalIntensityV5PreviewPanel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
 // ICM hidden until the four descriptive pillars are consolidated.
 // import { CecchinoIcmAnalysisPanel } from './CecchinoIcmAnalysisPanel'
@@ -84,6 +85,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
       />
 
       <CecchinoGoalIntensityAnalysisPanel goalIntensityAnalysis={detail.goal_intensity_analysis} />
+
+      <CecchinoGoalIntensityV5PreviewPanel preview={detail.goal_intensity_v5_preview} />
 
       <CecchinoExpectedGoalEngineDiagnosticsPanel
         diagnostics={detail.expected_goal_engine_diagnostics}

@@ -1601,6 +1601,26 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
     )
     goal_intensity_analysis = build_goal_intensity_for_today_row(db, row)
     expected_goal_engine_diagnostics = build_expected_goal_engine_diagnostics_for_today_row(db, row)
+    goal_intensity_v5_preview = None
+    try:
+        from app.services.cecchino.cecchino_goal_intensity_v5_preview import get_preview_detail
+
+        goal_intensity_v5_preview = get_preview_detail(db, int(row.id))
+        if goal_intensity_v5_preview.get("status") == "error":
+            # Assente bundle/snapshot: non bloccare il dettaglio Today
+            if goal_intensity_v5_preview.get("error") in {"bundle_missing", "snapshot_not_found"}:
+                goal_intensity_v5_preview = {
+                    "status": "unavailable",
+                    "error": goal_intensity_v5_preview.get("error"),
+                    "banner": "Preview research non produttiva. Nessun segnale betting attivato.",
+                }
+    except Exception as exc:
+        goal_intensity_v5_preview = {
+            "status": "error",
+            "error": "preview_detail_failed",
+            "message": str(exc)[:200],
+            "banner": "Preview research non produttiva. Nessun segnale betting attivato.",
+        }
 
     local_fixture: Fixture | None = None
     local_home_name: str | None = None
@@ -1672,6 +1692,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "balance_v5": balance_v5_preview,
         "fixture_identity_consistency": fixture_identity_consistency,
         "goal_intensity_analysis": goal_intensity_analysis,
+        "goal_intensity_v5_preview": goal_intensity_v5_preview,
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (

@@ -58,3 +58,32 @@ class CecchinoGoalIntensityV5CandidateIndicesBody(_GoalIntensityScanDateRangeMix
         if self.minimum_history_sample not in (10, 20):
             raise ValueError("minimum_history_sample deve essere 10 o 20")
         return self
+
+
+class CecchinoGoalIntensityV5PreviewFreezeBody(BaseModel):
+    date_from: date = Field(default=date(2026, 6, 19))
+    date_to: date = Field(default=date(2026, 7, 19))
+    competition_id: int | None = Field(default=None, gt=0)
+    minimum_history_sample: int = Field(default=10)
+    bootstrap_iterations: int = Field(default=1000, ge=10, le=10000)
+    random_seed: int = Field(default=42, ge=0)
+
+    @model_validator(mode="after")
+    def validate_freeze_parameters(self):
+        if self.date_from > self.date_to:
+            raise ValueError("date_from deve essere <= date_to")
+        if self.minimum_history_sample not in (10, 20):
+            raise ValueError("minimum_history_sample deve essere 10 o 20")
+        return self
+
+
+class CecchinoGoalIntensityV5PreviewRefreshBody(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    competition_id: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_refresh_range(self):
+        if self.date_from is not None and self.date_to is not None and self.date_from > self.date_to:
+            raise ValueError("date_from deve essere <= date_to")
+        return self
