@@ -22,15 +22,22 @@ from app.services.cecchino.cecchino_goal_intensity_analysis import VERSION as V4
 from app.services.cecchino.cecchino_goal_intensity_v5_candidate_indices import (
     CANDIDATE_DEFINITIONS,
     COMPOSITE_IDS,
+    EXPANDING_CANDIDATE_IDS,
     HARD_EXCLUDED_FEATURES,
+    LOO_IDS,
     PILLAR_CANDIDATE_IDS,
     SCORE_FEATURES,
     VERSION,
     TrainEcdf,
+    _calibrate_and_evaluate,
     _composite_scores,
+    _fit_linear_calibration,
+    _fit_logistic_calibration,
     _loo_composites,
+    _paired_calibrated_comparison,
     _pareto_select,
     _pillar_scores_from_pct,
+    _prospective_protocol,
     apply_ecdfs,
     build_goal_intensity_v5_candidate_indices,
     build_goal_intensity_v5_candidate_indices_internal,
@@ -122,7 +129,7 @@ def sample_result():
 
 
 def test_version_constant():
-    assert VERSION == "cecchino_goal_intensity_v5_candidate_indices_v1"
+    assert VERSION == "cecchino_goal_intensity_v5_candidate_indices_v1_1"
 
 
 def test_version_and_v4_unchanged(sample_result):
@@ -539,11 +546,26 @@ def test_export_kinds_produce_output(kind):
 
 
 def test_pareto_defaults_primary_a():
-    metrics = {cid: {"total_goals_ft": {"spearman": 0.1}, "goals_ge_2": {"auc": 0.55}} for cid in COMPOSITE_IDS}
+    metrics = {
+        cid: {
+            "total_goals_ft": {"spearman": 0.1, "mae": 1.5, "rmse": 1.8},
+            "goals_ge_2": {"auc": 0.55, "brier": 0.2},
+        }
+        for cid in COMPOSITE_IDS
+    }
     temporal = {cid: {"direction_consistent": True} for cid in COMPOSITE_IDS}
-    out = _pareto_select(metrics, temporal)
+    expanding = {"candidates": {cid: {"direction_consistent": True} for cid in COMPOSITE_IDS}}
+    paired = {
+        "GI_B_RECENCY_vs_GI_A_STRICT_CORE": {
+            "total_goals_ft": {"delta_mae_ci": {"mean": 0.01, "ci_lower": -0.05, "ci_upper": 0.07}}
+        }
+    }
+    out = _pareto_select(metrics, temporal, expanding, paired)
     assert out["primary_candidate"] == "GI_A_STRICT_CORE"
     assert out["selection_evidence_level"] == "low"
+    assert "nominal_pareto_front" in out
+    assert "statistically_supported_pareto_front" in out
+    assert out["uses_calibrated_metrics"] is True
 
 
 def test_distribution_hash_stable():
@@ -631,3 +653,334 @@ def test_mt2_formula():
         "total_goals_rolling_5": 60.0,
     })
     assert pillar["MT2_LONG_TERM_PLUS_RECENCY"] == 50.0
+
+
+# --- Fase 1D.1: calibrazione / paired / expanding / readiness ---
+
+
+def test_v11_binary_prob_not_score_over_100(sample_result):
+    ge2 = sample_result[0]["composite_metrics"]["GI_A_STRICT_CORE"]["goals_ge_2"]
+    assert ge2["uses_score_over_100_as_probability"] is False
+    assert ge2["calibration_method"] == "train_logistic_regression"
+    scores = [
+        r["GI_A_STRICT_CORE"]
+        for r in sample_result[0]["_scored_rows"]
+        if r.get("GI_A_STRICT_CORE") is not None
+    ]
+    y = [
+        r["goals_ge_2"]
+        for r in sample_result[0]["_scored_rows"]
+        if r.get("GI_A_STRICT_CORE") is not None
+    ]
+    naive = float(
+        np.mean((np.clip(np.asarray(scores) / 100.0, 1e-6, 1 - 1e-6) - np.asarray(y)) ** 2)
+    )
+    assert ge2["brier"] is not None
+    assert abs(float(ge2["brier"]) - naive) > 1e-9
+
+
+def test_v11_logistic_fit_train_only():
+    scores = [float(i) for i in range(20)]
+    targets = [0.0] * 10 + [1.0] * 10
+    cal = _fit_logistic_calibration(scores[:14], targets[:14])
+    assert cal is not None
+    assert cal["calibration_method"] == "train_logistic_regression"
+    assert cal["train_n"] == 14
+
+
+def test_v11_validation_not_in_logistic_fit(sample_result):
+    ge2 = sample_result[0]["composite_metrics"]["GI_A_STRICT_CORE"]["goals_ge_2"]
+    train_n = sum(1 for r in sample_result[0]["_scored_rows"] if r["split"] == "train")
+    assert ge2["train_n"] <= train_n
+
+
+def test_v11_test_not_in_logistic_fit(sample_result):
+    ge2 = sample_result[0]["composite_metrics"]["GI_A_STRICT_CORE"]["goals_ge_2"]
+    assert ge2["train_n"] is not None
+    total = len(sample_result[0]["_scored_rows"])
+    assert ge2["train_n"] < total
+
+
+def test_v11_linear_calibration_train_only(sample_result):
+    tg = sample_result[0]["composite_metrics"]["GI_A_STRICT_CORE"]["total_goals_ft"]
+    assert tg["calibration_method"] == "train_linear_regression"
+    assert tg["intercept"] is not None
+    assert tg["coefficient"] is not None
+    assert tg["mae"] is not None
+    assert tg["rmse"] is not None
+
+
+def test_v11_paired_mae_same_cohort(sample_result):
+    paired = sample_result[0]["paired_candidate_comparisons"]["GI_B_RECENCY_vs_GI_A_STRICT_CORE"]
+    assert paired["dimensionally_valid"] is True
+    assert paired["uses_raw_score_vs_goals"] is False
+    assert paired["total_goals_ft"]["n_paired"] > 0
+    assert "delta_mae" in paired["total_goals_ft"]
+
+
+def test_v11_paired_rmse_same_cohort(sample_result):
+    paired = sample_result[0]["paired_candidate_comparisons"]["GI_B_RECENCY_vs_GI_A_STRICT_CORE"]
+    assert "delta_rmse" in paired["total_goals_ft"]
+
+
+def test_v11_delta_error_negative_favors_left(sample_result):
+    paired = sample_result[0]["paired_candidate_comparisons"]["GI_B_RECENCY_vs_GI_A_STRICT_CORE"]
+    assert paired["direction_notes"]["delta_mae"] == "delta<0 favorisce left"
+
+
+def test_v11_delta_auc_positive_favors_left(sample_result):
+    paired = sample_result[0]["paired_candidate_comparisons"]["GI_B_RECENCY_vs_GI_A_STRICT_CORE"]
+    assert paired["direction_notes"]["delta_auc"] == "delta>0 favorisce left"
+
+
+def test_v11_delta_brier_negative_favors_left(sample_result):
+    paired = sample_result[0]["paired_candidate_comparisons"]["GI_B_RECENCY_vs_GI_A_STRICT_CORE"]
+    assert paired["direction_notes"]["delta_brier"] == "delta<0 favorisce left"
+
+
+def test_v11_paired_bootstrap_deterministic(sample_result):
+    a = sample_result[0]["paired_candidate_comparisons"]["GI_A_STRICT_CORE_vs_MT1_LONG_TERM"]
+    result2, _ = _run([_row(i) for i in range(48)], iterations=40, seed=42)
+    b = result2["paired_candidate_comparisons"]["GI_A_STRICT_CORE_vs_MT1_LONG_TERM"]
+    assert a["total_goals_ft"]["delta_mae"] == b["total_goals_ft"]["delta_mae"]
+
+
+def test_v11_no_raw_score_vs_total_goals(sample_result):
+    for comp in sample_result[0]["paired_candidate_comparisons"].values():
+        assert comp.get("uses_raw_score_vs_goals") is False
+
+
+def test_v11_ablation_calibrated(sample_result):
+    for label in ("without_production", "without_defence", "without_tempo", "without_volatility"):
+        ab = sample_result[0]["ablation_summary"][label]
+        assert ab["calibrated"] is True
+        assert ab["uses_raw_score_vs_goals"] is False
+        assert "pillar_incremental_assessment" in ab
+        assert ab["evidence_level"] in {"low", "moderate", "strong"}
+
+
+def test_v11_ablation_production(sample_result):
+    assert sample_result[0]["ablation_summary"]["without_production"]["loo_key"] == "GI_A_without_production"
+
+
+def test_v11_ablation_defence(sample_result):
+    assert sample_result[0]["ablation_summary"]["without_defence"]["loo_key"] == "GI_A_without_defence"
+
+
+def test_v11_ablation_tempo(sample_result):
+    assert sample_result[0]["ablation_summary"]["without_tempo"]["loo_key"] == "GI_A_without_tempo"
+
+
+def test_v11_ablation_volatility(sample_result):
+    assert sample_result[0]["ablation_summary"]["without_volatility"]["loo_key"] == "GI_A_without_volatility"
+
+
+@pytest.mark.parametrize(
+    "cid",
+    [
+        "GI_A_STRICT_CORE",
+        "GI_B_RECENCY",
+        "GI_C_SYMMETRIC_DIAGNOSTIC",
+        "GI_D_WEAKEST_DEFENCE",
+        "MT1_LONG_TERM",
+    ],
+)
+def test_v11_expanding_candidate(sample_result, cid):
+    expanding = sample_result[0]["temporal_metrics"]["expanding"]
+    if expanding["status"] != "ok":
+        pytest.skip("insufficient folds on synthetic sample")
+    assert cid in expanding["candidates"]
+
+
+def test_v11_expanding_all_targets(sample_result):
+    expanding = sample_result[0]["temporal_metrics"]["expanding"]
+    if expanding["status"] != "ok":
+        pytest.skip("insufficient folds")
+    assert expanding["all_targets_present"] is True
+    cand = expanding["candidates"]["GI_A_STRICT_CORE"]
+    assert "auc_goals_ge_2" in cand
+    assert "auc_goals_ge_3" in cand
+    assert "auc_btts_ft" in cand
+
+
+def test_v11_expanding_ecdf_refit_flag(sample_result):
+    expanding = sample_result[0]["temporal_metrics"]["expanding"]
+    if expanding["status"] == "ok":
+        assert expanding["ecdf_refit_per_fold"] is True
+
+
+def test_v11_expanding_calibration_refit_flag(sample_result):
+    expanding = sample_result[0]["temporal_metrics"]["expanding"]
+    if expanding["status"] == "ok":
+        assert expanding["calibration_refit_per_fold"] is True
+
+
+def test_v11_rank_stability(sample_result):
+    expanding = sample_result[0]["temporal_metrics"]["expanding"]
+    if expanding["status"] != "ok":
+        pytest.skip("insufficient folds")
+    for cid in COMPOSITE_IDS:
+        rs = expanding["candidates"][cid]["rank_stability"]
+        assert "mean_rank" in rs
+        assert "ranks" in rs
+
+
+def test_v11_pareto_calibrated_metrics(sample_result):
+    pareto = sample_result[0]["pareto_analysis"]
+    assert pareto["uses_calibrated_metrics"] is True
+    assert "nominal_pareto_front" in pareto
+    assert "statistically_supported_pareto_front" in pareto
+
+
+def test_v11_mt1_comparison(sample_result):
+    tempo = sample_result[0]["tempo_baseline_comparison"]
+    assert tempo["composite_value_over_tempo"] in {"positive", "neutral", "negative", "inconclusive"}
+    assert "GI_A_vs_MT1" in tempo
+    assert "GI_B_vs_MT1" in tempo
+    assert "GI_B_RECENCY_vs_MT1_LONG_TERM" in sample_result[0]["paired_candidate_comparisons"]
+
+
+def test_v11_prospective_start_after_dataset_end():
+    protocol = _prospective_protocol(date_to=date(2026, 7, 19))
+    assert protocol["first_prospective_scan_date"] == "2026-07-20"
+    assert protocol["dataset_end_date"] == "2026-07-19"
+    assert protocol["first_prospective_scan_date"] > protocol["dataset_end_date"]
+
+
+def test_v11_prospective_start_after_freeze():
+    protocol = _prospective_protocol(date_to=date(2026, 7, 19))
+    assert protocol["protocol_status"] == "waiting_for_prospective_data"
+    assert protocol["prospective_matches_collected"] == 0
+    assert protocol["prospective_window_started_at"] > protocol["candidate_definition_frozen_at"]
+
+
+def test_v11_readiness_false_when_temporal_incomplete():
+    rows = [_row(i) for i in range(12)]
+    result, _ = _run(rows, iterations=20)
+    readiness = result["phase_2a_readiness"]
+    assert readiness["temporal_validation_complete"] is False
+    assert readiness["recommended_next_step"] == "complete_phase_1d_evaluation"
+    assert readiness["ready_for_phase_2a"] is False
+
+
+def test_v11_readiness_true_only_all_gates(sample_result):
+    readiness = sample_result[0]["phase_2a_readiness"]
+    if readiness.get("ready_for_phase_2a"):
+        assert readiness["blocking_issues"] == []
+        assert readiness["recommended_next_step"] == "phase_2a_preview"
+        for key in (
+            "binary_calibration_verified",
+            "paired_comparison_dimensionally_valid",
+            "ablation_calibrated",
+            "prospective_start_strictly_after_freeze",
+        ):
+            assert readiness[key] is True
+    else:
+        assert readiness["recommended_next_step"] == "complete_phase_1d_evaluation"
+
+
+def test_v11_candidate_scores_unchanged_structure(sample_result):
+    row = sample_result[0]["_scored_rows"][0]
+    for cid in COMPOSITE_IDS:
+        assert 0 <= row[cid] <= 100
+    assert row["no_target_used_in_score"] is True
+
+
+def test_v11_hash_preserved(sample_result):
+    assert sample_result[0]["cohort_summary"]["fixture_ids_hash"] == "a" * 64
+    assert sample_result[0]["cohort_summary"]["targets_hash"] == "b" * 64
+
+
+def test_v11_v4_unchanged(sample_result):
+    assert sample_result[0]["v4_version"] == V4_VERSION
+    assert sample_result[0]["performance"]["v4_unchanged"] is True
+
+
+def test_v11_export_calibrated_predictions():
+    db = MagicMock()
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_candidate_indices."
+        "build_goal_intensity_v5_dataset_internal",
+        return_value=_source([_row(i) for i in range(48)]),
+    ):
+        chunks = list(
+            stream_goal_intensity_v5_candidate_indices_export(
+                db,
+                kind="calibrated_predictions",
+                date_from=date(2026, 6, 19),
+                date_to=date(2026, 7, 19),
+                bootstrap_iterations=20,
+            )
+        )
+    text = "".join(chunks)
+    assert "calibrated_prediction" in text or "raw_score" in text
+
+
+def test_v11_export_temporal_fold_metrics():
+    db = MagicMock()
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_candidate_indices."
+        "build_goal_intensity_v5_dataset_internal",
+        return_value=_source([_row(i) for i in range(48)]),
+    ):
+        chunks = list(
+            stream_goal_intensity_v5_candidate_indices_export(
+                db,
+                kind="temporal_fold_metrics",
+                date_from=date(2026, 6, 19),
+                date_to=date(2026, 7, 19),
+                bootstrap_iterations=20,
+            )
+        )
+    assert "".join(chunks)
+
+
+def test_v11_expanding_loo_candidates(sample_result):
+    expanding = sample_result[0]["temporal_metrics"]["expanding"]
+    if expanding["status"] != "ok":
+        pytest.skip("insufficient folds")
+    for loo in LOO_IDS:
+        assert loo in expanding["candidates"]
+
+
+def test_v11_gi_b_vs_mt1_present(sample_result):
+    assert "GI_B_RECENCY_vs_MT1_LONG_TERM" in sample_result[0]["paired_candidate_comparisons"]
+
+
+def test_v11_linear_fit_helper():
+    cal = _fit_linear_calibration([1.0, 2.0, 3.0, 4.0], [2.0, 4.0, 6.0, 8.0])
+    assert cal is not None
+    preds = cal["_predict"]([5.0])
+    assert abs(float(preds[0]) - 10.0) < 0.1
+
+
+def test_v11_calibrate_and_evaluate_no_score100():
+    rows = [_row(i) for i in range(40)]
+    ecdfs = fit_train_ecdfs(rows, SCORE_FEATURES)
+    from app.services.cecchino.cecchino_goal_intensity_v5_candidate_indices import _score_rows
+
+    scored = _score_rows(rows, ecdfs)
+    metrics, preds = _calibrate_and_evaluate(
+        scored,
+        "GI_A_STRICT_CORE",
+        bootstrap_iterations=20,
+        random_seed=42,
+        bootstrap_cache={},
+        collect_predictions=True,
+    )
+    assert metrics["goals_ge_2"]["uses_score_over_100_as_probability"] is False
+    assert any(p["target"] == "goals_ge_2" and p["probability"] is not None for p in preds)
+
+
+def test_v11_routes_new_exports():
+    routes_path = Path(__file__).resolve().parents[1] / "app" / "routes" / "cecchino_research.py"
+    source = routes_path.read_text(encoding="utf-8")
+    assert "calibrated-predictions" in source
+    assert "temporal-fold-metrics" in source
+
+
+def test_v11_expanding_candidate_ids_complete():
+    assert "GI_A_STRICT_CORE" in EXPANDING_CANDIDATE_IDS
+    assert "MT1_LONG_TERM" in EXPANDING_CANDIDATE_IDS
+    for loo in LOO_IDS:
+        assert loo in EXPANDING_CANDIDATE_IDS

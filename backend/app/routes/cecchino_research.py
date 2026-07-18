@@ -478,3 +478,17 @@ def post_goal_intensity_v5_candidate_indices_export_prospective(
     body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
 ):
     return _goal_intensity_candidate_indices_export("prospective_validation_protocol", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/calibrated-predictions")
+def post_goal_intensity_v5_candidate_indices_export_calibrated_predictions(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("calibrated_predictions", body, db)
+
+
+@router.post("/goal-intensity-v5/candidate-indices/export/temporal-fold-metrics")
+def post_goal_intensity_v5_candidate_indices_export_temporal_fold_metrics(
+    body: CecchinoGoalIntensityV5CandidateIndicesBody, db: Session = Depends(get_db)
+):
+    return _goal_intensity_candidate_indices_export("temporal_fold_metrics", body, db)

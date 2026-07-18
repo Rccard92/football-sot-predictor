@@ -1081,11 +1081,17 @@ function IndicesBody({
   const temporal = indices.temporal_metrics ?? {}
   const ablation = indices.ablation_summary ?? {}
   const redundancy = indices.pillar_redundancy ?? {}
+  const paired = indices.paired_candidate_comparisons ?? {}
+  const tempoBaseline = indices.tempo_baseline_comparison ?? {}
   const pareto = indices.pareto_analysis ?? {}
   const xg = indices.xg_optional_analysis ?? {}
   const protocol = indices.prospective_validation_protocol ?? {}
   const readiness = indices.phase_2a_readiness ?? {}
   const performance = indices.performance ?? {}
+  const expanding = (temporal.expanding as Record<string, unknown> | undefined) ?? {}
+  const giA = (composites.GI_A_STRICT_CORE as Record<string, unknown> | undefined) ?? {}
+  const giAGe2 = (giA.goals_ge_2 as Record<string, unknown> | undefined) ?? {}
+  const giATg = (giA.total_goals_ft as Record<string, unknown> | undefined) ?? {}
   const exportKinds: GoalIntensityCandidateIndicesExportKind[] = [
     'summary',
     'candidate_definitions',
@@ -1099,6 +1105,19 @@ function IndicesBody({
     'pillar_redundancy',
     'xg_optional_enrichment',
     'prospective_validation_protocol',
+    'calibrated_predictions',
+    'temporal_fold_metrics',
+  ]
+  const gateKeys = [
+    'binary_calibration_verified',
+    'paired_comparison_dimensionally_valid',
+    'paired_delta_direction_verified',
+    'ablation_calibrated',
+    'expanding_validation_all_candidates',
+    'expanding_validation_all_targets',
+    'tempo_baseline_comparison_complete',
+    'prospective_start_strictly_after_freeze',
+    'temporal_validation_complete',
   ]
 
   return (
@@ -1128,32 +1147,85 @@ function IndicesBody({
             ? (normalization.hard_excluded_features as string[]).join(', ')
             : '—'}
         </p>
-        <JsonBlock data={normalization.features} />
       </Section>
 
-      <Section title="Semantica pilastri">
+      <Section title="Calibrazione (non score/100)">
         <p className="text-xs text-slate-600">
-          Alto = più intensità potenziale. Solidità display = 100 − DV; stabilità display = 100 − OV.
-          I display non entrano nei compositi.
+          Brier e log loss usano probabilità da regressione logistica train-only. MAE/RMSE da
+          regressione lineare train-only su total_goals. GI_A è baseline trasparente, non
+          automaticamente «superiore».
         </p>
-        <JsonBlock data={definitions} />
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <Kv label="TG method" value={String(giATg.calibration_method ?? '—')} />
+          <Kv label="TG MAE" value={String(giATg.mae ?? '—')} />
+          <Kv label="TG RMSE" value={String(giATg.rmse ?? '—')} />
+          <Kv label="Binary method" value={String(giAGe2.calibration_method ?? '—')} />
+          <Kv label="ge2 Brier (cal)" value={String(giAGe2.brier ?? '—')} />
+          <Kv label="ge2 AUC" value={String(giAGe2.auc ?? '—')} />
+        </div>
       </Section>
 
       <Section title="Primary / Challenger / Pareto">
         <div className="grid gap-2 sm:grid-cols-2">
-          <Kv label="Primary" value={String(indices.primary_candidate ?? '—')} />
+          <Kv label="Primary (baseline)" value={String(indices.primary_candidate ?? '—')} />
           <Kv label="Challenger" value={String(indices.challenger_candidate ?? '—')} />
           <Kv label="Evidence" value={String(pareto.selection_evidence_level ?? '—')} />
           <Kv
-            label="Pareto front"
+            label="Nominal front"
             value={
-              Array.isArray(pareto.pareto_front_candidates)
-                ? (pareto.pareto_front_candidates as string[]).join(', ')
+              Array.isArray(pareto.nominal_pareto_front)
+                ? (pareto.nominal_pareto_front as string[]).join(', ')
+                : Array.isArray(pareto.pareto_front_candidates)
+                  ? (pareto.pareto_front_candidates as string[]).join(', ')
+                  : '—'
+            }
+          />
+          <Kv
+            label="Supported front"
+            value={
+              Array.isArray(pareto.statistically_supported_pareto_front)
+                ? (pareto.statistically_supported_pareto_front as string[]).join(', ')
                 : '—'
             }
           />
+          <Kv
+            label="MT1 competitive"
+            value={String(pareto.tempo_only_baseline_competitive ?? tempoBaseline.tempo_only_baseline_competitive ?? '—')}
+          />
         </div>
         <p className="mt-2 text-xs text-slate-600">{String(pareto.selection_motivation ?? '')}</p>
+      </Section>
+
+      <Section title="MT1 vs compositi">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Kv label="composite_value_over_tempo" value={String(tempoBaseline.composite_value_over_tempo ?? '—')} />
+          <Kv label="tempo_only_baseline_competitive" value={String(tempoBaseline.tempo_only_baseline_competitive ?? '—')} />
+          <Kv label="GI_A vs MT1" value={String(tempoBaseline.GI_A_vs_MT1 ?? '—')} />
+          <Kv label="GI_B vs MT1" value={String(tempoBaseline.GI_B_vs_MT1 ?? '—')} />
+        </div>
+        <p className="mt-2 text-xs text-slate-600">{String(tempoBaseline.note ?? '')}</p>
+      </Section>
+
+      <Section title="Paired delta (calibrati)">
+        <p className="text-xs text-slate-600">
+          delta MAE/RMSE/Brier &lt; 0 favorisce left; delta Spearman/AUC &gt; 0 favorisce left. Mai
+          score 0–100 vs gol.
+        </p>
+        <JsonBlock data={paired} />
+      </Section>
+
+      <Section title="Ablation calibrata">
+        <JsonBlock data={ablation} />
+      </Section>
+
+      <Section title="Expanding temporal (tutti i candidati)">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Kv label="Status" value={String(expanding.status ?? '—')} />
+          <Kv label="Fold count" value={String(expanding.fold_count ?? '—')} />
+          <Kv label="All candidates" value={String(expanding.all_candidates_present ?? '—')} />
+          <Kv label="All targets" value={String(expanding.all_targets_present ?? '—')} />
+        </div>
+        <JsonBlock data={expanding.candidates} />
       </Section>
 
       <Section title="Metriche compositi">
@@ -1162,14 +1234,6 @@ function IndicesBody({
 
       <Section title="Metriche pilastri">
         <JsonBlock data={pillars} />
-      </Section>
-
-      <Section title="Temporale">
-        <JsonBlock data={temporal} />
-      </Section>
-
-      <Section title="Ablation leave-one-pillar-out">
-        <JsonBlock data={ablation} />
       </Section>
 
       <Section title="Ridondanza pilastri">
@@ -1183,22 +1247,36 @@ function IndicesBody({
           <Kv label="Paired n" value={String(xg.paired_n ?? '—')} />
           <Kv label="Promoted to core" value={String(xg.promoted_to_core ?? false)} />
         </div>
-        <JsonBlock data={xg} />
       </Section>
 
       <Section title="Protocollo prospettico">
-        <JsonBlock data={protocol} />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Kv label="Freeze UTC" value={String(protocol.candidate_definition_frozen_at ?? '—')} />
+          <Kv label="First prospective scan" value={String(protocol.first_prospective_scan_date ?? '—')} />
+          <Kv label="Window start" value={String(protocol.prospective_window_started_at ?? '—')} />
+          <Kv label="Status" value={String(protocol.protocol_status ?? '—')} />
+          <Kv label="Collected" value={String(protocol.prospective_matches_collected ?? '—')} />
+          <Kv label="Minimum" value={String(protocol.minimum_prospective_matches ?? '—')} />
+        </div>
+        <p className="mt-2 text-xs text-slate-600">{String(protocol.note ?? '')}</p>
       </Section>
 
       <Section title="Readiness Fase 2A">
+        <Kv label="Ready" value={String(readiness.ready_for_phase_2a ?? false)} />
         <Kv label="Next step" value={String(readiness.recommended_next_step ?? '—')} />
+        <ul className="mt-2 space-y-1 text-xs text-slate-700">
+          {gateKeys.map((key) => (
+            <li key={key}>
+              {key}: {String(readiness[key] ?? '—')}
+            </li>
+          ))}
+        </ul>
         <p className="mt-2 text-xs text-slate-600">
           Blocking:{' '}
           {Array.isArray(readiness.blocking_issues)
             ? (readiness.blocking_issues as string[]).join(', ') || 'nessuno'
             : '—'}
         </p>
-        <JsonBlock data={readiness} />
       </Section>
 
       <Section title="Performance">
@@ -1228,8 +1306,16 @@ function IndicesBody({
         ) : null}
       </Section>
 
-      <Section title="Preview score (≤100)">
+      <Section title="Preview score grezzi (≤100)">
         <JsonBlock data={indices.preview_rows} />
+      </Section>
+
+      <Section title="Semantica pilastri">
+        <p className="text-xs text-slate-600">
+          Alto = più intensità potenziale. Solidità display = 100 − DV; stabilità display = 100 − OV.
+          I display non entrano nei compositi.
+        </p>
+        <JsonBlock data={definitions} />
       </Section>
     </div>
   )

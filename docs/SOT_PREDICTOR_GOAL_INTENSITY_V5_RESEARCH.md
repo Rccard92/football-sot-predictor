@@ -2,6 +2,10 @@
 
 Modulo di ricerca per rifondare **Intensità Goal** su quattro pilastri indipendenti. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
+## Fase 1D.1 — Calibrazione e valutazione corretta (2026-07-18)
+
+Versione `cecchino_goal_intensity_v5_candidate_indices_v1_1`. Score grezzi invariati (ECDF/formule). Corretti: Brier/logloss su probabilità logistic train-only (non score/100); paired/ablation su predizioni calibrate; expanding CV su GI_A–D, MT1 e LOO × 4 target; protocollo prospettico con `first_prospective_scan_date` = giorno dopo freeze; gate readiness v1_1; export `calibrated_predictions` e `temporal_fold_metrics`.
+
 ## Fase 1D — Indici candidati (2026-07-17)
 
 Modulo `cecchino_goal_intensity_v5_candidate_indices_v1`: riusa il dataset Fase 1B, normalizza feature con ECDF midrank **train-only**, costruisce score pilastro/compositi fissi (GI_A–D, equal weight), metriche sui 4 target, ablation, paired bootstrap, Pareto, xG optional paired e readiness Fase 2A.

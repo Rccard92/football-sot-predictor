@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
+
+1. Eseguire `POST .../candidate-indices` (v1_1): verificare calibrazione logistic/lineare, paired vs MT1, expanding tutti i candidati.
+2. Controllare `first_prospective_scan_date` > `dataset_end_date` e readiness `ready_for_phase_2a`.
+3. Export `calibrated_predictions` / `temporal_fold_metrics`.
+4. Benchmark: `python -m scripts.benchmark_goal_intensity_v5_candidate_indices` (<45s).
+
 ## Intensità Goal v5 Research — Fase 1D candidate indices (2026-07-17)
 
 1. Coorte Today eleggibile `scan_date` 2026-06-19→2026-07-19 (o range dichiarato).

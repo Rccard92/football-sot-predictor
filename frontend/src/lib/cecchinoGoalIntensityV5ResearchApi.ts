@@ -302,6 +302,7 @@ export type GoalIntensityV5CandidateIndicesResponse = Record<string, unknown> & 
   baseline_metrics?: Record<string, unknown>
   ablation_summary?: Record<string, unknown>
   paired_candidate_comparisons?: Record<string, unknown>
+  tempo_baseline_comparison?: Record<string, unknown>
   temporal_metrics?: Record<string, unknown>
   pareto_analysis?: Record<string, unknown>
   xg_optional_analysis?: Record<string, unknown>
@@ -328,6 +329,8 @@ export type GoalIntensityCandidateIndicesExportKind =
   | 'pillar_redundancy'
   | 'xg_optional_enrichment'
   | 'prospective_validation_protocol'
+  | 'calibrated_predictions'
+  | 'temporal_fold_metrics'
 
 const CANDIDATE_INDICES_EXPORT_PATH: Record<GoalIntensityCandidateIndicesExportKind, string> = {
   summary: '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/summary',
@@ -353,6 +356,10 @@ const CANDIDATE_INDICES_EXPORT_PATH: Record<GoalIntensityCandidateIndicesExportK
     '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/xg-optional-enrichment',
   prospective_validation_protocol:
     '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/prospective-validation-protocol',
+  calibrated_predictions:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/calibrated-predictions',
+  temporal_fold_metrics:
+    '/api/admin/cecchino/research/goal-intensity-v5/candidate-indices/export/temporal-fold-metrics',
 }
 
 const CANDIDATE_INDICES_JSON_EXPORTS = new Set<GoalIntensityCandidateIndicesExportKind>([

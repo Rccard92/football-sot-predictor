@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
+
+- `cecchino_goal_intensity_v5_candidate_indices_v1_1`: Brier/logloss su probabilità logistic train-only; paired/ablation su predizioni calibrate; expanding CV completo; protocollo prospettico dopo freeze; readiness gate aggiornati.
+- Export `calibrated_predictions` + `temporal_fold_metrics`; score grezzi e v4 invariati.
+
 ## Intensità Goal v5 Research — Fase 1D candidate indices (2026-07-17)
 
 - Aggiunto modulo research `cecchino_goal_intensity_v5_candidate_indices_v1`: ECDF midrank train-only, score pilastro/compositi GI_A–D, metriche 4 target, ablation, paired bootstrap, Pareto, xG optional paired, protocollo prospettico e readiness 2A.

@@ -68,7 +68,14 @@ def run_benchmark(
             "elapsed_lt_30s": elapsed_s < 30.0,
             "elapsed_lt_45s": elapsed_s < 45.0,
             "payload_lt_2mb": payload_bytes < 2 * 1024 * 1024,
+            "version_v1_1": VERSION.endswith("v1_1"),
+            "no_score_over_100_prob": True,
         }
+        # spot-check calibration flag if composites present
+        gi_a = ((payload.get("composite_metrics") or {}).get("GI_A_STRICT_CORE") or {}).get("goals_ge_2") or {}
+        if gi_a:
+            criteria["no_score_over_100_prob"] = gi_a.get("uses_score_over_100_as_probability") is False
+            criteria["logistic_calibrated"] = gi_a.get("calibration_method") == "train_logistic_regression"
         return {
             "version": VERSION,
             "date_from": date_from.isoformat(),
@@ -80,6 +87,8 @@ def run_benchmark(
             "primary_candidate": payload.get("primary_candidate"),
             "challenger_candidate": payload.get("challenger_candidate"),
             "phase_2a_next_step": readiness.get("recommended_next_step"),
+            "ready_for_phase_2a": readiness.get("ready_for_phase_2a"),
+            "tempo_baseline": payload.get("tempo_baseline_comparison"),
             "elapsed_s": round(elapsed_s, 3),
             "payload_bytes": payload_bytes,
             "criteria": criteria,
@@ -88,9 +97,10 @@ def run_benchmark(
                     criteria["status_ok"],
                     criteria["elapsed_lt_45s"],
                     criteria["payload_lt_2mb"],
+                    criteria.get("no_score_over_100_prob", True),
                 ]
             ),
-            "preferable_pass": all(criteria.values()),
+            "preferable_pass": all(v for k, v in criteria.items() if k != "elapsed_lt_30s") and criteria["elapsed_lt_30s"],
             "warnings": payload.get("warnings") or [],
         }
     finally:

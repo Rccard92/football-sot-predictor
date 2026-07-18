@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
+
+Correzione layer valutazione `candidate_indices_v1_1`: calibrazione train-only, paired/ablation dimensionalmente validi, expanding multi-candidato, protocollo prospettico post-freeze. Score e dataset invariati; v4 invariata.
+
 ## Intensità Goal v5 Research — Fase 1D candidate indices (2026-07-17)
 
 Indici candidati research `cecchino_goal_intensity_v5_candidate_indices_v1`: ECDF train-only, pilastri/compositi GI_A–D equal weight, ablation/Pareto/xG optional, readiness 2A. Riusa dataset 1B; statistics `v1_2` e v4 invariati. Nessuna formula produttiva.
