@@ -2,6 +2,12 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Hotfix JSON-safe VIF (2026-07-18)
+
+Causa HTTP 500 su `GET .../purchasability/audit`: `input_redundancy.vif` poteva contenere `Infinity` (R²≈1). Starlette `JSONResponse` rifiuta float non finiti (CORS nel browser è solo effetto collaterale).
+
+Trattamento: VIF non finito → `null` + lista `infinite_variables`; `status = perfect_multicollinearity_detected`. Sanitizer `make_json_safe` sull’output audit/export JSON. Nessun cambiamento a coorti, correlazioni, readiness o dati.
+
 ## Fase 1.1 — Integrità temporale e dataset core (`cecchino_purchasability_audit_v1_1`)
 
 Correzioni rispetto a v1:

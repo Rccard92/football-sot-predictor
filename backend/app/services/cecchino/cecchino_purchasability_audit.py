@@ -968,14 +968,35 @@ def _missing_overlap(rows: list[dict[str, Any]], a: str, b: str) -> dict[str, An
     return {"both_missing": both_missing, "a_missing": a_miss, "b_missing": b_miss, "n": len(rows)}
 
 
+def make_json_safe(value: Any) -> Any:
+    """Converte float non finiti in None; ricorsivo su dict/list/tuple; NumPy scalar → item()."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    # NumPy scalar (float64, int64, …)
+    item = getattr(value, "item", None)
+    if callable(item) and not isinstance(value, (bytes, bytearray)):
+        try:
+            return make_json_safe(item())
+        except (ValueError, TypeError):
+            pass
+    if isinstance(value, dict):
+        return {k: make_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        out = [make_json_safe(v) for v in value]
+        return out if isinstance(value, list) else tuple(out)
+    return value
+
+
 def _vif_status(core_rows: list[dict[str, Any]], keys: list[str]) -> dict[str, Any]:
+    empty = {"vif": {}, "infinite_variables": []}
     if len(core_rows) < max(20, len(keys) + 5):
         return {
             "status": "insufficient_sample",
             "reason": f"n={len(core_rows)} < required for VIF with {len(keys)} vars",
-            "vif": {},
+            **empty,
         }
-    # Build complete cases matrix
     matrix: list[list[float]] = []
     for r in core_rows:
         row = []
@@ -992,14 +1013,14 @@ def _vif_status(core_rows: list[dict[str, Any]], keys: list[str]) -> dict[str, A
         return {
             "status": "insufficient_complete_cases",
             "reason": f"complete_cases={len(matrix)}",
-            "vif": {},
+            **empty,
         }
-    # Simple diagonal VIF via R^2 of each vs others (OLS normal eq); skip if singular
     try:
         import numpy as np
 
         x = np.asarray(matrix, dtype=float)
-        vif: dict[str, float] = {}
+        vif: dict[str, float | None] = {}
+        infinite_variables: list[str] = []
         for i, name in enumerate(keys):
             y = x[:, i]
             z = np.delete(x, i, axis=1)
@@ -1009,10 +1030,39 @@ def _vif_status(core_rows: list[dict[str, Any]], keys: list[str]) -> dict[str, A
             ss_res = float(np.sum((y - pred) ** 2))
             ss_tot = float(np.sum((y - y.mean()) ** 2))
             r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-            vif[name] = round(1.0 / (1.0 - r2), 4) if r2 < 0.999 else float("inf")
-        return {"status": "ok", "reason": None, "vif": vif}
+            if r2 >= 0.999:
+                vif[name] = None
+                infinite_variables.append(name)
+                continue
+            raw = 1.0 / (1.0 - r2)
+            if not math.isfinite(raw):
+                vif[name] = None
+                infinite_variables.append(name)
+            else:
+                vif[name] = round(raw, 4)
+        if infinite_variables:
+            return {
+                "status": "perfect_multicollinearity_detected",
+                "reason": (
+                    "Una o più variabili sono combinazioni lineari o "
+                    "deterministiche delle altre."
+                ),
+                "vif": vif,
+                "infinite_variables": infinite_variables,
+            }
+        return {
+            "status": "ok",
+            "reason": None,
+            "vif": vif,
+            "infinite_variables": [],
+        }
     except Exception as exc:  # noqa: BLE001
-        return {"status": "unavailable", "reason": str(exc), "vif": {}}
+        return {
+            "status": "unavailable",
+            "reason": str(exc),
+            "vif": {},
+            "infinite_variables": [],
+        }
 
 
 def _input_redundancy(core_rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1267,7 +1317,7 @@ def build_purchasability_audit(
     )
     odds_sources = sorted({r.get("odds_source") for r in rows if r.get("odds_source")})
 
-    return {
+    payload = {
         "version": AUDIT_VERSION,
         "dataset_version": DATASET_VERSION,
         "status": "ok",
@@ -1326,6 +1376,7 @@ def build_purchasability_audit(
         "no_db_writes": True,
         "no_purchasability_formula": True,
     }
+    return make_json_safe(payload)
 
 
 def build_purchasability_dataset(
@@ -1500,12 +1551,17 @@ def stream_purchasability_export(
             "phase_2_readiness": audit["phase_2_readiness"],
             "exclusions": audit["exclusions"],
         }
-        yield json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-        return
-    if kind == "rating_dependency_map":
-        yield json.dumps(audit["rating_dependency_map"], ensure_ascii=False, indent=2).encode(
+        yield json.dumps(make_json_safe(payload), ensure_ascii=False, indent=2, allow_nan=False).encode(
             "utf-8"
         )
+        return
+    if kind == "rating_dependency_map":
+        yield json.dumps(
+            make_json_safe(audit["rating_dependency_map"]),
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        ).encode("utf-8")
         return
     if kind == "variable_registry":
         yield _csv_from_dicts(audit["variable_registry"]).encode("utf-8")

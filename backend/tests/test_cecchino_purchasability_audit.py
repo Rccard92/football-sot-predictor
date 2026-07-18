@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import math
 import pytest
 
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import _compute_rating
@@ -461,3 +462,106 @@ def test_no_betting_in_audit():
     audit = build_purchasability_audit(_db_with([_fixture()]))
     assert audit["no_purchasability_formula"] is True
     assert "value_bet" not in str(audit).lower()
+
+
+# --- Hotfix JSON-safe VIF ---
+
+
+def test_vif_perfect_multicollinearity_null():
+    from app.services.cecchino.cecchino_purchasability_audit import _vif_status
+
+    # raw_book_implied = 1/odds → collinearità deterministica con odds (e clone)
+    rows = []
+    for i in range(30):
+        odds = 1.5 + i * 0.05
+        rows.append(
+            {
+                "odds": odds,
+                "model_probability": 0.3 + i * 0.01,
+                "raw_book_implied_probability": 1.0 / odds,
+                "probability_advantage": 0.02 * i,
+                "edge": float(i),
+                "score": 0.01 * i,
+                "rating": 40 + i,
+            }
+        )
+    keys = [
+        "odds",
+        "model_probability",
+        "raw_book_implied_probability",
+        "probability_advantage",
+        "edge",
+        "score",
+        "rating",
+    ]
+    out = _vif_status(rows, keys)
+    assert out["status"] == "perfect_multicollinearity_detected"
+    assert out["infinite_variables"]
+    for name in out["infinite_variables"]:
+        assert out["vif"][name] is None
+    for v in out["vif"].values():
+        if v is not None:
+            assert math.isfinite(v)
+
+
+def test_audit_payload_strict_json_no_nonfinite():
+    import json
+    import math as math_mod
+
+    from fastapi.encoders import jsonable_encoder
+
+    from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
+
+    audit = build_purchasability_audit(_db_with([_fixture()]))
+    encoded = jsonable_encoder(audit)
+    dumped = json.dumps(encoded, allow_nan=False)
+
+    def _walk(obj):
+        if isinstance(obj, float):
+            assert math_mod.isfinite(obj)
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                _walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                _walk(v)
+
+    _walk(json.loads(dumped))
+    # sanitizer nest
+    dirty = {"a": float("inf"), "b": [float("nan"), {"c": float("-inf")}], "d": (1.0, float("inf"))}
+    clean = make_json_safe(dirty)
+    assert clean["a"] is None
+    assert clean["b"][0] is None
+    assert clean["b"][1]["c"] is None
+    assert clean["d"][0] == 1.0
+    assert clean["d"][1] is None
+    try:
+        import numpy as np
+
+        assert make_json_safe(np.float64(float("inf"))) is None
+        assert make_json_safe(np.float64(1.5)) == 1.5
+    except ImportError:
+        pass
+
+
+def test_vif_finite_values_remain_numeric():
+    from app.services.cecchino.cecchino_purchasability_audit import _vif_status
+
+    rows = []
+    for i in range(30):
+        rows.append(
+            {
+                "odds": 1.5 + i * 0.1,
+                "model_probability": 0.2 + (i % 7) * 0.03,
+                "raw_book_implied_probability": 0.4 + (i % 5) * 0.02,
+                "probability_advantage": -0.1 + i * 0.01,
+                "edge": -5.0 + i * 0.5,
+                "score": 0.001 * (i + 1),
+                "rating": 30 + (i % 11),
+            }
+        )
+    keys = list(rows[0].keys())
+    out = _vif_status(rows, keys)
+    if out["status"] == "ok":
+        assert out["infinite_variables"] == []
+        assert all(isinstance(v, float) and math.isfinite(v) for v in out["vif"].values())

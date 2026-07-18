@@ -1,5 +1,9 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Hotfix JSON-safe VIF (2026-07-18)
+
+- Audit payload: VIF infinite → `null` + `infinite_variables`; `make_json_safe` su export JSON. Versioni `v1_1` invariate; nessuna modifica CORS/DB/coorti.
+
 ## Indice di Acquistabilità — Fase 1.1 integrità temporale (2026-07-18)
 
 - Bump `cecchino_purchasability_audit_v1_1` / `dataset_v1_1`: timestamp canonico odds_meta; fallback updated_at non core; DC `not_applicable_overlapping_outcomes`; coorti market/model/core; Spearman midrank; export dataset streaming.

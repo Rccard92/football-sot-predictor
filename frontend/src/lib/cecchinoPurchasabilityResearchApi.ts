@@ -92,6 +92,15 @@ export type PurchasabilityAuditResponse = {
     [key: string]: unknown
   }
   rating_dependency_map?: Record<string, unknown>
+  input_redundancy?: {
+    vif?: {
+      status?: string
+      reason?: string | null
+      vif?: Record<string, number | null>
+      infinite_variables?: string[]
+    }
+    [key: string]: unknown
+  }
   no_db_writes?: boolean
   no_purchasability_formula?: boolean
 }
