@@ -2,6 +2,48 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A — Ricerca statistica (`cecchino_purchasability_statistical_research_v2a`)
+
+Read-only sulla coorte **settled_core** del dataset `cecchino_purchasability_dataset_v1_1` (non duplicato).
+
+### Coorte
+
+`is_settled_core` + settlement won/lost/void + timestamp verified pre-KO + no leakage. Void: profitto 0, escluso dal Win Rate, incluso nel ROI. Blocking se `canonical_row_key` duplicata; feature-vector uguali su fixture diverse = OK.
+
+### Dipendenza intra-fixture
+
+Split e bootstrap **per fixture** (mai random row-split). Expanding temporal CV (≥3 fold se possibile, altrimenti `limited_temporal_span`).
+
+### Feature engineering
+
+Gap comparator/complement solo da payload pre-match. Hard redundancy: no `odds`+`raw_implied`; no `score`+(model+edge); Rating+componenti solo in `RATING_MARGINAL_DIAGNOSTIC`.
+
+### Specs
+
+`BOOK_BASELINE`, `MODEL_BASELINE`, `RATING_BASELINE`, `VALUE_*`, `CONTEXT_ONLY`, `VALUE_*_CONTEXT`, `RATING_CONTEXT`, `RATING_MARGINAL_DIAGNOSTIC`.
+
+### Metriche
+
+Logistic L2 + StandardScaler train-only; OOF AUC/Brier/LogLoss/calibration; ROI stake=1; bootstrap cluster fixture (FE default 200–500).
+
+### Decisioni
+
+`retain_candidate` / `benchmark_only` / `redundant_exclude` / `unstable_exclude` / `market_specific_candidate` / `insufficient_evidence`. Rating: conclusioni tipizzate senza modificare la formula.
+
+### API
+
+- `GET .../purchasability/statistical-research`
+- `.../markets|features|candidates`
+- `.../export/{kind}` (10 export JSON-safe)
+
+### Frontend
+
+Sub-tab **Ricerca statistica — Fase 2A** sotto Acquistabilità su Segnali KPI (Audit conservato). Banner obbligatorio; nessuna colonna produttiva.
+
+### Limiti / Fase 2B
+
+Nessuna formula 0–100. Readiness in `phase_2b_readiness.recommended_next_step`. Benchmark Railway richiede `DATABASE_URL`; altrimenti `DATABASE_URL_missing`.
+
 ## Hotfix JSON-safe VIF (2026-07-18)
 
 Causa HTTP 500 su `GET .../purchasability/audit`: `input_redundancy.vif` poteva contenere `Infinity` (R²≈1). Starlette `JSONResponse` rifiuta float non finiti (CORS nel browser è solo effetto collaterale).
@@ -53,7 +95,8 @@ Sorgente `kpi_panel_json`; unità partita+mercato+selezione; Rating = benchmark;
 
 ## Roadmap
 
-1. Audit + dataset (1 / 1.1)
-2. Statistica
-3. Indice 0–100
-4. Integrazione monitorata
+1. Audit + dataset (1 / 1.1) — fatto
+2. Statistica (2A) — fatto
+3. Candidati Indice (2B)
+4. Indice 0–100
+5. Integrazione monitorata

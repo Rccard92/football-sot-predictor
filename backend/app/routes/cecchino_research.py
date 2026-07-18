@@ -76,6 +76,15 @@ from app.services.cecchino.cecchino_purchasability_audit import (
     purchasability_export_filename,
     stream_purchasability_export,
 )
+from app.services.cecchino.cecchino_purchasability_statistical_research import (
+    EXPORT_KINDS as PURCHASABILITY_STAT_EXPORT_KINDS,
+    build_purchasability_statistical_research,
+    build_statistical_candidates_payload,
+    build_statistical_features_payload,
+    build_statistical_markets_payload,
+    statistical_export_filename,
+    stream_statistical_export,
+)
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
 
@@ -752,4 +761,152 @@ def get_purchasability_export(
         competition_id=competition_id,
         market_family=market_family,
         book_source=book_source,
+    )
+
+
+# --- Indice di Acquistabilità Fase 2A (read-only statistical research) ---
+
+
+@router.get("/purchasability/statistical-research")
+def get_purchasability_statistical_research(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    market_family: str | None = Query(default=None),
+    selection: str | None = Query(default=None),
+    bootstrap_iterations: int = Query(default=200, ge=10, le=2000),
+    seed: int = Query(default=42),
+    db: Session = Depends(get_db),
+):
+    payload = build_purchasability_statistical_research(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        selection=selection,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/purchasability/statistical-research/markets")
+def get_purchasability_statistical_markets(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    bootstrap_iterations: int = Query(default=50, ge=10, le=2000),
+    seed: int = Query(default=42),
+    db: Session = Depends(get_db),
+):
+    payload = build_statistical_markets_payload(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/purchasability/statistical-research/features")
+def get_purchasability_statistical_features(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    bootstrap_iterations: int = Query(default=50, ge=10, le=2000),
+    seed: int = Query(default=42),
+    db: Session = Depends(get_db),
+):
+    payload = build_statistical_features_payload(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/purchasability/statistical-research/candidates")
+def get_purchasability_statistical_candidates(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    bootstrap_iterations: int = Query(default=50, ge=10, le=2000),
+    seed: int = Query(default=42),
+    db: Session = Depends(get_db),
+):
+    payload = build_statistical_candidates_payload(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+def _purchasability_stat_export_response(
+    kind: str,
+    db: Session,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    competition_id: int | None,
+    market_family: str | None,
+    selection: str | None,
+    bootstrap_iterations: int,
+    seed: int,
+):
+    if kind not in PURCHASABILITY_STAT_EXPORT_KINDS:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": "unknown_export_kind", "kind": kind},
+        )
+    filename = statistical_export_filename(kind)
+    media = "application/json" if filename.endswith(".json") else "text/csv; charset=utf-8"
+    stream = stream_statistical_export(
+        db,
+        kind,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        selection=selection,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+
+    def _iter():
+        for chunk in stream:
+            yield chunk
+
+    return StreamingResponse(
+        _iter(),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/purchasability/statistical-research/export/{kind}")
+def get_purchasability_statistical_export(
+    kind: str,
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    market_family: str | None = Query(default=None),
+    selection: str | None = Query(default=None),
+    bootstrap_iterations: int = Query(default=200, ge=10, le=2000),
+    seed: int = Query(default=42),
+    db: Session = Depends(get_db),
+):
+    return _purchasability_stat_export_response(
+        kind,
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        selection=selection,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
     )

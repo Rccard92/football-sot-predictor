@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — Fase 2A ricerca statistica (2026-07-18)
+
+Research read-only `cecchino_purchasability_statistical_research_v2a` su settled_core del dataset v1_1: CV temporale per fixture, logistic L2, benchmark Book/Model/Rating, contributo marginale, feature decisions, readiness 2B. Nessuna formula 0–100. Sub-tab FE «Ricerca statistica — Fase 2A». Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — Fase 1.1 integrità temporale (2026-07-18)
 
 Audit `cecchino_purchasability_audit_v1_1`: timestamp da odds_meta (non updated_at), bookmaker dict vs odds_source, DC non normalizzata, core rigoroso, paginazione batch. Nessuna formula 0–100. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.

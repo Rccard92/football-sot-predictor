@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A ricerca statistica (2026-07-18)
+
+- `cecchino_purchasability_statistical_research_v2a`: coorte settled_core, engineering gap, expanding CV per fixture, specs Book/Model/Rating/Value/Context, OOF + bootstrap fixture-clustered, feature decisions e readiness 2B.
+- API GET `.../purchasability/statistical-research` (+ markets/features/candidates/export); FE sub-tab sotto Acquistabilità. Dataset v1_1 invariato; nessuna formula 0–100.
+
 ## Indice di Acquistabilità — Hotfix JSON-safe VIF (2026-07-18)
 
 - Audit payload: VIF infinite → `null` + `infinite_variables`; `make_json_safe` su export JSON. Versioni `v1_1` invariate; nessuna modifica CORS/DB/coorti.

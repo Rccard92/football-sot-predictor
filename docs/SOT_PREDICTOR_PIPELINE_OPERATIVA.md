@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A statistica (2026-07-18)
+
+1. `GET .../purchasability/statistical-research` (filtri date/competition/market/selection/bootstrap/seed).
+2. Sottosezioni: `.../markets`, `.../features`, `.../candidates`.
+3. Export: `.../statistical-research/export/{summary|cohort_identity|temporal_folds|market_results|univariate_evidence|candidate_comparison|marginal_contribution|feature_decisions|rating_benchmark|readiness}`.
+4. FE: `/segnali-kpi` → Acquistabilità → «Ricerca statistica — Fase 2A» (bootstrap 200/500).
+5. Benchmark Railway: richiede `DATABASE_URL`; altrimenti `DATABASE_URL_missing`.
+
 ## Indice di Acquistabilità — Fase 1.1 (2026-07-18)
 
 1. `GET .../purchasability/audit` (v1_1): verificare `snapshot_fidelity`, blocking, markets_ready.
