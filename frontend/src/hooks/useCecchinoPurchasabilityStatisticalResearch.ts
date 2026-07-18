@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   getPurchasabilityStatisticalResearch,
   type PurchasabilityStatFilters,
@@ -22,6 +22,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<PurchasabilityStatisticalResearchResponse | null>(null)
+  const loadingRef = useRef(false)
 
   const filters = useCallback((): PurchasabilityStatFilters => {
     return {
@@ -34,6 +35,8 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
   }, [dateFrom, dateTo, selection, bootstrapIterations])
 
   const load = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
     setLoading(true)
     setError(null)
     try {
@@ -42,6 +45,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }, [filters])

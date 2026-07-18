@@ -1,6 +1,6 @@
-"""Indice di Acquistabilità — Fase 2A.1 ricerca statistica (read-only).
+"""Indice di Acquistabilità — Fase 2A.2 ricerca statistica (read-only).
 
-Versione: cecchino_purchasability_statistical_research_v2a_1
+Versione: cecchino_purchasability_statistical_research_v2a_2
 Dataset sorgente: cecchino_purchasability_dataset_v1_1 (non modificato).
 
 Nessuna formula 0–100, nessuna scrittura DB, nessuna modifica Rating/KPI/Segnali.
@@ -54,7 +54,7 @@ from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
     top_k_roi,
 )
 
-STAT_VERSION = "cecchino_purchasability_statistical_research_v2a_1"
+STAT_VERSION = "cecchino_purchasability_statistical_research_v2a_2"
 
 PRIMARY_MARKETS = (
     "HOME",
@@ -822,45 +822,163 @@ def classify_marginal(
     cross_market_label: str | None = None,
 ) -> str:
     """
-    Temporal classification from real fold signs + paired CI.
+    Classification from paired delta AUC + fold signs + CI.
 
     Thresholds (descriptive):
     - DELTA_AUC_STABLE = 0.01, DELTA_AUC_UNCERTAIN = 0.005, DELTA_AUC_NEGATIVE = -0.01
     - FOLD_NEUTRAL_ABS = 0.002
-    market_signs are ignored here when cross_market_label is provided from Pass 2.
+    Negative deltas never receive positive_* labels.
     """
+    del market_signs  # reserved; cross-market handled via cross_market_label
     if cross_market_label == "market_specific_signal":
         return "market_specific_signal"
     if delta_auc is None:
         return "insufficient_sample"
+
     pos_folds = sum(1 for s in fold_signs if s > 0)
     neg_folds = sum(1 for s in fold_signs if s < 0)
     n_signed = pos_folds + neg_folds
     if fold_signs and n_signed >= 2 and pos_folds > 0 and neg_folds > 0 and abs(pos_folds - neg_folds) <= 1:
         return "temporally_unstable"
+
     ci_low = (ci or {}).get("ci_low")
     ci_high = (ci or {}).get("ci_high")
     majority_pos = (not fold_signs) or (pos_folds > neg_folds)
+    majority_neg = fold_signs and neg_folds > pos_folds
+    ci_crosses_zero = (
+        ci_low is not None
+        and ci_high is not None
+        and float(ci_low) <= 0.0 <= float(ci_high)
+    )
+    ci_entirely_negative = ci_high is not None and float(ci_high) < 0.0
+    ci_entirely_positive = ci_low is not None and float(ci_low) > 0.0
+
+    # A. positive_stable_evidence
     if (
         delta_auc > DELTA_AUC_STABLE
-        and ci_low is not None
-        and ci_low > 0
+        and ci_entirely_positive
         and majority_pos
+        and not majority_neg
     ):
         return "positive_stable_evidence"
-    if delta_auc > DELTA_AUC_UNCERTAIN and (ci_low is None or ci_low <= 0):
-        return "positive_but_uncertain"
-    if delta_auc > DELTA_AUC_UNCERTAIN and majority_pos:
-        return "positive_but_uncertain"
-    if abs(delta_auc) < DELTA_AUC_UNCERTAIN and (
-        ci_high is None or (ci_low is not None and ci_low <= 0 <= (ci_high or 0))
+
+    # E. redundant — near-zero non-negative with CI compatible with zero
+    if (
+        0 <= delta_auc <= DELTA_AUC_UNCERTAIN
+        and (
+            ci_crosses_zero
+            or (ci_low is None and ci_high is None)
+            or (ci_low is not None and float(ci_low) <= 0.0)
+        )
     ):
         return "redundant_no_incremental_value"
-    if delta_auc < DELTA_AUC_NEGATIVE:
+
+    # B. positive_but_uncertain — only if delta > 0
+    if delta_auc > 0 and not majority_neg:
+        if ci_crosses_zero or ci_low is None or not ci_entirely_positive:
+            return "positive_but_uncertain"
+        if delta_auc <= DELTA_AUC_STABLE:
+            return "positive_but_uncertain"
+
+    # C. negative_incremental_value
+    if delta_auc < DELTA_AUC_NEGATIVE or ci_entirely_negative:
         return "negative_incremental_value"
-    if abs(delta_auc) < DELTA_AUC_UNCERTAIN:
+
+    # D. negative_but_uncertain — delta < 0, CI crosses zero / not strongly negative
+    if delta_auc < 0:
+        if ci_crosses_zero or ci_high is None or not ci_entirely_negative:
+            return "negative_but_uncertain"
+        return "negative_incremental_value"
+
+    if abs(delta_auc) <= DELTA_AUC_UNCERTAIN:
         return "redundant_no_incremental_value"
-    return "positive_but_uncertain"
+    if delta_auc > 0:
+        return "positive_but_uncertain"
+    return "insufficient_sample"
+
+
+def comparison_role_for(vs: str, spec: str) -> str:
+    if vs == "BOOK_BASELINE":
+        return "independent_vs_book"
+    if vs == "MODEL_BASELINE":
+        return "model_enrichment_diagnostic"
+    if (
+        vs == "RATING_BASELINE"
+        or spec.startswith("RATING_")
+        or "PLUS_RATING" in spec
+    ):
+        return "rating_diagnostic"
+    return "model_enrichment_diagnostic"
+
+
+def resolve_phase_2b_next_step(
+    *,
+    blocking: list[Any],
+    invariant_errors: list[str],
+    temporal_done: bool,
+    limited_temporal: bool,
+    can_2b: bool,
+    residual_research: bool,
+    paired_positive_vs_model: bool,
+    paired_positive_vs_book: bool,
+    retained: list[str],
+    independent_candidate_specs: list[str],
+) -> tuple[str, list[str]]:
+    """Gate Fase 2B: solo evidenza indipendente vs Book. Ritorna (next_step, errors)."""
+    errors = list(invariant_errors)
+
+    if blocking or errors:
+        return "resolve_data_quality", errors
+    if not temporal_done or limited_temporal:
+        return "continue_data_collection", errors
+    if can_2b:
+        next_step = "phase_2b_candidate_construction"
+    elif residual_research:
+        next_step = "phase_2a_residual_reliability_research"
+    elif paired_positive_vs_model and not paired_positive_vs_book:
+        next_step = "phase_2a_residual_reliability_research"
+    else:
+        next_step = "stop_no_incremental_signal"
+
+    if next_step == "phase_2b_candidate_construction":
+        if not retained:
+            errors.append("phase_2b_without_independent_feature")
+            next_step = "resolve_data_quality"
+        elif not paired_positive_vs_book:
+            errors.append("phase_2b_without_positive_vs_book")
+            next_step = "resolve_data_quality"
+        elif not independent_candidate_specs:
+            errors.append("empty_retained_features_with_positive_readiness")
+            next_step = "resolve_data_quality"
+
+    return next_step, errors
+
+
+SPECS_WITH_BOOK_INFO = frozenset(
+    {
+        "VALUE_ADVANTAGE",
+        "VALUE_EDGE",
+        "VALUE_ADVANTAGE_CONTEXT",
+        "VALUE_EDGE_CONTEXT",
+        "VALUE_ADVANTAGE_PLUS_RATING",
+        "VALUE_EDGE_PLUS_RATING",
+        "VALUE_ADVANTAGE_CONTEXT_PLUS_RATING",
+        "VALUE_EDGE_CONTEXT_PLUS_RATING",
+        "BOOK_BASELINE",
+    }
+)
+
+BOOK_DEPENDENCIES: dict[str, list[str]] = {
+    "VALUE_ADVANTAGE": ["model_probability", "book_prob"],
+    "VALUE_EDGE": ["model_probability", "odds"],
+    "VALUE_ADVANTAGE_CONTEXT": ["model_probability", "book_prob"],
+    "VALUE_EDGE_CONTEXT": ["model_probability", "odds"],
+    "VALUE_ADVANTAGE_PLUS_RATING": ["model_probability", "book_prob", "rating"],
+    "VALUE_EDGE_PLUS_RATING": ["model_probability", "odds", "rating"],
+    "VALUE_ADVANTAGE_CONTEXT_PLUS_RATING": ["model_probability", "book_prob", "rating"],
+    "VALUE_EDGE_CONTEXT_PLUS_RATING": ["model_probability", "odds", "rating"],
+    "BOOK_BASELINE": ["book_prob"],
+}
 
 
 def classify_cross_market(market_deltas: list[float]) -> dict[str, Any]:
@@ -1000,11 +1118,27 @@ def decide_features(
     rating_conclusion: str,
 ) -> list[dict[str, Any]]:
     uni_map = {u["feature"]: u for u in univariate}
-    marg_by_feat: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for m in marginal:
-        feat = m.get("feature")
-        if feat:
-            marg_by_feat[feat].append(m)
+
+    def related_for(name: str) -> list[dict[str, Any]]:
+        out = []
+        for m in marginal:
+            spec = str(m.get("spec") or "")
+            if name == "rating" and ("RATING" in spec or "PLUS_RATING" in spec):
+                out.append(m)
+            elif name == "probability_advantage" and "ADVANTAGE" in spec:
+                out.append(m)
+            elif name == "edge" and "EDGE" in spec:
+                out.append(m)
+            elif name == "score" and "SCORE" in spec:
+                out.append(m)
+            elif name == "model_probability" and m.get("spec") in (
+                "MODEL_BASELINE",
+                "VALUE_ADVANTAGE",
+                "VALUE_EDGE",
+                "VALUE_SCORE",
+            ):
+                out.append(m)
+        return out
 
     feature_catalog = [
         ("odds", "book", ["raw_book_implied_probability"], "benchmark_only"),
@@ -1027,48 +1161,83 @@ def decide_features(
     decisions = []
     for name, source, deps, forced in feature_catalog:
         u = uni_map.get(name) or uni_map.get("book_prob" if name.startswith("raw") else name) or {}
-        mlist = marg_by_feat.get(name) or []
-        labels = [m.get("classification") for m in mlist if m.get("classification")]
+        related = related_for(name)
+        vs_book = [
+            m
+            for m in related
+            if m.get("comparison_role") == "independent_vs_book"
+            or m.get("vs") == "BOOK_BASELINE"
+        ]
+        vs_model = [
+            m
+            for m in related
+            if m.get("comparison_role") == "model_enrichment_diagnostic"
+            or m.get("vs") == "MODEL_BASELINE"
+        ]
+        book_labels = [m.get("classification") for m in vs_book if m.get("classification")]
+        model_labels = [m.get("classification") for m in vs_model if m.get("classification")]
+        all_labels = [m.get("classification") for m in related if m.get("classification")]
+
+        evidence = {
+            "predictive_against_outcome": u.get("auc_univariate"),
+            "incremental_vs_model": any(x == "positive_stable_evidence" for x in model_labels),
+            "incremental_vs_book": any(x == "positive_stable_evidence" for x in book_labels),
+            "economic_ranking_evidence": any(
+                (m.get("delta_roi_top_10pct") or 0) > 0 for m in vs_book
+            ),
+            "residual_reliability_evidence": any(
+                (m.get("delta_brier_improvement") or 0) > 0 for m in vs_book
+            ),
+        }
+
         decision = forced
         reason = "default_policy"
         if name == "rating":
-            decision = (
-                "benchmark_only"
-                if rating_conclusion in ("benchmark_only", "redundant_exclude", "insufficient_evidence")
-                else (
-                    "retain_candidate"
-                    if rating_conclusion == "incremental_candidate"
-                    else (
-                        "market_specific_candidate"
-                        if rating_conclusion == "market_specific_benchmark"
-                        else "benchmark_only"
-                    )
+            if rating_conclusion == "incremental_candidate":
+                # Rating incremental is still not independent retain
+                decision = "benchmark_only"
+                reason = "rating_incremental_but_not_independent_candidate"
+            elif rating_conclusion == "market_specific_benchmark":
+                decision = "market_specific_candidate"
+                reason = "rating_market_specific_benchmark"
+            elif rating_conclusion in ("redundant_exclude", "temporally_unstable"):
+                decision = (
+                    "redundant_exclude"
+                    if rating_conclusion == "redundant_exclude"
+                    else "unstable_exclude"
                 )
-            )
-            reason = f"rating_conclusion={rating_conclusion}"
+                reason = f"rating_conclusion={rating_conclusion}"
+            else:
+                decision = "benchmark_only"
+                reason = f"rating_conclusion={rating_conclusion}"
         elif forced:
             decision = forced
             reason = "deterministic_book_or_benchmark"
-        elif "redundant_no_incremental_value" in labels and not any(
-            x == "positive_stable_evidence" for x in labels
-        ):
-            decision = "redundant_exclude"
-            reason = "no_incremental_vs_baselines"
-        elif "temporally_unstable" in labels:
+        elif "negative_incremental_value" in book_labels and not evidence["incremental_vs_book"]:
+            decision = "negative_incremental_value"
+            reason = "negative_vs_book"
+        elif "temporally_unstable" in all_labels and not evidence["incremental_vs_book"]:
             decision = "unstable_exclude"
             reason = "sign_unstable_across_folds"
-        elif "market_specific_signal" in labels:
-            decision = "market_specific_candidate"
-            reason = "effect_concentrated_in_subset_of_markets"
-        elif "positive_stable_evidence" in labels:
-            decision = "retain_candidate"
-            reason = "stable_marginal_gain"
+        elif evidence["incremental_vs_book"]:
+            if any(m.get("market_stability") == "market_specific_signal" for m in vs_book):
+                decision = "market_specific_candidate"
+                reason = "stable_vs_book_market_specific"
+            else:
+                decision = "retain_independent_candidate"
+                reason = "stable_marginal_vs_book"
+        elif evidence["incremental_vs_model"] and not evidence["incremental_vs_book"]:
+            decision = "model_enrichment_only"
+            reason = "improves_model_but_not_book"
+        elif "redundant_no_incremental_value" in book_labels:
+            decision = "redundant_exclude"
+            reason = "no_incremental_vs_book"
         elif u.get("status") == "insufficient_sample" or not u:
             decision = "insufficient_evidence"
             reason = "low_coverage_or_sample"
         else:
             decision = "insufficient_evidence"
-            reason = "effect_uncertain"
+            reason = "effect_uncertain_or_only_vs_model"
 
         decisions.append(
             {
@@ -1081,9 +1250,21 @@ def decide_features(
                     "auc": u.get("auc_univariate"),
                     "spearman_profit": u.get("spearman_profit"),
                 },
-                "marginal_effect": labels[:5],
-                "temporal_stability": "unstable" if "temporally_unstable" in labels else "unknown",
-                "market_stability": "market_specific" if "market_specific_signal" in labels else "unknown",
+                "marginal_effect": book_labels[:3] + model_labels[:2],
+                "evidence_axes": evidence,
+                "temporal_stability": (
+                    "unstable"
+                    if "temporally_unstable" in all_labels
+                    else ("stable" if evidence["incremental_vs_book"] else "unknown")
+                ),
+                "market_stability": next(
+                    (
+                        m.get("market_stability")
+                        for m in vs_book
+                        if m.get("market_stability")
+                    ),
+                    "unknown",
+                ),
                 "leakage_status": "safe",
                 "explainability": "high",
                 "decision": decision,
@@ -1162,6 +1343,7 @@ def _build_paired_entry(
         "market": market,
         "spec": spec,
         "vs": vs,
+        "comparison_role": comparison_role_for(vs, spec),
         "delta_auc": paired.get("delta_auc"),
         "delta_brier_improvement": paired.get("delta_brier_improvement"),
         "delta_log_loss_improvement": paired.get("delta_log_loss_improvement"),
@@ -1639,34 +1821,37 @@ def build_purchasability_statistical_research(
         list(uni_agg.values()), all_marginal, rating_conclusion
     )
     for d in feature_decisions:
-        related = [
+        related_book = [
             m
             for m in all_marginal
-            if (
-                d["feature_name"] == "rating"
-                and "RATING" in str(m.get("spec") or "")
-            )
-            or (
-                d["feature_name"] == "probability_advantage"
-                and "ADVANTAGE" in str(m.get("spec") or "")
-            )
-            or (
-                d["feature_name"] == "edge" and "EDGE" in str(m.get("spec") or "")
-            )
-            or (
-                d["feature_name"] == "score" and "SCORE" in str(m.get("spec") or "")
-            )
-            or (
-                d["feature_name"] == "model_probability"
-                and m.get("spec") in ("MODEL_BASELINE", "VALUE_ADVANTAGE", "VALUE_EDGE")
+            if m.get("vs") == "BOOK_BASELINE"
+            and (
+                (
+                    d["feature_name"] == "rating"
+                    and "RATING" in str(m.get("spec") or "")
+                )
+                or (
+                    d["feature_name"] == "probability_advantage"
+                    and "ADVANTAGE" in str(m.get("spec") or "")
+                )
+                or (
+                    d["feature_name"] == "edge" and "EDGE" in str(m.get("spec") or "")
+                )
+                or (
+                    d["feature_name"] == "score" and "SCORE" in str(m.get("spec") or "")
+                )
+                or (
+                    d["feature_name"] == "model_probability"
+                    and m.get("spec")
+                    in ("MODEL_BASELINE", "VALUE_ADVANTAGE", "VALUE_EDGE", "VALUE_SCORE")
+                )
             )
         ]
-        labels = [m.get("classification") for m in related if m.get("classification")]
-        mstab = [m.get("market_stability") for m in related if m.get("market_stability")]
-        if "market_specific_signal" in mstab:
+        labels = [m.get("classification") for m in related_book if m.get("classification")]
+        mstab = [m.get("market_stability") for m in related_book if m.get("market_stability")]
+        if "market_specific_signal" in mstab and d["decision"] == "retain_independent_candidate":
             d["market_stability"] = "market_specific_signal"
-            if d["decision"] not in ("benchmark_only", "redundant_exclude"):
-                d["decision"] = "market_specific_candidate"
+            d["decision"] = "market_specific_candidate"
         elif "cross_market_stable" in mstab:
             d["market_stability"] = "cross_market_stable"
         elif "cross_market_unstable" in mstab:
@@ -1679,7 +1864,9 @@ def build_purchasability_statistical_research(
             d["temporal_stability"] = "uncertain"
 
     retained = [
-        d["feature_name"] for d in feature_decisions if d["decision"] == "retain_candidate"
+        d["feature_name"]
+        for d in feature_decisions
+        if d["decision"] == "retain_independent_candidate"
     ]
     redundant = [
         d["feature_name"] for d in feature_decisions if d["decision"] == "redundant_exclude"
@@ -1691,6 +1878,11 @@ def build_purchasability_statistical_research(
         d["feature_name"]
         for d in feature_decisions
         if d["decision"] == "market_specific_candidate"
+    ]
+    model_enrichment_feats = [
+        d["feature_name"]
+        for d in feature_decisions
+        if d["decision"] == "model_enrichment_only"
     ]
 
     candidate_specs = []
@@ -1757,6 +1949,34 @@ def build_purchasability_statistical_research(
             tstab = "insufficient"
         mstab = cm.get("market_stability") or "insufficient_markets"
 
+        book_ll = [
+            m["delta_log_loss_improvement"]
+            for m in book_items
+            if m.get("delta_log_loss_improvement") is not None
+        ]
+        book_roi10 = [
+            m["delta_roi_top_10pct"]
+            for m in book_items
+            if m.get("delta_roi_top_10pct") is not None
+        ]
+        book_roi20 = [
+            m["delta_roi_top_20pct"]
+            for m in book_items
+            if m.get("delta_roi_top_20pct") is not None
+        ]
+        pos_book = sum(1 for m in book_items if m.get("classification") == "positive_stable_evidence")
+        if pos_book >= 2 or (
+            pos_book >= 1 and cm.get("market_stability") == "market_specific_signal"
+        ):
+            ind_status = "independent_positive"
+        elif any((d or 0) > 0 for d in book_deltas):
+            ind_status = "uncertain_vs_book"
+        elif book_deltas and all((d or 0) <= 0 for d in book_deltas):
+            ind_status = "not_independent_vs_book"
+        else:
+            ind_status = "insufficient"
+
+        contains_book = spec_name in SPECS_WITH_BOOK_INFO
         candidate_specs.append(
             {
                 "configuration": spec_name,
@@ -1777,11 +1997,30 @@ def build_purchasability_statistical_research(
                 "delta_brier_vs_book_mean": (
                     float(np.mean(book_brier)) if book_brier else None
                 ),
+                "contains_book_information": contains_book,
+                "deterministic_book_dependencies": BOOK_DEPENDENCIES.get(spec_name, []),
+                "independent_evidence_status": ind_status,
+                "independent_delta_auc_vs_book": (
+                    float(np.mean(book_deltas)) if book_deltas else None
+                ),
+                "independent_delta_brier_vs_book": (
+                    float(np.mean(book_brier)) if book_brier else None
+                ),
+                "independent_delta_log_loss_vs_book": (
+                    float(np.mean(book_ll)) if book_ll else None
+                ),
+                "independent_roi_top_10_vs_book": (
+                    float(np.mean(book_roi10)) if book_roi10 else None
+                ),
+                "independent_roi_top_20_vs_book": (
+                    float(np.mean(book_roi20)) if book_roi20 else None
+                ),
                 "temporal_stability": tstab,
                 "market_stability": mstab,
                 "markets_positive": cm.get("markets_positive"),
                 "markets_negative": cm.get("markets_negative"),
                 "status": "ok" if aucs else "insufficient",
+                "is_book_baseline_benchmark": spec_name == "BOOK_BASELINE",
             }
         )
 
@@ -1805,50 +2044,241 @@ def build_purchasability_statistical_research(
         if mr.get("status") == "ok"
     )
 
-    paired_positive = [
+    paired_positive_vs_book = [
         m
         for m in all_marginal
         if m.get("classification") == "positive_stable_evidence"
-        and m.get("vs") in ("BOOK_BASELINE", "MODEL_BASELINE")
+        and (
+            m.get("comparison_role") == "independent_vs_book"
+            or m.get("vs") == "BOOK_BASELINE"
+        )
     ]
-    paired_uncertain_ok = [
+    paired_positive_vs_model = [
         m
         for m in all_marginal
-        if m.get("delta_auc") is not None
-        and m.get("delta_auc") > 0
-        and ((m.get("confidence_intervals") or {}).get("delta_auc") or {}).get("ci_low")
-        is not None
-        and ((m.get("confidence_intervals") or {}).get("delta_auc") or {}).get("ci_low")
-        > -0.02
-        and (m.get("positive_folds") or 0) > (m.get("negative_folds") or 0)
+        if m.get("classification") == "positive_stable_evidence"
+        and (
+            m.get("comparison_role") == "model_enrichment_diagnostic"
+            or m.get("vs") == "MODEL_BASELINE"
+        )
     ]
-    multi_market_ok = False
-    for m in paired_positive + paired_uncertain_ok:
-        cm = m.get("market_stability")
-        if cm == "cross_market_stable" or cm == "market_specific_signal":
-            multi_market_ok = True
-            break
-        if (m.get("markets_positive") or 0) >= 2:
-            multi_market_ok = True
-            break
+    paired_positive_vs_rating = [
+        m
+        for m in all_marginal
+        if m.get("classification") == "positive_stable_evidence"
+        and m.get("comparison_role") == "rating_diagnostic"
+    ]
 
-    has_paired_evidence = bool(paired_positive) and multi_market_ok
+    independent_candidate_specs = [
+        c["configuration"]
+        for c in candidate_specs
+        if c.get("independent_evidence_status") == "independent_positive"
+        and c.get("configuration") != "BOOK_BASELINE"
+    ]
+    model_enrichment_specs = [
+        c["configuration"]
+        for c in candidate_specs
+        if c.get("configuration")
+        not in independent_candidate_specs
+        and c.get("configuration") != "BOOK_BASELINE"
+        and any(
+            m.get("spec") == c["configuration"]
+            and m.get("vs") == "MODEL_BASELINE"
+            and m.get("classification") == "positive_stable_evidence"
+            for m in all_marginal
+        )
+    ]
 
-    if blocking:
-        next_step = "resolve_data_quality"
-    elif not temporal_done or "limited_temporal_span" in limitations:
-        next_step = "continue_data_collection"
-    elif (
-        has_paired_evidence
-        and not blocking
-        and quality.get("canonical_keys_unique")
-        and fixture_ok
-    ):
-        next_step = "phase_2b_candidate_construction"
-    elif paired_uncertain_ok and not paired_positive:
-        next_step = "continue_data_collection"
+    # Book dominance (descriptive only)
+    book_aucs, book_briers, book_lls, book_roi10s = [], [], [], []
+    nonbook_best_aucs, nonbook_best_briers, nonbook_best_lls, nonbook_best_roi10 = [], [], [], []
+    markets_book_best = []
+    markets_cand_beats = []
+    for mr in market_results:
+        if mr.get("status") != "ok":
+            continue
+        specs = mr.get("candidate_specifications") or {}
+        book = specs.get("BOOK_BASELINE") or {}
+        b_auc = (book.get("classification") or {}).get("auc")
+        b_brier = (book.get("classification") or {}).get("brier")
+        b_ll = (book.get("classification") or {}).get("log_loss")
+        b_eco = book.get("economic") or {}
+        b_r10 = b_eco.get("roi_top_10pct")
+        if isinstance(b_r10, dict):
+            b_r10 = b_r10.get("roi")
+        if b_auc is not None:
+            book_aucs.append(b_auc)
+        if b_brier is not None:
+            book_briers.append(b_brier)
+        if b_ll is not None:
+            book_lls.append(b_ll)
+        if b_r10 is not None:
+            book_roi10s.append(b_r10)
+        best_auc = None
+        best_brier = None
+        best_ll = None
+        best_r10 = None
+        for sn, cs in specs.items():
+            if sn == "BOOK_BASELINE":
+                continue
+            auc = (cs.get("classification") or {}).get("auc")
+            if auc is not None and (best_auc is None or auc > best_auc):
+                best_auc = auc
+            br = (cs.get("classification") or {}).get("brier")
+            if br is not None and (best_brier is None or br < best_brier):
+                best_brier = br
+            ll = (cs.get("classification") or {}).get("log_loss")
+            if ll is not None and (best_ll is None or ll < best_ll):
+                best_ll = ll
+            eco = cs.get("economic") or {}
+            r10 = eco.get("roi_top_10pct")
+            if isinstance(r10, dict):
+                r10 = r10.get("roi")
+            if r10 is not None and (best_r10 is None or r10 > best_r10):
+                best_r10 = r10
+        if best_auc is not None:
+            nonbook_best_aucs.append(best_auc)
+        if best_brier is not None:
+            nonbook_best_briers.append(best_brier)
+        if best_ll is not None:
+            nonbook_best_lls.append(best_ll)
+        if best_r10 is not None:
+            nonbook_best_roi10.append(best_r10)
+        mkt = mr.get("market")
+        if b_auc is not None and best_auc is not None:
+            if b_auc >= best_auc:
+                markets_book_best.append(mkt)
+            else:
+                markets_cand_beats.append(mkt)
+
+    book_auc_mean = float(np.mean(book_aucs)) if book_aucs else None
+    best_nb_auc = float(np.mean(nonbook_best_aucs)) if nonbook_best_aucs else None
+    delta_best = (
+        float(best_nb_auc - book_auc_mean)
+        if book_auc_mean is not None and best_nb_auc is not None
+        else None
+    )
+    if markets_cand_beats and not markets_book_best:
+        dom_status = "candidate_incremental"
+    elif markets_book_best and not markets_cand_beats:
+        dom_status = "book_dominant"
+    elif markets_book_best and markets_cand_beats:
+        dom_status = "mixed_market_specific"
     else:
-        next_step = "stop_no_incremental_signal"
+        dom_status = "inconclusive"
+
+    book_baseline_assessment = {
+        "book_auc_mean": book_auc_mean,
+        "best_non_book_auc_mean": best_nb_auc,
+        "delta_best_non_book_vs_book": delta_best,
+        "book_brier_mean": float(np.mean(book_briers)) if book_briers else None,
+        "best_non_book_brier_mean": (
+            float(np.mean(nonbook_best_briers)) if nonbook_best_briers else None
+        ),
+        "book_log_loss_mean": float(np.mean(book_lls)) if book_lls else None,
+        "best_non_book_log_loss_mean": (
+            float(np.mean(nonbook_best_lls)) if nonbook_best_lls else None
+        ),
+        "book_roi_top_10": float(np.mean(book_roi10s)) if book_roi10s else None,
+        "best_non_book_roi_top_10": (
+            float(np.mean(nonbook_best_roi10)) if nonbook_best_roi10 else None
+        ),
+        "markets_where_book_is_best_auc": markets_book_best,
+        "markets_where_candidate_beats_book": markets_cand_beats,
+        "dominance_status": dom_status,
+        "note": "Descriptive only; not used for Rating add-on selection.",
+    }
+
+    def _book_spec_qualifies(spec_name: str) -> bool:
+        items = [
+            m
+            for m in paired_positive_vs_book
+            if m.get("spec") == spec_name
+        ]
+        if not items:
+            return False
+        # CI favourable, Brier/LL not materially worse, fold coherent, multi-market
+        ok_n = 0
+        for m in items:
+            ci = (m.get("confidence_intervals") or {}).get("delta_auc") or {}
+            if (m.get("delta_auc") or 0) <= 0:
+                continue
+            if ci.get("ci_low") is not None and ci["ci_low"] <= -0.005:
+                continue
+            if (m.get("delta_brier_improvement") or 0) < -0.02:
+                continue
+            if (m.get("delta_log_loss_improvement") or 0) < -0.05:
+                continue
+            if (m.get("positive_folds") or 0) < (m.get("negative_folds") or 0):
+                continue
+            ok_n += 1
+        if ok_n == 0:
+            return False
+        cm = cross_market_meta.get((spec_name, "BOOK_BASELINE")) or {}
+        return (
+            cm.get("markets_positive", 0) >= 2
+            or cm.get("market_stability") == "market_specific_signal"
+            or len({m.get("market") for m in items}) >= 2
+        )
+
+    qualifying_independent = [
+        s for s in independent_candidate_specs if _book_spec_qualifies(s)
+    ]
+
+    residual_research = (
+        not qualifying_independent
+        and (
+            any(
+                (c.get("independent_roi_top_10_vs_book") or 0) > 0
+                for c in candidate_specs
+            )
+            or any(
+                (c.get("independent_delta_brier_vs_book") or 0) > 0
+                for c in candidate_specs
+            )
+        )
+        and cohort_valid
+        and temporal_done
+    )
+
+    invariant_errors: list[str] = []
+    for m in all_marginal:
+        d = m.get("delta_auc")
+        cls = m.get("classification")
+        if d is not None and d <= 0 and cls in (
+            "positive_stable_evidence",
+            "positive_but_uncertain",
+        ):
+            invariant_errors.append("negative_delta_classified_positive")
+            break
+
+    can_2b = (
+        bool(qualifying_independent)
+        and bool(retained)
+        and not blocking
+        and bool(quality.get("canonical_keys_unique"))
+        and fixture_ok
+        and temporal_done
+        and bool(paired_positive_vs_book)
+    )
+
+    next_step, invariant_errors = resolve_phase_2b_next_step(
+        blocking=blocking,
+        invariant_errors=invariant_errors,
+        temporal_done=temporal_done,
+        limited_temporal="limited_temporal_span" in limitations,
+        can_2b=can_2b,
+        residual_research=residual_research,
+        paired_positive_vs_model=bool(paired_positive_vs_model),
+        paired_positive_vs_book=bool(paired_positive_vs_book),
+        retained=retained,
+        independent_candidate_specs=independent_candidate_specs,
+    )
+
+    readiness_invariants_passed = len(invariant_errors) == 0 and (
+        next_step != "phase_2b_candidate_construction"
+        or (bool(retained) and bool(paired_positive_vs_book) and bool(independent_candidate_specs))
+    )
 
     readiness = {
         "cohort_valid": cohort_valid,
@@ -1860,8 +2290,17 @@ def build_purchasability_statistical_research(
         "market_specific_features": market_spec_feats,
         "features_redundant": redundant,
         "features_unstable": unstable,
+        "model_enrichment_features": model_enrichment_feats,
         "rating_decision": rating_conclusion,
-        "paired_positive_comparisons": len(paired_positive),
+        "paired_positive_vs_book": len(paired_positive_vs_book),
+        "paired_positive_vs_model": len(paired_positive_vs_model),
+        "paired_positive_vs_rating": len(paired_positive_vs_rating),
+        "independent_candidate_specs": independent_candidate_specs,
+        "model_enrichment_specs": model_enrichment_specs,
+        "book_baseline_dominance": dom_status,
+        "residual_research_candidate": residual_research,
+        "readiness_invariants_passed": readiness_invariants_passed,
+        "readiness_invariant_errors": invariant_errors,
         "limitations": sorted(set(limitations)),
         "blocking_issues": blocking,
         "recommended_next_step": next_step,
@@ -1879,7 +2318,8 @@ def build_purchasability_statistical_research(
         ],
         "note": (
             "Rating pairs are prespecified (no OOF best-spec selection). "
-            "Decision uses paired CI, fold and market stability."
+            "Decision uses paired CI, fold and market stability. "
+            "Positive vs Rating alone does not authorize Fase 2B."
         ),
     }
 
@@ -1897,6 +2337,7 @@ def build_purchasability_statistical_research(
         "candidate_specifications": candidate_specs,
         "marginal_contribution": all_marginal,
         "rating_benchmark": rating_benchmark,
+        "book_baseline_assessment": book_baseline_assessment,
         "context_feature_evidence": {
             "features": [
                 "favourite_alignment",
@@ -1942,7 +2383,9 @@ def build_purchasability_statistical_research(
         "no_purchasability_formula": True,
         "research_banner": (
             "Fase di ricerca statistica. Nessun Indice di Acquistabilità produttivo. "
-            "Nessuna influenza sui Segnali Cecchino."
+            "Nessuna influenza sui Segnali Cecchino. "
+            "Un miglioramento rispetto al solo modello Cecchino non dimostra un vantaggio "
+            "indipendente rispetto al mercato."
         ),
     }
     return make_json_safe(payload)

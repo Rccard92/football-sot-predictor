@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A.2 timeout e gate Book (2026-07-18)
+
+- Bump `cecchino_purchasability_statistical_research_v2a_2`: timeout FE dedicato (300–1200s); `negative_but_uncertain`; `comparison_role`; dipendenza Book su Advantage/Edge; readiness solo vs Book + invariants; `book_baseline_assessment`.
+- Nessuna formula 0–100; dataset/audit v1_1 invariati.
+
 ## Indice di Acquistabilità — Fase 2A.1 paired/stabilità (2026-07-18)
 
 - Bump `cecchino_purchasability_statistical_research_v2a_1`: ROI full-coverage vs ranking OOF; `paired_oof_comparison` + CI fixture-paired; fold/market stability reali; Rating prespecificato; `stable_seed`; readiness 2B basata su evidenza paired.

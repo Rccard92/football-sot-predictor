@@ -57,6 +57,16 @@ export function PurchasabilityStatisticalResearchBody({
   const identity = data?.cohort_identity
   const readiness = data?.phase_2b_readiness
   const rating = data?.rating_benchmark
+  const bookAssess = data?.book_baseline_assessment
+  const decisionByConfig = new Map(
+    (data?.feature_decisions || []).map((f) => [f.feature_name, f.decision]),
+  )
+  const candidates = (data?.candidate_specifications || []).filter(
+    (c) => c.configuration !== 'BOOK_BASELINE' && !c.is_book_baseline_benchmark,
+  )
+  const bookBenchmark = (data?.candidate_specifications || []).find(
+    (c) => c.configuration === 'BOOK_BASELINE' || c.is_book_baseline_benchmark,
+  )
 
   return (
     <div className="space-y-4">
@@ -120,6 +130,15 @@ export function PurchasabilityStatisticalResearchBody({
             {loading ? 'Calcolo…' : 'Esegui ricerca'}
           </button>
         </div>
+        {loading ? (
+          <p className="mt-3 text-sm text-slate-600">
+            Ricerca statistica in corso. Con 200 bootstrap può richiedere circa 2–4 minuti. Non
+            avviare una seconda elaborazione.
+            {data ? (
+              <span className="ml-1 font-medium text-amber-800">Nuovo calcolo in corso.</span>
+            ) : null}
+          </p>
+        ) : null}
       </div>
 
       {data ? (
@@ -136,6 +155,36 @@ export function PurchasabilityStatisticalResearchBody({
                 <dd className="font-medium">{data.dataset_version}</dd>
               </div>
               <div>
+                <dt className="text-slate-500">Bootstrap richiesti</dt>
+                <dd className="font-medium">
+                  {data.filters?.bootstrap_iterations ?? bootstrapIterations}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Elapsed total ms</dt>
+                <dd className="font-medium">{fmt(data.elapsed_ms?.total, 1)}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Stato</dt>
+                <dd className="font-medium">{data.status}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Readiness 2B</dt>
+                <dd className="font-medium">{readiness?.recommended_next_step || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Book dominance</dt>
+                <dd className="font-medium">
+                  {bookAssess?.dominance_status ||
+                    readiness?.book_baseline_dominance ||
+                    '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Rating decision</dt>
+                <dd className="font-medium">{readiness?.rating_decision || rating?.conclusion || '—'}</dd>
+              </div>
+              <div>
                 <dt className="text-slate-500">Range</dt>
                 <dd className="font-medium">
                   {identity?.date_min || '—'} → {identity?.date_max || '—'}
@@ -148,22 +197,21 @@ export function PurchasabilityStatisticalResearchBody({
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-500">Stato</dt>
-                <dd className="font-medium">{data.status}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Readiness 2B</dt>
-                <dd className="font-medium">{readiness?.recommended_next_step || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Rating decision</dt>
-                <dd className="font-medium">{readiness?.rating_decision || rating?.conclusion || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Elapsed total ms</dt>
-                <dd className="font-medium">{fmt(data.elapsed_ms?.total, 1)}</dd>
+                <dt className="text-slate-500">Invariants</dt>
+                <dd className="font-medium">
+                  {readiness?.readiness_invariants_passed === true
+                    ? 'ok'
+                    : readiness?.readiness_invariants_passed === false
+                      ? 'fail'
+                      : '—'}
+                </dd>
               </div>
             </dl>
+            {(readiness?.readiness_invariant_errors || []).length > 0 ? (
+              <p className="mt-2 text-xs text-red-700">
+                Errori invariant: {(readiness?.readiness_invariant_errors || []).join(', ')}
+              </p>
+            ) : null}
             {(data.limitations || []).length > 0 ? (
               <p className="mt-3 text-xs text-amber-800">
                 Limitazioni: {(data.limitations || []).join(', ')}
@@ -171,55 +219,140 @@ export function PurchasabilityStatisticalResearchBody({
             ) : null}
           </section>
 
+          <section className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Contatori indipendenza</h3>
+            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-5">
+              <div>
+                <dt className="text-slate-500">Positivi vs Book</dt>
+                <dd className="font-medium">{readiness?.paired_positive_vs_book ?? 0}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Positivi vs Model</dt>
+                <dd className="font-medium">{readiness?.paired_positive_vs_model ?? 0}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Positivi vs Rating</dt>
+                <dd className="font-medium">{readiness?.paired_positive_vs_rating ?? 0}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Candidati indipendenti</dt>
+                <dd className="font-medium">
+                  {(readiness?.independent_candidate_specs || []).length}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Model enrichment</dt>
+                <dd className="font-medium">
+                  {(readiness?.model_enrichment_specs || []).length}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              Un miglioramento rispetto al solo modello Cecchino non dimostra un vantaggio
+              indipendente rispetto al mercato.
+            </p>
+          </section>
+
+          {bookBenchmark ? (
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="text-sm font-semibold text-slate-900">
+                BOOK_BASELINE — benchmark di mercato
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Non è un candidato all&apos;Acquistabilità: confronta le altre specifiche rispetto a
+                questa baseline.
+              </p>
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <dt className="text-slate-500">AUC</dt>
+                  <dd className="font-medium">{fmt(bookBenchmark.auc_mean)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Brier</dt>
+                  <dd className="font-medium">{fmt(bookBenchmark.brier_mean)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">ROI top10%</dt>
+                  <dd className="font-medium">{fmt(bookBenchmark.roi_top_10pct_mean)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Dominance</dt>
+                  <dd className="font-medium">{bookAssess?.dominance_status || '—'}</dd>
+                </div>
+              </dl>
+            </section>
+          ) : null}
+
           <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
             <h3 className="text-sm font-semibold text-slate-900">Candidati</h3>
             <p className="mt-1 text-xs text-slate-500">
-              ROI coorte = full coverage (non discriminante tra modelli). Confrontare ROI top 10%/20% e Δ
-              paired vs Book.
+              ROI coorte = full coverage (non discriminante tra modelli). Confrontare ROI top 10%/20%
+              e Δ paired vs Book. Advantage/Edge contengono informazione Book.
             </p>
-            <table className="mt-3 w-full min-w-[980px] text-left text-sm">
+            <table className="mt-3 w-full min-w-[1200px] text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="py-1 pr-2">Config</th>
                   <th className="py-1 pr-2">AUC</th>
-                  <th className="py-1 pr-2">Brier</th>
-                  <th className="py-1 pr-2">ROI coorte</th>
-                  <th className="py-1 pr-2">ROI top10%</th>
-                  <th className="py-1 pr-2">ROI top20%</th>
+                  <th className="py-1 pr-2">Book info</th>
                   <th className="py-1 pr-2">ΔAUC vs Book</th>
+                  <th className="py-1 pr-2">ΔBrier vs Book</th>
+                  <th className="py-1 pr-2">ROI top10% vs Book</th>
+                  <th className="py-1 pr-2">Evidenza ind.</th>
+                  <th className="py-1 pr-2">ROI top10%</th>
                   <th className="py-1 pr-2">Stab. fold</th>
-                  <th className="py-1 pr-2">Stab. mercati</th>
-                  <th className="py-1">Stato</th>
+                  <th className="py-1">Decisione</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.candidate_specifications || []).map((c) => (
-                  <tr key={c.configuration} className="border-b border-slate-100">
-                    <td className="py-1.5 pr-2 font-medium">{c.configuration}</td>
-                    <td className="py-1.5 pr-2">{fmt(c.auc_mean)}</td>
-                    <td className="py-1.5 pr-2">{fmt(c.brier_mean)}</td>
-                    <td className="py-1.5 pr-2 text-slate-500" title="ROI coorte — non discriminante">
-                      {fmt(c.cohort_full_coverage_roi)}
-                    </td>
-                    <td className="py-1.5 pr-2">{fmt(c.roi_top_10pct_mean)}</td>
-                    <td className="py-1.5 pr-2">{fmt(c.roi_top_20pct_mean)}</td>
-                    <td className="py-1.5 pr-2">{fmt(c.delta_auc_vs_book_mean)}</td>
-                    <td className="py-1.5 pr-2">{c.temporal_stability || '—'}</td>
-                    <td className="py-1.5 pr-2">{c.market_stability || '—'}</td>
-                    <td className="py-1.5">{c.status || '—'}</td>
-                  </tr>
-                ))}
+                {candidates.map((c) => {
+                  const relatedDecision =
+                    decisionByConfig.get(
+                      c.configuration.includes('ADVANTAGE')
+                        ? 'probability_advantage'
+                        : c.configuration.includes('EDGE')
+                          ? 'edge'
+                          : c.configuration.includes('SCORE')
+                            ? 'score'
+                            : c.configuration.includes('RATING')
+                              ? 'rating'
+                              : c.configuration.includes('MODEL')
+                                ? 'model_probability'
+                                : '',
+                    ) || c.status
+                  return (
+                    <tr key={c.configuration} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-2 font-medium">{c.configuration}</td>
+                      <td className="py-1.5 pr-2">{fmt(c.auc_mean)}</td>
+                      <td className="py-1.5 pr-2">{c.contains_book_information ? 'sì' : 'no'}</td>
+                      <td className="py-1.5 pr-2">
+                        {fmt(c.independent_delta_auc_vs_book ?? c.delta_auc_vs_book_mean)}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {fmt(c.independent_delta_brier_vs_book ?? c.delta_brier_vs_book_mean)}
+                      </td>
+                      <td className="py-1.5 pr-2">{fmt(c.independent_roi_top_10_vs_book)}</td>
+                      <td className="py-1.5 pr-2 text-xs">
+                        {c.independent_evidence_status || '—'}
+                      </td>
+                      <td className="py-1.5 pr-2">{fmt(c.roi_top_10pct_mean)}</td>
+                      <td className="py-1.5 pr-2">{c.temporal_stability || '—'}</td>
+                      <td className="py-1.5 text-xs">{relatedDecision || '—'}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
             <h3 className="text-sm font-semibold text-slate-900">Confronti paired (Δ + CI)</h3>
-            <table className="mt-3 w-full min-w-[900px] text-left text-sm">
+            <table className="mt-3 w-full min-w-[980px] text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="py-1 pr-2">Mercato</th>
                   <th className="py-1 pr-2">Spec vs</th>
+                  <th className="py-1 pr-2">Ruolo</th>
                   <th className="py-1 pr-2">ΔAUC</th>
                   <th className="py-1 pr-2">CI AUC</th>
                   <th className="py-1 pr-2">ΔROI top10%</th>
@@ -229,30 +362,28 @@ export function PurchasabilityStatisticalResearchBody({
                 </tr>
               </thead>
               <tbody>
-                {(data.marginal_contribution || [])
-                  .filter((m) => m.vs === 'BOOK_BASELINE')
-                  .slice(0, 40)
-                  .map((m, i) => {
-                    const ci = m.confidence_intervals?.delta_auc
-                    return (
-                      <tr key={`${m.market}-${m.spec}-${i}`} className="border-b border-slate-100">
-                        <td className="py-1.5 pr-2">{m.market}</td>
-                        <td className="py-1.5 pr-2 text-xs">
-                          {m.spec} vs {m.vs}
-                        </td>
-                        <td className="py-1.5 pr-2">{fmt(m.delta_auc)}</td>
-                        <td className="py-1.5 pr-2 text-xs">
-                          [{fmt(ci?.ci_low)} , {fmt(ci?.ci_high)}]
-                        </td>
-                        <td className="py-1.5 pr-2">{fmt(m.delta_roi_top_10pct)}</td>
-                        <td className="py-1.5 pr-2">
-                          {m.positive_folds ?? 0}/{m.negative_folds ?? 0}
-                        </td>
-                        <td className="py-1.5 pr-2 text-xs">{m.market_stability || '—'}</td>
-                        <td className="py-1.5 text-xs">{m.classification || '—'}</td>
-                      </tr>
-                    )
-                  })}
+                {(data.marginal_contribution || []).slice(0, 50).map((m, i) => {
+                  const ci = m.confidence_intervals?.delta_auc
+                  return (
+                    <tr key={`${m.market}-${m.spec}-${m.vs}-${i}`} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-2">{m.market}</td>
+                      <td className="py-1.5 pr-2 text-xs">
+                        {m.spec} vs {m.vs}
+                      </td>
+                      <td className="py-1.5 pr-2 text-xs">{m.comparison_role || '—'}</td>
+                      <td className="py-1.5 pr-2">{fmt(m.delta_auc)}</td>
+                      <td className="py-1.5 pr-2 text-xs">
+                        [{fmt(ci?.ci_low)} , {fmt(ci?.ci_high)}]
+                      </td>
+                      <td className="py-1.5 pr-2">{fmt(m.delta_roi_top_10pct)}</td>
+                      <td className="py-1.5 pr-2">
+                        {m.positive_folds ?? 0}/{m.negative_folds ?? 0}
+                      </td>
+                      <td className="py-1.5 pr-2 text-xs">{m.market_stability || '—'}</td>
+                      <td className="py-1.5 text-xs">{m.classification || '—'}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </section>
@@ -264,9 +395,9 @@ export function PurchasabilityStatisticalResearchBody({
                 <tr>
                   <th className="py-1 pr-2">Feature</th>
                   <th className="py-1 pr-2">Decisione</th>
-                  <th className="py-1 pr-2">Marginale</th>
+                  <th className="py-1 pr-2">vs Book</th>
+                  <th className="py-1 pr-2">vs Model</th>
                   <th className="py-1 pr-2">Temp.</th>
-                  <th className="py-1 pr-2">Mercato</th>
                   <th className="py-1">Motivazione</th>
                 </tr>
               </thead>
@@ -276,10 +407,12 @@ export function PurchasabilityStatisticalResearchBody({
                     <td className="py-1.5 pr-2 font-medium">{f.feature_name}</td>
                     <td className="py-1.5 pr-2">{f.decision}</td>
                     <td className="py-1.5 pr-2 text-xs">
-                      {(f.marginal_effect || []).slice(0, 2).join(', ') || '—'}
+                      {f.evidence_axes?.incremental_vs_book ? 'sì' : 'no'}
+                    </td>
+                    <td className="py-1.5 pr-2 text-xs">
+                      {f.evidence_axes?.incremental_vs_model ? 'sì' : 'no'}
                     </td>
                     <td className="py-1.5 pr-2">{f.temporal_stability || '—'}</td>
-                    <td className="py-1.5 pr-2">{f.market_stability || '—'}</td>
                     <td className="py-1.5 text-xs text-slate-600">{f.decision_reason || '—'}</td>
                   </tr>
                 ))}
@@ -388,7 +521,7 @@ export function PurchasabilityStatisticalResearchBody({
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Export Fase 2A.1</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">Export Fase 2A.2</h3>
             <div className="flex flex-wrap gap-2">
               {EXPORTS.map(([kind, label]) => (
                 <a

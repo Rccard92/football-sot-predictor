@@ -2,6 +2,19 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A.2 — Timeout FE e gate indipendenza vs Book (`…_v2a_2`)
+
+Correzioni post-benchmark Railway (~155,7s / 200 bootstrap vs timeout FE 90s):
+
+- **Timeout dedicato** su `getPurchasabilityStatisticalResearch`: ≤200 → 300s, 201–500 → 600s, >500 → 1200s. Il default `adminGetJson` resta 90s per le altre API.
+- **`classify_marginal`**: mai `positive_*` con ΔAUC ≤ 0; nuova classe `negative_but_uncertain`.
+- **`comparison_role`**: `independent_vs_book` | `model_enrichment_diagnostic` | `rating_diagnostic`.
+- **Book dependence**: VALUE_ADVANTAGE/EDGE (+ context/plus-rating) con `contains_book_information` e dipendenze deterministiche.
+- **Readiness 2B**: conta separatamente positivi vs Book/Model/Rating; `phase_2b_candidate_construction` solo con evidenza indipendente vs Book + retained non vuoto; altrimenti residual research / stop / data quality.
+- **`book_baseline_assessment`**: dominance descrittiva (`book_dominant` | …).
+- **Invariants**: `readiness_invariant_errors` (es. `negative_delta_classified_positive`, `phase_2b_without_independent_feature`).
+- Nessuna formula 0–100. Dataset `cecchino_purchasability_dataset_v1_1` invariato.
+
 ## Fase 2A.1 — Confronti paired e ROI discriminante (`…_v2a_1`)
 
 Correzioni su v2a prima del benchmark Railway:
@@ -13,11 +26,11 @@ Correzioni su v2a prima del benchmark Railway:
 - **Stabilità mercati**: Pass 1 per mercato → Pass 2 aggregato (`cross_market_stable` / `market_specific_signal` / …).
 - **Rating**: confronti **prespecificati** (niente selezione best-spec su OOF).
 - **`stable_seed`**: SHA-256, nessun `hash()` Python.
-- Readiness 2B richiede evidenza paired reale.
+- Readiness 2B richiede evidenza paired reale (superseduta dal gate Book in v2a_2).
 
 ## Fase 2A — Ricerca statistica (`cecchino_purchasability_statistical_research_v2a`)
 
-Read-only sulla coorte **settled_core** del dataset `cecchino_purchasability_dataset_v1_1` (non duplicato). Superseduta da v2a_1 per confronti paired.
+Read-only sulla coorte **settled_core** del dataset `cecchino_purchasability_dataset_v1_1` (non duplicato). Superseduta da v2a_1/v2a_2 per confronti paired e gate indipendenza.
 
 ### Coorte
 
@@ -41,7 +54,7 @@ Logistic L2 + StandardScaler train-only; OOF AUC/Brier/LogLoss/calibration; ROI 
 
 ### Decisioni
 
-`retain_candidate` / `benchmark_only` / `redundant_exclude` / `unstable_exclude` / `market_specific_candidate` / `insufficient_evidence`. Rating: conclusioni tipizzate senza modificare la formula.
+`retain_independent_candidate` / `model_enrichment_only` / `benchmark_only` / `redundant_exclude` / `unstable_exclude` / `market_specific_candidate` / `negative_incremental_value` / `insufficient_evidence`. Rating: conclusioni tipizzate senza modificare la formula; non retain solo perché batte MODEL.
 
 ### API
 
@@ -51,11 +64,11 @@ Logistic L2 + StandardScaler train-only; OOF AUC/Brier/LogLoss/calibration; ROI 
 
 ### Frontend
 
-Sub-tab **Ricerca statistica — Fase 2A** sotto Acquistabilità su Segnali KPI (Audit conservato). Banner obbligatorio; nessuna colonna produttiva.
+Sub-tab **Ricerca statistica — Fase 2A** sotto Acquistabilità su Segnali KPI (Audit conservato). Banner obbligatorio; nessuna colonna produttiva. Loading 2–4 min; no auto-load; keep results + “Nuovo calcolo in corso”.
 
 ### Limiti / Fase 2B
 
-Nessuna formula 0–100. Readiness in `phase_2b_readiness.recommended_next_step`. Benchmark Railway richiede `DATABASE_URL`; altrimenti `DATABASE_URL_missing`.
+Nessuna formula 0–100. Readiness in `phase_2b_readiness.recommended_next_step` (gate vs Book). Benchmark Railway richiede `DATABASE_URL`; altrimenti `DATABASE_URL_missing`.
 
 ## Hotfix JSON-safe VIF (2026-07-18)
 

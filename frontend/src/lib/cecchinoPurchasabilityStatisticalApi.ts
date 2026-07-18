@@ -32,6 +32,13 @@ export type PurchasabilityFeatureDecision = {
   temporal_stability?: string
   market_stability?: string
   deterministic_dependencies?: string[]
+  evidence_axes?: {
+    predictive_against_outcome?: number | null
+    incremental_vs_model?: boolean
+    incremental_vs_book?: boolean
+    economic_ranking_evidence?: boolean
+    residual_reliability_evidence?: boolean
+  }
 }
 
 export type PurchasabilityCandidateSpec = {
@@ -47,11 +54,20 @@ export type PurchasabilityCandidateSpec = {
   roi_top_quintile_mean?: number | null
   delta_auc_vs_book_mean?: number | null
   delta_brier_vs_book_mean?: number | null
+  contains_book_information?: boolean
+  deterministic_book_dependencies?: string[]
+  independent_evidence_status?: string
+  independent_delta_auc_vs_book?: number | null
+  independent_delta_brier_vs_book?: number | null
+  independent_delta_log_loss_vs_book?: number | null
+  independent_roi_top_10_vs_book?: number | null
+  independent_roi_top_20_vs_book?: number | null
   temporal_stability?: string
   market_stability?: string
   markets_positive?: number | null
   markets_negative?: number | null
   status?: string
+  is_book_baseline_benchmark?: boolean
 }
 
 export type PurchasabilityPairedCI = {
@@ -66,6 +82,11 @@ export type PurchasabilityMarginalRow = {
   market?: string
   spec?: string
   vs?: string
+  comparison_role?:
+    | 'independent_vs_book'
+    | 'model_enrichment_diagnostic'
+    | 'rating_diagnostic'
+    | string
   delta_auc?: number | null
   delta_brier_improvement?: number | null
   delta_roi_top_10pct?: number | null
@@ -80,6 +101,22 @@ export type PurchasabilityMarginalRow = {
     delta_auc?: PurchasabilityPairedCI
     delta_roi_top_10pct?: PurchasabilityPairedCI
   }
+}
+
+export type PurchasabilityBookBaselineAssessment = {
+  book_auc_mean?: number | null
+  best_non_book_auc_mean?: number | null
+  delta_best_non_book_vs_book?: number | null
+  book_brier_mean?: number | null
+  best_non_book_brier_mean?: number | null
+  book_log_loss_mean?: number | null
+  best_non_book_log_loss_mean?: number | null
+  book_roi_top_10?: number | null
+  best_non_book_roi_top_10?: number | null
+  markets_where_book_is_best_auc?: string[]
+  markets_where_candidate_beats_book?: string[]
+  dominance_status?: string
+  note?: string
 }
 
 export type PurchasabilityMarketResult = {
@@ -126,6 +163,7 @@ export type PurchasabilityStatisticalResearchResponse = {
     per_market?: Array<Record<string, unknown>>
     note?: string
   }
+  book_baseline_assessment?: PurchasabilityBookBaselineAssessment
   phase_2b_readiness?: {
     recommended_next_step?: string
     rating_decision?: string
@@ -136,6 +174,16 @@ export type PurchasabilityStatisticalResearchResponse = {
     features_redundant?: string[]
     features_unstable?: string[]
     market_specific_features?: string[]
+    model_enrichment_features?: string[]
+    paired_positive_vs_book?: number
+    paired_positive_vs_model?: number
+    paired_positive_vs_rating?: number
+    independent_candidate_specs?: string[]
+    model_enrichment_specs?: string[]
+    book_baseline_dominance?: string
+    residual_research_candidate?: boolean
+    readiness_invariants_passed?: boolean
+    readiness_invariant_errors?: string[]
     cohort_valid?: boolean
     temporal_cv_completed?: boolean
     [key: string]: unknown
@@ -162,11 +210,20 @@ function qs(filters: PurchasabilityStatFilters): string {
   return s ? `?${s}` : ''
 }
 
+export function statisticalResearchTimeoutMs(bootstrapIterations?: number | null): number {
+  const iterations = bootstrapIterations ?? 200
+  if (iterations > 500) return 1_200_000
+  if (iterations > 200) return 600_000
+  return 300_000
+}
+
 export async function getPurchasabilityStatisticalResearch(
   filters: PurchasabilityStatFilters = {},
 ): Promise<PurchasabilityStatisticalResearchResponse> {
+  const timeoutMs = statisticalResearchTimeoutMs(filters.bootstrap_iterations)
   return adminGetJson(
     `/api/admin/cecchino/research/purchasability/statistical-research${qs(filters)}`,
+    { timeoutMs },
   )
 }
 

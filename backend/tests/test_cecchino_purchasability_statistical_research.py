@@ -434,7 +434,7 @@ def test_35_37_json_safe_no_nan_inf():
 def test_38_39_audit_dataset_versions_unchanged():
     assert AUDIT_VERSION == "cecchino_purchasability_audit_v1_1"
     assert DATASET_VERSION == "cecchino_purchasability_dataset_v1_1"
-    assert STAT_VERSION == "cecchino_purchasability_statistical_research_v2a_1"
+    assert STAT_VERSION == "cecchino_purchasability_statistical_research_v2a_2"
 
 
 def test_40_46_flags_no_formula_no_writes():
@@ -678,3 +678,286 @@ def test_v2a1_20_readiness_not_positive_without_paired():
     # With tiny synthetic data, must not claim 2B construction without paired evidence
     if payload["phase_2b_readiness"].get("paired_positive_comparisons", 0) == 0:
         assert step != "phase_2b_candidate_construction"
+    if payload["phase_2b_readiness"].get("paired_positive_vs_book", 0) == 0:
+        assert step != "phase_2b_candidate_construction"
+
+
+# --- Fase 2A.2 timeout FE + gate indipendenza vs Book (20 punti) ---
+
+
+def test_v2a2_01_negative_delta_not_positive_uncertain():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_marginal,
+    )
+
+    assert (
+        classify_marginal(-0.02, [1], None, {"ci_low": -0.05, "ci_high": 0.01})
+        != "positive_but_uncertain"
+    )
+    assert (
+        classify_marginal(-0.001, [], None, {"ci_low": -0.02, "ci_high": 0.02})
+        != "positive_but_uncertain"
+    )
+
+
+def test_v2a2_02_negative_uncertain_when_ci_crosses_zero():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_marginal,
+    )
+
+    assert (
+        classify_marginal(-0.005, [1], None, {"ci_low": -0.02, "ci_high": 0.01})
+        == "negative_but_uncertain"
+    )
+
+
+def test_v2a2_03_entirely_negative_ci_is_negative_incremental():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_marginal,
+    )
+
+    assert (
+        classify_marginal(-0.005, [1], None, {"ci_low": -0.04, "ci_high": -0.01})
+        == "negative_incremental_value"
+    )
+
+
+def test_v2a2_04_positive_uncertain_when_ci_crosses_zero():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_marginal,
+    )
+
+    assert (
+        classify_marginal(0.02, [1], None, {"ci_low": -0.01, "ci_high": 0.05})
+        == "positive_but_uncertain"
+    )
+
+
+def test_v2a2_05_positive_stable_requires_positive_delta_and_ci():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_marginal,
+    )
+
+    assert (
+        classify_marginal(0.05, [1, 1, 1], None, {"ci_low": 0.01, "ci_high": 0.08})
+        == "positive_stable_evidence"
+    )
+    assert (
+        classify_marginal(-0.05, [1, 1, 1], None, {"ci_low": 0.01, "ci_high": 0.08})
+        != "positive_stable_evidence"
+    )
+
+
+def test_v2a2_06_07_08_comparison_roles():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        comparison_role_for,
+    )
+
+    assert comparison_role_for("MODEL_BASELINE", "VALUE_ADVANTAGE") == (
+        "model_enrichment_diagnostic"
+    )
+    assert comparison_role_for("BOOK_BASELINE", "VALUE_ADVANTAGE") == "independent_vs_book"
+    assert comparison_role_for("RATING_BASELINE", "RATING_CONTEXT") == "rating_diagnostic"
+    assert (
+        comparison_role_for("VALUE_ADVANTAGE", "VALUE_ADVANTAGE_PLUS_RATING")
+        == "rating_diagnostic"
+    )
+
+
+def test_v2a2_09_positive_vs_model_does_not_enable_2b():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        resolve_phase_2b_next_step,
+    )
+
+    step, errs = resolve_phase_2b_next_step(
+        blocking=[],
+        invariant_errors=[],
+        temporal_done=True,
+        limited_temporal=False,
+        can_2b=False,
+        residual_research=False,
+        paired_positive_vs_model=True,
+        paired_positive_vs_book=False,
+        retained=["probability_advantage"],
+        independent_candidate_specs=[],
+    )
+    assert step != "phase_2b_candidate_construction"
+    assert step == "phase_2a_residual_reliability_research"
+    assert errs == []
+
+
+def test_v2a2_10_positive_vs_rating_does_not_enable_2b():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        resolve_phase_2b_next_step,
+    )
+
+    step, _ = resolve_phase_2b_next_step(
+        blocking=[],
+        invariant_errors=[],
+        temporal_done=True,
+        limited_temporal=False,
+        can_2b=False,
+        residual_research=False,
+        paired_positive_vs_model=False,
+        paired_positive_vs_book=False,
+        retained=[],
+        independent_candidate_specs=[],
+    )
+    assert step != "phase_2b_candidate_construction"
+
+
+def test_v2a2_11_positive_stable_vs_book_can_enable_2b():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        resolve_phase_2b_next_step,
+    )
+
+    step, errs = resolve_phase_2b_next_step(
+        blocking=[],
+        invariant_errors=[],
+        temporal_done=True,
+        limited_temporal=False,
+        can_2b=True,
+        residual_research=False,
+        paired_positive_vs_model=True,
+        paired_positive_vs_book=True,
+        retained=["probability_advantage"],
+        independent_candidate_specs=["VALUE_ADVANTAGE"],
+    )
+    assert step == "phase_2b_candidate_construction"
+    assert errs == []
+
+
+def test_v2a2_12_empty_retained_blocks_2b():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        resolve_phase_2b_next_step,
+    )
+
+    step, errs = resolve_phase_2b_next_step(
+        blocking=[],
+        invariant_errors=[],
+        temporal_done=True,
+        limited_temporal=False,
+        can_2b=True,
+        residual_research=False,
+        paired_positive_vs_model=False,
+        paired_positive_vs_book=True,
+        retained=[],
+        independent_candidate_specs=["VALUE_ADVANTAGE"],
+    )
+    assert step == "resolve_data_quality"
+    assert "phase_2b_without_independent_feature" in errs
+
+
+def test_v2a2_13_14_value_specs_flag_book_dependence():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        BOOK_DEPENDENCIES,
+        SPECS_WITH_BOOK_INFO,
+    )
+
+    assert "VALUE_ADVANTAGE" in SPECS_WITH_BOOK_INFO
+    assert "VALUE_EDGE" in SPECS_WITH_BOOK_INFO
+    assert "book_prob" in BOOK_DEPENDENCIES["VALUE_ADVANTAGE"]
+    assert "odds" in BOOK_DEPENDENCIES["VALUE_EDGE"]
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME", "DRAW")),
+        bootstrap_iterations=12,
+        seed=11,
+    )
+    by_cfg = {c["configuration"]: c for c in payload["candidate_specifications"]}
+    assert by_cfg["VALUE_ADVANTAGE"]["contains_book_information"] is True
+    assert by_cfg["VALUE_EDGE"]["contains_book_information"] is True
+    assert by_cfg["VALUE_ADVANTAGE"]["deterministic_book_dependencies"]
+
+
+def test_v2a2_15_book_dominance_computed():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(16, ("HOME", "DRAW")),
+        bootstrap_iterations=12,
+        seed=12,
+    )
+    ba = payload["book_baseline_assessment"]
+    assert ba["dominance_status"] in {
+        "book_dominant",
+        "candidate_incremental",
+        "mixed_market_specific",
+        "inconclusive",
+    }
+    assert "book_auc_mean" in ba
+    assert payload["phase_2b_readiness"]["book_baseline_dominance"] == ba["dominance_status"]
+
+
+def test_v2a2_16_negative_classified_positive_invariant():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        resolve_phase_2b_next_step,
+    )
+
+    step, errs = resolve_phase_2b_next_step(
+        blocking=[],
+        invariant_errors=["negative_delta_classified_positive"],
+        temporal_done=True,
+        limited_temporal=False,
+        can_2b=True,
+        residual_research=False,
+        paired_positive_vs_model=False,
+        paired_positive_vs_book=True,
+        retained=["edge"],
+        independent_candidate_specs=["VALUE_EDGE"],
+    )
+    assert step == "resolve_data_quality"
+    assert "negative_delta_classified_positive" in errs
+
+
+def test_v2a2_17_18_statistical_api_timeout_and_default_unchanged():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    api_stat = (root / "frontend/src/lib/cecchinoPurchasabilityStatisticalApi.ts").read_text(
+        encoding="utf-8"
+    )
+    api_core = (root / "frontend/src/lib/api.ts").read_text(encoding="utf-8")
+    assert "statisticalResearchTimeoutMs" in api_stat
+    assert "300_000" in api_stat
+    assert "600_000" in api_stat
+    assert "1_200_000" in api_stat
+    assert "adminGetJson(" in api_stat and "timeoutMs" in api_stat
+    # Default adminGetJson resta 90s; solo override esplicito cambia
+    assert "timeoutMs: opts?.timeoutMs ?? 90_000" in api_core
+
+
+def test_v2a2_19_button_disabled_while_loading():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    body = (
+        root
+        / "frontend/src/components/cecchino-purchasability-research/PurchasabilityStatisticalResearchBody.tsx"
+    ).read_text(encoding="utf-8")
+    assert "disabled={loading}" in body
+    hook = (
+        root / "frontend/src/hooks/useCecchinoPurchasabilityStatisticalResearch.ts"
+    ).read_text(encoding="utf-8")
+    assert "loadingRef" in hook
+    assert "if (loadingRef.current) return" in hook
+
+
+def test_v2a2_20_strict_json_and_comparison_role_on_marginal():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME", "DRAW")),
+        bootstrap_iterations=12,
+        seed=13,
+    )
+    json.dumps(make_json_safe(payload), allow_nan=False)
+    roles = {m.get("comparison_role") for m in payload["marginal_contribution"]}
+    assert "independent_vs_book" in roles or any(
+        m.get("vs") == "BOOK_BASELINE" for m in payload["marginal_contribution"]
+    )
+    readiness = payload["phase_2b_readiness"]
+    assert "paired_positive_vs_book" in readiness
+    assert "paired_positive_vs_model" in readiness
+    assert "paired_positive_vs_rating" in readiness
+    assert "readiness_invariant_errors" in readiness
+    assert payload["version"] == "cecchino_purchasability_statistical_research_v2a_2"
+

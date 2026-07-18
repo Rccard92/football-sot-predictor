@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A.2 (2026-07-18)
+
+1. `GET .../purchasability/statistical-research` (versione `v2a_2`): verificare timeout FE ≥300s (200 bootstrap), positivi vs Book/Model/Rating separati, Book dominance, invariants.
+2. FE: loading 2–4 min, pulsante disabilitato, keep results; avviso indipendenza vs mercato.
+3. Benchmark Railway: prima 200 bootstrap; 1000 solo da console se invariants ok. Locale senza DB: `DATABASE_URL_missing`.
+
 ## Indice di Acquistabilità — Fase 2A.1 (2026-07-18)
 
 1. `GET .../purchasability/statistical-research` (versione `v2a_1`): verificare paired ΔAUC/CI, ROI top 10%/20%, fold/market stability.
