@@ -1,6 +1,6 @@
-"""Indice di Acquistabilità — Fase 2A ricerca statistica (read-only).
+"""Indice di Acquistabilità — Fase 2A.1 ricerca statistica (read-only).
 
-Versione: cecchino_purchasability_statistical_research_v2a
+Versione: cecchino_purchasability_statistical_research_v2a_1
 Dataset sorgente: cecchino_purchasability_dataset_v1_1 (non modificato).
 
 Nessuna formula 0–100, nessuna scrittura DB, nessuna modifica Rating/KPI/Segnali.
@@ -29,25 +29,32 @@ from app.services.cecchino.cecchino_purchasability_audit import (
     make_json_safe,
 )
 from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
+    DELTA_AUC_NEGATIVE,
+    DELTA_AUC_STABLE,
+    DELTA_AUC_UNCERTAIN,
+    FOLD_NEUTRAL_ABS,
+    MARKET_NEUTRAL_ABS,
     brier,
     calibration_slope_intercept,
-    clip_prob,
     ece_score,
     economic_metrics,
     expanding_fixture_folds,
     fixture_cluster_bootstrap_ci,
     gap_from_payload,
     log_loss_score,
+    paired_oof_comparison,
     parse_iso,
     quantile_roi,
+    ranking_economic_from_scores,
     roc_auc,
     safe_div,
     sha256_hex,
     spearman_rho,
+    stable_seed,
     top_k_roi,
 )
 
-STAT_VERSION = "cecchino_purchasability_statistical_research_v2a"
+STAT_VERSION = "cecchino_purchasability_statistical_research_v2a_1"
 
 PRIMARY_MARKETS = (
     "HOME",
@@ -157,11 +164,74 @@ SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
         "role": "rating_context",
         "allows_rating": True,
     },
-    "RATING_MARGINAL_DIAGNOSTIC": {
-        "features": [],  # filled dynamically: best_without_rating + rating
-        "role": "rating_marginal",
+    # Prespecified Rating diagnostics (no OOF selection of base spec)
+    "VALUE_ADVANTAGE_PLUS_RATING": {
+        "features": ["model_probability", "probability_advantage", "rating"],
+        "role": "rating_diagnostic",
         "allows_rating": True,
         "diagnostic": True,
+        "compare_to": "VALUE_ADVANTAGE",
+    },
+    "VALUE_EDGE_PLUS_RATING": {
+        "features": ["model_probability", "edge", "rating"],
+        "role": "rating_diagnostic",
+        "allows_rating": True,
+        "diagnostic": True,
+        "compare_to": "VALUE_EDGE",
+    },
+    "VALUE_SCORE_PLUS_RATING": {
+        "features": ["score", "rating"],
+        "role": "rating_diagnostic",
+        "allows_rating": True,
+        "diagnostic": True,
+        "compare_to": "VALUE_SCORE",
+    },
+    "VALUE_ADVANTAGE_CONTEXT_PLUS_RATING": {
+        "features": [
+            "model_probability",
+            "probability_advantage",
+            "favourite_intensity_book",
+            "favourite_intensity_model",
+            "comparator_odds_gap",
+            "comparator_model_probability_gap",
+            "rating",
+        ],
+        "categoricals": ["favourite_alignment"],
+        "role": "rating_diagnostic",
+        "allows_rating": True,
+        "diagnostic": True,
+        "compare_to": "VALUE_ADVANTAGE_CONTEXT",
+    },
+    "VALUE_EDGE_CONTEXT_PLUS_RATING": {
+        "features": [
+            "model_probability",
+            "edge",
+            "favourite_intensity_book",
+            "favourite_intensity_model",
+            "comparator_odds_gap",
+            "comparator_model_probability_gap",
+            "rating",
+        ],
+        "categoricals": ["favourite_alignment"],
+        "role": "rating_diagnostic",
+        "allows_rating": True,
+        "diagnostic": True,
+        "compare_to": "VALUE_EDGE_CONTEXT",
+    },
+    "VALUE_SCORE_CONTEXT_PLUS_RATING": {
+        "features": [
+            "score",
+            "favourite_intensity_book",
+            "favourite_intensity_model",
+            "comparator_odds_gap",
+            "comparator_model_probability_gap",
+            "rating",
+        ],
+        "categoricals": ["favourite_alignment"],
+        "role": "rating_diagnostic",
+        "allows_rating": True,
+        "diagnostic": True,
+        "compare_to": "VALUE_SCORE_CONTEXT",
     },
 }
 
@@ -617,9 +687,10 @@ def score_oof_predictions(
     odds = np.array([rows[i]["odds"] for i in eco_idx], dtype=float)
     scores = oof_prob[eco_idx]
     eco = economic_metrics(profits, won, odds, void_mask=void_mask)
-    eco["roi_by_quintile"] = quantile_roi(profits, scores, 5)
-    eco["roi_top_10pct"] = top_k_roi(profits, scores, 0.10)
-    eco["roi_top_20pct"] = top_k_roi(profits, scores, 0.20)
+    ranking = ranking_economic_from_scores(profits, scores)
+    eco.update(ranking)
+    # Explicit alias for clarity in payloads
+    eco["cohort_full_coverage_roi"] = eco.get("cohort_full_coverage_roi")
 
     fids = np.array([rows[i]["today_fixture_id"] for i in eco_idx])
     boot = fixture_cluster_bootstrap_ci(
@@ -628,6 +699,66 @@ def score_oof_predictions(
     eco["mean_profit_bootstrap"] = boot
 
     return {"status": "ok", "classification": cls, "economic": eco, "n_oof": int(np.sum(mask))}
+
+
+def fold_delta_auc_signs(
+    rows: list[dict[str, Any]],
+    folds: list[dict[str, Any]],
+    pred_cand: np.ndarray,
+    pred_base: np.ndarray,
+) -> dict[str, Any]:
+    """Per-fold paired delta AUC on test fixtures (real fold_signs)."""
+    fold_deltas: list[dict[str, Any]] = []
+    signs: list[int] = []
+    for fold in folds:
+        test_fids = set(fold["test_fixture_ids"])
+        idx = [
+            i
+            for i, r in enumerate(rows)
+            if r["today_fixture_id"] in test_fids
+            and np.isfinite(pred_cand[i])
+            and np.isfinite(pred_base[i])
+            and r.get("y_win") is not None
+        ]
+        if len(idx) < 4:
+            fold_deltas.append({"fold": fold["fold"], "delta_auc": None, "skipped": True})
+            continue
+        y = np.array([rows[i]["y_win"] for i in idx], dtype=float)
+        if len(np.unique(y)) < 2:
+            fold_deltas.append({"fold": fold["fold"], "delta_auc": None, "skipped": True})
+            continue
+        ac = roc_auc(y, pred_cand[idx])
+        ab = roc_auc(y, pred_base[idx])
+        if ac is None or ab is None:
+            fold_deltas.append({"fold": fold["fold"], "delta_auc": None, "skipped": True})
+            continue
+        d = float(ac - ab)
+        if abs(d) < FOLD_NEUTRAL_ABS:
+            sign = 0
+        else:
+            sign = 1 if d > 0 else -1
+        signs.append(sign)
+        fold_deltas.append({"fold": fold["fold"], "delta_auc": d, "sign": sign, "skipped": False})
+
+    pos = sum(1 for s in signs if s > 0)
+    neg = sum(1 for s in signs if s < 0)
+    neu = sum(1 for s in signs if s == 0)
+    consistency = None
+    if signs:
+        consistency = max(pos, neg, neu) / len(signs)
+    deltas_only = [f["delta_auc"] for f in fold_deltas if f.get("delta_auc") is not None]
+    effect_range = None
+    if deltas_only:
+        effect_range = float(max(deltas_only) - min(deltas_only))
+    return {
+        "fold_deltas": fold_deltas,
+        "fold_signs": signs,
+        "positive_folds": pos,
+        "negative_folds": neg,
+        "neutral_folds": neu,
+        "fold_sign_consistency": consistency,
+        "fold_effect_range": effect_range,
+    }
 
 
 def univariate_feature_analysis(
@@ -645,8 +776,6 @@ def univariate_feature_analysis(
         v = _num(r.get(feature))
         if v is None:
             continue
-        if r.get("y_win") is None and feature:  # still include for ROI with void
-            pass
         vals.append(v)
         profits.append(r["profit"])
         ywins.append(r.get("y_win"))
@@ -661,7 +790,6 @@ def univariate_feature_analysis(
         }
     arr = np.asarray(vals, dtype=float)
     pr = np.asarray(profits, dtype=float)
-    # AUC on non-void
     mask_cls = [i for i, y in enumerate(ywins) if y is not None]
     auc = None
     if len(mask_cls) >= 10:
@@ -688,27 +816,88 @@ def univariate_feature_analysis(
 def classify_marginal(
     delta_auc: float | None,
     fold_signs: list[int],
-    market_signs: list[int],
+    market_signs: list[int] | None,
     ci: dict[str, Any] | None,
+    *,
+    cross_market_label: str | None = None,
 ) -> str:
+    """
+    Temporal classification from real fold signs + paired CI.
+
+    Thresholds (descriptive):
+    - DELTA_AUC_STABLE = 0.01, DELTA_AUC_UNCERTAIN = 0.005, DELTA_AUC_NEGATIVE = -0.01
+    - FOLD_NEUTRAL_ABS = 0.002
+    market_signs are ignored here when cross_market_label is provided from Pass 2.
+    """
+    if cross_market_label == "market_specific_signal":
+        return "market_specific_signal"
     if delta_auc is None:
         return "insufficient_sample"
     pos_folds = sum(1 for s in fold_signs if s > 0)
     neg_folds = sum(1 for s in fold_signs if s < 0)
-    if fold_signs and pos_folds > 0 and neg_folds > 0 and abs(pos_folds - neg_folds) <= 1:
+    n_signed = pos_folds + neg_folds
+    if fold_signs and n_signed >= 2 and pos_folds > 0 and neg_folds > 0 and abs(pos_folds - neg_folds) <= 1:
         return "temporally_unstable"
-    if market_signs and sum(1 for s in market_signs if s > 0) == 1 and len(market_signs) >= 3:
-        return "market_specific_signal"
     ci_low = (ci or {}).get("ci_low")
-    if delta_auc > 0.01 and ci_low is not None and ci_low > 0:
+    ci_high = (ci or {}).get("ci_high")
+    majority_pos = (not fold_signs) or (pos_folds > neg_folds)
+    if (
+        delta_auc > DELTA_AUC_STABLE
+        and ci_low is not None
+        and ci_low > 0
+        and majority_pos
+    ):
         return "positive_stable_evidence"
-    if delta_auc > 0.005:
+    if delta_auc > DELTA_AUC_UNCERTAIN and (ci_low is None or ci_low <= 0):
         return "positive_but_uncertain"
-    if abs(delta_auc) < 0.005:
+    if delta_auc > DELTA_AUC_UNCERTAIN and majority_pos:
+        return "positive_but_uncertain"
+    if abs(delta_auc) < DELTA_AUC_UNCERTAIN and (
+        ci_high is None or (ci_low is not None and ci_low <= 0 <= (ci_high or 0))
+    ):
         return "redundant_no_incremental_value"
-    if delta_auc < -0.01:
+    if delta_auc < DELTA_AUC_NEGATIVE:
         return "negative_incremental_value"
+    if abs(delta_auc) < DELTA_AUC_UNCERTAIN:
+        return "redundant_no_incremental_value"
     return "positive_but_uncertain"
+
+
+def classify_cross_market(market_deltas: list[float]) -> dict[str, Any]:
+    signs = []
+    for d in market_deltas:
+        if abs(d) < MARKET_NEUTRAL_ABS:
+            signs.append(0)
+        else:
+            signs.append(1 if d > 0 else -1)
+    pos = sum(1 for s in signs if s > 0)
+    neg = sum(1 for s in signs if s < 0)
+    neu = sum(1 for s in signs if s == 0)
+    if len(market_deltas) < 2:
+        label = "insufficient_markets"
+    elif pos >= 2 and neg == 0:
+        label = "cross_market_stable"
+    elif pos == 1 and len(market_deltas) >= 2 and neg <= 1:
+        label = "market_specific_signal"
+    elif pos > 0 and neg > 0 and abs(pos - neg) <= 1:
+        label = "cross_market_unstable"
+    elif pos >= 2 and neg > 0:
+        label = "cross_market_unstable"
+    else:
+        label = "insufficient_markets"
+    dispersion = None
+    if market_deltas:
+        dispersion = float(np.std(market_deltas))
+    consistency = max(pos, neg, neu) / len(signs) if signs else None
+    return {
+        "market_deltas": market_deltas,
+        "markets_positive": pos,
+        "markets_negative": neg,
+        "markets_neutral": neu,
+        "market_sign_consistency": consistency,
+        "market_effect_dispersion": dispersion,
+        "market_stability": label,
+    }
 
 
 def resolve_spec_features(
@@ -716,12 +905,8 @@ def resolve_spec_features(
     *,
     best_without_rating_feats: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
+    del best_without_rating_feats  # no longer used (selection optimism removed)
     spec = SPEC_DEFINITIONS[spec_name]
-    if spec_name == "RATING_MARGINAL_DIAGNOSTIC":
-        base = list(best_without_rating_feats or ["model_probability", "probability_advantage"])
-        if "rating" not in base:
-            base = base + ["rating"]
-        return base, list(spec.get("categoricals") or [])
     return list(spec.get("features") or []), list(spec.get("categoricals") or [])
 
 
@@ -734,12 +919,11 @@ def run_spec_on_rows(
     seed: int,
     best_without_rating_feats: list[str] | None = None,
 ) -> dict[str, Any]:
-    numeric, cats = resolve_spec_features(
-        spec_name, best_without_rating_feats=best_without_rating_feats
-    )
-    # Hard redundancy checks (diagnostic may include rating+components)
+    del best_without_rating_feats
+    numeric, cats = resolve_spec_features(spec_name)
     issues = validate_spec_features(numeric)
-    if spec_name == "RATING_MARGINAL_DIAGNOSTIC":
+    # Rating+components allowed only on explicit diagnostic specs
+    if SPEC_DEFINITIONS.get(spec_name, {}).get("diagnostic"):
         issues = [i for i in issues if i != "rating_with_components"]
     if "odds_and_raw_implied_together" in issues or "score_with_model_and_edge" in issues:
         return {
@@ -749,7 +933,6 @@ def run_spec_on_rows(
             "features": numeric,
         }
 
-    # Drop features with zero coverage
     usable = []
     for f in numeric:
         if any(_num(r.get(f)) is not None for r in rows):
@@ -759,7 +942,10 @@ def run_spec_on_rows(
 
     oof = fit_predict_oof_logistic(rows, folds, usable, cats)
     metrics = score_oof_predictions(
-        rows, oof["oof_prob"], bootstrap_iterations=bootstrap_iterations, seed=seed
+        rows,
+        oof["oof_prob"],
+        bootstrap_iterations=bootstrap_iterations,
+        seed=stable_seed(seed, f"score:{spec_name}"),
     )
     return {
         "spec": spec_name,
@@ -771,7 +957,7 @@ def run_spec_on_rows(
         "economic": metrics.get("economic") or {},
         "fold_reports": oof["fold_reports"],
         "n_oof": metrics.get("n_oof"),
-        "oof_prob": oof["oof_prob"],  # internal; stripped before JSON
+        "oof_prob": oof["oof_prob"],
     }
 
 
@@ -907,6 +1093,97 @@ def decide_features(
     return decisions
 
 
+CORE_SPECS = (
+    "BOOK_BASELINE",
+    "MODEL_BASELINE",
+    "RATING_BASELINE",
+    "VALUE_ADVANTAGE",
+    "VALUE_EDGE",
+    "VALUE_SCORE",
+    "CONTEXT_ONLY",
+    "VALUE_ADVANTAGE_CONTEXT",
+    "VALUE_EDGE_CONTEXT",
+    "VALUE_SCORE_CONTEXT",
+    "RATING_CONTEXT",
+)
+
+RATING_DIAGNOSTIC_SPECS = (
+    "VALUE_ADVANTAGE_PLUS_RATING",
+    "VALUE_EDGE_PLUS_RATING",
+    "VALUE_SCORE_PLUS_RATING",
+    "VALUE_ADVANTAGE_CONTEXT_PLUS_RATING",
+    "VALUE_EDGE_CONTEXT_PLUS_RATING",
+    "VALUE_SCORE_CONTEXT_PLUS_RATING",
+)
+
+# Prespecified Rating paired comparisons (candidate, baseline)
+RATING_PAIRED_COMPARISONS: tuple[tuple[str, str], ...] = (
+    ("RATING_BASELINE", "BOOK_BASELINE"),
+    ("RATING_BASELINE", "MODEL_BASELINE"),
+    ("RATING_CONTEXT", "CONTEXT_ONLY"),
+    ("VALUE_ADVANTAGE_PLUS_RATING", "VALUE_ADVANTAGE"),
+    ("VALUE_EDGE_PLUS_RATING", "VALUE_EDGE"),
+    ("VALUE_SCORE_PLUS_RATING", "VALUE_SCORE"),
+    ("VALUE_ADVANTAGE_CONTEXT_PLUS_RATING", "VALUE_ADVANTAGE_CONTEXT"),
+    ("VALUE_EDGE_CONTEXT_PLUS_RATING", "VALUE_EDGE_CONTEXT"),
+    ("VALUE_SCORE_CONTEXT_PLUS_RATING", "VALUE_SCORE_CONTEXT"),
+)
+
+
+def _build_paired_entry(
+    *,
+    market: str,
+    spec: str,
+    vs: str,
+    rows: list[dict[str, Any]],
+    folds: list[dict[str, Any]],
+    pred_cand: np.ndarray,
+    pred_base: np.ndarray,
+    bootstrap_iterations: int,
+    seed: int,
+) -> dict[str, Any]:
+    paired = paired_oof_comparison(
+        rows,
+        pred_cand,
+        pred_base,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=stable_seed(seed, f"paired:{market}:{spec}:vs:{vs}"),
+    )
+    fold_info = fold_delta_auc_signs(rows, folds, pred_cand, pred_base)
+    ci_auc = (paired.get("confidence_intervals") or {}).get("delta_auc") or {}
+    # Pass 1: temporal only (no market_signs)
+    temporal_class = classify_marginal(
+        paired.get("delta_auc"),
+        fold_info.get("fold_signs") or [],
+        None,
+        ci_auc,
+    )
+    return {
+        "market": market,
+        "spec": spec,
+        "vs": vs,
+        "delta_auc": paired.get("delta_auc"),
+        "delta_brier_improvement": paired.get("delta_brier_improvement"),
+        "delta_log_loss_improvement": paired.get("delta_log_loss_improvement"),
+        "delta_ece_improvement": paired.get("delta_ece_improvement"),
+        "delta_roi_top_10pct": paired.get("delta_roi_top_10pct"),
+        "delta_roi_top_20pct": paired.get("delta_roi_top_20pct"),
+        "delta_roi_top_quintile": paired.get("delta_roi_top_quintile"),
+        "delta_top_bottom_roi_spread": paired.get("delta_top_bottom_roi_spread"),
+        "confidence_intervals": paired.get("confidence_intervals"),
+        "fold_deltas": fold_info.get("fold_deltas"),
+        "fold_signs": fold_info.get("fold_signs"),
+        "positive_folds": fold_info.get("positive_folds"),
+        "negative_folds": fold_info.get("negative_folds"),
+        "neutral_folds": fold_info.get("neutral_folds"),
+        "fold_sign_consistency": fold_info.get("fold_sign_consistency"),
+        "fold_effect_range": fold_info.get("fold_effect_range"),
+        "temporal_classification": temporal_class,
+        "classification": temporal_class,  # updated in Pass 2
+        "n_paired": paired.get("n_paired"),
+    }
+
+
 def analyze_market(
     market_rows: list[dict[str, Any]],
     market: str,
@@ -924,7 +1201,6 @@ def analyze_market(
 
     fixtures = order_fixtures(market_rows)
     folds, fold_lim = expanding_fixture_folds(fixtures)
-    # enrich fold date ranges
     temporal_folds = []
     for f in folds:
         tr = [r for r in market_rows if r["today_fixture_id"] in set(f["train_fixture_ids"])]
@@ -945,21 +1221,9 @@ def analyze_market(
             }
         )
 
-    spec_order = [
-        "BOOK_BASELINE",
-        "MODEL_BASELINE",
-        "RATING_BASELINE",
-        "VALUE_ADVANTAGE",
-        "VALUE_EDGE",
-        "VALUE_SCORE",
-        "CONTEXT_ONLY",
-        "VALUE_ADVANTAGE_CONTEXT",
-        "VALUE_EDGE_CONTEXT",
-        "VALUE_SCORE_CONTEXT",
-        "RATING_CONTEXT",
-    ]
+    all_specs = list(CORE_SPECS) + list(RATING_DIAGNOSTIC_SPECS)
     results: dict[str, dict[str, Any]] = {}
-    for spec in spec_order:
+    for spec in all_specs:
         results[spec] = run_spec_on_rows(
             market_rows,
             folds,
@@ -968,88 +1232,67 @@ def analyze_market(
             seed=seed,
         )
 
-    # pick best without rating by AUC
-    candidates_no_rating = [
-        s
-        for s in spec_order
-        if s not in ("RATING_BASELINE", "RATING_CONTEXT")
-        and results[s].get("classification", {}).get("auc") is not None
-    ]
-    best_no_rating = None
-    if candidates_no_rating:
-        best_no_rating = max(
-            candidates_no_rating,
-            key=lambda s: results[s]["classification"].get("auc") or -1.0,
-        )
-    best_feats = results[best_no_rating]["features"] if best_no_rating else ["model_probability"]
-
-    results["RATING_MARGINAL_DIAGNOSTIC"] = run_spec_on_rows(
-        market_rows,
-        folds,
-        "RATING_MARGINAL_DIAGNOSTIC",
-        bootstrap_iterations=bootstrap_iterations,
-        seed=seed,
-        best_without_rating_feats=best_feats,
-    )
-
     book = results["BOOK_BASELINE"]
     model = results["MODEL_BASELINE"]
     rating = results["RATING_BASELINE"]
 
-    marginal = []
-    for spec in spec_order + ["RATING_MARGINAL_DIAGNOSTIC"]:
+    # Pass 1 paired comparisons (unclassified globally)
+    marginal: list[dict[str, Any]] = []
+    compare_specs = [
+        s
+        for s in CORE_SPECS
+        if s not in ("BOOK_BASELINE",)
+    ]
+    for spec in compare_specs:
         r = results[spec]
-        auc = (r.get("classification") or {}).get("auc")
+        if "oof_prob" not in r:
+            continue
         for base_name, base in (
             ("BOOK_BASELINE", book),
             ("MODEL_BASELINE", model),
             ("RATING_BASELINE", rating),
         ):
-            ba = (base.get("classification") or {}).get("auc")
-            d_auc = _delta(auc, ba)
+            if spec == base_name:
+                continue
+            if "oof_prob" not in base:
+                continue
             marginal.append(
-                {
-                    "market": market,
-                    "spec": spec,
-                    "vs": base_name,
-                    "delta_auc": d_auc,
-                    "delta_brier": _delta(
-                        (r.get("classification") or {}).get("brier"),
-                        (base.get("classification") or {}).get("brier"),
-                    ),
-                    "delta_log_loss": _delta(
-                        (r.get("classification") or {}).get("log_loss"),
-                        (base.get("classification") or {}).get("log_loss"),
-                    ),
-                    "delta_roi": _delta(
-                        (r.get("economic") or {}).get("roi"),
-                        (base.get("economic") or {}).get("roi"),
-                    ),
-                    "classification": classify_marginal(
-                        d_auc,
-                        [],
-                        [],
-                        (r.get("economic") or {}).get("mean_profit_bootstrap"),
-                    ),
-                }
+                _build_paired_entry(
+                    market=market,
+                    spec=spec,
+                    vs=base_name,
+                    rows=market_rows,
+                    folds=folds,
+                    pred_cand=r["oof_prob"],
+                    pred_base=base["oof_prob"],
+                    bootstrap_iterations=bootstrap_iterations,
+                    seed=seed,
+                )
             )
 
-    # rating marginal vs best without
-    rating_marg = results["RATING_MARGINAL_DIAGNOSTIC"]
-    d_rating = _delta(
-        (rating_marg.get("classification") or {}).get("auc"),
-        (results[best_no_rating].get("classification") or {}).get("auc") if best_no_rating else None,
-    )
-    if d_rating is None:
-        rating_decision = "insufficient_evidence"
-    elif d_rating > 0.01:
-        rating_decision = "incremental_candidate"
-    elif abs(d_rating) < 0.005:
-        rating_decision = "redundant_exclude" if best_no_rating else "benchmark_only"
-    else:
-        rating_decision = "benchmark_only"
+    rating_comparisons = []
+    for cand_name, base_name in RATING_PAIRED_COMPARISONS:
+        cand = results.get(cand_name) or {}
+        base = results.get(base_name) or {}
+        if "oof_prob" not in cand or "oof_prob" not in base:
+            continue
+        entry = _build_paired_entry(
+            market=market,
+            spec=cand_name,
+            vs=base_name,
+            rows=market_rows,
+            folds=folds,
+            pred_cand=cand["oof_prob"],
+            pred_base=base["oof_prob"],
+            bootstrap_iterations=bootstrap_iterations,
+            seed=seed,
+        )
+        rating_comparisons.append(entry)
+        marginal.append(entry)
 
-    # univariate
+    # Rating decision from prespecified pairs (no best-spec selection)
+    rating_decision = _decide_rating_from_pairs(rating_comparisons)
+
     uni_feats = [
         "book_prob",
         "model_probability",
@@ -1064,7 +1307,10 @@ def analyze_market(
     ]
     univariate = [
         univariate_feature_analysis(
-            market_rows, f, bootstrap_iterations=bootstrap_iterations, seed=seed + hash(f) % 1000
+            market_rows,
+            f,
+            bootstrap_iterations=bootstrap_iterations,
+            seed=stable_seed(seed, f"uni:{f}"),
         )
         for f in uni_feats
     ]
@@ -1072,7 +1318,20 @@ def analyze_market(
     won_n = sum(1 for r in market_rows if r.get("y_win") == 1)
     cls_n = sum(1 for r in market_rows if r.get("y_win") is not None)
     profits = [r["profit"] for r in market_rows]
-    odds = [r["odds"] for r in market_rows]
+    odds_l = [r["odds"] for r in market_rows]
+
+    # Pick display "best" for market table without using it for Rating add-on
+    display_best = None
+    display_auc = None
+    for s in CORE_SPECS:
+        if s.startswith("RATING"):
+            continue
+        auc = (results[s].get("classification") or {}).get("auc")
+        if auc is None:
+            continue
+        if display_auc is None or auc > display_auc:
+            display_auc = auc
+            display_best = s
 
     specs_public = {k: _strip_oof(v) for k, v in results.items()}
 
@@ -1082,31 +1341,32 @@ def analyze_market(
         "settled_rows": len(market_rows),
         "unique_fixtures": len({r["today_fixture_id"] for r in market_rows}),
         "win_rate": safe_div(won_n, cls_n),
+        "cohort_full_coverage_roi": safe_div(sum(profits), len(profits)) if profits else None,
         "roi": safe_div(sum(profits), len(profits)) if profits else None,
-        "avg_odds": float(np.mean(odds)) if odds else None,
-        "avg_break_even": float(np.mean([1.0 / o for o in odds])) if odds else None,
+        "avg_odds": float(np.mean(odds_l)) if odds_l else None,
+        "avg_break_even": float(np.mean([1.0 / o for o in odds_l])) if odds_l else None,
         "limitations": fold_lim,
         "temporal_folds": temporal_folds,
         "candidate_specifications": specs_public,
-        "best_spec_without_rating": best_no_rating,
-        "best_spec_auc": (
-            (results[best_no_rating].get("classification") or {}).get("auc")
-            if best_no_rating
-            else None
-        ),
+        "best_spec_without_rating": display_best,
+        "best_spec_auc": display_auc,
         "marginal_contribution": marginal,
+        "rating_prespecified_comparisons": rating_comparisons,
         "univariate_evidence": univariate,
         "rating_benchmark": {
             "rating_alone_auc": (rating.get("classification") or {}).get("auc"),
-            "best_without_rating": best_no_rating,
-            "best_without_rating_auc": (
-                (results[best_no_rating].get("classification") or {}).get("auc")
-                if best_no_rating
-                else None
-            ),
-            "with_rating_auc": (rating_marg.get("classification") or {}).get("auc"),
-            "delta_auc_adding_rating": d_rating,
+            "prespecified_comparisons": [
+                {
+                    "spec": c["spec"],
+                    "vs": c["vs"],
+                    "delta_auc": c.get("delta_auc"),
+                    "ci": (c.get("confidence_intervals") or {}).get("delta_auc"),
+                    "temporal_classification": c.get("temporal_classification"),
+                }
+                for c in rating_comparisons
+            ],
             "decision": rating_decision,
+            "note": "Rating pairs are prespecified; no OOF best-spec selection.",
         },
         "baselines": {
             "book": _strip_oof(book),
@@ -1115,6 +1375,32 @@ def analyze_market(
         },
     }
 
+
+def _decide_rating_from_pairs(pairs: list[dict[str, Any]]) -> str:
+    if not pairs:
+        return "insufficient_evidence"
+    deltas = [p.get("delta_auc") for p in pairs if p.get("delta_auc") is not None]
+    if not deltas:
+        return "insufficient_evidence"
+    pos = sum(1 for d in deltas if d > DELTA_AUC_UNCERTAIN)
+    neg = sum(1 for d in deltas if d < -DELTA_AUC_UNCERTAIN)
+    unstable = sum(1 for p in pairs if p.get("temporal_classification") == "temporally_unstable")
+    if unstable >= max(1, len(pairs) // 2):
+        return "temporally_unstable"
+    ci_pos = 0
+    for p in pairs:
+        ci = (p.get("confidence_intervals") or {}).get("delta_auc") or {}
+        if (p.get("delta_auc") or 0) > DELTA_AUC_STABLE and (ci.get("ci_low") or -1) > 0:
+            ci_pos += 1
+    if ci_pos >= 2 and pos >= 2:
+        return "incremental_candidate"
+    if pos == 1 and len(deltas) >= 3:
+        return "market_specific_benchmark"
+    if all(abs(d) < DELTA_AUC_UNCERTAIN for d in deltas):
+        return "redundant_exclude"
+    if neg > pos:
+        return "benchmark_only"
+    return "benchmark_only"
 
 def analyze_pooled(
     rows: list[dict[str, Any]],
@@ -1261,7 +1547,6 @@ def build_purchasability_statistical_research(
     market_results = []
     all_marginal = []
     all_uni = []
-    rating_decisions = []
 
     markets = [m for m in PRIMARY_MARKETS]
     for mkt in markets:
@@ -1282,108 +1567,237 @@ def build_purchasability_statistical_research(
         market_results.append(mr)
         all_marginal.extend(mr.get("marginal_contribution") or [])
         all_uni.extend(mr.get("univariate_evidence") or [])
-        rb = mr.get("rating_benchmark") or {}
-        if rb.get("decision"):
-            rating_decisions.append(rb["decision"])
         limitations.extend(mr.get("limitations") or [])
 
     pooled = analyze_pooled(cohort, bootstrap_iterations=bootstrap_iterations, seed=seed)
     cv_ms = (time.perf_counter() - t_cv0) * 1000
 
-    # aggregate rating decision
+    # --- Pass 2: cross-market stability on identical (spec, vs) pairs ---
+    by_key: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for m in all_marginal:
+        key = (str(m.get("spec")), str(m.get("vs")))
+        by_key[key].append(m)
+
+    cross_market_meta: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, items in by_key.items():
+        deltas = [float(i["delta_auc"]) for i in items if i.get("delta_auc") is not None]
+        meta = classify_cross_market(deltas)
+        cross_market_meta[key] = meta
+        for i in items:
+            cm_label = meta["market_stability"]
+            i["market_stability"] = cm_label
+            i["markets_positive"] = meta["markets_positive"]
+            i["markets_negative"] = meta["markets_negative"]
+            i["markets_neutral"] = meta["markets_neutral"]
+            i["market_sign_consistency"] = meta["market_sign_consistency"]
+            i["market_effect_dispersion"] = meta["market_effect_dispersion"]
+            i["classification"] = classify_marginal(
+                i.get("delta_auc"),
+                i.get("fold_signs") or [],
+                None,
+                (i.get("confidence_intervals") or {}).get("delta_auc"),
+                cross_market_label=cm_label if cm_label == "market_specific_signal" else None,
+            )
+            if cm_label == "cross_market_unstable" and i["classification"] == "positive_stable_evidence":
+                i["classification"] = "positive_but_uncertain"
+            if cm_label == "cross_market_stable" and i.get("temporal_classification") == "positive_but_uncertain":
+                ci = (i.get("confidence_intervals") or {}).get("delta_auc") or {}
+                if (i.get("delta_auc") or 0) > DELTA_AUC_STABLE and (ci.get("ci_low") or -1) > 0:
+                    i["classification"] = "positive_stable_evidence"
+
+    rating_decisions = [
+        (mr.get("rating_benchmark") or {}).get("decision")
+        for mr in market_results
+        if mr.get("status") == "ok" and (mr.get("rating_benchmark") or {}).get("decision")
+    ]
     if not rating_decisions:
         rating_conclusion = "insufficient_evidence"
     elif all(d == "redundant_exclude" for d in rating_decisions):
         rating_conclusion = "redundant_exclude"
-    elif any(d == "incremental_candidate" for d in rating_decisions) and all(
-        d in ("incremental_candidate", "benchmark_only", "insufficient_evidence")
-        for d in rating_decisions
+    elif all(d == "temporally_unstable" for d in rating_decisions):
+        rating_conclusion = "temporally_unstable"
+    elif sum(1 for d in rating_decisions if d == "incremental_candidate") >= max(
+        1, len(rating_decisions) // 2
     ):
-        # only incremental if majority
-        if sum(1 for d in rating_decisions if d == "incremental_candidate") >= max(
-            1, len(rating_decisions) // 2
-        ):
-            rating_conclusion = "incremental_candidate"
-        else:
-            rating_conclusion = "market_specific_benchmark"
+        rating_conclusion = "incremental_candidate"
     elif any(d == "incremental_candidate" for d in rating_decisions):
+        rating_conclusion = "market_specific_benchmark"
+    elif any(d == "market_specific_benchmark" for d in rating_decisions):
         rating_conclusion = "market_specific_benchmark"
     else:
         rating_conclusion = "benchmark_only"
 
-    # collapse univariate by feature name (mean AUC)
     uni_agg: dict[str, dict[str, Any]] = {}
     for u in all_uni:
         f = u.get("feature")
         if not f:
             continue
-        if f not in uni_agg:
+        if f not in uni_agg or (u.get("n") or 0) > (uni_agg[f].get("n") or 0):
             uni_agg[f] = dict(u)
-        else:
-            # keep max n
-            if (u.get("n") or 0) > (uni_agg[f].get("n") or 0):
-                uni_agg[f] = dict(u)
 
     feature_decisions = decide_features(
         list(uni_agg.values()), all_marginal, rating_conclusion
     )
+    for d in feature_decisions:
+        related = [
+            m
+            for m in all_marginal
+            if (
+                d["feature_name"] == "rating"
+                and "RATING" in str(m.get("spec") or "")
+            )
+            or (
+                d["feature_name"] == "probability_advantage"
+                and "ADVANTAGE" in str(m.get("spec") or "")
+            )
+            or (
+                d["feature_name"] == "edge" and "EDGE" in str(m.get("spec") or "")
+            )
+            or (
+                d["feature_name"] == "score" and "SCORE" in str(m.get("spec") or "")
+            )
+            or (
+                d["feature_name"] == "model_probability"
+                and m.get("spec") in ("MODEL_BASELINE", "VALUE_ADVANTAGE", "VALUE_EDGE")
+            )
+        ]
+        labels = [m.get("classification") for m in related if m.get("classification")]
+        mstab = [m.get("market_stability") for m in related if m.get("market_stability")]
+        if "market_specific_signal" in mstab:
+            d["market_stability"] = "market_specific_signal"
+            if d["decision"] not in ("benchmark_only", "redundant_exclude"):
+                d["decision"] = "market_specific_candidate"
+        elif "cross_market_stable" in mstab:
+            d["market_stability"] = "cross_market_stable"
+        elif "cross_market_unstable" in mstab:
+            d["market_stability"] = "cross_market_unstable"
+        if "temporally_unstable" in labels:
+            d["temporal_stability"] = "temporally_unstable"
+        elif "positive_stable_evidence" in labels:
+            d["temporal_stability"] = "stable"
+        elif labels:
+            d["temporal_stability"] = "uncertain"
 
-    retained = [d["feature_name"] for d in feature_decisions if d["decision"] == "retain_candidate"]
-    redundant = [d["feature_name"] for d in feature_decisions if d["decision"] == "redundant_exclude"]
-    unstable = [d["feature_name"] for d in feature_decisions if d["decision"] == "unstable_exclude"]
-    market_spec = [
-        d["feature_name"] for d in feature_decisions if d["decision"] == "market_specific_candidate"
+    retained = [
+        d["feature_name"] for d in feature_decisions if d["decision"] == "retain_candidate"
+    ]
+    redundant = [
+        d["feature_name"] for d in feature_decisions if d["decision"] == "redundant_exclude"
+    ]
+    unstable = [
+        d["feature_name"] for d in feature_decisions if d["decision"] == "unstable_exclude"
+    ]
+    market_spec_feats = [
+        d["feature_name"]
+        for d in feature_decisions
+        if d["decision"] == "market_specific_candidate"
     ]
 
-    # candidate specs summary across markets
     candidate_specs = []
     for spec_name in SPEC_DEFINITIONS:
-        aucs = []
-        rois = []
+        aucs, briers, lls, eces = [], [], [], []
+        cohort_rois, top10s, top20s, topqs = [], [], [], []
         mkts = []
         for mr in market_results:
             cs = (mr.get("candidate_specifications") or {}).get(spec_name) or {}
-            auc = (cs.get("classification") or {}).get("auc")
-            roi = (cs.get("economic") or {}).get("roi")
-            if auc is not None:
-                aucs.append(auc)
+            cls = cs.get("classification") or {}
+            eco = cs.get("economic") or {}
+            if cls.get("auc") is not None:
+                aucs.append(cls["auc"])
                 mkts.append(mr.get("market"))
-            if roi is not None:
-                rois.append(roi)
-        book_deltas = [
-            m["delta_auc"]
+            if cls.get("brier") is not None:
+                briers.append(cls["brier"])
+            if cls.get("log_loss") is not None:
+                lls.append(cls["log_loss"])
+            if cls.get("ece") is not None:
+                eces.append(cls["ece"])
+            if eco.get("cohort_full_coverage_roi") is not None:
+                cohort_rois.append(eco["cohort_full_coverage_roi"])
+            elif eco.get("roi") is not None:
+                cohort_rois.append(eco["roi"])
+            t10 = eco.get("roi_top_10pct")
+            if isinstance(t10, dict):
+                t10 = t10.get("roi")
+            t20 = eco.get("roi_top_20pct")
+            if isinstance(t20, dict):
+                t20 = t20.get("roi")
+            if t10 is not None:
+                top10s.append(t10)
+            if t20 is not None:
+                top20s.append(t20)
+            if eco.get("roi_top_quintile") is not None:
+                topqs.append(eco["roi_top_quintile"])
+
+        book_items = [
+            m
             for m in all_marginal
-            if m.get("spec") == spec_name and m.get("vs") == "BOOK_BASELINE" and m.get("delta_auc") is not None
+            if m.get("spec") == spec_name and m.get("vs") == "BOOK_BASELINE"
         ]
+        book_deltas = [m["delta_auc"] for m in book_items if m.get("delta_auc") is not None]
+        book_brier = [
+            m["delta_brier_improvement"]
+            for m in book_items
+            if m.get("delta_brier_improvement") is not None
+        ]
+        temporal_labels = [
+            m.get("temporal_classification")
+            for m in book_items
+            if m.get("temporal_classification")
+        ]
+        cm = cross_market_meta.get((spec_name, "BOOK_BASELINE")) or {}
+        if "temporally_unstable" in temporal_labels:
+            tstab = "temporally_unstable"
+        elif temporal_labels and all(
+            x == "positive_stable_evidence" for x in temporal_labels
+        ):
+            tstab = "stable"
+        elif temporal_labels:
+            tstab = "mixed"
+        else:
+            tstab = "insufficient"
+        mstab = cm.get("market_stability") or "insufficient_markets"
+
         candidate_specs.append(
             {
                 "configuration": spec_name,
                 "markets": mkts,
                 "auc_mean": float(np.mean(aucs)) if aucs else None,
-                "brier_mean": None,
-                "roi_mean": float(np.mean(rois)) if rois else None,
-                "delta_vs_book_mean": float(np.mean(book_deltas)) if book_deltas else None,
-                "stability": "unknown",
+                "brier_mean": float(np.mean(briers)) if briers else None,
+                "log_loss_mean": float(np.mean(lls)) if lls else None,
+                "ece_mean": float(np.mean(eces)) if eces else None,
+                "cohort_full_coverage_roi": (
+                    float(np.mean(cohort_rois)) if cohort_rois else None
+                ),
+                "roi_top_10pct_mean": float(np.mean(top10s)) if top10s else None,
+                "roi_top_20pct_mean": float(np.mean(top20s)) if top20s else None,
+                "roi_top_quintile_mean": float(np.mean(topqs)) if topqs else None,
+                "delta_auc_vs_book_mean": (
+                    float(np.mean(book_deltas)) if book_deltas else None
+                ),
+                "delta_brier_vs_book_mean": (
+                    float(np.mean(book_brier)) if book_brier else None
+                ),
+                "temporal_stability": tstab,
+                "market_stability": mstab,
+                "markets_positive": cm.get("markets_positive"),
+                "markets_negative": cm.get("markets_negative"),
                 "status": "ok" if aucs else "insufficient",
             }
         )
 
-    # temporal folds from first market with folds
     temporal_folds = []
     for mr in market_results:
         if mr.get("temporal_folds"):
             temporal_folds = mr["temporal_folds"]
             break
 
-    markets_ok = [
-        mr["market"]
-        for mr in market_results
-        if mr.get("status") == "ok"
-    ]
+    markets_ok = [mr["market"] for mr in market_results if mr.get("status") == "ok"]
     blocking = list(quality.get("blocking_issues") or [])
     cohort_valid = len(cohort) > 0 and not blocking
     temporal_done = any(
-        (mr.get("temporal_folds") or []) for mr in market_results if mr.get("status") == "ok"
+        (mr.get("temporal_folds") or [])
+        for mr in market_results
+        if mr.get("status") == "ok"
     )
     fixture_ok = all(
         all(tf.get("fixture_overlap", 0) == 0 for tf in (mr.get("temporal_folds") or []))
@@ -1391,12 +1805,48 @@ def build_purchasability_statistical_research(
         if mr.get("status") == "ok"
     )
 
+    paired_positive = [
+        m
+        for m in all_marginal
+        if m.get("classification") == "positive_stable_evidence"
+        and m.get("vs") in ("BOOK_BASELINE", "MODEL_BASELINE")
+    ]
+    paired_uncertain_ok = [
+        m
+        for m in all_marginal
+        if m.get("delta_auc") is not None
+        and m.get("delta_auc") > 0
+        and ((m.get("confidence_intervals") or {}).get("delta_auc") or {}).get("ci_low")
+        is not None
+        and ((m.get("confidence_intervals") or {}).get("delta_auc") or {}).get("ci_low")
+        > -0.02
+        and (m.get("positive_folds") or 0) > (m.get("negative_folds") or 0)
+    ]
+    multi_market_ok = False
+    for m in paired_positive + paired_uncertain_ok:
+        cm = m.get("market_stability")
+        if cm == "cross_market_stable" or cm == "market_specific_signal":
+            multi_market_ok = True
+            break
+        if (m.get("markets_positive") or 0) >= 2:
+            multi_market_ok = True
+            break
+
+    has_paired_evidence = bool(paired_positive) and multi_market_ok
+
     if blocking:
         next_step = "resolve_data_quality"
     elif not temporal_done or "limited_temporal_span" in limitations:
         next_step = "continue_data_collection"
-    elif retained:
+    elif (
+        has_paired_evidence
+        and not blocking
+        and quality.get("canonical_keys_unique")
+        and fixture_ok
+    ):
         next_step = "phase_2b_candidate_construction"
+    elif paired_uncertain_ok and not paired_positive:
+        next_step = "continue_data_collection"
     else:
         next_step = "stop_no_incremental_signal"
 
@@ -1407,10 +1857,11 @@ def build_purchasability_statistical_research(
         "fixture_grouping_verified": fixture_ok,
         "markets_evaluated": markets_ok,
         "features_with_positive_stable_evidence": retained,
-        "market_specific_features": market_spec,
+        "market_specific_features": market_spec_feats,
         "features_redundant": redundant,
         "features_unstable": unstable,
         "rating_decision": rating_conclusion,
+        "paired_positive_comparisons": len(paired_positive),
         "limitations": sorted(set(limitations)),
         "blocking_issues": blocking,
         "recommended_next_step": next_step,
@@ -1426,7 +1877,10 @@ def build_purchasability_statistical_research(
             for mr in market_results
             if mr.get("status") == "ok"
         ],
-        "note": "Rating remains benchmark_candidate unless incremental OOF evidence is stable.",
+        "note": (
+            "Rating pairs are prespecified (no OOF best-spec selection). "
+            "Decision uses paired CI, fold and market stability."
+        ),
     }
 
     total_ms = (time.perf_counter() - t0) * 1000
@@ -1437,10 +1891,7 @@ def build_purchasability_statistical_research(
         "cohort_identity": identity,
         "data_quality": quality,
         "temporal_folds": temporal_folds,
-        "market_results": [
-            {k: v for k, v in mr.items() if k != "candidate_specifications" or True}
-            for mr in market_results
-        ],
+        "market_results": [dict(mr) for mr in market_results],
         "pooled_results": pooled,
         "univariate_evidence": list(uni_agg.values()),
         "candidate_specifications": candidate_specs,
@@ -1460,6 +1911,13 @@ def build_purchasability_statistical_research(
         "stability": {
             "limited_temporal_span": "limited_temporal_span" in limitations,
             "markets_with_ok_status": markets_ok,
+            "thresholds": {
+                "delta_auc_stable": DELTA_AUC_STABLE,
+                "delta_auc_uncertain": DELTA_AUC_UNCERTAIN,
+                "delta_auc_negative": DELTA_AUC_NEGATIVE,
+                "fold_neutral_abs": FOLD_NEUTRAL_ABS,
+                "market_neutral_abs": MARKET_NEUTRAL_ABS,
+            },
         },
         "feature_decisions": feature_decisions,
         "phase_2b_readiness": readiness,

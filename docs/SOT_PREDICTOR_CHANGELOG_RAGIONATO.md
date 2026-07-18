@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A.1 paired/stabilità (2026-07-18)
+
+- Bump `cecchino_purchasability_statistical_research_v2a_1`: ROI full-coverage vs ranking OOF; `paired_oof_comparison` + CI fixture-paired; fold/market stability reali; Rating prespecificato; `stable_seed`; readiness 2B basata su evidenza paired.
+- Dataset v1_1 invariato; nessuna formula 0–100.
+
 ## Indice di Acquistabilità — Fase 2A ricerca statistica (2026-07-18)
 
 - `cecchino_purchasability_statistical_research_v2a`: coorte settled_core, engineering gap, expanding CV per fixture, specs Book/Model/Rating/Value/Context, OOF + bootstrap fixture-clustered, feature decisions e readiness 2B.

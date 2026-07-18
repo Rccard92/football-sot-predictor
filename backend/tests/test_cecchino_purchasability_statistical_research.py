@@ -369,16 +369,20 @@ def test_26_to_30_classification_labels_and_end_to_end():
         classify_marginal,
     )
 
-    assert classify_marginal(0.05, [1, 1, 1], [1, 1, 1], {"ci_low": 0.01}) == (
+    assert classify_marginal(0.05, [1, 1, 1], None, {"ci_low": 0.01}) == (
         "positive_stable_evidence"
     )
-    assert classify_marginal(0.02, [1, -1, 1], [], None) == "temporally_unstable"
+    assert classify_marginal(0.02, [1, -1, 1], None, None) == "temporally_unstable"
     assert (
-        classify_marginal(0.03, [1], [1, 0, 0], None) == "market_specific_signal"
-        or classify_marginal(0.03, [1], [1, 0, 0], None) == "positive_but_uncertain"
+        classify_marginal(
+            0.03, [1], None, None, cross_market_label="market_specific_signal"
+        )
+        == "market_specific_signal"
     )
-    assert classify_marginal(0.001, [1], [1], None) == "redundant_no_incremental_value"
-    assert classify_marginal(0.008, [1], [1], {"ci_low": -0.01}) == "positive_but_uncertain"
+    assert classify_marginal(0.001, [1], None, {"ci_low": -0.01, "ci_high": 0.01}) == (
+        "redundant_no_incremental_value"
+    )
+    assert classify_marginal(0.008, [1], None, {"ci_low": -0.01}) == "positive_but_uncertain"
 
 
 # --- RATING (31-34) ---
@@ -398,9 +402,14 @@ def test_31_34_rating_section_present():
         "incremental_candidate",
         "redundant_exclude",
         "market_specific_benchmark",
+        "temporally_unstable",
         "insufficient_evidence",
     }
     assert payload["phase_2b_readiness"]["rating_decision"] == rb["conclusion"]
+    # No selection-optimism fields
+    for pm in rb.get("per_market") or []:
+        assert "best_without_rating" not in pm or pm.get("prespecified_comparisons") is not None
+        assert "prespecified_comparisons" in pm
 
 
 # --- JSON (35-37) ---
@@ -425,7 +434,7 @@ def test_35_37_json_safe_no_nan_inf():
 def test_38_39_audit_dataset_versions_unchanged():
     assert AUDIT_VERSION == "cecchino_purchasability_audit_v1_1"
     assert DATASET_VERSION == "cecchino_purchasability_dataset_v1_1"
-    assert STAT_VERSION == "cecchino_purchasability_statistical_research_v2a"
+    assert STAT_VERSION == "cecchino_purchasability_statistical_research_v2a_1"
 
 
 def test_40_46_flags_no_formula_no_writes():
@@ -462,3 +471,210 @@ def test_database_url_note():
     else:
         note = "DATABASE_URL_present"
     assert note in {"DATABASE_URL_missing", "DATABASE_URL_present"}
+
+
+# --- Fase 2A.1 correzioni (20 punti) ---
+
+
+def test_v2a1_01_full_coverage_roi_not_used_as_marginal():
+    from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
+        ranking_economic_from_scores,
+    )
+
+    profits = np.array([1.0, -1.0, 0.5, -1.0, 2.0, -1.0, 0.8, -1.0])
+    scores_a = np.array([0.9, 0.1, 0.8, 0.2, 0.85, 0.15, 0.7, 0.3])
+    scores_b = np.array([0.1, 0.9, 0.2, 0.8, 0.15, 0.85, 0.3, 0.7])
+    eco = economic_metrics(profits, np.ones(8), np.full(8, 2.0))
+    # Same cohort ROI regardless of scores
+    assert eco["cohort_full_coverage_roi"] == pytest.approx(float(np.mean(profits)))
+    r_a = ranking_economic_from_scores(profits, scores_a)
+    r_b = ranking_economic_from_scores(profits, scores_b)
+    assert r_a["roi_top_10pct"] != r_b["roi_top_10pct"]
+
+
+def test_v2a1_02_top10_changes_with_ranking():
+    from app.services.cecchino.cecchino_purchasability_statistical_helpers import top_k_roi
+
+    profits = np.array([1.0, -1.0, 2.0, -1.0, 0.5])
+    good = top_k_roi(profits, np.array([0.9, 0.1, 0.95, 0.05, 0.5]), 0.4)
+    bad = top_k_roi(profits, np.array([0.1, 0.9, 0.05, 0.95, 0.5]), 0.4)
+    assert good["roi"] != bad["roi"]
+
+
+def test_v2a1_03_05_paired_deltas_sign_convention():
+    from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
+        paired_oof_comparison,
+    )
+
+    rows = []
+    for i in range(40):
+        won = i % 2 == 0
+        rows.append(
+            {
+                "today_fixture_id": i // 2,
+                "y_win": 1 if won else 0,
+                "profit": 1.0 if won else -1.0,
+                "selection_void": False,
+            }
+        )
+    # Candidate perfectly ranked; baseline anti-ranked
+    y = np.array([r["y_win"] for r in rows], dtype=float)
+    cand = y * 0.9 + 0.05
+    base = (1 - y) * 0.9 + 0.05
+    out = paired_oof_comparison(
+        rows, cand, base, bootstrap_iterations=30, seed=11
+    )
+    assert out["delta_auc"] is not None and out["delta_auc"] > 0
+    assert out["delta_brier_improvement"] is not None and out["delta_brier_improvement"] > 0
+    assert out["delta_log_loss_improvement"] is not None and out["delta_log_loss_improvement"] > 0
+    ci = out["confidence_intervals"]["delta_auc"]
+    assert "estimate" in ci and "ci_low" in ci and "valid_iterations" in ci
+
+
+def test_v2a1_06_07_bootstrap_pairs_fixture_and_diff_ci():
+    from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
+        paired_oof_comparison,
+    )
+
+    rows = []
+    for i in range(30):
+        rows.append(
+            {
+                "today_fixture_id": i % 10,
+                "y_win": 1 if i % 3 else 0,
+                "profit": 1.0 if i % 3 else -1.0,
+            }
+        )
+    rng = np.random.default_rng(0)
+    cand = rng.random(30)
+    base = rng.random(30)
+    out = paired_oof_comparison(rows, cand, base, bootstrap_iterations=40, seed=5)
+    ci = out["confidence_intervals"]["delta_auc"]
+    # CI is on difference, not absolute profit
+    assert "mean_profit" not in ci
+    assert ci["iterations"] == 40
+
+
+def test_v2a1_08_09_fold_signs_real_and_unstable():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_marginal,
+        fold_delta_auc_signs,
+    )
+
+    rows = _multi_fixture_rows(16, ("HOME",))
+    cohort, _ = filter_settled_cohort(rows)
+    folds, _ = expanding_fixture_folds(order_fixtures(cohort))
+    n = len(cohort)
+    # alternating quality by fixture order → unstable folds possible
+    pred_c = np.linspace(0.2, 0.8, n)
+    pred_b = np.linspace(0.8, 0.2, n)
+    info = fold_delta_auc_signs(cohort, folds, pred_c, pred_b)
+    assert isinstance(info["fold_signs"], list)
+    # when folds valid, signs not forced empty by API
+    if any(not f.get("skipped") for f in info["fold_deltas"]):
+        assert len(info["fold_signs"]) > 0
+    assert classify_marginal(0.02, [1, -1, 1], None, None) == "temporally_unstable"
+
+
+def test_v2a1_10_market_specific_from_multi_market():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_cross_market,
+    )
+
+    meta = classify_cross_market([0.04, -0.001, 0.0])
+    assert meta["market_stability"] in {
+        "market_specific_signal",
+        "cross_market_stable",
+        "insufficient_markets",
+        "cross_market_unstable",
+    }
+    meta2 = classify_cross_market([0.05, 0.04, 0.03])
+    assert meta2["market_stability"] == "cross_market_stable"
+
+
+def test_v2a1_11_12_rating_prespecified_no_oof_best_pick():
+    import inspect
+    from app.services.cecchino import cecchino_purchasability_statistical_research as mod
+
+    src = inspect.getsource(mod.analyze_market)
+    assert "best_without_rating_feats" not in src or "RATING_PAIRED" in src
+    assert "RATING_PAIRED_COMPARISONS" in inspect.getsource(mod)
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(16, ("HOME", "DRAW")),
+        bootstrap_iterations=15,
+        seed=9,
+    )
+    for pm in payload["rating_benchmark"].get("per_market") or []:
+        comps = pm.get("prespecified_comparisons") or []
+        assert isinstance(comps, list)
+        # no dynamic "best_without_rating" selection field used for decision
+        assert "delta_auc_adding_rating" not in pm or comps
+
+
+def test_v2a1_13_14_stable_seed_no_builtin_hash():
+    from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
+        stable_seed,
+    )
+    import inspect
+    from app.services.cecchino import cecchino_purchasability_statistical_research as mod
+
+    assert stable_seed(42, "a") == stable_seed(42, "a")
+    assert stable_seed(42, "a") != stable_seed(42, "b")
+    src = inspect.getsource(mod)
+    assert "hash(f)" not in src
+    assert "seed + hash" not in src
+    assert "stable_seed" in src
+
+
+def test_v2a1_15_16_candidate_brier_and_stability_filled():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(18, ("HOME",)),
+        bootstrap_iterations=15,
+        seed=8,
+    )
+    specs = [c for c in payload["candidate_specifications"] if c.get("status") == "ok"]
+    assert specs
+    assert any(c.get("brier_mean") is not None for c in specs)
+    assert all(c.get("temporal_stability") != "unknown" for c in specs)
+    assert all(c.get("market_stability") != "unknown" for c in specs)
+
+
+def test_v2a1_17_18_no_oof_prob_no_or_true():
+    import inspect
+    from app.services.cecchino import cecchino_purchasability_statistical_research as mod
+
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=12,
+        seed=6,
+    )
+    blob = json.dumps(payload, allow_nan=False)
+    assert "oof_prob" not in blob
+    src = inspect.getsource(mod.build_purchasability_statistical_research)
+    assert "or True" not in src
+
+
+def test_v2a1_19_strict_json():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(12, ("HOME",)),
+        bootstrap_iterations=10,
+        seed=7,
+    )
+    json.dumps(make_json_safe(payload), allow_nan=False)
+
+
+def test_v2a1_20_readiness_not_positive_without_paired():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(12, ("HOME",)),
+        bootstrap_iterations=10,
+        seed=3,
+    )
+    step = payload["phase_2b_readiness"]["recommended_next_step"]
+    # With tiny synthetic data, must not claim 2B construction without paired evidence
+    if payload["phase_2b_readiness"].get("paired_positive_comparisons", 0) == 0:
+        assert step != "phase_2b_candidate_construction"

@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Indice di Acquistabilità — Fase 2A.1 (2026-07-18)
+
+| Campo | Valore |
+|-------|--------|
+| Versione | `cecchino_purchasability_statistical_research_v2a_1` |
+| Dataset | `cecchino_purchasability_dataset_v1_1` (read-only) |
+| Focus | Paired OOF, ROI ranking, stabilità fold/mercato, Rating prespecificato |
+| Produzione | Nessuna formula 0–100; Rating/KPI/Segnali invariati |
+
 ## Indice di Acquistabilità — Fase 2A (2026-07-18)
 
 | Campo | Valore |

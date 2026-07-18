@@ -39,10 +39,47 @@ export type PurchasabilityCandidateSpec = {
   markets?: string[]
   auc_mean?: number | null
   brier_mean?: number | null
-  roi_mean?: number | null
-  delta_vs_book_mean?: number | null
-  stability?: string
+  log_loss_mean?: number | null
+  ece_mean?: number | null
+  cohort_full_coverage_roi?: number | null
+  roi_top_10pct_mean?: number | null
+  roi_top_20pct_mean?: number | null
+  roi_top_quintile_mean?: number | null
+  delta_auc_vs_book_mean?: number | null
+  delta_brier_vs_book_mean?: number | null
+  temporal_stability?: string
+  market_stability?: string
+  markets_positive?: number | null
+  markets_negative?: number | null
   status?: string
+}
+
+export type PurchasabilityPairedCI = {
+  estimate?: number | null
+  ci_low?: number | null
+  ci_high?: number | null
+  iterations?: number
+  valid_iterations?: number
+}
+
+export type PurchasabilityMarginalRow = {
+  market?: string
+  spec?: string
+  vs?: string
+  delta_auc?: number | null
+  delta_brier_improvement?: number | null
+  delta_roi_top_10pct?: number | null
+  delta_roi_top_20pct?: number | null
+  classification?: string
+  temporal_classification?: string
+  market_stability?: string
+  fold_sign_consistency?: number | null
+  positive_folds?: number
+  negative_folds?: number
+  confidence_intervals?: {
+    delta_auc?: PurchasabilityPairedCI
+    delta_roi_top_10pct?: PurchasabilityPairedCI
+  }
 }
 
 export type PurchasabilityMarketResult = {
@@ -51,6 +88,7 @@ export type PurchasabilityMarketResult = {
   settled_rows?: number
   unique_fixtures?: number
   win_rate?: number | null
+  cohort_full_coverage_roi?: number | null
   roi?: number | null
   avg_odds?: number | null
   avg_break_even?: number | null
@@ -82,7 +120,7 @@ export type PurchasabilityStatisticalResearchResponse = {
   pooled_results?: Record<string, unknown>
   candidate_specifications?: PurchasabilityCandidateSpec[]
   feature_decisions?: PurchasabilityFeatureDecision[]
-  marginal_contribution?: Array<Record<string, unknown>>
+  marginal_contribution?: PurchasabilityMarginalRow[]
   rating_benchmark?: {
     conclusion?: string
     per_market?: Array<Record<string, unknown>>

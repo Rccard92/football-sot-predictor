@@ -2,9 +2,22 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A.1 — Confronti paired e ROI discriminante (`…_v2a_1`)
+
+Correzioni su v2a prima del benchmark Railway:
+
+- **ROI coorte** (`cohort_full_coverage_roi`): descrittivo, identico tra candidati a stake 1 full-coverage — **non** usarlo per delta tra modelli.
+- **ROI discriminante**: ranking OOF (`roi_top_10pct/20pct`, quintili, spread top–bottom).
+- **`paired_oof_comparison`**: delta classificazione con segno “migliore = positivo”; CI bootstrap **paired** clusterizzato per fixture sulla differenza.
+- **Stabilità fold**: `fold_signs` reali da delta AUC per fold test; soglie documentate (`DELTA_AUC_*`, `FOLD_NEUTRAL_ABS`).
+- **Stabilità mercati**: Pass 1 per mercato → Pass 2 aggregato (`cross_market_stable` / `market_specific_signal` / …).
+- **Rating**: confronti **prespecificati** (niente selezione best-spec su OOF).
+- **`stable_seed`**: SHA-256, nessun `hash()` Python.
+- Readiness 2B richiede evidenza paired reale.
+
 ## Fase 2A — Ricerca statistica (`cecchino_purchasability_statistical_research_v2a`)
 
-Read-only sulla coorte **settled_core** del dataset `cecchino_purchasability_dataset_v1_1` (non duplicato).
+Read-only sulla coorte **settled_core** del dataset `cecchino_purchasability_dataset_v1_1` (non duplicato). Superseduta da v2a_1 per confronti paired.
 
 ### Coorte
 

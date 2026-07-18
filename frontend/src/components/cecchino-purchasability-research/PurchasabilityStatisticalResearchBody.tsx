@@ -173,14 +173,22 @@ export function PurchasabilityStatisticalResearchBody({
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
             <h3 className="text-sm font-semibold text-slate-900">Candidati</h3>
-            <table className="mt-3 w-full min-w-[720px] text-left text-sm">
+            <p className="mt-1 text-xs text-slate-500">
+              ROI coorte = full coverage (non discriminante tra modelli). Confrontare ROI top 10%/20% e Δ
+              paired vs Book.
+            </p>
+            <table className="mt-3 w-full min-w-[980px] text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="py-1 pr-2">Config</th>
                   <th className="py-1 pr-2">AUC</th>
-                  <th className="py-1 pr-2">ROI</th>
-                  <th className="py-1 pr-2">Δ vs Book</th>
-                  <th className="py-1 pr-2">Stabilità</th>
+                  <th className="py-1 pr-2">Brier</th>
+                  <th className="py-1 pr-2">ROI coorte</th>
+                  <th className="py-1 pr-2">ROI top10%</th>
+                  <th className="py-1 pr-2">ROI top20%</th>
+                  <th className="py-1 pr-2">ΔAUC vs Book</th>
+                  <th className="py-1 pr-2">Stab. fold</th>
+                  <th className="py-1 pr-2">Stab. mercati</th>
                   <th className="py-1">Stato</th>
                 </tr>
               </thead>
@@ -189,12 +197,62 @@ export function PurchasabilityStatisticalResearchBody({
                   <tr key={c.configuration} className="border-b border-slate-100">
                     <td className="py-1.5 pr-2 font-medium">{c.configuration}</td>
                     <td className="py-1.5 pr-2">{fmt(c.auc_mean)}</td>
-                    <td className="py-1.5 pr-2">{fmt(c.roi_mean)}</td>
-                    <td className="py-1.5 pr-2">{fmt(c.delta_vs_book_mean)}</td>
-                    <td className="py-1.5 pr-2">{c.stability || '—'}</td>
+                    <td className="py-1.5 pr-2">{fmt(c.brier_mean)}</td>
+                    <td className="py-1.5 pr-2 text-slate-500" title="ROI coorte — non discriminante">
+                      {fmt(c.cohort_full_coverage_roi)}
+                    </td>
+                    <td className="py-1.5 pr-2">{fmt(c.roi_top_10pct_mean)}</td>
+                    <td className="py-1.5 pr-2">{fmt(c.roi_top_20pct_mean)}</td>
+                    <td className="py-1.5 pr-2">{fmt(c.delta_auc_vs_book_mean)}</td>
+                    <td className="py-1.5 pr-2">{c.temporal_stability || '—'}</td>
+                    <td className="py-1.5 pr-2">{c.market_stability || '—'}</td>
                     <td className="py-1.5">{c.status || '—'}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
+            <h3 className="text-sm font-semibold text-slate-900">Confronti paired (Δ + CI)</h3>
+            <table className="mt-3 w-full min-w-[900px] text-left text-sm">
+              <thead className="border-b border-slate-200 text-slate-500">
+                <tr>
+                  <th className="py-1 pr-2">Mercato</th>
+                  <th className="py-1 pr-2">Spec vs</th>
+                  <th className="py-1 pr-2">ΔAUC</th>
+                  <th className="py-1 pr-2">CI AUC</th>
+                  <th className="py-1 pr-2">ΔROI top10%</th>
+                  <th className="py-1 pr-2">Fold +/-</th>
+                  <th className="py-1 pr-2">Stab. mercato</th>
+                  <th className="py-1">Classe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.marginal_contribution || [])
+                  .filter((m) => m.vs === 'BOOK_BASELINE')
+                  .slice(0, 40)
+                  .map((m, i) => {
+                    const ci = m.confidence_intervals?.delta_auc
+                    return (
+                      <tr key={`${m.market}-${m.spec}-${i}`} className="border-b border-slate-100">
+                        <td className="py-1.5 pr-2">{m.market}</td>
+                        <td className="py-1.5 pr-2 text-xs">
+                          {m.spec} vs {m.vs}
+                        </td>
+                        <td className="py-1.5 pr-2">{fmt(m.delta_auc)}</td>
+                        <td className="py-1.5 pr-2 text-xs">
+                          [{fmt(ci?.ci_low)} , {fmt(ci?.ci_high)}]
+                        </td>
+                        <td className="py-1.5 pr-2">{fmt(m.delta_roi_top_10pct)}</td>
+                        <td className="py-1.5 pr-2">
+                          {m.positive_folds ?? 0}/{m.negative_folds ?? 0}
+                        </td>
+                        <td className="py-1.5 pr-2 text-xs">{m.market_stability || '—'}</td>
+                        <td className="py-1.5 text-xs">{m.classification || '—'}</td>
+                      </tr>
+                    )
+                  })}
               </tbody>
             </table>
           </section>
@@ -230,20 +288,31 @@ export function PurchasabilityStatisticalResearchBody({
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-slate-900">Rating</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Rating — confronti prespecificati</h3>
             <p className="mt-2 text-sm text-slate-700">
               Conclusione: <span className="font-medium">{rating?.conclusion || '—'}</span>
             </p>
             <p className="mt-1 text-xs text-slate-500">{rating?.note}</p>
-            <ul className="mt-3 space-y-1 text-sm">
-              {(rating?.per_market || []).slice(0, 12).map((m) => (
-                <li key={String(m.market)} className="flex flex-wrap gap-3 text-slate-700">
-                  <span className="font-medium w-28">{String(m.market)}</span>
-                  <span>alone {fmt(m.rating_alone_auc as number | null)}</span>
-                  <span>best w/o {fmt(m.best_without_rating_auc as number | null)}</span>
-                  <span>+rating {fmt(m.with_rating_auc as number | null)}</span>
-                  <span>Δ {fmt(m.delta_auc_adding_rating as number | null)}</span>
-                  <span>{String(m.decision || '')}</span>
+            <ul className="mt-3 space-y-2 text-sm">
+              {(rating?.per_market || []).slice(0, 8).map((m) => (
+                <li key={String(m.market)} className="border-b border-slate-100 pb-2">
+                  <div className="font-medium">
+                    {String(m.market)} — {String(m.decision || '')}
+                  </div>
+                  <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                    {((m.prespecified_comparisons as Array<Record<string, unknown>>) || [])
+                      .slice(0, 6)
+                      .map((c, idx) => {
+                        const ci = c.ci as { ci_low?: number; ci_high?: number } | undefined
+                        return (
+                          <li key={idx}>
+                            {String(c.spec)} vs {String(c.vs)}: ΔAUC {fmt(c.delta_auc as number | null)}{' '}
+                            CI [{fmt(ci?.ci_low)} , {fmt(ci?.ci_high)}] —{' '}
+                            {String(c.temporal_classification || '')}
+                          </li>
+                        )
+                      })}
+                  </ul>
                 </li>
               ))}
             </ul>
@@ -258,9 +327,9 @@ export function PurchasabilityStatisticalResearchBody({
                   <th className="py-1 pr-2">Rows</th>
                   <th className="py-1 pr-2">Fixture</th>
                   <th className="py-1 pr-2">WR</th>
-                  <th className="py-1 pr-2">ROI</th>
+                  <th className="py-1 pr-2">ROI coorte</th>
                   <th className="py-1 pr-2">Quota</th>
-                  <th className="py-1 pr-2">Best spec</th>
+                  <th className="py-1 pr-2">Best display</th>
                   <th className="py-1">AUC</th>
                 </tr>
               </thead>
@@ -271,7 +340,12 @@ export function PurchasabilityStatisticalResearchBody({
                     <td className="py-1.5 pr-2">{m.settled_rows ?? 0}</td>
                     <td className="py-1.5 pr-2">{m.unique_fixtures ?? 0}</td>
                     <td className="py-1.5 pr-2">{fmt(m.win_rate)}</td>
-                    <td className="py-1.5 pr-2">{fmt(m.roi)}</td>
+                    <td
+                      className="py-1.5 pr-2 text-slate-500"
+                      title="ROI coorte — non discriminante"
+                    >
+                      {fmt(m.cohort_full_coverage_roi ?? m.roi)}
+                    </td>
                     <td className="py-1.5 pr-2">{fmt(m.avg_odds, 2)}</td>
                     <td className="py-1.5 pr-2">{m.best_spec_without_rating || '—'}</td>
                     <td className="py-1.5">{fmt(m.best_spec_auc)}</td>
@@ -314,7 +388,7 @@ export function PurchasabilityStatisticalResearchBody({
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Export Fase 2A</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">Export Fase 2A.1</h3>
             <div className="flex flex-wrap gap-2">
               {EXPORTS.map(([kind, label]) => (
                 <a

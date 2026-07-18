@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A.1 (2026-07-18)
+
+1. `GET .../purchasability/statistical-research` (versione `v2a_1`): verificare paired ΔAUC/CI, ROI top 10%/20%, fold/market stability.
+2. Non usare ROI coorte per confrontare candidati.
+3. Benchmark Railway: 200 bootstrap tecnico, poi 1000; richiede `DATABASE_URL`.
+
 ## Indice di Acquistabilità — Fase 2A statistica (2026-07-18)
 
 1. `GET .../purchasability/statistical-research` (filtri date/competition/market/selection/bootstrap/seed).
