@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — Fase 2A.3.1 result FE (2026-07-18)
+
+FE carica summary poi result completo; classificazione effetto/temporale/mercato separata; `candidate_decision`. Versione `v2a_2` invariata. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — Fase 2A.3 job asincrono (2026-07-18)
 
 Esecuzione asincrona process-local della ricerca statistica (`…_v2a_2` invariata): POST job + polling FE, risultati temporanei in `/tmp`, nessuna persistenza DB. Evita timeout proxy sulle richieste sincrone lunghe (falso errore CORS). Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.

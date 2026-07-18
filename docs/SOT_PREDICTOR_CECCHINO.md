@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Indice di Acquistabilità — Fase 2A.3.1 result + classificazione (2026-07-18)
+
+| Campo | Valore |
+|-------|--------|
+| Statistica | `…_v2a_2` invariata |
+| FE | summary → result; paired/mercati/fold popolati |
+| Classi | effect / temporal / market separati |
+| Decisione | `candidate_decision` esplicita |
+
 ## Indice di Acquistabilità — Fase 2A.3 job asincrono (2026-07-18)
 
 | Campo | Valore |

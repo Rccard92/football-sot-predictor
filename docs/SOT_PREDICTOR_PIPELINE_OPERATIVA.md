@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A.3.1 (2026-07-18)
+
+1. Dopo job completed: verificare summary immediato + result con paired/mercati/fold.
+2. Controllare `effect_classification` vs `temporal_classification` (direzione negativa non mascherata).
+3. Colonna `candidate_decision` esplicita; elapsed in min/s.
+4. Non avviare ancora residual reliability né 1000 bootstrap.
+
 ## Indice di Acquistabilità — Fase 2A.3 (2026-07-18)
 
 1. FE: `POST .../statistical-research/jobs` (202) → poll `GET .../jobs/{id}` ogni 2s → `GET .../summary`.

@@ -4,6 +4,7 @@ import {
   formatPurchasabilityJobError,
   getActivePurchasabilityStatisticalJob,
   getPurchasabilityStatisticalJob,
+  getPurchasabilityStatisticalJobResult,
   getPurchasabilityStatisticalJobSummary,
   startPurchasabilityStatisticalJob,
   type PurchasabilityResearchJobStatus,
@@ -27,7 +28,9 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
   const [bootstrapIterations, setBootstrapIterations] = useState(200)
   const [loading, setLoading] = useState(false)
   const [loadingSummary, setLoadingSummary] = useState(false)
+  const [loadingResult, setLoadingResult] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [detailWarning, setDetailWarning] = useState<string | null>(null)
   const [data, setData] = useState<PurchasabilityStatisticalResearchResponse | null>(null)
   const [job, setJob] = useState<PurchasabilityResearchJobStatus | null>(null)
   const busyRef = useRef(false)
@@ -51,19 +54,35 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
     }
   }, [])
 
-  const loadSummary = useCallback(async (jobId: string) => {
+  const loadCompletedPayload = useCallback(async (jobId: string) => {
     setLoadingSummary(true)
+    setDetailWarning(null)
     try {
       const summary = await getPurchasabilityStatisticalJobSummary(jobId)
       if (!mountedRef.current) return
       setData(summary)
       setError(null)
+      setLoadingSummary(false)
+      setLoadingResult(true)
+      try {
+        const full = await getPurchasabilityStatisticalJobResult(jobId)
+        if (!mountedRef.current) return
+        setData(full)
+        setDetailWarning(null)
+      } catch {
+        if (!mountedRef.current) return
+        setDetailWarning(
+          'Risultato sintetico disponibile, dettaglio completo non caricato.',
+        )
+      } finally {
+        if (mountedRef.current) setLoadingResult(false)
+      }
     } catch (e) {
       if (!mountedRef.current) return
       setError(formatPurchasabilityJobError(e))
+      setLoadingSummary(false)
     } finally {
       if (mountedRef.current) {
-        setLoadingSummary(false)
         setLoading(false)
         busyRef.current = false
       }
@@ -80,7 +99,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
           setJob(st)
           if (st.status === 'completed') {
             stopPolling()
-            await loadSummary(jobId)
+            await loadCompletedPayload(jobId)
             return
           }
           if (st.status === 'failed') {
@@ -106,7 +125,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
       }
       void tick()
     },
-    [loadSummary, stopPolling],
+    [loadCompletedPayload, stopPolling],
   )
 
   const load = useCallback(async () => {
@@ -114,6 +133,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
     busyRef.current = true
     setLoading(true)
     setError(null)
+    setDetailWarning(null)
     try {
       const started = await startPurchasabilityStatisticalJob(filters())
       if (!mountedRef.current) return
@@ -123,7 +143,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
         filters: filters(),
       })
       if (started.status === 'completed') {
-        await loadSummary(started.job_id)
+        await loadCompletedPayload(started.job_id)
         return
       }
       pollJob(started.job_id)
@@ -133,7 +153,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
       setLoading(false)
       setError(formatPurchasabilityJobError(e))
     }
-  }, [filters, loadSummary, pollJob])
+  }, [filters, loadCompletedPayload, pollJob])
 
   useEffect(() => {
     mountedRef.current = true
@@ -150,7 +170,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
           pollJob(j.job_id)
         }
       } catch {
-        // silent: tab open without active job is fine
+        // silent
       }
     })()
     return () => {
@@ -163,6 +183,7 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
   const busy =
     loading ||
     loadingSummary ||
+    loadingResult ||
     job?.status === 'queued' ||
     job?.status === 'running'
 
@@ -177,7 +198,9 @@ export function useCecchinoPurchasabilityStatisticalResearch() {
     setBootstrapIterations,
     loading: busy,
     loadingSummary,
+    loadingResult,
     error,
+    detailWarning,
     data,
     job,
     filters,

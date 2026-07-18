@@ -172,6 +172,7 @@ export function SegnaliKpiPage() {
                 data={purchStat.data}
                 loading={purchStat.loading}
                 error={purchStat.error}
+                detailWarning={purchStat.detailWarning}
                 job={purchStat.job}
                 dateFrom={purchStat.dateFrom}
                 dateTo={purchStat.dateTo}

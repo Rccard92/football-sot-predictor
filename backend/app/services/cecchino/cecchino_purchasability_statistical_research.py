@@ -813,38 +813,16 @@ def univariate_feature_analysis(
     }
 
 
-def classify_marginal(
+def classify_effect(
     delta_auc: float | None,
-    fold_signs: list[int],
-    market_signs: list[int] | None,
     ci: dict[str, Any] | None,
-    *,
-    cross_market_label: str | None = None,
 ) -> str:
-    """
-    Classification from paired delta AUC + fold signs + CI.
-
-    Thresholds (descriptive):
-    - DELTA_AUC_STABLE = 0.01, DELTA_AUC_UNCERTAIN = 0.005, DELTA_AUC_NEGATIVE = -0.01
-    - FOLD_NEUTRAL_ABS = 0.002
-    Negative deltas never receive positive_* labels.
-    """
-    del market_signs  # reserved; cross-market handled via cross_market_label
-    if cross_market_label == "market_specific_signal":
-        return "market_specific_signal"
+    """Direzione dell'effetto da ΔAUC + CI paired (nessuna stabilità temporale)."""
     if delta_auc is None:
         return "insufficient_sample"
 
-    pos_folds = sum(1 for s in fold_signs if s > 0)
-    neg_folds = sum(1 for s in fold_signs if s < 0)
-    n_signed = pos_folds + neg_folds
-    if fold_signs and n_signed >= 2 and pos_folds > 0 and neg_folds > 0 and abs(pos_folds - neg_folds) <= 1:
-        return "temporally_unstable"
-
     ci_low = (ci or {}).get("ci_low")
     ci_high = (ci or {}).get("ci_high")
-    majority_pos = (not fold_signs) or (pos_folds > neg_folds)
-    majority_neg = fold_signs and neg_folds > pos_folds
     ci_crosses_zero = (
         ci_low is not None
         and ci_high is not None
@@ -853,16 +831,9 @@ def classify_marginal(
     ci_entirely_negative = ci_high is not None and float(ci_high) < 0.0
     ci_entirely_positive = ci_low is not None and float(ci_low) > 0.0
 
-    # A. positive_stable_evidence
-    if (
-        delta_auc > DELTA_AUC_STABLE
-        and ci_entirely_positive
-        and majority_pos
-        and not majority_neg
-    ):
+    if delta_auc > DELTA_AUC_STABLE and ci_entirely_positive:
         return "positive_stable_evidence"
 
-    # E. redundant — near-zero non-negative with CI compatible with zero
     if (
         0 <= delta_auc <= DELTA_AUC_UNCERTAIN
         and (
@@ -873,18 +844,16 @@ def classify_marginal(
     ):
         return "redundant_no_incremental_value"
 
-    # B. positive_but_uncertain — only if delta > 0
-    if delta_auc > 0 and not majority_neg:
+    if delta_auc > 0:
         if ci_crosses_zero or ci_low is None or not ci_entirely_positive:
             return "positive_but_uncertain"
         if delta_auc <= DELTA_AUC_STABLE:
             return "positive_but_uncertain"
+        return "positive_but_uncertain"
 
-    # C. negative_incremental_value
     if delta_auc < DELTA_AUC_NEGATIVE or ci_entirely_negative:
         return "negative_incremental_value"
 
-    # D. negative_but_uncertain — delta < 0, CI crosses zero / not strongly negative
     if delta_auc < 0:
         if ci_crosses_zero or ci_high is None or not ci_entirely_negative:
             return "negative_but_uncertain"
@@ -892,9 +861,69 @@ def classify_marginal(
 
     if abs(delta_auc) <= DELTA_AUC_UNCERTAIN:
         return "redundant_no_incremental_value"
-    if delta_auc > 0:
-        return "positive_but_uncertain"
     return "insufficient_sample"
+
+
+def classify_temporal(fold_signs: list[int]) -> str:
+    """Stabilità temporale basata solo sui segni dei fold."""
+    if not fold_signs:
+        return "insufficient_folds"
+    pos = sum(1 for s in fold_signs if s > 0)
+    neg = sum(1 for s in fold_signs if s < 0)
+    neu = sum(1 for s in fold_signs if s == 0)
+    n_signed = pos + neg
+    if n_signed < 2:
+        if pos > 0 and neg == 0:
+            return "temporally_stable_positive"
+        if neg > 0 and pos == 0:
+            return "temporally_stable_negative"
+        if neu > 0 and n_signed == 0:
+            return "temporally_neutral"
+        return "insufficient_folds"
+    if pos > 0 and neg > 0:
+        return "temporally_mixed"
+    if pos > 0 and neg == 0:
+        return "temporally_stable_positive"
+    if neg > 0 and pos == 0:
+        return "temporally_stable_negative"
+    return "temporally_neutral"
+
+
+def classify_market_from_cross(
+    cross_label: str | None,
+    *,
+    markets_positive: int = 0,
+    markets_negative: int = 0,
+) -> str:
+    """Mappa stabilità cross-market ai label espliciti di direzione/mercato."""
+    label = cross_label or "insufficient_markets"
+    if label == "market_specific_signal":
+        return "market_specific_signal"
+    if label == "cross_market_stable":
+        if markets_negative > markets_positive:
+            return "cross_market_stable_negative"
+        return "cross_market_stable_positive"
+    if label == "cross_market_unstable":
+        return "cross_market_mixed"
+    if label == "insufficient_markets":
+        return "insufficient_markets"
+    return "insufficient_markets"
+
+
+def classify_marginal(
+    delta_auc: float | None,
+    fold_signs: list[int],
+    market_signs: list[int] | None,
+    ci: dict[str, Any] | None,
+    *,
+    cross_market_label: str | None = None,
+) -> str:
+    """
+    Compatibilità: restituisce effect_classification (direzione).
+    Fold/market non sovrascrivono più la direzione.
+    """
+    del fold_signs, market_signs, cross_market_label
+    return classify_effect(delta_auc, ci)
 
 
 def comparison_role_for(vs: str, spec: str) -> str:
@@ -1177,6 +1206,9 @@ def decide_features(
         book_labels = [m.get("classification") for m in vs_book if m.get("classification")]
         model_labels = [m.get("classification") for m in vs_model if m.get("classification")]
         all_labels = [m.get("classification") for m in related if m.get("classification")]
+        temporal_labels = [
+            m.get("temporal_classification") for m in related if m.get("temporal_classification")
+        ]
 
         evidence = {
             "predictive_against_outcome": u.get("auc_univariate"),
@@ -1216,11 +1248,18 @@ def decide_features(
         elif "negative_incremental_value" in book_labels and not evidence["incremental_vs_book"]:
             decision = "negative_incremental_value"
             reason = "negative_vs_book"
-        elif "temporally_unstable" in all_labels and not evidence["incremental_vs_book"]:
+        elif (
+            "temporally_mixed" in temporal_labels
+            or "temporally_unstable" in all_labels
+        ) and not evidence["incremental_vs_book"]:
             decision = "unstable_exclude"
             reason = "sign_unstable_across_folds"
         elif evidence["incremental_vs_book"]:
-            if any(m.get("market_stability") == "market_specific_signal" for m in vs_book):
+            if any(
+                m.get("market_classification") == "market_specific_signal"
+                or m.get("market_stability") == "market_specific_signal"
+                for m in vs_book
+            ):
                 decision = "market_specific_candidate"
                 reason = "stable_vs_book_market_specific"
             else:
@@ -1254,14 +1293,14 @@ def decide_features(
                 "evidence_axes": evidence,
                 "temporal_stability": (
                     "unstable"
-                    if "temporally_unstable" in all_labels
+                    if "temporally_mixed" in temporal_labels
                     else ("stable" if evidence["incremental_vs_book"] else "unknown")
                 ),
                 "market_stability": next(
                     (
-                        m.get("market_stability")
+                        m.get("market_classification") or m.get("market_stability")
                         for m in vs_book
-                        if m.get("market_stability")
+                        if m.get("market_classification") or m.get("market_stability")
                     ),
                     "unknown",
                 ),
@@ -1332,13 +1371,8 @@ def _build_paired_entry(
     )
     fold_info = fold_delta_auc_signs(rows, folds, pred_cand, pred_base)
     ci_auc = (paired.get("confidence_intervals") or {}).get("delta_auc") or {}
-    # Pass 1: temporal only (no market_signs)
-    temporal_class = classify_marginal(
-        paired.get("delta_auc"),
-        fold_info.get("fold_signs") or [],
-        None,
-        ci_auc,
-    )
+    effect = classify_effect(paired.get("delta_auc"), ci_auc)
+    temporal = classify_temporal(fold_info.get("fold_signs") or [])
     return {
         "market": market,
         "spec": spec,
@@ -1360,8 +1394,10 @@ def _build_paired_entry(
         "neutral_folds": fold_info.get("neutral_folds"),
         "fold_sign_consistency": fold_info.get("fold_sign_consistency"),
         "fold_effect_range": fold_info.get("fold_effect_range"),
-        "temporal_classification": temporal_class,
-        "classification": temporal_class,  # updated in Pass 2
+        "effect_classification": effect,
+        "temporal_classification": temporal,
+        "market_classification": "insufficient_markets",
+        "classification": effect,  # compat: direction only
         "n_paired": paired.get("n_paired"),
     }
 
@@ -1392,6 +1428,8 @@ def analyze_market(
                 "fold": f["fold"],
                 "train_fixture_ids": f["train_fixture_ids"],
                 "test_fixture_ids": f["test_fixture_ids"],
+                "train_fixtures": len(f["train_fixture_ids"]),
+                "test_fixtures": len(f["test_fixture_ids"]),
                 "train_rows": len(tr),
                 "test_rows": len(te),
                 "train_date_min": min((r.get("scan_date") or "") for r in tr) if tr else None,
@@ -1399,6 +1437,12 @@ def analyze_market(
                 "test_date_min": min((r.get("scan_date") or "") for r in te) if te else None,
                 "test_date_max": max((r.get("scan_date") or "") for r in te) if te else None,
                 "fixture_overlap": 0,
+                "class_balance": {
+                    "train_won": sum(1 for r in tr if r.get("selection_won")),
+                    "train_lost": sum(1 for r in tr if r.get("selection_lost")),
+                    "test_won": sum(1 for r in te if r.get("selection_won")),
+                    "test_lost": sum(1 for r in te if r.get("selection_lost")),
+                },
                 "markets": [market],
             }
         )
@@ -1566,7 +1610,12 @@ def _decide_rating_from_pairs(pairs: list[dict[str, Any]]) -> str:
         return "insufficient_evidence"
     pos = sum(1 for d in deltas if d > DELTA_AUC_UNCERTAIN)
     neg = sum(1 for d in deltas if d < -DELTA_AUC_UNCERTAIN)
-    unstable = sum(1 for p in pairs if p.get("temporal_classification") == "temporally_unstable")
+    unstable = sum(
+        1
+        for p in pairs
+        if p.get("temporal_classification")
+        in ("temporally_mixed", "temporally_unstable")
+    )
     if unstable >= max(1, len(pairs) // 2):
         return "temporally_unstable"
     ci_pos = 0
@@ -1791,19 +1840,36 @@ def build_purchasability_statistical_research(
             i["markets_neutral"] = meta["markets_neutral"]
             i["market_sign_consistency"] = meta["market_sign_consistency"]
             i["market_effect_dispersion"] = meta["market_effect_dispersion"]
-            i["classification"] = classify_marginal(
-                i.get("delta_auc"),
-                i.get("fold_signs") or [],
-                None,
-                (i.get("confidence_intervals") or {}).get("delta_auc"),
-                cross_market_label=cm_label if cm_label == "market_specific_signal" else None,
+            mkt_cls = classify_market_from_cross(
+                cm_label,
+                markets_positive=int(meta.get("markets_positive") or 0),
+                markets_negative=int(meta.get("markets_negative") or 0),
             )
-            if cm_label == "cross_market_unstable" and i["classification"] == "positive_stable_evidence":
-                i["classification"] = "positive_but_uncertain"
-            if cm_label == "cross_market_stable" and i.get("temporal_classification") == "positive_but_uncertain":
+            i["market_classification"] = mkt_cls
+            # Effect stays direction-only; never overwrite negative with temporal
+            effect = i.get("effect_classification") or classify_effect(
+                i.get("delta_auc"),
+                (i.get("confidence_intervals") or {}).get("delta_auc"),
+            )
+            if (
+                cm_label == "cross_market_unstable"
+                and effect == "positive_stable_evidence"
+            ):
+                effect = "positive_but_uncertain"
+            if (
+                cm_label == "cross_market_stable"
+                and effect == "positive_but_uncertain"
+            ):
                 ci = (i.get("confidence_intervals") or {}).get("delta_auc") or {}
                 if (i.get("delta_auc") or 0) > DELTA_AUC_STABLE and (ci.get("ci_low") or -1) > 0:
-                    i["classification"] = "positive_stable_evidence"
+                    effect = "positive_stable_evidence"
+            if cm_label == "market_specific_signal" and effect == "positive_stable_evidence":
+                # keep positive; market axis already market_specific_signal
+                pass
+            i["effect_classification"] = effect
+            i["classification"] = effect
+            if not i.get("temporal_classification"):
+                i["temporal_classification"] = classify_temporal(i.get("fold_signs") or [])
 
     rating_decisions = [
         (mr.get("rating_benchmark") or {}).get("decision")
@@ -1874,7 +1940,9 @@ def build_purchasability_statistical_research(
             d["market_stability"] = "cross_market_stable"
         elif "cross_market_unstable" in mstab:
             d["market_stability"] = "cross_market_unstable"
-        if "temporally_unstable" in labels:
+        if "temporally_mixed" in [
+            m.get("temporal_classification") for m in related_book
+        ] or "temporally_unstable" in labels:
             d["temporal_stability"] = "temporally_unstable"
         elif "positive_stable_evidence" in labels:
             d["temporal_stability"] = "stable"
@@ -1955,11 +2023,16 @@ def build_purchasability_statistical_research(
             if m.get("temporal_classification")
         ]
         cm = cross_market_meta.get((spec_name, "BOOK_BASELINE")) or {}
-        if "temporally_unstable" in temporal_labels:
+        if "temporally_mixed" in temporal_labels or "temporally_unstable" in temporal_labels:
             tstab = "temporally_unstable"
+        elif temporal_labels and all(
+            x == "temporally_stable_positive" for x in temporal_labels
+        ):
+            tstab = "stable"
         elif temporal_labels and all(
             x == "positive_stable_evidence" for x in temporal_labels
         ):
+            # legacy label if any leftover
             tstab = "stable"
         elif temporal_labels:
             tstab = "mixed"
@@ -1993,6 +2066,43 @@ def build_purchasability_statistical_research(
             ind_status = "not_independent_vs_book"
         else:
             ind_status = "insufficient"
+
+        model_items = [
+            m
+            for m in all_marginal
+            if m.get("spec") == spec_name and m.get("vs") == "MODEL_BASELINE"
+        ]
+        pos_model = sum(
+            1 for m in model_items if m.get("classification") == "positive_stable_evidence"
+        )
+        neg_book = sum(
+            1
+            for m in book_items
+            if m.get("classification")
+            in ("negative_incremental_value", "negative_but_uncertain")
+        )
+
+        if spec_name == "BOOK_BASELINE":
+            cand_decision = "benchmark_only"
+        elif spec_name in ("MODEL_BASELINE", "RATING_BASELINE"):
+            cand_decision = "benchmark_only"
+        elif ind_status == "independent_positive":
+            if cm.get("market_stability") == "market_specific_signal":
+                cand_decision = "market_specific_candidate"
+            else:
+                cand_decision = "retain_independent_candidate"
+        elif tstab == "temporally_unstable" and ind_status != "independent_positive":
+            cand_decision = "unstable_exclude"
+        elif neg_book > 0 and pos_book == 0 and ind_status == "not_independent_vs_book":
+            cand_decision = "negative_incremental_value"
+        elif pos_model > 0 and ind_status != "independent_positive":
+            cand_decision = "model_enrichment_only"
+        elif ind_status in ("not_independent_vs_book", "uncertain_vs_book") and all(
+            m.get("classification") == "redundant_no_incremental_value" for m in book_items
+        ) and book_items:
+            cand_decision = "redundant_exclude"
+        else:
+            cand_decision = "insufficient_evidence"
 
         contains_book = spec_name in SPECS_WITH_BOOK_INFO
         candidate_specs.append(
@@ -2038,6 +2148,7 @@ def build_purchasability_statistical_research(
                 "markets_positive": cm.get("markets_positive"),
                 "markets_negative": cm.get("markets_negative"),
                 "status": "ok" if aucs else "insufficient",
+                "candidate_decision": cand_decision,
                 "is_book_baseline_benchmark": spec_name == "BOOK_BASELINE",
             }
         )

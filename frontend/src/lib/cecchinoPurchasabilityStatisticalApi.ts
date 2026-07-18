@@ -67,6 +67,7 @@ export type PurchasabilityCandidateSpec = {
   markets_positive?: number | null
   markets_negative?: number | null
   status?: string
+  candidate_decision?: string
   is_book_baseline_benchmark?: boolean
 }
 
@@ -89,10 +90,13 @@ export type PurchasabilityMarginalRow = {
     | string
   delta_auc?: number | null
   delta_brier_improvement?: number | null
+  delta_log_loss_improvement?: number | null
   delta_roi_top_10pct?: number | null
   delta_roi_top_20pct?: number | null
   classification?: string
+  effect_classification?: string
   temporal_classification?: string
+  market_classification?: string
   market_stability?: string
   fold_sign_consistency?: number | null
   positive_folds?: number
@@ -289,11 +293,33 @@ export async function getPurchasabilityStatisticalJobSummary(
   })
 }
 
+export async function getPurchasabilityStatisticalJobResult(
+  jobId: string,
+): Promise<PurchasabilityStatisticalResearchResponse> {
+  return adminGetJson(`${JOBS_BASE}/${encodeURIComponent(jobId)}/result`, {
+    timeoutMs: 300_000,
+  })
+}
+
 export async function getActivePurchasabilityStatisticalJob(): Promise<{
   status: string
   job: PurchasabilityResearchJobStatus | null
 }> {
   return adminGetJson(`${JOBS_BASE}/active`, { timeoutMs: 15_000 })
+}
+
+/** Formatta ms in "X min Y,Z s" (locale IT). */
+export function formatElapsedMs(ms: number | null | undefined): string {
+  if (ms == null || Number.isNaN(ms) || ms < 0) return '—'
+  const totalSec = ms / 1000
+  const minutes = Math.floor(totalSec / 60)
+  const seconds = totalSec - minutes * 60
+  const secStr = seconds.toLocaleString('it-IT', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })
+  if (minutes <= 0) return `${secStr} s`
+  return `${minutes} min ${secStr} s`
 }
 
 export function formatPurchasabilityJobError(err: unknown): string {

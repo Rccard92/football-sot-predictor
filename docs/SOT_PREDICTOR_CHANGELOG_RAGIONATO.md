@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A.3.1 result FE + classificazione (2026-07-18)
+
+- FE: summary → result completo; split effect/temporal/market; `candidate_decision`; elapsed formattato.
+- Statistica `v2a_2` invariata (nessun cambio formule/metriche numeriche).
+
 ## Indice di Acquistabilità — Fase 2A.3 job asincrono (2026-07-18)
 
 - Job process-local `cecchino_purchasability_research_jobs`: POST 202 + polling; risultati `/tmp`; idle HTTP sync non più usato dal FE.

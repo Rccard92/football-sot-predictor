@@ -4,12 +4,16 @@ import type {
   PurchasabilityStatFilters,
   PurchasabilityStatisticalResearchResponse,
 } from '../../lib/cecchinoPurchasabilityStatisticalApi'
-import { buildPurchasabilityStatExportUrl } from '../../lib/cecchinoPurchasabilityStatisticalApi'
+import {
+  buildPurchasabilityStatExportUrl,
+  formatElapsedMs,
+} from '../../lib/cecchinoPurchasabilityStatisticalApi'
 
 type Props = {
   data: PurchasabilityStatisticalResearchResponse | null
   loading: boolean
   error: string | null
+  detailWarning?: string | null
   job: PurchasabilityResearchJobStatus | null
   dateFrom: string
   dateTo: string
@@ -45,6 +49,7 @@ export function PurchasabilityStatisticalResearchBody({
   data,
   loading,
   error,
+  detailWarning,
   job,
   dateFrom,
   dateTo,
@@ -72,6 +77,7 @@ export function PurchasabilityStatisticalResearchBody({
   )
   const jobRunning = job?.status === 'queued' || job?.status === 'running'
   const shortJobId = job?.job_id ? `${job.job_id.slice(0, 8)}…` : null
+  const elapsedMs = data?.elapsed_ms?.total
 
   return (
     <div className="space-y-4">
@@ -82,6 +88,11 @@ export function PurchasabilityStatisticalResearchBody({
 
       {error ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+      ) : null}
+      {detailWarning ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {detailWarning}
+        </p>
       ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -178,8 +189,10 @@ export function PurchasabilityStatisticalResearchBody({
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-500">Elapsed total ms</dt>
-                <dd className="font-medium">{fmt(data.elapsed_ms?.total, 1)}</dd>
+                <dt className="text-slate-500">Elapsed</dt>
+                <dd className="font-medium" title={elapsedMs != null ? `${elapsedMs} ms` : undefined}>
+                  {formatElapsedMs(elapsedMs)}
+                </dd>
               </div>
               <div>
                 <dt className="text-slate-500">Stato</dt>
@@ -323,7 +336,8 @@ export function PurchasabilityStatisticalResearchBody({
               </thead>
               <tbody>
                 {candidates.map((c) => {
-                  const relatedDecision =
+                  const decision =
+                    c.candidate_decision ||
                     decisionByConfig.get(
                       c.configuration.includes('ADVANTAGE')
                         ? 'probability_advantage'
@@ -331,12 +345,15 @@ export function PurchasabilityStatisticalResearchBody({
                           ? 'edge'
                           : c.configuration.includes('SCORE')
                             ? 'score'
-                            : c.configuration.includes('RATING')
-                              ? 'rating'
-                              : c.configuration.includes('MODEL')
-                                ? 'model_probability'
-                                : '',
-                    ) || c.status
+                            : c.configuration.includes('CONTEXT')
+                              ? 'favourite_alignment'
+                              : c.configuration.includes('RATING')
+                                ? 'rating'
+                                : c.configuration.includes('MODEL')
+                                  ? 'model_probability'
+                                  : '',
+                    ) ||
+                    'insufficient_evidence'
                   return (
                     <tr key={c.configuration} className="border-b border-slate-100">
                       <td className="py-1.5 pr-2 font-medium">{c.configuration}</td>
@@ -354,7 +371,7 @@ export function PurchasabilityStatisticalResearchBody({
                       </td>
                       <td className="py-1.5 pr-2">{fmt(c.roi_top_10pct_mean)}</td>
                       <td className="py-1.5 pr-2">{c.temporal_stability || '—'}</td>
-                      <td className="py-1.5 text-xs">{relatedDecision || '—'}</td>
+                      <td className="py-1.5 text-xs">{decision}</td>
                     </tr>
                   )
                 })}
@@ -364,40 +381,50 @@ export function PurchasabilityStatisticalResearchBody({
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
             <h3 className="text-sm font-semibold text-slate-900">Confronti paired (Δ + CI)</h3>
-            <table className="mt-3 w-full min-w-[980px] text-left text-sm">
+            <table className="mt-3 w-full min-w-[1400px] text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="py-1 pr-2">Mercato</th>
-                  <th className="py-1 pr-2">Spec vs</th>
+                  <th className="py-1 pr-2">Spec</th>
+                  <th className="py-1 pr-2">Baseline</th>
                   <th className="py-1 pr-2">Ruolo</th>
                   <th className="py-1 pr-2">ΔAUC</th>
                   <th className="py-1 pr-2">CI AUC</th>
+                  <th className="py-1 pr-2">ΔBrier</th>
+                  <th className="py-1 pr-2">ΔLL</th>
                   <th className="py-1 pr-2">ΔROI top10%</th>
                   <th className="py-1 pr-2">Fold +/-</th>
-                  <th className="py-1 pr-2">Stab. mercato</th>
-                  <th className="py-1">Classe</th>
+                  <th className="py-1 pr-2">Effect</th>
+                  <th className="py-1 pr-2">Temporal</th>
+                  <th className="py-1">Market</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.marginal_contribution || []).slice(0, 50).map((m, i) => {
+                {(data.marginal_contribution || []).slice(0, 80).map((m, i) => {
                   const ci = m.confidence_intervals?.delta_auc
                   return (
                     <tr key={`${m.market}-${m.spec}-${m.vs}-${i}`} className="border-b border-slate-100">
                       <td className="py-1.5 pr-2">{m.market}</td>
-                      <td className="py-1.5 pr-2 text-xs">
-                        {m.spec} vs {m.vs}
-                      </td>
+                      <td className="py-1.5 pr-2 text-xs">{m.spec}</td>
+                      <td className="py-1.5 pr-2 text-xs">{m.vs}</td>
                       <td className="py-1.5 pr-2 text-xs">{m.comparison_role || '—'}</td>
                       <td className="py-1.5 pr-2">{fmt(m.delta_auc)}</td>
                       <td className="py-1.5 pr-2 text-xs">
                         [{fmt(ci?.ci_low)} , {fmt(ci?.ci_high)}]
                       </td>
+                      <td className="py-1.5 pr-2">{fmt(m.delta_brier_improvement)}</td>
+                      <td className="py-1.5 pr-2">{fmt(m.delta_log_loss_improvement)}</td>
                       <td className="py-1.5 pr-2">{fmt(m.delta_roi_top_10pct)}</td>
                       <td className="py-1.5 pr-2">
                         {m.positive_folds ?? 0}/{m.negative_folds ?? 0}
                       </td>
-                      <td className="py-1.5 pr-2 text-xs">{m.market_stability || '—'}</td>
-                      <td className="py-1.5 text-xs">{m.classification || '—'}</td>
+                      <td className="py-1.5 pr-2 text-xs">
+                        {m.effect_classification || m.classification || '—'}
+                      </td>
+                      <td className="py-1.5 pr-2 text-xs">{m.temporal_classification || '—'}</td>
+                      <td className="py-1.5 text-xs">
+                        {m.market_classification || m.market_stability || '—'}
+                      </td>
                     </tr>
                   )
                 })}
@@ -470,7 +497,7 @@ export function PurchasabilityStatisticalResearchBody({
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
             <h3 className="text-sm font-semibold text-slate-900">Mercati</h3>
-            <table className="mt-3 w-full min-w-[800px] text-left text-sm">
+            <table className="mt-3 w-full min-w-[1100px] text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="py-1 pr-2">Mercato</th>
@@ -479,60 +506,88 @@ export function PurchasabilityStatisticalResearchBody({
                   <th className="py-1 pr-2">WR</th>
                   <th className="py-1 pr-2">ROI coorte</th>
                   <th className="py-1 pr-2">Quota</th>
-                  <th className="py-1 pr-2">Best display</th>
-                  <th className="py-1">AUC</th>
+                  <th className="py-1 pr-2">AUC Book</th>
+                  <th className="py-1 pr-2">Best AUC</th>
+                  <th className="py-1 pr-2">Best spec</th>
+                  <th className="py-1">Limitazioni</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.market_results || []).map((m) => (
-                  <tr key={m.market} className="border-b border-slate-100">
-                    <td className="py-1.5 pr-2 font-medium">{m.market}</td>
-                    <td className="py-1.5 pr-2">{m.settled_rows ?? 0}</td>
-                    <td className="py-1.5 pr-2">{m.unique_fixtures ?? 0}</td>
-                    <td className="py-1.5 pr-2">{fmt(m.win_rate)}</td>
-                    <td
-                      className="py-1.5 pr-2 text-slate-500"
-                      title="ROI coorte — non discriminante"
-                    >
-                      {fmt(m.cohort_full_coverage_roi ?? m.roi)}
-                    </td>
-                    <td className="py-1.5 pr-2">{fmt(m.avg_odds, 2)}</td>
-                    <td className="py-1.5 pr-2">{m.best_spec_without_rating || '—'}</td>
-                    <td className="py-1.5">{fmt(m.best_spec_auc)}</td>
-                  </tr>
-                ))}
+                {(data.market_results || []).map((m) => {
+                  const specs = (m as { candidate_specifications?: Record<string, { classification?: { auc?: number } }> })
+                    .candidate_specifications
+                  const bookAuc = specs?.BOOK_BASELINE?.classification?.auc ?? null
+                  return (
+                    <tr key={m.market} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-2 font-medium">{m.market}</td>
+                      <td className="py-1.5 pr-2">{m.settled_rows ?? 0}</td>
+                      <td className="py-1.5 pr-2">{m.unique_fixtures ?? 0}</td>
+                      <td className="py-1.5 pr-2">{fmt(m.win_rate)}</td>
+                      <td
+                        className="py-1.5 pr-2 text-slate-500"
+                        title="ROI coorte — non discriminante"
+                      >
+                        {fmt(m.cohort_full_coverage_roi ?? m.roi)}
+                      </td>
+                      <td className="py-1.5 pr-2">{fmt(m.avg_odds, 2)}</td>
+                      <td className="py-1.5 pr-2">{fmt(bookAuc)}</td>
+                      <td className="py-1.5 pr-2">{fmt(m.best_spec_auc)}</td>
+                      <td className="py-1.5 pr-2 text-xs">{m.best_spec_without_rating || '—'}</td>
+                      <td className="py-1.5 text-xs text-slate-600">
+                        {(m.limitations || []).join(', ') || '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
             <h3 className="text-sm font-semibold text-slate-900">Fold temporali</h3>
-            <table className="mt-3 w-full min-w-[700px] text-left text-sm">
+            <table className="mt-3 w-full min-w-[1000px] text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="py-1 pr-2">Fold</th>
                   <th className="py-1 pr-2">Train range</th>
                   <th className="py-1 pr-2">Test range</th>
+                  <th className="py-1 pr-2">Train/Test fixture</th>
                   <th className="py-1 pr-2">Train/Test rows</th>
-                  <th className="py-1">Overlap fixture</th>
+                  <th className="py-1 pr-2">Overlap</th>
+                  <th className="py-1">Class balance (test W/L)</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.temporal_folds || []).map((f) => (
-                  <tr key={String(f.fold)} className="border-b border-slate-100">
-                    <td className="py-1.5 pr-2">{String(f.fold)}</td>
-                    <td className="py-1.5 pr-2">
-                      {String(f.train_date_min || '—')} → {String(f.train_date_max || '—')}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {String(f.test_date_min || '—')} → {String(f.test_date_max || '—')}
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      {String(f.train_rows ?? '—')} / {String(f.test_rows ?? '—')}
-                    </td>
-                    <td className="py-1.5">{String(f.fixture_overlap ?? 0)}</td>
-                  </tr>
-                ))}
+                {(data.temporal_folds || []).map((f) => {
+                  const cb = f.class_balance as
+                    | { test_won?: number; test_lost?: number }
+                    | undefined
+                  return (
+                    <tr key={String(f.fold)} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-2">{String(f.fold)}</td>
+                      <td className="py-1.5 pr-2">
+                        {String(f.train_date_min || '—')} → {String(f.train_date_max || '—')}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {String(f.test_date_min || '—')} → {String(f.test_date_max || '—')}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {String(f.train_fixtures ?? (f.train_fixture_ids as unknown[] | undefined)?.length ?? '—')}{' '}
+                        /{' '}
+                        {String(f.test_fixtures ?? (f.test_fixture_ids as unknown[] | undefined)?.length ?? '—')}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {String(f.train_rows ?? '—')} / {String(f.test_rows ?? '—')}
+                      </td>
+                      <td className="py-1.5 pr-2">{String(f.fixture_overlap ?? 0)}</td>
+                      <td className="py-1.5">
+                        {cb
+                          ? `${cb.test_won ?? 0}/${cb.test_lost ?? 0}`
+                          : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </section>

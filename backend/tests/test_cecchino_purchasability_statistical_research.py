@@ -366,19 +366,18 @@ def test_25_no_threshold_optimized_on_test():
 
 def test_26_to_30_classification_labels_and_end_to_end():
     from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_effect,
         classify_marginal,
+        classify_temporal,
     )
 
     assert classify_marginal(0.05, [1, 1, 1], None, {"ci_low": 0.01}) == (
         "positive_stable_evidence"
     )
-    assert classify_marginal(0.02, [1, -1, 1], None, None) == "temporally_unstable"
-    assert (
-        classify_marginal(
-            0.03, [1], None, None, cross_market_label="market_specific_signal"
-        )
-        == "market_specific_signal"
-    )
+    # fold misti non sovrascrivono la direzione
+    assert classify_marginal(0.02, [1, -1, 1], None, None) == "positive_but_uncertain"
+    assert classify_temporal([1, -1, 1]) == "temporally_mixed"
+    assert classify_effect(0.03, None) == "positive_but_uncertain"
     assert classify_marginal(0.001, [1], None, {"ci_low": -0.01, "ci_high": 0.01}) == (
         "redundant_no_incremental_value"
     )
@@ -557,7 +556,8 @@ def test_v2a1_06_07_bootstrap_pairs_fixture_and_diff_ci():
 
 def test_v2a1_08_09_fold_signs_real_and_unstable():
     from app.services.cecchino.cecchino_purchasability_statistical_research import (
-        classify_marginal,
+        classify_effect,
+        classify_temporal,
         fold_delta_auc_signs,
     )
 
@@ -573,7 +573,8 @@ def test_v2a1_08_09_fold_signs_real_and_unstable():
     # when folds valid, signs not forced empty by API
     if any(not f.get("skipped") for f in info["fold_deltas"]):
         assert len(info["fold_signs"]) > 0
-    assert classify_marginal(0.02, [1, -1, 1], None, None) == "temporally_unstable"
+    assert classify_temporal([1, -1, 1]) == "temporally_mixed"
+    assert classify_effect(0.02, None) == "positive_but_uncertain"
 
 
 def test_v2a1_10_market_specific_from_multi_market():
@@ -961,4 +962,125 @@ def test_v2a2_20_strict_json_and_comparison_role_on_marginal():
     assert "paired_positive_vs_rating" in readiness
     assert "readiness_invariant_errors" in readiness
     assert payload["version"] == "cecchino_purchasability_statistical_research_v2a_2"
+
+
+# --- Fase 2A.3.1 result completo + split classificazione ---
+
+
+def test_v2a31_08_09_10_effect_temporal_split():
+    from app.services.cecchino.cecchino_purchasability_statistical_research import (
+        classify_effect,
+        classify_temporal,
+    )
+
+    # 8. effect negativo + CI negativa
+    assert (
+        classify_effect(-0.080, {"ci_low": -0.136, "ci_high": -0.032})
+        == "negative_incremental_value"
+    )
+    # 9. fold misti
+    assert classify_temporal([1, -1, 1]) == "temporally_mixed"
+    # 10. direzione negativa non sostituita dalla stabilità
+    effect = classify_effect(-0.080, {"ci_low": -0.136, "ci_high": -0.032})
+    temporal = classify_temporal([1, -1, 0, 1])
+    assert effect == "negative_incremental_value"
+    assert temporal == "temporally_mixed"
+    assert effect != temporal
+
+
+def test_v2a31_11_12_candidate_decision_explicit():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME", "DRAW")),
+        bootstrap_iterations=12,
+        seed=31,
+    )
+    by_cfg = {c["configuration"]: c for c in payload["candidate_specifications"]}
+    assert by_cfg["BOOK_BASELINE"]["candidate_decision"] == "benchmark_only"
+    assert by_cfg["CONTEXT_ONLY"]["candidate_decision"] not in (None, "ok")
+    assert by_cfg["CONTEXT_ONLY"]["candidate_decision"] in {
+        "benchmark_only",
+        "retain_independent_candidate",
+        "model_enrichment_only",
+        "market_specific_candidate",
+        "negative_incremental_value",
+        "unstable_exclude",
+        "redundant_exclude",
+        "insufficient_evidence",
+    }
+    for c in payload["candidate_specifications"]:
+        assert c.get("candidate_decision") != "ok"
+
+
+def test_v2a31_13_format_elapsed_ms_frontend():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    api = (root / "frontend/src/lib/cecchinoPurchasabilityStatisticalApi.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "formatElapsedMs" in api
+    assert "min" in api
+    body = (
+        root
+        / "frontend/src/components/cecchino-purchasability-research/PurchasabilityStatisticalResearchBody.tsx"
+    ).read_text(encoding="utf-8")
+    assert "formatElapsedMs" in body
+
+
+def test_v2a31_01_07_fe_loads_summary_then_result():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    api = (root / "frontend/src/lib/cecchinoPurchasabilityStatisticalApi.ts").read_text(
+        encoding="utf-8"
+    )
+    hook = (
+        root / "frontend/src/hooks/useCecchinoPurchasabilityStatisticalResearch.ts"
+    ).read_text(encoding="utf-8")
+    assert "getPurchasabilityStatisticalJobResult" in api
+    assert "getPurchasabilityStatisticalJobSummary" in hook
+    assert "getPurchasabilityStatisticalJobResult" in hook
+    assert "loadCompletedPayload" in hook
+    assert "Risultato sintetico disponibile" in hook
+    assert "busyRef.current" in hook
+
+
+def test_v2a31_03_05_full_payload_has_sections():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME", "DRAW")),
+        bootstrap_iterations=12,
+        seed=32,
+    )
+    assert isinstance(payload.get("marginal_contribution"), list)
+    assert len(payload["marginal_contribution"]) > 0
+    m0 = payload["marginal_contribution"][0]
+    assert "effect_classification" in m0
+    assert "temporal_classification" in m0
+    assert "market_classification" in m0
+    assert m0["classification"] == m0["effect_classification"]
+    assert isinstance(payload.get("market_results"), list)
+    assert len(payload["market_results"]) > 0
+    assert isinstance(payload.get("temporal_folds"), list)
+    assert "class_balance" in (payload["temporal_folds"][0] or {})
+
+
+def test_v2a31_14_20_strict_json_version_invariants():
+    payload = build_purchasability_statistical_research(
+        MagicMock(),
+        rows=_multi_fixture_rows(14, ("HOME",)),
+        bootstrap_iterations=10,
+        seed=33,
+    )
+    json.dumps(make_json_safe(payload), allow_nan=False)
+    assert payload["version"] == "cecchino_purchasability_statistical_research_v2a_2"
+    assert payload["dataset_version"] == DATASET_VERSION
+    assert payload["no_db_writes"] is True
+    assert payload["no_purchasability_formula"] is True
+    assert "phase_2b_readiness" in payload
+    assert "rating_benchmark" in payload
+    assert "acquistabilità" not in json.dumps(payload).lower() or "produttivo" in (
+        payload.get("research_banner") or ""
+    ).lower()
 

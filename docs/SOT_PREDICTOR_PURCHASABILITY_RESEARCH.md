@@ -2,6 +2,20 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A.3.1 — Result completo FE + assi di classificazione
+
+Dopo il job async 2A.3:
+
+- Il FE carica prima lo **summary** (header/readiness), poi il **result** completo (`marginal_contribution`, `market_results`, `temporal_folds`).
+- Se il result fallisce, lo summary resta visibile con avviso strutturato.
+- Classificazione separata (metriche numeriche invariate, versione `v2a_2`):
+  - `effect_classification` (direzione Δ+CI) → anche `classification` per compat
+  - `temporal_classification` (solo fold)
+  - `market_classification` (cross-market)
+- `candidate_decision` esplicita (non lo status run `"ok"`).
+- Elapsed UI in minuti/secondi.
+- Prossima fase residua **non** avviata in questo step.
+
 ## Fase 2A.3 — Job asincrono (infrastruttura, versione statistica invariata)
 
 Problema: il GET sincrono tiene aperta la connessione HTTP per tutto il calcolo (~155–160s con 200 bootstrap). Il proxy Railway chiude prima → nel browser appare spesso “Failed to fetch” / assenza di `Access-Control-Allow-Origin` (**falso CORS**; non modificare CORS).
