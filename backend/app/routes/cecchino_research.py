@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -84,6 +84,16 @@ from app.services.cecchino.cecchino_purchasability_statistical_research import (
     build_statistical_markets_payload,
     statistical_export_filename,
     stream_statistical_export,
+)
+from app.services.cecchino.cecchino_purchasability_research_jobs import (
+    PurchasabilityResearchJobConflict,
+    PurchasabilityResearchJobNotFound,
+    enqueue_purchasability_research_job,
+    get_active_job,
+    get_job,
+)
+from app.schemas.cecchino_purchasability_research import (
+    CecchinoPurchasabilityStatisticalJobBody,
 )
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
@@ -778,6 +788,7 @@ def get_purchasability_statistical_research(
     seed: int = Query(default=42),
     db: Session = Depends(get_db),
 ):
+    """Sincrono — solo Console/debug. Preferire POST .../jobs dal frontend."""
     payload = build_purchasability_statistical_research(
         db,
         date_from=date_from,
@@ -788,7 +799,155 @@ def get_purchasability_statistical_research(
         bootstrap_iterations=bootstrap_iterations,
         seed=seed,
     )
-    return JSONResponse(content=jsonable_encoder(payload))
+    return JSONResponse(
+        content=jsonable_encoder(payload),
+        headers={"X-Research-Execution-Mode": "synchronous-debug"},
+    )
+
+
+# --- Fase 2A.3 async jobs (process-local; persi su restart) ---
+
+
+@router.post("/purchasability/statistical-research/jobs", status_code=202)
+def post_purchasability_statistical_research_job(
+    body: CecchinoPurchasabilityStatisticalJobBody,
+):
+    try:
+        out = enqueue_purchasability_research_job(
+            date_from=body.date_from,
+            date_to=body.date_to,
+            competition_id=body.competition_id,
+            market_family=body.market_family,
+            selection=body.selection,
+            bootstrap_iterations=body.bootstrap_iterations,
+            seed=body.seed,
+        )
+        return JSONResponse(status_code=202, content=out)
+    except PurchasabilityResearchJobConflict as e:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "conflict",
+                "error": "purchasability_research_job_already_running",
+                "active_job_id": e.active_job_id,
+                "active_filters": e.active_filters,
+            },
+        )
+
+
+@router.get("/purchasability/statistical-research/jobs/active")
+def get_purchasability_statistical_research_job_active():
+    job = get_active_job()
+    if job is None:
+        return JSONResponse(content={"status": "ok", "job": None})
+    return JSONResponse(content={"status": "ok", "job": job.to_status_dict()})
+
+
+@router.get("/purchasability/statistical-research/jobs/{job_id}")
+def get_purchasability_statistical_research_job(job_id: str):
+    try:
+        job = get_job(job_id)
+    except PurchasabilityResearchJobNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "error": "research_job_not_found_or_expired",
+            },
+        )
+    return JSONResponse(content=job.to_status_dict())
+
+
+def _stream_job_json_file(path: str, download_name: str):
+    def _iter():
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+
+    return StreamingResponse(
+        _iter(),
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'inline; filename="{download_name}"',
+            "X-Research-Execution-Mode": "async-job",
+        },
+    )
+
+
+@router.get("/purchasability/statistical-research/jobs/{job_id}/summary")
+def get_purchasability_statistical_research_job_summary(job_id: str):
+    try:
+        job = get_job(job_id)
+    except PurchasabilityResearchJobNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "error": "research_job_not_found_or_expired",
+            },
+        )
+    if job.status != "completed" or not job.summary_file_path:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "error": "research_job_result_not_ready",
+                "job_status": job.status,
+            },
+        )
+    from pathlib import Path
+
+    if not Path(job.summary_file_path).is_file():
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "error": "research_job_not_found_or_expired",
+            },
+        )
+    return FileResponse(
+        job.summary_file_path,
+        media_type="application/json; charset=utf-8",
+        filename=f"{job_id}.summary.json",
+        headers={"X-Research-Execution-Mode": "async-job"},
+    )
+
+
+@router.get("/purchasability/statistical-research/jobs/{job_id}/result")
+def get_purchasability_statistical_research_job_result(job_id: str):
+    try:
+        job = get_job(job_id)
+    except PurchasabilityResearchJobNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "error": "research_job_not_found_or_expired",
+            },
+        )
+    if job.status != "completed" or not job.result_file_path:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "error": "research_job_result_not_ready",
+                "job_status": job.status,
+            },
+        )
+    from pathlib import Path
+
+    if not Path(job.result_file_path).is_file():
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "error": "research_job_not_found_or_expired",
+            },
+        )
+    return _stream_job_json_file(job.result_file_path, f"{job_id}.result.json")
 
 
 @router.get("/purchasability/statistical-research/markets")

@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Indice di Acquistabilità — Fase 2A.3 job asincrono (2026-07-18)
+
+| Campo | Valore |
+|-------|--------|
+| Statistica | `cecchino_purchasability_statistical_research_v2a_2` (invariata) |
+| Job | process-local ThreadPoolExecutor + `/tmp` JSON |
+| FE | POST jobs + poll 2s; sync deprecato |
+| Nota | Job persi su restart; falso CORS da HTTP lungo |
+
 ## Indice di Acquistabilità — Fase 2A.2 timeout / indipendenza Book (2026-07-18)
 
 | Campo | Valore |

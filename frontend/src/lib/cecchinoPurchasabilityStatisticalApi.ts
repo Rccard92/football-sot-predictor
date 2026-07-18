@@ -1,4 +1,4 @@
-import { adminGetJson } from './api'
+import { AdminHttpError, adminGetJson, adminPostJson } from './api'
 
 export type PurchasabilityStatFilters = {
   date_from?: string
@@ -195,6 +195,34 @@ export type PurchasabilityStatisticalResearchResponse = {
   no_purchasability_formula?: boolean
 }
 
+export type PurchasabilityResearchJobStatus = {
+  job_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | string
+  current_stage?: string | null
+  progress_message?: string | null
+  created_at?: string
+  started_at?: string | null
+  completed_at?: string | null
+  elapsed_seconds?: number | null
+  filters?: PurchasabilityStatFilters
+  statistical_version?: string
+  dataset_version?: string
+  result_available?: boolean
+  error_code?: string | null
+  error_message?: string | null
+}
+
+export type PurchasabilityResearchJobStartResponse = {
+  status: string
+  job_id: string
+  reused: boolean
+  poll_after_ms?: number
+}
+
+export const PURCHASABILITY_JOB_POLL_MS = 2000
+
+const JOBS_BASE = '/api/admin/cecchino/research/purchasability/statistical-research/jobs'
+
 function qs(filters: PurchasabilityStatFilters): string {
   const p = new URLSearchParams()
   if (filters.date_from) p.set('date_from', filters.date_from)
@@ -210,6 +238,7 @@ function qs(filters: PurchasabilityStatFilters): string {
   return s ? `?${s}` : ''
 }
 
+/** @deprecated Solo Console/debug — il FE usa i job async. */
 export function statisticalResearchTimeoutMs(bootstrapIterations?: number | null): number {
   const iterations = bootstrapIterations ?? 200
   if (iterations > 500) return 1_200_000
@@ -217,6 +246,7 @@ export function statisticalResearchTimeoutMs(bootstrapIterations?: number | null
   return 300_000
 }
 
+/** @deprecated Solo Console/debug — non usare nel flusso UI. */
 export async function getPurchasabilityStatisticalResearch(
   filters: PurchasabilityStatFilters = {},
 ): Promise<PurchasabilityStatisticalResearchResponse> {
@@ -225,6 +255,64 @@ export async function getPurchasabilityStatisticalResearch(
     `/api/admin/cecchino/research/purchasability/statistical-research${qs(filters)}`,
     { timeoutMs },
   )
+}
+
+export async function startPurchasabilityStatisticalJob(
+  filters: PurchasabilityStatFilters = {},
+): Promise<PurchasabilityResearchJobStartResponse> {
+  return adminPostJson(
+    JOBS_BASE,
+    {
+      date_from: filters.date_from ?? null,
+      date_to: filters.date_to ?? null,
+      competition_id: filters.competition_id ?? null,
+      market_family: filters.market_family ?? null,
+      selection: filters.selection ?? null,
+      bootstrap_iterations: filters.bootstrap_iterations ?? 200,
+      seed: filters.seed ?? 42,
+    },
+    { timeoutMs: 30_000 },
+  )
+}
+
+export async function getPurchasabilityStatisticalJob(
+  jobId: string,
+): Promise<PurchasabilityResearchJobStatus> {
+  return adminGetJson(`${JOBS_BASE}/${encodeURIComponent(jobId)}`, { timeoutMs: 15_000 })
+}
+
+export async function getPurchasabilityStatisticalJobSummary(
+  jobId: string,
+): Promise<PurchasabilityStatisticalResearchResponse> {
+  return adminGetJson(`${JOBS_BASE}/${encodeURIComponent(jobId)}/summary`, {
+    timeoutMs: 300_000,
+  })
+}
+
+export async function getActivePurchasabilityStatisticalJob(): Promise<{
+  status: string
+  job: PurchasabilityResearchJobStatus | null
+}> {
+  return adminGetJson(`${JOBS_BASE}/active`, { timeoutMs: 15_000 })
+}
+
+export function formatPurchasabilityJobError(err: unknown): string {
+  if (err instanceof AdminHttpError) {
+    const body = err.body as Record<string, unknown> | null
+    const code = body && typeof body === 'object' ? String(body.error || '') : ''
+    if (err.status === 409 && code === 'purchasability_research_job_already_running') {
+      return 'È già in esecuzione un’altra ricerca statistica.'
+    }
+    if (err.status === 404 && code === 'research_job_not_found_or_expired') {
+      return 'Il job non è più disponibile, probabilmente a causa di un restart o di un nuovo deploy. Avvia nuovamente la ricerca.'
+    }
+    if (body && typeof body === 'object' && typeof body.error === 'string' && body.error) {
+      return String(body.error)
+    }
+    return err.message
+  }
+  if (err instanceof Error) return err.message
+  return String(err)
 }
 
 export function buildPurchasabilityStatExportUrl(

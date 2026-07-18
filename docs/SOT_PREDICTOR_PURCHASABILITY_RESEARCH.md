@@ -2,6 +2,20 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A.3 — Job asincrono (infrastruttura, versione statistica invariata)
+
+Problema: il GET sincrono tiene aperta la connessione HTTP per tutto il calcolo (~155–160s con 200 bootstrap). Il proxy Railway chiude prima → nel browser appare spesso “Failed to fetch” / assenza di `Access-Control-Allow-Origin` (**falso CORS**; non modificare CORS).
+
+Soluzione process-local (research/admin only):
+
+- `POST .../statistical-research/jobs` → HTTP 202 immediato + `job_id`
+- Polling `GET .../jobs/{id}` ogni ~2s
+- Risultati su `/tmp/cecchino_purchasability_research` (`*.result.json`, `*.summary.json`), scrittura atomica, strict JSON
+- `ThreadPoolExecutor(max_workers=1)`; registry in-memory; **i job si perdono su restart/deploy**
+- Nessuna migration, Redis, Celery, scrittura dati applicativi
+- Versione statistica resta `cecchino_purchasability_statistical_research_v2a_2`
+- GET sincrono conservato con header `X-Research-Execution-Mode: synchronous-debug` (Console/test)
+
 ## Fase 2A.2 — Timeout FE e gate indipendenza vs Book (`…_v2a_2`)
 
 Correzioni post-benchmark Railway (~155,7s / 200 bootstrap vs timeout FE 90s):

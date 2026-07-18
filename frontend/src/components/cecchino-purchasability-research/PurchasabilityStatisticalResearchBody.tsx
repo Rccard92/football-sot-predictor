@@ -1,4 +1,5 @@
 import type {
+  PurchasabilityResearchJobStatus,
   PurchasabilityStatExportKind,
   PurchasabilityStatFilters,
   PurchasabilityStatisticalResearchResponse,
@@ -9,6 +10,7 @@ type Props = {
   data: PurchasabilityStatisticalResearchResponse | null
   loading: boolean
   error: string | null
+  job: PurchasabilityResearchJobStatus | null
   dateFrom: string
   dateTo: string
   selection: string
@@ -43,6 +45,7 @@ export function PurchasabilityStatisticalResearchBody({
   data,
   loading,
   error,
+  job,
   dateFrom,
   dateTo,
   selection,
@@ -67,6 +70,8 @@ export function PurchasabilityStatisticalResearchBody({
   const bookBenchmark = (data?.candidate_specifications || []).find(
     (c) => c.configuration === 'BOOK_BASELINE' || c.is_book_baseline_benchmark,
   )
+  const jobRunning = job?.status === 'queued' || job?.status === 'running'
+  const shortJobId = job?.job_id ? `${job.job_id.slice(0, 8)}…` : null
 
   return (
     <div className="space-y-4">
@@ -115,6 +120,7 @@ export function PurchasabilityStatisticalResearchBody({
                 className="ml-2 rounded border border-slate-300 px-2 py-1"
                 value={bootstrapIterations}
                 onChange={(e) => onBootstrap(Number(e.target.value))}
+                disabled={loading}
               >
                 <option value={200}>200</option>
                 <option value={500}>500</option>
@@ -130,14 +136,25 @@ export function PurchasabilityStatisticalResearchBody({
             {loading ? 'Calcolo…' : 'Esegui ricerca'}
           </button>
         </div>
-        {loading ? (
-          <p className="mt-3 text-sm text-slate-600">
-            Ricerca statistica in corso. Con 200 bootstrap può richiedere circa 2–4 minuti. Non
-            avviare una seconda elaborazione.
+        {loading || jobRunning ? (
+          <div className="mt-3 space-y-1 text-sm text-slate-600">
+            <p>Ricerca statistica in esecuzione sul backend.</p>
+            <p className="text-xs text-slate-500">
+              Job {shortJobId || '—'} · stato {job?.status || '…'} · fase{' '}
+              {job?.current_stage || job?.progress_message || '…'} · elapsed{' '}
+              {job?.elapsed_seconds != null ? `${job.elapsed_seconds}s` : '—'} · bootstrap{' '}
+              {bootstrapIterations} · intervallo {dateFrom || '—'} → {dateTo || '—'}
+            </p>
+            <p className="text-xs text-slate-500">
+              Puoi cambiare pagina: il calcolo continuerà sul backend. Tornando in questa sezione
+              verrà recuperato lo stato del job. I job non sopravvivono a restart o nuovo deploy.
+            </p>
             {data ? (
-              <span className="ml-1 font-medium text-amber-800">Nuovo calcolo in corso.</span>
+              <p className="text-xs font-medium text-amber-800">
+                Nuovo calcolo in corso — risultati precedenti ancora visibili.
+              </p>
             ) : null}
-          </p>
+          </div>
         ) : null}
       </div>
 

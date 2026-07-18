@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — Fase 2A.3 job asincrono (2026-07-18)
+
+Esecuzione asincrona process-local della ricerca statistica (`…_v2a_2` invariata): POST job + polling FE, risultati temporanei in `/tmp`, nessuna persistenza DB. Evita timeout proxy sulle richieste sincrone lunghe (falso errore CORS). Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — Fase 2A.2 timeout e gate Book (2026-07-18)
 
 Research `cecchino_purchasability_statistical_research_v2a_2`: timeout FE 300–1200s; classificazione marginale con `negative_but_uncertain`; readiness 2B solo con evidenza indipendente vs Book; Book dominance descrittiva. Nessuna formula 0–100. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.

@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A.3 (2026-07-18)
+
+1. FE: `POST .../statistical-research/jobs` (202) → poll `GET .../jobs/{id}` ogni 2s → `GET .../summary`.
+2. Verificare job running, completed, readiness v2a_2; nessun “Failed to fetch” da connessione lunga.
+3. Job persi su restart/deploy (process-local `/tmp`). Locale senza DB: `DATABASE_URL_missing`.
+4. GET sync `.../statistical-research` solo Console (`X-Research-Execution-Mode: synchronous-debug`).
+
 ## Indice di Acquistabilità — Fase 2A.2 (2026-07-18)
 
 1. `GET .../purchasability/statistical-research` (versione `v2a_2`): verificare timeout FE ≥300s (200 bootstrap), positivi vs Book/Model/Rating separati, Book dominance, invariants.

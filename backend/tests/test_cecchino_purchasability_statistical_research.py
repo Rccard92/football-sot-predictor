@@ -938,8 +938,9 @@ def test_v2a2_19_button_disabled_while_loading():
     hook = (
         root / "frontend/src/hooks/useCecchinoPurchasabilityStatisticalResearch.ts"
     ).read_text(encoding="utf-8")
-    assert "loadingRef" in hook
-    assert "if (loadingRef.current) return" in hook
+    assert "busyRef" in hook
+    assert "if (busyRef.current) return" in hook
+    assert "stopPolling" in hook
 
 
 def test_v2a2_20_strict_json_and_comparison_role_on_marginal():

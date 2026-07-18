@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A.3 job asincrono (2026-07-18)
+
+- Job process-local `cecchino_purchasability_research_jobs`: POST 202 + polling; risultati `/tmp`; idle HTTP sync non più usato dal FE.
+- Versione statistica `v2a_2` invariata; nessuna migration/CORS/formula 0–100.
+
 ## Indice di Acquistabilità — Fase 2A.2 timeout e gate Book (2026-07-18)
 
 - Bump `cecchino_purchasability_statistical_research_v2a_2`: timeout FE dedicato (300–1200s); `negative_but_uncertain`; `comparison_role`; dipendenza Book su Advantage/Edge; readiness solo vs Book + invariants; `book_baseline_assessment`.

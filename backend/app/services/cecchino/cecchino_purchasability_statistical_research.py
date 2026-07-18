@@ -14,7 +14,7 @@ import json
 import time
 from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import numpy as np
 from sqlalchemy.orm import Session
@@ -1643,9 +1643,19 @@ def build_purchasability_statistical_research(
     bootstrap_iterations: int = DEFAULT_BOOTSTRAP_FE,
     seed: int = DEFAULT_SEED,
     rows: list[dict[str, Any]] | None = None,
+    progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    def _progress(stage: str, meta: dict[str, Any] | None = None) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(stage, dict(meta or {}))
+        except Exception:
+            pass
+
     t0 = time.perf_counter()
     t_load0 = time.perf_counter()
+    _progress("loading_dataset", {"bootstrap_iterations": bootstrap_iterations})
     if rows is None:
         raw_rows = build_purchasability_rows(
             db,
@@ -1659,6 +1669,7 @@ def build_purchasability_statistical_research(
     load_ms = (time.perf_counter() - t_load0) * 1000
 
     t_eng0 = time.perf_counter()
+    _progress("feature_engineering", {"raw_rows": len(raw_rows)})
     cohort, quality = filter_settled_cohort(raw_rows)
     if selection:
         cohort = [
@@ -1672,6 +1683,7 @@ def build_purchasability_statistical_research(
     limitations: list[str] = list(quality.get("blocking_issues") or [])
 
     if not cohort:
+        _progress("building_payload", {"empty_cohort": True})
         payload = {
             "status": "empty_cohort",
             "version": STAT_VERSION,
@@ -1723,7 +1735,10 @@ def build_purchasability_statistical_research(
             "no_db_writes": True,
             "no_purchasability_formula": True,
         }
-        return make_json_safe(payload)
+        _progress("serializing_result", {})
+        out = make_json_safe(payload)
+        _progress("completed", {"status": "empty_cohort"})
+        return out
 
     t_cv0 = time.perf_counter()
     market_results = []
@@ -1731,6 +1746,7 @@ def build_purchasability_statistical_research(
     all_uni = []
 
     markets = [m for m in PRIMARY_MARKETS]
+    _progress("temporal_cv", {"markets": len(markets)})
     for mkt in markets:
         mrows = [r for r in cohort if r.get("raw_market_code") == mkt]
         if not mrows:
@@ -1743,6 +1759,7 @@ def build_purchasability_statistical_research(
                 }
             )
             continue
+        _progress("paired_bootstrap", {"market": mkt, "rows": len(mrows)})
         mr = analyze_market(
             mrows, mkt, bootstrap_iterations=bootstrap_iterations, seed=seed
         )
@@ -1755,6 +1772,7 @@ def build_purchasability_statistical_research(
     cv_ms = (time.perf_counter() - t_cv0) * 1000
 
     # --- Pass 2: cross-market stability on identical (spec, vs) pairs ---
+    _progress("cross_market_analysis", {"paired_entries": len(all_marginal)})
     by_key: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for m in all_marginal:
         key = (str(m.get("spec")), str(m.get("vs")))
@@ -2324,6 +2342,7 @@ def build_purchasability_statistical_research(
     }
 
     total_ms = (time.perf_counter() - t0) * 1000
+    _progress("building_payload", {"markets_ok": len(markets_ok)})
     payload = {
         "status": "ok",
         "version": STAT_VERSION,
@@ -2388,7 +2407,10 @@ def build_purchasability_statistical_research(
             "indipendente rispetto al mercato."
         ),
     }
-    return make_json_safe(payload)
+    _progress("serializing_result", {})
+    out = make_json_safe(payload)
+    _progress("completed", {"status": out.get("status")})
+    return out
 
 
 def build_statistical_markets_payload(
