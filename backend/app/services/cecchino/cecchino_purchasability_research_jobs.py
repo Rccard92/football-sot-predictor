@@ -26,6 +26,11 @@ from app.services.cecchino.cecchino_purchasability_audit import (
     DATASET_VERSION,
     make_json_safe,
 )
+from app.services.cecchino.cecchino_purchasability_residual_reliability import (
+    RESIDUAL_RELIABILITY_VERSION,
+    build_purchasability_residual_reliability,
+    build_residual_summary_payload,
+)
 from app.services.cecchino.cecchino_purchasability_statistical_research import (
     STAT_VERSION,
     build_purchasability_statistical_research,
@@ -34,6 +39,10 @@ from app.services.cecchino.cecchino_purchasability_statistical_research import (
 logger = logging.getLogger(__name__)
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
+ResearchMode = Literal["phase2a_statistical", "phase2a_residual_reliability"]
+
+MODE_STATISTICAL = "phase2a_statistical"
+MODE_RESIDUAL = "phase2a_residual_reliability"
 
 RESULT_DIR = Path(
     os.environ.get(
@@ -68,9 +77,13 @@ SUMMARY_KEYS = (
 STAGE_MESSAGES = {
     "loading_dataset": "Caricamento dataset settled_core…",
     "feature_engineering": "Feature engineering e filtro coorte…",
+    "resolving_fair_book_probability": "Risoluzione probabilità Book equa…",
+    "building_residual_targets": "Costruzione target residuali…",
+    "feature_audit": "Audit feature di contesto…",
     "temporal_cv": "CV temporale per mercato…",
     "paired_bootstrap": "Confronti paired e bootstrap…",
     "cross_market_analysis": "Analisi stabilità cross-market…",
+    "economic_diagnostics": "Diagnostica economica positive-value…",
     "building_payload": "Costruzione payload di readiness…",
     "serializing_result": "Serializzazione JSON…",
     "completed": "Completato",
@@ -101,6 +114,7 @@ class PurchasabilityResearchJob:
     status: JobStatus
     filters: dict[str, Any]
     filters_hash: str
+    research_mode: str = MODE_STATISTICAL
     statistical_version: str = STAT_VERSION
     dataset_version: str = DATASET_VERSION
     created_at: str = field(default_factory=lambda: _utcnow_iso())
@@ -143,6 +157,7 @@ class PurchasabilityResearchJob:
                 round(self.elapsed_seconds, 1) if self.elapsed_seconds is not None else None
             ),
             "filters": dict(self.filters),
+            "research_mode": self.research_mode,
             "statistical_version": self.statistical_version,
             "dataset_version": self.dataset_version,
             "result_available": self.status == "completed"
@@ -182,6 +197,7 @@ def filters_hash_for(
     bootstrap_iterations: int,
     seed: int,
     statistical_version: str = STAT_VERSION,
+    research_mode: str = MODE_STATISTICAL,
 ) -> str:
     payload = {
         "date_from": str(date_from) if date_from else None,
@@ -192,6 +208,7 @@ def filters_hash_for(
         "bootstrap_iterations": int(bootstrap_iterations),
         "seed": int(seed),
         "statistical_version": statistical_version,
+        "research_mode": research_mode or MODE_STATISTICAL,
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -206,7 +223,11 @@ def normalize_filters(
     selection: str | None = None,
     bootstrap_iterations: int = 200,
     seed: int = 42,
+    research_mode: str = MODE_STATISTICAL,
 ) -> dict[str, Any]:
+    mode = research_mode or MODE_STATISTICAL
+    if mode not in (MODE_STATISTICAL, MODE_RESIDUAL):
+        mode = MODE_STATISTICAL
     return {
         "date_from": str(date_from) if date_from else None,
         "date_to": str(date_to) if date_to else None,
@@ -215,7 +236,14 @@ def normalize_filters(
         "selection": selection or None,
         "bootstrap_iterations": int(bootstrap_iterations),
         "seed": int(seed),
+        "research_mode": mode,
     }
+
+
+def _version_for_mode(research_mode: str) -> str:
+    if research_mode == MODE_RESIDUAL:
+        return RESIDUAL_RELIABILITY_VERSION
+    return STAT_VERSION
 
 
 def _parse_date(v: str | date | None) -> date | None:
@@ -318,6 +346,8 @@ def atomic_write_json(path: Path, payload: Any) -> None:
 
 
 def build_summary_payload(full: dict[str, Any]) -> dict[str, Any]:
+    if full.get("version") == RESIDUAL_RELIABILITY_VERSION or "phase_2b_residual_readiness" in full:
+        return build_residual_summary_payload(full)
     return {k: full.get(k) for k in SUMMARY_KEYS if k in full or k in (
         "status", "version", "dataset_version", "filters", "elapsed_ms",
         "phase_2b_readiness", "limitations",
@@ -351,6 +381,7 @@ def enqueue_purchasability_research_job(
     selection: str | None = None,
     bootstrap_iterations: int = 200,
     seed: int = 42,
+    research_mode: str = MODE_STATISTICAL,
     rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Avvia o riusa un job. Ritorna dict per HTTP 202. Raise conflict se altro job attivo."""
@@ -365,8 +396,11 @@ def enqueue_purchasability_research_job(
         selection=selection,
         bootstrap_iterations=bootstrap_iterations,
         seed=seed,
+        research_mode=research_mode,
     )
-    fhash = filters_hash_for(**filters, statistical_version=STAT_VERSION)
+    mode = str(filters.get("research_mode") or MODE_STATISTICAL)
+    version = _version_for_mode(mode)
+    fhash = filters_hash_for(**filters, statistical_version=version)
 
     with _lock:
         # reuse identical running/queued
@@ -414,6 +448,8 @@ def enqueue_purchasability_research_job(
             status="queued",
             filters=filters,
             filters_hash=fhash,
+            research_mode=mode,
+            statistical_version=version,
             current_stage="queued",
             progress_message="In coda…",
         )
@@ -421,7 +457,12 @@ def enqueue_purchasability_research_job(
         assert _executor is not None
         _executor.submit(_run_job_worker, job_id, rows)
 
-    logger.info("purchasability_research_job_started job_id=%s filters_hash=%s", job_id, fhash[:12])
+    logger.info(
+        "purchasability_research_job_started job_id=%s mode=%s filters_hash=%s",
+        job_id,
+        mode,
+        fhash[:12],
+    )
     return {
         "status": "queued",
         "job_id": job_id,
@@ -468,18 +509,33 @@ def _run_job_worker(job_id: str, rows: list[dict[str, Any]] | None) -> None:
         def progress_cb(stage: str, meta: dict[str, Any]) -> None:
             _update_progress(job_id, stage, meta)
 
-        payload = build_purchasability_statistical_research(
-            db,
-            date_from=_parse_date(filters.get("date_from")),
-            date_to=_parse_date(filters.get("date_to")),
-            competition_id=filters.get("competition_id"),
-            market_family=filters.get("market_family"),
-            selection=filters.get("selection"),
-            bootstrap_iterations=int(filters.get("bootstrap_iterations") or 200),
-            seed=int(filters.get("seed") or 42),
-            rows=rows,
-            progress_callback=progress_cb,
-        )
+        mode = str(filters.get("research_mode") or MODE_STATISTICAL)
+        if mode == MODE_RESIDUAL:
+            payload = build_purchasability_residual_reliability(
+                db,
+                date_from=_parse_date(filters.get("date_from")),
+                date_to=_parse_date(filters.get("date_to")),
+                competition_id=filters.get("competition_id"),
+                market_family=filters.get("market_family"),
+                selection=filters.get("selection"),
+                bootstrap_iterations=int(filters.get("bootstrap_iterations") or 200),
+                seed=int(filters.get("seed") or 42),
+                rows=rows,
+                progress_callback=progress_cb,
+            )
+        else:
+            payload = build_purchasability_statistical_research(
+                db,
+                date_from=_parse_date(filters.get("date_from")),
+                date_to=_parse_date(filters.get("date_to")),
+                competition_id=filters.get("competition_id"),
+                market_family=filters.get("market_family"),
+                selection=filters.get("selection"),
+                bootstrap_iterations=int(filters.get("bootstrap_iterations") or 200),
+                seed=int(filters.get("seed") or 42),
+                rows=rows,
+                progress_callback=progress_cb,
+            )
 
         _update_progress(job_id, "serializing_result", {})
         safe = make_json_safe(payload)
@@ -494,13 +550,19 @@ def _run_job_worker(job_id: str, rows: list[dict[str, Any]] | None) -> None:
             "status",
             "version",
             "dataset_version",
-            "phase_2b_readiness",
             "filters",
             "elapsed_ms",
             "limitations",
         ):
             if k not in summary:
                 summary[k] = safe.get(k)
+        if mode == MODE_RESIDUAL:
+            if "phase_2b_residual_readiness" not in summary:
+                summary["phase_2b_residual_readiness"] = safe.get(
+                    "phase_2b_residual_readiness"
+                )
+        elif "phase_2b_readiness" not in summary:
+            summary["phase_2b_readiness"] = safe.get("phase_2b_readiness")
 
         atomic_write_json(result_path, safe)
         atomic_write_json(summary_path, summary)

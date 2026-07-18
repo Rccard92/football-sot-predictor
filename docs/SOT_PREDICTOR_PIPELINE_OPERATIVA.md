@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A.4 (2026-07-18)
+
+1. FE: sottotab «Affidabilità residuale» → job con `research_mode=phase2a_residual_reliability` (200 bootstrap).
+2. Verificare fair Book coverage (1X2/OU/DC derivata), confronti vs Book direction e vs GAP_ONLY, readiness residuale.
+3. Non avviare 1000 bootstrap né formula 0–100.
+4. Job statistico 2A resta disponibile con mode default.
+
 ## Indice di Acquistabilità — Fase 2A.3.2 (2026-07-18)
 
 1. Verificare fold W/L/Void e WR non più 0/0; absence di `fold_class_balance_mismatch`.

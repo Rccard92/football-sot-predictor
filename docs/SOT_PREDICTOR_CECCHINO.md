@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Indice di Acquistabilità — Fase 2A.4 residual reliability (2026-07-18)
+
+| Campo | Valore |
+|-------|--------|
+| Versione | `cecchino_purchasability_residual_reliability_v2a_4` |
+| Focus | affidabilità disaccordo Cecchino–Book |
+| Job | `research_mode=phase2a_residual_reliability` |
+| Formula 0–100 | no |
+
 ## Indice di Acquistabilità — Fase 2A.3.2 coorte/dedup/Rating (2026-07-18)
 
 | Campo | Valore |

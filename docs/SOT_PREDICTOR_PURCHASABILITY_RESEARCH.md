@@ -2,6 +2,17 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A.4 — Residual Reliability (`…_residual_reliability_v2a_4`)
+
+Dopo Book dominance in 2A (`v2a_2`): non si ripete la corsa a battere il Book sull’esito.
+
+- **Domanda**: quanto è affidabile il *disaccordo* Cecchino–Book (direzione/ampiezza/contesto)?
+- Fair Book: 1X2/OU normalizzati; DC derivata da 1X2 normalizzato (`derived_double_chance_from_normalized_1x2`); raw implied solo secondario.
+- Target: `direction_correct`, `signed_book_residual`; baseline `BOOK_DIRECTION_BASELINE` e `GAP_ONLY`.
+- Decisivo: `GAP_RELIABILITY_CONTEXT` vs `GAP_ONLY`. Rating solo diagnostico.
+- Job: stesso executor con `research_mode=phase2a_residual_reliability`.
+- Nessuna formula 0–100.
+
 ## Fase 2A.3.2 — Coorte fold, dedup paired, Rating benchmark
 
 Versione statistica invariata `cecchino_purchasability_statistical_research_v2a_2` (nessun cambio a OOF/bootstrap/metriche elementari).

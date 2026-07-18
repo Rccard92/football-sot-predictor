@@ -85,6 +85,12 @@ from app.services.cecchino.cecchino_purchasability_statistical_research import (
     statistical_export_filename,
     stream_statistical_export,
 )
+from app.services.cecchino.cecchino_purchasability_residual_reliability import (
+    EXPORT_KINDS as PURCHASABILITY_RESIDUAL_EXPORT_KINDS,
+    build_purchasability_residual_reliability,
+    residual_export_filename,
+    stream_residual_export,
+)
 from app.services.cecchino.cecchino_purchasability_research_jobs import (
     PurchasabilityResearchJobConflict,
     PurchasabilityResearchJobNotFound,
@@ -821,6 +827,7 @@ def post_purchasability_statistical_research_job(
             selection=body.selection,
             bootstrap_iterations=body.bootstrap_iterations,
             seed=body.seed,
+            research_mode=body.research_mode or "phase2a_statistical",
         )
         return JSONResponse(status_code=202, content=out)
     except PurchasabilityResearchJobConflict as e:
@@ -1059,6 +1066,110 @@ def get_purchasability_statistical_export(
     db: Session = Depends(get_db),
 ):
     return _purchasability_stat_export_response(
+        kind,
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        selection=selection,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+
+
+# --- Fase 2A.4 residual reliability (sync debug + export; jobs via research_mode) ---
+
+
+@router.get("/purchasability/residual-reliability")
+def get_purchasability_residual_reliability(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    market_family: str | None = Query(default=None),
+    selection: str | None = Query(default=None),
+    bootstrap_iterations: int = Query(default=200, ge=10, le=2000),
+    seed: int = Query(default=42),
+    db: Session = Depends(get_db),
+):
+    payload = build_purchasability_residual_reliability(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        selection=selection,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+    return JSONResponse(
+        content=jsonable_encoder(payload),
+        headers={"X-Research-Execution-Mode": "synchronous-debug"},
+    )
+
+
+def _purchasability_residual_export_response(
+    kind: str,
+    db: Session,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    competition_id: int | None,
+    market_family: str | None,
+    selection: str | None,
+    bootstrap_iterations: int,
+    seed: int,
+):
+    if kind not in PURCHASABILITY_RESIDUAL_EXPORT_KINDS:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": "unknown_export_kind", "kind": kind},
+        )
+    filename = residual_export_filename(kind)
+    media = (
+        "application/json; charset=utf-8"
+        if kind in ("summary", "cohort", "fair-book-audit", "readiness", "economic")
+        else "text/csv; charset=utf-8"
+    )
+    stream = stream_residual_export(
+        db,
+        kind,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        selection=selection,
+        bootstrap_iterations=bootstrap_iterations,
+        seed=seed,
+    )
+
+    def _iter():
+        for chunk in stream:
+            if isinstance(chunk, str):
+                yield chunk.encode("utf-8")
+            else:
+                yield chunk
+
+    return StreamingResponse(
+        _iter(),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/purchasability/residual-reliability/export/{kind}")
+def get_purchasability_residual_export(
+    kind: str,
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    market_family: str | None = Query(default=None),
+    selection: str | None = Query(default=None),
+    bootstrap_iterations: int = Query(default=200, ge=10, le=2000),
+    seed: int = Query(default=42),
+    db: Session = Depends(get_db),
+):
+    return _purchasability_residual_export_response(
         kind,
         db,
         date_from=date_from,

@@ -283,6 +283,7 @@ export async function startPurchasabilityStatisticalJob(
       selection: filters.selection ?? null,
       bootstrap_iterations: filters.bootstrap_iterations ?? 200,
       seed: filters.seed ?? 42,
+      research_mode: 'phase2a_statistical',
     },
     { timeoutMs: 30_000 },
   )

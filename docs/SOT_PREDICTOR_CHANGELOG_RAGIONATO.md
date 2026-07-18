@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A.4 residual reliability (2026-07-18)
+
+- Nuovo `cecchino_purchasability_residual_reliability_v2a_4`: fair Book, target residuali, GAP_ONLY vs context, job `research_mode`, FE sottotab.
+- Statistica `v2a_2` e dataset `v1_1` invariati; nessuna formula 0–100.
+
 ## Indice di Acquistabilità — Fase 2A.3.2 coorte/dedup/Rating benchmark (2026-07-18)
 
 - Class balance fold su `y_win` + WR; dedup confronti paired con riuso Rating; Rating forzato a decisioni benchmark (non candidate).

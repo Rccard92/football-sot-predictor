@@ -47,3 +47,17 @@ class CecchinoPurchasabilityStatisticalJobBody(BaseModel):
     selection: str | None = None
     bootstrap_iterations: int = Field(default=200, ge=10, le=2000)
     seed: int = Field(default=42)
+    research_mode: str = Field(
+        default="phase2a_statistical",
+        description="phase2a_statistical | phase2a_residual_reliability",
+    )
+
+
+class CecchinoPurchasabilityResidualReliabilityQuery(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    competition_id: int | None = None
+    market_family: str | None = None
+    selection: str | None = None
+    bootstrap_iterations: int = Field(default=200, ge=10, le=2000)
+    seed: int = Field(default=42)

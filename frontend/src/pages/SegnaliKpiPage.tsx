@@ -20,12 +20,14 @@ import { KpiSignalsSkeleton } from '../components/cecchino-kpi-signals/KpiSignal
 import { KpiSignalsTopRankingLab } from '../components/cecchino-kpi-signals/KpiSignalsTopRankingLab'
 import { PurchasabilityAuditBody } from '../components/cecchino-purchasability-research/PurchasabilityAuditBody'
 import { PurchasabilityStatisticalResearchBody } from '../components/cecchino-purchasability-research/PurchasabilityStatisticalResearchBody'
+import { PurchasabilityResidualReliabilityBody } from '../components/cecchino-purchasability-research/PurchasabilityResidualReliabilityBody'
 import { useCecchinoKpiSignals } from '../hooks/useCecchinoKpiSignals'
 import { useCecchinoPurchasabilityAudit } from '../hooks/useCecchinoPurchasabilityAudit'
 import { useCecchinoPurchasabilityStatisticalResearch } from '../hooks/useCecchinoPurchasabilityStatisticalResearch'
+import { useCecchinoPurchasabilityResidualReliability } from '../hooks/useCecchinoPurchasabilityResidualReliability'
 
 type TabId = 'signals' | 'purchasability'
-type PurchasabilitySubTab = 'audit' | 'statistical-2a'
+type PurchasabilitySubTab = 'audit' | 'statistical-2a' | 'residual-2a4'
 
 export function SegnaliKpiPage() {
   const [tab, setTab] = useState<TabId>('signals')
@@ -33,6 +35,7 @@ export function SegnaliKpiPage() {
   const kpi = useCecchinoKpiSignals()
   const purch = useCecchinoPurchasabilityAudit()
   const purchStat = useCecchinoPurchasabilityStatisticalResearch()
+  const purchResidual = useCecchinoPurchasabilityResidualReliability()
   const [drawer, setDrawer] = useState<KpiDrawerState>(null)
   const [heatmapFilter, setHeatmapFilter] = useState<KpiHeatmapSelection | null>(null)
 
@@ -149,6 +152,17 @@ export function SegnaliKpiPage() {
               >
                 Ricerca statistica — Fase 2A
               </button>
+              <button
+                type="button"
+                onClick={() => setPurchSubTab('residual-2a4')}
+                className={`rounded-md px-3 py-1 text-sm ${
+                  purchSubTab === 'residual-2a4'
+                    ? 'bg-cyan-800 text-white'
+                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Affidabilità residuale — Fase 2A.4
+              </button>
             </div>
 
             {purchSubTab === 'audit' ? (
@@ -167,7 +181,7 @@ export function SegnaliKpiPage() {
                 onDatasetPage={(offset) => void purch.loadDatasetPage(offset)}
                 filters={purch.filters}
               />
-            ) : (
+            ) : purchSubTab === 'statistical-2a' ? (
               <PurchasabilityStatisticalResearchBody
                 data={purchStat.data}
                 loading={purchStat.loading}
@@ -184,6 +198,24 @@ export function SegnaliKpiPage() {
                 onBootstrap={purchStat.setBootstrapIterations}
                 onRefresh={() => void purchStat.load()}
                 filters={purchStat.filters}
+              />
+            ) : (
+              <PurchasabilityResidualReliabilityBody
+                data={purchResidual.data}
+                loading={purchResidual.loading}
+                error={purchResidual.error}
+                detailWarning={purchResidual.detailWarning}
+                job={purchResidual.job}
+                dateFrom={purchResidual.dateFrom}
+                dateTo={purchResidual.dateTo}
+                selection={purchResidual.selection}
+                bootstrapIterations={purchResidual.bootstrapIterations}
+                onDateFrom={purchResidual.setDateFrom}
+                onDateTo={purchResidual.setDateTo}
+                onSelection={purchResidual.setSelection}
+                onBootstrap={purchResidual.setBootstrapIterations}
+                onRefresh={() => void purchResidual.load()}
+                filters={purchResidual.filters}
               />
             )}
           </div>
