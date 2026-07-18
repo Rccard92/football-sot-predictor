@@ -68,6 +68,14 @@ from app.services.cecchino.cecchino_goal_intensity_v5_statistics import (
     statistics_export_filename,
     stream_goal_intensity_v5_statistics_export,
 )
+from app.services.cecchino.cecchino_purchasability_audit import (
+    EXPORT_KINDS as PURCHASABILITY_EXPORT_KINDS,
+    build_purchasability_audit,
+    build_purchasability_dataset,
+    build_purchasability_markets_payload,
+    purchasability_export_filename,
+    stream_purchasability_export,
+)
 
 router = APIRouter(prefix="/admin/cecchino/research", tags=["admin-cecchino-research"])
 
@@ -625,3 +633,123 @@ def get_goal_intensity_v5_preview_detail(
 ):
     payload = get_preview_detail(db, today_fixture_id)
     return JSONResponse(content=jsonable_encoder(payload))
+
+
+# --- Indice di Acquistabilità Fase 1 (read-only) ---
+
+
+@router.get("/purchasability/audit")
+def get_purchasability_audit(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    market_family: str | None = Query(default=None),
+    book_source: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    payload = build_purchasability_audit(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        book_source=book_source,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/purchasability/dataset")
+def get_purchasability_dataset(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    market_family: str | None = Query(default=None),
+    book_source: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    payload = build_purchasability_dataset(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        book_source=book_source,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/purchasability/markets")
+def get_purchasability_markets(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    payload = build_purchasability_markets_payload(
+        db, date_from=date_from, date_to=date_to
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+def _purchasability_export_response(
+    kind: str,
+    db: Session,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    competition_id: int | None,
+    market_family: str | None,
+    book_source: str | None,
+):
+    if kind not in PURCHASABILITY_EXPORT_KINDS:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": "unknown_export_kind", "kind": kind},
+        )
+    filename = purchasability_export_filename(kind)
+    media = "application/json" if filename.endswith(".json") else "text/csv; charset=utf-8"
+    stream = stream_purchasability_export(
+        db,
+        kind,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        book_source=book_source,
+    )
+
+    def _iter():
+        for chunk in stream:
+            yield chunk
+
+    return StreamingResponse(
+        _iter(),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/purchasability/export/{kind}")
+def get_purchasability_export(
+    kind: str,
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    competition_id: int | None = Query(default=None),
+    market_family: str | None = Query(default=None),
+    book_source: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    return _purchasability_export_response(
+        kind,
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_family=market_family,
+        book_source=book_source,
+    )

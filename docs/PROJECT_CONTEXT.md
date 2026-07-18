@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
+
+Research read-only `cecchino_purchasability_audit_v1` / `dataset_v1`: inventario KPI da `kpi_panel_json`, mappa opposizioni, dataset pre-match senza bias rating≥50, Rating = benchmark. Nessuna formula 0–100; tab «Acquistabilità — Audit» su Segnali KPI. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Intensità Goal v5 Research — Fase 2A.1 Preview freeze reale (2026-07-18)
 
 Preview `cecchino_goal_intensity_v5_preview_v1_1`: freeze reale (`frozen_at=now`), ammissione `source_snapshot_at > frozen_at` e `< kickoff`, esclusione retrospettiva per identity sets. Same-day post-freeze ok. Min 200 = solo gate 2B. Formule/hash/v4 invariati; nessuna migration.

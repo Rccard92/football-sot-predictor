@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
+
+| Campo | Valore |
+|-------|--------|
+| Versione | `cecchino_purchasability_audit_v1` / `dataset_v1` |
+| Sorgente | `kpi_panel_json` (non activation rating≥50) |
+| Rating | `benchmark_candidate` |
+| FE | Tab «Acquistabilità — Audit» su Segnali KPI |
+| Formula Indice | non ancora |
+
 ## Intensità Goal v5 Research — Fase 2A.1 Preview freeze reale (2026-07-18)
 
 | Campo | Valore |

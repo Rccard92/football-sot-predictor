@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
+
+1. `GET /api/admin/cecchino/research/purchasability/audit` (filtri date/competition/market/book).
+2. Dataset paginato: `.../purchasability/dataset`; mercati: `.../purchasability/markets`.
+3. Export: `.../purchasability/export/{audit_summary|variable_registry|market_opposition_map|market_coverage|dataset|exclusions|rating_dependency_map}`.
+4. FE: `/segnali-kpi` → tab «Acquistabilità — Audit» → «Aggiorna Audit».
+5. Read-only: nessuna scrittura DB; nessuna formula 0–100.
+
 ## Intensità Goal v5 Research — Fase 2A.1 Preview freeze reale (2026-07-18)
 
 1. Freeze bundle v1_1: `python -m scripts.freeze_goal_intensity_v5_preview_bundle --date-from 2026-06-19 --date-to 2026-07-19` (o `POST .../preview/freeze`) → `frozen_at=now`, identity guard in payload.

@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
+
+- `cecchino_purchasability_audit_v1` + `dataset_v1`: audit indipendenza KPI, mappa mercati opposti, dataset storico da `kpi_panel_json` (no bias rating≥50).
+- API GET research purchasability + export; tab FE «Acquistabilità — Audit» su Segnali KPI; Rating classificato benchmark; nessuna formula Indice, nessuna migration.
+
 ## Intensità Goal v5 Research — Fase 2A.1 Preview freeze reale (2026-07-18)
 
 - Bump `cecchino_goal_intensity_v5_preview_v1_1`: `frozen_at` effettivo al freeze; ammissione strict `source_snapshot_at > frozen_at` e `< kickoff`.
