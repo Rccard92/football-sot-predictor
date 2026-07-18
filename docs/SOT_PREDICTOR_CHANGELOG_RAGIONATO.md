@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Intensità Goal v5 Research — Fase 2A.1 Preview freeze reale (2026-07-18)
+
+- Bump `cecchino_goal_intensity_v5_preview_v1_1`: `frozen_at` effettivo al freeze; ammissione strict `source_snapshot_at > frozen_at` e `< kickoff`.
+- Esclusione retrospettiva via `prospective_guard` identity sets (JSONB); rimossi gate calendario `scan_before_prospective` / 2026-07-20.
+- FE: raccolta prospettica da freeze reale; nota 200 = solo gate 2B. Nessuna migration; formule/hash invariati.
+
 ## Intensità Goal v5 Research — Fase 2A Preview (2026-07-18)
 
 - `cecchino_goal_intensity_v5_preview_v1`: bundle congelato, snapshot pre-match, monitoraggio prospettico GI_A/GI_B/MT1/diagnostico senza volatilità.

@@ -2,9 +2,13 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal v5 Research — Fase 2A.1 Preview freeze reale (2026-07-18)
+
+Preview `cecchino_goal_intensity_v5_preview_v1_1`: freeze reale (`frozen_at=now`), ammissione `source_snapshot_at > frozen_at` e `< kickoff`, esclusione retrospettiva per identity sets. Same-day post-freeze ok. Min 200 = solo gate 2B. Formule/hash/v4 invariati; nessuna migration.
+
 ## Intensità Goal v5 Research — Fase 2A Preview (2026-07-18)
 
-Preview prospettica `cecchino_goal_intensity_v5_preview_v1`: bundle congelato (ECDF+calibrazioni 1D.1), snapshot pre-match Today eleggibili da 2026-07-20, lock/result attach, monitoraggio GI_A/GI_B/MT1/diagnostico, min 200. Nessuna sostituzione v4; nessun betting. Cache export 1D saltata.
+Preview prospettica storica `cecchino_goal_intensity_v5_preview_v1` (superseduta): bundle ECDF+calibrazioni 1D.1, snapshot/lock/result, monitoraggio GI_A/GI_B/MT1/diagnostico. Cache export 1D saltata.
 
 ## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
 

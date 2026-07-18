@@ -93,28 +93,47 @@ export function GoalIntensityV5PreviewBody({
         </div>
 
         {bundle ? (
-          <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Bundle attivo" value={`#${bundle.bundle_id}`} />
-            <Stat label="Versione" value={bundle.version} />
-            <Stat label="Definition hash" value={bundle.candidate_definition_hash_short ?? '—'} />
-            <Stat label="Freeze" value={bundle.frozen_at?.slice(0, 19) ?? '—'} />
-            <Stat label="Inizio prospettica" value={bundle.first_prospective_scan_date ?? '—'} />
-            <Stat label="Raccolte" value={String(bundle.collected ?? 0)} />
-            <Stat label="Concluse" value={String(bundle.completed ?? 0)} />
-            <Stat label="Pending" value={String(bundle.pending ?? 0)} />
-            <Stat label="Incomplete" value={String(bundle.incomplete ?? 0)} />
-            <Stat label="Error" value={String(bundle.error ?? 0)} />
-            <Stat
-              label="Target minimo"
-              value={String(bundle.minimum_prospective_matches ?? 200)}
-            />
-            <Stat label="Progresso" value={pct(bundle.progress_to_minimum)} />
-            <Stat label="Protocol status" value={bundle.protocol_status ?? '—'} />
-            <Stat
-              label="Primary / Challenger"
-              value={`${bundle.primary_candidate ?? 'GI_A'} / ${bundle.challenger_candidate ?? 'GI_B'}`}
-            />
-          </dl>
+          <>
+            <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <Stat label="Bundle attivo" value={`#${bundle.bundle_id}`} />
+              <Stat label="Versione" value={bundle.version} />
+              <Stat label="Definition hash" value={bundle.candidate_definition_hash_short ?? '—'} />
+              <Stat
+                label="Raccolta prospettica avviata"
+                value={(bundle.bundle_frozen_at ?? bundle.frozen_at)?.replace('T', ' ').slice(0, 19) ?? '—'}
+              />
+              <Stat
+                label="Modalità"
+                value={
+                  bundle.prospective_start_mode === 'strict_after_actual_bundle_freeze'
+                    ? 'Dopo il freeze effettivo'
+                    : (bundle.prospective_start_mode ?? '—')
+                }
+              />
+              <Stat
+                label="Partite retrospettive congelate"
+                value={String(bundle.retrospective_identity_count ?? 0)}
+              />
+              <Stat label="Snapshot dopo freeze" value={String(bundle.collected ?? 0)} />
+              <Stat label="Concluse" value={String(bundle.completed ?? 0)} />
+              <Stat label="Pending" value={String(bundle.pending ?? 0)} />
+              <Stat label="Incomplete" value={String(bundle.incomplete ?? 0)} />
+              <Stat label="Error" value={String(bundle.error ?? 0)} />
+              <Stat
+                label="Progresso verso 200"
+                value={`${pct(bundle.progress_to_minimum)} (${bundle.completed ?? 0}/200)`}
+              />
+              <Stat label="Protocol status" value={bundle.protocol_status ?? '—'} />
+              <Stat
+                label="Primary / Challenger"
+                value={`${bundle.primary_candidate ?? 'GI_A'} / ${bundle.challenger_candidate ?? 'GI_B'}`}
+              />
+            </dl>
+            <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              Le 200 partite rappresentano il campione minimo per la futura revisione della Fase 2B.
+              La Preview è già operativa e raccoglie dati dalla prima scansione successiva al freeze.
+            </p>
+          </>
         ) : (
           <p className="mt-3 text-sm text-slate-500">
             Nessun bundle attivo. Esegui freeze (script o POST freeze) prima del refresh.

@@ -1,7 +1,7 @@
-"""Intensità Goal v5 — Fase 2A: Preview research prospettica.
+"""Intensità Goal v5 — Fase 2A.1: Preview prospettica (freeze reale).
 
-Bundle congelato da candidate_indices_v1_1; snapshot pre-match; monitoraggio.
-Non riesegue Fase 1C/1D per singola partita. Nessuna formula produttiva; v4 invariata.
+Bundle congelato da candidate_indices_v1_1; ammissione strict-after-freeze;
+esclusione identity retrospettive. Nessuna formula produttiva; v4 invariata.
 """
 
 from __future__ import annotations
@@ -72,6 +72,8 @@ DIAGNOSTIC_ID = "GI_A_without_volatility"
 
 MONITORED_CANDIDATES = (PRIMARY_ID, CHALLENGER_ID, BENCHMARK_ID, DIAGNOSTIC_ID)
 MINIMUM_PROSPECTIVE_MATCHES = 200
+PROSPECTIVE_START_MODE = "strict_after_actual_bundle_freeze"
+RETROSPECTIVE_EXCLUSION_MODE = "exact_frozen_identity_sets"
 
 BUNDLE_FEATURE_KEYS = (
     "home_goals_scored_avg",
@@ -117,6 +119,86 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _iso_z(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    ensured = _ensure_utc(dt)
+    assert ensured is not None
+    return ensured.isoformat().replace("+00:00", "Z")
+
+
+def _unique_sorted_ids(values: list[Any]) -> list[int]:
+    out: set[int] = set()
+    for v in values:
+        if v is None:
+            continue
+        try:
+            out.add(int(v))
+        except (TypeError, ValueError):
+            continue
+    return sorted(out)
+
+
+def _build_prospective_guard(
+    scored_rows: list[dict[str, Any]],
+    *,
+    fixture_ids_hash: str,
+    targets_hash: str,
+) -> dict[str, Any]:
+    today_ids = _unique_sorted_ids([r.get("today_fixture_id") for r in scored_rows])
+    local_ids = _unique_sorted_ids([r.get("local_fixture_id") for r in scored_rows])
+    provider_ids = _unique_sorted_ids([r.get("provider_fixture_id") for r in scored_rows])
+    scan_dates: list[str] = []
+    for r in scored_rows:
+        sd = r.get("scan_date")
+        if sd is None:
+            continue
+        scan_dates.append(sd.isoformat() if hasattr(sd, "isoformat") else str(sd)[:10])
+    scan_dates = sorted({s for s in scan_dates if s})
+    return {
+        "retrospective_today_fixture_ids": today_ids,
+        "retrospective_local_fixture_ids": local_ids,
+        "retrospective_provider_fixture_ids": provider_ids,
+        "retrospective_identity_count": len(today_ids) + len(local_ids) + len(provider_ids),
+        "retrospective_effective_min_scan_date": scan_dates[0] if scan_dates else None,
+        "retrospective_effective_max_scan_date": scan_dates[-1] if scan_dates else None,
+        "fixture_ids_hash": fixture_ids_hash,
+        "targets_hash": targets_hash,
+        "exclusion_mode": RETROSPECTIVE_EXCLUSION_MODE,
+    }
+
+
+def _prospective_guard(bundle: CecchinoGoalIntensityV5PreviewBundle) -> dict[str, Any]:
+    payload = bundle.candidate_definitions_payload or {}
+    guard = payload.get("prospective_guard")
+    return guard if isinstance(guard, dict) else {}
+
+
+def _is_retrospective_identity(today_row: CecchinoTodayFixture, guard: dict[str, Any]) -> bool:
+    today_set = set(guard.get("retrospective_today_fixture_ids") or [])
+    local_set = set(guard.get("retrospective_local_fixture_ids") or [])
+    provider_set = set(guard.get("retrospective_provider_fixture_ids") or [])
+    tid = getattr(today_row, "id", None)
+    lid = getattr(today_row, "local_fixture_id", None)
+    pid = getattr(today_row, "provider_fixture_id", None)
+    try:
+        if tid is not None and int(tid) in today_set:
+            return True
+    except (TypeError, ValueError):
+        pass
+    try:
+        if lid is not None and int(lid) in local_set:
+            return True
+    except (TypeError, ValueError):
+        pass
+    try:
+        if pid is not None and int(pid) in provider_set:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -179,9 +261,11 @@ def freeze_preview_bundle(
     bootstrap_iterations: int = 1000,
     random_seed: int = 42,
     enforce_expected_hashes: bool = True,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Crea bundle attivo da Fase 1D.1; fallisce se readiness/hash non OK."""
     t0 = time.perf_counter()
+    actual_freeze_at = _ensure_utc(now) or _utc_now()
     full = build_goal_intensity_v5_candidate_indices_internal(
         db,
         date_from=date_from,
@@ -213,6 +297,7 @@ def freeze_preview_bundle(
     targets_hash = str(cohort.get("targets_hash") or "")
     def_hash = _candidate_definition_hash()
     protocol = full.get("prospective_validation_protocol") or {}
+    candidate_definition_frozen_at = str(protocol.get("candidate_definition_frozen_at") or "")
 
     if enforce_expected_hashes:
         mismatches = []
@@ -297,6 +382,15 @@ def freeze_preview_bundle(
                 "version": VERSION,
             }
 
+    scored_rows = list(full.get("_scored_rows") or [])
+    prospective_guard = _build_prospective_guard(
+        scored_rows,
+        fixture_ids_hash=fixture_hash,
+        targets_hash=targets_hash,
+    )
+    freeze_iso = _iso_z(actual_freeze_at)
+    first_prospective = actual_freeze_at.date()
+
     definitions_payload = {
         "candidate_definitions": CANDIDATE_DEFINITIONS,
         "primary_candidate": PRIMARY_ID,
@@ -318,14 +412,12 @@ def freeze_preview_bundle(
                 "statistically_supported_pareto_front",
             )
         },
+        "candidate_definition_frozen_at": candidate_definition_frozen_at,
+        "bundle_frozen_at": freeze_iso,
+        "prospective_window_started_at": freeze_iso,
+        "prospective_start_mode": PROSPECTIVE_START_MODE,
+        "prospective_guard": prospective_guard,
     }
-
-    frozen_at = datetime.fromisoformat(
-        str(protocol.get("candidate_definition_frozen_at") or "").replace("Z", "+00:00")
-    )
-    first_prospective = date.fromisoformat(
-        str(protocol.get("first_prospective_scan_date") or (date_to + timedelta(days=1)).isoformat())
-    )
 
     # Supersede previous active bundles (no delete)
     for old in db.scalars(
@@ -349,7 +441,7 @@ def freeze_preview_bundle(
         retrospective_date_from=date_from,
         retrospective_date_to=date_to,
         first_prospective_scan_date=first_prospective,
-        frozen_at=frozen_at,
+        frozen_at=actual_freeze_at,
         status=BUNDLE_STATUS_ACTIVE,
         is_active=True,
     )
@@ -365,8 +457,13 @@ def freeze_preview_bundle(
         "candidate_definition_hash": def_hash,
         "fixture_ids_hash": fixture_hash,
         "targets_hash": targets_hash,
+        "candidate_definition_frozen_at": candidate_definition_frozen_at,
+        "bundle_frozen_at": freeze_iso,
+        "prospective_window_started_at": freeze_iso,
+        "prospective_start_mode": PROSPECTIVE_START_MODE,
         "first_prospective_scan_date": first_prospective.isoformat(),
-        "frozen_at": frozen_at.isoformat().replace("+00:00", "Z"),
+        "frozen_at": freeze_iso,
+        "retrospective_identity_count": prospective_guard["retrospective_identity_count"],
         "is_active": True,
         "v4_version": V4_VERSION,
         "elapsed_ms": _round((time.perf_counter() - t0) * 1000, 2),
@@ -384,6 +481,7 @@ def get_active_bundle(db: Session) -> CecchinoGoalIntensityV5PreviewBundle | Non
         .where(
             CecchinoGoalIntensityV5PreviewBundle.is_active.is_(True),
             CecchinoGoalIntensityV5PreviewBundle.status == BUNDLE_STATUS_ACTIVE,
+            CecchinoGoalIntensityV5PreviewBundle.version == PREVIEW_BUNDLE_VERSION,
         )
         .order_by(CecchinoGoalIntensityV5PreviewBundle.id.desc())
     ).first()
@@ -500,28 +598,18 @@ def compute_snapshot_for_today_row(
     if bundle is None:
         return {"status": "error", "reason_codes": ["bundle_missing"], "today_fixture_id": today_row.id}
 
+    if bundle.version != PREVIEW_BUNDLE_VERSION:
+        return {
+            "status": "error",
+            "reason_codes": ["bundle_missing"],
+            "today_fixture_id": today_row.id,
+        }
+
     if bundle.candidate_definition_hash != EXPECTED_DEFINITION_HASH and bundle.candidate_definition_hash != _candidate_definition_hash():
-        # Allow current definition hash if matches live code
         if bundle.candidate_definition_hash != _candidate_definition_hash():
             return {
                 "status": "error",
                 "reason_codes": ["bundle_hash_mismatch"],
-                "today_fixture_id": today_row.id,
-            }
-
-    scan_date = today_row.scan_date
-    if scan_date < bundle.first_prospective_scan_date:
-        return {
-            "status": "skipped",
-            "reason_codes": ["scan_before_prospective"],
-            "today_fixture_id": today_row.id,
-        }
-    if scan_date <= bundle.retrospective_date_to:
-        # prospective starts after retrospective end
-        if scan_date < bundle.first_prospective_scan_date:
-            return {
-                "status": "skipped",
-                "reason_codes": ["retrospective_match_excluded"],
                 "today_fixture_id": today_row.id,
             }
 
@@ -540,7 +628,7 @@ def compute_snapshot_for_today_row(
     ).first()
 
     kickoff = _ensure_utc(today_row.kickoff)
-    # Lock / result attach path
+    # Lock / result attach path — snapshot già creato: non ricalcolare
     if existing and existing.locked_at is not None:
         attached = _attach_result_if_available(db, existing, today_row, now=now)
         return {
@@ -550,13 +638,7 @@ def compute_snapshot_for_today_row(
             "today_fixture_id": today_row.id,
         }
 
-    if kickoff is not None and now >= kickoff:
-        if existing is None:
-            return {
-                "status": "skipped",
-                "reason_codes": ["snapshot_after_kickoff"],
-                "today_fixture_id": today_row.id,
-            }
+    if existing is not None and kickoff is not None and now >= kickoff:
         existing.locked_at = now
         existing.snapshot_status = SNAPSHOT_LOCKED
         attached = _attach_result_if_available(db, existing, today_row, now=now)
@@ -565,6 +647,37 @@ def compute_snapshot_for_today_row(
             "status": "locked",
             "snapshot_id": existing.id,
             "result_attached": attached,
+            "today_fixture_id": today_row.id,
+        }
+
+    guard = _prospective_guard(bundle)
+    if _is_retrospective_identity(today_row, guard):
+        return {
+            "status": "skipped",
+            "reason_codes": ["retrospective_fixture_excluded"],
+            "today_fixture_id": today_row.id,
+        }
+
+    source_snapshot_at = _ensure_utc(getattr(today_row, "updated_at", None)) or now
+    freeze_at = _ensure_utc(bundle.frozen_at)
+    if freeze_at is None or source_snapshot_at <= freeze_at:
+        return {
+            "status": "skipped",
+            "reason_codes": ["snapshot_not_after_bundle_freeze"],
+            "today_fixture_id": today_row.id,
+        }
+
+    if kickoff is not None and source_snapshot_at >= kickoff:
+        return {
+            "status": "skipped",
+            "reason_codes": ["snapshot_after_kickoff"],
+            "today_fixture_id": today_row.id,
+        }
+
+    if kickoff is not None and now >= kickoff:
+        return {
+            "status": "skipped",
+            "reason_codes": ["snapshot_after_kickoff"],
             "today_fixture_id": today_row.id,
         }
 
@@ -620,13 +733,7 @@ def compute_snapshot_for_today_row(
         )
 
     scored = score_features_with_bundle(features, bundle)
-    source_snapshot_at = _ensure_utc(getattr(today_row, "updated_at", None)) or now
-    if kickoff is not None and source_snapshot_at >= kickoff:
-        return {
-            "status": "skipped",
-            "reason_codes": ["snapshot_after_kickoff"],
-            "today_fixture_id": today_row.id,
-        }
+    scan_date = today_row.scan_date
 
     payload_common = dict(
         local_fixture_id=int(local.id),
@@ -861,10 +968,9 @@ def refresh_preview(
     if bundle is None:
         return {"status": "error", "error": "bundle_missing", "version": VERSION}
 
-    start = date_from or bundle.first_prospective_scan_date
+    freeze_at = _ensure_utc(bundle.frozen_at)
+    start = date_from or (freeze_at.date() if freeze_at else bundle.first_prospective_scan_date)
     end = date_to or date.today()
-    if start < bundle.first_prospective_scan_date:
-        start = bundle.first_prospective_scan_date
 
     q = select(CecchinoTodayFixture).where(
         CecchinoTodayFixture.scan_date >= start,
@@ -875,10 +981,15 @@ def refresh_preview(
     rows = list(db.scalars(q).all())
 
     counters = {
+        "queried_today_rows": len(rows),
         "eligible_found": 0,
+        "retrospective_excluded": 0,
+        "not_after_freeze_excluded": 0,
+        "snapshot_after_kickoff": 0,
         "created": 0,
         "updated": 0,
         "locked": 0,
+        "completed": 0,
         "incomplete": 0,
         "error": 0,
         "skipped": 0,
@@ -889,6 +1000,7 @@ def refresh_preview(
             counters["eligible_found"] += 1
         result = compute_snapshot_for_today_row(db, row, bundle)
         st = result.get("status")
+        reasons = result.get("reason_codes") or []
         if st == "created":
             counters["created"] += 1
         elif st == "updated":
@@ -897,22 +1009,43 @@ def refresh_preview(
             counters["locked"] += 1
             if result.get("result_attached"):
                 counters["results_attached"] += 1
+                counters["completed"] += 1
         elif st == "error":
-            if "feature_incomplete" in (result.get("reason_codes") or []):
+            if "feature_incomplete" in reasons:
                 counters["incomplete"] += 1
             else:
                 counters["error"] += 1
         else:
             counters["skipped"] += 1
+            if "retrospective_fixture_excluded" in reasons:
+                counters["retrospective_excluded"] += 1
+            if "snapshot_not_after_bundle_freeze" in reasons:
+                counters["not_after_freeze_excluded"] += 1
+            if "snapshot_after_kickoff" in reasons:
+                counters["snapshot_after_kickoff"] += 1
 
     monitoring = build_prospective_monitoring(db, bundle)
+    defs = bundle.candidate_definitions_payload or {}
     return {
         "status": "ok",
         "version": VERSION,
         "bundle_id": bundle.id,
+        "bundle_frozen_at": _iso_z(freeze_at),
+        "prospective_start_mode": defs.get("prospective_start_mode") or PROSPECTIVE_START_MODE,
         "date_from": start.isoformat(),
         "date_to": end.isoformat(),
         "counters": counters,
+        "queried_today_rows": counters["queried_today_rows"],
+        "retrospective_excluded": counters["retrospective_excluded"],
+        "not_after_freeze_excluded": counters["not_after_freeze_excluded"],
+        "snapshot_after_kickoff": counters["snapshot_after_kickoff"],
+        "created": counters["created"],
+        "updated": counters["updated"],
+        "locked": counters["locked"],
+        "completed": counters["completed"],
+        "incomplete": counters["incomplete"],
+        "error": counters["error"],
+        "results_attached": counters["results_attached"],
         "monitoring_status": monitoring.get("status"),
         "completed_prospective_matches": monitoring.get("completed_prospective_matches"),
         "phase_2b_readiness": monitoring.get("phase_2b_readiness"),
@@ -959,7 +1092,7 @@ def list_preview_snapshots(
         "total": int(total),
         "limit": limit,
         "offset": offset,
-        "items": [_snapshot_list_item(s) for s in items],
+        "items": [_snapshot_list_item(s, bundle) for s in items],
     }
 
 
@@ -975,12 +1108,26 @@ def get_preview_detail(db: Session, today_fixture_id: int) -> dict[str, Any]:
     ).first()
     if snap is None:
         return {"status": "error", "error": "snapshot_not_found"}
+    freeze_at = _ensure_utc(bundle.frozen_at)
+    source_at = _ensure_utc(snap.source_snapshot_at)
+    kickoff = _ensure_utc(snap.kickoff)
+    after_freeze = bool(freeze_at and source_at and source_at > freeze_at)
+    before_kickoff = bool(kickoff and source_at and source_at < kickoff) if source_at else None
     return {
         "status": "ok",
         "version": VERSION,
         "banner": "Preview research non produttiva. Nessun segnale betting attivato.",
         "bundle": _bundle_summary(bundle, db),
-        "snapshot": _snapshot_detail(snap),
+        "snapshot": {
+            **_snapshot_detail(snap),
+            "bundle_frozen_at": _iso_z(freeze_at),
+            "source_snapshot_after_freeze": after_freeze,
+            "source_snapshot_before_kickoff": before_kickoff,
+            "freeze_check": {
+                "source_snapshot_at_gt_bundle_frozen_at": after_freeze,
+                "source_snapshot_at_lt_kickoff": before_kickoff,
+            },
+        },
         "v4_unchanged": True,
         "no_betting_signals": True,
     }
@@ -999,16 +1146,32 @@ def _bundle_summary(bundle: CecchinoGoalIntensityV5PreviewBundle, db: Session) -
     locked = sum(1 for s in snaps if s.snapshot_status == SNAPSHOT_LOCKED)
     incomplete = sum(1 for s in snaps if s.snapshot_status == SNAPSHOT_INCOMPLETE)
     errors = sum(1 for s in snaps if s.snapshot_status == SNAPSHOT_ERROR)
+    defs = bundle.candidate_definitions_payload or {}
+    guard = _prospective_guard(bundle)
+    freeze_at = _ensure_utc(bundle.frozen_at)
+    if completed >= MINIMUM_PROSPECTIVE_MATCHES:
+        protocol_status = "minimum_sample_reached"
+    elif len(snaps) == 0:
+        protocol_status = "waiting_for_prospective_data"
+    else:
+        protocol_status = "collecting_prospective_data"
     return {
         "bundle_id": bundle.id,
         "version": bundle.version,
         "candidate_indices_version": bundle.candidate_indices_version,
         "candidate_definition_hash": bundle.candidate_definition_hash,
         "candidate_definition_hash_short": bundle.candidate_definition_hash[:12],
-        "frozen_at": bundle.frozen_at.isoformat().replace("+00:00", "Z") if bundle.frozen_at else None,
+        "frozen_at": _iso_z(freeze_at),
+        "bundle_frozen_at": _iso_z(freeze_at),
+        "candidate_definition_frozen_at": defs.get("candidate_definition_frozen_at"),
+        "prospective_window_started_at": defs.get("prospective_window_started_at") or _iso_z(freeze_at),
+        "prospective_start_mode": defs.get("prospective_start_mode") or PROSPECTIVE_START_MODE,
+        "retrospective_exclusion_mode": guard.get("exclusion_mode") or RETROSPECTIVE_EXCLUSION_MODE,
+        "retrospective_identity_count": guard.get("retrospective_identity_count") or 0,
         "first_prospective_scan_date": bundle.first_prospective_scan_date.isoformat(),
         "is_active": bundle.is_active,
         "collected": len(snaps),
+        "prospective_matches_collected": len(snaps),
         "completed": completed,
         "pending": pending,
         "locked": locked,
@@ -1016,13 +1179,7 @@ def _bundle_summary(bundle: CecchinoGoalIntensityV5PreviewBundle, db: Session) -
         "error": errors,
         "minimum_prospective_matches": MINIMUM_PROSPECTIVE_MATCHES,
         "progress_to_minimum": min(1.0, completed / MINIMUM_PROSPECTIVE_MATCHES) if MINIMUM_PROSPECTIVE_MATCHES else 0,
-        "protocol_status": (
-            "minimum_sample_reached"
-            if completed >= MINIMUM_PROSPECTIVE_MATCHES
-            else "waiting_for_prospective_data"
-            if completed == 0
-            else "provisional_monitoring"
-        ),
+        "protocol_status": protocol_status,
         "primary_candidate": PRIMARY_ID,
         "challenger_candidate": CHALLENGER_ID,
         "benchmark_candidate": BENCHMARK_ID,
@@ -1030,7 +1187,26 @@ def _bundle_summary(bundle: CecchinoGoalIntensityV5PreviewBundle, db: Session) -
     }
 
 
-def _snapshot_list_item(s: CecchinoGoalIntensityV5PreviewSnapshot) -> dict[str, Any]:
+def _snapshot_temporal_flags(
+    s: CecchinoGoalIntensityV5PreviewSnapshot,
+    bundle: CecchinoGoalIntensityV5PreviewBundle | None = None,
+) -> dict[str, Any]:
+    freeze_at = _ensure_utc(bundle.frozen_at) if bundle else None
+    source_at = _ensure_utc(s.source_snapshot_at)
+    kickoff = _ensure_utc(s.kickoff)
+    return {
+        "source_snapshot_after_freeze": bool(freeze_at and source_at and source_at > freeze_at),
+        "source_snapshot_before_kickoff": bool(kickoff and source_at and source_at < kickoff)
+        if source_at and kickoff
+        else None,
+    }
+
+
+def _snapshot_list_item(
+    s: CecchinoGoalIntensityV5PreviewSnapshot,
+    bundle: CecchinoGoalIntensityV5PreviewBundle | None = None,
+) -> dict[str, Any]:
+    flags = _snapshot_temporal_flags(s, bundle)
     return {
         "id": s.id,
         "today_fixture_id": s.today_fixture_id,
@@ -1063,12 +1239,16 @@ def _snapshot_list_item(s: CecchinoGoalIntensityV5PreviewSnapshot) -> dict[str, 
         ),
         "total_goals_ft": s.total_goals_ft,
         "result_attached": s.result_attached_at is not None,
+        **flags,
     }
 
 
-def _snapshot_detail(s: CecchinoGoalIntensityV5PreviewSnapshot) -> dict[str, Any]:
+def _snapshot_detail(
+    s: CecchinoGoalIntensityV5PreviewSnapshot,
+    bundle: CecchinoGoalIntensityV5PreviewBundle | None = None,
+) -> dict[str, Any]:
     return {
-        **_snapshot_list_item(s),
+        **_snapshot_list_item(s, bundle),
         "pillar_scores": s.pillar_scores_payload,
         "candidate_scores": s.candidate_scores_payload,
         "calibrated_predictions": s.calibrated_predictions_payload,
@@ -1100,7 +1280,37 @@ def build_prospective_monitoring(db: Session, bundle: CecchinoGoalIntensityV5Pre
         ).all()
     )
     n = len(completed)
-    status = "minimum_sample_reached" if n >= MINIMUM_PROSPECTIVE_MATCHES else "provisional_monitoring"
+    all_snaps = list(
+        db.scalars(
+            select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id
+            )
+        ).all()
+    )
+    if n >= MINIMUM_PROSPECTIVE_MATCHES:
+        status = "minimum_sample_reached"
+    elif len(all_snaps) == 0:
+        status = "waiting_for_prospective_data"
+    else:
+        status = "collecting_prospective_data"
+
+    defs = bundle.candidate_definitions_payload or {}
+    guard = _prospective_guard(bundle)
+    freeze_at = _ensure_utc(bundle.frozen_at)
+    after_freeze_ok = all(
+        bool(freeze_at and s.source_snapshot_at and _ensure_utc(s.source_snapshot_at) > freeze_at)
+        for s in all_snaps
+        if s.source_snapshot_at is not None
+    ) if all_snaps else True
+    before_kickoff_ok = all(
+        bool(
+            s.kickoff
+            and s.source_snapshot_at
+            and _ensure_utc(s.source_snapshot_at) < _ensure_utc(s.kickoff)  # type: ignore[operator]
+        )
+        for s in all_snaps
+        if s.source_snapshot_at is not None and s.kickoff is not None
+    ) if all_snaps else True
 
     def scores(cid: str) -> list[float]:
         out = []
@@ -1208,6 +1418,16 @@ def build_prospective_monitoring(db: Session, bundle: CecchinoGoalIntensityV5Pre
         "no_target_leakage_verified": all(bool(s.no_target_used_in_score) for s in completed) if completed else True,
         "snapshots_locked_after_kickoff": True,
         "results_attached_without_score_recompute": True,
+        "actual_bundle_freeze_used": defs.get("prospective_start_mode") == PROSPECTIVE_START_MODE,
+        "snapshot_strictly_after_bundle_freeze": after_freeze_ok,
+        "retrospective_identity_sets_available": bool(
+            (guard.get("retrospective_today_fixture_ids") or [])
+            or (guard.get("retrospective_local_fixture_ids") or [])
+        ),
+        "retrospective_matches_excluded": True,
+        "same_day_post_freeze_snapshots_supported": True,
+        "no_calendar_date_dependency": True,
+        "snapshots_before_kickoff": before_kickoff_ok,
         "minimum_prospective_matches": MINIMUM_PROSPECTIVE_MATCHES,
         "completed_prospective_matches": n,
         "minimum_sample_reached": n >= MINIMUM_PROSPECTIVE_MATCHES,
@@ -1229,6 +1449,18 @@ def build_prospective_monitoring(db: Session, bundle: CecchinoGoalIntensityV5Pre
     return {
         "status": status,
         "version": VERSION,
+        "prospective_protocol": {
+            "candidate_definition_frozen_at": defs.get("candidate_definition_frozen_at"),
+            "bundle_frozen_at": _iso_z(freeze_at),
+            "prospective_window_started_at": defs.get("prospective_window_started_at") or _iso_z(freeze_at),
+            "first_prospective_scan_date": bundle.first_prospective_scan_date.isoformat(),
+            "prospective_start_mode": defs.get("prospective_start_mode") or PROSPECTIVE_START_MODE,
+            "retrospective_exclusion_mode": guard.get("exclusion_mode") or RETROSPECTIVE_EXCLUSION_MODE,
+            "retrospective_identity_count": guard.get("retrospective_identity_count") or 0,
+            "prospective_matches_collected": len(all_snaps),
+            "minimum_prospective_matches": MINIMUM_PROSPECTIVE_MATCHES,
+            "protocol_status": status,
+        },
         "completed_prospective_matches": n,
         "minimum_prospective_matches": MINIMUM_PROSPECTIVE_MATCHES,
         "metrics_by_candidate": metrics_by_candidate,
@@ -1255,17 +1487,32 @@ def stream_preview_export(db: Session, *, kind: PreviewExportKind) -> Iterator[s
         return
     if kind == "preview_summary":
         monitoring = build_prospective_monitoring(db, bundle)
+        summary = _bundle_summary(bundle, db)
         yield json.dumps(
-            {"bundle": _bundle_summary(bundle, db), "monitoring": monitoring},
+            {
+                "bundle": summary,
+                "monitoring": monitoring,
+                "bundle_frozen_at": summary.get("bundle_frozen_at"),
+                "prospective_start_mode": summary.get("prospective_start_mode"),
+                "retrospective_exclusion_mode": summary.get("retrospective_exclusion_mode"),
+                "retrospective_identity_count": summary.get("retrospective_identity_count"),
+            },
             ensure_ascii=False,
             default=str,
         )
         return
     if kind == "preview_bundle_definition":
+        defs = bundle.candidate_definitions_payload or {}
         yield json.dumps(
             {
                 "version": bundle.version,
                 "candidate_definition_hash": bundle.candidate_definition_hash,
+                "bundle_frozen_at": defs.get("bundle_frozen_at") or _iso_z(bundle.frozen_at),
+                "prospective_start_mode": defs.get("prospective_start_mode") or PROSPECTIVE_START_MODE,
+                "retrospective_exclusion_mode": RETROSPECTIVE_EXCLUSION_MODE,
+                "retrospective_identity_count": (defs.get("prospective_guard") or {}).get(
+                    "retrospective_identity_count"
+                ),
                 "normalization_payload_meta": {
                     k: {mk: mv for mk, mv in v.items() if mk != "train_values"}
                     for k, v in ((bundle.normalization_payload or {}).get("features") or {}).items()
@@ -1290,13 +1537,13 @@ def stream_preview_export(db: Session, *, kind: PreviewExportKind) -> Iterator[s
     )
     if kind == "preview_completed_results":
         snaps = [s for s in snaps if s.result_attached_at is not None]
-        rows = [_snapshot_list_item(s) for s in snaps]
+        rows = [_snapshot_list_item(s, bundle) for s in snaps]
     elif kind == "preview_candidate_monitoring":
         mon = build_prospective_monitoring(db, bundle)
         rows = [{"section": "metrics", **{"candidate": k, **v}} for k, v in (mon.get("metrics_by_candidate") or {}).items()]
         rows += [{"section": "comparison", "name": k, **v} for k, v in (mon.get("comparisons") or {}).items()]
     else:
-        rows = [_snapshot_list_item(s) for s in snaps]
+        rows = [_snapshot_list_item(s, bundle) for s in snaps]
 
     if not rows:
         rows = [{"note": "empty"}]

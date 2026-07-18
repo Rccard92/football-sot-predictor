@@ -67,8 +67,13 @@ def _bundle(
     *,
     active: bool = True,
     definition_hash: str | None = None,
-    first_prospective: date = date(2026, 7, 20),
+    first_prospective: date | None = None,
+    frozen_at: datetime | None = None,
+    retrospective_today_ids: list[int] | None = None,
+    retrospective_local_ids: list[int] | None = None,
+    retrospective_provider_ids: list[int] | None = None,
 ) -> CecchinoGoalIntensityV5PreviewBundle:
+    freeze = frozen_at or datetime(2026, 7, 20, 8, 0, tzinfo=timezone.utc)
     train = [0.4 + i * 0.05 for i in range(40)]
     norm = {
         "normalization_method": "train_ecdf_midrank",
@@ -112,6 +117,7 @@ def _bundle(
                 "train_n": 40,
             },
         }
+    freeze_iso = freeze.isoformat().replace("+00:00", "Z")
     return CecchinoGoalIntensityV5PreviewBundle(
         id=1,
         version=PREVIEW_BUNDLE_VERSION,
@@ -127,11 +133,26 @@ def _bundle(
             "challenger_candidate": CHALLENGER_ID,
             "benchmark_candidate": BENCHMARK_ID,
             "diagnostic_candidate": DIAGNOSTIC_ID,
+            "candidate_definition_frozen_at": "2026-07-19T23:59:59Z",
+            "bundle_frozen_at": freeze_iso,
+            "prospective_window_started_at": freeze_iso,
+            "prospective_start_mode": "strict_after_actual_bundle_freeze",
+            "prospective_guard": {
+                "retrospective_today_fixture_ids": retrospective_today_ids or [],
+                "retrospective_local_fixture_ids": retrospective_local_ids or [],
+                "retrospective_provider_fixture_ids": retrospective_provider_ids or [],
+                "retrospective_identity_count": len(retrospective_today_ids or [])
+                + len(retrospective_local_ids or [])
+                + len(retrospective_provider_ids or []),
+                "exclusion_mode": "exact_frozen_identity_sets",
+                "fixture_ids_hash": EXPECTED_FIXTURE_IDS_HASH,
+                "targets_hash": EXPECTED_TARGETS_HASH,
+            },
         },
         retrospective_date_from=date(2026, 6, 19),
         retrospective_date_to=date(2026, 7, 19),
-        first_prospective_scan_date=first_prospective,
-        frozen_at=datetime(2026, 7, 19, 23, 59, 59, tzinfo=timezone.utc),
+        first_prospective_scan_date=first_prospective or freeze.date(),
+        frozen_at=freeze,
         status=BUNDLE_STATUS_ACTIVE if active else BUNDLE_STATUS_SUPERSEDED,
         is_active=active,
     )
@@ -144,6 +165,8 @@ def _today(
     eligibility: str = ELIGIBILITY_ELIGIBLE,
     kickoff: datetime | None = None,
     local_fixture_id: int | None = 50,
+    provider_fixture_id: int | None = None,
+    updated_at: datetime | None = None,
 ):
     return SimpleNamespace(
         id=today_id,
@@ -152,12 +175,12 @@ def _today(
         kickoff=kickoff or datetime(2026, 7, 21, 18, 0, tzinfo=timezone.utc),
         local_fixture_id=local_fixture_id,
         provider_source="api_football",
-        provider_fixture_id=9000 + today_id,
+        provider_fixture_id=provider_fixture_id if provider_fixture_id is not None else 9000 + today_id,
         competition_id=39,
         home_team_name="Home FC",
         away_team_name="Away FC",
         league_name="Premier",
-        updated_at=datetime(2026, 7, 20, 10, 0, tzinfo=timezone.utc),
+        updated_at=updated_at or datetime(2026, 7, 20, 10, 0, tzinfo=timezone.utc),
         goals_home=None,
         goals_away=None,
         score_fulltime_home=None,
@@ -177,7 +200,10 @@ def _fake_indices_ok() -> dict:
         comp = _composite_scores(pillar)
         loo = _loo_composites(pillar)
         scored.append({
+            "today_fixture_id": 1000 + i,
             "local_fixture_id": i + 1,
+            "provider_fixture_id": 5000 + i,
+            "scan_date": "2026-06-19",
             "split": "train" if i < 35 else ("validation" if i < 42 else "test"),
             **pillar,
             **comp,
@@ -295,6 +321,7 @@ def test_bundle_hash_mismatch_blocks_activation():
 def test_bundle_freeze_saves_ecdf_and_calibration():
     db = MagicMock()
     db.scalars.return_value.all.return_value = []
+    freeze_now = datetime(2026, 7, 18, 14, 30, 0, tzinfo=timezone.utc)
     with patch(
         "app.services.cecchino.cecchino_goal_intensity_v5_preview.build_goal_intensity_v5_candidate_indices_internal",
         return_value=_fake_indices_ok(),
@@ -305,14 +332,28 @@ def test_bundle_freeze_saves_ecdf_and_calibration():
             date_to=date(2026, 7, 19),
             bootstrap_iterations=50,
             enforce_expected_hashes=True,
+            now=freeze_now,
         )
     assert out["status"] == "ok"
     assert out["version"] == VERSION
+    assert out["version"].endswith("v1_1")
     assert out["candidate_definition_hash"] == EXPECTED_DEFINITION_HASH
+    assert out["bundle_frozen_at"] == "2026-07-18T14:30:00Z"
+    assert out["frozen_at"] == "2026-07-18T14:30:00Z"
+    assert out["first_prospective_scan_date"] == "2026-07-18"
+    assert out["candidate_definition_frozen_at"] == "2026-07-19T23:59:59Z"
+    assert out["prospective_start_mode"] == "strict_after_actual_bundle_freeze"
     assert out["simple_export_cache_skipped"] is True
     assert db.add.called
     bundle = db.add.call_args[0][0]
     assert isinstance(bundle, CecchinoGoalIntensityV5PreviewBundle)
+    assert bundle.frozen_at == freeze_now
+    assert bundle.first_prospective_scan_date == date(2026, 7, 18)
+    assert bundle.frozen_at.isoformat() != "2026-07-19T23:59:59+00:00"
+    guard = bundle.candidate_definitions_payload["prospective_guard"]
+    assert guard["retrospective_today_fixture_ids"] == sorted(guard["retrospective_today_fixture_ids"])
+    assert guard["retrospective_local_fixture_ids"] == sorted(set(guard["retrospective_local_fixture_ids"]))
+    assert len(guard["retrospective_today_fixture_ids"]) == 50
     feats = bundle.normalization_payload["features"]
     for k in BUNDLE_FEATURE_KEYS:
         assert "train_values" in feats[k]
@@ -425,23 +466,51 @@ def test_ineligible_and_unknown_excluded():
         assert code in out["reason_codes"]
 
 
-def test_scan_before_prospective_excluded():
-    bundle = _bundle()
+def test_scan_before_prospective_no_longer_blocks_same_day_post_freeze():
+    """first_prospective_scan_date non blocca una scansione post-freeze dello stesso giorno."""
+    freeze = datetime(2026, 7, 20, 8, 0, tzinfo=timezone.utc)
+    bundle = _bundle(frozen_at=freeze, first_prospective=date(2026, 7, 20))
     db = MagicMock()
-    out = compute_snapshot_for_today_row(
-        db, _today(scan_date=date(2026, 7, 19)), bundle
-    )
-    assert out["status"] == "skipped"
-    assert "scan_before_prospective" in out["reason_codes"]
+    db.scalars.return_value.first.return_value = None
+    local = SimpleNamespace(id=50, home_team_id=1, away_team_id=2, api_fixture_id=99)
+    db.get.return_value = local
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_preview.extract_features_for_local_fixture",
+        return_value=(
+            _features(),
+            {
+                "sample_size": 12,
+                "xg_status": "available",
+                "current_fixture_included": False,
+                "future_fixture_included": False,
+            },
+        ),
+    ):
+        out = compute_snapshot_for_today_row(
+            db,
+            _today(
+                scan_date=date(2026, 7, 20),
+                updated_at=freeze + timedelta(seconds=1),
+            ),
+            bundle,
+            now=freeze + timedelta(minutes=5),
+        )
+    assert out["status"] == "created"
 
 
-def test_retrospective_match_not_included_before_first_prospective():
-    bundle = _bundle(first_prospective=date(2026, 7, 20))
+def test_snapshot_before_freeze_excluded():
+    freeze = datetime(2026, 7, 20, 8, 0, tzinfo=timezone.utc)
+    bundle = _bundle(frozen_at=freeze)
     db = MagicMock()
+    db.scalars.return_value.first.return_value = None
     out = compute_snapshot_for_today_row(
-        db, _today(scan_date=date(2026, 7, 10)), bundle
+        db,
+        _today(updated_at=freeze - timedelta(seconds=1)),
+        bundle,
+        now=freeze + timedelta(hours=1),
     )
     assert out["status"] == "skipped"
+    assert "snapshot_not_after_bundle_freeze" in out["reason_codes"]
 
 
 def test_identity_failed_when_local_missing():
@@ -633,7 +702,7 @@ def test_monitoring_provisional_under_200():
         return_value=bundle,
     ):
         mon = build_prospective_monitoring(db, bundle)
-    assert mon["status"] == "provisional_monitoring"
+    assert mon["status"] == "collecting_prospective_data"
     assert mon["completed_prospective_matches"] == 10
     assert mon["phase_2b_readiness"]["recommended_next_step"] == "continue_prospective_monitoring"
     assert "GI_B_vs_GI_A" in mon["comparisons"]
@@ -880,3 +949,96 @@ def test_cache_skipped_documented_in_freeze_report():
         )
     assert out["simple_export_cache_skipped"] is True
     assert "memoria" in (out.get("simple_export_cache_reason") or "").lower()
+
+
+def test_snapshot_equal_to_freeze_excluded():
+    freeze = datetime(2026, 7, 20, 8, 0, tzinfo=timezone.utc)
+    bundle = _bundle(frozen_at=freeze)
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    out = compute_snapshot_for_today_row(
+        db, _today(updated_at=freeze), bundle, now=freeze + timedelta(minutes=1)
+    )
+    assert out["status"] == "skipped"
+    assert "snapshot_not_after_bundle_freeze" in out["reason_codes"]
+
+
+def test_retrospective_today_id_excluded():
+    bundle = _bundle(retrospective_today_ids=[100])
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    out = compute_snapshot_for_today_row(db, _today(today_id=100), bundle)
+    assert out["status"] == "skipped"
+    assert "retrospective_fixture_excluded" in out["reason_codes"]
+
+
+def test_retrospective_local_id_excluded():
+    bundle = _bundle(retrospective_local_ids=[50])
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    out = compute_snapshot_for_today_row(db, _today(today_id=999, local_fixture_id=50), bundle)
+    assert out["status"] == "skipped"
+    assert "retrospective_fixture_excluded" in out["reason_codes"]
+
+
+def test_retrospective_provider_id_excluded():
+    bundle = _bundle(retrospective_provider_ids=[7777])
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    out = compute_snapshot_for_today_row(
+        db, _today(today_id=999, local_fixture_id=88, provider_fixture_id=7777), bundle
+    )
+    assert out["status"] == "skipped"
+    assert "retrospective_fixture_excluded" in out["reason_codes"]
+
+
+def test_new_match_not_in_retrospective_admitted():
+    freeze = datetime(2026, 7, 20, 8, 0, tzinfo=timezone.utc)
+    bundle = _bundle(
+        frozen_at=freeze,
+        retrospective_today_ids=[1, 2],
+        retrospective_local_ids=[10, 11],
+        retrospective_provider_ids=[20, 21],
+    )
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    local = SimpleNamespace(id=99, home_team_id=1, away_team_id=2, api_fixture_id=30)
+    db.get.return_value = local
+    with patch(
+        "app.services.cecchino.cecchino_goal_intensity_v5_preview.extract_features_for_local_fixture",
+        return_value=(
+            _features(),
+            {
+                "sample_size": 12,
+                "xg_status": "missing",
+                "current_fixture_included": False,
+                "future_fixture_included": False,
+            },
+        ),
+    ):
+        out = compute_snapshot_for_today_row(
+            db,
+            _today(
+                today_id=500,
+                local_fixture_id=99,
+                provider_fixture_id=30,
+                updated_at=freeze + timedelta(seconds=5),
+            ),
+            bundle,
+            now=freeze + timedelta(minutes=1),
+        )
+    assert out["status"] == "created"
+
+
+def test_no_hardcoded_july_20_dependency_in_admission():
+    import inspect
+    import app.services.cecchino.cecchino_goal_intensity_v5_preview as mod
+
+    src = inspect.getsource(mod.compute_snapshot_for_today_row)
+    assert "2026-07-20" not in src
+    assert "scan_before_prospective" not in src
+
+
+def test_version_is_v1_1():
+    assert VERSION == "cecchino_goal_intensity_v5_preview_v1_1"
+    assert PREVIEW_BUNDLE_VERSION == VERSION

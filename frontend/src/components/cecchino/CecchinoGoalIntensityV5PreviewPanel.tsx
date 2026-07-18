@@ -70,6 +70,39 @@ export function CecchinoGoalIntensityV5PreviewPanel({ preview }: Props) {
           'Preview research non produttiva. Nessun segnale betting attivato.'}
       </p>
 
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        <p>
+          Bundle frozen at:{' '}
+          <span className="font-medium">
+            {String(snap.bundle_frozen_at ?? (preview.bundle as Record<string, unknown> | undefined)?.bundle_frozen_at ?? '—')}
+          </span>
+        </p>
+        <p className="mt-1">
+          Source snapshot at:{' '}
+          <span className="font-medium">{String(snap.source_snapshot_at ?? '—')}</span>
+        </p>
+        <p className="mt-1">
+          source_snapshot_at &gt; bundle_frozen_at:{' '}
+          <span className="font-medium">
+            {(() => {
+              const check = snap.freeze_check as Record<string, boolean> | undefined
+              const v = check?.source_snapshot_at_gt_bundle_frozen_at ?? snap.source_snapshot_after_freeze
+              return v == null ? '—' : v ? 'sì' : 'no'
+            })()}
+          </span>
+        </p>
+        <p className="mt-1">
+          source_snapshot_at &lt; kickoff:{' '}
+          <span className="font-medium">
+            {(() => {
+              const check = snap.freeze_check as Record<string, boolean> | undefined
+              const v = check?.source_snapshot_at_lt_kickoff ?? snap.source_snapshot_before_kickoff
+              return v == null ? '—' : v ? 'sì' : 'no'
+            })()}
+          </span>
+        </p>
+      </div>
+
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <PillarBlock
           title="1. Produzione offensiva"

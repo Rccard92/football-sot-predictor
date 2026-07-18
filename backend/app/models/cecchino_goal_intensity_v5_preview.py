@@ -23,7 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 from app.models.mixins import TimestampMixin
 
-PREVIEW_BUNDLE_VERSION = "cecchino_goal_intensity_v5_preview_v1"
+PREVIEW_BUNDLE_VERSION = "cecchino_goal_intensity_v5_preview_v1_1"
 BUNDLE_STATUS_ACTIVE = "active"
 BUNDLE_STATUS_SUPERSEDED = "superseded"
 

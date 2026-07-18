@@ -1,12 +1,18 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Intensità Goal v5 Research — Fase 2A.1 Preview freeze reale (2026-07-18)
+
+1. Freeze bundle v1_1: `python -m scripts.freeze_goal_intensity_v5_preview_bundle --date-from 2026-06-19 --date-to 2026-07-19` (o `POST .../preview/freeze`) → `frozen_at=now`, identity guard in payload.
+2. Nessuna migration aggiuntiva (JSONB già esistente). Bundle v1 residui restano in DB ma non attivi per nuovi snapshot.
+3. `POST .../preview/refresh` (default `date_from=frozen_at.date()`): ammette Today con `updated_at > frozen_at` e `< kickoff`, non in identity sets.
+4. Monitor: `GET .../preview/monitoring`; sotto 200 → `continue_prospective_monitoring` (Preview già operativa).
+5. Export snapshot già salvati (no riesecuzione 1C/1D).
+
 ## Intensità Goal v5 Research — Fase 2A Preview (2026-07-18)
 
-1. Freeze bundle: `python -m scripts.freeze_goal_intensity_v5_preview_bundle --date-from 2026-06-19 --date-to 2026-07-19` (o `POST .../preview/freeze`).
-2. Migration: `alembic upgrade head` (tabelle bundle/snapshot).
-3. `POST .../preview/refresh` o pulsante FE «Aggiorna Preview».
-4. Monitor: `GET .../preview/monitoring`; sotto 200 → `continue_prospective_monitoring`.
-5. Export snapshot già salvati (no riesecuzione 1C/1D).
+1. Freeze bundle storico v1: `python -m scripts.freeze_goal_intensity_v5_preview_bundle` / `POST .../preview/freeze`.
+2. Migration iniziale: `alembic upgrade head` (tabelle bundle/snapshot).
+3. Refresh / monitor / export come sopra (superseduto da v1_1 per ammissione).
 
 ## Intensità Goal v5 Research — Fase 1D.1 eval calibrata (2026-07-18)
 

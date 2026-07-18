@@ -17,9 +17,16 @@ export type GoalIntensityV5PreviewBundleSummary = {
   candidate_definition_hash?: string
   candidate_definition_hash_short?: string
   frozen_at?: string | null
+  bundle_frozen_at?: string | null
+  candidate_definition_frozen_at?: string | null
+  prospective_window_started_at?: string | null
+  prospective_start_mode?: string
+  retrospective_exclusion_mode?: string
+  retrospective_identity_count?: number
   first_prospective_scan_date?: string
   is_active?: boolean
   collected?: number
+  prospective_matches_collected?: number
   completed?: number
   pending?: number
   locked?: number

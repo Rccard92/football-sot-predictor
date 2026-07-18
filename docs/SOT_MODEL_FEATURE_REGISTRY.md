@@ -2,7 +2,7 @@
 
 Registro delle variabili usate nei modelli SOT. **Parte principale: v2.1** (`baseline_v2_1_weighted_components`). Sezioni brevi su v1.1 (base v2.0) e v2.0.
 
-> **Nota research Intensità Goal v5 (Fase 1D / 1D.1 / 2A):** gli indici candidati `GI_A`–`GI_D` e gli score pilastro OP/DV/MT/OV sono definizioni research fisse (`cecchino_goal_intensity_v5_candidate_indices_v1` / `v1_1`), normalizzate con ECDF train-only. La Preview Fase 2A (`cecchino_goal_intensity_v5_preview_v1`) applica lo stesso bundle congelato su snapshot pre-match prospettici. **Non** sono feature del registry produttivo SOT né della formula Intensità Goal v4; nessun segnale betting.
+> **Nota research Intensità Goal v5 (Fase 1D / 1D.1 / 2A / 2A.1):** gli indici candidati `GI_A`–`GI_D` e gli score pilastro OP/DV/MT/OV sono definizioni research fisse (`cecchino_goal_intensity_v5_candidate_indices_v1` / `v1_1`), normalizzate con ECDF train-only. La Preview (`cecchino_goal_intensity_v5_preview_v1_1`) applica lo stesso bundle congelato su snapshot pre-match con freeze reale e identity guard. **Non** sono feature del registry produttivo SOT né della formula Intensità Goal v4; nessun segnale betting.
 
 Fonte codice: `backend/app/services/predictions_v21/v21_manifest_definitions.py`, `v21_feature_collectors.py`, `v21_macro_aggregators.py`, `v21_feature_context.py`.
 

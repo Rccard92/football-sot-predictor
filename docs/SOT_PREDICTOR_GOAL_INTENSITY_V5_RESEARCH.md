@@ -2,9 +2,13 @@
 
 Modulo di ricerca per rifondare **Intensità Goal** su quattro pilastri indipendenti. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
+## Fase 2A.1 — Preview freeze reale (2026-07-18)
+
+Versione `cecchino_goal_intensity_v5_preview_v1_1`. `bundle.frozen_at = now UTC` al freeze (non la data protocollo 1D). Ammissione: `source_snapshot_at > frozen_at` e `< kickoff`; esclusione retrospettiva via identity sets congelati (today/local/provider). Same-day post-freeze ammesso. Formule/ECDF/hash invariati; nessuna migration.
+
 ## Fase 2A — Preview prospettica (2026-07-18)
 
-Versione `cecchino_goal_intensity_v5_preview_v1`. Bundle congelato da `candidate_indices_v1_1` (ECDF train + calibrazioni lineari/logistiche). Snapshot pre-match su Cecchino Today eleggibili con `scan_date >= first_prospective_scan_date` (2026-07-20). Lock post-kickoff; risultati FT collegati senza ricalcolo score.
+Versione storica `cecchino_goal_intensity_v5_preview_v1` (superseduta da v1_1). Bundle congelato da `candidate_indices_v1_1` (ECDF train + calibrazioni). Snapshot pre-match su Today eleggibili; lock post-kickoff; risultati FT senza ricalcolo score.
 
 | Campo | Valore |
 |-------|--------|
@@ -13,7 +17,8 @@ Versione `cecchino_goal_intensity_v5_preview_v1`. Bundle congelato da `candidate
 | Benchmark | `MT1_LONG_TERM` |
 | Diagnostico | `GI_A_without_volatility` |
 | Hash definition | `3c48413461490d9ad17c59f052e0543919e12a6013a04ca0bdccdddb316273ab` |
-| Min prospettico | 200 partite concluse |
+| Min prospettico | 200 partite concluse (solo gate Fase 2B) |
+| Ammissione v1_1 | `source_snapshot_at > bundle_frozen_at` + identity guard |
 | Cache export 1D | `simple_export_cache_skipped=true` (rischio memoria/sessioni) |
 | v4 / betting | invariata / nessun segnale |
 
