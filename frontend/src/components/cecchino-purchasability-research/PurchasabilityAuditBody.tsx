@@ -55,7 +55,8 @@ export function PurchasabilityAuditBody({
     <div className="space-y-4">
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
         Fase di audit research. Nessun Indice di Acquistabilità calcolato. Nessuna influenza sui
-        Segnali Cecchino.
+        Segnali Cecchino. updated_at generico non costituisce prova di uno snapshot pre-match. Le
+        Doppie Chance non sono normalizzabili come tre esiti mutuamente esclusivi.
       </p>
 
       {error ? (
@@ -112,8 +113,46 @@ export function PurchasabilityAuditBody({
               value={`${summary.date_min ?? '—'} → ${summary.date_max ?? '—'}`}
             />
             <Stat label="Osservate" value={String(summary.observed_rows)} />
-            <Stat label="Core" value={String(summary.core_rows)} />
-            <Stat label="Settled" value={String(summary.settled_core_rows)} />
+            <Stat
+              label="Timestamp verificati %"
+              value={String((summary as { timestamp_verified_pct?: number }).timestamp_verified_pct ?? '—')}
+            />
+            <Stat
+              label="Fallback updated_at"
+              value={String(
+                (summary as { generic_updated_at_fallback_rows?: number })
+                  .generic_updated_at_fallback_rows ?? 0,
+              )}
+            />
+            <Stat
+              label="Market valid"
+              value={String((summary as { market_valid_rows?: number }).market_valid_rows ?? 0)}
+            />
+            <Stat
+              label="Model complete"
+              value={String((summary as { model_complete_rows?: number }).model_complete_rows ?? 0)}
+            />
+            <Stat
+              label="Core complete"
+              value={String(
+                (summary as { core_complete_rows?: number }).core_complete_rows ??
+                  summary.core_rows,
+              )}
+            />
+            <Stat label="Settled core" value={String(summary.settled_core_rows)} />
+            <Stat
+              label="Bookmaker"
+              value={
+                ((summary as { bookmaker_names?: string[] }).bookmaker_names || []).join(', ') ||
+                '—'
+              }
+            />
+            <Stat
+              label="Odds sources"
+              value={
+                ((summary as { odds_sources?: string[] }).odds_sources || []).join(', ') || '—'
+              }
+            />
             <Stat label="Mercati pronti" value={(summary.markets_ready || []).join(', ') || '—'} />
             <Stat label="Blocking" value={blocking.length ? blocking.join(', ') : 'nessuno'} />
             <Stat
@@ -174,17 +213,17 @@ export function PurchasabilityAuditBody({
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto">
         <h3 className="text-sm font-semibold text-slate-900">Mercati</h3>
-        <table className="mt-2 w-full min-w-[700px] text-left text-xs">
+        <table className="mt-2 w-full min-w-[900px] text-left text-xs">
           <thead className="text-slate-500">
             <tr>
               <th className="py-1 pr-2">Raw</th>
               <th className="py-1 pr-2">Famiglia</th>
-              <th className="py-1 pr-2">Periodo</th>
-              <th className="py-1 pr-2">Linea</th>
-              <th className="py-1 pr-2">Comparatori</th>
-              <th className="py-1 pr-2">Complemento</th>
+              <th className="py-1 pr-2">Norm</th>
+              <th className="py-1 pr-2">Verified</th>
+              <th className="py-1 pr-2">Model</th>
               <th className="py-1 pr-2">Core</th>
-              <th className="py-1">Stato</th>
+              <th className="py-1 pr-2">Settled</th>
+              <th className="py-1">Stato / blocking</th>
             </tr>
           </thead>
           <tbody>
@@ -192,12 +231,17 @@ export function PurchasabilityAuditBody({
               <tr key={m.raw_market_code} className="border-t border-slate-100 text-slate-800">
                 <td className="py-1 pr-2 font-medium">{m.raw_market_code}</td>
                 <td className="py-1 pr-2">{m.canonical_market_family}</td>
-                <td className="py-1 pr-2">{m.period}</td>
-                <td className="py-1 pr-2">{m.line ?? '—'}</td>
-                <td className="py-1 pr-2">{(m.comparator_selections || []).join(', ') || '—'}</td>
-                <td className="py-1 pr-2">{m.complement_selection ?? '—'}</td>
-                <td className="py-1 pr-2">{m.core_rows ?? 0}</td>
-                <td className="py-1">{m.opposition_status}</td>
+                <td className="py-1 pr-2">{m.normalization_applicability ?? '—'}</td>
+                <td className="py-1 pr-2">{m.verified_pre_match_rows ?? 0}</td>
+                <td className="py-1 pr-2">{m.model_complete_rows ?? 0}</td>
+                <td className="py-1 pr-2">{m.core_complete_rows ?? m.core_rows ?? 0}</td>
+                <td className="py-1 pr-2">{m.settled_core_rows ?? m.settled_rows ?? 0}</td>
+                <td className="py-1">
+                  {m.opposition_status}
+                  {(m.blocking_reasons || []).length
+                    ? ` · ${(m.blocking_reasons || []).join(', ')}`
+                    : ''}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -237,8 +281,8 @@ export function PurchasabilityAuditBody({
               <th className="py-1 pr-2">Partita</th>
               <th className="py-1 pr-2">Selezione</th>
               <th className="py-1 pr-2">Quota</th>
-              <th className="py-1 pr-2">Rating</th>
-              <th className="py-1 pr-2">Edge</th>
+              <th className="py-1 pr-2">Fidelity</th>
+              <th className="py-1 pr-2">Book / odds_src</th>
               <th className="py-1 pr-2">Settlement</th>
               <th className="py-1">Profit</th>
             </tr>
@@ -251,8 +295,10 @@ export function PurchasabilityAuditBody({
                 </td>
                 <td className="py-1 pr-2">{r.selection}</td>
                 <td className="py-1 pr-2">{r.odds ?? '—'}</td>
-                <td className="py-1 pr-2">{r.rating ?? '—'}</td>
-                <td className="py-1 pr-2">{r.edge ?? '—'}</td>
+                <td className="py-1 pr-2">{String(r.snapshot_fidelity ?? '—')}</td>
+                <td className="py-1 pr-2">
+                  {String(r.bookmaker_name ?? '—')} / {String(r.odds_source ?? '—')}
+                </td>
                 <td className="py-1 pr-2">{r.settlement_status}</td>
                 <td className="py-1">{r.unit_stake_profit ?? '—'}</td>
               </tr>

@@ -67,13 +67,15 @@ ABSENT_FROM_PANEL: tuple[str, ...] = (
     "UNDER_PT_0_5",
 )
 
-# Selezioni richieste per normalizzazione overround nello stesso mercato/period/line.
+# Selezioni richieste per normalizzazione overround (solo esiti mutuamente esclusivi).
+# Doppia Chance esclusa: 1X/X2/12 sono eventi sovrapposti.
 MARKET_COMPLETE_SETS: dict[tuple[str, str, float | None], frozenset[str]] = {
     (FAMILY_MATCH_WINNER, PERIOD_FT, None): frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY}),
-    (FAMILY_DOUBLE_CHANCE, PERIOD_FT, None): frozenset({SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO}),
     (FAMILY_OVER_UNDER, PERIOD_FT, 2.5): frozenset({SEL_OVER_2_5, SEL_UNDER_2_5}),
     (FAMILY_OVER_UNDER, PERIOD_HT, 1.5): frozenset({SEL_OVER_PT_1_5, SEL_UNDER_PT_1_5}),
 }
+
+NORM_NOT_APPLICABLE_OVERLAPPING = "not_applicable_overlapping_outcomes"
 
 
 def _entry(
@@ -325,7 +327,15 @@ def same_opposition_scope(a: dict[str, Any], b: dict[str, Any]) -> bool:
 def required_selections_for_normalization(
     family: str, period: str, line: float | None
 ) -> frozenset[str] | None:
+    """None se normalizzazione non definita (es. Doppia Chance overlapping)."""
     return MARKET_COMPLETE_SETS.get((family, period, line))
+
+
+def normalization_status_for_family(family: str) -> str | None:
+    """Se non None, status fisso senza tentare overround."""
+    if family == FAMILY_DOUBLE_CHANCE:
+        return NORM_NOT_APPLICABLE_OVERLAPPING
+    return None
 
 
 def comparators_valid_for_selection(

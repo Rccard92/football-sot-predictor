@@ -2,6 +2,15 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Indice di Acquistabilità — Fase 1.1 (2026-07-18)
+
+| Campo | Valore |
+|-------|--------|
+| Versione | `cecchino_purchasability_audit_v1_1` |
+| Timestamp | odds_meta → odds_checked_at; updated_at solo fallback |
+| DC | non normalizzata (overlapping) |
+| Core | modello completo + timestamp verified |
+
 ## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
 
 | Campo | Valore |

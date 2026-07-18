@@ -1,5 +1,12 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 1.1 (2026-07-18)
+
+1. `GET .../purchasability/audit` (v1_1): verificare `snapshot_fidelity`, blocking, markets_ready.
+2. Dataset paginato batch: `.../dataset?status=core`.
+3. Export dataset streama senza audit pieno; altri export da summary.
+4. FE tab Acquistabilità: fidelity, bookmaker, coorti.
+
 ## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
 
 1. `GET /api/admin/cecchino/research/purchasability/audit` (filtri date/competition/market/book).

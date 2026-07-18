@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — Fase 1.1 integrità temporale (2026-07-18)
+
+Audit `cecchino_purchasability_audit_v1_1`: timestamp da odds_meta (non updated_at), bookmaker dict vs odds_source, DC non normalizzata, core rigoroso, paginazione batch. Nessuna formula 0–100. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
 
 Research read-only `cecchino_purchasability_audit_v1` / `dataset_v1`: inventario KPI da `kpi_panel_json`, mappa opposizioni, dataset pre-match senza bias rating≥50, Rating = benchmark. Nessuna formula 0–100; tab «Acquistabilità — Audit» su Segnali KPI. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.

@@ -1,5 +1,9 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 1.1 integrità temporale (2026-07-18)
+
+- Bump `cecchino_purchasability_audit_v1_1` / `dataset_v1_1`: timestamp canonico odds_meta; fallback updated_at non core; DC `not_applicable_overlapping_outcomes`; coorti market/model/core; Spearman midrank; export dataset streaming.
+
 ## Indice di Acquistabilità — Fase 1 Audit (2026-07-18)
 
 - `cecchino_purchasability_audit_v1` + `dataset_v1`: audit indipendenza KPI, mappa mercati opposti, dataset storico da `kpi_panel_json` (no bias rating≥50).

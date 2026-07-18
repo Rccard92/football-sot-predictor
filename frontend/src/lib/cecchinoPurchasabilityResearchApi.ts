@@ -33,8 +33,17 @@ export type PurchasabilityMarketRow = {
   complement_selection: string | null
   opposition_status: string
   observed_rows?: number
+  verified_pre_match_rows?: number
+  model_complete_rows?: number
+  core_complete_rows?: number
   core_rows?: number
+  settled_core_rows?: number
   settled_rows?: number
+  settlement_pct?: number
+  timestamp_verified_pct?: number
+  normalization_applicability?: string
+  blocking_reasons?: string[]
+  sample_size_warning?: string[]
   settlement_available?: boolean
   unsupported_reason?: string | null
 }
@@ -48,9 +57,18 @@ export type PurchasabilityAuditResponse = {
     observed_rows: number
     pre_match_rows: number
     core_rows: number
+    core_complete_rows?: number
+    market_valid_rows?: number
+    model_complete_rows?: number
     settled_core_rows: number
     excluded_rows: number
     unique_fixtures: number
+    timestamp_verified_rows?: number
+    timestamp_verified_pct?: number
+    generic_updated_at_fallback_rows?: number
+    post_kickoff_excluded_rows?: number
+    bookmaker_names?: string[]
+    odds_sources?: string[]
     markets_ready: string[]
     date_min: string | null
     date_max: string | null

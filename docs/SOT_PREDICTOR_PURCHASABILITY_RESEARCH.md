@@ -1,62 +1,53 @@
 # Indice di Acquistabilità — Research
 
-Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*  
-Non risponde a: *quanto valore ha questa quota?* (competenza del Rating).
+Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
-## Fase 1 — Audit e dataset storico (`cecchino_purchasability_audit_v1` / `cecchino_purchasability_dataset_v1`)
+## Fase 1.1 — Integrità temporale e dataset core (`cecchino_purchasability_audit_v1_1`)
 
-Obiettivo: inventario KPI, audit di indipendenza, mappa mercati opposti, dataset storico pre-match, readiness Fase 2. **Nessuna formula 0–100**, nessun peso, nessuna classe qualitativa, nessun betting.
+Correzioni rispetto a v1:
 
-### Sorgente canonica
+### Timestamp canonico (non `updated_at`)
 
-- `CecchinoTodayFixture.kpi_panel_json.rows[]` da `build_cecchino_kpi_panel_v2_betfair` (`cecchino_kpi_v2_betfair`).
-- **Non** la coorte `cecchino_kpi_signal_activations` (rating ≥ 50 → selection bias).
-- Snapshot: un solo panel per Today fixture (overwrite). `source_snapshot_at = updated_at` (fallback `odds_checked_at`); ammissione se strettamente `< kickoff`.
+`resolve_purchasability_snapshot_timestamp(fixture)` priorità:
 
-### Unità di analisi
+1. `kpi_panel_json.odds_meta.last_betfair_refresh_at` / `odds_updated_at` / `odds_fetched_at` → `verified_panel_odds_meta`
+2. stessi campi su `odds_snapshot_json.odds_meta` → `verified_snapshot_odds_meta`
+3. `odds_checked_at` → `verified_odds_checked_at`
+4. `updated_at` → `generic_updated_at_fallback` (**non** entra in core; exclusion `snapshot_timestamp_not_verifiable`)
 
-`partita + mercato + selezione + snapshot KPI + quota + risultato` (una riga per selezione, non una per partita).
+`updated_at` è un timestamp generico della riga Today e può essere aggiornato post-kickoff da risultati/stato.
 
-### Rating = benchmark
+`no_post_match_data_in_features = true` solo con timestamp pre-match **verificato**.
 
-Formula invariata in `cecchino_kpi_panel_v2_betfair._compute_rating`:
+### Bookmaker vs odds_source
 
-`raw = (prob_cecchino*100)*0.5 + (vantaggio_prob*100)*2.0 + edge_pct` → clamp 0–100.
+- `panel.bookmaker` = dict `{name, provider_bookmaker_id, provider_source}`
+- `row.book_source` = `odds_source` per selezione
+- Filtro query non sovrascrive la sorgente
 
-Classificato `benchmark_candidate`. Dependency map esportata; non è input obbligatorio dell’Indice.
+### Doppia Chance
 
-### Mappa opposizioni
+1X/X2/12 non sono mutuamente esclusivi → `book_probability_normalization_status = not_applicable_overlapping_outcomes`. Restano ammesse al core se modello completo.
 
-Modulo `cecchino_market_opposition.py`: comparatore ≠ complemento; stesso periodo/linea/famiglia. Unsupported (fuori core): Over 1.5 senza Under 1.5, Under 3.5 senza Over 3.5, X PT incompleto, GG/No Goal assenti dal pannello, Over PT 0.5 senza Under.
+### Core complete
 
-### Target research
+Identity + mercato supported + timestamp verified pre-kickoff + odds>1 + model/advantage/edge/score/rating non null + book identificata + no leakage. Rating/Edge bassi o negativi ammessi. Book-only escluso.
 
-Stake = 1 unità. Win: `odds - 1`; Loss: `-1`; Void: `0`. Void escluso dal denominatore Win Rate; incluso a profitto 0 nel ROI. Missing settlement escluso dalle metriche.
+### Coorti
 
-### API (read-only)
+`all_observed` / `pre_match` / `market_valid` / `model_complete` / `core_complete` / `settled_core` / `excluded`.
 
-- `GET /api/admin/cecchino/research/purchasability/audit`
-- `GET /api/admin/cecchino/research/purchasability/dataset`
-- `GET /api/admin/cecchino/research/purchasability/markets`
-- `GET /api/admin/cecchino/research/purchasability/export/{kind}`
+### Readiness
 
-### Frontend
+`markets_ready` richiede supported + core + settled + timestamp verificabile. Blocking strutturali → `resolve_data_gaps`.
 
-Tab **Acquistabilità — Audit** su `/segnali-kpi`. Nessuna colonna produttiva Acquistabilità.
+## Fase 1 — Audit iniziale (`v1`, superseduta)
 
-### Limiti
+Sorgente `kpi_panel_json`; unità partita+mercato+selezione; Rating = benchmark; nessuna formula 0–100.
 
-- Nessuno storico multi-versione del panel KPI.
-- Nessuna migration / scrittura DB in Fase 1.
-- Normalizzazione book solo su mercato completo nello stesso snapshot.
+## Roadmap
 
-### Roadmap macro-fasi
-
-1. Audit + dataset (questa fase)
-2. Ricerca statistica (associazioni vs settlement/ROI)
-3. Costruzione Indice 0–100 (solo dopo evidenza)
-4. Integrazione monitorata (senza sostituire Rating)
-
-## Non modificare
-
-Rating, Score, Edge, Segnali KPI, Cecchino Today eligibility, altri moduli research produttivi.
+1. Audit + dataset (1 / 1.1)
+2. Statistica
+3. Indice 0–100
+4. Integrazione monitorata

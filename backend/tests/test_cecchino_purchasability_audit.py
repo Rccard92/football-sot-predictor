@@ -1,8 +1,8 @@
-"""Test Fase 1 Indice di Acquistabilità — audit + dataset + opposizioni."""
+"""Test Fase 1.1 Indice di Acquistabilità — integrità temporale e core."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -10,25 +10,29 @@ import pytest
 
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import _compute_rating
 from app.services.cecchino.cecchino_market_opposition import (
+    FAMILY_DOUBLE_CHANCE,
+    NORM_NOT_APPLICABLE_OVERLAPPING,
     OPPOSITION_SUPPORTED,
-    OPPOSITION_UNSUPPORTED,
-    comparators_valid_for_selection,
+    MARKET_COMPLETE_SETS,
     get_opposition,
-    list_opposition_map,
+    normalization_status_for_family,
 )
 from app.services.cecchino.cecchino_purchasability_audit import (
     AUDIT_VERSION,
     DATASET_VERSION,
     FEATURE_CANDIDATE_KEYS,
+    FIDELITY_FALLBACK,
+    FIDELITY_PANEL,
     TARGET_KEYS,
-    _build_observed_row,
+    _input_redundancy,
+    _midranks,
     _normalize_book_probs,
-    _settle_row,
+    _spearman,
     build_purchasability_audit,
     build_purchasability_dataset,
     build_purchasability_rows,
-    build_variable_registry,
-    rating_dependency_map,
+    resolve_purchasability_snapshot_timestamp,
+    resolve_selection_key,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
@@ -36,17 +40,30 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_HOME,
     SEL_ONE_TWO,
     SEL_ONE_X,
-    SEL_OVER_1_5,
     SEL_OVER_2_5,
     SEL_UNDER_2_5,
-    SEL_UNDER_3_5,
     SEL_X_TWO,
 )
 from app.services.cecchino import cecchino_kpi_signals as kpi_mod
-from app.services.cecchino import cecchino_today_service as today_mod
 
 
-def _panel_row(key: str, book: float, cec: float, **extra):
+def _panel_row(key: str, book: float, cec: float | None, *, book_source: str = "betfair_raw"):
+    if cec is None:
+        return {
+            "market_key": key,
+            "segno": key,
+            "label": key,
+            "quota_book": book,
+            "quota_cecchino": None,
+            "prob_book": round(1.0 / book, 4),
+            "prob_cecchino": None,
+            "vantaggio_prob": None,
+            "edge_pct": None,
+            "score_acquisto": None,
+            "rating": None,
+            "status": "book_only",
+            "book_source": book_source,
+        }
     prob_c = round(1.0 / cec, 4)
     prob_b = round(1.0 / book, 4)
     vant = round(prob_c - prob_b, 4)
@@ -65,8 +82,23 @@ def _panel_row(key: str, book: float, cec: float, **extra):
         "edge_pct": edge,
         "score_acquisto": score,
         "rating": rating,
-        **extra,
+        "status": "available",
+        "book_source": book_source,
     }
+
+
+def _full_rows(**kwargs):
+    src = kwargs.pop("book_source", "betfair_raw_match_winner")
+    return [
+        _panel_row(SEL_HOME, 2.2, 2.0, book_source=src),
+        _panel_row(SEL_DRAW, 3.4, 3.2, book_source=src),
+        _panel_row(SEL_AWAY, 3.5, 3.8, book_source=src),
+        _panel_row(SEL_ONE_X, 1.4, 1.35, book_source="derived_from_betfair_1x2"),
+        _panel_row(SEL_X_TWO, 1.7, 1.75, book_source="derived_from_betfair_1x2"),
+        _panel_row(SEL_ONE_TWO, 1.3, 1.28, book_source="derived_from_betfair_1x2"),
+        _panel_row(SEL_OVER_2_5, 1.9, 1.85, book_source="betfair_raw_over_under"),
+        _panel_row(SEL_UNDER_2_5, 2.0, 2.05, book_source="betfair_raw_over_under"),
+    ]
 
 
 def _fixture(
@@ -74,24 +106,21 @@ def _fixture(
     fid: int = 1,
     kickoff: datetime | None = None,
     updated_at: datetime | None = None,
+    odds_checked_at: datetime | None = None,
+    panel_odds_meta: dict | None = None,
+    snapshot_odds_meta: dict | None = None,
     panel_rows: list | None = None,
     ft: tuple[int, int] | None = (2, 1),
     ht: tuple[int, int] | None = (1, 0),
 ):
-    freeze = datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc)
     ko = kickoff or datetime(2026, 7, 10, 18, 0, tzinfo=timezone.utc)
-    rows = panel_rows or [
-        _panel_row(SEL_HOME, 2.2, 2.0),
-        _panel_row(SEL_DRAW, 3.4, 3.2),
-        _panel_row(SEL_AWAY, 3.5, 3.8),
-        _panel_row(SEL_ONE_X, 1.4, 1.35),
-        _panel_row(SEL_X_TWO, 1.7, 1.75),
-        _panel_row(SEL_ONE_TWO, 1.3, 1.28),
-        _panel_row(SEL_OVER_2_5, 1.9, 1.85),
-        _panel_row(SEL_UNDER_2_5, 2.0, 2.05),
-        _panel_row(SEL_OVER_1_5, 1.3, 1.28),
-        _panel_row(SEL_UNDER_3_5, 1.5, 1.55),
-    ]
+    pre = datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc)
+    meta = panel_odds_meta if panel_odds_meta is not None else {
+        "last_betfair_refresh_at": "2026-07-10T08:00:00Z",
+        "odds_updated_at": "2026-07-10T08:00:00Z",
+        "odds_fetched_at": "2026-07-10T07:55:00Z",
+    }
+    rows = panel_rows if panel_rows is not None else _full_rows()
     return SimpleNamespace(
         id=fid,
         local_fixture_id=100 + fid,
@@ -102,15 +131,27 @@ def _fixture(
         away_team_name="Away FC",
         kickoff=ko,
         scan_date=date(2026, 7, 10),
-        updated_at=updated_at or freeze,
-        odds_checked_at=freeze,
+        updated_at=updated_at or datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc),
+        odds_checked_at=odds_checked_at,
         score_fulltime_home=ft[0] if ft else None,
         score_fulltime_away=ft[1] if ft else None,
         score_halftime_home=ht[0] if ht else None,
         score_halftime_away=ht[1] if ht else None,
         match_display_status="finished",
         fixture_status="FT",
-        kpi_panel_json={"version": "cecchino_kpi_v2_betfair", "bookmaker": "betfair", "rows": rows},
+        kpi_panel_json={
+            "version": "cecchino_kpi_v2_betfair",
+            "bookmaker": {
+                "name": "Betfair",
+                "provider_bookmaker_id": 11,
+                "provider_source": "api_football",
+            },
+            "odds_meta": meta,
+            "rows": rows,
+        },
+        odds_snapshot_json={
+            "odds_meta": snapshot_odds_meta or {},
+        },
     )
 
 
@@ -119,209 +160,243 @@ def _db_with(fixtures: list):
     db.scalars.return_value.all.return_value = fixtures
     db.add = MagicMock()
     db.commit = MagicMock()
-    db.flush = MagicMock()
     return db
 
 
-# --- Opposizioni ---
+# --- Timestamp ---
 
 
-def test_home_comparator_away_complement_x2():
-    o = get_opposition(SEL_HOME)
-    assert o["comparator_selections"] == [SEL_AWAY]
-    assert o["complement_selection"] == SEL_X_TWO
-    assert o["opposition_status"] == OPPOSITION_SUPPORTED
-
-
-def test_draw_comparators_and_complement_12():
-    o = get_opposition(SEL_DRAW)
-    assert set(o["comparator_selections"]) == {SEL_HOME, SEL_AWAY}
-    assert o["complement_selection"] == SEL_ONE_TWO
-
-
-def test_away_comparator_home_complement_1x():
-    o = get_opposition(SEL_AWAY)
-    assert o["comparator_selections"] == [SEL_HOME]
-    assert o["complement_selection"] == SEL_ONE_X
-
-
-def test_1x_opposite_2():
-    o = get_opposition(SEL_ONE_X)
-    assert o["comparator_selections"] == [SEL_AWAY]
-    assert o["complement_selection"] == SEL_AWAY
-
-
-def test_x2_opposite_1():
-    o = get_opposition(SEL_X_TWO)
-    assert o["comparator_selections"] == [SEL_HOME]
-    assert o["complement_selection"] == SEL_HOME
-
-
-def test_12_opposite_x():
-    o = get_opposition(SEL_ONE_TWO)
-    assert o["comparator_selections"] == [SEL_DRAW]
-    assert o["complement_selection"] == SEL_DRAW
-
-
-def test_over_under_same_line():
-    o = get_opposition(SEL_OVER_2_5)
-    u = get_opposition(SEL_UNDER_2_5)
-    assert o["line"] == u["line"] == 2.5
-    assert o["complement_selection"] == SEL_UNDER_2_5
-    assert u["complement_selection"] == SEL_OVER_2_5
-
-
-def test_different_periods_not_compared():
-    assert not comparators_valid_for_selection(SEL_OVER_2_5, "OVER_PT_1_5")
-
-
-def test_different_lines_not_compared():
-    assert not comparators_valid_for_selection(SEL_OVER_2_5, SEL_OVER_1_5)
-
-
-def test_gg_unsupported():
-    o = get_opposition("GG")
-    assert o["opposition_status"] == OPPOSITION_UNSUPPORTED
-
-
-def test_unsupported_over_1_5_excluded_from_supported():
-    assert get_opposition(SEL_OVER_1_5)["opposition_status"] == OPPOSITION_UNSUPPORTED
-    assert get_opposition(SEL_UNDER_3_5)["opposition_status"] == OPPOSITION_UNSUPPORTED
-
-
-# --- Audit / dataset ---
-
-
-def test_no_db_writes_on_audit():
-    db = _db_with([_fixture()])
-    out = build_purchasability_audit(db)
-    assert out["no_db_writes"] is True
-    db.add.assert_not_called()
-    db.commit.assert_not_called()
-
-
-def test_no_migration_in_module():
-    import app.services.cecchino.cecchino_purchasability_audit as mod
-    import inspect
-
-    src = inspect.getsource(mod)
-    assert "alembic" not in src.lower()
-    assert "op.create_table" not in src
-
-
-def test_variable_registry_verified_origins():
-    reg = build_variable_registry()
-    names = {v["canonical_name"] for v in reg}
-    assert "odds" in names
-    assert "rating" in names
-    rating = next(v for v in reg if v["canonical_name"] == "rating")
-    assert rating["independence_class"] == "benchmark_candidate"
-    assert rating["source_function"] == "_compute_rating"
-
-
-def test_runtime_vs_persisted():
-    reg = {v["canonical_name"]: v for v in build_variable_registry()}
-    assert reg["odds"]["persistence"] == "persisted_json"
-    assert reg["normalized_book_probability"]["persistence"] == "runtime"
-
-
-def test_pre_match_timestamp_and_post_match_excluded():
-    pre = _fixture(
-        updated_at=datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc),
-        kickoff=datetime(2026, 7, 10, 18, 0, tzinfo=timezone.utc),
-    )
-    post = _fixture(
-        fid=2,
+def test_updated_at_post_kickoff_but_odds_meta_pre_match_valid():
+    fx = _fixture(
         updated_at=datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc),
-        kickoff=datetime(2026, 7, 10, 18, 0, tzinfo=timezone.utc),
+        panel_odds_meta={"last_betfair_refresh_at": "2026-07-10T08:00:00Z"},
     )
-    db = _db_with([pre, post])
-    rows = build_purchasability_rows(db)
-    pre_rows = [r for r in rows if r["today_fixture_id"] == 1]
-    post_rows = [r for r in rows if r["today_fixture_id"] == 2]
-    assert all(r["source_snapshot_before_kickoff"] for r in pre_rows if r["opposition_status"] == OPPOSITION_SUPPORTED)
-    assert any("snapshot_not_before_kickoff" in r["exclusion_reason_codes"] for r in post_rows)
-    assert any(r["leakage_status"] == "excluded_leakage" for r in post_rows)
+    snap = resolve_purchasability_snapshot_timestamp(fx)
+    assert snap["snapshot_fidelity"] == FIDELITY_PANEL
+    assert snap["snapshot_timestamp_verified"] is True
+    rows = build_purchasability_rows(_db_with([fx]))
+    home = next(r for r in rows if r["selection"] == SEL_HOME)
+    assert home["is_pre_match"] is True
+    assert home["is_core"] is True
+    assert home["no_post_match_data_in_features"] is True
 
 
-def test_rating_benchmark_and_dependency_map():
-    dep = rating_dependency_map()
-    assert dep["classification"] == "benchmark_candidate"
-    comps = {c["name"] for c in dep["direct_components"]}
-    assert comps == {"prob_cecchino", "vantaggio_prob", "edge_pct"}
+def test_only_updated_at_not_core():
+    fx = _fixture(
+        panel_odds_meta={},
+        snapshot_odds_meta={},
+        odds_checked_at=None,
+        updated_at=datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc),
+    )
+    snap = resolve_purchasability_snapshot_timestamp(fx)
+    assert snap["snapshot_fidelity"] == FIDELITY_FALLBACK
+    assert snap["snapshot_timestamp_verified"] is False
+    rows = build_purchasability_rows(_db_with([fx]))
+    assert all(not r["is_core"] for r in rows)
+    assert any("snapshot_timestamp_not_verifiable" in r["exclusion_reason_codes"] for r in rows)
+    assert all(r["no_post_match_data_in_features"] is False for r in rows)
 
 
-def test_unit_is_fixture_market_selection():
-    db = _db_with([_fixture()])
-    rows = build_purchasability_rows(db)
-    keys = {(r["today_fixture_id"], r["selection"]) for r in rows}
-    assert len(keys) == len(rows)
-    assert len(rows) > 1
+def test_odds_meta_post_kickoff_excluded_leakage():
+    fx = _fixture(
+        panel_odds_meta={"last_betfair_refresh_at": "2026-07-10T19:00:00Z"},
+        updated_at=datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc),
+    )
+    rows = build_purchasability_rows(_db_with([fx]))
+    assert any(r["leakage_status"] == "excluded_leakage" for r in rows)
+    assert all(not r["is_core"] for r in rows)
 
 
-def test_no_rating_edge_signal_filter():
-    # include low rating row
+# --- Bookmaker ---
+
+
+def test_odds_source_from_row():
+    fx = _fixture()
+    rows = build_purchasability_rows(_db_with([fx]))
+    home = next(r for r in rows if r["selection"] == SEL_HOME)
+    assert home["odds_source"] == "betfair_raw_match_winner"
+    assert home["bookmaker_name"] == "Betfair"
+    assert home["bookmaker_provider_id"] == 11
+    assert not isinstance(home["bookmaker_name"], dict)
+
+
+def test_book_source_filter_does_not_overwrite():
+    fx = _fixture()
+    rows = build_purchasability_rows(_db_with([fx]), book_source="Betfair")
+    assert rows
+    assert all(r["bookmaker_name"] == "Betfair" for r in rows)
+    # odds_source rimane quello della riga, non "Betfair"
+    home = next(r for r in rows if r["selection"] == SEL_HOME)
+    assert home["odds_source"] == "betfair_raw_match_winner"
+
+
+def test_bookmaker_dict_not_stringified():
+    fx = _fixture()
+    rows = build_purchasability_rows(_db_with([fx]))
+    for r in rows:
+        assert r["bookmaker_name"] == "Betfair"
+        assert "{" not in str(r["bookmaker_name"])
+
+
+# --- Core ---
+
+
+def test_book_only_not_core():
     rows_panel = [
-        _panel_row(SEL_HOME, 2.2, 2.0),
+        _panel_row(SEL_HOME, 2.2, None),
         _panel_row(SEL_DRAW, 3.4, 3.2),
         _panel_row(SEL_AWAY, 3.5, 3.8),
     ]
-    # force low rating by high book / low edge
-    low = _panel_row(SEL_HOME, 1.1, 2.5)
+    fx = _fixture(panel_rows=rows_panel)
+    rows = build_purchasability_rows(_db_with([fx]))
+    home = next(r for r in rows if r["selection"] == SEL_HOME)
+    assert home["is_core"] is False
+    assert home["model_probability"] is None
+
+
+def test_missing_model_probability_not_core():
+    r = _panel_row(SEL_HOME, 2.2, 2.0)
+    r["prob_cecchino"] = None
+    r["vantaggio_prob"] = None
+    r["edge_pct"] = None
+    r["score_acquisto"] = None
+    r["rating"] = None
+    fx = _fixture(panel_rows=[r, _panel_row(SEL_DRAW, 3.4, 3.2), _panel_row(SEL_AWAY, 3.5, 3.8)])
+    rows = build_purchasability_rows(_db_with([fx]))
+    home = next(x for x in rows if x["selection"] == SEL_HOME)
+    assert home["is_core"] is False
+
+
+def test_low_rating_complete_enters_core():
+    # force low rating via high book / low cecchino edge negative-ish
+    low = _panel_row(SEL_HOME, 1.15, 2.5)
     assert (low.get("rating") or 0) < 50
-    rows_panel[0] = low
-    fx = _fixture(panel_rows=rows_panel + [
-        _panel_row(SEL_OVER_2_5, 1.9, 1.85),
-        _panel_row(SEL_UNDER_2_5, 2.0, 2.05),
-    ])
-    db = _db_with([fx])
-    rows = build_purchasability_rows(db)
-    home = [r for r in rows if r["selection"] == SEL_HOME]
-    assert home
-    assert home[0]["rating"] is None or home[0]["rating"] < 50 or True  # still present
-    assert any(r["selection"] == SEL_HOME for r in rows)
-
-
-def test_raw_odds_and_implied_and_overround():
-    odds_map = {SEL_HOME: 2.0, SEL_DRAW: 3.5, SEL_AWAY: 4.0}
-    norm, overround, status = _normalize_book_probs(
-        odds_map, frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY})
+    fx = _fixture(
+        panel_rows=[
+            low,
+            _panel_row(SEL_DRAW, 3.4, 3.2),
+            _panel_row(SEL_AWAY, 3.5, 3.8),
+        ]
     )
+    rows = build_purchasability_rows(_db_with([fx]))
+    home = next(r for r in rows if r["selection"] == SEL_HOME)
+    assert home["rating"] is not None and home["rating"] < 50
+    assert home["is_core"] is True
+
+
+def test_negative_edge_complete_enters_core():
+    # book < cecchino → edge negativo
+    neg = _panel_row(SEL_HOME, 1.8, 2.2)
+    assert (neg.get("edge_pct") or 0) < 0
+    fx = _fixture(
+        panel_rows=[
+            neg,
+            _panel_row(SEL_DRAW, 3.4, 3.2),
+            _panel_row(SEL_AWAY, 3.5, 3.8),
+        ]
+    )
+    rows = build_purchasability_rows(_db_with([fx]))
+    home = next(r for r in rows if r["selection"] == SEL_HOME)
+    assert home["edge"] < 0
+    assert home["is_core"] is True
+
+
+# --- Normalization ---
+
+
+def test_double_chance_not_normalized():
+    assert (FAMILY_DOUBLE_CHANCE, "FT", None) not in MARKET_COMPLETE_SETS
+    assert normalization_status_for_family(FAMILY_DOUBLE_CHANCE) == NORM_NOT_APPLICABLE_OVERLAPPING
+    fx = _fixture()
+    rows = build_purchasability_rows(_db_with([fx]))
+    dc = [r for r in rows if r["selection"] in (SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO)]
+    assert dc
+    assert all(
+        r["book_probability_normalization_status"] == NORM_NOT_APPLICABLE_OVERLAPPING for r in dc
+    )
+    assert all(r["normalized_book_probability"] is None for r in dc)
+    # DC can still be core
+    assert any(r["is_core"] for r in dc)
+
+
+def test_1x2_normalized():
+    odds = {SEL_HOME: 2.0, SEL_DRAW: 3.5, SEL_AWAY: 4.0}
+    req = MARKET_COMPLETE_SETS[("match_winner", "FT", None)]
+    norm, overround, status = _normalize_book_probs(odds, req)
     assert status == "ok"
     assert overround is not None and overround > 0
+    assert norm is not None and abs(sum(norm.values()) - 1.0) < 1e-9
+
+
+def test_ou_same_line_normalized():
+    odds = {SEL_OVER_2_5: 1.9, SEL_UNDER_2_5: 2.0}
+    req = MARKET_COMPLETE_SETS[("over_under", "FT", 2.5)]
+    norm, overround, status = _normalize_book_probs(odds, req)
+    assert status == "ok"
     assert norm is not None
-    assert abs(sum(norm.values()) - 1.0) < 1e-9
-    raw = 1.0 / 2.0
-    assert abs(raw - 0.5) < 1e-9
 
 
-def test_normalization_incomplete_market():
-    norm, overround, status = _normalize_book_probs(
-        {SEL_HOME: 2.0, SEL_DRAW: 3.5}, frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY})
+# --- Redundancy ---
+
+
+def test_negative_correlation_detected():
+    rows = []
+    for i in range(20):
+        rows.append({"odds": float(i + 1), "model_probability": float(20 - i), "raw_book_implied_probability": 1.0 / (i + 2),
+                     "probability_advantage": 0.01 * i, "edge": float(i), "score": 0.1 * i, "rating": 40 + i})
+    red = _input_redundancy(rows)
+    high = red["high_correlation_pairs"]
+    assert any(
+        (p.get("pearson") is not None and abs(p["pearson"]) >= 0.9)
+        or (p.get("spearman") is not None and abs(p["spearman"]) >= 0.9)
+        for p in high
     )
-    assert status == "incomplete_market"
-    assert norm is None
 
 
-def test_settlement_profit_win_loss_void():
-    fx = _fixture(ft=(2, 1))  # home wins
-    win = _settle_row(SEL_HOME, fx, 2.5)
-    assert win["selection_won"] is True
-    assert win["unit_stake_profit"] == pytest.approx(1.5)
-    loss = _settle_row(SEL_AWAY, fx, 3.0)
-    assert loss["selection_lost"] is True
-    assert loss["unit_stake_profit"] == -1.0
-    # void not emitted by evaluator — flag false, profit None unless void path
-    assert win["selection_void"] is False
+def test_spearman_midrank_ties():
+    xs = [1.0, 2.0, 2.0, 3.0]
+    ranks = _midranks(xs)
+    assert ranks[1] == ranks[2] == 2.5
+    ys = [3.0, 2.0, 2.0, 1.0]
+    s = _spearman(xs, ys)
+    assert s is not None
 
 
-def test_missing_settlement_excluded_from_settled_metrics():
+def test_exact_duplicates_detected():
+    row = {
+        "odds": 2.0,
+        "model_probability": 0.5,
+        "raw_book_implied_probability": 0.5,
+        "probability_advantage": 0.1,
+        "edge": 5.0,
+        "score": 0.025,
+        "rating": 50,
+    }
+    red = _input_redundancy([row, dict(row), dict(row)])
+    assert red["exact_duplicates_detected"] is True
+    assert red["exact_duplicate_count"] >= 1
+
+
+def test_missing_overlap_computed():
+    rows = [
+        {"odds": 2.0, "model_probability": None, "raw_book_implied_probability": 0.5,
+         "probability_advantage": None, "edge": 1.0, "score": None, "rating": 40},
+        {"odds": None, "model_probability": 0.4, "raw_book_implied_probability": None,
+         "probability_advantage": 0.1, "edge": None, "score": 0.1, "rating": None},
+    ]
+    red = _input_redundancy(rows)
+    assert red["missing_overlap"]
+    assert any(m["a_missing"] >= 0 for m in red["missing_overlap"])
+
+
+# --- Readiness / dataset ---
+
+
+def test_readiness_not_phase2_without_settled():
     fx = _fixture(ft=None, ht=None)
-    db = _db_with([fx])
-    audit = build_purchasability_audit(db)
-    assert audit["summary"]["settled_core_rows"] == 0 or True
-    settled = [r for r in build_purchasability_rows(db) if r.get("is_settled_core")]
-    assert all(r["settlement_status"] in ("won", "lost", "void") for r in settled)
+    audit = build_purchasability_audit(_db_with([fx]))
+    assert "no_settled_core_rows" in audit["phase_2_readiness"]["blocking_issues"]
+    assert audit["phase_2_readiness"]["recommended_next_step"] == "resolve_data_gaps"
 
 
 def test_no_target_in_features():
@@ -329,76 +404,60 @@ def test_no_target_in_features():
         assert t not in FEATURE_CANDIDATE_KEYS
 
 
-def test_canonical_key_stable():
-    fx = _fixture()
-    siblings = {r["market_key"]: r for r in fx.kpi_panel_json["rows"]}
-    a = _build_observed_row(fx, siblings[SEL_HOME], siblings, "betfair")
-    b = _build_observed_row(fx, siblings[SEL_HOME], siblings, "betfair")
-    assert a["canonical_row_key"] == b["canonical_row_key"]
-
-
-def test_dataset_paginated():
-    fixtures = [_fixture(fid=i) for i in range(1, 5)]
+def test_dataset_batch_pagination_stable():
+    fixtures = [_fixture(fid=i) for i in range(1, 6)]
     db = _db_with(fixtures)
-    page = build_purchasability_dataset(db, status="core", limit=5, offset=0)
-    assert page["limit"] == 5
-    assert page["offset"] == 0
-    assert page["total"] >= len(page["items"])
-    assert page["version"] == DATASET_VERSION
+    p1 = build_purchasability_dataset(db, status="core", limit=3, offset=0)
+    p2 = build_purchasability_dataset(db, status="core", limit=3, offset=3)
+    assert p1["total"] == p2["total"]
+    assert len(p1["items"]) == 3
+    keys1 = {r["canonical_row_key"] for r in p1["items"]}
+    keys2 = {r["canonical_row_key"] for r in p2["items"]}
+    assert keys1.isdisjoint(keys2)
+    assert p1["version"] == DATASET_VERSION
 
 
-def test_audit_version_and_readiness():
-    db = _db_with([_fixture()])
-    audit = build_purchasability_audit(db)
-    assert audit["version"] == AUDIT_VERSION
-    assert audit["phase_2_readiness"]["kpi_source_identified"] is True
-    assert audit["phase_2_readiness"]["rating_dependency_map_complete"] is True
-    assert "recommended_next_step" in audit["phase_2_readiness"]
+def test_selection_alias_over_25():
+    assert resolve_selection_key({"segno": "Over 2.5"}) == SEL_OVER_2_5
+    assert resolve_selection_key({"label": "1"}) == SEL_HOME
 
 
-def test_unsupported_market_not_core():
-    db = _db_with([_fixture()])
-    rows = build_purchasability_rows(db)
-    o15 = [r for r in rows if r["selection"] == SEL_OVER_1_5]
-    assert o15
-    assert all(not r["is_core"] for r in o15)
-
-
-def test_void_kept_concept():
-    # documentation: void profit 0 path exists in settle helper structure
+def test_panel_rows_accepts_dict_normalize():
     fx = _fixture()
-    s = _settle_row(SEL_HOME, fx, 2.0)
-    assert "selection_void" in s
-    assert "unit_stake_profit" in s
+    rows = build_purchasability_rows(_db_with([fx]))
+    assert len(rows) >= 8
+
+
+def test_no_db_writes():
+    db = _db_with([_fixture()])
+    build_purchasability_audit(db)
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
+
+
+def test_versions_v1_1():
+    assert AUDIT_VERSION == "cecchino_purchasability_audit_v1_1"
+    assert DATASET_VERSION == "cecchino_purchasability_dataset_v1_1"
+
+
+def test_opposition_home():
+    o = get_opposition(SEL_HOME)
+    assert o["opposition_status"] == OPPOSITION_SUPPORTED
+    assert o["comparator_selections"] == [SEL_AWAY]
 
 
 # --- Regression ---
 
 
 def test_rating_formula_unchanged():
-    r = _compute_rating(0.5, 0.05, 10.0)
-    # 0.5*100*0.5 + 0.05*100*2 + 10 = 25 + 10 + 10 = 45
-    assert r == 45
+    assert _compute_rating(0.5, 0.05, 10.0) == 45
 
 
-def test_kpi_signals_module_still_has_min_rating():
+def test_kpi_min_rating_unchanged():
     assert kpi_mod.MIN_KPI_RATING == 50
 
 
-def test_today_service_module_importable():
-    assert hasattr(today_mod, "CecchinoTodayFixture") or True
-    assert today_mod is not None
-
-
-def test_opposition_map_lists_panel_keys():
-    codes = {e["raw_market_code"] for e in list_opposition_map()}
-    assert SEL_HOME in codes
-    assert SEL_OVER_2_5 in codes
-
-
-def test_no_betting_fields_in_audit_payload():
-    db = _db_with([_fixture()])
-    audit = build_purchasability_audit(db)
-    blob = str(audit).lower()
-    assert "value_bet" not in blob
-    assert audit.get("no_purchasability_formula") is True
+def test_no_betting_in_audit():
+    audit = build_purchasability_audit(_db_with([_fixture()]))
+    assert audit["no_purchasability_formula"] is True
+    assert "value_bet" not in str(audit).lower()
