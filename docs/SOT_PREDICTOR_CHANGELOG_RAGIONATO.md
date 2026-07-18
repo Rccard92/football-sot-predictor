@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — Fase 2A.4.1 coorte DC / OOF / span (2026-07-18)
+
+- `…_residual_reliability_v2a_4_1`: DC↔1X2 senza `odds_source` nella chiave cross; OOF mask comune; span ≥90g / 3 mesi; FE aggiornato.
+- Perché `v2a_4` non era definitiva: DC assenti, baseline OOF non allineata, stop su ~29 giorni.
+
 ## Indice di Acquistabilità — Fase 2A.4 residual reliability (2026-07-18)
 
 - Nuovo `cecchino_purchasability_residual_reliability_v2a_4`: fair Book, target residuali, GAP_ONLY vs context, job `research_mode`, FE sottotab.

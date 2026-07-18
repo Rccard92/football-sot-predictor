@@ -19,7 +19,10 @@ from app.services.cecchino.cecchino_purchasability_fair_book import (
     SOURCE_DC_DERIVED,
     SOURCE_RAW_SECONDARY,
     SOURCE_TWO_WAY,
+    cross_market_snapshot_key,
     resolve_fair_book_probability,
+    resolve_fair_for_rows,
+    same_market_sibling_key,
 )
 from app.services.cecchino.cecchino_purchasability_research_jobs import (
     MODE_RESIDUAL,
@@ -27,9 +30,13 @@ from app.services.cecchino.cecchino_purchasability_research_jobs import (
     filters_hash_for,
 )
 from app.services.cecchino.cecchino_purchasability_residual_reliability import (
+    MIN_TEMPORAL_SPAN_DAYS,
     RESIDUAL_RELIABILITY_VERSION,
     SPECS,
+    _baseline_prediction,
     _residual_row,
+    _temporal_span,
+    build_oof_evaluation_mask,
     build_purchasability_residual_reliability,
 )
 from app.services.cecchino.cecchino_purchasability_statistical_research import (
@@ -132,10 +139,11 @@ def _row(
 
 
 def _1x2_siblings(fid: int = 1, day: int = 1, **kw) -> list[dict]:
+    src = kw.pop("source", "betfair_raw_match_winner")
     return [
-        _row(fid=fid, market=SEL_HOME, odds=2.10, day=day, **kw),
-        _row(fid=fid, market=SEL_DRAW, odds=3.40, day=day, **kw),
-        _row(fid=fid, market=SEL_AWAY, odds=3.60, day=day, **kw),
+        _row(fid=fid, market=SEL_HOME, odds=2.10, day=day, source=src, **kw),
+        _row(fid=fid, market=SEL_DRAW, odds=3.40, day=day, source=src, **kw),
+        _row(fid=fid, market=SEL_AWAY, odds=3.60, day=day, source=src, **kw),
     ]
 
 
@@ -328,9 +336,17 @@ def _multi_residual_rows(n_fixtures: int = 16) -> list[dict]:
             if abs(r["model_probability"] - r["fair_book_probability"]) < 1e-6:
                 r["model_probability"] = min(0.99, r["model_probability"] + 0.02)
             rows.append(r)
-        # DC derived
+        # DC derived — odds_source diverso (cross-market linkage)
         for m in (SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO):
-            dc = _row(fid=fid, market=m, odds=1.45, day=day, model_p=model_p, won=won)
+            dc = _row(
+                fid=fid,
+                market=m,
+                odds=1.45,
+                day=day,
+                model_p=model_p,
+                won=won,
+                source="betfair_raw_double_chance",
+            )
             fair = resolve_fair_book_probability(dc, base)
             dc.update(fair)
             if dc.get("fair_book_probability_verified") and abs(
@@ -430,7 +446,7 @@ def test_v2a4_55_63_versions_unchanged():
     assert STAT_VERSION == "cecchino_purchasability_statistical_research_v2a_2"
     assert DATASET_VERSION == "cecchino_purchasability_dataset_v1_1"
     assert AUDIT_VERSION.startswith("cecchino_purchasability_audit")
-    assert RESIDUAL_RELIABILITY_VERSION == "cecchino_purchasability_residual_reliability_v2a_4"
+    assert RESIDUAL_RELIABILITY_VERSION == "cecchino_purchasability_residual_reliability_v2a_4_1"
 
 
 def test_v2a4_36_economic_positive_value_only():
@@ -438,6 +454,187 @@ def test_v2a4_36_economic_positive_value_only():
     payload = build_purchasability_residual_reliability(
         MagicMock(), rows=rows, bootstrap_iterations=6, seed=11
     )
-    # residual rows with positive_value should drive economic n
     eco = payload["economic_diagnostics"]
     assert isinstance(eco.get("positive_value_rows"), int)
+
+
+# --- Fase 2A.4.1 ---
+
+
+def test_v241_01_04_dc_cross_odds_source_linked():
+    mw = [
+        _row(fid=1, market=SEL_HOME, odds=2.10, source="betfair_raw_match_winner"),
+        _row(fid=1, market=SEL_DRAW, odds=3.40, source="betfair_raw_match_winner"),
+        _row(fid=1, market=SEL_AWAY, odds=3.60, source="betfair_raw_match_winner"),
+    ]
+    assert same_market_sibling_key(mw[0]) != same_market_sibling_key(
+        _row(fid=1, market=SEL_ONE_X, odds=1.4, source="betfair_raw_double_chance")
+    )
+    assert cross_market_snapshot_key(mw[0]) == cross_market_snapshot_key(
+        _row(fid=1, market=SEL_ONE_X, odds=1.4, source="betfair_raw_double_chance")
+    )
+    fair_h = resolve_fair_book_probability(mw[0], mw)["fair_book_probability"]
+    fair_d = resolve_fair_book_probability(mw[1], mw)["fair_book_probability"]
+    fair_a = resolve_fair_book_probability(mw[2], mw)["fair_book_probability"]
+    one_x = _row(fid=1, market=SEL_ONE_X, odds=1.4, source="betfair_raw_double_chance")
+    x2 = _row(fid=1, market=SEL_X_TWO, odds=1.5, source="betfair_raw_double_chance")
+    twelve = _row(fid=1, market=SEL_ONE_TWO, odds=1.35, source="betfair_raw_double_chance")
+    all_rows = mw + [one_x, x2, twelve]
+    enriched = resolve_fair_for_rows(all_rows)
+    by_sel = {r["selection"]: r for r in enriched}
+    assert by_sel[SEL_ONE_X]["fair_book_probability_source"] == SOURCE_DC_DERIVED
+    assert by_sel[SEL_ONE_X]["fair_book_probability_verified"] is True
+    assert by_sel[SEL_ONE_X]["fair_book_probability"] == pytest.approx(fair_h + fair_d)
+    assert by_sel[SEL_X_TWO]["fair_book_probability"] == pytest.approx(fair_d + fair_a)
+    assert by_sel[SEL_ONE_TWO]["fair_book_probability"] == pytest.approx(fair_h + fair_a)
+    assert by_sel[SEL_ONE_X]["normalization_payload"]["linkage_mode"] == (
+        "cross_market_same_snapshot_provider"
+    )
+
+
+def test_v241_05_07_dc_mismatch_excluded():
+    mw = _1x2_siblings(source="betfair_raw_match_winner")
+    # different snapshot
+    dc_snap = _row(
+        fid=1, market=SEL_ONE_X, odds=1.4, source="betfair_raw_double_chance", snapshot_hour=11
+    )
+    assert resolve_fair_book_probability(dc_snap, mw)["fair_book_probability_verified"] is False
+    # different bookmaker
+    dc_bm = _row(
+        fid=1, market=SEL_ONE_X, odds=1.4, source="betfair_raw_double_chance", bookmaker="OTHER"
+    )
+    assert resolve_fair_book_probability(dc_bm, mw)["fair_book_probability_verified"] is False
+    # different provider
+    for r in mw:
+        r["bookmaker_provider_id"] = 1
+        r["bookmaker_provider_source"] = "betfair"
+    dc_prov = _row(fid=1, market=SEL_ONE_X, odds=1.4, source="betfair_raw_double_chance")
+    dc_prov["bookmaker_provider_id"] = 99
+    dc_prov["bookmaker_provider_source"] = "betfair"
+    assert resolve_fair_book_probability(dc_prov, mw)["fair_book_probability_verified"] is False
+
+
+def test_v241_08_09_dc_not_three_way_and_source():
+    dc_only = [
+        _row(fid=1, market=SEL_ONE_X, odds=1.4, source="betfair_raw_double_chance"),
+        _row(fid=1, market=SEL_X_TWO, odds=1.5, source="betfair_raw_double_chance"),
+        _row(fid=1, market=SEL_ONE_TWO, odds=1.35, source="betfair_raw_double_chance"),
+    ]
+    out = resolve_fair_book_probability(dc_only[0], dc_only)
+    assert out["fair_book_probability_verified"] is False
+    assert out["fair_book_probability_source"] == SOURCE_RAW_SECONDARY
+
+
+def test_v241_10_fair_audit_observed_settled_residual():
+    rows = _multi_residual_rows(8)
+    # force DC with different odds_source
+    for r in rows:
+        if r["selection"] in (SEL_ONE_X, SEL_X_TWO, SEL_ONE_TWO):
+            r["odds_source"] = "betfair_raw_double_chance"
+            r["book_source"] = "betfair_raw_double_chance"
+        else:
+            r["odds_source"] = "betfair_raw_match_winner"
+            r["book_source"] = "betfair_raw_match_winner"
+    payload = build_purchasability_residual_reliability(
+        MagicMock(), rows=rows, bootstrap_iterations=4, seed=3
+    )
+    audit = payload["fair_book_probability_audit"]
+    assert "all_observed_source_counts" in audit
+    assert "settled_source_counts" in audit
+    assert "residual_source_counts" in audit
+    assert audit["double_chance"]["dc_derived_verified_rows"] > 0
+    residual_mk = set(audit["markets_residual_evaluated"])
+    assert SEL_ONE_X in residual_mk and SEL_X_TWO in residual_mk and SEL_ONE_TWO in residual_mk
+
+
+def test_v241_11_17_oof_mask_baseline_aligned():
+    rows = _multi_residual_rows(16)
+    payload = build_purchasability_residual_reliability(
+        MagicMock(), rows=rows, bootstrap_iterations=4, seed=5
+    )
+    oof = payload["oof_evaluation_identity"]
+    assert oof["oof_evaluable_rows"] < oof["source_residual_rows"]
+    assert oof["train_only_initial_rows"] > 0
+    base = payload["binary_results"]["BOOK_DIRECTION_BASELINE"]
+    gap = payload["binary_results"]["GAP_ONLY"]
+    assert base["n_oof"] == oof["oof_evaluable_rows"] or base["n_oof"] <= oof["oof_evaluable_rows"]
+    assert base["n_oof"] == gap["n_oof"] or abs(base["n_oof"] - gap["n_oof"]) <= gap.get(
+        "missing_prediction_rows", 0
+    )
+    assert "oof_coverage" in base and "n_source" in base
+    paired = payload["paired_comparisons"]["GAP_RELIABILITY_CONTEXT_vs_GAP_ONLY"]
+    assert paired.get("same_evaluation_cohort") is True
+    assert paired.get("paired_row_key_hash")
+
+
+def test_v241_baseline_nan_outside_mask():
+    rows = [
+        {"today_fixture_id": 1, "book_direction_probability": 0.4, "canonical_row_key": "a"},
+        {"today_fixture_id": 2, "book_direction_probability": 0.5, "canonical_row_key": "b"},
+        {"today_fixture_id": 3, "book_direction_probability": 0.6, "canonical_row_key": "c"},
+    ]
+    folds = [{"fold": 1, "train_fixture_ids": [1], "test_fixture_ids": [2, 3]}]
+    mask = build_oof_evaluation_mask(rows, folds)
+    pred = _baseline_prediction(rows, mask)
+    assert np.isnan(pred[0])
+    assert np.isfinite(pred[1]) and np.isfinite(pred[2])
+    assert int(mask.sum()) == 2
+
+
+def test_v241_18_20_economic_paired_common_cohort():
+    rows = _multi_residual_rows(14)
+    payload = build_purchasability_residual_reliability(
+        MagicMock(), rows=rows, bootstrap_iterations=8, seed=13
+    )
+    eco = payload["economic_diagnostics"]
+    assert "oof_positive_rows" in eco
+    paired = eco.get("paired_comparisons") or {}
+    assert "GAP_RELIABILITY_CONTEXT_vs_GAP_ONLY" in paired
+    assert "RELIABILITY_CONTEXT_ONLY_vs_BOOK_DIRECTION_BASELINE" in paired
+    block = paired["GAP_RELIABILITY_CONTEXT_vs_GAP_ONLY"]
+    if block.get("status") == "ok":
+        assert block["same_evaluation_cohort"] is True
+        assert "ci_delta_roi_top_10pct" in block
+        assert block["paired_row_key_hash"]
+
+
+def test_v241_21_25_temporal_and_readiness():
+    assert MIN_TEMPORAL_SPAN_DAYS == 90
+    short_rows = []
+    for i in range(10):
+        r = _row(fid=200 + i, market=SEL_HOME, odds=2.1, day=1 + i, model_p=0.7, won=True)
+        r["kickoff"] = datetime(2026, 6, 19 + (i % 10), 18, 0, tzinfo=timezone.utc).isoformat()
+        short_rows.append(r)
+    # fabricate residual-like rows for span helper
+    for r in short_rows:
+        r["fair_book_probability"] = 0.45
+        r["fair_book_probability_verified"] = True
+    span = _temporal_span(short_rows)
+    assert span["temporal_span_days"] < 90
+    assert span["limited_temporal_span"] is True
+
+    long_rows = []
+    for i in range(12):
+        month = 1 + (i % 4)
+        day = 5 + (i % 20)
+        r = _row(fid=300 + i, market=SEL_HOME, odds=2.1, day=1, model_p=0.7, won=True)
+        r["kickoff"] = datetime(2026, month, day, 18, 0, tzinfo=timezone.utc).isoformat()
+        long_rows.append(r)
+    span2 = _temporal_span(long_rows)
+    assert span2["temporal_span_days"] >= 90
+    assert span2["unique_calendar_months"] >= 3
+    assert span2["limited_temporal_span"] is False
+
+    rows = _multi_residual_rows(12)
+    # keep dates within one month
+    for i, r in enumerate(rows):
+        r["kickoff"] = datetime(2026, 6, 19 + (i % 10), 18, 0, tzinfo=timezone.utc).isoformat()
+    payload = build_purchasability_residual_reliability(
+        MagicMock(), rows=rows, bootstrap_iterations=4, seed=2
+    )
+    ready = payload["phase_2b_residual_readiness"]
+    assert ready["limited_temporal_span"] is True
+    assert ready["recommended_next_step"] == "continue_data_collection"
+    assert any("limited_temporal_span" in c for c in ready.get("readiness_reason_codes") or [])
+    # stop not allowed while limited
+    assert ready["recommended_next_step"] != "stop_context_no_incremental_reliability"

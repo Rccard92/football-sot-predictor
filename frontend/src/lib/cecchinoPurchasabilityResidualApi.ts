@@ -34,8 +34,11 @@ export type PurchasabilityResidualReliabilityResponse = {
   version: string
   dataset_version: string
   source_statistical_version?: string
+  source_settled_rows?: number
   research_banner?: string
   cohort_identity?: Record<string, unknown>
+  oof_evaluation_identity?: Record<string, unknown>
+  temporal_span?: Record<string, unknown>
   fair_book_probability_audit?: Record<string, unknown>
   residual_feature_audit?: Array<Record<string, unknown>>
   temporal_folds?: Array<Record<string, unknown>>

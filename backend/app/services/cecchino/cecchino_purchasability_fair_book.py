@@ -1,6 +1,7 @@
-"""Fair Book probability — research Indice di Acquistabilità Fase 2A.4.
+"""Fair Book probability — research Indice di Acquistabilità Fase 2A.4.1.
 
 Dataset v1_1 invariato. Derivazione research-only (soprattutto DC da 1X2 normalizzato).
+Chiavi sibling distinte: same-market (con odds_source) vs cross-market snapshot (senza).
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ PRIMARY_MARKETS = (
     SEL_OVER_PT_1_5,
     SEL_UNDER_PT_1_5,
 )
+LINKAGE_MODE_CROSS = "cross_market_same_snapshot_provider"
 
 
 def _num(v: Any) -> float | None:
@@ -84,13 +86,40 @@ def _odds_source(row: dict[str, Any]) -> str:
     return str(row.get("odds_source") or row.get("book_source") or "")
 
 
-def sibling_match_key(row: dict[str, Any]) -> tuple[Any, ...]:
+def _provider_id(row: dict[str, Any]) -> Any:
+    return row.get("bookmaker_provider_id")
+
+
+def _provider_source(row: dict[str, Any]) -> Any:
+    return row.get("bookmaker_provider_source")
+
+
+def same_market_sibling_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    """Chiave per normalizzare esiti dello stesso mercato (include odds_source)."""
     return (
         row.get("today_fixture_id"),
         _snapshot(row),
         _bookmaker(row),
+        _provider_id(row),
+        _provider_source(row),
         _odds_source(row),
     )
+
+
+def cross_market_snapshot_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    """Chiave cross-market DC↔1X2: stesso snapshot/bookmaker/provider, senza odds_source."""
+    return (
+        row.get("today_fixture_id"),
+        _snapshot(row),
+        _bookmaker(row),
+        _provider_id(row),
+        _provider_source(row),
+    )
+
+
+def sibling_match_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    """Alias retrocompatibile → same_market_sibling_key."""
+    return same_market_sibling_key(row)
 
 
 def normalize_exclusive_market(
@@ -142,6 +171,57 @@ def _verified(
     }
 
 
+def _filter_same_market(row: dict[str, Any], sibling_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    key = same_market_sibling_key(row)
+    matched = [s for s in sibling_rows if same_market_sibling_key(s) == key]
+    sel = _sel(row)
+    if not any(_sel(s) == sel for s in matched):
+        matched = list(matched) + [row]
+    return matched
+
+
+def _match_winner_odds_cross(
+    row: dict[str, Any],
+    sibling_rows: list[dict[str, Any]],
+    period: Any,
+) -> tuple[dict[str, float], list[dict[str, Any]], str | None]:
+    """Raccoglie odds HOME/DRAW/AWAY con cross_market_snapshot_key."""
+    key = cross_market_snapshot_key(row)
+    mw_rows: list[dict[str, Any]] = []
+    mismatch_reason: str | None = None
+    for s in sibling_rows:
+        sk = _sel(s)
+        if sk not in MATCH_WINNER_SELS:
+            continue
+        if s.get("today_fixture_id") != row.get("today_fixture_id"):
+            continue
+        if _snapshot(s) != _snapshot(row):
+            mismatch_reason = mismatch_reason or "dc_snapshot_mismatch"
+            continue
+        if _bookmaker(s) != _bookmaker(row):
+            mismatch_reason = mismatch_reason or "dc_bookmaker_mismatch"
+            continue
+        if _provider_id(s) != _provider_id(row) or _provider_source(s) != _provider_source(row):
+            # Solo se entrambi i lati hanno provider valorizzato
+            if _provider_id(row) is not None or _provider_source(row) is not None:
+                if _provider_id(s) is not None or _provider_source(s) is not None:
+                    if _provider_id(s) != _provider_id(row) or _provider_source(s) != _provider_source(row):
+                        mismatch_reason = mismatch_reason or "dc_provider_mismatch"
+                        continue
+        if cross_market_snapshot_key(s) != key:
+            continue
+        if get_opposition(sk).get("period") != period:
+            continue
+        mw_rows.append(s)
+
+    mw_odds: dict[str, float] = {}
+    for s in mw_rows:
+        o = _odds(s)
+        if o is not None:
+            mw_odds[_sel(s)] = o
+    return mw_odds, mw_rows, mismatch_reason
+
+
 def resolve_fair_book_probability(
     row: dict[str, Any],
     sibling_rows: list[dict[str, Any]],
@@ -156,27 +236,51 @@ def resolve_fair_book_probability(
     period = opp.get("period")
     line = opp.get("line")
 
-    # Filter siblings: same fixture/snapshot/bookmaker/source; reject mismatches
-    row_key = sibling_match_key(row)
-    matched: list[dict[str, Any]] = []
-    for s in sibling_rows:
-        if sibling_match_key(s) != row_key:
-            # explicit exclusion reasons for diagnostics
-            if s.get("today_fixture_id") != row.get("today_fixture_id"):
-                continue
-            if _snapshot(s) != _snapshot(row):
-                continue  # different snapshot
-            if _bookmaker(s) != _bookmaker(row):
-                continue  # different bookmaker
-            if _odds_source(s) != _odds_source(row):
-                continue
-            continue
-        matched.append(s)
+    # --- Double chance: cross-market linkage (prima del filtro same-market) ---
+    if sel in DC_SELS or family == FAMILY_DOUBLE_CHANCE:
+        mw_odds, mw_rows, mismatch = _match_winner_odds_cross(row, sibling_rows, period)
+        required = frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY})
+        normalized, overround, status = normalize_exclusive_market(mw_odds, required)
+        if status != "ok" or not normalized:
+            reason = f"dc_1x2_unavailable:{status}"
+            if mismatch and status == "incomplete_market":
+                reason = mismatch
+            return _raw_fallback(row, reason)
 
-    # Include self if missing from siblings
-    if not any(_sel(s) == sel for s in matched):
-        matched = list(matched) + [row]
+        p_h = normalized[SEL_HOME]
+        p_d = normalized[SEL_DRAW]
+        p_a = normalized[SEL_AWAY]
+        derived = {
+            SEL_ONE_X: p_h + p_d,
+            SEL_X_TWO: p_d + p_a,
+            SEL_ONE_TWO: p_h + p_a,
+        }
+        if sel not in derived:
+            return _raw_fallback(row, "dc_selection_unknown")
 
+        src_1x2 = sorted({_odds_source(s) for s in mw_rows if _odds_source(s)})
+        return _verified(
+            prob=derived[sel],
+            source=SOURCE_DC_DERIVED,
+            payload={
+                "status": "ok",
+                "overround_1x2": overround,
+                "dc_odds_source": _odds_source(row) or None,
+                "source_1x2_odds_source": src_1x2[0] if len(src_1x2) == 1 else src_1x2,
+                "snapshot_at": _snapshot(row) or None,
+                "bookmaker": _bookmaker(row) or None,
+                "provider": {
+                    "bookmaker_provider_id": _provider_id(row),
+                    "bookmaker_provider_source": _provider_source(row),
+                },
+                "normalized_1x2": {k: round(v, 8) for k, v in normalized.items()},
+                "derived_dc": {k: round(v, 8) for k, v in derived.items()},
+                "linkage_mode": LINKAGE_MODE_CROSS,
+                "note": "DC not normalized as three-way exclusive market",
+            },
+        )
+
+    matched = _filter_same_market(row, sibling_rows)
     odds_by_sel: dict[str, float] = {}
     for s in matched:
         sk = _sel(s)
@@ -189,7 +293,6 @@ def resolve_fair_book_probability(
         required = required_selections_for_normalization(FAMILY_MATCH_WINNER, period, line)
         if not required:
             return _raw_fallback(row, "no_normalization_set")
-        # only same family/period/line odds
         scoped = {
             k: v
             for k, v in odds_by_sel.items()
@@ -228,7 +331,6 @@ def resolve_fair_book_probability(
             and get_opposition(k).get("period") == period
             and get_opposition(k).get("line") == line
         }
-        # Reject if sibling has different period/line mixed in required set check
         normalized, overround, status = normalize_exclusive_market(scoped, required)
         if status != "ok" or not normalized or sel not in normalized:
             return _raw_fallback(row, status if status != "ok" else "selection_missing")
@@ -245,75 +347,55 @@ def resolve_fair_book_probability(
             },
         )
 
-    # --- Double chance derived from normalized 1X2 ---
-    if sel in DC_SELS or family == FAMILY_DOUBLE_CHANCE:
-        # Cross-family: use match_winner siblings only
-        mw_odds = {
-            k: v
-            for k, v in odds_by_sel.items()
-            if k in MATCH_WINNER_SELS
-            and get_opposition(k).get("canonical_market_family") == FAMILY_MATCH_WINNER
-            and get_opposition(k).get("period") == period
-        }
-        # Also pull from sibling_rows that are match_winner even if family filter above
-        for s in sibling_rows:
-            if sibling_match_key(s) != row_key:
-                continue
-            sk = _sel(s)
-            if sk not in MATCH_WINNER_SELS:
-                continue
-            o = _odds(s)
-            if o is not None:
-                mw_odds[sk] = o
-
-        required = frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY})
-        normalized, overround, status = normalize_exclusive_market(mw_odds, required)
-        if status != "ok" or not normalized:
-            return _raw_fallback(row, f"dc_1x2_unavailable:{status}")
-
-        p_h = normalized[SEL_HOME]
-        p_d = normalized[SEL_DRAW]
-        p_a = normalized[SEL_AWAY]
-        derived = {
-            SEL_ONE_X: p_h + p_d,
-            SEL_X_TWO: p_d + p_a,
-            SEL_ONE_TWO: p_h + p_a,
-        }
-        if sel not in derived:
-            return _raw_fallback(row, "dc_selection_unknown")
-        return _verified(
-            prob=derived[sel],
-            source=SOURCE_DC_DERIVED,
-            payload={
-                "status": "ok",
-                "overround_1x2": overround,
-                "normalized_1x2": {k: round(v, 8) for k, v in normalized.items()},
-                "derived_dc": {k: round(v, 8) for k, v in derived.items()},
-                "note": "DC not normalized as three-way exclusive market",
-            },
-        )
-
     return _raw_fallback(row, "unsupported_market_for_fair_book")
 
 
-def build_sibling_index(rows: list[dict[str, Any]]) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
-    """Index all rows by fixture+snapshot+bookmaker+source for fair resolution."""
+def build_same_market_index(rows: list[dict[str, Any]]) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
     idx: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
-        idx[sibling_match_key(r)].append(r)
+        idx[same_market_sibling_key(r)].append(r)
     return idx
+
+
+def build_cross_market_index(rows: list[dict[str, Any]]) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
+    idx: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        idx[cross_market_snapshot_key(r)].append(r)
+    return idx
+
+
+def build_sibling_index(rows: list[dict[str, Any]]) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
+    """Alias retrocompatibile → same-market index."""
+    return build_same_market_index(rows)
 
 
 def resolve_fair_for_rows(
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Attach fair book fields to each row (in-place copy list of enriched dicts)."""
-    idx = build_sibling_index(rows)
+    """Attach fair book fields; DC usa indice cross-market, 1X2/OU same-market."""
+    same_idx = build_same_market_index(rows)
+    cross_idx = build_cross_market_index(rows)
     out: list[dict[str, Any]] = []
     for r in rows:
-        siblings = idx.get(sibling_match_key(r), [r])
+        sel = _sel(r)
+        opp = get_opposition(sel) if sel else {}
+        is_dc = sel in DC_SELS or opp.get("canonical_market_family") == FAMILY_DOUBLE_CHANCE
+        if is_dc:
+            siblings = cross_idx.get(cross_market_snapshot_key(r), [r])
+        else:
+            siblings = same_idx.get(same_market_sibling_key(r), [r])
         fair = resolve_fair_book_probability(r, siblings)
         enriched = dict(r)
         enriched.update(fair)
         out.append(enriched)
     return out
+
+
+def dc_cross_market_linkable(row: dict[str, Any], sibling_rows: list[dict[str, Any]]) -> bool:
+    """True se esiste 1X2 completo sullo stesso cross_market_snapshot_key."""
+    period = get_opposition(_sel(row)).get("period")
+    mw_odds, _, _ = _match_winner_odds_cross(row, sibling_rows, period)
+    normalized, _, status = normalize_exclusive_market(
+        mw_odds, frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY})
+    )
+    return status == "ok" and bool(normalized)

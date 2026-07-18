@@ -161,7 +161,7 @@ export function SegnaliKpiPage() {
                     : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                Affidabilità residuale — Fase 2A.4
+                Affidabilità residuale — Fase 2A.4.1
               </button>
             </div>
 

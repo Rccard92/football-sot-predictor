@@ -1,4 +1,4 @@
-"""Ricerca Fase 2A.4: affidabilità del residuo modello-book, sola lettura."""
+"""Ricerca Fase 2A.4.1: affidabilità del residuo modello-book, sola lettura."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import io
 import json
 import time
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Callable, Iterator
 
 import numpy as np
@@ -20,11 +20,15 @@ from app.services.cecchino.cecchino_purchasability_audit import (
     make_json_safe,
 )
 from app.services.cecchino.cecchino_purchasability_fair_book import (
+    DC_SELS,
     PRIMARY_MARKETS,
     SOURCE_1X2,
     SOURCE_DC_DERIVED,
     SOURCE_RAW_SECONDARY,
     SOURCE_TWO_WAY,
+    build_cross_market_index,
+    cross_market_snapshot_key,
+    dc_cross_market_linkable,
     resolve_fair_for_rows,
 )
 from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
@@ -37,18 +41,19 @@ from app.services.cecchino.cecchino_purchasability_statistical_helpers import (
     ranking_economic_from_scores,
     roc_auc,
     safe_div,
+    sha256_hex,
     stable_seed,
 )
 from app.services.cecchino.cecchino_purchasability_statistical_research import (
     order_fixtures,
 )
 
-RESIDUAL_RELIABILITY_VERSION = "cecchino_purchasability_residual_reliability_v2a_4"
+RESIDUAL_RELIABILITY_VERSION = "cecchino_purchasability_residual_reliability_v2a_4_1"
 RESIDUAL_VERSION = RESIDUAL_RELIABILITY_VERSION
 SOURCE_STATISTICAL_VERSION = "cecchino_purchasability_statistical_research_v2a_2"
 EPS = 1e-12
-GAP_SENSITIVITY_05 = 0.005
-GAP_SENSITIVITY_01 = 0.01
+MIN_TEMPORAL_SPAN_DAYS = 90
+MIN_CALENDAR_MONTHS = 3
 EXPORT_KINDS = (
     "summary", "cohort", "fair-book-audit", "feature-audit", "folds", "markets",
     "binary-results", "residual-results", "paired", "economic", "decisions", "readiness",
@@ -79,7 +84,6 @@ _CONTEXT_CATS = [
     "favourite_alignment",
 ]
 
-# Nessuna feature-target entra in queste specifiche.
 SPECS: dict[str, dict[str, Any]] = {
     "BOOK_DIRECTION_BASELINE": {"numeric": [], "categorical": [], "baseline": True},
     "GAP_ONLY": {
@@ -131,6 +135,11 @@ PAIRED_COMPARISONS: tuple[tuple[str, str], ...] = (
     ("RATING_RELIABILITY_CONTEXT_DIAGNOSTIC", "GAP_ONLY"),
 )
 
+ECONOMIC_PAIRED: tuple[tuple[str, str], ...] = (
+    ("GAP_RELIABILITY_CONTEXT", "GAP_ONLY"),
+    ("RELIABILITY_CONTEXT_ONLY", "BOOK_DIRECTION_BASELINE"),
+)
+
 FEATURE_ROLES = {
     "absolute_model_book_gap": "magnitude_benchmark",
     "gap_direction_code": "magnitude_benchmark",
@@ -176,6 +185,88 @@ def _payload_gap(row: dict[str, Any], key: str, own: float | None, complement: s
 def _profit(row: dict[str, Any], y: int, odds: float) -> float:
     value = _num(row.get("unit_stake_profit"))
     return value if value is not None else (odds - 1.0 if y else -1.0)
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _row_key(row: dict[str, Any]) -> str:
+    return str(row.get("canonical_row_key") or f"{row.get('today_fixture_id')}:{row.get('selection')}:{row.get('snapshot_at')}")
+
+
+def build_oof_evaluation_mask(rows: list[dict[str, Any]], folds: list[dict[str, Any]]) -> np.ndarray:
+    """True solo per fixture presenti in almeno un test fold."""
+    test_ids: set[Any] = set()
+    for fold in folds:
+        test_ids.update(fold.get("test_fixture_ids") or [])
+    return np.array([r.get("today_fixture_id") in test_ids for r in rows], dtype=bool)
+
+
+def _oof_evaluation_identity(
+    rows: list[dict[str, Any]],
+    folds: list[dict[str, Any]],
+    mask: np.ndarray,
+) -> dict[str, Any]:
+    oof_rows = [rows[i] for i, ok in enumerate(mask) if ok]
+    oof_keys = sorted(_row_key(r) for r in oof_rows)
+    oof_fids = sorted({str(r["today_fixture_id"]) for r in oof_rows})
+    train_only = int((~mask).sum()) if len(mask) else 0
+    union_fids = set()
+    for fold in folds:
+        union_fids.update(str(x) for x in (fold.get("test_fixture_ids") or []))
+    return {
+        "source_residual_rows": len(rows),
+        "train_only_initial_rows": train_only,
+        "oof_evaluable_rows": len(oof_rows),
+        "oof_evaluable_fixtures": len(oof_fids),
+        "oof_row_key_hash": sha256_hex(oof_keys)[:32] if oof_keys else None,
+        "oof_fixture_hash": sha256_hex(oof_fids)[:32] if oof_fids else None,
+        "fold_test_union_verified": set(oof_fids) == union_fids if folds else False,
+    }
+
+
+def _temporal_span(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    dates: list[date] = []
+    for r in rows:
+        dt = _parse_dt(r.get("kickoff")) or _parse_dt(r.get("snapshot_at"))
+        if dt is not None:
+            dates.append(dt.date())
+    if not dates:
+        return {
+            "temporal_date_min": None,
+            "temporal_date_max": None,
+            "temporal_span_days": 0,
+            "unique_calendar_months": 0,
+            "unique_match_days": 0,
+            "limited_temporal_span": True,
+            "min_temporal_span_days": MIN_TEMPORAL_SPAN_DAYS,
+            "min_calendar_months": MIN_CALENDAR_MONTHS,
+        }
+    dmin, dmax = min(dates), max(dates)
+    span_days = (dmax - dmin).days
+    months = {(d.year, d.month) for d in dates}
+    limited = span_days < MIN_TEMPORAL_SPAN_DAYS or len(months) < MIN_CALENDAR_MONTHS
+    return {
+        "temporal_date_min": dmin.isoformat(),
+        "temporal_date_max": dmax.isoformat(),
+        "temporal_span_days": span_days,
+        "unique_calendar_months": len(months),
+        "unique_match_days": len(set(dates)),
+        "limited_temporal_span": limited,
+        "min_temporal_span_days": MIN_TEMPORAL_SPAN_DAYS,
+        "min_calendar_months": MIN_CALENDAR_MONTHS,
+    }
 
 
 def _residual_row(row: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
@@ -277,22 +368,198 @@ def _cohort_identity(rows: list[dict[str, Any]], exclusions: Counter[str]) -> di
     }
 
 
+def _is_settled(row: dict[str, Any]) -> bool:
+    return bool(row.get("is_settled_core")) and row.get("settlement_status") in ("won", "lost", "void")
+
+
+def _market_sel(row: dict[str, Any]) -> str:
+    return str(row.get("raw_market_code") or row.get("selection") or "")
+
+
+def _source_count_block(
+    enriched: list[dict[str, Any]],
+    residuals: list[dict[str, Any]],
+    *,
+    settled_only: bool = False,
+) -> list[dict[str, Any]]:
+    residual_keys = {_row_key(r) for r in residuals}
+    # residual rows lose some fields; match by selection+fixture+snapshot when possible
+    residual_identity = {
+        (r.get("today_fixture_id"), r.get("selection"), r.get("snapshot_at")) for r in residuals
+    }
+    by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in enriched:
+        if settled_only and not _is_settled(r):
+            continue
+        src = str(r.get("fair_book_probability_source") or "missing")
+        by_source[src].append(r)
+    out = []
+    for src in sorted(by_source.keys()):
+        group = by_source[src]
+        settled = [r for r in group if _is_settled(r)]
+        verified_settled = [r for r in settled if r.get("fair_book_probability_verified")]
+        residual_n = sum(
+            1
+            for r in group
+            if (r.get("today_fixture_id"), _market_sel(r), r.get("snapshot_at")) in residual_identity
+            or _row_key(r) in residual_keys
+        )
+        out.append({
+            "source": src,
+            "observed_rows": len(group) if not settled_only else len(settled),
+            "settled_rows": len(settled),
+            "verified_settled_rows": len(verified_settled),
+            "residual_rows": residual_n,
+            "verified_coverage_settled": safe_div(len(verified_settled), len(settled)),
+        })
+    return out
+
+
+def _dc_audit(enriched: list[dict[str, Any]], residuals: list[dict[str, Any]]) -> dict[str, Any]:
+    cross_idx = build_cross_market_index(enriched)
+    dc_rows = [r for r in enriched if _market_sel(r) in DC_SELS]
+    dc_settled = [r for r in dc_rows if _is_settled(r)]
+    linkable = 0
+    derived = 0
+    missing_1x2 = 0
+    snap_mm = 0
+    book_mm = 0
+    prov_mm = 0
+    for r in dc_settled:
+        siblings = cross_idx.get(cross_market_snapshot_key(r), [])
+        if dc_cross_market_linkable(r, siblings):
+            linkable += 1
+        reason = str(r.get("exclusion_reason") or "")
+        if r.get("fair_book_probability_source") == SOURCE_DC_DERIVED and r.get("fair_book_probability_verified"):
+            derived += 1
+        elif "snapshot" in reason:
+            snap_mm += 1
+        elif "bookmaker" in reason:
+            book_mm += 1
+        elif "provider" in reason:
+            prov_mm += 1
+        else:
+            missing_1x2 += 1
+    dc_residual = [r for r in residuals if r.get("selection") in DC_SELS]
+    by_market = {}
+    for m in sorted(DC_SELS):
+        inp = [r for r in dc_rows if _market_sel(r) == m]
+        sett = [r for r in inp if _is_settled(r)]
+        ver = [r for r in sett if r.get("fair_book_probability_verified")]
+        res = [r for r in dc_residual if r.get("selection") == m]
+        by_market[m] = {
+            "input_rows": len(inp),
+            "settled_rows": len(sett),
+            "derived_verified_rows": len(ver),
+            "residual_rows": len(res),
+        }
+    linkage_failed = linkable > 0 and derived == 0 and len(dc_settled) > 0
+    return {
+        "dc_input_rows": len(dc_rows),
+        "dc_settled_rows": len(dc_settled),
+        "dc_cross_market_linkable_rows": linkable,
+        "dc_derived_verified_rows": derived,
+        "dc_residual_rows": len(dc_residual),
+        "dc_missing_1x2_rows": missing_1x2,
+        "dc_snapshot_mismatch_rows": snap_mm,
+        "dc_bookmaker_mismatch_rows": book_mm,
+        "dc_provider_mismatch_rows": prov_mm,
+        "coverage_by_dc_market": by_market,
+        "linkage_status": "failed" if linkage_failed else ("ok" if derived > 0 else "no_derived"),
+        "dc_fair_probability_linkage_failed": linkage_failed,
+    }
+
+
+def _markets_status(enriched: list[dict[str, Any]], residuals: list[dict[str, Any]]) -> dict[str, Any]:
+    available = sorted({_market_sel(r) for r in enriched if _market_sel(r) in PRIMARY_MARKETS})
+    verified = sorted({
+        _market_sel(r) for r in enriched
+        if _market_sel(r) in PRIMARY_MARKETS and r.get("fair_book_probability_verified")
+    })
+    residual_mk = sorted({r.get("selection") for r in residuals if r.get("selection") in PRIMARY_MARKETS})
+    missing = [m for m in PRIMARY_MARKETS if m not in residual_mk]
+    reasons: dict[str, str] = {}
+    for m in PRIMARY_MARKETS:
+        src = [r for r in enriched if _market_sel(r) == m]
+        if not src:
+            reasons[m] = "no_source_rows"
+        elif not any(r.get("fair_book_probability_verified") for r in src):
+            reasons[m] = "missing_fair_probability"
+        elif m not in residual_mk:
+            reasons[m] = "insufficient_sample"
+        else:
+            reasons[m] = "evaluated"
+    return {
+        "markets_available": available,
+        "markets_with_verified_fair_probability": verified,
+        "markets_residual_evaluated": residual_mk,
+        "markets_missing": missing,
+        "missing_reason_by_market": reasons,
+        "all_expected_markets_evaluated": len(missing) == 0,
+        "expected_markets": list(PRIMARY_MARKETS),
+    }
+
+
 def _fair_audit(enriched: list[dict[str, Any]], residuals: list[dict[str, Any]], exclusions: Counter[str]) -> dict[str, Any]:
-    sources = Counter(str(r.get("fair_book_probability_source") or "missing") for r in enriched)
-    verified = Counter(str(r.get("fair_book_probability_source") or "missing") for r in enriched if r.get("fair_book_probability_verified"))
+    mk = _markets_status(enriched, residuals)
     markets: dict[str, dict[str, Any]] = {}
     for market in PRIMARY_MARKETS:
-        all_rows = [r for r in enriched if (r.get("raw_market_code") or r.get("selection")) == market]
+        all_rows = [r for r in enriched if _market_sel(r) == market]
+        settled = [r for r in all_rows if _is_settled(r)]
         valid = [r for r in residuals if r.get("selection") == market]
         markets[market] = {
-            "input_rows": len(all_rows), "verified_fair_rows": sum(bool(r.get("fair_book_probability_verified")) for r in all_rows),
-            "residual_rows": len(valid), "verified_coverage": safe_div(sum(bool(r.get("fair_book_probability_verified")) for r in all_rows), len(all_rows)),
+            "input_rows": len(all_rows),
+            "settled_rows": len(settled),
+            "verified_fair_rows": sum(bool(r.get("fair_book_probability_verified")) for r in all_rows),
+            "verified_settled_rows": sum(bool(r.get("fair_book_probability_verified")) for r in settled),
+            "residual_rows": len(valid),
+            "verified_coverage": safe_div(sum(bool(r.get("fair_book_probability_verified")) for r in all_rows), len(all_rows)),
+            "verified_coverage_settled": safe_div(
+                sum(bool(r.get("fair_book_probability_verified")) for r in settled), len(settled)
+            ),
+            "status": (mk.get("missing_reason_by_market") or {}).get(market),
         }
+    observed = _source_count_block(enriched, residuals, settled_only=False)
+    settled_counts = _source_count_block(enriched, residuals, settled_only=True)
+    residual_by_src = Counter(str(r.get("fair_book_probability_source") or "missing") for r in residuals)
+    residual_counts = [
+        {
+            "source": k,
+            "observed_rows": next((x["observed_rows"] for x in observed if x["source"] == k), 0),
+            "settled_rows": next((x["settled_rows"] for x in settled_counts if x["source"] == k), 0),
+            "verified_settled_rows": next((x["verified_settled_rows"] for x in settled_counts if x["source"] == k), 0),
+            "residual_rows": residual_by_src.get(k, 0),
+            "verified_coverage_settled": next(
+                (x["verified_coverage_settled"] for x in settled_counts if x["source"] == k), None
+            ),
+        }
+        for k in sorted(set(list(residual_by_src) + [x["source"] for x in observed]))
+    ]
+    # legacy compact sources list
+    sources_legacy = [
+        {
+            "source": x["source"],
+            "rows": x["observed_rows"],
+            "verified_rows": x["verified_settled_rows"],
+            "observed_rows": x["observed_rows"],
+            "settled_rows": x["settled_rows"],
+            "verified_settled_rows": x["verified_settled_rows"],
+            "residual_rows": x["residual_rows"],
+            "verified_coverage_settled": x["verified_coverage_settled"],
+        }
+        for x in observed
+    ]
+    dc = _dc_audit(enriched, residuals)
     return {
-        "sources": [{"source": key, "rows": value, "verified_rows": verified.get(key, 0)} for key, value in sorted(sources.items())],
+        "sources": sources_legacy,
+        "all_observed_source_counts": observed,
+        "settled_source_counts": settled_counts,
+        "residual_source_counts": residual_counts,
         "source_definitions": [SOURCE_1X2, SOURCE_TWO_WAY, SOURCE_DC_DERIVED, SOURCE_RAW_SECONDARY],
         "residual_exclusions": dict(exclusions),
         "coverage_by_market": markets,
+        "double_chance": dc,
+        **mk,
     }
 
 
@@ -300,7 +567,6 @@ def _spearman(xs: list[float], ys: list[float]) -> float | None:
     if len(xs) < 3 or len(xs) != len(ys):
         return None
     try:
-        # ranks sufficient for an audit; scipy is intentionally not a dependency.
         rx = np.argsort(np.argsort(np.asarray(xs, dtype=float))).astype(float)
         ry = np.argsort(np.argsort(np.asarray(ys, dtype=float))).astype(float)
         return float(np.corrcoef(rx, ry)[0, 1]) if np.std(rx) and np.std(ry) else None
@@ -387,12 +653,38 @@ def _fit_oof(rows: list[dict[str, Any]], folds: list[dict[str, Any]], spec: dict
     return pred, reports
 
 
-def _binary_metrics(rows: list[dict[str, Any]], pred: np.ndarray) -> dict[str, Any]:
-    idx = [i for i, r in enumerate(rows) if r.get("direction_correct") is not None and np.isfinite(pred[i])]
+def _binary_metrics(rows: list[dict[str, Any]], pred: np.ndarray, *, oof_mask: np.ndarray | None = None) -> dict[str, Any]:
+    n_source = len(rows)
+    if oof_mask is not None and len(oof_mask) == len(rows):
+        eligible = [i for i, ok in enumerate(oof_mask) if ok and rows[i].get("direction_correct") is not None]
+    else:
+        eligible = [i for i, r in enumerate(rows) if r.get("direction_correct") is not None]
+    idx = [i for i in eligible if np.isfinite(pred[i])]
+    missing = len(eligible) - len(idx)
+    keys = sorted(_row_key(rows[i]) for i in idx)
     if not idx:
-        return {"status": "no_oof", "n_oof": 0}
+        return {
+            "status": "no_oof",
+            "n_source": n_source,
+            "n_oof": 0,
+            "oof_coverage": 0.0,
+            "missing_prediction_rows": missing,
+            "evaluation_row_key_hash": None,
+        }
     y, p = np.array([rows[i]["direction_correct"] for i in idx]), np.clip(pred[idx], 1e-6, 1 - 1e-6)
-    return {"status": "ok", "n_oof": len(idx), "auc": roc_auc(y, p), "brier": brier(y, p), "log_loss": log_loss_score(y, p), "ece": ece_score(y, p), "accuracy": float(np.mean((p >= .5) == y))}
+    return {
+        "status": "ok",
+        "n_source": n_source,
+        "n_oof": len(idx),
+        "oof_coverage": safe_div(len(idx), n_source),
+        "missing_prediction_rows": missing,
+        "evaluation_row_key_hash": sha256_hex(keys)[:32],
+        "auc": roc_auc(y, p),
+        "brier": brier(y, p),
+        "log_loss": log_loss_score(y, p),
+        "ece": ece_score(y, p),
+        "accuracy": float(np.mean((p >= .5) == y)),
+    }
 
 
 def _residual_metrics(rows: list[dict[str, Any]], pred: np.ndarray) -> dict[str, Any]:
@@ -403,23 +695,149 @@ def _residual_metrics(rows: list[dict[str, Any]], pred: np.ndarray) -> dict[str,
     return {"status": "ok", "n_oof": len(idx), "mae": float(np.mean(abs(y - p))), "rmse": float(np.sqrt(np.mean((y - p) ** 2))), "correlation": float(np.corrcoef(y, p)[0, 1]) if len(y) > 2 and np.std(y) and np.std(p) else None}
 
 
-def _baseline_prediction(rows: list[dict[str, Any]]) -> np.ndarray:
-    return np.array([clip_prob(r["book_direction_probability"]) if r.get("book_direction_probability") is not None else np.nan for r in rows])
+def _baseline_prediction(rows: list[dict[str, Any]], oof_mask: np.ndarray) -> np.ndarray:
+    """Baseline densa solo sulla maschera OOF; fuori → NaN."""
+    pred = np.full(len(rows), np.nan)
+    for i, r in enumerate(rows):
+        if not oof_mask[i]:
+            continue
+        if r.get("book_direction_probability") is not None:
+            pred[i] = clip_prob(r["book_direction_probability"])
+    return pred
 
 
-def _economic(rows: list[dict[str, Any]], predictions: dict[str, np.ndarray]) -> dict[str, Any]:
-    positive = [i for i, r in enumerate(rows) if r.get("positive_value_row") and np.isfinite(next(iter(predictions.values()))[i])]
-    profits = np.array([rows[i]["profit"] for i in positive], dtype=float)
-    out = {"positive_value_rows": len(positive), "stake": 1, "by_specification": {}}
+def _economic(
+    rows: list[dict[str, Any]],
+    predictions: dict[str, np.ndarray],
+    oof_mask: np.ndarray,
+    *,
+    bootstrap_iterations: int,
+    seed: int,
+) -> dict[str, Any]:
+    source_pos = [i for i, r in enumerate(rows) if r.get("positive_value_row")]
+    oof_pos = [i for i in source_pos if oof_mask[i]]
+    out: dict[str, Any] = {
+        "positive_value_rows": len(source_pos),
+        "source_positive_rows": len(source_pos),
+        "oof_positive_rows": len(oof_pos),
+        "oof_coverage": safe_div(len(oof_pos), len(source_pos)),
+        "stake": 1,
+        "by_specification": {},
+        "paired_comparisons": {},
+    }
     for name, pred in predictions.items():
-        valid = [i for i in positive if np.isfinite(pred[i])]
-        out["by_specification"][name] = ranking_economic_from_scores(np.array([rows[i]["profit"] for i in valid]), pred[valid]) if valid else {}
+        valid = [i for i in oof_pos if np.isfinite(pred[i])]
+        block = ranking_economic_from_scores(
+            np.array([rows[i]["profit"] for i in valid], dtype=float),
+            pred[valid],
+        ) if valid else {}
+        block.update({
+            "source_positive_rows": len(source_pos),
+            "oof_positive_rows": len(valid),
+            "oof_coverage": safe_div(len(valid), len(source_pos)),
+        })
+        out["by_specification"][name] = block
+
+    for cand, base in ECONOMIC_PAIRED:
+        if cand not in predictions or base not in predictions:
+            continue
+        pc, pb = predictions[cand], predictions[base]
+        paired_idx = [
+            i for i in oof_pos
+            if np.isfinite(pc[i]) and np.isfinite(pb[i])
+        ]
+        keys = sorted(_row_key(rows[i]) for i in paired_idx)
+        if not paired_idx:
+            out["paired_comparisons"][f"{cand}_vs_{base}"] = {
+                "status": "no_paired_rows",
+                "paired_rows": 0,
+                "same_evaluation_cohort": True,
+            }
+            continue
+        profits = np.array([rows[i]["profit"] for i in paired_idx], dtype=float)
+        sc = pc[paired_idx]
+        sb = pb[paired_idx]
+        fids = np.array([rows[i]["today_fixture_id"] for i in paired_idx])
+        eco_c = ranking_economic_from_scores(profits, sc)
+        eco_b = ranking_economic_from_scores(profits, sb)
+
+        def _delta(a: Any, b: Any) -> float | None:
+            if a is None or b is None:
+                return None
+            return float(a) - float(b)
+
+        # fixture-clustered CI on ROI top 10% delta via bootstrap of per-fixture contribution proxy
+        # Use score-rank ROI difference recomputed each bootstrap sample
+        rng = np.random.default_rng(stable_seed(seed, f"eco:{cand}:{base}"))
+        groups: dict[Any, list[int]] = defaultdict(list)
+        for local_i, fid in enumerate(fids):
+            groups[fid].append(local_i)
+        uniq = list(groups.keys())
+        boot10: list[float] = []
+        boot20: list[float] = []
+        boot_q: list[float] = []
+        for _ in range(max(1, bootstrap_iterations)):
+            sample = rng.choice(uniq, size=len(uniq), replace=True)
+            idx = np.concatenate([np.asarray(groups[f], dtype=int) for f in sample])
+            rc = ranking_economic_from_scores(profits[idx], sc[idx])
+            rb = ranking_economic_from_scores(profits[idx], sb[idx])
+            d10 = _delta(rc.get("roi_top_10pct"), rb.get("roi_top_10pct"))
+            d20 = _delta(rc.get("roi_top_20pct"), rb.get("roi_top_20pct"))
+            dq = _delta(rc.get("roi_top_quintile"), rb.get("roi_top_quintile"))
+            if d10 is not None:
+                boot10.append(d10)
+            if d20 is not None:
+                boot20.append(d20)
+            if dq is not None:
+                boot_q.append(dq)
+
+        def _ci(vals: list[float], est: float | None) -> dict[str, Any]:
+            if not vals:
+                return {"estimate": est, "ci_low": None, "ci_high": None, "iterations": bootstrap_iterations}
+            arr = np.asarray(vals, dtype=float)
+            return {
+                "estimate": est if est is not None else float(np.mean(arr)),
+                "ci_low": float(np.percentile(arr, 2.5)),
+                "ci_high": float(np.percentile(arr, 97.5)),
+                "iterations": bootstrap_iterations,
+            }
+
+        d10 = _delta(eco_c.get("roi_top_10pct"), eco_b.get("roi_top_10pct"))
+        d20 = _delta(eco_c.get("roi_top_20pct"), eco_b.get("roi_top_20pct"))
+        dq = _delta(eco_c.get("roi_top_quintile"), eco_b.get("roi_top_quintile"))
+        out["paired_comparisons"][f"{cand}_vs_{base}"] = {
+            "status": "ok",
+            "paired_rows": len(paired_idx),
+            "paired_row_key_hash": sha256_hex(keys)[:32],
+            "same_evaluation_cohort": True,
+            "delta_roi_top_10pct": d10,
+            "delta_roi_top_20pct": d20,
+            "delta_roi_top_quintile": dq,
+            "ci_delta_roi_top_10pct": _ci(boot10, d10),
+            "ci_delta_roi_top_20pct": _ci(boot20, d20),
+            "ci_delta_roi_top_quintile": _ci(boot_q, dq),
+        }
     return out
 
 
 def _paired_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    # Il helper usa y_win come target binario e profit per l'economia paired.
     return [{**r, "y_win": r.get("direction_correct")} for r in rows]
+
+
+def _enrich_paired(paired: dict[str, Any], rows: list[dict[str, Any]], predictions: dict[str, np.ndarray]) -> dict[str, Any]:
+    out = {}
+    for key, val in paired.items():
+        block = dict(val)
+        parts = key.split("_vs_")
+        if len(parts) == 2 and parts[0] in predictions and parts[1] in predictions:
+            pc, pb = predictions[parts[0]], predictions[parts[1]]
+            idx = [i for i in range(len(rows)) if np.isfinite(pc[i]) and np.isfinite(pb[i])]
+            keys = sorted(_row_key(rows[i]) for i in idx)
+            block["paired_n"] = len(idx)
+            block["paired_row_key_hash"] = sha256_hex(keys)[:32] if keys else None
+            block["same_evaluation_cohort"] = True
+        out[key] = block
+    return out
 
 
 def _readiness(
@@ -428,11 +846,15 @@ def _readiness(
     binary: dict[str, Any],
     paired: dict[str, Any],
     limitations: list[str],
+    temporal: dict[str, Any],
+    markets_info: dict[str, Any],
+    dc_audit: dict[str, Any],
     *,
     fair_verified: bool,
     canonical_keys_unique: bool,
+    blocking_extra: list[str] | None = None,
 ) -> dict[str, Any]:
-    del binary  # specs diagnostic tracked via paired roles
+    del binary
     decisive = paired.get("GAP_RELIABILITY_CONTEXT_vs_GAP_ONLY") or {}
     context = paired.get("GAP_RELIABILITY_CONTEXT_vs_BOOK_DIRECTION_BASELINE") or {}
     rating_vs_gap = paired.get("RATING_RELIABILITY_CONTEXT_DIAGNOSTIC_vs_GAP_ONLY") or {}
@@ -442,14 +864,18 @@ def _readiness(
     better_book = (context.get("delta_auc") or 0) > 0
     rating_only = (rating_vs_gap.get("delta_auc") or 0) > 0 and not better_gap
     markets = {r["selection"] for r in rows if r.get("selection") in PRIMARY_MARKETS}
-    blocking: list[str] = []
+    blocking: list[str] = list(blocking_extra or [])
     if not rows:
         blocking.append("empty_cohort")
     if not fair_verified:
         blocking.append("fair_book_probability_unverified")
     if not canonical_keys_unique:
         blocking.append("duplicated_canonical_row_key")
-    limited = "limited_temporal_span" in limitations
+    if dc_audit.get("dc_fair_probability_linkage_failed"):
+        blocking.append("dc_fair_probability_linkage_failed")
+    limited = bool(temporal.get("limited_temporal_span"))
+    if limited and "limited_temporal_span" not in limitations:
+        limitations.append("limited_temporal_span")
     context_specs_vs_book = []
     context_specs_vs_gap = []
     for key, val in paired.items():
@@ -459,25 +885,40 @@ def _readiness(
             context_specs_vs_book.append(key.split("_vs_")[0])
         if key.endswith("_vs_GAP_ONLY") and "DIAGNOSTIC" not in key:
             context_specs_vs_gap.append(key.split("_vs_")[0])
-    ready = (
+
+    reason_codes: list[str] = []
+    span_days = int(temporal.get("temporal_span_days") or 0)
+    if limited:
+        reason_codes.append(f"limited_temporal_span_{span_days}_days")
+    if not markets_info.get("all_expected_markets_evaluated"):
+        missing_dc = [m for m in DC_SELS if m in (markets_info.get("markets_missing") or [])]
+        if missing_dc:
+            reason_codes.append("double_chance_not_evaluated")
+    if markets_info.get("all_expected_markets_evaluated"):
+        reason_codes.append("all_primary_markets_evaluated")
+    if not better_gap:
+        reason_codes.append("context_negative_vs_gap")
+    reason_codes.append("no_positive_economic_ranking")
+
+    # Ordine readiness §10
+    if blocking:
+        next_step = "resolve_data_quality"
+    elif (
         better_gap
         and better_book
         and len(markets) >= 2
         and len(folds) >= 2
-        and not blocking
         and not rating_only
         and not limited
-    )
-    if blocking:
-        next_step = "resolve_data_quality"
-    elif ready:
+    ):
         next_step = "phase_2b_reliability_candidate_construction"
-    elif better_book and better_gap and len(markets) == 1 and not blocking:
+    elif better_book and better_gap and len(markets) == 1 and not limited:
         next_step = "phase_2b_market_specific_reliability_candidate"
     elif limited or len(rows) < 30 or len(folds) < 2:
         next_step = "continue_data_collection"
     else:
         next_step = "stop_context_no_incremental_reliability"
+
     return {
         "cohort_valid": bool(rows) and not blocking,
         "fair_book_probability_verified": fair_verified,
@@ -487,9 +928,13 @@ def _readiness(
         ) if folds else False,
         "temporal_cv_completed": bool(folds),
         "limited_temporal_span": limited,
+        "temporal_span_days": span_days,
+        "unique_calendar_months": temporal.get("unique_calendar_months"),
         "residual_core_rows": len(rows),
         "unique_fixtures": len({r["today_fixture_id"] for r in rows}),
         "markets_evaluated": sorted(markets),
+        "markets_expected": list(PRIMARY_MARKETS),
+        "all_expected_markets_evaluated": markets_info.get("all_expected_markets_evaluated"),
         "context_specs_positive_vs_book": context_specs_vs_book,
         "context_specs_positive_vs_gap_only": context_specs_vs_gap,
         "market_specific_context_specs": context_specs_vs_gap if len(markets) == 1 else [],
@@ -501,6 +946,7 @@ def _readiness(
         "residual_ranking_positive": False,
         "blocking_issues": blocking,
         "limitations": list(limitations),
+        "readiness_reason_codes": reason_codes,
         "context_beats_book": better_book,
         "context_beats_gap_only_or_residual_add": better_gap,
         "rating_alone_does_not_authorize": True,
@@ -533,7 +979,13 @@ def _decisions(audit: list[dict[str, Any]], paired: dict[str, Any], rows: list[d
 
 
 def build_residual_summary_payload(full: dict[str, Any]) -> dict[str, Any]:
-    keys = ("status", "version", "dataset_version", "source_statistical_version", "cohort_identity", "fair_book_probability_audit", "phase_2b_residual_readiness", "limitations", "filters", "elapsed_ms", "research_banner", "no_db_writes", "no_purchasability_formula")
+    keys = (
+        "status", "version", "dataset_version", "source_statistical_version",
+        "cohort_identity", "oof_evaluation_identity", "temporal_span",
+        "fair_book_probability_audit", "phase_2b_residual_readiness",
+        "limitations", "filters", "elapsed_ms", "research_banner",
+        "no_db_writes", "no_purchasability_formula",
+    )
     return {key: full.get(key) for key in keys}
 
 
@@ -560,32 +1012,43 @@ def build_purchasability_residual_reliability(
         if item is None:
             exclusions[reason or "unknown"] += 1
         elif item["gap_direction_code"] == 0:
-            # La coorte primaria richiede un verso del gap osservabile.
             exclusions["neutral_model_book_gap"] += 1
         else:
             residuals.append(item)
     if selection:
         residuals = [r for r in residuals if r.get("selection") == selection]
-    identity, fair_audit = _cohort_identity(residuals, exclusions), _fair_audit(fair_rows, residuals, exclusions)
+    identity = _cohort_identity(residuals, exclusions)
+    fair_audit = _fair_audit(fair_rows, residuals, exclusions)
+    temporal = _temporal_span(residuals)
     limitations: list[str] = []
+    if temporal.get("limited_temporal_span"):
+        limitations.append("limited_temporal_span")
     progress("feature_audit", {"residual_rows": len(residuals)})
     audit = _feature_audit(residuals)
     progress("temporal_cv", {})
     fixtures = order_fixtures(residuals) if residuals else []
     folds, fold_limitations = expanding_fixture_folds(fixtures)
-    limitations.extend(fold_limitations)
+    for lim in fold_limitations:
+        if lim not in limitations:
+            limitations.append(lim)
+    oof_mask = build_oof_evaluation_mask(residuals, folds) if residuals else np.array([], dtype=bool)
+    oof_identity = _oof_evaluation_identity(residuals, folds, oof_mask)
     binary_results: dict[str, Any] = {}
     residual_results: dict[str, Any] = {}
     predictions: dict[str, np.ndarray] = {}
     fold_reports: dict[str, list[dict[str, Any]]] = {}
     for name, spec in SPECS.items():
         if name == "BOOK_DIRECTION_BASELINE":
-            pred = _baseline_prediction(residuals)
-            reports = [{"fold": f["fold"], "baseline": True, "skipped": False} for f in folds]
+            pred = _baseline_prediction(residuals, oof_mask)
+            reports = [{"fold": f["fold"], "baseline": True, "skipped": False, "oof_masked": True} for f in folds]
         else:
             pred, reports = _fit_oof(residuals, folds, spec)
-        predictions[name] = pred; fold_reports[name] = reports
-        binary_results[name] = {**_binary_metrics(residuals, pred), "diagnostic_only": bool(spec.get("diagnostic"))}
+        predictions[name] = pred
+        fold_reports[name] = reports
+        binary_results[name] = {
+            **_binary_metrics(residuals, pred, oof_mask=oof_mask),
+            "diagnostic_only": bool(spec.get("diagnostic")),
+        }
         if name != "BOOK_DIRECTION_BASELINE":
             ridge, _ = _fit_oof(residuals, folds, spec, residual=True)
             huber, _ = _fit_oof(residuals, folds, spec, residual=True, huber=True)
@@ -603,34 +1066,82 @@ def build_purchasability_residual_reliability(
             bootstrap_iterations=max(1, int(bootstrap_iterations)),
             seed=stable_seed(seed, f"{candidate}:{baseline}"),
         )
+    paired = _enrich_paired(paired, residuals, predictions)
     progress("economic_diagnostics", {})
-    economic = _economic(residuals, predictions)
+    economic = _economic(
+        residuals, predictions, oof_mask,
+        bootstrap_iterations=max(1, int(bootstrap_iterations)),
+        seed=seed,
+    )
     decisions = _decisions(audit, paired, residuals)
+    markets_info = {
+        "markets_available": fair_audit.get("markets_available"),
+        "markets_with_verified_fair_probability": fair_audit.get("markets_with_verified_fair_probability"),
+        "markets_residual_evaluated": fair_audit.get("markets_residual_evaluated"),
+        "markets_missing": fair_audit.get("markets_missing"),
+        "missing_reason_by_market": fair_audit.get("missing_reason_by_market"),
+        "all_expected_markets_evaluated": fair_audit.get("all_expected_markets_evaluated"),
+    }
     readiness = _readiness(
         residuals,
         folds,
         binary_results,
         paired,
         limitations,
+        temporal,
+        markets_info,
+        fair_audit.get("double_chance") or {},
         fair_verified=bool(residuals),
         canonical_keys_unique=bool(identity.get("canonical_keys_unique")),
     )
+    settled_source = sum(1 for r in fair_rows if _is_settled(r))
     progress("building_payload", {})
+    market_results = []
+    for market in PRIMARY_MARKETS:
+        n = sum(r.get("selection") == market for r in residuals)
+        status = (fair_audit.get("missing_reason_by_market") or {}).get(market, "no_source_rows")
+        market_results.append({
+            "market": market,
+            "rows": n,
+            "fixtures": len({r["today_fixture_id"] for r in residuals if r.get("selection") == market}),
+            "status": status if n == 0 else "evaluated",
+        })
     payload = {
-        "status": "ok", "version": RESIDUAL_RELIABILITY_VERSION, "dataset_version": DATASET_VERSION,
+        "status": "ok",
+        "version": RESIDUAL_RELIABILITY_VERSION,
+        "dataset_version": DATASET_VERSION,
         "source_statistical_version": SOURCE_STATISTICAL_VERSION,
-        "cohort_identity": identity, "fair_book_probability_audit": fair_audit,
-        "residual_feature_audit": audit, "temporal_folds": folds, "fold_reports": fold_reports,
-        "market_results": [{"market": market, "rows": sum(r.get("selection") == market for r in residuals), "fixtures": len({r["today_fixture_id"] for r in residuals if r.get("selection") == market})} for market in PRIMARY_MARKETS],
-        "binary_results": binary_results, "residual_results": residual_results, "paired_comparisons": paired,
-        "economic_diagnostics": economic, "feature_decisions": decisions,
-        "phase_2b_residual_readiness": readiness, "limitations": limitations,
-        "filters": {"date_from": str(date_from) if date_from else None, "date_to": str(date_to) if date_to else None, "competition_id": competition_id, "market_family": market_family, "selection": selection, "bootstrap_iterations": bootstrap_iterations, "seed": seed},
+        "source_settled_rows": settled_source,
+        "cohort_identity": identity,
+        "oof_evaluation_identity": oof_identity,
+        "temporal_span": temporal,
+        "fair_book_probability_audit": fair_audit,
+        "residual_feature_audit": audit,
+        "temporal_folds": folds,
+        "fold_reports": fold_reports,
+        "market_results": market_results,
+        "binary_results": binary_results,
+        "residual_results": residual_results,
+        "paired_comparisons": paired,
+        "economic_diagnostics": economic,
+        "feature_decisions": decisions,
+        "phase_2b_residual_readiness": readiness,
+        "limitations": limitations,
+        "filters": {
+            "date_from": str(date_from) if date_from else None,
+            "date_to": str(date_to) if date_to else None,
+            "competition_id": competition_id,
+            "market_family": market_family,
+            "selection": selection,
+            "bootstrap_iterations": bootstrap_iterations,
+            "seed": seed,
+        },
         "research_banner": (
             "Questa fase studia l’affidabilità del disaccordo tra Cecchino e Book. "
             "Non calcola ancora l’Indice di Acquistabilità e non influenza i Segnali."
         ),
-        "no_db_writes": True, "no_purchasability_formula": True,
+        "no_db_writes": True,
+        "no_purchasability_formula": True,
         "elapsed_ms": {"total": round((time.perf_counter() - started) * 1000, 2)},
     }
     if not residuals:
@@ -647,11 +1158,11 @@ def build_purchasability_residual_reliability(
             "markets_evaluated": [],
             "blocking_issues": ["empty_cohort"],
             "limitations": ["empty_residual_cohort"],
+            "readiness_reason_codes": ["limited_temporal_span_0_days"],
             "recommended_next_step": "continue_data_collection",
         }
     progress("serializing_result", {})
     output = make_json_safe(payload)
-    # Impedisce in modo esplicito l'esportazione pubblica dei vettori OOF.
     json.dumps(output, allow_nan=False)
     progress("completed", {"status": output["status"]})
     return output
@@ -692,4 +1203,4 @@ def stream_residual_export(db, kind: str, **kwargs: Any) -> Iterator[str]:
 
 def residual_export_filename(kind: str) -> str:
     extension = "json" if kind in {"summary", "cohort", "fair-book-audit", "economic", "readiness"} else "csv"
-    return f"purchasability_residual_reliability_v2a_4_{kind}.{extension}"
+    return f"purchasability_residual_reliability_v2a_4_1_{kind}.{extension}"

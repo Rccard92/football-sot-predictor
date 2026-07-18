@@ -1,5 +1,11 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Indice di Acquistabilità — Fase 2A.4.1 (2026-07-18)
+
+1. FE: sottotab «Affidabilità residuale — Fase 2A.4.1» → job `research_mode=phase2a_residual_reliability` (200 bootstrap).
+2. Verificare: `derived_double_chance… > 0`, ONE_X/X_TWO/ONE_TWO in residual, n OOF baseline ≈ candidati, `limited_temporal_span=true` se span &lt;90g, readiness `continue_data_collection` se limited.
+3. Non avviare 1000 bootstrap né formula 0–100.
+
 ## Indice di Acquistabilità — Fase 2A.4 (2026-07-18)
 
 1. FE: sottotab «Affidabilità residuale» → job con `research_mode=phase2a_residual_reliability` (200 bootstrap).

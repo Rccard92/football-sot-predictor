@@ -2,6 +2,17 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Fase 2A.4.1 — Coorte DC, OOF comune, span temporale (`…_v2a_4_1`)
+
+Correzione post-run Railway su `v2a_4` (conclusioni **non** definitive).
+
+- **DC↔1X2 cross-market**: `cross_market_snapshot_key` senza `odds_source` (DC `betfair_raw_double_chance` ↔ 1X2 `betfair_raw_match_winner`); `same_market_sibling_key` resta per 1X2/OU.
+- Fair audit: observed/settled/residual per source; diagnostica DC; mercati attesi/mancanti.
+- **Maschera OOF comune**: baseline `BOOK_DIRECTION` = NaN fuori dai test fold; metriche confrontabili; `oof_evaluation_identity`.
+- Economia paired su coorte OOF∩positive comune.
+- Span: `limited_temporal_span` se &lt;90 giorni o &lt;3 mesi calendario → readiness `continue_data_collection` (niente stop definitivo su ~1 mese).
+- Dataset `v1_1` e statistica `v2a_2` invariati; nessuna formula 0–100.
+
 ## Fase 2A.4 — Residual Reliability (`…_residual_reliability_v2a_4`)
 
 Dopo Book dominance in 2A (`v2a_2`): non si ripete la corsa a battere il Book sull’esito.
@@ -12,6 +23,7 @@ Dopo Book dominance in 2A (`v2a_2`): non si ripete la corsa a battere il Book su
 - Decisivo: `GAP_RELIABILITY_CONTEXT` vs `GAP_ONLY`. Rating solo diagnostico.
 - Job: stesso executor con `research_mode=phase2a_residual_reliability`.
 - Nessuna formula 0–100.
+- **Nota**: su Railway `v2a_4` le DC erano assenti per mismatch `odds_source`; vedi 2A.4.1.
 
 ## Fase 2A.3.2 — Coorte fold, dedup paired, Rating benchmark
 

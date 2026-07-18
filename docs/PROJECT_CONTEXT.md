@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — Fase 2A.4.1 coorte DC / OOF / span (2026-07-18)
+
+Research `cecchino_purchasability_residual_reliability_v2a_4_1`: linkage DC cross-market, maschera OOF comune, gate temporale 90g/3 mesi, readiness `continue_data_collection` su span corto. La conclusione `v2a_4` non è definitiva. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — Fase 2A.4 residual reliability (2026-07-18)
 
 Research `cecchino_purchasability_residual_reliability_v2a_4`: fair Book probability, target `direction_correct` / `signed_book_residual`, GAP_ONLY vs context, gate Fase 2B residuale. Statistica `v2a_2` invariata. Nessuna formula 0–100. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
