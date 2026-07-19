@@ -169,12 +169,16 @@ Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su g
 3. Export JSON audit + CSV inventario feature
 4. v4 operativa invariata; docs: `SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md`
 
+## Equilibrio vs Squilibrio v5 — canonico (2026-07-19)
+
+1. Detail Today espone solo `balance_v5` (`cecchino_balance_v5_v2`).
+2. FE: `CecchinoBalanceV5Panel` — quattro card + sintesi strutturale + scostamento mercato.
+3. Non reintrodurre Preview né candidati research duplicati.
+4. ICM/Segnali restano sull’adapter `balance_analysis` (valori numerici invariati).
+
 ## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
 
-- Detail espone `balance_v5_preview` e alias `balance_v5` (`balance_v5_v1`).
-- FE monta `CecchinoBalanceV5PreviewPanel` con `detail.balance_v5 ?? detail.balance_v5_preview`.
-- Credibilità X: link a `/cecchino/ricerca-credibilita-x`. ICM e vecchio BalanceAnalysisPanel non montati.
-- Identity mismatch → alert, zero indici; GET senza write.
+Sostituita dal consolidamento canonico sopra.
 
 ## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
 

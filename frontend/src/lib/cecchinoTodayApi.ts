@@ -933,14 +933,14 @@ export type CecchinoBalanceV5Pillar = {
   key: string
   title: string
   question: string
-  status: 'official' | 'research' | 'calibration_pending' | 'unavailable' | string
+  status: 'official' | 'descriptive_official' | 'unavailable' | string
   index: number | null
   class_label: string | null
   reading: string
-  direction: string | null
-  source_version: string | null
-  components: CecchinoBalanceV5Component[]
-  warnings: string[]
+  direction?: string | null
+  components?: CecchinoBalanceV5Component[]
+  warnings?: string[]
+  informational_note?: string | null
 }
 
 export type CecchinoBalanceV5MarketPair = {
@@ -948,14 +948,22 @@ export type CecchinoBalanceV5MarketPair = {
   label: string
   quota_cecchino?: number | null
   quota_book?: number | null
+  prob_cecchino_norm?: number | null
+  prob_book_norm?: number | null
   prob_cecchino_pct?: number | null
   prob_book_pct?: number | null
+  signed_diff?: number | null
+  abs_diff?: number | null
+  signed_diff_pp?: number | null
+  abs_diff_pp?: number | null
   deviation_pp?: number | null
+  direction_label?: string | null
+  direction?: string | null
 }
 
 export type CecchinoBalanceV5MarketDeviation = {
-  title: string
-  subtitle: string
+  title?: string
+  subtitle?: string
   status: string
   index?: number | null
   class_label?: string | null
@@ -965,14 +973,14 @@ export type CecchinoBalanceV5MarketDeviation = {
   has_book_data?: boolean
 }
 
-export type CecchinoBalanceV5Preview = {
+export type CecchinoBalanceV5 = {
   status?: 'ok' | 'unavailable' | string
   version: string
-  pillars: CecchinoBalanceV5Pillar[]
+  inputs?: Record<string, unknown>
+  pillars: Record<string, CecchinoBalanceV5Pillar> | CecchinoBalanceV5Pillar[]
+  pillar_order?: string[]
   market_deviation: CecchinoBalanceV5MarketDeviation
-  research_note: string
-  production_changes: boolean
-  research_candidates?: Record<string, unknown>
+  structural_summary?: string
   warnings?: string[]
 }
 
@@ -1034,8 +1042,7 @@ export type CecchinoTodayDetailResponse = {
   picchetti_debug_summary?: CecchinoPicchettiDebugSummary
   icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
-  balance_v5_preview?: CecchinoBalanceV5Preview
-  balance_v5?: CecchinoBalanceV5Preview
+  balance_v5?: CecchinoBalanceV5
   fixture_identity_consistency?: CecchinoFixtureIdentityConsistency
   goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
   goal_intensity_v5_preview?: {

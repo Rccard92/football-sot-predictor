@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Equilibrio vs Squilibrio v5 — modulo canonico (2026-07-19)
+
+Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backend/app/services/cecchino/cecchino_balance_v5.py). Quattro pilastri (F36 ufficiale, Dominanza ufficiale, Credibilità X descrittiva, Gap ufficiale) + scostamento mercato separato. Eliminati Preview e research_candidates. Adapter legacy `cecchino_balance_analysis.py` per ICM/Signals. Nessun impatto su formule ICM/Segnali/KPI.
+
 ## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
 
 Colonna **Acquistabilità** dopo Rating: `cecchino_purchasability_empirical_rating_v1_1`. Current da `kpi_panel_json`; coorte locale→globale; mercati panel con settlement; formula score invariata; nessuna probabilità/stake. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.

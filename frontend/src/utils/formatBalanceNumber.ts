@@ -1,4 +1,4 @@
-/** Formattazione numerica Preview v5 — locale it-IT, max 2 decimali. */
+/** Formattazione numerica Balance v5 — locale it-IT, max 2 decimali. */
 
 export type BalanceNumberUnit = 'pct' | 'pp' | 'quota' | 'index' | 'text'
 

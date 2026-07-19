@@ -172,19 +172,19 @@ CSV_COLUMNS: tuple[str, ...] = (
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
-    from app.services.cecchino.cecchino_balance_research_candidates import clamp_index
+    from app.services.cecchino.cecchino_balance_v5 import clamp_index
 
     return clamp_index(value, lo, hi)
 
 
 def _classify_conviction(value: float | None) -> str | None:
-    from app.services.cecchino.cecchino_balance_research_candidates import classify_conviction
+    from app.services.cecchino.cecchino_balance_v5 import classify_conviction
 
     return classify_conviction(value)
 
 
 def _classify_gap_coherence(value: float | None) -> str | None:
-    from app.services.cecchino.cecchino_balance_research_candidates import classify_gap_coherence
+    from app.services.cecchino.cecchino_balance_v5 import classify_gap_coherence
 
     return classify_gap_coherence(value)
 
@@ -347,19 +347,21 @@ def _build_dataset_row(
         max_prob = ordered[0]
         second_prob = ordered[1]
 
-    conviction = None
-    if max_prob is not None and second_prob is not None and max_prob > 0:
-        conviction = _clamp(100.0 * (max_prob - second_prob) / max_prob, 0, 100)
+    from app.services.cecchino.cecchino_balance_v5 import (
+        conviction_index,
+        gap_coherence_index,
+        probability_balance_index,
+        probability_gap_1_2_pp,
+    )
 
-    gap_1_2 = abs(p1n - p2n) if p1n is not None and p2n is not None else None
-    prob_balance = None
-    if p1n is not None and p2n is not None and (p1n + p2n) > 0:
-        prob_balance = _clamp(100.0 * (1.0 - abs(p1n - p2n) / (p1n + p2n)), 0, 100)
-
+    conviction = conviction_index(p1n, pxn, p2n)
+    gap_1_2 = probability_gap_1_2_pp(p1n, p2n)
+    prob_balance = probability_balance_index(p1n, p2n)
     f36_score = f36.get("score")
-    gap_coherence = None
-    if f36_score is not None and prob_balance is not None:
-        gap_coherence = _clamp(100.0 - abs(float(f36_score) - prob_balance), 0, 100)
+    gap_coherence = gap_coherence_index(
+        float(f36_score) if f36_score is not None else None,
+        prob_balance,
+    )
 
     lateral_max = max(p1n, p2n) if p1n is not None and p2n is not None else None
     x_vs_best = (pxn - lateral_max) if pxn is not None and lateral_max is not None else None

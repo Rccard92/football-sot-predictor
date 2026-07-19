@@ -269,20 +269,22 @@ Sostituita da v1.1 (formula score invariata).
 
 Dettaglio: [SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md](./SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md).
 
-## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
+## Equilibrio vs Squilibrio v5 — modulo canonico (2026-07-19)
 
 | Aspetto | Dettaglio |
 |---------|-----------|
-| Versione | `balance_v5_v1` (alias top-level `balance_v5` = `balance_v5_preview`) |
-| UI | Pannello ufficiale «Equilibrio vs Squilibrio v5»; sottotitolo quattro letture indipendenti |
-| Stati | F36 `official`; Dominanza/Gap `research`; Credibilità X `calibration_pending` |
-| Identity / xG | Blocco su mismatch (2A.x); GET detail read-only; nessun auto-realign |
-| Book | Solo nella sezione Scostamento mercato; assente da Credibilità X |
-| ICM | Backend invariato; UI non montata |
-| Lab | Link secondario → `/cecchino/ricerca-credibilita-x` (nessun trigger analisi) |
-| Formule | Nessuna nuova; solo labeling/selezione campi esistenti |
+| Versione | `cecchino_balance_v5_v2` |
+| Modulo | `cecchino_balance_v5.py` (unico punto formule Balance) |
+| API | Solo `balance_v5` |
+| Pilastri | F36 / Dominanza / Gap ufficiali; Credibilità X `descriptive_official` |
+| Book | `market_deviation` separato |
+| Legacy | Adapter `cecchino_balance_analysis.py` per ICM/Signals/dataset |
+| Eliminati | Preview + research_candidates |
+| Divieto | reintrodurre Preview o formule duplicate |
 
-## Equilibrio vs Squilibrio — xG cache refresh Fase 2A.4 (2026-07-17)
+## Equilibrio vs Squilibrio v5 — Fase 2B (2026-07-17)
+
+Sostituita dal modulo canonico v2 sopra.
 
 | Aspetto | Dettaglio |
 |---------|-----------|

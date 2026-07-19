@@ -64,7 +64,7 @@ from app.services.cecchino.cecchino_constants import (
     STATUS_AVAILABLE,
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
-from app.services.cecchino.cecchino_balance_v5_preview import build_balance_v5_preview
+from app.services.cecchino.cecchino_balance_v5 import build_cecchino_balance_v5
 from app.services.cecchino.cecchino_fixture_identity_consistency import (
     build_fixture_identity_consistency,
 )
@@ -1644,10 +1644,9 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         local_away_team_name=local_away_name,
     )
 
-    balance_v5_preview = build_balance_v5_preview(
-        balance_analysis=balance_analysis,
-        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+    balance_v5 = build_cecchino_balance_v5(
         cecchino_final=output.get("final") if isinstance(output, dict) else None,
+        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
         identity_consistency=fixture_identity_consistency,
     )
     icm_analysis = build_cecchino_icm_analysis(
@@ -1688,8 +1687,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "picchetti_debug_summary": picchetti_debug_summary,
         "icm_analysis": icm_analysis,
         "balance_analysis": balance_analysis,
-        "balance_v5_preview": balance_v5_preview,
-        "balance_v5": balance_v5_preview,
+        "balance_v5": balance_v5,
         "fixture_identity_consistency": fixture_identity_consistency,
         "goal_intensity_analysis": goal_intensity_analysis,
         "goal_intensity_v5_preview": goal_intensity_v5_preview,

@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio v5 — canonico (2026-07-19)
+
+- Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
+- Eliminati `cecchino_balance_v5_preview.py` e `cecchino_balance_research_candidates.py`; `balance_analysis` ridotto ad adapter; FE `CecchinoBalanceV5Panel` senza Preview.
+
 ## Indice di Acquistabilità — empirica v1.1 copertura operativa KPI (2026-07-19)
 
 - Current rows da `kpi_panel_json`; chiave `fixture:market_key`; coorte locale→globale; mercati panel con settlement (`DRAW_PT`, OU linee).

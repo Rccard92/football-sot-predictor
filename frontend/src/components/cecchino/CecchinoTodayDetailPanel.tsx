@@ -9,7 +9,7 @@ import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
-import { CecchinoBalanceV5PreviewPanel } from './CecchinoBalanceV5PreviewPanel'
+import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
 import { CecchinoGoalIntensityAnalysisPanel } from './CecchinoGoalIntensityAnalysisPanel'
 import { CecchinoGoalIntensityV5PreviewPanel } from './CecchinoGoalIntensityV5PreviewPanel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
@@ -149,8 +149,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         kpiPanel={detail.kpi_panel_v2 ?? detail.kpi_panel}
       />
 
-      <CecchinoBalanceV5PreviewPanel
-        preview={detail.balance_v5 ?? detail.balance_v5_preview}
+      <CecchinoBalanceV5Panel
+        balance={detail.balance_v5}
         identityConsistency={detail.fixture_identity_consistency}
       />
 

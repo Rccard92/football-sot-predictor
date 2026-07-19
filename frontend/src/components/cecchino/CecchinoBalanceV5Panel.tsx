@@ -1,15 +1,14 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import type {
+  CecchinoBalanceV5,
   CecchinoBalanceV5Pillar,
-  CecchinoBalanceV5Preview,
   CecchinoFixtureIdentityConsistency,
 } from '../../lib/cecchinoTodayApi'
 import { formatBalanceNumber } from '../../utils/formatBalanceNumber'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type Props = {
-  preview?: CecchinoBalanceV5Preview | null
+  balance?: CecchinoBalanceV5 | null
   identityConsistency?: CecchinoFixtureIdentityConsistency | null
 }
 
@@ -19,14 +18,11 @@ const PANEL_SUBTITLE = 'Quattro letture indipendenti della struttura della parti
 const IDENTITY_MISMATCH_ALERT =
   'Analisi non disponibile: data, stato o snapshot della fixture non risultano coerenti.'
 
-const LAB_HREF = '/cecchino/ricerca-credibilita-x'
-
 const PILLAR_ORDER = ['f36', 'dominance', 'draw_credibility', 'gap_coherence'] as const
 
 const BADGE_LABEL: Record<string, string> = {
-  official: 'Produttivo',
-  research: 'Ricerca',
-  calibration_pending: 'In calibrazione',
+  official: 'Ufficiale',
+  descriptive_official: 'Descrittivo',
   unavailable: 'Dato non disponibile',
 }
 
@@ -34,10 +30,8 @@ function badgeClass(status: string): string {
   switch (status) {
     case 'official':
       return 'bg-slate-800 text-white ring-slate-800'
-    case 'research':
-      return 'bg-amber-50 text-amber-900 ring-amber-200'
-    case 'calibration_pending':
-      return 'bg-slate-100 text-slate-600 ring-slate-200'
+    case 'descriptive_official':
+      return 'bg-slate-100 text-slate-800 ring-slate-300'
     default:
       return 'bg-slate-50 text-slate-500 ring-slate-200'
   }
@@ -49,7 +43,6 @@ function fmtIndex(index: number | null | undefined): string {
 
 function fmtClass(label: string | null | undefined, status: string): string {
   if (label) return label
-  if (status === 'calibration_pending') return 'In calibrazione'
   if (status === 'unavailable') return 'Dato non disponibile'
   return '—'
 }
@@ -62,15 +55,28 @@ function fmtValue(value: number | string | null | undefined, unit: string): stri
 }
 
 function isIdentityMismatch(
-  preview?: CecchinoBalanceV5Preview | null,
+  balance?: CecchinoBalanceV5 | null,
   identityConsistency?: CecchinoFixtureIdentityConsistency | null,
 ): boolean {
   if (identityConsistency?.status === 'inconsistent') return true
-  if (preview?.status === 'unavailable') {
-    const warnings = preview.warnings ?? []
+  if (balance?.status === 'unavailable') {
+    const warnings = balance.warnings ?? []
     if (warnings.includes('fixture_identity_mismatch')) return true
   }
   return false
+}
+
+function resolvePillars(balance: CecchinoBalanceV5): CecchinoBalanceV5Pillar[] {
+  const order = balance.pillar_order?.length ? balance.pillar_order : [...PILLAR_ORDER]
+  const raw = balance.pillars
+  if (Array.isArray(raw)) {
+    return order
+      .map((key) => (raw as CecchinoBalanceV5Pillar[]).find((p) => p.key === key))
+      .filter(Boolean) as CecchinoBalanceV5Pillar[]
+  }
+  return order
+    .map((key) => (raw as Record<string, CecchinoBalanceV5Pillar>)[key])
+    .filter(Boolean)
 }
 
 function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; number: number }) {
@@ -107,6 +113,11 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
         </div>
       </div>
       <p className="text-xs leading-relaxed text-slate-700">{pillar.reading}</p>
+      {pillar.key === 'draw_credibility' ? (
+        <p className="text-[11px] leading-snug text-slate-500">
+          Indice descrittivo interno, non ancora probabilità calibrata sull’esito reale.
+        </p>
+      ) : null}
       <button
         type="button"
         className="self-start text-xs font-medium text-slate-600 underline-offset-2 hover:underline"
@@ -116,7 +127,7 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
       </button>
       {open ? (
         <ul className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          {pillar.components.map((c) => (
+          {(pillar.components ?? []).map((c) => (
             <li key={c.key} className="flex justify-between gap-2">
               <span className="text-slate-500">{c.label}</span>
               <span className="tabular-nums font-medium">{fmtValue(c.value, c.unit)}</span>
@@ -124,23 +135,12 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
           ))}
         </ul>
       ) : null}
-      {pillar.key === 'draw_credibility' ? (
-        <Link
-          to={LAB_HREF}
-          className="self-start text-xs font-medium text-slate-600 underline-offset-2 hover:underline"
-        >
-          Apri laboratorio Credibilità X
-        </Link>
-      ) : null}
-      {pillar.source_version ? (
-        <p className="text-[10px] text-slate-400">Fonte: {pillar.source_version}</p>
-      ) : null}
     </article>
   )
 }
 
-export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: Props) {
-  if (!preview) {
+export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) {
+  if (!balance) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
         <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
@@ -149,7 +149,7 @@ export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: 
     )
   }
 
-  if (isIdentityMismatch(preview, identityConsistency)) {
+  if (isIdentityMismatch(balance, identityConsistency)) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
         <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
@@ -163,17 +163,17 @@ export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: 
     )
   }
 
-  const pillars = PILLAR_ORDER.map((key) => preview.pillars.find((p) => p.key === key)).filter(
-    Boolean,
-  ) as CecchinoBalanceV5Pillar[]
-
-  const market = preview.market_deviation
+  const pillars = resolvePillars(balance)
+  const market = balance.market_deviation
 
   return (
     <section className="space-y-4">
       <div>
         <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
         <p className={todaySectionSubtitle}>{PANEL_SUBTITLE}</p>
+        {balance.structural_summary ? (
+          <p className="mt-3 text-sm leading-relaxed text-slate-800">{balance.structural_summary}</p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
@@ -182,46 +182,67 @@ export function CecchinoBalanceV5PreviewPanel({ preview, identityConsistency }: 
         ))}
       </div>
 
-      <section className={`${todayCard} ${todayCardPadding} border-slate-300`}>
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h4 className="text-sm font-semibold text-slate-900">{market.title}</h4>
-            <p className="text-xs text-slate-500">{market.subtitle}</p>
+      {market ? (
+        <section className={`${todayCard} ${todayCardPadding} border-slate-300`}>
+          <div className="mb-2">
+            <h4 className="text-sm font-semibold text-slate-900">
+              {market.title ?? 'Scostamento dal mercato'}
+            </h4>
+            <p className="text-xs text-slate-500">
+              {market.subtitle ??
+                'Lo scostamento descrive la distanza tra Cecchino e mercato.'}
+            </p>
           </div>
-          <span
-            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ${badgeClass(market.status)}`}
-          >
-            {BADGE_LABEL[market.status] ?? market.status}
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
-            <thead className="text-slate-500">
-              <tr>
-                <th className="py-1 pr-3">Mercato</th>
-                <th className="py-1 pr-3">Quota Cecchino</th>
-                <th className="py-1 pr-3">Quota Book</th>
-                <th className="py-1 pr-3">Dev. pp</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(market.pairs ?? []).map((pair) => (
-                <tr key={pair.key} className="border-t border-slate-100">
-                  <td className="py-1.5 pr-3 font-medium text-slate-800">{pair.label}</td>
-                  <td className="py-1.5 pr-3 tabular-nums">{fmtValue(pair.quota_cecchino ?? null, 'quota')}</td>
-                  <td className="py-1.5 pr-3 tabular-nums">{fmtValue(pair.quota_book ?? null, 'quota')}</td>
-                  <td className="py-1.5 pr-3 tabular-nums">{fmtValue(pair.deviation_pp ?? null, 'pp')}</td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead className="text-slate-500">
+                <tr>
+                  <th className="py-1 pr-3">Mercato</th>
+                  <th className="py-1 pr-3">Prob. Cecchino</th>
+                  <th className="py-1 pr-3">Prob. Book</th>
+                  <th className="py-1 pr-3">Diff.</th>
+                  <th className="py-1 pr-3">|Diff.|</th>
+                  <th className="py-1 pr-3">Quota Cecch.</th>
+                  <th className="py-1 pr-3">Quota Book</th>
+                  <th className="py-1 pr-3">Direzione</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-slate-600">{market.reading}</p>
-      </section>
-
-      <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        {preview.research_note}
-      </p>
+              </thead>
+              <tbody>
+                {(market.pairs ?? []).map((pair) => (
+                  <tr key={pair.key} className="border-t border-slate-100">
+                    <td className="py-1.5 pr-3 font-medium text-slate-800">{pair.label}</td>
+                    <td className="py-1.5 pr-3 tabular-nums">
+                      {fmtValue(pair.prob_cecchino_norm ?? pair.prob_cecchino_pct ?? null, 'pct')}
+                    </td>
+                    <td className="py-1.5 pr-3 tabular-nums">
+                      {fmtValue(pair.prob_book_norm ?? pair.prob_book_pct ?? null, 'pct')}
+                    </td>
+                    <td className="py-1.5 pr-3 tabular-nums">
+                      {fmtValue(pair.signed_diff ?? pair.signed_diff_pp ?? null, 'pp')}
+                    </td>
+                    <td className="py-1.5 pr-3 tabular-nums">
+                      {fmtValue(pair.abs_diff ?? pair.deviation_pp ?? pair.abs_diff_pp ?? null, 'pp')}
+                    </td>
+                    <td className="py-1.5 pr-3 tabular-nums">
+                      {fmtValue(pair.quota_cecchino ?? null, 'quota')}
+                    </td>
+                    <td className="py-1.5 pr-3 tabular-nums">
+                      {fmtValue(pair.quota_book ?? null, 'quota')}
+                    </td>
+                    <td className="py-1.5 pr-3 text-slate-600">
+                      {pair.direction_label ?? pair.direction ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-slate-600">
+            {market.reading ||
+              'Lo scostamento descrive la distanza tra Cecchino e mercato. Non stabilisce quale dei due abbia ragione e non modifica i quattro pilastri.'}
+          </p>
+        </section>
+      ) : null}
     </section>
   )
 }

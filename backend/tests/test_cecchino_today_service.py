@@ -123,10 +123,9 @@ def test_detail_includes_identity_and_preview_ok(
     assert detail["status"] == "ok"
     assert detail["kickoff"].startswith("2026-07-16")
     assert detail["fixture_identity_consistency"]["status"] == "consistent"
-    assert detail["balance_v5_preview"]["status"] == "ok"
-    assert detail["balance_v5_preview"]["version"] == "balance_v5_v1"
-    assert detail["balance_v5"] is detail["balance_v5_preview"]
-    assert detail["balance_v5"]["version"] == "balance_v5_v1"
+    assert detail["balance_v5"]["status"] == "ok"
+    assert detail["balance_v5"]["version"] == "cecchino_balance_v5_v2"
+    assert "balance_v5_preview" not in detail
     db.commit.assert_not_called()
 
 
@@ -200,10 +199,10 @@ def test_detail_preview_blocked_on_identity_mismatch_no_write(
     assert detail["fixture_identity_consistency"]["raw_sources"]["local_fixture"]["kickoff"].startswith(
         "2026-07-22"
     )
-    preview = detail["balance_v5_preview"]
+    preview = detail["balance_v5"]
     assert preview["status"] == "unavailable"
-    assert preview["version"] == "balance_v5_v1"
-    assert detail["balance_v5"] is preview
+    assert preview["version"] == "cecchino_balance_v5_v2"
+    assert "balance_v5_preview" not in detail
     assert "fixture_identity_mismatch" in preview["warnings"]
     db.commit.assert_not_called()
     assert "fixture_identity_minimal_fix_applied" not in (detail["warnings"] or [])

@@ -9,10 +9,11 @@ from unittest.mock import MagicMock, patch
 from fastapi.encoders import jsonable_encoder
 
 from app.services.cecchino.cecchino_balance_analysis import build_cecchino_balance_analysis
-from app.services.cecchino.cecchino_balance_v5_preview import (
+from app.services.cecchino.cecchino_balance_v5 import (
     VERSION,
-    build_balance_v5_preview,
+    build_cecchino_balance_v5,
 )
+
 from app.services.cecchino.cecchino_fixture_identity_consistency import (
     build_fixture_identity_consistency,
 )
@@ -231,10 +232,14 @@ def test_10_preview_bloccata():
         prob_cecchino_x=0.28,
         prob_cecchino_2=0.30,
     )
-    preview = build_balance_v5_preview(balance_analysis=bal, identity_consistency=consistency)
-    assert VERSION == "balance_v5_v1"
+    assert bal["status"] == "available"
+    preview = build_cecchino_balance_v5(
+        cecchino_final={},
+        identity_consistency=consistency,
+    )
+    assert VERSION == "cecchino_balance_v5_v2"
     assert preview["status"] == "unavailable"
-    assert all(p["index"] is None for p in preview["pillars"])
+    assert all(p.get("index") is None for p in preview["pillars"].values())
     assert preview["market_deviation"]["status"] == "unavailable"
 
 
@@ -406,14 +411,22 @@ def test_15_formule_invariate():
         prob_cecchino_x=0.28,
         prob_cecchino_2=0.30,
     )
-    preview = build_balance_v5_preview(
-        balance_analysis=bal,
+    final = {
+        "status": "available",
+        "quota_1": 2.1,
+        "quota_x": 3.4,
+        "quota_2": 3.6,
+        "prob_1": 0.42,
+        "prob_x": 0.28,
+        "prob_2": 0.30,
+    }
+    preview = build_cecchino_balance_v5(
+        cecchino_final=final,
         identity_consistency={"status": "consistent"},
     )
-    f36 = next(p for p in preview["pillars"] if p["key"] == "f36")
+    f36 = preview["pillars"]["f36"]
     assert f36["index"] == bal["f36"]["score"]
-    assert preview["production_changes"] is False
-    assert preview["version"] == "balance_v5_v1"
+    assert preview["version"] == "cecchino_balance_v5_v2"
     encoded = jsonable_encoder(preview)
     assert encoded["version"] == VERSION
 

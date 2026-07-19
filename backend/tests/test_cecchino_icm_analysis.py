@@ -281,6 +281,22 @@ def test_detail_payload_includes_icm_analysis():
         patch(
             "app.services.cecchino.cecchino_today_service.sync_cecchino_signal_activations",
         ),
+        patch(
+            "app.services.cecchino.cecchino_today_service.build_expected_goal_engine_diagnostics_for_today_row",
+            return_value={},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_today_service.build_goal_intensity_for_today_row",
+            return_value={},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_goal_intensity_v5_preview.get_preview_detail",
+            return_value={"status": "unavailable", "error": "bundle_missing"},
+        ),
+        patch(
+            "app.services.cecchino.cecchino_today_service.build_bookmaker_odds_detail",
+            return_value={},
+        ),
     ):
         detail = get_today_fixture_detail(db, 99)
 
@@ -288,3 +304,5 @@ def test_detail_payload_includes_icm_analysis():
     assert "icm_analysis" in detail
     assert detail["icm_analysis"]["status"] == "available"
     assert "delta_force_analysis" not in detail
+    assert "balance_v5" in detail
+    assert "balance_v5_preview" not in detail
