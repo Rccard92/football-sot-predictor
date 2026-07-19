@@ -18,6 +18,19 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Legacy | `GET …/purchasability-empirical` (deprecated) |
 | Preview contract | `cecchino_purchasability_v1_preview_contract` |
 
+## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
+
+| Campo | Valore |
+|-------|--------|
+| Validation | `cecchino_purchasability_validation_v1` |
+| Feature attiva | `cecchino_purchasability_features_v1_1` (unsupported senza favourite FT) |
+| Tabella | `cecchino_purchasability_evaluations` |
+| Policy | `cecchino_purchasability_promotion_policy_v1` (immutabile) |
+| Candidate | ancora `candidate_2` / `active_preview` — **nessun auto-promote** |
+| Output max | `eligible_for_manual_promotion` |
+| Lab FE | Segnali KPI → Acquistabilità → **Validazione — Fase 5** |
+| `prima_data_teorica` | `primo_snapshot_prospettico + 90g` (calcolata) |
+
 ## Acquistabilità — FASE 4/5 KPI + snapshot (2026-07-19)
 
 | Campo | Valore |
@@ -28,7 +41,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Snapshot | `cecchino_purchasability_snapshot_v1` in `cecchino_output_json.purchasability_preview` |
 | UI | colonna KPI **Acquistabilità** (solo intero 0–100) |
 | Signals | no |
-| Next | FASE 5/5 — validazione e promozione |
+| Next | FASE 5/5 completata (validazione; promozione solo manuale futura) |
 
 ## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
 
@@ -46,7 +59,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 
 | Campo | Valore |
 |-------|--------|
-| Feature version | `cecchino_purchasability_features_v1` |
+| Feature version | `cecchino_purchasability_features_v1_1` (attiva; v1 storica accettata) |
 | Modulo | `cecchino_purchasability_features.py` |
 | Endpoint debug | `GET …/purchasability-preview/features/{today_fixture_id}` |
 | Score formula | no (feature layer; score via candidato Fase 3) |

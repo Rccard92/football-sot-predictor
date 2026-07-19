@@ -21,13 +21,15 @@ import { KpiSignalsTopRankingLab } from '../components/cecchino-kpi-signals/KpiS
 import { PurchasabilityAuditBody } from '../components/cecchino-purchasability-research/PurchasabilityAuditBody'
 import { PurchasabilityStatisticalResearchBody } from '../components/cecchino-purchasability-research/PurchasabilityStatisticalResearchBody'
 import { PurchasabilityResidualReliabilityBody } from '../components/cecchino-purchasability-research/PurchasabilityResidualReliabilityBody'
+import { PurchasabilityValidationBody } from '../components/cecchino-purchasability-research/PurchasabilityValidationBody'
 import { useCecchinoKpiSignals } from '../hooks/useCecchinoKpiSignals'
 import { useCecchinoPurchasabilityAudit } from '../hooks/useCecchinoPurchasabilityAudit'
 import { useCecchinoPurchasabilityStatisticalResearch } from '../hooks/useCecchinoPurchasabilityStatisticalResearch'
 import { useCecchinoPurchasabilityResidualReliability } from '../hooks/useCecchinoPurchasabilityResidualReliability'
+import { useCecchinoPurchasabilityValidation } from '../hooks/useCecchinoPurchasabilityValidation'
 
 type TabId = 'signals' | 'purchasability'
-type PurchasabilitySubTab = 'audit' | 'statistical-2a' | 'residual-2a4'
+type PurchasabilitySubTab = 'audit' | 'statistical-2a' | 'residual-2a4' | 'validation-f5'
 
 export function SegnaliKpiPage() {
   const [tab, setTab] = useState<TabId>('signals')
@@ -36,6 +38,7 @@ export function SegnaliKpiPage() {
   const purch = useCecchinoPurchasabilityAudit()
   const purchStat = useCecchinoPurchasabilityStatisticalResearch()
   const purchResidual = useCecchinoPurchasabilityResidualReliability()
+  const purchValidation = useCecchinoPurchasabilityValidation()
   const [drawer, setDrawer] = useState<KpiDrawerState>(null)
   const [heatmapFilter, setHeatmapFilter] = useState<KpiHeatmapSelection | null>(null)
 
@@ -163,6 +166,20 @@ export function SegnaliKpiPage() {
               >
                 Affidabilità residuale — Fase 2A.4.1
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPurchSubTab('validation-f5')
+                  void purchValidation.loadSync()
+                }}
+                className={`rounded-md px-3 py-1 text-sm ${
+                  purchSubTab === 'validation-f5'
+                    ? 'bg-cyan-800 text-white'
+                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Validazione — Fase 5
+              </button>
             </div>
 
             {purchSubTab === 'audit' ? (
@@ -199,7 +216,7 @@ export function SegnaliKpiPage() {
                 onRefresh={() => void purchStat.load()}
                 filters={purchStat.filters}
               />
-            ) : (
+            ) : purchSubTab === 'residual-2a4' ? (
               <PurchasabilityResidualReliabilityBody
                 data={purchResidual.data}
                 loading={purchResidual.loading}
@@ -216,6 +233,26 @@ export function SegnaliKpiPage() {
                 onBootstrap={purchResidual.setBootstrapIterations}
                 onRefresh={() => void purchResidual.load()}
                 filters={purchResidual.filters}
+              />
+            ) : (
+              <PurchasabilityValidationBody
+                health={purchValidation.health}
+                summary={purchValidation.summary}
+                readiness={purchValidation.readiness}
+                loading={purchValidation.loading}
+                error={purchValidation.error}
+                job={purchValidation.job}
+                dateFrom={purchValidation.dateFrom}
+                dateTo={purchValidation.dateTo}
+                marketKey={purchValidation.marketKey}
+                bootstrapIterations={purchValidation.bootstrapIterations}
+                onDateFrom={purchValidation.setDateFrom}
+                onDateTo={purchValidation.setDateTo}
+                onMarketKey={purchValidation.setMarketKey}
+                onBootstrap={purchValidation.setBootstrapIterations}
+                onRefresh={() => void purchValidation.loadSync()}
+                onStartJob={() => void purchValidation.startJob()}
+                filters={purchValidation.filters}
               />
             )}
           </div>

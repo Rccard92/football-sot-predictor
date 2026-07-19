@@ -28,9 +28,13 @@ Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backe
 
 **ACQUISTABILITÀ**: feature Fase 2 + candidato Fase 3 Preview (vedi sotto). Nessuna colonna UI ancora.
 
+## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
+
+Validazione da snapshot persistito; tabella evaluations; policy promozione solo readiness (`eligible_for_manual_promotion`). Feature `v1_1`. Lab FE Validazione. candidate_2 resta Preview. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Acquistabilità — FASE 4/5 KPI + snapshot (2026-07-19)
 
-`candidate_2` / `balanced_geometric_v1_1` attivo: ROUND_HALF_UP, reading Phase1=0, compact snapshot in `cecchino_output_json.purchasability_preview`, colonna KPI solo numerica. candidate_1 frozen. Signals no. Next: FASE 5/5. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+`candidate_2` / `balanced_geometric_v1_1` attivo: ROUND_HALF_UP, reading Phase1=0, compact snapshot in `cecchino_output_json.purchasability_preview`, colonna KPI solo numerica. candidate_1 frozen. Signals no. Validazione: FASE 5/5. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
 
 ## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
 

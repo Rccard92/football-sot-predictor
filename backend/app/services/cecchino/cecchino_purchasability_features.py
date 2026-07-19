@@ -1,9 +1,9 @@
-"""Acquistabilità feature layer pre-match — FASE 2/5.
+"""Acquistabilità feature layer pre-match — FASE 2–5.
 
-Versione: cecchino_purchasability_features_v1
+Versione attiva: cecchino_purchasability_features_v1_1
+(v1 storica ancora accettata negli snapshot; v1_1 = diagnostica unsupported corretta).
 
 Layer operativo feature (phase_1_value + phase_2_quality) su snapshot KPI salvati.
-Nessuna formula 0–100; score/class/reading restano null (status=not_calculated).
 Non importa Affidabilità storica. Read-only, deterministico, JSON-safe.
 """
 
@@ -398,12 +398,13 @@ def _build_phase_2(
             "strongest_comparator_model_probability": None,
             "opposition_pressure_book": None,
             "opposition_pressure_model": None,
-            **_build_favourite_context(
-                market_key=market_key,
-                opp=opp,
-                fair_by_m=fair_by_m,
-                model_by_m=model_by_m,
-            ),
+            # Nessun favourite context cross-period (es. FT su HT unsupported)
+            "favourite_context_basis": None,
+            "book_favourite": None,
+            "model_favourite": None,
+            "favourite_alignment": "unavailable",
+            "favourite_intensity_book": None,
+            "favourite_intensity_model": None,
             "fair_book_probability": sel_fair_p,
             "model_context_probability": sel_model_ctx,
             "model_book_gap": None,

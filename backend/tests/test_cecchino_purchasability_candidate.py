@@ -86,7 +86,7 @@ def _feature_item(
     inputs.update(extra_inputs)
     return {
         "version": "cecchino_purchasability_v1_preview_contract",
-        "feature_version": "cecchino_purchasability_features_v1",
+        "feature_version": "cecchino_purchasability_features_v1_1",
         "feature_status": feature_status,
         "status": "not_calculated",
         "score": None,

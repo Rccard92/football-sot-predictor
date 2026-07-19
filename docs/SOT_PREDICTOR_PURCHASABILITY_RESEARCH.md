@@ -9,6 +9,25 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 | **AFFIDABILITÀ STORICA** | Misura il comportamento storico dello stesso mercato e della stessa fascia Rating (Win Rate, ROI, margine vs break-even, stabilità, numerosità). |
 | **ACQUISTABILITÀ** | Misura quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti. |
 
+## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
+
+Coorte primaria da `purchasability_preview` persistito (verified + before kickoff). Tabella `cecchino_purchasability_evaluations`.
+
+| Campo | Valore |
+|-------|--------|
+| Validation | `cecchino_purchasability_validation_v1` |
+| Feature | `cecchino_purchasability_features_v1_1` |
+| Policy | `cecchino_purchasability_promotion_policy_v1` |
+| Coorti eligible | `prospective_persisted`, `legacy_persisted_backfill` |
+| Esclusa dai gate | `legacy_derived_diagnostic` |
+| Candidate | `candidate_2` resta `active_preview` |
+| Max readiness | `eligible_for_manual_promotion` (mai auto) |
+| `prima_data_teorica` | primo settled prospettico + 90 giorni |
+
+Endpoint: `GET …/kpi-signals/purchasability-validation/{health,summary,rows,readiness,export.csv}` + jobs; admin sync.
+
+Target residuale post-match: `signed_book_residual = y_win - fair_book`. Nessun Brier/LogLoss sullo score. Lab FE sottotab Validazione.
+
 ## Acquistabilità — FASE 4/5 KPI + snapshot `balanced_geometric_v1_1` (2026-07-19)
 
 - **candidate_1** frozen (`python_round_legacy`); **candidate_2** attivo (`round_half_up`, UI + compact snapshot).
@@ -16,7 +35,7 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 - Persistenza: `cecchino_output_json["purchasability_preview"]` (`cecchino_purchasability_snapshot_v1`); nessuna migrazione.
 - Fallback storico: `persisted_pre_match_snapshot` | `derived_read_only_from_stored_snapshot`.
 - FE: colonna Acquistabilità solo numero 0–100; Affidabilità separata; Signals no.
-- Next: **FASE 5/5 — validazione e promozione**.
+- Validazione/promozione controllata: **FASE 5/5**.
 
 ## Acquistabilità — FASE 3/5 candidato `balanced_geometric_v1` (2026-07-19)
 

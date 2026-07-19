@@ -8,13 +8,21 @@
 4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
 5. Nessuna colonna Acquistabilità produttiva.
 
+## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
+
+1. Scan/recompute: dopo persist preview → `sync_purchasability_validation_for_fixture` (try/except).
+2. Update risultati: accanto a Signals/KPI → `evaluate_purchasability_validation_for_fixture`.
+3. Admin backfill: `POST /api/admin/cecchino/purchasability-validation/sync`.
+4. Lab: Segnali KPI → Acquistabilità → Validazione — Fase 5 (health/summary/readiness/jobs).
+5. candidate_2 non promosso automaticamente; gate solo readiness.
+
 ## Acquistabilità — FASE 4/5 KPI + snapshot (2026-07-19)
 
 1. Scan/recompute pre-match: features → candidate_2 → compact snapshot → `cecchino_output_json.purchasability_preview`.
 2. Detail Today restituisce snapshot (persisted o derived read-only).
 3. Pannello KPI: colonna **Acquistabilità** (solo numero); Affidabilità invariata.
 4. Post-kickoff: non sovrascrivere snapshot pre-match.
-5. Next: FASE 5/5 — validazione e promozione.
+5. Validazione: vedi FASE 5/5.
 
 ## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
 

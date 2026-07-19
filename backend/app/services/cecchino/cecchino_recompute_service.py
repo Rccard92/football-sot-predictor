@@ -247,6 +247,19 @@ def recompute_today_fixture_offline(
         eval_counts = evaluate_activations_for_fixture(db, int(row.id))
         result["signals_evaluated"] = eval_counts.get("evaluated", 0)
 
+    if eligibility.is_eligible:
+        try:
+            from app.services.cecchino.cecchino_purchasability_validation import (
+                sync_purchasability_validation_for_fixture,
+            )
+
+            with db.begin_nested():
+                sync_purchasability_validation_for_fixture(db, int(row.id))
+        except Exception:
+            logger.exception(
+                "purchasability validation sync skipped fixture_id=%s", row.id
+            )
+
     return result
 
 

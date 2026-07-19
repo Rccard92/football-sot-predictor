@@ -15,7 +15,7 @@ def test_preview_contract_version():
         PURCHASABILITY_PREVIEW_CONTRACT_VERSION
         == "cecchino_purchasability_v1_preview_contract"
     )
-    assert PURCHASABILITY_FEATURE_VERSION == "cecchino_purchasability_features_v1"
+    assert PURCHASABILITY_FEATURE_VERSION == "cecchino_purchasability_features_v1_1"
 
 
 def test_preview_not_calculated_score_null():

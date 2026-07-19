@@ -295,6 +295,7 @@ def _persist_post_calc_snapshot(
     if eligibility_status == ELIGIBILITY_ELIGIBLE:
         maybe_ensure_xg_for_eligible_row(db, row)
         _maybe_sync_kpi_signals_for_fixture(db, int(row.id))
+        _maybe_sync_purchasability_validation_for_fixture(db, int(row.id))
     return row, eligibility_status
 
 
@@ -305,6 +306,23 @@ def _maybe_sync_kpi_signals_for_fixture(db: Session, today_fixture_id: int) -> N
         sync_kpi_signals_for_fixture(db, today_fixture_id)
     except Exception:
         logger.exception("KPI signals sync skipped fixture_id=%s", today_fixture_id)
+
+
+def _maybe_sync_purchasability_validation_for_fixture(
+    db: Session, today_fixture_id: int
+) -> None:
+    """Sync coorte validazione Acquistabilità — non bloccante."""
+    try:
+        from app.services.cecchino.cecchino_purchasability_validation import (
+            sync_purchasability_validation_for_fixture,
+        )
+
+        with db.begin_nested():
+            sync_purchasability_validation_for_fixture(db, int(today_fixture_id))
+    except Exception:
+        logger.exception(
+            "purchasability validation sync skipped fixture_id=%s", today_fixture_id
+        )
 
 
 def rome_today(tz_name: str = DEFAULT_TODAY_TIMEZONE) -> date:
@@ -1568,6 +1586,17 @@ def update_today_fixture_results(
             revaluate_kpi_signals_for_fixture(db, int(row.id))
         except Exception:
             logger.exception("KPI signals revaluate skipped fixture_id=%s", row.id)
+        try:
+            from app.services.cecchino.cecchino_purchasability_validation import (
+                evaluate_purchasability_validation_for_fixture,
+            )
+
+            with db.begin_nested():
+                evaluate_purchasability_validation_for_fixture(db, int(row.id))
+        except Exception:
+            logger.exception(
+                "purchasability validation evaluate skipped fixture_id=%s", row.id
+            )
 
     db.commit()
     return {

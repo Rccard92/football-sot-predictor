@@ -33,12 +33,20 @@
 - Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
 - Eliminati `cecchino_balance_v5_preview.py` e `cecchino_balance_research_candidates.py`; `balance_analysis` ridotto ad adapter; FE `CecchinoBalanceV5Panel` senza Preview.
 
+## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
+
+- Feature `v1_1`: mercati unsupported senza contesto favourite FT.
+- Tabella `cecchino_purchasability_evaluations`; sync da snapshot persistito; evaluate su update-results.
+- Aggregazioni residuali / Phase1 / fold / bootstrap; policy `…_promotion_policy_v1`.
+- Lab FE **Validazione — Fase 5**; candidate_2 resta Preview; max `eligible_for_manual_promotion`.
+- Formula KPI / Signals invariati.
+
 ## Acquistabilità — FASE 4/5 KPI + snapshot (2026-07-19)
 
 - candidate_2 `balanced_geometric_v1_1` attivo (ROUND_HALF_UP, reading Phase1=0); candidate_1 frozen.
 - Compact snapshot `cecchino_purchasability_snapshot_v1` in `cecchino_output_json.purchasability_preview`.
 - Detail Today + colonna KPI **Acquistabilità** (solo numero 0–100 / —); Affidabilità separata; Signals invariati.
-- Next: FASE 5/5 — validazione e promozione.
+- Validazione: vedi FASE 5/5.
 
 ## Acquistabilità — FASE 3/5 candidato balanced_geometric_v1 (2026-07-19)
 

@@ -1,11 +1,11 @@
-"""Contratto tecnico Acquistabilità V1 Preview — FASE 3/5 candidato.
+"""Contratto tecnico Acquistabilità V1 Preview — FASE 3–5.
 
 Versione contratto: cecchino_purchasability_v1_preview_contract
-Feature version: cecchino_purchasability_features_v1
-Candidate version: cecchino_purchasability_v1_preview_candidate_1
+Feature version attiva: cecchino_purchasability_features_v1_1
+Candidate version: cecchino_purchasability_v1_preview_candidate_2
 
 Factory not_calculated: score/class null (retrocompatibile Fase 1–2).
-Candidato balanced_geometric_v1 calcola score solo via modulo candidate.
+Candidato balanced_geometric_v1_1 calcola score solo via modulo candidate.
 Affidabilità storica ≠ Acquistabilità; Rating non è peso.
 """
 
@@ -16,7 +16,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 PURCHASABILITY_PREVIEW_CONTRACT_VERSION = "cecchino_purchasability_v1_preview_contract"
-PURCHASABILITY_FEATURE_VERSION = "cecchino_purchasability_features_v1"
+PURCHASABILITY_FEATURE_V1_VERSION = "cecchino_purchasability_features_v1"
+PURCHASABILITY_FEATURE_V1_1_VERSION = "cecchino_purchasability_features_v1_1"
+ACTIVE_PURCHASABILITY_FEATURE_VERSION = PURCHASABILITY_FEATURE_V1_1_VERSION
+PURCHASABILITY_FEATURE_VERSION = ACTIVE_PURCHASABILITY_FEATURE_VERSION
 PURCHASABILITY_CANDIDATE_VERSION = "cecchino_purchasability_v1_preview_candidate_2"
 PURCHASABILITY_CANDIDATE_NAME = "balanced_geometric_v1_1"
 PURCHASABILITY_SNAPSHOT_VERSION = "cecchino_purchasability_snapshot_v1"

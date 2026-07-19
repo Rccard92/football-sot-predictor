@@ -110,7 +110,7 @@ def test_endpoint_fixture_ok():
     body = res.json()
     assert body["no_score_formula"] is True
     assert body["no_db_writes"] is True
-    assert body["feature_version"] == "cecchino_purchasability_features_v1"
+    assert body["feature_version"] == "cecchino_purchasability_features_v1_1"
     assert body["summary"]["total"] == 3
     for item in body["items"]:
         assert item["score"] is None
