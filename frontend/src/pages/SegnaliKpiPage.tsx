@@ -18,27 +18,10 @@ import { KpiSignalsMetricRibbon } from '../components/cecchino-kpi-signals/KpiSi
 import { KpiSignalsPageHeader } from '../components/cecchino-kpi-signals/KpiSignalsPageHeader'
 import { KpiSignalsSkeleton } from '../components/cecchino-kpi-signals/KpiSignalsSkeleton'
 import { KpiSignalsTopRankingLab } from '../components/cecchino-kpi-signals/KpiSignalsTopRankingLab'
-import { PurchasabilityAuditBody } from '../components/cecchino-purchasability-research/PurchasabilityAuditBody'
-import { PurchasabilityStatisticalResearchBody } from '../components/cecchino-purchasability-research/PurchasabilityStatisticalResearchBody'
-import { PurchasabilityResidualReliabilityBody } from '../components/cecchino-purchasability-research/PurchasabilityResidualReliabilityBody'
-import { PurchasabilityValidationBody } from '../components/cecchino-purchasability-research/PurchasabilityValidationBody'
 import { useCecchinoKpiSignals } from '../hooks/useCecchinoKpiSignals'
-import { useCecchinoPurchasabilityAudit } from '../hooks/useCecchinoPurchasabilityAudit'
-import { useCecchinoPurchasabilityStatisticalResearch } from '../hooks/useCecchinoPurchasabilityStatisticalResearch'
-import { useCecchinoPurchasabilityResidualReliability } from '../hooks/useCecchinoPurchasabilityResidualReliability'
-import { useCecchinoPurchasabilityValidation } from '../hooks/useCecchinoPurchasabilityValidation'
-
-type TabId = 'signals' | 'purchasability'
-type PurchasabilitySubTab = 'audit' | 'statistical-2a' | 'residual-2a4' | 'validation-f5'
 
 export function SegnaliKpiPage() {
-  const [tab, setTab] = useState<TabId>('signals')
-  const [purchSubTab, setPurchSubTab] = useState<PurchasabilitySubTab>('audit')
   const kpi = useCecchinoKpiSignals()
-  const purch = useCecchinoPurchasabilityAudit()
-  const purchStat = useCecchinoPurchasabilityStatisticalResearch()
-  const purchResidual = useCecchinoPurchasabilityResidualReliability()
-  const purchValidation = useCecchinoPurchasabilityValidation()
   const [drawer, setDrawer] = useState<KpiDrawerState>(null)
   const [heatmapFilter, setHeatmapFilter] = useState<KpiHeatmapSelection | null>(null)
 
@@ -105,217 +88,62 @@ export function SegnaliKpiPage() {
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
         <KpiSignalsPageHeader />
 
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setTab('signals')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-              tab === 'signals'
-                ? 'bg-slate-900 text-white'
-                : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            Segnali
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('purchasability')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-              tab === 'purchasability'
-                ? 'bg-slate-900 text-white'
-                : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            Acquistabilità
-          </button>
-        </div>
+        <KpiSignalsFilters
+          dateFrom={kpi.dateFrom}
+          dateTo={kpi.dateTo}
+          ratingBucket={kpi.ratingBucket}
+          selectionKey={kpi.selectionKey}
+          evaluationStatus={kpi.evaluationStatus}
+          countryName={kpi.countryName}
+          leagueName={kpi.leagueName}
+          loading={kpi.loading}
+          actionLoading={kpi.actionLoading}
+          onDateFromChange={kpi.setDateFrom}
+          onDateToChange={kpi.setDateTo}
+          onRatingBucketChange={kpi.setRatingBucket}
+          onSelectionKeyChange={kpi.setSelectionKey}
+          onEvaluationStatusChange={kpi.setEvaluationStatus}
+          onCountryNameChange={kpi.setCountryName}
+          onLeagueNameChange={kpi.setLeagueName}
+          onRefresh={() => void kpi.loadAll()}
+          onSync={() => void kpi.runSync()}
+          onRevaluate={() => void kpi.runRevaluate()}
+          onExport={kpi.exportCsv}
+        />
 
-        {tab === 'purchasability' ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setPurchSubTab('audit')}
-                className={`rounded-md px-3 py-1 text-sm ${
-                  purchSubTab === 'audit'
-                    ? 'bg-cyan-800 text-white'
-                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                Audit
-              </button>
-              <button
-                type="button"
-                onClick={() => setPurchSubTab('statistical-2a')}
-                className={`rounded-md px-3 py-1 text-sm ${
-                  purchSubTab === 'statistical-2a'
-                    ? 'bg-cyan-800 text-white'
-                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                Ricerca statistica — Fase 2A
-              </button>
-              <button
-                type="button"
-                onClick={() => setPurchSubTab('residual-2a4')}
-                className={`rounded-md px-3 py-1 text-sm ${
-                  purchSubTab === 'residual-2a4'
-                    ? 'bg-cyan-800 text-white'
-                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                Affidabilità residuale — Fase 2A.4.1
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPurchSubTab('validation-f5')
-                  void purchValidation.loadSync()
-                }}
-                className={`rounded-md px-3 py-1 text-sm ${
-                  purchSubTab === 'validation-f5'
-                    ? 'bg-cyan-800 text-white'
-                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                Validazione — Fase 5
-              </button>
-            </div>
+        {kpi.loading && !kpi.summary ? <KpiSignalsSkeleton /> : null}
 
-            {purchSubTab === 'audit' ? (
-              <PurchasabilityAuditBody
-                audit={purch.audit}
-                dataset={purch.dataset}
-                loading={purch.loading}
-                error={purch.error}
-                dateFrom={purch.dateFrom}
-                dateTo={purch.dateTo}
-                marketFamily={purch.marketFamily}
-                onDateFrom={purch.setDateFrom}
-                onDateTo={purch.setDateTo}
-                onMarketFamily={purch.setMarketFamily}
-                onRefresh={() => void purch.loadAudit()}
-                onDatasetPage={(offset) => void purch.loadDatasetPage(offset)}
-                filters={purch.filters}
-              />
-            ) : purchSubTab === 'statistical-2a' ? (
-              <PurchasabilityStatisticalResearchBody
-                data={purchStat.data}
-                loading={purchStat.loading}
-                error={purchStat.error}
-                detailWarning={purchStat.detailWarning}
-                job={purchStat.job}
-                dateFrom={purchStat.dateFrom}
-                dateTo={purchStat.dateTo}
-                selection={purchStat.selection}
-                bootstrapIterations={purchStat.bootstrapIterations}
-                onDateFrom={purchStat.setDateFrom}
-                onDateTo={purchStat.setDateTo}
-                onSelection={purchStat.setSelection}
-                onBootstrap={purchStat.setBootstrapIterations}
-                onRefresh={() => void purchStat.load()}
-                filters={purchStat.filters}
-              />
-            ) : purchSubTab === 'residual-2a4' ? (
-              <PurchasabilityResidualReliabilityBody
-                data={purchResidual.data}
-                loading={purchResidual.loading}
-                error={purchResidual.error}
-                detailWarning={purchResidual.detailWarning}
-                job={purchResidual.job}
-                dateFrom={purchResidual.dateFrom}
-                dateTo={purchResidual.dateTo}
-                selection={purchResidual.selection}
-                bootstrapIterations={purchResidual.bootstrapIterations}
-                onDateFrom={purchResidual.setDateFrom}
-                onDateTo={purchResidual.setDateTo}
-                onSelection={purchResidual.setSelection}
-                onBootstrap={purchResidual.setBootstrapIterations}
-                onRefresh={() => void purchResidual.load()}
-                filters={purchResidual.filters}
-              />
-            ) : (
-              <PurchasabilityValidationBody
-                health={purchValidation.health}
-                summary={purchValidation.summary}
-                readiness={purchValidation.readiness}
-                loading={purchValidation.loading}
-                error={purchValidation.error}
-                job={purchValidation.job}
-                dateFrom={purchValidation.dateFrom}
-                dateTo={purchValidation.dateTo}
-                marketKey={purchValidation.marketKey}
-                bootstrapIterations={purchValidation.bootstrapIterations}
-                onDateFrom={purchValidation.setDateFrom}
-                onDateTo={purchValidation.setDateTo}
-                onMarketKey={purchValidation.setMarketKey}
-                onBootstrap={purchValidation.setBootstrapIterations}
-                onRefresh={() => void purchValidation.loadSync()}
-                onStartJob={() => void purchValidation.startJob()}
-                filters={purchValidation.filters}
-              />
-            )}
-          </div>
-        ) : (
+        {!kpi.loading && emptyVariant ? (
+          <KpiSignalsEmptyState
+            variant={emptyVariant}
+            onSync={() => void kpi.runSync()}
+            actionLoading={kpi.actionLoading}
+          />
+        ) : null}
+
+        {kpi.summary && !emptyVariant ? (
           <>
-            <KpiSignalsFilters
-              dateFrom={kpi.dateFrom}
-              dateTo={kpi.dateTo}
-              ratingBucket={kpi.ratingBucket}
-              selectionKey={kpi.selectionKey}
-              evaluationStatus={kpi.evaluationStatus}
-              countryName={kpi.countryName}
-              leagueName={kpi.leagueName}
-              loading={kpi.loading}
-              actionLoading={kpi.actionLoading}
-              onDateFromChange={kpi.setDateFrom}
-              onDateToChange={kpi.setDateTo}
-              onRatingBucketChange={kpi.setRatingBucket}
-              onSelectionKeyChange={kpi.setSelectionKey}
-              onEvaluationStatusChange={kpi.setEvaluationStatus}
-              onCountryNameChange={kpi.setCountryName}
-              onLeagueNameChange={kpi.setLeagueName}
-              onRefresh={() => void kpi.loadAll()}
-              onSync={() => void kpi.runSync()}
-              onRevaluate={() => void kpi.runRevaluate()}
-              onExport={kpi.exportCsv}
+            <KpiRatingBucketCarousel
+              buckets={kpi.summary.by_rating_bucket}
+              selectedBucket={kpi.ratingBucket}
+              onSelect={handleBucketSelect}
+              onClearFilter={() => {
+                setHeatmapFilter(null)
+                void kpi.loadAll()
+              }}
             />
-
-            {kpi.loading && !kpi.summary ? <KpiSignalsSkeleton /> : null}
-
-            {!kpi.loading && emptyVariant ? (
-              <KpiSignalsEmptyState
-                variant={emptyVariant}
-                onSync={() => void kpi.runSync()}
-                actionLoading={kpi.actionLoading}
-              />
-            ) : null}
-
-            {kpi.summary && !emptyVariant ? (
-              <>
-                <KpiRatingBucketCarousel
-                  buckets={kpi.summary.by_rating_bucket}
-                  selectedBucket={kpi.ratingBucket}
-                  onSelect={handleBucketSelect}
-                  onClearFilter={() => {
-                    setHeatmapFilter(null)
-                    void kpi.loadAll()
-                  }}
-                />
-                <KpiSignalsMetricRibbon overall={kpi.summary.overall} />
-                <KpiSignalsHeatmapLab
-                  cells={kpi.summary.heatmap.cells}
-                  onCellClick={handleHeatmapCellClick}
-                />
-                <KpiSignalsTopRankingLab top={kpi.summary.top} />
-                <KpiSignalsActivationsLab rows={filteredActivations} onRowClick={handleRowClick} />
-                <KpiSignalsInfoPanel />
-              </>
-            ) : null}
-
-            <KpiSignalDetailDrawer state={drawer} onClose={() => setDrawer(null)} />
+            <KpiSignalsMetricRibbon overall={kpi.summary.overall} />
+            <KpiSignalsHeatmapLab
+              cells={kpi.summary.heatmap.cells}
+              onCellClick={handleHeatmapCellClick}
+            />
+            <KpiSignalsTopRankingLab top={kpi.summary.top} />
+            <KpiSignalsActivationsLab rows={filteredActivations} onRowClick={handleRowClick} />
+            <KpiSignalsInfoPanel />
           </>
-        )}
+        ) : null}
+
+        <KpiSignalDetailDrawer state={drawer} onClose={() => setDrawer(null)} />
       </div>
     </motion.div>
   )

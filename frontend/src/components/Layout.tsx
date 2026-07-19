@@ -7,14 +7,17 @@ import { MobileTopBar } from './MobileTopBar'
 import { Sidebar } from './Sidebar'
 
 const CECCHINO_TODAY_PATH = '/cecchino-today'
+const MONITORAGGIO_MODULI_PATH = '/monitoraggio-moduli'
 
 export function Layout() {
   const location = useLocation()
-  const isCecchinoTodayWorkspace =
+  const isFullWidthWorkspace =
     location.pathname === CECCHINO_TODAY_PATH ||
-    location.pathname.startsWith(`${CECCHINO_TODAY_PATH}/`)
+    location.pathname.startsWith(`${CECCHINO_TODAY_PATH}/`) ||
+    location.pathname === MONITORAGGIO_MODULI_PATH ||
+    location.pathname.startsWith(`${MONITORAGGIO_MODULI_PATH}/`)
 
-  const contentClass = isCecchinoTodayWorkspace
+  const contentClass = isFullWidthWorkspace
     ? 'w-full max-w-none px-3 py-4 sm:px-4 lg:px-5'
     : 'content-container mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8'
 

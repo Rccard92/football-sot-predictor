@@ -8,6 +8,14 @@
 4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
 5. Nessuna colonna Acquistabilità produttiva.
 
+## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
+
+1. Aprire `/monitoraggio-moduli` (full-width).
+2. Overview → selezionare modulo → vista interna (`?module=&view=`).
+3. Export: «Scarica analisi» → ZIP `SOT_MONITOR_<MODULE>_…`.
+4. Redirect: `/monitoraggio-segnali-lab`, `/cecchino/ricerca-credibilita-x`, `/cecchino/ricerca-intensita-goal`.
+5. Segnali KPI operativo resta su `/segnali-kpi` senza laboratori Acquistabilità.
+
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 1. Scan/recompute: dopo persist preview → `sync_purchasability_validation_for_fixture` (try/except).

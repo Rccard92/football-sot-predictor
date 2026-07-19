@@ -6,6 +6,7 @@ from app.routes import (
     cecchino,
     cecchino_admin,
     cecchino_kpi_signals,
+    cecchino_module_monitoring,
     cecchino_research,
     cecchino_signals,
     cecchino_today,
@@ -83,6 +84,7 @@ api_router.include_router(cecchino_admin.router)
 api_router.include_router(cecchino_kpi_signals.router)
 api_router.include_router(cecchino_kpi_signals.admin_router)
 api_router.include_router(cecchino_kpi_signals.validation_admin_router)
+api_router.include_router(cecchino_module_monitoring.router)
 api_router.include_router(cecchino_research.router)
 api_router.include_router(cecchino_signals.router)
 api_router.include_router(cecchino_today.router)

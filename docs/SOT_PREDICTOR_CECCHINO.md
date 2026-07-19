@@ -18,6 +18,19 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Legacy | `GET …/purchasability-empirical` (deprecated) |
 | Preview contract | `cecchino_purchasability_v1_preview_contract` |
 
+## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
+
+| Campo | Valore |
+|-------|--------|
+| Route | `/monitoraggio-moduli` (full-width) |
+| Moduli | Acquistabilità · Balance v5 · Goal Intensity v5 · Segnali |
+| Overview API | `GET /api/cecchino/module-monitoring/overview` |
+| Export | `GET …/module-monitoring/{key}/analysis-pack.zip` |
+| Redirect | lab segnali / credibilità X / intensità goal → workspace |
+| Segnali KPI | solo Segnali (tab Acquistabilità rimossa) |
+| Librerie | Tailwind, ECharts, Framer Motion, Sonner |
+| Formule | invariate |
+
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 | Campo | Valore |

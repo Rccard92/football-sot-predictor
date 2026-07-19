@@ -33,6 +33,13 @@
 - Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
 - Eliminati `cecchino_balance_v5_preview.py` e `cecchino_balance_research_candidates.py`; `balance_analysis` ridotto ad adapter; FE `CecchinoBalanceV5Panel` senza Preview.
 
+## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
+
+- Workspace unificato `/monitoraggio-moduli`: 4 moduli semanticamente separati, shell condivisa, export ZIP ChatGPT.
+- Redirect legacy lab; sidebar: rimossi Segnali Lab / Credibilità X / Intensità Goal; aggiunta Monitoraggio Moduli.
+- Segnali KPI: rimossa tab Acquistabilità (body/hook riusati nel workspace).
+- Nessuna modifica a formule, candidate, gate, Signals, Rating.
+
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 - Feature `v1_1`: mercati unsupported senza contesto favourite FT.

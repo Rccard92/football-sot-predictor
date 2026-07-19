@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { LegacyLabRedirect } from './components/module-monitoring/LegacyLabRedirect'
 import { Admin } from './pages/Admin'
 import { ApiDataCatalog } from './pages/ApiDataCatalog'
 import { Backtest } from './pages/Backtest'
@@ -17,11 +18,8 @@ import { BetMonitoring } from './pages/BetMonitoring'
 import { Bookmakers } from './pages/Bookmakers'
 import { CecchinoPage } from './pages/CecchinoPage'
 import { CecchinoSignalsMonitoringPage } from './pages/CecchinoSignalsMonitoringPage'
-import { MonitoraggioSegnaliLab } from './pages/MonitoraggioSegnaliLab'
-import { SignalsLabErrorBoundary } from './components/cecchino-lab/SignalsLabErrorBoundary'
 import { SegnaliKpiPage } from './pages/SegnaliKpiPage'
-import { RicercaCredibilitaXPage } from './pages/RicercaCredibilitaXPage'
-import { RicercaIntensitaGoalPage } from './pages/RicercaIntensitaGoalPage'
+import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
@@ -34,17 +32,20 @@ export default function App() {
           <Route path="/cecchino" element={<CecchinoPage />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
           <Route path="/monitoraggio-segnali" element={<CecchinoSignalsMonitoringPage />} />
+          <Route path="/monitoraggio-moduli" element={<MonitoraggioModuliPage />} />
           <Route
             path="/monitoraggio-segnali-lab"
-            element={
-              <SignalsLabErrorBoundary>
-                <MonitoraggioSegnaliLab />
-              </SignalsLabErrorBoundary>
-            }
+            element={<LegacyLabRedirect module="signals" view="lab" />}
           />
           <Route path="/segnali-kpi" element={<SegnaliKpiPage />} />
-          <Route path="/cecchino/ricerca-credibilita-x" element={<RicercaCredibilitaXPage />} />
-          <Route path="/cecchino/ricerca-intensita-goal" element={<RicercaIntensitaGoalPage />} />
+          <Route
+            path="/cecchino/ricerca-credibilita-x"
+            element={<LegacyLabRedirect module="balance-v5" view="draw-credibility" />}
+          />
+          <Route
+            path="/cecchino/ricerca-intensita-goal"
+            element={<LegacyLabRedirect module="goal-intensity-v5" view="research" />}
+          />
           <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
           <Route path="/bookmakers" element={<Bookmakers />} />
           <Route path="/changelog" element={<Changelog />} />

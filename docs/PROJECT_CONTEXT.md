@@ -28,6 +28,10 @@ Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backe
 
 **ACQUISTABILITÀ**: feature Fase 2 + candidato Fase 3 Preview (vedi sotto). Nessuna colonna UI ancora.
 
+## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
+
+Workspace `/monitoraggio-moduli`: Acquistabilità, Balance v5, Goal Intensity v5, Segnali. Overview + analysis-pack ZIP. Redirect laboratori legacy. Segnali KPI senza tab Acquistabilità. Formule invariate. Next: Fase 2/3 validazione empirica Balance v5.
+
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 Validazione da snapshot persistito; tabella evaluations; policy promozione solo readiness (`eligible_for_manual_promotion`). Feature `v1_1`. Lab FE Validazione. candidate_2 resta Preview. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
