@@ -3,7 +3,7 @@ import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
-import { coverageDisplay } from './moduleMonitoringUi'
+import { coverageDisplay, monitoringStatusLabel } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -22,13 +22,18 @@ export function BalanceModulePanel({
 }: Props) {
   if (view === 'overview' || view === 'geometry-f36' || view === 'dominance' || view === 'gap-coherence' || view === 'data-health') {
     const cov = coverageDisplay(overview?.coverage ?? null, overview?.coverage != null)
+    const statusRaw = overview?.status || 'official_monitored'
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-violet-200/70 bg-violet-50/50 px-3 py-2 text-sm text-violet-900">
           Monitoraggio descrittivo — validazione empirica avanzata in preparazione
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MonitoringMetricCard label="Versione" value={overview?.version || 'cecchino_balance_v5_v2'} />
+          <MonitoringMetricCard
+            label="Stato"
+            value={monitoringStatusLabel(statusRaw)}
+            ariaLabel={`Stato ${statusRaw}`}
+          />
           <MonitoringMetricCard label="Coverage snapshot" value={cov.text} />
           <MonitoringMetricCard
             label="Fixture analizzate"

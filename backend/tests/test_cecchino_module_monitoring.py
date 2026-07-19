@@ -195,3 +195,186 @@ def test_purchasability_overview_empty(monkeypatch):
     )
     assert out["coverage"] is None
     assert out["warnings"]
+
+
+def _mock_fixture(
+    *,
+    output: dict | None,
+    settled: bool = False,
+):
+    row = MagicMock()
+    row.cecchino_output_json = output
+    row.score_fulltime_home = 1 if settled else None
+    row.score_fulltime_away = 0 if settled else None
+    return row
+
+
+def test_extract_balance_v5_canonical_and_legacy():
+    from app.services.cecchino.cecchino_module_monitoring_exports import (
+        extract_balance_v5_from_today_output,
+    )
+
+    assert extract_balance_v5_from_today_output(None) is None
+    assert extract_balance_v5_from_today_output({}) is None
+    assert (
+        extract_balance_v5_from_today_output({"balance_v5": {"status": "unavailable"}})
+        is None
+    )
+    ok = extract_balance_v5_from_today_output(
+        {"balance_v5": {"status": "ok", "pillars": {}}}
+    )
+    assert ok is not None
+    legacy = extract_balance_v5_from_today_output(
+        {"balance_analysis": {"gap": 1.2, "status": "ok"}}
+    )
+    assert legacy is not None
+
+
+def test_balance_overview_settled_subseteq_fixtures(monkeypatch):
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    rows = [
+        _mock_fixture(output={"balance_v5": {"status": "ok", "x": 1}}, settled=True),
+        _mock_fixture(output={"balance_v5": {"status": "ok", "x": 1}}, settled=False),
+        _mock_fixture(output={}, settled=True),  # eleggibile FT ma senza balance
+        _mock_fixture(
+            output={"balance_v5": {"status": "unavailable"}}, settled=True
+        ),
+    ]
+
+    class _Scalars:
+        def all(self):
+            return rows
+
+    db = MagicMock()
+    db.scalars.return_value = _Scalars()
+
+    out = mon.build_balance_module_overview(
+        db, date_from=date(2026, 1, 1), date_to=date(2026, 1, 31)
+    )
+    assert out["eligible_fixtures"] == 4
+    assert out["fixtures"] == 2
+    assert out["settled"] == 1
+    assert out["settled"] <= out["fixtures"]
+    assert out["coverage"] == 0.5
+    assert any("persistito" in w for w in out["warnings"]) is False
+
+
+def test_balance_overview_zero_covered_warning(monkeypatch):
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    rows = [
+        _mock_fixture(output={}, settled=True),
+        _mock_fixture(output={}, settled=True),
+    ]
+
+    class _Scalars:
+        def all(self):
+            return rows
+
+    db = MagicMock()
+    db.scalars.return_value = _Scalars()
+    out = mon.build_balance_module_overview(
+        db, date_from=date(2026, 1, 1), date_to=date(2026, 1, 31)
+    )
+    assert out["fixtures"] == 0
+    assert out["settled"] == 0
+    assert out["coverage"] == 0.0
+    # Mai Fixture 0 + Settled > 0
+    assert not (out["fixtures"] == 0 and (out["settled"] or 0) > 0)
+    assert any("persistito" in w for w in out["warnings"])
+
+
+def test_balance_coverage_null_when_no_eligible():
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    class _Scalars:
+        def all(self):
+            return []
+
+    db = MagicMock()
+    db.scalars.return_value = _Scalars()
+    out = mon.build_balance_module_overview(
+        db, date_from=date(2026, 1, 1), date_to=date(2026, 1, 31)
+    )
+    assert out["coverage"] is None
+    assert out["fixtures"] is None
+    assert out["settled"] is None
+
+
+@pytest.mark.parametrize(
+    "module_key",
+    ["purchasability", "balance-v5", "goal-intensity-v5", "signals"],
+)
+def test_build_module_rows_csv_bom_and_headers(module_key, monkeypatch):
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    monkeypatch.setattr(
+        mon,
+        "export_purchasability_validation_csv",
+        lambda *a, **k: "id,market_key\n",
+    )
+    monkeypatch.setattr(
+        mon,
+        "build_balance_module_overview",
+        lambda *a, **k: {
+            "module_key": "balance-v5",
+            "eligible_fixtures": 0,
+            "covered_fixtures": 0,
+            "settled_covered_fixtures": 0,
+            "coverage": None,
+            "status": "official_monitored",
+            "version": "v",
+        },
+    )
+    monkeypatch.setattr(
+        mon,
+        "build_goal_intensity_module_overview",
+        lambda *a, **k: {
+            "module_key": "goal-intensity-v5",
+            "eligible_fixtures": 0,
+            "fixtures": None,
+            "settled": None,
+            "coverage": None,
+            "status": "preview_research",
+            "version": "v",
+        },
+    )
+    monkeypatch.setattr(
+        mon,
+        "build_signals_module_overview",
+        lambda *a, **k: {
+            "module_key": "signals",
+            "fixtures": None,
+            "activations": None,
+            "settled": None,
+            "coverage": None,
+            "status": "operational",
+            "version": "v",
+        },
+    )
+    data, filename = mon.build_module_rows_csv(
+        MagicMock(),
+        module_key=module_key,
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 1, 31),
+    )
+    assert data.startswith(b"\xef\xbb\xbf")
+    assert filename.endswith("_rows.csv")
+    assert module_key in filename
+    text = data.decode("utf-8-sig")
+    assert text.splitlines()[0]  # header presente anche se empty
+
+
+def test_rows_csv_invalid_key():
+    from app.services.cecchino.cecchino_module_monitoring_exports import (
+        build_module_rows_csv,
+    )
+
+    with pytest.raises(ValueError):
+        build_module_rows_csv(
+            MagicMock(),
+            module_key="nope",
+            date_from=date(2026, 1, 1),
+            date_to=date(2026, 1, 2),
+        )

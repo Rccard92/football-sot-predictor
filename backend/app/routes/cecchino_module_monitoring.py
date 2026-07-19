@@ -14,6 +14,7 @@ from app.services.cecchino.cecchino_module_monitoring_exports import (
     VALID_MODULE_KEYS,
     build_module_analysis_pack_zip,
     build_module_monitoring_overview,
+    build_module_rows_csv,
     build_module_summary_payload,
 )
 
@@ -106,4 +107,36 @@ def module_monitoring_summary_json(
                 f'attachment; filename="SOT_MONITOR_{module_key}_summary.json"'
             )
         },
+    )
+
+
+@router.get("/{module_key}/rows.csv")
+def module_monitoring_rows_csv(
+    module_key: str,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    market_key: str | None = Query(None),
+    include_rows: bool = Query(True),
+    include_debug: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    _ = include_rows, include_debug
+    if module_key not in VALID_MODULE_KEYS:
+        raise HTTPException(status_code=404, detail="unknown_module_key")
+    try:
+        data, filename = build_module_rows_csv(
+            db,
+            module_key=module_key,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+            market_key=market_key,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="unknown_module_key")
+    return Response(
+        content=data,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

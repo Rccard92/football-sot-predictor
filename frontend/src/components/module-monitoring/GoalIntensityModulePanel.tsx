@@ -3,6 +3,7 @@ import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
+import { monitoringStatusLabel } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -26,10 +27,15 @@ export function GoalIntensityModulePanel({
     view === 'calibration' ||
     view === 'data-health'
   ) {
+    const statusRaw = overview?.status || 'preview_research'
     return (
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MonitoringMetricCard label="Stato" value="Preview research" />
+          <MonitoringMetricCard
+            label="Stato"
+            value={monitoringStatusLabel(statusRaw)}
+            ariaLabel={`Stato ${statusRaw}`}
+          />
           <MonitoringMetricCard label="Versione" value={overview?.version || 'goal_intensity_v5_preview'} />
           <MonitoringMetricCard
             label="Fixture periodo"

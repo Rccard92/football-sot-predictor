@@ -28,6 +28,10 @@ Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backe
 
 **ACQUISTABILITÀ**: feature Fase 2 + candidato Fase 3 Preview (vedi sotto). Nessuna colonna UI ancora.
 
+## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
+
+Portal export (no clipping); export globale hero; `rows.csv`; Balance settled⊆fixtures da snapshot persistito; label status IT. Formule invariate. Next: Fase 2/3 validazione empirica Balance v5.
+
 ## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
 
 Workspace `/monitoraggio-moduli`: Acquistabilità, Balance v5, Goal Intensity v5, Segnali. Overview + analysis-pack ZIP. Redirect laboratori legacy. Segnali KPI senza tab Acquistabilità. Formule invariate. Next: Fase 2/3 validazione empirica Balance v5.

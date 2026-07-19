@@ -7,15 +7,17 @@ type Props = {
   hint?: string
   icon?: React.ReactNode
   footer?: React.ReactNode
+  ariaLabel?: string
 }
 
-export function MonitoringMetricCard({ label, value, hint, icon, footer }: Props) {
+export function MonitoringMetricCard({ label, value, hint, icon, footer, ariaLabel }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={MOTION_FAST}
       className={`${CARD_BASE} px-4 py-3`}
+      aria-label={ariaLabel}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>

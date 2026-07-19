@@ -11,6 +11,7 @@ import {
   CARD_BASE,
   MOTION_MED,
   coverageDisplay,
+  monitoringStatusLabel,
 } from './moduleMonitoringUi'
 
 type Props = {
@@ -25,6 +26,9 @@ export function ModuleOverviewGrid({ items, onOpen }: Props) {
         const def = getMonitoringModule(item.module_key)
         const accent = ACCENT_CLASSES[def.accent]
         const cov = coverageDisplay(item.coverage, item.coverage != null)
+        const statusLabel = item.status
+          ? monitoringStatusLabel(item.status)
+          : def.operationalStatus
         return (
           <motion.article
             key={item.module_key}
@@ -37,7 +41,11 @@ export function ModuleOverviewGrid({ items, onOpen }: Props) {
               <div>
                 <h3 className="text-base font-semibold text-slate-900">{def.label}</h3>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  <MonitoringAccentBadge label={def.operationalStatus} accent={def.accent} />
+                  <MonitoringAccentBadge
+                    label={statusLabel}
+                    accent={def.accent}
+                    ariaLabel={item.status || undefined}
+                  />
                   <MonitoringStatusBadge label={cov.text} tone={cov.tone} />
                 </div>
               </div>

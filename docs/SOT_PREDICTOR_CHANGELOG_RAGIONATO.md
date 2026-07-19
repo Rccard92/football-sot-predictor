@@ -33,6 +33,13 @@
 - Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
 - Eliminati `cecchino_balance_v5_preview.py` e `cecchino_balance_research_candidates.py`; `balance_analysis` ridotto ad adapter; FE `CecchinoBalanceV5Panel` senza Preview.
 
+## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
+
+- Menu export via React portal (no clipping da `overflow-hidden`); desktop fixed + mobile bottom sheet; a11y Escape/focus.
+- Hero: export globale multi-modulo (un download per scelta); shell: menu per-modulo + CSV righe.
+- Endpoint `GET …/rows.csv` (BOM UTF-8); Balance overview: settled ⊆ fixtures da payload persistito; label status IT.
+- Nessuna modifica a formule, candidate, gate, Signals, Rating.
+
 ## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
 
 - Workspace unificato `/monitoraggio-moduli`: 4 moduli semanticamente separati, shell condivisa, export ZIP ChatGPT.

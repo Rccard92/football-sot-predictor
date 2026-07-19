@@ -16,6 +16,12 @@ export type ModuleOverviewItem = {
   last_snapshot_at?: string | null
   next_review_at?: string | null
   warnings?: string[]
+  eligible_fixtures?: number | null
+  covered_fixtures?: number | null
+  settled_covered_fixtures?: number | null
+  coverage_numerator?: number | null
+  coverage_denominator?: number | null
+  activations?: number | null
 }
 
 export type ModuleMonitoringOverview = {
@@ -102,5 +108,15 @@ export async function downloadModuleSummaryJson(
   await downloadBlob(
     `${BASE}/${moduleKey}/summary.json${qs({ ...filters, include_rows: false })}`,
     `SOT_MONITOR_${moduleKey}_summary.json`,
+  )
+}
+
+export async function downloadModuleRowsCsv(
+  moduleKey: MonitoringModuleKeyApi,
+  filters: ModuleMonitoringFilters,
+): Promise<void> {
+  await downloadBlob(
+    `${BASE}/${moduleKey}/rows.csv${qs({ ...filters, include_rows: true })}`,
+    `SOT_MONITOR_${moduleKey}_${filters.date_from}_${filters.date_to}_rows.csv`,
   )
 }

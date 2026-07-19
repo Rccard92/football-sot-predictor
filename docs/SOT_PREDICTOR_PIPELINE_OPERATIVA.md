@@ -8,6 +8,14 @@
 4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
 5. Nessuna colonna Acquistabilità produttiva.
 
+## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
+
+1. Hero «Scarica analisi» → menu globale (un pacchetto per modulo scelto); shell → menu del modulo attivo.
+2. Menu in portal (desktop popover fixed / mobile bottom sheet); Escape / click fuori / backdrop chiudono.
+3. CSV righe: `GET /api/cecchino/module-monitoring/{key}/rows.csv`.
+4. Overview Balance: coverage = covered/eligible; settled solo su covered; warning se snapshot senza Balance.
+5. Status UI in italiano (`monitoringStatusLabel`); raw key solo in aria-label.
+
 ## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
 
 1. Aprire `/monitoraggio-moduli` (full-width).

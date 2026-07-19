@@ -76,16 +76,26 @@ export const MOTION_MED = { duration: 0.25 }
 
 export const READINESS_LABELS: Record<string, string> = {
   data_quality_blocked: 'Qualità dati insufficiente',
-  insufficient_temporal_span: 'Periodo di osservazione insufficiente',
+  insufficient_temporal_span: 'Periodo insufficiente',
   insufficient_sample: 'Campione insufficiente',
   collecting_data: 'Raccolta dati',
   performance_not_confirmed: 'Prestazioni non confermate',
   eligible_for_manual_promotion: 'Pronta per revisione manuale',
+  candidate_under_review: 'Candidato in revisione',
+  official_monitored: 'Ufficiale monitorato',
+  preview_research: 'Preview research',
+  operational: 'Operativo',
+  preview_monitored: 'Preview monitorata',
 }
 
 export function readinessLabelIt(status: string | null | undefined): string {
   if (!status) return 'Stato non disponibile'
   return READINESS_LABELS[status] || status
+}
+
+/** Label italiane per status overview/API — raw key solo via aria-label. */
+export function monitoringStatusLabel(status: string | null | undefined): string {
+  return readinessLabelIt(status)
 }
 
 export function fmtNum(n: number | null | undefined, digits = 2): string {

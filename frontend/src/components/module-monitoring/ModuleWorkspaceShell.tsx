@@ -3,7 +3,12 @@ import type { MonitoringModuleDef } from './moduleMonitoringRegistry'
 import { MonitoringAccentBadge } from './MonitoringStatusBadge'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import { ModuleViewTabs } from './ModuleViewTabs'
-import { ACCENT_CLASSES, CARD_BASE, MOTION_MED } from './moduleMonitoringUi'
+import {
+  ACCENT_CLASSES,
+  CARD_BASE,
+  MOTION_MED,
+  monitoringStatusLabel,
+} from './moduleMonitoringUi'
 import type { MonitoringModuleKeyApi } from '../../lib/cecchinoModuleMonitoringApi'
 
 type Props = {
@@ -13,6 +18,7 @@ type Props = {
   dateFrom: string
   dateTo: string
   competitionId?: number | null
+  apiStatus?: string | null
   children: React.ReactNode
 }
 
@@ -23,9 +29,13 @@ export function ModuleWorkspaceShell({
   dateFrom,
   dateTo,
   competitionId,
+  apiStatus,
   children,
 }: Props) {
   const accent = ACCENT_CLASSES[module.accent]
+  const statusLabel = apiStatus
+    ? monitoringStatusLabel(apiStatus)
+    : module.operationalStatus
   return (
     <section className={`${CARD_BASE} overflow-hidden`}>
       <header className={`border-b border-slate-100 px-4 py-4 sm:px-5 ${accent.softBg}`}>
@@ -33,7 +43,11 @@ export function ModuleWorkspaceShell({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold text-slate-900">{module.label}</h2>
-              <MonitoringAccentBadge label={module.operationalStatus} accent={module.accent} />
+              <MonitoringAccentBadge
+                label={statusLabel}
+                accent={module.accent}
+                ariaLabel={apiStatus || undefined}
+              />
             </div>
             <p className="mt-1 max-w-2xl text-sm text-slate-600">{module.description}</p>
             <p className="mt-1 text-xs text-slate-500">Fallback versione: {module.versionLabel}</p>

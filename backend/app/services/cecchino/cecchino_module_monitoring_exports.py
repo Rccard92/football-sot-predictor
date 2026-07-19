@@ -110,6 +110,40 @@ def build_purchasability_module_overview(
     )
 
 
+def extract_balance_v5_from_today_output(
+    output: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Estrae Balance v5 solo da payload persistito (no ricalcolo).
+
+    Canonico: ``balance_v5`` dict non vuoto e status != unavailable.
+    Legacy: ``balance_analysis`` non vuoto se presente e utilizzabile.
+    """
+    if not isinstance(output, dict):
+        return None
+    bal = output.get("balance_v5")
+    if isinstance(bal, dict) and bal:
+        status = str(bal.get("status") or "").strip().lower()
+        if status != "unavailable":
+            return bal
+    legacy = output.get("balance_analysis")
+    if isinstance(legacy, dict) and legacy:
+        status = str(legacy.get("status") or "").strip().lower()
+        if status and status == "unavailable":
+            return None
+        # legacy usable if it has any meaningful keys beyond empty shell
+        if any(k for k in legacy.keys() if k not in {"status", "message", "error"}):
+            return legacy
+        if status and status != "unavailable":
+            return legacy
+    return None
+
+
+def _fixture_is_settled(row: CecchinoTodayFixture) -> bool:
+    return (
+        row.score_fulltime_home is not None and row.score_fulltime_away is not None
+    )
+
+
 def build_balance_module_overview(
     db: Session,
     *,
@@ -125,19 +159,25 @@ def build_balance_module_overview(
     if competition_id is not None:
         q = q.where(CecchinoTodayFixture.competition_id == int(competition_id))
     rows = list(db.scalars(q).all())
-    with_balance = 0
-    settled = 0
+    eligible = len(rows)
+    covered = 0
+    settled_covered = 0
     for row in rows:
         out = row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else {}
-        if out.get("balance_v5") or out.get("balance_analysis"):
-            with_balance += 1
-        if row.score_fulltime_home is not None and row.score_fulltime_away is not None:
-            settled += 1
-    denom = len(rows)
-    coverage = (with_balance / denom) if denom else None
-    warnings = []
-    if denom == 0:
+        bal = extract_balance_v5_from_today_output(out)
+        if bal is None:
+            continue
+        covered += 1
+        if _fixture_is_settled(row):
+            settled_covered += 1
+    coverage = (covered / eligible) if eligible else None
+    warnings: list[str] = []
+    if eligible == 0:
         warnings.append("Nessuna fixture eleggibile nel periodo")
+    elif covered == 0:
+        warnings.append(
+            "Balance non disponibile nello snapshot persistito"
+        )
     warnings.append(
         "Monitoraggio descrittivo — validazione empirica avanzata in preparazione"
     )
@@ -147,8 +187,13 @@ def build_balance_module_overview(
             "status": "official_monitored",
             "version": "cecchino_balance_v5_v2",
             "coverage": coverage,
-            "fixtures": with_balance if denom else None,
-            "settled": settled if denom else None,
+            "fixtures": covered if eligible else None,
+            "settled": settled_covered if eligible else None,
+            "eligible_fixtures": eligible,
+            "covered_fixtures": covered,
+            "settled_covered_fixtures": settled_covered,
+            "coverage_numerator": covered if eligible else None,
+            "coverage_denominator": eligible if eligible else None,
             "last_snapshot_at": None,
             "next_review_at": None,
             "warnings": warnings,
@@ -163,7 +208,8 @@ def build_goal_intensity_module_overview(
     date_to: date,
     competition_id: int | None = None,
 ) -> dict[str, Any]:
-    # Soft overview: count fixtures; detailed preview via existing APIs in pack
+    # Soft overview: eligible fixtures; settled ⊆ eligible (FT scores).
+    # coverage null: coverage Goal Intensity non derivabile da solo conteggio eleggibili.
     q = select(CecchinoTodayFixture).where(
         CecchinoTodayFixture.scan_date >= date_from,
         CecchinoTodayFixture.scan_date <= date_to,
@@ -172,13 +218,11 @@ def build_goal_intensity_module_overview(
     if competition_id is not None:
         q = q.where(CecchinoTodayFixture.competition_id == int(competition_id))
     rows = list(db.scalars(q).all())
-    settled = sum(
-        1
-        for r in rows
-        if r.score_fulltime_home is not None and r.score_fulltime_away is not None
-    )
+    eligible = len(rows)
+    settled = sum(1 for r in rows if _fixture_is_settled(r))
     warnings = [
         "Preview research: metriche candidate/calibrazione nel pacchetto export",
+        "Coverage non disponibile: zero ≠ assente (denominatore coverage non definito in overview soft)",
     ]
     if not rows:
         warnings.insert(0, "Nessuna fixture eleggibile nel periodo")
@@ -188,8 +232,9 @@ def build_goal_intensity_module_overview(
             "status": "preview_research",
             "version": "goal_intensity_v5_preview",
             "coverage": None,
-            "fixtures": len(rows) if rows else None,
-            "settled": settled if rows else None,
+            "fixtures": eligible if eligible else None,
+            "settled": settled if eligible else None,
+            "eligible_fixtures": eligible,
             "last_snapshot_at": None,
             "next_review_at": None,
             "warnings": warnings,
@@ -204,6 +249,7 @@ def build_signals_module_overview(
     date_to: date,
     competition_id: int | None = None,
 ) -> dict[str, Any]:
+    _ = competition_id  # filtro competition non ancora esposto da build_signals_summary
     try:
         from app.services.cecchino.cecchino_signal_aggregation import (
             build_signals_summary,
@@ -216,18 +262,28 @@ def build_signals_module_overview(
         )
         overall = summary.get("overall") if isinstance(summary, dict) else {}
         overall = overall or {}
+        # Distingue fixture distinte / attivazioni / settled (won+lost).
+        # settled ⊆ activations semanticamente; fixtures può essere assente → null.
+        fixtures = overall.get("fixtures")
+        activations = overall.get("activations")
         settled = int(overall.get("won") or 0) + int(overall.get("lost") or 0)
+        warnings: list[str] = []
+        if fixtures is None and activations is not None:
+            warnings.append(
+                "Fixture distinte assenti nel summary: settled riferito alle attivazioni"
+            )
         return make_json_safe(
             {
                 "module_key": "signals",
                 "status": "operational",
                 "version": "signals_lab",
                 "coverage": None,
-                "fixtures": overall.get("fixtures"),
-                "settled": settled or overall.get("activations"),
+                "fixtures": fixtures,
+                "settled": settled if (fixtures is not None or activations is not None) else None,
+                "activations": activations,
                 "last_snapshot_at": None,
                 "next_review_at": None,
-                "warnings": [],
+                "warnings": warnings,
             }
         )
     except Exception as exc:
@@ -239,6 +295,7 @@ def build_signals_module_overview(
                 "coverage": None,
                 "fixtures": None,
                 "settled": None,
+                "activations": None,
                 "last_snapshot_at": None,
                 "next_review_at": None,
                 "warnings": [f"summary_unavailable:{type(exc).__name__}"],
@@ -605,3 +662,128 @@ def build_module_summary_payload(
             competition_id=competition_id,
         )
     }
+
+
+def rows_csv_filename(module_key: str, date_from: date, date_to: date) -> str:
+    return (
+        f"SOT_MONITOR_{module_key}_{date_from.isoformat()}_{date_to.isoformat()}_rows.csv"
+    )
+
+
+def build_module_rows_csv(
+    db: Session,
+    *,
+    module_key: str,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None = None,
+    market_key: str | None = None,
+) -> tuple[bytes, str]:
+    """CSV righe per modulo — stessi adapter dello ZIP dove disponibili."""
+    if module_key not in VALID_MODULE_KEYS:
+        raise ValueError("invalid_module_key")
+
+    filename = rows_csv_filename(module_key, date_from, date_to)
+
+    if module_key == "purchasability":
+        csv_text = export_purchasability_validation_csv(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+            market_key=market_key,
+        )
+        return ("\ufeff" + csv_text).encode("utf-8"), filename
+
+    if module_key == "balance-v5":
+        overview = build_balance_module_overview(
+            db, date_from=date_from, date_to=date_to, competition_id=competition_id
+        )
+        rows = [
+            {
+                "module_key": "balance-v5",
+                "eligible_fixtures": overview.get("eligible_fixtures"),
+                "covered_fixtures": overview.get("covered_fixtures"),
+                "settled_covered_fixtures": overview.get("settled_covered_fixtures"),
+                "coverage": overview.get("coverage"),
+                "status": overview.get("status"),
+                "version": overview.get("version"),
+            }
+        ]
+        return (
+            _csv_bom(
+                rows,
+                [
+                    "module_key",
+                    "eligible_fixtures",
+                    "covered_fixtures",
+                    "settled_covered_fixtures",
+                    "coverage",
+                    "status",
+                    "version",
+                ],
+            ),
+            filename,
+        )
+
+    if module_key == "goal-intensity-v5":
+        overview = build_goal_intensity_module_overview(
+            db, date_from=date_from, date_to=date_to, competition_id=competition_id
+        )
+        rows = [
+            {
+                "module_key": "goal-intensity-v5",
+                "eligible_fixtures": overview.get("eligible_fixtures"),
+                "fixtures": overview.get("fixtures"),
+                "settled": overview.get("settled"),
+                "coverage": overview.get("coverage"),
+                "status": overview.get("status"),
+                "version": overview.get("version"),
+            }
+        ]
+        return (
+            _csv_bom(
+                rows,
+                [
+                    "module_key",
+                    "eligible_fixtures",
+                    "fixtures",
+                    "settled",
+                    "coverage",
+                    "status",
+                    "version",
+                ],
+            ),
+            filename,
+        )
+
+    # signals
+    overview = build_signals_module_overview(
+        db, date_from=date_from, date_to=date_to, competition_id=competition_id
+    )
+    rows = [
+        {
+            "module_key": "signals",
+            "fixtures": overview.get("fixtures"),
+            "activations": overview.get("activations"),
+            "settled": overview.get("settled"),
+            "coverage": overview.get("coverage"),
+            "status": overview.get("status"),
+            "version": overview.get("version"),
+        }
+    ]
+    return (
+        _csv_bom(
+            rows,
+            [
+                "module_key",
+                "fixtures",
+                "activations",
+                "settled",
+                "coverage",
+                "status",
+                "version",
+            ],
+        ),
+        filename,
+    )

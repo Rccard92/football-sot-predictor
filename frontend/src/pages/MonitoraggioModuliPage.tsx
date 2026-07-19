@@ -127,6 +127,9 @@ export function MonitoraggioModuliPage() {
         competitionId={competitionId}
         onRefresh={() => void loadOverview()}
         loading={loading}
+        moduleStatuses={Object.fromEntries(
+          overviewItems.map((m) => [m.module_key, m.status]),
+        )}
       />
 
       <MonitoringFilterBar
@@ -169,6 +172,7 @@ export function MonitoraggioModuliPage() {
         dateFrom={dateFrom}
         dateTo={dateTo}
         competitionId={competitionId ? Number(competitionId) : null}
+        apiStatus={currentOverview?.status}
       >
         {activeModule === 'purchasability' ? (
           <PurchasabilityModulePanel

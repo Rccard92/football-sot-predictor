@@ -18,6 +18,18 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Legacy | `GET …/purchasability-empirical` (deprecated) |
 | Preview contract | `cecchino_purchasability_v1_preview_contract` |
 
+## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
+
+| Campo | Valore |
+|-------|--------|
+| Export menu | Portal `document.body` (desktop fixed / mobile bottom sheet) — no clipping |
+| Hero | `MonitoringGlobalExportMenu` (1 download per scelta, 4 moduli) |
+| Shell | menu per-modulo invariato + CSV righe |
+| CSV | `GET …/module-monitoring/{key}/rows.csv` (BOM UTF-8) |
+| Balance overview | `extract_balance_v5_from_today_output`; settled ⊆ fixtures; solo persistito |
+| Label status | `monitoringStatusLabel` IT in overview/UI |
+| Formule | invariate |
+
 ## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
 
 | Campo | Valore |

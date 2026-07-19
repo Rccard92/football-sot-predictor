@@ -11,7 +11,7 @@ import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
-import { coverageDisplay } from './moduleMonitoringUi'
+import { coverageDisplay, monitoringStatusLabel } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -30,10 +30,15 @@ export function PurchasabilityModulePanel({
 }: Props) {
   if (view === 'overview') {
     const cov = coverageDisplay(overview?.coverage ?? null, overview?.coverage != null)
+    const statusRaw = overview?.status || null
     return (
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MonitoringMetricCard label="Stato" value={overview?.status || '—'} />
+          <MonitoringMetricCard
+            label="Stato"
+            value={monitoringStatusLabel(statusRaw)}
+            ariaLabel={statusRaw ? `Stato ${statusRaw}` : undefined}
+          />
           <MonitoringMetricCard label="Coverage" value={cov.text} />
           <MonitoringMetricCard
             label="Fixture"

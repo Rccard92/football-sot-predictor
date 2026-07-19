@@ -1,5 +1,5 @@
 import { HERO_BASE } from './moduleMonitoringUi'
-import { MonitoringExportMenu } from './MonitoringExportMenu'
+import { MonitoringGlobalExportMenu } from './MonitoringGlobalExportMenu'
 
 type Props = {
   modulesCount: number
@@ -10,6 +10,7 @@ type Props = {
   competitionId: string
   onRefresh: () => void
   loading?: boolean
+  moduleStatuses?: Record<string, string | null | undefined>
 }
 
 export function ModuleMonitoringHero({
@@ -21,6 +22,7 @@ export function ModuleMonitoringHero({
   competitionId,
   onRefresh,
   loading,
+  moduleStatuses,
 }: Props) {
   const competitionLabel = competitionId ? competitionId : 'tutte'
   return (
@@ -75,11 +77,11 @@ export function ModuleMonitoringHero({
           >
             Aggiorna
           </button>
-          <MonitoringExportMenu
-            moduleKey="purchasability"
+          <MonitoringGlobalExportMenu
             dateFrom={dateFrom}
             dateTo={dateTo}
             competitionId={competitionId ? Number(competitionId) : null}
+            moduleStatuses={moduleStatuses}
           />
         </div>
       </div>

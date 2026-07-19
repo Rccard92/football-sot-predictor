@@ -11,44 +11,31 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 import {
   downloadModuleAnalysisPack,
-  downloadModuleRowsCsv,
-  downloadModuleSummaryJson,
   type MonitoringModuleKeyApi,
 } from '../../lib/cecchinoModuleMonitoringApi'
-import { getMonitoringModule } from './moduleMonitoringRegistry'
-import { MOTION_FAST } from './moduleMonitoringUi'
-
-type BusyAction = 'zip' | 'csv' | 'json' | null
+import { MONITORING_MODULES } from './moduleMonitoringRegistry'
+import { monitoringStatusLabel, MOTION_FAST } from './moduleMonitoringUi'
 
 type Props = {
-  moduleKey: MonitoringModuleKeyApi
   dateFrom: string
   dateTo: string
   competitionId?: number | null
-  marketKey?: string
-  includeRows?: boolean
-  showRowsCsv?: boolean
+  moduleStatuses?: Record<string, string | null | undefined>
 }
 
 type Pos = { top: number; left: number; openUp: boolean }
 
-const MENU_WIDTH = 320
+const MENU_WIDTH = 340
 const MOBILE_MQ = '(max-width: 639px)'
 
-export function MonitoringExportMenu({
-  moduleKey,
+export function MonitoringGlobalExportMenu({
   dateFrom,
   dateTo,
   competitionId,
-  marketKey,
-  includeRows = true,
-  showRowsCsv,
+  moduleStatuses,
 }: Props) {
-  const mod = getMonitoringModule(moduleKey)
-  const canRows =
-    showRowsCsv ?? mod.exportCapabilities.includes('rows-csv')
   const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState<BusyAction>(null)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [pos, setPos] = useState<Pos>({ top: 0, left: 0, openUp: false })
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -56,24 +43,15 @@ export function MonitoringExportMenu({
   const firstItemRef = useRef<HTMLButtonElement>(null)
   const menuId = useId()
 
-  const filters = {
-    date_from: dateFrom,
-    date_to: dateTo,
-    competition_id: competitionId ?? undefined,
-    market_key: marketKey || undefined,
-    include_rows: includeRows,
-  }
-
   const updatePosition = useCallback(() => {
     const el = triggerRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
     const spaceBelow = window.innerHeight - r.bottom
-    const openUp = spaceBelow < 280 && r.top > spaceBelow
+    const openUp = spaceBelow < 360 && r.top > spaceBelow
     let left = r.right - MENU_WIDTH
     left = Math.max(8, Math.min(left, window.innerWidth - MENU_WIDTH - 8))
-    const top = openUp ? r.top - 8 : r.bottom + 8
-    setPos({ top, left, openUp })
+    setPos({ top: openUp ? r.top - 8 : r.bottom + 8, left, openUp })
   }, [])
 
   useEffect(() => {
@@ -93,56 +71,49 @@ export function MonitoringExportMenu({
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        e.preventDefault()
         setOpen(false)
         triggerRef.current?.focus()
       }
     }
-    const onScroll = () => {
-      if (isMobile) return
-      updatePosition()
-    }
-    const onResize = () => {
-      if (!isMobile) updatePosition()
-    }
     const onPointer = (e: MouseEvent) => {
       const t = e.target as Node
-      if (triggerRef.current?.contains(t)) return
-      if (menuRef.current?.contains(t)) return
+      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return
       setOpen(false)
       triggerRef.current?.focus()
     }
+    const onScroll = () => {
+      if (!isMobile) updatePosition()
+    }
     document.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onPointer)
-    window.addEventListener('resize', onResize)
+    window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', onScroll, true)
     const t = window.setTimeout(() => firstItemRef.current?.focus(), 30)
     return () => {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onPointer)
-      window.removeEventListener('resize', onResize)
+      window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', onScroll, true)
       window.clearTimeout(t)
     }
   }, [open, isMobile, updatePosition])
 
-  async function run(
-    action: BusyAction,
-    fn: () => Promise<void>,
-    startMsg: string,
-  ) {
-    if (busy) return
-    setBusy(action)
-    toast.message(startMsg)
+  async function downloadOne(key: MonitoringModuleKeyApi) {
+    if (busyKey) return
+    setBusyKey(key)
+    toast.message(`Preparazione pacchetto ${key}…`)
     try {
-      await fn()
+      await downloadModuleAnalysisPack(key, {
+        date_from: dateFrom,
+        date_to: dateTo,
+        competition_id: competitionId ?? undefined,
+        include_rows: true,
+      })
       toast.success('Download pronto')
-      setOpen(false)
-      triggerRef.current?.focus()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export fallito')
     } finally {
-      setBusy(null)
+      setBusyKey(null)
     }
   }
 
@@ -151,7 +122,7 @@ export function MonitoringExportMenu({
       ref={menuRef}
       id={menuId}
       role="menu"
-      aria-label={`Esporta ${mod.label}`}
+      aria-label="Esporta analisi moduli"
       initial={{ opacity: 0, y: isMobile ? 12 : 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: isMobile ? 8 : 4 }}
@@ -159,7 +130,7 @@ export function MonitoringExportMenu({
       className={
         isMobile
           ? 'fixed inset-x-3 bottom-3 z-[100] max-h-[85dvh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 shadow-xl'
-          : 'fixed z-[100] w-[320px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl'
+          : 'fixed z-[100] w-[340px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl'
       }
       style={
         isMobile
@@ -172,11 +143,11 @@ export function MonitoringExportMenu({
       }
     >
       {isMobile ? (
-        <div className="mb-3 flex items-center justify-between">
+        <div className="relative mb-3">
           <div className="mx-auto h-1 w-10 rounded-full bg-slate-300" aria-hidden />
           <button
             type="button"
-            className="absolute right-4 top-3 text-sm text-slate-500"
+            className="absolute right-0 top-0 text-sm text-slate-500"
             onClick={() => {
               setOpen(false)
               triggerRef.current?.focus()
@@ -186,72 +157,38 @@ export function MonitoringExportMenu({
           </button>
         </div>
       ) : null}
-      <h3 className="text-sm font-semibold text-slate-900">Esporta {mod.label}</h3>
+      <h3 className="text-sm font-semibold text-slate-900">Esporta analisi moduli</h3>
+      <p className="mt-1 text-xs text-slate-500">
+        Scegli un modulo. Non è un export generico: ogni pacchetto è specifico.
+      </p>
       <p className="mt-1 text-xs text-slate-500">
         Periodo {dateFrom} → {dateTo}
         {competitionId != null ? ` · competition ${competitionId}` : ' · tutte'}
       </p>
-      <ul className="mt-3 space-y-1">
-        <li>
-          <button
-            ref={firstItemRef}
-            type="button"
-            role="menuitem"
-            disabled={busy != null}
-            onClick={() =>
-              void run('zip', () => downloadModuleAnalysisPack(moduleKey, filters), 'Preparazione pacchetto…')
-            }
-            className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
-          >
-            <span className="block text-sm font-medium text-slate-900">
-              Scarica pacchetto per ChatGPT
-              {busy === 'zip' ? '…' : ''}
-            </span>
-            <span className="mt-0.5 block text-xs text-slate-500">
-              ZIP con handoff, manifest, summary, health e warning.
-            </span>
-          </button>
-        </li>
-        {canRows ? (
-          <li>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={busy != null}
-              onClick={() =>
-                void run('csv', () => downloadModuleRowsCsv(moduleKey, filters), 'Preparazione CSV…')
-              }
-              className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
-            >
-              <span className="block text-sm font-medium text-slate-900">
-                Scarica CSV righe
-                {busy === 'csv' ? '…' : ''}
-              </span>
-              <span className="mt-0.5 block text-xs text-slate-500">
-                CSV UTF-8 (BOM) del dataset tabellare del modulo.
-              </span>
-            </button>
-          </li>
-        ) : null}
-        <li>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={busy != null}
-            onClick={() =>
-              void run('json', () => downloadModuleSummaryJson(moduleKey, filters), 'Preparazione riepilogo…')
-            }
-            className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
-          >
-            <span className="block text-sm font-medium text-slate-900">
-              Scarica riepilogo JSON
-              {busy === 'json' ? '…' : ''}
-            </span>
-            <span className="mt-0.5 block text-xs text-slate-500">
-              JSON strict con metriche aggregate.
-            </span>
-          </button>
-        </li>
+      <ul className="mt-3 space-y-1.5">
+        {MONITORING_MODULES.map((m, idx) => {
+          const st = moduleStatuses?.[m.key]
+          const label = st ? monitoringStatusLabel(st) : m.operationalStatus
+          return (
+            <li key={m.key}>
+              <button
+                ref={idx === 0 ? firstItemRef : undefined}
+                type="button"
+                role="menuitem"
+                disabled={busyKey != null}
+                aria-label={`${m.label} ${st || m.key}`}
+                onClick={() => void downloadOne(m.key as MonitoringModuleKeyApi)}
+                className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
+              >
+                <span className="block text-sm font-medium text-slate-900">{m.label}</span>
+                <span className="mt-0.5 block text-xs text-slate-500">{label}</span>
+                <span className="mt-1 block text-xs font-medium text-cyan-700">
+                  {busyKey === m.key ? 'Download in corso…' : 'Scarica pacchetto'}
+                </span>
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </motion.div>
   )
@@ -261,7 +198,7 @@ export function MonitoringExportMenu({
       <button
         ref={triggerRef}
         type="button"
-        aria-label={`Scarica analisi ${mod.label}`}
+        aria-label="Scarica analisi moduli"
         aria-expanded={open}
         aria-haspopup="menu"
         aria-controls={open ? menuId : undefined}

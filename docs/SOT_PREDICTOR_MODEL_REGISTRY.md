@@ -2,6 +2,15 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
+
+| Artefatto | Note |
+|-----------|------|
+| Export portal | `MonitoringExportMenu` / `MonitoringGlobalExportMenu` → `createPortal(document.body)` |
+| rows.csv | `GET /api/cecchino/module-monitoring/{module_key}/rows.csv` |
+| Balance coverage | covered/eligible; settled_covered ⊆ covered; solo snapshot persistito |
+| Status labels | `monitoringStatusLabel` (IT); raw key in aria-label |
+
 ## Monitoraggio Moduli Cecchino — FASE 1/3 (2026-07-19)
 
 | Modulo | Status UI | Version fallback | Endpoint overview |
