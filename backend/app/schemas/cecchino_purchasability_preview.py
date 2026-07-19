@@ -1,11 +1,12 @@
-"""Contratto tecnico Acquistabilità V1 Preview — FASE 2/5 feature layer.
+"""Contratto tecnico Acquistabilità V1 Preview — FASE 3/5 candidato.
 
 Versione contratto: cecchino_purchasability_v1_preview_contract
 Feature version: cecchino_purchasability_features_v1
+Candidate version: cecchino_purchasability_v1_preview_candidate_1
 
-Nessuna formula 0–100. score/class/reading restano null finché status=not_calculated.
-Affidabilità storica ≠ Acquistabilità; non copia Rating; non somma KPI.
-Fase 2 riusa cecchino_market_opposition e fair book condiviso.
+Factory not_calculated: score/class null (retrocompatibile Fase 1–2).
+Candidato balanced_geometric_v1 calcola score solo via modulo candidate.
+Affidabilità storica ≠ Acquistabilità; Rating non è peso.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from pydantic import BaseModel, Field
 
 PURCHASABILITY_PREVIEW_CONTRACT_VERSION = "cecchino_purchasability_v1_preview_contract"
 PURCHASABILITY_FEATURE_VERSION = "cecchino_purchasability_features_v1"
+PURCHASABILITY_CANDIDATE_VERSION = "cecchino_purchasability_v1_preview_candidate_1"
+PURCHASABILITY_CANDIDATE_NAME = "balanced_geometric_v1"
 
 PurchasabilityStatus = Literal[
     "not_calculated",
@@ -25,6 +28,8 @@ PurchasabilityStatus = Literal[
 ]
 
 FeatureStatus = Literal["ready", "partial", "unavailable"]
+
+CalculationQuality = Literal["full", "partial"]
 
 PurchasabilityClass = Literal[
     "Molto Bassa",
@@ -77,6 +82,17 @@ class PurchasabilityPhase1Value(BaseModel):
     dependency_metadata: dict[str, Any] = Field(
         default_factory=lambda: dict(RATING_DEPENDENCY_METADATA)
     )
+    probability_strength_score: float | None = None
+    edge_value_score: float | None = None
+    component_scores: dict[str, Any] | None = None
+    active_inputs: list[str] | None = None
+    diagnostic_only_inputs: list[str] | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    formula_version: str | None = None
+    historical_reliability_used: bool | None = None
+    rating_used_as_weight: bool | None = None
+    score_acquisto_used_as_weight: bool | None = None
+    double_counting_prevented: bool | None = None
 
 
 class PurchasabilityBookFavourite(BaseModel):
@@ -134,6 +150,16 @@ class PurchasabilityPhase2Quality(BaseModel):
     model_book_gap: float | None = None
     absolute_model_book_gap: float | None = None
     gap_direction: GapDirection | None = None
+    component_scores: dict[str, Any] | None = None
+    configured_weights: dict[str, float] | None = None
+    applied_weights: dict[str, float] | None = None
+    missing_components: list[str] | None = None
+    coverage_ratio: float | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    formula_version: str | None = None
+    model_book_gap_role: str | None = None
+    large_gap_is_automatic_penalty: bool | None = None
+    large_gap_is_automatic_bonus: bool | None = None
 
 
 class PurchasabilityContextHook(BaseModel):
@@ -174,13 +200,27 @@ class PurchasabilityDataQuality(BaseModel):
     warning_codes: list[str] = Field(default_factory=list)
 
 
+class PurchasabilityFinalCombination(BaseModel):
+    official: str | None = "geometric"
+    formula_version: str | None = None
+    geometric: float | None = None
+    arithmetic: float | None = None
+    harmonic: float | None = None
+    raw_final_score: float | None = None
+    rounded_final_score: int | None = None
+
+
 class CecchinoPurchasabilityPreviewContract(BaseModel):
-    """Contratto preview — score sempre null finché status=not_calculated."""
+    """Contratto preview — not_calculated senza score; candidato con score."""
 
     version: str = PURCHASABILITY_PREVIEW_CONTRACT_VERSION
     feature_version: str = PURCHASABILITY_FEATURE_VERSION
+    candidate_version: str | None = None
+    candidate_name: str | None = None
     feature_status: FeatureStatus | None = None
     status: PurchasabilityStatus = "not_calculated"
+    calculation_quality: CalculationQuality | None = None
+    raw_score: float | None = None
     score: float | None = None
     class_: PurchasabilityClass | None = Field(default=None, alias="class")
     reading: str | None = None
@@ -192,6 +232,8 @@ class CecchinoPurchasabilityPreviewContract(BaseModel):
     phase_2_quality: PurchasabilityPhase2Quality = Field(
         default_factory=PurchasabilityPhase2Quality
     )
+    final_combination: PurchasabilityFinalCombination | None = None
+    comparator_formulas: dict[str, str] | None = None
     context_hooks: PurchasabilityContextHooks = Field(
         default_factory=PurchasabilityContextHooks
     )
@@ -199,6 +241,7 @@ class CecchinoPurchasabilityPreviewContract(BaseModel):
     data_quality: PurchasabilityDataQuality = Field(
         default_factory=PurchasabilityDataQuality
     )
+    score_metadata: dict[str, Any] | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -212,8 +255,12 @@ def build_purchasability_preview_not_calculated(
     contract = CecchinoPurchasabilityPreviewContract(
         version=PURCHASABILITY_PREVIEW_CONTRACT_VERSION,
         feature_version=PURCHASABILITY_FEATURE_VERSION,
+        candidate_version=None,
+        candidate_name=None,
         feature_status=None,
         status="not_calculated",
+        calculation_quality=None,
+        raw_score=None,
         score=None,
         class_=None,
         reading=None,
@@ -229,6 +276,8 @@ def build_purchasability_preview_not_calculated(
             status="not_calculated",
             score=None,
         ),
+        final_combination=None,
+        comparator_formulas=None,
         context_hooks=PurchasabilityContextHooks(
             balance_v5=PurchasabilityContextHook(status="not_connected"),
             goal_intensity_v5=PurchasabilityContextHook(status="not_connected"),
@@ -240,5 +289,6 @@ def build_purchasability_preview_not_calculated(
             contains_settlement_fields=False,
             contains_result_fields=False,
         ),
+        score_metadata=None,
     )
     return contract.model_dump(by_alias=True)

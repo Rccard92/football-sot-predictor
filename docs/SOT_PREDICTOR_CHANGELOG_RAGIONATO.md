@@ -33,11 +33,18 @@
 - Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
 - Eliminati `cecchino_balance_v5_preview.py` e `cecchino_balance_research_candidates.py`; `balance_analysis` ridotto ad adapter; FE `CecchinoBalanceV5Panel` senza Preview.
 
+## Acquistabilità — FASE 3/5 candidato balanced_geometric_v1 (2026-07-19)
+
+- Modulo `cecchino_purchasability_candidate.py` (`cecchino_purchasability_v1_preview_candidate_1` / `balanced_geometric_v1` frozen).
+- Phase1: √(prob×100 × edge+/20×100); Phase2 pesi 0.40/0.30/0.20/0.10; finale √(p1×p2) intero 0–100; classi 20/40/60/80.
+- Endpoint debug `GET …/purchasability-preview/candidate/{id}`; Rating/HR esclusi; nessuna UI/persistenza.
+- Next: FASE 4/5 — colonna KPI + snapshot pre-match.
+
 ## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
 
 - Modulo `cecchino_purchasability_features_v1`: phase_1_value (KPI row) + phase_2_quality (opposition, fair Book, model context, favoriti descrittivi).
 - Adapter `resolve_fair_book_for_panel_rows`; DC da 1X2; endpoint debug features; score/class null; nessuna UI.
-- Next: FASE 3/5 — candidato Acquistabilità v1 Preview.
+- Completata da FASE 3/5 candidato Preview.
 
 ## Affidabilità storica vs Acquistabilità — FASE 1/5 (2026-07-19)
 

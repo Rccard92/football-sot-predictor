@@ -8,12 +8,19 @@
 4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
 5. Nessuna colonna Acquistabilità produttiva.
 
+## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
+
+1. Flusso: fixture → features Fase 2 → `calculate_purchasability_candidate_batch`.
+2. Endpoint debug: `GET …/purchasability-preview/candidate/{today_fixture_id}` (read-only).
+3. Features endpoint invariato (`status=not_calculated`).
+4. UI invariata; nessuna persistenza; Rating/HR non pesi.
+5. Next: FASE 4/5 — colonna KPI + snapshot pre-match.
+
 ## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
 
 1. Feature layer solo backend/debug: `GET …/purchasability-preview/features/{today_fixture_id}`.
-2. Usa `kpi_panel_json` salvato; score sempre null; nessuna chiamata FE.
+2. Usa `kpi_panel_json` salvato; score sempre null sul feature layer; nessuna chiamata FE.
 3. UI Pannello KPI invariata (Affidabilità presente, Acquistabilità assente).
-4. Next: FASE 3/5 — candidato Acquistabilità v1 Preview.
 
 ## Indice di Acquistabilità — empirica v1.1 (2026-07-19)
 

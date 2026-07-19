@@ -28,6 +28,9 @@ from app.services.cecchino.cecchino_kpi_signals_aggregation import (
 from app.services.cecchino.cecchino_historical_reliability import (
     build_historical_reliability_for_panel,
 )
+from app.services.cecchino.cecchino_purchasability_candidate import (
+    build_purchasability_candidate_for_fixture,
+)
 from app.services.cecchino.cecchino_purchasability_features import (
     build_purchasability_features_for_fixture,
 )
@@ -183,6 +186,22 @@ def kpi_signals_purchasability_preview_features(
     if fixture is None:
         raise HTTPException(status_code=404, detail="today_fixture_not_found")
     payload = build_purchasability_features_for_fixture(fixture)
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/purchasability-preview/candidate/{today_fixture_id}")
+def kpi_signals_purchasability_preview_candidate(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    """Debug read-only — candidato Acquistabilità V1 Preview (Fase 3/5).
+
+    Feature layer → balanced_geometric_v1. Nessuna scrittura, nessuna UI.
+    """
+    fixture = db.get(CecchinoTodayFixture, today_fixture_id)
+    if fixture is None:
+        raise HTTPException(status_code=404, detail="today_fixture_not_found")
+    payload = build_purchasability_candidate_for_fixture(fixture)
     return JSONResponse(content=jsonable_encoder(payload))
 
 

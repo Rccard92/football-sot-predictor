@@ -7,7 +7,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Concetto | Ruolo |
 |----------|--------|
 | Affidabilità storica | Storico mercato + fascia Rating; colonna KPI **Affidabilità** |
-| Acquistabilità | Contratto preview + feature Fase 2; nessuna formula / nessuna colonna |
+| Acquistabilità | Feature Fase 2 + candidato Fase 3 Preview; nessuna colonna UI ancora |
 
 | Campo | Valore |
 |-------|--------|
@@ -18,6 +18,20 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Legacy | `GET …/purchasability-empirical` (deprecated) |
 | Preview contract | `cecchino_purchasability_v1_preview_contract` |
 
+## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
+
+| Campo | Valore |
+|-------|--------|
+| Candidate version | `cecchino_purchasability_v1_preview_candidate_1` |
+| Nome | `balanced_geometric_v1` (frozen) |
+| Modulo | `cecchino_purchasability_candidate.py` |
+| Endpoint debug | `GET …/purchasability-preview/candidate/{today_fixture_id}` |
+| Finale | √(phase1 × phase2) → int 0–100 |
+| Pesi Phase2 | 0.40 / 0.30 / 0.20 / 0.10 |
+| Classi | Molto Bassa…Molto Alta su 20/40/60/80 |
+| UI / DB / Signals | no |
+| Next | FASE 4/5 — colonna KPI + snapshot |
+
 ## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
 
 | Campo | Valore |
@@ -25,9 +39,8 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Feature version | `cecchino_purchasability_features_v1` |
 | Modulo | `cecchino_purchasability_features.py` |
 | Endpoint debug | `GET …/purchasability-preview/features/{today_fixture_id}` |
-| Score formula | no (sempre null) |
+| Score formula | no (feature layer; score via candidato Fase 3) |
 | UI | invariata (solo Affidabilità) |
-| Next | FASE 3/5 — candidato Acquistabilità v1 Preview |
 
 ## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
 

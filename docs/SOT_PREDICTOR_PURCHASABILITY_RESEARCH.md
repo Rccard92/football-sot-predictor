@@ -7,30 +7,48 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 | Concetto | Definizione |
 |----------|-------------|
 | **AFFIDABILITÀ STORICA** | Misura il comportamento storico dello stesso mercato e della stessa fascia Rating (Win Rate, ROI, margine vs break-even, stabilità, numerosità). |
-| **ACQUISTABILITÀ** | Misurerà quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti. |
+| **ACQUISTABILITÀ** | Misura quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti. |
+
+## Acquistabilità — FASE 3/5 candidato `balanced_geometric_v1` (2026-07-19)
+
+Candidato frozen Preview su feature Fase 2. Modulo `cecchino_purchasability_candidate.py`.
+
+| Campo | Valore |
+|-------|--------|
+| Version | `cecchino_purchasability_v1_preview_candidate_1` |
+| Nome | `balanced_geometric_v1` |
+| Endpoint | `GET …/purchasability-preview/candidate/{today_fixture_id}` |
+
+**Phase 1 (valore):** input attivi `prob_cecchino`, `edge_pct`.  
+`probability_strength = clamp(p×100)`; `edge_value = clamp(max(edge,0)/20×100)`;  
+`phase_1 = √(probability_strength × edge_value)` (2 dp). Edge ≤0 → 0 + `no_positive_value_detected`.  
+Rating / score_acquisto / Affidabilità storica: solo diagnostici, mai pesi.
+
+**Phase 2 (qualità):** pesi configurati 0.40 / 0.30 / 0.20 / 0.10  
+(`model_opposition_support`, `book_opposition_resistance`, `opposite_favourite_intensity`, `favourite_alignment`).  
+Obbligatori i primi due (mancanti → score null). Opzionali: rinormalizza pesi, status `partial`.  
+Gap Book–model solo diagnostico (`large_gap_is_automatic_penalty/bonus=false`).
+
+**Finale:** `√(phase_1 × phase_2)` → intero 0–100. Combinatori arithmetic/harmonic solo research.  
+Classi: Molto Bassa / Bassa / Media / Alta / Molto Alta su soglie 20/40/60/80.  
+Reading: frase base per classe + al più una contestuale (priorità pressione opposta → disaccordo → supporto modello → no edge).
+
+**Esclusioni:** nessuna UI; nessuna persistenza; nessun Signals; hook Balance/Goal Intensità non usati; mercati unsupported → `opposition_context_not_supported`.
+
+Next: **FASE 4/5 — colonna KPI Acquistabilità + snapshot/versionamento pre-match**.
 
 ## Acquistabilità — FASE 2/5 feature operative pre-match (2026-07-19)
 
 Layer feature `cecchino_purchasability_features_v1` su snapshot `kpi_panel_json` (read-only).
 
-- **phase_1_value**: input KPI riga (quote, prob, vantaggio, edge, score, rating) + `dependency_metadata`; score fase = null.
-- **phase_2_quality**: opposizione (`cecchino_market_opposition`), fair Book (`resolve_fair_book_for_panel_rows`), model context, comparator_evidence, favorito/intensità descrittivi, gap Book–Cecchino non penalizzante; score = null.
-- **status** contratto = `not_calculated`; **feature_status** = ready|partial|unavailable.
-- Nessuna formula 0–100; nessuna UI; nessun uso di Affidabilità storica.
+- **phase_1_value**: input KPI riga (quote, prob, vantaggio, edge, score, rating) + `dependency_metadata`; score fase = null sul feature layer.
+- **phase_2_quality**: opposizione, fair Book, model context, comparator_evidence, favorito/intensità, gap non penalizzante; score = null sul feature layer.
+- **status** feature contract = `not_calculated`; **feature_status** = ready|partial|unavailable.
 - Endpoint debug: `GET /api/cecchino/kpi-signals/purchasability-preview/features/{today_fixture_id}`
 - Double Chance: fair/model da 1/X/2 normalizzato (non tre DC esclusive).
-- Next: **FASE 3/5 — candidato Acquistabilità v1 Preview**.
+- Score 0–100 calcolato dal candidato Fase 3 (non dal feature layer).
 
-In Fase 1/5 l’ex «Acquistabilità empirica» è ridenominata **Affidabilità storica**. L’Acquistabilità produttiva **non** è ancora calcolata: esiste solo il contratto preview `cecchino_purchasability_v1_preview_contract` (`backend/app/schemas/cecchino_purchasability_preview.py`) con `status=not_calculated` e `score=null`.
-
-Vincoli Acquistabilità (non ancora implementati come formula):
-
-- modulo separato; non copia il Rating; non usa Affidabilità storica come score finale;
-- non somma automaticamente Rating, Score, Edge e Vantaggio;
-- distingue «valore individuato» da «qualità del valore»;
-- una forte differenza Cecchino–Book non è automaticamente penalizzante;
-- la decisione di gioco resta ai Segnali Cecchino;
-- Fase 2 riusa `cecchino_market_opposition.py` (comparator_selections, complement_selection, opposition_status, canonical_market_family, period, line).
+In Fase 1/5 l’ex «Acquistabilità empirica» è ridenominata **Affidabilità storica**. Factory `not_calculated` resta senza score.
 
 ## Affidabilità storica v1.1 — Pannello KPI (`cecchino_historical_reliability_v1_1`)
 
