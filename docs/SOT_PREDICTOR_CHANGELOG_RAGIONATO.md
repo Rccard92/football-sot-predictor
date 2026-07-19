@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino Today — workspace master-detail adattivo (2026-07-19)
+
+- Layout: `/cecchino-today` full-width (`max-w-none`); altre route restano `max-w-[1320px]`.
+- Master-detail da 2xl (lista 370–410px); sotto 2xl drawer partite; card ridisegnate; KPI senza scrollbar.
+
 ## Cecchino Today — KPI full-width senza scrollbar (2026-07-19)
 
 - Dashboard `max-w-[1800px]`; grid `xl` con sidebar 320px + dettaglio flessibile; tabella KPI `table-fixed` senza `min-w`/`overflow-x`.

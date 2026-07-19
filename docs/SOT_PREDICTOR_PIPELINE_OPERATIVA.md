@@ -169,6 +169,13 @@ Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su g
 3. Export JSON audit + CSV inventario feature
 4. v4 operativa invariata; docs: `SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md`
 
+## Cecchino Today — workspace master-detail adattivo (2026-07-19)
+
+1. Layout: solo `/cecchino-today` senza max-w 1320.
+2. Da 2xl: lista 370–410px + dettaglio; Nascondi/Mostra partite.
+3. Sotto 2xl: drawer partite; dettaglio full-width.
+4. Card partite ridisegnate; KPI tabella da xl, card sotto xl.
+
 ## Cecchino Today — KPI full-width senza scrollbar (2026-07-19)
 
 1. Pagina `max-w-[1800px]`; da xl sidebar 320px + dettaglio `1fr`.

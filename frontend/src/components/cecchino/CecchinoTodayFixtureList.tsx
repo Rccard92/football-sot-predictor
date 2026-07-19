@@ -53,7 +53,7 @@ export function CecchinoTodayFixtureList({
 
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-4`}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="sticky top-0 z-[1] -mx-1 flex items-center justify-between gap-2 bg-white/95 px-1 py-1 backdrop-blur-sm">
         <h2 className={todaySectionTitle}>Partite eleggibili</h2>
         {!loading && <span className="text-xs text-slate-500">{fixtureCount} visibili</span>}
       </div>
@@ -107,9 +107,9 @@ export function CecchinoTodayFixtureList({
       )}
 
       {!loading && !error && fixtureCount > 0 && (
-        <div className="space-y-8 pr-1">
+        <div className="space-y-6 pr-1">
           {countries.map((country) => (
-            <div key={country.country_name} className="space-y-4">
+            <div key={country.country_name} className="space-y-3">
               <div className="flex items-center gap-2 border-b-2 border-slate-200 pb-2">
                 <SafeImg
                   src={country.country_flag_url}
@@ -119,12 +119,12 @@ export function CecchinoTodayFixtureList({
                 <h3 className="text-base font-semibold text-slate-900">{country.country_name}</h3>
               </div>
               {country.leagues.map((league) => (
-                <div key={`${country.country_name}-${league.league_name}`} className="space-y-3 pl-1">
+                <div key={`${country.country_name}-${league.league_name}`} className="space-y-2 pl-1">
                   <div className="flex items-center gap-2 py-1">
                     <SafeImg src={league.league_logo_url} alt="" className="h-5 w-5 object-contain" />
                     <h4 className="text-sm font-semibold text-slate-700">{league.league_name}</h4>
                   </div>
-                  <ul className="space-y-3">
+                  <ul className="space-y-2">
                     {league.fixtures.map((fixture: CecchinoTodayListFixture) => (
                       <li key={fixture.today_fixture_id}>
                         <CecchinoTodayFixtureCard

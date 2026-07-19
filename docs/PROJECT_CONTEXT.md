@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Cecchino Today — workspace master-detail adattivo (2026-07-19)
+
+Route `/cecchino-today` fluid (override Layout); 2xl lista 370–410px + dettaglio; sotto 2xl drawer «Partite eleggibili»; card partite a due righe squadre; KPI tabella da xl senza scroll.
+
 ## Cecchino Today — KPI full-width senza scrollbar (2026-07-19)
 
 Pagina Today `max-w-[1800px]`; da xl sidebar fissa 320px e dettaglio fluido; KPI senza scroll orizzontale (`table-fixed`); sotto xl card; toggle Espandi analisi.

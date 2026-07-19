@@ -9,6 +9,7 @@ import {
   CecchinoTodayFilters,
   type StatusFilter,
 } from '../components/cecchino/CecchinoTodayFilters'
+import { CecchinoTodayFixtureDrawer } from '../components/cecchino/CecchinoTodayFixtureDrawer'
 import { CecchinoTodayFixtureList } from '../components/cecchino/CecchinoTodayFixtureList'
 import { CecchinoTodayPageHeader } from '../components/cecchino/CecchinoTodayPageHeader'
 import { CecchinoTodayScanProgressCard } from '../components/cecchino/CecchinoTodayScanProgressCard'
@@ -69,7 +70,8 @@ export function CecchinoTodayPage() {
   const [scanReport, setScanReport] = useState<CecchinoTodayScanReport | null>(null)
   const [activeJob, setActiveJob] = useState<CecchinoTodayScanJob | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [analysisExpanded, setAnalysisExpanded] = useState(false)
+  const [listHidden, setListHidden] = useState(false)
+  const [fixtureDrawerOpen, setFixtureDrawerOpen] = useState(false)
   const [detail, setDetail] = useState<CecchinoTodayDetailResponse | null>(null)
   const [listLoading, setListLoading] = useState(false)
   const [daysLoading, setDaysLoading] = useState(false)
@@ -356,7 +358,8 @@ export function CecchinoTodayPage() {
       setScanDayLoading(false)
     }
     setSelectedId(null)
-    setAnalysisExpanded(false)
+    setListHidden(false)
+    setFixtureDrawerOpen(false)
     setDetail(null)
     void loadList(selectedDay)
     void resumeActiveJobForDay(selectedDay)
@@ -384,6 +387,7 @@ export function CecchinoTodayPage() {
   const handleSelectFixture = useCallback((id: number) => {
     setRefreshBetfairMsg(null)
     setSelectedId(id)
+    setFixtureDrawerOpen(false)
   }, [])
 
   const handleScanDay = async (forceRescan: boolean) => {
@@ -604,6 +608,27 @@ export function CecchinoTodayPage() {
   const isScanned = list?.is_scanned ?? false
   const hasActiveFilters =
     statusFilter !== 'all' || !!countryFilter || !!leagueFilter || !!searchQuery.trim()
+  const visibleFixtureCount = useMemo(
+    () =>
+      filteredCountries.reduce(
+        (n, c) => n + c.leagues.reduce((ln, l) => ln + l.fixtures.length, 0),
+        0,
+      ),
+    [filteredCountries],
+  )
+
+  const listProps = {
+    countries: filteredCountries,
+    selectedId,
+    onSelect: handleSelectFixture,
+    loading: listLoading,
+    error: listError,
+    selectedDay,
+    isScanned,
+    hasActiveFilters,
+    totalBeforeFilter,
+    onScanDay: () => void handleScanDay(false),
+  }
   const scanInProgress =
     scanDayLoading ||
     (activeJob?.scan_date === selectedDay &&
@@ -617,7 +642,7 @@ export function CecchinoTodayPage() {
       activeJob.status === 'completed')
 
   return (
-    <div className="mx-auto w-full max-w-[1800px] space-y-6 px-2 sm:px-4">
+    <div className="w-full space-y-6">
       <CecchinoTodayPageHeader
         isScanned={isScanned}
         scanDayLoading={scanDayLoading}
@@ -686,36 +711,35 @@ export function CecchinoTodayPage() {
         />
       )}
 
-      <div className={analysisExpanded ? 'grid grid-cols-1' : todayPageGrid}>
-        {!analysisExpanded ? (
-          <div className={todayStickyListColumn}>
-            <CecchinoTodayFixtureList
-              countries={filteredCountries}
-              selectedId={selectedId}
-              onSelect={handleSelectFixture}
-              loading={listLoading}
-              error={listError}
-              selectedDay={selectedDay}
-              isScanned={isScanned}
-              hasActiveFilters={hasActiveFilters}
-              totalBeforeFilter={totalBeforeFilter}
-              onScanDay={() => void handleScanDay(false)}
-            />
+      <div className={listHidden ? 'grid grid-cols-1' : todayPageGrid}>
+        {/* Lista inline solo da 2xl e se non nascosta */}
+        {!listHidden ? (
+          <div className={`hidden 2xl:block ${todayStickyListColumn}`}>
+            <CecchinoTodayFixtureList {...listProps} />
           </div>
         ) : null}
 
         <section className="min-w-0 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className={todaySectionTitle}>Dettaglio analisi</h2>
-            {selectedId != null ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Sotto 2xl: apre drawer */}
               <button
                 type="button"
-                onClick={() => setAnalysisExpanded((v) => !v)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+                onClick={() => setFixtureDrawerOpen(true)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 2xl:hidden"
               >
-                {analysisExpanded ? 'Mostra partite' : 'Espandi analisi'}
+                Partite eleggibili · {visibleFixtureCount}
               </button>
-            ) : null}
+              {/* Da 2xl: nascondi/mostra lista inline */}
+              <button
+                type="button"
+                onClick={() => setListHidden((v) => !v)}
+                className="hidden rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 2xl:inline-flex"
+              >
+                {listHidden ? 'Mostra partite' : 'Nascondi partite'}
+              </button>
+            </div>
           </div>
           {detailError && (
             <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
@@ -731,6 +755,14 @@ export function CecchinoTodayPage() {
           )}
         </section>
       </div>
+
+      <CecchinoTodayFixtureDrawer
+        open={fixtureDrawerOpen}
+        onClose={() => setFixtureDrawerOpen(false)}
+        title={`Partite eleggibili · ${visibleFixtureCount}`}
+      >
+        <CecchinoTodayFixtureList {...listProps} />
+      </CecchinoTodayFixtureDrawer>
 
       <CecchinoTodayExcludedPanel
         selectedDay={selectedDay}

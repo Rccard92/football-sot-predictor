@@ -6,7 +6,7 @@ export const todayCard =
 export const todayCardPadding = 'p-4 sm:p-5'
 
 export const todayPageGrid =
-  'grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]'
+  'grid gap-5 2xl:grid-cols-[minmax(370px,410px)_minmax(0,1fr)]'
 
 export const todaySectionTitle = 'text-base font-semibold text-slate-900'
 
@@ -46,6 +46,6 @@ export const todayTimelineGrid =
   'grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-7'
 
 export const todayStickyListColumn =
-  'min-w-0 xl:sticky xl:top-6 xl:max-h-[calc(100vh-1.5rem)] xl:overflow-y-auto xl:self-start'
+  'min-w-0 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-2rem)] 2xl:overflow-y-auto 2xl:self-start'
 
 export const todaySkeleton = 'animate-pulse rounded-lg bg-slate-200/80'
