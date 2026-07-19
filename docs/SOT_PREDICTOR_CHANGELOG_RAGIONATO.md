@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio v5 — no doppia normalizzazione 1X2 market (2026-07-19)
+
+- `_build_market_deviation_v5` usa la tripletta Cecchino 1X2 già normalizzata dal builder (niente secondo `_normalize_3way_probs`).
+- Book 1X2 e Under/Over restano normalizzati localmente; versione `cecchino_balance_v5_v2` invariata.
+
 ## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
 
 - F36 reading: `f36_class_key` tecnico (Transizione/Squilibrio non più «relativamente vicine»).

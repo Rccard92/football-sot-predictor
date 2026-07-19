@@ -403,22 +403,47 @@ def test_norm_1x2_shared_across_pillars_and_market():
         }
     )
     assert v5["inputs"]["prob_x"] == pytest.approx(58.75)
-    assert v5["inputs"]["prob_x_norm"] == pytest.approx(60.61, abs=0.02)
+    assert v5["inputs"]["prob_x_norm"] == 60.61
     dc = v5["pillars"]["draw_credibility"]
-    assert dc["index"] == pytest.approx(v5["inputs"]["prob_x_norm"], abs=0.02)
+    assert dc["index"] == v5["inputs"]["prob_x_norm"]
     pairs = {p["key"]: p for p in v5["market_deviation"]["pairs"]}
-    assert pairs["x"]["prob_cecchino_norm"] == pytest.approx(dc["index"], abs=0.02)
-    gap_pp = abs(v5["inputs"]["prob_1_norm"] - v5["inputs"]["prob_2_norm"])
+    assert pairs["x"]["prob_cecchino_norm"] == dc["index"]
+    gap_pp = round(abs(v5["inputs"]["prob_1_norm"] - v5["inputs"]["prob_2_norm"]), 2)
     gap_comp = next(
         c for c in v5["pillars"]["gap_coherence"]["components"] if c["key"] == "probability_gap_1_2_pp"
     )
-    assert gap_comp["value"] == pytest.approx(gap_pp, abs=0.02)
+    assert gap_comp["value"] == gap_pp
     assert pairs["x"]["direction_label"] in (
         "Probabilità allineate",
         "Probabilità Cecchino maggiore",
         "Probabilità Book maggiore",
         None,
     )
+
+
+def test_no_double_normalize_cecchino_1x2_when_rounded_sum_not_100():
+    """Tripletta il cui primo arrotondamento somma 99.99: market non deve rinormalizzare."""
+    v5 = build_cecchino_balance_v5(
+        cecchino_final={
+            "status": "available",
+            "quota_1": 2.10,
+            "quota_x": 3.40,
+            "quota_2": 3.60,
+            "prob_1_pct": 33.33,
+            "prob_x_pct": 33.33,
+            "prob_2_pct": 33.33,
+        }
+    )
+    n1 = v5["inputs"]["prob_1_norm"]
+    nx = v5["inputs"]["prob_x_norm"]
+    n2 = v5["inputs"]["prob_2_norm"]
+    assert round(n1 + nx + n2, 2) == 99.99
+    dc = v5["pillars"]["draw_credibility"]
+    pairs = {p["key"]: p for p in v5["market_deviation"]["pairs"]}
+    assert pairs["x"]["prob_cecchino_norm"] == dc["index"]
+    assert pairs["x"]["prob_cecchino_norm"] == nx
+    assert pairs["1"]["prob_cecchino_norm"] == n1
+    assert pairs["2"]["prob_cecchino_norm"] == n2
 
 
 def test_goal_markets_separate_from_final():

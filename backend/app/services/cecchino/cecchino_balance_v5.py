@@ -1456,12 +1456,11 @@ def _build_market_deviation_v5(
     quota_book_under: float | None,
     quota_book_over: float | None,
 ) -> dict[str, Any]:
-    """Market deviation v5 con normalizzazione 3-way per 1X2 e 2-way per O/U."""
-    # Normalize Cecchino 1X2
-    p1_c, px_c, p2_c = cecchino_1x2
-    p1_cn, px_cn, p2_cn = _normalize_3way_probs(p1_c, px_c, p2_c)
+    """Market deviation v5: Cecchino 1X2 già normalizzato; Book 1X2 e O/U normalizzati qui."""
+    # Cecchino 1X2: già normalizzato dal builder — non rinormalizzare
+    p1_cn, px_cn, p2_cn = cecchino_1x2
 
-    # Normalize Book 1X2
+    # Book 1X2: probabilità implicite grezze → normalizzare
     p1_b, px_b, p2_b = book_1x2
     p1_bn, px_bn, p2_bn = _normalize_3way_probs(p1_b, px_b, p2_b)
 
