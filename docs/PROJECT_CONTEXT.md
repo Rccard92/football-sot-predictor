@@ -28,9 +28,13 @@ Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backe
 
 **ACQUISTABILITÀ**: feature Fase 2 + candidato Fase 3 Preview (vedi sotto). Nessuna colonna UI ancora.
 
+## Acquistabilità — FASE 4/5 KPI + snapshot (2026-07-19)
+
+`candidate_2` / `balanced_geometric_v1_1` attivo: ROUND_HALF_UP, reading Phase1=0, compact snapshot in `cecchino_output_json.purchasability_preview`, colonna KPI solo numerica. candidate_1 frozen. Signals no. Next: FASE 5/5. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
 
-`cecchino_purchasability_v1_preview_candidate_1` / `balanced_geometric_v1`: Phase1 √(prob×edge), Phase2 pesi 0.40/0.30/0.20/0.10, finale geometrico 0–100. Endpoint `…/purchasability-preview/candidate/{id}`. Rating/HR esclusi; no UI/DB. Next: FASE 4/5 KPI. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+`cecchino_purchasability_v1_preview_candidate_1` / `balanced_geometric_v1` frozen (superseded by candidate_2). Endpoint debug candidate. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
 
 ## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
 

@@ -4,7 +4,10 @@ import {
   getHistoricalReliability,
   type HistoricalReliabilityItem,
 } from '../../lib/cecchinoKpiSignalsApi'
-import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
+import type {
+  CecchinoPurchasabilityPreviewItem,
+  CecchinoTodayDetailResponse,
+} from '../../lib/cecchinoTodayApi'
 import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
 import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
@@ -109,6 +112,17 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     [canFetch, hrByMarket],
   )
 
+  const purchasabilityByMarketKey = useMemo(() => {
+    const items = detail.purchasability_preview?.items
+    if (!items?.length) return {} as Record<string, CecchinoPurchasabilityPreviewItem>
+    const map: Record<string, CecchinoPurchasabilityPreviewItem> = {}
+    for (const it of items) {
+      const key = it.market_key || it.selection
+      if (key) map[key] = it
+    }
+    return map
+  }, [detail.purchasability_preview])
+
   if (loading) {
     return <CecchinoTodayDetailSkeleton />
   }
@@ -138,6 +152,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           historicalReliabilityByMarketKey={hrMemo}
           historicalReliabilityLoading={hrLoading}
           historicalReliabilityError={hrError}
+          purchasabilityByMarketKey={purchasabilityByMarketKey}
         />
       )}
 

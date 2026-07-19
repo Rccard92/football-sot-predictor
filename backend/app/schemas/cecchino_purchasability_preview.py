@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field
 
 PURCHASABILITY_PREVIEW_CONTRACT_VERSION = "cecchino_purchasability_v1_preview_contract"
 PURCHASABILITY_FEATURE_VERSION = "cecchino_purchasability_features_v1"
-PURCHASABILITY_CANDIDATE_VERSION = "cecchino_purchasability_v1_preview_candidate_1"
-PURCHASABILITY_CANDIDATE_NAME = "balanced_geometric_v1"
+PURCHASABILITY_CANDIDATE_VERSION = "cecchino_purchasability_v1_preview_candidate_2"
+PURCHASABILITY_CANDIDATE_NAME = "balanced_geometric_v1_1"
+PURCHASABILITY_SNAPSHOT_VERSION = "cecchino_purchasability_snapshot_v1"
 
 PurchasabilityStatus = Literal[
     "not_calculated",

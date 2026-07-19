@@ -9,13 +9,22 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 | **AFFIDABILITÀ STORICA** | Misura il comportamento storico dello stesso mercato e della stessa fascia Rating (Win Rate, ROI, margine vs break-even, stabilità, numerosità). |
 | **ACQUISTABILITÀ** | Misura quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti. |
 
+## Acquistabilità — FASE 4/5 KPI + snapshot `balanced_geometric_v1_1` (2026-07-19)
+
+- **candidate_1** frozen (`python_round_legacy`); **candidate_2** attivo (`round_half_up`, UI + compact snapshot).
+- Reading Phase1=0: priorità assoluta (favorevole / intermedia / limitata per Phase2).
+- Persistenza: `cecchino_output_json["purchasability_preview"]` (`cecchino_purchasability_snapshot_v1`); nessuna migrazione.
+- Fallback storico: `persisted_pre_match_snapshot` | `derived_read_only_from_stored_snapshot`.
+- FE: colonna Acquistabilità solo numero 0–100; Affidabilità separata; Signals no.
+- Next: **FASE 5/5 — validazione e promozione**.
+
 ## Acquistabilità — FASE 3/5 candidato `balanced_geometric_v1` (2026-07-19)
 
 Candidato frozen Preview su feature Fase 2. Modulo `cecchino_purchasability_candidate.py`.
 
 | Campo | Valore |
 |-------|--------|
-| Version | `cecchino_purchasability_v1_preview_candidate_1` |
+| Version | `cecchino_purchasability_v1_preview_candidate_1` (frozen; superseded) |
 | Nome | `balanced_geometric_v1` |
 | Endpoint | `GET …/purchasability-preview/candidate/{today_fixture_id}` |
 
@@ -24,18 +33,9 @@ Candidato frozen Preview su feature Fase 2. Modulo `cecchino_purchasability_cand
 `phase_1 = √(probability_strength × edge_value)` (2 dp). Edge ≤0 → 0 + `no_positive_value_detected`.  
 Rating / score_acquisto / Affidabilità storica: solo diagnostici, mai pesi.
 
-**Phase 2 (qualità):** pesi configurati 0.40 / 0.30 / 0.20 / 0.10  
-(`model_opposition_support`, `book_opposition_resistance`, `opposite_favourite_intensity`, `favourite_alignment`).  
-Obbligatori i primi due (mancanti → score null). Opzionali: rinormalizza pesi, status `partial`.  
-Gap Book–model solo diagnostico (`large_gap_is_automatic_penalty/bonus=false`).
-
-**Finale:** `√(phase_1 × phase_2)` → intero 0–100. Combinatori arithmetic/harmonic solo research.  
-Classi: Molto Bassa / Bassa / Media / Alta / Molto Alta su soglie 20/40/60/80.  
-Reading: frase base per classe + al più una contestuale (priorità pressione opposta → disaccordo → supporto modello → no edge).
-
-**Esclusioni:** nessuna UI; nessuna persistenza; nessun Signals; hook Balance/Goal Intensità non usati; mercati unsupported → `opposition_context_not_supported`.
-
-Next: **FASE 4/5 — colonna KPI Acquistabilità + snapshot/versionamento pre-match**.
+**Phase 2 (qualità):** pesi configurati 0.40 / 0.30 / 0.20 / 0.10.  
+**Finale:** `√(phase_1 × phase_2)` → intero 0–100 (v2: ROUND_HALF_UP).  
+Classi: Molto Bassa / Bassa / Media / Alta / Molto Alta su soglie 20/40/60/80.
 
 ## Acquistabilità — FASE 2/5 feature operative pre-match (2026-07-19)
 

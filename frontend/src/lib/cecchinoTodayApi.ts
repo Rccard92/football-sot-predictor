@@ -336,6 +336,33 @@ export type CecchinoKpiV2Panel = {
   warnings?: string[]
 }
 
+export type CecchinoPurchasabilityPreviewItem = {
+  market_key: string
+  selection?: string | null
+  status: 'available' | 'partial' | 'unavailable'
+  calculation_quality?: 'full' | 'partial' | null
+  score: number | null
+  raw_score?: number | null
+  class?: 'Molto Bassa' | 'Bassa' | 'Media' | 'Alta' | 'Molto Alta' | null
+  reading?: string | null
+  phase_1_score?: number | null
+  phase_2_score?: number | null
+  reason_codes?: string[]
+}
+
+export type CecchinoPurchasabilityPreviewSnapshot = {
+  snapshot_version: string
+  contract_version: string
+  feature_version: string
+  candidate_version: string
+  candidate_name: string
+  status: 'ok' | 'partial' | 'unavailable'
+  source_mode?: 'persisted_pre_match_snapshot' | 'derived_read_only_from_stored_snapshot'
+  items: CecchinoPurchasabilityPreviewItem[]
+  summary?: Record<string, unknown>
+  pre_match_only: boolean
+}
+
 export type CecchinoBetfairRefreshResponse = {
   status: string
   today_fixture_id?: number
@@ -1078,6 +1105,7 @@ export type CecchinoTodayDetailResponse = {
     no_betting_signals?: boolean
   }
   expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics
+  purchasability_preview?: CecchinoPurchasabilityPreviewSnapshot | null
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]

@@ -8,13 +8,20 @@
 4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
 5. Nessuna colonna Acquistabilità produttiva.
 
+## Acquistabilità — FASE 4/5 KPI + snapshot (2026-07-19)
+
+1. Scan/recompute pre-match: features → candidate_2 → compact snapshot → `cecchino_output_json.purchasability_preview`.
+2. Detail Today restituisce snapshot (persisted o derived read-only).
+3. Pannello KPI: colonna **Acquistabilità** (solo numero); Affidabilità invariata.
+4. Post-kickoff: non sovrascrivere snapshot pre-match.
+5. Next: FASE 5/5 — validazione e promozione.
+
 ## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
 
 1. Flusso: fixture → features Fase 2 → `calculate_purchasability_candidate_batch`.
-2. Endpoint debug: `GET …/purchasability-preview/candidate/{today_fixture_id}` (read-only).
+2. Endpoint debug: `GET …/purchasability-preview/candidate/{today_fixture_id}` (read-only, ora candidate_2).
 3. Features endpoint invariato (`status=not_calculated`).
-4. UI invariata; nessuna persistenza; Rating/HR non pesi.
-5. Next: FASE 4/5 — colonna KPI + snapshot pre-match.
+4. Persistenza/UI: vedi Fase 4.
 
 ## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
 

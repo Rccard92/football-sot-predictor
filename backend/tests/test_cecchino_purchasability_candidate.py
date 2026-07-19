@@ -11,16 +11,21 @@ from pathlib import Path
 import pytest
 
 from app.services.cecchino.cecchino_purchasability_candidate import (
+    ACTIVE_PURCHASABILITY_CANDIDATE_NAME,
+    ACTIVE_PURCHASABILITY_CANDIDATE_VERSION,
     PHASE_1_FORMULA_VERSION,
     PHASE_2_FORMULA_VERSION,
     PURCHASABILITY_CANDIDATE_NAME,
     PURCHASABILITY_CANDIDATE_REGISTRY,
+    PURCHASABILITY_CANDIDATE_V1_VERSION,
+    PURCHASABILITY_CANDIDATE_V2_VERSION,
     PURCHASABILITY_CANDIDATE_VERSION,
     audit_candidate_independence,
     calculate_purchasability_candidate_batch,
     calculate_purchasability_candidate_item,
     compare_purchasability_combiners,
     map_score_to_class,
+    round_purchasability_score_half_up,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
@@ -490,23 +495,104 @@ def test_batch_summary_and_flags():
             ],
         }
     )
-    assert batch["candidate_version"] == PURCHASABILITY_CANDIDATE_VERSION
-    assert batch["candidate_name"] == PURCHASABILITY_CANDIDATE_NAME
+    assert batch["candidate_version"] == PURCHASABILITY_CANDIDATE_V2_VERSION
+    assert batch["candidate_name"] == ACTIVE_PURCHASABILITY_CANDIDATE_NAME
+    assert batch["active_candidate_version"] == PURCHASABILITY_CANDIDATE_V2_VERSION
     assert batch["historical_reliability_used"] is False
     assert batch["rating_used_as_weight"] is False
-    assert batch["ui_integration"] is False
-    assert batch["db_persistence"] is False
+    assert batch["ui_integration"] is True
+    assert batch["db_persistence"] is True
     assert batch["summary"]["total"] == 2
     assert batch["summary"]["unavailable"] >= 1
 
 
 def test_registry_frozen():
-    assert PURCHASABILITY_CANDIDATE_VERSION in PURCHASABILITY_CANDIDATE_REGISTRY
-    entry = PURCHASABILITY_CANDIDATE_REGISTRY[PURCHASABILITY_CANDIDATE_VERSION]
-    assert entry["name"] == PURCHASABILITY_CANDIDATE_NAME
-    assert entry["status"] == "frozen_preview"
+    assert PURCHASABILITY_CANDIDATE_V1_VERSION in PURCHASABILITY_CANDIDATE_REGISTRY
+    assert PURCHASABILITY_CANDIDATE_V2_VERSION in PURCHASABILITY_CANDIDATE_REGISTRY
+    assert ACTIVE_PURCHASABILITY_CANDIDATE_VERSION == PURCHASABILITY_CANDIDATE_V2_VERSION
+    assert PURCHASABILITY_CANDIDATE_VERSION == PURCHASABILITY_CANDIDATE_V2_VERSION
+    entry = PURCHASABILITY_CANDIDATE_REGISTRY[PURCHASABILITY_CANDIDATE_V2_VERSION]
+    assert entry["name"] == ACTIVE_PURCHASABILITY_CANDIDATE_NAME
+    assert entry["status"] == "active_preview"
     with pytest.raises(TypeError):
         entry["name"] = "mutated"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        entry["configured_weights"]["model_opposition_support"] = 0.99  # type: ignore[index]
+    with pytest.raises(TypeError):
+        PURCHASABILITY_CANDIDATE_REGISTRY["x"] = {}  # type: ignore[index]
+    v1 = PURCHASABILITY_CANDIDATE_REGISTRY[PURCHASABILITY_CANDIDATE_V1_VERSION]
+    assert v1["status"] == "frozen_preview"
+    assert v1["rounding_policy"] == "python_round_legacy"
+    assert v1["superseded_by"] == PURCHASABILITY_CANDIDATE_V2_VERSION
+
+
+def test_round_half_up_thresholds():
+    assert round_purchasability_score_half_up(19.49) == 19
+    assert round_purchasability_score_half_up(19.50) == 20
+    assert round_purchasability_score_half_up(39.50) == 40
+    assert round_purchasability_score_half_up(59.50) == 60
+    assert round_purchasability_score_half_up(79.50) == 80
+    assert round_purchasability_score_half_up(99.50) == 100
+    assert round_purchasability_score_half_up(-5) == 0
+    assert round_purchasability_score_half_up(150) == 100
+    assert map_score_to_class(round_purchasability_score_half_up(19.50)) == "Bassa"
+
+
+def test_reading_phase1_zero_favorable():
+    item = calculate_purchasability_candidate_item(
+        _feature_item(
+            edge_pct=0,
+            model_context_probability=0.70,
+            opposition_pressure_model=0.25,
+            opposition_pressure_book=0.25,
+            favourite_alignment="aligned",
+        )
+    )
+    assert item["score"] == 0
+    assert item["class"] == "Molto Bassa"
+    assert item["phase_2_quality"]["score"] is not None
+    assert item["phase_2_quality"]["score"] >= 60
+    assert "valore positivo" in item["reading"].lower()
+    assert "favorevole" in item["reading"].lower()
+    assert "scarsamente" not in item["reading"].lower()
+
+
+def test_reading_phase1_zero_intermediate():
+    item = calculate_purchasability_candidate_item(
+        _feature_item(
+            edge_pct=0,
+            model_context_probability=0.40,
+            opposition_pressure_model=0.45,
+            opposition_pressure_book=0.55,
+            favourite_alignment="disagree",
+            book_favourite_selection=SEL_AWAY,
+            favourite_intensity_book=0.55,
+            comparator_selections=[SEL_DRAW, SEL_AWAY],
+        )
+    )
+    assert item["score"] == 0
+    p2 = item["phase_2_quality"]["score"]
+    assert p2 is not None and 40 <= p2 < 60
+    assert "intermedia" in item["reading"].lower()
+
+
+def test_reading_phase1_zero_limited():
+    item = calculate_purchasability_candidate_item(
+        _feature_item(
+            edge_pct=0,
+            model_context_probability=0.20,
+            opposition_pressure_model=0.55,
+            opposition_pressure_book=0.80,
+            favourite_alignment="disagree",
+            book_favourite_selection=SEL_AWAY,
+            favourite_intensity_book=0.80,
+            comparator_selections=[SEL_DRAW, SEL_AWAY],
+        )
+    )
+    assert item["score"] == 0
+    assert item["phase_2_quality"]["score"] is not None
+    assert item["phase_2_quality"]["score"] < 40
+    assert "supporto limitato" in item["reading"].lower()
 
 
 def test_audit_independence():

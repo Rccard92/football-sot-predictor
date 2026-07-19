@@ -109,6 +109,10 @@ from app.services.cecchino.cecchino_kpi_panel_v2_betfair import (
     build_cecchino_kpi_panel_v2_betfair,
     normalize_kpi_panel_rows,
 )
+from app.services.cecchino.cecchino_purchasability_snapshot import (
+    attach_purchasability_preview_to_output,
+    resolve_purchasability_preview_for_detail,
+)
 from app.services.cecchino.cecchino_fixture_history import (
     build_fixture_contexts,
     build_goal_market_contexts,
@@ -1019,6 +1023,60 @@ def run_scan(
                     betfair_payload=betfair_payload,
                     goal_markets=cecchino_output.get("goal_markets"),
                 )
+                meta = read_odds_meta(odds_snapshot)
+                if meta:
+                    kpi_panel["odds_meta"] = meta
+                # Compact Acquistabilità preview → cecchino_output (pre-match only)
+                existing_prev = None
+                existing_row = db.scalar(
+                    select(CecchinoTodayFixture).where(
+                        CecchinoTodayFixture.scan_date == resolved_date,
+                        CecchinoTodayFixture.provider_source == PROVIDER_API_FOOTBALL,
+                        CecchinoTodayFixture.provider_fixture_id == api_fid,
+                    )
+                )
+                if existing_row is not None and isinstance(
+                    existing_row.cecchino_output_json, dict
+                ):
+                    existing_prev = existing_row.cecchino_output_json.get(
+                        "purchasability_preview"
+                    )
+                snap_at = None
+                snap_src = None
+                snap_verified = False
+                if isinstance(meta, dict):
+                    for fld in ("odds_fetched_at", "fetched_at", "snapshot_at"):
+                        if meta.get(fld):
+                            snap_at = meta.get(fld)
+                            snap_src = f"odds_meta.{fld}"
+                            snap_verified = True
+                            break
+                attach_purchasability_preview_to_output(
+                    cecchino_output=cecchino_output,
+                    kpi_panel=kpi_panel,
+                    fixture_meta={
+                        "today_fixture_id": (
+                            int(existing_row.id) if existing_row is not None else None
+                        ),
+                        "local_fixture_id": int(local_fx.id),
+                        "provider_fixture_id": api_fid,
+                        "competition_id": int(comp.id),
+                        "scan_date": resolved_date,
+                        "kickoff": getattr(local_fx, "kickoff", None)
+                        or (item.get("fixture") or {}).get("date"),
+                    },
+                    snapshot_info={
+                        "snapshot_at": snap_at,
+                        "snapshot_source": snap_src,
+                        "snapshot_fidelity": (
+                            "verified_panel_odds_meta" if snap_verified else "missing"
+                        ),
+                        "snapshot_timestamp_verified": snap_verified,
+                    },
+                    existing_preview=existing_prev
+                    if isinstance(existing_prev, dict)
+                    else None,
+                )
                 _emit_progress(progress, current_step="saving_snapshots")
                 _, eligibility_status = _persist_post_calc_snapshot(
                     db,
@@ -1760,6 +1818,10 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "goal_intensity_analysis": goal_intensity_analysis,
         "goal_intensity_v5_preview": goal_intensity_v5_preview,
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
+        "purchasability_preview": resolve_purchasability_preview_for_detail(
+            row=row,
+            kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+        ),
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (
             f"/cecchino?competition_id={row.competition_id}&fixture_id={row.local_fixture_id}"

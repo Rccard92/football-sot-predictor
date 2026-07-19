@@ -109,8 +109,34 @@ export function ratingBadgeClass(label: string | null | undefined): string {
   }
 }
 
-export function purchasabilityBadgeClass(klass: string | null | undefined): string {
-  return historicalReliabilityBadgeClass(klass)
+export function purchasabilityBadgeClass(
+  klass: string | null | undefined,
+  calculationQuality?: 'full' | 'partial' | null,
+): string {
+  let base: string
+  switch (klass) {
+    case 'Molto Bassa':
+      base = 'bg-slate-600 text-white'
+      break
+    case 'Bassa':
+      base = 'bg-orange-600 text-white'
+      break
+    case 'Media':
+      base = 'bg-amber-500 text-slate-950'
+      break
+    case 'Alta':
+      base = 'bg-sky-500 text-white'
+      break
+    case 'Molto Alta':
+      base = 'bg-emerald-500 text-white'
+      break
+    default:
+      base = 'bg-slate-600 text-slate-200'
+  }
+  if (calculationQuality === 'partial') {
+    return `${base} ring-1 ring-dashed ring-white/60`
+  }
+  return base
 }
 
 export function historicalReliabilityBadgeClass(klass: string | null | undefined): string {

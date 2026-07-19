@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import type { HistoricalReliabilityItem } from '../../lib/cecchinoKpiSignalsApi'
-import type { CecchinoKpiV2Panel, CecchinoKpiV2Row } from '../../lib/cecchinoTodayApi'
+import type {
+  CecchinoKpiV2Panel,
+  CecchinoKpiV2Row,
+  CecchinoPurchasabilityPreviewItem,
+} from '../../lib/cecchinoTodayApi'
 import {
   edgeClassName,
   fmtKpiCell,
@@ -11,6 +15,7 @@ import {
   formatEdgePct,
   historicalReliabilityBadgeClass,
   isKpiPrimaryRow,
+  purchasabilityBadgeClass,
   ratingBadgeClass,
   vantaggioClassName,
 } from './cecchinoKpiUiUtils'
@@ -46,6 +51,32 @@ type Props = {
   historicalReliabilityByMarketKey?: Record<string, HistoricalReliabilityItem>
   historicalReliabilityLoading?: boolean
   historicalReliabilityError?: string | null
+  purchasabilityByMarketKey?: Record<string, CecchinoPurchasabilityPreviewItem>
+}
+
+function PurchasabilityCell({
+  item,
+}: {
+  item: CecchinoPurchasabilityPreviewItem | undefined
+}) {
+  if (!item || item.status === 'unavailable' || item.score == null) {
+    return <span className="text-slate-500">—</span>
+  }
+  const label =
+    item.class != null
+      ? `Acquistabilità ${item.score}, classe ${item.class}`
+      : `Acquistabilità ${item.score}`
+  return (
+    <span
+      aria-label={label}
+      className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityBadgeClass(
+        item.class,
+        item.calculation_quality,
+      )}`}
+    >
+      {item.score}
+    </span>
+  )
 }
 
 function cohortScopeChip(scope?: HistoricalReliabilityItem['cohort_scope']) {
@@ -240,6 +271,7 @@ export function CecchinoTodayKpiPanel({
   historicalReliabilityByMarketKey,
   historicalReliabilityLoading,
   historicalReliabilityError,
+  purchasabilityByMarketKey,
 }: Props) {
   const status = bookmakerStatus || panel.bookmaker_status || 'not_available'
   const oddsMeta = panel.odds_meta
@@ -248,6 +280,11 @@ export function CecchinoTodayKpiPanel({
   const lookup = (row: CecchinoKpiV2Row) =>
     historicalReliabilityByMarketKey?.[row.market_key] ||
     historicalReliabilityByMarketKey?.[row.segno] ||
+    undefined
+
+  const lookupPurch = (row: CecchinoKpiV2Row) =>
+    purchasabilityByMarketKey?.[row.market_key] ||
+    purchasabilityByMarketKey?.[row.segno] ||
     undefined
 
   return (
@@ -292,16 +329,17 @@ export function CecchinoTodayKpiPanel({
       <div className="hidden bg-[#163352] xl:block">
         <table className="w-full table-fixed border-collapse text-center text-[11px] text-white 2xl:text-xs">
           <colgroup>
+            <col className="w-[9%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[7%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
             <col className="w-[10%]" />
-            <col className="w-[7%]" />
-            <col className="w-[7%]" />
-            <col className="w-[7%]" />
-            <col className="w-[7%]" />
-            <col className="w-[8%]" />
-            <col className="w-[7%]" />
-            <col className="w-[7%]" />
-            <col className="w-[13%]" />
-            <col className="w-[27%]" />
+            <col className="w-[22%]" />
+            <col className="w-[16%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-slate-400/50 bg-[#0f2847]">
@@ -332,8 +370,11 @@ export function CecchinoTodayKpiPanel({
               <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Rating
               </th>
-              <th className="px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Affidabilità
+              </th>
+              <th className="px-1.5 py-2 text-[10px] font-semibold uppercase leading-tight text-slate-200">
+                Acquistabilità
               </th>
             </tr>
           </thead>
@@ -346,6 +387,7 @@ export function CecchinoTodayKpiPanel({
                 ? 'font-bold text-white'
                 : 'font-medium text-slate-300'
               const emp = lookup(row)
+              const purch = lookupPurch(row)
 
               return (
                 <tr
@@ -396,13 +438,16 @@ export function CecchinoTodayKpiPanel({
                       <span className="text-slate-500">—</span>
                     )}
                   </td>
-                  <td className="px-1.5 py-2.5">
+                  <td className="border-r border-slate-500/40 px-1.5 py-2.5">
                     <HistoricalReliabilityCell
                       item={emp}
                       loading={historicalReliabilityLoading}
                       error={historicalReliabilityError}
                       onOpen={() => emp && setOpenItem(emp)}
                     />
+                  </td>
+                  <td className="px-1.5 py-2.5">
+                    <PurchasabilityCell item={purch} />
                   </td>
                 </tr>
               )
@@ -415,6 +460,7 @@ export function CecchinoTodayKpiPanel({
         {(panel.rows || []).map((row) => {
           const segnoLabel = kpiSegnoLabel(row)
           const emp = lookup(row)
+          const purch = lookupPurch(row)
           return (
             <article
               key={row.market_key}
@@ -438,6 +484,10 @@ export function CecchinoTodayKpiPanel({
                   error={historicalReliabilityError}
                   onOpen={() => emp && setOpenItem(emp)}
                 />
+              </div>
+              <div className="mb-2">
+                <p className="mb-1 text-[10px] uppercase text-slate-400">Acquistabilità</p>
+                <PurchasabilityCell item={purch} />
               </div>
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
                 <dt className="text-slate-400">Quota Book</dt>

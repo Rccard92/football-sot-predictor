@@ -19,6 +19,9 @@ from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for
 from app.services.cecchino.cecchino_fixture_history import build_goal_market_contexts
 from app.services.cecchino.cecchino_goal_formulas import build_goal_market_cecchino_odds
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import build_cecchino_kpi_panel_v2_betfair
+from app.services.cecchino.cecchino_purchasability_snapshot import (
+    attach_purchasability_preview_to_output,
+)
 from app.services.cecchino.cecchino_service import calculate_and_persist_for_fixture
 from app.services.cecchino.cecchino_signal_backfill import (
     _ensure_signals_matrix_on_row,
@@ -155,6 +158,41 @@ def recompute_today_fixture_offline(
     meta = read_odds_meta(row.odds_snapshot_json)
     if meta:
         kpi_panel["odds_meta"] = meta
+
+    existing_prev = None
+    if isinstance(row.cecchino_output_json, dict):
+        existing_prev = row.cecchino_output_json.get("purchasability_preview")
+    snap_at = None
+    snap_src = None
+    snap_verified = False
+    if isinstance(meta, dict):
+        for fld in ("odds_fetched_at", "fetched_at", "snapshot_at"):
+            if meta.get(fld):
+                snap_at = meta.get(fld)
+                snap_src = f"odds_meta.{fld}"
+                snap_verified = True
+                break
+    attach_purchasability_preview_to_output(
+        cecchino_output=cecchino_output,
+        kpi_panel=kpi_panel,
+        fixture_meta={
+            "today_fixture_id": int(row.id),
+            "local_fixture_id": row.local_fixture_id,
+            "provider_fixture_id": row.provider_fixture_id,
+            "competition_id": row.competition_id,
+            "scan_date": row.scan_date,
+            "kickoff": row.kickoff,
+        },
+        snapshot_info={
+            "snapshot_at": snap_at,
+            "snapshot_source": snap_src,
+            "snapshot_fidelity": (
+                "verified_panel_odds_meta" if snap_verified else "missing"
+            ),
+            "snapshot_timestamp_verified": snap_verified,
+        },
+        existing_preview=existing_prev if isinstance(existing_prev, dict) else None,
+    )
 
     leakage_status = _extract_leakage_status(row.stats_snapshot_json)
     combined_warnings: list[str] = list(row.warnings_json or [])

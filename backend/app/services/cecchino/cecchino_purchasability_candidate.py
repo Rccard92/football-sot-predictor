@@ -1,11 +1,10 @@
-"""Acquistabilità V1 Preview — candidato frozen Fase 3/5.
+"""Acquistabilità V1 Preview — candidati Fase 3–4/5.
 
-Versione: cecchino_purchasability_v1_preview_candidate_1
-Nome: balanced_geometric_v1
+candidate_1 (frozen): balanced_geometric_v1 — round legacy, no UI/persistenza.
+candidate_2 (active): balanced_geometric_v1_1 — ROUND_HALF_UP, reading P1=0,
+compact snapshot + UI. Stesse formule/pesi/classi/mercati.
 
-Calcola score Phase1/Phase2 + finale geometrico sulle feature Fase 2.
 Non importa Affidabilità storica. Non usa Rating/Score come peso.
-Read-only, deterministico, JSON-safe. Nessuna persistenza.
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import statistics
+from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
 from typing import Any
 
@@ -37,8 +37,17 @@ from app.services.cecchino.cecchino_selection_keys import (
     SEL_X_TWO,
 )
 
-PURCHASABILITY_CANDIDATE_VERSION = "cecchino_purchasability_v1_preview_candidate_1"
-PURCHASABILITY_CANDIDATE_NAME = "balanced_geometric_v1"
+PURCHASABILITY_CANDIDATE_V1_VERSION = "cecchino_purchasability_v1_preview_candidate_1"
+PURCHASABILITY_CANDIDATE_V1_NAME = "balanced_geometric_v1"
+PURCHASABILITY_CANDIDATE_V2_VERSION = "cecchino_purchasability_v1_preview_candidate_2"
+PURCHASABILITY_CANDIDATE_V2_NAME = "balanced_geometric_v1_1"
+
+ACTIVE_PURCHASABILITY_CANDIDATE_VERSION = PURCHASABILITY_CANDIDATE_V2_VERSION
+ACTIVE_PURCHASABILITY_CANDIDATE_NAME = PURCHASABILITY_CANDIDATE_V2_NAME
+
+# Alias compatibilità (sempre versione attiva)
+PURCHASABILITY_CANDIDATE_VERSION = ACTIVE_PURCHASABILITY_CANDIDATE_VERSION
+PURCHASABILITY_CANDIDATE_NAME = ACTIVE_PURCHASABILITY_CANDIDATE_NAME
 
 PHASE_1_FORMULA_VERSION = "purchasability_phase_1_value_v1"
 PHASE_2_FORMULA_VERSION = "purchasability_phase_2_quality_v1"
@@ -46,12 +55,13 @@ FINAL_FORMULA_VERSION = "purchasability_final_geometric_v1"
 
 CLASS_THRESHOLDS = (20, 40, 60, 80)
 
-CONFIGURED_PHASE_2_WEIGHTS: dict[str, float] = {
+_CONFIGURED_WEIGHTS_RAW = {
     "model_opposition_support": 0.40,
     "book_opposition_resistance": 0.30,
     "opposite_favourite_intensity": 0.20,
     "favourite_alignment": 0.10,
 }
+CONFIGURED_PHASE_2_WEIGHTS = MappingProxyType(dict(_CONFIGURED_WEIGHTS_RAW))
 
 REQUIRED_PHASE_2_COMPONENTS = (
     "model_opposition_support",
@@ -80,20 +90,42 @@ SUPPORTED_CANDIDATE_MARKETS = frozenset(
 
 PURCHASABILITY_CANDIDATE_REGISTRY = MappingProxyType(
     {
-        PURCHASABILITY_CANDIDATE_VERSION: MappingProxyType(
+        PURCHASABILITY_CANDIDATE_V1_VERSION: MappingProxyType(
             {
-                "name": PURCHASABILITY_CANDIDATE_NAME,
+                "name": PURCHASABILITY_CANDIDATE_V1_NAME,
                 "status": "frozen_preview",
                 "phase_1_formula": PHASE_1_FORMULA_VERSION,
                 "phase_2_formula": PHASE_2_FORMULA_VERSION,
                 "final_formula": FINAL_FORMULA_VERSION,
-                "class_thresholds": list(CLASS_THRESHOLDS),
+                "class_thresholds": CLASS_THRESHOLDS,
+                "configured_weights": CONFIGURED_PHASE_2_WEIGHTS,
+                "rounding_policy": "python_round_legacy",
                 "uses_rating": False,
                 "uses_historical_reliability": False,
                 "uses_future_context_hooks": False,
-                "configured_weights": dict(CONFIGURED_PHASE_2_WEIGHTS),
+                "ui_integration": False,
+                "persistence": False,
+                "superseded_by": PURCHASABILITY_CANDIDATE_V2_VERSION,
             }
-        )
+        ),
+        PURCHASABILITY_CANDIDATE_V2_VERSION: MappingProxyType(
+            {
+                "name": PURCHASABILITY_CANDIDATE_V2_NAME,
+                "status": "active_preview",
+                "phase_1_formula": PHASE_1_FORMULA_VERSION,
+                "phase_2_formula": PHASE_2_FORMULA_VERSION,
+                "final_formula": FINAL_FORMULA_VERSION,
+                "class_thresholds": CLASS_THRESHOLDS,
+                "configured_weights": CONFIGURED_PHASE_2_WEIGHTS,
+                "rounding_policy": "round_half_up",
+                "uses_rating": False,
+                "uses_historical_reliability": False,
+                "uses_future_context_hooks": False,
+                "ui_integration": True,
+                "persistence": "compact_pre_match_snapshot",
+                "predecessor": PURCHASABILITY_CANDIDATE_V1_VERSION,
+            }
+        ),
     }
 )
 
@@ -128,7 +160,37 @@ READING_BY_CLASS: dict[str, str] = {
     ),
 }
 
+READING_NO_POSITIVE_VALUE_FAVORABLE = (
+    "La quota non presenta un valore positivo secondo il Cecchino. "
+    "La struttura dei mercati opposti risulta favorevole, ma non può "
+    "rendere acquistabile una quota priva di Edge positivo."
+)
+READING_NO_POSITIVE_VALUE_INTERMEDIATE = (
+    "La quota non presenta un valore positivo secondo il Cecchino. "
+    "La struttura dei mercati opposti risulta intermedia, ma non può "
+    "rendere acquistabile una quota priva di Edge positivo."
+)
+READING_NO_POSITIVE_VALUE_LIMITED = (
+    "La quota non presenta un valore positivo secondo il Cecchino. "
+    "Anche la struttura dei mercati opposti fornisce un supporto limitato."
+)
+
 CLASS_ORDER = ("Molto Bassa", "Bassa", "Media", "Alta", "Molto Alta")
+
+
+def registry_as_json_safe() -> dict[str, Any]:
+    """Copia JSON-safe della registry senza mutare la fonte canonica."""
+    out: dict[str, Any] = {}
+    for ver, entry in PURCHASABILITY_CANDIDATE_REGISTRY.items():
+        e = dict(entry)
+        weights = e.get("configured_weights")
+        if isinstance(weights, MappingProxyType):
+            e["configured_weights"] = dict(weights)
+        thresholds = e.get("class_thresholds")
+        if isinstance(thresholds, tuple):
+            e["class_thresholds"] = list(thresholds)
+        out[ver] = e
+    return out
 
 
 def clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -137,6 +199,28 @@ def clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
 
 def _round2(value: float) -> float:
     return round(value, 2)
+
+
+def round_purchasability_score_half_up(raw_score: float) -> int:
+    """Arrotondamento ufficiale candidate_2: Decimal ROUND_HALF_UP 0–100."""
+    clamped = clamp(float(raw_score), 0.0, 100.0)
+    return int(
+        Decimal(str(clamped)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+
+
+def _round_final_score(raw_score: float, *, candidate_version: str) -> int:
+    if candidate_version == PURCHASABILITY_CANDIDATE_V1_VERSION:
+        return int(round(clamp(float(raw_score))))
+    return round_purchasability_score_half_up(raw_score)
+
+
+def _candidate_meta(candidate_version: str) -> tuple[str, str]:
+    entry = PURCHASABILITY_CANDIDATE_REGISTRY.get(candidate_version)
+    if entry is None:
+        candidate_version = ACTIVE_PURCHASABILITY_CANDIDATE_VERSION
+        entry = PURCHASABILITY_CANDIDATE_REGISTRY[candidate_version]
+    return candidate_version, str(entry["name"])
 
 
 def _safe_float(value: Any) -> float | None:
@@ -184,7 +268,7 @@ def compare_purchasability_combiners(
         "arithmetic": arithmetic,
         "harmonic": harmonic,
         "official": "geometric",
-        "production_candidate": PURCHASABILITY_CANDIDATE_NAME,
+        "production_candidate": ACTIVE_PURCHASABILITY_CANDIDATE_NAME,
     }
 
 
@@ -308,24 +392,15 @@ def _calculate_phase_2(phase_2: dict[str, Any]) -> dict[str, Any]:
     abs_gap = _safe_float(phase_2.get("absolute_model_book_gap"))
     gap_dir = phase_2.get("gap_direction")
     if abs_gap is not None and abs_gap >= 0.10:
-        if gap_dir == "positive" or (
-            gap_dir is None
-            and (_safe_float(phase_2.get("model_book_gap")) or 0) > 0
-        ):
+        mb = _safe_float(phase_2.get("model_book_gap"))
+        if gap_dir == "positive" or (gap_dir is None and mb is not None and mb > 0):
             reason_codes.append("model_materially_above_book")
-        elif gap_dir == "negative" or (
-            gap_dir is None
-            and (_safe_float(phase_2.get("model_book_gap")) or 0) < 0
-        ):
+        elif gap_dir == "negative" or (gap_dir is None and mb is not None and mb < 0):
             reason_codes.append("model_materially_below_book")
-        else:
-            # gap grande ma direzione neutra/sconosciuta: entrambi i reason
-            # non necessari — usa below se gap model_book negativo, else above
-            mb = _safe_float(phase_2.get("model_book_gap"))
-            if mb is not None and mb < 0:
-                reason_codes.append("model_materially_below_book")
-            elif mb is not None and mb > 0:
-                reason_codes.append("model_materially_above_book")
+        elif mb is not None and mb < 0:
+            reason_codes.append("model_materially_below_book")
+        elif mb is not None and mb > 0:
+            reason_codes.append("model_materially_above_book")
 
     required_missing = [
         c for c in REQUIRED_PHASE_2_COMPONENTS if component_scores.get(c) is None
@@ -388,12 +463,22 @@ def _calculate_phase_2(phase_2: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _reading_no_positive_value(phase_2_score: float | None) -> str:
+    p2 = float(phase_2_score) if phase_2_score is not None else 0.0
+    if p2 >= 60:
+        return READING_NO_POSITIVE_VALUE_FAVORABLE
+    if p2 >= 40:
+        return READING_NO_POSITIVE_VALUE_INTERMEDIATE
+    return READING_NO_POSITIVE_VALUE_LIMITED
+
+
 def _build_contextual_reading(
     *,
     phase_2_feature: dict[str, Any],
     phase_1_score: float | None,
     model_support: float | None,
 ) -> str | None:
+    """Legacy candidate_1: phase1=0 in coda."""
     opp_book = _safe_float(phase_2_feature.get("opposition_pressure_book"))
     if opp_book is not None and opp_book >= 0.65:
         return "La forza del segno opposto riduce la qualità del valore."
@@ -416,11 +501,22 @@ def _build_reading(
     class_name: str | None,
     phase_2_feature: dict[str, Any],
     phase_1_score: float | None,
+    phase_2_score: float | None,
     model_support: float | None,
+    candidate_version: str,
     unavailable_reason: str | None = None,
 ) -> str | None:
     if unavailable_reason:
         return unavailable_reason
+
+    # candidate_2: Phase1=0 ha precedenza assoluta (niente lettura classe)
+    if (
+        candidate_version != PURCHASABILITY_CANDIDATE_V1_VERSION
+        and phase_1_score is not None
+        and phase_1_score == 0
+    ):
+        return _reading_no_positive_value(phase_2_score)
+
     if not class_name:
         return None
     base = READING_BY_CLASS.get(class_name)
@@ -460,7 +556,12 @@ def _unavailable_reading(reason_codes: list[str]) -> str:
 
 def calculate_purchasability_candidate_item(
     feature_item: dict[str, Any],
+    *,
+    candidate_version: str | None = None,
 ) -> dict[str, Any]:
+    ver, name = _candidate_meta(
+        candidate_version or ACTIVE_PURCHASABILITY_CANDIDATE_VERSION
+    )
     market_key = feature_item.get("market_key") or feature_item.get("selection")
     selection = feature_item.get("selection") or market_key
     feature_status = feature_item.get("feature_status")
@@ -502,7 +603,6 @@ def calculate_purchasability_candidate_item(
     phase_1 = _calculate_phase_1(inputs)
     phase_2 = _calculate_phase_2(phase_2_src)
 
-    # Merge feature phase payloads with scored fields (preserve inputs/evidence)
     phase_1_out = {
         **{k: v for k, v in phase_1_src.items() if k != "score"},
         "status": phase_1["status"],
@@ -519,7 +619,6 @@ def calculate_purchasability_candidate_item(
         "score_acquisto_used_as_weight": False,
         "double_counting_prevented": True,
     }
-    # Keep dependency_metadata from features if present
     if "dependency_metadata" not in phase_1_out and phase_1_src.get(
         "dependency_metadata"
     ):
@@ -560,8 +659,11 @@ def calculate_purchasability_candidate_item(
         or not core_ok
     )
 
+    registry_entry = PURCHASABILITY_CANDIDATE_REGISTRY[ver]
+    ui_flag = bool(registry_entry.get("ui_integration"))
+    persistence_flag = registry_entry.get("persistence") not in (False, None)
+
     if force_unavailable:
-        # Deduplicate reason codes preserving order
         seen: set[str] = set()
         uniq_reasons: list[str] = []
         for r in reason_codes:
@@ -572,8 +674,8 @@ def calculate_purchasability_candidate_item(
         item = {
             "version": PURCHASABILITY_PREVIEW_CONTRACT_VERSION,
             "feature_version": PURCHASABILITY_FEATURE_VERSION,
-            "candidate_version": PURCHASABILITY_CANDIDATE_VERSION,
-            "candidate_name": PURCHASABILITY_CANDIDATE_NAME,
+            "candidate_version": ver,
+            "candidate_name": name,
             "feature_status": feature_status,
             "status": "unavailable",
             "calculation_quality": None,
@@ -607,6 +709,7 @@ def calculate_purchasability_candidate_item(
                 "rating_used_as_weight": False,
                 "score_acquisto_used_as_weight": False,
                 "official_combiner": "geometric",
+                "rounding_policy": registry_entry.get("rounding_policy"),
             },
         }
         return make_json_safe(item)
@@ -616,7 +719,7 @@ def calculate_purchasability_candidate_item(
         phase_2_score=float(p2_raw),
     )
     raw_final = float(combiners["geometric"])
-    rounded = int(round(clamp(raw_final)))
+    rounded = _round_final_score(raw_final, candidate_version=ver)
     class_name = map_score_to_class(rounded)
 
     is_partial = (
@@ -634,7 +737,9 @@ def calculate_purchasability_candidate_item(
         class_name=class_name,
         phase_2_feature=phase_2_src,
         phase_1_score=phase_1.get("score"),
+        phase_2_score=phase_2.get("score"),
         model_support=_safe_float(model_support),
+        candidate_version=ver,
     )
 
     seen2: set[str] = set()
@@ -647,8 +752,8 @@ def calculate_purchasability_candidate_item(
     item = {
         "version": PURCHASABILITY_PREVIEW_CONTRACT_VERSION,
         "feature_version": PURCHASABILITY_FEATURE_VERSION,
-        "candidate_version": PURCHASABILITY_CANDIDATE_VERSION,
-        "candidate_name": PURCHASABILITY_CANDIDATE_NAME,
+        "candidate_version": ver,
+        "candidate_name": name,
         "feature_status": feature_status,
         "status": top_status,
         "calculation_quality": calculation_quality,
@@ -684,7 +789,8 @@ def calculate_purchasability_candidate_item(
             "rating_used_as_weight": False,
             "score_acquisto_used_as_weight": False,
             "official_combiner": "geometric",
-            "production_candidate": PURCHASABILITY_CANDIDATE_NAME,
+            "production_candidate": name,
+            "rounding_policy": registry_entry.get("rounding_policy"),
         },
     }
     return make_json_safe(item)
@@ -692,13 +798,19 @@ def calculate_purchasability_candidate_item(
 
 def calculate_purchasability_candidate_batch(
     feature_batch: dict[str, Any],
+    *,
+    candidate_version: str | None = None,
 ) -> dict[str, Any]:
+    ver, name = _candidate_meta(
+        candidate_version or ACTIVE_PURCHASABILITY_CANDIDATE_VERSION
+    )
+    registry_entry = PURCHASABILITY_CANDIDATE_REGISTRY[ver]
     items_in = feature_batch.get("items") if isinstance(feature_batch, dict) else None
     if not isinstance(items_in, list):
         items_in = []
 
     items: list[dict[str, Any]] = [
-        calculate_purchasability_candidate_item(it)
+        calculate_purchasability_candidate_item(it, candidate_version=ver)
         for it in items_in
         if isinstance(it, dict)
     ]
@@ -738,12 +850,18 @@ def calculate_purchasability_candidate_batch(
     else:
         batch_status = "partial"
 
+    ui_flag = bool(registry_entry.get("ui_integration"))
+    persistence_val = registry_entry.get("persistence")
+    persistence_flag = persistence_val not in (False, None)
+
     payload = {
         "status": batch_status,
         "version": PURCHASABILITY_PREVIEW_CONTRACT_VERSION,
         "feature_version": PURCHASABILITY_FEATURE_VERSION,
-        "candidate_version": PURCHASABILITY_CANDIDATE_VERSION,
-        "candidate_name": PURCHASABILITY_CANDIDATE_NAME,
+        "candidate_version": ver,
+        "candidate_name": name,
+        "active_candidate_version": ACTIVE_PURCHASABILITY_CANDIDATE_VERSION,
+        "active_candidate_name": ACTIVE_PURCHASABILITY_CANDIDATE_NAME,
         "today_fixture_id": feature_batch.get("today_fixture_id"),
         "items": items,
         "summary": {
@@ -764,8 +882,8 @@ def calculate_purchasability_candidate_batch(
         "historical_reliability_used": False,
         "rating_used_as_weight": False,
         "signals_integration": False,
-        "ui_integration": False,
-        "db_persistence": False,
+        "ui_integration": ui_flag,
+        "db_persistence": persistence_flag,
         "no_db_writes": True,
     }
     safe = make_json_safe(payload)
@@ -773,9 +891,16 @@ def calculate_purchasability_candidate_batch(
     return safe
 
 
-def build_purchasability_candidate_for_fixture(fixture: Any) -> dict[str, Any]:
+def build_purchasability_candidate_for_fixture(
+    fixture: Any,
+    *,
+    candidate_version: str | None = None,
+) -> dict[str, Any]:
     features = build_purchasability_features_for_fixture(fixture)
-    return calculate_purchasability_candidate_batch(features)
+    return calculate_purchasability_candidate_batch(
+        features,
+        candidate_version=candidate_version or ACTIVE_PURCHASABILITY_CANDIDATE_VERSION,
+    )
 
 
 def _pearson(xs: list[float], ys: list[float]) -> float | None:
@@ -797,51 +922,38 @@ def audit_candidate_independence(items: list[dict[str, Any]]) -> dict[str, Any]:
     equals_rating = 0
     equals_score_acq = 0
     abs_diffs: list[float] = []
-    cand_scores: list[float] = []
-    ratings: list[float] = []
-    edges: list[float] = []
 
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        score = _safe_float(it.get("score"))
-        if score is None:
-            continue
-        phase1 = it.get("phase_1_value") if isinstance(it.get("phase_1_value"), dict) else {}
-        inputs = phase1.get("inputs") if isinstance(phase1.get("inputs"), dict) else {}
-        rating = _safe_float(inputs.get("rating"))
-        score_acq = _safe_float(inputs.get("score_acquisto"))
-        edge = _safe_float(inputs.get("edge_pct"))
-        compared += 1
-        cand_scores.append(score)
-        if rating is not None:
-            if abs(score - rating) < 1e-9:
-                equals_rating += 1
-            abs_diffs.append(abs(score - rating))
-            ratings.append(rating)
-        if score_acq is not None and abs(score - score_acq) < 1e-9:
-            equals_score_acq += 1
-        if edge is not None:
-            edges.append(edge)
-
-    # Align edges with cand_scores only when both present — rebuild paired lists
     paired_edge_c: list[float] = []
     paired_edge_e: list[float] = []
     paired_rating_c: list[float] = []
     paired_rating_r: list[float] = []
+
     for it in items:
         if not isinstance(it, dict):
             continue
         score = _safe_float(it.get("score"))
         if score is None:
             continue
-        phase1 = it.get("phase_1_value") if isinstance(it.get("phase_1_value"), dict) else {}
-        inputs = phase1.get("inputs") if isinstance(phase1.get("inputs"), dict) else {}
+        phase1 = (
+            it.get("phase_1_value")
+            if isinstance(it.get("phase_1_value"), dict)
+            else {}
+        )
+        inputs = (
+            phase1.get("inputs") if isinstance(phase1.get("inputs"), dict) else {}
+        )
         rating = _safe_float(inputs.get("rating"))
+        score_acq = _safe_float(inputs.get("score_acquisto"))
         edge = _safe_float(inputs.get("edge_pct"))
+        compared += 1
         if rating is not None:
+            if abs(score - rating) < 1e-9:
+                equals_rating += 1
+            abs_diffs.append(abs(score - rating))
             paired_rating_c.append(score)
             paired_rating_r.append(rating)
+        if score_acq is not None and abs(score - score_acq) < 1e-9:
+            equals_score_acq += 1
         if edge is not None:
             paired_edge_c.append(score)
             paired_edge_e.append(edge)

@@ -17,8 +17,9 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.routes.cecchino_kpi_signals import router
 from app.services.cecchino.cecchino_purchasability_candidate import (
-    PURCHASABILITY_CANDIDATE_NAME,
-    PURCHASABILITY_CANDIDATE_VERSION,
+    ACTIVE_PURCHASABILITY_CANDIDATE_NAME,
+    ACTIVE_PURCHASABILITY_CANDIDATE_VERSION,
+    PURCHASABILITY_CANDIDATE_V2_VERSION,
 )
 from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
 
@@ -111,11 +112,13 @@ def test_candidate_endpoint_ok():
     res = client.get("/api/cecchino/kpi-signals/purchasability-preview/candidate/42")
     assert res.status_code == 200
     body = res.json()
-    assert body["candidate_version"] == PURCHASABILITY_CANDIDATE_VERSION
-    assert body["candidate_name"] == PURCHASABILITY_CANDIDATE_NAME
+    assert body["candidate_version"] == PURCHASABILITY_CANDIDATE_V2_VERSION
+    assert body["candidate_name"] == ACTIVE_PURCHASABILITY_CANDIDATE_NAME
+    assert body["active_candidate_version"] == ACTIVE_PURCHASABILITY_CANDIDATE_VERSION
     assert body["no_db_writes"] is True
-    assert body["ui_integration"] is False
+    assert body["ui_integration"] is True
     assert body["historical_reliability_used"] is False
+    assert "persisted_snapshot_meta" in body
     assert body["summary"]["total"] == 3
     scored = [it for it in body["items"] if it["score"] is not None]
     assert len(scored) >= 1

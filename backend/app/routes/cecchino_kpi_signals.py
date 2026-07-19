@@ -194,14 +194,27 @@ def kpi_signals_purchasability_preview_candidate(
     today_fixture_id: int,
     db: Session = Depends(get_db),
 ):
-    """Debug read-only — candidato Acquistabilità V1 Preview (Fase 3/5).
+    """Debug read-only — candidato Acquistabilità V1 Preview (candidate_2 attivo).
 
-    Feature layer → balanced_geometric_v1. Nessuna scrittura, nessuna UI.
+    Feature layer → balanced_geometric_v1_1. Nessuna scrittura.
     """
     fixture = db.get(CecchinoTodayFixture, today_fixture_id)
     if fixture is None:
         raise HTTPException(status_code=404, detail="today_fixture_not_found")
     payload = build_purchasability_candidate_for_fixture(fixture)
+    output = getattr(fixture, "cecchino_output_json", None)
+    persisted = None
+    if isinstance(output, dict):
+        persisted = output.get("purchasability_preview")
+    if isinstance(persisted, dict) and persisted.get("candidate_version"):
+        payload["persisted_snapshot_meta"] = {
+            "available": True,
+            "candidate_version": persisted.get("candidate_version"),
+            "hash": persisted.get("full_candidate_payload_sha256"),
+            "source_snapshot_at": persisted.get("source_snapshot_at"),
+        }
+    else:
+        payload["persisted_snapshot_meta"] = {"available": False}
     return JSONResponse(content=jsonable_encoder(payload))
 
 

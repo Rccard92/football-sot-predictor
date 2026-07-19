@@ -18,19 +18,29 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Legacy | `GET …/purchasability-empirical` (deprecated) |
 | Preview contract | `cecchino_purchasability_v1_preview_contract` |
 
+## Acquistabilità — FASE 4/5 KPI + snapshot (2026-07-19)
+
+| Campo | Valore |
+|-------|--------|
+| Active | `cecchino_purchasability_v1_preview_candidate_2` / `balanced_geometric_v1_1` |
+| Frozen | candidate_1 `balanced_geometric_v1` |
+| Rounding | ROUND_HALF_UP (v2); python_round_legacy (v1) |
+| Snapshot | `cecchino_purchasability_snapshot_v1` in `cecchino_output_json.purchasability_preview` |
+| UI | colonna KPI **Acquistabilità** (solo intero 0–100) |
+| Signals | no |
+| Next | FASE 5/5 — validazione e promozione |
+
 ## Acquistabilità — FASE 3/5 candidato Preview (2026-07-19)
 
 | Campo | Valore |
 |-------|--------|
-| Candidate version | `cecchino_purchasability_v1_preview_candidate_1` |
-| Nome | `balanced_geometric_v1` (frozen) |
+| Candidate version | `cecchino_purchasability_v1_preview_candidate_1` (frozen; superseded by candidate_2) |
+| Nome | `balanced_geometric_v1` |
 | Modulo | `cecchino_purchasability_candidate.py` |
 | Endpoint debug | `GET …/purchasability-preview/candidate/{today_fixture_id}` |
 | Finale | √(phase1 × phase2) → int 0–100 |
 | Pesi Phase2 | 0.40 / 0.30 / 0.20 / 0.10 |
 | Classi | Molto Bassa…Molto Alta su 20/40/60/80 |
-| UI / DB / Signals | no |
-| Next | FASE 4/5 — colonna KPI + snapshot |
 
 ## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
 
