@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Cecchino Today — KPI full-width senza scrollbar (2026-07-19)
+
+Pagina Today `max-w-[1800px]`; da xl sidebar fissa 320px e dettaglio fluido; KPI senza scroll orizzontale (`table-fixed`); sotto xl card; toggle Espandi analisi.
+
 ## Equilibrio vs Squilibrio v5 — dettaglio storico snapshot (2026-07-19)
 
 Detail Today: `historical_snapshot` per `scan_date` passate (identity status/score non bloccanti, solo snapshot salvati, KPI senza fallback DB). `current_strict` invariato per oggi. Meta `balance_v5_snapshot_meta`. Nessun ricalcolo post-match in GET.

@@ -289,50 +289,50 @@ export function CecchinoTodayKpiPanel({
         )}
       </div>
 
-      <div className="hidden bg-[#163352] md:block overflow-x-auto">
-        <table className="w-full table-fixed border-collapse text-center text-xs text-white sm:text-[13px] min-w-[900px]">
+      <div className="hidden bg-[#163352] xl:block">
+        <table className="w-full table-fixed border-collapse text-center text-[11px] text-white 2xl:text-xs">
           <colgroup>
-            <col className="w-[11%]" />
-            <col className="w-[8%]" />
-            <col className="w-[8%]" />
+            <col className="w-[10%]" />
+            <col className="w-[7%]" />
+            <col className="w-[7%]" />
             <col className="w-[7%]" />
             <col className="w-[7%]" />
             <col className="w-[8%]" />
             <col className="w-[7%]" />
-            <col className="w-[8%]" />
-            <col className="w-[12%]" />
-            <col className="w-[14%]" />
+            <col className="w-[7%]" />
+            <col className="w-[13%]" />
+            <col className="w-[27%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-slate-400/50 bg-[#0f2847]">
-              <th className="border-r border-slate-500/40 px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-300 sm:text-xs">
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-300">
                 Segno
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Quota Book
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-amber-200 sm:text-xs">
-                Quota Cecch.
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-amber-200">
+                Quota Cecchino
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Prob. Book
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
-                Prob. Cecch.
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
+                Prob. Cecchino
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Vant. Prob.
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
-                Edge %
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
+                Edge
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Score
               </th>
-              <th className="border-r border-slate-500/40 px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
+              <th className="border-r border-slate-500/40 px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Rating
               </th>
-              <th className="px-2 py-2 text-[10px] font-semibold uppercase text-slate-200 sm:text-xs">
+              <th className="px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
                 Acquistabilità
               </th>
             </tr>
@@ -353,50 +353,50 @@ export function CecchinoTodayKpiPanel({
                   className={`border-b border-slate-600/40 hover:bg-slate-800/25 ${rowBg}`}
                 >
                   <td
-                    className={`border-r border-slate-500/40 px-2 py-2.5 text-left whitespace-nowrap ${labelClass}`}
+                    className={`border-r border-slate-500/40 px-1.5 py-2.5 text-left whitespace-nowrap ${labelClass}`}
                   >
                     {segnoLabel}
                   </td>
-                  <td className="border-r border-slate-500/40 px-2 py-2.5 tabular-nums text-slate-100">
+                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
                     {fmtKpiCell(row.quota_book, true)}
                   </td>
-                  <td className="border-r border-slate-500/40 px-2 py-2.5 font-semibold tabular-nums text-amber-100">
+                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap font-semibold tabular-nums text-amber-100">
                     {fmtKpiCell(row.quota_cecchino, true)}
                   </td>
-                  <td className="border-r border-slate-500/40 px-2 py-2.5 tabular-nums text-slate-100">
+                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
                     {fmtProbPct(row.prob_book)}
                   </td>
-                  <td className="border-r border-slate-500/40 px-2 py-2.5 tabular-nums text-slate-100">
+                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
                     {fmtProbPct(row.prob_cecchino)}
                   </td>
                   <td
-                    className={`border-r border-slate-500/40 px-2 py-2.5 tabular-nums ${vantaggioClassName(row.vantaggio_prob)}`}
+                    className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${vantaggioClassName(row.vantaggio_prob)}`}
                   >
                     {fmtVantaggioProb(row.vantaggio_prob)}
                   </td>
                   <td
-                    className={`border-r border-slate-500/40 px-2 py-2.5 tabular-nums ${edgeClassName(row.edge_pct)}`}
+                    className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${edgeClassName(row.edge_pct)}`}
                   >
                     {formatEdgePct(row.edge_pct)}
                   </td>
-                  <td className="border-r border-slate-500/40 px-2 py-2.5 tabular-nums text-slate-300">
+                  <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-300">
                     {fmtScoreAcquisto(row.score_acquisto)}
                   </td>
-                  <td className="border-r border-slate-500/40 px-2 py-2.5">
+                  <td className="border-r border-slate-500/40 px-1.5 py-2.5">
                     {row.rating != null ? (
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${ratingBadgeClass(row.rating_label)}`}
                       >
                         <span className="tabular-nums">{row.rating}</span>
                         {row.rating_label && (
-                          <span className="hidden lg:inline">{row.rating_label}</span>
+                          <span className="hidden 2xl:inline">{row.rating_label}</span>
                         )}
                       </span>
                     ) : (
                       <span className="text-slate-500">—</span>
                     )}
                   </td>
-                  <td className="px-2 py-2.5">
+                  <td className="px-1.5 py-2.5">
                     <PurchasabilityCell
                       item={emp}
                       loading={purchasabilityLoading}
@@ -411,7 +411,7 @@ export function CecchinoTodayKpiPanel({
         </table>
       </div>
 
-      <div className="space-y-2 bg-[#163352] p-3 md:hidden">
+      <div className="space-y-2 bg-[#163352] p-3 xl:hidden">
         {(panel.rows || []).map((row) => {
           const segnoLabel = kpiSegnoLabel(row)
           const emp = lookup(row)
@@ -444,12 +444,18 @@ export function CecchinoTodayKpiPanel({
                 <dd>{fmtKpiCell(row.quota_book, true)}</dd>
                 <dt className="text-slate-400">Quota Cecchino</dt>
                 <dd className="text-amber-100">{fmtKpiCell(row.quota_cecchino, true)}</dd>
-                <dt className="text-slate-400">Edge %</dt>
-                <dd className={edgeClassName(row.edge_pct)}>{formatEdgePct(row.edge_pct)}</dd>
+                <dt className="text-slate-400">Prob. Book</dt>
+                <dd>{fmtProbPct(row.prob_book)}</dd>
+                <dt className="text-slate-400">Prob. Cecchino</dt>
+                <dd>{fmtProbPct(row.prob_cecchino)}</dd>
                 <dt className="text-slate-400">Vant. Prob.</dt>
                 <dd className={vantaggioClassName(row.vantaggio_prob)}>
                   {fmtVantaggioProb(row.vantaggio_prob)}
                 </dd>
+                <dt className="text-slate-400">Edge</dt>
+                <dd className={edgeClassName(row.edge_pct)}>{formatEdgePct(row.edge_pct)}</dd>
+                <dt className="text-slate-400">Score</dt>
+                <dd>{fmtScoreAcquisto(row.score_acquisto)}</dd>
               </dl>
             </article>
           )

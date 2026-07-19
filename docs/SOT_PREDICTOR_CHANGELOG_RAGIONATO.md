@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Cecchino Today — KPI full-width senza scrollbar (2026-07-19)
+
+- Dashboard `max-w-[1800px]`; grid `xl` con sidebar 320px + dettaglio flessibile; tabella KPI `table-fixed` senza `min-w`/`overflow-x`.
+- Sotto xl: card KPI complete; toggle «Espandi analisi» / «Mostra partite» (solo FE).
+
 ## Equilibrio vs Squilibrio v5 — dettaglio storico da snapshot pre-match (2026-07-19)
 
 - Detail Today: `scan_date < oggi (Europe/Rome)` → `historical_snapshot` con identity storica (status/score non bloccanti); altrimenti `current_strict`.

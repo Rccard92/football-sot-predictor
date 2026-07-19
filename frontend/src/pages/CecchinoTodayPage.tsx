@@ -69,6 +69,7 @@ export function CecchinoTodayPage() {
   const [scanReport, setScanReport] = useState<CecchinoTodayScanReport | null>(null)
   const [activeJob, setActiveJob] = useState<CecchinoTodayScanJob | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [analysisExpanded, setAnalysisExpanded] = useState(false)
   const [detail, setDetail] = useState<CecchinoTodayDetailResponse | null>(null)
   const [listLoading, setListLoading] = useState(false)
   const [daysLoading, setDaysLoading] = useState(false)
@@ -355,6 +356,7 @@ export function CecchinoTodayPage() {
       setScanDayLoading(false)
     }
     setSelectedId(null)
+    setAnalysisExpanded(false)
     setDetail(null)
     void loadList(selectedDay)
     void resumeActiveJobForDay(selectedDay)
@@ -615,7 +617,7 @@ export function CecchinoTodayPage() {
       activeJob.status === 'completed')
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-6">
+    <div className="mx-auto w-full max-w-[1800px] space-y-6 px-2 sm:px-4">
       <CecchinoTodayPageHeader
         isScanned={isScanned}
         scanDayLoading={scanDayLoading}
@@ -684,24 +686,37 @@ export function CecchinoTodayPage() {
         />
       )}
 
-      <div className={todayPageGrid}>
-        <div className={todayStickyListColumn}>
-          <CecchinoTodayFixtureList
-            countries={filteredCountries}
-            selectedId={selectedId}
-            onSelect={handleSelectFixture}
-            loading={listLoading}
-            error={listError}
-            selectedDay={selectedDay}
-            isScanned={isScanned}
-            hasActiveFilters={hasActiveFilters}
-            totalBeforeFilter={totalBeforeFilter}
-            onScanDay={() => void handleScanDay(false)}
-          />
-        </div>
+      <div className={analysisExpanded ? 'grid grid-cols-1' : todayPageGrid}>
+        {!analysisExpanded ? (
+          <div className={todayStickyListColumn}>
+            <CecchinoTodayFixtureList
+              countries={filteredCountries}
+              selectedId={selectedId}
+              onSelect={handleSelectFixture}
+              loading={listLoading}
+              error={listError}
+              selectedDay={selectedDay}
+              isScanned={isScanned}
+              hasActiveFilters={hasActiveFilters}
+              totalBeforeFilter={totalBeforeFilter}
+              onScanDay={() => void handleScanDay(false)}
+            />
+          </div>
+        ) : null}
 
         <section className="min-w-0 space-y-4">
-          <h2 className={todaySectionTitle}>Dettaglio analisi</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className={todaySectionTitle}>Dettaglio analisi</h2>
+            {selectedId != null ? (
+              <button
+                type="button"
+                onClick={() => setAnalysisExpanded((v) => !v)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+              >
+                {analysisExpanded ? 'Mostra partite' : 'Espandi analisi'}
+              </button>
+            ) : null}
+          </div>
           {detailError && (
             <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
               {detailError}

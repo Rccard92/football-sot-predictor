@@ -169,6 +169,12 @@ Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su g
 3. Export JSON audit + CSV inventario feature
 4. v4 operativa invariata; docs: `SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md`
 
+## Cecchino Today — KPI full-width senza scrollbar (2026-07-19)
+
+1. Pagina `max-w-[1800px]`; da xl sidebar 320px + dettaglio `1fr`.
+2. Tabella KPI `table-fixed` senza overflow-x; sotto xl card complete.
+3. Toggle FE «Espandi analisi» / «Mostra partite» (niente API).
+
 ## Equilibrio vs Squilibrio v5 — dettaglio storico snapshot (2026-07-19)
 
 1. Modalità da `scan_date` vs `rome_today()` (non da solo `fixture_status`).
