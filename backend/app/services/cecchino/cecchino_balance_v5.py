@@ -1014,22 +1014,29 @@ def _kpi_row_map(kpi_panel: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _goal_odds_from_final(final: dict[str, Any] | None) -> tuple[float | None, float | None]:
-    """Estrae quote Under/Over 2.5 da cecchino_final."""
-    if not final or not isinstance(final, dict):
-        return None, None
-    gm = final.get("goal_markets") or {}
-    if not isinstance(gm, dict):
+def _goal_odds_from_markets(goal_markets: dict[str, Any] | None) -> tuple[float | None, float | None]:
+    """Estrae quote Under/Over 2.5 dal blocco goal_markets (fratello di final)."""
+    if not goal_markets or not isinstance(goal_markets, dict):
         return None, None
     under = None
     over = None
-    u = gm.get(SEL_UNDER_2_5) or gm.get("under_2_5") or {}
-    o = gm.get(SEL_OVER_2_5) or gm.get("over_2_5") or {}
+    u = goal_markets.get(SEL_UNDER_2_5) or goal_markets.get("under_2_5") or {}
+    o = goal_markets.get(SEL_OVER_2_5) or goal_markets.get("over_2_5") or {}
     if isinstance(u, dict):
         under = _num(u.get("final_odd") or u.get("odd"))
     if isinstance(o, dict):
         over = _num(o.get("final_odd") or o.get("odd"))
     return under, over
+
+
+def _goal_odds_from_final(final: dict[str, Any] | None) -> tuple[float | None, float | None]:
+    """Fallback legacy: goal_markets annidati in final (non percorso principale)."""
+    if not final or not isinstance(final, dict):
+        return None, None
+    nested = final.get("goal_markets")
+    if isinstance(nested, dict):
+        return _goal_odds_from_markets(nested)
+    return None, None
 
 
 def _goal_probs_from_odds(under: float | None, over: float | None) -> tuple[float | None, float | None]:
@@ -1120,6 +1127,7 @@ def _pillar_f36_v5(
     f36_signed: float | None,
     f36_score: float | None,
     f36_label: str | None,
+    f36_class_key: str | None = None,
 ) -> dict[str, Any]:
     """Pilastro F36 v5 (official)."""
     if None in (quota_1, quota_2, f36_abs, f36_signed, f36_score, f36_label):
@@ -1138,7 +1146,7 @@ def _pillar_f36_v5(
 
     direction = _f36_side_from_signed(f36_signed)
     reading = _f36_structural_reading_v5({
-        "class_key": f36_label.lower().replace(" ", "_") if f36_label else None,
+        "class_key": f36_class_key,
         "signed": f36_signed,
     })
 
@@ -1280,6 +1288,10 @@ def _pillar_draw_credibility_v5(
         _component("f36_class", "Classe F36", f36_label, unit="text"),
         _component("dominant_sign", "Segno dominante", dominant_sign, unit="text"),
     ]
+    if under_odd is not None:
+        components.append(_component("quota_under_2_5", "Under 2.5 Cecchino", under_odd, unit="quota"))
+    if over_odd is not None:
+        components.append(_component("quota_over_2_5", "Over 2.5 Cecchino", over_odd, unit="quota"))
 
     # Aggiungi Under/Over solo se disponibili (normalizzati)
     if under_norm is not None:
@@ -1409,11 +1421,11 @@ def _market_pair_v5(
         signed_diff = round(float(prob_cecchino_norm) - float(prob_book_norm), 2)
         abs_diff = abs(signed_diff)
         if abs_diff < 0.5:
-            direction_label = "allineati"
+            direction_label = "Probabilità allineate"
         elif signed_diff > 0:
-            direction_label = "Cecchino più alto"
+            direction_label = "Probabilità Cecchino maggiore"
         else:
-            direction_label = "Book più alto"
+            direction_label = "Probabilità Book maggiore"
 
     return {
         "key": key,
@@ -1540,22 +1552,14 @@ def _build_structural_summary_v5(
 def build_cecchino_balance_v5(
     *,
     cecchino_final: dict[str, Any],
+    goal_markets: dict[str, Any] | None = None,
     kpi_panel: dict[str, Any] | None = None,
     identity_consistency: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Builder pubblico Balance v5 — NON richiede balance_analysis come input.
-    
-    Estrae quote/probs da cecchino_final come build_balance_analysis_from_final,
-    poi computa i 4 pilastri direttamente.
-    
-    Args:
-        cecchino_final: dict con quota_1, quota_x, quota_2, prob_1_pct/prob_1, etc.
-        kpi_panel: opzionale, per arricchire market deviation con quote book
-        identity_consistency: opzionale, gestisce mismatch identità fixture
-    
-    Returns:
-        dict con status, version, inputs, pillars (4), pillar_order, market_deviation,
-        structural_summary, warnings
+
+    Estrae quote/probs da cecchino_final, normalizza 1X2 una sola volta per il
+    dominio v5, e legge Goal Markets dal blocco fratello (non da final).
     """
     # Identity mismatch → unavailable
     if isinstance(identity_consistency, dict) and identity_consistency.get("status") == "inconsistent":
@@ -1581,7 +1585,6 @@ def build_cecchino_balance_v5(
             "warnings": ["fixture_identity_mismatch"] + warnings_identity,
         }
 
-    # Estrazione dati da cecchino_final
     if not isinstance(cecchino_final, dict) or cecchino_final.get("status") != "available":
         return {
             "status": "unavailable",
@@ -1599,28 +1602,32 @@ def build_cecchino_balance_v5(
             "warnings": ["cecchino_final_unavailable"],
         }
 
-    # Estrai quote e probs (stessa logica di build_balance_analysis_from_final)
     quota_1 = _num(cecchino_final.get("quota_1"))
     quota_x = _num(cecchino_final.get("quota_x"))
     quota_2 = _num(cecchino_final.get("quota_2"))
-    prob_1 = _prob_to_percent(
+    prob_1_raw = _prob_to_percent(
         _num(cecchino_final.get("prob_1")),
-        _num(cecchino_final.get("prob_1_pct"))
+        _num(cecchino_final.get("prob_1_pct")),
     )
-    prob_x = _prob_to_percent(
+    prob_x_raw = _prob_to_percent(
         _num(cecchino_final.get("prob_x")),
-        _num(cecchino_final.get("prob_x_pct"))
+        _num(cecchino_final.get("prob_x_pct")),
     )
-    prob_2 = _prob_to_percent(
+    prob_2_raw = _prob_to_percent(
         _num(cecchino_final.get("prob_2")),
-        _num(cecchino_final.get("prob_2_pct"))
+        _num(cecchino_final.get("prob_2_pct")),
+    )
+    prob_1_norm, prob_x_norm, prob_2_norm = _normalize_3way_probs(
+        prob_1_raw, prob_x_raw, prob_2_raw
     )
 
-    # Goal markets
-    under_odd, over_odd = _goal_odds_from_final(cecchino_final)
+    # Goal markets: percorso principale = argomento esplicito; fallback nested in final
+    gm = goal_markets if isinstance(goal_markets, dict) else None
+    under_odd, over_odd = _goal_odds_from_markets(gm)
+    if under_odd is None and over_odd is None:
+        under_odd, over_odd = _goal_odds_from_final(cecchino_final)
     under_pct, over_pct = _goal_probs_from_odds(under_odd, over_odd)
 
-    # KPI enrichment per book odds
     rows = _kpi_row_map(kpi_panel)
     quota_book_1 = _num(rows.get(SEL_HOME, {}).get("quota_book"))
     quota_book_x = _num(rows.get(SEL_DRAW, {}).get("quota_book"))
@@ -1628,7 +1635,6 @@ def build_cecchino_balance_v5(
     quota_book_under = _num(rows.get(SEL_UNDER_2_5, {}).get("quota_book"))
     quota_book_over = _num(rows.get(SEL_OVER_2_5, {}).get("quota_book"))
 
-    # Book implied probs (grezzi, prima di normalizzare)
     def _implied_pct(q: float | None) -> float | None:
         if q is None or q <= 1:
             return None
@@ -1640,33 +1646,28 @@ def build_cecchino_balance_v5(
     prob_book_under = _implied_pct(quota_book_under)
     prob_book_over = _implied_pct(quota_book_over)
 
-    # Computa F36 (legacy helper)
     if None in (quota_1, quota_2):
         f36_signed = None
         f36_abs = None
-        f36_dict = {}
+        f36_dict: dict[str, Any] = {}
     else:
         f36_signed = quota_2 - quota_1
         f36_abs = abs(f36_signed)
         f36_dict = _classify_f36(f36_abs, f36_signed)
 
-    # Computa dominance (legacy helper)
-    if None in (prob_1, prob_x, prob_2):
+    # Dominanza / ranking / gap sul dominio v5: solo probabilità normalizzate
+    if None in (prob_1_norm, prob_x_norm, prob_2_norm):
         best_side = None
         dominance_pp = None
     else:
-        probs_pct = {"1": prob_1, "X": prob_x, "2": prob_2}
+        probs_pct = {"1": prob_1_norm, "X": prob_x_norm, "2": prob_2_norm}
         best_label, _, _, _ = _dominance_sides(probs_pct)
         best_side = _side_label_to_enum(best_label)
-        dominance_pp = compute_dominance_pp(prob_1, prob_x, prob_2)
+        dominance_pp = compute_dominance_pp(prob_1_norm, prob_x_norm, prob_2_norm)
 
-    # X rank
-    x_rank, _ = x_rank_from_probs(prob_1, prob_x, prob_2)
+    x_rank, _ = x_rank_from_probs(prob_1_norm, prob_x_norm, prob_2_norm)
+    gap_pp = probability_gap_1_2_pp(prob_1_norm, prob_2_norm)
 
-    # Gap pp
-    gap_pp = probability_gap_1_2_pp(prob_1, prob_2)
-
-    # Pilastri
     pillar_f36 = _pillar_f36_v5(
         quota_1=quota_1,
         quota_2=quota_2,
@@ -1674,12 +1675,13 @@ def build_cecchino_balance_v5(
         f36_signed=f36_signed,
         f36_score=f36_dict.get("score"),
         f36_label=f36_dict.get("label"),
+        f36_class_key=f36_dict.get("class_key"),
     )
 
     pillar_dominance = _pillar_dominance_v5(
-        prob_1=prob_1,
-        prob_x=prob_x,
-        prob_2=prob_2,
+        prob_1=prob_1_norm,
+        prob_x=prob_x_norm,
+        prob_2=prob_2_norm,
         best_side=best_side,
         dominance_pp=dominance_pp,
     )
@@ -1687,7 +1689,7 @@ def build_cecchino_balance_v5(
     dominant_sign = dominant_side_to_market_label(best_side)
 
     pillar_draw = _pillar_draw_credibility_v5(
-        prob_x=prob_x,
+        prob_x=prob_x_norm,
         quota_x=quota_x,
         x_rank=x_rank,
         under_odd=under_odd,
@@ -1699,16 +1701,15 @@ def build_cecchino_balance_v5(
     )
 
     pillar_gap = _pillar_gap_v5(
-        prob_1=prob_1,
-        prob_2=prob_2,
+        prob_1=prob_1_norm,
+        prob_2=prob_2_norm,
         gap_pp=gap_pp,
         f36_score=f36_dict.get("score"),
         f36_class_key=f36_dict.get("class_key"),
     )
 
-    # Market deviation
     market_deviation = _build_market_deviation_v5(
-        cecchino_1x2=(prob_1, prob_x, prob_2),
+        cecchino_1x2=(prob_1_norm, prob_x_norm, prob_2_norm),
         book_1x2=(prob_book_1, prob_book_x, prob_book_2),
         cecchino_ou=(under_pct, over_pct),
         book_ou=(prob_book_under, prob_book_over),
@@ -1724,7 +1725,6 @@ def build_cecchino_balance_v5(
         quota_book_over=quota_book_over,
     )
 
-    # Structural summary
     structural_summary = _build_structural_summary_v5(
         f36_label=pillar_f36.get("class_label"),
         dominance_label=pillar_dominance.get("class_label"),
@@ -1732,13 +1732,12 @@ def build_cecchino_balance_v5(
         gap_label=pillar_gap.get("class_label"),
     )
 
-    # Warnings aggregate
-    warnings = []
+    warnings: list[str] = []
     for p in [pillar_f36, pillar_dominance, pillar_draw, pillar_gap]:
         warnings.extend(p.get("warnings", []))
     if market_deviation.get("status") == "unavailable":
         warnings.extend(market_deviation.get("warnings", []))
-    warnings = list(set(warnings))  # deduplica
+    warnings = list(set(warnings))
 
     return {
         "status": "ok",
@@ -1747,9 +1746,12 @@ def build_cecchino_balance_v5(
             "quota_1": quota_1,
             "quota_x": quota_x,
             "quota_2": quota_2,
-            "prob_1": prob_1,
-            "prob_x": prob_x,
-            "prob_2": prob_2,
+            "prob_1": prob_1_raw,
+            "prob_x": prob_x_raw,
+            "prob_2": prob_2_raw,
+            "prob_1_norm": prob_1_norm,
+            "prob_x_norm": prob_x_norm,
+            "prob_2_norm": prob_2_norm,
             "under_odd": under_odd,
             "over_odd": over_odd,
         },

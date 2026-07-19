@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
+
+Fix su `cecchino_balance_v5_v2` (no bump): F36 via `class_key` tecnico; normalizzazione 1X2 unica (`*_norm`); `goal_markets` argomento separato; FE label/disclaimer/market; Intensità Goal v4 nascosta dal Today Detail; titolo v5 = `Intensità Goal Avanzata - v5 Preview research`. Legacy ICM/Signals intatti.
+
 ## Equilibrio vs Squilibrio v5 — modulo canonico (2026-07-19)
 
 Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backend/app/services/cecchino/cecchino_balance_v5.py). Quattro pilastri (F36 ufficiale, Dominanza ufficiale, Credibilità X descrittiva, Gap ufficiale) + scostamento mercato separato. Eliminati Preview e research_candidates. Adapter legacy `cecchino_balance_analysis.py` per ICM/Signals. Nessun impatto su formule ICM/Segnali/KPI.

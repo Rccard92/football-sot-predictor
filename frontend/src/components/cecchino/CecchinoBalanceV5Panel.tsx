@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type {
   CecchinoBalanceV5,
+  CecchinoBalanceV5MarketPair,
   CecchinoBalanceV5Pillar,
   CecchinoFixtureIdentityConsistency,
 } from '../../lib/cecchinoTodayApi'
@@ -14,6 +15,10 @@ type Props = {
 
 const PANEL_TITLE = 'Equilibrio vs Squilibrio v5'
 const PANEL_SUBTITLE = 'Quattro letture indipendenti della struttura della partita.'
+const INDEX_DISCLAIMER =
+  'Gli indici descrivono dimensioni diverse e non vanno confrontati direttamente tra loro.'
+const DRAW_NOTE_FALLBACK =
+  'Indice descrittivo interno, non ancora probabilità calibrata sull’esito reale.'
 
 const IDENTITY_MISMATCH_ALERT =
   'Analisi non disponibile: data, stato o snapshot della fixture non risultano coerenti.'
@@ -37,6 +42,32 @@ function badgeClass(status: string): string {
   }
 }
 
+function indexLabel(key: string): string {
+  switch (key) {
+    case 'f36':
+      return 'Indice equilibrio'
+    case 'dominance':
+      return 'Indice convinzione'
+    case 'draw_credibility':
+      return 'Probabilità X norm.'
+    case 'gap_coherence':
+      return 'Indice coerenza'
+    default:
+      return 'Indice'
+  }
+}
+
+function classLabelTitle(key: string): string {
+  if (key === 'draw_credibility') return 'Classe quota X'
+  return 'Classe'
+}
+
+function directionLabel(key: string, direction: string): string {
+  if (key === 'f36') return `Inclinazione strutturale: lato ${direction}`
+  if (key === 'dominance') return `Scenario dominante: ${direction}`
+  return `Segno: ${direction}`
+}
+
 function fmtIndex(index: number | null | undefined): string {
   return formatBalanceNumber(index, 'index')
 }
@@ -52,6 +83,15 @@ function fmtValue(value: number | string | null | undefined, unit: string): stri
     return formatBalanceNumber(value, unit)
   }
   return formatBalanceNumber(value, 'index')
+}
+
+/** Quote a due decimali fissi (3 → 3,00). */
+function fmtQuotaFixed(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return Number(value).toLocaleString('it-IT', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 function isIdentityMismatch(
@@ -79,8 +119,23 @@ function resolvePillars(balance: CecchinoBalanceV5): CecchinoBalanceV5Pillar[] {
     .filter(Boolean)
 }
 
+function marketRowHasAnyData(pair: CecchinoBalanceV5MarketPair): boolean {
+  return (
+    pair.quota_cecchino != null ||
+    pair.quota_book != null ||
+    pair.prob_cecchino_norm != null ||
+    pair.prob_book_norm != null ||
+    pair.prob_cecchino_pct != null ||
+    pair.prob_book_pct != null
+  )
+}
+
 function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; number: number }) {
   const [open, setOpen] = useState(false)
+  const note =
+    pillar.key === 'draw_credibility'
+      ? pillar.informational_note || DRAW_NOTE_FALLBACK
+      : null
   return (
     <article className={`${todayCard} ${todayCardPadding} flex flex-col gap-3`}>
       <div className="flex items-start justify-between gap-2">
@@ -99,25 +154,27 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
       <p className="text-xs text-slate-500">{pillar.question}</p>
       <div className="flex items-end justify-between gap-3 border-t border-slate-100 pt-3">
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">Indice</p>
+          <p className="text-[10px] uppercase tracking-wide text-slate-400">
+            {indexLabel(pillar.key)}
+          </p>
           <p className="text-2xl font-semibold tabular-nums text-slate-900">{fmtIndex(pillar.index)}</p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">Classe</p>
+          <p className="text-[10px] uppercase tracking-wide text-slate-400">
+            {classLabelTitle(pillar.key)}
+          </p>
           <p className="text-sm font-medium text-slate-800">
             {fmtClass(pillar.class_label, pillar.status)}
           </p>
           {pillar.direction ? (
-            <p className="mt-0.5 text-xs text-slate-500">Segno: {pillar.direction}</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {directionLabel(pillar.key, pillar.direction)}
+            </p>
           ) : null}
         </div>
       </div>
       <p className="text-xs leading-relaxed text-slate-700">{pillar.reading}</p>
-      {pillar.key === 'draw_credibility' ? (
-        <p className="text-[11px] leading-snug text-slate-500">
-          Indice descrittivo interno, non ancora probabilità calibrata sull’esito reale.
-        </p>
-      ) : null}
+      {note ? <p className="text-[11px] leading-snug text-slate-500">{note}</p> : null}
       <button
         type="button"
         className="self-start text-xs font-medium text-slate-600 underline-offset-2 hover:underline"
@@ -130,7 +187,11 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
           {(pillar.components ?? []).map((c) => (
             <li key={c.key} className="flex justify-between gap-2">
               <span className="text-slate-500">{c.label}</span>
-              <span className="tabular-nums font-medium">{fmtValue(c.value, c.unit)}</span>
+              <span className="tabular-nums font-medium">
+                {c.unit === 'quota'
+                  ? fmtQuotaFixed(c.value == null || c.value === '' ? null : Number(c.value))
+                  : fmtValue(c.value, c.unit)}
+              </span>
             </li>
           ))}
         </ul>
@@ -165,12 +226,14 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) 
 
   const pillars = resolvePillars(balance)
   const market = balance.market_deviation
+  const marketPairs = (market?.pairs ?? []).filter(marketRowHasAnyData)
 
   return (
     <section className="space-y-4">
       <div>
         <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
         <p className={todaySectionSubtitle}>{PANEL_SUBTITLE}</p>
+        <p className="mt-2 text-xs text-slate-500">{INDEX_DISCLAIMER}</p>
         {balance.structural_summary ? (
           <p className="mt-3 text-sm leading-relaxed text-slate-800">{balance.structural_summary}</p>
         ) : null}
@@ -204,11 +267,11 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) 
                   <th className="py-1 pr-3">|Diff.|</th>
                   <th className="py-1 pr-3">Quota Cecch.</th>
                   <th className="py-1 pr-3">Quota Book</th>
-                  <th className="py-1 pr-3">Direzione</th>
+                  <th className="py-1 pr-3">Confronto probabilità</th>
                 </tr>
               </thead>
               <tbody>
-                {(market.pairs ?? []).map((pair) => (
+                {marketPairs.map((pair) => (
                   <tr key={pair.key} className="border-t border-slate-100">
                     <td className="py-1.5 pr-3 font-medium text-slate-800">{pair.label}</td>
                     <td className="py-1.5 pr-3 tabular-nums">
@@ -224,10 +287,10 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) 
                       {fmtValue(pair.abs_diff ?? pair.deviation_pp ?? pair.abs_diff_pp ?? null, 'pp')}
                     </td>
                     <td className="py-1.5 pr-3 tabular-nums">
-                      {fmtValue(pair.quota_cecchino ?? null, 'quota')}
+                      {fmtQuotaFixed(pair.quota_cecchino ?? null)}
                     </td>
                     <td className="py-1.5 pr-3 tabular-nums">
-                      {fmtValue(pair.quota_book ?? null, 'quota')}
+                      {fmtQuotaFixed(pair.quota_book ?? null)}
                     </td>
                     <td className="py-1.5 pr-3 text-slate-600">
                       {pair.direction_label ?? pair.direction ?? '—'}

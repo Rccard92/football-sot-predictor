@@ -370,3 +370,69 @@ def test_arch_no_betting_in_v5_payload():
     blob = json.dumps(v5, ensure_ascii=False).lower()
     for phrase in ("x / under molto", "da giocare", "value bet", "stake consigliato"):
         assert phrase not in blob
+
+
+def test_f36_reading_transition_uses_class_key():
+    v5 = build_cecchino_balance_v5(cecchino_final=_final(quota_1=2.20, quota_2=3.40))
+    f36 = v5["pillars"]["f36"]
+    assert f36["class_label"] == "Transizione"
+    reading = (f36["reading"] or "").lower()
+    assert "distanza intermedia" in reading
+    assert "relativamente vicine" not in reading
+
+
+def test_f36_reading_imbalance_uses_class_key():
+    v5 = build_cecchino_balance_v5(cecchino_final=_final(quota_1=1.80, quota_2=4.50))
+    f36 = v5["pillars"]["f36"]
+    assert f36["class_label"] == "Squilibrio"
+    reading = (f36["reading"] or "").lower()
+    assert "sbilanciata" in reading
+    assert "relativamente vicine" not in reading
+
+
+def test_norm_1x2_shared_across_pillars_and_market():
+    v5 = build_cecchino_balance_v5(
+        cecchino_final={
+            "status": "available",
+            "quota_1": 2.10,
+            "quota_x": 3.40,
+            "quota_2": 3.60,
+            "prob_1_pct": 22.90,
+            "prob_x_pct": 58.75,
+            "prob_2_pct": 15.28,
+        }
+    )
+    assert v5["inputs"]["prob_x"] == pytest.approx(58.75)
+    assert v5["inputs"]["prob_x_norm"] == pytest.approx(60.61, abs=0.02)
+    dc = v5["pillars"]["draw_credibility"]
+    assert dc["index"] == pytest.approx(v5["inputs"]["prob_x_norm"], abs=0.02)
+    pairs = {p["key"]: p for p in v5["market_deviation"]["pairs"]}
+    assert pairs["x"]["prob_cecchino_norm"] == pytest.approx(dc["index"], abs=0.02)
+    gap_pp = abs(v5["inputs"]["prob_1_norm"] - v5["inputs"]["prob_2_norm"])
+    gap_comp = next(
+        c for c in v5["pillars"]["gap_coherence"]["components"] if c["key"] == "probability_gap_1_2_pp"
+    )
+    assert gap_comp["value"] == pytest.approx(gap_pp, abs=0.02)
+    assert pairs["x"]["direction_label"] in (
+        "Probabilità allineate",
+        "Probabilità Cecchino maggiore",
+        "Probabilità Book maggiore",
+        None,
+    )
+
+
+def test_goal_markets_separate_from_final():
+    gm = {
+        SEL_UNDER_2_5: {"status": "available", "final_odd": 1.85},
+        SEL_OVER_2_5: {"status": "available", "final_odd": 2.05},
+    }
+    v5 = build_cecchino_balance_v5(cecchino_final=_final(), goal_markets=gm)
+    assert v5["inputs"]["under_odd"] == pytest.approx(1.85)
+    assert v5["inputs"]["over_odd"] == pytest.approx(2.05)
+    dc_keys = [c["key"] for c in v5["pillars"]["draw_credibility"]["components"]]
+    assert "quota_under_2_5" in dc_keys
+    assert "quota_over_2_5" in dc_keys
+    pairs = {p["key"]: p for p in v5["market_deviation"]["pairs"]}
+    assert pairs["under_2_5"]["quota_cecchino"] == pytest.approx(1.85)
+    assert pairs["over_2_5"]["quota_cecchino"] == pytest.approx(2.05)
+    assert pairs["under_2_5"]["prob_cecchino_norm"] is not None

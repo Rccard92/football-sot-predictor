@@ -169,6 +169,15 @@ Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su g
 3. Export JSON audit + CSV inventario feature
 4. v4 operativa invariata; docs: `SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md`
 
+## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
+
+1. F36: passare `class_key` tecnico a `_pillar_f36_v5` (no ricostruzione da label IT).
+2. Builder: `prob_*_raw` → `_normalize_3way_probs` → usare solo `*_norm` in pilastri/market; raw+norm in `inputs`.
+3. Today: `build_cecchino_balance_v5(..., goal_markets=output.get("goal_markets"))`.
+4. FE Balance: label per pilastro, disclaimer indici, `informational_note`, colonna «Confronto probabilità», hide se quote/prob tutti null.
+5. Today Detail: non montare `CecchinoGoalIntensityAnalysisPanel` (v4); titolo v5 esatto `Intensità Goal Avanzata - v5 Preview research`.
+6. Nessun bump versione; nessun Preview Balance; legacy ICM/Signals intatti.
+
 ## Equilibrio vs Squilibrio v5 — canonico (2026-07-19)
 
 1. Detail Today espone solo `balance_v5` (`cecchino_balance_v5_v2`).

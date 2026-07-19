@@ -269,6 +269,18 @@ Sostituita da v1.1 (formula score invariata).
 
 Dettaglio: [SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md](./SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md).
 
+## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Versione | resta `cecchino_balance_v5_v2` (nessun bump) |
+| F36 reading | usa `f36_class_key` tecnico (`transition`/`imbalance`), non label IT |
+| Prob 1X2 | normalizzazione unica `*_norm` in tutto il dominio v5; raw in `inputs` |
+| Goal markets | argomento separato `goal_markets` (Today passa blocco fratello di `final`) |
+| FE Balance | label pilastri, disclaimer indici, `informational_note`, colonna confronto prob., hide righe vuote |
+| Intensità Goal | v4 nascosta dal Today Detail (file/payload restano); titolo v5 = `Intensità Goal Avanzata - v5 Preview research` |
+| Invariato | adapter legacy, ICM, Signals, formule Goal/Poisson/KPI |
+
 ## Equilibrio vs Squilibrio v5 — modulo canonico (2026-07-19)
 
 | Aspetto | Dettaglio |

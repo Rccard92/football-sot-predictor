@@ -1646,6 +1646,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
 
     balance_v5 = build_cecchino_balance_v5(
         cecchino_final=output.get("final") if isinstance(output, dict) else None,
+        goal_markets=output.get("goal_markets") if isinstance(output, dict) else None,
         kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
         identity_consistency=fixture_identity_consistency,
     )

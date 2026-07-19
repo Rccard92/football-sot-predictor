@@ -32,7 +32,7 @@ export function CecchinoGoalIntensityV5PreviewPanel({ preview }: Props) {
   if (!preview || preview.status === 'unavailable') {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
-        <h3 className={todaySectionTitle}>Intensità Goal v5 — Preview research</h3>
+        <h3 className={todaySectionTitle}>Intensità Goal Avanzata - v5 Preview research</h3>
         <p className={todaySectionSubtitle}>
           Snapshot prospettico non disponibile (bundle assente o partita fuori coorte).
         </p>
@@ -46,7 +46,7 @@ export function CecchinoGoalIntensityV5PreviewPanel({ preview }: Props) {
   if (preview.status === 'error' && !preview.snapshot) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
-        <h3 className={todaySectionTitle}>Intensità Goal v5 — Preview research</h3>
+        <h3 className={todaySectionTitle}>Intensità Goal Avanzata - v5 Preview research</h3>
         <p className="mt-2 text-sm text-slate-600">{preview.banner ?? 'Preview non disponibile.'}</p>
       </section>
     )
@@ -61,7 +61,7 @@ export function CecchinoGoalIntensityV5PreviewPanel({ preview }: Props) {
 
   return (
     <section className={`${todayCard} ${todayCardPadding}`}>
-      <h3 className={todaySectionTitle}>Intensità Goal v5 — Preview research</h3>
+      <h3 className={todaySectionTitle}>Intensità Goal Avanzata - v5 Preview research</h3>
       <p className={todaySectionSubtitle}>
         Separato da Intensità Goal v4. Score congelati da bundle Fase 2A.
       </p>

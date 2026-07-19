@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
+
+- F36 reading: `f36_class_key` tecnico (Transizione/Squilibrio non più «relativamente vicine»).
+- Normalizzazione 1X2 unica nel dominio v5; Under/Over da `goal_markets` separato (wire Today).
+- FE: label/disclaimer/informational_note/market labels; Intensità Goal v4 nascosta dal Detail; titolo v5 rinominato.
+- Versione resta `cecchino_balance_v5_v2`; nessun impatto ICM/Signals/legacy.
+
 ## Equilibrio vs Squilibrio v5 — canonico (2026-07-19)
 
 - Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
