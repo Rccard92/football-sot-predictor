@@ -48,6 +48,24 @@ type Props = {
   purchasabilityError?: string | null
 }
 
+function cohortScopeChip(scope?: EmpiricalPurchasabilityItem['cohort_scope']) {
+  if (scope === 'same_competition') {
+    return (
+      <span className="mt-0.5 inline-block rounded border border-sky-500/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-sky-200">
+        Campionato
+      </span>
+    )
+  }
+  if (scope === 'all_competitions_fallback') {
+    return (
+      <span className="mt-0.5 inline-block rounded border border-amber-500/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber-200">
+        Globale
+      </span>
+    )
+  }
+  return null
+}
+
 function PurchasabilityCell({
   item,
   loading,
@@ -68,6 +86,39 @@ function PurchasabilityCell({
   if (!item) {
     return <span className="text-slate-500">—</span>
   }
+
+  if (item.status === 'rating_below_scope') {
+    return (
+      <span
+        className="text-left"
+        title="L’Acquistabilità viene calcolata per Rating almeno pari a 50."
+      >
+        <span className="block text-slate-300">—</span>
+        <span className="block text-[9px] text-slate-400">Non valutato</span>
+      </span>
+    )
+  }
+
+  if (item.status === 'unsupported_market') {
+    return (
+      <span className="text-left" title={item.unsupported_reason || item.explanation || undefined}>
+        <span className="block text-slate-300">—</span>
+        <span className="block text-[9px] text-slate-400">Non disponibile</span>
+      </span>
+    )
+  }
+
+  if (item.status === 'insufficient_data') {
+    const n =
+      item.global_sample_size ?? item.selected_sample_size ?? item.sample_size ?? 0
+    return (
+      <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
+        <span className="block text-slate-300">—</span>
+        <span className="block text-[9px] text-slate-400">{n} casi globali</span>
+      </button>
+    )
+  }
+
   if (item.score == null) {
     return (
       <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
@@ -76,6 +127,7 @@ function PurchasabilityCell({
       </button>
     )
   }
+
   return (
     <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
       <span
@@ -85,8 +137,9 @@ function PurchasabilityCell({
         <span className="hidden lg:inline">{item.class}</span>
       </span>
       <span className="mt-0.5 block text-[9px] text-slate-400">
-        {item.sample_size ?? 0} casi · ROI {fmtRoiPct(item.roi)}
+        {item.selected_sample_size ?? item.sample_size ?? 0} casi · ROI {fmtRoiPct(item.roi)}
       </span>
+      {cohortScopeChip(item.cohort_scope)}
     </button>
   )
 }
@@ -99,6 +152,12 @@ function PurchasabilityPopover({
   onClose: () => void
 }) {
   const band = item.rating_band
+  const scopeLabel =
+    item.cohort_scope === 'same_competition'
+      ? 'Campionato'
+      : item.cohort_scope === 'all_competitions_fallback'
+        ? 'Globale (fallback)'
+        : '—'
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -118,13 +177,21 @@ function PurchasabilityPopover({
         </div>
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
           <dt className="text-slate-500">Mercato</dt>
-          <dd>{item.selection ?? '—'}</dd>
+          <dd>{item.label || item.selection || item.market_key || '—'}</dd>
           <dt className="text-slate-500">Rating attuale</dt>
           <dd>{item.rating ?? '—'}</dd>
           <dt className="text-slate-500">Fascia Rating</dt>
           <dd>{band?.label ?? '—'}</dd>
-          <dt className="text-slate-500">Campione</dt>
-          <dd>{item.sample_size ?? 0}</dd>
+          <dt className="text-slate-500">Ambito coorte</dt>
+          <dd>{scopeLabel}</dd>
+          <dt className="text-slate-500">Casi campionato</dt>
+          <dd>{item.local_sample_size ?? '—'}</dd>
+          <dt className="text-slate-500">Casi globali</dt>
+          <dd>{item.global_sample_size ?? '—'}</dd>
+          <dt className="text-slate-500">Campione usato</dt>
+          <dd>{item.selected_sample_size ?? item.sample_size ?? 0}</dd>
+          <dt className="text-slate-500">Competizioni in coorte</dt>
+          <dd>{item.competition_count ?? '—'}</dd>
           <dt className="text-slate-500">W / L / V</dt>
           <dd>
             {item.wins ?? 0} / {item.losses ?? 0} / {item.voids ?? 0}
@@ -139,7 +206,7 @@ function PurchasabilityPopover({
           <dd>{fmtPp(item.realized_margin)}</dd>
           <dt className="text-slate-500">ROI</dt>
           <dd>{fmtRoiPct(item.roi)}</dd>
-          <dt className="text-slate-500">Periodi positivi</dt>
+          <dt className="text-slate-500">Stabilità (periodi +)</dt>
           <dd>
             {item.positive_periods != null && item.total_periods != null
               ? `${item.positive_periods} / ${item.total_periods}`
@@ -158,8 +225,9 @@ function PurchasabilityPopover({
           <p className="mt-3 text-xs text-slate-700">{item.explanation}</p>
         ) : null}
         <p className="mt-3 rounded-md bg-slate-50 px-2 py-2 text-[11px] leading-snug text-slate-600">
-          L’Acquistabilità descrive il comportamento storico di Rating simili. Non rappresenta una
-          probabilità di vittoria né uno stake consigliato.
+          L’Acquistabilità descrive il comportamento storico di Rating simili sullo stesso mercato.
+          Non rappresenta una probabilità di vittoria né uno stake consigliato. Lo storico globale
+          si usa solo se il campionato non ha abbastanza casi.
         </p>
       </div>
     </div>

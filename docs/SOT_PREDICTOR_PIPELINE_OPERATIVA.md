@@ -1,10 +1,15 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
-## Indice di Acquistabilità — empirica v1 (2026-07-18)
+## Indice di Acquistabilità — empirica v1.1 (2026-07-19)
 
 1. Aprire Cecchino Today → dettaglio partita → colonna **Acquistabilità** dopo Rating.
-2. Verificare batch API `purchasability-empirical` (scan_date, competition_id); errore non blocca il pannello.
-3. Non avviare job research Fase 2A.
+2. Verificare chip **Campionato** / **Globale**; Rating &lt;50 → «Non valutato»; mercati panel (X PT, Over 1.5, …).
+3. Batch API `purchasability-empirical` (scan_date, competition_id); errore non blocca il pannello.
+4. Non avviare job research Fase 2A.
+
+## Indice di Acquistabilità — empirica v1 (2026-07-18)
+
+Sostituita da v1.1.
 
 ## Indice di Acquistabilità — Fase 2A.4.1 (2026-07-18)
 

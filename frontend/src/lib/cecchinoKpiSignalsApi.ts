@@ -190,6 +190,8 @@ export type EmpiricalPurchasabilityItem = {
   class: string
   competition_id?: number | null
   selection?: string | null
+  market_key?: string | null
+  label?: string | null
   today_fixture_id?: number | null
   rating?: number | null
   rating_band?: { min: number; max: number; label: string } | null
@@ -211,6 +213,16 @@ export type EmpiricalPurchasabilityItem = {
   historical_date_to?: string | null
   reason_codes?: string[]
   explanation?: string
+  cohort_scope?: 'same_competition' | 'all_competitions_fallback' | null
+  local_sample_size?: number | null
+  global_sample_size?: number | null
+  selected_sample_size?: number | null
+  competitions_in_cohort?: number[] | null
+  competition_count?: number | null
+  fallback_used?: boolean
+  fallback_reason?: string | null
+  raw_market_key?: string | null
+  unsupported_reason?: string | null
 }
 
 export type EmpiricalPurchasabilityResponse = {

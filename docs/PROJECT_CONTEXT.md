@@ -2,9 +2,13 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
+
+Colonna **Acquistabilità** dopo Rating: `cecchino_purchasability_empirical_rating_v1_1`. Current da `kpi_panel_json`; coorte locale→globale; mercati panel con settlement; formula score invariata; nessuna probabilità/stake. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
 
-Colonna **Acquistabilità** dopo Rating: `cecchino_purchasability_empirical_rating_v1`. Coorte mercato+fascia+competizione; score empirico 0–100; nessuna probabilità/stake; indipendente da Intensità/Equilibrio/Credibilità X. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+Sostituita da v1.1. Coorte solo locale; current da audit rows.
 
 ## Indice di Acquistabilità — Fase 2A.4.1 coorte DC / OOF / span (2026-07-18)
 

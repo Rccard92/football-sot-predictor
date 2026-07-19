@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Indice di Acquistabilità — empirica v1.1 copertura operativa KPI (2026-07-19)
+
+- Current rows da `kpi_panel_json`; chiave `fixture:market_key`; coorte locale→globale; mercati panel con settlement (`DRAW_PT`, OU linee).
+- FE: Campionato/Globale, «Non valutato» per Rating&lt;50; formula score invariata rispetto a v1.
+
 ## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
 
 - Colonna Acquistabilità nel Pannello KPI Today; servizio `cecchino_purchasability_empirical.py`; endpoint `GET …/kpi-signals/purchasability-empirical`.

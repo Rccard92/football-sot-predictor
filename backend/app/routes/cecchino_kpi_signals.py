@@ -131,7 +131,7 @@ def kpi_signals_purchasability_empirical(
     competition_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Acquistabilità empirica v1 — read-only, batch per Pannello KPI."""
+    """Acquistabilità empirica v1.1 — read-only, batch per Pannello KPI."""
     payload = build_empirical_purchasability_for_panel(
         db,
         date_from=date_from,

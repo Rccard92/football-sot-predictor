@@ -47,7 +47,7 @@ function mapPurchasabilityForFixture(
   todayFixtureId: number | null | undefined,
 ): Record<string, EmpiricalPurchasabilityItem> {
   const byMarket: Record<string, EmpiricalPurchasabilityItem> = {}
-  for (const item of Object.values(items)) {
+  for (const [key, item] of Object.entries(items)) {
     if (
       todayFixtureId != null &&
       item.today_fixture_id != null &&
@@ -55,8 +55,14 @@ function mapPurchasabilityForFixture(
     ) {
       continue
     }
-    const sel = item.selection
-    if (sel) byMarket[sel] = item
+    const marketKey = item.market_key || item.selection
+    if (marketKey) byMarket[marketKey] = item
+    // Chiave API v1.1: today_fixture_id:market_key
+    const colon = key.indexOf(':')
+    if (colon > 0) {
+      const mk = key.slice(colon + 1)
+      if (mk) byMarket[mk] = item
+    }
   }
   return byMarket
 }

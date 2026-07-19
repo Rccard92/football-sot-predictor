@@ -2,7 +2,7 @@
 
 Registro delle variabili usate nei modelli SOT. **Parte principale: v2.1** (`baseline_v2_1_weighted_components`). Sezioni brevi su v1.1 (base v2.0) e v2.0.
 
-> **Nota research Indice di Acquistabilità (Fase 1 … / empirica v1):** audit v1_1; statistica OOF `v2a_2`; residual `v2a_4_1`; **Acquistabilità empirica** `empirical_rating_v1` in Pannello KPI (non probabilità, non stake). **Non** Indice ML né feature registry produttivo SOT.
+> **Nota research Indice di Acquistabilità (Fase 1 … / empirica v1.1):** audit v1_1; statistica OOF `v2a_2`; residual `v2a_4_1`; **Acquistabilità empirica** `empirical_rating_v1_1` in Pannello KPI (panel rows + coorte locale→globale; non probabilità, non stake). **Non** Indice ML né feature registry produttivo SOT.
 
 > **Nota research Intensità Goal v5 (Fase 1D / 1D.1 / 2A / 2A.1):** gli indici candidati `GI_A`–`GI_D` e gli score pilastro OP/DV/MT/OV sono definizioni research fisse (`cecchino_goal_intensity_v5_candidate_indices_v1` / `v1_1`), normalizzate con ECDF train-only. La Preview (`cecchino_goal_intensity_v5_preview_v1_1`) applica lo stesso bundle congelato su snapshot pre-match con freeze reale e identity guard. **Non** sono feature del registry produttivo SOT né della formula Intensità Goal v4; nessun segnale betting.
 

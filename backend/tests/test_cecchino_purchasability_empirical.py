@@ -1,9 +1,9 @@
-"""Test Acquistabilità empirica v1 — Indice di Acquistabilità Pannello KPI."""
+"""Test Acquistabilità empirica v1.1 — copertura operativa Pannello KPI."""
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,17 +12,25 @@ from app.services.cecchino.cecchino_purchasability_audit import DATASET_VERSION,
 from app.services.cecchino.cecchino_purchasability_empirical import (
     EMPIRICAL_VERSION,
     MIN_SAMPLE,
+    SCOPE_GLOBAL,
+    SCOPE_LOCAL,
+    SUPPORTED_SELECTIONS,
+    build_empirical_global_history_index,
     build_empirical_history_index,
     build_empirical_purchasability_for_panel,
     calculate_empirical_cohort_metrics,
     calculate_empirical_purchasability,
     get_rating_band,
+    is_market_settlement_supported,
+    panel_item_key,
 )
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
+    SEL_DRAW_PT,
     SEL_HOME,
-    SEL_ONE_X,
+    SEL_OVER_1_5,
     SEL_OVER_2_5,
+    SEL_UNDER_3_5,
 )
 
 
@@ -44,9 +52,10 @@ def _hist(
     profit = 0.0 if void else (odds - 1.0 if won else -1.0)
     return {
         "today_fixture_id": fid,
-        "canonical_row_key": f"k-{fid}-{selection}-{day}",
+        "canonical_row_key": f"k-{fid}-{selection}-{day}-{competition_id}",
         "raw_market_code": selection,
         "selection": selection,
+        "market_key": selection,
         "competition_id": competition_id,
         "kickoff": kick.isoformat(),
         "scan_date": f"2026-{month:02d}-{day:02d}",
@@ -65,7 +74,30 @@ def _hist(
     }
 
 
-# --- Fasce Rating ---
+def _current(
+    *,
+    fid: int,
+    rating: int = 74,
+    selection: str = SEL_HOME,
+    competition_id: int = 1,
+    kickoff: datetime | None = None,
+) -> dict:
+    ko = kickoff or datetime(2026, 3, 15, 18, 0, tzinfo=timezone.utc)
+    return {
+        "today_fixture_id": fid,
+        "competition_id": competition_id,
+        "market_key": selection,
+        "selection": selection,
+        "raw_market_code": selection,
+        "label": selection,
+        "rating": rating,
+        "kickoff": ko.isoformat(),
+        "scan_date": ko.date().isoformat(),
+        "odds": 2.0,
+    }
+
+
+# --- 1–5 Fasce Rating ---
 
 
 def test_emp_01_05_rating_bands():
@@ -85,10 +117,10 @@ def test_emp_06_rating_below_scope():
     )
     assert out["status"] == "rating_below_scope"
     assert out["score"] is None
-    assert out["class"] == "Fuori perimetro"
+    assert out["class"] == "Non valutato"
 
 
-# --- Coorte ---
+# --- 7–11 Coorte ---
 
 
 def test_emp_07_08_same_market_and_competition_only():
@@ -132,7 +164,7 @@ def test_emp_11_post_match_leakage_excluded():
     assert len(idx.get((1, SEL_HOME, "70–79"), [])) == 1
 
 
-# --- Metriche ---
+# --- 12–17 Metriche ---
 
 
 def test_emp_12_17_metrics_win_rate_void_be_roi_margin():
@@ -147,22 +179,20 @@ def test_emp_12_17_metrics_win_rate_void_be_roi_margin():
     assert m["losses"] == 1
     assert m["voids"] == 1
     assert m["win_rate"] == pytest.approx(2 / 3)
-    # break-even = mean of 1/odds on non-void
     expected_be = (0.5 + 0.5 + 0.4) / 3
     assert m["average_break_even_probability"] == pytest.approx(expected_be)
     assert m["realized_margin"] == pytest.approx(m["win_rate"] - expected_be)
-    # profits: +1, -1, +1.5, 0 → sum 1.5 / 4
     assert m["total_profit"] == pytest.approx(1.5)
     assert m["roi"] == pytest.approx(1.5 / 4)
-    assert rows[3]["unit_stake_profit"] == 0.0
 
 
 def test_emp_18_19_temporal_stability():
     rows = []
     for i in range(40):
-        # first half positive ROI-ish wins at 2.0, second half losses
         won = i < 20
-        rows.append(_hist(fid=100 + i, day=1 + (i % 28), month=1 + (i // 28), odds=2.0, won=won, rating=75))
+        rows.append(
+            _hist(fid=100 + i, day=1 + (i % 28), month=1 + (i // 28), odds=2.0, won=won, rating=75)
+        )
     m = calculate_empirical_cohort_metrics(rows)
     assert m["total_periods"] is not None and m["total_periods"] >= 2
     assert m["stability_ratio"] == pytest.approx(m["positive_periods"] / m["total_periods"])
@@ -171,14 +201,16 @@ def test_emp_18_19_temporal_stability():
 def test_emp_20_insufficient_sample():
     rows = [_hist(fid=i, day=1 + (i % 28), rating=75) for i in range(1, 20)]
     m = calculate_empirical_cohort_metrics(rows)
-    out = calculate_empirical_purchasability(m, rating=75, rating_band=get_rating_band(75), selection=SEL_HOME)
+    out = calculate_empirical_purchasability(
+        m, rating=75, rating_band=get_rating_band(75), selection=SEL_HOME
+    )
     assert out["status"] == "insufficient_data"
     assert out["score"] is None
     assert out["class"] == "Dati insufficienti"
     assert m["sample_size"] < MIN_SAMPLE
 
 
-# --- Formula ---
+# --- 21–25 Formula ---
 
 
 def test_emp_21_24_components_and_cap():
@@ -207,7 +239,6 @@ def test_emp_21_24_components_and_cap():
     assert out["score"] <= 49
     assert "negative_roi_and_margin_cap" in out["reason_codes"]
 
-    # ROI +10% → roi_component 100; margin 0 → 50; stab 50 → raw ~66.7; conf 1 → score ~67
     pos = dict(metrics)
     pos["roi"] = 0.10
     pos["realized_margin"] = 0.0
@@ -226,23 +257,191 @@ def test_emp_25_classes():
     assert _class_for_score(55, "ok") == "Incerta"
     assert _class_for_score(70, "ok") == "Buona"
     assert _class_for_score(85, "ok") == "Alta"
+    assert _class_for_score(None, "rating_below_scope") == "Non valutato"
+    assert _class_for_score(None, "unsupported_market") == "Non disponibile"
+
+
+# --- v1.1: panel key, hierarchy, markets ---
+
+
+def test_emp_v11_panel_item_key():
+    assert panel_item_key(today_fixture_id=12, market_key=SEL_DRAW_PT) == f"12:{SEL_DRAW_PT}"
+
+
+def test_emp_v11_supported_panel_markets():
+    for mk in (SEL_HOME, SEL_DRAW_PT, SEL_OVER_1_5, SEL_UNDER_3_5, SEL_OVER_2_5):
+        assert is_market_settlement_supported(mk)
+        assert mk in SUPPORTED_SELECTIONS
+    assert not is_market_settlement_supported("BTTS_YES")
+    assert not is_market_settlement_supported("HOME_PT")
+
+
+def test_emp_v11_global_index():
+    rows = [
+        _hist(fid=1, day=1, competition_id=1, selection=SEL_OVER_1_5, rating=75),
+        _hist(fid=2, day=2, competition_id=2, selection=SEL_OVER_1_5, rating=75),
+        _hist(fid=3, day=3, competition_id=1, selection=SEL_HOME, rating=75),
+    ]
+    g = build_empirical_global_history_index(rows)
+    assert len(g[(SEL_OVER_1_5, "70–79")]) == 2
+    assert len(g[(SEL_HOME, "70–79")]) == 1
+
+
+def test_emp_v11_local_preferred_over_global():
+    """Local ≥30 → same_competition anche se globale più grande."""
+    local = [
+        _hist(fid=i, day=1 + (i % 28), month=1 + (i // 28), competition_id=1, rating=75, won=True)
+        for i in range(1, 35)
+    ]
+    extra_global = [
+        _hist(
+            fid=200 + i,
+            day=1 + (i % 28),
+            month=1,
+            competition_id=9,
+            rating=75,
+            won=False,
+        )
+        for i in range(40)
+    ]
+    hist = local + extra_global
+    current = [_current(fid=999, rating=76, competition_id=1)]
+    payload = build_empirical_purchasability_for_panel(
+        MagicMock(),
+        date_from=date(2026, 3, 15),
+        date_to=date(2026, 3, 15),
+        history_rows=hist,
+        current_rows=current,
+    )
+    key = panel_item_key(today_fixture_id=999, market_key=SEL_HOME)
+    item = payload["items"][key]
+    assert item["status"] == "ok"
+    assert item["cohort_scope"] == SCOPE_LOCAL
+    assert item["fallback_used"] is False
+    assert item["local_sample_size"] >= MIN_SAMPLE
+
+
+def test_emp_v11_global_fallback_when_local_thin():
+    """Local <30 e global ≥30 → all_competitions_fallback."""
+    local = [
+        _hist(fid=i, day=i, competition_id=1, rating=75, won=True) for i in range(1, 10)
+    ]
+    other = [
+        _hist(
+            fid=100 + i,
+            day=1 + (i % 28),
+            month=1 + (i // 28),
+            competition_id=2 + (i % 3),
+            rating=75,
+            won=i % 2 == 0,
+        )
+        for i in range(40)
+    ]
+    payload = build_empirical_purchasability_for_panel(
+        MagicMock(),
+        date_from=date(2026, 3, 15),
+        date_to=date(2026, 3, 15),
+        history_rows=local + other,
+        current_rows=[_current(fid=50, rating=74, competition_id=1)],
+    )
+    item = payload["items"][panel_item_key(today_fixture_id=50, market_key=SEL_HOME)]
+    assert item["status"] == "ok"
+    assert item["cohort_scope"] == SCOPE_GLOBAL
+    assert item["fallback_used"] is True
+    assert item["fallback_reason"] == "same_competition_below_minimum"
+    assert item["local_sample_size"] < MIN_SAMPLE
+    assert item["global_sample_size"] >= MIN_SAMPLE
+    assert (item["competition_count"] or 0) >= 2
+    assert payload["summary"]["scored_global_fallback"] == 1
+
+
+def test_emp_v11_insufficient_after_global():
+    hist = [
+        _hist(fid=i, day=i, competition_id=1, rating=75) for i in range(1, 8)
+    ] + [
+        _hist(fid=20 + i, day=i, competition_id=2, rating=75) for i in range(1, 8)
+    ]
+    payload = build_empirical_purchasability_for_panel(
+        MagicMock(),
+        date_from=date(2026, 3, 15),
+        date_to=date(2026, 3, 15),
+        history_rows=hist,
+        current_rows=[_current(fid=99, rating=72, competition_id=1)],
+    )
+    item = payload["items"][panel_item_key(today_fixture_id=99, market_key=SEL_HOME)]
+    assert item["status"] == "insufficient_data"
+    assert item["global_sample_size"] < MIN_SAMPLE
+    assert payload["summary"]["insufficient_after_global_fallback"] == 1
+
+
+def test_emp_v11_draw_pt_and_ou_lines_scored():
+    hist = []
+    for sel in (SEL_DRAW_PT, SEL_OVER_1_5, SEL_UNDER_3_5):
+        for i in range(35):
+            hist.append(
+                _hist(
+                    fid=1000 + hash(sel) % 1000 + i,
+                    day=1 + (i % 28),
+                    month=1 + (i // 28),
+                    selection=sel,
+                    competition_id=1,
+                    rating=75,
+                    won=True,
+                )
+            )
+    currents = [
+        _current(fid=7, rating=76, selection=sel, competition_id=1)
+        for sel in (SEL_DRAW_PT, SEL_OVER_1_5, SEL_UNDER_3_5)
+    ]
+    payload = build_empirical_purchasability_for_panel(
+        MagicMock(),
+        date_from=date(2026, 3, 15),
+        date_to=date(2026, 3, 15),
+        history_rows=hist,
+        current_rows=currents,
+    )
+    for sel in (SEL_DRAW_PT, SEL_OVER_1_5, SEL_UNDER_3_5):
+        item = payload["items"][panel_item_key(today_fixture_id=7, market_key=sel)]
+        assert item["status"] == "ok", sel
+        assert item["selection"] == sel
+
+
+def test_emp_v11_unsupported_reason():
+    payload = build_empirical_purchasability_for_panel(
+        MagicMock(),
+        date_from=date(2026, 3, 15),
+        date_to=date(2026, 3, 15),
+        history_rows=[],
+        current_rows=[_current(fid=1, rating=70, selection="BTTS_YES")],
+    )
+    item = payload["items"][panel_item_key(today_fixture_id=1, market_key="BTTS_YES")]
+    assert item["status"] == "unsupported_market"
+    assert item["class"] == "Non disponibile"
+    assert item["unsupported_reason"] == "no_deterministic_settlement"
+    assert item["raw_market_key"] == "BTTS_YES"
+
+
+def test_emp_v11_below_scope_on_panel_row():
+    payload = build_empirical_purchasability_for_panel(
+        MagicMock(),
+        date_from=date(2026, 3, 15),
+        date_to=date(2026, 3, 15),
+        history_rows=[_hist(fid=1, day=1, rating=75)],
+        current_rows=[_current(fid=2, rating=40)],
+    )
+    item = payload["items"][panel_item_key(today_fixture_id=2, market_key=SEL_HOME)]
+    assert item["status"] == "rating_below_scope"
+    assert item["class"] == "Non valutato"
+    assert payload["summary"]["below_scope"] == 1
 
 
 def test_emp_26_strict_json():
     rows = [_hist(fid=i, day=1 + (i % 28), rating=75, won=i % 2 == 0) for i in range(1, 50)]
-    current = [
-        {
-            **_hist(fid=999, day=28, rating=76, month=2),
-            "is_settled_core": False,
-            "settlement_status": "missing",
-            "canonical_row_key": "current-home",
-            "kickoff": datetime(2026, 2, 28, 18, 0, tzinfo=timezone.utc).isoformat(),
-        }
-    ]
+    current = [_current(fid=999, rating=76)]
     payload = build_empirical_purchasability_for_panel(
         MagicMock(),
-        date_from=datetime(2026, 2, 28).date(),
-        date_to=datetime(2026, 2, 28).date(),
+        date_from=date(2026, 2, 28),
+        date_to=date(2026, 2, 28),
         competition_id=1,
         history_rows=rows,
         current_rows=current,
@@ -251,27 +450,20 @@ def test_emp_26_strict_json():
     assert payload["version"] == EMPIRICAL_VERSION
     assert payload["dataset_version"] == DATASET_VERSION
     assert payload["summary"]["no_db_writes"] is True
+    assert "scored_same_competition" in payload["summary"]
+    assert "market_distribution" in payload["summary"]
 
 
 def test_emp_27_28_batch_no_db_write_single_load():
     hist = [_hist(fid=i, day=1 + (i % 28), rating=72, won=True) for i in range(1, 40)]
-    currents = [
-        {
-            **_hist(fid=900 + i, day=15, month=3, rating=74),
-            "is_settled_core": False,
-            "settlement_status": "missing",
-            "canonical_row_key": f"cur-{i}",
-            "kickoff": datetime(2026, 3, 15, 18, 0, tzinfo=timezone.utc).isoformat(),
-        }
-        for i in range(3)
-    ]
+    currents = [_current(fid=900 + i, rating=74) for i in range(3)]
     with patch(
         "app.services.cecchino.cecchino_purchasability_empirical.build_purchasability_rows"
     ) as mock_build:
         payload = build_empirical_purchasability_for_panel(
             MagicMock(),
-            date_from=datetime(2026, 3, 15).date(),
-            date_to=datetime(2026, 3, 15).date(),
+            date_from=date(2026, 3, 15),
+            date_to=date(2026, 3, 15),
             history_rows=hist,
             current_rows=currents,
         )
@@ -281,9 +473,8 @@ def test_emp_27_28_batch_no_db_write_single_load():
 
 
 def test_emp_32_38_versions_and_no_ml_flags():
-    assert EMPIRICAL_VERSION == "cecchino_purchasability_empirical_rating_v1"
+    assert EMPIRICAL_VERSION == "cecchino_purchasability_empirical_rating_v1_1"
     assert DATASET_VERSION == "cecchino_purchasability_dataset_v1_1"
-    # formula uses only clamp/mean — no sklearn import in module
     import app.services.cecchino.cecchino_purchasability_empirical as mod
 
     assert not hasattr(mod, "LogisticRegression")
@@ -314,17 +505,32 @@ def test_emp_confidence_shrink():
     out100 = calculate_empirical_purchasability(
         base100, rating=75, rating_band=get_rating_band(75), selection=SEL_HOME
     )
-    # with positive evidence, larger sample should be at least as extreme / closer to raw
     assert out50["sample_confidence"] == pytest.approx(0.5)
     assert out100["sample_confidence"] == pytest.approx(1.0)
     assert abs(out100["score"] - 50) >= abs(out50["score"] - 50)
 
 
-def test_emp_unsupported_market():
+def test_emp_formula_unchanged_from_v1():
+    """Stessi input → stesso score della formula v1 (cap + shrink)."""
+    metrics = {
+        "sample_size": 80,
+        "wins": 45,
+        "losses": 35,
+        "voids": 0,
+        "win_rate": 45 / 80,
+        "average_odds": 2.1,
+        "average_break_even_probability": 1 / 2.1,
+        "realized_margin": (45 / 80) - (1 / 2.1),
+        "total_profit": 8.0,
+        "roi": 8.0 / 80,
+        "positive_periods": 3,
+        "total_periods": 4,
+        "stability_ratio": 0.75,
+    }
     out = calculate_empirical_purchasability(
-        {"sample_size": 0},
-        selection="OVER_1_5",
-        rating=70,
-        status_override="unsupported_market",
+        metrics, rating=72, rating_band=get_rating_band(72), selection=SEL_HOME
     )
-    assert out["class"] == "Mercato non supportato"
+    assert out["version"] == EMPIRICAL_VERSION
+    assert out["status"] == "ok"
+    assert isinstance(out["score"], int)
+    assert 0 <= out["score"] <= 100

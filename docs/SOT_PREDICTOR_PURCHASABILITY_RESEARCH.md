@@ -2,17 +2,21 @@
 
 Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
 
+## Acquistabilità empirica v1.1 — copertura operativa KPI (`…_empirical_rating_v1_1`)
+
+Implementazione **produttiva read-only** nel Pannello KPI (colonna dopo Rating). Formula score **invariata** rispetto a v1.
+
+- **Current rows**: esattamente le righe di `kpi_panel_json` / v2 (non `build_purchasability_rows`)
+- **Chiave item**: `today_fixture_id:market_key`
+- **Coorte gerarchica**: locale `competition+selection+band` ≥30 → `same_competition`; altrimenti globale `selection+band` ≥30 → `all_competitions_fallback`; altrimenti `insufficient_data`
+- Mercati allineati a `KPI_V2_ROW_DEFS` / `PANEL_MARKET_KEYS` (inclusi `DRAW_PT`, `OVER_1_5`, `UNDER_3_5`, …); settlement via `evaluate_market_selection`
+- Rating &lt;50 → **Non valutato** (no score); FE chip Campionato/Globale
+- Dataset `v1_1` invariato; research Fase 2A / residual **congelata**
+- Endpoint: `GET /api/cecchino/kpi-signals/purchasability-empirical`
+
 ## Acquistabilità empirica v1 — Pannello KPI (`…_empirical_rating_v1`)
 
-Implementazione **produttiva read-only** nel Pannello KPI (colonna dopo Rating).
-
-- Coorte: stessa `competition_id` + selection + fascia Rating (50–59 … 90–100) + `kickoff` storico &lt; corrente
-- Metriche: win rate (void fuori), break-even = media `1/odds`, ROI stake 1, stabilità periodi
-- Score 0–100: media ROI/margin/stability components + shrink `min(1,n/100)`; se ROI e margine ≤0 → score ≤49
-- Soglia campione 30; Rating &lt;50 = Fuori perimetro
-- **Non** probabilità di vittoria, **non** stake consigliato, **non** ML/bootstrap
-- Dataset `v1_1` invariato; research Fase 2A / residual **congelata** (non modificata)
-- Endpoint: `GET /api/cecchino/kpi-signals/purchasability-empirical`
+Sostituita da v1.1 per copertura operativa. Logica storica: coorte solo locale, current da audit rows, whitelist mercati ridotta.
 
 ## Fase 2A.4.1 — Coorte DC, OOF comune, span temporale (`…_v2a_4_1`)
 

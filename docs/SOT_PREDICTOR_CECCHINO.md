@@ -2,14 +2,20 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
-## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
+## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
 
 | Campo | Valore |
 |-------|--------|
-| Versione | `cecchino_purchasability_empirical_rating_v1` |
-| UI | Colonna dopo Rating in Pannello KPI |
+| Versione | `cecchino_purchasability_empirical_rating_v1_1` |
+| UI | Colonna dopo Rating; chip Campionato/Globale |
+| Current | Righe `kpi_panel_json` / v2 |
+| Coorte | Locale ≥30, altrimenti globale |
 | Endpoint | `GET /api/cecchino/kpi-signals/purchasability-empirical` |
 | Probabilità / stake | no |
+
+## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
+
+Sostituita da v1.1 (formula score invariata).
 
 ## Indice di Acquistabilità — Fase 2A.4.1 residual reliability (2026-07-18)
 
