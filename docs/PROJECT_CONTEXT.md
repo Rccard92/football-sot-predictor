@@ -22,9 +22,15 @@ Fix su `cecchino_balance_v5_v2` (no bump): F36 via `class_key` tecnico; normaliz
 
 Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backend/app/services/cecchino/cecchino_balance_v5.py). Quattro pilastri (F36 ufficiale, Dominanza ufficiale, Credibilità X descrittiva, Gap ufficiale) + scostamento mercato separato. Eliminati Preview e research_candidates. Adapter legacy `cecchino_balance_analysis.py` per ICM/Signals. Nessun impatto su formule ICM/Segnali/KPI.
 
+## Affidabilità storica vs Acquistabilità — FASE 1/5 (2026-07-19)
+
+**AFFIDABILITÀ STORICA** (`cecchino_historical_reliability_v1_1`): comportamento storico stesso mercato + fascia Rating. Colonna KPI **Affidabilità**. Endpoint `GET …/historical-reliability`. Shim legacy `purchasability-empirical`.
+
+**ACQUISTABILITÀ**: contratto preview `cecchino_purchasability_v1_preview_contract` solo schema (`status=not_calculated`, `score=null`); nessuna colonna UI, nessuna formula. Next: FASE 2/5 feature pre-match. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
 
-Colonna **Acquistabilità** dopo Rating: `cecchino_purchasability_empirical_rating_v1_1`. Current da `kpi_panel_json`; coorte locale→globale; mercati panel con settlement; formula score invariata; nessuna probabilità/stake. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+Ridenominata semanticamente in Affidabilità storica v1.1 (formula invariata). Vedi sezione sopra.
 
 ## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
 

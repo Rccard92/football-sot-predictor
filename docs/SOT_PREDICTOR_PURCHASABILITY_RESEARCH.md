@@ -1,18 +1,44 @@
 # Indice di Acquistabilità — Research
 
-Modulo **indipendente** dal Rating. Risponde a: *quanto è statisticamente affidabile acquistare il valore individuato dal modello?*
+Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti?*
 
-## Acquistabilità empirica v1.1 — copertura operativa KPI (`…_empirical_rating_v1_1`)
+## Affidabilità storica vs Acquistabilità (FASE 1/5)
 
-Implementazione **produttiva read-only** nel Pannello KPI (colonna dopo Rating). Formula score **invariata** rispetto a v1.
+| Concetto | Definizione |
+|----------|-------------|
+| **AFFIDABILITÀ STORICA** | Misura il comportamento storico dello stesso mercato e della stessa fascia Rating (Win Rate, ROI, margine vs break-even, stabilità, numerosità). |
+| **ACQUISTABILITÀ** | Misurerà quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti. |
 
-- **Current rows**: esattamente le righe di `kpi_panel_json` / v2 (non `build_purchasability_rows`)
+In Fase 1/5 l’ex «Acquistabilità empirica» è ridenominata **Affidabilità storica**. L’Acquistabilità produttiva **non** è ancora calcolata: esiste solo il contratto preview `cecchino_purchasability_v1_preview_contract` (`backend/app/schemas/cecchino_purchasability_preview.py`) con `status=not_calculated` e `score=null`.
+
+Prossima fase: **FASE 2/5 — Contratto dati operativo e costruzione delle feature pre-match per Valore della quota e Qualità del valore.**
+
+Vincoli Acquistabilità (non ancora implementati come formula):
+
+- modulo separato; non copia il Rating; non usa Affidabilità storica come score finale;
+- non somma automaticamente Rating, Score, Edge e Vantaggio;
+- distingue «valore individuato» da «qualità del valore»;
+- una forte differenza Cecchino–Book non è automaticamente penalizzante;
+- la decisione di gioco resta ai Segnali Cecchino;
+- Fase 2 riusa `cecchino_market_opposition.py` (comparator_selections, complement_selection, opposition_status, canonical_market_family, period, line).
+
+## Affidabilità storica v1.1 — Pannello KPI (`cecchino_historical_reliability_v1_1`)
+
+Implementazione **produttiva read-only** nel Pannello KPI (colonna **Affidabilità** dopo Rating). Formula score **invariata** rispetto a `cecchino_purchasability_empirical_rating_v1_1`.
+
+- **Modulo**: `backend/app/services/cecchino/cecchino_historical_reliability.py`
+- **Shim legacy**: `cecchino_purchasability_empirical.py` (alias, nessuna seconda formula)
+- **metric_kind**: `historical_reliability`
+- **legacy_version**: `cecchino_purchasability_empirical_rating_v1_1`
+- **Current rows**: esattamente le righe di `kpi_panel_json` / v2
 - **Chiave item**: `today_fixture_id:market_key`
-- **Coorte gerarchica**: locale `competition+selection+band` ≥30 → `same_competition`; altrimenti globale `selection+band` ≥30 → `all_competitions_fallback`; altrimenti `insufficient_data`
-- Mercati allineati a `KPI_V2_ROW_DEFS` / `PANEL_MARKET_KEYS` (inclusi `DRAW_PT`, `OVER_1_5`, `UNDER_3_5`, …); settlement via `evaluate_market_selection`
-- Rating &lt;50 → **Non valutato** (no score); FE chip Campionato/Globale
-- Dataset `v1_1` invariato; research Fase 2A / residual **congelata**
-- Endpoint: `GET /api/cecchino/kpi-signals/purchasability-empirical`
+- **Coorte gerarchica**: locale ≥30 → `same_competition`; altrimenti globale ≥30 → `all_competitions_fallback`
+- Endpoint canonico: `GET /api/cecchino/kpi-signals/historical-reliability`
+- Endpoint legacy: `GET /api/cecchino/kpi-signals/purchasability-empirical` (`deprecated=true`)
+
+## Acquistabilità empirica v1.1 — (rinominata; storico)
+
+Sostituita semanticamente da Affidabilità storica v1.1. Stessa formula numerica.
 
 ## Acquistabilità empirica v1 — Pannello KPI (`…_empirical_rating_v1`)
 

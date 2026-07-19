@@ -110,6 +110,10 @@ export function ratingBadgeClass(label: string | null | undefined): string {
 }
 
 export function purchasabilityBadgeClass(klass: string | null | undefined): string {
+  return historicalReliabilityBadgeClass(klass)
+}
+
+export function historicalReliabilityBadgeClass(klass: string | null | undefined): string {
   switch (klass) {
     case 'Alta':
       return 'bg-emerald-600 text-white'

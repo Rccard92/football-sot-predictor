@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { EmpiricalPurchasabilityItem } from '../../lib/cecchinoKpiSignalsApi'
+import type { HistoricalReliabilityItem } from '../../lib/cecchinoKpiSignalsApi'
 import type { CecchinoKpiV2Panel, CecchinoKpiV2Row } from '../../lib/cecchinoTodayApi'
 import {
   edgeClassName,
@@ -9,8 +9,8 @@ import {
   fmtScoreAcquisto,
   fmtVantaggioProb,
   formatEdgePct,
+  historicalReliabilityBadgeClass,
   isKpiPrimaryRow,
-  purchasabilityBadgeClass,
   ratingBadgeClass,
   vantaggioClassName,
 } from './cecchinoKpiUiUtils'
@@ -43,12 +43,12 @@ function fmtPp(v: number | null | undefined): string {
 type Props = {
   panel: CecchinoKpiV2Panel
   bookmakerStatus?: string
-  purchasabilityByMarketKey?: Record<string, EmpiricalPurchasabilityItem>
-  purchasabilityLoading?: boolean
-  purchasabilityError?: string | null
+  historicalReliabilityByMarketKey?: Record<string, HistoricalReliabilityItem>
+  historicalReliabilityLoading?: boolean
+  historicalReliabilityError?: string | null
 }
 
-function cohortScopeChip(scope?: EmpiricalPurchasabilityItem['cohort_scope']) {
+function cohortScopeChip(scope?: HistoricalReliabilityItem['cohort_scope']) {
   if (scope === 'same_competition') {
     return (
       <span className="mt-0.5 inline-block rounded border border-sky-500/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-sky-200">
@@ -66,13 +66,13 @@ function cohortScopeChip(scope?: EmpiricalPurchasabilityItem['cohort_scope']) {
   return null
 }
 
-function PurchasabilityCell({
+function HistoricalReliabilityCell({
   item,
   loading,
   error,
   onOpen,
 }: {
-  item?: EmpiricalPurchasabilityItem
+  item?: HistoricalReliabilityItem
   loading?: boolean
   error?: string | null
   onOpen: () => void
@@ -81,7 +81,7 @@ function PurchasabilityCell({
     return <span className="text-[10px] text-slate-400">Calcolo storico…</span>
   }
   if (error && !item) {
-    return <span className="text-[10px] text-slate-400">Acquistabilità non disponibile</span>
+    return <span className="text-[10px] text-slate-400">Affidabilità non disponibile</span>
   }
   if (!item) {
     return <span className="text-slate-500">—</span>
@@ -91,7 +91,7 @@ function PurchasabilityCell({
     return (
       <span
         className="text-left"
-        title="L’Acquistabilità viene calcolata per Rating almeno pari a 50."
+        title="L’Affidabilità storica viene calcolata per Rating almeno pari a 50."
       >
         <span className="block text-slate-300">—</span>
         <span className="block text-[9px] text-slate-400">Non valutato</span>
@@ -131,7 +131,7 @@ function PurchasabilityCell({
   return (
     <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
       <span
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${purchasabilityBadgeClass(item.class)}`}
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${historicalReliabilityBadgeClass(item.class)}`}
       >
         <span className="tabular-nums">{item.score}</span>
         <span className="hidden lg:inline">{item.class}</span>
@@ -144,11 +144,11 @@ function PurchasabilityCell({
   )
 }
 
-function PurchasabilityPopover({
+function HistoricalReliabilityPopover({
   item,
   onClose,
 }: {
-  item: EmpiricalPurchasabilityItem
+  item: HistoricalReliabilityItem
   onClose: () => void
 }) {
   const band = item.rating_band
@@ -170,7 +170,7 @@ function PurchasabilityPopover({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2">
-          <h4 className="font-semibold text-slate-900">Acquistabilità empirica</h4>
+          <h4 className="font-semibold text-slate-900">Affidabilità storica</h4>
           <button type="button" className="text-slate-500 hover:text-slate-800" onClick={onClose}>
             Chiudi
           </button>
@@ -225,9 +225,9 @@ function PurchasabilityPopover({
           <p className="mt-3 text-xs text-slate-700">{item.explanation}</p>
         ) : null}
         <p className="mt-3 rounded-md bg-slate-50 px-2 py-2 text-[11px] leading-snug text-slate-600">
-          L’Acquistabilità descrive il comportamento storico di Rating simili sullo stesso mercato.
-          Non rappresenta una probabilità di vittoria né uno stake consigliato. Lo storico globale
-          si usa solo se il campionato non ha abbastanza casi.
+          L’Affidabilità storica descrive come si sono comportati in passato lo stesso mercato e la
+          stessa fascia Rating. Non rappresenta la nuova Acquistabilità, una probabilità di vittoria
+          o uno stake consigliato.
         </p>
       </div>
     </div>
@@ -237,17 +237,17 @@ function PurchasabilityPopover({
 export function CecchinoTodayKpiPanel({
   panel,
   bookmakerStatus,
-  purchasabilityByMarketKey,
-  purchasabilityLoading,
-  purchasabilityError,
+  historicalReliabilityByMarketKey,
+  historicalReliabilityLoading,
+  historicalReliabilityError,
 }: Props) {
   const status = bookmakerStatus || panel.bookmaker_status || 'not_available'
   const oddsMeta = panel.odds_meta
-  const [openItem, setOpenItem] = useState<EmpiricalPurchasabilityItem | null>(null)
+  const [openItem, setOpenItem] = useState<HistoricalReliabilityItem | null>(null)
 
   const lookup = (row: CecchinoKpiV2Row) =>
-    purchasabilityByMarketKey?.[row.market_key] ||
-    purchasabilityByMarketKey?.[row.segno] ||
+    historicalReliabilityByMarketKey?.[row.market_key] ||
+    historicalReliabilityByMarketKey?.[row.segno] ||
     undefined
 
   return (
@@ -333,7 +333,7 @@ export function CecchinoTodayKpiPanel({
                 Rating
               </th>
               <th className="px-1.5 py-2 text-[10px] font-semibold uppercase text-slate-200">
-                Acquistabilità
+                Affidabilità
               </th>
             </tr>
           </thead>
@@ -397,10 +397,10 @@ export function CecchinoTodayKpiPanel({
                     )}
                   </td>
                   <td className="px-1.5 py-2.5">
-                    <PurchasabilityCell
+                    <HistoricalReliabilityCell
                       item={emp}
-                      loading={purchasabilityLoading}
-                      error={purchasabilityError}
+                      loading={historicalReliabilityLoading}
+                      error={historicalReliabilityError}
                       onOpen={() => emp && setOpenItem(emp)}
                     />
                   </td>
@@ -431,11 +431,11 @@ export function CecchinoTodayKpiPanel({
                 )}
               </div>
               <div className="mb-2">
-                <p className="mb-1 text-[10px] uppercase text-slate-400">Acquistabilità</p>
-                <PurchasabilityCell
+                <p className="mb-1 text-[10px] uppercase text-slate-400">Affidabilità</p>
+                <HistoricalReliabilityCell
                   item={emp}
-                  loading={purchasabilityLoading}
-                  error={purchasabilityError}
+                  loading={historicalReliabilityLoading}
+                  error={historicalReliabilityError}
                   onOpen={() => emp && setOpenItem(emp)}
                 />
               </div>
@@ -473,7 +473,7 @@ export function CecchinoTodayKpiPanel({
       )}
 
       {openItem ? (
-        <PurchasabilityPopover item={openItem} onClose={() => setOpenItem(null)} />
+        <HistoricalReliabilityPopover item={openItem} onClose={() => setOpenItem(null)} />
       ) : null}
     </section>
   )

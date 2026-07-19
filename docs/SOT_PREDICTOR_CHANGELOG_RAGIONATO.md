@@ -33,10 +33,19 @@
 - Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
 - Eliminati `cecchino_balance_v5_preview.py` e `cecchino_balance_research_candidates.py`; `balance_analysis` ridotto ad adapter; FE `CecchinoBalanceV5Panel` senza Preview.
 
+## Affidabilità storica vs Acquistabilità — FASE 1/5 (2026-07-19)
+
+- Ridenominazione semantica: ex Acquistabilità empirica → **Affidabilità storica** (`cecchino_historical_reliability_v1_1`); formula numerica invariata.
+- Modulo canonico + shim `cecchino_purchasability_empirical.py`; endpoint `historical-reliability` + alias legacy deprecato.
+- FE: colonna **Affidabilità**, popover Affidabilità storica; fetch unica al nuovo endpoint.
+- Contratto preview Acquistabilità (`cecchino_purchasability_v1_preview_contract`) senza score/UI.
+- Next: FASE 2/5 — feature operative pre-match.
+
 ## Indice di Acquistabilità — empirica v1.1 copertura operativa KPI (2026-07-19)
 
 - Current rows da `kpi_panel_json`; chiave `fixture:market_key`; coorte locale→globale; mercati panel con settlement (`DRAW_PT`, OU linee).
 - FE: Campionato/Globale, «Non valutato» per Rating&lt;50; formula score invariata rispetto a v1.
+- (2026-07-19 sera) ridenominata Affidabilità storica — vedi sezione FASE 1/5.
 
 ## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
 

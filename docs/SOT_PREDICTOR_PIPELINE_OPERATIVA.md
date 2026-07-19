@@ -1,11 +1,17 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Affidabilità storica vs Acquistabilità — FASE 1/5 (2026-07-19)
+
+1. Aprire Cecchino Today → dettaglio → colonna **Affidabilità** dopo Rating (popover «Affidabilità storica»).
+2. Verificare chip Campionato/Globale; Rating &lt;50 → «Non valutato».
+3. Batch API `GET /api/cecchino/kpi-signals/historical-reliability` (scan_date, competition_id); errore non blocca il pannello.
+4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
+5. Nessuna colonna Acquistabilità produttiva; contratto preview non esposto in UI.
+6. Next: FASE 2/5 — feature pre-match.
+
 ## Indice di Acquistabilità — empirica v1.1 (2026-07-19)
 
-1. Aprire Cecchino Today → dettaglio partita → colonna **Acquistabilità** dopo Rating.
-2. Verificare chip **Campionato** / **Globale**; Rating &lt;50 → «Non valutato»; mercati panel (X PT, Over 1.5, …).
-3. Batch API `purchasability-empirical` (scan_date, competition_id); errore non blocca il pannello.
-4. Non avviare job research Fase 2A.
+Sostituita semanticamente da Affidabilità storica (stessa formula). Vedi sezione sopra.
 
 ## Indice di Acquistabilità — empirica v1 (2026-07-18)
 

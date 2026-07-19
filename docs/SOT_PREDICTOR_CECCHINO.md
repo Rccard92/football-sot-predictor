@@ -2,16 +2,26 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
-## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
+## Affidabilità storica vs Acquistabilità — FASE 1/5 (2026-07-19)
+
+| Concetto | Ruolo |
+|----------|--------|
+| Affidabilità storica | Storico mercato + fascia Rating; colonna KPI **Affidabilità** |
+| Acquistabilità | Contratto preview solo; nessuna formula / nessuna colonna |
 
 | Campo | Valore |
 |-------|--------|
-| Versione | `cecchino_purchasability_empirical_rating_v1_1` |
-| UI | Colonna dopo Rating; chip Campionato/Globale |
-| Current | Righe `kpi_panel_json` / v2 |
-| Coorte | Locale ≥30, altrimenti globale |
-| Endpoint | `GET /api/cecchino/kpi-signals/purchasability-empirical` |
-| Probabilità / stake | no |
+| Modulo | `cecchino_historical_reliability.py` |
+| Versione | `cecchino_historical_reliability_v1_1` |
+| metric_kind | `historical_reliability` |
+| Endpoint | `GET /api/cecchino/kpi-signals/historical-reliability` |
+| Legacy | `GET …/purchasability-empirical` (deprecated) |
+| Preview contract | `cecchino_purchasability_v1_preview_contract` |
+| Next | FASE 2/5 — feature pre-match Valore / Qualità |
+
+## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
+
+Ridenominata in Affidabilità storica v1.1 (formula score invariata).
 
 ## Indice di Acquistabilità — empirica v1 Pannello KPI (2026-07-18)
 

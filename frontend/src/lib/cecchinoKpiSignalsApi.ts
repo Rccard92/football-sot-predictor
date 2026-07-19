@@ -183,8 +183,10 @@ export function buildKpiSignalsExportUrl(filters: KpiSignalsFilters): string {
   return `/api/cecchino/kpi-signals/export.csv${qs(filters)}`
 }
 
-export type EmpiricalPurchasabilityItem = {
+export type HistoricalReliabilityItem = {
+  metric_kind?: string
   version?: string
+  legacy_version?: string
   status: string
   score: number | null
   class: string
@@ -225,20 +227,29 @@ export type EmpiricalPurchasabilityItem = {
   unsupported_reason?: string | null
 }
 
-export type EmpiricalPurchasabilityResponse = {
+export type HistoricalReliabilityResponse = {
+  metric_kind?: string
   version: string
+  legacy_version?: string
   status: string
-  items: Record<string, EmpiricalPurchasabilityItem>
+  items: Record<string, HistoricalReliabilityItem>
   summary?: Record<string, unknown>
+  deprecated?: boolean
+  replacement_endpoint?: string
 }
 
-export async function getPurchasabilityEmpirical(params: {
+/** @deprecated Alias — usare HistoricalReliabilityItem */
+export type EmpiricalPurchasabilityItem = HistoricalReliabilityItem
+/** @deprecated Alias — usare HistoricalReliabilityResponse */
+export type EmpiricalPurchasabilityResponse = HistoricalReliabilityResponse
+
+export async function getHistoricalReliability(params: {
   date_from: string
   date_to: string
   competition_id?: number | null
-}): Promise<EmpiricalPurchasabilityResponse> {
+}): Promise<HistoricalReliabilityResponse> {
   return adminGetJson(
-    `/api/cecchino/kpi-signals/purchasability-empirical${qs({
+    `/api/cecchino/kpi-signals/historical-reliability${qs({
       date_from: params.date_from,
       date_to: params.date_to,
       competition_id: params.competition_id ?? undefined,
@@ -246,3 +257,7 @@ export async function getPurchasabilityEmpirical(params: {
     { timeoutMs: 120_000 },
   )
 }
+
+/** @deprecated Alias — punta a getHistoricalReliability (stessa richiesta HTTP) */
+export const getPurchasabilityEmpirical = getHistoricalReliability
+

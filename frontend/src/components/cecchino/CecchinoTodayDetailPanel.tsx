@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
 import {
-  getPurchasabilityEmpirical,
-  type EmpiricalPurchasabilityItem,
+  getHistoricalReliability,
+  type HistoricalReliabilityItem,
 } from '../../lib/cecchinoKpiSignalsApi'
 import type { CecchinoTodayDetailResponse } from '../../lib/cecchinoTodayApi'
 import { partitionTodayDetailWarnings } from '../../lib/cecchinoTodayApi'
@@ -41,11 +41,11 @@ export function CecchinoTodayDetailSkeleton() {
   )
 }
 
-function mapPurchasabilityForFixture(
-  items: Record<string, EmpiricalPurchasabilityItem>,
+function mapHistoricalReliabilityForFixture(
+  items: Record<string, HistoricalReliabilityItem>,
   todayFixtureId: number | null | undefined,
-): Record<string, EmpiricalPurchasabilityItem> {
-  const byMarket: Record<string, EmpiricalPurchasabilityItem> = {}
+): Record<string, HistoricalReliabilityItem> {
+  const byMarket: Record<string, HistoricalReliabilityItem> = {}
   for (const [key, item] of Object.entries(items)) {
     if (
       todayFixtureId != null &&
@@ -56,7 +56,7 @@ function mapPurchasabilityForFixture(
     }
     const marketKey = item.market_key || item.selection
     if (marketKey) byMarket[marketKey] = item
-    // Chiave API v1.1: today_fixture_id:market_key
+    // Chiave API: today_fixture_id:market_key
     const colon = key.indexOf(':')
     if (colon > 0) {
       const mk = key.slice(colon + 1)
@@ -67,9 +67,9 @@ function mapPurchasabilityForFixture(
 }
 
 export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
-  const [empByMarket, setEmpByMarket] = useState<Record<string, EmpiricalPurchasabilityItem>>({})
-  const [empLoading, setEmpLoading] = useState(false)
-  const [empError, setEmpError] = useState<string | null>(null)
+  const [hrByMarket, setHrByMarket] = useState<Record<string, HistoricalReliabilityItem>>({})
+  const [hrLoading, setHrLoading] = useState(false)
+  const [hrError, setHrError] = useState<string | null>(null)
 
   const scanDate = detail.scan_date
   const competitionId = detail.competition_id
@@ -81,22 +81,22 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     if (!canFetch || !scanDate) return
     let cancelled = false
     void (async () => {
-      setEmpLoading(true)
-      setEmpError(null)
+      setHrLoading(true)
+      setHrError(null)
       try {
-        const res = await getPurchasabilityEmpirical({
+        const res = await getHistoricalReliability({
           date_from: scanDate,
           date_to: scanDate,
           competition_id: competitionId ?? null,
         })
         if (cancelled) return
-        setEmpByMarket(mapPurchasabilityForFixture(res.items || {}, todayFixtureId))
+        setHrByMarket(mapHistoricalReliabilityForFixture(res.items || {}, todayFixtureId))
       } catch {
         if (cancelled) return
-        setEmpByMarket({})
-        setEmpError('Acquistabilità non disponibile')
+        setHrByMarket({})
+        setHrError('Affidabilità non disponibile')
       } finally {
-        if (!cancelled) setEmpLoading(false)
+        if (!cancelled) setHrLoading(false)
       }
     })()
     return () => {
@@ -104,9 +104,9 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     }
   }, [canFetch, scanDate, competitionId, todayFixtureId])
 
-  const empMemo = useMemo(
-    () => (canFetch ? empByMarket : {}),
-    [canFetch, empByMarket],
+  const hrMemo = useMemo(
+    () => (canFetch ? hrByMarket : {}),
+    [canFetch, hrByMarket],
   )
 
   if (loading) {
@@ -135,9 +135,9 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         <CecchinoTodayKpiPanel
           panel={(detail.kpi_panel_v2 ?? detail.kpi_panel)!}
           bookmakerStatus={(detail.kpi_panel_v2 ?? detail.kpi_panel)?.bookmaker_status}
-          purchasabilityByMarketKey={empMemo}
-          purchasabilityLoading={empLoading}
-          purchasabilityError={empError}
+          historicalReliabilityByMarketKey={hrMemo}
+          historicalReliabilityLoading={hrLoading}
+          historicalReliabilityError={hrError}
         />
       )}
 

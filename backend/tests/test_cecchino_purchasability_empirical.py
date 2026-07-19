@@ -1,4 +1,4 @@
-"""Test Acquistabilità empirica v1.1 — copertura operativa Pannello KPI."""
+"""Test Affidabilità storica via shim legacy purchasability_empirical."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ import pytest
 from app.services.cecchino.cecchino_purchasability_audit import DATASET_VERSION, make_json_safe
 from app.services.cecchino.cecchino_purchasability_empirical import (
     EMPIRICAL_VERSION,
+    HISTORICAL_RELIABILITY_VERSION,
+    LEGACY_EMPIRICAL_VERSION,
+    METRIC_KIND,
     MIN_SAMPLE,
     SCOPE_GLOBAL,
     SCOPE_LOCAL,
@@ -448,6 +451,8 @@ def test_emp_26_strict_json():
     )
     json.dumps(make_json_safe(payload), allow_nan=False)
     assert payload["version"] == EMPIRICAL_VERSION
+    assert payload["metric_kind"] == METRIC_KIND
+    assert payload["legacy_version"] == LEGACY_EMPIRICAL_VERSION
     assert payload["dataset_version"] == DATASET_VERSION
     assert payload["summary"]["no_db_writes"] is True
     assert "scored_same_competition" in payload["summary"]
@@ -458,7 +463,7 @@ def test_emp_27_28_batch_no_db_write_single_load():
     hist = [_hist(fid=i, day=1 + (i % 28), rating=72, won=True) for i in range(1, 40)]
     currents = [_current(fid=900 + i, rating=74) for i in range(3)]
     with patch(
-        "app.services.cecchino.cecchino_purchasability_empirical.build_purchasability_rows"
+        "app.services.cecchino.cecchino_historical_reliability.build_purchasability_rows"
     ) as mock_build:
         payload = build_empirical_purchasability_for_panel(
             MagicMock(),
@@ -473,12 +478,21 @@ def test_emp_27_28_batch_no_db_write_single_load():
 
 
 def test_emp_32_38_versions_and_no_ml_flags():
-    assert EMPIRICAL_VERSION == "cecchino_purchasability_empirical_rating_v1_1"
+    assert EMPIRICAL_VERSION == HISTORICAL_RELIABILITY_VERSION
+    assert HISTORICAL_RELIABILITY_VERSION == "cecchino_historical_reliability_v1_1"
+    assert LEGACY_EMPIRICAL_VERSION == "cecchino_purchasability_empirical_rating_v1_1"
+    assert METRIC_KIND == "historical_reliability"
     assert DATASET_VERSION == "cecchino_purchasability_dataset_v1_1"
     import app.services.cecchino.cecchino_purchasability_empirical as mod
 
     assert not hasattr(mod, "LogisticRegression")
     assert not hasattr(mod, "bootstrap")
+    # Shim: nessuna seconda copia della formula (solo alias)
+    assert mod.calculate_empirical_purchasability is mod.calculate_historical_reliability
+    assert (
+        mod.build_empirical_purchasability_for_panel
+        is mod.build_historical_reliability_for_panel
+    )
 
 
 def test_emp_confidence_shrink():
