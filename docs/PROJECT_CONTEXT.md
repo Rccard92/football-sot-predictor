@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Equilibrio vs Squilibrio v5 — dettaglio storico snapshot (2026-07-19)
+
+Detail Today: `historical_snapshot` per `scan_date` passate (identity status/score non bloccanti, solo snapshot salvati, KPI senza fallback DB). `current_strict` invariato per oggi. Meta `balance_v5_snapshot_meta`. Nessun ricalcolo post-match in GET.
+
 ## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
 
 Fix su `cecchino_balance_v5_v2` (no bump): F36 via `class_key` tecnico; normalizzazione 1X2 unica (`*_norm`); `goal_markets` argomento separato; FE label/disclaimer/market; Intensità Goal v4 nascosta dal Today Detail; titolo v5 = `Intensità Goal Avanzata - v5 Preview research`. Legacy ICM/Signals intatti.

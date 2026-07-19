@@ -151,6 +151,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
       <CecchinoBalanceV5Panel
         balance={detail.balance_v5}
         identityConsistency={detail.fixture_identity_consistency}
+        snapshotMeta={detail.balance_v5_snapshot_meta}
       />
 
       <CecchinoGoalIntensityV5PreviewPanel preview={detail.goal_intensity_v5_preview} />

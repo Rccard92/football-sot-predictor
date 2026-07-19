@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Equilibrio vs Squilibrio v5 — dettaglio storico da snapshot pre-match (2026-07-19)
+
+- Detail Today: `scan_date < oggi (Europe/Rome)` → `historical_snapshot` con identity storica (status/score non bloccanti); altrimenti `current_strict`.
+- Solo snapshot salvati (`cecchino_output` / KPI / odds); KPI `snapshot_only` senza fallback DB Book; Book post-kickoff non entra nel market.
+- Payload `balance_v5_snapshot_meta`; FE box «Snapshot storico pre-match»; nessun ricalcolo/API in GET.
+
 ## Equilibrio vs Squilibrio v5 — no doppia normalizzazione 1X2 market (2026-07-19)
 
 - `_build_market_deviation_v5` usa la tripletta Cecchino 1X2 già normalizzata dal builder (niente secondo `_normalize_3way_probs`).

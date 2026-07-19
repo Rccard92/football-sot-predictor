@@ -1007,6 +1007,26 @@ export type CecchinoFixtureIdentityConsistency = {
   score_match?: boolean
   snapshot_match?: boolean
   chronological_status_valid?: boolean
+  verification_mode?: 'current_strict' | 'historical_snapshot' | string
+  historical_identity_status?: string | null
+  status_match_blocking?: boolean
+  score_match_blocking?: boolean
+  static_identity_verified?: boolean
+  warnings?: string[]
+}
+
+export type CecchinoBalanceV5SnapshotMeta = {
+  mode?: 'current_strict' | 'historical_snapshot' | string
+  status?: 'verified' | 'partial' | 'blocked' | string
+  source?: string
+  scan_date?: string | null
+  kickoff?: string | null
+  calculation_target_kickoff?: string | null
+  odds_fetched_at?: string | null
+  static_identity_verified?: boolean
+  status_match_blocking?: boolean
+  score_match_blocking?: boolean
+  book_snapshot_status?: 'verified' | 'partial' | 'unavailable' | 'blocked' | string
   warnings?: string[]
 }
 
@@ -1043,6 +1063,7 @@ export type CecchinoTodayDetailResponse = {
   icm_analysis?: CecchinoIcmAnalysis
   balance_analysis?: CecchinoBalanceAnalysis
   balance_v5?: CecchinoBalanceV5
+  balance_v5_snapshot_meta?: CecchinoBalanceV5SnapshotMeta
   fixture_identity_consistency?: CecchinoFixtureIdentityConsistency
   goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
   goal_intensity_v5_preview?: {

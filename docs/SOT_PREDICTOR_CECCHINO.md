@@ -269,6 +269,17 @@ Sostituita da v1.1 (formula score invariata).
 
 Dettaglio: [SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md](./SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md).
 
+## Equilibrio vs Squilibrio v5 — dettaglio storico snapshot (2026-07-19)
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| Modalità | `current_strict` se `scan_date >= oggi`; `historical_snapshot` se `scan_date < oggi` (Europe/Rome) |
+| Identity storica | `build_historical_fixture_identity_consistency` + adapter `consistent/inconsistent`; status/score non bloccanti |
+| Identity current | `build_fixture_identity_consistency` invariata (status/score/snapshot bloccanti) |
+| Dati | Solo snapshot pre-match salvati; GET read-only; no ricalcolo/API/Betfair DB fallback |
+| Book storico | Solo se timestamp ≤ kickoff; altrimenti pilastri ok e market unavailable |
+| Meta | `balance_v5_snapshot_meta` (verified/partial/blocked) calcolato in lettura |
+
 ## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
 
 | Aspetto | Dettaglio |

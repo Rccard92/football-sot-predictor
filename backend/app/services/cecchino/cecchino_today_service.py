@@ -65,8 +65,16 @@ from app.services.cecchino.cecchino_constants import (
 )
 from app.services.cecchino.cecchino_balance_analysis import build_balance_analysis_from_final
 from app.services.cecchino.cecchino_balance_v5 import build_cecchino_balance_v5
-from app.services.cecchino.cecchino_fixture_identity_consistency import (
-    build_fixture_identity_consistency,
+from app.services.cecchino.cecchino_balance_v5_detail import (
+    MODE_HISTORICAL,
+    apply_market_deviation_book_gate,
+    build_balance_identity_for_detail,
+    classify_book_snapshot_status,
+    evaluate_balance_v5_snapshot_meta,
+    identity_for_balance_build,
+    prepare_kpi_for_historical_balance,
+    resolve_balance_detail_mode,
+    _kpi_has_book_odds,
 )
 from app.services.cecchino.cecchino_current_season_xg import maybe_ensure_xg_for_eligible_row
 from app.models.team import Team
@@ -1538,8 +1546,17 @@ def _kpi_panel_needs_rebuild(kpi_panel: dict[str, Any] | None) -> bool:
     return False
 
 
-def _resolve_kpi_panel_for_detail(row: CecchinoTodayFixture, db: Session) -> dict[str, Any] | None:
-    """Normalizza o ricostruisce KPI v2 da snapshot/DB per il dettaglio API."""
+def _resolve_kpi_panel_for_detail(
+    row: CecchinoTodayFixture,
+    db: Session,
+    *,
+    snapshot_only: bool = False,
+) -> dict[str, Any] | None:
+    """Normalizza o ricostruisce KPI v2 da snapshot/DB per il dettaglio API.
+
+    Con snapshot_only=True (dettaglio storico): solo kpi_panel_json / odds_snapshot_json,
+    mai load_betfair_odds_payload dal DB.
+    """
     kpi = row.kpi_panel_json
     if not _kpi_panel_needs_rebuild(kpi):
         return normalize_kpi_panel_rows(kpi)
@@ -1553,7 +1570,12 @@ def _resolve_kpi_panel_for_detail(row: CecchinoTodayFixture, db: Session) -> dic
         home_team_name=row.home_team_name,
         away_team_name=row.away_team_name,
     )
-    if betfair_payload.get("status") == "not_available" and row.competition_id and row.local_fixture_id:
+    if (
+        not snapshot_only
+        and betfair_payload.get("status") == "not_available"
+        and row.competition_id
+        and row.local_fixture_id
+    ):
         betfair_payload = load_betfair_odds_payload(
             db,
             competition_id=int(row.competition_id),
@@ -1588,7 +1610,9 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         }
 
     output = row.cecchino_output_json or {}
-    kpi_panel = _resolve_kpi_panel_for_detail(row, db)
+    balance_mode = resolve_balance_detail_mode(row.scan_date, rome_today())
+    snapshot_only = balance_mode == MODE_HISTORICAL
+    kpi_panel = _resolve_kpi_panel_for_detail(row, db, snapshot_only=snapshot_only)
     picchetti_debug_summary = None
     if isinstance(output, dict) and output:
         full_debug = build_cecchino_picchetti_debug(
@@ -1633,7 +1657,8 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
             local_home_name = home_team.name if home_team else None
             local_away_name = away_team.name if away_team else None
 
-    fixture_identity_consistency = build_fixture_identity_consistency(
+    fixture_identity_consistency = build_balance_identity_for_detail(
+        mode=balance_mode,
         today_row=row,
         local_fixture=local_fixture,
         cecchino_output=output if isinstance(output, dict) else None,
@@ -1644,12 +1669,53 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         local_away_team_name=local_away_name,
     )
 
+    kickoff_dt = None
+    if row.kickoff:
+        try:
+            kickoff_dt = ensure_datetime_utc(row.kickoff, field_name="today.kickoff")
+        except Exception:
+            kickoff_dt = None
+    odds_meta = read_odds_meta(row.odds_snapshot_json if isinstance(row.odds_snapshot_json, dict) else None)
+    book_status, book_warnings = classify_book_snapshot_status(
+        kickoff=kickoff_dt,
+        odds_meta=odds_meta,
+        has_book_odds=_kpi_has_book_odds(kpi_panel if isinstance(kpi_panel, dict) else None),
+    )
+
+    balance_v5_snapshot_meta = evaluate_balance_v5_snapshot_meta(
+        mode=balance_mode,
+        today_row=row,
+        identity=fixture_identity_consistency,
+        cecchino_output=output if isinstance(output, dict) else None,
+        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+        book_status=book_status,
+        book_warnings=book_warnings,
+    )
+
+    kpi_for_balance = kpi_panel if isinstance(kpi_panel, dict) else None
+    if balance_mode == MODE_HISTORICAL:
+        kpi_for_balance = prepare_kpi_for_historical_balance(
+            kpi_for_balance,
+            book_status=book_status,
+        )
+
+    identity_for_balance = identity_for_balance_build(
+        fixture_identity_consistency,
+        balance_v5_snapshot_meta,
+    )
+
     balance_v5 = build_cecchino_balance_v5(
         cecchino_final=output.get("final") if isinstance(output, dict) else None,
         goal_markets=output.get("goal_markets") if isinstance(output, dict) else None,
-        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
-        identity_consistency=fixture_identity_consistency,
+        kpi_panel=kpi_for_balance,
+        identity_consistency=identity_for_balance,
     )
+    if balance_mode == MODE_HISTORICAL:
+        balance_v5 = apply_market_deviation_book_gate(
+            balance_v5,
+            book_status=book_status,
+            book_warnings=book_warnings,
+        )
     icm_analysis = build_cecchino_icm_analysis(
         balance_analysis=balance_analysis,
         kpi_panel=kpi_panel,
@@ -1689,6 +1755,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "icm_analysis": icm_analysis,
         "balance_analysis": balance_analysis,
         "balance_v5": balance_v5,
+        "balance_v5_snapshot_meta": balance_v5_snapshot_meta,
         "fixture_identity_consistency": fixture_identity_consistency,
         "goal_intensity_analysis": goal_intensity_analysis,
         "goal_intensity_v5_preview": goal_intensity_v5_preview,

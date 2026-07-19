@@ -157,7 +157,13 @@ def test_detail_preview_blocked_on_identity_mismatch_no_write(
     mock_xg.return_value = {
         "xg_profiles": {"anti_leakage": {"fixture_date_cutoff": KO_BAD.isoformat()}},
     }
+    # scan_date = oggi Europe/Rome → current_strict (status/score/snapshot bloccanti)
+    from datetime import date as date_cls
+    from zoneinfo import ZoneInfo
+
+    today_rome = datetime.now(ZoneInfo("Europe/Rome")).date()
     row = _eligible_row(
+        scan_date=today_rome,
         cecchino_output_json={
             "final": {
                 "status": "available",
@@ -195,6 +201,7 @@ def test_detail_preview_blocked_on_identity_mismatch_no_write(
     assert detail["kickoff"].startswith("2026-07-16")
     assert row.kickoff == KO
     assert detail["fixture_identity_consistency"]["status"] == "inconsistent"
+    assert detail["fixture_identity_consistency"]["verification_mode"] == "current_strict"
     assert detail["fixture_identity_consistency"]["raw_sources"]["today"]["kickoff"].startswith("2026-07-16")
     assert detail["fixture_identity_consistency"]["raw_sources"]["local_fixture"]["kickoff"].startswith(
         "2026-07-22"

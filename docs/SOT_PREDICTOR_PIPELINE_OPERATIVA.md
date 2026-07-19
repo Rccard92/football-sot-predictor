@@ -169,6 +169,14 @@ Rieseguire l’audit sul lab: coorte kickoff, feature coverage reale attesa su g
 3. Export JSON audit + CSV inventario feature
 4. v4 operativa invariata; docs: `SOT_PREDICTOR_GOAL_INTENSITY_V5_RESEARCH.md`
 
+## Equilibrio vs Squilibrio v5 — dettaglio storico snapshot (2026-07-19)
+
+1. Modalità da `scan_date` vs `rome_today()` (non da solo `fixture_status`).
+2. Storico: identity statica; status/score diagnostici; gate su output/final/kickoff/target.
+3. KPI `snapshot_only=True`: niente `load_betfair_odds_payload`.
+4. FE: box snapshot storico; alert specifici se blocked.
+5. Fail-closed su mismatch ID/squadre/comp/kickoff/output; nessuna scrittura GET.
+
 ## Equilibrio vs Squilibrio v5 — fix incoerenze + Intensità Goal UI (2026-07-19)
 
 1. F36: passare `class_key` tecnico a `_pillar_f36_v5` (no ricostruzione da label IT).

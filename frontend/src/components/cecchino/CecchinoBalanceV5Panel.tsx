@@ -3,6 +3,7 @@ import type {
   CecchinoBalanceV5,
   CecchinoBalanceV5MarketPair,
   CecchinoBalanceV5Pillar,
+  CecchinoBalanceV5SnapshotMeta,
   CecchinoFixtureIdentityConsistency,
 } from '../../lib/cecchinoTodayApi'
 import { formatBalanceNumber } from '../../utils/formatBalanceNumber'
@@ -11,6 +12,7 @@ import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } 
 type Props = {
   balance?: CecchinoBalanceV5 | null
   identityConsistency?: CecchinoFixtureIdentityConsistency | null
+  snapshotMeta?: CecchinoBalanceV5SnapshotMeta | null
 }
 
 const PANEL_TITLE = 'Equilibrio vs Squilibrio v5'
@@ -22,6 +24,11 @@ const DRAW_NOTE_FALLBACK =
 
 const IDENTITY_MISMATCH_ALERT =
   'Analisi non disponibile: data, stato o snapshot della fixture non risultano coerenti.'
+
+const HIST_VERIFIED_TEXT =
+  'Analisi ricostruita esclusivamente dai dati salvati prima della partita. Stato e risultato finali non modificano i quattro pilastri.'
+const HIST_PARTIAL_TEXT =
+  'Analisi basata sullo snapshot storico salvato. Alcuni metadati temporali legacy non sono disponibili e vengono indicati come non verificabili.'
 
 const PILLAR_ORDER = ['f36', 'dominance', 'draw_credibility', 'gap_coherence'] as const
 
@@ -97,13 +104,65 @@ function fmtQuotaFixed(value: number | null | undefined): string {
 function isIdentityMismatch(
   balance?: CecchinoBalanceV5 | null,
   identityConsistency?: CecchinoFixtureIdentityConsistency | null,
+  snapshotMeta?: CecchinoBalanceV5SnapshotMeta | null,
 ): boolean {
+  if (snapshotMeta?.mode === 'historical_snapshot' && snapshotMeta.status === 'blocked') {
+    return true
+  }
+  if (snapshotMeta?.mode === 'historical_snapshot' && (snapshotMeta.status === 'verified' || snapshotMeta.status === 'partial')) {
+    // Storico verificato/parziale: non bloccare per status/score Today vs Local
+    return balance?.status === 'unavailable' && (balance.warnings ?? []).includes('fixture_identity_mismatch')
+  }
   if (identityConsistency?.status === 'inconsistent') return true
   if (balance?.status === 'unavailable') {
     const warnings = balance.warnings ?? []
     if (warnings.includes('fixture_identity_mismatch')) return true
   }
   return false
+}
+
+function blockedAlertMessage(snapshotMeta?: CecchinoBalanceV5SnapshotMeta | null): string {
+  const warnings = snapshotMeta?.warnings ?? []
+  if (warnings.includes('historical_target_kickoff_mismatch') || warnings.includes('today_local_kickoff_mismatch')) {
+    return 'Snapshot storico bloccato: kickoff non coerente.'
+  }
+  if (warnings.includes('provider_fixture_id_mismatch')) {
+    return 'Snapshot storico bloccato: fixture provider differente.'
+  }
+  if (
+    warnings.includes('historical_cecchino_output_absent') ||
+    warnings.includes('historical_cecchino_final_unavailable')
+  ) {
+    return 'Snapshot storico non disponibile: output Cecchino originale assente.'
+  }
+  if (warnings.includes('local_fixture_id_mismatch') || warnings.includes('historical_local_fixture_missing')) {
+    return 'Snapshot storico bloccato: fixture locale non coerente.'
+  }
+  if (warnings.includes('competition_mismatch')) {
+    return 'Snapshot storico bloccato: competizione differente.'
+  }
+  if (warnings.includes('teams_mismatch')) {
+    return 'Snapshot storico bloccato: squadre non coerenti.'
+  }
+  if (snapshotMeta?.mode === 'historical_snapshot') {
+    return 'Snapshot storico bloccato: identità o dati pre-match non coerenti.'
+  }
+  return IDENTITY_MISMATCH_ALERT
+}
+
+function bookStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case 'verified':
+      return 'Book: verificato pre-match'
+    case 'partial':
+      return 'Book: timestamp non verificabile'
+    case 'blocked':
+      return 'Book: non usabile (post-kickoff)'
+    case 'unavailable':
+      return 'Book: assente'
+    default:
+      return status ? `Book: ${status}` : ''
+  }
 }
 
 function resolvePillars(balance: CecchinoBalanceV5): CecchinoBalanceV5Pillar[] {
@@ -200,7 +259,7 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
   )
 }
 
-export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) {
+export function CecchinoBalanceV5Panel({ balance, identityConsistency, snapshotMeta }: Props) {
   if (!balance) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
@@ -210,7 +269,7 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) 
     )
   }
 
-  if (isIdentityMismatch(balance, identityConsistency)) {
+  if (isIdentityMismatch(balance, identityConsistency, snapshotMeta)) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
         <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
@@ -218,45 +277,71 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) 
           role="alert"
           className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
         >
-          {IDENTITY_MISMATCH_ALERT}
+          {blockedAlertMessage(snapshotMeta)}
         </p>
       </section>
     )
   }
 
   const pillars = resolvePillars(balance)
-  const market = balance.market_deviation
-  const marketPairs = (market?.pairs ?? []).filter(marketRowHasAnyData)
+  const pairs = (balance.market_deviation?.pairs ?? []).filter(marketRowHasAnyData)
+  const showHistoricalBox =
+    snapshotMeta?.mode === 'historical_snapshot' &&
+    (snapshotMeta.status === 'verified' || snapshotMeta.status === 'partial')
 
   return (
     <section className="space-y-4">
       <div>
         <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
-        <p className={todaySectionSubtitle}>{PANEL_SUBTITLE}</p>
-        <p className="mt-2 text-xs text-slate-500">{INDEX_DISCLAIMER}</p>
-        {balance.structural_summary ? (
-          <p className="mt-3 text-sm leading-relaxed text-slate-800">{balance.structural_summary}</p>
-        ) : null}
+        <p className={`mt-1 ${todaySectionSubtitle}`}>{PANEL_SUBTITLE}</p>
+        <p className="mt-1 text-xs text-slate-500">{INDEX_DISCLAIMER}</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
+      {showHistoricalBox ? (
+        <div className="rounded-lg border border-sky-200/80 bg-sky-50/70 px-3 py-2.5 text-sm text-slate-800">
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-900/80">
+            Snapshot storico pre-match
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-700">
+            {snapshotMeta?.status === 'partial' ? HIST_PARTIAL_TEXT : HIST_VERIFIED_TEXT}
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
+            {snapshotMeta?.scan_date ? <li>Scan: {snapshotMeta.scan_date}</li> : null}
+            {snapshotMeta?.kickoff ? <li>Kickoff: {snapshotMeta.kickoff}</li> : null}
+            {snapshotMeta?.odds_fetched_at ? (
+              <li>Quote: {snapshotMeta.odds_fetched_at}</li>
+            ) : null}
+            {snapshotMeta?.book_snapshot_status ? (
+              <li>{bookStatusLabel(snapshotMeta.book_snapshot_status)}</li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-2">
         {pillars.map((p, i) => (
           <PillarCard key={p.key} pillar={p} number={i + 1} />
         ))}
       </div>
 
-      {market ? (
-        <section className={`${todayCard} ${todayCardPadding} border-slate-300`}>
-          <div className="mb-2">
-            <h4 className="text-sm font-semibold text-slate-900">
-              {market.title ?? 'Scostamento dal mercato'}
-            </h4>
-            <p className="text-xs text-slate-500">
-              {market.subtitle ??
-                'Lo scostamento descrive la distanza tra Cecchino e mercato.'}
-            </p>
-          </div>
-          <div className="overflow-x-auto">
+      {balance.structural_summary ? (
+        <p className="text-sm leading-relaxed text-slate-700">{balance.structural_summary}</p>
+      ) : null}
+
+      <div className={`${todayCard} ${todayCardPadding}`}>
+        <h4 className="text-sm font-semibold text-slate-900">
+          {balance.market_deviation?.title ?? 'Scostamento dal mercato'}
+        </h4>
+        <p className="mt-0.5 text-xs text-slate-500">
+          {balance.market_deviation?.subtitle ??
+            'Lo scostamento descrive la distanza tra Cecchino e mercato.'}
+        </p>
+        {balance.market_deviation?.status === 'unavailable' || pairs.length === 0 ? (
+          <p className="mt-2 text-xs text-slate-500">
+            {balance.market_deviation?.reading || 'Scostamento dal mercato storico non disponibile.'}
+          </p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-left text-xs">
               <thead className="text-slate-500">
                 <tr>
@@ -271,7 +356,7 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) 
                 </tr>
               </thead>
               <tbody>
-                {marketPairs.map((pair) => (
+                {pairs.map((pair) => (
                   <tr key={pair.key} className="border-t border-slate-100">
                     <td className="py-1.5 pr-3 font-medium text-slate-800">{pair.label}</td>
                     <td className="py-1.5 pr-3 tabular-nums">
@@ -300,12 +385,14 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency }: Props) 
               </tbody>
             </table>
           </div>
+        )}
+        {balance.market_deviation?.status !== 'unavailable' && pairs.length > 0 ? (
           <p className="mt-3 text-xs leading-relaxed text-slate-600">
-            {market.reading ||
+            {balance.market_deviation?.reading ||
               'Lo scostamento descrive la distanza tra Cecchino e mercato. Non stabilisce quale dei due abbia ragione e non modifica i quattro pilastri.'}
           </p>
-        </section>
-      ) : null}
+        ) : null}
+      </div>
     </section>
   )
 }
