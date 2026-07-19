@@ -233,7 +233,7 @@ def build_purchasability_preview_not_calculated(
             balance_v5=PurchasabilityContextHook(status="not_connected"),
             goal_intensity_v5=PurchasabilityContextHook(status="not_connected"),
         ),
-        reason_codes=["formula_not_implemented_phase_1"],
+        reason_codes=["purchasability_score_formula_not_implemented"],
         data_quality=PurchasabilityDataQuality(
             pre_match_only=True,
             no_post_match_features=True,

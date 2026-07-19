@@ -22,6 +22,7 @@ from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SE
 def _fixture(panel=None):
     fx = MagicMock()
     fx.id = 42
+    fx.local_fixture_id = 777
     fx.provider_fixture_id = 900
     fx.competition_id = 3
     fx.scan_date = None
@@ -32,7 +33,9 @@ def _fixture(panel=None):
     }
     fx.odds_checked_at = None
     fx.updated_at = datetime(2026, 3, 15, 11, 0, tzinfo=timezone.utc)
-    fx.cecchino_output = None
+    fx.cecchino_output_json = None
+    # Spec: nessun attributo legacy obbligatorio; del evita MagicMock auto-attr
+    del fx.cecchino_output
     return fx
 
 

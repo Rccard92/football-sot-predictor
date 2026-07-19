@@ -313,6 +313,7 @@ def test_no_historical_reliability_import():
 def test_fixture_missing_panel():
     fx = SimpleNamespace(
         id=5,
+        local_fixture_id=None,
         provider_fixture_id=9,
         competition_id=1,
         scan_date=None,
@@ -321,9 +322,85 @@ def test_fixture_missing_panel():
         odds_snapshot_json=None,
         odds_checked_at=None,
         updated_at=datetime(2026, 3, 15, 10, 0, tzinfo=timezone.utc),
-        cecchino_output=None,
+        cecchino_output_json=None,
     )
     payload = build_purchasability_features_for_fixture(fx)
     assert payload["status"] == "unavailable"
     assert payload["items"] == []
     assert payload["no_score_formula"] is True
+
+
+def _orm_fixture(
+    *,
+    fixture_id: int = 50,
+    local_fixture_id: int | None = 900,
+    cecchino_output_json: dict | None = None,
+    panel: dict | None = None,
+):
+    """Fixture ORM-shaped: solo cecchino_output_json, nessun cecchino_output."""
+    return SimpleNamespace(
+        id=fixture_id,
+        local_fixture_id=local_fixture_id,
+        provider_fixture_id=1001,
+        competition_id=7,
+        scan_date="2026-03-15",
+        kickoff=datetime(2026, 3, 15, 18, 0, tzinfo=timezone.utc),
+        kpi_panel_json=panel
+        if panel is not None
+        else {"rows": _1x2_panel(), "bookmaker": {"name": "Betfair"}},
+        odds_snapshot_json={
+            "odds_meta": {"odds_fetched_at": "2026-03-15T12:00:00+00:00"}
+        },
+        odds_checked_at=None,
+        updated_at=datetime(2026, 3, 15, 10, 0, tzinfo=timezone.utc),
+        cecchino_output_json=cecchino_output_json,
+    )
+
+
+def test_orm_local_fixture_id_distinct_from_today_id():
+    fx = _orm_fixture(
+        cecchino_output_json={
+            "goal_intensity_v5_preview": {"version": "gi_v5_test"},
+            "balance_v5": {"version": "balance_v5_test"},
+        }
+    )
+    assert not hasattr(fx, "cecchino_output")
+    payload = build_purchasability_features_for_fixture(fx)
+    assert payload["items"]
+    dq = payload["items"][0]["data_quality"]
+    assert dq["today_fixture_id"] == 50
+    assert dq["local_fixture_id"] == 900
+    assert dq["today_fixture_id"] != dq["local_fixture_id"]
+    hooks = payload["items"][0]["context_hooks"]
+    assert hooks["goal_intensity_v5"]["status"] == "available_not_used"
+    assert hooks["balance_v5"]["status"] == "available_not_used"
+    for item in payload["items"]:
+        assert item["score"] is None
+        assert item["class"] is None
+        assert item["phase_1_value"]["score"] is None
+        assert item["phase_2_quality"]["score"] is None
+        assert "purchasability_score_formula_not_implemented" in item["reason_codes"]
+        assert "formula_not_implemented_phase_1" not in item["reason_codes"]
+
+
+def test_orm_local_fixture_id_absent_stays_null():
+    fx = _orm_fixture(local_fixture_id=None, cecchino_output_json=None)
+    payload = build_purchasability_features_for_fixture(fx)
+    dq = payload["items"][0]["data_quality"]
+    assert dq["today_fixture_id"] == 50
+    assert dq["local_fixture_id"] is None
+    hooks = payload["items"][0]["context_hooks"]
+    assert hooks["balance_v5"]["status"] == "not_connected"
+    assert hooks["goal_intensity_v5"]["status"] == "not_connected"
+
+
+def test_orm_goal_intensity_only_hook():
+    fx = _orm_fixture(
+        cecchino_output_json={
+            "goal_intensity_v5": {"version": "gi_only"},
+        }
+    )
+    payload = build_purchasability_features_for_fixture(fx)
+    hooks = payload["items"][0]["context_hooks"]
+    assert hooks["goal_intensity_v5"]["status"] == "available_not_used"
+    assert hooks["balance_v5"]["status"] == "not_connected"

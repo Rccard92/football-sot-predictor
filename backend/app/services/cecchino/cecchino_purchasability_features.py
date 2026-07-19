@@ -626,8 +626,7 @@ def _build_data_quality(
     return {
         "source": "stored_kpi_panel_snapshot",
         "today_fixture_id": fixture_meta.get("today_fixture_id"),
-        "local_fixture_id": fixture_meta.get("local_fixture_id")
-        or fixture_meta.get("today_fixture_id"),
+        "local_fixture_id": fixture_meta.get("local_fixture_id"),
         "provider_fixture_id": fixture_meta.get("provider_fixture_id"),
         "competition_id": fixture_meta.get("competition_id"),
         "scan_date": _iso(fixture_meta.get("scan_date")),
@@ -717,7 +716,7 @@ def build_purchasability_feature_item(
         phase_1=phase_1, phase_2=phase_2, data_quality=data_quality
     )
 
-    reason_codes = ["formula_not_implemented_phase_1"]
+    reason_codes = ["purchasability_score_formula_not_implemented"]
     reason_codes.extend(_gap_reason_codes(phase_2))
     if feature_status == "unavailable" and data_quality.get("snapshot_before_kickoff") is False:
         reason_codes.append("snapshot_not_before_kickoff")
@@ -862,7 +861,7 @@ def build_purchasability_features_for_fixture(fixture: Any) -> dict[str, Any]:
 
     fixture_meta = {
         "today_fixture_id": getattr(fixture, "id", None),
-        "local_fixture_id": getattr(fixture, "id", None),
+        "local_fixture_id": getattr(fixture, "local_fixture_id", None),
         "provider_fixture_id": getattr(fixture, "provider_fixture_id", None),
         "competition_id": getattr(fixture, "competition_id", None),
         "scan_date": getattr(fixture, "scan_date", None),
@@ -870,33 +869,34 @@ def build_purchasability_features_for_fixture(fixture: Any) -> dict[str, Any]:
     }
 
     context_meta: dict[str, Any] = {}
-    output = getattr(fixture, "cecchino_output", None)
+    output = getattr(fixture, "cecchino_output_json", None)
+    if not isinstance(output, dict):
+        output = getattr(fixture, "cecchino_output", None)
     if isinstance(output, dict):
-        if output.get("balance_v5") is not None or fixture_meta:
-            bal = getattr(fixture, "balance_v5", None)
-            # Prefer explicit attrs if present on detail payloads; from ORM often in cecchino_output
-            bal = bal if bal is not None else output.get("balance_v5")
-            if bal is not None:
-                context_meta["balance_v5"] = {
-                    "status": "available_not_used",
-                    "available": True,
-                    "source_version": (
-                        bal.get("version") if isinstance(bal, dict) else None
-                    ),
-                    "reason_codes": ["detected_not_used_in_phase_2"],
-                }
-            gi = output.get("goal_intensity_v5_preview") or output.get(
-                "goal_intensity_v5"
-            )
-            if gi is not None:
-                context_meta["goal_intensity_v5"] = {
-                    "status": "available_not_used",
-                    "available": True,
-                    "source_version": (
-                        gi.get("version") if isinstance(gi, dict) else None
-                    ),
-                    "reason_codes": ["detected_not_used_in_phase_2"],
-                }
+        bal = getattr(fixture, "balance_v5", None)
+        if bal is None:
+            bal = output.get("balance_v5")
+        if bal is not None:
+            context_meta["balance_v5"] = {
+                "status": "available_not_used",
+                "available": True,
+                "source_version": (
+                    bal.get("version") if isinstance(bal, dict) else None
+                ),
+                "reason_codes": ["detected_not_used_in_phase_2"],
+            }
+        gi = output.get("goal_intensity_v5_preview") or output.get(
+            "goal_intensity_v5"
+        )
+        if gi is not None:
+            context_meta["goal_intensity_v5"] = {
+                "status": "available_not_used",
+                "available": True,
+                "source_version": (
+                    gi.get("version") if isinstance(gi, dict) else None
+                ),
+                "reason_codes": ["detected_not_used_in_phase_2"],
+            }
 
     return build_purchasability_features_for_panel(
         kpi_panel=panel if isinstance(panel, dict) else None,

@@ -31,7 +31,7 @@ def test_preview_not_calculated_score_null():
     assert payload["reading"] is None
     assert payload["market_key"] == "HOME"
     assert payload["selection"] == "HOME"
-    assert payload["reason_codes"] == ["formula_not_implemented_phase_1"]
+    assert payload["reason_codes"] == ["purchasability_score_formula_not_implemented"]
     assert payload["phase_1_value"]["status"] == "not_calculated"
     assert payload["phase_1_value"]["score"] is None
     assert payload["phase_1_value"]["inputs"]["prob_cecchino"] is None
