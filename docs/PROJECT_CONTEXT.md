@@ -26,7 +26,11 @@ Versione `cecchino_balance_v5_v2`: unico modulo [`cecchino_balance_v5.py`](backe
 
 **AFFIDABILITÀ STORICA** (`cecchino_historical_reliability_v1_1`): comportamento storico stesso mercato + fascia Rating. Colonna KPI **Affidabilità**. Endpoint `GET …/historical-reliability`. Shim legacy `purchasability-empirical`.
 
-**ACQUISTABILITÀ**: contratto preview `cecchino_purchasability_v1_preview_contract` solo schema (`status=not_calculated`, `score=null`); nessuna colonna UI, nessuna formula. Next: FASE 2/5 feature pre-match. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+**ACQUISTABILITÀ**: contratto preview + feature layer Fase 2 (vedi sotto).
+
+## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
+
+`cecchino_purchasability_features_v1`: phase_1_value / phase_2_quality da `kpi_panel_json`; fair Book + model context; mercati opposti; score null; nessuna UI. Endpoint debug `…/purchasability-preview/features/{id}`. Next: FASE 3/5 candidato. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
 
 ## Indice di Acquistabilità — empirica v1.1 Pannello KPI (2026-07-19)
 

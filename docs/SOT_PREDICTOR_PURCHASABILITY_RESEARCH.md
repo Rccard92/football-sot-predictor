@@ -9,9 +9,19 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 | **AFFIDABILITÀ STORICA** | Misura il comportamento storico dello stesso mercato e della stessa fascia Rating (Win Rate, ROI, margine vs break-even, stabilità, numerosità). |
 | **ACQUISTABILITÀ** | Misurerà quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti. |
 
-In Fase 1/5 l’ex «Acquistabilità empirica» è ridenominata **Affidabilità storica**. L’Acquistabilità produttiva **non** è ancora calcolata: esiste solo il contratto preview `cecchino_purchasability_v1_preview_contract` (`backend/app/schemas/cecchino_purchasability_preview.py`) con `status=not_calculated` e `score=null`.
+## Acquistabilità — FASE 2/5 feature operative pre-match (2026-07-19)
 
-Prossima fase: **FASE 2/5 — Contratto dati operativo e costruzione delle feature pre-match per Valore della quota e Qualità del valore.**
+Layer feature `cecchino_purchasability_features_v1` su snapshot `kpi_panel_json` (read-only).
+
+- **phase_1_value**: input KPI riga (quote, prob, vantaggio, edge, score, rating) + `dependency_metadata`; score fase = null.
+- **phase_2_quality**: opposizione (`cecchino_market_opposition`), fair Book (`resolve_fair_book_for_panel_rows`), model context, comparator_evidence, favorito/intensità descrittivi, gap Book–Cecchino non penalizzante; score = null.
+- **status** contratto = `not_calculated`; **feature_status** = ready|partial|unavailable.
+- Nessuna formula 0–100; nessuna UI; nessun uso di Affidabilità storica.
+- Endpoint debug: `GET /api/cecchino/kpi-signals/purchasability-preview/features/{today_fixture_id}`
+- Double Chance: fair/model da 1/X/2 normalizzato (non tre DC esclusive).
+- Next: **FASE 3/5 — candidato Acquistabilità v1 Preview**.
+
+In Fase 1/5 l’ex «Acquistabilità empirica» è ridenominata **Affidabilità storica**. L’Acquistabilità produttiva **non** è ancora calcolata: esiste solo il contratto preview `cecchino_purchasability_v1_preview_contract` (`backend/app/schemas/cecchino_purchasability_preview.py`) con `status=not_calculated` e `score=null`.
 
 Vincoli Acquistabilità (non ancora implementati come formula):
 

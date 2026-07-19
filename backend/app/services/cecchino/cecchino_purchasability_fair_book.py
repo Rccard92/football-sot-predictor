@@ -399,3 +399,94 @@ def dc_cross_market_linkable(row: dict[str, Any], sibling_rows: list[dict[str, A
         mw_odds, frozenset({SEL_HOME, SEL_DRAW, SEL_AWAY})
     )
     return status == "ok" and bool(normalized)
+
+
+def _panel_row_to_fair_research_row(
+    panel_row: dict[str, Any],
+    *,
+    today_fixture_id: Any = None,
+    snapshot_at: str | None = None,
+    bookmaker_name: str | None = None,
+) -> dict[str, Any]:
+    """Adatta una riga KPI panel alla shape research fair-book (odds = quota_book)."""
+    market_key = str(panel_row.get("market_key") or panel_row.get("selection") or "")
+    odds = _num(panel_row.get("quota_book") or panel_row.get("odds"))
+    book_source = str(panel_row.get("book_source") or "")
+    return {
+        "today_fixture_id": today_fixture_id
+        if today_fixture_id is not None
+        else panel_row.get("today_fixture_id"),
+        "selection": market_key,
+        "raw_market_code": market_key,
+        "market_key": market_key,
+        "odds": odds,
+        "quota_book": odds,
+        "snapshot_at": snapshot_at or panel_row.get("snapshot_at") or "",
+        "bookmaker_name": bookmaker_name or panel_row.get("bookmaker_name") or "panel",
+        "book_source": book_source,
+        "odds_source": book_source or "kpi_panel",
+        "bookmaker_provider_id": panel_row.get("bookmaker_provider_id"),
+        "bookmaker_provider_source": panel_row.get("bookmaker_provider_source"),
+    }
+
+
+def resolve_fair_book_for_panel_rows(
+    panel_rows: list[dict[str, Any]],
+    *,
+    today_fixture_id: Any = None,
+    snapshot_at: str | None = None,
+    bookmaker_name: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Fair Book per righe correnti del Pannello KPI.
+
+    Riusa ``resolve_fair_book_probability`` senza duplicare le formule.
+    Ritorna mappa market_key → campi fair + raw_implied + overround.
+    """
+    adapted: list[dict[str, Any]] = []
+    for prow in panel_rows:
+        market_key = str(prow.get("market_key") or prow.get("selection") or "")
+        if not market_key:
+            continue
+        adapted.append(
+            _panel_row_to_fair_research_row(
+                prow,
+                today_fixture_id=today_fixture_id,
+                snapshot_at=snapshot_at,
+                bookmaker_name=bookmaker_name,
+            )
+        )
+
+    if not adapted:
+        return {}
+
+    enriched = resolve_fair_for_rows(adapted)
+    out: dict[str, dict[str, Any]] = {}
+    for row in enriched:
+        sel = _sel(row)
+        if not sel:
+            continue
+        odds = _odds(row)
+        raw = (1.0 / odds) if odds and odds > 0 else None
+        payload = row.get("normalization_payload") or {}
+        overround = payload.get("overround")
+        if overround is None:
+            overround = payload.get("overround_1x2")
+        norm_status = payload.get("status")
+        if row.get("fair_book_probability_verified"):
+            norm_status = norm_status or "ok"
+        elif norm_status is None:
+            norm_status = "fallback_raw_implied"
+        out[sel] = {
+            "raw_implied_probability": raw,
+            "fair_book_probability": row.get("fair_book_probability"),
+            "fair_book_probability_verified": bool(
+                row.get("fair_book_probability_verified")
+            ),
+            "fair_book_probability_source": row.get("fair_book_probability_source"),
+            "normalization_status": norm_status,
+            "normalization_payload": payload,
+            "market_overround": overround,
+            "exclusion_reason": row.get("exclusion_reason"),
+        }
+    return out
+

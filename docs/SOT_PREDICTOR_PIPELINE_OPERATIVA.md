@@ -6,8 +6,14 @@
 2. Verificare chip Campionato/Globale; Rating &lt;50 → «Non valutato».
 3. Batch API `GET /api/cecchino/kpi-signals/historical-reliability` (scan_date, competition_id); errore non blocca il pannello.
 4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
-5. Nessuna colonna Acquistabilità produttiva; contratto preview non esposto in UI.
-6. Next: FASE 2/5 — feature pre-match.
+5. Nessuna colonna Acquistabilità produttiva.
+
+## Acquistabilità — FASE 2/5 feature pre-match (2026-07-19)
+
+1. Feature layer solo backend/debug: `GET …/purchasability-preview/features/{today_fixture_id}`.
+2. Usa `kpi_panel_json` salvato; score sempre null; nessuna chiamata FE.
+3. UI Pannello KPI invariata (Affidabilità presente, Acquistabilità assente).
+4. Next: FASE 3/5 — candidato Acquistabilità v1 Preview.
 
 ## Indice di Acquistabilità — empirica v1.1 (2026-07-19)
 
