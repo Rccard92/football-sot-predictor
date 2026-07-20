@@ -299,6 +299,7 @@ def _persist_post_calc_snapshot(
         maybe_ensure_xg_for_eligible_row(db, row)
         _maybe_sync_kpi_signals_for_fixture(db, int(row.id))
         _maybe_sync_purchasability_validation_for_fixture(db, int(row.id))
+        _maybe_sync_balance_empirical_for_fixture(db, int(row.id))
     return row, eligibility_status
 
 
@@ -325,6 +326,25 @@ def _maybe_sync_purchasability_validation_for_fixture(
     except Exception:
         logger.exception(
             "purchasability validation sync skipped fixture_id=%s", today_fixture_id
+        )
+
+
+def _maybe_sync_balance_empirical_for_fixture(
+    db: Session, today_fixture_id: int
+) -> None:
+    """Upsert dataset empirico Balance — non bloccante."""
+    try:
+        from app.services.cecchino.cecchino_balance_v5_empirical import (
+            upsert_balance_empirical_for_fixture_id,
+        )
+
+        with db.begin_nested():
+            upsert_balance_empirical_for_fixture_id(
+                db, int(today_fixture_id), commit=False
+            )
+    except Exception:
+        logger.exception(
+            "balance empirical upsert skipped fixture_id=%s", today_fixture_id
         )
 
 
@@ -1632,6 +1652,17 @@ def update_today_fixture_results(
         except Exception:
             logger.exception(
                 "purchasability validation evaluate skipped fixture_id=%s", row.id
+            )
+        try:
+            from app.services.cecchino.cecchino_balance_v5_empirical import (
+                settle_balance_empirical_record,
+            )
+
+            with db.begin_nested():
+                settle_balance_empirical_record(db, fixture=row, commit=False)
+        except Exception:
+            logger.exception(
+                "balance empirical settle skipped fixture_id=%s", row.id
             )
 
     db.commit()

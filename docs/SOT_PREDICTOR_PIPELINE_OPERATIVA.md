@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
+
+1. Applicare migrazione `20260720120000` (`cecchino_balance_v5_evaluations`).
+2. `/monitoraggio-moduli` → Balance → vista **Dataset empirico** → Dry-run sync → Conferma run (token `SYNC_BALANCE_V5_EMPIRICAL_DATASET`).
+3. Verificare GET `…/balance-v5/empirical/health` (settled/pending/coorti dinamici; niente 964/876 hardcodati).
+4. Export ZIP Balance = `cecchino_module_monitoring_exports_v6` con file `empirical_*`.
+5. NON modificare formule Balance; NON promuovere `historical_diagnostic`; win-rate = Step 2B.
+
 ## Fix export coorti e schemi forensic v4 (2026-07-20)
 
 1. NON ripetere historical-backfill se le eval storiche ci sono già.

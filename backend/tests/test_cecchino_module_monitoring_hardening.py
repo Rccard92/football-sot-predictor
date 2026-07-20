@@ -33,8 +33,8 @@ from app.services.cecchino.cecchino_purchasability_snapshot import (
 )
 
 
-def test_monitoring_export_version_v5():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v5"
+def test_monitoring_export_version_v6():
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v6"
 
 
 def test_attach_purchasability_writes_preview_on_dict_copy(monkeypatch):

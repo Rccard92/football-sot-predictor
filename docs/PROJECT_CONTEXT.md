@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
+
+Tabella `cecchino_balance_v5_evaluations`, sync admin (token `SYNC_BALANCE_V5_EMPIRICAL_DATASET`), settlement su update-results, export **v6** con `empirical_*`, UI vista Dataset empirico. Maturità `empirical_dataset_collecting`. Formule Balance/Signals/candidate invariate. Next: Step 2B metriche empiriche. Dettaglio: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_MONITORING.md`.
+
 ## Fix export coorti e schemi forensic v4 (2026-07-20)
 
 Export analisi rispettano `source_cohort` (all/storiche) senza `promotion_eligible_only` implicito; readiness resta prospettica. Pacchetti v4: dual summary Acquistabilità, colonne HT/outcome Balance, `historical_availability` Goal, Signals multi-CSV (all/current/verified/unusable), audit technical+scientific. **Non rieseguire backfill.** Runtime ZIP da verificare esternamente. **Runtime DB non interrogabile dall’ambiente Cursor** se non raggiungibile.

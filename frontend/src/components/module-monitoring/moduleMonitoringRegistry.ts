@@ -60,6 +60,7 @@ export const MONITORING_MODULES: MonitoringModuleDef[] = [
     defaultView: 'overview',
     views: [
       { id: 'overview', label: 'Overview' },
+      { id: 'empirical-dataset', label: 'Dataset empirico' },
       { id: 'geometry-f36', label: 'Geometria F36' },
       { id: 'dominance', label: 'Dominanza' },
       { id: 'draw-credibility', label: 'Credibilità X' },

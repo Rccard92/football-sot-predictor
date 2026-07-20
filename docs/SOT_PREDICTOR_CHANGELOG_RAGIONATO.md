@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
+
+- Tabella `cecchino_balance_v5_evaluations` + sync/settlement fail-soft su scan/recompute/update-results.
+- API admin empirical-sync plan/run (token `SYNC_BALANCE_V5_EMPIRICAL_DATASET`) e GET empirical/*.
+- Export pack `cecchino_module_monitoring_exports_v6` con file `empirical_*` Balance.
+- UI vista «Dataset empirico»; maturità overview `empirical_dataset_collecting`.
+- Formule Balance / Signals / Acquistabilità candidate invariate. Win-rate/calibrazione = Step 2B.
+
 ## Fix performance audit monitoraggio moduli (2026-07-20)
 
 - FE: rimosso auto-run audit su cambio filtri; single-flight + AbortController; timeout dedicato 240s solo per `analysis-packs-audit`; badge stale «Filtri modificati — riverifica necessaria».

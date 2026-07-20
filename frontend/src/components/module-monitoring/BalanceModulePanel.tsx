@@ -1,5 +1,6 @@
 import { RicercaCredibilitaXPage } from '../../pages/RicercaCredibilitaXPage'
 import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
+import { BalanceEmpiricalDatasetView } from './balance/BalanceEmpiricalDatasetView'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
@@ -85,6 +86,17 @@ export function BalanceModulePanel({
           </p>
         ))}
       </div>
+    )
+  }
+
+  if (view === 'empirical-dataset') {
+    return (
+      <BalanceEmpiricalDatasetView
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        competitionId={competitionId}
+        cohortFilter={cohortFilter}
+      />
     )
   }
 

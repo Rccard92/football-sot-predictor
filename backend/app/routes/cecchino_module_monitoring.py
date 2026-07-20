@@ -70,7 +70,7 @@ def module_monitoring_all_analysis_packs_audit(
     return JSONResponse(content=jsonable_encoder(payload))
 
 
-# IMPORTANT: purchasability-cardinality BEFORE /{module_key} routes to avoid conflicts
+# IMPORTANT: dedicated paths BEFORE /{module_key} routes to avoid conflicts
 @router.get("/purchasability-cardinality")
 def purchasability_cardinality_report(
     date_from: date = Query(...),
@@ -78,16 +78,6 @@ def purchasability_cardinality_report(
     competition_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """
-    Report di cardinalità per CecchinoPurchasabilityEvaluation.
-    
-    Conteggi per source_cohort, candidate_version, evaluation_status,
-    promotion_eligible, is_current, market_key.
-    
-    Include riconciliazione tra settled+pending vs totali.
-    
-    Read-only, NO scritture DB.
-    """
     payload = build_purchasability_evaluation_cardinality_report(
         db,
         date_from=date_from,
@@ -95,6 +85,129 @@ def purchasability_cardinality_report(
         competition_id=competition_id,
     )
     return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/balance-v5/empirical/health")
+def balance_empirical_health(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    source_cohort: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        build_balance_empirical_health,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_balance_empirical_health(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                source_cohort=source_cohort,
+            )
+        )
+    )
+
+
+@router.get("/balance-v5/empirical/summary")
+def balance_empirical_summary(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    source_cohort: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        build_balance_empirical_summary,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_balance_empirical_summary(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                source_cohort=source_cohort,
+            )
+        )
+    )
+
+
+@router.get("/balance-v5/empirical/rows")
+def balance_empirical_rows(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    source_cohort: str | None = Query(None),
+    evaluation_status: str | None = Query(None),
+    f36_class: str | None = Query(None),
+    dominance_class: str | None = Query(None),
+    draw_credibility_class: str | None = Query(None),
+    gap_class: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        query_balance_empirical_rows,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            query_balance_empirical_rows(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                source_cohort=source_cohort,
+                evaluation_status=evaluation_status,
+                f36_class=f36_class,
+                dominance_class=dominance_class,
+                draw_credibility_class=draw_credibility_class,
+                gap_class=gap_class,
+                limit=limit,
+                offset=offset,
+            )
+        )
+    )
+
+
+@router.get("/balance-v5/empirical/target-contract")
+def balance_empirical_target_contract():
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        build_balance_empirical_target_contract,
+    )
+
+    return JSONResponse(content=jsonable_encoder(build_balance_empirical_target_contract()))
+
+
+@router.get("/balance-v5/empirical/cardinality")
+def balance_empirical_cardinality(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    source_cohort: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        build_balance_empirical_cardinality,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_balance_empirical_cardinality(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                source_cohort=source_cohort,
+            )
+        )
+    )
 
 
 @router.get("/{module_key}/analysis-pack-audit")

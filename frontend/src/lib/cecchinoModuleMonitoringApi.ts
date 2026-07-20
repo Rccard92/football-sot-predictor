@@ -327,3 +327,143 @@ export const COHORT_FILTER_OPTIONS: { value: CohortFilterValue; label: string }[
   { value: 'historical_reconstructed_verified', label: 'Storica ricostruita verificata' },
   { value: 'historical_diagnostic', label: 'Storica diagnostica' },
 ]
+
+export const BALANCE_EMPIRICAL_SYNC_CONFIRM =
+  'SYNC_BALANCE_V5_EMPIRICAL_DATASET'
+
+export type BalanceEmpiricalHealth = {
+  status?: string
+  dataset_version?: string
+  target_contract_version?: string
+  balance_version?: string
+  readiness?: string
+  cardinality?: Record<string, unknown>
+  timestamp_verified?: number
+  timestamp_unverified?: number
+  pre_match_snapshots?: number
+  book_verified?: number
+  analysis_eligible?: number
+  promotion_eligible?: number
+  notes?: string[]
+}
+
+export type BalanceEmpiricalCardinality = {
+  status?: string
+  dataset_version?: string
+  fixtures?: number
+  rows?: number
+  settled?: number
+  pending?: number
+  verified?: number
+  diagnostic?: number
+  prospective?: number
+  analysis_eligible?: number
+  promotion_eligible?: number
+  by_source_cohort?: Record<string, number>
+  by_evaluation_status?: Record<string, number>
+}
+
+export type BalanceEmpiricalSyncResult = Record<string, unknown> & {
+  dry_run?: boolean
+  dataset_version?: string
+  source_fixtures?: number
+  rows_new?: number
+  rows_updatable?: number
+  rows_skipped?: number
+  inserted?: number
+  updated?: number
+  settled?: number
+  pending?: number
+  failed?: number
+}
+
+function balanceEmpiricalQuery(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
+    source_cohort?: string
+  },
+): string {
+  const p = new URLSearchParams()
+  p.set('date_from', filters.date_from)
+  p.set('date_to', filters.date_to)
+  if (filters.competition_id != null) p.set('competition_id', String(filters.competition_id))
+  if (filters.source_cohort && filters.source_cohort !== 'all') {
+    p.set('source_cohort', filters.source_cohort)
+  }
+  return p.toString()
+}
+
+export async function getBalanceEmpiricalHealth(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
+    source_cohort?: string
+  },
+): Promise<BalanceEmpiricalHealth> {
+  return adminGetJson(
+    `${BASE}/balance-v5/empirical/health?${balanceEmpiricalQuery(filters)}`,
+  )
+}
+
+export async function getBalanceEmpiricalSummary(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
+    source_cohort?: string
+  },
+): Promise<Record<string, unknown>> {
+  return adminGetJson(
+    `${BASE}/balance-v5/empirical/summary?${balanceEmpiricalQuery(filters)}`,
+  )
+}
+
+export async function getBalanceEmpiricalCardinality(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
+    source_cohort?: string
+  },
+): Promise<BalanceEmpiricalCardinality> {
+  return adminGetJson(
+    `${BASE}/balance-v5/empirical/cardinality?${balanceEmpiricalQuery(filters)}`,
+  )
+}
+
+export async function getBalanceEmpiricalTargetContract(): Promise<Record<string, unknown>> {
+  return adminGetJson(`${BASE}/balance-v5/empirical/target-contract`)
+}
+
+export async function getBalanceEmpiricalRows(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'> & {
+    source_cohort?: string
+    evaluation_status?: string
+    limit?: number
+    offset?: number
+  },
+): Promise<{ items?: unknown[]; total?: number }> {
+  const p = new URLSearchParams(balanceEmpiricalQuery(filters))
+  if (filters.evaluation_status) p.set('evaluation_status', filters.evaluation_status)
+  if (filters.limit != null) p.set('limit', String(filters.limit))
+  if (filters.offset != null) p.set('offset', String(filters.offset))
+  return adminGetJson(`${BASE}/balance-v5/empirical/rows?${p.toString()}`)
+}
+
+export async function planBalanceEmpiricalSync(body: {
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  source_cohort?: string
+}): Promise<BalanceEmpiricalSyncResult> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson(
+    '/api/admin/cecchino/module-monitoring/balance-v5/empirical-sync/plan',
+    body,
+  )
+}
+
+export async function runBalanceEmpiricalSync(body: {
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  source_cohort?: string
+  confirm: string
+}): Promise<BalanceEmpiricalSyncResult> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson(
+    '/api/admin/cecchino/module-monitoring/balance-v5/empirical-sync/run',
+    body,
+  )
+}

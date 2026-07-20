@@ -2,6 +2,19 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
+
+| Campo | Valore |
+|-------|--------|
+| Dataset | `cecchino_balance_v5_empirical_dataset_v1` |
+| Target contract | `cecchino_balance_v5_empirical_target_contract_v1` |
+| Tabella | `cecchino_balance_v5_evaluations` |
+| Export | `cecchino_module_monitoring_exports_v6` |
+| Sync token | `SYNC_BALANCE_V5_EMPIRICAL_DATASET` |
+| Maturità | `empirical_dataset_collecting` |
+| Formule Balance | invariate (`cecchino_balance_v5_v2`) |
+| Doc | `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_MONITORING.md` |
+
 ## Affidabilità storica vs Acquistabilità — FASE 1/5 (2026-07-19)
 
 | Concetto | Ruolo |

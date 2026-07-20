@@ -286,6 +286,17 @@ def recompute_today_fixture_offline(
             logger.exception(
                 "purchasability validation sync skipped fixture_id=%s", row.id
             )
+        try:
+            from app.services.cecchino.cecchino_balance_v5_empirical import (
+                upsert_balance_empirical_record,
+            )
+
+            with db.begin_nested():
+                upsert_balance_empirical_record(db, fixture=row, commit=False)
+        except Exception:
+            logger.exception(
+                "balance empirical upsert skipped fixture_id=%s", row.id
+            )
 
     return result
 

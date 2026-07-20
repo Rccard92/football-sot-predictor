@@ -133,6 +133,7 @@ const SCIENTIFIC_MATURITY_LABELS: Record<string, string> = {
   campione_insufficiente: 'Campione insufficiente',
   validazione_in_corso: 'Validazione in corso',
   validazione_empirica_da_avviare: 'Validazione empirica da avviare',
+  empirical_dataset_collecting: 'Dataset empirico in raccolta',
   evidenza_sufficiente: 'Evidenza sufficiente',
   pronta_per_revisione: 'Pronta per revisione',
   promossa: 'Promossa',
@@ -149,7 +150,7 @@ export function scientificMaturityLabel(
     return SCIENTIFIC_MATURITY_LABELS[maturity] || maturity.replace(/_/g, ' ')
   }
   if (moduleKey === 'goal-intensity-v5') return 'Raccolta dati'
-  if (moduleKey === 'balance-v5') return 'Validazione empirica da avviare'
+  if (moduleKey === 'balance-v5') return 'Dataset empirico in raccolta'
   if (moduleKey === 'purchasability') return 'Campione insufficiente'
   if (moduleKey === 'signals') return 'Monitoraggio'
   return 'Raccolta dati'

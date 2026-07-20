@@ -23,7 +23,7 @@ from app.services.cecchino.cecchino_monitoring_cohorts import (
 
 
 def test_export_version_is_v4():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v5"
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v6"
 
 
 def test_purchasability_schema_is_forensic_complete():

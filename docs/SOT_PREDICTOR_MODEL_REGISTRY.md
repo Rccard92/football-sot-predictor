@@ -2,6 +2,17 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Export pack | `cecchino_module_monitoring_exports_v6` |
+| Empirical dataset | `cecchino_balance_v5_empirical_dataset_v1` |
+| Target contract | `cecchino_balance_v5_empirical_target_contract_v1` |
+| Tabella | `cecchino_balance_v5_evaluations` |
+| Maturità Balance | `empirical_dataset_collecting` |
+| Balance formule | `cecchino_balance_v5_v2` (invariato) |
+
 ## Stabilizzazione finale Monitoraggio Moduli Fase 1/3 — export v5 (2026-07-20)
 
 | Artefatto | Versione / note |

@@ -1,4 +1,4 @@
-"""Export di monitoraggio Cecchino — forensic v5.
+"""Export di monitoraggio Cecchino — forensic v6.
 
 Il modulo assembla esclusivamente dati e formule già prodotti dai servizi
 canonici. Gli export sono riproducibili, autocontenuti e verificabili tramite
@@ -29,6 +29,12 @@ from app.models.cecchino_today_fixture import (
 )
 from app.schemas.cecchino_purchasability_preview import (
     PURCHASABILITY_CANDIDATE_VERSION,
+)
+from app.services.cecchino.cecchino_balance_v5_empirical import (
+    build_balance_empirical_cardinality,
+    build_balance_empirical_health,
+    build_balance_empirical_target_contract,
+    query_balance_empirical_rows,
 )
 from app.services.cecchino.cecchino_balance_v5_monitoring import (
     BALANCE_ROW_FIELDS,
@@ -69,6 +75,60 @@ from app.services.cecchino.cecchino_signal_aggregation import (
 
 logger = logging.getLogger(__name__)
 
+_BALANCE_EMPIRICAL_ROW_FIELDS = [
+    "id",
+    "today_fixture_id",
+    "local_fixture_id",
+    "provider_fixture_id",
+    "competition_id",
+    "scan_date",
+    "kickoff",
+    "country_name",
+    "league_name",
+    "home_team_name",
+    "away_team_name",
+    "empirical_dataset_version",
+    "balance_version",
+    "snapshot_version",
+    "snapshot_hash",
+    "source_mode",
+    "source_cohort",
+    "source_snapshot_at",
+    "pre_match_verified",
+    "book_verified",
+    "warning_codes",
+    "f36_index",
+    "f36_class",
+    "dominance_index",
+    "dominance_class",
+    "dominance_selection",
+    "draw_credibility_index",
+    "draw_credibility_class",
+    "gap_index",
+    "gap_class",
+    "prob_1_norm",
+    "prob_x_norm",
+    "prob_2_norm",
+    "book_prob_1",
+    "book_prob_x",
+    "book_prob_2",
+    "evaluation_status",
+    "evaluation_reason",
+    "ft_home",
+    "ft_away",
+    "ht_home",
+    "ht_away",
+    "outcome_1x2",
+    "is_draw",
+    "total_goals",
+    "absolute_goal_difference",
+    "dominance_selection_hit",
+    "evaluated_at",
+    "analysis_eligible",
+    "promotion_eligible",
+    "is_current",
+]
+
 ModuleKey = Literal[
     "purchasability",
     "balance-v5",
@@ -79,7 +139,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v5"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v6"
 
 # Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
 _MODULE_AUDIT_CACHE_TTL_S = 300
@@ -383,6 +443,12 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
             "source_cohort_distribution.json",
             "version_definition.json",
             "draw_credibility_research.json",
+            "empirical_dataset_rows.csv",
+            "empirical_dataset_health.json",
+            "empirical_target_contract.json",
+            "empirical_cardinality.json",
+            "empirical_source_cohorts.csv",
+            "empirical_evaluation_status.csv",
         ],
     },
     "goal-intensity-v5": {
@@ -1294,8 +1360,12 @@ già prodotti dal servizio di validazione.
 - `monthly_timeseries.csv`: copertura mensile e distinzione fra coorti.
 - `snapshot_health.json`: eleggibili, coperti e coperti con risultato.
 - `version_definition.json`: versioni Balance, snapshot e chiave di persistenza.
+- `empirical_dataset_rows.csv`: dataset empirico persistito (una riga corrente per fixture).
+- `empirical_dataset_health.json` / `empirical_cardinality.json` / `empirical_target_contract.json`.
+- `empirical_source_cohorts.csv` / `empirical_evaluation_status.csv`: conteggi coorte e status.
 
 Le righe legacy sono diagnostiche e non equivalgono a snapshot prospettici verificati.
+Il dataset empirico non altera formule Balance né promuove le coorti diagnostic.
 """,
         "goal-intensity-v5": """# Dizionario dati — Goal Intensity v5 Preview
 
@@ -1356,6 +1426,7 @@ def _handoff_md(
             "copertura per coorte e mese",
             "distribuzione delle classi dei quattro pilastri",
             "confronto descrittivo con risultati FT disponibili",
+            "stato del dataset empirico (coorti, pending/settled, target contract)",
         ],
         "goal-intensity-v5": [
             "avanzamento prospettico e integrità temporale",
@@ -1376,6 +1447,7 @@ def _handoff_md(
         "balance-v5": [
             "trattare la coorte legacy come prospettica",
             "ricostruire input non presenti negli snapshot",
+            "promuovere historical_diagnostic o leggere win-rate/calibrazione (Step 2B)",
         ],
         "goal-intensity-v5": [
             "validare il modello se il campione minimo non è raggiunto",
@@ -1601,6 +1673,98 @@ def _build_purchasability_files(
     }
 
 
+def _build_balance_empirical_export_files(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None,
+) -> dict[str, bytes]:
+    """File empirici Balance v5 — header sempre presenti anche a dataset vuoto."""
+    empty = {
+        "empirical_dataset_rows.csv": _csv_bom([], _BALANCE_EMPIRICAL_ROW_FIELDS),
+        "empirical_dataset_health.json": _json_bytes(
+            {"status": "unavailable", "reason": "empirical_export_unavailable"}
+        ),
+        "empirical_target_contract.json": _json_bytes(
+            build_balance_empirical_target_contract()
+        ),
+        "empirical_cardinality.json": _json_bytes(
+            {"status": "unavailable", "by_source_cohort": {}, "by_evaluation_status": {}}
+        ),
+        "empirical_source_cohorts.csv": _csv_bom([], ["source_cohort", "rows"]),
+        "empirical_evaluation_status.csv": _csv_bom(
+            [], ["evaluation_status", "rows"]
+        ),
+    }
+    try:
+        health = build_balance_empirical_health(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+        cardinality = build_balance_empirical_cardinality(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+        contract = build_balance_empirical_target_contract()
+        emp_items: list[dict[str, Any]] = []
+        offset = 0
+        page_size = 5000
+        while True:
+            page = query_balance_empirical_rows(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                limit=page_size,
+                offset=offset,
+            )
+            batch = list(page.get("items") or [])
+            emp_items.extend(row for row in batch if isinstance(row, dict))
+            total = int(page.get("total") or 0)
+            offset += len(batch)
+            if not batch or offset >= total:
+                break
+        cohort_rows = [
+            {"source_cohort": k, "rows": v}
+            for k, v in sorted((cardinality.get("by_source_cohort") or {}).items())
+        ]
+        status_rows = [
+            {"evaluation_status": k, "rows": v}
+            for k, v in sorted((cardinality.get("by_evaluation_status") or {}).items())
+        ]
+        return {
+            "empirical_dataset_rows.csv": _csv_bom(
+                emp_items, _BALANCE_EMPIRICAL_ROW_FIELDS
+            ),
+            "empirical_dataset_health.json": _json_bytes(health),
+            "empirical_target_contract.json": _json_bytes(contract),
+            "empirical_cardinality.json": _json_bytes(cardinality),
+            "empirical_source_cohorts.csv": _csv_bom(
+                cohort_rows, ["source_cohort", "rows"]
+            ),
+            "empirical_evaluation_status.csv": _csv_bom(
+                status_rows, ["evaluation_status", "rows"]
+            ),
+        }
+    except Exception as exc:
+        logger.warning(
+            "balance_empirical_export_failed error_code=%s",
+            type(exc).__name__,
+        )
+        empty["empirical_dataset_health.json"] = _json_bytes(
+            {
+                "status": "unavailable",
+                "reason": f"empirical_export_failed:{type(exc).__name__}",
+            }
+        )
+        return empty
+
+
 def _build_balance_files(
     db: Session,
     *,
@@ -1614,6 +1778,14 @@ def _build_balance_files(
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
+    )
+    files.update(
+        _build_balance_empirical_export_files(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
     )
     overview = build_balance_module_overview(
         db,

@@ -885,13 +885,13 @@ def build_balance_module_overview_v2(
             "Coverage da coorti storiche — snapshot prospectivo assente"
         )
     warnings.append(
-        "Monitoraggio descrittivo — validazione empirica avanzata in preparazione"
+        "Dataset empirico in raccolta — nessuna win-rate/calibrazione (Step 2B)"
     )
     return make_json_safe(
         {
             "module_key": "balance-v5",
             "status": "official_monitored",
-            "scientific_maturity": "validazione_empirica_da_avviare",
+            "scientific_maturity": "empirical_dataset_collecting",
             "version": BALANCE_V5_VERSION,
             "coverage": coverage,
             "coverage_descriptive": coverage,

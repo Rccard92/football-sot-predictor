@@ -105,6 +105,79 @@ def historical_backfill_run(
         ) from exc
 
 
+class BalanceEmpiricalSyncBody(BaseModel):
+    date_from: date
+    date_to: date
+    competition_id: int | None = None
+    source_cohort: str = "all"
+
+
+class BalanceEmpiricalSyncRunBody(BalanceEmpiricalSyncBody):
+    confirm: str | None = None
+
+
+@admin_router.post("/balance-v5/empirical-sync/plan")
+def balance_empirical_sync_plan(
+    body: BalanceEmpiricalSyncBody,
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        sync_balance_empirical_dataset,
+    )
+
+    try:
+        payload = sync_balance_empirical_dataset(
+            db,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            competition_id=body.competition_id,
+            source_cohort=body.source_cohort,
+            dry_run=True,
+            commit=False,
+        )
+        return JSONResponse(content=jsonable_encoder(payload))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"balance_empirical_sync_plan_failed:{type(exc).__name__}",
+        ) from exc
+
+
+@admin_router.post("/balance-v5/empirical-sync/run")
+def balance_empirical_sync_run(
+    body: BalanceEmpiricalSyncRunBody,
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        BALANCE_EMPIRICAL_SYNC_CONFIRM_TOKEN,
+        sync_balance_empirical_dataset,
+    )
+
+    if body.confirm != BALANCE_EMPIRICAL_SYNC_CONFIRM_TOKEN:
+        raise HTTPException(status_code=400, detail="invalid_confirm_token")
+    try:
+        payload = sync_balance_empirical_dataset(
+            db,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            competition_id=body.competition_id,
+            source_cohort=body.source_cohort,
+            dry_run=False,
+            commit=True,
+            confirm=body.confirm,
+        )
+        return JSONResponse(content=jsonable_encoder(payload))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"balance_empirical_sync_run_failed:{type(exc).__name__}",
+        ) from exc
+
+
 @status_router.get("/historical-backfill/status")
 def historical_backfill_status(
     date_from: date,
