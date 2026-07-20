@@ -158,7 +158,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v8"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v9"
 
 # Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
 _MODULE_AUDIT_CACHE_TTL_S = 300
@@ -493,6 +493,16 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
             "empirical_analysis_metadata.json",
             "pillar_evidence_status.json",
             "empirical_class_registry.json",
+            "balance_readiness_overview.json",
+            "balance_readiness_policy.json",
+            "balance_readiness_gates.csv",
+            "balance_pillar_readiness.json",
+            "balance_prospective_progress.json",
+            "balance_readiness_history.csv",
+            "balance_current_decision.json",
+            "balance_decision_contract.json",
+            "balance_prospective_collection_health.json",
+            "balance_governance_decisions.csv",
         ],
     },
     "goal-intensity-v5": {
@@ -1419,9 +1429,15 @@ già prodotti dal servizio di validazione.
 - `empirical_dataset_rows.csv`: dataset empirico persistito (una riga corrente per fixture).
 - `empirical_dataset_health.json` / `empirical_cardinality.json` / `empirical_target_contract.json`.
 - `empirical_source_cohorts.csv` / `empirical_evaluation_status.csv`: conteggi coorte e status.
+- `balance_readiness_overview.json` / `balance_readiness_policy.json`: readiness Step 2C.
+- `balance_readiness_gates.csv`: gate tecnici e scientifici (solo prospective per promo).
+- `balance_pillar_readiness.json` / `balance_prospective_progress.json`.
+- `balance_current_decision.json` / `balance_decision_contract.json`.
+- `balance_prospective_collection_health.json` / `balance_governance_decisions.csv`.
 
 Le righe legacy sono diagnostiche e non equivalgono a snapshot prospettici verificati.
 Il dataset empirico non altera formule Balance né promuove le coorti diagnostic.
+La readiness non attiva Signals e non produce uno score aggregato unico.
 """,
         "goal-intensity-v5": """# Dizionario dati — Goal Intensity v5 Preview
 
@@ -2117,6 +2133,190 @@ def _build_balance_analysis_export_files(
     }
 
 
+def _build_balance_readiness_export_files(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None,
+) -> dict[str, bytes]:
+    """File readiness/governance Step 2C — fail-soft."""
+    from app.models.cecchino_balance_v5_governance_decision import (
+        CecchinoBalanceV5GovernanceDecision,
+    )
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_decision_contract,
+        build_balance_prospective_collection_health,
+        build_balance_readiness_full_report,
+        list_balance_readiness_history,
+    )
+    from app.services.cecchino.cecchino_balance_v5_readiness_policy import (
+        BALANCE_READINESS_POLICY_VERSION,
+        build_balance_readiness_policy_payload,
+    )
+
+    try:
+        report = build_balance_readiness_full_report(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "balance_readiness_report_failed error_code=%s", type(exc).__name__
+        )
+        report = {
+            "overview": {"status": "unavailable", "error": type(exc).__name__},
+            "technical_gates": {"gates": []},
+            "scientific_gates": {"gates": []},
+            "pillars": {},
+            "prospective_progress": {},
+            "current_decision": {},
+            "decision_contract": build_balance_decision_contract(),
+            "prospective_collection_health": {"status": "unavailable"},
+            "policy": build_balance_readiness_policy_payload(),
+        }
+
+    history = list_balance_readiness_history(db, competition_id=competition_id)
+    hist_items = list(history.get("items") or [])
+
+    gate_rows: list[dict[str, Any]] = []
+    for category, block in (
+        ("technical", report.get("technical_gates") or {}),
+        ("scientific", report.get("scientific_gates") or {}),
+    ):
+        for g in block.get("gates") or []:
+            if not isinstance(g, dict):
+                continue
+            gate_rows.append(
+                {
+                    "category": g.get("category") or category,
+                    "key": g.get("key"),
+                    "label_it": g.get("label_it"),
+                    "status": g.get("status"),
+                    "value": g.get("value"),
+                    "threshold": g.get("threshold"),
+                    "numerator": g.get("numerator"),
+                    "denominator": g.get("denominator"),
+                    "promotion_blocking": g.get("promotion_blocking"),
+                    "evidence_scope": g.get("evidence_scope"),
+                    "reason_codes": "|".join(g.get("reason_codes") or []),
+                }
+            )
+
+    try:
+        dec_rows_orm = (
+            db.query(CecchinoBalanceV5GovernanceDecision)
+            .order_by(CecchinoBalanceV5GovernanceDecision.created_at.desc())
+            .limit(200)
+            .all()
+        )
+    except Exception:
+        dec_rows_orm = []
+    dec_rows = [
+        {
+            "id": r.id,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "decision": r.decision,
+            "decision_status": r.decision_status,
+            "decision_reason": r.decision_reason,
+            "governance_version": r.governance_version,
+            "policy_version": r.policy_version,
+            "requested_by": r.requested_by,
+            "confirmed_by": r.confirmed_by,
+            "evidence_snapshot_hash": r.evidence_snapshot_hash,
+        }
+        for r in dec_rows_orm
+    ]
+
+    overview = report.get("overview") or {}
+    return {
+        "balance_readiness_overview.json": _json_bytes(overview),
+        "balance_readiness_policy.json": _json_bytes(
+            report.get("policy") or build_balance_readiness_policy_payload()
+        ),
+        "balance_readiness_gates.csv": _csv_bom(
+            gate_rows,
+            [
+                "category",
+                "key",
+                "label_it",
+                "status",
+                "value",
+                "threshold",
+                "numerator",
+                "denominator",
+                "promotion_blocking",
+                "evidence_scope",
+                "reason_codes",
+            ],
+        ),
+        "balance_pillar_readiness.json": _json_bytes(report.get("pillars") or {}),
+        "balance_prospective_progress.json": _json_bytes(
+            report.get("prospective_progress") or {}
+        ),
+        "balance_readiness_history.csv": _csv_bom(
+            hist_items,
+            [
+                "snapshot_date",
+                "prospective_settled",
+                "prospective_days",
+                "temporal_folds",
+                "scientific_maturity",
+                "current_decision",
+                "readiness_hash",
+            ],
+        ),
+        "balance_current_decision.json": _json_bytes(
+            report.get("current_decision")
+            or {
+                "decision": overview.get("current_decision"),
+                "signals_integration_status": overview.get(
+                    "signals_integration_status"
+                ),
+            }
+        ),
+        "balance_decision_contract.json": _json_bytes(
+            report.get("decision_contract") or build_balance_decision_contract()
+        ),
+        "balance_prospective_collection_health.json": _json_bytes(
+            report.get("prospective_collection_health")
+            or build_balance_prospective_collection_health(
+                db,
+                filters={
+                    "date_from": date_from,
+                    "date_to": date_to,
+                    "competition_id": competition_id,
+                },
+            )
+        ),
+        "balance_governance_decisions.csv": _csv_bom(
+            dec_rows,
+            [
+                "id",
+                "created_at",
+                "decision",
+                "decision_status",
+                "decision_reason",
+                "governance_version",
+                "policy_version",
+                "requested_by",
+                "confirmed_by",
+                "evidence_snapshot_hash",
+            ],
+        ),
+        "balance_readiness_meta.json": _json_bytes(
+            {
+                "policy_version": BALANCE_READINESS_POLICY_VERSION,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "competition_id": competition_id,
+            }
+        ),
+    }
+
+
 def _build_balance_files(
     db: Session,
     *,
@@ -2151,6 +2351,19 @@ def _build_balance_files(
     except Exception as exc:
         logger.warning(
             "balance_analysis_export_failed error_code=%s", type(exc).__name__
+        )
+    try:
+        files.update(
+            _build_balance_readiness_export_files(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "balance_readiness_export_failed error_code=%s", type(exc).__name__
         )
     overview = build_balance_module_overview(
         db,
@@ -2211,6 +2424,8 @@ def _build_balance_files(
             "balance": overview.get("version"),
             "empirical_analysis": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
             "statistical_policy": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
+            "readiness": "cecchino_balance_v5_readiness_v1",
+            "readiness_policy": "cecchino_balance_v5_readiness_policy_v1",
         },
         "source_cohorts": cohorts_map,
         "warnings": warnings,

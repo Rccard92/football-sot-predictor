@@ -16,7 +16,7 @@ type Props = {
 }
 
 const PANEL_TITLE = 'Equilibrio vs Squilibrio v5'
-const PANEL_SUBTITLE = 'Quattro letture indipendenti della struttura della partita.'
+const PANEL_SUBTITLE = 'Quattro letture distinte della struttura della partita.'
 const INDEX_DISCLAIMER =
   'Gli indici descrivono dimensioni diverse e non vanno confrontati direttamente tra loro.'
 const DRAW_NOTE_FALLBACK =

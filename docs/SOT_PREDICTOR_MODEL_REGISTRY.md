@@ -2,6 +2,17 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Export pack | `cecchino_module_monitoring_exports_v9` |
+| Readiness | `cecchino_balance_v5_readiness_v1` |
+| Readiness policy | `cecchino_balance_v5_readiness_policy_v1` |
+| Governance | `cecchino_balance_v5_governance_v1` |
+| Decision contract | `cecchino_balance_v5_decision_contract_v1` |
+| Balance formule | `cecchino_balance_v5_v2` (invariato) |
+
 ## Scientific Consistency Fix / export v8 (2026-07-20)
 
 | Artefatto | Versione / note |

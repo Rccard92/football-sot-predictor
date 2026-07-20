@@ -83,6 +83,7 @@ export const READINESS_LABELS: Record<string, string> = {
   eligible_for_manual_promotion: 'Pronta per revisione manuale',
   candidate_under_review: 'Candidato in revisione',
   official_monitored: 'Ufficiale monitorato',
+  official_descriptive_monitored: 'Ufficiale descrittivo monitorato',
   preview_research: 'Preview research',
   operational: 'Operativo',
   preview_monitored: 'Preview monitorata',
@@ -134,6 +135,9 @@ const SCIENTIFIC_MATURITY_LABELS: Record<string, string> = {
   validazione_in_corso: 'Validazione in corso',
   validazione_empirica_da_avviare: 'Validazione empirica da avviare',
   empirical_dataset_collecting: 'Dataset empirico in raccolta',
+  prospective_not_started: 'Raccolta prospettica non iniziata',
+  prospective_collecting: 'Raccolta prospettica in corso',
+  ready_for_manual_review: 'Pronto per revisione manuale',
   evidenza_sufficiente: 'Evidenza sufficiente',
   pronta_per_revisione: 'Pronta per revisione',
   promossa: 'Promossa',
@@ -202,4 +206,72 @@ export function dataCoverageLabel(item: CoverageItem): string {
     return `Copertura dati: ${fmtPct(item.coverage)}`
   }
   return 'Copertura dati: non ancora disponibile'
+}
+
+const OPERATIONAL_STATUS_LABELS: Record<string, string> = {
+  official_descriptive_monitored: 'Ufficiale descrittivo monitorato',
+}
+
+const SCIENTIFIC_STATUS_LABELS: Record<string, string> = {
+  prospective_not_started: 'Raccolta prospettica non iniziata',
+  prospective_collecting: 'Raccolta prospettica in corso',
+  ready_for_manual_review: 'Pronto per revisione manuale',
+}
+
+const GOVERNANCE_DECISION_LABELS: Record<string, string> = {
+  continue_monitoring: 'Continua monitoraggio',
+  freeze_as_descriptive: 'Mantieni come descrittivo',
+  request_formula_review: 'Richiedi revisione formula',
+}
+
+const COLLECTION_HEALTH_LABELS: Record<string, string> = {
+  not_started: 'Non avviato',
+  collecting: 'In raccolta',
+  stalled: 'Fermo',
+  degraded: 'Degradato',
+  healthy: 'Sano',
+}
+
+export function operationalStatusLabelIt(status: string | null | undefined): string {
+  if (!status) return 'Stato non disponibile'
+  return OPERATIONAL_STATUS_LABELS[status] || status
+}
+
+export function scientificStatusLabelIt(status: string | null | undefined): string {
+  if (!status) return 'Stato non disponibile'
+  return SCIENTIFIC_STATUS_LABELS[status] || status
+}
+
+export function balanceDecisionLabelIt(decision: string | null | undefined): string {
+  if (!decision) return 'Decisione non disponibile'
+  return GOVERNANCE_DECISION_LABELS[decision] || decision
+}
+
+export function collectionHealthLabelIt(health: string | null | undefined): string {
+  if (!health) return 'Stato non disponibile'
+  return COLLECTION_HEALTH_LABELS[health] || health
+}
+
+export type BalanceGateState = 'superato' | 'in_raccolta' | 'bloccante' | 'non_valutabile'
+
+export function balanceGateStateFromStatus(status: string | null | undefined): BalanceGateState {
+  if (!status) return 'non_valutabile'
+  switch (status.toLowerCase()) {
+    case 'pass':
+    case 'passed':
+      return 'superato'
+    case 'fail':
+    case 'failed':
+    case 'blocking':
+      return 'bloccante'
+    case 'wait':
+    case 'waiting':
+    case 'collecting':
+      return 'in_raccolta'
+    case 'not_applicable':
+    case 'n/a':
+      return 'non_valutabile'
+    default:
+      return 'non_valutabile'
+  }
 }

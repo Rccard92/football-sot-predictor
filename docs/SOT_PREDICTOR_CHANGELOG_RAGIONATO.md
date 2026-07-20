@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
+
+- Policy immutabile readiness + servizio gate tecnici/scientifici, progresso prospettico, decisioni pilastro, health.
+- Persistenza snapshot giornalieri + governance decisions; hook fail-soft su scan/update-results/recompute/job 2B.
+- API readiness/* + admin refresh/decisions; export pack **v9** + dossier ZIP dedicato.
+- FE tab Readiness; terminologia «letture distinte»; Signals mai auto-attivi.
+- Formule/soglie/classi/dataset storico invariati. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_READINESS_GOVERNANCE.md`.
+
 ## Scientific Consistency Fix / export v8 (2026-07-20)
 
 - Export pack bump `cecchino_module_monitoring_exports_v8`: bootstrap ZIP = default 2000; `pillar_evidence_status.json` da analisi pilastro complete.

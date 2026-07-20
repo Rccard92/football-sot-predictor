@@ -355,6 +355,15 @@ def recompute_cecchino_range(
 
     db.commit()
 
+    try:
+        from app.services.cecchino.cecchino_balance_v5_readiness import (
+            upsert_balance_readiness_daily_snapshot,
+        )
+
+        upsert_balance_readiness_daily_snapshot(db, commit=True)
+    except Exception:
+        logger.exception("balance readiness snapshot skipped after recompute")
+
     # ICM è derivato a read-time da kpi_panel + final: il ricalcolo KPI lo aggiorna implicitamente.
     return {
         "status": "ok",

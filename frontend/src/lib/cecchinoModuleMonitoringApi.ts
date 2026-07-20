@@ -576,3 +576,196 @@ export async function getBalanceEmpiricalAnalysisJob(
 ): Promise<BalanceEmpiricalAnalysisJobStatus> {
   return adminGetJson(`${BASE}/balance-v5/empirical/analysis/jobs/${jobId}`, opts)
 }
+
+/* ——— Balance v5 Readiness / Governance (Step 2C) ——— */
+
+export type BalanceReadinessOverview = {
+  operational_status?: string
+  operational_status_label_it?: string
+  scientific_maturity?: string
+  scientific_maturity_label_it?: string
+  current_decision?: string
+  current_decision_label_it?: string
+  manual_review_status?: string
+  manual_review_status_label_it?: string
+  signals_integration_status?: string
+  signals_integration_status_label_it?: string
+  earliest_theoretical_review_at?: string | null
+  banner_it?: string
+  progress_summary?: Record<string, BalanceProgressRatio>
+  prospective_collection_health?: BalanceCollectionHealth
+  coverage?: { historical_diagnostic?: number; prospective_persisted?: number }
+  [key: string]: unknown
+}
+
+export type BalanceReadinessGate = {
+  key: string
+  category?: string
+  label_it?: string
+  status: string
+  value?: number | string | null
+  threshold?: number | string | null
+  numerator?: number | null
+  denominator?: number | null
+  reason_codes?: string[]
+  evidence_scope?: string
+  promotion_blocking?: boolean
+}
+
+export type BalanceReadinessGatesPayload = {
+  technical?: { gates?: BalanceReadinessGate[]; [key: string]: unknown }
+  scientific?: { gates?: BalanceReadinessGate[]; [key: string]: unknown }
+}
+
+export type BalanceReadinessPillar = {
+  pillar: string
+  role?: string
+  role_label?: string
+  evidence_status?: string
+  decision?: string
+  prospective_validation_status?: string
+  signal_usage?: string
+  warnings?: string[]
+  reason_codes?: string[]
+  usage_note?: string
+  [key: string]: unknown
+}
+
+export type BalanceReadinessPillars = {
+  pillars?: Record<string, BalanceReadinessPillar>
+  warnings?: string[]
+  [key: string]: unknown
+}
+
+export type BalanceProgressRatio = {
+  numerator?: number
+  denominator?: number
+  label_it?: string
+}
+
+export type BalanceTimelineItem = {
+  key: string
+  label_it?: string
+  done?: boolean
+}
+
+export type BalanceProspectiveProgress = {
+  ratios?: Record<string, BalanceProgressRatio>
+  prospective_pending?: number
+  earliest_theoretical_review_at?: string | null
+  earliest_theoretical_review_label_it?: string
+  timeline?: BalanceTimelineItem[]
+  [key: string]: unknown
+}
+
+export type BalanceCollectionHealth = {
+  status?: string
+  label_it?: string
+  [key: string]: unknown
+}
+
+export type BalanceReadinessHistoryEntry = {
+  snapshot_date: string
+  prospective_settled?: number
+  prospective_days?: number
+  temporal_folds?: number
+  scientific_maturity?: string
+  current_decision?: string
+  readiness_hash?: string
+}
+
+export type BalanceReadinessHistory = {
+  items?: BalanceReadinessHistoryEntry[]
+  count?: number
+}
+
+export type BalanceReadinessDecisionContract = {
+  version?: string
+  allowed_now?: string[]
+  blocked_until_separate_implementation?: string[]
+  decisions?: Record<
+    string,
+    { label_it?: string; allowed?: boolean; note?: string; reason_code?: string }
+  >
+  notes?: string[]
+}
+
+function readinessQuery(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): string {
+  const p = new URLSearchParams()
+  if (filters.date_from) p.set('date_from', filters.date_from)
+  if (filters.date_to) p.set('date_to', filters.date_to)
+  if (filters.competition_id != null) p.set('competition_id', String(filters.competition_id))
+  return p.toString()
+}
+
+export async function getBalanceReadinessOverview(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): Promise<BalanceReadinessOverview> {
+  return adminGetJson(`${BASE}/balance-v5/readiness/overview?${readinessQuery(filters)}`)
+}
+
+export async function getBalanceReadinessGates(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): Promise<BalanceReadinessGatesPayload> {
+  return adminGetJson(`${BASE}/balance-v5/readiness/gates?${readinessQuery(filters)}`)
+}
+
+export async function getBalanceReadinessPillars(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): Promise<BalanceReadinessPillars> {
+  return adminGetJson(`${BASE}/balance-v5/readiness/pillars?${readinessQuery(filters)}`)
+}
+
+export async function getBalanceReadinessProspectiveProgress(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): Promise<BalanceProspectiveProgress> {
+  return adminGetJson(
+    `${BASE}/balance-v5/readiness/prospective-progress?${readinessQuery(filters)}`,
+  )
+}
+
+export async function getBalanceReadinessHistory(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): Promise<BalanceReadinessHistory> {
+  return adminGetJson(`${BASE}/balance-v5/readiness/history?${readinessQuery(filters)}`)
+}
+
+export async function getBalanceReadinessDecisionContract(): Promise<BalanceReadinessDecisionContract> {
+  return adminGetJson(`${BASE}/balance-v5/readiness/decision-contract`)
+}
+
+export const BALANCE_V5_GOVERNANCE_DECISION_CONFIRM = 'CONFIRM_BALANCE_V5_GOVERNANCE_DECISION'
+
+export async function refreshBalanceReadiness(body?: {
+  date_from?: string | null
+  date_to?: string | null
+  competition_id?: number | null
+}): Promise<Record<string, unknown>> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson('/api/admin/cecchino/module-monitoring/balance-v5/readiness/refresh', body || {})
+}
+
+export async function recordBalanceGovernanceDecision(body: {
+  decision: string
+  decision_reason?: string
+  confirm: string
+  requested_by?: string
+  confirmed_by?: string
+}): Promise<Record<string, unknown>> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson(
+    '/api/admin/cecchino/module-monitoring/balance-v5/governance/decisions',
+    body,
+  )
+}
+
+export async function downloadBalanceReadinessDossier(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): Promise<void> {
+  await downloadBlob(
+    `${BASE}/balance-v5/readiness/export?${readinessQuery(filters)}`,
+    `SOT_BALANCE_V5_READINESS_${filters.date_from}_${filters.date_to}.zip`,
+  )
+}

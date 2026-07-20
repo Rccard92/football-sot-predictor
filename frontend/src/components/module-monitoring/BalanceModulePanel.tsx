@@ -11,8 +11,10 @@ import {
 } from './balance/BalanceAnalysisViews'
 import { BalanceEmpiricalAnalysisJobPanel } from './balance/BalanceEmpiricalAnalysisJobPanel'
 import { BalanceEmpiricalDatasetView } from './balance/BalanceEmpiricalDatasetView'
+import { BalanceReadinessView } from './balance/BalanceReadinessView'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
+import { scientificMaturityLabel } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -44,7 +46,7 @@ export function BalanceModulePanel({
         {overview ? (
           <p className="text-xs text-slate-500">
             Operativo: Ufficiale monitorato · Maturità:{' '}
-            {overview.scientific_maturity || 'empirical_dataset_collecting'}
+            {scientificMaturityLabel(overview.scientific_maturity, 'balance-v5')}
           </p>
         ) : null}
         <BalanceEmpiricalOverview {...common} />
@@ -88,6 +90,10 @@ export function BalanceModulePanel({
     return <BalanceStabilityView {...common} />
   }
 
+  if (view === 'readiness') {
+    return <BalanceReadinessView {...common} />
+  }
+
   if (view === 'data-health') {
     return <BalanceDataHealthView {...common} />
   }
@@ -96,9 +102,9 @@ export function BalanceModulePanel({
     return (
       <div className="space-y-3">
         <p className="text-sm text-slate-600">
-          Export analysis pack Balance v5 (forensic v8 + analisi empirica Step 2B).
+          Export analysis pack Balance v5 (forensic v9 + analisi empirica + readiness Step 2C).
           Il pulsante «Scarica analisi» scarica solo lo ZIP; l’analisi statistica si avvia
-          dalla Overview.
+          dalla Overview. Il dossier readiness dedicato è nella tab Readiness.
         </p>
         <BalanceEmpiricalAnalysisJobPanel
           dateFrom={dateFrom}

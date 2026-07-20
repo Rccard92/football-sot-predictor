@@ -178,6 +178,75 @@ def balance_empirical_sync_run(
         ) from exc
 
 
+class BalanceReadinessRefreshBody(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    competition_id: int | None = None
+
+
+class BalanceGovernanceDecisionBody(BaseModel):
+    decision: str
+    decision_reason: str | None = None
+    confirm: str
+    requested_by: str | None = None
+    confirmed_by: str | None = None
+
+
+@admin_router.post("/balance-v5/readiness/refresh")
+def balance_readiness_refresh(
+    body: BalanceReadinessRefreshBody,
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_readiness_full_report,
+        upsert_balance_readiness_daily_snapshot,
+    )
+
+    filters = {
+        "date_from": body.date_from,
+        "date_to": body.date_to,
+        "competition_id": body.competition_id,
+    }
+    report = build_balance_readiness_full_report(db, filters=filters)
+    snap = upsert_balance_readiness_daily_snapshot(
+        db,
+        competition_id=body.competition_id,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        commit=True,
+    )
+    return JSONResponse(
+        content=jsonable_encoder({"status": "ok", "snapshot": snap, "report": report})
+    )
+
+
+@admin_router.post("/balance-v5/governance/decisions")
+def balance_governance_decisions(
+    body: BalanceGovernanceDecisionBody,
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        record_balance_governance_decision,
+    )
+
+    result = record_balance_governance_decision(
+        db,
+        decision=body.decision,
+        decision_reason=body.decision_reason,
+        confirm_token=body.confirm,
+        requested_by=body.requested_by,
+        confirmed_by=body.confirmed_by,
+        commit=True,
+    )
+    if result.get("status") == "rejected":
+        code = int(result.get("http_status") or 422)
+        raise HTTPException(
+            status_code=code,
+            detail={"error": result.get("error")},
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
 @status_router.get("/historical-backfill/status")
 def historical_backfill_status(
     date_from: date,

@@ -1,0 +1,84 @@
+"""Policy immutabile readiness Balance v5 — Fase 2/3 Step 2C.
+
+Le soglie non sono modificabili da FE/query/env.
+Un cambio richiede una nuova policy version.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+BALANCE_READINESS_VERSION = "cecchino_balance_v5_readiness_v1"
+BALANCE_READINESS_POLICY_VERSION = "cecchino_balance_v5_readiness_policy_v1"
+BALANCE_GOVERNANCE_VERSION = "cecchino_balance_v5_governance_v1"
+BALANCE_DECISION_CONTRACT_VERSION = "cecchino_balance_v5_decision_contract_v1"
+
+BALANCE_GOVERNANCE_CONFIRM_TOKEN = "CONFIRM_BALANCE_V5_GOVERNANCE_DECISION"
+
+MIN_PROSPECTIVE_SETTLED_GLOBAL = 1500
+MIN_PROSPECTIVE_CALENDAR_DAYS = 90
+MIN_TEMPORAL_FOLDS = 3
+MIN_SETTLED_PER_TEMPORAL_FOLD = 300
+MIN_COMPETITIONS_WITH_SUFFICIENT_SAMPLE = 10
+MIN_ROWS_PER_COMPETITION = 30
+MIN_ROWS_PER_ACTIVE_CLASS = 100
+MIN_POPULATED_CLASSES_FOR_TREND = 3
+MIN_PROSPECTIVE_PERSISTENCE_COVERAGE = 0.95
+MIN_PREMATCH_TIMESTAMP_COVERAGE = 0.95
+MIN_BOOK_VERIFIED_COVERAGE = 0.95
+MAX_RESULT_MISSING_SHARE = 0.01
+MAX_DUPLICATE_CURRENT_ROWS = 0
+MAX_POST_KICKOFF_ROWS = 0
+MAX_INVALID_PROBABILITY_ROWS = 0
+MAX_MATERIAL_DRIFT_FOLDS = 0
+REQUIRED_STABLE_OR_MILD_FOLDS = 2
+CONFIDENCE_LEVEL = 0.95
+
+ALLOWED_GOVERNANCE_DECISIONS_STEP_2C = frozenset(
+    {
+        "continue_monitoring",
+        "freeze_as_descriptive",
+        "request_formula_review",
+    }
+)
+
+BLOCKED_SIGNAL_DECISIONS = frozenset(
+    {
+        "manual_signal_integration_approved",
+        "manual_signal_integration_rejected",
+        "eligible_for_manual_signal_integration_review",
+    }
+)
+
+
+def build_balance_readiness_policy_payload() -> dict[str, Any]:
+    return {
+        "version": BALANCE_READINESS_POLICY_VERSION,
+        "readiness_version": BALANCE_READINESS_VERSION,
+        "governance_version": BALANCE_GOVERNANCE_VERSION,
+        "decision_contract_version": BALANCE_DECISION_CONTRACT_VERSION,
+        "immutable": True,
+        "MIN_PROSPECTIVE_SETTLED_GLOBAL": MIN_PROSPECTIVE_SETTLED_GLOBAL,
+        "MIN_PROSPECTIVE_CALENDAR_DAYS": MIN_PROSPECTIVE_CALENDAR_DAYS,
+        "MIN_TEMPORAL_FOLDS": MIN_TEMPORAL_FOLDS,
+        "MIN_SETTLED_PER_TEMPORAL_FOLD": MIN_SETTLED_PER_TEMPORAL_FOLD,
+        "MIN_COMPETITIONS_WITH_SUFFICIENT_SAMPLE": MIN_COMPETITIONS_WITH_SUFFICIENT_SAMPLE,
+        "MIN_ROWS_PER_COMPETITION": MIN_ROWS_PER_COMPETITION,
+        "MIN_ROWS_PER_ACTIVE_CLASS": MIN_ROWS_PER_ACTIVE_CLASS,
+        "MIN_POPULATED_CLASSES_FOR_TREND": MIN_POPULATED_CLASSES_FOR_TREND,
+        "MIN_PROSPECTIVE_PERSISTENCE_COVERAGE": MIN_PROSPECTIVE_PERSISTENCE_COVERAGE,
+        "MIN_PREMATCH_TIMESTAMP_COVERAGE": MIN_PREMATCH_TIMESTAMP_COVERAGE,
+        "MIN_BOOK_VERIFIED_COVERAGE": MIN_BOOK_VERIFIED_COVERAGE,
+        "MAX_RESULT_MISSING_SHARE": MAX_RESULT_MISSING_SHARE,
+        "MAX_DUPLICATE_CURRENT_ROWS": MAX_DUPLICATE_CURRENT_ROWS,
+        "MAX_POST_KICKOFF_ROWS": MAX_POST_KICKOFF_ROWS,
+        "MAX_INVALID_PROBABILITY_ROWS": MAX_INVALID_PROBABILITY_ROWS,
+        "MAX_MATERIAL_DRIFT_FOLDS": MAX_MATERIAL_DRIFT_FOLDS,
+        "REQUIRED_STABLE_OR_MILD_FOLDS": REQUIRED_STABLE_OR_MILD_FOLDS,
+        "CONFIDENCE_LEVEL": CONFIDENCE_LEVEL,
+        "notes": [
+            "Soglie non modificabili da FE/query/env",
+            "historical_diagnostic non incrementa gate prospettici",
+            "signals_integration=active richiede implementazione separata",
+        ],
+    }

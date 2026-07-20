@@ -109,8 +109,8 @@ def test_evidence_caps_historical_diagnostic():
     assert ev["formula_change_recommended"] is False
 
 
-def test_export_v8_requires_analysis_files():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v8"
+def test_export_v9_requires_analysis_files():
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v9"
     req = SCHEMA_CONTRACTS["balance-v5"]["required_files"]
     for name in (
         "balance_empirical_analysis_overview.json",

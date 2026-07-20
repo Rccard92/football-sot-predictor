@@ -66,6 +66,7 @@ export const MONITORING_MODULES: MonitoringModuleDef[] = [
       { id: 'draw-credibility', label: 'Credibilità X' },
       { id: 'gap-coherence', label: 'Gap' },
       { id: 'stability', label: 'Stabilità' },
+      { id: 'readiness', label: 'Readiness' },
       { id: 'data-health', label: 'Data health' },
       { id: 'exports', label: 'Export' },
     ],

@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
+
+1. Applicare migrazione `20260720180000` (readiness snapshots + governance decisions).
+2. `/monitoraggio-moduli` → Balance → tab **Readiness**.
+3. Verificare baseline 0 prospective: operativo descrittivo, maturità `prospective_not_started`, Signals blocked, `continue_monitoring`.
+4. Export forensic = `cecchino_module_monitoring_exports_v9`; dossier ZIP dedicato dalla tab Readiness.
+5. Governance admin: token `CONFIRM_BALANCE_V5_GOVERNANCE_DECISION`; Signal decisions rifiutate.
+6. Formule/soglie/classi/Signals invariate; non rieseguire sync empirico.
+
 ## Scientific Consistency Fix / export v8 (2026-07-20)
 
 1. ZIP Balance = `cecchino_module_monitoring_exports_v8`; bootstrap export allineato a default 2000.

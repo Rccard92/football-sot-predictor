@@ -298,6 +298,18 @@ def _run_job_worker(job_id: str) -> None:
             j.progress_message = "Completato"
             j.result_file_path = str(out_path)
         logger.info("balance_empirical_analysis_job_completed job_id=%s", job_id)
+        try:
+            from app.services.cecchino.cecchino_balance_v5_readiness import (
+                upsert_balance_readiness_daily_snapshot,
+            )
+
+            snap_db = SessionLocal()
+            try:
+                upsert_balance_readiness_daily_snapshot(snap_db, commit=True)
+            finally:
+                snap_db.close()
+        except Exception:
+            logger.exception("balance readiness snapshot after analysis job failed")
     except Exception as exc:
         logger.exception("balance_empirical_analysis_job_failed job_id=%s", job_id)
         with _lock:

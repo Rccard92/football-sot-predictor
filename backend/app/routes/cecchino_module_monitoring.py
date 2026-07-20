@@ -571,6 +571,170 @@ def balance_empirical_analysis_jobs_get(job_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _readiness_filters(
+    date_from: date | None,
+    date_to: date | None,
+    competition_id: int | None,
+):
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "competition_id": competition_id,
+    }
+
+
+@router.get("/balance-v5/readiness/overview")
+def balance_readiness_overview(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_readiness_overview,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_balance_readiness_overview(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+            )
+        )
+    )
+
+
+@router.get("/balance-v5/readiness/gates")
+def balance_readiness_gates(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_scientific_gates,
+        build_balance_technical_gates,
+    )
+
+    filters = _readiness_filters(date_from, date_to, competition_id)
+    return JSONResponse(
+        content=jsonable_encoder(
+            {
+                "technical": build_balance_technical_gates(db, filters=filters),
+                "scientific": build_balance_scientific_gates(db, filters=filters),
+            }
+        )
+    )
+
+
+@router.get("/balance-v5/readiness/pillars")
+def balance_readiness_pillars(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_pillar_readiness,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_balance_pillar_readiness(
+                db, filters=_readiness_filters(date_from, date_to, competition_id)
+            )
+        )
+    )
+
+
+@router.get("/balance-v5/readiness/prospective-progress")
+def balance_readiness_prospective_progress(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_prospective_progress,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_balance_prospective_progress(
+                db, filters=_readiness_filters(date_from, date_to, competition_id)
+            )
+        )
+    )
+
+
+@router.get("/balance-v5/readiness/history")
+def balance_readiness_history(
+    competition_id: int | None = Query(None),
+    limit: int = Query(90, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        list_balance_readiness_history,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            list_balance_readiness_history(
+                db, competition_id=competition_id, limit=limit
+            )
+        )
+    )
+
+
+@router.get("/balance-v5/readiness/decision-contract")
+def balance_readiness_decision_contract():
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_decision_contract,
+    )
+
+    return JSONResponse(content=jsonable_encoder(build_balance_decision_contract()))
+
+
+@router.get("/balance-v5/readiness/export")
+def balance_readiness_export(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Dossier readiness ZIP (non sostituisce forensic)."""
+    import io
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_readiness_dossier_files,
+    )
+
+    files = build_balance_readiness_dossier_files(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, data in files.items():
+            zf.writestr(name, data)
+    buf.seek(0)
+    df = (date_from or date.today()).isoformat()
+    dt = (date_to or date.today()).isoformat()
+    filename = f"SOT_BALANCE_V5_READINESS_{df}_{dt}.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{module_key}/analysis-pack-audit")
 def module_monitoring_analysis_pack_audit(
     module_key: str,

@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
+
+Readiness prospettica + gate + snapshot + governance + tab UI. Export **v9**. Baseline 0 prospective: `continue_monitoring`, Signals blocked. Formule invariate. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_READINESS_GOVERNANCE.md`.
+
 ## Scientific Consistency Fix / export v8 (2026-07-20)
 
 Allineamento scientifico Balance empirico: export **v8**, bootstrap ZIP=2000, `pillar_evidence_status` canonico da pilastri completi, UI job con stati evidenza IT + bootstrap requested/effective. Formule invariate; no promozione. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.

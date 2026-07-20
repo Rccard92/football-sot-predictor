@@ -1284,6 +1284,14 @@ def run_scan(
             sum(excluded_summary.values()),
             duration,
         )
+    try:
+        from app.services.cecchino.cecchino_balance_v5_readiness import (
+            upsert_balance_readiness_daily_snapshot,
+        )
+
+        upsert_balance_readiness_daily_snapshot(db, commit=True)
+    except Exception:
+        logger.exception("balance readiness snapshot skipped after scan")
     return report
 
 
@@ -1664,6 +1672,16 @@ def update_today_fixture_results(
             logger.exception(
                 "balance empirical settle skipped fixture_id=%s", row.id
             )
+
+    try:
+        from app.services.cecchino.cecchino_balance_v5_readiness import (
+            upsert_balance_readiness_daily_snapshot,
+        )
+
+        with db.begin_nested():
+            upsert_balance_readiness_daily_snapshot(db, commit=False)
+    except Exception:
+        logger.exception("balance readiness snapshot skipped after update-results")
 
     db.commit()
     return {

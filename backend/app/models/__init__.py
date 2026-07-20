@@ -9,6 +9,12 @@ from app.models.cecchino_prediction import CecchinoPrediction
 from app.models.cecchino_kpi_signal_activation import CecchinoKpiSignalActivation
 from app.models.cecchino_purchasability_evaluation import CecchinoPurchasabilityEvaluation
 from app.models.cecchino_balance_v5_evaluation import CecchinoBalanceV5Evaluation
+from app.models.cecchino_balance_v5_readiness_snapshot import (
+    CecchinoBalanceV5ReadinessSnapshot,
+)
+from app.models.cecchino_balance_v5_governance_decision import (
+    CecchinoBalanceV5GovernanceDecision,
+)
 from app.models.cecchino_signal_activation import CecchinoSignalActivation
 from app.models.cecchino_signal_min_book_odd_setting import CecchinoSignalMinBookOddSetting
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
@@ -75,6 +81,8 @@ __all__ = [
     "CecchinoKpiSignalActivation",
     "CecchinoPurchasabilityEvaluation",
     "CecchinoBalanceV5Evaluation",
+    "CecchinoBalanceV5ReadinessSnapshot",
+    "CecchinoBalanceV5GovernanceDecision",
     "CecchinoSignalActivation",
     "CecchinoSignalMinBookOddSetting",
     "CecchinoTodayFixture",
