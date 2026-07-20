@@ -8,6 +8,7 @@ import { Sidebar } from './Sidebar'
 
 const CECCHINO_TODAY_PATH = '/cecchino-today'
 const MONITORAGGIO_MODULI_PATH = '/monitoraggio-moduli'
+const MONITORAGGIO_SEGNO_1_PATH = '/monitoraggio-segno-1'
 
 export function Layout() {
   const location = useLocation()
@@ -15,7 +16,9 @@ export function Layout() {
     location.pathname === CECCHINO_TODAY_PATH ||
     location.pathname.startsWith(`${CECCHINO_TODAY_PATH}/`) ||
     location.pathname === MONITORAGGIO_MODULI_PATH ||
-    location.pathname.startsWith(`${MONITORAGGIO_MODULI_PATH}/`)
+    location.pathname.startsWith(`${MONITORAGGIO_MODULI_PATH}/`) ||
+    location.pathname === MONITORAGGIO_SEGNO_1_PATH ||
+    location.pathname.startsWith(`${MONITORAGGIO_SEGNO_1_PATH}/`)
 
   const contentClass = isFullWidthWorkspace
     ? 'w-full max-w-none px-3 py-4 sm:px-4 lg:px-5'

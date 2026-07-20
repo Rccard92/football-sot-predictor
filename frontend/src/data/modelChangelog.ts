@@ -12,6 +12,22 @@ export type ChangelogEntry = {
 
 export const MODEL_CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'cecchino-home-wins-monitoring-v1',
+    date: '2026-07-20',
+    title: 'Monitoraggio Segno 1 — archivio esito reale 1',
+    type: 'minor',
+    summary:
+      'Nuova pagina Cecchino e API sulla coorte storica delle vittorie casalinghe (finished, FT casa > trasferta), indipendente dal Segnale 1. Solo snapshot persistiti; export ZIP per analisi.',
+    highlights: [
+      'Route /monitoraggio-segno-1 e voce menu Cecchino.',
+      'API lista/dettaglio/export ZIP su /api/cecchino/home-wins.',
+      'Fonte cecchino_today_fixtures senza nuova tabella.',
+      'Nessun ricalcolo KPI/Balance/Intensità Goal in lettura.',
+      'Segnale 1 solo osservativo; pattern mining non incluso.',
+    ],
+    visible_to_user: true,
+  },
+  {
     version: 'cecchino-today-0.13.0',
     date: '2026-06-04',
     title: 'Cecchino Today — Gate progressivi e riduzione consumo API',

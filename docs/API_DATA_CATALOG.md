@@ -265,6 +265,18 @@ Risposta arricchita (Fase 2): `data_quality` (8 sample count, `leakage_check`, `
 
 Dettaglio: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
 
+### Monitoraggio Segno 1 (esito reale 1)
+
+Vista applicativa su `cecchino_today_fixtures` (vittorie casalinghe finished). Nessuna tabella dedicata. Snapshot-only.
+
+| Metodo | Path | Descrizione |
+|--------|------|-------------|
+| GET | `/api/cecchino/home-wins` | Lista paginata + summary/filtri (`date_from`, `date_to`, `competition_id`, `country`, `league`, `team`, `completeness`, `page`, `page_size`) |
+| GET | `/api/cecchino/home-wins/{today_fixture_id}` | Dettaglio pre-match/post-match da snapshot persistiti |
+| GET | `/api/cecchino/home-wins/export` | ZIP dataset completo filtrato (`manifest`, `schema`, `quality_report`, CSV, JSONL) |
+
+Contratto selezione: `signal_1_used_for_selection=false`. Dataset version: `cecchino_home_wins_monitoring_v1`.
+
 ### Health
 
 | Metodo | Path |

@@ -1,5 +1,9 @@
 # SOT Predictor — Changelog ragionato
 
+## Monitoraggio Segno 1 — FASE 1 esito reale 1 (2026-07-20)
+
+Archivio storico vittorie casalinghe (esito reale 1) derivato da `cecchino_today_fixtures` senza nuova tabella. Export ZIP (`manifest`/`schema`/`quality_report`/`home_wins_features.csv`/`home_wins_full.jsonl`). Nessun ricalcolo moduli. Segnale 1 solo osservativo. Pattern research non implementata.
+
 ## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
 
 - Policy immutabile readiness + servizio gate tecnici/scientifici, progresso prospettico, decisioni pilastro, health.

@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Monitoraggio Segno 1 — FASE 1 esito reale 1 (2026-07-20)
+
+Pagina Cecchino `/monitoraggio-segno-1` + API `/api/cecchino/home-wins` sulla coorte storica **finished con FT casa > trasferta**. Selezione indipendente dal Segnale 1. Fonte unica `cecchino_today_fixtures` (nessuna tabella nuova). Snapshot-only (no ricalcolo KPI/Balance/GI). Export ZIP analisi ChatGPT. Pattern mining non in scope.
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
 Facade + Today `goal_intensity_v5` + readiness + API canoniche + export **v10** + workspace FE (no research tab). Bundle frozen invariato. Signals blocked. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.

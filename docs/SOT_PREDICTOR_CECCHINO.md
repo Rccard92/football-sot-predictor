@@ -2,6 +2,17 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Monitoraggio Segno 1 — FASE 1 esito reale 1 (2026-07-20)
+
+**Esito reale 1 ≠ Segnale 1.** Coorte = partite `match_display_status=finished` con punteggio FT casa > trasferta (priorità `score_fulltime_*`, fallback `goals_*` tracciato). Non filtra su Segnale 1, attivazioni, eligibility, edge, quota, rating.
+
+- Fonte: `cecchino_today_fixtures` (vista applicativa; nessuna tabella `home_wins`).
+- Aggiornamento automatico: dopo `POST /api/admin/cecchino/today/update-results` la fixture finished 1 entra subito nella coorte.
+- Read-only snapshot: KPI/`balance_v5_monitoring`/GI v5 preview/purchasability da payload persistiti; mancanti → `unavailable` + reason (no rebuild).
+- API: `GET /api/cecchino/home-wins`, `GET /api/cecchino/home-wins/{id}`, `GET /api/cecchino/home-wins/export` (ZIP).
+- UI: voce Cecchino «Monitoraggio Segno 1».
+- Limitazione FASE 1: niente pattern mining, clustering, ROI, nuove formule/soglie.
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
 | Campo | Valore |

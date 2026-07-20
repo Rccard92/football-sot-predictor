@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Monitoraggio Segno 1 — FASE 1 (2026-07-20)
+
+1. Nessun processo dedicato: la coorte deriva da `cecchino_today_fixtures` dopo `POST /api/admin/cecchino/today/update-results`.
+2. Criterio: finished + FT casa > trasferta (no Segnale 1, no eligibility gate).
+3. UI: `/monitoraggio-segno-1` → lista filtrata server-side → dettaglio snapshot-only → «Scarica dataset completo» (ZIP intera coorte filtrata).
+4. Export: `manifest.json`, `schema.json`, `quality_report.json`, `home_wins_features.csv`, `home_wins_full.jsonl`.
+5. Non ricalcolare moduli in lettura; campi mancanti restano unavailable.
+6. Fuori scope FASE 1: pattern mining / clustering / ROI.
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
 1. Today detail: campo canonico `goal_intensity_v5` (alias preview deprecated).
