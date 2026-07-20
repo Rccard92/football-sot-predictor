@@ -79,6 +79,7 @@ export function GoalIntensityModulePanel({
           dateFrom={dateFrom}
           dateTo={dateTo}
           competitionId={competitionId}
+          sourceCohort={cohortFilter}
         />
       </div>
     )

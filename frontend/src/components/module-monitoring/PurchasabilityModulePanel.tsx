@@ -47,16 +47,36 @@ export function PurchasabilityModulePanel({
             value={monitoringStatusLabel(statusRaw)}
             ariaLabel={statusRaw ? `Stato ${statusRaw}` : undefined}
           />
-          <MonitoringMetricCard label="Coverage" value={cov.text} />
           <MonitoringMetricCard
-            label="Fixture"
-            value={overview?.fixtures == null ? '—' : String(overview.fixtures)}
+            label="Prospettiche"
+            value={
+              overview?.prospective_rows == null
+                ? '0'
+                : String(overview.prospective_rows)
+            }
           />
           <MonitoringMetricCard
-            label="Settled"
-            value={overview?.settled == null ? '—' : String(overview.settled)}
+            label="Storiche"
+            value={
+              overview?.historical_rows == null
+                ? '—'
+                : String(overview.historical_rows)
+            }
+          />
+          <MonitoringMetricCard
+            label="Settled storiche"
+            value={
+              overview?.settled_historical == null && overview?.settled == null
+                ? '—'
+                : String(overview?.settled_historical ?? overview?.settled)
+            }
           />
         </div>
+        <p className="text-xs text-slate-500">
+          Righe totali validation:{' '}
+          {overview?.validation_rows_total ?? '—'} · Coverage snapshot prospettico:{' '}
+          {cov.text}. Readiness/promozione restano solo prospettiche.
+        </p>
         <p className="text-sm text-slate-600">
           Apri la vista Validazione per metriche, gate e grafici. I laboratori Audit / 2A /
           Residuale restano disponibili senza avvio parallelo.
@@ -80,6 +100,7 @@ export function PurchasabilityModulePanel({
           dateFrom={dateFrom}
           dateTo={dateTo}
           competitionId={competitionId}
+          sourceCohort={cohortFilter}
         />
       </div>
     )

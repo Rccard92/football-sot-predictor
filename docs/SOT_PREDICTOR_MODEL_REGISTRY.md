@@ -2,6 +2,15 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Fix export coorti e schemi forensic v4 (2026-07-20)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Export pack | `cecchino_module_monitoring_exports_v4` |
+| Analysis vs readiness | filtro coorte su analisi; gates solo `prospective_persisted` |
+| Signals forensic | multi-file activations_* |
+| Balance formule | `cecchino_balance_v5_v2` (invariato) |
+
 ## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
 
 | Artefatto | Versione / note |

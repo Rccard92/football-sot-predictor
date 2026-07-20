@@ -32,6 +32,7 @@ type Props = {
   marketKey?: string
   includeRows?: boolean
   showRowsCsv?: boolean
+  sourceCohort?: string
 }
 
 type Pos = { top: number; left: number; openUp: boolean }
@@ -47,6 +48,7 @@ export function MonitoringExportMenu({
   marketKey,
   includeRows = true,
   showRowsCsv,
+  sourceCohort = 'all',
 }: Props) {
   const mod = getMonitoringModule(moduleKey)
   const canRows =
@@ -68,6 +70,7 @@ export function MonitoringExportMenu({
     competition_id: competitionId ?? undefined,
     market_key: marketKey || undefined,
     include_rows: includeRows,
+    source_cohort: sourceCohort,
   }
 
   const completenessLabel = formatExportCompletenessLabel(exportStatus)

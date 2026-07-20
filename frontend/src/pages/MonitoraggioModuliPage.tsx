@@ -137,6 +137,7 @@ export function MonitoraggioModuliPage() {
         moduleStatuses={Object.fromEntries(
           overviewItems.map((m) => [m.module_key, m.status]),
         )}
+        sourceCohort={cohortFilter}
       />
 
       <MonitoringFilterBar
@@ -174,7 +175,7 @@ export function MonitoraggioModuliPage() {
         </label>
         <p className="max-w-xl text-xs text-slate-500">
           Default analisi: tutte (segmentate). Per readiness/promozione preferire «Prospettica».
-          Filtro informativo in overview — le metriche di promozione restano prospettiche.
+          Il filtro coorte si applica a ZIP, CSV, audit e summary analitici.
         </p>
       </div>
 
@@ -182,6 +183,7 @@ export function MonitoraggioModuliPage() {
         dateFrom={dateFrom}
         dateTo={dateTo}
         competitionId={competitionId}
+        sourceCohort={cohortFilter}
       />
 
       <MonitoringHistoricalImportPanel
@@ -220,6 +222,7 @@ export function MonitoraggioModuliPage() {
         dateTo={dateTo}
         competitionId={competitionId ? Number(competitionId) : null}
         apiStatus={currentOverview?.status}
+        sourceCohort={cohortFilter}
       >
         {activeModule === 'purchasability' ? (
           <PurchasabilityModulePanel

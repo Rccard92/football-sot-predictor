@@ -78,6 +78,15 @@ BALANCE_ROW_FIELDS: list[str] = [
     "book_verified",
     "ft_home",
     "ft_away",
+    "ht_home",
+    "ht_away",
+    "outcome_1x2",
+    "is_draw",
+    "total_goals",
+    "absolute_goal_difference",
+    "dominance_selection_hit",
+    "dominance_selection_result",
+    "result_available",
     "is_settled",
     "warning_codes",
 ]
@@ -389,9 +398,44 @@ def _row_from_resolve(
     payload = resolved.get("payload")
     if not isinstance(payload, dict):
         return None
-    settled = (
-        fx.score_fulltime_home is not None and fx.score_fulltime_away is not None
+    ft_h = fx.score_fulltime_home
+    ft_a = fx.score_fulltime_away
+    ht_h = fx.score_halftime_home
+    ht_a = fx.score_halftime_away
+    settled = ft_h is not None and ft_a is not None
+    result_available = settled
+    outcome_1x2 = None
+    is_draw = None
+    total_goals = None
+    abs_diff = None
+    if settled:
+        if ft_h > ft_a:
+            outcome_1x2 = "1"
+        elif ft_h < ft_a:
+            outcome_1x2 = "2"
+        else:
+            outcome_1x2 = "X"
+        is_draw = outcome_1x2 == "X"
+        total_goals = int(ft_h) + int(ft_a)
+        abs_diff = abs(int(ft_h) - int(ft_a))
+    dom_sel = str(payload.get("dominance_selection") or "").strip().upper() or None
+    dom_hit = None
+    dom_result = None
+    if settled and dom_sel in {"1", "X", "2"}:
+        dom_hit = dom_sel == outcome_1x2
+        dom_result = "hit" if dom_hit else "miss"
+    warnings = [str(w) for w in (payload.get("warning_codes") or [])]
+    cohort = resolved.get("source_cohort")
+    book_null = (
+        payload.get("book_prob_1") is None
+        and payload.get("book_prob_x") is None
+        and payload.get("book_prob_2") is None
     )
+    if book_null and (
+        cohort == "historical_diagnostic"
+        or str(cohort or "").endswith("diagnostic")
+    ):
+        warnings.append("book_probabilities_unavailable_historical_diagnostic")
     return {
         "today_fixture_id": fx.id,
         "provider_fixture_id": fx.provider_fixture_id,
@@ -425,10 +469,19 @@ def _row_from_resolve(
         "book_prob_x": payload.get("book_prob_x"),
         "book_prob_2": payload.get("book_prob_2"),
         "book_verified": payload.get("book_verified"),
-        "ft_home": fx.score_fulltime_home,
-        "ft_away": fx.score_fulltime_away,
+        "ft_home": ft_h,
+        "ft_away": ft_a,
+        "ht_home": ht_h,
+        "ht_away": ht_a,
+        "outcome_1x2": outcome_1x2,
+        "is_draw": is_draw,
+        "total_goals": total_goals,
+        "absolute_goal_difference": abs_diff,
+        "dominance_selection_hit": dom_hit,
+        "dominance_selection_result": dom_result,
+        "result_available": result_available,
         "is_settled": settled,
-        "warning_codes": "|".join(str(w) for w in (payload.get("warning_codes") or [])),
+        "warning_codes": "|".join(warnings),
     }
 
 

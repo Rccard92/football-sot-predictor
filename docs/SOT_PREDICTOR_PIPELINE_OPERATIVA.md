@@ -1,5 +1,14 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Fix export coorti e schemi forensic v4 (2026-07-20)
+
+1. NON ripetere historical-backfill se le eval storiche ci sono già.
+2. `/monitoraggio-moduli` → Coorte = Tutte → Riverifica → scarica 4 ZIP v4.
+3. Acquistabilità: verificare `rows.csv` non vuoto e `source_row_count` > 0 con filtro all.
+4. Readiness/gates restano prospettici anche con storico esportato.
+5. Signals: controllare i 4 CSV attivazioni; unusable fuori dalle metriche ufficiali.
+6. Verifica esterna: hash, schema, reconciliation, technical/scientific status.
+
 ## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
 
 1. `/monitoraggio-moduli` → filtro **Coorte** (default analisi = tutte; readiness = prospettica).

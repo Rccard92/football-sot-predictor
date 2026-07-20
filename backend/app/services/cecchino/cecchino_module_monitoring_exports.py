@@ -1,4 +1,4 @@
-"""Export di monitoraggio Cecchino — forensic v3.
+"""Export di monitoraggio Cecchino — forensic v4.
 
 Il modulo assembla esclusivamente dati e formule già prodotti dai servizi
 canonici. Gli export sono riproducibili, autocontenuti e verificabili tramite
@@ -36,6 +36,13 @@ from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
     get_active_bundle,
     stream_preview_export,
 )
+from app.services.cecchino.cecchino_monitoring_cohorts import (
+    COHORT_FILTER_ALL,
+    COHORT_PROSPECTIVE,
+    analysis_query_flags,
+    normalize_cohort,
+    parse_export_cohort_filter,
+)
 from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
 from app.services.cecchino.cecchino_purchasability_validation import (
     PURCHASABILITY_VALIDATION_VERSION,
@@ -64,7 +71,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v3"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v4"
 
 _COMMON_REQUIRED_FILES: tuple[str, ...] = (
     "README_ANALISI.md",
@@ -80,33 +87,125 @@ _COMMON_REQUIRED_FILES: tuple[str, ...] = (
     "warnings.json",
     "source_cohorts.json",
 )
+
+# Full forensic fields for purchasability validation rows
 _PURCHASABILITY_ROW_FIELDS = [
+    # Identity fields
     "id",
     "today_fixture_id",
+    "local_fixture_id",
+    "provider_fixture_id",
+    "competition_id",
     "scan_date",
-    "market_key",
-    "purchasability_score",
-    "score_band",
-    "evaluation_status",
-    "quota_book",
-    "profit_units",
+    "kickoff",
+    "country_name",
+    "league_name",
+    "home_team_name",
+    "away_team_name",
+    # Snapshot fields
     "source_cohort",
-    "promotion_eligible",
+    "source_mode",
+    "snapshot_version",
+    "snapshot_hash",
+    "source_snapshot_at",
+    "snapshot_timestamp_verified",
+    "snapshot_before_kickoff",
+    # Candidate/version fields
     "candidate_version",
+    "candidate_name",
+    "feature_version",
+    "validation_version",
+    # Market fields
+    "market_key",
+    "market_family",
+    "selection",
+    "calculation_status",
+    "calculation_quality",
+    # Score fields
+    "purchasability_score",
+    "raw_score",
+    "score_band",
+    "purchasability_class",
+    "phase_1_score",
+    "phase_2_score",
+    "reading",
+    # Odds/probability fields
+    "quota_book",
+    "quota_cecchino",
+    "fair_book_probability",
+    "prob_cecchino",
+    "edge_pct",
+    "rating_score",
+    "score_acquisto",
+    # Evaluation fields
+    "evaluation_status",
+    "evaluation_reason",
+    "result_home_ft",
+    "result_away_ft",
+    "result_home_ht",
+    "result_away_ht",
+    "stake_units",
+    "profit_units",
+    "evaluated_at",
+    # Promotion fields
+    "promotion_eligible",
+    "is_current",
+    "created_at",
+    "updated_at",
 ]
+
+# Full forensic fields for signal activations
 _SIGNALS_ROW_FIELDS = [
     "id",
     "today_fixture_id",
-    "model_key",
+    "local_fixture_id",
+    "provider_fixture_id",
+    "competition_id",
+    "country_name",
+    "league_name",
+    "home_team_name",
+    "away_team_name",
     "scan_date",
     "kickoff",
-    "match",
+    "activation_timestamp",
+    "source_cohort",
+    "is_current",
+    "model_key",
+    "model_label",
+    "weights_version",
+    "weights_display",
     "signal_group",
     "signal_label",
+    "selection",
     "source_column",
     "target_market_key",
-    "evaluation_status",
+    "target_market_label",
+    "rating",
+    "score",
     "quota_book",
+    "quota_cecchino",
+    "prob_book",
+    "prob_cecchino",
+    "edge_pct",
+    "activation_status",
+    "evaluation_status",
+    "evaluation_reason",
+    "result_home_ft",
+    "result_away_ft",
+    "result_home_ht",
+    "result_away_ht",
+    "ft_home_goals",
+    "ft_away_goals",
+    "ht_home_goals",
+    "ht_away_goals",
+    "ft_score",
+    "ht_score",
+    "stake_units",
+    "profit_units",
+    "evaluated_at",
+    "warning_codes",
+    "match",
+    "counts_in_avg_won_odds",
 ]
 
 _COMPLETENESS_VALUES = frozenset({"complete", "partial", "empty", "blocked"})
@@ -182,7 +281,11 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
         "required_files": [
             "gates.json",
             "readiness.json",
-            "distributions.csv",
+            "summary_all_selected_cohorts.json",
+            "summary_prospective_only.json",
+            "distributions_by_score_band.csv",
+            "distributions_by_market.csv",
+            "distributions_by_cohort.csv",
             "rows.csv",
         ],
     },
@@ -207,13 +310,16 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
         "required_columns": _GOAL_EMPTY_HEADERS["preview_snapshots.csv"],
         "required_files": [
             filename for _, filename, _ in _GOAL_EXPORTS
-        ] + ["prospective_progress.json", "data_health.json"],
+        ] + ["prospective_progress.json", "data_health.json", "historical_availability.json"],
     },
     "signals": {
-        "primary_rows_file": "activations_rows.csv",
+        "primary_rows_file": "activations_all_rows.csv",
         "required_columns": _SIGNALS_ROW_FIELDS,
         "required_files": [
-            "activations_rows.csv",
+            "activations_all_rows.csv",
+            "activations_current_rows.csv",
+            "activations_verified_pre_match.csv",
+            "activations_unusable.csv",
             "by_signal.csv",
             "by_column.csv",
             "by_signal_and_column.csv",
@@ -403,19 +509,64 @@ def _build_export_audit(
     if unexpected_files:
         warnings.append("File non previsti dal contratto presenti nell'inventario")
 
+    # Technical status: file/schema integrity
     hard_failure = bool(
         missing_files or missing_columns or not row_count_match or truncated
     )
-    status = "fail" if hard_failure else ("partial" if warnings else "pass")
+    technical_status = "fail" if hard_failure else ("partial" if warnings else "pass")
+
+    # Scientific status: schema/cohorts/results — allowed: pass|partial|fail|partial_collecting
+    completed_count = int(meta.get("completed_count", 0) or 0)
+    settled_count = int(meta.get("settled_count", 0) or 0)
+    completeness = str(meta.get("completeness") or "")
+
+    if hard_failure:
+        scientific_status = "fail"
+    elif exported_row_count == 0 and completeness == "blocked":
+        scientific_status = "fail"
+    elif exported_row_count == 0:
+        scientific_status = "fail"
+    elif module_key == "goal-intensity-v5" and completed_count == 0:
+        scientific_status = "partial_collecting"
+    elif settled_count == 0 and module_key in {"purchasability", "signals"}:
+        scientific_status = "partial_collecting"
+    elif completeness in {"partial", "empty"} or warnings:
+        scientific_status = "partial"
+    else:
+        scientific_status = "pass"
+
+    # Combined status for backward compatibility (prefer technical fail)
+    if technical_status == "fail" or scientific_status == "fail":
+        status = "fail"
+    elif scientific_status == "partial_collecting" or technical_status == "partial" or scientific_status == "partial":
+        status = "partial"
+    else:
+        status = "pass"
+
+    reconciliation = {
+        "source_total_rows": source_row_count,
+        "selected_cohort_rows": int(meta.get("selected_cohort_rows", source_row_count) or source_row_count),
+        "exported_rows": exported_row_count,
+        "excluded_rows": int(meta.get("excluded_rows", 0) or 0),
+        "excluded_by_reason": meta.get("excluded_by_reason") or {},
+        "duplicate_rows": int(meta.get("duplicate_rows", 0) or 0),
+        "not_evaluable_rows": int(meta.get("not_evaluable_rows", 0) or 0),
+        "unusable_rows": int(meta.get("unusable_rows", 0) or 0),
+        "truncated": truncated,
+    }
+
     return make_json_safe(
         {
             "export_version": MONITORING_EXPORT_VERSION,
             "module_key": module_key,
             "status": status,
+            "technical_status": technical_status,
+            "scientific_status": scientific_status,
             "source_row_count": source_row_count,
             "exported_row_count": exported_row_count,
             "row_count_match": row_count_match,
             "truncated": truncated,
+            "reconciliation": reconciliation,
             "required_files": required_files,
             "actual_files": actual_files,
             "missing_files": missing_files,
@@ -539,9 +690,18 @@ def build_purchasability_module_overview(
             "coverage": coverage,
             "fixtures": health.get("fixtures_with_verified_pre_match_preview"),
             "settled": health.get("result_settled_count"),
+            "prospective_rows": health.get("prospective_rows_available"),
+            "historical_rows": health.get("historical_rows_available"),
+            "validation_rows_total": health.get("validation_rows_total"),
+            "validation_rows_by_source_cohort": health.get(
+                "validation_rows_by_source_cohort"
+            ),
+            "settled_historical": health.get("result_settled_count"),
             "last_snapshot_at": health.get("last_persisted_snapshot_at"),
             "next_review_at": readiness.get("prima_data_teorica_promozione"),
             "warnings": list(dict.fromkeys(str(item) for item in warnings)),
+            "persistence_blocking_reason": blocking_reason,
+            "persistence_blocking_note": health.get("persistence_blocking_note"),
         }
     )
 
@@ -971,18 +1131,41 @@ def _build_purchasability_files(
     competition_id: int | None,
     market_key: str | None,
     include_rows: bool,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> tuple[dict[str, bytes], dict[str, Any]]:
+    # Parse filter and get query flags
+    parsed_filter = parse_export_cohort_filter(source_cohort_filter)
+    flags = analysis_query_flags(parsed_filter)
+    
+    # Health is always unfiltered
     health = build_purchasability_validation_health(
         db, date_from=date_from, date_to=date_to, competition_id=competition_id
     )
-    summary = build_purchasability_validation_summary(
+    
+    # Summary for selected cohorts (based on filter)
+    summary_selected = build_purchasability_validation_summary(
         db,
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
         market_key=market_key,
         bootstrap_iterations=50,
+        promotion_eligible_only=flags["promotion_eligible_only"],
+        source_cohorts=flags["source_cohorts"],
     )
+    
+    # Summary always prospective only (for gates/readiness)
+    summary_prospective = build_purchasability_validation_summary(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_key=market_key,
+        bootstrap_iterations=50,
+        promotion_eligible_only=True,
+    )
+    
+    # Gates and readiness ALWAYS use prospective only
     readiness = build_purchasability_promotion_readiness(
         db,
         date_from=date_from,
@@ -991,34 +1174,60 @@ def _build_purchasability_files(
         market_key=market_key,
         bootstrap_iterations=50,
     )
+    
     warnings = list(readiness.get("warnings") or [])
     blocking = health.get("persistence_blocking_reason")
     if blocking:
         warnings.append(f"Persistenza bloccata: {blocking}")
+    
+    # Build distribution CSVs
+    distributions_by_score_band = _summary_csv(
+        {"rows": summary_selected.get("by_score_band") or []},
+        "rows",
+        [
+            "score_band",
+            "rows",
+            "fixtures",
+            "win_rate",
+            "roi_pct",
+            "realized_margin",
+            "average_phase_1",
+            "average_phase_2",
+        ],
+    )
+    
+    distributions_by_market = _summary_csv(
+        {"rows": summary_selected.get("by_market_key") or []},
+        "rows",
+        ["market_key", "rows", "fixtures", "win_rate", "roi_pct"],
+    )
+    
+    distributions_by_cohort = _summary_csv(
+        {"rows": summary_selected.get("by_source_cohort") or []},
+        "rows",
+        ["source_cohort", "rows", "fixtures", "won", "lost", "pending"],
+    )
+    
     files = {
         "health.json": _json_bytes(health),
-        "summary.json": _json_bytes(summary),
+        "summary.json": _json_bytes(summary_selected),  # summary = selected filter
+        "summary_all_selected_cohorts.json": _json_bytes(summary_selected),
+        "summary_prospective_only.json": _json_bytes(summary_prospective),
         "gates.json": _json_bytes(readiness.get("data_gates") or {}),
         "readiness.json": _json_bytes(readiness),
         "warnings.json": _json_bytes({"warnings": warnings}),
-        "distributions.csv": _summary_csv(
-            {"rows": summary.get("by_score_band") or []},
-            "rows",
-            [
-                "score_band",
-                "rows",
-                "fixtures",
-                "win_rate",
-                "roi_pct",
-                "realized_margin",
-                "average_phase_1",
-                "average_phase_2",
-            ],
-        ),
+        "distributions_by_score_band.csv": distributions_by_score_band,
+        "distributions_by_market.csv": distributions_by_market,
+        "distributions_by_cohort.csv": distributions_by_cohort,
+        # Keep legacy distributions.csv for backward compatibility
+        "distributions.csv": distributions_by_score_band,
     }
-    source_total_rows = int((summary.get("metrics") or {}).get("rows") or 0)
+    
+    source_total_rows = int((summary_selected.get("metrics") or {}).get("rows") or 0)
     exported_row_count = 0
     truncated = False
+    settled_count = 0
+    
     if include_rows:
         page_size = 100_000
         safety_cap = 2_000_000
@@ -1033,6 +1242,9 @@ def _build_purchasability_files(
                 market_key=market_key,
                 limit=min(page_size, safety_cap - offset),
                 offset=offset,
+                # Use filter flags for rows (NOT always promotion_eligible_only)
+                promotion_eligible_only=flags["promotion_eligible_only"],
+                source_cohorts=flags["source_cohorts"],
             )
             page = list(payload.get("items") or [])
             source_total_rows = int(payload.get("total") or source_total_rows)
@@ -1047,24 +1259,30 @@ def _build_purchasability_files(
             )
         files["rows.csv"] = _csv_bom(exported_rows, _PURCHASABILITY_ROW_FIELDS)
         exported_row_count = len(exported_rows)
-    row_count = (
-        exported_row_count
-        if include_rows
-        else source_total_rows
-    )
-    if blocking:
+        # Count settled for scientific status
+        settled_count = sum(
+            1 for r in exported_rows
+            if r.get("evaluation_status") in ("won", "lost")
+        )
+    
+    row_count = exported_row_count if include_rows else source_total_rows
+    
+    # Completeness: blocking + exported > 0 → partial NOT blocked
+    if blocking and exported_row_count == 0:
         completeness = "blocked"
     elif row_count == 0:
         completeness = "empty"
-    elif warnings:
+    elif blocking or warnings:
         completeness = "partial"
     else:
         completeness = "complete"
+    
     cohorts = [
         str(row.get("source_cohort"))
-        for row in (summary.get("by_source_cohort") or [])
+        for row in (summary_selected.get("by_source_cohort") or [])
         if isinstance(row, dict) and row.get("source_cohort")
     ]
+    
     return files, {
         "module_version": PURCHASABILITY_CANDIDATE_VERSION,
         "versions": {
@@ -1073,6 +1291,7 @@ def _build_purchasability_files(
             "policy": PURCHASABILITY_PROMOTION_POLICY_VERSION,
         },
         "source_cohorts": cohorts,
+        "source_cohort_filter": parsed_filter,
         "warnings": warnings,
         "completeness": completeness,
         "blocking_reasons": [str(blocking)] if blocking else [],
@@ -1080,6 +1299,7 @@ def _build_purchasability_files(
         "primary_rows": row_count,
         "source_total_rows": source_total_rows,
         "exported_total_rows": exported_row_count,
+        "settled_count": settled_count,
         "truncated": truncated,
     }
 
@@ -1145,6 +1365,8 @@ def _build_goal_files(
     bundle = _active_goal_bundle(db)
     warnings: list[str] = []
     files: dict[str, bytes] = {}
+    completed_count = 0
+    
     if bundle is None:
         warnings.append("Bundle Goal Intensity v5 attivo assente")
         for _, filename, kind in _GOAL_EXPORTS:
@@ -1158,6 +1380,13 @@ def _build_goal_files(
         completeness = "blocked"
         blocking_reasons = ["bundle_missing"]
         module_version = None
+        historical_availability = {
+            "status": "unavailable",
+            "eligible_fixtures": 0,
+            "coverage_fixtures": 0,
+            "exclusion_reasons": ["bundle_missing"],
+            "effective_date_range": None,
+        }
     else:
         for export_kind, filename, kind in _GOAL_EXPORTS:
             files[filename] = _materialize_preview_export(
@@ -1169,9 +1398,44 @@ def _build_goal_files(
             preview_summary = {}
         monitoring = build_prospective_monitoring(db, bundle)
         snapshots = _count_csv_rows(files["preview_snapshots.csv"])
-        completeness = "complete" if snapshots > 0 else "empty"
+        
+        # Count completed results (with FT attached) - DO NOT invent from Today FT
+        completed_count = _count_csv_rows(files["preview_completed_results.csv"])
+        
+        # Completeness depends on completed results for scientific validity
+        if snapshots == 0:
+            completeness = "empty"
+        elif completed_count == 0:
+            completeness = "partial"  # collecting data, no completed results yet
+        else:
+            completeness = "complete"
         blocking_reasons = []
         module_version = bundle.version
+        
+        # Historical availability: document eligible/coverage/exclusion
+        bundle_summary = (preview_summary or {}).get("bundle") or {}
+        eligible_fixtures, _ = _eligible_fixture_counts(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+        historical_availability = {
+            "status": "available" if bundle is not None else "unavailable",
+            "eligible_fixtures": eligible_fixtures,
+            "coverage_fixtures": snapshots,
+            "completed_count": completed_count,
+            "prospective_matches_collected": bundle_summary.get(
+                "prospective_matches_collected"
+            ),
+            "exclusion_reasons": [],
+            "effective_date_range": {
+                "from": date_from.isoformat(),
+                "to": date_to.isoformat(),
+            },
+            "bundle_version": module_version,
+        }
+    
     files["prospective_progress.json"] = _json_bytes(monitoring)
     files["data_health.json"] = _json_bytes(
         _goal_data_health(
@@ -1180,6 +1444,8 @@ def _build_goal_files(
             bundle_available=bundle is not None,
         )
     )
+    files["historical_availability.json"] = _json_bytes(historical_availability)
+    
     rows = _count_csv_rows(files["preview_snapshots.csv"])
     return files, {
         "module_version": module_version,
@@ -1192,8 +1458,26 @@ def _build_goal_files(
         "primary_rows": rows,
         "source_total_rows": rows,
         "exported_total_rows": rows,
+        "completed_count": completed_count,
         "truncated": False,
     }
+
+
+def _is_verified_pre_match(item: dict[str, Any]) -> bool:
+    """Check if activation was created before kickoff."""
+    activation_ts = item.get("activation_timestamp")
+    kickoff = item.get("kickoff")
+    if not activation_ts or not kickoff:
+        return False
+    try:
+        # Parse timestamps
+        act_str = str(activation_ts).replace("Z", "+00:00")
+        kick_str = str(kickoff).replace("Z", "+00:00")
+        act_dt = datetime.fromisoformat(act_str)
+        kick_dt = datetime.fromisoformat(kick_str)
+        return act_dt < kick_dt
+    except (ValueError, TypeError):
+        return False
 
 
 def _build_signals_files(
@@ -1204,13 +1488,17 @@ def _build_signals_files(
     competition_id: int | None,
     include_rows: bool,
 ) -> tuple[dict[str, bytes], dict[str, Any]]:
+    # Summary with default model
     summary = build_signals_summary(db, date_from=date_from, date_to=date_to)
     overall = summary.get("overall") or {}
+    
+    # Fetch ALL activations (all rows, not just current)
     page_size = 100_000
     safety_cap = 2_000_000
     offset = 0
     source_total_rows = 0
-    items: list[dict[str, Any]] = []
+    all_items: list[dict[str, Any]] = []
+    
     while offset < safety_cap:
         activation_payload = list_signal_activations(
             db,
@@ -1218,6 +1506,7 @@ def _build_signals_files(
             date_to=date_to,
             limit=min(page_size, safety_cap - offset),
             offset=offset,
+            only_current=False,  # Get all rows for all_rows file
         )
         source_total_rows = int(activation_payload.get("total") or source_total_rows)
         page = [
@@ -1225,12 +1514,39 @@ def _build_signals_files(
             for row in (activation_payload.get("items") or [])
             if isinstance(row, dict)
         ]
-        items.extend(page)
+        all_items.extend(page)
         offset += len(page)
         if not page or offset >= source_total_rows:
             break
-    truncated = source_total_rows > len(items)
-    activations_csv = _csv_bom(items, _SIGNALS_ROW_FIELDS)
+    
+    truncated = source_total_rows > len(all_items)
+    
+    # Split into 4 categories
+    current_items: list[dict[str, Any]] = []
+    verified_pre_match: list[dict[str, Any]] = []
+    unusable: list[dict[str, Any]] = []
+    
+    for item in all_items:
+        is_current = item.get("is_current", False)
+        is_pre_match = _is_verified_pre_match(item)
+        
+        if is_current:
+            current_items.append(item)
+        
+        if is_pre_match:
+            verified_pre_match.append(item)
+        elif item.get("kickoff") and item.get("activation_timestamp"):
+            # Has both timestamps but created after kickoff
+            unusable.append(item)
+    
+    # Build 4 CSV files
+    files: dict[str, bytes] = {
+        "activations_all_rows.csv": _csv_bom(all_items, _SIGNALS_ROW_FIELDS),
+        "activations_current_rows.csv": _csv_bom(current_items, _SIGNALS_ROW_FIELDS),
+        "activations_verified_pre_match.csv": _csv_bom(verified_pre_match, _SIGNALS_ROW_FIELDS),
+        "activations_unusable.csv": _csv_bom(unusable, _SIGNALS_ROW_FIELDS),
+    }
+    
     model_key = (summary.get("filters") or {}).get("model_key")
     model_row = {"model_key": model_key, **overall}
     version_definition = {
@@ -1242,26 +1558,34 @@ def _build_signals_files(
             "distinct_fixtures": "overall.fixtures_with_signals_count",
             "settled_activations": "overall.won + overall.lost",
             "odds": "persisted_only_no_recalculation",
+            "primary_rows_file": "activations_all_rows.csv",
+            "performance_source": "activations_verified_pre_match.csv",
         },
     }
-    files = {
-        "activations_rows.csv": activations_csv,
+    
+    # Build summary using only verified pre-match for performance metrics
+    summary_verified = build_signals_summary(
+        db, date_from=date_from, date_to=date_to, only_current=True
+    )
+    
+    files.update({
         "by_signal.csv": _summary_csv(
-            summary, "by_signal", ["signal_group", "signal_label", "activations"]
+            summary_verified, "by_signal", ["signal_group", "signal_label", "activations"]
         ),
         "by_column.csv": _summary_csv(
-            summary, "by_column", ["source_column", "activations"]
+            summary_verified, "by_column", ["source_column", "activations"]
         ),
         "by_signal_and_column.csv": _summary_csv(
-            summary,
+            summary_verified,
             "by_signal_and_column",
             ["signal_group", "signal_label", "source_column", "activations"],
         ),
         "overall.json": _json_bytes(overall),
-        "monthly_timeseries.csv": _signals_monthly_timeseries(items),
+        "monthly_timeseries.csv": _signals_monthly_timeseries(verified_pre_match),
         "version_definition.json": _json_bytes(version_definition),
         "model_summary.csv": _rows_to_csv([model_row]),
-    }
+    })
+    
     warnings = list(summary.get("warnings") or [])
     if truncated:
         warnings.append(
@@ -1271,8 +1595,15 @@ def _build_signals_files(
         warnings.append(
             "Filtro competition_id non applicabile al servizio Signals; export su tutte le competizioni"
         )
-    rows = len(items)
+    if len(unusable) > 0:
+        warnings.append(
+            f"{len(unusable)} attivazioni create post-kickoff escluse da performance aggregations"
+        )
+    
+    rows = len(all_items)
+    settled_count = int(overall.get("won", 0) or 0) + int(overall.get("lost", 0) or 0)
     completeness = "empty" if rows == 0 else ("partial" if warnings else "complete")
+    
     return files, {
         "module_version": "signals_aggregation_current",
         "versions": {"signals": "signals_aggregation_current", "model_key": model_key},
@@ -1280,10 +1611,13 @@ def _build_signals_files(
         "warnings": warnings,
         "completeness": completeness,
         "blocking_reasons": [],
-        "include_rows_effective": include_rows and "activations_rows.csv" in files,
+        "include_rows_effective": include_rows and "activations_all_rows.csv" in files,
         "primary_rows": rows,
         "source_total_rows": source_total_rows,
         "exported_total_rows": rows,
+        "settled_count": settled_count,
+        "verified_pre_match_count": len(verified_pre_match),
+        "unusable_count": len(unusable),
         "truncated": truncated,
     }
 
@@ -1298,6 +1632,7 @@ def _build_module_inventory(
     market_key: str | None,
     include_rows: bool,
     include_debug: bool,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> tuple[dict[str, bytes], dict[str, Any], dict[str, Any]]:
     if module_key not in VALID_MODULE_KEYS:
         raise ValueError("invalid_module_key")
@@ -1309,6 +1644,7 @@ def _build_module_inventory(
             competition_id=competition_id,
             market_key=market_key,
             include_rows=include_rows,
+            source_cohort_filter=source_cohort_filter,
         )
     elif module_key == "balance-v5":
         files, meta = _build_balance_files(
@@ -1335,6 +1671,9 @@ def _build_module_inventory(
             include_rows=include_rows,
         )
 
+    # Parse and normalize cohort filter for filters.json
+    parsed_cohort_filter = parse_export_cohort_filter(source_cohort_filter)
+    
     filters = {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -1342,6 +1681,7 @@ def _build_module_inventory(
         "market_key": market_key,
         "include_rows_requested": include_rows,
         "include_debug": include_debug,
+        "source_cohort_filter": parsed_cohort_filter,
     }
     meta.setdefault("versions", {})
     meta.setdefault("source_cohorts", [])
@@ -1498,8 +1838,9 @@ def build_module_analysis_pack_zip(
     market_key: str | None = None,
     include_rows: bool = True,
     include_debug: bool = False,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> tuple[bytes, str]:
-    """Costruisce il pacchetto forensic v3 con audit incorporato."""
+    """Costruisce il pacchetto forensic v4 con audit incorporato."""
     files, manifest, _ = _build_module_inventory(
         db,
         module_key=module_key,
@@ -1509,6 +1850,7 @@ def build_module_analysis_pack_zip(
         market_key=market_key,
         include_rows=include_rows,
         include_debug=include_debug,
+        source_cohort_filter=source_cohort_filter,
     )
     return (
         _pack_zip(files, manifest),
@@ -1526,6 +1868,7 @@ def build_module_analysis_pack_audit(
     market_key: str | None = None,
     include_rows: bool = True,
     include_debug: bool = False,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> dict[str, Any]:
     """Costruisce l'audit completo senza materializzare i byte ZIP."""
     _, manifest, meta = _build_module_inventory(
@@ -1537,6 +1880,7 @@ def build_module_analysis_pack_audit(
         market_key=market_key,
         include_rows=include_rows,
         include_debug=include_debug,
+        source_cohort_filter=source_cohort_filter,
     )
     file_names = ["manifest.json"] + [
         str(entry.get("name"))
@@ -1550,6 +1894,7 @@ def build_module_analysis_pack_audit(
             "export_audit": meta.get("export_audit") or {},
             "files": sorted(file_names),
             "completeness": manifest.get("export_completeness_status"),
+            "source_cohort_filter": parse_export_cohort_filter(source_cohort_filter),
         }
     )
 
@@ -1563,6 +1908,7 @@ def build_modules_analysis_packs_audit(
     market_key: str | None = None,
     include_rows: bool = True,
     include_debug: bool = False,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> dict[str, Any]:
     """Costruisce in un'unica risposta gli audit dei quattro moduli."""
     modules = [
@@ -1575,6 +1921,7 @@ def build_modules_analysis_packs_audit(
             market_key=market_key,
             include_rows=include_rows,
             include_debug=include_debug,
+            source_cohort_filter=source_cohort_filter,
         )
         for module_key in (
             "purchasability",
@@ -1587,6 +1934,7 @@ def build_modules_analysis_packs_audit(
         {
             "generated_at": _utcnow(),
             "export_version": MONITORING_EXPORT_VERSION,
+            "source_cohort_filter": parse_export_cohort_filter(source_cohort_filter),
             "modules": modules,
         }
     )
@@ -1600,11 +1948,14 @@ def build_module_summary_payload(
     date_to: date,
     competition_id: int | None = None,
     market_key: str | None = None,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> dict[str, Any]:
     """Payload summary API, mantenuto compatibile con la versione precedente."""
     if module_key not in VALID_MODULE_KEYS:
         raise ValueError("invalid_module_key")
     if module_key == "purchasability":
+        # Apply cohort filter to summary
+        flags = analysis_query_flags(parse_export_cohort_filter(source_cohort_filter))
         return build_purchasability_validation_summary(
             db,
             date_from=date_from,
@@ -1612,6 +1963,8 @@ def build_module_summary_payload(
             competition_id=competition_id,
             market_key=market_key,
             bootstrap_iterations=50,
+            promotion_eligible_only=flags["promotion_eligible_only"],
+            source_cohorts=flags["source_cohorts"],
         )
     if module_key == "balance-v5":
         return {
@@ -1649,12 +2002,15 @@ def build_module_rows_csv(
     date_to: date,
     competition_id: int | None = None,
     market_key: str | None = None,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> tuple[bytes, str]:
     """CSV righe canonico: validazioni, Balance, snapshot Goal o attivazioni."""
     if module_key not in VALID_MODULE_KEYS:
         raise ValueError("invalid_module_key")
     filename = rows_csv_filename(module_key, date_from, date_to)
     if module_key == "purchasability":
+        # Apply cohort filter to rows
+        flags = analysis_query_flags(parse_export_cohort_filter(source_cohort_filter))
         content = _with_bom(
             export_purchasability_validation_csv(
                 db,
@@ -1662,6 +2018,7 @@ def build_module_rows_csv(
                 date_to=date_to,
                 competition_id=competition_id,
                 market_key=market_key,
+                promotion_eligible_only=flags["promotion_eligible_only"],
             )
         )
     elif module_key == "balance-v5":
@@ -1693,6 +2050,7 @@ def build_module_export_status(
     competition_id: int | None = None,
     market_key: str | None = None,
     include_rows: bool = True,
+    source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> dict[str, Any]:
     """Dry-run dell'inventario senza comprimere lo ZIP."""
     files, manifest, meta = _build_module_inventory(
@@ -1704,6 +2062,7 @@ def build_module_export_status(
         market_key=market_key,
         include_rows=include_rows,
         include_debug=False,
+        source_cohort_filter=source_cohort_filter,
     )
     expected = [entry["name"] for entry in manifest["files"]]
     return make_json_safe(
@@ -1713,6 +2072,7 @@ def build_module_export_status(
             "files_available": sorted(files),
             "rows": meta["primary_rows"],
             "source_cohorts": meta["source_cohorts"],
+            "source_cohort_filter": parse_export_cohort_filter(source_cohort_filter),
             "completeness": meta["completeness"],
             "blocking_reasons": meta["blocking_reasons"],
             "estimated_size_bytes": sum(len(content) for content in files.values())

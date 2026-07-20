@@ -18,6 +18,21 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Legacy | `GET …/purchasability-empirical` (deprecated) |
 | Preview contract | `cecchino_purchasability_v1_preview_contract` |
 
+## Fix export coorti e schemi forensic v4 (2026-07-20)
+
+| Campo | Valore |
+|-------|--------|
+| Export | `cecchino_module_monitoring_exports_v4` |
+| Cohort query | `source_cohort` su ZIP/CSV/audit |
+| Cardinality | `GET …/purchasability-cardinality` (read-only) |
+| Acquistabilità | dual summary + forensic rows; partial≠blocked con storico |
+| Balance | HT/outcome/result_available |
+| Goal | `historical_availability.json` |
+| Signals | `activations_all/current/verified/unusable` |
+| Audit | `technical_status` + `scientific_status` |
+| Formule | invariate |
+| Backfill | non rieseguire |
+
 ## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
 
 | Campo | Valore |

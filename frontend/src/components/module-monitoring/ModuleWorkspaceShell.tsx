@@ -19,6 +19,7 @@ type Props = {
   dateTo: string
   competitionId?: number | null
   apiStatus?: string | null
+  sourceCohort?: string
   children: React.ReactNode
 }
 
@@ -30,6 +31,7 @@ export function ModuleWorkspaceShell({
   dateTo,
   competitionId,
   apiStatus,
+  sourceCohort = 'all',
   children,
 }: Props) {
   const accent = ACCENT_CLASSES[module.accent]
@@ -57,6 +59,7 @@ export function ModuleWorkspaceShell({
             dateFrom={dateFrom}
             dateTo={dateTo}
             competitionId={competitionId}
+            sourceCohort={sourceCohort}
           />
         </div>
         <div className="mt-3">

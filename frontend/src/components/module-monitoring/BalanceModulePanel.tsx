@@ -82,6 +82,7 @@ export function BalanceModulePanel({
           dateFrom={dateFrom}
           dateTo={dateTo}
           competitionId={competitionId}
+          sourceCohort={cohortFilter}
         />
       </div>
     )

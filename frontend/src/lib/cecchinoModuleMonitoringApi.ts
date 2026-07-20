@@ -22,6 +22,12 @@ export type ModuleOverviewItem = {
   coverage_numerator?: number | null
   coverage_denominator?: number | null
   activations?: number | null
+  prospective_rows?: number | null
+  historical_rows?: number | null
+  validation_rows_total?: number | null
+  validation_rows_by_source_cohort?: Record<string, number> | null
+  settled_historical?: number | null
+  persistence_blocking_reason?: string | null
 }
 
 export type ModuleMonitoringOverview = {
@@ -36,6 +42,7 @@ export type ModuleMonitoringFilters = {
   market_key?: string
   include_rows?: boolean
   include_debug?: boolean
+  source_cohort?: string
 }
 
 const BASE = '/api/cecchino/module-monitoring'
@@ -48,6 +55,11 @@ function qs(filters: ModuleMonitoringFilters): string {
   if (filters.market_key) p.set('market_key', filters.market_key)
   if (filters.include_rows != null) p.set('include_rows', String(filters.include_rows))
   if (filters.include_debug != null) p.set('include_debug', String(filters.include_debug))
+  if (filters.source_cohort && filters.source_cohort !== 'all') {
+    p.set('source_cohort', filters.source_cohort)
+  } else if (filters.source_cohort === 'all') {
+    p.set('source_cohort', 'all')
+  }
   return `?${p.toString()}`
 }
 
@@ -216,11 +228,13 @@ export type PackAuditItem = {
   completeness?: string
   export_audit?: {
     status?: string
+    technical_status?: string
+    scientific_status?: string
     source_row_count?: number
     exported_row_count?: number
     truncated?: boolean
     missing_files?: string[]
-    missing_columns?: Record<string, string[]>
+    missing_columns?: Record<string, string[]> | string[]
     row_count_match?: boolean
   }
   files_available?: string[]
@@ -231,12 +245,16 @@ export type PackAuditItem = {
 }
 
 export async function getAnalysisPacksAudit(
-  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+  filters: Pick<
+    ModuleMonitoringFilters,
+    'date_from' | 'date_to' | 'competition_id' | 'source_cohort'
+  >,
 ): Promise<{ modules: PackAuditItem[]; export_version?: string }> {
   const p = new URLSearchParams()
   p.set('date_from', filters.date_from)
   p.set('date_to', filters.date_to)
   if (filters.competition_id != null) p.set('competition_id', String(filters.competition_id))
+  if (filters.source_cohort) p.set('source_cohort', filters.source_cohort)
   return adminGetJson(`${BASE}/analysis-packs-audit?${p.toString()}`)
 }
 

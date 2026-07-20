@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix export coorti e schemi forensic v4 (2026-07-20)
+
+- Filtro coorte end-to-end su ZIP/CSV/audit; analisi ≠ readiness (prospective-only gates).
+- Acquistabilità: rows forensic completi; export storico non blocked se righe storiche > 0; health con validation_rows_*.
+- Balance: HT/outcome/result_available; warning book null su historical_diagnostic.
+- Goal: historical_availability.json; completed=0 esplicito senza inventare risultati.
+- Signals: activations_all/current/verified/unusable; aggregazioni senza unusable in ROI.
+- Audit: technical_status + scientific_status + reconciliation. Export `…_exports_v4`.
+
 ## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
 
 - Coorti canoniche + alias legacy; resolver Balance: `output.balance_v5` non è più `prospective_persisted`.

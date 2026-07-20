@@ -25,6 +25,7 @@ type Props = {
   dateTo: string
   competitionId?: number | null
   moduleStatuses?: Record<string, string | null | undefined>
+  sourceCohort?: string
 }
 
 type Pos = { top: number; left: number; openUp: boolean }
@@ -37,6 +38,7 @@ export function MonitoringGlobalExportMenu({
   dateTo,
   competitionId,
   moduleStatuses,
+  sourceCohort = 'all',
 }: Props) {
   const [open, setOpen] = useState(false)
   const [busyKey, setBusyKey] = useState<string | null>(null)
@@ -84,6 +86,7 @@ export function MonitoringGlobalExportMenu({
       date_to: dateTo,
       competition_id: competitionId ?? undefined,
       include_rows: true,
+      source_cohort: sourceCohort,
     }
     void Promise.all(
       MONITORING_MODULES.map(async (m) => {
@@ -105,7 +108,7 @@ export function MonitoringGlobalExportMenu({
     return () => {
       cancelled = true
     }
-  }, [open, dateFrom, dateTo, competitionId])
+  }, [open, dateFrom, dateTo, competitionId, sourceCohort])
 
   useEffect(() => {
     if (!open) return
@@ -148,13 +151,14 @@ export function MonitoringGlobalExportMenu({
         date_to: dateTo,
         competition_id: competitionId ?? undefined,
         include_rows: true,
+        source_cohort: sourceCohort,
       })
       const st = exportStatuses[key]
       const label = formatExportCompletenessLabel(st)
       if (st?.completeness === 'complete') {
-        toast.success(`Download pronto · ${label}`)
+        toast.success(`Download pronto · forensic v4 · ${label}`)
       } else {
-        toast.warning(`Download completato · pacchetto non completo · ${label}`)
+        toast.warning(`Download completato · forensic v4 non completo · ${label}`)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export fallito')

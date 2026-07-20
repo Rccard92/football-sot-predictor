@@ -29,8 +29,8 @@ from app.services.cecchino.cecchino_monitoring_cohorts import (
 )
 
 
-def test_export_version_is_v3():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v3"
+def test_export_version_is_v4():
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v4"
 
 
 def test_cohort_aliases_normalize():
@@ -125,7 +125,7 @@ def test_zip_contains_forensic_files(monkeypatch):
         assert "manifest.json" in names
         assert "schema_contract.json" in names or "export_audit.json" in names
         manifest = json.loads(zf.read("manifest.json"))
-        assert "v3" in str(manifest.get("export_version") or manifest.get("schema_version") or "")
+        assert "v4" in str(manifest.get("export_version") or manifest.get("schema_version") or "")
         assert "secret" not in json.dumps(manifest).lower()
 
 

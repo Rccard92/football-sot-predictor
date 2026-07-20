@@ -78,6 +78,7 @@ export function SignalsModulePanel({
           dateFrom={dateFrom}
           dateTo={dateTo}
           competitionId={competitionId}
+          sourceCohort={cohortFilter}
         />
       </div>
     )

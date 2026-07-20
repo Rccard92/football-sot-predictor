@@ -11,6 +11,7 @@ type Props = {
   onRefresh: () => void
   loading?: boolean
   moduleStatuses?: Record<string, string | null | undefined>
+  sourceCohort?: string
 }
 
 export function ModuleMonitoringHero({
@@ -23,6 +24,7 @@ export function ModuleMonitoringHero({
   onRefresh,
   loading,
   moduleStatuses,
+  sourceCohort = 'all',
 }: Props) {
   const competitionLabel = competitionId ? competitionId : 'tutte'
   return (
@@ -82,6 +84,7 @@ export function ModuleMonitoringHero({
             dateTo={dateTo}
             competitionId={competitionId ? Number(competitionId) : null}
             moduleStatuses={moduleStatuses}
+            sourceCohort={sourceCohort}
           />
         </div>
       </div>

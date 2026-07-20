@@ -437,6 +437,7 @@ def build_purchasability_validation_summary(
     score_band: str | None = None,
     evaluation_status: str | None = None,
     source_cohort: str | None = None,
+    source_cohorts: list[str] | None = None,
     promotion_eligible_only: bool = True,
     bootstrap_iterations: int = DEFAULT_BOOTSTRAP_ITERATIONS,
 ) -> dict[str, Any]:
@@ -451,6 +452,7 @@ def build_purchasability_validation_summary(
         score_band=score_band,
         evaluation_status=evaluation_status,
         source_cohort=source_cohort,
+        source_cohorts=source_cohorts,
         promotion_eligible_only=promotion_eligible_only,
     )
     pending = sum(1 for r in all_rows if r.evaluation_status == EVAL_PENDING)

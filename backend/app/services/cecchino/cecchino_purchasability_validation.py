@@ -611,6 +611,7 @@ def _filters_clause(
     source_cohort: str | None,
     promotion_eligible_only: bool,
     only_current: bool = True,
+    source_cohorts: list[str] | None = None,
 ) -> list[Any]:
     clauses: list[Any] = []
     if only_current:
@@ -635,7 +636,9 @@ def _filters_clause(
         clauses.append(
             CecchinoPurchasabilityEvaluation.evaluation_status == evaluation_status
         )
-    if source_cohort:
+    if source_cohorts:
+        clauses.append(CecchinoPurchasabilityEvaluation.source_cohort.in_(source_cohorts))
+    elif source_cohort:
         clauses.append(CecchinoPurchasabilityEvaluation.source_cohort == source_cohort)
     if promotion_eligible_only:
         clauses.append(CecchinoPurchasabilityEvaluation.promotion_eligible.is_(True))
@@ -691,6 +694,7 @@ def query_validation_rows(
     score_band: str | None = None,
     evaluation_status: str | None = None,
     source_cohort: str | None = None,
+    source_cohorts: list[str] | None = None,
     promotion_eligible_only: bool = True,
     only_current: bool = True,
 ) -> list[CecchinoPurchasabilityEvaluation]:
@@ -703,6 +707,7 @@ def query_validation_rows(
         score_band=score_band,
         evaluation_status=evaluation_status,
         source_cohort=source_cohort,
+        source_cohorts=source_cohorts,
         promotion_eligible_only=promotion_eligible_only,
         only_current=only_current,
     )
@@ -862,6 +867,24 @@ def build_purchasability_validation_health(
 
     pending = sum(1 for e in evals if e.evaluation_status == EVAL_PENDING)
     settled = sum(1 for e in evals if e.evaluation_status in (EVAL_WON, EVAL_LOST))
+    not_evaluable_count = sum(1 for e in evals if e.evaluation_status == EVAL_NOT_EVALUABLE)
+    result_missing_count = sum(1 for e in evals if e.evaluation_status == EVAL_RESULT_MISSING)
+
+    by_cohort: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    by_candidate: dict[str, int] = {}
+    prospective_rows = 0
+    historical_rows = 0
+    for e in evals:
+        by_cohort[str(e.source_cohort)] = by_cohort.get(str(e.source_cohort), 0) + 1
+        by_status[str(e.evaluation_status)] = by_status.get(str(e.evaluation_status), 0) + 1
+        by_candidate[str(e.candidate_version)] = (
+            by_candidate.get(str(e.candidate_version), 0) + 1
+        )
+        if e.source_cohort == "prospective_persisted" or e.promotion_eligible:
+            prospective_rows += 1
+        else:
+            historical_rows += 1
 
     dup_keys: dict[tuple[Any, ...], int] = {}
     for e in evals:
@@ -909,6 +932,15 @@ def build_purchasability_validation_health(
             "duplicate_validation_rows": duplicates,
             "result_pending_count": pending,
             "result_settled_count": settled,
+            "validation_rows_total": len(evals),
+            "validation_rows_current": len(evals),
+            "validation_rows_by_source_cohort": by_cohort,
+            "validation_rows_by_evaluation_status": by_status,
+            "validation_rows_by_candidate_version": by_candidate,
+            "historical_rows_available": historical_rows,
+            "prospective_rows_available": prospective_rows,
+            "not_evaluable_count": not_evaluable_count,
+            "result_missing_count": result_missing_count,
             "first_persisted_snapshot_at": first_persisted_snapshot_at,
             "last_persisted_snapshot_at": last_persisted_snapshot_at,
             "newest_eligible_scan_date": (
@@ -926,6 +958,12 @@ def build_purchasability_validation_health(
             "sync_error_count": sync_error_count,
             "persistence_blocking_reason": persistence_blocking_reason,
             "prospective_monitoring_floor": prospective_floor,
+            "persistence_blocking_note": (
+                "Describes missing prospective purchasability_preview snapshots; "
+                "does not imply absence of historical validation rows."
+                if persistence_blocking_reason == "only_legacy_derived_available"
+                else None
+            ),
         }
     )
 
@@ -941,7 +979,9 @@ def build_purchasability_validation_rows(
     score_band: str | None = None,
     evaluation_status: str | None = None,
     source_cohort: str | None = None,
+    source_cohorts: list[str] | None = None,
     promotion_eligible_only: bool = True,
+    only_current: bool = True,
     limit: int = 200,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -955,43 +995,15 @@ def build_purchasability_validation_rows(
         score_band=score_band,
         evaluation_status=evaluation_status,
         source_cohort=source_cohort,
+        source_cohorts=source_cohorts,
         promotion_eligible_only=promotion_eligible_only,
+        only_current=only_current,
     )
     total = len(rows)
     page = rows[offset : offset + limit]
     items = []
     for e in page:
-        items.append(
-            {
-                "id": e.id,
-                "today_fixture_id": e.today_fixture_id,
-                "scan_date": e.scan_date.isoformat() if e.scan_date else None,
-                "kickoff": e.kickoff.isoformat() if e.kickoff else None,
-                "home_team_name": e.home_team_name,
-                "away_team_name": e.away_team_name,
-                "league_name": e.league_name,
-                "country_name": e.country_name,
-                "market_key": e.market_key,
-                "market_family": market_family_for(e.market_key),
-                "score_band": score_band_for(e.purchasability_score),
-                "purchasability_score": e.purchasability_score,
-                "purchasability_class": e.purchasability_class,
-                "phase_1_score": float(e.phase_1_score) if e.phase_1_score is not None else None,
-                "phase_2_score": float(e.phase_2_score) if e.phase_2_score is not None else None,
-                "quota_book": float(e.quota_book) if e.quota_book is not None else None,
-                "fair_book_probability": (
-                    float(e.fair_book_probability)
-                    if e.fair_book_probability is not None
-                    else None
-                ),
-                "evaluation_status": e.evaluation_status,
-                "profit_units": float(e.profit_units) if e.profit_units is not None else None,
-                "source_cohort": e.source_cohort,
-                "promotion_eligible": e.promotion_eligible,
-                "candidate_version": e.candidate_version,
-                "snapshot_hash": e.snapshot_hash,
-            }
-        )
+        items.append(_serialize_validation_row_forensic(e))
     return make_json_safe(
         {
             "status": "ok",
@@ -1002,6 +1014,70 @@ def build_purchasability_validation_rows(
             "items": items,
         }
     )
+
+
+def _serialize_validation_row_forensic(e: CecchinoPurchasabilityEvaluation) -> dict[str, Any]:
+    """Schema forensic completo — campi assenti restano null, mai ricostruiti."""
+    return {
+        "id": e.id,
+        "today_fixture_id": e.today_fixture_id,
+        "local_fixture_id": e.local_fixture_id,
+        "provider_fixture_id": e.provider_fixture_id,
+        "competition_id": e.competition_id,
+        "scan_date": e.scan_date.isoformat() if e.scan_date else None,
+        "kickoff": e.kickoff.isoformat() if e.kickoff else None,
+        "country_name": e.country_name,
+        "league_name": e.league_name,
+        "home_team_name": e.home_team_name,
+        "away_team_name": e.away_team_name,
+        "source_cohort": e.source_cohort,
+        "source_mode": None,
+        "snapshot_version": e.snapshot_version,
+        "snapshot_hash": e.snapshot_hash,
+        "source_snapshot_at": (
+            e.source_snapshot_at.isoformat() if e.source_snapshot_at else None
+        ),
+        "snapshot_timestamp_verified": e.snapshot_timestamp_verified,
+        "snapshot_before_kickoff": e.snapshot_before_kickoff,
+        "candidate_version": e.candidate_version,
+        "candidate_name": e.candidate_name,
+        "feature_version": e.feature_version,
+        "validation_version": PURCHASABILITY_VALIDATION_VERSION,
+        "market_key": e.market_key,
+        "market_family": market_family_for(e.market_key),
+        "selection": e.selection,
+        "calculation_status": e.calculation_status,
+        "calculation_quality": e.calculation_quality,
+        "purchasability_score": e.purchasability_score,
+        "raw_score": float(e.raw_score) if e.raw_score is not None else None,
+        "score_band": score_band_for(e.purchasability_score),
+        "purchasability_class": e.purchasability_class,
+        "phase_1_score": float(e.phase_1_score) if e.phase_1_score is not None else None,
+        "phase_2_score": float(e.phase_2_score) if e.phase_2_score is not None else None,
+        "reading": e.reading,
+        "quota_book": float(e.quota_book) if e.quota_book is not None else None,
+        "quota_cecchino": float(e.quota_cecchino) if e.quota_cecchino is not None else None,
+        "fair_book_probability": (
+            float(e.fair_book_probability) if e.fair_book_probability is not None else None
+        ),
+        "prob_cecchino": float(e.prob_cecchino) if e.prob_cecchino is not None else None,
+        "edge_pct": float(e.edge_pct) if e.edge_pct is not None else None,
+        "rating_score": e.rating_score,
+        "score_acquisto": float(e.score_acquisto) if e.score_acquisto is not None else None,
+        "evaluation_status": e.evaluation_status,
+        "evaluation_reason": e.evaluation_reason,
+        "result_home_ft": e.result_home_ft,
+        "result_away_ft": e.result_away_ft,
+        "result_home_ht": e.result_home_ht,
+        "result_away_ht": e.result_away_ht,
+        "stake_units": float(e.stake_units) if e.stake_units is not None else None,
+        "profit_units": float(e.profit_units) if e.profit_units is not None else None,
+        "evaluated_at": e.evaluated_at.isoformat() if e.evaluated_at else None,
+        "promotion_eligible": e.promotion_eligible,
+        "is_current": e.is_current,
+        "created_at": e.created_at.isoformat() if getattr(e, "created_at", None) else None,
+        "updated_at": e.updated_at.isoformat() if getattr(e, "updated_at", None) else None,
+    }
 
 
 def export_purchasability_validation_csv(

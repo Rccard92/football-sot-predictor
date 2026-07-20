@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix export coorti e schemi forensic v4 (2026-07-20)
+
+Export analisi rispettano `source_cohort` (all/storiche) senza `promotion_eligible_only` implicito; readiness resta prospettica. Pacchetti v4: dual summary Acquistabilità, colonne HT/outcome Balance, `historical_availability` Goal, Signals multi-CSV (all/current/verified/unusable), audit technical+scientific. **Non rieseguire backfill.** Runtime ZIP da verificare esternamente. **Runtime DB non interrogabile dall’ambiente Cursor** se non raggiungibile.
+
 ## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
 
 Backfill storico controllato (plan/run/status + token `IMPORT_CECCHINO_HISTORICAL_MONITORING`); coorti canoniche separate (`prospective_persisted` ≠ storici); fix Balance legacy non più prospective; export forensic **v3** (`schema_contract` / `export_audit` / no truncation); UI Import storico + filtro Coorte + Qualità pacchetti. Formule/candidate/Rating/Signals invariati. **Backfill/ZIP runtime non eseguiti dall’ambiente Cursor** — Fase 1/3 chiusa solo dopo verifica esterna dei 4 ZIP. Next (post-approvazione): Fase 2/3 empirica Balance v5.

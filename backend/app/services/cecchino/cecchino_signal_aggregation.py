@@ -202,13 +202,15 @@ def _base_query(
     country_name: str | None = None,
     evaluation_status: str | None = None,
     only_current: bool = True,
+    all_models: bool = False,
 ):
     query = select(CecchinoSignalActivation).where(
         CecchinoSignalActivation.scan_date >= date_from,
         CecchinoSignalActivation.scan_date <= date_to,
         CecchinoSignalActivation.signal_value.is_(True),
     )
-    if model_key:
+    # all_models=True means skip model_key filter entirely
+    if not all_models and model_key:
         query = query.where(CecchinoSignalActivation.model_key == str(model_key).upper())
     if only_current:
         query = query.where(CecchinoSignalActivation.is_current.is_(True))
@@ -249,8 +251,10 @@ def build_signals_summary(
     evaluation_status: str | None = None,
     only_current: bool = True,
     include_diagnostics: bool = False,
+    all_models: bool = False,
 ) -> dict[str, Any]:
-    mk = str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+    # When all_models=True, model_key filter is skipped
+    mk = None if all_models else str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
     filters = {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -261,6 +265,7 @@ def build_signals_summary(
         "country_name": country_name,
         "evaluation_status": evaluation_status,
         "only_current": only_current,
+        "all_models": all_models,
     }
     rows = list(
         db.scalars(
@@ -275,6 +280,7 @@ def build_signals_summary(
                 country_name=country_name,
                 evaluation_status=evaluation_status,
                 only_current=only_current,
+                all_models=all_models,
             ),
         ).all(),
     )
@@ -378,8 +384,10 @@ def list_signal_activations(
     only_current: bool = True,
     limit: int = 100,
     offset: int = 0,
+    all_models: bool = False,
 ) -> dict[str, Any]:
-    mk = str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+    # When all_models=True, model_key filter is skipped
+    mk = None if all_models else str(model_key or CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
     query = _base_query(
         db,
         date_from=date_from,
@@ -391,6 +399,7 @@ def list_signal_activations(
         country_name=country_name,
         evaluation_status=evaluation_status,
         only_current=only_current,
+        all_models=all_models,
     )
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = list(
@@ -427,31 +436,78 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
     ht_score = None
     if row.ht_home_goals is not None and row.ht_away_goals is not None:
         ht_score = f"{row.ht_home_goals}-{row.ht_away_goals}"
+    
+    # Activation timestamp (created_at)
+    activation_timestamp = None
+    if hasattr(row, "created_at") and row.created_at is not None:
+        activation_timestamp = row.created_at.isoformat() if hasattr(row.created_at, "isoformat") else str(row.created_at)
+    
+    # Evaluated at timestamp
+    evaluated_at = None
+    if hasattr(row, "evaluated_at") and row.evaluated_at is not None:
+        evaluated_at = row.evaluated_at.isoformat() if hasattr(row.evaluated_at, "isoformat") else str(row.evaluated_at)
+    
+    # Weights version from model_key
+    weights_version = getattr(row, "weights_version", None) or None
+    
+    # Probabilities: only persisted values (no reconstruction from odds)
+    prob_cecchino = None
+    if hasattr(row, "prob_cecchino") and row.prob_cecchino is not None:
+        prob_cecchino = float(row.prob_cecchino)
+    prob_book = None
+    if hasattr(row, "prob_book") and row.prob_book is not None:
+        prob_book = float(row.prob_book)
+
     return {
         "id": int(row.id),
         "today_fixture_id": int(row.today_fixture_id),
+        "local_fixture_id": row.local_fixture_id,
+        "provider_fixture_id": row.provider_fixture_id,
+        "competition_id": None,
         "model_key": row.model_key,
         "model_label": row.model_label,
+        "weights_version": weights_version,
         "weights_display": format_model_weights_display(row.model_key) if row.model_key else None,
         "scan_date": row.scan_date.isoformat(),
         "kickoff": row.kickoff.isoformat() if row.kickoff else None,
         "match": f"{home} vs {away}",
+        "home_team_name": row.home_team_name,
+        "away_team_name": row.away_team_name,
         "country_name": row.country_name,
         "league_name": row.league_name,
         "signal_group": row.signal_group,
         "signal_label": _format_signal_display_label(row.signal_group, row.signal_label),
+        "selection": None,
         "source_column": row.source_column,
         "target_market_label": _format_target_market_label(row),
         "target_market_key": row.target_market_key,
+        "source_cohort": None,
+        "activation_status": None,
         "evaluation_status": row.evaluation_status,
         "evaluation_reason": row.evaluation_reason,
+        "evaluated_at": evaluated_at,
+        "result_home_ft": row.ft_home_goals,
+        "result_away_ft": row.ft_away_goals,
+        "result_home_ht": row.ht_home_goals,
+        "result_away_ht": row.ht_away_goals,
+        "ft_home_goals": row.ft_home_goals,
+        "ft_away_goals": row.ft_away_goals,
+        "ht_home_goals": row.ht_home_goals,
+        "ht_away_goals": row.ht_away_goals,
         "ft_score": ft_score,
         "ht_score": ht_score,
         "quota_book": float(row.quota_book) if row.quota_book is not None else None,
         "quota_cecchino": float(row.quota_cecchino) if row.quota_cecchino is not None else None,
+        "prob_book": prob_book,
+        "prob_cecchino": prob_cecchino,
         "edge_pct": float(row.edge_pct) if row.edge_pct is not None else None,
         "rating": row.rating,
+        "score": None,
+        "stake_units": None,
+        "profit_units": None,
+        "warning_codes": None,
         "is_current": row.is_current,
+        "activation_timestamp": activation_timestamp,
         "counts_in_avg_won_odds": _counts_in_avg_won_odds(row),
     }
 

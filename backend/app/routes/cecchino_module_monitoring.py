@@ -20,6 +20,9 @@ from app.services.cecchino.cecchino_module_monitoring_exports import (
     build_module_summary_payload,
     build_modules_analysis_packs_audit,
 )
+from app.services.cecchino.cecchino_module_monitoring_reconciliation import (
+    build_purchasability_evaluation_cardinality_report,
+)
 
 router = APIRouter(
     prefix="/cecchino/module-monitoring",
@@ -51,6 +54,7 @@ def module_monitoring_all_analysis_packs_audit(
     market_key: str | None = Query(None),
     include_rows: bool = Query(True),
     include_debug: bool = Query(False),
+    source_cohort: str | None = Query(None, description="Cohort filter: all, prospective, historical_persisted_verified, etc."),
     db: Session = Depends(get_db),
 ):
     payload = build_modules_analysis_packs_audit(
@@ -61,6 +65,34 @@ def module_monitoring_all_analysis_packs_audit(
         market_key=market_key,
         include_rows=include_rows,
         include_debug=include_debug,
+        source_cohort_filter=source_cohort or "all",
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+# IMPORTANT: purchasability-cardinality BEFORE /{module_key} routes to avoid conflicts
+@router.get("/purchasability-cardinality")
+def purchasability_cardinality_report(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Report di cardinalità per CecchinoPurchasabilityEvaluation.
+    
+    Conteggi per source_cohort, candidate_version, evaluation_status,
+    promotion_eligible, is_current, market_key.
+    
+    Include riconciliazione tra settled+pending vs totali.
+    
+    Read-only, NO scritture DB.
+    """
+    payload = build_purchasability_evaluation_cardinality_report(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
     )
     return JSONResponse(content=jsonable_encoder(payload))
 
@@ -74,6 +106,7 @@ def module_monitoring_analysis_pack_audit(
     market_key: str | None = Query(None),
     include_rows: bool = Query(True),
     include_debug: bool = Query(False),
+    source_cohort: str | None = Query(None, description="Cohort filter: all, prospective, historical_persisted_verified, etc."),
     db: Session = Depends(get_db),
 ):
     if module_key not in VALID_MODULE_KEYS:
@@ -88,6 +121,7 @@ def module_monitoring_analysis_pack_audit(
             market_key=market_key,
             include_rows=include_rows,
             include_debug=include_debug,
+            source_cohort_filter=source_cohort or "all",
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="unknown_module_key")
@@ -102,6 +136,7 @@ def module_monitoring_export_status(
     competition_id: int | None = Query(None),
     market_key: str | None = Query(None),
     include_rows: bool = Query(True),
+    source_cohort: str | None = Query(None, description="Cohort filter: all, prospective, historical_persisted_verified, etc."),
     db: Session = Depends(get_db),
 ):
     if module_key not in VALID_MODULE_KEYS:
@@ -115,6 +150,7 @@ def module_monitoring_export_status(
             competition_id=competition_id,
             market_key=market_key,
             include_rows=include_rows,
+            source_cohort_filter=source_cohort or "all",
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="unknown_module_key")
@@ -130,6 +166,7 @@ def module_monitoring_analysis_pack(
     market_key: str | None = Query(None),
     include_rows: bool = Query(True),
     include_debug: bool = Query(False),
+    source_cohort: str | None = Query(None, description="Cohort filter: all, prospective, historical_persisted_verified, etc."),
     db: Session = Depends(get_db),
 ):
     if module_key not in VALID_MODULE_KEYS:
@@ -144,6 +181,7 @@ def module_monitoring_analysis_pack(
             market_key=market_key,
             include_rows=include_rows,
             include_debug=include_debug,
+            source_cohort_filter=source_cohort or "all",
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="unknown_module_key")
@@ -161,6 +199,7 @@ def module_monitoring_summary_json(
     date_to: date = Query(...),
     competition_id: int | None = Query(None),
     market_key: str | None = Query(None),
+    source_cohort: str | None = Query(None, description="Cohort filter: all, prospective, historical_persisted_verified, etc."),
     db: Session = Depends(get_db),
 ):
     if module_key not in VALID_MODULE_KEYS:
@@ -173,6 +212,7 @@ def module_monitoring_summary_json(
             date_to=date_to,
             competition_id=competition_id,
             market_key=market_key,
+            source_cohort_filter=source_cohort or "all",
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="unknown_module_key")
@@ -200,6 +240,7 @@ def module_monitoring_rows_csv(
     market_key: str | None = Query(None),
     include_rows: bool = Query(True),
     include_debug: bool = Query(False),
+    source_cohort: str | None = Query(None, description="Cohort filter: all, prospective, historical_persisted_verified, etc."),
     db: Session = Depends(get_db),
 ):
     _ = include_rows, include_debug
@@ -213,6 +254,7 @@ def module_monitoring_rows_csv(
             date_to=date_to,
             competition_id=competition_id,
             market_key=market_key,
+            source_cohort_filter=source_cohort or "all",
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="unknown_module_key")

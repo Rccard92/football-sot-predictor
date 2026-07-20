@@ -13,6 +13,7 @@ type Props = {
   dateFrom: string
   dateTo: string
   competitionId: string
+  sourceCohort?: string
 }
 
 function tone(status: string | undefined): string {
@@ -21,7 +22,12 @@ function tone(status: string | undefined): string {
   return 'text-amber-900 bg-amber-50 border-amber-200'
 }
 
-export function MonitoringPackQualityCard({ dateFrom, dateTo, competitionId }: Props) {
+export function MonitoringPackQualityCard({
+  dateFrom,
+  dateTo,
+  competitionId,
+  sourceCohort = 'all',
+}: Props) {
   const [items, setItems] = useState<PackAuditItem[]>([])
   const [loading, setLoading] = useState(false)
   const [checkedAt, setCheckedAt] = useState<string | null>(null)
@@ -33,6 +39,7 @@ export function MonitoringPackQualityCard({ dateFrom, dateTo, competitionId }: P
         date_from: dateFrom,
         date_to: dateTo,
         competition_id: competitionId ? Number(competitionId) : undefined,
+        source_cohort: sourceCohort,
       })
       setItems(payload.modules || [])
       setCheckedAt(new Date().toISOString())
@@ -41,7 +48,7 @@ export function MonitoringPackQualityCard({ dateFrom, dateTo, competitionId }: P
     } finally {
       setLoading(false)
     }
-  }, [dateFrom, dateTo, competitionId])
+  }, [dateFrom, dateTo, competitionId, sourceCohort])
 
   useEffect(() => {
     void load()
@@ -53,7 +60,7 @@ export function MonitoringPackQualityCard({ dateFrom, dateTo, competitionId }: P
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Qualità pacchetti analisi</h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            Completezza forensic v3 — non basta che lo ZIP esista.
+            Completezza forensic v4 — non basta che lo ZIP esista.
           </p>
           {checkedAt ? (
             <p className="mt-1 text-[11px] text-slate-400">
@@ -74,7 +81,12 @@ export function MonitoringPackQualityCard({ dateFrom, dateTo, competitionId }: P
         {items.map((it) => {
           const def = getMonitoringModule(it.module_key)
           const audit = it.export_audit
-          const status = audit?.status || it.completeness || 'partial'
+          const status =
+            audit?.scientific_status ||
+            audit?.technical_status ||
+            audit?.status ||
+            it.completeness ||
+            'partial'
           const filesOk = (it.files_available?.length || 0)
           const filesExp = (it.files_expected?.length || 0)
           const src = audit?.source_row_count
@@ -118,17 +130,19 @@ export function MonitoringPackQualityCard({ dateFrom, dateTo, competitionId }: P
                     date_to: dateTo,
                     competition_id: competitionId ? Number(competitionId) : undefined,
                     include_rows: true,
+                    source_cohort: sourceCohort,
                   }).then(
                     () => {
-                      const auditSt = audit?.status || status
+                      const tech = audit?.technical_status || '—'
+                      const sci = audit?.scientific_status || status
                       const trunc = audit?.truncated ? ' · troncato' : ''
-                      if (auditSt === 'pass' || auditSt === 'complete') {
+                      if (sci === 'pass' || status === 'complete') {
                         toast.success(
-                          `Download ${def.label} · forensic v3 completo${trunc}`,
+                          `Download ${def.label} · v4 tech=${tech} sci=${sci}${trunc}`,
                         )
                       } else {
                         toast.warning(
-                          `Download ${def.label} · forensic v3 ${auditSt}${trunc}`,
+                          `Download ${def.label} · v4 tech=${tech} sci=${sci}${trunc}`,
                         )
                       }
                     },
