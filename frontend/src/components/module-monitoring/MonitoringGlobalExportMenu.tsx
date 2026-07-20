@@ -11,6 +11,10 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
 import {
   downloadModuleAnalysisPack,
+  formatEstimatedSize,
+  formatExportCompletenessLabel,
+  getModuleExportStatus,
+  type ModuleExportStatus,
   type MonitoringModuleKeyApi,
 } from '../../lib/cecchinoModuleMonitoringApi'
 import { MONITORING_MODULES } from './moduleMonitoringRegistry'
@@ -25,7 +29,7 @@ type Props = {
 
 type Pos = { top: number; left: number; openUp: boolean }
 
-const MENU_WIDTH = 340
+const MENU_WIDTH = 360
 const MOBILE_MQ = '(max-width: 639px)'
 
 export function MonitoringGlobalExportMenu({
@@ -38,6 +42,10 @@ export function MonitoringGlobalExportMenu({
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [pos, setPos] = useState<Pos>({ top: 0, left: 0, openUp: false })
+  const [exportStatuses, setExportStatuses] = useState<
+    Record<string, ModuleExportStatus | null>
+  >({})
+  const [statusLoading, setStatusLoading] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const firstItemRef = useRef<HTMLButtonElement>(null)
@@ -66,6 +74,38 @@ export function MonitoringGlobalExportMenu({
     if (!open || isMobile) return
     updatePosition()
   }, [open, isMobile, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setStatusLoading(true)
+    const filters = {
+      date_from: dateFrom,
+      date_to: dateTo,
+      competition_id: competitionId ?? undefined,
+      include_rows: true,
+    }
+    void Promise.all(
+      MONITORING_MODULES.map(async (m) => {
+        try {
+          const st = await getModuleExportStatus(m.key as MonitoringModuleKeyApi, filters)
+          return [m.key, st] as const
+        } catch {
+          return [m.key, null] as const
+        }
+      }),
+    )
+      .then((pairs) => {
+        if (cancelled) return
+        setExportStatuses(Object.fromEntries(pairs))
+      })
+      .finally(() => {
+        if (!cancelled) setStatusLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, dateFrom, dateTo, competitionId])
 
   useEffect(() => {
     if (!open) return
@@ -109,7 +149,13 @@ export function MonitoringGlobalExportMenu({
         competition_id: competitionId ?? undefined,
         include_rows: true,
       })
-      toast.success('Download pronto')
+      const st = exportStatuses[key]
+      const label = formatExportCompletenessLabel(st)
+      if (st?.completeness === 'complete') {
+        toast.success(`Download pronto · ${label}`)
+      } else {
+        toast.warning(`Download completato · pacchetto non completo · ${label}`)
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export fallito')
     } finally {
@@ -130,7 +176,7 @@ export function MonitoringGlobalExportMenu({
       className={
         isMobile
           ? 'fixed inset-x-3 bottom-3 z-[100] max-h-[85dvh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 shadow-xl'
-          : 'fixed z-[100] w-[340px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl'
+          : 'fixed z-[100] w-[360px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl'
       }
       style={
         isMobile
@@ -159,16 +205,22 @@ export function MonitoringGlobalExportMenu({
       ) : null}
       <h3 className="text-sm font-semibold text-slate-900">Esporta analisi moduli</h3>
       <p className="mt-1 text-xs text-slate-500">
-        Scegli un modulo. Non è un export generico: ogni pacchetto è specifico.
+        Scegli un modulo. Un download per scelta — non quattro automatici.
       </p>
       <p className="mt-1 text-xs text-slate-500">
         Periodo {dateFrom} → {dateTo}
         {competitionId != null ? ` · competition ${competitionId}` : ' · tutte'}
       </p>
+      {statusLoading ? (
+        <p className="mt-2 text-xs text-slate-500">Verifica completezza pacchetti…</p>
+      ) : null}
       <ul className="mt-3 space-y-1.5">
         {MONITORING_MODULES.map((m, idx) => {
-          const st = moduleStatuses?.[m.key]
-          const label = st ? monitoringStatusLabel(st) : m.operationalStatus
+          const stApi = moduleStatuses?.[m.key]
+          const label = stApi ? monitoringStatusLabel(stApi) : m.operationalStatus
+          const exp = exportStatuses[m.key]
+          const completeness = formatExportCompletenessLabel(exp)
+          const size = formatEstimatedSize(exp?.estimated_size_bytes)
           return (
             <li key={m.key}>
               <button
@@ -176,12 +228,16 @@ export function MonitoringGlobalExportMenu({
                 type="button"
                 role="menuitem"
                 disabled={busyKey != null}
-                aria-label={`${m.label} ${st || m.key}`}
+                aria-label={`${m.label} ${stApi || m.key}`}
                 onClick={() => void downloadOne(m.key as MonitoringModuleKeyApi)}
                 className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
               >
                 <span className="block text-sm font-medium text-slate-900">{m.label}</span>
                 <span className="mt-0.5 block text-xs text-slate-500">{label}</span>
+                <span className="mt-0.5 block text-xs text-amber-800">
+                  {completeness}
+                  {size ? ` · ~${size}` : ''}
+                </span>
                 <span className="mt-1 block text-xs font-medium text-cyan-700">
                   {busyKey === m.key ? 'Download in corso…' : 'Scarica pacchetto'}
                 </span>

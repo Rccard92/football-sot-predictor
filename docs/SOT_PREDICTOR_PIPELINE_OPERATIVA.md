@@ -8,6 +8,14 @@
 4. Alias legacy `purchasability-empirical` ancora attivo ma deprecato.
 5. Nessuna colonna Acquistabilità produttiva.
 
+## Monitoraggio Moduli — HARDENING export coorti reali (2026-07-20)
+
+1. Nuove scansioni: persistono `purchasability_preview` + `balance_v5_monitoring` (no FT nello snapshot).
+2. Overview Balance: covered = persisted ∪ legacy_derived; settled ⊆ covered.
+3. Export: menu mostra completezza/righe/coorte/size via `GET …/export-status`.
+4. ZIP v2: Balance rows+distribuzioni; Goal 6 preview file; Segnali activations+timeseries.
+5. Acquistabilità storiche restano `only_legacy_derived` — non backfill massivo.
+
 ## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
 
 1. Hero «Scarica analisi» → menu globale (un pacchetto per modulo scelto); shell → menu del modulo attivo.

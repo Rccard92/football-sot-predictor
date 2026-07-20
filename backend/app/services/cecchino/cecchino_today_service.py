@@ -113,6 +113,9 @@ from app.services.cecchino.cecchino_purchasability_snapshot import (
     attach_purchasability_preview_to_output,
     resolve_purchasability_preview_for_detail,
 )
+from app.services.cecchino.cecchino_balance_v5_monitoring import (
+    attach_balance_v5_monitoring_to_output,
+)
 from app.services.cecchino.cecchino_fixture_history import (
     build_fixture_contexts,
     build_goal_market_contexts,
@@ -1091,8 +1094,41 @@ def run_scan(
                         ),
                         "snapshot_timestamp_verified": snap_verified,
                     },
-                    existing_preview=existing_prev
+                    existing_prev=existing_prev
                     if isinstance(existing_prev, dict)
+                    else None,
+                )
+                existing_bal = None
+                if existing_row is not None and isinstance(
+                    existing_row.cecchino_output_json, dict
+                ):
+                    existing_bal = existing_row.cecchino_output_json.get(
+                        "balance_v5_monitoring"
+                    )
+                attach_balance_v5_monitoring_to_output(
+                    cecchino_output=cecchino_output,
+                    kpi_panel=kpi_panel,
+                    fixture_meta={
+                        "today_fixture_id": (
+                            int(existing_row.id) if existing_row is not None else None
+                        ),
+                        "local_fixture_id": int(local_fx.id),
+                        "provider_fixture_id": api_fid,
+                        "competition_id": int(comp.id),
+                        "scan_date": resolved_date,
+                        "kickoff": getattr(local_fx, "kickoff", None)
+                        or (item.get("fixture") or {}).get("date"),
+                    },
+                    snapshot_info={
+                        "snapshot_at": snap_at,
+                        "snapshot_source": snap_src,
+                        "snapshot_fidelity": (
+                            "verified_panel_odds_meta" if snap_verified else "missing"
+                        ),
+                        "snapshot_timestamp_verified": snap_verified,
+                    },
+                    existing_monitoring=existing_bal
+                    if isinstance(existing_bal, dict)
                     else None,
                 )
                 _emit_progress(progress, current_step="saving_snapshots")

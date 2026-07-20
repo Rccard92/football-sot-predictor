@@ -744,8 +744,16 @@ def build_purchasability_validation_health(
     snapshot_dist: dict[str, int] = {}
     invalid_reasons: dict[str, int] = {}
     mismatch = 0
+    first_persisted_snapshot_at: datetime | str | None = None
+    last_persisted_snapshot_at: datetime | str | None = None
+    newest_eligible_scan_date: date | None = None
+    newest_persisted_scan_date: date | None = None
+    persisted_ats: list[Any] = []
 
     for fx in fixtures:
+        if fx.scan_date is not None:
+            if newest_eligible_scan_date is None or fx.scan_date > newest_eligible_scan_date:
+                newest_eligible_scan_date = fx.scan_date
         panel = fx.kpi_panel_json if isinstance(fx.kpi_panel_json, dict) else None
         if panel and _panel_rows(panel):
             with_panel += 1
@@ -764,6 +772,15 @@ def build_purchasability_validation_health(
             unavailable += 1
             continue
         with_preview += 1
+        if fx.scan_date is not None:
+            if (
+                newest_persisted_scan_date is None
+                or fx.scan_date > newest_persisted_scan_date
+            ):
+                newest_persisted_scan_date = fx.scan_date
+        snap_at = preview.get("source_snapshot_at")
+        if snap_at:
+            persisted_ats.append(snap_at)
         if preview.get("status") == "unavailable":
             unavailable += 1
         verified = bool(preview.get("source_snapshot_verified"))
@@ -784,28 +801,91 @@ def build_purchasability_validation_health(
         if _timestamps_mismatch(_panel_snapshot_at(panel), preview.get("source_snapshot_at")):
             mismatch += 1
 
+    if persisted_ats:
+        try:
+            sorted_ats = sorted(str(a) for a in persisted_ats)
+            first_persisted_snapshot_at = sorted_ats[0]
+            last_persisted_snapshot_at = sorted_ats[-1]
+        except Exception:
+            first_persisted_snapshot_at = str(persisted_ats[0])
+            last_persisted_snapshot_at = str(persisted_ats[-1])
+
+    # Floor prospettico = primo snapshot candidate_2 osservato (non data deploy inventata)
+    prospective_floor = first_persisted_snapshot_at
+    post_deploy_fixtures = 0
+    post_deploy_with_preview = 0
+    if prospective_floor:
+        # Con floor: tutte le fixture nel range sono "post" rispetto al primo osservato
+        # se scan_date >= data del primo snapshot (best-effort da ISO date prefix)
+        floor_date = None
+        try:
+            floor_date = date.fromisoformat(str(prospective_floor)[:10])
+        except ValueError:
+            floor_date = None
+        for fx in fixtures:
+            if floor_date is None or (
+                fx.scan_date is not None and fx.scan_date >= floor_date
+            ):
+                post_deploy_fixtures += 1
+                out = (
+                    fx.cecchino_output_json
+                    if isinstance(fx.cecchino_output_json, dict)
+                    else {}
+                )
+                if isinstance(out.get("purchasability_preview"), dict):
+                    post_deploy_with_preview += 1
+    else:
+        post_deploy_fixtures = 0
+        post_deploy_with_preview = 0
+
     denom = with_panel
     coverage = (with_verified / denom) if denom else None
 
-    ev_q = select(CecchinoPurchasabilityEvaluation).where(
-        CecchinoPurchasabilityEvaluation.scan_date >= date_from,
-        CecchinoPurchasabilityEvaluation.scan_date <= date_to,
-        CecchinoPurchasabilityEvaluation.is_current.is_(True),
-    )
-    if competition_id is not None:
-        ev_q = ev_q.where(
-            CecchinoPurchasabilityEvaluation.competition_id == int(competition_id)
+    # Table availability
+    table_unavailable = False
+    sync_error_count = 0
+    try:
+        ev_q = select(CecchinoPurchasabilityEvaluation).where(
+            CecchinoPurchasabilityEvaluation.scan_date >= date_from,
+            CecchinoPurchasabilityEvaluation.scan_date <= date_to,
+            CecchinoPurchasabilityEvaluation.is_current.is_(True),
         )
-    evals = list(db.scalars(ev_q).all())
+        if competition_id is not None:
+            ev_q = ev_q.where(
+                CecchinoPurchasabilityEvaluation.competition_id == int(competition_id)
+            )
+        evals = list(db.scalars(ev_q).all())
+    except Exception:
+        table_unavailable = True
+        evals = []
+        sync_error_count = 1
+
     pending = sum(1 for e in evals if e.evaluation_status == EVAL_PENDING)
     settled = sum(1 for e in evals if e.evaluation_status in (EVAL_WON, EVAL_LOST))
 
-    # duplicate current check
     dup_keys: dict[tuple[Any, ...], int] = {}
     for e in evals:
         key = (e.today_fixture_id, e.candidate_version, e.market_key)
         dup_keys[key] = dup_keys.get(key, 0) + 1
     duplicates = sum(1 for v in dup_keys.values() if v > 1)
+
+    persistence_blocking_reason: str | None = None
+    if table_unavailable:
+        persistence_blocking_reason = "migration_or_table_unavailable"
+    elif with_panel > 0 and with_preview == 0 and only_derived == with_panel:
+        persistence_blocking_reason = (
+            "only_legacy_derived_available"
+            if prospective_floor is None
+            else "no_post_deploy_scan_detected"
+        )
+    elif with_preview == 0 and prospective_floor is None:
+        persistence_blocking_reason = "no_post_deploy_scan_detected"
+    elif with_preview > 0 and len(evals) == 0 and not table_unavailable:
+        persistence_blocking_reason = "validation_sync_failed"
+    elif with_panel > 0 and with_preview == 0 and invalid_reasons:
+        persistence_blocking_reason = "snapshot_build_failed"
+    elif with_panel > 0 and with_preview == 0:
+        persistence_blocking_reason = "snapshot_not_committed"
 
     return make_json_safe(
         {
@@ -829,6 +909,23 @@ def build_purchasability_validation_health(
             "duplicate_validation_rows": duplicates,
             "result_pending_count": pending,
             "result_settled_count": settled,
+            "first_persisted_snapshot_at": first_persisted_snapshot_at,
+            "last_persisted_snapshot_at": last_persisted_snapshot_at,
+            "newest_eligible_scan_date": (
+                newest_eligible_scan_date.isoformat()
+                if newest_eligible_scan_date
+                else None
+            ),
+            "newest_persisted_scan_date": (
+                newest_persisted_scan_date.isoformat()
+                if newest_persisted_scan_date
+                else None
+            ),
+            "post_deploy_fixtures": post_deploy_fixtures,
+            "post_deploy_fixtures_with_preview": post_deploy_with_preview,
+            "sync_error_count": sync_error_count,
+            "persistence_blocking_reason": persistence_blocking_reason,
+            "prospective_monitoring_floor": prospective_floor,
         }
     )
 

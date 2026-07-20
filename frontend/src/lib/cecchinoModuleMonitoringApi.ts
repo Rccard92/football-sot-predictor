@@ -120,3 +120,55 @@ export async function downloadModuleRowsCsv(
     `SOT_MONITOR_${moduleKey}_${filters.date_from}_${filters.date_to}_rows.csv`,
   )
 }
+
+export type ModuleExportStatus = {
+  module_key: string
+  files_expected: string[]
+  files_available: string[]
+  rows: number | null
+  source_cohorts?: Record<string, number> | null
+  completeness: 'complete' | 'partial' | 'empty' | 'blocked' | string
+  export_completeness_status?: string
+  blocking_reasons?: string[]
+  estimated_size_bytes?: number | null
+  warnings?: string[]
+}
+
+export async function getModuleExportStatus(
+  moduleKey: MonitoringModuleKeyApi,
+  filters: ModuleMonitoringFilters,
+): Promise<ModuleExportStatus> {
+  return adminGetJson(
+    `${BASE}/${moduleKey}/export-status${qs({ ...filters, include_rows: filters.include_rows ?? true })}`,
+  )
+}
+
+export function formatExportCompletenessLabel(status: ModuleExportStatus | null | undefined): string {
+  if (!status) return 'Stato export non disponibile'
+  const rows = status.rows
+  const c = status.completeness || status.export_completeness_status || 'partial'
+  if (c === 'complete') {
+    return rows != null ? `Completo · ${rows.toLocaleString('it-IT')} righe` : 'Completo'
+  }
+  if (c === 'empty') {
+    return 'Raccolta dati · 0 righe prospettiche'
+  }
+  if (c === 'blocked') {
+    const reason = status.blocking_reasons?.[0]
+    return reason ? `Bloccato · ${reason}` : 'Bloccato'
+  }
+  const reason = status.blocking_reasons?.[0] || status.warnings?.[0]
+  if (rows != null && rows > 0) {
+    return reason
+      ? `Parziale · ${rows.toLocaleString('it-IT')} righe · ${reason}`
+      : `Parziale · ${rows.toLocaleString('it-IT')} righe`
+  }
+  return reason ? `Parziale · ${reason}` : 'Parziale · pacchetto incompleto'
+}
+
+export function formatEstimatedSize(bytes: number | null | undefined): string {
+  if (bytes == null || bytes <= 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}

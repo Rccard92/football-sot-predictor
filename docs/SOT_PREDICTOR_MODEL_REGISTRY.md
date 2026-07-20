@@ -2,6 +2,15 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Monitoraggio Moduli — HARDENING export (2026-07-20)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Export pack | `cecchino_module_monitoring_exports_v2` |
+| Balance monitoring snapshot | `cecchino_balance_v5_monitoring_snapshot_v1` |
+| Balance formule | `cecchino_balance_v5_v2` (invariato) |
+| export-status | `GET /api/cecchino/module-monitoring/{key}/export-status` |
+
 ## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
 
 | Artefatto | Note |

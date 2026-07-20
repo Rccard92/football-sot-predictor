@@ -13,6 +13,10 @@ import {
   downloadModuleAnalysisPack,
   downloadModuleRowsCsv,
   downloadModuleSummaryJson,
+  formatEstimatedSize,
+  formatExportCompletenessLabel,
+  getModuleExportStatus,
+  type ModuleExportStatus,
   type MonitoringModuleKeyApi,
 } from '../../lib/cecchinoModuleMonitoringApi'
 import { getMonitoringModule } from './moduleMonitoringRegistry'
@@ -51,6 +55,8 @@ export function MonitoringExportMenu({
   const [busy, setBusy] = useState<BusyAction>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [pos, setPos] = useState<Pos>({ top: 0, left: 0, openUp: false })
+  const [exportStatus, setExportStatus] = useState<ModuleExportStatus | null>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const firstItemRef = useRef<HTMLButtonElement>(null)
@@ -63,6 +69,13 @@ export function MonitoringExportMenu({
     market_key: marketKey || undefined,
     include_rows: includeRows,
   }
+
+  const completenessLabel = formatExportCompletenessLabel(exportStatus)
+  const sizeLabel = formatEstimatedSize(exportStatus?.estimated_size_bytes)
+  const isPartial =
+    exportStatus != null &&
+    exportStatus.completeness !== 'complete' &&
+    exportStatus.completeness !== 'blocked'
 
   const updatePosition = useCallback(() => {
     const el = triggerRef.current
@@ -88,6 +101,26 @@ export function MonitoringExportMenu({
     if (!open || isMobile) return
     updatePosition()
   }, [open, isMobile, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setStatusLoading(true)
+    void getModuleExportStatus(moduleKey, filters)
+      .then((st) => {
+        if (!cancelled) setExportStatus(st)
+      })
+      .catch(() => {
+        if (!cancelled) setExportStatus(null)
+      })
+      .finally(() => {
+        if (!cancelled) setStatusLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on open + filters
+  }, [open, moduleKey, dateFrom, dateTo, competitionId, marketKey, includeRows])
 
   useEffect(() => {
     if (!open) return
@@ -136,7 +169,14 @@ export function MonitoringExportMenu({
     toast.message(startMsg)
     try {
       await fn()
-      toast.success('Download pronto')
+      const label = formatExportCompletenessLabel(exportStatus)
+      if (exportStatus?.completeness === 'complete') {
+        toast.success(`Download pronto · ${label}`)
+      } else if (exportStatus?.completeness === 'blocked') {
+        toast.warning(`Download completato · ${label}`)
+      } else {
+        toast.warning(`Download completato · pacchetto non completo · ${label}`)
+      }
       setOpen(false)
       triggerRef.current?.focus()
     } catch (err) {
@@ -191,6 +231,27 @@ export function MonitoringExportMenu({
         Periodo {dateFrom} → {dateTo}
         {competitionId != null ? ` · competition ${competitionId}` : ' · tutte'}
       </p>
+      <div
+        className={`mt-2 rounded-xl border px-2.5 py-2 text-xs ${
+          isPartial || exportStatus?.completeness === 'empty'
+            ? 'border-amber-200 bg-amber-50 text-amber-900'
+            : exportStatus?.completeness === 'blocked'
+              ? 'border-rose-200 bg-rose-50 text-rose-900'
+              : 'border-slate-200 bg-slate-50 text-slate-700'
+        }`}
+      >
+        {statusLoading
+          ? 'Verifica completezza…'
+          : `${completenessLabel}${sizeLabel ? ` · ~${sizeLabel}` : ''}`}
+        {exportStatus?.source_cohorts ? (
+          <div className="mt-1 text-[11px] opacity-80">
+            Coorti:{' '}
+            {Object.entries(exportStatus.source_cohorts)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(' · ') || '—'}
+          </div>
+        ) : null}
+      </div>
       <ul className="mt-3 space-y-1">
         <li>
           <button
@@ -199,7 +260,11 @@ export function MonitoringExportMenu({
             role="menuitem"
             disabled={busy != null}
             onClick={() =>
-              void run('zip', () => downloadModuleAnalysisPack(moduleKey, filters), 'Preparazione pacchetto…')
+              void run(
+                'zip',
+                () => downloadModuleAnalysisPack(moduleKey, filters),
+                'Preparazione pacchetto…',
+              )
             }
             className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
           >
@@ -208,7 +273,7 @@ export function MonitoringExportMenu({
               {busy === 'zip' ? '…' : ''}
             </span>
             <span className="mt-0.5 block text-xs text-slate-500">
-              ZIP con handoff, manifest, summary, health e warning.
+              ZIP con handoff, manifest v2, summary e dataset modulo.
             </span>
           </button>
         </li>
@@ -219,7 +284,11 @@ export function MonitoringExportMenu({
               role="menuitem"
               disabled={busy != null}
               onClick={() =>
-                void run('csv', () => downloadModuleRowsCsv(moduleKey, filters), 'Preparazione CSV…')
+                void run(
+                  'csv',
+                  () => downloadModuleRowsCsv(moduleKey, filters),
+                  'Preparazione CSV…',
+                )
               }
               className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
             >
@@ -239,7 +308,11 @@ export function MonitoringExportMenu({
             role="menuitem"
             disabled={busy != null}
             onClick={() =>
-              void run('json', () => downloadModuleSummaryJson(moduleKey, filters), 'Preparazione riepilogo…')
+              void run(
+                'json',
+                () => downloadModuleSummaryJson(moduleKey, filters),
+                'Preparazione riepilogo…',
+              )
             }
             className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 disabled:opacity-60"
           >

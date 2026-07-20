@@ -22,6 +22,9 @@ from app.services.cecchino.cecchino_kpi_panel_v2_betfair import build_cecchino_k
 from app.services.cecchino.cecchino_purchasability_snapshot import (
     attach_purchasability_preview_to_output,
 )
+from app.services.cecchino.cecchino_balance_v5_monitoring import (
+    attach_balance_v5_monitoring_to_output,
+)
 from app.services.cecchino.cecchino_service import calculate_and_persist_for_fixture
 from app.services.cecchino.cecchino_signal_backfill import (
     _ensure_signals_matrix_on_row,
@@ -192,6 +195,30 @@ def recompute_today_fixture_offline(
             "snapshot_timestamp_verified": snap_verified,
         },
         existing_preview=existing_prev if isinstance(existing_prev, dict) else None,
+    )
+    existing_bal = None
+    if isinstance(row.cecchino_output_json, dict):
+        existing_bal = row.cecchino_output_json.get("balance_v5_monitoring")
+    attach_balance_v5_monitoring_to_output(
+        cecchino_output=cecchino_output,
+        kpi_panel=kpi_panel,
+        fixture_meta={
+            "today_fixture_id": int(row.id),
+            "local_fixture_id": row.local_fixture_id,
+            "provider_fixture_id": row.provider_fixture_id,
+            "competition_id": row.competition_id,
+            "scan_date": row.scan_date,
+            "kickoff": row.kickoff,
+        },
+        snapshot_info={
+            "snapshot_at": snap_at,
+            "snapshot_source": snap_src,
+            "snapshot_fidelity": (
+                "verified_panel_odds_meta" if snap_verified else "missing"
+            ),
+            "snapshot_timestamp_verified": snap_verified,
+        },
+        existing_monitoring=existing_bal if isinstance(existing_bal, dict) else None,
     )
 
     leakage_status = _extract_leakage_status(row.stats_snapshot_json)

@@ -33,6 +33,13 @@
 - Modulo unico `cecchino_balance_v5.py` (`cecchino_balance_v5_v2`); pilastri keyed; Credibilità X descrittiva (`prob_x_norm`); Dominanza/Gap ufficiali; Book separato.
 - Eliminati `cecchino_balance_v5_preview.py` e `cecchino_balance_research_candidates.py`; `balance_analysis` ridotto ad adapter; FE `CecchinoBalanceV5Panel` senza Preview.
 
+## Monitoraggio Moduli — HARDENING export coorti reali (2026-07-20)
+
+- Snapshot Balance monitoring persistito su nuove scansioni; resolve dual-cohort (prospective vs legacy derived).
+- ZIP autosufficienti v2 (manifest hash/row_count); Goal/Segnali incorporano export esistenti.
+- Health Acquistabilità con `persistence_blocking_reason`; API `export-status` + toast completezza.
+- Nessuna modifica a formule, candidate, Rating, Signals.
+
 ## Monitoraggio Moduli Cecchino — MICRO-FIX export portal + overview (2026-07-19)
 
 - Menu export via React portal (no clipping da `overflow-hidden`); desktop fixed + mobile bottom sheet; a11y Escape/focus.
