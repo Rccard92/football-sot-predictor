@@ -1114,7 +1114,7 @@ def run_scan(
                         ),
                         "snapshot_timestamp_verified": snap_verified,
                     },
-                    existing_prev=existing_prev
+                    existing_preview=existing_prev
                     if isinstance(existing_prev, dict)
                     else None,
                 )

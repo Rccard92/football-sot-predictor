@@ -215,9 +215,41 @@ def make_progress_reporter(db: Session, job_id: str) -> Callable[..., None]:
     return progress
 
 
+def _metrics_result_summary(
+    metrics: ScanRunMetrics | None,
+    *,
+    report: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Propagazione contatori API/metriche senza alterare la logica di consumo."""
+    if report and isinstance(report.get("result_summary"), dict):
+        summary = dict(report["result_summary"])
+        if metrics is not None:
+            metrics.sync_api_calls_total()
+            if not summary.get("api_calls_total") and metrics.api_calls_total:
+                summary["api_calls"] = dict(metrics.api_calls)
+                summary["api_calls_total"] = metrics.api_calls_total
+                summary["api_calls_by_endpoint"] = dict(metrics.api_calls)
+        return summary
+    if metrics is None:
+        return None
+    duration = 0.0
+    if metrics.started_at > 0:
+        duration = max(0.0, time.time() - metrics.started_at)
+    return metrics.to_result_summary(
+        fixtures_found=int(metrics.fixtures_found or 0),
+        after_competition_filter=int(metrics.after_competition_filter or 0),
+        odds_checked=int(metrics.odds_checked or 0),
+        eligible_count=0,
+        excluded_count=0,
+        excluded_summary=dict(metrics.excluded_summary or {}),
+        duration_seconds=duration,
+    )
+
+
 def _run_scan_job_thread(job_id: str) -> None:
     db = SessionLocal()
     terminal = False
+    metrics: ScanRunMetrics | None = None
     try:
         job = get_scan_job(db, job_id)
         if job is None:
@@ -251,16 +283,26 @@ def _run_scan_job_thread(job_id: str) -> None:
 
         status = report.get("status")
         if status == "already_scanned":
+            already_summary: dict[str, Any] = {
+                "status": "already_scanned",
+                "scan_meta": report.get("scan_meta"),
+            }
+            metrics_summary = _metrics_result_summary(metrics)
+            if metrics_summary:
+                already_summary["api_calls"] = metrics_summary.get("api_calls", {})
+                already_summary["api_calls_total"] = metrics_summary.get(
+                    "api_calls_total", 0
+                )
+                already_summary["api_calls_by_endpoint"] = metrics_summary.get(
+                    "api_calls_by_endpoint", {}
+                )
             update_scan_job(
                 db,
                 job_id,
                 status=JOB_STATUS_COMPLETED,
                 finished_at=_utcnow(),
                 current_step="completed",
-                result_summary_json={
-                    "status": "already_scanned",
-                    "scan_meta": report.get("scan_meta"),
-                },
+                result_summary_json=already_summary,
                 warnings_json=[],
             )
             db.commit()
@@ -279,7 +321,7 @@ def _run_scan_job_thread(job_id: str) -> None:
                 current_step="completed",
                 errors_json=list(report.get("errors") or [report.get("message", "scan failed")]),
                 warnings_json=list(report.get("warnings") or []),
-                result_summary_json=report.get("result_summary"),
+                result_summary_json=_metrics_result_summary(metrics, report=report),
                 progress_current=int(report.get("fixtures_processed") or 0),
                 progress_total=int(report.get("fixtures_found") or report.get("total_discovered") or 0),
                 eligible_count=int(report.get("eligible") or 0),
@@ -302,7 +344,7 @@ def _run_scan_job_thread(job_id: str) -> None:
             eligible_count=int(report.get("eligible") or 0),
             excluded_count=int(report.get("excluded_total") or 0),
             excluded_summary_json=dict(report.get("excluded_summary") or {}),
-            result_summary_json=report.get("result_summary"),
+            result_summary_json=_metrics_result_summary(metrics, report=report),
             warnings_json=list(report.get("warnings") or []),
             errors_json=list(report.get("errors") or []),
             fixtures_found=int(report.get("fixtures_found") or report.get("total_discovered") or 0),
@@ -372,14 +414,16 @@ def _run_scan_job_thread(job_id: str) -> None:
             if job is not None:
                 errs = list(job.errors_json or [])
                 errs.append(str(exc)[:500])
-                update_scan_job(
-                    db,
-                    job_id,
-                    status=JOB_STATUS_FAILED,
-                    finished_at=_utcnow(),
-                    current_step="completed",
-                    errors_json=errs,
-                )
+                update_kwargs: dict[str, Any] = {
+                    "status": JOB_STATUS_FAILED,
+                    "finished_at": _utcnow(),
+                    "current_step": "completed",
+                    "errors_json": errs,
+                }
+                summary = _metrics_result_summary(metrics)
+                if summary is not None:
+                    update_kwargs["result_summary_json"] = summary
+                update_scan_job(db, job_id, **update_kwargs)
                 db.commit()
                 terminal = True
         except Exception:
@@ -392,14 +436,17 @@ def _run_scan_job_thread(job_id: str) -> None:
                 if job is not None and job.status in JOB_ACTIVE_STATUSES:
                     errs = list(job.errors_json or [])
                     errs.append("job thread exited without terminal status")
-                    update_scan_job(
-                        db,
-                        job_id,
-                        status=JOB_STATUS_FAILED,
-                        finished_at=_utcnow(),
-                        current_step="completed",
-                        errors_json=errs,
-                    )
+                    update_kwargs = {
+                        "status": JOB_STATUS_FAILED,
+                        "finished_at": _utcnow(),
+                        "current_step": "completed",
+                        "errors_json": errs,
+                    }
+                    if job.result_summary_json is None:
+                        summary = _metrics_result_summary(metrics)
+                        if summary is not None:
+                            update_kwargs["result_summary_json"] = summary
+                    update_scan_job(db, job_id, **update_kwargs)
                     db.commit()
             except Exception:
                 logger.exception("Failed guard cleanup for scan job job_id=%s", job_id)
