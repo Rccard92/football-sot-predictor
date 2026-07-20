@@ -11,6 +11,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import zipfile
 from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
@@ -30,6 +31,7 @@ from app.services.cecchino.cecchino_balance_v5_monitoring import (
     BALANCE_ROW_FIELDS,
     build_balance_export_files,
     build_balance_module_overview_v2,
+    build_balance_monitoring_rows,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
     build_prospective_monitoring,
@@ -61,6 +63,8 @@ from app.services.cecchino.cecchino_signal_aggregation import (
     export_signals_csv,
     list_signal_activations,
 )
+
+logger = logging.getLogger(__name__)
 
 ModuleKey = Literal[
     "purchasability",
@@ -2184,6 +2188,32 @@ def build_module_analysis_pack_audit(
     )
 
 
+def _failed_module_audit_payload(module_key: str, exc: Exception) -> dict[str, Any]:
+    """Payload sanitizzato quando l'audit di un singolo modulo fallisce."""
+    error_type = type(exc).__name__
+    export_audit = {
+        "technical_status": "fail",
+        "scientific_status": "fail",
+        "status": "fail",
+        "error_code": "module_audit_failed",
+        "error_type": error_type,
+    }
+    return make_json_safe(
+        {
+            "module_key": module_key,
+            "status": "failed",
+            "technical_status": "fail",
+            "scientific_status": "fail",
+            "error_code": "module_audit_failed",
+            "error_type": error_type,
+            "files_available": 0,
+            "files_expected": None,
+            "export_audit": export_audit,
+            "completeness": "blocked",
+        }
+    )
+
+
 def build_modules_analysis_packs_audit(
     db: Session,
     *,
@@ -2196,25 +2226,31 @@ def build_modules_analysis_packs_audit(
     source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> dict[str, Any]:
     """Costruisce in un'unica risposta gli audit dei quattro moduli."""
-    modules = [
-        build_module_analysis_pack_audit(
-            db,
-            module_key=module_key,
-            date_from=date_from,
-            date_to=date_to,
-            competition_id=competition_id,
-            market_key=market_key,
-            include_rows=include_rows,
-            include_debug=include_debug,
-            source_cohort_filter=source_cohort_filter,
-        )
-        for module_key in (
-            "purchasability",
-            "balance-v5",
-            "goal-intensity-v5",
-            "signals",
-        )
-    ]
+    module_keys = (
+        "purchasability",
+        "balance-v5",
+        "goal-intensity-v5",
+        "signals",
+    )
+    modules: list[dict[str, Any]] = []
+    for module_key in module_keys:
+        try:
+            modules.append(
+                build_module_analysis_pack_audit(
+                    db,
+                    module_key=module_key,
+                    date_from=date_from,
+                    date_to=date_to,
+                    competition_id=competition_id,
+                    market_key=market_key,
+                    include_rows=include_rows,
+                    include_debug=include_debug,
+                    source_cohort_filter=source_cohort_filter,
+                )
+            )
+        except Exception as exc:
+            logger.exception("module_audit_failed module_key=%s", module_key)
+            modules.append(_failed_module_audit_payload(module_key, exc))
     return make_json_safe(
         {
             "generated_at": _utcnow(),

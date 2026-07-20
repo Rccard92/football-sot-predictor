@@ -247,7 +247,12 @@ export async function runHistoricalBackfill(body: {
 
 export type PackAuditItem = {
   module_key: string
+  status?: string
   completeness?: string
+  technical_status?: string
+  scientific_status?: string
+  error_code?: string
+  error_type?: string
   export_audit?: {
     status?: string
     technical_status?: string
@@ -260,9 +265,11 @@ export type PackAuditItem = {
     row_count_match?: boolean
     actual_files?: string[]
     required_files?: string[]
+    error_code?: string
+    error_type?: string
   }
-  files_available?: string[]
-  files_expected?: string[]
+  files_available?: string[] | number
+  files_expected?: string[] | null
   rows?: number | null
   source_cohorts?: Record<string, number>
   blocking_reasons?: string[]

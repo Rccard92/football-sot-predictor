@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix audit forensic v5 — NameError build_balance_monitoring_rows (2026-07-20)
+
+- Import mancante `build_balance_monitoring_rows` in export monitoraggio → `GET /analysis-packs-audit` 500.
+- Fail-soft per modulo in audit globale; FE «Riverifica» con toast/ Riprova e conservazione ultimo risultato.
+
 ## Stabilizzazione finale Monitoraggio Moduli Fase 1/3 — export v5 (2026-07-20)
 
 - Acquistabilità: aggregazioni analitiche senza gate `promotion_eligible`; `source_mode` in export; overview con fixture/righe prospettiche vs storiche separate da readiness.
