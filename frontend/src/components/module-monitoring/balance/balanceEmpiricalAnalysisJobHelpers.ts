@@ -273,12 +273,29 @@ export type ResultSummaryFields = {
   duration: string
   rowsAnalyzed: string
   bootstrapIterations: string
+  bootstrapRequested: string
+  bootstrapEffective: string
   evidenceScope: string
   statusF36: string
   statusDominance: string
   statusCredibilityX: string
   statusGap: string
   warningCount: string
+}
+
+export const EVIDENCE_STATUS_LABELS_IT: Record<string, string> = {
+  analysis_not_run: 'Analisi non eseguita',
+  insufficient_data: 'Dati insufficienti',
+  descriptive_only: 'Evidenza descrittiva',
+  exploratory_evidence: 'Evidenza esplorativa',
+  evidence_emerging: 'Evidenza emergente',
+  evidence_inconsistent: 'Evidenza incoerente',
+  not_evaluable: 'Non valutabile',
+}
+
+export function mapEvidenceStatusIt(status: string | null | undefined): string {
+  if (!status) return '—'
+  return EVIDENCE_STATUS_LABELS_IT[status] || status.replace(/_/g, ' ')
 }
 
 function dash(v: unknown): string {
@@ -292,23 +309,36 @@ function pillarStatus(
   key: string,
 ): string {
   if (!result) return '—'
+  // Canonico: top-level pillar_evidence_status dal full analysis / job
   const pes = result.pillar_evidence_status
-  if (!pes || typeof pes !== 'object') {
-    const overview = result.overview
-    if (overview && typeof overview === 'object') {
-      const op = (overview as Record<string, unknown>).pillar_evidence_status
-      if (op && typeof op === 'object') {
-        const p = (op as Record<string, unknown>)[key]
-        if (p && typeof p === 'object') {
-          return dash((p as Record<string, unknown>).status)
-        }
+  if (pes && typeof pes === 'object') {
+    const p = (pes as Record<string, unknown>)[key]
+    if (p && typeof p === 'object') {
+      const st = (p as Record<string, unknown>).status
+      if (st && st !== 'analysis_not_run') return mapEvidenceStatusIt(String(st))
+      if (st) return mapEvidenceStatusIt(String(st))
+    }
+  }
+  // Fallback: evidence del pilastro completo
+  const pillar = result[key]
+  if (pillar && typeof pillar === 'object') {
+    const ev = (pillar as Record<string, unknown>).evidence
+    if (ev && typeof ev === 'object') {
+      const st = (ev as Record<string, unknown>).status
+      if (st) return mapEvidenceStatusIt(String(st))
+    }
+  }
+  // Overview stub solo se non analysis_not_run finto come definitivo — mostra label
+  const overview = result.overview
+  if (overview && typeof overview === 'object') {
+    const op = (overview as Record<string, unknown>).pillar_evidence_status
+    if (op && typeof op === 'object') {
+      const p = (op as Record<string, unknown>)[key]
+      if (p && typeof p === 'object') {
+        const st = (p as Record<string, unknown>).status
+        if (st) return mapEvidenceStatusIt(String(st))
       }
     }
-    return '—'
-  }
-  const p = (pes as Record<string, unknown>)[key]
-  if (p && typeof p === 'object') {
-    return dash((p as Record<string, unknown>).status)
   }
   return '—'
 }
@@ -372,15 +402,23 @@ export function extractResultSummary(
     duration,
     rowsAnalyzed: dash(rows),
     bootstrapIterations: dash(
-      job?.bootstrap_iterations ?? result?.bootstrap_iterations,
+      result?.bootstrap_iterations_effective ??
+        result?.bootstrap_iterations ??
+        job?.bootstrap_iterations,
+    ),
+    bootstrapRequested: dash(
+      result?.bootstrap_iterations_requested ?? result?.bootstrap_iterations,
+    ),
+    bootstrapEffective: dash(
+      result?.bootstrap_iterations_effective ?? result?.bootstrap_iterations,
     ),
     evidenceScope: dash(
       overview?.evidence_scope ?? result?.evidence_scope,
     ),
-    statusF36: pillarStatus(overview ?? result, 'f36'),
-    statusDominance: pillarStatus(overview ?? result, 'dominance'),
-    statusCredibilityX: pillarStatus(overview ?? result, 'draw_credibility'),
-    statusGap: pillarStatus(overview ?? result, 'gap'),
+    statusF36: pillarStatus(result, 'f36'),
+    statusDominance: pillarStatus(result, 'dominance'),
+    statusCredibilityX: pillarStatus(result, 'draw_credibility'),
+    statusGap: pillarStatus(result, 'gap'),
     warningCount: countWarnings(result),
   }
 }

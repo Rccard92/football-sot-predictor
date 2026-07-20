@@ -880,13 +880,14 @@ def build_balance_module_overview_v2(
         warnings.append("Nessuna fixture eleggibile nel periodo")
     elif covered == 0:
         warnings.append("Balance non disponibile nello snapshot persistito né derivabile")
-    elif prospective == 0 and (hist_verified + hist_diag) > 0:
+    if prospective == 0 and (hist_verified + hist_diag) > 0:
         warnings.append(
             "Coverage da coorti storiche — snapshot prospectivo assente"
         )
-    warnings.append(
-        "Dataset empirico in raccolta — nessuna win-rate/calibrazione (Step 2B)"
-    )
+    if hist_diag > 0:
+        warnings.append(
+            "Coorte historical_diagnostic — evidenza esplorativa/descrittiva, non promozione"
+        )
     return make_json_safe(
         {
             "module_key": "balance-v5",

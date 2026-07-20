@@ -131,8 +131,9 @@ export function BalanceEmpiricalDatasetView({
         <h3 className="text-sm font-semibold text-slate-900">Dataset empirico in raccolta</h3>
         <p className="text-sm text-slate-600">
           Persistenza e settlement delle snapshot Balance già calcolate. Non modifica formule,
-          soglie, classi o Signals. Lo storico diagnostic non promuove. Win-rate e calibrazione
-          arrivano nello Step 2B.
+          soglie, classi o Signals. Lo storico diagnostic non promuove. Win-rate,
+          calibrazione e test statistici sono disponibili dall’analisi completa
+          (Overview → Avvia analisi completa / job Step 2B).
         </p>
         {(health?.notes || []).map((n) => (
           <p key={n} className="text-xs text-amber-800">

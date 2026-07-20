@@ -1,10 +1,17 @@
-# SOT Predictor — Pipeline operativa Cecchino Today
+﻿# SOT Predictor — Pipeline operativa Cecchino Today
+
+## Scientific Consistency Fix / export v8 (2026-07-20)
+
+1. ZIP Balance = `cecchino_module_monitoring_exports_v8`; bootstrap export allineato a default 2000.
+2. Evidence canonica da pilastri full analysis (non stub overview `analysis_not_run` come definitivo).
+3. Job UI: mostrare bootstrap requested/effective e label IT stati evidenza.
+4. Formule invariate; SCI non PASS / no promozione.
 
 ## Balance v5 Step 2B — Job launcher UI (2026-07-20)
 
 1. `/monitoraggio-moduli` → Balance → **Overview**.
 2. Card «Analisi statistica completa» → scegliere bootstrap (default 2000) → **Avvia analisi completa** (non auto-start).
-3. Attendere polling; a completamento scaricare JSON job e/o ZIP v7.
+3. Attendere polling; a completamento scaricare JSON job e/o ZIP v8.
 4. Vista **Export**: riepilogo ultimo job + «Scarica analisi» = solo ZIP (non avvia il job).
 5. Job in `/tmp` — dopo redeploy può sparire (404); riavviare analisi. Formule invariate.
 
@@ -13,7 +20,7 @@
 1. NON rieseguire sync empirico.
 2. `/monitoraggio-moduli` → Balance → viste F36/Dominanza/Credibilità X/Gap/Stabilità/Data health.
 3. Job `POST …/empirical/analysis/jobs` dalla UI Overview (bootstrap 500–10000).
-4. Export ZIP Balance = `cecchino_module_monitoring_exports_v7`.
+4. Export ZIP Balance = `cecchino_module_monitoring_exports_v8`.
 5. SCI exploratory/partial_diagnostic — non dichiarare SCI PASS né promozione.
 
 ## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
@@ -1145,3 +1152,4 @@ Metriche in `result_summary_json`: `api_calls`, `odds_from_cache`, `odds_from_ap
 - Formule SOT v2.0/v2.1 non modificate
 - `team_sot_predictions` non utilizzata da Cecchino Today
 - Engine Cecchino (`cecchino_engine.py`) invariato — il gate consuma solo l’output
+

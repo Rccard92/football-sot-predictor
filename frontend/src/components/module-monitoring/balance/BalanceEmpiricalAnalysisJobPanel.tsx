@@ -456,6 +456,8 @@ export function BalanceEmpiricalAnalysisJobPanel({
             <MetaItem label="Durata" value={summary.duration} />
             <MetaItem label="Righe analizzate" value={summary.rowsAnalyzed} />
             <MetaItem label="Bootstrap" value={summary.bootstrapIterations} />
+            <MetaItem label="Bootstrap richiesto" value={summary.bootstrapRequested} />
+            <MetaItem label="Bootstrap effettivo" value={summary.bootstrapEffective} />
             <MetaItem label="Evidence scope" value={summary.evidenceScope} />
             <MetaItem label="Status F36" value={summary.statusF36} />
             <MetaItem label="Status Dominanza" value={summary.statusDominance} />
@@ -474,7 +476,7 @@ export function BalanceEmpiricalAnalysisJobPanel({
             </button>
             <div className="inline-flex flex-col gap-1">
               <span className="text-xs font-medium text-slate-600">
-                Scarica pacchetto Balance v7
+                Scarica pacchetto Balance v8
               </span>
               <MonitoringExportMenu
                 moduleKey="balance-v5"

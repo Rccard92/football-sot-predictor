@@ -8,7 +8,7 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 |-------|--------|
 | Analysis | `cecchino_balance_v5_empirical_analysis_v1` |
 | Policy | `cecchino_balance_v5_statistical_policy_v1` |
-| Export | `cecchino_module_monitoring_exports_v7` |
+| Export | `cecchino_module_monitoring_exports_v8` |
 | Evidence cap | `exploratory_evidence` su historical_diagnostic |
 | Formule Balance | invariate |
 | Doc | `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md` |

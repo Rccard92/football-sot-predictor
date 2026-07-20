@@ -1,7 +1,16 @@
-# Balance v5 — Analisi empirica (Fase 2/3 Step 2B)
+﻿# Balance v5 — Analisi empirica (Fase 2/3 Step 2B)
 
 Analisi statistica **separata** dei quattro pilastri sul dataset empirico Step 2A.
 Sola lettura su `cecchino_balance_v5_evaluations`. Nessuna modifica a formule/soglie/classi.
+
+## Scientific Consistency Fix (export v8)
+
+Allineamento evidenza/bootstrap tra job, overview e ZIP:
+
+- Export pack: `cecchino_module_monitoring_exports_v8` (bootstrap export = `BOOTSTRAP_ITERATIONS_DEFAULT` 2000, non piu 500).
+- `pillar_evidence_status` canonico da analisi pilastro complete (`build_balance_full_pillar_evidence_status`); UI legge prima il top-level job, poi `evidence` del pilastro.
+- Stati: `analysis_not_run`, `descriptive_only`, `exploratory_evidence`, `evidence_inconsistent`, ecc.; warning overview senza fake "nessuna win-rate Step 2B".
+- Formule Balance invariate; nessuna promozione automatica.
 
 ## Versioni
 
@@ -10,7 +19,7 @@ Sola lettura su `cecchino_balance_v5_evaluations`. Nessuna modifica a formule/so
 | Analysis | `cecchino_balance_v5_empirical_analysis_v1` |
 | Policy | `cecchino_balance_v5_statistical_policy_v1` |
 | Dataset | `cecchino_balance_v5_empirical_dataset_v1` |
-| Export | `cecchino_module_monitoring_exports_v7` |
+| Export | `cecchino_module_monitoring_exports_v8` |
 
 ## Policy (immutabile)
 
@@ -35,7 +44,7 @@ Posizione: **Balance → Overview**, card «Analisi statistica completa» subito
 |---------|---------|
 | **Avvia analisi completa** | POST job asincrono (bootstrap, test, stabilità). Non modifica formule. |
 | **Scarica risultato statistico JSON** | File locale dal payload GET job (`SOT_BALANCE_V5_JOB_…json`). |
-| **Scarica analisi** (Export / post-job) | ZIP forensic Balance **v7** via `MonitoringExportMenu` — distinto dal JSON. |
+| **Scarica analisi** (Export / post-job) | ZIP forensic Balance **v8** via `MonitoringExportMenu` — distinto dal JSON. |
 
 Polling: usa `poll_after_ms` (default 2000). Stati: In coda / In elaborazione / Completata / Non riuscita.  
 409 `job_already_running` → riprende `active_job_id`.  
@@ -50,3 +59,4 @@ Score aggregato, ranking pilastri, ROI, promozione da diagnostic, «formula vali
 ## Next
 
 Step 2C — readiness e decisione Balance v5.
+

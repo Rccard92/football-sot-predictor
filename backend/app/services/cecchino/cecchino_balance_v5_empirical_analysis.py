@@ -88,6 +88,7 @@ PROB_SUM_TOLERANCE = 0.02
 
 EVIDENCE_STATUSES = frozenset(
     {
+        "analysis_not_run",
         "insufficient_data",
         "descriptive_only",
         "exploratory_evidence",
@@ -337,12 +338,12 @@ def _group_outcome_stats(
         "average_absolute_goal_difference": mean(diffs),
         "median_absolute_goal_difference": median(diffs),
         "total_goals_ci": bootstrap_ci(
-            goals, seed=seed_mean, iterations=min(bootstrap_iterations, 500), confidence=CONFIDENCE_LEVEL
+            goals, seed=seed_mean, iterations=bootstrap_iterations, confidence=CONFIDENCE_LEVEL
         ),
         "median_total_goals_ci": bootstrap_ci(
             goals,
             seed=seed_med,
-            iterations=min(bootstrap_iterations, 500),
+            iterations=bootstrap_iterations,
             confidence=CONFIDENCE_LEVEL,
             statistic="median",
         ),
@@ -385,18 +386,38 @@ def build_balance_pillar_evidence_status(
     warnings: list[str] | None = None,
     blocking_reasons: list[str] | None = None,
     inconsistent: bool = False,
+    descriptive_structure: bool = False,
+    analysis_not_run: bool = False,
 ) -> dict[str, Any]:
+    """Priorità: not_run → insufficient → inconsistent → descriptive → cap historical → exploratory."""
     warns = list(warnings or [])
     blocking = list(blocking_reasons or [])
+    if analysis_not_run:
+        return make_json_safe(
+            {
+                "pillar": pillar,
+                "evidence_scope": evidence_scope,
+                "status": "analysis_not_run",
+                "sample_size": sample_size,
+                "primary_metric": primary_metric or {},
+                "supporting_metrics": supporting_metrics or [],
+                "blocking_reasons": blocking,
+                "warnings": warns,
+                "formula_change_recommended": False,
+                "promotion_eligible": False,
+            }
+        )
+
     status = "descriptive_only"
     if sample_size < MIN_ROWS_DESCRIPTIVE_CLASS:
         status = "insufficient_data"
         blocking.append("sample_below_descriptive_minimum")
     elif inconsistent:
         status = "evidence_inconsistent"
-    elif sample_size < MIN_SETTLED_GLOBAL:
+    elif descriptive_structure or sample_size < MIN_SETTLED_GLOBAL:
         status = "descriptive_only"
-        warns.append("below_MIN_SETTLED_GLOBAL")
+        if sample_size < MIN_SETTLED_GLOBAL and not descriptive_structure:
+            warns.append("below_MIN_SETTLED_GLOBAL")
     elif evidence_scope == COHORT_HISTORICAL_DIAGNOSTIC:
         status = "exploratory_evidence"
         warns.append("historical_diagnostic_caps_status_at_exploratory_evidence")
@@ -417,19 +438,134 @@ def build_balance_pillar_evidence_status(
             "primary_metric": primary_metric or {},
             "supporting_metrics": supporting_metrics or [],
             "blocking_reasons": blocking,
-            "warnings": warns,
+            "warnings": list(dict.fromkeys(warns)),
             "formula_change_recommended": False,
             "promotion_eligible": False,
         }
     )
 
 
-def _deterministic_reading_f36(by_class: list[dict[str, Any]], n: int) -> str:
+def build_balance_full_pillar_evidence_status(
+    *,
+    f36_analysis: dict[str, Any],
+    dominance_analysis: dict[str, Any],
+    draw_credibility_analysis: dict[str, Any],
+    gap_analysis: dict[str, Any],
+) -> dict[str, Any]:
+    """Mappa canonica: usa esclusivamente analysis['evidence'] dei quattro pilastri completi."""
+
+    def _ev(payload: dict[str, Any], key: str) -> dict[str, Any]:
+        ev = payload.get("evidence") if isinstance(payload, dict) else None
+        if isinstance(ev, dict) and ev.get("status"):
+            return make_json_safe(dict(ev))
+        return make_json_safe(
+            {
+                "pillar": key,
+                "status": "not_evaluable",
+                "warnings": ["evidence_missing_from_pillar_payload"],
+                "formula_change_recommended": False,
+                "promotion_eligible": False,
+            }
+        )
+
+    return make_json_safe(
+        {
+            "f36": _ev(f36_analysis, "f36"),
+            "dominance": _ev(dominance_analysis, "dominance"),
+            "draw_credibility": _ev(draw_credibility_analysis, "draw_credibility"),
+            "gap": _ev(gap_analysis, "gap"),
+        }
+    )
+
+
+def _spearman_abs(block: dict[str, Any] | None) -> float:
+    if not block or not isinstance(block, dict):
+        return 0.0
+    rho = block.get("rho")
+    if rho is None:
+        return 0.0
+    try:
+        return abs(float(rho))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _f36_evidence_flags(tests: dict[str, Any]) -> dict[str, bool]:
+    """Regole scientifiche F36 (descriptive_structure)."""
+    chi = tests.get("class_vs_outcome_1x2") or {}
+    p_out = chi.get("p_value_adjusted")
+    if p_out is None:
+        p_out = chi.get("p_value")
+    try:
+        p_out_f = float(p_out) if p_out is not None else 1.0
+    except (TypeError, ValueError):
+        p_out_f = 1.0
+    try:
+        cramers_v = float(chi.get("cramers_v") or 0.0)
+    except (TypeError, ValueError):
+        cramers_v = 0.0
+
+    kw_g = tests.get("class_vs_total_goals") or {}
+    kw_d = tests.get("class_vs_absolute_goal_difference") or {}
+    p_g = kw_g.get("p_value_adjusted", kw_g.get("p_value"))
+    p_d = kw_d.get("p_value_adjusted", kw_d.get("p_value"))
+    try:
+        p_g_f = float(p_g) if p_g is not None else 1.0
+    except (TypeError, ValueError):
+        p_g_f = 1.0
+    try:
+        p_d_f = float(p_d) if p_d is not None else 1.0
+    except (TypeError, ValueError):
+        p_d_f = 1.0
+
+    spearman = tests.get("spearman_index") or {}
+    rhos = [
+        _spearman_abs(spearman.get("vs_is_draw")),
+        _spearman_abs(spearman.get("vs_total_goals")),
+        _spearman_abs(spearman.get("vs_absolute_goal_difference")),
+    ]
+    all_rho_small = all(r < 0.10 for r in rhos)
+    null_effects = (
+        p_out_f > 0.05
+        and cramers_v < 0.10
+        and p_g_f > 0.05
+        and p_d_f > 0.05
+        and all_rho_small
+    )
+    outcome_signal = p_out_f <= 0.05 and cramers_v >= 0.10
+    numeric_signal = (p_g_f <= 0.05 or p_d_f <= 0.05) and not all_rho_small
+    conflicting = bool(
+        (outcome_signal and not numeric_signal and (p_g_f > 0.05 and p_d_f > 0.05))
+        or (numeric_signal and not outcome_signal)
+    )
+    coherent = (outcome_signal or numeric_signal) and not conflicting and not null_effects
+    return {
+        "null_effects": null_effects,
+        "conflicting": conflicting,
+        "coherent": coherent,
+    }
+
+
+READING_F36_NULL = (
+    "Nel campione osservato le classi F36 descrivono configurazioni diverse "
+    "delle quote, ma non emergono differenze statisticamente rilevanti negli "
+    "esiti, nei goal o nella differenza reti."
+)
+
+
+def _deterministic_reading_f36(
+    by_class: list[dict[str, Any]],
+    n: int,
+    *,
+    evidence_flags: dict[str, bool] | None = None,
+) -> str:
     if n < MIN_ROWS_DESCRIPTIVE_CLASS:
         return (
             "Campione insufficiente per descrivere differenze strutturali tra le classi F36."
         )
-    # find class with highest lateral (home+away) share among adequate samples
+    flags = evidence_flags or {}
+    if flags.get("null_effects") or flags.get("conflicting") or not flags.get("coherent"):
+        return READING_F36_NULL
     best = None
     best_lat = -1.0
     for row in by_class:
@@ -441,15 +577,12 @@ def _deterministic_reading_f36(by_class: list[dict[str, Any]], n: int) -> str:
             best_lat = lat
             best = row
     if best is None:
-        return (
-            "Le classi F36 sono osservabili, ma le differenze empiriche restano "
-            "descrittive e non supportano una lettura selettiva degli esiti."
-        )
+        return READING_F36_NULL
     label = best.get("label_it") or best.get("class")
     return (
-        f"Le fixture classificate «{label}» mostrano una maggiore concentrazione "
-        "degli esiti laterali rispetto ad altre classi osservate nel campione settled; "
-        "F36 non seleziona automaticamente un esito."
+        f"Nel campione storico diagnostico le fixture «{label}» mostrano una "
+        "configurazione laterale relativamente più frequente; l’effetto resta "
+        "esplorativo e F36 non seleziona automaticamente un esito."
     )
 
 
@@ -544,6 +677,16 @@ def build_f36_empirical_analysis(
     p_raw = [chi.get("p_value"), kw_goals.get("p_value"), kw_diff.get("p_value")]
     p_adj = benjamini_hochberg(p_raw)
 
+    tests = {
+        "class_vs_outcome_1x2": {**chi, "p_value_adjusted": p_adj[0]},
+        "class_vs_total_goals": {**kw_goals, "p_value_adjusted": p_adj[1]},
+        "class_vs_absolute_goal_difference": {
+            **kw_diff,
+            "p_value_adjusted": p_adj[2],
+        },
+        "spearman_index": spearman_block,
+    }
+    flags = _f36_evidence_flags(tests)
     evidence = build_balance_pillar_evidence_status(
         pillar="f36",
         sample_size=len(settled),
@@ -555,7 +698,8 @@ def build_f36_empirical_analysis(
             {"spearman": spearman_block},
         ],
         warnings=list(dict.fromkeys(warnings)),
-        inconsistent=False,
+        inconsistent=bool(flags.get("conflicting")),
+        descriptive_structure=bool(flags.get("null_effects")),
     )
 
     return make_json_safe(
@@ -564,6 +708,7 @@ def build_f36_empirical_analysis(
             "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
             "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
             "dataset_version": BALANCE_EMPIRICAL_DATASET_VERSION,
+            "bootstrap_iterations": int(bootstrap_iterations),
             "pillar": "f36",
             "role": PILLAR_META["f36"]["role"],
             "role_label": PILLAR_META["f36"]["meaning"],
@@ -575,16 +720,10 @@ def build_f36_empirical_analysis(
                 "note": "pending esclusi dalle metriche prestazionali",
             },
             "by_class": class_rows,
-            "tests": {
-                "class_vs_outcome_1x2": {**chi, "p_value_adjusted": p_adj[0]},
-                "class_vs_total_goals": {**kw_goals, "p_value_adjusted": p_adj[1]},
-                "class_vs_absolute_goal_difference": {
-                    **kw_diff,
-                    "p_value_adjusted": p_adj[2],
-                },
-                "spearman_index": spearman_block,
-            },
-            "reading": _deterministic_reading_f36(class_rows, len(settled)),
+            "tests": tests,
+            "reading": _deterministic_reading_f36(
+                class_rows, len(settled), evidence_flags=flags
+            ),
             "evidence": evidence,
             "forbidden_interpretations": [
                 "f36_is_direct_betting_signal",
@@ -685,6 +824,29 @@ def build_dominance_empirical_analysis(
     ]
     trend = spearman_safe(idx, hit_f)
 
+    dom_warns: list[str] = ["hit_rate_is_not_roi"]
+    if obs_minus_exp is not None and obs_minus_exp < 0:
+        dom_warns.append("overall_observed_below_expected")
+    for s in sel_stats:
+        sel = str(s.get("selection") or "").upper()
+        hr = (s.get("hit_rate") or {}).get("rate")
+        exp_m = s.get("expected_mean")
+        if hr is None or exp_m is None:
+            continue
+        try:
+            if float(hr) + 1e-9 < float(exp_m):
+                if sel in {"2", "AWAY"}:
+                    dom_warns.append("selection_away_underperforms_expected")
+                elif sel in {"X", "DRAW"}:
+                    dom_warns.append("selection_draw_underperforms_expected")
+        except (TypeError, ValueError):
+            pass
+    for c in class_stats:
+        key = str(c.get("canonical_key") or c.get("class") or "").lower()
+        rows_c = int(c.get("rows") or 0)
+        if "very_strong" in key and rows_c < MIN_ROWS_DESCRIPTIVE_CLASS:
+            dom_warns.append("very_strong_sample_insufficient")
+
     evidence = build_balance_pillar_evidence_status(
         pillar="dominance",
         sample_size=n,
@@ -695,7 +857,7 @@ def build_dominance_empirical_analysis(
             "ece": ece.get("ece"),
         },
         supporting_metrics=[{"spearman_index_vs_hit": trend}],
-        warnings=["hit_rate_is_not_roi"],
+        warnings=list(dict.fromkeys(dom_warns)),
     )
 
     return make_json_safe(
@@ -704,6 +866,7 @@ def build_dominance_empirical_analysis(
             "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
             "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
             "dataset_version": BALANCE_EMPIRICAL_DATASET_VERSION,
+            "bootstrap_iterations": int(bootstrap_iterations),
             "pillar": "dominance",
             "role": PILLAR_META["dominance"]["role"],
             "role_label": PILLAR_META["dominance"]["meaning"],
@@ -836,6 +999,52 @@ def build_draw_credibility_empirical_analysis(
         if r.draw_credibility_index is not None
     ]
 
+    roc_auc = None
+    if isinstance(disc, dict):
+        roc_auc = disc.get("roc_auc")
+    try:
+        roc_auc_f = float(roc_auc) if roc_auc is not None else 0.5
+    except (TypeError, ValueError):
+        roc_auc_f = 0.5
+
+    # Class ordering / monotonicità (stessa segnale — conta una sola volta)
+    ordering_violated = mono_status == "inconsistent"
+    # High bands overestimate: top half by order with negative calibration_gap (predicted > observed)
+    high_over = 0
+    high_n = 0
+    for row in class_stats:
+        if int(row.get("rows") or 0) < MIN_ROWS_DESCRIPTIVE_CLASS:
+            continue
+        order = int(row.get("order") or 0)
+        if order < 9000 and order >= 3:  # fasce alte tipiche
+            high_n += 1
+            gap_c = row.get("calibration_gap")
+            try:
+                if gap_c is not None and float(gap_c) < -0.05:
+                    high_over += 1
+            except (TypeError, ValueError):
+                pass
+    high_bands_overestimated = high_n > 0 and high_over >= max(1, high_n // 2)
+
+    inconsistency_votes = 0
+    if skill is not None and skill < 0:
+        inconsistency_votes += 1
+    if mono_status == "inconsistent" or ordering_violated:
+        inconsistency_votes += 1
+    if roc_auc_f < 0.55:
+        inconsistency_votes += 1
+    if high_bands_overestimated:
+        inconsistency_votes += 1
+    draw_inconsistent = inconsistency_votes >= 2
+
+    draw_reading = None
+    if draw_inconsistent:
+        draw_reading = (
+            "Nel campione storico diagnostico la probabilità della X non mostra una "
+            "calibrazione stabile: le classi non risultano monotone e le probabilità "
+            "più alte tendono a essere sovrastimate."
+        )
+
     evidence = build_balance_pillar_evidence_status(
         pillar="draw_credibility",
         sample_size=n,
@@ -846,42 +1055,44 @@ def build_draw_credibility_empirical_analysis(
             "brier_skill": skill,
         },
         supporting_metrics=[{"discrimination": disc, "monotonicity": mono_status}],
-        inconsistent=mono_status == "inconsistent",
+        inconsistent=draw_inconsistent,
         warnings=["roc_auc_is_diagnostic_only"],
     )
 
-    return make_json_safe(
-        {
-            "status": "ok",
-            "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
-            "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
-            "dataset_version": BALANCE_EMPIRICAL_DATASET_VERSION,
-            "pillar": "draw_credibility",
-            "role": PILLAR_META["draw_credibility"]["role"],
-            "role_label": PILLAR_META["draw_credibility"]["meaning"],
-            "filters": filters,
-            "sample": _sample_counts(rows),
-            "analytical_sample": {"settled_with_class": n},
-            "global": {
-                "draw_rate": proportion_block(draws, n),
-                "predicted_x_mean": mean(p),
-                "brier": brier,
-                "baseline_brier": baseline_brier,
-                "brier_skill_score": skill,
-                "ece": ece.get("ece"),
-                "discrimination": disc,
-            },
-            "by_class": class_stats,
-            "calibration": ece,
-            "monotonicity": {
-                "status": mono_status,
-                "transitions": transitions,
-                "violations": violations,
-            },
-            "spearman_index_vs_draw": spearman_safe(idx, y_idx),
-            "evidence": evidence,
-        }
-    )
+    out = {
+        "status": "ok",
+        "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
+        "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
+        "dataset_version": BALANCE_EMPIRICAL_DATASET_VERSION,
+        "bootstrap_iterations": int(bootstrap_iterations),
+        "pillar": "draw_credibility",
+        "role": PILLAR_META["draw_credibility"]["role"],
+        "role_label": PILLAR_META["draw_credibility"]["meaning"],
+        "filters": filters,
+        "sample": _sample_counts(rows),
+        "analytical_sample": {"settled_with_class": n},
+        "global": {
+            "draw_rate": proportion_block(draws, n),
+            "predicted_x_mean": mean(p),
+            "brier": brier,
+            "baseline_brier": baseline_brier,
+            "brier_skill_score": skill,
+            "ece": ece.get("ece"),
+            "discrimination": disc,
+        },
+        "by_class": class_stats,
+        "calibration": ece,
+        "monotonicity": {
+            "status": mono_status,
+            "transitions": transitions,
+            "violations": violations,
+        },
+        "spearman_index_vs_draw": spearman_safe(idx, y_idx),
+        "evidence": evidence,
+    }
+    if draw_reading:
+        out["reading"] = draw_reading
+    return make_json_safe(out)
 
 
 def build_gap_empirical_analysis(
@@ -984,17 +1195,48 @@ def build_gap_empirical_analysis(
     ]
     draws_f = [1.0 if r.is_draw else 0.0 for r in settled if r.gap_index is not None]
 
+    sp_hit = spearman_safe(idx_hit, hit_f)
+    sp_diff = spearman_safe(idx, diffs)
+    sp_draw = spearman_safe(idx, draws_f)
+    rhos_g = [_spearman_abs(sp_hit), _spearman_abs(sp_diff), _spearman_abs(sp_draw)]
+    adequate = [c for c in class_stats if int(c.get("rows") or 0) >= MIN_ROWS_DESCRIPTIVE_CLASS]
+    total_rows = sum(int(c.get("rows") or 0) for c in class_stats) or 1
+    top2 = sorted((int(c.get("rows") or 0) for c in class_stats), reverse=True)[:2]
+    top2_share = (sum(top2) / total_rows) if top2 else 0.0
+    concentrated = top2_share >= 0.90
+    limited_classes = len(adequate) < 3
+    rho_null = all(r < 0.10 for r in rhos_g)
+    hit_rates = []
+    for c in adequate:
+        hr = (c.get("dominance_hit") or {}).get("rate")
+        if hr is not None:
+            try:
+                hit_rates.append(float(hr))
+            except (TypeError, ValueError):
+                pass
+    limited_diff = True
+    if len(hit_rates) >= 2:
+        limited_diff = (max(hit_rates) - min(hit_rates)) < 0.10
+
+    gap_descriptive = limited_classes or concentrated or (rho_null and limited_diff)
+    gap_warns = ["gap_is_not_autonomous_betting_signal"]
+    if concentrated:
+        gap_warns.append("class_distribution_concentrated")
+    if gap_descriptive:
+        gap_warns.append("limited_discriminative_evidence")
+
     evidence = build_balance_pillar_evidence_status(
         pillar="gap",
         sample_size=len(settled),
         evidence_scope=scope,
         primary_metric={"by_class_count": len(class_stats)},
         supporting_metrics=[
-            {"spearman_vs_hit": spearman_safe(idx_hit, hit_f)},
-            {"spearman_vs_abs_diff": spearman_safe(idx, diffs)},
-            {"spearman_vs_draw": spearman_safe(idx, draws_f)},
+            {"spearman_vs_hit": sp_hit},
+            {"spearman_vs_abs_diff": sp_diff},
+            {"spearman_vs_draw": sp_draw},
         ],
-        warnings=["gap_is_not_autonomous_betting_signal"],
+        warnings=gap_warns,
+        descriptive_structure=gap_descriptive,
     )
 
     return make_json_safe(
@@ -1003,6 +1245,7 @@ def build_gap_empirical_analysis(
             "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
             "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
             "dataset_version": BALANCE_EMPIRICAL_DATASET_VERSION,
+            "bootstrap_iterations": int(bootstrap_iterations),
             "pillar": "gap",
             "role": PILLAR_META["gap"]["role"],
             "role_label": PILLAR_META["gap"]["meaning"],
@@ -1016,9 +1259,9 @@ def build_gap_empirical_analysis(
             "heatmap_gap_x_dominance": heat_dom,
             "heatmap_gap_x_f36": heat_f36,
             "trends": {
-                "gap_index_vs_dominance_hit": spearman_safe(idx_hit, hit_f),
-                "gap_index_vs_abs_diff": spearman_safe(idx, diffs),
-                "gap_index_vs_is_draw": spearman_safe(idx, draws_f),
+                "gap_index_vs_dominance_hit": sp_hit,
+                "gap_index_vs_abs_diff": sp_diff,
+                "gap_index_vs_is_draw": sp_draw,
             },
             "evidence": evidence,
         }
@@ -1318,9 +1561,10 @@ def build_balance_empirical_analysis_overview(
             sample_size=len(settled),
             evidence_scope=scope,
             primary_metric={"settled": len(settled)},
-            warnings=["overview_only_pending_full_pillar_endpoints"],
+            warnings=["full_pillar_analysis_required_for_definitive_status"],
+            analysis_not_run=True,
         )
-        for p in PILLAR_META
+        for p in ("f36", "dominance", "draw_credibility", "gap")
     }
     return make_json_safe(
         {
@@ -1335,6 +1579,7 @@ def build_balance_empirical_analysis_overview(
             "policy": build_statistical_policy_payload(),
             "pillar_evidence_status": evidence,
             "notes": [
+                "Status pilastri definitivi solo dopo analisi completa / job",
                 "Analisi descrittiva/esplorativa — historical_diagnostic non promuove",
                 "Nessun score aggregato dei quattro pilastri",
                 "pending esclusi dalle metriche prestazionali",
@@ -1355,6 +1600,40 @@ def build_balance_empirical_full_analysis(
             f"bootstrap_iterations must be in "
             f"[{BOOTSTRAP_ITERATIONS_MIN}, {BOOTSTRAP_ITERATIONS_MAX}]"
         )
+    overview = build_balance_empirical_analysis_overview(
+        db,
+        date_from=date.fromisoformat(filters["date_from"]),
+        date_to=date.fromisoformat(filters["date_to"]),
+        competition_id=filters.get("competition_id"),
+        source_cohort=filters.get("source_cohort") or "all",
+    )
+    f36 = build_f36_empirical_analysis(
+        db, filters=filters, bootstrap_iterations=iters
+    )
+    dominance = build_dominance_empirical_analysis(
+        db, filters=filters, bootstrap_iterations=iters
+    )
+    draw_credibility = build_draw_credibility_empirical_analysis(
+        db, filters=filters, bootstrap_iterations=iters
+    )
+    gap = build_gap_empirical_analysis(
+        db, filters=filters, bootstrap_iterations=iters
+    )
+    pillar_evidence = build_balance_full_pillar_evidence_status(
+        f36_analysis=f36,
+        dominance_analysis=dominance,
+        draw_credibility_analysis=draw_credibility,
+        gap_analysis=gap,
+    )
+    overview = dict(overview)
+    overview["pillar_evidence_status"] = pillar_evidence
+    overview["notes"] = [
+        n
+        for n in (overview.get("notes") or [])
+        if "overview_only" not in str(n).lower()
+        and "full_pillar_analysis_required" not in str(n).lower()
+    ] + ["pillar_evidence_status from full pillar analyses"]
+
     return make_json_safe(
         {
             "status": "ok",
@@ -1362,26 +1641,15 @@ def build_balance_empirical_full_analysis(
             "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
             "dataset_version": BALANCE_EMPIRICAL_DATASET_VERSION,
             "bootstrap_iterations": iters,
+            "bootstrap_iterations_requested": iters,
+            "bootstrap_iterations_effective": iters,
             "filters": filters,
-            "overview": build_balance_empirical_analysis_overview(
-                db,
-                date_from=date.fromisoformat(filters["date_from"]),
-                date_to=date.fromisoformat(filters["date_to"]),
-                competition_id=filters.get("competition_id"),
-                source_cohort=filters.get("source_cohort") or "all",
-            ),
-            "f36": build_f36_empirical_analysis(
-                db, filters=filters, bootstrap_iterations=iters
-            ),
-            "dominance": build_dominance_empirical_analysis(
-                db, filters=filters, bootstrap_iterations=iters
-            ),
-            "draw_credibility": build_draw_credibility_empirical_analysis(
-                db, filters=filters, bootstrap_iterations=iters
-            ),
-            "gap": build_gap_empirical_analysis(
-                db, filters=filters, bootstrap_iterations=iters
-            ),
+            "overview": overview,
+            "pillar_evidence_status": pillar_evidence,
+            "f36": f36,
+            "dominance": dominance,
+            "draw_credibility": draw_credibility,
+            "gap": gap,
             "dependency": build_balance_empirical_dependency_analysis(
                 db, filters=filters
             ),

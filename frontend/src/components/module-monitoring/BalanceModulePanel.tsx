@@ -96,7 +96,7 @@ export function BalanceModulePanel({
     return (
       <div className="space-y-3">
         <p className="text-sm text-slate-600">
-          Export analysis pack Balance v5 (forensic v7 + analisi empirica Step 2B).
+          Export analysis pack Balance v5 (forensic v8 + analisi empirica Step 2B).
           Il pulsante «Scarica analisi» scarica solo lo ZIP; l’analisi statistica si avvia
           dalla Overview.
         </p>

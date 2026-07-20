@@ -1,9 +1,16 @@
 # SOT Predictor — Changelog ragionato
 
+## Scientific Consistency Fix / export v8 (2026-07-20)
+
+- Export pack bump `cecchino_module_monitoring_exports_v8`: bootstrap ZIP = default 2000; `pillar_evidence_status.json` da analisi pilastro complete.
+- Evidence: priorita analysis_not_run -> insufficient -> inconsistent -> descriptive -> cap historical -> exploratory; F36/draw regole incoerenza; CI bootstrap senza cap artificiale a 500.
+- FE: evidence canonica nel job summary; label IT; bootstrap requested/effective; badge `analysis_not_run`.
+- Overview warning: coorte `historical_diagnostic` esplorativa (niente messaggio fake Step 2B win-rate). Formule invariate.
+
 ## Balance v5 Step 2B — Job launcher UI (2026-07-20)
 
 - FE: `BalanceEmpiricalAnalysisJobPanel` in Overview (dopo banner, prima filtri); Export con riepilogo job.
-- Avvio/polling/409/404/sessionStorage `cecchino_balance_v5_analysis_job_v1`; download JSON distinto da ZIP v7.
+- Avvio/polling/409/404/sessionStorage `cecchino_balance_v5_analysis_job_v1`; download JSON distinto da ZIP v8.
 - Bootstrap UI 500–10000 (default 2000 Consigliato); nessun auto-start; single-flight.
 - Backend invariato sul contratto job (solo helper test + import SessionLocal nel try del worker). Formule/dataset/export invariati.
 
@@ -11,7 +18,7 @@
 
 - Analisi statistica separata F36/Dominanza/Credibilità X/Gap su `cecchino_balance_v5_evaluations` (sola lettura).
 - Registry classi + policy immutabile; evidence max `exploratory_evidence` su historical_diagnostic.
-- API analysis/* + job bootstrap 202; export pack `…_exports_v7`; UI viste dedicate ECharts.
+- API analysis/* + job bootstrap 202; export pack `cecchino_module_monitoring_exports_v7` (superseded by v8); UI viste dedicate ECharts.
 - Formule/soglie/classi/Signals invariate; sync empirico non rieseguito.
 
 ## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
@@ -1134,3 +1141,4 @@
 - v2.0 e v2.1: nessuna modifica.
 
 Vedi anche [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
+

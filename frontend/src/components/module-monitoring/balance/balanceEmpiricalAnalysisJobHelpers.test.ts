@@ -180,6 +180,8 @@ describe('result summary', () => {
       elapsed_seconds: 12.5,
       bootstrap_iterations: 2000,
       result: {
+        bootstrap_iterations_requested: 2000,
+        bootstrap_iterations_effective: 2000,
         overview: {
           evidence_scope: 'historical_diagnostic',
           sample: { settled: 40 },
@@ -194,8 +196,10 @@ describe('result summary', () => {
     })
     expect(s.rowsAnalyzed).toBe('40')
     expect(s.evidenceScope).toBe('historical_diagnostic')
-    expect(s.statusF36).toBe('exploratory_evidence')
+    expect(s.statusF36).toBe('Evidenza esplorativa')
     expect(s.bootstrapIterations).toBe('2000')
+    expect(s.bootstrapRequested).toBe('2000')
+    expect(s.bootstrapEffective).toBe('2000')
   })
 })
 

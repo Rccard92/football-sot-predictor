@@ -39,10 +39,12 @@ from app.services.cecchino.cecchino_balance_v5_empirical import (
 from app.services.cecchino.cecchino_balance_v5_empirical_analysis import (
     BALANCE_EMPIRICAL_ANALYSIS_VERSION,
     BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
+    BOOTSTRAP_ITERATIONS_DEFAULT,
     build_balance_empirical_analysis_overview,
     build_balance_empirical_data_health_analysis,
     build_balance_empirical_dependency_analysis,
     build_balance_empirical_stability_analysis,
+    build_balance_full_pillar_evidence_status,
     build_draw_credibility_empirical_analysis,
     build_dominance_empirical_analysis,
     build_f36_empirical_analysis,
@@ -156,7 +158,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v7"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v8"
 
 # Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
 _MODULE_AUDIT_CACHE_TTL_S = 300
@@ -1859,19 +1861,26 @@ def _build_balance_analysis_export_files(
             source_cohort="all",
         )
     )
-    f36 = _safe(lambda: build_f36_empirical_analysis(db, filters=filters, bootstrap_iterations=500))
+    boot = BOOTSTRAP_ITERATIONS_DEFAULT
+    f36 = _safe(
+        lambda: build_f36_empirical_analysis(
+            db, filters=filters, bootstrap_iterations=boot
+        )
+    )
     dom = _safe(
         lambda: build_dominance_empirical_analysis(
-            db, filters=filters, bootstrap_iterations=500
+            db, filters=filters, bootstrap_iterations=boot
         )
     )
     draw = _safe(
         lambda: build_draw_credibility_empirical_analysis(
-            db, filters=filters, bootstrap_iterations=500
+            db, filters=filters, bootstrap_iterations=boot
         )
     )
     gap = _safe(
-        lambda: build_gap_empirical_analysis(db, filters=filters, bootstrap_iterations=500)
+        lambda: build_gap_empirical_analysis(
+            db, filters=filters, bootstrap_iterations=boot
+        )
     )
     dep = _safe(lambda: build_balance_empirical_dependency_analysis(db, filters=filters))
     stab = _safe(lambda: build_balance_empirical_stability_analysis(db, filters=filters))
@@ -2086,6 +2095,8 @@ def _build_balance_analysis_export_files(
                 "date_from": date_from.isoformat(),
                 "date_to": date_to.isoformat(),
                 "competition_id": competition_id,
+                "bootstrap_iterations_requested": boot,
+                "bootstrap_iterations_effective": boot,
                 "forbidden": [
                     "aggregate_balance_score",
                     "pillar_ranking",
@@ -2095,7 +2106,12 @@ def _build_balance_analysis_export_files(
             }
         ),
         "pillar_evidence_status.json": _json_bytes(
-            overview.get("pillar_evidence_status") or {}
+            build_balance_full_pillar_evidence_status(
+                f36_analysis=f36,
+                dominance_analysis=dom,
+                draw_credibility_analysis=draw,
+                gap_analysis=gap,
+            )
         ),
         "empirical_class_registry.json": _json_bytes(registry),
     }
@@ -2143,6 +2159,31 @@ def _build_balance_files(
         competition_id=competition_id,
     )
     warnings = list(overview.get("warnings") or [])
+    pes_bytes = files.get("pillar_evidence_status.json")
+    if pes_bytes:
+        try:
+            pes = json.loads(pes_bytes.decode("utf-8"))
+            for key, label in (
+                ("f36", "F36"),
+                ("dominance", "Dominanza"),
+                ("draw_credibility", "Credibilità X"),
+                ("gap", "Gap"),
+            ):
+                st = (pes.get(key) or {}).get("status")
+                if st == "evidence_inconsistent":
+                    warnings.append(f"{label} evidence_inconsistent")
+                elif st == "descriptive_only":
+                    warnings.append(f"{label} evidenza soltanto descrittiva")
+        except Exception:
+            pass
+    warnings = [
+        w
+        for w in warnings
+        if "nessuna win-rate" not in str(w).lower()
+        and "step 2b" not in str(w).lower()
+    ]
+    # dedupe preserve order
+    warnings = list(dict.fromkeys(warnings))
     rows = _count_csv_rows(files["balance_rows.csv"])
     timestamp_verified = sum(
         1

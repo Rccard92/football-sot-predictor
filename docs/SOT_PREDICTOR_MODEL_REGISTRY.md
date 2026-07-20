@@ -1,12 +1,21 @@
-# SOT Predictor — Model Registry (indice)
+﻿# SOT Predictor — Model Registry (indice)
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
+
+## Scientific Consistency Fix / export v8 (2026-07-20)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Export pack | `cecchino_module_monitoring_exports_v8` |
+| Evidence canon | `build_balance_full_pillar_evidence_status` (pilastri full) |
+| Bootstrap export | `BOOTSTRAP_ITERATIONS_DEFAULT` (2000) |
+| Balance formule | `cecchino_balance_v5_v2` (invariato) |
 
 ## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
-| Export pack | `cecchino_module_monitoring_exports_v7` |
+| Export pack | `cecchino_module_monitoring_exports_v8` |
 | Empirical analysis | `cecchino_balance_v5_empirical_analysis_v1` |
 | Statistical policy | `cecchino_balance_v5_statistical_policy_v1` |
 | Evidence cap (diagnostic) | `exploratory_evidence` |
@@ -96,3 +105,4 @@ Route FE: `/monitoraggio-moduli`.
 | Policy | `cecchino_purchasability_promotion_policy_v1` |
 
 Registry candidate resta `active_preview` (nessun auto-promote).
+

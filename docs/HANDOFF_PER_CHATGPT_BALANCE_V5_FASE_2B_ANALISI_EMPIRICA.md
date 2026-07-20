@@ -12,7 +12,7 @@
 - Analysis: `cecchino_balance_v5_empirical_analysis_v1`
 - Policy: `cecchino_balance_v5_statistical_policy_v1`
 - Dataset: `cecchino_balance_v5_empirical_dataset_v1`
-- Export: `cecchino_module_monitoring_exports_v7`
+- Export: `cecchino_module_monitoring_exports_v8`
 
 ## Servizi
 

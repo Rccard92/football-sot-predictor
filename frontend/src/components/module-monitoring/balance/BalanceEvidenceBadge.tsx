@@ -4,8 +4,9 @@ type Props = {
 }
 
 const LABELS: Record<string, string> = {
+  analysis_not_run: 'Analisi non eseguita',
   insufficient_data: 'Dati insufficienti',
-  descriptive_only: 'Solo descrittivo',
+  descriptive_only: 'Evidenza descrittiva',
   exploratory_evidence: 'Evidenza esplorativa',
   evidence_emerging: 'Evidenza emergente',
   evidence_inconsistent: 'Evidenza incoerente',

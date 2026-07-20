@@ -60,7 +60,7 @@ def _eval(**kwargs):
 
 
 def test_export_version_is_v5():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v7"
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v8"
 
 
 def test_analysis_settled_ignores_promotion_gate():

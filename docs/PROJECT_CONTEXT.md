@@ -1,14 +1,18 @@
-# SOT Predictor — Contesto progetto
+﻿# SOT Predictor — Contesto progetto
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Scientific Consistency Fix / export v8 (2026-07-20)
+
+Allineamento scientifico Balance empirico: export **v8**, bootstrap ZIP=2000, `pillar_evidence_status` canonico da pilastri completi, UI job con stati evidenza IT + bootstrap requested/effective. Formule invariate; no promozione. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.
+
 ## Balance v5 Step 2B — Job launcher UI (2026-07-20)
 
-UI Overview avvia il job statistico (polling, JSON, ZIP v7 distinto). «Scarica analisi» resta solo ZIP. `sessionStorage` job; `/tmp` efimero. Formule invariate. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.
+UI Overview avvia il job statistico (polling, JSON, ZIP v8 distinto). «Scarica analisi» resta solo ZIP. `sessionStorage` job; `/tmp` efimero. Formule invariate. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.
 
 ## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
 
-Analisi separata 4 pilastri su dataset empirico; policy/registry; API+job; export **v7**; UI viste dedicate. Evidence max esplorativa su historical_diagnostic. Formule invariate. Next: Step 2C readiness. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.
+Analisi separata 4 pilastri su dataset empirico; policy/registry; API+job; export **v8**; UI viste dedicate. Evidence max esplorativa su historical_diagnostic. Formule invariate. Next: Step 2C readiness. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.
 
 ## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
 
@@ -456,3 +460,4 @@ Regole: model-aware, no xG proxy, v2.0 non modificare, endpoint competition-scop
 Stack: React + FastAPI + PostgreSQL su Railway.
 [Descrivi qui il task specifico]
 ```
+

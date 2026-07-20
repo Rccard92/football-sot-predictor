@@ -377,7 +377,7 @@ def test_migration_revision_chain_smoke():
 
 
 def test_export_v6_includes_empirical_files(monkeypatch):
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v7"
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v8"
     required = SCHEMA_CONTRACTS["balance-v5"]["required_files"]
     for name in (
         "empirical_dataset_rows.csv",
