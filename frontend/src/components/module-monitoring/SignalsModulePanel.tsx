@@ -11,6 +11,7 @@ type Props = {
   dateTo: string
   competitionId?: number | null
   overview?: ModuleOverviewItem | null
+  cohortFilter?: string
 }
 
 export function SignalsModulePanel({
@@ -19,11 +20,18 @@ export function SignalsModulePanel({
   dateTo,
   competitionId,
   overview,
+  cohortFilter = 'all',
 }: Props) {
   if (view === 'overview' || view === 'performance' || view === 'models' || view === 'trends') {
     const statusRaw = overview?.status || 'operational'
     return (
       <div className="space-y-4">
+        {cohortFilter !== 'all' && cohortFilter !== 'prospective_persisted' ? (
+          <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-sm text-amber-950">
+            Filtro coorte «{cohortFilter}»: le metriche ufficiali restano sulle attivazioni
+            pre-match verificate.
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MonitoringMetricCard
             label="Stato"

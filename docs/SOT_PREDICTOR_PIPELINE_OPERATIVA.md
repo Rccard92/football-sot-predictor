@@ -1,5 +1,14 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
+
+1. `/monitoraggio-moduli` → filtro **Coorte** (default analisi = tutte; readiness = prospettica).
+2. Card **Qualità pacchetti** → `GET …/analysis-packs-audit` (status audit ≠ «ZIP esiste»).
+3. Strumenti → **Importa storico** → Analizza (`…/historical-backfill/plan`) → Conferma + token → run.
+4. Export ZIP v3: README/HANDOFF/manifest/schema_contract/export_audit/source_cohorts + rows (chunk se serve).
+5. Coorti storiche: non promotion-eligible; niente leakage in `cecchino_output_json` per Acquistabilità ricostruita.
+6. Verifica esterna obbligatoria dei 4 ZIP prima di dichiarare gate chiuso; poi Fase 2/3 Balance empirica.
+
 ## Affidabilità storica vs Acquistabilità — FASE 1/5 (2026-07-19)
 
 1. Aprire Cecchino Today → dettaglio → colonna **Affidabilità** dopo Rating (popover «Affidabilità storica»).

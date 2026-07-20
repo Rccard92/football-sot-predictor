@@ -1,0 +1,150 @@
+import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import {
+  downloadModuleAnalysisPack,
+  getAnalysisPacksAudit,
+  type MonitoringModuleKeyApi,
+  type PackAuditItem,
+} from '../../lib/cecchinoModuleMonitoringApi'
+import { getMonitoringModule } from './moduleMonitoringRegistry'
+import { CARD_BASE } from './moduleMonitoringUi'
+
+type Props = {
+  dateFrom: string
+  dateTo: string
+  competitionId: string
+}
+
+function tone(status: string | undefined): string {
+  if (status === 'pass' || status === 'complete') return 'text-emerald-700 bg-emerald-50 border-emerald-200'
+  if (status === 'fail' || status === 'blocked') return 'text-rose-800 bg-rose-50 border-rose-200'
+  return 'text-amber-900 bg-amber-50 border-amber-200'
+}
+
+export function MonitoringPackQualityCard({ dateFrom, dateTo, competitionId }: Props) {
+  const [items, setItems] = useState<PackAuditItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const [checkedAt, setCheckedAt] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const payload = await getAnalysisPacksAudit({
+        date_from: dateFrom,
+        date_to: dateTo,
+        competition_id: competitionId ? Number(competitionId) : undefined,
+      })
+      setItems(payload.modules || [])
+      setCheckedAt(new Date().toISOString())
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Audit pacchetti fallito')
+    } finally {
+      setLoading(false)
+    }
+  }, [dateFrom, dateTo, competitionId])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  return (
+    <section className={`${CARD_BASE} p-4`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Qualità pacchetti analisi</h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Completezza forensic v3 — non basta che lo ZIP esista.
+          </p>
+          {checkedAt ? (
+            <p className="mt-1 text-[11px] text-slate-400">
+              Ultima verifica {new Date(checkedAt).toLocaleString('it-IT')}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void load()}
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+        >
+          {loading ? 'Verifica…' : 'Riverifica'}
+        </button>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {items.map((it) => {
+          const def = getMonitoringModule(it.module_key)
+          const audit = it.export_audit
+          const status = audit?.status || it.completeness || 'partial'
+          const filesOk = (it.files_available?.length || 0)
+          const filesExp = (it.files_expected?.length || 0)
+          const src = audit?.source_row_count
+          const exp = audit?.exported_row_count
+          return (
+            <article
+              key={it.module_key}
+              className={`rounded-xl border px-3 py-2.5 ${tone(status)}`}
+            >
+              <div className="text-sm font-semibold">{def.label}</div>
+              <div className="mt-1 text-xs font-medium uppercase tracking-wide">{status}</div>
+              <dl className="mt-2 space-y-0.5 text-[11px]">
+                <div className="flex justify-between gap-2">
+                  <dt>File</dt>
+                  <dd>
+                    {filesOk}/{filesExp || '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt>Righe</dt>
+                  <dd>
+                    {src ?? '—'} → {exp ?? it.rows ?? '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt>Troncamento</dt>
+                  <dd>{audit?.truncated ? 'Sì' : 'No'}</dd>
+                </div>
+              </dl>
+              {(audit?.missing_files || []).length ? (
+                <p className="mt-1 text-[10px] opacity-80">
+                  Mancanti: {(audit?.missing_files || []).slice(0, 3).join(', ')}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="mt-2 text-xs font-semibold underline"
+                onClick={() =>
+                  void downloadModuleAnalysisPack(it.module_key as MonitoringModuleKeyApi, {
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                    competition_id: competitionId ? Number(competitionId) : undefined,
+                    include_rows: true,
+                  }).then(
+                    () => {
+                      const auditSt = audit?.status || status
+                      const trunc = audit?.truncated ? ' · troncato' : ''
+                      if (auditSt === 'pass' || auditSt === 'complete') {
+                        toast.success(
+                          `Download ${def.label} · forensic v3 completo${trunc}`,
+                        )
+                      } else {
+                        toast.warning(
+                          `Download ${def.label} · forensic v3 ${auditSt}${trunc}`,
+                        )
+                      }
+                    },
+                    (e) => toast.error(e instanceof Error ? e.message : 'Download fallito'),
+                  )
+                }
+              >
+                Scarica ZIP
+              </button>
+            </article>
+          )
+        })}
+        {!items.length && !loading ? (
+          <p className="text-sm text-slate-500">Nessun audit disponibile.</p>
+        ) : null}
+      </div>
+    </section>
+  )
+}

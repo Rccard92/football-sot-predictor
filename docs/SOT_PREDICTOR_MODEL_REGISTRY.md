@@ -2,11 +2,22 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Cohorts | `prospective_persisted`, `historical_persisted_verified`, `historical_reconstructed_verified`, `historical_diagnostic`, `unusable` |
+| Backfill | `cecchino_module_historical_backfill_v1` |
+| Export pack | `cecchino_module_monitoring_exports_v3` |
+| Audit | `analysis-pack-audit` / `analysis-packs-audit` |
+| Balance formule | `cecchino_balance_v5_v2` (invariato) |
+| Roadmap | Fase 2/3 empirica Balance · Fase 3/3 (post-approvazione ZIP) |
+
 ## Monitoraggio Moduli — HARDENING export (2026-07-20)
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
-| Export pack | `cecchino_module_monitoring_exports_v2` |
+| Export pack | `cecchino_module_monitoring_exports_v2` → v3 al gate |
 | Balance monitoring snapshot | `cecchino_balance_v5_monitoring_snapshot_v1` |
 | Balance formule | `cecchino_balance_v5_v2` (invariato) |
 | export-status | `GET /api/cecchino/module-monitoring/{key}/export-status` |

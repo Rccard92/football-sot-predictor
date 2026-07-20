@@ -172,3 +172,85 @@ export function formatEstimatedSize(bytes: number | null | undefined): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+export const HISTORICAL_BACKFILL_CONFIRM =
+  'IMPORT_CECCHINO_HISTORICAL_MONITORING'
+
+export type HistoricalBackfillPlan = Record<string, unknown> & {
+  version?: string
+  modules?: Record<string, Record<string, unknown>>
+}
+
+export async function planHistoricalBackfill(body: {
+  module_keys: string[]
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  include_unverified_diagnostic?: boolean
+}): Promise<HistoricalBackfillPlan> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson(
+    '/api/admin/cecchino/module-monitoring/historical-backfill/plan',
+    body,
+  )
+}
+
+export async function runHistoricalBackfill(body: {
+  module_keys: string[]
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  include_unverified_diagnostic?: boolean
+  evaluate_after?: boolean
+  confirm: string
+}): Promise<HistoricalBackfillPlan> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson(
+    '/api/admin/cecchino/module-monitoring/historical-backfill/run',
+    body,
+  )
+}
+
+export type PackAuditItem = {
+  module_key: string
+  completeness?: string
+  export_audit?: {
+    status?: string
+    source_row_count?: number
+    exported_row_count?: number
+    truncated?: boolean
+    missing_files?: string[]
+    missing_columns?: Record<string, string[]>
+    row_count_match?: boolean
+  }
+  files_available?: string[]
+  files_expected?: string[]
+  rows?: number | null
+  source_cohorts?: Record<string, number>
+  blocking_reasons?: string[]
+}
+
+export async function getAnalysisPacksAudit(
+  filters: Pick<ModuleMonitoringFilters, 'date_from' | 'date_to' | 'competition_id'>,
+): Promise<{ modules: PackAuditItem[]; export_version?: string }> {
+  const p = new URLSearchParams()
+  p.set('date_from', filters.date_from)
+  p.set('date_to', filters.date_to)
+  if (filters.competition_id != null) p.set('competition_id', String(filters.competition_id))
+  return adminGetJson(`${BASE}/analysis-packs-audit?${p.toString()}`)
+}
+
+export type CohortFilterValue =
+  | 'all'
+  | 'prospective_persisted'
+  | 'historical_persisted_verified'
+  | 'historical_reconstructed_verified'
+  | 'historical_diagnostic'
+
+export const COHORT_FILTER_OPTIONS: { value: CohortFilterValue; label: string }[] = [
+  { value: 'all', label: 'Tutte le coorti' },
+  { value: 'prospective_persisted', label: 'Prospettica' },
+  { value: 'historical_persisted_verified', label: 'Storica persistita verificata' },
+  { value: 'historical_reconstructed_verified', label: 'Storica ricostruita verificata' },
+  { value: 'historical_diagnostic', label: 'Storica diagnostica' },
+]

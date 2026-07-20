@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
+
+- Coorti canoniche + alias legacy; resolver Balance: `output.balance_v5` non è più `prospective_persisted`.
+- Servizio `cecchino_module_historical_backfill_v1`: plan read-only, run idempotente con confirm, status.
+- Acquistabilità storico: evaluation `promotion_eligible=false`; niente preview ricostruito in JSON.
+- Export `cecchino_module_monitoring_exports_v3`: schema_contract, export_audit, source_cohorts, chunk CSV anti-troncamento.
+- Audit API + UI: Importa storico, filtro Coorte, card Qualità pacchetti. Nessuna modifica formule.
+
 ## Cecchino Today — workspace master-detail adattivo (2026-07-19)
 
 - Layout: `/cecchino-today` full-width (`max-w-none`); altre route restano `max-w-[1320px]`.

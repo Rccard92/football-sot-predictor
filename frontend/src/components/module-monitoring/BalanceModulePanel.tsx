@@ -11,6 +11,7 @@ type Props = {
   dateTo: string
   competitionId?: number | null
   overview?: ModuleOverviewItem | null
+  cohortFilter?: string
 }
 
 export function BalanceModulePanel({
@@ -19,12 +20,19 @@ export function BalanceModulePanel({
   dateTo,
   competitionId,
   overview,
+  cohortFilter = 'all',
 }: Props) {
   if (view === 'overview' || view === 'geometry-f36' || view === 'dominance' || view === 'gap-coherence' || view === 'data-health') {
     const cov = coverageDisplay(overview?.coverage ?? null, overview?.coverage != null)
     const statusRaw = overview?.status || 'official_monitored'
     return (
       <div className="space-y-4">
+        {cohortFilter !== 'all' && cohortFilter !== 'prospective_persisted' ? (
+          <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-sm text-amber-950">
+            Filtro coorte «{cohortFilter}»: le metriche di readiness restano sulla coorte
+            prospettica; lo storico non promuove.
+          </div>
+        ) : null}
         <div className="rounded-xl border border-violet-200/70 bg-violet-50/50 px-3 py-2 text-sm text-violet-900">
           Monitoraggio descrittivo — validazione empirica avanzata in preparazione
         </div>

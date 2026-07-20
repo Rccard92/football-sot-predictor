@@ -19,6 +19,7 @@ type Props = {
   dateTo: string
   competitionId?: number | null
   overview?: ModuleOverviewItem | null
+  cohortFilter?: string
 }
 
 export function PurchasabilityModulePanel({
@@ -27,12 +28,19 @@ export function PurchasabilityModulePanel({
   dateTo,
   competitionId,
   overview,
+  cohortFilter = 'all',
 }: Props) {
   if (view === 'overview') {
     const cov = coverageDisplay(overview?.coverage ?? null, overview?.coverage != null)
     const statusRaw = overview?.status || null
     return (
       <div className="space-y-4">
+        {cohortFilter !== 'all' && cohortFilter !== 'prospective_persisted' ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Filtro coorte «{cohortFilter}»: le metriche di readiness/promozione restano sulla
+            coorte prospettica.
+          </p>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MonitoringMetricCard
             label="Stato"

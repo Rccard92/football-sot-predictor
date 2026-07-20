@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.cecchino.cecchino_module_monitoring_exports import (
     VALID_MODULE_KEYS,
+    build_module_analysis_pack_audit,
     build_module_analysis_pack_zip,
     build_module_export_status,
     build_module_monitoring_overview,
     build_module_rows_csv,
     build_module_summary_payload,
+    build_modules_analysis_packs_audit,
 )
 
 router = APIRouter(
@@ -38,6 +40,57 @@ def module_monitoring_overview(
         date_to=date_to,
         competition_id=competition_id,
     )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/analysis-packs-audit")
+def module_monitoring_all_analysis_packs_audit(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    market_key: str | None = Query(None),
+    include_rows: bool = Query(True),
+    include_debug: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    payload = build_modules_analysis_packs_audit(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_key=market_key,
+        include_rows=include_rows,
+        include_debug=include_debug,
+    )
+    return JSONResponse(content=jsonable_encoder(payload))
+
+
+@router.get("/{module_key}/analysis-pack-audit")
+def module_monitoring_analysis_pack_audit(
+    module_key: str,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    competition_id: int | None = Query(None),
+    market_key: str | None = Query(None),
+    include_rows: bool = Query(True),
+    include_debug: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    if module_key not in VALID_MODULE_KEYS:
+        raise HTTPException(status_code=404, detail="unknown_module_key")
+    try:
+        payload = build_module_analysis_pack_audit(
+            db,
+            module_key=module_key,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+            market_key=market_key,
+            include_rows=include_rows,
+            include_debug=include_debug,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="unknown_module_key")
     return JSONResponse(content=jsonable_encoder(payload))
 
 

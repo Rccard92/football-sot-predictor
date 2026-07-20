@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
+
+Backfill storico controllato (plan/run/status + token `IMPORT_CECCHINO_HISTORICAL_MONITORING`); coorti canoniche separate (`prospective_persisted` ≠ storici); fix Balance legacy non più prospective; export forensic **v3** (`schema_contract` / `export_audit` / no truncation); UI Import storico + filtro Coorte + Qualità pacchetti. Formule/candidate/Rating/Signals invariati. **Backfill/ZIP runtime non eseguiti dall’ambiente Cursor** — Fase 1/3 chiusa solo dopo verifica esterna dei 4 ZIP. Next (post-approvazione): Fase 2/3 empirica Balance v5.
+
 ## Cecchino Today — workspace master-detail adattivo (2026-07-19)
 
 Route `/cecchino-today` fluid (override Layout); 2xl lista 370–410px + dettaglio; sotto 2xl drawer «Partite eleggibili»; card partite a due righe squadre; KPI tabella da xl senza scroll.

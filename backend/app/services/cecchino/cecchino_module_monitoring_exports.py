@@ -1,4 +1,4 @@
-"""Export di monitoraggio Cecchino — hardening v2.
+"""Export di monitoraggio Cecchino — forensic v3.
 
 Il modulo assembla esclusivamente dati e formule già prodotti dai servizi
 canonici. Gli export sono riproducibili, autocontenuti e verificabili tramite
@@ -40,6 +40,7 @@ from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
 from app.services.cecchino.cecchino_purchasability_validation import (
     PURCHASABILITY_VALIDATION_VERSION,
     build_purchasability_validation_health,
+    build_purchasability_validation_rows,
     export_purchasability_validation_csv,
 )
 from app.services.cecchino.cecchino_purchasability_validation_aggregation import (
@@ -63,7 +64,50 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v2"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v3"
+
+_COMMON_REQUIRED_FILES: tuple[str, ...] = (
+    "README_ANALISI.md",
+    "CHATGPT_HANDOFF.md",
+    "manifest.json",
+    "versions.json",
+    "filters.json",
+    "data_dictionary.md",
+    "schema_contract.json",
+    "export_audit.json",
+    "health.json",
+    "summary.json",
+    "warnings.json",
+    "source_cohorts.json",
+)
+_PURCHASABILITY_ROW_FIELDS = [
+    "id",
+    "today_fixture_id",
+    "scan_date",
+    "market_key",
+    "purchasability_score",
+    "score_band",
+    "evaluation_status",
+    "quota_book",
+    "profit_units",
+    "source_cohort",
+    "promotion_eligible",
+    "candidate_version",
+]
+_SIGNALS_ROW_FIELDS = [
+    "id",
+    "today_fixture_id",
+    "model_key",
+    "scan_date",
+    "kickoff",
+    "match",
+    "signal_group",
+    "signal_label",
+    "source_column",
+    "target_market_key",
+    "evaluation_status",
+    "quota_book",
+]
 
 _COMPLETENESS_VALUES = frozenset({"complete", "partial", "empty", "blocked"})
 _GOAL_EXPORTS: tuple[tuple[str, str, str], ...] = (
@@ -130,6 +174,57 @@ _GOAL_EMPTY_HEADERS: dict[str, list[str]] = {
     ],
 }
 
+# Contratti minimi forensic dei quattro moduli (piano §§15-18).
+SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
+    "purchasability": {
+        "primary_rows_file": "rows.csv",
+        "required_columns": _PURCHASABILITY_ROW_FIELDS,
+        "required_files": [
+            "gates.json",
+            "readiness.json",
+            "distributions.csv",
+            "rows.csv",
+        ],
+    },
+    "balance-v5": {
+        "primary_rows_file": "balance_rows.csv",
+        "required_columns": BALANCE_ROW_FIELDS,
+        "required_files": [
+            "balance_rows.csv",
+            "f36_distribution.csv",
+            "dominance_distribution.csv",
+            "draw_credibility_distribution.csv",
+            "gap_distribution.csv",
+            "monthly_timeseries.csv",
+            "snapshot_health.json",
+            "source_cohort_distribution.json",
+            "version_definition.json",
+            "draw_credibility_research.json",
+        ],
+    },
+    "goal-intensity-v5": {
+        "primary_rows_file": "preview_snapshots.csv",
+        "required_columns": _GOAL_EMPTY_HEADERS["preview_snapshots.csv"],
+        "required_files": [
+            filename for _, filename, _ in _GOAL_EXPORTS
+        ] + ["prospective_progress.json", "data_health.json"],
+    },
+    "signals": {
+        "primary_rows_file": "activations_rows.csv",
+        "required_columns": _SIGNALS_ROW_FIELDS,
+        "required_files": [
+            "activations_rows.csv",
+            "by_signal.csv",
+            "by_column.csv",
+            "by_signal_and_column.csv",
+            "monthly_timeseries.csv",
+            "overall.json",
+            "version_definition.json",
+            "model_summary.csv",
+        ],
+    },
+}
+
 
 def _utcnow() -> str:
     """Timestamp UTC ISO-8601 usato da overview e manifest."""
@@ -184,6 +279,158 @@ def _count_csv_rows(content: bytes) -> int:
     if not rows:
         return 0
     return max(0, len(rows) - 1)
+
+
+def _chunk_csv_bytes(
+    content: bytes,
+    prefix: str = "rows",
+    max_rows: int = 50_000,
+) -> dict[str, bytes]:
+    """Suddivide un CSV preservando BOM e header in ogni parte."""
+    if max_rows <= 0:
+        raise ValueError("max_rows_must_be_positive")
+    text = content.decode("utf-8-sig")
+    parsed = list(csv.reader(io.StringIO(text)))
+    if not parsed:
+        return {f"{prefix}_0001.csv": _with_bom(content)}
+    header, data_rows = parsed[0], parsed[1:]
+    chunks: dict[str, bytes] = {}
+    for index, start in enumerate(range(0, len(data_rows), max_rows), start=1):
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(header)
+        writer.writerows(data_rows[start : start + max_rows])
+        chunks[f"{prefix}_{index:04d}.csv"] = _with_bom(buf.getvalue())
+    if not chunks:
+        chunks[f"{prefix}_0001.csv"] = _with_bom(text)
+    return chunks
+
+
+def _csv_header(content: bytes) -> list[str]:
+    try:
+        return next(csv.reader(io.StringIO(content.decode("utf-8-sig"))), [])
+    except (UnicodeDecodeError, csv.Error):
+        return []
+
+
+def _primary_csv_names(
+    files: dict[str, bytes],
+    schema_contract: dict[str, Any],
+) -> list[str]:
+    primary = str(schema_contract.get("primary_rows_file") or "rows.csv")
+    if primary in files:
+        return [primary]
+    chunks = [
+        str(item)
+        for item in (schema_contract.get("primary_rows_chunks") or [])
+        if str(item) in files
+    ]
+    return sorted(chunks)
+
+
+def _build_export_audit(
+    files: dict[str, bytes],
+    meta: dict[str, Any],
+    module_key: str,
+    required_files: list[str],
+    schema_contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Verifica completezza, schema e cardinalità dell'inventario forensic."""
+    virtual_actual = set(files) | {"manifest.json", "export_audit.json"}
+    actual_files = sorted(virtual_actual)
+    missing_files = sorted(set(required_files) - virtual_actual)
+    unexpected_files = sorted(virtual_actual - set(required_files))
+    primary_names = _primary_csv_names(files, schema_contract)
+    required_columns = list(schema_contract.get("required_columns") or [])
+    actual_columns = _csv_header(files[primary_names[0]]) if primary_names else []
+    missing_columns = sorted(set(required_columns) - set(actual_columns))
+
+    exported_row_count = sum(_count_csv_rows(files[name]) for name in primary_names)
+    source_row_count = int(meta.get("source_total_rows", meta.get("primary_rows", 0)) or 0)
+    row_count_match = source_row_count == exported_row_count
+    truncated = bool(meta.get("truncated", False))
+
+    null_counts: Counter[str] = Counter()
+    observed_rows = 0
+    date_values: list[str] = []
+    cohort_counts: Counter[str] = Counter()
+    for name in primary_names:
+        try:
+            reader = csv.DictReader(io.StringIO(files[name].decode("utf-8-sig")))
+            for row in reader:
+                observed_rows += 1
+                for column in actual_columns:
+                    if row.get(column) in (None, ""):
+                        null_counts[column] += 1
+                raw_date = row.get("scan_date") or row.get("Data") or row.get("kickoff")
+                if raw_date:
+                    date_values.append(str(raw_date)[:10])
+                cohort = row.get("source_cohort")
+                if cohort:
+                    cohort_counts[str(cohort)] += 1
+        except (UnicodeDecodeError, csv.Error):
+            continue
+    null_ratios = {
+        column: (null_counts[column] / observed_rows if observed_rows else 0.0)
+        for column in actual_columns
+    }
+    source_cohort_counts: Any = dict(cohort_counts)
+    if not source_cohort_counts:
+        source_cohort_counts = meta.get("source_cohort_counts")
+        if source_cohort_counts is None:
+            source_cohorts = meta.get("source_cohorts") or {}
+            if isinstance(source_cohorts, dict):
+                source_cohort_counts = source_cohorts
+            elif isinstance(source_cohorts, list) and len(source_cohorts) == 1:
+                source_cohort_counts = {
+                    str(source_cohorts[0]): source_row_count,
+                }
+            else:
+                source_cohort_counts = {
+                    str(cohort): 0 for cohort in source_cohorts
+                }
+
+    validation_errors: list[str] = []
+    if missing_files:
+        validation_errors.append("required_files_missing")
+    if missing_columns:
+        validation_errors.append("required_columns_missing")
+    if not row_count_match:
+        validation_errors.append("row_count_mismatch")
+    if truncated:
+        validation_errors.append("export_truncated")
+    warnings = list(meta.get("warnings") or [])
+    if unexpected_files:
+        warnings.append("File non previsti dal contratto presenti nell'inventario")
+
+    hard_failure = bool(
+        missing_files or missing_columns or not row_count_match or truncated
+    )
+    status = "fail" if hard_failure else ("partial" if warnings else "pass")
+    return make_json_safe(
+        {
+            "export_version": MONITORING_EXPORT_VERSION,
+            "module_key": module_key,
+            "status": status,
+            "source_row_count": source_row_count,
+            "exported_row_count": exported_row_count,
+            "row_count_match": row_count_match,
+            "truncated": truncated,
+            "required_files": required_files,
+            "actual_files": actual_files,
+            "missing_files": missing_files,
+            "unexpected_files": unexpected_files,
+            "required_columns": required_columns,
+            "actual_columns": actual_columns,
+            "missing_columns": missing_columns,
+            "null_ratio_by_column": null_ratios,
+            "source_cohort_counts": source_cohort_counts,
+            "date_min": min(date_values) if date_values else None,
+            "date_max": max(date_values) if date_values else None,
+            "validation_errors": validation_errors,
+            "warnings": list(dict.fromkeys(str(item) for item in warnings)),
+        }
+    )
 
 
 def _file_entry(
@@ -769,21 +1016,41 @@ def _build_purchasability_files(
             ],
         ),
     }
+    source_total_rows = int((summary.get("metrics") or {}).get("rows") or 0)
+    exported_row_count = 0
+    truncated = False
     if include_rows:
-        files["rows.csv"] = _with_bom(
-            export_purchasability_validation_csv(
+        page_size = 100_000
+        safety_cap = 2_000_000
+        offset = 0
+        exported_rows: list[dict[str, Any]] = []
+        while offset < safety_cap:
+            payload = build_purchasability_validation_rows(
                 db,
                 date_from=date_from,
                 date_to=date_to,
                 competition_id=competition_id,
                 market_key=market_key,
+                limit=min(page_size, safety_cap - offset),
+                offset=offset,
             )
-        )
-    exported_row_count = _count_csv_rows(files.get("rows.csv", b""))
+            page = list(payload.get("items") or [])
+            source_total_rows = int(payload.get("total") or source_total_rows)
+            exported_rows.extend(row for row in page if isinstance(row, dict))
+            offset += len(page)
+            if not page or offset >= source_total_rows:
+                break
+        truncated = source_total_rows > len(exported_rows)
+        if truncated:
+            warnings.append(
+                "Export Acquistabilità fermato al limite di sicurezza di 2.000.000 righe"
+            )
+        files["rows.csv"] = _csv_bom(exported_rows, _PURCHASABILITY_ROW_FIELDS)
+        exported_row_count = len(exported_rows)
     row_count = (
         exported_row_count
         if include_rows
-        else int((summary.get("metrics") or {}).get("rows") or 0)
+        else source_total_rows
     )
     if blocking:
         completeness = "blocked"
@@ -811,6 +1078,9 @@ def _build_purchasability_files(
         "blocking_reasons": [str(blocking)] if blocking else [],
         "include_rows_effective": include_rows and "rows.csv" in files,
         "primary_rows": row_count,
+        "source_total_rows": source_total_rows,
+        "exported_total_rows": exported_row_count,
+        "truncated": truncated,
     }
 
 
@@ -858,6 +1128,9 @@ def _build_balance_files(
         "blocking_reasons": [],
         "include_rows_effective": include_rows and "balance_rows.csv" in files,
         "primary_rows": rows,
+        "source_total_rows": rows,
+        "exported_total_rows": rows,
+        "truncated": False,
     }
 
 
@@ -917,6 +1190,9 @@ def _build_goal_files(
         "blocking_reasons": blocking_reasons,
         "include_rows_effective": include_rows and "preview_snapshots.csv" in files,
         "primary_rows": rows,
+        "source_total_rows": rows,
+        "exported_total_rows": rows,
+        "truncated": False,
     }
 
 
@@ -930,17 +1206,31 @@ def _build_signals_files(
 ) -> tuple[dict[str, bytes], dict[str, Any]]:
     summary = build_signals_summary(db, date_from=date_from, date_to=date_to)
     overall = summary.get("overall") or {}
-    activation_payload = list_signal_activations(
-        db,
-        date_from=date_from,
-        date_to=date_to,
-        limit=100_000,
-        offset=0,
-    )
-    items = list(activation_payload.get("items") or [])
-    activations_csv = _with_bom(
-        export_signals_csv(db, date_from=date_from, date_to=date_to)
-    )
+    page_size = 100_000
+    safety_cap = 2_000_000
+    offset = 0
+    source_total_rows = 0
+    items: list[dict[str, Any]] = []
+    while offset < safety_cap:
+        activation_payload = list_signal_activations(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            limit=min(page_size, safety_cap - offset),
+            offset=offset,
+        )
+        source_total_rows = int(activation_payload.get("total") or source_total_rows)
+        page = [
+            row
+            for row in (activation_payload.get("items") or [])
+            if isinstance(row, dict)
+        ]
+        items.extend(page)
+        offset += len(page)
+        if not page or offset >= source_total_rows:
+            break
+    truncated = source_total_rows > len(items)
+    activations_csv = _csv_bom(items, _SIGNALS_ROW_FIELDS)
     model_key = (summary.get("filters") or {}).get("model_key")
     model_row = {"model_key": model_key, **overall}
     version_definition = {
@@ -973,11 +1263,15 @@ def _build_signals_files(
         "model_summary.csv": _rows_to_csv([model_row]),
     }
     warnings = list(summary.get("warnings") or [])
+    if truncated:
+        warnings.append(
+            "Export Signals fermato al limite di sicurezza di 2.000.000 righe"
+        )
     if competition_id is not None:
         warnings.append(
             "Filtro competition_id non applicabile al servizio Signals; export su tutte le competizioni"
         )
-    rows = int(overall.get("activations") or 0)
+    rows = len(items)
     completeness = "empty" if rows == 0 else ("partial" if warnings else "complete")
     return files, {
         "module_version": "signals_aggregation_current",
@@ -988,6 +1282,9 @@ def _build_signals_files(
         "blocking_reasons": [],
         "include_rows_effective": include_rows and "activations_rows.csv" in files,
         "primary_rows": rows,
+        "source_total_rows": source_total_rows,
+        "exported_total_rows": rows,
+        "truncated": truncated,
     }
 
 
@@ -1046,10 +1343,67 @@ def _build_module_inventory(
         "include_rows_requested": include_rows,
         "include_debug": include_debug,
     }
-    files["versions.json"] = _json_bytes(meta["versions"])
+    meta.setdefault("versions", {})
+    meta.setdefault("source_cohorts", [])
+    meta.setdefault("warnings", [])
+    meta.setdefault("completeness", "partial")
+    meta.setdefault("blocking_reasons", [])
+    meta.setdefault("primary_rows", 0)
+    meta.setdefault("source_total_rows", meta.get("primary_rows", 0))
+    meta.setdefault("exported_total_rows", meta.get("primary_rows", 0))
+    meta.setdefault("truncated", False)
+    files["versions.json"] = _json_bytes(meta.get("versions") or {})
     files["filters.json"] = _json_bytes(filters)
     files["README_ANALISI.md"] = _readme_md(module_key).encode("utf-8")
     files["data_dictionary.md"] = _dictionary_md(module_key).encode("utf-8")
+    files["source_cohorts.json"] = _json_bytes(meta.get("source_cohorts") or [])
+    files.setdefault("warnings.json", _json_bytes({"warnings": meta.get("warnings") or []}))
+    if "health.json" not in files:
+        health_source = (
+            files.get("snapshot_health.json")
+            or files.get("data_health.json")
+            or _json_bytes(
+                {
+                    "source_total_rows": meta.get("source_total_rows", 0),
+                    "exported_total_rows": meta.get("exported_total_rows", 0),
+                    "truncated": bool(meta.get("truncated", False)),
+                }
+            )
+        )
+        files["health.json"] = health_source
+    if "summary.json" not in files:
+        summary_source = (
+            files.get("preview_summary.json")
+            or files.get("overall.json")
+            or _json_bytes({"primary_rows": meta.get("primary_rows", 0)})
+        )
+        files["summary.json"] = summary_source
+
+    schema_contract = {
+        **SCHEMA_CONTRACTS[module_key],
+        "export_version": MONITORING_EXPORT_VERSION,
+        "module_key": module_key,
+        "required_columns": list(SCHEMA_CONTRACTS[module_key]["required_columns"]),
+        "required_files": list(SCHEMA_CONTRACTS[module_key]["required_files"]),
+    }
+    csv_chunks: dict[str, list[str]] = {}
+    primary_name = str(schema_contract["primary_rows_file"])
+    for csv_name in [
+        name
+        for name, content in files.items()
+        if name.endswith(".csv") and _count_csv_rows(content) > 50_000
+    ]:
+        prefix = "rows" if csv_name == primary_name else csv_name.removesuffix(".csv")
+        chunks = _chunk_csv_bytes(files.pop(csv_name), prefix=prefix)
+        files.update(chunks)
+        chunk_names = sorted(chunks)
+        csv_chunks[csv_name] = chunk_names
+        if csv_name == primary_name:
+            schema_contract["primary_rows_chunks"] = chunk_names
+        schema_contract["required_files"] = [
+            name for name in schema_contract["required_files"] if name != csv_name
+        ] + chunk_names
+    files["schema_contract.json"] = _json_bytes(schema_contract)
 
     schema_version = _module_schema_version(module_key)
     pre_handoff_entries = [
@@ -1068,11 +1422,30 @@ def _build_module_inventory(
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
-        source_cohorts=meta["source_cohorts"],
+        source_cohorts=meta.get("source_cohorts") or [],
         entries=pre_handoff_entries,
-        warnings=meta["warnings"],
-        completeness=meta["completeness"],
+        warnings=meta.get("warnings") or [],
+        completeness=str(meta.get("completeness") or "partial"),
     ).encode("utf-8")
+    required_files = list(
+        dict.fromkeys(
+            [*_COMMON_REQUIRED_FILES, *schema_contract.get("required_files", [])]
+        )
+    )
+    export_audit = _build_export_audit(
+        files,
+        meta,
+        module_key,
+        required_files,
+        schema_contract,
+    )
+    files["export_audit.json"] = _json_bytes(export_audit)
+    meta["export_audit"] = export_audit
+    if (
+        export_audit.get("status") != "pass"
+        and meta.get("completeness") != "blocked"
+    ):
+        meta["completeness"] = "partial"
     entries = [
         _file_entry(
             name,
@@ -1086,21 +1459,27 @@ def _build_module_inventory(
     ]
     manifest = {
         "schema_version": MONITORING_EXPORT_VERSION,
+        "export_version": MONITORING_EXPORT_VERSION,
         "module_key": module_key,
-        "module_version": meta["module_version"],
+        "module_version": meta.get("module_version"),
         "generated_at": _utcnow(),
-        "source_cohorts": meta["source_cohorts"],
+        "source_cohorts": meta.get("source_cohorts") or [],
+        "source_total_rows": int(meta.get("source_total_rows", 0) or 0),
+        "exported_total_rows": int(meta.get("exported_total_rows", 0) or 0),
+        "truncated": bool(meta.get("truncated", False)),
+        "csv_chunks": csv_chunks,
         "date_range": {
             "from": date_from.isoformat(),
             "to": date_to.isoformat(),
         },
         "competition": competition_id,
         "market_key": market_key,
-        "include_rows": meta["include_rows_effective"],
+        "include_rows": bool(meta.get("include_rows_effective", include_rows)),
         "include_rows_requested": include_rows,
         "include_debug": include_debug,
-        "warnings_count": len(meta["warnings"]),
-        "export_completeness_status": meta["completeness"],
+        "warnings_count": len(meta.get("warnings") or []),
+        "export_audit_status": export_audit.get("status"),
+        "export_completeness_status": meta.get("completeness") or "partial",
         "files": entries,
         "manifest_self_hash_excluded": True,
     }
@@ -1120,7 +1499,7 @@ def build_module_analysis_pack_zip(
     include_rows: bool = True,
     include_debug: bool = False,
 ) -> tuple[bytes, str]:
-    """Costruisce il pacchetto v2 con inventario, hash e handoff specifico."""
+    """Costruisce il pacchetto forensic v3 con audit incorporato."""
     files, manifest, _ = _build_module_inventory(
         db,
         module_key=module_key,
@@ -1134,6 +1513,82 @@ def build_module_analysis_pack_zip(
     return (
         _pack_zip(files, manifest),
         analysis_pack_filename(module_key, date_from, date_to),
+    )
+
+
+def build_module_analysis_pack_audit(
+    db: Session,
+    *,
+    module_key: str,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None = None,
+    market_key: str | None = None,
+    include_rows: bool = True,
+    include_debug: bool = False,
+) -> dict[str, Any]:
+    """Costruisce l'audit completo senza materializzare i byte ZIP."""
+    _, manifest, meta = _build_module_inventory(
+        db,
+        module_key=module_key,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_key=market_key,
+        include_rows=include_rows,
+        include_debug=include_debug,
+    )
+    file_names = ["manifest.json"] + [
+        str(entry.get("name"))
+        for entry in (manifest.get("files") or [])
+        if entry.get("name")
+    ]
+    return make_json_safe(
+        {
+            "module_key": module_key,
+            "export_version": MONITORING_EXPORT_VERSION,
+            "export_audit": meta.get("export_audit") or {},
+            "files": sorted(file_names),
+            "completeness": manifest.get("export_completeness_status"),
+        }
+    )
+
+
+def build_modules_analysis_packs_audit(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None = None,
+    market_key: str | None = None,
+    include_rows: bool = True,
+    include_debug: bool = False,
+) -> dict[str, Any]:
+    """Costruisce in un'unica risposta gli audit dei quattro moduli."""
+    modules = [
+        build_module_analysis_pack_audit(
+            db,
+            module_key=module_key,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+            market_key=market_key,
+            include_rows=include_rows,
+            include_debug=include_debug,
+        )
+        for module_key in (
+            "purchasability",
+            "balance-v5",
+            "goal-intensity-v5",
+            "signals",
+        )
+    ]
+    return make_json_safe(
+        {
+            "generated_at": _utcnow(),
+            "export_version": MONITORING_EXPORT_VERSION,
+            "modules": modules,
+        }
     )
 
 

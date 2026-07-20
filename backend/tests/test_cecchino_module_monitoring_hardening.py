@@ -33,8 +33,8 @@ from app.services.cecchino.cecchino_purchasability_snapshot import (
 )
 
 
-def test_monitoring_export_version_v2():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v2"
+def test_monitoring_export_version_v3():
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v3"
 
 
 def test_attach_purchasability_writes_preview_on_dict_copy(monkeypatch):
@@ -148,6 +148,7 @@ def test_resolve_balance_derived_from_final(monkeypatch):
     row = SimpleNamespace(
         cecchino_output_json={"final": {"quota_1": 2.1, "quota_x": 3.2, "quota_2": 3.5}},
         kpi_panel_json={"rows": []},
+        odds_snapshot_json={},
         scan_date=date(2026, 7, 1),
         kickoff=None,
         score_fulltime_home=1,
@@ -162,7 +163,7 @@ def test_resolve_balance_derived_from_final(monkeypatch):
     )
     resolved = resolve_balance_v5_monitoring_snapshot(row)
     assert resolved["mode"] == "derived_read_only_from_stored_pre_match"
-    assert resolved["source_cohort"] == "legacy_derived_diagnostic"
+    assert resolved["source_cohort"] == "historical_diagnostic"
     assert resolved["payload"]["f36_index"] == 1.0
 
 
@@ -176,12 +177,13 @@ def test_resolve_balance_persisted_monitoring_key():
     row = SimpleNamespace(
         cecchino_output_json={BALANCE_MONITORING_KEY: compact},
         kpi_panel_json={},
+        odds_snapshot_json={},
         scan_date=date(2026, 7, 1),
         kickoff=None,
     )
     resolved = resolve_balance_v5_monitoring_snapshot(row)
     assert resolved["mode"] == "persisted"
-    assert resolved["source_cohort"] == "prospective_persisted"
+    assert resolved["source_cohort"] == "historical_diagnostic"
 
 
 def test_attach_balance_monitoring_to_output(monkeypatch):

@@ -18,13 +18,28 @@ Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (
 | Legacy | `GET …/purchasability-empirical` (deprecated) |
 | Preview contract | `cecchino_purchasability_v1_preview_contract` |
 
+## Gate chiusura Monitoraggio Moduli Fase 1/3 (2026-07-20)
+
+| Campo | Valore |
+|-------|--------|
+| Cohorts | `cecchino_monitoring_cohorts.py` (canoniche + alias) |
+| Backfill | `cecchino_module_historical_backfill_v1` · confirm `IMPORT_CECCHINO_HISTORICAL_MONITORING` |
+| Plan/Run | `POST /api/admin/…/historical-backfill/plan` · `/run` |
+| Status | `GET /api/cecchino/module-monitoring/historical-backfill/status` |
+| Export | `cecchino_module_monitoring_exports_v3` |
+| Audit | `GET …/analysis-pack-audit` · `…/analysis-packs-audit` |
+| ZIP obbligatori | schema_contract · export_audit · source_cohorts · no truncation silenzioso |
+| UI | Importa storico · filtro Coorte · Qualità pacchetti |
+| Formule | invariate |
+| Gate runtime | Backfill/ZIP runtime non eseguiti da Cursor — verifica esterna ZIP |
+
 ## Monitoraggio Moduli — HARDENING export coorti reali (2026-07-20)
 
 | Campo | Valore |
 |-------|--------|
-| Export version | `cecchino_module_monitoring_exports_v2` |
+| Export version | `cecchino_module_monitoring_exports_v2` (superseded by v3 al gate) |
 | Balance snapshot | `cecchino_output_json.balance_v5_monitoring` (`…_monitoring_snapshot_v1`) |
-| Coorti | `prospective_persisted` / `legacy_derived_diagnostic` |
+| Coorti | `prospective_persisted` / `legacy_derived_diagnostic` (poi canoniche al gate) |
 | Goal ZIP | 6 preview export reali + progress/health |
 | Segnali ZIP | activations_rows + serie mensile + aggregati |
 | Status API | `GET …/export-status` (completezza, righe, coorti, size) |

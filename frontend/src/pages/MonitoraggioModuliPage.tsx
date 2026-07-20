@@ -4,6 +4,8 @@ import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import {
   getModuleMonitoringOverview,
+  COHORT_FILTER_OPTIONS,
+  type CohortFilterValue,
   type ModuleOverviewItem,
 } from '../lib/cecchinoModuleMonitoringApi'
 import { ModuleMonitoringHero } from '../components/module-monitoring/ModuleMonitoringHero'
@@ -11,6 +13,8 @@ import { ModuleOverviewGrid } from '../components/module-monitoring/ModuleOvervi
 import { ModuleSelector } from '../components/module-monitoring/ModuleSelector'
 import { ModuleWorkspaceShell } from '../components/module-monitoring/ModuleWorkspaceShell'
 import { MonitoringFilterBar } from '../components/module-monitoring/MonitoringFilterBar'
+import { MonitoringHistoricalImportPanel } from '../components/module-monitoring/MonitoringHistoricalImportPanel'
+import { MonitoringPackQualityCard } from '../components/module-monitoring/MonitoringPackQualityCard'
 import { PurchasabilityModulePanel } from '../components/module-monitoring/PurchasabilityModulePanel'
 import { BalanceModulePanel } from '../components/module-monitoring/BalanceModulePanel'
 import { GoalIntensityModulePanel } from '../components/module-monitoring/GoalIntensityModulePanel'
@@ -55,6 +59,9 @@ export function MonitoraggioModuliPage() {
   const [loading, setLoading] = useState(false)
   const [overviewItems, setOverviewItems] = useState<ModuleOverviewItem[]>([])
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  const [cohortFilter, setCohortFilter] = useState<CohortFilterValue>(
+    (searchParams.get('cohort') as CohortFilterValue) || 'all',
+  )
 
   const syncUrl = useCallback(
     (next: { module?: MonitoringModuleKey; view?: string }) => {
@@ -143,6 +150,46 @@ export function MonitoraggioModuliPage() {
         loading={loading}
       />
 
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm">
+        <label className="text-xs font-medium text-slate-600">
+          Coorte
+          <select
+            value={cohortFilter}
+            onChange={(e) => {
+              const v = e.target.value as CohortFilterValue
+              setCohortFilter(v)
+              const p = new URLSearchParams(searchParams)
+              if (v === 'all') p.delete('cohort')
+              else p.set('cohort', v)
+              setSearchParams(p, { replace: true })
+            }}
+            className="mt-1 block rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800"
+          >
+            {COHORT_FILTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="max-w-xl text-xs text-slate-500">
+          Default analisi: tutte (segmentate). Per readiness/promozione preferire «Prospettica».
+          Filtro informativo in overview — le metriche di promozione restano prospettiche.
+        </p>
+      </div>
+
+      <MonitoringPackQualityCard
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        competitionId={competitionId}
+      />
+
+      <MonitoringHistoricalImportPanel
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        competitionId={competitionId}
+      />
+
       <ModuleOverviewGrid
         items={
           overviewItems.length
@@ -181,6 +228,7 @@ export function MonitoraggioModuliPage() {
             dateTo={dateTo}
             competitionId={competitionId ? Number(competitionId) : null}
             overview={currentOverview}
+            cohortFilter={cohortFilter}
           />
         ) : activeModule === 'balance-v5' ? (
           <BalanceModulePanel
@@ -189,6 +237,7 @@ export function MonitoraggioModuliPage() {
             dateTo={dateTo}
             competitionId={competitionId ? Number(competitionId) : null}
             overview={currentOverview}
+            cohortFilter={cohortFilter}
           />
         ) : activeModule === 'goal-intensity-v5' ? (
           <GoalIntensityModulePanel
@@ -197,6 +246,7 @@ export function MonitoraggioModuliPage() {
             dateTo={dateTo}
             competitionId={competitionId ? Number(competitionId) : null}
             overview={currentOverview}
+            cohortFilter={cohortFilter}
           />
         ) : (
           <SignalsModulePanel
@@ -205,6 +255,7 @@ export function MonitoraggioModuliPage() {
             dateTo={dateTo}
             competitionId={competitionId ? Number(competitionId) : null}
             overview={currentOverview}
+            cohortFilter={cohortFilter}
           />
         )}
       </ModuleWorkspaceShell>

@@ -1,7 +1,7 @@
 """Balance v5 monitoring — snapshot compatto, resolve, dataset (read-only).
 
 Non modifica formule di ``build_cecchino_balance_v5``.
-Coorti: prospective_persisted | legacy_derived_diagnostic.
+Coorti canoniche: prospective_persisted | historical_* | unusable.
 """
 
 from __future__ import annotations
@@ -21,6 +21,12 @@ from app.models.cecchino_today_fixture import (
 )
 from app.services.cecchino.cecchino_balance_v5 import VERSION as BALANCE_V5_VERSION
 from app.services.cecchino.cecchino_balance_v5 import build_cecchino_balance_v5
+from app.services.cecchino.cecchino_monitoring_cohorts import (
+    COHORT_HISTORICAL_DIAGNOSTIC,
+    COHORT_HISTORICAL_PERSISTED_VERIFIED,
+    COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED,
+    COHORT_PROSPECTIVE,
+)
 from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
 
 BALANCE_MONITORING_SNAPSHOT_VERSION = "cecchino_balance_v5_monitoring_snapshot_v1"
@@ -31,7 +37,12 @@ ResolveMode = Literal[
     "derived_read_only_from_stored_pre_match",
     "unavailable",
 ]
-SourceCohort = Literal["prospective_persisted", "legacy_derived_diagnostic"]
+SourceCohort = Literal[
+    "prospective_persisted",
+    "historical_persisted_verified",
+    "historical_reconstructed_verified",
+    "historical_diagnostic",
+]
 
 BALANCE_ROW_FIELDS: list[str] = [
     "today_fixture_id",
@@ -180,20 +191,53 @@ def build_balance_v5_from_stored_row(row: CecchinoTodayFixture) -> dict[str, Any
     return bal
 
 
+def _odds_meta_verified_pre_kickoff(row: CecchinoTodayFixture) -> bool:
+    """True se odds/snapshot timestamp esiste e risulta prima del kickoff."""
+    odds = row.odds_snapshot_json if isinstance(row.odds_snapshot_json, dict) else {}
+    meta = odds.get("meta") if isinstance(odds.get("meta"), dict) else {}
+    snap_at = None
+    for fld in ("odds_fetched_at", "fetched_at", "snapshot_at"):
+        if meta.get(fld):
+            snap_at = meta.get(fld)
+            break
+        if odds.get(fld):
+            snap_at = odds.get(fld)
+            break
+    if snap_at is None or row.kickoff is None:
+        return False
+    try:
+        if isinstance(snap_at, datetime):
+            snap_dt = snap_at if snap_at.tzinfo else snap_at.replace(tzinfo=timezone.utc)
+        else:
+            raw = str(snap_at).replace("Z", "+00:00")
+            snap_dt = datetime.fromisoformat(raw)
+            if snap_dt.tzinfo is None:
+                snap_dt = snap_dt.replace(tzinfo=timezone.utc)
+        kick = row.kickoff
+        if kick.tzinfo is None:
+            kick = kick.replace(tzinfo=timezone.utc)
+        return snap_dt < kick
+    except Exception:
+        return False
+
+
 def resolve_balance_v5_monitoring_snapshot(
     today_fixture: CecchinoTodayFixture,
 ) -> dict[str, Any]:
     """Resolve canonico monitoring Balance.
 
-    1. persisted ``balance_v5_monitoring``
-    2. derived_read_only_from_stored_pre_match (final+KPI)
-    3. unavailable
+    1. persisted ``balance_v5_monitoring`` (prospective se pre_match_verified)
+    2. legacy ``balance_v5`` — mai prospective se pre_match_verified null
+    3. derived_read_only_from_stored_pre_match
+    4. unavailable
     """
     output = (
         today_fixture.cecchino_output_json
         if isinstance(today_fixture.cecchino_output_json, dict)
         else {}
     )
+    verified_ts = _odds_meta_verified_pre_kickoff(today_fixture)
+
     persisted = output.get(BALANCE_MONITORING_KEY)
     if isinstance(persisted, dict) and persisted:
         status = str(persisted.get("status") or "").strip().lower()
@@ -202,13 +246,22 @@ def resolve_balance_v5_monitoring_snapshot(
             or persisted.get("prob_1_norm") is not None
             or persisted.get("pillars")
         ):
+            pmv = persisted.get("pre_match_verified")
+            if pmv is True or (
+                pmv is None and verified_ts and persisted.get("source_mode") == "prospective_scan"
+            ):
+                cohort = COHORT_PROSPECTIVE
+            elif verified_ts or pmv is True:
+                cohort = COHORT_HISTORICAL_PERSISTED_VERIFIED
+            else:
+                cohort = COHORT_HISTORICAL_DIAGNOSTIC
             return {
                 "mode": "persisted",
                 "payload": persisted,
-                "source_cohort": "prospective_persisted",
+                "source_cohort": cohort,
             }
 
-    # Legacy full balance_v5 accidentally persisted (rare)
+    # Legacy full balance_v5 — NEVER auto-classify as prospective
     legacy_full = output.get("balance_v5")
     if isinstance(legacy_full, dict) and legacy_full.get("status") != "unavailable":
         compact = compact_balance_v5_monitoring_snapshot(
@@ -216,12 +269,17 @@ def resolve_balance_v5_monitoring_snapshot(
             scan_date=today_fixture.scan_date,
             kickoff=today_fixture.kickoff,
             source_mode="legacy_persisted_balance_v5",
-            pre_match_verified=None,
+            pre_match_verified=verified_ts if verified_ts else None,
+        )
+        cohort = (
+            COHORT_HISTORICAL_PERSISTED_VERIFIED
+            if verified_ts
+            else COHORT_HISTORICAL_DIAGNOSTIC
         )
         return {
             "mode": "persisted",
             "payload": compact,
-            "source_cohort": "prospective_persisted",
+            "source_cohort": cohort,
         }
 
     derived = build_balance_v5_from_stored_row(today_fixture)
@@ -231,12 +289,17 @@ def resolve_balance_v5_monitoring_snapshot(
             scan_date=today_fixture.scan_date,
             kickoff=today_fixture.kickoff,
             source_mode="derived_read_only_from_stored_pre_match",
-            pre_match_verified=None,
+            pre_match_verified=verified_ts if verified_ts else None,
+        )
+        cohort = (
+            COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED
+            if verified_ts
+            else COHORT_HISTORICAL_DIAGNOSTIC
         )
         return {
             "mode": "derived_read_only_from_stored_pre_match",
             "payload": compact,
-            "source_cohort": "legacy_derived_diagnostic",
+            "source_cohort": cohort,
         }
 
     return {"mode": "unavailable", "payload": None, "source_cohort": None}
@@ -431,24 +494,37 @@ def _csv_bom_bytes(rows: list[dict[str, Any]], fieldnames: list[str]) -> bytes:
 
 def build_balance_monthly_timeseries(rows: list[dict[str, Any]]) -> bytes:
     by_month: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"fixtures": 0, "settled": 0, "prospective": 0, "legacy": 0}
+        lambda: {
+            "fixtures": 0,
+            "settled": 0,
+            "prospective": 0,
+            "historical_verified": 0,
+            "historical_diagnostic": 0,
+        }
     )
     for r in rows:
         sd = str(r.get("scan_date") or "")[:7] or "unknown"
         by_month[sd]["fixtures"] += 1
         if r.get("is_settled"):
             by_month[sd]["settled"] += 1
-        if r.get("source_cohort") == "prospective_persisted":
+        cohort = str(r.get("source_cohort") or "")
+        if cohort == COHORT_PROSPECTIVE:
             by_month[sd]["prospective"] += 1
-        elif r.get("source_cohort") == "legacy_derived_diagnostic":
-            by_month[sd]["legacy"] += 1
+        elif cohort in (
+            COHORT_HISTORICAL_PERSISTED_VERIFIED,
+            COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED,
+        ):
+            by_month[sd]["historical_verified"] += 1
+        elif cohort == COHORT_HISTORICAL_DIAGNOSTIC:
+            by_month[sd]["historical_diagnostic"] += 1
     out = [
         {
             "month": m,
             "fixtures": v["fixtures"],
             "settled": v["settled"],
             "prospective_persisted": v["prospective"],
-            "legacy_derived_diagnostic": v["legacy"],
+            "historical_verified": v["historical_verified"],
+            "historical_diagnostic": v["historical_diagnostic"],
         }
         for m, v in sorted(by_month.items())
     ]
@@ -459,7 +535,8 @@ def build_balance_monthly_timeseries(rows: list[dict[str, Any]]) -> bytes:
             "fixtures",
             "settled",
             "prospective_persisted",
-            "legacy_derived_diagnostic",
+            "historical_verified",
+            "historical_diagnostic",
         ],
     )
 
@@ -481,8 +558,12 @@ def build_balance_export_files(
     cohort_counts: Counter[str] = Counter(
         str(r.get("source_cohort") or "unknown") for r in rows
     )
-    prospective = cohort_counts.get("prospective_persisted", 0)
-    legacy = cohort_counts.get("legacy_derived_diagnostic", 0)
+    prospective = cohort_counts.get(COHORT_PROSPECTIVE, 0)
+    hist_verified = (
+        cohort_counts.get(COHORT_HISTORICAL_PERSISTED_VERIFIED, 0)
+        + cohort_counts.get(COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED, 0)
+    )
+    hist_diag = cohort_counts.get(COHORT_HISTORICAL_DIAGNOSTIC, 0)
     settled = sum(1 for r in rows if r.get("is_settled"))
     eligible_n = len(eligible_list)
 
@@ -491,15 +572,17 @@ def build_balance_export_files(
         "covered_rows": len(rows),
         "settled_covered": settled,
         "prospective_persisted": prospective,
-        "legacy_derived_diagnostic": legacy,
+        "historical_persisted_or_reconstructed_verified": hist_verified,
+        "historical_diagnostic": hist_diag,
+        "legacy_derived_diagnostic": hist_diag,  # alias report
         "coverage": (len(rows) / eligible_n) if eligible_n else None,
         "warnings": [],
     }
     if eligible_n and not rows:
         health["warnings"].append("Balance non disponibile (né persistito né derivabile)")
-    elif prospective == 0 and legacy > 0:
+    elif prospective == 0 and (hist_verified + hist_diag) > 0:
         health["warnings"].append(
-            "Solo coorte legacy_derived_diagnostic — nessuna riga prospective_persisted"
+            "Solo coorti storiche — nessuna riga prospective_persisted"
         )
 
     version_def = {
@@ -570,16 +653,23 @@ def build_balance_module_overview_v2(
     covered = 0
     settled_covered = 0
     prospective = 0
-    legacy = 0
+    hist_verified = 0
+    hist_diag = 0
     for fx in fixtures:
         resolved = resolve_balance_v5_monitoring_snapshot(fx)
         if resolved.get("mode") == "unavailable":
             continue
         covered += 1
-        if resolved.get("source_cohort") == "prospective_persisted":
+        cohort = resolved.get("source_cohort")
+        if cohort == COHORT_PROSPECTIVE:
             prospective += 1
-        elif resolved.get("source_cohort") == "legacy_derived_diagnostic":
-            legacy += 1
+        elif cohort in (
+            COHORT_HISTORICAL_PERSISTED_VERIFIED,
+            COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED,
+        ):
+            hist_verified += 1
+        elif cohort == COHORT_HISTORICAL_DIAGNOSTIC:
+            hist_diag += 1
         if (
             fx.score_fulltime_home is not None
             and fx.score_fulltime_away is not None
@@ -592,9 +682,9 @@ def build_balance_module_overview_v2(
         warnings.append("Nessuna fixture eleggibile nel periodo")
     elif covered == 0:
         warnings.append("Balance non disponibile nello snapshot persistito né derivabile")
-    elif prospective == 0 and legacy > 0:
+    elif prospective == 0 and (hist_verified + hist_diag) > 0:
         warnings.append(
-            "Coverage da coorte legacy_derived_diagnostic — snapshot prospectivo assente"
+            "Coverage da coorti storiche — snapshot prospectivo assente"
         )
     warnings.append(
         "Monitoraggio descrittivo — validazione empirica avanzata in preparazione"
@@ -613,10 +703,13 @@ def build_balance_module_overview_v2(
             "coverage_numerator": covered if eligible else None,
             "coverage_denominator": eligible if eligible else None,
             "prospective_persisted": prospective,
-            "legacy_derived_diagnostic": legacy,
+            "historical_persisted_or_reconstructed_verified": hist_verified,
+            "historical_diagnostic": hist_diag,
+            "legacy_derived_diagnostic": hist_diag,
             "source_cohorts": {
-                "prospective_persisted": prospective,
-                "legacy_derived_diagnostic": legacy,
+                COHORT_PROSPECTIVE: prospective,
+                COHORT_HISTORICAL_PERSISTED_VERIFIED: hist_verified,
+                COHORT_HISTORICAL_DIAGNOSTIC: hist_diag,
             },
             "last_snapshot_at": None,
             "next_review_at": None,
