@@ -2,9 +2,13 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
+
+Facade + Today `goal_intensity_v5` + readiness + API canoniche + export **v10** + workspace FE (no research tab). Bundle frozen invariato. Signals blocked. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
+
 ## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
 
-Readiness prospettica + gate + snapshot + governance + tab UI. Export **v9**. Baseline 0 prospective: `continue_monitoring`, Signals blocked. Formule invariate. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_READINESS_GOVERNANCE.md`.
+Readiness prospettica + gate + snapshot + governance + tab UI. Export condiviso **v10** (bump Goal). Baseline 0 prospective: `continue_monitoring`, Signals blocked. Formule invariate. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_READINESS_GOVERNANCE.md`.
 
 ## Scientific Consistency Fix / export v8 (2026-07-20)
 

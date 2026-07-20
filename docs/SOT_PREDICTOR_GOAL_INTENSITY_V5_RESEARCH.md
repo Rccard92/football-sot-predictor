@@ -1,6 +1,11 @@
 # Intensità Goal v5 — Research
 
-Modulo di ricerca per rifondare **Intensità Goal** su quattro pilastri indipendenti. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
+> **Consolidamento operativo (2026-07-20):** il monitoring canonico è in
+> `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md` (facade, readiness, export v10, workspace).
+> Questo file resta il riferimento **research_internal** (audit/dataset/statistics/candidate).
+> UI lab rimossa: redirect a `/monitoraggio-moduli?module=goal-intensity-v5&view=overview`.
+
+Modulo di ricerca per rifondare **Intensità Goal** su quattro dimensioni distinte. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
 ## Fase 2A.1 — Preview freeze reale (2026-07-18)
 

@@ -220,6 +220,33 @@ def balance_readiness_refresh(
     )
 
 
+class GoalIntensityReadinessRefreshBody(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    competition_id: int | None = None
+
+
+@admin_router.post("/goal-intensity-v5/readiness/refresh")
+def goal_intensity_v5_readiness_refresh(
+    body: GoalIntensityReadinessRefreshBody,
+    db: Session = Depends(get_db),
+):
+    """Ricalcola readiness/cache; non crea snapshot né muta bundle/score/Signals."""
+    from app.services.cecchino.cecchino_goal_intensity_v5_readiness import (
+        build_goal_intensity_v5_readiness,
+        clear_goal_intensity_v5_readiness_cache,
+    )
+
+    clear_goal_intensity_v5_readiness_cache()
+    report = build_goal_intensity_v5_readiness(
+        db,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        competition_id=body.competition_id,
+    )
+    return JSONResponse(content=jsonable_encoder({"status": "ok", "report": report}))
+
+
 @admin_router.post("/balance-v5/governance/decisions")
 def balance_governance_decisions(
     body: BalanceGovernanceDecisionBody,

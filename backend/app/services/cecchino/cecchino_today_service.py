@@ -1683,6 +1683,13 @@ def update_today_fixture_results(
     except Exception:
         logger.exception("balance readiness snapshot skipped after update-results")
 
+    try:
+        from app.services.cecchino.cecchino_goal_intensity_v5 import attach_results_for_rows
+
+        attach_results_for_rows(db, rows, commit=False)
+    except Exception:
+        logger.exception("goal intensity v5 attach skipped after update-results")
+
     db.commit()
     return {
         "status": "ok",
@@ -1797,26 +1804,27 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
     )
     goal_intensity_analysis = build_goal_intensity_for_today_row(db, row)
     expected_goal_engine_diagnostics = build_expected_goal_engine_diagnostics_for_today_row(db, row)
-    goal_intensity_v5_preview = None
+    goal_intensity_v5 = None
     try:
-        from app.services.cecchino.cecchino_goal_intensity_v5_preview import get_preview_detail
+        from app.services.cecchino.cecchino_goal_intensity_v5 import build_today_payload
 
-        goal_intensity_v5_preview = get_preview_detail(db, int(row.id))
-        if goal_intensity_v5_preview.get("status") == "error":
-            # Assente bundle/snapshot: non bloccare il dettaglio Today
-            if goal_intensity_v5_preview.get("error") in {"bundle_missing", "snapshot_not_found"}:
-                goal_intensity_v5_preview = {
-                    "status": "unavailable",
-                    "error": goal_intensity_v5_preview.get("error"),
-                    "banner": "Preview research non produttiva. Nessun segnale betting attivato.",
-                }
+        goal_intensity_v5 = build_today_payload(db, int(row.id))
     except Exception as exc:
-        goal_intensity_v5_preview = {
+        goal_intensity_v5 = {
             "status": "error",
-            "error": "preview_detail_failed",
+            "error": "goal_intensity_v5_detail_failed",
             "message": str(exc)[:200],
-            "banner": "Preview research non produttiva. Nessun segnale betting attivato.",
+            "operational_status": "preview_monitored",
+            "operational_status_label_it": "Preview monitorata",
+            "signals_integration_status": "blocked",
+            "no_betting_signals": True,
         }
+    # Alias deprecated: stesso payload, una sola computazione
+    goal_intensity_v5_preview = {
+        **(goal_intensity_v5 or {}),
+        "deprecated": True,
+        "replacement": "goal_intensity_v5",
+    }
 
     local_fixture: Fixture | None = None
     local_home_name: str | None = None
@@ -1930,6 +1938,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "balance_v5_snapshot_meta": balance_v5_snapshot_meta,
         "fixture_identity_consistency": fixture_identity_consistency,
         "goal_intensity_analysis": goal_intensity_analysis,
+        "goal_intensity_v5": goal_intensity_v5,
         "goal_intensity_v5_preview": goal_intensity_v5_preview,
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
         "purchasability_preview": resolve_purchasability_preview_for_detail(

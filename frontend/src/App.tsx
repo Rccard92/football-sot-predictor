@@ -44,7 +44,7 @@ export default function App() {
           />
           <Route
             path="/cecchino/ricerca-intensita-goal"
-            element={<LegacyLabRedirect module="goal-intensity-v5" view="research" />}
+            element={<LegacyLabRedirect module="goal-intensity-v5" view="overview" />}
           />
           <Route path="/monitoraggio-giocate" element={<BetMonitoring />} />
           <Route path="/bookmakers" element={<Bookmakers />} />

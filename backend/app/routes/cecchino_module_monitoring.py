@@ -771,6 +771,229 @@ def balance_readiness_export(
     )
 
 
+def _goal_v5_filters(
+    date_from: date | None,
+    date_to: date | None,
+    competition_id: int | None,
+) -> dict:
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "competition_id": competition_id,
+    }
+
+
+@router.get("/goal-intensity-v5/overview")
+def goal_intensity_v5_overview(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5 import build_overview
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_overview(db, **_goal_v5_filters(date_from, date_to, competition_id))
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/dimensions")
+def goal_intensity_v5_dimensions(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5 import build_dimensions
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_dimensions(db, **_goal_v5_filters(date_from, date_to, competition_id))
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/candidates")
+def goal_intensity_v5_candidates(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    candidate_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5 import build_candidates
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_candidates(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                candidate_id=candidate_id,
+            )
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/prospective-results")
+def goal_intensity_v5_prospective_results(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    snapshot_status: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5 import build_prospective_results
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_prospective_results(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                snapshot_status=snapshot_status,
+                limit=limit,
+                offset=offset,
+            )
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/calibration")
+def goal_intensity_v5_calibration(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5 import build_calibration
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_calibration(db, **_goal_v5_filters(date_from, date_to, competition_id))
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/stability")
+def goal_intensity_v5_stability(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5 import build_stability
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_stability(db, **_goal_v5_filters(date_from, date_to, competition_id))
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/readiness")
+def goal_intensity_v5_readiness(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5_readiness import (
+        build_goal_intensity_v5_readiness,
+    )
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_goal_intensity_v5_readiness(
+                db, **_goal_v5_filters(date_from, date_to, competition_id)
+            )
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/data-health")
+def goal_intensity_v5_data_health(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    from app.services.cecchino.cecchino_goal_intensity_v5 import build_data_health
+
+    return JSONResponse(
+        content=jsonable_encoder(
+            build_data_health(db, **_goal_v5_filters(date_from, date_to, competition_id))
+        )
+    )
+
+
+@router.get("/goal-intensity-v5/export")
+def goal_intensity_v5_export_dossier(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    competition_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Dossier readiness Goal v5 ZIP."""
+    import io
+    import logging
+    import time
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+
+    from app.services.cecchino.cecchino_goal_intensity_v5_readiness import (
+        build_goal_intensity_v5_dossier_files,
+    )
+
+    log = logging.getLogger(__name__)
+    started = time.perf_counter()
+    log.info(
+        "goal_intensity_v5_dossier_started date_from=%s date_to=%s competition_id=%s",
+        date_from,
+        date_to,
+        competition_id,
+    )
+    try:
+        files = build_goal_intensity_v5_dossier_files(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, data in files.items():
+                zf.writestr(name, data)
+        buf.seek(0)
+        log.info(
+            "goal_intensity_v5_dossier_completed file_count=%s archive_size=%s elapsed_ms=%s",
+            len(files),
+            buf.getbuffer().nbytes,
+            int((time.perf_counter() - started) * 1000),
+        )
+    except Exception as exc:
+        log.exception(
+            "goal_intensity_v5_dossier_failed error_type=%s", type(exc).__name__
+        )
+        raise
+
+    df = (date_from or date.today()).isoformat()
+    dt = (date_to or date.today()).isoformat()
+    filename = f"SOT_GOAL_INTENSITY_V5_READINESS_{df}_{dt}.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{module_key}/analysis-pack-audit")
 def module_monitoring_analysis_pack_audit(
     module_key: str,

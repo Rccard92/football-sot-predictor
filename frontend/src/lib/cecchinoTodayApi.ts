@@ -1093,6 +1093,18 @@ export type CecchinoTodayDetailResponse = {
   balance_v5_snapshot_meta?: CecchinoBalanceV5SnapshotMeta
   fixture_identity_consistency?: CecchinoFixtureIdentityConsistency
   goal_intensity_analysis?: CecchinoGoalIntensityAnalysis
+  goal_intensity_v5?: {
+    status: string
+    banner?: string
+    error?: string
+    message?: string
+    version?: string
+    bundle?: Record<string, unknown>
+    snapshot?: Record<string, unknown>
+    v4_unchanged?: boolean
+    no_betting_signals?: boolean
+  }
+  /** @deprecated Usa goal_intensity_v5 */
   goal_intensity_v5_preview?: {
     status: string
     banner?: string

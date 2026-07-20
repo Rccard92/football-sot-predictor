@@ -158,7 +158,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v9"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v10"
 
 # Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
 _MODULE_AUDIT_CACHE_TTL_S = 300
@@ -510,7 +510,19 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
         "required_columns": _GOAL_EMPTY_HEADERS["preview_snapshots.csv"],
         "required_files": [
             filename for _, filename, _ in _GOAL_EXPORTS
-        ] + ["prospective_progress.json", "data_health.json", "historical_availability.json"],
+        ]
+        + [
+            "prospective_progress.json",
+            "data_health.json",
+            "historical_availability.json",
+            "goal_overview.json",
+            "goal_readiness.json",
+            "goal_readiness_policy.json",
+            "goal_prospective_progress.json",
+            "goal_dimensions_summary.json",
+            "goal_candidates_summary.json",
+            "goal_versions.json",
+        ],
     },
     "signals": {
         "primary_rows_file": "activations_all_models.csv",
@@ -2538,11 +2550,81 @@ def _build_goal_files(
         )
     )
     files["historical_availability.json"] = _json_bytes(historical_availability)
-    
+
+    # Canonical monitoring/readiness artifacts (v10) — fail-soft
+    try:
+        from app.services.cecchino.cecchino_goal_intensity_v5 import (
+            build_candidates,
+            build_dimensions,
+            build_overview,
+        )
+        from app.services.cecchino.cecchino_goal_intensity_v5_readiness import (
+            build_goal_intensity_v5_readiness,
+        )
+        from app.services.cecchino.cecchino_goal_intensity_v5_readiness_policy import (
+            GOAL_INTENSITY_V5_EXPORT_VERSION,
+            GOAL_INTENSITY_V5_MONITORING_VERSION,
+            GOAL_INTENSITY_V5_READINESS_POLICY_VERSION,
+            GOAL_INTENSITY_V5_READINESS_VERSION,
+            build_goal_intensity_v5_readiness_policy_payload,
+        )
+
+        overview = build_overview(
+            db, date_from=date_from, date_to=date_to, competition_id=competition_id
+        )
+        readiness = build_goal_intensity_v5_readiness(
+            db, date_from=date_from, date_to=date_to, competition_id=competition_id
+        )
+        files["goal_overview.json"] = _json_bytes(overview)
+        files["goal_readiness.json"] = _json_bytes(readiness)
+        files["goal_readiness_policy.json"] = _json_bytes(
+            build_goal_intensity_v5_readiness_policy_payload()
+        )
+        files["goal_prospective_progress.json"] = _json_bytes(
+            readiness.get("prospective_progress") or {}
+        )
+        files["goal_dimensions_summary.json"] = _json_bytes(
+            build_dimensions(
+                db, date_from=date_from, date_to=date_to, competition_id=competition_id
+            )
+        )
+        files["goal_candidates_summary.json"] = _json_bytes(
+            build_candidates(
+                db, date_from=date_from, date_to=date_to, competition_id=competition_id
+            )
+        )
+        files["goal_versions.json"] = _json_bytes(
+            {
+                "bundle_version": module_version,
+                "monitoring_version": GOAL_INTENSITY_V5_MONITORING_VERSION,
+                "readiness_version": GOAL_INTENSITY_V5_READINESS_VERSION,
+                "readiness_policy_version": GOAL_INTENSITY_V5_READINESS_POLICY_VERSION,
+                "export_version": GOAL_INTENSITY_V5_EXPORT_VERSION,
+                "monitoring_export_pack": MONITORING_EXPORT_VERSION,
+            }
+        )
+    except Exception as exc:
+        logger.warning(
+            "goal_readiness_export_failed error_code=%s", type(exc).__name__
+        )
+        for name in (
+            "goal_overview.json",
+            "goal_readiness.json",
+            "goal_readiness_policy.json",
+            "goal_prospective_progress.json",
+            "goal_dimensions_summary.json",
+            "goal_candidates_summary.json",
+            "goal_versions.json",
+        ):
+            files.setdefault(name, _json_bytes({"status": "unavailable"}))
+
     rows = _count_csv_rows(files["preview_snapshots.csv"])
     return files, {
         "module_version": module_version,
-        "versions": {"goal_intensity_bundle": module_version},
+        "versions": {
+            "goal_intensity_bundle": module_version,
+            "monitoring": "cecchino_goal_intensity_v5_monitoring_v1",
+        },
         "source_cohorts": ["prospective_frozen_bundle"] if bundle is not None else [],
         "warnings": warnings,
         "completeness": completeness,

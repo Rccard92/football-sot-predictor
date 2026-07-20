@@ -13,7 +13,7 @@ import { CecchinoSignalsCard } from './CecchinoSignalsCard'
 import { CecchinoTodayDetailHeader } from './CecchinoTodayDetailHeader'
 import { CecchinoTodayKpiPanel } from './CecchinoTodayKpiPanel'
 import { CecchinoBalanceV5Panel } from './CecchinoBalanceV5Panel'
-import { CecchinoGoalIntensityV5PreviewPanel } from './CecchinoGoalIntensityV5PreviewPanel'
+import { CecchinoGoalIntensityV5Panel } from './CecchinoGoalIntensityV5Panel'
 import { CecchinoExpectedGoalEngineDiagnosticsPanel } from './CecchinoExpectedGoalEngineDiagnosticsPanel'
 import { CecchinoTodayPicchettiDebugPanel } from './CecchinoTodayPicchettiDebugPanel'
 import { todayCard, todayCardPadding, todaySkeleton } from './cecchinoTodayStyles'
@@ -169,7 +169,7 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         snapshotMeta={detail.balance_v5_snapshot_meta}
       />
 
-      <CecchinoGoalIntensityV5PreviewPanel preview={detail.goal_intensity_v5_preview} />
+      <CecchinoGoalIntensityV5Panel goalIntensity={detail.goal_intensity_v5 ?? detail.goal_intensity_v5_preview} />
 
       <CecchinoExpectedGoalEngineDiagnosticsPanel
         diagnostics={detail.expected_goal_engine_diagnostics}

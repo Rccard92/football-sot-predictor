@@ -7,7 +7,7 @@ Sola lettura su `cecchino_balance_v5_evaluations`. Nessuna modifica a formule/so
 
 Allineamento evidenza/bootstrap tra job, overview e ZIP:
 
-- Export pack: `cecchino_module_monitoring_exports_v9` (include file readiness Step 2C; bootstrap export = `BOOTSTRAP_ITERATIONS_DEFAULT` 2000).
+- Export pack: `cecchino_module_monitoring_exports_v10` (include file readiness Step 2C; bootstrap export = `BOOTSTRAP_ITERATIONS_DEFAULT` 2000).
 - `pillar_evidence_status` canonico da analisi pilastro complete (`build_balance_full_pillar_evidence_status`); UI legge prima il top-level job, poi `evidence` del pilastro.
 - Stati: `analysis_not_run`, `descriptive_only`, `exploratory_evidence`, `evidence_inconsistent`, ecc.; warning overview senza fake "nessuna win-rate Step 2B".
 - Formule Balance invariate; nessuna promozione automatica.
@@ -19,7 +19,7 @@ Allineamento evidenza/bootstrap tra job, overview e ZIP:
 | Analysis | `cecchino_balance_v5_empirical_analysis_v1` |
 | Policy | `cecchino_balance_v5_statistical_policy_v1` |
 | Dataset | `cecchino_balance_v5_empirical_dataset_v1` |
-| Export | `cecchino_module_monitoring_exports_v9` |
+| Export | `cecchino_module_monitoring_exports_v10` |
 
 ## Policy (immutabile)
 

@@ -2,13 +2,25 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
+
+| Campo | Valore |
+|-------|--------|
+| Bundle | `cecchino_goal_intensity_v5_preview_v1_1` (invariato) |
+| Facade | `cecchino_goal_intensity_v5` |
+| Readiness | `cecchino_goal_intensity_v5_readiness_v1` |
+| Policy | `cecchino_goal_intensity_v5_readiness_policy_v1` |
+| Export | `cecchino_module_monitoring_exports_v10` |
+| Stato | Preview monitorata · Signals blocked |
+| Doc | `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md` |
+
 ## Balance v5 Fase 2C — Readiness & Governance (2026-07-20)
 
 | Campo | Valore |
 |-------|--------|
 | Readiness | `cecchino_balance_v5_readiness_v1` |
 | Policy | `cecchino_balance_v5_readiness_policy_v1` |
-| Export | `cecchino_module_monitoring_exports_v9` |
+| Export | `cecchino_module_monitoring_exports_v10` (bump condiviso con Goal) |
 | Signals | sempre `blocked` nello Step 2C |
 | Formule Balance | invariate |
 | Doc | `docs/SOT_PREDICTOR_BALANCE_V5_READINESS_GOVERNANCE.md` |
