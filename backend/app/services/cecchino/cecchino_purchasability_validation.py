@@ -875,6 +875,8 @@ def build_purchasability_validation_health(
     by_candidate: dict[str, int] = {}
     prospective_rows = 0
     historical_rows = 0
+    historical_fixture_ids: set[int] = set()
+    invalid_book_odds_count = 0
     for e in evals:
         by_cohort[str(e.source_cohort)] = by_cohort.get(str(e.source_cohort), 0) + 1
         by_status[str(e.evaluation_status)] = by_status.get(str(e.evaluation_status), 0) + 1
@@ -885,6 +887,11 @@ def build_purchasability_validation_health(
             prospective_rows += 1
         else:
             historical_rows += 1
+            if e.today_fixture_id is not None:
+                historical_fixture_ids.add(int(e.today_fixture_id))
+        dq = _purchasability_data_quality_fields(e)
+        if not dq.get("analysis_eligible") and dq.get("analysis_exclusion_reason") == "invalid_decimal_book_odds":
+            invalid_book_odds_count += 1
 
     dup_keys: dict[tuple[Any, ...], int] = {}
     for e in evals:
@@ -938,7 +945,11 @@ def build_purchasability_validation_health(
             "validation_rows_by_evaluation_status": by_status,
             "validation_rows_by_candidate_version": by_candidate,
             "historical_rows_available": historical_rows,
+            "historical_fixtures": len(historical_fixture_ids),
             "prospective_rows_available": prospective_rows,
+            "invalid_book_odds_count": invalid_book_odds_count,
+            "data_quality_excluded_rows": invalid_book_odds_count,
+            "evaluated_rows": settled,
             "not_evaluable_count": not_evaluable_count,
             "result_missing_count": result_missing_count,
             "first_persisted_snapshot_at": first_persisted_snapshot_at,
@@ -1016,6 +1027,24 @@ def build_purchasability_validation_rows(
     )
 
 
+def _purchasability_data_quality_fields(
+    e: CecchinoPurchasabilityEvaluation,
+) -> dict[str, Any]:
+    """Data quality export — non modifica quota_book originale."""
+    qb = float(e.quota_book) if e.quota_book is not None else None
+    if qb is not None and qb <= 1.0:
+        return {
+            "analysis_eligible": False,
+            "data_quality_status": "invalid",
+            "analysis_exclusion_reason": "invalid_decimal_book_odds",
+        }
+    return {
+        "analysis_eligible": True,
+        "data_quality_status": "valid",
+        "analysis_exclusion_reason": None,
+    }
+
+
 def _source_mode_for_cohort(source_cohort: str | None) -> str | None:
     """Deriva source_mode export da source_cohort persistita."""
     if not source_cohort:
@@ -1072,6 +1101,7 @@ def _serialize_validation_row_forensic(e: CecchinoPurchasabilityEvaluation) -> d
         "phase_2_score": float(e.phase_2_score) if e.phase_2_score is not None else None,
         "reading": e.reading,
         "quota_book": float(e.quota_book) if e.quota_book is not None else None,
+        **_purchasability_data_quality_fields(e),
         "quota_cecchino": float(e.quota_cecchino) if e.quota_cecchino is not None else None,
         "fair_book_probability": (
             float(e.fair_book_probability) if e.fair_book_probability is not None else None

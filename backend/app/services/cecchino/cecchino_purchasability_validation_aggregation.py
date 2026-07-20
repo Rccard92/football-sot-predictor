@@ -37,6 +37,7 @@ from app.services.cecchino.cecchino_purchasability_validation import (
     PURCHASABILITY_VALIDATION_VERSION,
     SCORE_BANDS_ORDERED,
     SCORE_BAND_ZERO,
+    _purchasability_data_quality_fields,
     build_purchasability_validation_health,
     market_family_for,
     query_validation_rows,
@@ -83,15 +84,34 @@ def _analysis_settled_rows(
     rows: list[CecchinoPurchasabilityEvaluation],
 ) -> list[CecchinoPurchasabilityEvaluation]:
     """Coorte analitica storica: won/lost con quota book valida, senza gate promozione."""
+    return _performance_eligible_rows(rows)
+
+
+def _performance_eligible_rows(
+    rows: list[CecchinoPurchasabilityEvaluation],
+) -> list[CecchinoPurchasabilityEvaluation]:
+    """Righe won/lost escluse da performance se quota book invalida."""
     out = []
     for r in rows:
         if r.evaluation_status not in (EVAL_WON, EVAL_LOST):
             continue
-        qb = _f(r.quota_book)
-        if qb is None or qb <= 1.0:
+        dq = _purchasability_data_quality_fields(r)
+        if not dq.get("analysis_eligible"):
             continue
         out.append(r)
     return out
+
+
+def _invalid_book_odds_rows(
+    rows: list[CecchinoPurchasabilityEvaluation],
+) -> list[CecchinoPurchasabilityEvaluation]:
+    return [
+        r
+        for r in rows
+        if not _purchasability_data_quality_fields(r).get("analysis_eligible")
+        and _f(r.quota_book) is not None
+        and _f(r.quota_book) <= 1.0
+    ]
 
 
 def _settled_rows(
@@ -105,8 +125,7 @@ def _settled_rows(
     for r in rows:
         if r.evaluation_status not in (EVAL_WON, EVAL_LOST):
             continue
-        qb = _f(r.quota_book)
-        if qb is None or qb <= 1.0:
+        if not _purchasability_data_quality_fields(r).get("analysis_eligible"):
             continue
         if require_snapshot_verified:
             if not r.snapshot_timestamp_verified or r.snapshot_before_kickoff is not True:
@@ -487,11 +506,23 @@ def build_purchasability_validation_summary(
             require_snapshot_verified=True,
         )
     else:
-        settled = _analysis_settled_rows(all_rows)
+        settled = _performance_eligible_rows(all_rows)
+    invalid_book_odds_count = len(_invalid_book_odds_rows(all_rows))
+    performance_eligible_count = len(settled)
     general = _metrics_block(settled)
     general["pending"] = pending
     general["result_missing"] = result_missing
     general["rows_total_filtered"] = len(all_rows)
+    general["invalid_book_odds_count"] = invalid_book_odds_count
+    general["excluded_from_performance_count"] = invalid_book_odds_count
+    reconciliation = {
+        "raw_rows": len(all_rows),
+        "performance_eligible_rows": performance_eligible_count,
+        "pending": pending,
+        "result_missing": result_missing,
+        "invalid_book_odds": invalid_book_odds_count,
+        "excluded_from_performance_count": invalid_book_odds_count,
+    }
 
     seed = _bootstrap_seed(
         cv,
@@ -587,6 +618,7 @@ def build_purchasability_validation_summary(
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "metrics": general,
+            "reconciliation": reconciliation,
             "by_score_band": _band_table(settled),
             "by_market_key": _group_table(
                 settled, lambda r: r.market_key, "market_key"

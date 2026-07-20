@@ -127,3 +127,78 @@ export function coverageDisplay(
     tone: coverage >= 0.95 ? 'success' : coverage >= 0.5 ? 'warning' : 'collecting',
   }
 }
+
+const SCIENTIFIC_MATURITY_LABELS: Record<string, string> = {
+  raccolta_dati: 'Raccolta dati',
+  campione_insufficiente: 'Campione insufficiente',
+  validazione_in_corso: 'Validazione in corso',
+  validazione_empirica_da_avviare: 'Validazione empirica da avviare',
+  evidenza_sufficiente: 'Evidenza sufficiente',
+  pronta_per_revisione: 'Pronta per revisione',
+  promossa: 'Promossa',
+  monitoraggio: 'Monitoraggio',
+  partial_collecting: 'Raccolta dati',
+  partial: 'Campione insufficiente',
+}
+
+export function scientificMaturityLabel(
+  maturity: string | null | undefined,
+  moduleKey?: string,
+): string {
+  if (maturity) {
+    return SCIENTIFIC_MATURITY_LABELS[maturity] || maturity.replace(/_/g, ' ')
+  }
+  if (moduleKey === 'goal-intensity-v5') return 'Raccolta dati'
+  if (moduleKey === 'balance-v5') return 'Validazione empirica da avviare'
+  if (moduleKey === 'purchasability') return 'Campione insufficiente'
+  if (moduleKey === 'signals') return 'Monitoraggio'
+  return 'Raccolta dati'
+}
+
+export function operationalStatusLabel(
+  status: string | null | undefined,
+  fallback?: string,
+): string {
+  if (status) return monitoringStatusLabel(status)
+  return fallback || 'Stato non disponibile'
+}
+
+type CoverageItem = {
+  module_key?: string
+  coverage?: number | null
+  coverage_descriptive_ratio?: string | null
+  coverage_numerator?: number | null
+  coverage_denominator?: number | null
+  timestamp_verified_ratio?: string | null
+  global_snapshots?: number | null
+  snapshots_in_period?: number | null
+  historical_rows?: number | null
+  validation_rows_total?: number | null
+}
+
+export function dataCoverageLabel(item: CoverageItem): string {
+  const key = item.module_key
+  if (key === 'balance-v5' && item.coverage_descriptive_ratio) {
+    return `Copertura dati: ${item.coverage_descriptive_ratio}`
+  }
+  if (key === 'balance-v5' && item.coverage_numerator != null && item.coverage_denominator != null) {
+    return `Copertura dati: ${item.coverage_numerator}/${item.coverage_denominator}`
+  }
+  if (key === 'goal-intensity-v5') {
+    const global = item.global_snapshots
+    const period = item.snapshots_in_period
+    if (global != null && period != null) {
+      return `Copertura dati: ${period} snapshot nel periodo (${global} globali)`
+    }
+  }
+  if (key === 'purchasability' && item.validation_rows_total != null) {
+    return `Copertura dati: ${item.validation_rows_total} righe validation`
+  }
+  if (key === 'signals' && item.historical_rows != null) {
+    return `Copertura dati: ${item.historical_rows} attivazioni`
+  }
+  if (item.coverage != null) {
+    return `Copertura dati: ${fmtPct(item.coverage)}`
+  }
+  return 'Copertura dati: non ancora disponibile'
+}

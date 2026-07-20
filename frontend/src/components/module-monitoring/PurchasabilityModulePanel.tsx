@@ -11,7 +11,8 @@ import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
-import { coverageDisplay, monitoringStatusLabel } from './moduleMonitoringUi'
+import { ModuleCardSections } from './ModuleCardSections'
+import { monitoringStatusLabel } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -31,7 +32,6 @@ export function PurchasabilityModulePanel({
   cohortFilter = 'all',
 }: Props) {
   if (view === 'overview') {
-    const cov = coverageDisplay(overview?.coverage ?? null, overview?.coverage != null)
     const statusRaw = overview?.status || null
     return (
       <div className="space-y-4">
@@ -41,18 +41,22 @@ export function PurchasabilityModulePanel({
             coorte prospettica.
           </p>
         ) : null}
+        {overview ? <ModuleCardSections item={overview} /> : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MonitoringMetricCard
-            label="Stato readiness"
-            value={monitoringStatusLabel(overview?.readiness_status ?? statusRaw)}
-            ariaLabel={statusRaw ? `Stato ${statusRaw}` : undefined}
-          />
           <MonitoringMetricCard
             label="Fixture prospettive"
             value={
               overview?.prospective_fixtures == null
                 ? '—'
                 : String(overview.prospective_fixtures)
+            }
+          />
+          <MonitoringMetricCard
+            label="Fixture storiche"
+            value={
+              overview?.historical_fixtures == null
+                ? '—'
+                : String(overview.historical_fixtures)
             }
           />
           <MonitoringMetricCard
@@ -64,15 +68,17 @@ export function PurchasabilityModulePanel({
             }
           />
           <MonitoringMetricCard
-            label="Settled storiche"
+            label="Righe valutate (won/lost)"
             value={
-              overview?.historical_settled_rows == null
-                ? '—'
-                : String(overview.historical_settled_rows)
+              overview?.evaluated_rows == null
+                ? overview?.historical_settled_rows == null
+                  ? '—'
+                  : String(overview.historical_settled_rows)
+                : String(overview.evaluated_rows)
             }
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MonitoringMetricCard
             label="Pending"
             value={
@@ -87,12 +93,23 @@ export function PurchasabilityModulePanel({
                 : String(overview.result_missing_rows)
             }
           />
-          <MonitoringMetricCard label="Coverage snapshot prosp." value={cov.text} />
+          <MonitoringMetricCard
+            label="Righe escluse data quality"
+            value={
+              overview?.data_quality_excluded_rows == null
+                ? '—'
+                : String(overview.data_quality_excluded_rows)
+            }
+          />
+          <MonitoringMetricCard
+            label="Stato readiness"
+            value={monitoringStatusLabel(overview?.readiness_status ?? statusRaw)}
+            ariaLabel={statusRaw ? `Stato ${statusRaw}` : undefined}
+          />
         </div>
         <p className="text-xs text-slate-500">
-          Righe totali validation:{' '}
-          {overview?.validation_rows_total ?? '—'} · Coverage snapshot prospettico:{' '}
-          {cov.text}. Readiness/promozione restano solo prospettiche.
+          Righe totali validation: {overview?.validation_rows_total ?? '—'}. Readiness/promozione
+          restano solo prospettiche.
         </p>
         <p className="text-sm text-slate-600">
           Apri la vista Validazione per metriche, gate e grafici. I laboratori Audit / 2A /

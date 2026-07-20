@@ -382,12 +382,17 @@ def resolve_balance_v5_monitoring_snapshot(
 
     derived = build_balance_v5_from_stored_row(today_fixture)
     if derived is not None:
+        derived_source_mode = (
+            "derived_read_only_from_stored_pre_match"
+            if verified_ts
+            else "derived_read_only_from_stored_inputs_unverified_timestamp"
+        )
         compact = compact_balance_v5_monitoring_snapshot(
             derived,
             scan_date=today_fixture.scan_date,
             kickoff=today_fixture.kickoff,
             snapshot_timestamp=source_snapshot_at,
-            source_mode="derived_read_only_from_stored_pre_match",
+            source_mode=derived_source_mode,
             pre_match_verified=verified_ts if verified_ts else None,
             book_probs=book_probs or None,
             book_verified=book_verified,
@@ -398,7 +403,7 @@ def resolve_balance_v5_monitoring_snapshot(
             else COHORT_HISTORICAL_DIAGNOSTIC
         )
         return {
-            "mode": "derived_read_only_from_stored_pre_match",
+            "mode": derived_source_mode,
             "payload": compact,
             "source_cohort": cohort,
         }
@@ -886,13 +891,21 @@ def build_balance_module_overview_v2(
         {
             "module_key": "balance-v5",
             "status": "official_monitored",
+            "scientific_maturity": "validazione_empirica_da_avviare",
             "version": BALANCE_V5_VERSION,
             "coverage": coverage,
             "coverage_descriptive": coverage,
+            "coverage_descriptive_ratio": (
+                f"{covered}/{eligible}" if eligible else None
+            ),
             "timestamp_verified_coverage": (
                 (timestamp_verified / covered) if covered else None
             ),
+            "timestamp_verified_ratio": (
+                f"{timestamp_verified}/{covered}" if covered else None
+            ),
             "prospective_coverage": (prospective / covered) if covered else None,
+            "prospective_snapshots": prospective,
             "fixtures": covered if eligible else None,
             "settled": settled_covered if eligible else None,
             "eligible_fixtures": eligible,

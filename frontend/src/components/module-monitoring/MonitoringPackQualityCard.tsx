@@ -112,15 +112,10 @@ export function MonitoringPackQualityCard({
             it.completeness ||
             'partial'
           const sci = audit?.scientific_status || it.scientific_status || tech
-          const filesOk =
-            audit?.actual_files?.length ||
-            (typeof it.files_available === 'number'
-              ? it.files_available
-              : it.files_available?.length) ||
-            0
-          const filesExp =
-            audit?.required_files?.length ||
-            (it.files_expected?.length ?? (it.files_expected == null ? null : 0))
+          const required = audit?.required_files || []
+          const actualSet = new Set(audit?.actual_files || [])
+          const filesOk = required.filter((f) => actualSet.has(f)).length
+          const filesExp = required.length || null
           const src = audit?.source_row_count
           const exp = audit?.exported_row_count ?? it.rows
           return (

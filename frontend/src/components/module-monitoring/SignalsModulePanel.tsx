@@ -3,7 +3,7 @@ import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
-import { monitoringStatusLabel } from './moduleMonitoringUi'
+import { ModuleCardSections } from './ModuleCardSections'
 
 type Props = {
   view: string
@@ -23,7 +23,6 @@ export function SignalsModulePanel({
   cohortFilter = 'all',
 }: Props) {
   if (view === 'overview' || view === 'performance' || view === 'models' || view === 'trends') {
-    const statusRaw = overview?.status || 'operational'
     return (
       <div className="space-y-4">
         {cohortFilter !== 'all' && cohortFilter !== 'prospective_persisted' ? (
@@ -32,18 +31,20 @@ export function SignalsModulePanel({
             pre-match verificate.
           </div>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {overview ? <ModuleCardSections item={overview} /> : null}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <MonitoringMetricCard
-            label="Stato"
-            value={monitoringStatusLabel(statusRaw)}
-            ariaLabel={`Stato ${statusRaw}`}
+            label="Fixture con segnali correnti"
+            value={
+              overview?.fixtures_with_current_signals == null
+                ? overview?.fixtures == null
+                  ? '—'
+                  : String(overview.fixtures)
+                : String(overview.fixtures_with_current_signals)
+            }
           />
           <MonitoringMetricCard
-            label="Fixture con segnali"
-            value={overview?.fixtures == null ? '—' : String(overview.fixtures)}
-          />
-          <MonitoringMetricCard
-            label="Attivazioni correnti (F)"
+            label="Attivazioni correnti"
             value={
               overview?.current_activations == null
                 ? '—'
@@ -51,17 +52,23 @@ export function SignalsModulePanel({
             }
           />
           <MonitoringMetricCard
-            label="Settled (F corrente)"
-            value={overview?.settled == null ? '—' : String(overview.settled)}
+            label="Attivazioni correnti valutate"
+            value={
+              overview?.current_activations_evaluated == null
+                ? '—'
+                : String(overview.current_activations_evaluated)
+            }
           />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <MonitoringMetricCard
-            label="Storiche verificate"
+            label="Attivazioni storiche totali"
             value={
-              overview?.historical_activations == null
-                ? '—'
-                : String(overview.historical_activations)
+              overview?.historical_activations_total == null
+                ? overview?.historical_activations == null
+                  ? '—'
+                  : String(overview.historical_activations)
+                : String(overview.historical_activations_total)
             }
           />
           <MonitoringMetricCard
@@ -73,9 +80,13 @@ export function SignalsModulePanel({
             }
           />
           <MonitoringMetricCard
-            label="Unusable"
+            label="Post-kickoff escluse"
             value={
-              overview?.unusable_count == null ? '—' : String(overview.unusable_count)
+              overview?.post_kickoff_excluded_count == null
+                ? overview?.unusable_count == null
+                  ? '—'
+                  : String(overview.unusable_count)
+                : String(overview.post_kickoff_excluded_count)
             }
           />
         </div>

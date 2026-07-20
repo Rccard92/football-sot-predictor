@@ -3,7 +3,8 @@ import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
-import { coverageDisplay, monitoringStatusLabel } from './moduleMonitoringUi'
+import { ModuleCardSections } from './ModuleCardSections'
+import { monitoringStatusLabel } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -23,7 +24,6 @@ export function BalanceModulePanel({
   cohortFilter = 'all',
 }: Props) {
   if (view === 'overview' || view === 'geometry-f36' || view === 'dominance' || view === 'gap-coherence' || view === 'data-health') {
-    const cov = coverageDisplay(overview?.coverage ?? null, overview?.coverage != null)
     const statusRaw = overview?.status || 'official_monitored'
     return (
       <div className="space-y-4">
@@ -33,37 +33,35 @@ export function BalanceModulePanel({
             prospettica; lo storico non promuove.
           </div>
         ) : null}
-        <div className="rounded-xl border border-violet-200/70 bg-violet-50/50 px-3 py-2 text-sm text-violet-900">
-          Monitoraggio descrittivo — validazione empirica avanzata in preparazione
-        </div>
+        {overview ? <ModuleCardSections item={overview} /> : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MonitoringMetricCard
-            label="Stato"
-            value={monitoringStatusLabel(statusRaw)}
-            ariaLabel={`Stato ${statusRaw}`}
-          />
-          <MonitoringMetricCard
-            label="Coverage descrittiva"
-            value={cov.text}
+            label="Copertura descrittiva"
+            value={overview?.coverage_descriptive_ratio || '—'}
           />
           <MonitoringMetricCard
             label="Timestamp verificati"
-            value={
-              overview?.timestamp_verified_fixtures == null
-                ? '—'
-                : String(overview.timestamp_verified_fixtures)
-            }
+            value={overview?.timestamp_verified_ratio || '—'}
           />
           <MonitoringMetricCard
-            label="Prospettica"
+            label="Snapshot prospettici"
             value={
               overview?.prospective_persisted == null
                 ? '—'
                 : String(overview.prospective_persisted)
             }
           />
+          <MonitoringMetricCard
+            label="Fixture settled"
+            value={overview?.settled == null ? '—' : String(overview.settled)}
+          />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MonitoringMetricCard
+            label="Stato"
+            value={monitoringStatusLabel(statusRaw)}
+            ariaLabel={`Stato ${statusRaw}`}
+          />
           <MonitoringMetricCard
             label="Ricostruite"
             value={
@@ -71,10 +69,6 @@ export function BalanceModulePanel({
                 ? '—'
                 : String(overview.reconstructed_fixtures)
             }
-          />
-          <MonitoringMetricCard
-            label="Fixture settled"
-            value={overview?.settled == null ? '—' : String(overview.settled)}
           />
           <MonitoringMetricCard
             label="Fixture analizzate"

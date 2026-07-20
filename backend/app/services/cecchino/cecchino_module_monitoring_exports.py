@@ -136,6 +136,9 @@ _PURCHASABILITY_ROW_FIELDS = [
     "reading",
     # Odds/probability fields
     "quota_book",
+    "analysis_eligible",
+    "data_quality_status",
+    "analysis_exclusion_reason",
     "quota_cecchino",
     "fair_book_probability",
     "prob_cecchino",
@@ -284,6 +287,9 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
     "purchasability": {
         "primary_rows_file": "rows.csv",
         "required_columns": _PURCHASABILITY_ROW_FIELDS,
+        "optional_aliases": {
+            "distributions.csv": "distributions_by_score_band.csv",
+        },
         "required_files": [
             "gates.json",
             "readiness.json",
@@ -321,11 +327,13 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
     "signals": {
         "primary_rows_file": "activations_all_models.csv",
         "required_columns": _SIGNALS_ROW_FIELDS,
+        "optional_aliases": {
+            "activations_all_rows.csv": "activations_all_models.csv",
+            "activations_current_rows.csv": "activations_current_model.csv",
+        },
         "required_files": [
             "activations_all_models.csv",
-            "activations_all_rows.csv",
             "activations_current_model.csv",
-            "activations_current_rows.csv",
             "activations_verified_pre_match.csv",
             "activations_unusable.csv",
             "aggregations_by_model.csv",
@@ -480,10 +488,14 @@ def _build_export_audit(
     schema_contract: dict[str, Any],
 ) -> dict[str, Any]:
     """Verifica completezza, schema e cardinalità dell'inventario forensic."""
+    optional_aliases = dict(schema_contract.get("optional_aliases") or {})
+    alias_names = set(optional_aliases.keys())
     virtual_actual = set(files) | {"manifest.json", "export_audit.json"}
     actual_files = sorted(virtual_actual)
     missing_files = sorted(set(required_files) - virtual_actual)
-    unexpected_files = sorted(virtual_actual - set(required_files))
+    unexpected_files = sorted(
+        virtual_actual - set(required_files) - alias_names - {"manifest.json", "export_audit.json"}
+    )
     primary_names = _primary_csv_names(files, schema_contract)
     required_columns = list(schema_contract.get("required_columns") or [])
     actual_columns = _csv_header(files[primary_names[0]]) if primary_names else []
@@ -551,7 +563,7 @@ def _build_export_audit(
     hard_failure = bool(
         missing_files or missing_columns or not row_count_match or truncated
     )
-    technical_status = "fail" if hard_failure else ("partial" if warnings else "pass")
+    technical_status = "fail" if hard_failure else "pass"
 
     # Scientific status: schema/cohorts/results — allowed: pass|partial|fail|partial_collecting
     completed_count = int(meta.get("completed_count", 0) or 0)
@@ -572,7 +584,7 @@ def _build_export_audit(
             scientific_status = "partial_collecting"
         elif blocking_reasons and exported_row_count > 0:
             scientific_status = "partial"
-        elif completeness in {"partial", "empty"} or warnings:
+        elif completeness in {"partial", "empty"}:
             scientific_status = "partial"
         else:
             scientific_status = "pass"
@@ -580,7 +592,7 @@ def _build_export_audit(
         ts_verified = int(meta.get("timestamp_verified_count", 0) or 0)
         if exported_row_count > 0 and ts_verified == 0:
             scientific_status = "partial"
-        elif completeness in {"partial", "empty"} or warnings:
+        elif completeness in {"partial", "empty"}:
             scientific_status = "partial"
         else:
             scientific_status = "pass"
@@ -590,14 +602,14 @@ def _build_export_audit(
         elif not meta.get("source_cohort_counts"):
             scientific_status = "partial"
         elif settled_count == 0 and exported_row_count > 0:
-            scientific_status = "partial_collecting"
-        elif completeness in {"partial", "empty"} or warnings:
+            scientific_status = "monitoring"
+        elif completeness in {"partial", "empty"}:
             scientific_status = "partial"
         else:
             scientific_status = "pass"
     elif settled_count == 0 and module_key in {"purchasability", "signals"}:
         scientific_status = "partial_collecting"
-    elif completeness in {"partial", "empty"} or warnings:
+    elif completeness in {"partial", "empty"}:
         scientific_status = "partial"
     else:
         scientific_status = "pass"
@@ -605,7 +617,7 @@ def _build_export_audit(
     # Combined status for backward compatibility (prefer technical fail)
     if technical_status == "fail" or scientific_status == "fail":
         status = "fail"
-    elif scientific_status == "partial_collecting" or technical_status == "partial" or scientific_status == "partial":
+    elif scientific_status in {"partial_collecting", "monitoring", "partial"}:
         status = "partial"
     else:
         status = "pass"
@@ -635,6 +647,7 @@ def _build_export_audit(
             "truncated": truncated,
             "reconciliation": reconciliation,
             "required_files": required_files,
+            "optional_aliases": optional_aliases,
             "actual_files": actual_files,
             "missing_files": missing_files,
             "unexpected_files": unexpected_files,
@@ -762,18 +775,23 @@ def build_purchasability_module_overview(
         {
             "module_key": "purchasability",
             "status": readiness.get("status") or "collecting_data",
+            "scientific_maturity": readiness.get("status") or "collecting_data",
             "readiness_status": readiness.get("status") or "collecting_data",
             "version": PURCHASABILITY_CANDIDATE_VERSION,
             "coverage": coverage,
             "fixtures": health.get("fixtures_with_verified_pre_match_preview"),
             "prospective_fixtures": health.get("fixtures_with_persisted_preview"),
-            "historical_fixtures": None,
+            "historical_fixtures": health.get("historical_fixtures"),
             "settled": health.get("result_settled_count"),
+            "evaluated_rows": health.get("evaluated_rows"),
             "prospective_rows": health.get("prospective_rows_available"),
             "historical_rows": health.get("historical_rows_available"),
             "historical_settled_rows": hist_metrics.get("settled"),
             "pending_rows": health.get("result_pending_count"),
             "result_missing_rows": health.get("result_missing_count"),
+            "data_quality_excluded_rows": health.get("data_quality_excluded_rows"),
+            "invalid_book_odds_count": health.get("invalid_book_odds_count"),
+            "reconciliation": summary_historical.get("reconciliation"),
             "validation_rows_total": health.get("validation_rows_total"),
             "validation_rows_by_source_cohort": health.get(
                 "validation_rows_by_source_cohort"
@@ -843,12 +861,15 @@ def build_goal_intensity_module_overview(
         "Preview research: metriche candidate e calibrazione disponibili nel pacchetto",
     ]
     snapshots_count = 0
+    global_snapshots_count = 0
     pending_count = 0
     completed_count = 0
     monitoring_status = None
     min_sample = None
     first_effective_date = None
     last_effective_date = None
+    snapshot_collection_progress = None
+    completed_results_progress = None
     if bundle is None:
         warnings.insert(0, "Bundle Goal Intensity v5 attivo assente")
     else:
@@ -860,15 +881,21 @@ def build_goal_intensity_module_overview(
             build_prospective_monitoring,
         )
 
-        snaps = list(
+        all_snaps = list(
             db.scalars(
                 select(CecchinoGoalIntensityV5PreviewSnapshot).where(
                     CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id,
-                    CecchinoGoalIntensityV5PreviewSnapshot.scan_date >= date_from,
-                    CecchinoGoalIntensityV5PreviewSnapshot.scan_date <= date_to,
                 )
             ).all()
         )
+        global_snapshots_count = len(all_snaps)
+        snaps = [
+            s
+            for s in all_snaps
+            if s.scan_date is not None
+            and s.scan_date >= date_from
+            and s.scan_date <= date_to
+        ]
         snapshots_count = len(snaps)
         completed_count = sum(1 for s in snaps if s.result_attached_at is not None)
         pending_count = max(0, snapshots_count - completed_count)
@@ -879,21 +906,36 @@ def build_goal_intensity_module_overview(
         monitoring = build_prospective_monitoring(db, bundle)
         monitoring_status = monitoring.get("status")
         min_sample = MINIMUM_PROSPECTIVE_MATCHES
+        if min_sample:
+            snapshot_collection_progress = min(
+                1.0, global_snapshots_count / min_sample
+            )
+            completed_results_progress = min(1.0, completed_count / min_sample)
     if eligible == 0:
         warnings.insert(0, "Nessuna fixture eleggibile nel periodo")
+    scientific_maturity = (
+        "raccolta_dati"
+        if completed_count == 0
+        else "validazione_in_corso"
+    )
     return make_json_safe(
         {
             "module_key": "goal-intensity-v5",
             "status": "preview_research" if bundle is not None else "blocked",
+            "scientific_maturity": scientific_maturity,
             "version": bundle.version if bundle is not None else None,
             "coverage": None,
             "fixtures": eligible if eligible else None,
             "settled": settled if eligible else None,
             "eligible_fixtures": eligible,
-            "prospective_snapshots": snapshots_count,
-            "pending_snapshots": pending_count,
-            "completed_snapshots": completed_count,
+            "global_snapshots": global_snapshots_count if bundle is not None else None,
+            "snapshots_in_period": snapshots_count if bundle is not None else None,
+            "prospective_snapshots": snapshots_count if bundle is not None else None,
+            "pending_snapshots": pending_count if bundle is not None else None,
+            "completed_snapshots": completed_count if bundle is not None else None,
             "minimum_sample": min_sample,
+            "snapshot_collection_progress": snapshot_collection_progress,
+            "completed_results_progress": completed_results_progress,
             "monitoring_status": monitoring_status,
             "first_effective_date": first_effective_date,
             "last_effective_date": last_effective_date,
@@ -933,20 +975,33 @@ def build_signals_module_overview(
         all_items = [
             row for row in (all_payload.get("items") or []) if isinstance(row, dict)
         ]
+        current_items = [
+            item
+            for item in all_items
+            if item.get("is_current")
+            and str(item.get("model_key") or "").upper()
+            == str(CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+        ]
+        current_count = len(current_items)
+        fixtures_with_current_signals = len(
+            {
+                int(item["today_fixture_id"])
+                for item in current_items
+                if item.get("today_fixture_id") is not None
+            }
+        )
+        current_activations_evaluated = sum(
+            1
+            for item in current_items
+            if str(item.get("evaluation_status") or "") in {"won", "lost"}
+        )
+        historical_activations_total = len(all_items)
         verified_count = sum(
             1 for item in all_items if item.get("source_cohort") == "historical_persisted_verified"
         )
         unusable_count = sum(
             1 for item in all_items if item.get("source_cohort") == "unusable"
         )
-        current_count = sum(
-            1
-            for item in all_items
-            if item.get("is_current")
-            and str(item.get("model_key") or "").upper()
-            == str(CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
-        )
-        historical_count = verified_count
         warnings = list(summary.get("warnings") or [])
         if competition_id is not None:
             warnings.append(
@@ -960,15 +1015,20 @@ def build_signals_module_overview(
             {
                 "module_key": "signals",
                 "status": "operational",
+                "scientific_maturity": "monitoraggio",
                 "version": "signals_aggregation_current",
                 "coverage": None,
-                "fixtures": distinct_fixtures,
+                "fixtures": fixtures_with_current_signals,
+                "fixtures_with_current_signals": fixtures_with_current_signals,
                 "distinct_fixtures": distinct_fixtures,
                 "eligible_fixtures": eligible,
                 "activations": activations,
                 "current_activations": current_count,
-                "historical_activations": historical_count,
+                "current_activations_evaluated": current_activations_evaluated,
+                "historical_activations_total": historical_activations_total,
+                "historical_activations": historical_activations_total,
                 "verified_pre_match_count": verified_count,
+                "post_kickoff_excluded_count": unusable_count,
                 "unusable_count": unusable_count,
                 "settled": settled_activations,
                 "settled_activations": settled_activations,
@@ -1150,7 +1210,8 @@ def _dictionary_md(module_key: str) -> str:
 - `gates.json`: esito puntuale dei gate temporali, di numerosità e copertura.
 - `readiness.json`: stato della revisione manuale; non autorizza promozioni automatiche.
 - `warnings.json`: avvisi consolidati, incluso l'eventuale blocco di persistenza.
-- `distributions.csv`: righe aggregate per fascia dello score Acquistabilità.
+- `distributions_by_score_band.csv`: righe aggregate per fascia dello score Acquistabilità (canonico).
+- `distributions.csv`: alias legacy opzionale di `distributions_by_score_band.csv` (non incluso nel pacchetto v5).
 - `rows.csv`: validazioni per mercato; `source_cohort` distingue origine prospettica/legacy.
 
 `settled` indica esclusivamente righe con esito `won` o `lost`. Quote e profitto sono valori
@@ -1382,8 +1443,6 @@ def _build_purchasability_files(
         "distributions_by_score_band.csv": distributions_by_score_band,
         "distributions_by_market.csv": distributions_by_market,
         "distributions_by_cohort.csv": distributions_by_cohort,
-        # Keep legacy distributions.csv for backward compatibility
-        "distributions.csv": distributions_by_score_band,
     }
     
     source_total_rows = int(
@@ -1447,7 +1506,9 @@ def _build_purchasability_files(
         for row in (summary_selected.get("by_source_cohort") or [])
         if isinstance(row, dict) and row.get("source_cohort")
     ]
-    
+    reconciliation = summary_selected.get("reconciliation") or {}
+    invalid_book_odds_count = int(reconciliation.get("invalid_book_odds", 0) or 0)
+
     return files, {
         "module_version": PURCHASABILITY_CANDIDATE_VERSION,
         "versions": {
@@ -1466,6 +1527,9 @@ def _build_purchasability_files(
         "exported_total_rows": exported_row_count,
         "settled_count": settled_count,
         "truncated": truncated,
+        "invalid_book_odds_count": invalid_book_odds_count,
+        "excluded_from_performance_count": invalid_book_odds_count,
+        "reconciliation": reconciliation,
     }
 
 

@@ -9,6 +9,7 @@ export type MonitoringModuleKeyApi =
 export type ModuleOverviewItem = {
   module_key: MonitoringModuleKeyApi | string
   status?: string | null
+  scientific_maturity?: string | null
   version?: string | null
   coverage?: number | null
   fixtures?: number | null
@@ -21,34 +22,50 @@ export type ModuleOverviewItem = {
   settled_covered_fixtures?: number | null
   coverage_numerator?: number | null
   coverage_denominator?: number | null
+  coverage_descriptive_ratio?: string | null
+  timestamp_verified_ratio?: string | null
   activations?: number | null
   prospective_rows?: number | null
   historical_rows?: number | null
   prospective_fixtures?: number | null
+  historical_fixtures?: number | null
   historical_settled_rows?: number | null
+  evaluated_rows?: number | null
   pending_rows?: number | null
   result_missing_rows?: number | null
+  data_quality_excluded_rows?: number | null
+  invalid_book_odds_count?: number | null
   readiness_status?: string | null
   validation_rows_total?: number | null
   validation_rows_by_source_cohort?: Record<string, number> | null
+  reconciliation?: Record<string, number> | null
   settled_historical?: number | null
   prospective_persisted?: number | null
+  prospective_snapshots?: number | null
   reconstructed_fixtures?: number | null
   timestamp_verified_fixtures?: number | null
   coverage_descriptive?: number | null
   timestamp_verified_coverage?: number | null
   prospective_coverage?: number | null
-  prospective_snapshots?: number | null
+  global_snapshots?: number | null
+  snapshots_in_period?: number | null
   pending_snapshots?: number | null
   completed_snapshots?: number | null
   minimum_sample?: number | null
+  snapshot_collection_progress?: number | null
+  completed_results_progress?: number | null
   monitoring_status?: string | null
   first_effective_date?: string | null
   last_effective_date?: string | null
+  fixtures_with_current_signals?: number | null
+  current_activations?: number | null
+  current_activations_evaluated?: number | null
+  historical_activations_total?: number | null
   verified_pre_match_count?: number | null
+  post_kickoff_excluded_count?: number | null
   unusable_count?: number | null
   historical_activations?: number | null
-  current_activations?: number | null
+  settled_activations?: number | null
   persistence_blocking_reason?: string | null
 }
 

@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Chiusura UX e Data Quality — Monitoraggio Moduli Fase 1/3 (2026-07-20)
+
+- Acquistabilità: campi export `analysis_eligible`, `data_quality_status`, `analysis_exclusion_reason` per quote book ≤ 1; riconciliazione esplicita (`raw_rows`, `performance_eligible_rows`, `invalid_book_odds`); righe restano in CSV ma escluse da ROI/test.
+- Balance: `source_mode=derived_read_only_from_stored_inputs_unverified_timestamp` senza timestamp verificato; card con rapporti `964/964`, `0/964` — niente cerchio generico 100%.
+- Goal: snapshot globali vs periodo; `snapshot_collection_progress` e `completed_results_progress` distinti.
+- Signals: metriche con unità esplicite (fixture correnti, attivazioni valutate, post-kickoff escluse).
+- Audit: TECH pass solo su integrità file/schema/righe; SCI indipendente; alias opzionali (`distributions.csv`, `activations_*_rows.csv`); UI tre sezioni card (Operativo / Copertura dati / Maturità scientifica).
+
 ## Fix audit forensic v5 — NameError build_balance_monitoring_rows (2026-07-20)
 
 - Import mancante `build_balance_monitoring_rows` in export monitoraggio → `GET /analysis-packs-audit` 500.

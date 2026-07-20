@@ -3,7 +3,8 @@ import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
 import { MonitoringMetricCard } from './MonitoringMetricCard'
-import { monitoringStatusLabel } from './moduleMonitoringUi'
+import { ModuleCardSections } from './ModuleCardSections'
+import { fmtPct } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -29,7 +30,6 @@ export function GoalIntensityModulePanel({
     view === 'calibration' ||
     view === 'data-health'
   ) {
-    const statusRaw = overview?.status || 'preview_research'
     return (
       <div className="space-y-4">
         {cohortFilter !== 'all' && cohortFilter !== 'prospective_persisted' ? (
@@ -37,19 +37,23 @@ export function GoalIntensityModulePanel({
             Filtro coorte «{cohortFilter}»: i minimi prospettici e i bundle Goal non cambiano.
           </div>
         ) : null}
+        {overview ? <ModuleCardSections item={overview} /> : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MonitoringMetricCard
-            label="Stato"
-            value={monitoringStatusLabel(statusRaw)}
-            ariaLabel={`Stato ${statusRaw}`}
-          />
           <MonitoringMetricCard label="Versione" value={overview?.version || 'goal_intensity_v5_preview'} />
           <MonitoringMetricCard
-            label="Snapshot prospettici"
+            label="Snapshot globali"
             value={
-              overview?.prospective_snapshots == null
-                ? '—'
-                : String(overview.prospective_snapshots)
+              overview?.global_snapshots == null ? '—' : String(overview.global_snapshots)
+            }
+          />
+          <MonitoringMetricCard
+            label="Snapshot nel periodo"
+            value={
+              overview?.snapshots_in_period == null
+                ? overview?.prospective_snapshots == null
+                  ? '—'
+                  : String(overview.prospective_snapshots)
+                : String(overview.snapshots_in_period)
             }
           />
           <MonitoringMetricCard
@@ -61,7 +65,7 @@ export function GoalIntensityModulePanel({
             }
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MonitoringMetricCard
             label="Pending"
             value={
@@ -71,14 +75,26 @@ export function GoalIntensityModulePanel({
             }
           />
           <MonitoringMetricCard
+            label="Progressione raccolta snapshot"
+            value={
+              overview?.snapshot_collection_progress == null
+                ? '—'
+                : fmtPct(overview.snapshot_collection_progress)
+            }
+          />
+          <MonitoringMetricCard
+            label="Progressione risultati completati"
+            value={
+              overview?.completed_results_progress == null
+                ? '—'
+                : fmtPct(overview.completed_results_progress)
+            }
+          />
+          <MonitoringMetricCard
             label="Campione minimo"
             value={
               overview?.minimum_sample == null ? '—' : String(overview.minimum_sample)
             }
-          />
-          <MonitoringMetricCard
-            label="Progressione"
-            value={overview?.monitoring_status || '—'}
           />
         </div>
         <p className="text-xs text-slate-500">

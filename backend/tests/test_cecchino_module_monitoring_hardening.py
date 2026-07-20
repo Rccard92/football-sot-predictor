@@ -162,7 +162,7 @@ def test_resolve_balance_derived_from_final(monkeypatch):
         away_team_name="A",
     )
     resolved = resolve_balance_v5_monitoring_snapshot(row)
-    assert resolved["mode"] == "derived_read_only_from_stored_pre_match"
+    assert resolved["mode"] == "derived_read_only_from_stored_inputs_unverified_timestamp"
     assert resolved["source_cohort"] == "historical_diagnostic"
     assert resolved["payload"]["f36_index"] == 1.0
 
