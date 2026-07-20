@@ -292,18 +292,25 @@ export type PackAuditItem = {
   blocking_reasons?: string[]
 }
 
+/** Timeout dedicato audit forensic (4 moduli) — non modifica il default 90s delle altre GET. */
+export const ANALYSIS_PACKS_AUDIT_TIMEOUT_MS = 240_000
+
 export async function getAnalysisPacksAudit(
   filters: Pick<
     ModuleMonitoringFilters,
     'date_from' | 'date_to' | 'competition_id' | 'source_cohort'
   >,
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<{ modules: PackAuditItem[]; export_version?: string }> {
   const p = new URLSearchParams()
   p.set('date_from', filters.date_from)
   p.set('date_to', filters.date_to)
   if (filters.competition_id != null) p.set('competition_id', String(filters.competition_id))
   if (filters.source_cohort) p.set('source_cohort', filters.source_cohort)
-  return adminGetJson(`${BASE}/analysis-packs-audit?${p.toString()}`)
+  return adminGetJson(`${BASE}/analysis-packs-audit?${p.toString()}`, {
+    timeoutMs: opts?.timeoutMs ?? ANALYSIS_PACKS_AUDIT_TIMEOUT_MS,
+    signal: opts?.signal,
+  })
 }
 
 export type CohortFilterValue =

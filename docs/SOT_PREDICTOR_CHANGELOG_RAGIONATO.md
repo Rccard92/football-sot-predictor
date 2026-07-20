@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix performance audit monitoraggio moduli (2026-07-20)
+
+- FE: rimosso auto-run audit su cambio filtri; single-flight + AbortController; timeout dedicato 240s solo per `analysis-packs-audit`; badge stale «Filtri modificati — riverifica necessaria».
+- BE: cache in-memory TTL 300s su `build_modules_analysis_packs_audit` + log `module_audit_started/completed/cache_hit`. Nessuna modifica formule/export ZIP/DB.
+
 ## Chiusura UX e Data Quality — Monitoraggio Moduli Fase 1/3 (2026-07-20)
 
 - Acquistabilità: campi export `analysis_eligible`, `data_quality_status`, `analysis_exclusion_reason` per quote book ≤ 1; riconciliazione esplicita (`raw_rows`, `performance_eligible_rows`, `invalid_book_odds`); righe restano in CSV ma escluse da ROI/test.

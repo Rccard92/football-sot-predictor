@@ -24,10 +24,18 @@ from app.services.cecchino.cecchino_balance_v5_monitoring import (
 from app.services.cecchino.cecchino_module_monitoring_exports import (
     build_module_analysis_pack_audit,
     build_modules_analysis_packs_audit,
+    clear_module_audit_cache,
 )
 
 DATE_FROM = date(2026, 6, 19)
 DATE_TO = date(2026, 7, 20)
+
+
+@pytest.fixture(autouse=True)
+def _clear_audit_cache():
+    clear_module_audit_cache()
+    yield
+    clear_module_audit_cache()
 
 
 def _eligible_balance_fixture(**overrides):
@@ -322,3 +330,121 @@ def test_balance_single_module_audit_endpoint_http_200(monkeypatch):
         assert audit.get("scientific_status")
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_module_audit_cache_miss_then_hit(monkeypatch):
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    calls = {"n": 0}
+    real = mon.build_module_analysis_pack_audit
+
+    def _counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(mon, "build_module_analysis_pack_audit", _counting)
+    _patch_draw_credibility(monkeypatch)
+    db = _balance_audit_db()
+
+    first = build_modules_analysis_packs_audit(
+        db,
+        date_from=DATE_FROM,
+        date_to=DATE_TO,
+        include_rows=False,
+        source_cohort_filter="all",
+    )
+    n_after_miss = calls["n"]
+    assert n_after_miss == 4
+    assert len(first.get("modules") or []) == 4
+
+    second = build_modules_analysis_packs_audit(
+        db,
+        date_from=DATE_FROM,
+        date_to=DATE_TO,
+        include_rows=False,
+        source_cohort_filter="all",
+    )
+    assert calls["n"] == n_after_miss
+    assert len(second.get("modules") or []) == 4
+    assert second.get("export_version") == first.get("export_version")
+
+
+def test_module_audit_cache_miss_on_different_filter(monkeypatch):
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    calls = {"n": 0}
+
+    def _counting(*a, **k):
+        calls["n"] += 1
+        return {
+            "module_key": k.get("module_key") or "purchasability",
+            "status": "pass",
+            "export_audit": {"technical_status": "pass", "scientific_status": "partial"},
+        }
+
+    monkeypatch.setattr(mon, "build_module_analysis_pack_audit", _counting)
+    db = MagicMock()
+
+    build_modules_analysis_packs_audit(
+        db, date_from=DATE_FROM, date_to=DATE_TO, include_rows=False, source_cohort_filter="all"
+    )
+    assert calls["n"] == 4
+    build_modules_analysis_packs_audit(
+        db,
+        date_from=DATE_FROM,
+        date_to=DATE_TO,
+        include_rows=False,
+        source_cohort_filter="prospective_persisted",
+    )
+    assert calls["n"] == 8
+
+
+def test_module_audit_cache_invalidated_by_export_version(monkeypatch):
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    calls = {"n": 0}
+
+    def _ok(*a, **k):
+        calls["n"] += 1
+        return {
+            "module_key": k.get("module_key", "purchasability"),
+            "status": "pass",
+            "export_audit": {"technical_status": "pass"},
+        }
+
+    monkeypatch.setattr(mon, "build_module_analysis_pack_audit", _ok)
+    db = MagicMock()
+    build_modules_analysis_packs_audit(
+        db, date_from=DATE_FROM, date_to=DATE_TO, include_rows=False
+    )
+    assert calls["n"] == 4
+    monkeypatch.setattr(
+        mon, "MONITORING_EXPORT_VERSION", "cecchino_module_monitoring_exports_v5_test"
+    )
+    build_modules_analysis_packs_audit(
+        db, date_from=DATE_FROM, date_to=DATE_TO, include_rows=False
+    )
+    assert calls["n"] == 8
+
+
+def test_module_audit_errors_not_cached(monkeypatch):
+    from app.services.cecchino import cecchino_module_monitoring_exports as mon
+
+    calls = {"n": 0}
+
+    def _fail(*a, **k):
+        calls["n"] += 1
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mon, "build_module_analysis_pack_audit", _fail)
+    db = MagicMock()
+    first = build_modules_analysis_packs_audit(
+        db, date_from=DATE_FROM, date_to=DATE_TO, include_rows=False
+    )
+    assert calls["n"] == 4
+    assert all(m.get("status") == "failed" for m in first["modules"])
+    second = build_modules_analysis_packs_audit(
+        db, date_from=DATE_FROM, date_to=DATE_TO, include_rows=False
+    )
+    assert calls["n"] == 8
+    assert len(second["modules"]) == 4

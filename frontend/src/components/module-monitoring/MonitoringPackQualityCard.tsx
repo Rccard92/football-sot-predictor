@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  ANALYSIS_PACKS_AUDIT_TIMEOUT_MS,
   downloadModuleAnalysisPack,
   getAnalysisPacksAudit,
   type MonitoringModuleKeyApi,
   type PackAuditItem,
 } from '../../lib/cecchinoModuleMonitoringApi'
+import {
+  AUDIT_TIMEOUT_USER_MESSAGE,
+  createAuditRequestGuard,
+  isAuditTimeoutError,
+} from './auditRequestGuard'
 import { getMonitoringModule } from './moduleMonitoringRegistry'
 import { CARD_BASE } from './moduleMonitoringUi'
 
@@ -34,30 +40,89 @@ export function MonitoringPackQualityCard({
   const [loading, setLoading] = useState(false)
   const [checkedAt, setCheckedAt] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [filtersStale, setFiltersStale] = useState(false)
+  const [loadingLong, setLoadingLong] = useState(false)
+  const [loadingSince, setLoadingSince] = useState<number | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setLoadError(null)
-    try {
-      const payload = await getAnalysisPacksAudit({
-        date_from: dateFrom,
-        date_to: dateTo,
-        competition_id: competitionId ? Number(competitionId) : undefined,
-        source_cohort: sourceCohort,
-      })
-      setItems(payload.modules || [])
-      setCheckedAt(new Date().toISOString())
-    } catch {
-      setLoadError('Verifica pacchetti non riuscita')
-      toast.error('Verifica pacchetti non riuscita')
-    } finally {
-      setLoading(false)
-    }
-  }, [dateFrom, dateTo, competitionId, sourceCohort])
+  const guardRef = useRef(createAuditRequestGuard())
+  const verifiedFiltersRef = useRef<string | null>(null)
+
+  const filterKey = `${dateFrom}|${dateTo}|${competitionId}|${sourceCohort}`
 
   useEffect(() => {
-    void load()
-  }, [load])
+    const verified = verifiedFiltersRef.current
+    if (verified != null && verified !== filterKey && (items.length > 0 || checkedAt)) {
+      setFiltersStale(true)
+    }
+  }, [filterKey, items.length, checkedAt])
+
+  useEffect(() => {
+    if (!loading || loadingSince == null) {
+      setLoadingLong(false)
+      return
+    }
+    const tick = () => {
+      setLoadingLong(Date.now() - loadingSince >= 30_000)
+    }
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [loading, loadingSince])
+
+  useEffect(() => {
+    const guard = guardRef.current
+    return () => {
+      guard.abort()
+    }
+  }, [])
+
+  const load = useCallback(async () => {
+    const guard = guardRef.current
+    const started = guard.begin()
+    if (!started) return
+
+    const { requestId, signal } = started
+    setLoading(true)
+    setLoadingSince(Date.now())
+    setLoadingLong(false)
+    setLoadError(null)
+
+    try {
+      const payload = await getAnalysisPacksAudit(
+        {
+          date_from: dateFrom,
+          date_to: dateTo,
+          competition_id: competitionId ? Number(competitionId) : undefined,
+          source_cohort: sourceCohort,
+        },
+        { timeoutMs: ANALYSIS_PACKS_AUDIT_TIMEOUT_MS, signal },
+      )
+      if (!guard.isCurrent(requestId)) return
+      setItems(payload.modules || [])
+      setCheckedAt(new Date().toISOString())
+      verifiedFiltersRef.current = filterKey
+      setFiltersStale(false)
+      setLoadError(null)
+      toast.success('Verifica pacchetti completata')
+    } catch (err) {
+      if (!guard.isCurrent(requestId)) return
+      if (signal.aborted && !isAuditTimeoutError(err)) {
+        return
+      }
+      const message = isAuditTimeoutError(err)
+        ? AUDIT_TIMEOUT_USER_MESSAGE
+        : 'Verifica pacchetti non riuscita'
+      setLoadError(message)
+      toast.error(message)
+    } finally {
+      guard.end(requestId)
+      if (guard.isCurrent(requestId) || !guard.isInFlight()) {
+        setLoading(false)
+        setLoadingSince(null)
+        setLoadingLong(false)
+      }
+    }
+  }, [dateFrom, dateTo, competitionId, sourceCohort, filterKey])
 
   return (
     <section className={`${CARD_BASE} p-4`}>
@@ -70,6 +135,11 @@ export function MonitoringPackQualityCard({
           {checkedAt ? (
             <p className="mt-1 text-[11px] text-slate-400">
               Ultima verifica {new Date(checkedAt).toLocaleString('it-IT')}
+            </p>
+          ) : null}
+          {filtersStale ? (
+            <p className="mt-1 inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+              Filtri modificati — riverifica necessaria
             </p>
           ) : null}
         </div>
@@ -94,9 +164,22 @@ export function MonitoringPackQualityCard({
           </button>
         </div>
       </div>
+      {loading ? (
+        <div className="mt-2 rounded-lg border border-cyan-200 bg-cyan-50/80 px-3 py-2 text-xs text-cyan-950">
+          <p className="font-semibold">Verifica forensic in corso…</p>
+          <p className="mt-0.5 text-cyan-800">
+            Il controllo di file, colonne, righe e hash può richiedere alcuni minuti.
+          </p>
+          {loadingLong ? (
+            <p className="mt-1 font-medium text-amber-900">
+              Verifica ancora in corso — non chiudere la pagina.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {loadError ? (
         <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
-          {loadError}. I risultati precedenti restano visibili finché disponibili.
+          {loadError} I risultati precedenti restano visibili finché disponibili.
         </p>
       ) : null}
       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -190,7 +273,9 @@ export function MonitoringPackQualityCard({
           )
         })}
         {!items.length && !loading && !loadError ? (
-          <p className="text-sm text-slate-500">Nessun audit disponibile.</p>
+          <p className="text-sm text-slate-500">
+            Nessun audit disponibile. Clicca «Riverifica» per avviare il controllo forensic.
+          </p>
         ) : null}
       </div>
     </section>

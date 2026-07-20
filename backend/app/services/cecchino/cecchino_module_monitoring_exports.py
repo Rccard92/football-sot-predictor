@@ -8,12 +8,15 @@ hash SHA-256 nel manifest.
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import io
 import json
 import logging
+import threading
+import time
 import zipfile
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, OrderedDict
 from datetime import date, datetime, timezone
 from typing import Any, Literal
 
@@ -77,6 +80,71 @@ VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
 MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v5"
+
+# Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
+_MODULE_AUDIT_CACHE_TTL_S = 300
+_MODULE_AUDIT_CACHE_MAX = 32
+_module_audit_cache: OrderedDict[tuple[Any, ...], tuple[float, dict[str, Any]]] = OrderedDict()
+_module_audit_cache_lock = threading.Lock()
+
+
+def clear_module_audit_cache() -> None:
+    """Svuota la cache audit — usata dai test e a cambio export version."""
+    with _module_audit_cache_lock:
+        _module_audit_cache.clear()
+
+
+def _module_audit_cache_key(
+    *,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None,
+    market_key: str | None,
+    include_rows: bool,
+    include_debug: bool,
+    source_cohort_filter: str,
+) -> tuple[Any, ...]:
+    return (
+        MONITORING_EXPORT_VERSION,
+        date_from.isoformat(),
+        date_to.isoformat(),
+        competition_id,
+        market_key,
+        bool(include_rows),
+        bool(include_debug),
+        parse_export_cohort_filter(source_cohort_filter),
+    )
+
+
+def _module_audit_cache_get(key: tuple[Any, ...]) -> dict[str, Any] | None:
+    now = time.monotonic()
+    with _module_audit_cache_lock:
+        entry = _module_audit_cache.get(key)
+        if entry is None:
+            return None
+        stored_at, payload = entry
+        if now - stored_at > _MODULE_AUDIT_CACHE_TTL_S:
+            _module_audit_cache.pop(key, None)
+            return None
+        # export version nella chiave: se MONITORING_EXPORT_VERSION cambia, miss automatico
+        if key[0] != MONITORING_EXPORT_VERSION:
+            _module_audit_cache.pop(key, None)
+            return None
+        _module_audit_cache.move_to_end(key)
+        return copy.deepcopy(payload)
+
+
+def _module_audit_cache_put(key: tuple[Any, ...], payload: dict[str, Any]) -> None:
+    with _module_audit_cache_lock:
+        # Invalidazione se la versione globale non combacia più con chiavi vecchie
+        stale = [k for k in _module_audit_cache if k[0] != MONITORING_EXPORT_VERSION]
+        for k in stale:
+            _module_audit_cache.pop(k, None)
+        _module_audit_cache[key] = (time.monotonic(), copy.deepcopy(payload))
+        _module_audit_cache.move_to_end(key)
+        while len(_module_audit_cache) > _MODULE_AUDIT_CACHE_MAX:
+            _module_audit_cache.popitem(last=False)
+
 
 _COMMON_REQUIRED_FILES: tuple[str, ...] = (
     "README_ANALISI.md",
@@ -2289,7 +2357,52 @@ def build_modules_analysis_packs_audit(
     include_debug: bool = False,
     source_cohort_filter: str = COHORT_FILTER_ALL,
 ) -> dict[str, Any]:
-    """Costruisce in un'unica risposta gli audit dei quattro moduli."""
+    """Costruisce in un'unica risposta gli audit dei quattro moduli.
+
+    Cache in-memory TTL 300s per chiavi identiche; errori non memorizzati.
+    Non influenza gli ZIP scaricati.
+    """
+    cohort = parse_export_cohort_filter(source_cohort_filter)
+    cache_key = _module_audit_cache_key(
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        market_key=market_key,
+        include_rows=include_rows,
+        include_debug=include_debug,
+        source_cohort_filter=source_cohort_filter,
+    )
+    logger.info(
+        "module_audit_started date_from=%s date_to=%s source_cohort=%s",
+        date_from.isoformat(),
+        date_to.isoformat(),
+        cohort,
+    )
+    t0 = time.perf_counter()
+    cached = _module_audit_cache_get(cache_key)
+    if cached is not None:
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+        module_count = len(cached.get("modules") or [])
+        logger.info(
+            "module_audit_cache_hit date_from=%s date_to=%s source_cohort=%s "
+            "elapsed_ms=%s module_count=%s cache_hit=true",
+            date_from.isoformat(),
+            date_to.isoformat(),
+            cohort,
+            elapsed_ms,
+            module_count,
+        )
+        logger.info(
+            "module_audit_completed date_from=%s date_to=%s source_cohort=%s "
+            "elapsed_ms=%s module_count=%s cache_hit=true",
+            date_from.isoformat(),
+            date_to.isoformat(),
+            cohort,
+            elapsed_ms,
+            module_count,
+        )
+        return cached
+
     module_keys = (
         "purchasability",
         "balance-v5",
@@ -2315,14 +2428,34 @@ def build_modules_analysis_packs_audit(
         except Exception as exc:
             logger.exception("module_audit_failed module_key=%s", module_key)
             modules.append(_failed_module_audit_payload(module_key, exc))
-    return make_json_safe(
+    payload = make_json_safe(
         {
             "generated_at": _utcnow(),
             "export_version": MONITORING_EXPORT_VERSION,
-            "source_cohort_filter": parse_export_cohort_filter(source_cohort_filter),
+            "source_cohort_filter": cohort,
             "modules": modules,
         }
     )
+    # Non cacheare se tutti i moduli sono failed (errore globale di costruzione)
+    all_failed = bool(modules) and all(
+        m.get("status") == "failed"
+        or (m.get("export_audit") or {}).get("error_code") == "module_audit_failed"
+        for m in modules
+        if isinstance(m, dict)
+    )
+    if not all_failed:
+        _module_audit_cache_put(cache_key, payload)
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+    logger.info(
+        "module_audit_completed date_from=%s date_to=%s source_cohort=%s "
+        "elapsed_ms=%s module_count=%s cache_hit=false",
+        date_from.isoformat(),
+        date_to.isoformat(),
+        cohort,
+        elapsed_ms,
+        len(modules),
+    )
+    return payload
 
 
 def build_module_summary_payload(
