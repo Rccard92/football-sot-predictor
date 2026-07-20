@@ -34,7 +34,7 @@ def test_list_endpoint_ok():
     client = _client()
     payload = {
         "status": "ok",
-        "dataset_version": "cecchino_home_wins_monitoring_v1",
+        "dataset_version": "cecchino_home_wins_monitoring_v1_1",
         "selection_contract": SELECTION_CONTRACT,
         "total": 1,
         "page": 1,
@@ -51,6 +51,7 @@ def test_list_endpoint_ok():
     body = res.json()
     assert body["status"] == "ok"
     assert body["selection_contract"]["signal_1_used_for_selection"] is False
+    assert body["selection_contract"]["eligible_only"] is True
     mocked.assert_called_once()
     kwargs = mocked.call_args.kwargs
     assert kwargs["country"] == "Italy"
@@ -61,7 +62,7 @@ def test_detail_endpoint_ok_and_404():
     client = _client()
     ok = {
         "status": "ok",
-        "dataset_version": "cecchino_home_wins_monitoring_v1",
+        "dataset_version": "cecchino_home_wins_monitoring_v1_1",
         "selection_contract": SELECTION_CONTRACT,
         "identity": {"today_fixture_id": 9},
         "post_match_outcome": {"outcome_1x2": "1"},
@@ -81,6 +82,23 @@ def test_detail_endpoint_ok_and_404():
     ):
         res404 = client.get("/api/cecchino/home-wins/99")
     assert res404.status_code == 404
+
+
+def test_detail_non_eligible_returns_404():
+    """Dettaglio di fixture non eligible → 404 not_in_home_wins_cohort."""
+    client = _client()
+    with patch(
+        "app.routes.cecchino_home_wins.get_home_win_detail",
+        return_value={
+            "status": "error",
+            "reason": "not_in_home_wins_cohort",
+            "selection_contract": SELECTION_CONTRACT,
+        },
+    ):
+        res = client.get("/api/cecchino/home-wins/88")
+    assert res.status_code == 404
+    assert res.json()["reason"] == "not_in_home_wins_cohort"
+    assert SELECTION_CONTRACT["eligible_only"] is True
 
 
 def test_export_endpoint_zip():
@@ -118,7 +136,7 @@ def test_no_rebuild_via_api_monkeypatch():
             "app.routes.cecchino_home_wins.list_home_wins",
             return_value={
                 "status": "ok",
-                "dataset_version": "cecchino_home_wins_monitoring_v1",
+                "dataset_version": "cecchino_home_wins_monitoring_v1_1",
                 "selection_contract": SELECTION_CONTRACT,
                 "total": 0,
                 "page": 1,

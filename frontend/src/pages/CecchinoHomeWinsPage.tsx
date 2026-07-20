@@ -129,8 +129,9 @@ export function CecchinoHomeWinsPage() {
             Monitoraggio Segno 1
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            Archivio delle partite terminate con vittoria della squadra di casa. La selezione
-            dipende esclusivamente dal risultato finale e non dall&apos;attivazione del Segnale 1.
+            Archivio delle partite eleggibili terminate con vittoria della squadra di casa.
+            La selezione dipende esclusivamente dall&apos;esito reale 1 tra le fixture
+            dichiarate eligible dal Cecchino e non dall&apos;attivazione del Segnale 1.
           </p>
         </div>
         <button

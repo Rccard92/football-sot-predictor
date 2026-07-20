@@ -1,6 +1,6 @@
 """Monitoraggio storico esito reale 1 (vittorie casalinghe) — snapshot-only, read-only.
 
-La coorte dipende esclusivamente da stato finished + punteggio FT casa > trasferta.
+La coorte dipende da eligibility=eligible + finished + FT casa > trasferta.
 Il Segnale 1 non è mai usato per la selezione.
 """
 
@@ -21,20 +21,25 @@ from sqlalchemy.orm import Session
 from app.models.cecchino_goal_intensity_v5_preview import (
     CecchinoGoalIntensityV5PreviewSnapshot,
 )
-from app.models.cecchino_today_fixture import MATCH_FINISHED, CecchinoTodayFixture
+from app.models.cecchino_today_fixture import (
+    ELIGIBILITY_ELIGIBLE,
+    MATCH_FINISHED,
+    CecchinoTodayFixture,
+)
 from app.services.cecchino.cecchino_purchasability_audit import make_json_safe
 from app.services.cecchino.cecchino_selection_keys import SEL_AWAY, SEL_DRAW, SEL_HOME
 
-DATASET_VERSION = "cecchino_home_wins_monitoring_v1"
+DATASET_VERSION = "cecchino_home_wins_monitoring_v1_1"
 CSV_SCHEMA_VERSION = "cecchino_home_wins_features_csv_v1"
-COHORT_ID = "finished_home_wins"
+COHORT_ID = "finished_eligible_home_wins"
 SELECTION_CONTRACT = {
     "cohort": COHORT_ID,
     "outcome": "1",
+    "eligible_only": True,
     "signal_1_used_for_selection": False,
     "inclusion_rule": (
-        "match_display_status=finished AND fulltime_home > fulltime_away "
-        "with scores available; eligibility/signals/edge/odds never used for selection"
+        "eligibility_status=eligible AND match_display_status=finished "
+        "AND fulltime_home > fulltime_away"
     ),
 }
 
@@ -187,7 +192,9 @@ def _resolve_match_status(row: CecchinoTodayFixture) -> str:
 
 
 def classify_finished_home_win(row: CecchinoTodayFixture) -> dict[str, Any] | None:
-    """Classifica una vittoria casalinga finished. None se fuori coorte."""
+    """Classifica una vittoria casalinga eligible+finished. None se fuori coorte."""
+    if getattr(row, "eligibility_status", None) != ELIGIBILITY_ELIGIBLE:
+        return None
     if _resolve_match_status(row) != MATCH_FINISHED:
         return None
 
@@ -478,6 +485,7 @@ def _base_filters(
     team: str | None = None,
 ) -> list[Any]:
     clauses: list[Any] = [
+        CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
         CecchinoTodayFixture.match_display_status == MATCH_FINISHED,
         or_(
             and_(

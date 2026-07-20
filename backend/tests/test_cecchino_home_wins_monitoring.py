@@ -9,9 +9,17 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.models.cecchino_today_fixture import (
     ELIGIBILITY_ELIGIBLE,
+    ELIGIBILITY_ERROR,
     ELIGIBILITY_EXCLUDED_CUP,
+    ELIGIBILITY_EXCLUDED_FRIENDLY,
+    ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+    ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER,
+    ELIGIBILITY_EXCLUDED_WOMEN,
+    ELIGIBILITY_EXCLUDED_YOUTH,
     MATCH_FINISHED,
     MATCH_UPCOMING,
 )
@@ -218,11 +226,40 @@ def test_signal_1_inactive_still_included():
     assert detail["selection_contract"]["signal_1_used_for_selection"] is False
 
 
-def test_eligibility_not_used_as_filter():
+def test_non_eligible_home_win_excluded():
     row = _row(eligibility_status=ELIGIBILITY_EXCLUDED_CUP)
-    assert row_in_home_wins_cohort(row)
-    detail = build_home_win_detail_record(row)
-    assert detail["identity"]["eligibility_status"] == ELIGIBILITY_EXCLUDED_CUP
+    assert not row_in_home_wins_cohort(row)
+    assert classify_finished_home_win(row) is None
+    assert build_home_win_detail_record(row) is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        ELIGIBILITY_EXCLUDED_FRIENDLY,
+        ELIGIBILITY_EXCLUDED_CUP,
+        ELIGIBILITY_EXCLUDED_YOUTH,
+        ELIGIBILITY_EXCLUDED_WOMEN,
+        ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
+        ELIGIBILITY_EXCLUDED_MISSING_BOOKMAKER,
+        ELIGIBILITY_ERROR,
+    ],
+)
+def test_excluded_eligibility_statuses_out_of_cohort(status):
+    row = _row(
+        eligibility_status=status,
+        score_fulltime_home=2,
+        score_fulltime_away=0,
+    )
+    assert classify_finished_home_win(row) is None
+    assert not row_in_home_wins_cohort(row)
+
+
+def test_selection_contract_eligible_only():
+    assert SELECTION_CONTRACT["eligible_only"] is True
+    assert SELECTION_CONTRACT["signal_1_used_for_selection"] is False
+    assert SELECTION_CONTRACT["cohort"] == "finished_eligible_home_wins"
+    assert "eligibility_status=eligible" in SELECTION_CONTRACT["inclusion_rule"]
 
 
 def test_partial_record_included_and_marked():
@@ -355,6 +392,32 @@ def test_list_filters_completeness():
     assert out_complete["items"][0]["today_fixture_id"] == 1
 
 
+def test_export_excludes_non_eligible_rows():
+    eligible = _row(id=10, provider_fixture_id=90001)
+    excluded = _row(
+        id=11,
+        provider_fixture_id=90002,
+        eligibility_status=ELIGIBILITY_EXCLUDED_FRIENDLY,
+    )
+    db = MagicMock()
+    # fetch_home_win_rows already applies SQL eligible filter; simulate that
+    with patch.object(hw, "fetch_home_win_rows", return_value=[eligible]), patch.object(
+        hw, "_load_gi_snapshots_bulk", return_value={}
+    ):
+        files = build_home_wins_export_files(db)
+    assert json.loads(files["manifest.json"])["record_count"] == 1
+    csv_text = files["home_wins_features.csv"].decode("utf-8-sig")
+    assert "90001" in csv_text
+    assert "90002" not in csv_text
+    jsonl = files["home_wins_full.jsonl"].decode("utf-8")
+    assert '"today_fixture_id":10' in jsonl or '"today_fixture_id": 10' in jsonl
+    assert excluded.id == 11  # silence unused in path where fetch filters it out
+    for line in jsonl.strip().splitlines():
+        obj = json.loads(line)
+        assert obj["identity"]["eligibility_status"] == ELIGIBILITY_ELIGIBLE
+        assert obj["selection_contract"]["eligible_only"] is True
+
+
 def test_detail_uses_persisted_payloads_only():
     row = _row()
     detail = build_home_win_detail_record(row)
@@ -383,6 +446,7 @@ def test_export_contains_expected_files_and_stable_csv():
     }
     manifest = json.loads(files["manifest.json"])
     assert manifest["signal_1_used_for_selection"] is False
+    assert manifest["selection_contract"]["eligible_only"] is True
     assert manifest["record_count"] == 2
     assert manifest["dataset_version"] == DATASET_VERSION
 
@@ -465,6 +529,7 @@ def test_update_results_then_cohort_includes_fixture():
 
     row = MagicMock()
     row.id = 777
+    row.eligibility_status = ELIGIBILITY_ELIGIBLE
     row.match_display_status = MATCH_UPCOMING
     row.fixture_status = "NS"
     row.goals_home = None
