@@ -42,14 +42,43 @@ export function BalanceModulePanel({
             value={monitoringStatusLabel(statusRaw)}
             ariaLabel={`Stato ${statusRaw}`}
           />
-          <MonitoringMetricCard label="Coverage snapshot" value={cov.text} />
           <MonitoringMetricCard
-            label="Fixture analizzate"
-            value={overview?.fixtures == null ? '—' : String(overview.fixtures)}
+            label="Coverage descrittiva"
+            value={cov.text}
+          />
+          <MonitoringMetricCard
+            label="Timestamp verificati"
+            value={
+              overview?.timestamp_verified_fixtures == null
+                ? '—'
+                : String(overview.timestamp_verified_fixtures)
+            }
+          />
+          <MonitoringMetricCard
+            label="Prospettica"
+            value={
+              overview?.prospective_persisted == null
+                ? '—'
+                : String(overview.prospective_persisted)
+            }
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MonitoringMetricCard
+            label="Ricostruite"
+            value={
+              overview?.reconstructed_fixtures == null
+                ? '—'
+                : String(overview.reconstructed_fixtures)
+            }
           />
           <MonitoringMetricCard
             label="Fixture settled"
             value={overview?.settled == null ? '—' : String(overview.settled)}
+          />
+          <MonitoringMetricCard
+            label="Fixture analizzate"
+            value={overview?.fixtures == null ? '—' : String(overview.fixtures)}
           />
         </div>
         <p className="text-sm text-slate-600">

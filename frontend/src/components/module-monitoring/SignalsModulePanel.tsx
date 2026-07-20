@@ -38,18 +38,44 @@ export function SignalsModulePanel({
             value={monitoringStatusLabel(statusRaw)}
             ariaLabel={`Stato ${statusRaw}`}
           />
-          <MonitoringMetricCard label="Versione" value={overview?.version || 'signals_lab'} />
           <MonitoringMetricCard
-            label="Fixture"
+            label="Fixture con segnali"
             value={overview?.fixtures == null ? '—' : String(overview.fixtures)}
           />
           <MonitoringMetricCard
-            label="Settled"
+            label="Attivazioni correnti (F)"
+            value={
+              overview?.current_activations == null
+                ? '—'
+                : String(overview.current_activations)
+            }
+          />
+          <MonitoringMetricCard
+            label="Settled (F corrente)"
             value={overview?.settled == null ? '—' : String(overview.settled)}
-            hint={
-              overview?.activations != null
-                ? `Attivazioni: ${overview.activations}`
-                : undefined
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MonitoringMetricCard
+            label="Storiche verificate"
+            value={
+              overview?.historical_activations == null
+                ? '—'
+                : String(overview.historical_activations)
+            }
+          />
+          <MonitoringMetricCard
+            label="Pre-match verificate"
+            value={
+              overview?.verified_pre_match_count == null
+                ? '—'
+                : String(overview.verified_pre_match_count)
+            }
+          />
+          <MonitoringMetricCard
+            label="Unusable"
+            value={
+              overview?.unusable_count == null ? '—' : String(overview.unusable_count)
             }
           />
         </div>

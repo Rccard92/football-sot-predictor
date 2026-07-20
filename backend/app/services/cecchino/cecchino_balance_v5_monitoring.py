@@ -76,6 +76,7 @@ BALANCE_ROW_FIELDS: list[str] = [
     "book_prob_x",
     "book_prob_2",
     "book_verified",
+    "generated_at",
     "ft_home",
     "ft_away",
     "ht_home",
@@ -115,6 +116,7 @@ def compact_balance_v5_monitoring_snapshot(
     scan_date: Any,
     kickoff: Any,
     snapshot_timestamp: Any = None,
+    generated_at: Any = None,
     pre_match_verified: bool | None = None,
     source_mode: str = "prospective_scan",
     book_probs: dict[str, Any] | None = None,
@@ -153,7 +155,8 @@ def compact_balance_v5_monitoring_snapshot(
             "balance_version": str(balance_v5.get("version") or BALANCE_V5_VERSION),
             "scan_date": _iso(scan_date),
             "kickoff": _iso(kickoff),
-            "snapshot_timestamp": _iso(snapshot_timestamp) or _utcnow(),
+            "snapshot_timestamp": _iso(snapshot_timestamp),
+            "generated_at": _iso(generated_at) if generated_at is not None else None,
             "pre_match_verified": pre_match_verified,
             "source_mode": source_mode,
             "f36_index": f36.get("index"),
@@ -198,6 +201,79 @@ def build_balance_v5_from_stored_row(row: CecchinoTodayFixture) -> dict[str, Any
     if not isinstance(bal, dict) or bal.get("status") == "unavailable":
         return None
     return bal
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        raw = str(value).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(raw)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _extract_odds_snapshot_at(row: CecchinoTodayFixture) -> str | None:
+    """Timestamp reale odds/snapshot — mai datetime.now."""
+    odds = row.odds_snapshot_json if isinstance(row.odds_snapshot_json, dict) else {}
+    meta = odds.get("meta") if isinstance(odds.get("meta"), dict) else {}
+    snap_at = None
+    for fld in ("odds_fetched_at", "fetched_at", "snapshot_at"):
+        if meta.get(fld):
+            snap_at = meta.get(fld)
+            break
+        if odds.get(fld):
+            snap_at = odds.get(fld)
+            break
+    if snap_at is None:
+        kpi = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else {}
+        kmeta = kpi.get("meta") if isinstance(kpi.get("meta"), dict) else {}
+        for fld in ("snapshot_at", "fetched_at", "odds_fetched_at"):
+            if kmeta.get(fld):
+                snap_at = kmeta.get(fld)
+                break
+    dt = _parse_iso_datetime(snap_at)
+    return dt.isoformat() if dt else None
+
+
+def _extract_book_probs_from_row(row: CecchinoTodayFixture) -> tuple[dict[str, Any], bool | None]:
+    """Probabilità book da snapshot storici salvati — null se assenti."""
+    book_probs: dict[str, Any] = {}
+    odds = row.odds_snapshot_json if isinstance(row.odds_snapshot_json, dict) else {}
+    markets = odds.get("markets") if isinstance(odds.get("markets"), dict) else {}
+    for mk, payload in markets.items():
+        if not isinstance(payload, dict):
+            continue
+        key = str(mk).upper()
+        prob = payload.get("prob") or payload.get("probability")
+        if prob is None:
+            continue
+        if key in {"1", "HOME", "1X2_1"}:
+            book_probs["prob_1"] = prob
+        elif key in {"X", "DRAW", "1X2_X"}:
+            book_probs["prob_x"] = prob
+        elif key in {"2", "AWAY", "1X2_2"}:
+            book_probs["prob_2"] = prob
+    if not book_probs:
+        kpi = row.kpi_panel_json if isinstance(row.kpi_panel_json, dict) else {}
+        for prow in kpi.get("rows") or []:
+            if not isinstance(prow, dict):
+                continue
+            mk = str(prow.get("market_key") or "").upper()
+            pb = prow.get("prob_book")
+            if pb is None:
+                continue
+            if mk in ("1", "HOME", "1X2_1"):
+                book_probs["prob_1"] = pb
+            elif mk in ("X", "DRAW", "1X2_X"):
+                book_probs["prob_x"] = pb
+            elif mk in ("2", "AWAY", "1X2_2"):
+                book_probs["prob_2"] = pb
+    verified = _odds_meta_verified_pre_kickoff(row) if book_probs else None
+    return book_probs, verified
 
 
 def _odds_meta_verified_pre_kickoff(row: CecchinoTodayFixture) -> bool:
@@ -246,6 +322,8 @@ def resolve_balance_v5_monitoring_snapshot(
         else {}
     )
     verified_ts = _odds_meta_verified_pre_kickoff(today_fixture)
+    source_snapshot_at = _extract_odds_snapshot_at(today_fixture)
+    book_probs, book_verified = _extract_book_probs_from_row(today_fixture)
 
     persisted = output.get(BALANCE_MONITORING_KEY)
     if isinstance(persisted, dict) and persisted:
@@ -264,9 +342,17 @@ def resolve_balance_v5_monitoring_snapshot(
                 cohort = COHORT_HISTORICAL_PERSISTED_VERIFIED
             else:
                 cohort = COHORT_HISTORICAL_DIAGNOSTIC
+            payload = dict(persisted)
+            if not payload.get("snapshot_timestamp") and source_snapshot_at:
+                payload["snapshot_timestamp"] = source_snapshot_at
+            if book_probs and payload.get("book_prob_1") is None:
+                payload["book_prob_1"] = book_probs.get("prob_1")
+                payload["book_prob_x"] = book_probs.get("prob_x")
+                payload["book_prob_2"] = book_probs.get("prob_2")
+                payload["book_verified"] = book_verified
             return {
                 "mode": "persisted",
-                "payload": persisted,
+                "payload": payload,
                 "source_cohort": cohort,
             }
 
@@ -277,8 +363,11 @@ def resolve_balance_v5_monitoring_snapshot(
             legacy_full,
             scan_date=today_fixture.scan_date,
             kickoff=today_fixture.kickoff,
+            snapshot_timestamp=source_snapshot_at,
             source_mode="legacy_persisted_balance_v5",
             pre_match_verified=verified_ts if verified_ts else None,
+            book_probs=book_probs or None,
+            book_verified=book_verified,
         )
         cohort = (
             COHORT_HISTORICAL_PERSISTED_VERIFIED
@@ -297,8 +386,11 @@ def resolve_balance_v5_monitoring_snapshot(
             derived,
             scan_date=today_fixture.scan_date,
             kickoff=today_fixture.kickoff,
+            snapshot_timestamp=source_snapshot_at,
             source_mode="derived_read_only_from_stored_pre_match",
             pre_match_verified=verified_ts if verified_ts else None,
+            book_probs=book_probs or None,
+            book_verified=book_verified,
         )
         cohort = (
             COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED
@@ -453,6 +545,7 @@ def _row_from_resolve(
         "source_cohort": resolved.get("source_cohort"),
         "pre_match_verified": payload.get("pre_match_verified"),
         "snapshot_timestamp": payload.get("snapshot_timestamp"),
+        "generated_at": _utcnow(),
         "f36_index": payload.get("f36_index"),
         "f36_class": payload.get("f36_class"),
         "dominance_index": payload.get("dominance_index"),
@@ -618,6 +711,13 @@ def build_balance_export_files(
     )
     hist_diag = cohort_counts.get(COHORT_HISTORICAL_DIAGNOSTIC, 0)
     settled = sum(1 for r in rows if r.get("is_settled"))
+    timestamp_verified = sum(
+        1
+        for r in rows
+        if r.get("snapshot_timestamp")
+        and r.get("pre_match_verified") is True
+        and r.get("generated_at") != r.get("snapshot_timestamp")
+    )
     eligible_n = len(eligible_list)
 
     health: dict[str, Any] = {
@@ -628,6 +728,7 @@ def build_balance_export_files(
         "historical_persisted_or_reconstructed_verified": hist_verified,
         "historical_diagnostic": hist_diag,
         "legacy_derived_diagnostic": hist_diag,  # alias report
+        "timestamp_verified_rows": timestamp_verified,
         "coverage": (len(rows) / eligible_n) if eligible_n else None,
         "warnings": [],
     }
@@ -643,6 +744,40 @@ def build_balance_export_files(
         "snapshot_version": BALANCE_MONITORING_SNAPSHOT_VERSION,
         "monitoring_key": BALANCE_MONITORING_KEY,
     }
+
+    try:
+        from app.services.cecchino.cecchino_draw_credibility_research import (
+            build_draw_credibility_coverage_audit,
+        )
+
+        draw_research = build_draw_credibility_coverage_audit(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+            only_eligible=True,
+        )
+        if not draw_research.get("counts"):
+            draw_research = {
+                "status": "unavailable",
+                "reason": "coverage_audit_empty_for_selected_range",
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+            }
+        else:
+            draw_research = {
+                "status": "ok",
+                **draw_research,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+            }
+    except Exception as exc:
+        draw_research = {
+            "status": "unavailable",
+            "reason": f"coverage_audit_failed:{type(exc).__name__}",
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+        }
 
     files: dict[str, bytes] = {
         "balance_rows.csv": _csv_bom_bytes(rows, BALANCE_ROW_FIELDS),
@@ -678,13 +813,10 @@ def build_balance_export_files(
         "draw_credibility_research.json": (
             __import__("json")
             .dumps(
-                {
-                    "status": "unavailable",
-                    "note": "Research Credibilità X non incluso in questo pack",
-                    "rows": 0,
-                },
+                make_json_safe(draw_research),
                 ensure_ascii=False,
                 indent=2,
+                allow_nan=False,
             )
             .encode("utf-8")
         ),
@@ -708,12 +840,18 @@ def build_balance_module_overview_v2(
     prospective = 0
     hist_verified = 0
     hist_diag = 0
+    reconstructed = 0
+    timestamp_verified = 0
     for fx in fixtures:
         resolved = resolve_balance_v5_monitoring_snapshot(fx)
         if resolved.get("mode") == "unavailable":
             continue
         covered += 1
         cohort = resolved.get("source_cohort")
+        payload = resolved.get("payload") if isinstance(resolved.get("payload"), dict) else {}
+        snap_ts = payload.get("snapshot_timestamp")
+        if snap_ts and (_odds_meta_verified_pre_kickoff(fx) or payload.get("pre_match_verified") is True):
+            timestamp_verified += 1
         if cohort == COHORT_PROSPECTIVE:
             prospective += 1
         elif cohort in (
@@ -721,6 +859,8 @@ def build_balance_module_overview_v2(
             COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED,
         ):
             hist_verified += 1
+            if cohort == COHORT_HISTORICAL_RECONSTRUCTED_VERIFIED:
+                reconstructed += 1
         elif cohort == COHORT_HISTORICAL_DIAGNOSTIC:
             hist_diag += 1
         if (
@@ -748,11 +888,18 @@ def build_balance_module_overview_v2(
             "status": "official_monitored",
             "version": BALANCE_V5_VERSION,
             "coverage": coverage,
+            "coverage_descriptive": coverage,
+            "timestamp_verified_coverage": (
+                (timestamp_verified / covered) if covered else None
+            ),
+            "prospective_coverage": (prospective / covered) if covered else None,
             "fixtures": covered if eligible else None,
             "settled": settled_covered if eligible else None,
             "eligible_fixtures": eligible,
             "covered_fixtures": covered,
             "settled_covered_fixtures": settled_covered,
+            "reconstructed_fixtures": reconstructed,
+            "timestamp_verified_fixtures": timestamp_verified,
             "coverage_numerator": covered if eligible else None,
             "coverage_denominator": eligible if eligible else None,
             "prospective_persisted": prospective,

@@ -45,14 +45,46 @@ export function GoalIntensityModulePanel({
           />
           <MonitoringMetricCard label="Versione" value={overview?.version || 'goal_intensity_v5_preview'} />
           <MonitoringMetricCard
-            label="Fixture periodo"
-            value={overview?.fixtures == null ? '—' : String(overview.fixtures)}
+            label="Snapshot prospettici"
+            value={
+              overview?.prospective_snapshots == null
+                ? '—'
+                : String(overview.prospective_snapshots)
+            }
           />
           <MonitoringMetricCard
-            label="Settled"
-            value={overview?.settled == null ? '—' : String(overview.settled)}
+            label="Completed"
+            value={
+              overview?.completed_snapshots == null
+                ? '—'
+                : String(overview.completed_snapshots)
+            }
           />
         </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MonitoringMetricCard
+            label="Pending"
+            value={
+              overview?.pending_snapshots == null
+                ? '—'
+                : String(overview.pending_snapshots)
+            }
+          />
+          <MonitoringMetricCard
+            label="Campione minimo"
+            value={
+              overview?.minimum_sample == null ? '—' : String(overview.minimum_sample)
+            }
+          />
+          <MonitoringMetricCard
+            label="Progressione"
+            value={overview?.monitoring_status || '—'}
+          />
+        </div>
+        <p className="text-xs text-slate-500">
+          Date effettive: {overview?.first_effective_date || '—'} →{' '}
+          {overview?.last_effective_date || '—'}
+        </p>
         <p className="text-sm text-slate-600">
           Vista «{view}»: usa il laboratorio ricerca (tab Preview) per candidati, calibrazione e
           export backend già distinti (preview_summary … preview_bundle_definition). Coverage

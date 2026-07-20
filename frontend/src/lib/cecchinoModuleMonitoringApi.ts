@@ -24,9 +24,31 @@ export type ModuleOverviewItem = {
   activations?: number | null
   prospective_rows?: number | null
   historical_rows?: number | null
+  prospective_fixtures?: number | null
+  historical_settled_rows?: number | null
+  pending_rows?: number | null
+  result_missing_rows?: number | null
+  readiness_status?: string | null
   validation_rows_total?: number | null
   validation_rows_by_source_cohort?: Record<string, number> | null
   settled_historical?: number | null
+  prospective_persisted?: number | null
+  reconstructed_fixtures?: number | null
+  timestamp_verified_fixtures?: number | null
+  coverage_descriptive?: number | null
+  timestamp_verified_coverage?: number | null
+  prospective_coverage?: number | null
+  prospective_snapshots?: number | null
+  pending_snapshots?: number | null
+  completed_snapshots?: number | null
+  minimum_sample?: number | null
+  monitoring_status?: string | null
+  first_effective_date?: string | null
+  last_effective_date?: string | null
+  verified_pre_match_count?: number | null
+  unusable_count?: number | null
+  historical_activations?: number | null
+  current_activations?: number | null
   persistence_blocking_reason?: string | null
 }
 
@@ -236,6 +258,8 @@ export type PackAuditItem = {
     missing_files?: string[]
     missing_columns?: Record<string, string[]> | string[]
     row_count_match?: boolean
+    actual_files?: string[]
+    required_files?: string[]
   }
   files_available?: string[]
   files_expected?: string[]

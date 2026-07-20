@@ -43,20 +43,20 @@ export function PurchasabilityModulePanel({
         ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MonitoringMetricCard
-            label="Stato"
-            value={monitoringStatusLabel(statusRaw)}
+            label="Stato readiness"
+            value={monitoringStatusLabel(overview?.readiness_status ?? statusRaw)}
             ariaLabel={statusRaw ? `Stato ${statusRaw}` : undefined}
           />
           <MonitoringMetricCard
-            label="Prospettiche"
+            label="Fixture prospettive"
             value={
-              overview?.prospective_rows == null
-                ? '0'
-                : String(overview.prospective_rows)
+              overview?.prospective_fixtures == null
+                ? '—'
+                : String(overview.prospective_fixtures)
             }
           />
           <MonitoringMetricCard
-            label="Storiche"
+            label="Righe storiche"
             value={
               overview?.historical_rows == null
                 ? '—'
@@ -66,11 +66,28 @@ export function PurchasabilityModulePanel({
           <MonitoringMetricCard
             label="Settled storiche"
             value={
-              overview?.settled_historical == null && overview?.settled == null
+              overview?.historical_settled_rows == null
                 ? '—'
-                : String(overview?.settled_historical ?? overview?.settled)
+                : String(overview.historical_settled_rows)
             }
           />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <MonitoringMetricCard
+            label="Pending"
+            value={
+              overview?.pending_rows == null ? '—' : String(overview.pending_rows)
+            }
+          />
+          <MonitoringMetricCard
+            label="Result missing"
+            value={
+              overview?.result_missing_rows == null
+                ? '—'
+                : String(overview.result_missing_rows)
+            }
+          />
+          <MonitoringMetricCard label="Coverage snapshot prosp." value={cov.text} />
         </div>
         <p className="text-xs text-slate-500">
           Righe totali validation:{' '}

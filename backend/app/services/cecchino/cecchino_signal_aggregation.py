@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import and_, func, not_, or_, select
@@ -427,6 +427,30 @@ def _counts_in_avg_won_odds(row: CecchinoSignalActivation) -> bool:
     return row.evaluation_status == EVAL_WON and row.quota_book is not None
 
 
+def _activation_source_cohort(
+    activation_timestamp: str | None,
+    kickoff: str | None,
+) -> str | None:
+    if not activation_timestamp or not kickoff:
+        return None
+    try:
+        act_str = str(activation_timestamp).replace("Z", "+00:00")
+        kick_str = str(kickoff).replace("Z", "+00:00")
+        act_dt = datetime.fromisoformat(act_str)
+        kick_dt = datetime.fromisoformat(kick_str)
+        if act_dt.tzinfo is None:
+            act_dt = act_dt.replace(tzinfo=timezone.utc)
+        if kick_dt.tzinfo is None:
+            kick_dt = kick_dt.replace(tzinfo=timezone.utc)
+        return (
+            "historical_persisted_verified"
+            if act_dt < kick_dt
+            else "unusable"
+        )
+    except (ValueError, TypeError):
+        return None
+
+
 def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
     home = row.home_team_name or "?"
     away = row.away_team_name or "?"
@@ -458,6 +482,16 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
     if hasattr(row, "prob_book") and row.prob_book is not None:
         prob_book = float(row.prob_book)
 
+    selection = None
+    selection_source = None
+    if row.target_market_key:
+        selection = row.target_market_key
+        selection_source = "derived_from_target_market_key"
+
+    source_cohort = _activation_source_cohort(activation_timestamp, (
+        row.kickoff.isoformat() if row.kickoff else None
+    ))
+
     return {
         "id": int(row.id),
         "today_fixture_id": int(row.today_fixture_id),
@@ -477,11 +511,12 @@ def _serialize_activation_row(row: CecchinoSignalActivation) -> dict[str, Any]:
         "league_name": row.league_name,
         "signal_group": row.signal_group,
         "signal_label": _format_signal_display_label(row.signal_group, row.signal_label),
-        "selection": None,
+        "selection": selection,
+        "selection_source": selection_source,
         "source_column": row.source_column,
         "target_market_label": _format_target_market_label(row),
         "target_market_key": row.target_market_key,
-        "source_cohort": None,
+        "source_cohort": source_cohort,
         "activation_status": None,
         "evaluation_status": row.evaluation_status,
         "evaluation_reason": row.evaluation_reason,

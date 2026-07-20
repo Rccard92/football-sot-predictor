@@ -1480,7 +1480,13 @@ def build_prospective_monitoring(db: Session, bundle: CecchinoGoalIntensityV5Pre
 # ---------------------------------------------------------------------------
 
 
-def stream_preview_export(db: Session, *, kind: PreviewExportKind) -> Iterator[str]:
+def stream_preview_export(
+    db: Session,
+    *,
+    kind: PreviewExportKind,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Iterator[str]:
     bundle = get_active_bundle(db)
     if bundle is None:
         yield json.dumps({"error": "bundle_missing"})
@@ -1535,6 +1541,10 @@ def stream_preview_export(db: Session, *, kind: PreviewExportKind) -> Iterator[s
             )
         ).all()
     )
+    if date_from is not None:
+        snaps = [s for s in snaps if s.scan_date is not None and s.scan_date >= date_from]
+    if date_to is not None:
+        snaps = [s for s in snaps if s.scan_date is not None and s.scan_date <= date_to]
     if kind == "preview_completed_results":
         snaps = [s for s in snaps if s.result_attached_at is not None]
         rows = [_snapshot_list_item(s, bundle) for s in snaps]
@@ -1546,7 +1556,70 @@ def stream_preview_export(db: Session, *, kind: PreviewExportKind) -> Iterator[s
         rows = [_snapshot_list_item(s, bundle) for s in snaps]
 
     if not rows:
-        rows = [{"note": "empty"}]
+        if kind == "preview_snapshots":
+            columns = [
+                "id",
+                "today_fixture_id",
+                "scan_date",
+                "kickoff",
+                "competition_id",
+                "competition_name",
+                "home_team_name",
+                "away_team_name",
+                "snapshot_status",
+                "preview_status",
+                "source_snapshot_at",
+                "history_sample_size",
+                "xg_status",
+                "GI_A",
+                "GI_B",
+                "MT1",
+                "GI_A_without_volatility",
+                "expected_goals_GI_A",
+                "p_ge2_GI_A",
+                "p_ge3_GI_A",
+                "p_btts_GI_A",
+                "total_goals_ft",
+                "result_attached",
+                "source_snapshot_after_freeze",
+                "source_snapshot_before_kickoff",
+            ]
+        elif kind == "preview_completed_results":
+            columns = [
+                "id",
+                "today_fixture_id",
+                "scan_date",
+                "kickoff",
+                "competition_id",
+                "snapshot_status",
+                "GI_A",
+                "GI_B",
+                "MT1",
+                "total_goals_ft",
+                "result_attached",
+            ]
+        elif kind == "preview_candidate_monitoring":
+            columns = [
+                "section",
+                "candidate",
+                "name",
+                "n",
+                "status",
+                "spearman",
+                "pearson",
+                "mae",
+                "rmse",
+                "delta_mae",
+                "evidence_level",
+            ]
+        else:
+            columns = ["note"]
+        yield "\ufeff"
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=columns, lineterminator="\n", extrasaction="ignore")
+        writer.writeheader()
+        yield buf.getvalue()
+        return
     columns = list(rows[0].keys())
     yield "\ufeff"
     buf = io.StringIO()

@@ -2,6 +2,17 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Stabilizzazione finale Monitoraggio Moduli Fase 1/3 — export v5 (2026-07-20)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Export pack | `cecchino_module_monitoring_exports_v5` |
+| Acquistabilità analisi | aggregazioni su coorte analitica (`won/lost` + quota) senza gate promozione |
+| Balance timestamp | `snapshot_timestamp` da odds/KPI; `generated_at` = ora export |
+| Goal preview | filtro `scan_date` end-to-end; no righe `note=empty` |
+| Signals export | `all_models`; `activations_all_models.csv` + coorti + `field_availability.json` |
+| Audit scientifico | regole per modulo (`partial_collecting` Goal se completed=0) |
+
 ## Fix export coorti e schemi forensic v4 (2026-07-20)
 
 | Artefatto | Versione / note |

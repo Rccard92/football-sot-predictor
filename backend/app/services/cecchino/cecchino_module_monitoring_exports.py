@@ -1,4 +1,4 @@
-"""Export di monitoraggio Cecchino — forensic v4.
+"""Export di monitoraggio Cecchino — forensic v5.
 
 Il modulo assembla esclusivamente dati e formule già prodotti dai servizi
 canonici. Gli export sono riproducibili, autocontenuti e verificabili tramite
@@ -55,6 +55,7 @@ from app.services.cecchino.cecchino_purchasability_validation_aggregation import
     build_purchasability_promotion_readiness,
     build_purchasability_validation_summary,
 )
+from app.services.cecchino.cecchino_constants import CECCHINO_DEFAULT_WEIGHT_MODEL_KEY
 from app.services.cecchino.cecchino_signal_aggregation import (
     build_signals_summary,
     export_signals_csv,
@@ -71,7 +72,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v4"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v5"
 
 _COMMON_REQUIRED_FILES: tuple[str, ...] = (
     "README_ANALISI.md",
@@ -177,6 +178,7 @@ _SIGNALS_ROW_FIELDS = [
     "signal_group",
     "signal_label",
     "selection",
+    "selection_source",
     "source_column",
     "target_market_key",
     "target_market_label",
@@ -313,13 +315,18 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
         ] + ["prospective_progress.json", "data_health.json", "historical_availability.json"],
     },
     "signals": {
-        "primary_rows_file": "activations_all_rows.csv",
+        "primary_rows_file": "activations_all_models.csv",
         "required_columns": _SIGNALS_ROW_FIELDS,
         "required_files": [
+            "activations_all_models.csv",
             "activations_all_rows.csv",
+            "activations_current_model.csv",
             "activations_current_rows.csv",
             "activations_verified_pre_match.csv",
             "activations_unusable.csv",
+            "aggregations_by_model.csv",
+            "aggregations_by_weights_version.csv",
+            "field_availability.json",
             "by_signal.csv",
             "by_column.csv",
             "by_signal_and_column.csv",
@@ -382,9 +389,36 @@ def _count_csv_rows(content: bytes) -> int:
         return 0
     text = content.decode("utf-8-sig")
     rows = list(csv.reader(io.StringIO(text)))
-    if not rows:
+    if len(rows) <= 1:
         return 0
-    return max(0, len(rows) - 1)
+    header = rows[0]
+    count = 0
+    for row in rows[1:]:
+        if not row or all(cell == "" for cell in row):
+            continue
+        if len(row) == 1 and row[0] in {"", "note"}:
+            continue
+        if header and len(row) == len(header):
+            mapped = dict(zip(header, row))
+            if mapped.get("note") == "empty":
+                continue
+        count += 1
+    return count
+
+
+def _goal_effective_date_range(content: bytes) -> dict[str, str | None]:
+    if not content:
+        return {"from": None, "to": None}
+    text = content.decode("utf-8-sig")
+    rows = list(csv.DictReader(io.StringIO(text)))
+    dates = [
+        str(r.get("scan_date") or "")[:10]
+        for r in rows
+        if r.get("scan_date") and r.get("note") != "empty"
+    ]
+    if not dates:
+        return {"from": None, "to": None}
+    return {"from": min(dates), "to": max(dates)}
 
 
 def _chunk_csv_bytes(
@@ -519,6 +553,7 @@ def _build_export_audit(
     completed_count = int(meta.get("completed_count", 0) or 0)
     settled_count = int(meta.get("settled_count", 0) or 0)
     completeness = str(meta.get("completeness") or "")
+    blocking_reasons = list(meta.get("blocking_reasons") or [])
 
     if hard_failure:
         scientific_status = "fail"
@@ -528,6 +563,34 @@ def _build_export_audit(
         scientific_status = "fail"
     elif module_key == "goal-intensity-v5" and completed_count == 0:
         scientific_status = "partial_collecting"
+    elif module_key == "purchasability":
+        if settled_count == 0 and exported_row_count > 0:
+            scientific_status = "partial_collecting"
+        elif blocking_reasons and exported_row_count > 0:
+            scientific_status = "partial"
+        elif completeness in {"partial", "empty"} or warnings:
+            scientific_status = "partial"
+        else:
+            scientific_status = "pass"
+    elif module_key == "balance-v5":
+        ts_verified = int(meta.get("timestamp_verified_count", 0) or 0)
+        if exported_row_count > 0 and ts_verified == 0:
+            scientific_status = "partial"
+        elif completeness in {"partial", "empty"} or warnings:
+            scientific_status = "partial"
+        else:
+            scientific_status = "pass"
+    elif module_key == "signals":
+        if not meta.get("all_models_exported"):
+            scientific_status = "partial"
+        elif not meta.get("source_cohort_counts"):
+            scientific_status = "partial"
+        elif settled_count == 0 and exported_row_count > 0:
+            scientific_status = "partial_collecting"
+        elif completeness in {"partial", "empty"} or warnings:
+            scientific_status = "partial"
+        else:
+            scientific_status = "pass"
     elif settled_count == 0 and module_key in {"purchasability", "signals"}:
         scientific_status = "partial_collecting"
     elif completeness in {"partial", "empty"} or warnings:
@@ -666,6 +729,15 @@ def build_purchasability_module_overview(
         date_to=date_to,
         competition_id=competition_id,
     )
+    summary_historical = build_purchasability_validation_summary(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        bootstrap_iterations=50,
+        promotion_eligible_only=False,
+    )
+    hist_metrics = summary_historical.get("metrics") or {}
     readiness = build_purchasability_promotion_readiness(
         db,
         date_from=date_from,
@@ -686,17 +758,23 @@ def build_purchasability_module_overview(
         {
             "module_key": "purchasability",
             "status": readiness.get("status") or "collecting_data",
+            "readiness_status": readiness.get("status") or "collecting_data",
             "version": PURCHASABILITY_CANDIDATE_VERSION,
             "coverage": coverage,
             "fixtures": health.get("fixtures_with_verified_pre_match_preview"),
+            "prospective_fixtures": health.get("fixtures_with_persisted_preview"),
+            "historical_fixtures": None,
             "settled": health.get("result_settled_count"),
             "prospective_rows": health.get("prospective_rows_available"),
             "historical_rows": health.get("historical_rows_available"),
+            "historical_settled_rows": hist_metrics.get("settled"),
+            "pending_rows": health.get("result_pending_count"),
+            "result_missing_rows": health.get("result_missing_count"),
             "validation_rows_total": health.get("validation_rows_total"),
             "validation_rows_by_source_cohort": health.get(
                 "validation_rows_by_source_cohort"
             ),
-            "settled_historical": health.get("result_settled_count"),
+            "settled_historical": hist_metrics.get("settled"),
             "last_snapshot_at": health.get("last_persisted_snapshot_at"),
             "next_review_at": readiness.get("prima_data_teorica_promozione"),
             "warnings": list(dict.fromkeys(str(item) for item in warnings)),
@@ -759,10 +837,44 @@ def build_goal_intensity_module_overview(
     bundle = _active_goal_bundle(db)
     warnings = [
         "Preview research: metriche candidate e calibrazione disponibili nel pacchetto",
-        "Coverage non disponibile: il denominatore della coverage preview non è definito",
     ]
+    snapshots_count = 0
+    pending_count = 0
+    completed_count = 0
+    monitoring_status = None
+    min_sample = None
+    first_effective_date = None
+    last_effective_date = None
     if bundle is None:
         warnings.insert(0, "Bundle Goal Intensity v5 attivo assente")
+    else:
+        from app.models.cecchino_goal_intensity_v5_preview import (
+            CecchinoGoalIntensityV5PreviewSnapshot,
+        )
+        from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
+            MINIMUM_PROSPECTIVE_MATCHES,
+            build_prospective_monitoring,
+        )
+
+        snaps = list(
+            db.scalars(
+                select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                    CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id,
+                    CecchinoGoalIntensityV5PreviewSnapshot.scan_date >= date_from,
+                    CecchinoGoalIntensityV5PreviewSnapshot.scan_date <= date_to,
+                )
+            ).all()
+        )
+        snapshots_count = len(snaps)
+        completed_count = sum(1 for s in snaps if s.result_attached_at is not None)
+        pending_count = max(0, snapshots_count - completed_count)
+        scan_dates = [s.scan_date for s in snaps if s.scan_date is not None]
+        if scan_dates:
+            first_effective_date = min(scan_dates).isoformat()
+            last_effective_date = max(scan_dates).isoformat()
+        monitoring = build_prospective_monitoring(db, bundle)
+        monitoring_status = monitoring.get("status")
+        min_sample = MINIMUM_PROSPECTIVE_MATCHES
     if eligible == 0:
         warnings.insert(0, "Nessuna fixture eleggibile nel periodo")
     return make_json_safe(
@@ -774,7 +886,14 @@ def build_goal_intensity_module_overview(
             "fixtures": eligible if eligible else None,
             "settled": settled if eligible else None,
             "eligible_fixtures": eligible,
-            "last_snapshot_at": None,
+            "prospective_snapshots": snapshots_count,
+            "pending_snapshots": pending_count,
+            "completed_snapshots": completed_count,
+            "minimum_sample": min_sample,
+            "monitoring_status": monitoring_status,
+            "first_effective_date": first_effective_date,
+            "last_effective_date": last_effective_date,
+            "last_snapshot_at": last_effective_date,
             "next_review_at": None,
             "warnings": warnings,
         }
@@ -798,6 +917,32 @@ def build_signals_module_overview(
         settled_activations = int(overall.get("won") or 0) + int(
             overall.get("lost") or 0
         )
+        all_payload = list_signal_activations(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            limit=500_000,
+            offset=0,
+            only_current=False,
+            all_models=True,
+        )
+        all_items = [
+            row for row in (all_payload.get("items") or []) if isinstance(row, dict)
+        ]
+        verified_count = sum(
+            1 for item in all_items if item.get("source_cohort") == "historical_persisted_verified"
+        )
+        unusable_count = sum(
+            1 for item in all_items if item.get("source_cohort") == "unusable"
+        )
+        current_count = sum(
+            1
+            for item in all_items
+            if item.get("is_current")
+            and str(item.get("model_key") or "").upper()
+            == str(CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+        )
+        historical_count = verified_count
         warnings = list(summary.get("warnings") or [])
         if competition_id is not None:
             warnings.append(
@@ -817,6 +962,10 @@ def build_signals_module_overview(
                 "distinct_fixtures": distinct_fixtures,
                 "eligible_fixtures": eligible,
                 "activations": activations,
+                "current_activations": current_count,
+                "historical_activations": historical_count,
+                "verified_pre_match_count": verified_count,
+                "unusable_count": unusable_count,
                 "settled": settled_activations,
                 "settled_activations": settled_activations,
                 "last_snapshot_at": None,
@@ -910,8 +1059,18 @@ def _summary_csv(summary: dict[str, Any], key: str, fallback: list[str]) -> byte
     return _csv_bom([row for row in rows if isinstance(row, dict)], fields or fallback)
 
 
-def _materialize_preview_export(db: Session, kind: str, filename: str, file_kind: str) -> bytes:
-    raw = "".join(stream_preview_export(db, kind=kind)).encode("utf-8")
+def _materialize_preview_export(
+    db: Session,
+    kind: str,
+    filename: str,
+    file_kind: str,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> bytes:
+    raw = "".join(
+        stream_preview_export(db, kind=kind, date_from=date_from, date_to=date_to)
+    ).encode("utf-8")
     if file_kind == "csv":
         return _with_bom(raw)
     try:
@@ -1223,7 +1382,9 @@ def _build_purchasability_files(
         "distributions.csv": distributions_by_score_band,
     }
     
-    source_total_rows = int((summary_selected.get("metrics") or {}).get("rows") or 0)
+    source_total_rows = int(
+        (summary_selected.get("metrics") or {}).get("rows_total_filtered") or 0
+    )
     exported_row_count = 0
     truncated = False
     settled_count = 0
@@ -1326,6 +1487,13 @@ def _build_balance_files(
     )
     warnings = list(overview.get("warnings") or [])
     rows = _count_csv_rows(files["balance_rows.csv"])
+    timestamp_verified = sum(
+        1
+        for r in build_balance_monitoring_rows(
+            db, date_from=date_from, date_to=date_to, competition_id=competition_id
+        )
+        if r.get("snapshot_timestamp") and r.get("pre_match_verified") is True
+    )
     eligible = int(overview.get("eligible_fixtures") or 0)
     if eligible == 0:
         completeness = "empty"
@@ -1350,6 +1518,7 @@ def _build_balance_files(
         "primary_rows": rows,
         "source_total_rows": rows,
         "exported_total_rows": rows,
+        "timestamp_verified_count": timestamp_verified,
         "truncated": False,
     }
 
@@ -1390,7 +1559,12 @@ def _build_goal_files(
     else:
         for export_kind, filename, kind in _GOAL_EXPORTS:
             files[filename] = _materialize_preview_export(
-                db, export_kind, filename, kind
+                db,
+                export_kind,
+                filename,
+                kind,
+                date_from=date_from,
+                date_to=date_to,
             )
         try:
             preview_summary = json.loads(files["preview_summary.json"].decode("utf-8"))
@@ -1420,6 +1594,7 @@ def _build_goal_files(
             date_to=date_to,
             competition_id=competition_id,
         )
+        effective_range = _goal_effective_date_range(files["preview_snapshots.csv"])
         historical_availability = {
             "status": "available" if bundle is not None else "unavailable",
             "eligible_fixtures": eligible_fixtures,
@@ -1429,7 +1604,8 @@ def _build_goal_files(
                 "prospective_matches_collected"
             ),
             "exclusion_reasons": [],
-            "effective_date_range": {
+            "effective_date_range": effective_range,
+            "requested_date_range": {
                 "from": date_from.isoformat(),
                 "to": date_to.isoformat(),
             },
@@ -1480,6 +1656,78 @@ def _is_verified_pre_match(item: dict[str, Any]) -> bool:
         return False
 
 
+def _signals_aggregation_table(
+    items: list[dict[str, Any]],
+    key_name: str,
+) -> bytes:
+    groups: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"activations": 0, "won": 0, "lost": 0, "pending": 0}
+    )
+    for item in items:
+        key = str(item.get(key_name) or "unknown")
+        groups[key]["activations"] += 1
+        status = str(item.get("evaluation_status") or "")
+        if status == "won":
+            groups[key]["won"] += 1
+        elif status == "lost":
+            groups[key]["lost"] += 1
+        elif status == "pending":
+            groups[key]["pending"] += 1
+    rows = [{key_name: k, **v} for k, v in sorted(groups.items())]
+    fields = [key_name, "activations", "won", "lost", "pending"]
+    return _csv_bom(rows, fields)
+
+
+def _signals_field_availability(items: list[dict[str, Any]]) -> dict[str, Any]:
+    if not items:
+        return {
+            "persisted": [],
+            "derived": ["selection", "source_cohort"],
+            "unavailable": [
+                "rating",
+                "score",
+                "stake_units",
+                "profit_units",
+                "activation_status",
+                "warning_codes",
+            ],
+        }
+    sample = items[0]
+    persisted = [
+        field
+        for field in (
+            "model_key",
+            "weights_version",
+            "quota_book",
+            "quota_cecchino",
+            "prob_book",
+            "prob_cecchino",
+            "edge_pct",
+            "evaluation_status",
+            "target_market_key",
+        )
+        if sample.get(field) is not None
+    ]
+    derived = []
+    if sample.get("selection") is not None:
+        derived.append("selection")
+    if sample.get("source_cohort") is not None:
+        derived.append("source_cohort")
+    if sample.get("selection_source"):
+        derived.append("selection_source")
+    unavailable = [
+        field
+        for field in ("rating", "score", "stake_units", "profit_units", "activation_status", "warning_codes")
+        if sample.get(field) is None
+    ]
+    return {
+        "persisted": persisted,
+        "derived": derived,
+        "unavailable": unavailable,
+        "note": "Nessun Rating/Score/stake/profit inventato — solo campi persistiti o derivati documentati.",
+    }
+
+
 def _build_signals_files(
     db: Session,
     *,
@@ -1488,17 +1736,18 @@ def _build_signals_files(
     competition_id: int | None,
     include_rows: bool,
 ) -> tuple[dict[str, bytes], dict[str, Any]]:
-    # Summary with default model
-    summary = build_signals_summary(db, date_from=date_from, date_to=date_to)
+    default_model = str(CECCHINO_DEFAULT_WEIGHT_MODEL_KEY).upper()
+    summary = build_signals_summary(
+        db, date_from=date_from, date_to=date_to, only_current=True
+    )
     overall = summary.get("overall") or {}
-    
-    # Fetch ALL activations (all rows, not just current)
+
     page_size = 100_000
     safety_cap = 2_000_000
     offset = 0
     source_total_rows = 0
     all_items: list[dict[str, Any]] = []
-    
+
     while offset < safety_cap:
         activation_payload = list_signal_activations(
             db,
@@ -1506,7 +1755,8 @@ def _build_signals_files(
             date_to=date_to,
             limit=min(page_size, safety_cap - offset),
             offset=offset,
-            only_current=False,  # Get all rows for all_rows file
+            only_current=False,
+            all_models=True,
         )
         source_total_rows = int(activation_payload.get("total") or source_total_rows)
         page = [
@@ -1518,36 +1768,55 @@ def _build_signals_files(
         offset += len(page)
         if not page or offset >= source_total_rows:
             break
-    
+
     truncated = source_total_rows > len(all_items)
-    
-    # Split into 4 categories
-    current_items: list[dict[str, Any]] = []
+
+    current_model_items: list[dict[str, Any]] = []
     verified_pre_match: list[dict[str, Any]] = []
+    verified_current_model: list[dict[str, Any]] = []
     unusable: list[dict[str, Any]] = []
-    
+    historical_items: list[dict[str, Any]] = []
+
     for item in all_items:
-        is_current = item.get("is_current", False)
+        is_current = bool(item.get("is_current", False))
+        model_key = str(item.get("model_key") or "").upper()
+        cohort = item.get("source_cohort")
         is_pre_match = _is_verified_pre_match(item)
-        
-        if is_current:
-            current_items.append(item)
-        
+
+        if is_current and model_key == default_model:
+            current_model_items.append(item)
+
         if is_pre_match:
             verified_pre_match.append(item)
+            if is_current and model_key == default_model:
+                verified_current_model.append(item)
+            if cohort == "historical_persisted_verified":
+                historical_items.append(item)
         elif item.get("kickoff") and item.get("activation_timestamp"):
-            # Has both timestamps but created after kickoff
             unusable.append(item)
-    
-    # Build 4 CSV files
+
+    all_models_csv = _csv_bom(all_items, _SIGNALS_ROW_FIELDS)
     files: dict[str, bytes] = {
-        "activations_all_rows.csv": _csv_bom(all_items, _SIGNALS_ROW_FIELDS),
-        "activations_current_rows.csv": _csv_bom(current_items, _SIGNALS_ROW_FIELDS),
-        "activations_verified_pre_match.csv": _csv_bom(verified_pre_match, _SIGNALS_ROW_FIELDS),
+        "activations_all_models.csv": all_models_csv,
+        "activations_all_rows.csv": all_models_csv,
+        "activations_current_model.csv": _csv_bom(
+            current_model_items, _SIGNALS_ROW_FIELDS
+        ),
+        "activations_current_rows.csv": _csv_bom(
+            current_model_items, _SIGNALS_ROW_FIELDS
+        ),
+        "activations_verified_pre_match.csv": _csv_bom(
+            verified_pre_match, _SIGNALS_ROW_FIELDS
+        ),
         "activations_unusable.csv": _csv_bom(unusable, _SIGNALS_ROW_FIELDS),
+        "aggregations_by_model.csv": _signals_aggregation_table(all_items, "model_key"),
+        "aggregations_by_weights_version.csv": _signals_aggregation_table(
+            all_items, "weights_version"
+        ),
+        "field_availability.json": _json_bytes(_signals_field_availability(all_items)),
     }
-    
-    model_key = (summary.get("filters") or {}).get("model_key")
+
+    model_key = (summary.get("filters") or {}).get("model_key") or default_model
     model_row = {"model_key": model_key, **overall}
     version_definition = {
         "version": "signals_aggregation_current",
@@ -1558,16 +1827,16 @@ def _build_signals_files(
             "distinct_fixtures": "overall.fixtures_with_signals_count",
             "settled_activations": "overall.won + overall.lost",
             "odds": "persisted_only_no_recalculation",
-            "primary_rows_file": "activations_all_rows.csv",
-            "performance_source": "activations_verified_pre_match.csv",
+            "primary_rows_file": "activations_all_models.csv",
+            "performance_source": "activations_verified_pre_match.csv (model F current)",
+            "all_models": True,
         },
     }
-    
-    # Build summary using only verified pre-match for performance metrics
+
     summary_verified = build_signals_summary(
         db, date_from=date_from, date_to=date_to, only_current=True
     )
-    
+
     files.update({
         "by_signal.csv": _summary_csv(
             summary_verified, "by_signal", ["signal_group", "signal_label", "activations"]
@@ -1581,11 +1850,11 @@ def _build_signals_files(
             ["signal_group", "signal_label", "source_column", "activations"],
         ),
         "overall.json": _json_bytes(overall),
-        "monthly_timeseries.csv": _signals_monthly_timeseries(verified_pre_match),
+        "monthly_timeseries.csv": _signals_monthly_timeseries(verified_current_model),
         "version_definition.json": _json_bytes(version_definition),
         "model_summary.csv": _rows_to_csv([model_row]),
     })
-    
+
     warnings = list(summary.get("warnings") or [])
     if truncated:
         warnings.append(
@@ -1599,25 +1868,35 @@ def _build_signals_files(
         warnings.append(
             f"{len(unusable)} attivazioni create post-kickoff escluse da performance aggregations"
         )
-    
+    model_keys = {str(item.get("model_key") or "") for item in all_items}
+    if len(model_keys) < 2 and len(all_items) > 0:
+        warnings.append("Export all_models con un solo model_key presente nel periodo")
+
     rows = len(all_items)
     settled_count = int(overall.get("won", 0) or 0) + int(overall.get("lost", 0) or 0)
     completeness = "empty" if rows == 0 else ("partial" if warnings else "complete")
-    
+
     return files, {
         "module_version": "signals_aggregation_current",
         "versions": {"signals": "signals_aggregation_current", "model_key": model_key},
-        "source_cohorts": ["current_signal_activations"],
+        "source_cohorts": sorted({str(i.get("source_cohort") or "unknown") for i in all_items}),
+        "source_cohort_counts": dict(
+            Counter(str(i.get("source_cohort") or "unknown") for i in all_items)
+        ),
         "warnings": warnings,
         "completeness": completeness,
         "blocking_reasons": [],
-        "include_rows_effective": include_rows and "activations_all_rows.csv" in files,
+        "include_rows_effective": include_rows and "activations_all_models.csv" in files,
         "primary_rows": rows,
         "source_total_rows": source_total_rows,
         "exported_total_rows": rows,
         "settled_count": settled_count,
         "verified_pre_match_count": len(verified_pre_match),
         "unusable_count": len(unusable),
+        "historical_activations_count": len(historical_items),
+        "current_model_activations_count": len(current_model_items),
+        "all_models_exported": True,
+        "model_keys_present": sorted(k for k in model_keys if k),
         "truncated": truncated,
     }
 
@@ -1887,12 +2166,18 @@ def build_module_analysis_pack_audit(
         for entry in (manifest.get("files") or [])
         if entry.get("name")
     ]
+    export_audit = meta.get("export_audit") or {}
+    required = list(export_audit.get("required_files") or [])
+    actual = list(export_audit.get("actual_files") or sorted(file_names))
     return make_json_safe(
         {
             "module_key": module_key,
             "export_version": MONITORING_EXPORT_VERSION,
-            "export_audit": meta.get("export_audit") or {},
+            "export_audit": export_audit,
             "files": sorted(file_names),
+            "files_available": actual,
+            "files_expected": required or sorted(file_names),
+            "rows": export_audit.get("exported_row_count"),
             "completeness": manifest.get("export_completeness_status"),
             "source_cohort_filter": parse_export_cohort_filter(source_cohort_filter),
         }
@@ -2033,7 +2318,12 @@ def build_module_rows_csv(
             content = _csv_bom([], _GOAL_EMPTY_HEADERS["preview_snapshots.csv"])
         else:
             content = _materialize_preview_export(
-                db, "preview_snapshots", "preview_snapshots.csv", "csv"
+                db,
+                "preview_snapshots",
+                "preview_snapshots.csv",
+                "csv",
+                date_from=date_from,
+                date_to=date_to,
             )
     else:
         content = _with_bom(

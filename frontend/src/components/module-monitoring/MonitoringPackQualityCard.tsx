@@ -60,7 +60,7 @@ export function MonitoringPackQualityCard({
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Qualità pacchetti analisi</h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            Completezza forensic v4 — non basta che lo ZIP esista.
+            Completezza forensic v5 — file, colonne, righe e stati tecnico/scientifico separati.
           </p>
           {checkedAt ? (
             <p className="mt-1 text-[11px] text-slate-400">
@@ -81,23 +81,28 @@ export function MonitoringPackQualityCard({
         {items.map((it) => {
           const def = getMonitoringModule(it.module_key)
           const audit = it.export_audit
-          const status =
-            audit?.scientific_status ||
-            audit?.technical_status ||
-            audit?.status ||
-            it.completeness ||
-            'partial'
-          const filesOk = (it.files_available?.length || 0)
-          const filesExp = (it.files_expected?.length || 0)
+          const tech = audit?.technical_status || audit?.status || it.completeness || 'partial'
+          const sci = audit?.scientific_status || tech
+          const filesOk =
+            audit?.actual_files?.length ||
+            it.files_available?.length ||
+            0
+          const filesExp =
+            audit?.required_files?.length ||
+            it.files_expected?.length ||
+            0
           const src = audit?.source_row_count
-          const exp = audit?.exported_row_count
+          const exp = audit?.exported_row_count ?? it.rows
           return (
             <article
               key={it.module_key}
-              className={`rounded-xl border px-3 py-2.5 ${tone(status)}`}
+              className={`rounded-xl border px-3 py-2.5 ${tone(sci)}`}
             >
               <div className="text-sm font-semibold">{def.label}</div>
-              <div className="mt-1 text-xs font-medium uppercase tracking-wide">{status}</div>
+              <div className="mt-1 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-wide">
+                <span>tech: {tech}</span>
+                <span>sci: {sci}</span>
+              </div>
               <dl className="mt-2 space-y-0.5 text-[11px]">
                 <div className="flex justify-between gap-2">
                   <dt>File</dt>
@@ -108,7 +113,7 @@ export function MonitoringPackQualityCard({
                 <div className="flex justify-between gap-2">
                   <dt>Righe</dt>
                   <dd>
-                    {src ?? '—'} → {exp ?? it.rows ?? '—'}
+                    {src ?? '—'} → {exp ?? '—'}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
@@ -133,16 +138,14 @@ export function MonitoringPackQualityCard({
                     source_cohort: sourceCohort,
                   }).then(
                     () => {
-                      const tech = audit?.technical_status || '—'
-                      const sci = audit?.scientific_status || status
                       const trunc = audit?.truncated ? ' · troncato' : ''
-                      if (sci === 'pass' || status === 'complete') {
+                      if (sci === 'pass' || sci === 'complete') {
                         toast.success(
-                          `Download ${def.label} · v4 tech=${tech} sci=${sci}${trunc}`,
+                          `Download ${def.label} · v5 tech=${tech} sci=${sci}${trunc}`,
                         )
                       } else {
                         toast.warning(
-                          `Download ${def.label} · v4 tech=${tech} sci=${sci}${trunc}`,
+                          `Download ${def.label} · v5 tech=${tech} sci=${sci}${trunc}`,
                         )
                       }
                     },

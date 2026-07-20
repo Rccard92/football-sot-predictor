@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.models.cecchino_purchasability_evaluation import (
     EVAL_LOST,
     EVAL_PENDING,
+    EVAL_RESULT_MISSING,
     EVAL_WON,
     CecchinoPurchasabilityEvaluation,
 )
@@ -78,9 +79,10 @@ def _f(v: Any) -> float | None:
         return None
 
 
-def _settled_rows(
+def _analysis_settled_rows(
     rows: list[CecchinoPurchasabilityEvaluation],
 ) -> list[CecchinoPurchasabilityEvaluation]:
+    """Coorte analitica storica: won/lost con quota book valida, senza gate promozione."""
     out = []
     for r in rows:
         if r.evaluation_status not in (EVAL_WON, EVAL_LOST):
@@ -88,9 +90,28 @@ def _settled_rows(
         qb = _f(r.quota_book)
         if qb is None or qb <= 1.0:
             continue
-        if not r.snapshot_timestamp_verified or r.snapshot_before_kickoff is not True:
+        out.append(r)
+    return out
+
+
+def _settled_rows(
+    rows: list[CecchinoPurchasabilityEvaluation],
+    *,
+    require_promotion_eligible: bool = True,
+    require_snapshot_verified: bool = True,
+) -> list[CecchinoPurchasabilityEvaluation]:
+    """Coorte readiness/promozione: gate snapshot + promotion_eligible."""
+    out = []
+    for r in rows:
+        if r.evaluation_status not in (EVAL_WON, EVAL_LOST):
             continue
-        if not r.promotion_eligible:
+        qb = _f(r.quota_book)
+        if qb is None or qb <= 1.0:
+            continue
+        if require_snapshot_verified:
+            if not r.snapshot_timestamp_verified or r.snapshot_before_kickoff is not True:
+                continue
+        if require_promotion_eligible and not r.promotion_eligible:
             continue
         out.append(r)
     return out
@@ -456,9 +477,20 @@ def build_purchasability_validation_summary(
         promotion_eligible_only=promotion_eligible_only,
     )
     pending = sum(1 for r in all_rows if r.evaluation_status == EVAL_PENDING)
-    settled = _settled_rows(all_rows)
+    result_missing = sum(
+        1 for r in all_rows if r.evaluation_status == EVAL_RESULT_MISSING
+    )
+    if promotion_eligible_only:
+        settled = _settled_rows(
+            all_rows,
+            require_promotion_eligible=True,
+            require_snapshot_verified=True,
+        )
+    else:
+        settled = _analysis_settled_rows(all_rows)
     general = _metrics_block(settled)
     general["pending"] = pending
+    general["result_missing"] = result_missing
     general["rows_total_filtered"] = len(all_rows)
 
     seed = _bootstrap_seed(

@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Stabilizzazione finale Monitoraggio Moduli Fase 1/3 — export v5 (2026-07-20)
+
+- Acquistabilità: aggregazioni analitiche senza gate `promotion_eligible`; `source_mode` in export; overview con fixture/righe prospettiche vs storiche separate da readiness.
+- Balance: `snapshot_timestamp` solo da odds/KPI persistiti; `generated_at` distinto; book probs da snapshot; `draw_credibility_research.json` da coverage audit.
+- Goal: filtro `scan_date` su preview export; CSV vuoto header-only; `effective_date_range` dalle righe esportate.
+- Signals: `all_models=True`; CSV `activations_all_models/current/verified/unusable` + aggregazioni modello/pesi + `field_availability.json`; coorti pre-kickoff.
+- UI: card modulo allineate; Qualità pacchetti legge `export_audit.actual_files` e stati tech/sci separati. Export `…_exports_v5`.
+
 ## Fix export coorti e schemi forensic v4 (2026-07-20)
 
 - Filtro coorte end-to-end su ZIP/CSV/audit; analisi ≠ readiness (prospective-only gates).

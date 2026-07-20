@@ -1016,6 +1016,22 @@ def build_purchasability_validation_rows(
     )
 
 
+def _source_mode_for_cohort(source_cohort: str | None) -> str | None:
+    """Deriva source_mode export da source_cohort persistita."""
+    if not source_cohort:
+        return None
+    cohort = str(source_cohort)
+    if cohort == "historical_reconstructed_verified":
+        return "historical_reconstruction"
+    if cohort == "prospective_persisted":
+        return "prospective_scan"
+    if cohort in {"historical_persisted_verified", "legacy_persisted_backfill"}:
+        return "legacy_persisted"
+    if cohort in {"historical_diagnostic", "legacy_derived_diagnostic"}:
+        return "historical_diagnostic"
+    return None
+
+
 def _serialize_validation_row_forensic(e: CecchinoPurchasabilityEvaluation) -> dict[str, Any]:
     """Schema forensic completo — campi assenti restano null, mai ricostruiti."""
     return {
@@ -1031,7 +1047,7 @@ def _serialize_validation_row_forensic(e: CecchinoPurchasabilityEvaluation) -> d
         "home_team_name": e.home_team_name,
         "away_team_name": e.away_team_name,
         "source_cohort": e.source_cohort,
-        "source_mode": None,
+        "source_mode": _source_mode_for_cohort(e.source_cohort),
         "snapshot_version": e.snapshot_version,
         "snapshot_hash": e.snapshot_hash,
         "source_snapshot_at": (
