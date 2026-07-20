@@ -706,6 +706,8 @@ def balance_readiness_export(
 ):
     """Dossier readiness ZIP (non sostituisce forensic)."""
     import io
+    import logging
+    import time
     import zipfile
 
     from fastapi.responses import StreamingResponse
@@ -714,17 +716,51 @@ def balance_readiness_export(
         build_balance_readiness_dossier_files,
     )
 
-    files = build_balance_readiness_dossier_files(
-        db,
-        date_from=date_from,
-        date_to=date_to,
-        competition_id=competition_id,
+    log = logging.getLogger(__name__)
+    started = time.perf_counter()
+    log.info(
+        "balance_readiness_dossier_started date_from=%s date_to=%s competition_id=%s",
+        date_from,
+        date_to,
+        competition_id,
     )
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for name, data in files.items():
-            zf.writestr(name, data)
-    buf.seek(0)
+    try:
+        files = build_balance_readiness_dossier_files(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, data in files.items():
+                zf.writestr(name, data)
+        buf.seek(0)
+        archive_size = buf.getbuffer().nbytes
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        log.info(
+            "balance_readiness_dossier_completed date_from=%s date_to=%s "
+            "competition_id=%s file_count=%s archive_size=%s elapsed_ms=%s",
+            date_from,
+            date_to,
+            competition_id,
+            len(files),
+            archive_size,
+            elapsed_ms,
+        )
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        log.exception(
+            "balance_readiness_dossier_failed date_from=%s date_to=%s "
+            "competition_id=%s error_type=%s elapsed_ms=%s",
+            date_from,
+            date_to,
+            competition_id,
+            type(exc).__name__,
+            elapsed_ms,
+        )
+        raise
+
     df = (date_from or date.today()).isoformat()
     dt = (date_to or date.today()).isoformat()
     filename = f"SOT_BALANCE_V5_READINESS_{df}_{dt}.zip"

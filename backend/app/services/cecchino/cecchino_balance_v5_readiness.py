@@ -1389,6 +1389,8 @@ def build_balance_readiness_dossier_files(
     competition_id: int | None = None,
 ) -> dict[str, bytes]:
     """File per ZIP dossier readiness dedicato."""
+    from fastapi.encoders import jsonable_encoder
+
     filters = _parse_filters(
         date_from=date_from, date_to=date_to, competition_id=competition_id
     )
@@ -1396,8 +1398,9 @@ def build_balance_readiness_dossier_files(
     history = list_balance_readiness_history(db, competition_id=competition_id)
 
     def _jb(obj: Any) -> bytes:
+        encoded = jsonable_encoder(make_json_safe(obj))
         return (
-            json.dumps(make_json_safe(obj), ensure_ascii=False, indent=2) + "\n"
+            json.dumps(encoded, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         ).encode("utf-8")
 
     readme = (

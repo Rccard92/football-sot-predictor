@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from unittest.mock import MagicMock, patch
+
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql://user:pass@localhost:5432/test",
+)
 
 from app.services.cecchino.cecchino_balance_v5_readiness import (
     build_balance_decision_contract,
@@ -224,3 +230,150 @@ def test_dossier_files_shape():
     assert "README.md" in files
     assert "balance_readiness_overview.json" in files
     assert b"Balance v5 Readiness" in files["README.md"]
+
+
+def test_dossier_serializes_real_date_filters():
+    """Builder con date Python reali — non mockare la serializzazione."""
+    import json
+
+    db = MagicMock()
+    db.query.return_value = _empty_eval_query()
+
+    date_from = date(2026, 6, 19)
+    date_to = date(2026, 7, 20)
+
+    # Empty DB path through real builders (no TypeError on date filters)
+    with patch(
+        "app.services.cecchino.cecchino_balance_v5_readiness._base_q",
+        return_value=_empty_eval_query(),
+    ), patch(
+        "app.services.cecchino.cecchino_balance_v5_readiness._prospective_settled_q",
+        return_value=_empty_eval_query(),
+    ), patch(
+        "app.services.cecchino.cecchino_balance_v5_readiness._count",
+        return_value=0,
+    ), patch(
+        "app.services.cecchino.cecchino_balance_v5_readiness._max_updated_at",
+        return_value=None,
+    ), patch(
+        "app.services.cecchino.cecchino_balance_v5_readiness.build_balance_pillar_readiness",
+        return_value={"pillars": {}},
+    ), patch(
+        "app.services.cecchino.cecchino_balance_v5_readiness.list_balance_readiness_history",
+        return_value={"items": [], "count": 0},
+    ):
+        files = build_balance_readiness_dossier_files(
+            db, date_from=date_from, date_to=date_to
+        )
+
+    assert "README.md" in files
+    assert b"Balance v5 Readiness" in files["README.md"]
+    for name, data in files.items():
+        assert isinstance(data, (bytes, bytearray)), name
+
+    expected_json = [
+        "balance_readiness_overview.json",
+        "balance_readiness_policy.json",
+        "balance_readiness_gates.json",
+        "balance_pillar_readiness.json",
+        "balance_prospective_progress.json",
+        "balance_readiness_history.json",
+        "balance_current_decision.json",
+        "balance_decision_contract.json",
+        "balance_prospective_collection_health.json",
+        "metadata.json",
+    ]
+    for name in expected_json:
+        assert name in files
+        text = files[name].decode("utf-8")
+        assert "NaN" not in text
+        assert "Infinity" not in text
+        parsed = json.loads(text)
+        assert parsed is not None
+
+    meta = json.loads(files["metadata.json"].decode("utf-8"))
+    assert meta["filters"] == {
+        "date_from": "2026-06-19",
+        "date_to": "2026-07-20",
+        "competition_id": None,
+    }
+
+
+def test_readiness_export_endpoint_zip():
+    import io
+    import json
+    import zipfile
+
+    from fastapi.testclient import TestClient
+
+    from app.core.database import get_db
+    from app.main import app
+
+    db = MagicMock()
+    db.query.return_value = _empty_eval_query()
+
+    def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        with patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness._base_q",
+            return_value=_empty_eval_query(),
+        ), patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness._prospective_settled_q",
+            return_value=_empty_eval_query(),
+        ), patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness._count",
+            return_value=0,
+        ), patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness._max_updated_at",
+            return_value=None,
+        ), patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness.build_balance_pillar_readiness",
+            return_value={"pillars": {}},
+        ), patch(
+            "app.services.cecchino.cecchino_balance_v5_readiness.list_balance_readiness_history",
+            return_value={"items": [], "count": 0},
+        ):
+            client = TestClient(app)
+            resp = client.get(
+                "/api/cecchino/module-monitoring/balance-v5/readiness/export",
+                params={
+                    "date_from": "2026-06-19",
+                    "date_to": "2026-07-20",
+                },
+            )
+        assert resp.status_code == 200
+        assert "application/zip" in (resp.headers.get("content-type") or "")
+        cd = resp.headers.get("content-disposition") or ""
+        assert "SOT_BALANCE_V5_READINESS_2026-06-19_2026-07-20.zip" in cd
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            names = set(zf.namelist())
+            for required in (
+                "README.md",
+                "balance_readiness_overview.json",
+                "balance_readiness_policy.json",
+                "balance_readiness_gates.json",
+                "balance_pillar_readiness.json",
+                "balance_prospective_progress.json",
+                "balance_readiness_history.json",
+                "balance_current_decision.json",
+                "balance_decision_contract.json",
+                "balance_prospective_collection_health.json",
+                "metadata.json",
+            ):
+                assert required in names
+            meta = json.loads(zf.read("metadata.json"))
+            assert meta["filters"]["date_from"] == "2026-06-19"
+            assert meta["filters"]["date_to"] == "2026-07-20"
+            for name in names:
+                if name.endswith(".json"):
+                    text = zf.read(name).decode("utf-8")
+                    assert "NaN" not in text
+                    assert "Infinity" not in text
+                    json.loads(text)
+            assert b"Balance v5 Readiness" in zf.read("README.md")
+    finally:
+        app.dependency_overrides.pop(get_db, None)

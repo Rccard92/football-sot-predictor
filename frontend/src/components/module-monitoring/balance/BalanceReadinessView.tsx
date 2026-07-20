@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import {
   downloadBalanceReadinessDossier,
   getBalanceReadinessDecisionContract,
@@ -92,6 +93,7 @@ export function BalanceReadinessView({ dateFrom, dateTo, competitionId }: Props)
   }, [dateFrom, dateTo, competitionId])
 
   const handleDownloadDossier = async () => {
+    if (downloading) return
     setDownloading(true)
     try {
       await downloadBalanceReadinessDossier({
@@ -99,8 +101,8 @@ export function BalanceReadinessView({ dateFrom, dateTo, competitionId }: Props)
         date_to: dateTo,
         competition_id: competitionId ?? undefined,
       })
-    } catch (err: unknown) {
-      alert(`Errore download: ${(err as Error)?.message || 'Errore sconosciuto'}`)
+    } catch {
+      toast.error('Download dossier readiness non riuscito')
     } finally {
       setDownloading(false)
     }
