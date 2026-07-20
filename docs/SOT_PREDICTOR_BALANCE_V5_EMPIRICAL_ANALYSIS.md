@@ -27,6 +27,22 @@ Mai promozione automatica nello Step 2B.
 `GET …/balance-v5/empirical/analysis/{overview|f36|dominance|draw-credibility|gap|stability|data-health|dependency}`  
 `POST …/analysis/jobs` (202) · `GET …/analysis/jobs/{id}`
 
+## Launcher UI job statistico (micro-fix)
+
+Posizione: **Balance → Overview**, card «Analisi statistica completa» subito dopo il banner Overview e prima dei filtri.
+
+| Comando | Cosa fa |
+|---------|---------|
+| **Avvia analisi completa** | POST job asincrono (bootstrap, test, stabilità). Non modifica formule. |
+| **Scarica risultato statistico JSON** | File locale dal payload GET job (`SOT_BALANCE_V5_JOB_…json`). |
+| **Scarica analisi** (Export / post-job) | ZIP forensic Balance **v7** via `MonitoringExportMenu` — distinto dal JSON. |
+
+Polling: usa `poll_after_ms` (default 2000). Stati: In coda / In elaborazione / Completata / Non riuscita.  
+409 `job_already_running` → riprende `active_job_id`.  
+404 → risultato `/tmp` perso (redeploy); messaggio IT a riprovare.  
+Persistenza sessione: `sessionStorage` chiave `cecchino_balance_v5_analysis_job_v1` (non localStorage).  
+Bootstrap UI: 500 / **2000 Consigliato** / 5000 / 10000. Nessun auto-start al mount.
+
 ## Interpretazioni vietate
 
 Score aggregato, ranking pilastri, ROI, promozione da diagnostic, «formula validata».

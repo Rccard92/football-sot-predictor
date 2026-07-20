@@ -1,10 +1,18 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Balance v5 Step 2B — Job launcher UI (2026-07-20)
+
+1. `/monitoraggio-moduli` → Balance → **Overview**.
+2. Card «Analisi statistica completa» → scegliere bootstrap (default 2000) → **Avvia analisi completa** (non auto-start).
+3. Attendere polling; a completamento scaricare JSON job e/o ZIP v7.
+4. Vista **Export**: riepilogo ultimo job + «Scarica analisi» = solo ZIP (non avvia il job).
+5. Job in `/tmp` — dopo redeploy può sparire (404); riavviare analisi. Formule invariate.
+
 ## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
 
 1. NON rieseguire sync empirico.
 2. `/monitoraggio-moduli` → Balance → viste F36/Dominanza/Credibilità X/Gap/Stabilità/Data health.
-3. Eventuale job `POST …/empirical/analysis/jobs` (bootstrap 500–10000).
+3. Job `POST …/empirical/analysis/jobs` dalla UI Overview (bootstrap 500–10000).
 4. Export ZIP Balance = `cecchino_module_monitoring_exports_v7`.
 5. SCI exploratory/partial_diagnostic — non dichiarare SCI PASS né promozione.
 

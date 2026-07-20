@@ -9,6 +9,7 @@ import {
   BalanceGapAnalysisView,
   BalanceStabilityView,
 } from './balance/BalanceAnalysisViews'
+import { BalanceEmpiricalAnalysisJobPanel } from './balance/BalanceEmpiricalAnalysisJobPanel'
 import { BalanceEmpiricalDatasetView } from './balance/BalanceEmpiricalDatasetView'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
@@ -96,14 +97,28 @@ export function BalanceModulePanel({
       <div className="space-y-3">
         <p className="text-sm text-slate-600">
           Export analysis pack Balance v5 (forensic v7 + analisi empirica Step 2B).
+          Il pulsante «Scarica analisi» scarica solo lo ZIP; l’analisi statistica si avvia
+          dalla Overview.
         </p>
-        <MonitoringExportMenu
-          moduleKey="balance-v5"
+        <BalanceEmpiricalAnalysisJobPanel
           dateFrom={dateFrom}
           dateTo={dateTo}
           competitionId={competitionId}
-          sourceCohort={cohortFilter}
+          cohortFilter={cohortFilter}
+          compact
         />
+        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Scarica pacchetto analisi (ZIP)
+          </p>
+          <MonitoringExportMenu
+            moduleKey="balance-v5"
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            competitionId={competitionId}
+            sourceCohort={cohortFilter}
+          />
+        </div>
       </div>
     )
   }

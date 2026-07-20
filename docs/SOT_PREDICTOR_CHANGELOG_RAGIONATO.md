@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Balance v5 Step 2B — Job launcher UI (2026-07-20)
+
+- FE: `BalanceEmpiricalAnalysisJobPanel` in Overview (dopo banner, prima filtri); Export con riepilogo job.
+- Avvio/polling/409/404/sessionStorage `cecchino_balance_v5_analysis_job_v1`; download JSON distinto da ZIP v7.
+- Bootstrap UI 500–10000 (default 2000 Consigliato); nessun auto-start; single-flight.
+- Backend invariato sul contratto job (solo helper test + import SessionLocal nel try del worker). Formule/dataset/export invariati.
+
 ## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
 
 - Analisi statistica separata F36/Dominanza/Credibilità X/Gap su `cecchino_balance_v5_evaluations` (sola lettura).

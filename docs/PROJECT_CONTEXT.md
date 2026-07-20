@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Balance v5 Step 2B — Job launcher UI (2026-07-20)
+
+UI Overview avvia il job statistico (polling, JSON, ZIP v7 distinto). «Scarica analisi» resta solo ZIP. `sessionStorage` job; `/tmp` efimero. Formule invariate. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.
+
 ## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
 
 Analisi separata 4 pilastri su dataset empirico; policy/registry; API+job; export **v7**; UI viste dedicate. Evidence max esplorativa su historical_diagnostic. Formule invariate. Next: Step 2C readiness. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.

@@ -1,3 +1,4 @@
+import { BalanceEmpiricalAnalysisJobPanel } from './BalanceEmpiricalAnalysisJobPanel'
 import { BalancePillarAnalysisShell } from './BalancePillarAnalysisShell'
 
 type Props = {
@@ -15,6 +16,14 @@ export function BalanceEmpiricalOverview(props: Props) {
       pillar="overview"
       title="Overview analisi empirica"
       roleLabel="Quattro pilastri analizzati separatamente — nessuno score aggregato."
+      beforeFilters={
+        <BalanceEmpiricalAnalysisJobPanel
+          dateFrom={props.dateFrom}
+          dateTo={props.dateTo}
+          competitionId={props.competitionId}
+          cohortFilter={props.cohortFilter}
+        />
+      }
     />
   )
 }

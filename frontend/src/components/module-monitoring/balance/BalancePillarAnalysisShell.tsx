@@ -41,6 +41,8 @@ type Props = {
   cohortFilter?: string
   title: string
   roleLabel?: string
+  /** Contenuto tra banner titolo e filtri (es. job launcher Overview). */
+  beforeFilters?: ReactNode
   extra?: ReactNode
 }
 
@@ -52,6 +54,7 @@ export function BalancePillarAnalysisShell({
   cohortFilter = 'all',
   title,
   roleLabel,
+  beforeFilters,
   extra,
 }: Props) {
   const [filters, setFilters] = useState<BalanceAnalysisFiltersState>(EMPTY_BALANCE_FILTERS)
@@ -148,6 +151,8 @@ export function BalancePillarAnalysisShell({
           />
         </div>
       </div>
+
+      {beforeFilters}
 
       <BalanceAnalysisFilters value={filters} onChange={updateFilters} />
 

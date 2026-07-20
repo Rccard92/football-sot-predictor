@@ -522,19 +522,57 @@ export async function getBalanceEmpiricalAnalysis(
   })
 }
 
-export async function startBalanceEmpiricalAnalysisJob(body: {
-  date_from: string
-  date_to: string
-  competition_id?: number | null
-  source_cohort?: string
+export type BalanceEmpiricalAnalysisJobStartResponse = {
+  job_id: string
+  status: string
+  reused?: boolean
+  poll_after_ms?: number
+}
+
+export type BalanceEmpiricalAnalysisJobStatus = {
+  job_id: string
+  status: string
+  current_stage?: string | null
+  progress_message?: string | null
+  created_at?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  elapsed_seconds?: number | null
+  filters?: Record<string, unknown>
   bootstrap_iterations?: number
-}): Promise<{ job_id: string; status: string; poll_after_ms?: number }> {
+  analysis_version?: string
+  policy_version?: string
+  dataset_version?: string
+  result_available?: boolean
+  error_code?: string | null
+  error_message?: string | null
+  ephemeral_note?: string | null
+  poll_after_ms?: number
+  result?: Record<string, unknown> | null
+  [key: string]: unknown
+}
+
+export async function startBalanceEmpiricalAnalysisJob(
+  body: {
+    date_from: string
+    date_to: string
+    competition_id?: number | null
+    source_cohort?: string
+    bootstrap_iterations?: number
+  },
+  opts?: { signal?: AbortSignal },
+): Promise<BalanceEmpiricalAnalysisJobStartResponse> {
   const { adminPostJson } = await import('./api')
-  return adminPostJson('/api/cecchino/module-monitoring/balance-v5/empirical/analysis/jobs', body)
+  return adminPostJson(
+    '/api/cecchino/module-monitoring/balance-v5/empirical/analysis/jobs',
+    body,
+    opts,
+  )
 }
 
 export async function getBalanceEmpiricalAnalysisJob(
   jobId: string,
-): Promise<Record<string, unknown>> {
-  return adminGetJson(`${BASE}/balance-v5/empirical/analysis/jobs/${jobId}`)
+  opts?: { signal?: AbortSignal },
+): Promise<BalanceEmpiricalAnalysisJobStatus> {
+  return adminGetJson(`${BASE}/balance-v5/empirical/analysis/jobs/${jobId}`, opts)
 }

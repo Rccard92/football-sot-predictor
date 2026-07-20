@@ -267,10 +267,10 @@ def get_balance_empirical_analysis_job(job_id: str) -> dict[str, Any]:
 
 
 def _run_job_worker(job_id: str) -> None:
-    from app.core.database import SessionLocal
-
     db = None
     try:
+        from app.core.database import SessionLocal
+
         with _lock:
             j = _jobs.get(job_id)
             if j is None:
@@ -323,3 +323,23 @@ def _run_job_worker(job_id: str) -> None:
             while len(completed) > MAX_COMPLETED_JOBS:
                 old = completed.pop(0)
                 _jobs.pop(old.job_id, None)
+
+
+def reset_jobs_for_tests() -> None:
+    """Solo test: svuota registry in-memory."""
+    with _lock:
+        for j in list(_jobs.values()):
+            if j.result_file_path:
+                try:
+                    Path(j.result_file_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+        _jobs.clear()
+
+
+def set_result_dir_for_tests(path: Path) -> None:
+    """Solo test: redirige RESULT_DIR."""
+    global RESULT_DIR
+    with _lock:
+        RESULT_DIR = Path(path)
+        RESULT_DIR.mkdir(parents=True, exist_ok=True)
