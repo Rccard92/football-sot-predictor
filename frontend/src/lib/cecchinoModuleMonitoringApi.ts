@@ -467,3 +467,74 @@ export async function runBalanceEmpiricalSync(body: {
     body,
   )
 }
+
+export type BalanceAnalysisPayload = Record<string, unknown> & {
+  status?: string
+  reading?: string
+  banner?: string
+  evidence?: Record<string, unknown>
+  evidence_scope?: string
+  sample?: Record<string, unknown>
+  by_class?: Array<Record<string, unknown>>
+}
+
+export type BalanceAnalysisPillar =
+  | 'overview'
+  | 'f36'
+  | 'dominance'
+  | 'draw-credibility'
+  | 'gap'
+  | 'stability'
+  | 'data-health'
+  | 'dependency'
+
+export async function getBalanceEmpiricalAnalysis(
+  pillar: BalanceAnalysisPillar,
+  filters: {
+    date_from: string
+    date_to: string
+    competition_id?: number
+    source_cohort?: string
+    country_name?: string
+    f36_class?: string
+    dominance_class?: string
+    dominance_selection?: string
+    draw_credibility_class?: string
+    gap_class?: string
+  },
+  signal?: AbortSignal,
+): Promise<BalanceAnalysisPayload> {
+  const p = new URLSearchParams()
+  p.set('date_from', filters.date_from)
+  p.set('date_to', filters.date_to)
+  if (filters.competition_id != null) p.set('competition_id', String(filters.competition_id))
+  if (filters.source_cohort) p.set('source_cohort', filters.source_cohort)
+  if (filters.country_name) p.set('country_name', filters.country_name)
+  if (filters.f36_class) p.set('f36_class', filters.f36_class)
+  if (filters.dominance_class) p.set('dominance_class', filters.dominance_class)
+  if (filters.dominance_selection) p.set('dominance_selection', filters.dominance_selection)
+  if (filters.draw_credibility_class) {
+    p.set('draw_credibility_class', filters.draw_credibility_class)
+  }
+  if (filters.gap_class) p.set('gap_class', filters.gap_class)
+  return adminGetJson(`${BASE}/balance-v5/empirical/analysis/${pillar}?${p}`, {
+    signal,
+  })
+}
+
+export async function startBalanceEmpiricalAnalysisJob(body: {
+  date_from: string
+  date_to: string
+  competition_id?: number | null
+  source_cohort?: string
+  bootstrap_iterations?: number
+}): Promise<{ job_id: string; status: string; poll_after_ms?: number }> {
+  const { adminPostJson } = await import('./api')
+  return adminPostJson('/api/cecchino/module-monitoring/balance-v5/empirical/analysis/jobs', body)
+}
+
+export async function getBalanceEmpiricalAnalysisJob(
+  jobId: string,
+): Promise<Record<string, unknown>> {
+  return adminGetJson(`${BASE}/balance-v5/empirical/analysis/jobs/${jobId}`)
+}

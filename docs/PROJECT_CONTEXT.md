@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
+
+Analisi separata 4 pilastri su dataset empirico; policy/registry; API+job; export **v7**; UI viste dedicate. Evidence max esplorativa su historical_diagnostic. Formule invariate. Next: Step 2C readiness. Doc: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`.
+
 ## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
 
 Tabella `cecchino_balance_v5_evaluations`, sync admin (token `SYNC_BALANCE_V5_EMPIRICAL_DATASET`), settlement su update-results, export **v6** con `empirical_*`, UI vista Dataset empirico. Maturità `empirical_dataset_collecting`. Formule Balance/Signals/candidate invariate. Next: Step 2B metriche empiriche. Dettaglio: `docs/SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_MONITORING.md`.

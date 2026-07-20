@@ -1,5 +1,13 @@
 # SOT Predictor — Pipeline operativa Cecchino Today
 
+## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
+
+1. NON rieseguire sync empirico.
+2. `/monitoraggio-moduli` → Balance → viste F36/Dominanza/Credibilità X/Gap/Stabilità/Data health.
+3. Eventuale job `POST …/empirical/analysis/jobs` (bootstrap 500–10000).
+4. Export ZIP Balance = `cecchino_module_monitoring_exports_v7`.
+5. SCI exploratory/partial_diagnostic — non dichiarare SCI PASS né promozione.
+
 ## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
 
 1. Applicare migrazione `20260720120000` (`cecchino_balance_v5_evaluations`).

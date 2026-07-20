@@ -1,4 +1,4 @@
-"""Export di monitoraggio Cecchino — forensic v6.
+"""Export di monitoraggio Cecchino — forensic v7.
 
 Il modulo assembla esclusivamente dati e formule già prodotti dai servizi
 canonici. Gli export sono riproducibili, autocontenuti e verificabili tramite
@@ -35,6 +35,23 @@ from app.services.cecchino.cecchino_balance_v5_empirical import (
     build_balance_empirical_health,
     build_balance_empirical_target_contract,
     query_balance_empirical_rows,
+)
+from app.services.cecchino.cecchino_balance_v5_empirical_analysis import (
+    BALANCE_EMPIRICAL_ANALYSIS_VERSION,
+    BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
+    build_balance_empirical_analysis_overview,
+    build_balance_empirical_data_health_analysis,
+    build_balance_empirical_dependency_analysis,
+    build_balance_empirical_stability_analysis,
+    build_draw_credibility_empirical_analysis,
+    build_dominance_empirical_analysis,
+    build_f36_empirical_analysis,
+    build_gap_empirical_analysis,
+    build_statistical_policy_payload,
+    normalize_analysis_filters,
+)
+from app.services.cecchino.cecchino_balance_v5_empirical_registry import (
+    build_class_registry_payload,
 )
 from app.services.cecchino.cecchino_balance_v5_monitoring import (
     BALANCE_ROW_FIELDS,
@@ -139,7 +156,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v6"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v7"
 
 # Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
 _MODULE_AUDIT_CACHE_TTL_S = 300
@@ -449,6 +466,31 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
             "empirical_cardinality.json",
             "empirical_source_cohorts.csv",
             "empirical_evaluation_status.csv",
+            "balance_empirical_analysis_overview.json",
+            "f36_empirical_summary.json",
+            "f36_by_class.csv",
+            "f36_outcome_distribution.csv",
+            "f36_numeric_metrics.csv",
+            "dominance_empirical_summary.json",
+            "dominance_hit_by_class.csv",
+            "dominance_hit_by_selection.csv",
+            "dominance_calibration.csv",
+            "draw_credibility_empirical_summary.json",
+            "draw_credibility_by_class.csv",
+            "draw_credibility_calibration.csv",
+            "draw_credibility_monotonicity.json",
+            "gap_empirical_summary.json",
+            "gap_by_class.csv",
+            "gap_by_dominance.csv",
+            "gap_by_f36.csv",
+            "pillar_dependency.json",
+            "stability_by_month.csv",
+            "stability_by_competition.csv",
+            "empirical_data_health.json",
+            "empirical_statistical_policy.json",
+            "empirical_analysis_metadata.json",
+            "pillar_evidence_status.json",
+            "empirical_class_registry.json",
         ],
     },
     "goal-intensity-v5": {
@@ -724,12 +766,18 @@ def _build_export_audit(
             scientific_status = "pass"
     elif module_key == "balance-v5":
         ts_verified = int(meta.get("timestamp_verified_count", 0) or 0)
-        if exported_row_count > 0 and ts_verified == 0:
-            scientific_status = "partial"
+        prospective = 0
+        cohorts = meta.get("source_cohorts") or {}
+        if isinstance(cohorts, dict):
+            prospective = int(cohorts.get("prospective_persisted") or 0)
+        if exported_row_count > 0 and prospective == 0:
+            scientific_status = "partial_diagnostic"
+        elif exported_row_count > 0 and ts_verified == 0:
+            scientific_status = "exploratory"
         elif completeness in {"partial", "empty"}:
             scientific_status = "partial"
         else:
-            scientific_status = "pass"
+            scientific_status = "exploratory"
     elif module_key == "signals":
         if not meta.get("all_models_exported"):
             scientific_status = "partial"
@@ -751,7 +799,13 @@ def _build_export_audit(
     # Combined status for backward compatibility (prefer technical fail)
     if technical_status == "fail" or scientific_status == "fail":
         status = "fail"
-    elif scientific_status in {"partial_collecting", "monitoring", "partial"}:
+    elif scientific_status in {
+        "partial_collecting",
+        "monitoring",
+        "partial",
+        "exploratory",
+        "partial_diagnostic",
+    }:
         status = "partial"
     else:
         status = "pass"
@@ -1425,8 +1479,8 @@ def _handoff_md(
         "balance-v5": [
             "copertura per coorte e mese",
             "distribuzione delle classi dei quattro pilastri",
-            "confronto descrittivo con risultati FT disponibili",
-            "stato del dataset empirico (coorti, pending/settled, target contract)",
+            "analisi empirica separata F36/Dominanza/Credibilità X/Gap",
+            "stato del dataset empirico e evidence status esplorativo",
         ],
         "goal-intensity-v5": [
             "avanzamento prospettico e integrità temporale",
@@ -1447,7 +1501,8 @@ def _handoff_md(
         "balance-v5": [
             "trattare la coorte legacy come prospettica",
             "ricostruire input non presenti negli snapshot",
-            "promuovere historical_diagnostic o leggere win-rate/calibrazione (Step 2B)",
+            "promuovere historical_diagnostic o leggere win-rate/calibrazione come prova definitiva",
+            "creare score aggregato o ranking dei quattro pilastri",
         ],
         "goal-intensity-v5": [
             "validare il modello se il campione minimo non è raggiunto",
@@ -1765,6 +1820,287 @@ def _build_balance_empirical_export_files(
         return empty
 
 
+def _build_balance_analysis_export_files(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None,
+) -> dict[str, bytes]:
+    """File analisi empirica Step 2B — fail-soft, header/JSON sempre presenti."""
+    filters = normalize_analysis_filters(
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+        source_cohort="all",
+    )
+    empty_meta = {
+        "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
+        "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
+        "status": "unavailable",
+    }
+
+    def _safe(builder, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            return builder()
+        except Exception as exc:
+            logger.warning(
+                "balance_analysis_export_part_failed error_code=%s",
+                type(exc).__name__,
+            )
+            return {**(fallback or empty_meta), "error": type(exc).__name__}
+
+    overview = _safe(
+        lambda: build_balance_empirical_analysis_overview(
+            db,
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+            source_cohort="all",
+        )
+    )
+    f36 = _safe(lambda: build_f36_empirical_analysis(db, filters=filters, bootstrap_iterations=500))
+    dom = _safe(
+        lambda: build_dominance_empirical_analysis(
+            db, filters=filters, bootstrap_iterations=500
+        )
+    )
+    draw = _safe(
+        lambda: build_draw_credibility_empirical_analysis(
+            db, filters=filters, bootstrap_iterations=500
+        )
+    )
+    gap = _safe(
+        lambda: build_gap_empirical_analysis(db, filters=filters, bootstrap_iterations=500)
+    )
+    dep = _safe(lambda: build_balance_empirical_dependency_analysis(db, filters=filters))
+    stab = _safe(lambda: build_balance_empirical_stability_analysis(db, filters=filters))
+    health = _safe(
+        lambda: build_balance_empirical_data_health_analysis(db, filters=filters)
+    )
+    policy = build_statistical_policy_payload()
+    registry = build_class_registry_payload()
+
+    f36_by_class = list(f36.get("by_class") or [])
+    f36_outcome = [
+        {
+            "class": r.get("class"),
+            "label_it": r.get("label_it"),
+            "HOME": r.get("outcome_HOME"),
+            "DRAW": r.get("outcome_DRAW"),
+            "AWAY": r.get("outcome_AWAY"),
+            "home_rate_pct": (r.get("home_rate") or {}).get("rate_pct"),
+            "draw_rate_pct": (r.get("draw_rate") or {}).get("rate_pct"),
+            "away_rate_pct": (r.get("away_rate") or {}).get("rate_pct"),
+        }
+        for r in f36_by_class
+    ]
+    f36_numeric = [
+        {
+            "class": r.get("class"),
+            "average_total_goals": r.get("average_total_goals"),
+            "median_total_goals": r.get("median_total_goals"),
+            "average_absolute_goal_difference": r.get(
+                "average_absolute_goal_difference"
+            ),
+            "rows": r.get("rows"),
+            "data_status": r.get("data_status"),
+        }
+        for r in f36_by_class
+    ]
+    dom_class = list(dom.get("by_class") or [])
+    dom_sel = list(dom.get("by_selection") or [])
+    cal_bins = list((dom.get("calibration") or {}).get("bins") or [])
+    draw_class = list(draw.get("by_class") or [])
+    draw_cal = list((draw.get("calibration") or {}).get("bins") or [])
+    gap_class = list(gap.get("by_class") or [])
+    gap_dom = list(gap.get("heatmap_gap_x_dominance") or [])
+    gap_f36 = list(gap.get("heatmap_gap_x_f36") or [])
+    stab_month = list(stab.get("by_month") or [])
+    stab_comp = list(stab.get("by_competition") or [])
+
+    def _flatten_hit(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+        out = []
+        for r in rows:
+            hr = r.get("hit_rate") or {}
+            out.append(
+                {
+                    key: r.get(key) or r.get("class") or r.get("selection"),
+                    "label_it": r.get("label_it"),
+                    "rows": r.get("rows"),
+                    "hit_rate_pct": hr.get("rate_pct"),
+                    "ci_lower_pct": (hr.get("ci95") or {}).get("lower_pct"),
+                    "ci_upper_pct": (hr.get("ci95") or {}).get("upper_pct"),
+                    "expected_mean": r.get("expected_mean"),
+                }
+            )
+        return out
+
+    return {
+        "balance_empirical_analysis_overview.json": _json_bytes(overview),
+        "f36_empirical_summary.json": _json_bytes(f36),
+        "f36_by_class.csv": _csv_bom(f36_by_class, list(f36_by_class[0].keys()) if f36_by_class else ["class", "rows"]),
+        "f36_outcome_distribution.csv": _csv_bom(
+            f36_outcome,
+            [
+                "class",
+                "label_it",
+                "HOME",
+                "DRAW",
+                "AWAY",
+                "home_rate_pct",
+                "draw_rate_pct",
+                "away_rate_pct",
+            ],
+        ),
+        "f36_numeric_metrics.csv": _csv_bom(
+            f36_numeric,
+            [
+                "class",
+                "average_total_goals",
+                "median_total_goals",
+                "average_absolute_goal_difference",
+                "rows",
+                "data_status",
+            ],
+        ),
+        "dominance_empirical_summary.json": _json_bytes(dom),
+        "dominance_hit_by_class.csv": _csv_bom(
+            _flatten_hit(dom_class, "class"),
+            [
+                "class",
+                "label_it",
+                "rows",
+                "hit_rate_pct",
+                "ci_lower_pct",
+                "ci_upper_pct",
+                "expected_mean",
+            ],
+        ),
+        "dominance_hit_by_selection.csv": _csv_bom(
+            _flatten_hit(dom_sel, "selection"),
+            [
+                "selection",
+                "label_it",
+                "rows",
+                "hit_rate_pct",
+                "ci_lower_pct",
+                "ci_upper_pct",
+                "expected_mean",
+            ],
+        ),
+        "dominance_calibration.csv": _csv_bom(
+            cal_bins,
+            ["bin", "lo", "hi", "count", "predicted_mean", "observed_rate", "gap"],
+        ),
+        "draw_credibility_empirical_summary.json": _json_bytes(draw),
+        "draw_credibility_by_class.csv": _csv_bom(
+            [
+                {
+                    "class": r.get("class"),
+                    "label_it": r.get("label_it"),
+                    "rows": r.get("rows"),
+                    "draw_rate_pct": (r.get("draw_rate") or {}).get("rate_pct"),
+                    "brier": r.get("brier"),
+                    "calibration_gap": r.get("calibration_gap"),
+                }
+                for r in draw_class
+            ],
+            [
+                "class",
+                "label_it",
+                "rows",
+                "draw_rate_pct",
+                "brier",
+                "calibration_gap",
+            ],
+        ),
+        "draw_credibility_calibration.csv": _csv_bom(
+            draw_cal,
+            ["bin", "lo", "hi", "count", "predicted_mean", "observed_rate", "gap"],
+        ),
+        "draw_credibility_monotonicity.json": _json_bytes(
+            draw.get("monotonicity") or {}
+        ),
+        "gap_empirical_summary.json": _json_bytes(gap),
+        "gap_by_class.csv": _csv_bom(
+            gap_class, list(gap_class[0].keys()) if gap_class else ["class", "rows"]
+        ),
+        "gap_by_dominance.csv": _csv_bom(
+            gap_dom,
+            list(gap_dom[0].keys()) if gap_dom else ["gap_class", "dominance_class", "rows"],
+        ),
+        "gap_by_f36.csv": _csv_bom(
+            gap_f36,
+            list(gap_f36[0].keys()) if gap_f36 else ["gap_class", "f36_class", "rows"],
+        ),
+        "pillar_dependency.json": _json_bytes(dep),
+        "stability_by_month.csv": _csv_bom(
+            [
+                {
+                    "month": r.get("month"),
+                    "rows": r.get("rows"),
+                    "dominance_hit_pct": (r.get("dominance_hit") or {}).get("rate_pct"),
+                    "draw_rate_pct": (r.get("draw_rate") or {}).get("rate_pct"),
+                    "draw_brier": r.get("draw_brier"),
+                    "psi_vs_previous": r.get("psi_vs_previous"),
+                    "drift_status": r.get("drift_status"),
+                }
+                for r in stab_month
+            ],
+            [
+                "month",
+                "rows",
+                "dominance_hit_pct",
+                "draw_rate_pct",
+                "draw_brier",
+                "psi_vs_previous",
+                "drift_status",
+            ],
+        ),
+        "stability_by_competition.csv": _csv_bom(
+            [
+                {
+                    "competition_id": r.get("competition_id"),
+                    "rows": r.get("rows"),
+                    "dominance_hit_pct": (r.get("dominance_hit") or {}).get("rate_pct"),
+                    "draw_rate_pct": (r.get("draw_rate") or {}).get("rate_pct"),
+                    "draw_brier": r.get("draw_brier"),
+                }
+                for r in stab_comp
+            ],
+            [
+                "competition_id",
+                "rows",
+                "dominance_hit_pct",
+                "draw_rate_pct",
+                "draw_brier",
+            ],
+        ),
+        "empirical_data_health.json": _json_bytes(health),
+        "empirical_statistical_policy.json": _json_bytes(policy),
+        "empirical_analysis_metadata.json": _json_bytes(
+            {
+                "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
+                "policy_version": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "competition_id": competition_id,
+                "forbidden": [
+                    "aggregate_balance_score",
+                    "pillar_ranking",
+                    "promotion_from_historical_diagnostic",
+                    "roi_signals",
+                ],
+            }
+        ),
+        "pillar_evidence_status.json": _json_bytes(
+            overview.get("pillar_evidence_status") or {}
+        ),
+        "empirical_class_registry.json": _json_bytes(registry),
+    }
+
+
 def _build_balance_files(
     db: Session,
     *,
@@ -1787,6 +2123,19 @@ def _build_balance_files(
             competition_id=competition_id,
         )
     )
+    try:
+        files.update(
+            _build_balance_analysis_export_files(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "balance_analysis_export_failed error_code=%s", type(exc).__name__
+        )
     overview = build_balance_module_overview(
         db,
         date_from=date_from,
@@ -1817,7 +2166,11 @@ def _build_balance_files(
     }
     return files, {
         "module_version": overview.get("version"),
-        "versions": {"balance": overview.get("version")},
+        "versions": {
+            "balance": overview.get("version"),
+            "empirical_analysis": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
+            "statistical_policy": BALANCE_EMPIRICAL_STATISTICAL_POLICY_VERSION,
+        },
         "source_cohorts": cohorts_map,
         "warnings": warnings,
         "completeness": completeness,

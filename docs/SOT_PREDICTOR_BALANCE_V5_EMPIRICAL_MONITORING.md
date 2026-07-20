@@ -2,6 +2,8 @@
 
 Persistenza e settlement del dataset empirico Balance v5 **senza** modificare formule, soglie, classi, pesi, score aggregato, Signals o Acquistabilità candidate.
 
+**Step 2B (analisi):** vedi [`SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md`](SOT_PREDICTOR_BALANCE_V5_EMPIRICAL_ANALYSIS.md) — export v7, evidence esplorativa.
+
 ## Versioni
 
 | Artefatto | Valore |

@@ -1,11 +1,17 @@
 import { RicercaCredibilitaXPage } from '../../pages/RicercaCredibilitaXPage'
 import type { ModuleOverviewItem } from '../../lib/cecchinoModuleMonitoringApi'
+import {
+  BalanceDataHealthView,
+  BalanceDominanceAnalysisView,
+  BalanceDrawCredibilityAnalysisView,
+  BalanceEmpiricalOverview,
+  BalanceF36AnalysisView,
+  BalanceGapAnalysisView,
+  BalanceStabilityView,
+} from './balance/BalanceAnalysisViews'
 import { BalanceEmpiricalDatasetView } from './balance/BalanceEmpiricalDatasetView'
 import { MonitoringEmptyState } from './MonitoringEmptyState'
 import { MonitoringExportMenu } from './MonitoringExportMenu'
-import { MonitoringMetricCard } from './MonitoringMetricCard'
-import { ModuleCardSections } from './ModuleCardSections'
-import { monitoringStatusLabel } from './moduleMonitoringUi'
 
 type Props = {
   view: string
@@ -24,94 +30,73 @@ export function BalanceModulePanel({
   overview,
   cohortFilter = 'all',
 }: Props) {
-  if (view === 'overview' || view === 'geometry-f36' || view === 'dominance' || view === 'gap-coherence' || view === 'data-health') {
-    const statusRaw = overview?.status || 'official_monitored'
+  const common = {
+    dateFrom,
+    dateTo,
+    competitionId,
+    cohortFilter,
+  }
+
+  if (view === 'overview') {
     return (
       <div className="space-y-4">
-        {cohortFilter !== 'all' && cohortFilter !== 'prospective_persisted' ? (
-          <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-sm text-amber-950">
-            Filtro coorte «{cohortFilter}»: le metriche di readiness restano sulla coorte
-            prospettica; lo storico non promuove.
-          </div>
-        ) : null}
-        {overview ? <ModuleCardSections item={overview} /> : null}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MonitoringMetricCard
-            label="Copertura descrittiva"
-            value={overview?.coverage_descriptive_ratio || '—'}
-          />
-          <MonitoringMetricCard
-            label="Timestamp verificati"
-            value={overview?.timestamp_verified_ratio || '—'}
-          />
-          <MonitoringMetricCard
-            label="Snapshot prospettici"
-            value={
-              overview?.prospective_persisted == null
-                ? '—'
-                : String(overview.prospective_persisted)
-            }
-          />
-          <MonitoringMetricCard
-            label="Fixture settled"
-            value={overview?.settled == null ? '—' : String(overview.settled)}
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <MonitoringMetricCard
-            label="Stato"
-            value={monitoringStatusLabel(statusRaw)}
-            ariaLabel={`Stato ${statusRaw}`}
-          />
-          <MonitoringMetricCard
-            label="Ricostruite"
-            value={
-              overview?.reconstructed_fixtures == null
-                ? '—'
-                : String(overview.reconstructed_fixtures)
-            }
-          />
-          <MonitoringMetricCard
-            label="Fixture analizzate"
-            value={overview?.fixtures == null ? '—' : String(overview.fixtures)}
-          />
-        </div>
-        <p className="text-sm text-slate-600">
-          Vista «{view}»: distribuzione pilastri e health da snapshot salvati. Per Credibilità X
-          apri la vista dedicata (laboratorio esistente).
-        </p>
-        {(overview?.warnings || []).map((w) => (
-          <p key={w} className="text-xs text-amber-700">
-            {w}
+        {overview ? (
+          <p className="text-xs text-slate-500">
+            Operativo: Ufficiale monitorato · Maturità:{' '}
+            {overview.scientific_maturity || 'empirical_dataset_collecting'}
           </p>
-        ))}
+        ) : null}
+        <BalanceEmpiricalOverview {...common} />
       </div>
     )
   }
 
   if (view === 'empirical-dataset') {
-    return (
-      <BalanceEmpiricalDatasetView
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        competitionId={competitionId}
-        cohortFilter={cohortFilter}
-      />
-    )
+    return <BalanceEmpiricalDatasetView {...common} />
+  }
+
+  if (view === 'geometry-f36') {
+    return <BalanceF36AnalysisView {...common} />
+  }
+
+  if (view === 'dominance') {
+    return <BalanceDominanceAnalysisView {...common} />
   }
 
   if (view === 'draw-credibility') {
     return (
-      <div className="-mx-2">
-        <RicercaCredibilitaXPage />
+      <div className="space-y-6">
+        <BalanceDrawCredibilityAnalysisView {...common} />
+        <div className="border-t border-slate-200 pt-4">
+          <h4 className="mb-2 text-sm font-semibold text-slate-800">
+            Laboratorio legacy — Ricerca Credibilità X
+          </h4>
+          <div className="-mx-2">
+            <RicercaCredibilitaXPage />
+          </div>
+        </div>
       </div>
     )
+  }
+
+  if (view === 'gap-coherence') {
+    return <BalanceGapAnalysisView {...common} />
+  }
+
+  if (view === 'stability') {
+    return <BalanceStabilityView {...common} />
+  }
+
+  if (view === 'data-health') {
+    return <BalanceDataHealthView {...common} />
   }
 
   if (view === 'exports') {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-slate-600">Export analysis pack Balance v5.</p>
+        <p className="text-sm text-slate-600">
+          Export analysis pack Balance v5 (forensic v7 + analisi empirica Step 2B).
+        </p>
         <MonitoringExportMenu
           moduleKey="balance-v5"
           dateFrom={dateFrom}

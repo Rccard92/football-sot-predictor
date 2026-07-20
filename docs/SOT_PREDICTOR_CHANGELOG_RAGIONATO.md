@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Balance v5 Fase 2B — Analisi empirica (2026-07-20)
+
+- Analisi statistica separata F36/Dominanza/Credibilità X/Gap su `cecchino_balance_v5_evaluations` (sola lettura).
+- Registry classi + policy immutabile; evidence max `exploratory_evidence` su historical_diagnostic.
+- API analysis/* + job bootstrap 202; export pack `…_exports_v7`; UI viste dedicate ECharts.
+- Formule/soglie/classi/Signals invariate; sync empirico non rieseguito.
+
 ## Balance v5 Fase 2A — Dataset empirico (2026-07-20)
 
 - Tabella `cecchino_balance_v5_evaluations` + sync/settlement fail-soft su scan/recompute/update-results.
