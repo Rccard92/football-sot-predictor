@@ -191,7 +191,7 @@ def test_governance_token_and_signal_rejection():
 
 
 def test_export_v9_includes_readiness_files():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v10"
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v11"
     req = SCHEMA_CONTRACTS["balance-v5"]["required_files"]
     for name in (
         "balance_readiness_overview.json",

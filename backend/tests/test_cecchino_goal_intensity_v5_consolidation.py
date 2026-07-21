@@ -34,9 +34,9 @@ from app.services.cecchino.cecchino_module_monitoring_exports import (
 )
 
 
-def test_export_version_is_v10():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v10"
-    assert "v10" in MONITORING_EXPORT_VERSION
+def test_export_version_is_v11():
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v11"
+    assert "v11" in MONITORING_EXPORT_VERSION
 
 
 def test_goal_schema_contract_includes_canonical_files():
@@ -136,6 +136,8 @@ def test_readiness_zero_snapshots_prospective_not_started():
 def _snap(status: str, attached: bool = False):
     s = MagicMock()
     s.snapshot_status = status
+    s.scan_date = date(2026, 1, 10)
+    s.competition_id = 1
     s.result_attached_at = (
         datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc) if attached else None
     )

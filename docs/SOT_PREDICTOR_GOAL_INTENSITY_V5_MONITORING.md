@@ -2,7 +2,7 @@
 
 **Stato operativo:** Preview monitorata  
 **Bundle frozen:** `cecchino_goal_intensity_v5_preview_v1_1` (invariato)  
-**Export pack:** `cecchino_module_monitoring_exports_v10`
+**Export pack:** `cecchino_module_monitoring_exports_v11`
 
 ## Architettura
 

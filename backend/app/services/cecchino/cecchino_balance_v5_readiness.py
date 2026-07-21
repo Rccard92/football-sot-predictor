@@ -773,7 +773,7 @@ def build_balance_pillar_readiness(
             decision="continue_monitoring",
             prospective_validation_status=prosp_status if prosp_status != "not_started" else "to_validate",
             signal_usage="blocked",
-            warnings=warns("dominance") + ["hit_rate_is_not_roi"],
+            warnings=list(dict.fromkeys(warns("dominance") + ["hit_rate_is_not_roi"])),
             reason_codes=["historical_diagnostic_only"],
             usage_note="Evidenza storica esplorativa — validazione prospettica richiesta",
         ),
@@ -993,10 +993,12 @@ def build_balance_readiness_decision(
     tech = build_balance_technical_gates(db, filters=filters)
     sci = build_balance_scientific_gates(db, filters=filters)
     progress = build_balance_prospective_progress(db, filters=filters)
-    prosp_n = int(sci.get("prospective_settled") or 0)
+    prosp_settled = int(sci.get("prospective_settled") or progress.get("prospective_settled") or 0)
+    prosp_pending = int(progress.get("prospective_pending") or 0)
+    prosp_rows = prosp_settled + prosp_pending
 
     sci_gates = sci.get("gates") or []
-    all_sci_pass = all(g.get("status") == "pass" for g in sci_gates) and prosp_n > 0
+    all_sci_pass = all(g.get("status") == "pass" for g in sci_gates) and prosp_settled > 0
     tech_blocking_fail = any(
         g.get("status") == "fail" and g.get("promotion_blocking")
         for g in (tech.get("gates") or [])
@@ -1006,14 +1008,18 @@ def build_balance_readiness_decision(
         decision = "ready_for_manual_review"
         manual = "eligible"
         maturity = "ready_for_manual_review"
-    elif prosp_n == 0:
+    elif prosp_rows == 0:
         decision = "continue_monitoring"
         manual = "not_eligible"
         maturity = "prospective_not_started"
-    else:
+    elif prosp_settled == 0:
         decision = "continue_monitoring"
         manual = "not_eligible"
         maturity = "prospective_collecting"
+    else:
+        decision = "continue_monitoring"
+        manual = "not_eligible"
+        maturity = "insufficient_prospective_sample"
 
     return make_json_safe(
         {
@@ -1030,6 +1036,7 @@ def build_balance_readiness_decision(
             "scientific_maturity_label_it": {
                 "prospective_not_started": "Raccolta prospettica non iniziata",
                 "prospective_collecting": "Raccolta prospettica in corso",
+                "insufficient_prospective_sample": "Campione prospettico insufficiente",
                 "ready_for_manual_review": "Pronto per revisione manuale",
             }.get(maturity, maturity),
             "manual_review_status": manual,
@@ -1460,6 +1467,123 @@ def list_balance_readiness_history(
         for r in rows
     ]
     return make_json_safe({"items": items, "count": len(items)})
+
+
+def build_balance_empirical_reconciliation(
+    db: Session,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    competition_id: int | None = None,
+) -> dict[str, Any]:
+    """Riconcilia righe monitoring Balance vs dataset empirico corrente."""
+    from app.services.cecchino.cecchino_balance_v5_empirical import (
+        query_balance_empirical_rows,
+    )
+    from app.services.cecchino.cecchino_balance_v5_monitoring import (
+        build_balance_monitoring_rows,
+    )
+    from app.services.cecchino.cecchino_monitoring_cohorts import COHORT_HISTORICAL_DIAGNOSTIC
+
+    filters = _parse_filters(
+        date_from=date_from, date_to=date_to, competition_id=competition_id
+    )
+    df = filters.get("date_from")
+    dt = filters.get("date_to")
+    comp = filters.get("competition_id")
+    if df is None or dt is None:
+        return {
+            "status": "unavailable",
+            "reconciliation_status": "unavailable",
+            "explanation": "date_from/date_to richiesti per riconciliazione export",
+        }
+
+    mon_rows = build_balance_monitoring_rows(
+        db, date_from=df, date_to=dt, competition_id=comp
+    )
+    mon_ids = {
+        int(r["today_fixture_id"])
+        for r in mon_rows
+        if r.get("today_fixture_id") is not None
+    }
+    emp_items: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        page = query_balance_empirical_rows(
+            db,
+            date_from=df,
+            date_to=dt,
+            competition_id=comp,
+            limit=5000,
+            offset=offset,
+        )
+        batch = list(page.get("items") or [])
+        emp_items.extend(row for row in batch if isinstance(row, dict))
+        total = int(page.get("total") or 0)
+        offset += len(batch)
+        if not batch or offset >= total:
+            break
+    emp_ids = {
+        int(r["today_fixture_id"])
+        for r in emp_items
+        if r.get("today_fixture_id") is not None
+    }
+    only_mon = sorted(mon_ids - emp_ids)
+    only_emp = sorted(emp_ids - mon_ids)
+    intersection = sorted(mon_ids & emp_ids)
+
+    counts_by_cohort: dict[str, int] = defaultdict(int)
+    for r in mon_rows:
+        counts_by_cohort[str(r.get("source_cohort") or "unknown")] += 1
+    emp_by_cohort: dict[str, int] = defaultdict(int)
+    for r in emp_items:
+        emp_by_cohort[str(r.get("source_cohort") or "unknown")] += 1
+
+    only_emp_rows = [r for r in emp_items if int(r.get("today_fixture_id") or 0) in only_emp]
+    only_emp_hist_diag = sum(
+        1 for r in only_emp_rows if r.get("source_cohort") == COHORT_HISTORICAL_DIAGNOSTIC
+    )
+    explanation_parts: list[str] = []
+    if only_emp_hist_diag and len(only_emp) == only_emp_hist_diag:
+        explanation_parts.append(
+            "Le righe solo empiriche appartengono alla coorte historical_diagnostic "
+            "non inclusa nel monitoring Balance corrente."
+        )
+    elif only_emp:
+        explanation_parts.append(
+            "Differenza tra righe monitoring e record empirici correnti (is_current)."
+        )
+    if only_mon:
+        explanation_parts.append(
+            "Alcune righe monitoring non hanno record empirico corrente corrispondente."
+        )
+    if not only_mon and not only_emp:
+        explanation_parts.append("Monitoring ed empirico allineati sulle fixture_id.")
+    reconciliation_status = "explained" if explanation_parts and not only_mon else (
+        "mismatch" if (only_mon or only_emp) and not explanation_parts else "explained"
+    )
+    if only_emp_hist_diag and len(only_emp) == only_emp_hist_diag:
+        reconciliation_status = "explained"
+
+    return make_json_safe(
+        {
+            "status": "ok",
+            "balance_monitoring_rows": len(mon_rows),
+            "empirical_current_rows": len(emp_items),
+            "intersection_rows": len(intersection),
+            "only_monitoring_count": len(only_mon),
+            "only_empirical_count": len(only_emp),
+            "only_monitoring_ids": only_mon[:500],
+            "only_empirical_ids": only_emp[:500],
+            "counts_by_source_cohort_monitoring": dict(counts_by_cohort),
+            "counts_by_source_cohort_empirical": dict(emp_by_cohort),
+            "counts_by_reason": {
+                "only_empirical_historical_diagnostic": only_emp_hist_diag,
+            },
+            "explanation": " ".join(explanation_parts) or "Nessuna differenza rilevata.",
+            "reconciliation_status": reconciliation_status,
+        }
+    )
 
 
 def build_balance_readiness_dossier_files(

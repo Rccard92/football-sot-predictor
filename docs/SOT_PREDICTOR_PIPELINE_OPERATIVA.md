@@ -22,7 +22,7 @@
 1. Today detail: campo canonico `goal_intensity_v5` (alias preview deprecated).
 2. `/monitoraggio-moduli` → Goal Intensity → viste Overview…Export (no tab research).
 3. Readiness: Signals blocked, decision `continue_monitoring` fino a 200 completed.
-4. Export forensic = `cecchino_module_monitoring_exports_v10`; dossier ZIP da tab Readiness.
+4. Export forensic = `cecchino_module_monitoring_exports_v11`; dossier ZIP da tab Readiness.
 5. Redirect `/cecchino/ricerca-intensita-goal` → overview Goal.
 6. Formule/bundle/hash/Signals invariati; v4 resta nel JSON (non in UI).
 
@@ -31,7 +31,7 @@
 1. Applicare migrazione `20260720180000` (readiness snapshots + governance decisions).
 2. `/monitoraggio-moduli` → Balance → tab **Readiness**.
 3. Verificare baseline 0 prospective: operativo descrittivo, maturità `prospective_not_started`, Signals blocked, `continue_monitoring`.
-4. Export forensic = `cecchino_module_monitoring_exports_v10`; dossier ZIP dedicato dalla tab Readiness.
+4. Export forensic = `cecchino_module_monitoring_exports_v11`; dossier ZIP dedicato dalla tab Readiness.
 5. Governance admin: token `CONFIRM_BALANCE_V5_GOVERNANCE_DECISION`; Signal decisions rifiutate.
 6. Formule/soglie/classi/Signals invariate; non rieseguire sync empirico.
 

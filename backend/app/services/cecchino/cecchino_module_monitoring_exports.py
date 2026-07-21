@@ -158,7 +158,7 @@ ModuleKey = Literal[
 VALID_MODULE_KEYS: frozenset[str] = frozenset(
     {"purchasability", "balance-v5", "goal-intensity-v5", "signals"}
 )
-MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v10"
+MONITORING_EXPORT_VERSION = "cecchino_module_monitoring_exports_v11"
 
 # Cache in-memory breve per audit multi-modulo (TTL 5 min, max 32 entry).
 _MODULE_AUDIT_CACHE_TTL_S = 300
@@ -503,6 +503,7 @@ SCHEMA_CONTRACTS: dict[str, dict[str, Any]] = {
             "balance_decision_contract.json",
             "balance_prospective_collection_health.json",
             "balance_governance_decisions.csv",
+            "balance_empirical_reconciliation.json",
         ],
     },
     "goal-intensity-v5": {
@@ -2145,6 +2146,49 @@ def _build_balance_analysis_export_files(
     }
 
 
+def _build_balance_readiness_export_placeholders(
+    *,
+    date_from: date,
+    date_to: date,
+    competition_id: int | None,
+    error: str,
+) -> dict[str, bytes]:
+    """Garantisce i 9 file readiness anche in caso di fallimento totale."""
+    from app.services.cecchino.cecchino_balance_v5_readiness import (
+        build_balance_decision_contract,
+    )
+    from app.services.cecchino.cecchino_balance_v5_readiness_policy import (
+        BALANCE_READINESS_POLICY_VERSION,
+        BALANCE_READINESS_VERSION,
+        build_balance_readiness_policy_payload,
+    )
+
+    err_payload = {"status": "unavailable", "error": error}
+    filters = {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "competition_id": competition_id,
+    }
+    meta = {
+        "readiness_version": BALANCE_READINESS_VERSION,
+        "policy_version": BALANCE_READINESS_POLICY_VERSION,
+        "filters": filters,
+        "export_error": error,
+    }
+    return {
+        "balance_readiness_overview.json": _json_bytes(err_payload),
+        "balance_readiness_policy.json": _json_bytes(build_balance_readiness_policy_payload()),
+        "balance_readiness_gates.csv": _csv_bom([], ["category", "key", "status"]),
+        "balance_pillar_readiness.json": _json_bytes(err_payload),
+        "balance_prospective_progress.json": _json_bytes(err_payload),
+        "balance_readiness_history.json": _json_bytes({"items": [], "count": 0, "error": error}),
+        "balance_current_decision.json": _json_bytes(err_payload),
+        "balance_decision_contract.json": _json_bytes(build_balance_decision_contract()),
+        "balance_prospective_collection_health.json": _json_bytes(err_payload),
+        "metadata.json": _json_bytes(meta),
+    }
+
+
 def _build_balance_readiness_export_files(
     db: Session,
     *,
@@ -2377,6 +2421,38 @@ def _build_balance_files(
         logger.warning(
             "balance_readiness_export_failed error_code=%s", type(exc).__name__
         )
+        files.update(
+            _build_balance_readiness_export_placeholders(
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                error=type(exc).__name__,
+            )
+        )
+    try:
+        from app.services.cecchino.cecchino_balance_v5_readiness import (
+            build_balance_empirical_reconciliation,
+        )
+
+        files["balance_empirical_reconciliation.json"] = _json_bytes(
+            build_balance_empirical_reconciliation(
+                db,
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "balance_reconciliation_export_failed error_code=%s", type(exc).__name__
+        )
+        files["balance_empirical_reconciliation.json"] = _json_bytes(
+            {
+                "status": "error",
+                "error": type(exc).__name__,
+                "reconciliation_status": "unavailable",
+            }
+        )
     overview = build_balance_module_overview(
         db,
         date_from=date_from,
@@ -2541,7 +2617,33 @@ def _build_goal_files(
             "bundle_version": module_version,
         }
     
-    files["prospective_progress.json"] = _json_bytes(monitoring)
+    if bundle is not None:
+        from app.models.cecchino_goal_intensity_v5_preview import (
+            CecchinoGoalIntensityV5PreviewSnapshot,
+        )
+        from app.services.cecchino.cecchino_goal_intensity_v5_monitoring_adapter import (
+            normalize_goal_v5_monitoring_contract,
+        )
+
+        all_goal_snaps = list(
+            db.scalars(
+                select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                    CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id
+                )
+            ).all()
+        )
+        normalized_progress = normalize_goal_v5_monitoring_contract(
+            monitoring=monitoring,
+            snapshots=all_goal_snaps,
+            bundle_summary=(preview_summary or {}).get("bundle"),
+            date_from=date_from,
+            date_to=date_to,
+            competition_id=competition_id,
+        )
+    else:
+        normalized_progress = monitoring
+
+    files["prospective_progress.json"] = _json_bytes(normalized_progress)
     files["data_health.json"] = _json_bytes(
         _goal_data_health(
             preview_summary,

@@ -14,7 +14,7 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
-| Export pack | `cecchino_module_monitoring_exports_v10` |
+| Export pack | `cecchino_module_monitoring_exports_v11` |
 | Bundle | `cecchino_goal_intensity_v5_preview_v1_1` (frozen, invariato) |
 | Facade / monitoring | `cecchino_goal_intensity_v5_monitoring_v1` |
 | Readiness | `cecchino_goal_intensity_v5_readiness_v1` |
@@ -25,7 +25,7 @@ Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l
 
 | Artefatto | Versione / note |
 |-----------|-----------------|
-| Export pack | `cecchino_module_monitoring_exports_v10` (bump condiviso) |
+| Export pack | `cecchino_module_monitoring_exports_v11` (bump condiviso) |
 | Readiness | `cecchino_balance_v5_readiness_v1` |
 | Readiness policy | `cecchino_balance_v5_readiness_policy_v1` |
 | Governance | `cecchino_balance_v5_governance_v1` |

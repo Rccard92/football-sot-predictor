@@ -110,7 +110,7 @@ def test_evidence_caps_historical_diagnostic():
 
 
 def test_export_v9_requires_analysis_files():
-    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v10"
+    assert MONITORING_EXPORT_VERSION == "cecchino_module_monitoring_exports_v11"
     req = SCHEMA_CONTRACTS["balance-v5"]["required_files"]
     for name in (
         "balance_empirical_analysis_overview.json",

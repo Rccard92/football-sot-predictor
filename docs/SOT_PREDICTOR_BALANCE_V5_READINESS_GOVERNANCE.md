@@ -11,7 +11,7 @@ Policy immutabile, gate tecnici/scientifici, decisioni di governance e tab UI Re
 | Policy | `cecchino_balance_v5_readiness_policy_v1` |
 | Governance | `cecchino_balance_v5_governance_v1` |
 | Decision contract | `cecchino_balance_v5_decision_contract_v1` |
-| Export pack | `cecchino_module_monitoring_exports_v10` |
+| Export pack | `cecchino_module_monitoring_exports_v11` |
 
 ## Principi
 

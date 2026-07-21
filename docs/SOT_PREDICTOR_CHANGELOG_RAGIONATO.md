@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Micro-fix — Goal v5 monitoring + export v11 (2026-07-21)
+
+- Goal: registry dimensioni OP/DV/MT/OV, adapter monitoring canonico (`completed_n`/`pending_n` int), coverage global/periodo, settlement con reason codes + cache invalidation.
+- Balance: maturità `prospective_collecting` con pending>0; pack readiness sempre completo; `balance_empirical_reconciliation.json`.
+- Export condiviso bump `cecchino_module_monitoring_exports_v11`. Formule/bundle/Signals invariati.
+
 ## Hotfix — isolamento Readiness post-scan (2026-07-21)
 
 - Causa: migrazione `20260720180000` senza `server_default` su `created_at`/`updated_at` readiness → `NotNullViolation` → sessione aborted → `PendingRollbackError` su `get_day_scan_meta` → job mostrato `failed` nonostante scan OK.

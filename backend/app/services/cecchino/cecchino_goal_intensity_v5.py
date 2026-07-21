@@ -7,6 +7,7 @@ API pubbliche per Today, monitoring, settlement fail-soft.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from datetime import date
 from typing import Any
 
@@ -22,9 +23,17 @@ from app.models.cecchino_goal_intensity_v5_preview import (
     CecchinoGoalIntensityV5PreviewSnapshot,
 )
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
+from app.services.cecchino.cecchino_goal_intensity_v5_dimension_registry import (
+    GOAL_INTENSITY_V5_DIMENSION_REGISTRY_VERSION,
+    build_dimensions_from_snapshots,
+)
+from app.services.cecchino.cecchino_goal_intensity_v5_monitoring_adapter import (
+    normalize_goal_v5_monitoring_contract,
+)
 from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
     MINIMUM_PROSPECTIVE_MATCHES,
     VERSION as BUNDLE_VERSION,
+    _bundle_summary,
     _utc_now,
     build_prospective_monitoring,
     compute_snapshot_for_today_row,
@@ -135,13 +144,22 @@ def attach_results_for_rows(
         _ensure_utc,
         _load_fixture,
     )
+    from app.services.cecchino.cecchino_goal_intensity_v5_readiness import (
+        clear_goal_intensity_v5_readiness_cache,
+    )
 
     bundle = get_active_bundle(db)
     if bundle is None:
-        return {"status": "skipped", "reason": "bundle_missing", "attached": 0}
+        return {
+            "status": "skipped",
+            "reason": "bundle_missing",
+            "attached": 0,
+            "skipped_by_reason": {"bundle_missing": len(rows)},
+        }
     now = _utc_now()
     attached = 0
     errors = 0
+    skipped_by_reason: dict[str, int] = defaultdict(int)
     for row in rows:
         try:
             snap = db.scalars(
@@ -151,7 +169,16 @@ def attach_results_for_rows(
                     == int(row.id),
                 )
             ).first()
-            if snap is None or snap.result_attached_at is not None:
+            if snap is None:
+                skipped_by_reason["snapshot_missing"] += 1
+                continue
+            if snap.result_attached_at is not None:
+                skipped_by_reason["already_attached"] += 1
+                continue
+            if str(snap.snapshot_status or "") in {
+                SNAPSHOT_ERROR,
+            }:
+                skipped_by_reason["snapshot_error"] += 1
                 continue
             home = getattr(row, "goals_home", None)
             away = getattr(row, "goals_away", None)
@@ -168,6 +195,7 @@ def attach_results_for_rows(
                 home = getattr(local, "goals_home", None)
                 away = getattr(local, "goals_away", None)
             if home is None or away is None:
+                skipped_by_reason["score_missing"] += 1
                 continue
             finished_codes = {
                 MATCH_FINISHED,
@@ -177,11 +205,15 @@ def attach_results_for_rows(
                 "PEN",
                 "Match Finished",
             }
-            if match_status not in finished_codes and str(
-                getattr(local, "status_short", "") or ""
-            ) not in {"FT", "AET", "PEN"}:
+            local_status = str(getattr(local, "status_short", "") or "")
+            if match_status not in finished_codes and local_status not in {
+                "FT",
+                "AET",
+                "PEN",
+            }:
                 kickoff = _ensure_utc(snap.kickoff)
                 if kickoff is None or now < kickoff + timedelta(hours=1.5):
+                    skipped_by_reason["pre_kickoff_or_not_finished"] += 1
                     continue
             total = int(home) + int(away)
             snap.goals_home_ft = int(home)
@@ -197,12 +229,14 @@ def attach_results_for_rows(
             attached += 1
         except Exception:
             errors += 1
+            skipped_by_reason["exception"] += 1
             logger.exception(
                 "goal_intensity_v5 attach skipped today_fixture_id=%s",
                 getattr(row, "id", None),
             )
     if attached:
         db.flush()
+        clear_goal_intensity_v5_readiness_cache()
     if commit and attached:
         try:
             db.commit()
@@ -213,6 +247,7 @@ def attach_results_for_rows(
         "attached": attached,
         "errors": errors,
         "bundle_id": bundle.id,
+        "skipped_by_reason": dict(skipped_by_reason),
     }
 
 
@@ -238,6 +273,37 @@ def _filter_snaps(
     return out
 
 
+def _goal_monitoring_context(
+    db: Session,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    competition_id: int | None = None,
+) -> tuple[Any, dict[str, Any], list[CecchinoGoalIntensityV5PreviewSnapshot], dict[str, Any]]:
+    bundle = get_active_bundle(db)
+    monitoring = build_prospective_monitoring(db, bundle)
+    if bundle is None:
+        normalized = normalize_goal_v5_monitoring_contract(monitoring=monitoring)
+        return None, monitoring, [], normalized
+    all_snaps = list(
+        db.scalars(
+            select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id
+            )
+        ).all()
+    )
+    summary = _bundle_summary(bundle, db)
+    normalized = normalize_goal_v5_monitoring_contract(
+        monitoring=monitoring,
+        snapshots=all_snaps,
+        bundle_summary=summary,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
+    return bundle, monitoring, all_snaps, normalized
+
+
 def build_overview(
     db: Session,
     *,
@@ -245,8 +311,12 @@ def build_overview(
     date_to: date | None = None,
     competition_id: int | None = None,
 ) -> dict[str, Any]:
-    bundle = get_active_bundle(db)
-    monitoring = build_prospective_monitoring(db, bundle)
+    bundle, monitoring, all_snaps, normalized = _goal_monitoring_context(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
     if bundle is None:
         return make_json_safe(
             {
@@ -260,13 +330,6 @@ def build_overview(
                 "monitoring_version": GOAL_INTENSITY_V5_MONITORING_VERSION,
             }
         )
-    all_snaps = list(
-        db.scalars(
-            select(CecchinoGoalIntensityV5PreviewSnapshot).where(
-                CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id
-            )
-        ).all()
-    )
     period = _filter_snaps(
         all_snaps,
         date_from=date_from,
@@ -279,13 +342,7 @@ def build_overview(
         for s in all_snaps
         if s.snapshot_status == SNAPSHOT_COMPLETED and s.result_attached_at
     ]
-    pending = [s for s in all_snaps if s.snapshot_status == SNAPSHOT_PENDING]
-    incomplete = [
-        s
-        for s in all_snaps
-        if s.snapshot_status in {SNAPSHOT_INCOMPLETE, SNAPSHOT_ERROR}
-    ]
-    n_completed = len(completed)
+    n_completed = normalized.get("completed_snapshots", len(completed))
     if len(all_snaps) == 0:
         maturity = "prospective_not_started"
         maturity_it = "Raccolta prospettica non iniziata"
@@ -305,6 +362,7 @@ def build_overview(
         for s in completed
         if s.result_attached_at or s.scan_date
     )
+    summary = _bundle_summary(bundle, db)
     return make_json_safe(
         {
             "status": "ok",
@@ -318,17 +376,19 @@ def build_overview(
             "signals_integration_status_label_it": "Bloccata",
             "current_decision": "continue_monitoring",
             "current_decision_label_it": "Continua monitoraggio",
+            "coverage_global": normalized.get("coverage_global"),
+            "coverage_in_period": normalized.get("coverage_in_period"),
             "coverage": {
-                "snapshots_global": len(all_snaps),
+                "snapshots_global": normalized.get("total_snapshots", len(all_snaps)),
                 "snapshots_in_period": len(period),
-                "pending": len(pending),
-                "completed": n_completed,
-                "incomplete_or_error": len(incomplete),
+                "pending": normalized.get("pending_snapshots", 0),
+                "completed": normalized.get("completed_snapshots", n_completed),
+                "incomplete_or_error": int(normalized.get("incomplete_snapshots", 0))
+                + int(normalized.get("error_snapshots", 0)),
                 "minimum_prospective_matches": MINIMUM_PROSPECTIVE_MATCHES,
             },
             "candidates": {
-                "primary": monitoring.get("bundle", {}).get("primary_candidate")
-                or "GI_A_STRICT_CORE",
+                "primary": summary.get("primary_candidate") or "GI_A_STRICT_CORE",
                 "challenger": "GI_B_RECENCY",
                 "benchmark": "MT1_LONG_TERM",
                 "diagnostic": "GI_A_without_volatility",
@@ -343,6 +403,7 @@ def build_overview(
                     (scan_dates[-1] - scan_dates[0]).days + 1 if len(scan_dates) >= 2 else len(scan_dates)
                 ),
             },
+            "monitoring_normalized": normalized,
             "prospective_monitoring": monitoring,
             "filters": {
                 "date_from": date_from.isoformat() if date_from else None,
@@ -376,53 +437,41 @@ def build_dimensions(
         competition_id=competition_id,
         snapshot_status=None,
     )
-    labels = {
-        "offensive_production": "Produzione offensiva",
-        "defensive_solidity": "Solidità difensiva",
-        "match_tempo": "Ritmo partita",
-        "offensive_stability": "Stabilità offensiva",
-    }
-    dims: dict[str, Any] = {}
-    for key, label in labels.items():
-        vals = []
-        missing = 0
-        for s in snaps:
-            ps = s.pillar_scores_payload or {}
-            # support multiple key shapes from payload
-            v = ps.get(key)
-            if v is None and isinstance(ps, dict):
-                for alt in (key, key.replace("_", ""), "OP", "DV", "MT", "OV"):
-                    if alt in ps:
-                        v = ps[alt]
-                        break
-                # nested by pillar id
-                for nested in ps.values():
-                    if isinstance(nested, dict) and nested.get("key") == key:
-                        v = nested.get("score") or nested.get("value")
-            if v is None:
-                missing += 1
-            else:
-                try:
-                    vals.append(float(v))
-                except (TypeError, ValueError):
-                    missing += 1
-        dims[key] = {
-            "key": key,
-            "label_it": label,
-            "definition": "Dimensione distinta della struttura goal (research).",
-            "n": len(vals),
-            "missing": missing,
-            "mean": round(sum(vals) / len(vals), 6) if vals else None,
-            "min": min(vals) if vals else None,
-            "max": max(vals) if vals else None,
+    dims = build_dimensions_from_snapshots(snaps)
+    dims_list = [
+        {
+            "key": d.get("key"),
+            "label": d.get("label_it"),
+            "components": [
+                {
+                    "key": m.get("key"),
+                    "label": m.get("label"),
+                    "description": (
+                        f"n={m.get('n')} missing={m.get('missing')} "
+                        f"mean={m.get('mean')} median={m.get('median')}"
+                        if m.get("n") is not None
+                        else None
+                    ),
+                }
+                for m in (d.get("metrics") or [])
+            ],
         }
+        for d in dims.values()
+    ]
     return make_json_safe(
         {
             "status": "ok",
             "terminology": "quattro dimensioni distinte",
+            "registry_version": GOAL_INTENSITY_V5_DIMENSION_REGISTRY_VERSION,
             "snapshot_count": len(snaps),
             "dimensions": dims,
+            "dimensions_list": dims_list,
             "dependency_note": "Le dimensioni sono distinte; indipendenza statistica non assunta.",
+            "filters": {
+                "date_from": date_from.isoformat() if date_from else None,
+                "date_to": date_to.isoformat() if date_to else None,
+                "competition_id": competition_id,
+            },
         }
     )
 
@@ -435,8 +484,16 @@ def build_candidates(
     competition_id: int | None = None,
     candidate_id: str | None = None,
 ) -> dict[str, Any]:
-    monitoring = build_prospective_monitoring(db)
+    _, monitoring, _, normalized = _goal_monitoring_context(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
     metrics = (monitoring.get("metrics_by_candidate") or {}) if isinstance(monitoring, dict) else {}
+    completed_n = int(normalized.get("completed_n") or 0)
+    pending_n = int(normalized.get("pending_n") or 0)
+    total_snapshots = int(normalized.get("total_snapshots") or 0)
     roles = {
         "GI_A_STRICT_CORE": "Primary",
         "GI_B_RECENCY": "Challenger",
@@ -459,8 +516,9 @@ def build_candidates(
     return make_json_safe(
         {
             "status": monitoring.get("status", "ok"),
-            "completed_n": monitoring.get("completed_n")
-            or (monitoring.get("phase_2b_readiness") or {}).get("completed"),
+            "completed_n": completed_n,
+            "pending_n": pending_n,
+            "total_snapshots": total_snapshots,
             "minimum_prospective_matches": MINIMUM_PROSPECTIVE_MATCHES,
             "candidates": items,
             "auto_winner": False,
@@ -484,6 +542,12 @@ def build_prospective_results(
     limit: int = 200,
     offset: int = 0,
 ) -> dict[str, Any]:
+    _, _, _, normalized = _goal_monitoring_context(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
     payload = list_preview_snapshots(
         db,
         date_from=date_from,
@@ -493,9 +557,20 @@ def build_prospective_results(
         limit=limit,
         offset=offset,
     )
+    cov = normalized.get("coverage_in_period") or normalized.get("coverage_global") or {}
+    total = int(normalized.get("total_snapshots") or cov.get("snapshots") or 0)
+    completed = int(normalized.get("completed_snapshots") or cov.get("completed") or 0)
+    pending = int(normalized.get("pending_snapshots") or cov.get("pending") or 0)
     return make_json_safe(
         {
             **payload,
+            "snapshots_count": total,
+            "completed_count": completed,
+            "pending_count": pending,
+            "completed_progress": round(completed / total, 6) if total else 0.0,
+            "collection_progress": round((total - pending) / total, 6) if total else 0.0,
+            "coverage_global": normalized.get("coverage_global"),
+            "coverage_in_period": normalized.get("coverage_in_period"),
             "note": "Solo snapshot prospettici persistiti; nessuna ricostruzione retroattiva.",
         }
     )
@@ -508,18 +583,33 @@ def build_calibration(
     date_to: date | None = None,
     competition_id: int | None = None,
 ) -> dict[str, Any]:
-    monitoring = build_prospective_monitoring(db)
-    completed_n = int(
-        monitoring.get("completed_n")
-        or ((monitoring.get("phase_2b_readiness") or {}).get("completed"))
-        or 0
+    _, monitoring, _, normalized = _goal_monitoring_context(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
     )
+    completed_n = int(normalized.get("completed_n") or 0)
     if completed_n == 0:
         return make_json_safe(
             {
                 "status": "empty",
                 "message": "Nessun risultato completed: metriche non calcolabili.",
                 "completed_n": 0,
+                "metrics_by_candidate": {},
+                "filters": {
+                    "date_from": date_from.isoformat() if date_from else None,
+                    "date_to": date_to.isoformat() if date_to else None,
+                    "competition_id": competition_id,
+                },
+            }
+        )
+    if completed_n < 5:
+        return make_json_safe(
+            {
+                "status": "insufficient_sample",
+                "message": "Campione completed insufficiente per metriche di calibrazione.",
+                "completed_n": completed_n,
                 "metrics_by_candidate": {},
                 "filters": {
                     "date_from": date_from.isoformat() if date_from else None,

@@ -97,6 +97,29 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
   if (error) return <EmptyState message={`Errore: ${error}`} />
   if (!data) return <EmptyState message="Dati non disponibili" />
 
+  const covGlobal = (data.coverage_global || data.coverage) as Record<string, unknown> | undefined
+  const covPeriod = (data.coverage_in_period || data.coverage) as Record<string, unknown> | undefined
+  const globalSnapshots =
+    (covGlobal?.snapshots as number | undefined) ??
+    (data.global_snapshots as number | undefined) ??
+    (data.coverage as { snapshots_global?: number } | undefined)?.snapshots_global
+  const periodSnapshots =
+    (covPeriod?.snapshots as number | undefined) ??
+    (data.snapshots_in_period as number | undefined) ??
+    (data.prospective_snapshots as number | undefined)
+  const completedSnapshots =
+    (covGlobal?.completed as number | undefined) ??
+    (data.completed_snapshots as number | undefined) ??
+    (data.coverage as { completed?: number } | undefined)?.completed
+  const pendingSnapshots =
+    (covGlobal?.pending as number | undefined) ??
+    (data.pending_snapshots as number | undefined) ??
+    (data.coverage as { pending?: number } | undefined)?.pending
+  const minimumSample =
+    (data.minimum_sample as number | undefined) ??
+    (data.coverage as { minimum_prospective_matches?: number } | undefined)?.minimum_prospective_matches ??
+    200
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -110,28 +133,22 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
         <MonitoringMetricCard label="Versione" value={data.version || 'goal_intensity_v5'} />
         <MonitoringMetricCard
           label="Snapshot globali"
-          value={data.global_snapshots == null ? '—' : String(data.global_snapshots)}
+          value={globalSnapshots == null ? '—' : String(globalSnapshots)}
         />
         <MonitoringMetricCard
           label="Snapshot nel periodo"
-          value={
-            data.snapshots_in_period == null
-              ? data.prospective_snapshots == null
-                ? '—'
-                : String(data.prospective_snapshots)
-              : String(data.snapshots_in_period)
-          }
+          value={periodSnapshots == null ? '—' : String(periodSnapshots)}
         />
         <MonitoringMetricCard
           label="Completed"
-          value={data.completed_snapshots == null ? '—' : String(data.completed_snapshots)}
+          value={completedSnapshots == null ? '—' : String(completedSnapshots)}
         />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MonitoringMetricCard
           label="Pending"
-          value={data.pending_snapshots == null ? '—' : String(data.pending_snapshots)}
+          value={pendingSnapshots == null ? '—' : String(pendingSnapshots)}
         />
         <MonitoringMetricCard
           label="Progressione raccolta"
@@ -143,9 +160,19 @@ export function GoalIntensityOverviewView({ dateFrom, dateTo, competitionId, coh
         />
         <MonitoringMetricCard
           label="Campione minimo"
-          value={data.minimum_sample == null ? '—' : String(data.minimum_sample)}
+          value={String(minimumSample)}
         />
       </div>
+
+      {(Boolean(covGlobal?.first_snapshot) || Boolean(covGlobal?.last_snapshot)) && (
+        <p className="text-xs text-slate-500">
+          Copertura globale: {String(covGlobal?.first_snapshot || '—')} →{' '}
+          {String(covGlobal?.last_snapshot || '—')}
+          {covPeriod?.last_snapshot != null && (
+            <> · Periodo fino a {String(covPeriod.last_snapshot)}</>
+          )}
+        </p>
+      )}
 
       {(data.first_effective_date || data.last_effective_date) && (
         <p className="text-xs text-slate-500">
@@ -202,18 +229,65 @@ export function GoalIntensityDimensionsView({ dateFrom, dateTo, competitionId, c
   if (error) return <EmptyState message={`Errore: ${error}`} />
   if (!data) return <EmptyState message="Dati non disponibili" />
 
+  type DimRow = {
+    key?: string
+    label?: string
+    components?: Array<{ key?: string; label?: string; description?: string }>
+  }
+
+  const rawDims = data.dimensions
+  let dimList: DimRow[] = []
+  if (Array.isArray(rawDims)) {
+    dimList = rawDims as DimRow[]
+  } else if (Array.isArray(data.dimensions_list)) {
+    dimList = data.dimensions_list
+  } else if (rawDims && typeof rawDims === 'object') {
+    dimList = Object.values(
+      rawDims as Record<
+        string,
+        {
+          key?: string
+          label?: string
+          label_it?: string
+          metrics?: Array<{
+            key?: string
+            label?: string
+            n?: number
+            missing?: number
+            mean?: number | null
+            median?: number | null
+          }>
+        }
+      >,
+    ).map((d) => ({
+      key: d.key,
+      label: d.label || d.label_it,
+      components: (d.metrics || []).map((m) => ({
+        key: m.key,
+        label: m.label,
+        description:
+          m.n != null
+            ? `n=${m.n} missing=${m.missing ?? 0} mean=${m.mean ?? '—'} median=${m.median ?? '—'}`
+            : undefined,
+      })),
+    }))
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-800">Quattro dimensioni distinte</h3>
         <p className="mt-1 text-xs text-slate-600">
           Produzione offensiva, Solidità difensiva, Ritmo partita, Stabilità offensiva.
+          {data.snapshot_count != null && (
+            <> · Snapshot nel periodo: {String(data.snapshot_count)}</>
+          )}
         </p>
       </div>
 
-      {data.dimensions && data.dimensions.length > 0 ? (
+      {dimList.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2">
-          {data.dimensions.map((dim, idx) => (
+          {dimList.map((dim, idx) => (
             <div key={dim.key || idx} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <h4 className="text-sm font-semibold text-slate-800">{dim.label}</h4>
               {dim.components && dim.components.length > 0 && (
@@ -275,6 +349,10 @@ export function GoalIntensityCandidatesView({ dateFrom, dateTo, competitionId, c
   if (error) return <EmptyState message={`Errore: ${error}`} />
   if (!data) return <EmptyState message="Dati non disponibili" />
 
+  const completedN = data.completed_n as number | undefined
+  const pendingN = data.pending_n as number | undefined
+  const totalSnaps = data.total_snapshots as number | undefined
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -282,13 +360,19 @@ export function GoalIntensityCandidatesView({ dateFrom, dateTo, competitionId, c
         <p className="mt-1 text-xs text-slate-600">
           Primary, Challenger, Benchmark, Diagnostico — confronto candidati per selezione finale.
         </p>
+        {(completedN != null || pendingN != null) && (
+          <p className="mt-2 text-xs text-slate-500">
+            Completed: {completedN ?? 0} · Pending: {pendingN ?? 0}
+            {totalSnaps != null && ` · Totale snapshot: ${totalSnaps}`}
+          </p>
+        )}
       </div>
 
       {data.candidates && data.candidates.length > 0 ? (
         <div className="space-y-3">
           {data.candidates.map((cand, idx) => (
             <div
-              key={cand.id || idx}
+              key={(cand.id || cand.candidate_id || idx) as string}
               className={`rounded-xl border px-4 py-3 ${
                 cand.role === 'Primary'
                   ? 'border-violet-200 bg-violet-50'
@@ -297,7 +381,9 @@ export function GoalIntensityCandidatesView({ dateFrom, dateTo, competitionId, c
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-800">{cand.id}</h4>
+                  <h4 className="text-sm font-semibold text-slate-800">
+                    {(cand.id || cand.candidate_id) as string}
+                  </h4>
                   <p className="text-xs text-slate-600">{cand.role}</p>
                 </div>
                 {cand.active != null && (
@@ -597,6 +683,9 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
   if (!data) return <EmptyState message="Dati non disponibili" />
 
   const gates = readinessGateList(data)
+  const progress = (data.prospective_progress || data.monitoring_normalized) as
+    | Record<string, unknown>
+    | undefined
 
   return (
     <div className="space-y-4">
@@ -606,6 +695,27 @@ export function GoalIntensityReadinessView({ dateFrom, dateTo, competitionId, co
           Stato operativo, maturità scientifica e gate di monitoraggio. Signals sempre bloccati.
         </p>
       </div>
+
+      {progress && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MonitoringMetricCard
+            label="Completed"
+            value={String(progress.completed_n ?? progress.completed_snapshots ?? 0)}
+          />
+          <MonitoringMetricCard
+            label="Pending"
+            value={String(progress.pending_n ?? progress.pending_snapshots ?? 0)}
+          />
+          <MonitoringMetricCard
+            label="Minimo prospettico"
+            value={String(progress.minimum_prospective_matches ?? 200)}
+          />
+          <MonitoringMetricCard
+            label="Totale snapshot"
+            value={String(progress.total_snapshots ?? 0)}
+          />
+        </div>
+      )}
 
       <div className="flex justify-end">
         <button

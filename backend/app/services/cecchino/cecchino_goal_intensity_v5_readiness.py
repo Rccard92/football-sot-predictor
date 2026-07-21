@@ -27,8 +27,12 @@ from app.services.cecchino.cecchino_goal_intensity_v5 import (
     build_overview,
     get_active_bundle,
 )
+from app.services.cecchino.cecchino_goal_intensity_v5_monitoring_adapter import (
+    normalize_goal_v5_monitoring_contract,
+)
 from app.services.cecchino.cecchino_goal_intensity_v5_preview import (
     MINIMUM_PROSPECTIVE_MATCHES,
+    _bundle_summary,
     build_prospective_monitoring,
 )
 from app.services.cecchino.cecchino_goal_intensity_v5_readiness_policy import (
@@ -102,6 +106,25 @@ def build_goal_intensity_v5_readiness(
     bundle = get_active_bundle(db)
     policy = build_goal_intensity_v5_readiness_policy_payload()
     monitoring = build_prospective_monitoring(db, bundle)
+    all_snaps: list[CecchinoGoalIntensityV5PreviewSnapshot] = []
+    bundle_summary = None
+    if bundle is not None:
+        all_snaps = list(
+            db.scalars(
+                select(CecchinoGoalIntensityV5PreviewSnapshot).where(
+                    CecchinoGoalIntensityV5PreviewSnapshot.bundle_id == bundle.id
+                )
+            ).all()
+        )
+        bundle_summary = _bundle_summary(bundle, db)
+    normalized = normalize_goal_v5_monitoring_contract(
+        monitoring=monitoring,
+        snapshots=all_snaps,
+        bundle_summary=bundle_summary,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
     health = build_data_health(
         db, date_from=date_from, date_to=date_to, competition_id=competition_id
     )
@@ -121,6 +144,10 @@ def build_goal_intensity_v5_readiness(
         )
         completed_n = 0
         all_n = 0
+        pending_n = 0
+        locked_n = 0
+        incomplete_n = 0
+        error_n = 0
     else:
         tech_gates.append(
             _gate(
@@ -148,12 +175,12 @@ def build_goal_intensity_v5_readiness(
                 )
             ).all()
         )
-        all_n = len(snaps)
-        completed_n = sum(
-            1
-            for s in snaps
-            if s.snapshot_status == SNAPSHOT_COMPLETED and s.result_attached_at
-        )
+        all_n = int(normalized.get("total_snapshots") or 0)
+        completed_n = int(normalized.get("completed_snapshots") or 0)
+        pending_n = int(normalized.get("pending_snapshots") or 0)
+        locked_n = int(normalized.get("locked_snapshots") or 0)
+        incomplete_n = int(normalized.get("incomplete_snapshots") or 0)
+        error_n = int(normalized.get("error_snapshots") or 0)
         no_target_ok = all(s.no_target_used_in_score is not False for s in snaps) if snaps else True
         tech_gates.append(
             _gate(
@@ -258,12 +285,19 @@ def build_goal_intensity_v5_readiness(
             "prospective_gates": {"gates": progress_gates},
             "prospective_progress": {
                 "completed": completed_n,
-                "pending": (monitoring.get("bundle") or {}).get("pending"),
+                "pending": pending_n,
+                "locked": locked_n,
+                "incomplete": incomplete_n,
+                "error": error_n,
                 "snapshots": all_n,
                 "minimum": MIN_PROSPECTIVE_COMPLETED,
+                "first_snapshot_at": (normalized.get("coverage_global") or {}).get("first_snapshot"),
                 "first_completed_at": first_completed,
                 "earliest_theoretical_review_at": earliest,
             },
+            "coverage_global": normalized.get("coverage_global"),
+            "coverage_in_period": normalized.get("coverage_in_period"),
+            "monitoring_normalized": normalized,
             "scientific": {
                 "phase_2b_readiness": phase,
                 "blocking_issues": blocking,

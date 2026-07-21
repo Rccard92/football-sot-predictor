@@ -27,12 +27,22 @@ export type GoalIntensityV5Overview = {
 export type GoalIntensityV5Dimensions = {
   status?: string
   version?: string
+  snapshot_count?: number
   dimensions?: Array<{
     key: string
     label: string
     components?: Array<{
       key: string
       label: string
+      description?: string
+    }>
+  }> | Record<string, unknown>
+  dimensions_list?: Array<{
+    key?: string
+    label?: string
+    components?: Array<{
+      key?: string
+      label?: string
       description?: string
     }>
   }>
@@ -44,7 +54,8 @@ export type GoalIntensityV5Candidates = {
   status?: string
   version?: string
   candidates?: Array<{
-    id: string
+    id?: string
+    candidate_id?: string
     role: string
     description?: string
     formula?: string
