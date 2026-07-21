@@ -1286,10 +1286,22 @@ def run_scan(
         )
     try:
         from app.services.cecchino.cecchino_balance_v5_readiness import (
-            upsert_balance_readiness_daily_snapshot,
+            BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING,
+            safe_upsert_balance_readiness_daily_snapshot,
         )
 
-        upsert_balance_readiness_daily_snapshot(db, commit=True)
+        readiness_out = safe_upsert_balance_readiness_daily_snapshot(
+            phase="after_today_scan",
+            scan_date=resolved_date,
+            job_id=job_id,
+        )
+        if readiness_out.get("status") == "skipped":
+            code = str(
+                readiness_out.get("warning_code")
+                or BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING
+            )
+            if code not in report["warnings"]:
+                report["warnings"].append(code)
     except Exception:
         logger.exception("balance readiness snapshot skipped after scan")
     return report
@@ -1675,11 +1687,21 @@ def update_today_fixture_results(
 
     try:
         from app.services.cecchino.cecchino_balance_v5_readiness import (
-            upsert_balance_readiness_daily_snapshot,
+            BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING,
+            safe_upsert_balance_readiness_daily_snapshot,
         )
 
-        with db.begin_nested():
-            upsert_balance_readiness_daily_snapshot(db, commit=False)
+        readiness_out = safe_upsert_balance_readiness_daily_snapshot(
+            phase="after_update_results",
+            scan_date=resolved,
+        )
+        if readiness_out.get("status") == "skipped":
+            code = str(
+                readiness_out.get("warning_code")
+                or BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING
+            )
+            if code not in warnings:
+                warnings.append(code)
     except Exception:
         logger.exception("balance readiness snapshot skipped after update-results")
 

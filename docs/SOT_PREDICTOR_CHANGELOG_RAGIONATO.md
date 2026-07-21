@@ -1,5 +1,13 @@
 # SOT Predictor — Changelog ragionato
 
+## Hotfix — isolamento Readiness post-scan (2026-07-21)
+
+- Causa: migrazione `20260720180000` senza `server_default` su `created_at`/`updated_at` readiness → `NotNullViolation` → sessione aborted → `PendingRollbackError` su `get_day_scan_meta` → job mostrato `failed` nonostante scan OK.
+- Fix schema: nuova migrazione `20260721100000` (defaults `now()` su readiness snapshots + governance `created_at`).
+- Fix transazionale: helper `safe_upsert_balance_readiness_daily_snapshot` con `SessionLocal` dedicata su scan/update-results/recompute/analysis job.
+- Warning non bloccante `balance_readiness_snapshot_failed_non_blocking` in `warnings_json` (mai in `errors_json`).
+- Formule Balance/Acquistabilità/GI/Signals/eligibility invariate; nessuna riscansione/backfill.
+
 ## Monitoraggio Segno 1 — FASE 1 esito reale 1 (2026-07-20)
 
 Archivio storico vittorie casalinghe (esito reale 1) derivato da `cecchino_today_fixtures` senza nuova tabella. Export ZIP (`manifest`/`schema`/`quality_report`/`home_wins_features.csv`/`home_wins_full.jsonl`). Nessun ricalcolo moduli. Segnale 1 solo osservativo. Pattern research non implementata.

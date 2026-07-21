@@ -1,5 +1,13 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Hotfix — isolamento Readiness post-scan (2026-07-21)
+
+1. Deploy backend + `alembic upgrade head` (revisione `20260721100000`).
+2. Verificare `column_default` su `cecchino_balance_v5_readiness_snapshots.created_at/updated_at` e governance `created_at`.
+3. Opzionale: refresh readiness admin esistente (niente nuova scansione API).
+4. Prossima scansione naturale: job deve terminare `completed`; warning readiness solo in ambra se accessorio fallisce.
+5. Non ripetere la scansione del 21/07/2026 salvo decisione esplicita.
+
 ## Monitoraggio Segno 1 — FASE 1 (2026-07-20)
 
 1. Nessun processo dedicato: la coorte deriva da `cecchino_today_fixtures` dopo `POST /api/admin/cecchino/today/update-results`.

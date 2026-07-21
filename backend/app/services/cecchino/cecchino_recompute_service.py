@@ -357,10 +357,20 @@ def recompute_cecchino_range(
 
     try:
         from app.services.cecchino.cecchino_balance_v5_readiness import (
-            upsert_balance_readiness_daily_snapshot,
+            BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING,
+            safe_upsert_balance_readiness_daily_snapshot,
         )
 
-        upsert_balance_readiness_daily_snapshot(db, commit=True)
+        readiness_out = safe_upsert_balance_readiness_daily_snapshot(
+            phase="after_recompute",
+        )
+        if readiness_out.get("status") == "skipped":
+            code = str(
+                readiness_out.get("warning_code")
+                or BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING
+            )
+            if code not in warnings:
+                warnings.append(code)
     except Exception:
         logger.exception("balance readiness snapshot skipped after recompute")
 

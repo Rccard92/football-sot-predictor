@@ -2,6 +2,14 @@
 
 Registro sintetico delle versioni operative/monitorate. La fonte runtime resta l’API.
 
+## Hotfix — isolamento Readiness post-scan (2026-07-21)
+
+| Artefatto | Versione / note |
+|-----------|-----------------|
+| Balance formule | `cecchino_balance_v5_v2` (**invariato**) |
+| Readiness / policy / governance | versioni Step 2C **invariate** |
+| Schema | solo `server_default now()` su timestamp readiness/governance |
+
 ## Intensità Goal Avanzata v5 — Consolidamento finale (2026-07-20)
 
 | Artefatto | Versione / note |

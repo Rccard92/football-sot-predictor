@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Hotfix — isolamento Readiness post-scan (2026-07-21)
+
+Scan Today completata può fallire solo nel salvataggio accessorio Readiness (timestamp NOT NULL senza default DB). Migrazione `20260721100000` + sessione dedicata fail-soft. Job resta `completed` con warning non bloccante. Nessuna modifica formule; le eleggibili già persistite restano valide. Doc: `docs/HANDOFF_PER_CHATGPT_HOTFIX_READINESS_POST_SCAN.md`.
+
 ## Monitoraggio Segno 1 — FASE 1 esito reale 1 (2026-07-20)
 
 Pagina Cecchino `/monitoraggio-segno-1` + API `/api/cecchino/home-wins` sulla coorte storica **finished con FT casa > trasferta**. Selezione indipendente dal Segnale 1. Fonte unica `cecchino_today_fixtures` (nessuna tabella nuova). Snapshot-only (no ricalcolo KPI/Balance/GI). Export ZIP analisi ChatGPT. Pattern mining non in scope.

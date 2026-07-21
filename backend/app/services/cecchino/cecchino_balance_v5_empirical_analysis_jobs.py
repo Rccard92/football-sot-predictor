@@ -300,14 +300,10 @@ def _run_job_worker(job_id: str) -> None:
         logger.info("balance_empirical_analysis_job_completed job_id=%s", job_id)
         try:
             from app.services.cecchino.cecchino_balance_v5_readiness import (
-                upsert_balance_readiness_daily_snapshot,
+                safe_upsert_balance_readiness_daily_snapshot,
             )
 
-            snap_db = SessionLocal()
-            try:
-                upsert_balance_readiness_daily_snapshot(snap_db, commit=True)
-            finally:
-                snap_db.close()
+            safe_upsert_balance_readiness_daily_snapshot(phase="after_analysis_job")
         except Exception:
             logger.exception("balance readiness snapshot after analysis job failed")
     except Exception as exc:

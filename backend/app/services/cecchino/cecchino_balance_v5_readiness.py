@@ -1278,6 +1278,87 @@ def upsert_balance_readiness_daily_snapshot(
     return {"status": "ok", "action": action, "readiness_hash": rh, "snapshot_date": snap_d.isoformat()}
 
 
+BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING = (
+    "balance_readiness_snapshot_failed_non_blocking"
+)
+
+
+def safe_upsert_balance_readiness_daily_snapshot(
+    *,
+    phase: str,
+    scan_date: date | str | None = None,
+    job_id: str | None = None,
+    snapshot_date: date | None = None,
+    competition_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    """Esegue l'upsert Readiness in sessione dedicata fail-soft.
+
+    Non riusa la sessione del chiamante: un IntegrityError/rollback resta
+    isolato e non avvelena la scansione / recompute / update-results.
+    """
+    from app.core.database import SessionLocal
+
+    scan_date_s: str | None
+    if scan_date is None:
+        scan_date_s = None
+    elif isinstance(scan_date, date):
+        scan_date_s = scan_date.isoformat()
+    else:
+        scan_date_s = str(scan_date)
+
+    snap_db = SessionLocal()
+    rolled_back = False
+    try:
+        result = upsert_balance_readiness_daily_snapshot(
+            snap_db,
+            snapshot_date=snapshot_date,
+            competition_id=competition_id,
+            date_from=date_from,
+            date_to=date_to,
+            commit=True,
+        )
+        logger.info(
+            "balance_readiness_snapshot_saved_after_scan phase=%s scan_date=%s "
+            "job_id=%s action=%s readiness_hash=%s",
+            phase,
+            scan_date_s,
+            job_id,
+            result.get("action"),
+            result.get("readiness_hash"),
+        )
+        return result
+    except Exception as exc:
+        try:
+            snap_db.rollback()
+            rolled_back = True
+        except Exception:
+            logger.exception(
+                "balance_readiness_snapshot accessory rollback failed phase=%s",
+                phase,
+            )
+        logger.exception(
+            "balance_readiness_snapshot_skipped_after_scan phase=%s scan_date=%s "
+            "job_id=%s exc_type=%s main_scan_preserved=%s "
+            "accessory_session_rolled_back=%s",
+            phase,
+            scan_date_s,
+            job_id,
+            type(exc).__name__,
+            True,
+            rolled_back,
+        )
+        return {
+            "status": "skipped",
+            "warning_code": BALANCE_READINESS_SNAPSHOT_FAILED_NON_BLOCKING,
+            "phase": phase,
+            "exc_type": type(exc).__name__,
+        }
+    finally:
+        snap_db.close()
+
+
 def record_balance_governance_decision(
     db: Session,
     *,

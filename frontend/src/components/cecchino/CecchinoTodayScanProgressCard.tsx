@@ -131,7 +131,7 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
         ) : null}
       </div>
 
-      {(job.warnings?.length ?? 0) > 0 && isRunning ? (
+      {(job.warnings?.length ?? 0) > 0 && (isRunning || isCompleted) ? (
         <ul className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-amber-800">
           {job.warnings.slice(0, 3).map((w) => (
             <li key={w}>{w}</li>
