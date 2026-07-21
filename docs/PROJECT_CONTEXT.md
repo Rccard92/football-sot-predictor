@@ -14,6 +14,10 @@ Pagina Cecchino `/monitoraggio-segno-1` + API `/api/cecchino/home-wins` sulla co
 
 Facade + Today `goal_intensity_v5` + readiness + API canoniche + export **v10** + workspace FE (no research tab). Bundle frozen invariato. Signals blocked. Doc: `docs/SOT_PREDICTOR_GOAL_INTENSITY_V5_MONITORING.md`.
 
+## Hotfix — Balance v11 export packaging (2026-07-21)
+
+Pacchetto forensic Balance v11 autosufficiente: readiness reale nel pack (non TypeError), CSV history/governance, audit `partial_collecting` con campione prospettico in raccolta. Doc: `HANDOFF_PER_CHATGPT_BALANCE_V11_EXPORT_PACKAGING_FIX.md`.
+
 ## Micro-fix — Goal v5 monitoring + export v11 (2026-07-21)
 
 Registry dimensioni Goal, adapter monitoring, export forensic **v11**, riconciliazione Balance monitoring/empirical, FE overview/dimensioni/readiness. Formule invariate. Doc: `HANDOFF_PER_CHATGPT_GOAL_V5_FINAL_MONITORING_CONSISTENCY_FIX.md`.

@@ -309,10 +309,11 @@ def test_balance_readiness_export_placeholders_cover_required_files():
         "balance_readiness_gates.csv",
         "balance_pillar_readiness.json",
         "balance_prospective_progress.json",
-        "balance_readiness_history.json",
+        "balance_readiness_history.csv",
         "balance_current_decision.json",
         "balance_decision_contract.json",
         "balance_prospective_collection_health.json",
+        "balance_governance_decisions.csv",
         "metadata.json",
     ):
         assert name in files

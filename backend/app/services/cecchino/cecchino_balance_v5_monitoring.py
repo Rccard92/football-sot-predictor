@@ -847,6 +847,7 @@ def build_balance_module_overview_v2(
     hist_diag = 0
     reconstructed = 0
     timestamp_verified = 0
+    last_snapshot_at: str | None = None
     for fx in fixtures:
         resolved = resolve_balance_v5_monitoring_snapshot(fx)
         if resolved.get("mode") == "unavailable":
@@ -855,8 +856,15 @@ def build_balance_module_overview_v2(
         cohort = resolved.get("source_cohort")
         payload = resolved.get("payload") if isinstance(resolved.get("payload"), dict) else {}
         snap_ts = payload.get("snapshot_timestamp")
-        if snap_ts and (_odds_meta_verified_pre_kickoff(fx) or payload.get("pre_match_verified") is True):
+        verified_ts = snap_ts and (
+            _odds_meta_verified_pre_kickoff(fx) or payload.get("pre_match_verified") is True
+        )
+        if verified_ts:
             timestamp_verified += 1
+            if cohort == COHORT_PROSPECTIVE and snap_ts:
+                snap_str = str(snap_ts)
+                if last_snapshot_at is None or snap_str > last_snapshot_at:
+                    last_snapshot_at = snap_str
         if cohort == COHORT_PROSPECTIVE:
             prospective += 1
         elif cohort in (
@@ -925,7 +933,7 @@ def build_balance_module_overview_v2(
                 COHORT_HISTORICAL_PERSISTED_VERIFIED: hist_verified,
                 COHORT_HISTORICAL_DIAGNOSTIC: hist_diag,
             },
-            "last_snapshot_at": None,
+            "last_snapshot_at": last_snapshot_at,
             "next_review_at": None,
             "warnings": warnings,
         }

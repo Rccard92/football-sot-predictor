@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Hotfix — Balance v11 export packaging (2026-07-21)
+
+- Causa: pacchetto forensic Balance includeva readiness con `TypeError` (filtri `date` non JSON-serializzabili via `make_json_safe`) e CSV history/governance assenti dopo fail-soft esterno.
+- Fix: builder readiness condiviso dossier/forensic, `_serialize_filters`, placeholder schema-complete, audit `partial_collecting`, `last_snapshot_at` prospettico.
+- Formule/policy/dataset/Signals invariati.
+
 ## Micro-fix — Goal v5 monitoring + export v11 (2026-07-21)
 
 - Goal: registry dimensioni OP/DV/MT/OV, adapter monitoring canonico (`completed_n`/`pending_n` int), coverage global/periodo, settlement con reason codes + cache invalidation.

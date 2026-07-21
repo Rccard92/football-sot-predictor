@@ -191,6 +191,16 @@ def _parse_filters(
     }
 
 
+def _serialize_filters(filters: dict[str, Any]) -> dict[str, Any]:
+    df = filters.get("date_from")
+    dt = filters.get("date_to")
+    return {
+        "date_from": df.isoformat() if isinstance(df, date) else df,
+        "date_to": dt.isoformat() if isinstance(dt, date) else dt,
+        "competition_id": filters.get("competition_id"),
+    }
+
+
 def _max_updated_at(db: Session) -> str | None:
     v = db.query(func.max(CecchinoBalanceV5Evaluation.updated_at)).scalar()
     return v.isoformat() if v is not None else None
@@ -1098,7 +1108,7 @@ def build_balance_readiness_overview(
             "dataset_version": BALANCE_EMPIRICAL_DATASET_VERSION,
             "analysis_version": BALANCE_EMPIRICAL_ANALYSIS_VERSION,
             "policy": build_balance_readiness_policy_payload(),
-            "filters": filters,
+            "filters": _serialize_filters(filters),
             "coverage": {
                 "historical_diagnostic": hist_n,
                 "prospective_persisted": prosp_n,
@@ -1456,7 +1466,9 @@ def list_balance_readiness_history(
     )
     items = [
         {
-            "snapshot_date": r.snapshot_date.isoformat(),
+            "snapshot_date": (
+                r.snapshot_date.isoformat() if r.snapshot_date is not None else None
+            ),
             "prospective_settled": r.prospective_settled,
             "prospective_days": r.prospective_days,
             "temporal_folds": r.temporal_folds,
@@ -1467,6 +1479,168 @@ def list_balance_readiness_history(
         for r in rows
     ]
     return make_json_safe({"items": items, "count": len(items)})
+
+
+BALANCE_READINESS_HISTORY_CSV_FIELDS = [
+    "snapshot_date",
+    "prospective_settled",
+    "prospective_days",
+    "temporal_folds",
+    "scientific_maturity",
+    "current_decision",
+    "readiness_hash",
+]
+
+BALANCE_GOVERNANCE_CSV_FIELDS = [
+    "id",
+    "created_at",
+    "decision",
+    "decision_status",
+    "decision_reason",
+    "governance_version",
+    "policy_version",
+    "requested_by",
+    "confirmed_by",
+    "evidence_snapshot_hash",
+]
+
+BALANCE_READINESS_GATES_CSV_FIELDS = [
+    "category",
+    "key",
+    "label_it",
+    "status",
+    "value",
+    "threshold",
+    "numerator",
+    "denominator",
+    "promotion_blocking",
+    "evidence_scope",
+    "reason_codes",
+]
+
+
+def list_balance_governance_decisions(
+    db: Session,
+    *,
+    limit: int = 200,
+) -> dict[str, Any]:
+    from app.models.cecchino_balance_v5_governance_decision import (
+        CecchinoBalanceV5GovernanceDecision,
+    )
+
+    try:
+        rows_orm = (
+            db.query(CecchinoBalanceV5GovernanceDecision)
+            .order_by(CecchinoBalanceV5GovernanceDecision.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+    except Exception:
+        rows_orm = []
+    items = [
+        {
+            "id": r.id,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "decision": r.decision,
+            "decision_status": r.decision_status,
+            "decision_reason": r.decision_reason,
+            "governance_version": r.governance_version,
+            "policy_version": r.policy_version,
+            "requested_by": r.requested_by,
+            "confirmed_by": r.confirmed_by,
+            "evidence_snapshot_hash": r.evidence_snapshot_hash,
+        }
+        for r in rows_orm
+    ]
+    return make_json_safe({"items": items, "count": len(items)})
+
+
+def build_balance_readiness_gate_csv_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    gate_rows: list[dict[str, Any]] = []
+    for category, block in (
+        ("technical", report.get("technical_gates") or {}),
+        ("scientific", report.get("scientific_gates") or {}),
+    ):
+        for g in block.get("gates") or []:
+            if not isinstance(g, dict):
+                continue
+            gate_rows.append(
+                {
+                    "category": g.get("category") or category,
+                    "key": g.get("key"),
+                    "label_it": g.get("label_it"),
+                    "status": g.get("status"),
+                    "value": g.get("value"),
+                    "threshold": g.get("threshold"),
+                    "numerator": g.get("numerator"),
+                    "denominator": g.get("denominator"),
+                    "promotion_blocking": g.get("promotion_blocking"),
+                    "evidence_scope": g.get("evidence_scope"),
+                    "reason_codes": "|".join(
+                        str(c) for c in (g.get("reason_codes") or [])
+                    ),
+                }
+            )
+    return gate_rows
+
+
+def build_balance_readiness_pack_payload(
+    db: Session,
+    *,
+    date_from: date | str | None = None,
+    date_to: date | str | None = None,
+    competition_id: int | None = None,
+) -> dict[str, Any]:
+    """Payload canonico condiviso dossier + forensic pack."""
+    filters = _parse_filters(
+        date_from=date_from, date_to=date_to, competition_id=competition_id
+    )
+    return make_json_safe(
+        {
+            "filters": _serialize_filters(filters),
+            "report": build_balance_readiness_full_report(db, filters=filters),
+            "history": list_balance_readiness_history(
+                db, competition_id=competition_id
+            ),
+            "governance": list_balance_governance_decisions(db, limit=200),
+        }
+    )
+
+
+def build_balance_readiness_forensic_file_payload(
+    pack: dict[str, Any],
+) -> dict[str, Any]:
+    """Mappa file forensic readiness (contenuto pre-serializzazione)."""
+    report = pack.get("report") or {}
+    overview = report.get("overview") or {}
+    history_items = list((pack.get("history") or {}).get("items") or [])
+    governance_items = list((pack.get("governance") or {}).get("items") or [])
+    return {
+        "balance_readiness_overview.json": overview,
+        "balance_readiness_policy.json": report.get("policy")
+        or build_balance_readiness_policy_payload(),
+        "balance_readiness_gates.csv": build_balance_readiness_gate_csv_rows(report),
+        "balance_pillar_readiness.json": report.get("pillars") or {},
+        "balance_prospective_progress.json": report.get("prospective_progress") or {},
+        "balance_readiness_history.csv": history_items,
+        "balance_current_decision.json": report.get("current_decision")
+        or {
+            "decision": overview.get("current_decision"),
+            "signals_integration_status": overview.get("signals_integration_status"),
+        },
+        "balance_decision_contract.json": report.get("decision_contract")
+        or build_balance_decision_contract(),
+        "balance_prospective_collection_health.json": report.get(
+            "prospective_collection_health"
+        )
+        or {},
+        "balance_governance_decisions.csv": governance_items,
+        "metadata.json": {
+            "readiness_version": BALANCE_READINESS_VERSION,
+            "policy_version": BALANCE_READINESS_POLICY_VERSION,
+            "filters": pack.get("filters") or {},
+        },
+    }
 
 
 def build_balance_empirical_reconciliation(
@@ -1596,11 +1770,15 @@ def build_balance_readiness_dossier_files(
     """File per ZIP dossier readiness dedicato."""
     from fastapi.encoders import jsonable_encoder
 
-    filters = _parse_filters(
-        date_from=date_from, date_to=date_to, competition_id=competition_id
+    pack = build_balance_readiness_pack_payload(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
     )
-    report = build_balance_readiness_full_report(db, filters=filters)
-    history = list_balance_readiness_history(db, competition_id=competition_id)
+    report = pack.get("report") or {}
+    history = pack.get("history") or {}
+    filters = pack.get("filters") or {}
 
     def _jb(obj: Any) -> bytes:
         encoded = jsonable_encoder(make_json_safe(obj))

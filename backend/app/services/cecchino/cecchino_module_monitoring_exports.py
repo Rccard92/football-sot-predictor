@@ -794,8 +794,20 @@ def _build_export_audit(
         prospective = 0
         cohorts = meta.get("source_cohorts") or {}
         if isinstance(cohorts, dict):
-            prospective = int(cohorts.get("prospective_persisted") or 0)
-        if exported_row_count > 0 and prospective == 0:
+            prospective = int(
+                cohorts.get("prospective_persisted")
+                or cohorts.get("prospective")
+                or 0
+            )
+        prosp_settled = int(meta.get("prospective_settled_count", 0) or 0)
+        readiness_maturity = str(meta.get("readiness_scientific_maturity") or "")
+        if hard_failure:
+            scientific_status = "fail"
+        elif exported_row_count > 0 and prospective > 0 and prosp_settled == 0:
+            scientific_status = "partial_collecting"
+        elif readiness_maturity == "prospective_collecting":
+            scientific_status = "partial_collecting"
+        elif exported_row_count > 0 and prospective == 0:
             scientific_status = "partial_diagnostic"
         elif exported_row_count > 0 and ts_verified == 0:
             scientific_status = "exploratory"
@@ -2153,8 +2165,11 @@ def _build_balance_readiness_export_placeholders(
     competition_id: int | None,
     error: str,
 ) -> dict[str, bytes]:
-    """Garantisce i 9 file readiness anche in caso di fallimento totale."""
+    """Garantisce tutti i file readiness dello schema anche in caso di fallimento totale."""
     from app.services.cecchino.cecchino_balance_v5_readiness import (
+        BALANCE_GOVERNANCE_CSV_FIELDS,
+        BALANCE_READINESS_GATES_CSV_FIELDS,
+        BALANCE_READINESS_HISTORY_CSV_FIELDS,
         build_balance_decision_contract,
     )
     from app.services.cecchino.cecchino_balance_v5_readiness_policy import (
@@ -2163,7 +2178,7 @@ def _build_balance_readiness_export_placeholders(
         build_balance_readiness_policy_payload,
     )
 
-    err_payload = {"status": "unavailable", "error": error}
+    err_payload = {"status": "unavailable", "error": error, "error_code": error}
     filters = {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -2174,17 +2189,19 @@ def _build_balance_readiness_export_placeholders(
         "policy_version": BALANCE_READINESS_POLICY_VERSION,
         "filters": filters,
         "export_error": error,
+        "export_error_code": error,
     }
     return {
         "balance_readiness_overview.json": _json_bytes(err_payload),
         "balance_readiness_policy.json": _json_bytes(build_balance_readiness_policy_payload()),
-        "balance_readiness_gates.csv": _csv_bom([], ["category", "key", "status"]),
+        "balance_readiness_gates.csv": _csv_bom([], BALANCE_READINESS_GATES_CSV_FIELDS),
         "balance_pillar_readiness.json": _json_bytes(err_payload),
         "balance_prospective_progress.json": _json_bytes(err_payload),
-        "balance_readiness_history.json": _json_bytes({"items": [], "count": 0, "error": error}),
+        "balance_readiness_history.csv": _csv_bom([], BALANCE_READINESS_HISTORY_CSV_FIELDS),
         "balance_current_decision.json": _json_bytes(err_payload),
         "balance_decision_contract.json": _json_bytes(build_balance_decision_contract()),
         "balance_prospective_collection_health.json": _json_bytes(err_payload),
+        "balance_governance_decisions.csv": _csv_bom([], BALANCE_GOVERNANCE_CSV_FIELDS),
         "metadata.json": _json_bytes(meta),
     }
 
@@ -2195,24 +2212,20 @@ def _build_balance_readiness_export_files(
     date_from: date,
     date_to: date,
     competition_id: int | None,
-) -> dict[str, bytes]:
-    """File readiness/governance Step 2C — fail-soft."""
-    from app.models.cecchino_balance_v5_governance_decision import (
-        CecchinoBalanceV5GovernanceDecision,
-    )
+) -> tuple[dict[str, bytes], dict[str, Any]]:
+    """File readiness/governance Step 2C — builder canonico condiviso con dossier."""
     from app.services.cecchino.cecchino_balance_v5_readiness import (
-        build_balance_decision_contract,
+        BALANCE_GOVERNANCE_CSV_FIELDS,
+        BALANCE_READINESS_GATES_CSV_FIELDS,
+        BALANCE_READINESS_HISTORY_CSV_FIELDS,
         build_balance_prospective_collection_health,
-        build_balance_readiness_full_report,
-        list_balance_readiness_history,
-    )
-    from app.services.cecchino.cecchino_balance_v5_readiness_policy import (
-        BALANCE_READINESS_POLICY_VERSION,
-        build_balance_readiness_policy_payload,
+        build_balance_readiness_forensic_file_payload,
+        build_balance_readiness_pack_payload,
     )
 
+    readiness_meta: dict[str, Any] = {}
     try:
-        report = build_balance_readiness_full_report(
+        pack = build_balance_readiness_pack_payload(
             db,
             date_from=date_from,
             date_to=date_to,
@@ -2220,157 +2233,109 @@ def _build_balance_readiness_export_files(
         )
     except Exception as exc:
         logger.warning(
-            "balance_readiness_report_failed error_code=%s", type(exc).__name__
+            "balance_readiness_export_step_failed step=pack_payload error_code=%s",
+            type(exc).__name__,
         )
-        report = {
-            "overview": {"status": "unavailable", "error": type(exc).__name__},
-            "technical_gates": {"gates": []},
-            "scientific_gates": {"gates": []},
-            "pillars": {},
-            "prospective_progress": {},
-            "current_decision": {},
-            "decision_contract": build_balance_decision_contract(),
-            "prospective_collection_health": {"status": "unavailable"},
-            "policy": build_balance_readiness_policy_payload(),
-        }
-
-    history = list_balance_readiness_history(db, competition_id=competition_id)
-    hist_items = list(history.get("items") or [])
-
-    gate_rows: list[dict[str, Any]] = []
-    for category, block in (
-        ("technical", report.get("technical_gates") or {}),
-        ("scientific", report.get("scientific_gates") or {}),
-    ):
-        for g in block.get("gates") or []:
-            if not isinstance(g, dict):
-                continue
-            gate_rows.append(
-                {
-                    "category": g.get("category") or category,
-                    "key": g.get("key"),
-                    "label_it": g.get("label_it"),
-                    "status": g.get("status"),
-                    "value": g.get("value"),
-                    "threshold": g.get("threshold"),
-                    "numerator": g.get("numerator"),
-                    "denominator": g.get("denominator"),
-                    "promotion_blocking": g.get("promotion_blocking"),
-                    "evidence_scope": g.get("evidence_scope"),
-                    "reason_codes": "|".join(g.get("reason_codes") or []),
-                }
-            )
+        return (
+            _build_balance_readiness_export_placeholders(
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                error=type(exc).__name__,
+            ),
+            readiness_meta,
+        )
 
     try:
-        dec_rows_orm = (
-            db.query(CecchinoBalanceV5GovernanceDecision)
-            .order_by(CecchinoBalanceV5GovernanceDecision.created_at.desc())
-            .limit(200)
-            .all()
+        file_payload = build_balance_readiness_forensic_file_payload(pack)
+    except Exception as exc:
+        logger.warning(
+            "balance_readiness_export_step_failed step=forensic_payload error_code=%s",
+            type(exc).__name__,
         )
-    except Exception:
-        dec_rows_orm = []
-    dec_rows = [
-        {
-            "id": r.id,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "decision": r.decision,
-            "decision_status": r.decision_status,
-            "decision_reason": r.decision_reason,
-            "governance_version": r.governance_version,
-            "policy_version": r.policy_version,
-            "requested_by": r.requested_by,
-            "confirmed_by": r.confirmed_by,
-            "evidence_snapshot_hash": r.evidence_snapshot_hash,
-        }
-        for r in dec_rows_orm
-    ]
+        return (
+            _build_balance_readiness_export_placeholders(
+                date_from=date_from,
+                date_to=date_to,
+                competition_id=competition_id,
+                error=type(exc).__name__,
+            ),
+            readiness_meta,
+        )
 
+    report = pack.get("report") or {}
     overview = report.get("overview") or {}
-    return {
-        "balance_readiness_overview.json": _json_bytes(overview),
-        "balance_readiness_policy.json": _json_bytes(
-            report.get("policy") or build_balance_readiness_policy_payload()
-        ),
-        "balance_readiness_gates.csv": _csv_bom(
-            gate_rows,
-            [
-                "category",
-                "key",
-                "label_it",
-                "status",
-                "value",
-                "threshold",
-                "numerator",
-                "denominator",
-                "promotion_blocking",
-                "evidence_scope",
-                "reason_codes",
-            ],
-        ),
-        "balance_pillar_readiness.json": _json_bytes(report.get("pillars") or {}),
-        "balance_prospective_progress.json": _json_bytes(
-            report.get("prospective_progress") or {}
-        ),
-        "balance_readiness_history.csv": _csv_bom(
-            hist_items,
-            [
-                "snapshot_date",
-                "prospective_settled",
-                "prospective_days",
-                "temporal_folds",
-                "scientific_maturity",
-                "current_decision",
-                "readiness_hash",
-            ],
-        ),
-        "balance_current_decision.json": _json_bytes(
-            report.get("current_decision")
-            or {
-                "decision": overview.get("current_decision"),
-                "signals_integration_status": overview.get(
-                    "signals_integration_status"
-                ),
-            }
-        ),
-        "balance_decision_contract.json": _json_bytes(
-            report.get("decision_contract") or build_balance_decision_contract()
-        ),
-        "balance_prospective_collection_health.json": _json_bytes(
-            report.get("prospective_collection_health")
-            or build_balance_prospective_collection_health(
-                db,
-                filters={
-                    "date_from": date_from,
-                    "date_to": date_to,
-                    "competition_id": competition_id,
-                },
+    if not file_payload.get("balance_prospective_collection_health.json"):
+        try:
+            file_payload["balance_prospective_collection_health.json"] = (
+                report.get("prospective_collection_health")
+                or build_balance_prospective_collection_health(
+                    db, filters=pack.get("filters") or {}
+                )
             )
-        ),
-        "balance_governance_decisions.csv": _csv_bom(
-            dec_rows,
-            [
-                "id",
-                "created_at",
-                "decision",
-                "decision_status",
-                "decision_reason",
-                "governance_version",
-                "policy_version",
-                "requested_by",
-                "confirmed_by",
-                "evidence_snapshot_hash",
-            ],
-        ),
-        "balance_readiness_meta.json": _json_bytes(
-            {
-                "policy_version": BALANCE_READINESS_POLICY_VERSION,
-                "date_from": date_from.isoformat(),
-                "date_to": date_to.isoformat(),
-                "competition_id": competition_id,
+        except Exception as exc:
+            logger.warning(
+                "balance_readiness_export_step_failed step=collection_health error_code=%s",
+                type(exc).__name__,
+            )
+            file_payload["balance_prospective_collection_health.json"] = {
+                "status": "unavailable",
+                "error_code": type(exc).__name__,
             }
+
+    files: dict[str, bytes] = {}
+    files["balance_readiness_overview.json"] = _json_bytes(
+        file_payload["balance_readiness_overview.json"]
+    )
+    files["balance_readiness_policy.json"] = _json_bytes(
+        file_payload["balance_readiness_policy.json"]
+    )
+    files["balance_readiness_gates.csv"] = _csv_bom(
+        file_payload["balance_readiness_gates.csv"],
+        BALANCE_READINESS_GATES_CSV_FIELDS,
+    )
+    files["balance_pillar_readiness.json"] = _json_bytes(
+        file_payload["balance_pillar_readiness.json"]
+    )
+    files["balance_prospective_progress.json"] = _json_bytes(
+        file_payload["balance_prospective_progress.json"]
+    )
+    files["balance_readiness_history.csv"] = _csv_bom(
+        file_payload["balance_readiness_history.csv"],
+        BALANCE_READINESS_HISTORY_CSV_FIELDS,
+    )
+    files["balance_current_decision.json"] = _json_bytes(
+        file_payload["balance_current_decision.json"]
+    )
+    files["balance_decision_contract.json"] = _json_bytes(
+        file_payload["balance_decision_contract.json"]
+    )
+    files["balance_prospective_collection_health.json"] = _json_bytes(
+        file_payload["balance_prospective_collection_health.json"]
+    )
+    files["balance_governance_decisions.csv"] = _csv_bom(
+        file_payload["balance_governance_decisions.csv"],
+        BALANCE_GOVERNANCE_CSV_FIELDS,
+    )
+    files["metadata.json"] = _json_bytes(file_payload["metadata.json"])
+
+    progress = report.get("prospective_progress") or {}
+    readiness_meta = {
+        "readiness_scientific_maturity": overview.get("scientific_maturity"),
+        "readiness_current_decision": overview.get("current_decision"),
+        "readiness_signals_integration_status": overview.get(
+            "signals_integration_status"
         ),
+        "prospective_settled_count": int(
+            (progress.get("ratios") or {})
+            .get("prospective_settled", {})
+            .get("numerator")
+            or overview.get("prospective_settled")
+            or 0
+        ),
+        "prospective_pending_count": int(overview.get("prospective_pending") or 0),
     }
+    return files, readiness_meta
 
 
 def _build_balance_files(
@@ -2408,27 +2373,13 @@ def _build_balance_files(
         logger.warning(
             "balance_analysis_export_failed error_code=%s", type(exc).__name__
         )
-    try:
-        files.update(
-            _build_balance_readiness_export_files(
-                db,
-                date_from=date_from,
-                date_to=date_to,
-                competition_id=competition_id,
-            )
-        )
-    except Exception as exc:
-        logger.warning(
-            "balance_readiness_export_failed error_code=%s", type(exc).__name__
-        )
-        files.update(
-            _build_balance_readiness_export_placeholders(
-                date_from=date_from,
-                date_to=date_to,
-                competition_id=competition_id,
-                error=type(exc).__name__,
-            )
-        )
+    readiness_files, readiness_meta = _build_balance_readiness_export_files(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        competition_id=competition_id,
+    )
+    files.update(readiness_files)
     try:
         from app.services.cecchino.cecchino_balance_v5_readiness import (
             build_balance_empirical_reconciliation,
@@ -2524,7 +2475,9 @@ def _build_balance_files(
         "source_total_rows": rows,
         "exported_total_rows": rows,
         "timestamp_verified_count": timestamp_verified,
+        "last_snapshot_at": overview.get("last_snapshot_at"),
         "truncated": False,
+        **readiness_meta,
     }
 
 
