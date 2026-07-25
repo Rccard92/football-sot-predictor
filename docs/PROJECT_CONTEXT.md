@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Analisi interattiva formule Segnali Cecchino (2026-07-25)
+
+Modalità debug sulla Matrice SI/NO: pulsante `ƒx Analisi segnali` (lazy), badge SI/NO cliccabili, popup condition-trace, download `cecchino-signals-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/signal-explanations` (26 celle, diagnostic_re_evaluation_only). Celle `—` e Indice affidabilità non cliccabili. Formule segnali invariate; risultato persistito = fonte di verità.
+
 ## Hotfix — Analisi formule interattiva Pannello KPI (2026-07-25)
 
 Modalità debug umana sul Pannello KPI Cecchino Today: pulsante `ƒx Analisi formule` (lazy), celle analizzabili cliccabili, popup unificato, download `cecchino-kpi-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/kpi-explanations` snapshot-only (`no_model_recalculation`). Escluse SEGNO e QUOTA BOOK. Impatto nullo a riposo. Formule KPI/Balance/GI/Signals invariate.

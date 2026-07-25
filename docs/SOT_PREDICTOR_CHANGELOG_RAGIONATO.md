@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Analisi interattiva formule Segnali Cecchino (2026-07-25)
+
+- UI Matrice SI/NO: `ƒx Analisi segnali` / download audit; solo badge SI/NO cliccabili; Affidabilità invariata.
+- API `GET .../signal-explanations`: registry 26 celle, condition trace AND/OR, parity con `build_signals_matrix`, nessun effetto operativo.
+- Formule/soglie/operatori segnali invariati; stored_result resta fonte di verità.
+
 ## Feat — Analisi formule interattiva Pannello KPI (2026-07-25)
 
 - UI: pulsanti testata `ƒx Analisi formule` / `Scarica audit KPI`; celle analizzabili solo con modalità attiva; SEGNO e QUOTA BOOK esclusi; Affidabilità legacy preservata a riposo.

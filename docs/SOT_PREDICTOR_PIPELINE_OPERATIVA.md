@@ -1,5 +1,13 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Analisi formule Segnali Cecchino (2026-07-25)
+
+1. Apertura partita: **nessuna** richiesta `signal-explanations`.
+2. `ƒx Analisi segnali` → una sola `GET /api/cecchino/today/{id}/signal-explanations` (cache per fixture).
+3. Cliccabili: solo badge `SI`/`NO`; `—` esclusi; Indice affidabilità invariato.
+4. Download `cecchino-signals-audit-{provider_fixture_id}.json` (lazy anche senza mode on).
+5. Audit diagnostico: `build_signals_matrix` in-memory + condition trace; non aggiorna DB/segnali.
+
 ## Analisi formule Pannello KPI (2026-07-25)
 
 1. Apertura partita Today: **nessuna** richiesta `kpi-explanations` (impatto nullo).

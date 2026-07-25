@@ -1389,6 +1389,107 @@ export async function getKpiExplanations(
   )
 }
 
+export type CecchinoSignalConditionLeaf = {
+  condition_key: string
+  label: string
+  left_label: string
+  left_value: unknown
+  left_display?: string
+  operator: string
+  right_label: string
+  right_value: unknown
+  right_display?: string
+  expression: string
+  passed: boolean
+  source_path: string
+}
+
+export type CecchinoSignalLogicGroup = {
+  operator: 'AND' | 'OR' | string
+  group_key?: string
+  label?: string
+  conditions?: CecchinoSignalConditionLeaf[]
+  branches?: CecchinoSignalLogicGroup[]
+  result?: string
+}
+
+export type CecchinoSignalExplanationInput = {
+  excel_name?: string
+  key: string
+  label: string
+  value: unknown
+  display_value?: string
+  source_path: string
+  source_type?: string
+  derivation?: string
+}
+
+export type CecchinoSignalCellExplanation = {
+  row_key: string
+  row_label: string
+  column_key: string
+  column_label: string
+  source_cell: string
+  stored_result: string | null
+  canonical_audit_result: string | null
+  condition_trace_result: string | null
+  consistency: { status: string; stored?: string | null; canonical?: string | null; trace?: string | null }
+  description: string
+  purpose: string
+  target_market?: string
+  excel_formula: string
+  formula_symbolic: string
+  formula_applied: string[]
+  logic: CecchinoSignalLogicGroup
+  passed_conditions: CecchinoSignalConditionLeaf[]
+  failed_conditions: CecchinoSignalConditionLeaf[]
+  reason_summary: string
+  inputs: CecchinoSignalExplanationInput[]
+  warnings?: string[]
+  si_meaning?: string
+  no_meaning?: string
+}
+
+export type CecchinoSignalExplanationsResponse = {
+  status: string
+  code?: string
+  message?: string
+  audit_version?: string
+  module?: string
+  generated_at?: string
+  no_operational_recalculation?: boolean
+  diagnostic_re_evaluation_only?: boolean
+  fixture?: {
+    today_fixture_id: number
+    local_fixture_id?: number | null
+    provider_fixture_id?: number | null
+    home_team?: string | null
+    away_team?: string | null
+    kickoff?: string | null
+    scan_date?: string | null
+  }
+  matrix?: {
+    source?: string
+    status?: string
+    inputs?: Record<string, unknown>
+    reliability?: Record<string, unknown>
+    excel_mapping?: Record<string, unknown>
+    warnings?: string[]
+  }
+  active_cell_count?: number
+  excluded_cells?: string
+  cells: Record<string, CecchinoSignalCellExplanation>
+  warnings?: string[]
+}
+
+export async function getSignalExplanations(
+  todayFixtureId: number,
+): Promise<CecchinoSignalExplanationsResponse> {
+  return requestJson<CecchinoSignalExplanationsResponse>(
+    `/api/cecchino/today/${todayFixtureId}/signal-explanations`,
+  )
+}
+
 export async function getPicchettiDebugJson(
   todayFixtureId: number,
 ): Promise<CecchinoPicchettiDebugResponse> {

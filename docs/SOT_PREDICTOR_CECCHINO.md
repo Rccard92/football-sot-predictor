@@ -2,6 +2,18 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Analisi interattiva formule Segnali Cecchino (2026-07-25)
+
+| Elemento | Dettaglio |
+|----------|-----------|
+| Attivazione | `ƒx Analisi segnali` (lazy, max 1 req/fixture) |
+| Download | `cecchino-signals-audit-{provider_fixture_id}.json` |
+| Endpoint | `GET /api/cecchino/today/{id}/signal-explanations` |
+| Celle | 26 attive SI/NO; `—` escluse |
+| Trace | AND/OR + dipendenze (12→Over E, Scala→1/2) |
+| Verità | `signals_matrix` persistita; audit diagnostico separato |
+| Invariato | `cecchino_signals_matrix.py`, monitoraggio, settlement, layout a riposo |
+
 ## Analisi formule interattiva Pannello KPI (2026-07-25)
 
 Modalità umana sul Pannello KPI Today (impatto nullo a riposo):

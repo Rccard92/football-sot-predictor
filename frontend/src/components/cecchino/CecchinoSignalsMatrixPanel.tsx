@@ -3,9 +3,24 @@ import type { CecchinoSignalsMatrix } from '../../lib/cecchinoApi'
 type Props = {
   matrix: CecchinoSignalsMatrix
   variant?: 'default' | 'embedded'
+  analysisMode?: boolean
+  onOpenCell?: (rowKey: string, columnKey: string) => void
+  hasExplanation?: (rowKey: string, columnKey: string) => boolean
 }
 
-function SiNoBadge({ value, embedded }: { value: string; embedded?: boolean }) {
+function SiNoBadge({
+  value,
+  embedded,
+  interactive,
+  onClick,
+  ariaLabel,
+}: {
+  value: string
+  embedded?: boolean
+  interactive?: boolean
+  onClick?: () => void
+  ariaLabel?: string
+}) {
   if (value !== 'SI' && value !== 'NO') {
     return <span className="text-slate-400">—</span>
   }
@@ -17,13 +32,22 @@ function SiNoBadge({ value, embedded }: { value: string; embedded?: boolean }) {
     : isSi
       ? 'bg-emerald-100 text-emerald-800'
       : 'bg-slate-100 text-slate-600'
-  return (
-    <span
-      className={`inline-block min-w-[2.25rem] rounded-md px-2 py-0.5 text-center text-[11px] font-semibold uppercase ring-1 ${base}`}
-    >
-      {value}
-    </span>
-  )
+  const className = `inline-block min-w-[2.25rem] rounded-md px-2 py-0.5 text-center text-[11px] font-semibold uppercase ring-1 ${base}`
+
+  if (interactive && onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={ariaLabel}
+        className={`${className} cursor-pointer hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70`}
+      >
+        {value}
+      </button>
+    )
+  }
+
+  return <span className={className}>{value}</span>
 }
 
 function signalVal(signals: Record<string, string>, key: string): string {
@@ -34,7 +58,13 @@ function signalVal(signals: Record<string, string>, key: string): string {
 const EXCEL_COLS = ['excel_d', 'excel_e', 'excel_f', 'excel_g'] as const
 const EXCEL_HEADERS = ['Excel D', 'Excel E', 'Excel F', 'Excel G']
 
-export function CecchinoSignalsMatrixPanel({ matrix, variant = 'default' }: Props) {
+export function CecchinoSignalsMatrixPanel({
+  matrix,
+  variant = 'default',
+  analysisMode = false,
+  onOpenCell,
+  hasExplanation,
+}: Props) {
   const embedded = variant === 'embedded'
   const rows = matrix.rows ?? []
   const rel = matrix.reliability
@@ -43,6 +73,26 @@ export function CecchinoSignalsMatrixPanel({ matrix, variant = 'default' }: Prop
   const outerClass = embedded
     ? 'space-y-4'
     : 'space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm'
+
+  const renderBadge = (rowKey: string, columnKey: string, value: string, rowLabel: string) => {
+    const canOpen =
+      analysisMode &&
+      (value === 'SI' || value === 'NO') &&
+      (hasExplanation ? hasExplanation(rowKey, columnKey) : true)
+    return (
+      <SiNoBadge
+        value={value}
+        embedded={embedded}
+        interactive={canOpen}
+        onClick={canOpen ? () => onOpenCell?.(rowKey, columnKey) : undefined}
+        ariaLabel={
+          canOpen
+            ? `Apri analisi ${rowLabel}, ${columnKey}, risultato ${value}`
+            : undefined
+        }
+      />
+    )
+  }
 
   return (
     <div className={outerClass}>
@@ -79,22 +129,21 @@ export function CecchinoSignalsMatrixPanel({ matrix, variant = 'default' }: Prop
           <tbody>
             {rows.map((row) => {
               const sig = row.signals ?? {}
-              const scala =
-                row.key === 'one_x'
-                  ? signalVal(sig, 'scala_1x')
-                  : row.key === 'x_two'
-                    ? signalVal(sig, 'scala_x2')
-                    : '—'
+              const scalaKey =
+                row.key === 'one_x' ? 'scala_1x' : row.key === 'x_two' ? 'scala_x2' : null
+              const scala = scalaKey ? signalVal(sig, scalaKey) : '—'
               return (
                 <tr key={row.key} className="border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-3 py-2 font-medium text-slate-800">{row.label}</td>
                   {EXCEL_COLS.map((col) => (
                     <td key={col} className="px-3 py-2 text-center">
-                      <SiNoBadge value={signalVal(sig, col)} embedded={embedded} />
+                      {renderBadge(row.key, col, signalVal(sig, col), row.label)}
                     </td>
                   ))}
                   <td className="px-3 py-2 text-center">
-                    {scala !== '—' ? <SiNoBadge value={scala} embedded={embedded} /> : '—'}
+                    {scala !== '—' && scalaKey
+                      ? renderBadge(row.key, scalaKey, scala, row.label)
+                      : '—'}
                   </td>
                 </tr>
               )
