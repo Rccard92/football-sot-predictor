@@ -1,18 +1,24 @@
-import { useState } from 'react'
+import { useCallback, useState, type KeyboardEvent } from 'react'
 import type {
+  CecchinoBalanceExplanationsResponse,
+  CecchinoBalancePillarExplanation,
   CecchinoBalanceV5,
   CecchinoBalanceV5MarketPair,
   CecchinoBalanceV5Pillar,
   CecchinoBalanceV5SnapshotMeta,
   CecchinoFixtureIdentityConsistency,
 } from '../../lib/cecchinoTodayApi'
+import { getBalanceExplanations } from '../../lib/cecchinoTodayApi'
 import { formatBalanceNumber } from '../../utils/formatBalanceNumber'
+import { CecchinoBalancePillarAuditModal } from './CecchinoBalancePillarAuditModal'
 import { todayCard, todayCardPadding, todaySectionSubtitle, todaySectionTitle } from './cecchinoTodayStyles'
 
 type Props = {
   balance?: CecchinoBalanceV5 | null
   identityConsistency?: CecchinoFixtureIdentityConsistency | null
   snapshotMeta?: CecchinoBalanceV5SnapshotMeta | null
+  todayFixtureId?: number | null
+  providerFixtureId?: number | null
 }
 
 const PANEL_TITLE = 'Equilibrio vs Squilibrio v5'
@@ -31,6 +37,13 @@ const HIST_PARTIAL_TEXT =
   'Analisi basata sullo snapshot storico salvato. Alcuni metadati temporali legacy non sono disponibili e vengono indicati come non verificabili.'
 
 const PILLAR_ORDER = ['f36', 'dominance', 'draw_credibility', 'gap_coherence'] as const
+
+const CANONICAL_TO_AUDIT: Record<string, string> = {
+  f36: 'geometry',
+  dominance: 'conviction',
+  draw_credibility: 'draw_credibility',
+  gap_coherence: 'coherence_1_2',
+}
 
 const BADGE_LABEL: Record<string, string> = {
   official: 'Ufficiale',
@@ -189,14 +202,66 @@ function marketRowHasAnyData(pair: CecchinoBalanceV5MarketPair): boolean {
   )
 }
 
-function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; number: number }) {
+function downloadAuditJson(
+  payload: CecchinoBalanceExplanationsResponse,
+  providerFixtureId: number | null | undefined,
+) {
+  const id = providerFixtureId ?? payload.fixture?.provider_fixture_id ?? 'unknown'
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cecchino-balance-v5-audit-${id}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function PillarCard({
+  pillar,
+  number,
+  analysisActive,
+  onOpenAnalysis,
+}: {
+  pillar: CecchinoBalanceV5Pillar
+  number: number
+  analysisActive: boolean
+  onOpenAnalysis?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const note =
     pillar.key === 'draw_credibility'
       ? pillar.informational_note || DRAW_NOTE_FALLBACK
       : null
+
+  const interactiveClass = analysisActive
+    ? 'cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400'
+    : ''
+
+  const openAnalysis = () => {
+    if (analysisActive && onOpenAnalysis) onOpenAnalysis()
+  }
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!analysisActive) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      openAnalysis()
+    }
+  }
+
   return (
-    <article className={`${todayCard} ${todayCardPadding} flex flex-col gap-3`}>
+    <article
+      className={`${todayCard} ${todayCardPadding} flex flex-col gap-3 ${interactiveClass}`}
+      role={analysisActive ? 'button' : undefined}
+      tabIndex={analysisActive ? 0 : undefined}
+      aria-label={
+        analysisActive
+          ? `Apri analisi del Pilastro ${number}, ${pillar.title}`
+          : undefined
+      }
+      onClick={analysisActive ? openAnalysis : undefined}
+      onKeyDown={analysisActive ? onKeyDown : undefined}
+    >
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
@@ -237,7 +302,10 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
       <button
         type="button"
         className="self-start text-xs font-medium text-slate-600 underline-offset-2 hover:underline"
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
       >
         {open ? 'Nascondi componenti' : 'Mostra componenti'}
       </button>
@@ -259,7 +327,73 @@ function PillarCard({ pillar, number }: { pillar: CecchinoBalanceV5Pillar; numbe
   )
 }
 
-export function CecchinoBalanceV5Panel({ balance, identityConsistency, snapshotMeta }: Props) {
+export function CecchinoBalanceV5Panel({
+  balance,
+  identityConsistency,
+  snapshotMeta,
+  todayFixtureId,
+  providerFixtureId,
+}: Props) {
+  const [analysisMode, setAnalysisMode] = useState(false)
+  const [explanations, setExplanations] = useState<CecchinoBalanceExplanationsResponse | null>(
+    null,
+  )
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<CecchinoBalancePillarExplanation | null>(null)
+  const [analysisFixtureId, setAnalysisFixtureId] = useState(todayFixtureId)
+
+  if (analysisFixtureId !== todayFixtureId) {
+    setAnalysisFixtureId(todayFixtureId)
+    setAnalysisMode(false)
+    setExplanations(null)
+    setError(null)
+    setLoading(false)
+    setSelected(null)
+  }
+
+  const loadExplanations = useCallback(async (): Promise<CecchinoBalanceExplanationsResponse | null> => {
+    if (explanations) return explanations
+    if (todayFixtureId == null) return null
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await getBalanceExplanations(todayFixtureId)
+      if (res.status === 'error') {
+        setError(res.message || res.code || 'Errore caricamento audit Balance')
+        return null
+      }
+      setExplanations(res)
+      return res
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Errore caricamento audit Balance')
+      return null
+    } finally {
+      setLoading(false)
+    }
+  }, [explanations, todayFixtureId])
+
+  const toggleAnalysis = async () => {
+    if (analysisMode) {
+      setAnalysisMode(false)
+      setSelected(null)
+      return
+    }
+    const res = await loadExplanations()
+    if (res) setAnalysisMode(true)
+  }
+
+  const handleDownload = async () => {
+    const res = await loadExplanations()
+    if (res) downloadAuditJson(res, providerFixtureId)
+  }
+
+  const openPillar = (canonicalKey: string) => {
+    const auditKey = CANONICAL_TO_AUDIT[canonicalKey] ?? canonicalKey
+    const expl = explanations?.pillars?.[auditKey]
+    if (expl) setSelected(expl)
+  }
+
   if (!balance) {
     return (
       <section className={`${todayCard} ${todayCardPadding}`}>
@@ -291,10 +425,42 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency, snapshotM
 
   return (
     <section className="space-y-4">
-      <div>
-        <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
-        <p className={`mt-1 ${todaySectionSubtitle}`}>{PANEL_SUBTITLE}</p>
-        <p className="mt-1 text-xs text-slate-500">{INDEX_DISCLAIMER}</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className={todaySectionTitle}>{PANEL_TITLE}</h3>
+          <p className={`mt-1 ${todaySectionSubtitle}`}>{PANEL_SUBTITLE}</p>
+          <p className="mt-1 text-xs text-slate-500">{INDEX_DISCLAIMER}</p>
+          {error ? <p className="mt-2 text-xs text-amber-700">{error}</p> : null}
+          {analysisMode ? (
+            <p className="mt-2 text-xs text-slate-500">
+              Modalità analisi: clicca un pilastro per la formula
+            </p>
+          ) : null}
+        </div>
+        {todayFixtureId != null ? (
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => void toggleAnalysis()}
+              disabled={loading}
+              className={`rounded-md border px-2.5 py-1 text-[11px] font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-60 ${
+                analysisMode
+                  ? 'border-amber-300 bg-amber-50 text-amber-900'
+                  : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {loading ? 'Caricamento…' : analysisMode ? 'Analisi attiva' : 'ƒx Analisi pilastri'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownload()}
+              disabled={loading}
+              className="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:opacity-60"
+            >
+              Scarica audit Balance
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {showHistoricalBox ? (
@@ -320,7 +486,13 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency, snapshotM
 
       <div className="grid gap-3 md:grid-cols-2">
         {pillars.map((p, i) => (
-          <PillarCard key={p.key} pillar={p} number={i + 1} />
+          <PillarCard
+            key={p.key}
+            pillar={p}
+            number={i + 1}
+            analysisActive={analysisMode}
+            onOpenAnalysis={() => openPillar(p.key)}
+          />
         ))}
       </div>
 
@@ -393,6 +565,14 @@ export function CecchinoBalanceV5Panel({ balance, identityConsistency, snapshotM
           </p>
         ) : null}
       </div>
+
+      {selected ? (
+        <CecchinoBalancePillarAuditModal
+          explanation={selected}
+          sourceMode={explanations?.source_mode}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
     </section>
   )
 }

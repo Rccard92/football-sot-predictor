@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Analisi interattiva pilastri Balance v5 (2026-07-25)
+
+- UI Equilibrio vs Squilibrio v5: `ƒx Analisi pilastri` / download audit; card interattive solo in modalità attiva; `Mostra componenti` invariato.
+- API `GET .../balance-explanations`: quattro pilastri, formule canoniche, classification trace, consistency, source_mode; nessun effetto operativo.
+- Pilastro 3 chiaramente DESCITTIVO; risultato visualizzato resta fonte di verità; formule Balance invariate.
+
 ## Feat — Analisi interattiva formule Segnali Cecchino (2026-07-25)
 
 - UI Matrice SI/NO: `ƒx Analisi segnali` / download audit; solo badge SI/NO cliccabili; Affidabilità invariata.

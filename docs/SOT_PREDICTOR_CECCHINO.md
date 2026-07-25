@@ -2,6 +2,18 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Analisi interattiva pilastri Balance v5 (2026-07-25)
+
+| Elemento | Dettaglio |
+|----------|-----------|
+| Attivazione | `ƒx Analisi pilastri` (lazy, max 1 req/fixture) |
+| Download | `cecchino-balance-v5-audit-{provider_fixture_id}.json` |
+| Endpoint | `GET /api/cecchino/today/{id}/balance-explanations` |
+| Pilastri | Geometria, Convinzione, Credibilità X (DESCITTIVO), Coerenza 1/2 |
+| Source mode | `persisted_balance_v5_monitoring` / `derived_read_only_from_stored_snapshot` |
+| Verità | risultato visualizzato Balance; audit diagnostico separato |
+| Invariato | formule/soglie Balance, layout a riposo, `Mostra componenti` |
+
 ## Analisi interattiva formule Segnali Cecchino (2026-07-25)
 
 | Elemento | Dettaglio |

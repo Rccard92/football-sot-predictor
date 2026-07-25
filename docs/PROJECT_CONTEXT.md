@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Analisi interattiva pilastri Balance v5 (2026-07-25)
+
+Modalità debug su Equilibrio vs Squilibrio v5: pulsante `ƒx Analisi pilastri` (lazy), quattro card cliccabili solo con analisi attiva, popup audit per pilastro, download `cecchino-balance-v5-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/balance-explanations` (diagnostic_re_evaluation_only, source_mode persisted/derived). Pilastro 3 DESCITTIVO. `Mostra componenti` invariato. Formule Balance invariate; risultato visualizzato = fonte di verità.
+
 ## Feat — Analisi interattiva formule Segnali Cecchino (2026-07-25)
 
 Modalità debug sulla Matrice SI/NO: pulsante `ƒx Analisi segnali` (lazy), badge SI/NO cliccabili, popup condition-trace, download `cecchino-signals-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/signal-explanations` (26 celle, diagnostic_re_evaluation_only). Celle `—` e Indice affidabilità non cliccabili. Formule segnali invariate; risultato persistito = fonte di verità.

@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Analisi pilastri Balance v5 (2026-07-25)
+
+1. Apertura partita: **nessuna** richiesta `balance-explanations`.
+2. `ƒx Analisi pilastri` → una sola `GET /api/cecchino/today/{id}/balance-explanations` (cache per fixture).
+3. Con analisi attiva: quattro card cliccabili (pointer, hover shadow/ring, Enter/Space); a riposo layout invariato.
+4. `Mostra componenti` continua a espandere inline (`stopPropagation`, non apre il popup).
+5. Download `cecchino-balance-v5-audit-{provider_fixture_id}.json` (lazy anche senza mode on).
+6. Audit diagnostico read-only da snapshot; nessun aggiornamento DB/Balance/segnali.
+
 ## Analisi formule Segnali Cecchino (2026-07-25)
 
 1. Apertura partita: **nessuna** richiesta `signal-explanations`.

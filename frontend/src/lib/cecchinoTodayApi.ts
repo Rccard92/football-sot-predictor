@@ -1490,6 +1490,111 @@ export async function getSignalExplanations(
   )
 }
 
+export type CecchinoBalanceExplanationInput = {
+  key: string
+  label: string
+  value: unknown
+  display_value?: string
+  source_path: string
+  source_type?: string
+  derivation?: string
+}
+
+export type CecchinoBalanceExplanationComponent = {
+  key?: string
+  label?: string
+  value?: unknown
+  unit?: string | null
+  weight?: number | null
+  contribution?: number | null
+  source?: string | null
+}
+
+export type CecchinoBalanceClassificationTraceItem = {
+  class: string
+  condition: string
+  matched: boolean
+}
+
+export type CecchinoBalancePillarExplanation = {
+  pillar_key: string
+  pillar_number: number
+  title: string
+  status: string
+  classification_type?: string
+  badge?: string
+  question?: string
+  description?: string
+  purpose?: string
+  interpretation?: string
+  methodological_caution?: string
+  formula_symbolic?: string
+  formula_applied?: string[]
+  inputs?: CecchinoBalanceExplanationInput[]
+  components?: CecchinoBalanceExplanationComponent[]
+  displayed_result?: {
+    value?: number | null
+    display_value?: string | null
+    class?: string | null
+    direction?: string | null
+  }
+  canonical_audit_result?: {
+    value?: number | null
+    class?: string | null
+    direction?: string | null
+    [key: string]: unknown
+  }
+  consistency?: {
+    status: string
+    delta?: number | null
+  }
+  classification_trace?: CecchinoBalanceClassificationTraceItem[]
+  reason_summary?: string
+  formula_version?: string
+  source_paths?: string[]
+  warnings?: string[]
+}
+
+export type CecchinoBalanceExplanationsResponse = {
+  status: string
+  code?: string
+  message?: string
+  audit_version?: string
+  module?: string
+  generated_at?: string
+  no_operational_recalculation?: boolean
+  diagnostic_re_evaluation_only?: boolean
+  source_mode?: string
+  fixture?: {
+    today_fixture_id: number
+    local_fixture_id?: number | null
+    provider_fixture_id?: number | null
+    home_team?: string | null
+    away_team?: string | null
+    kickoff?: string | null
+    scan_date?: string | null
+  }
+  overview?: {
+    version?: string
+    pre_match_only?: boolean
+    official_pillars?: string[]
+    descriptive_pillars?: string[]
+    canonical_pillar_order?: string[]
+    audit_pillar_order?: string[]
+  }
+  pillars: Record<string, CecchinoBalancePillarExplanation>
+  warnings?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export async function getBalanceExplanations(
+  todayFixtureId: number,
+): Promise<CecchinoBalanceExplanationsResponse> {
+  return requestJson<CecchinoBalanceExplanationsResponse>(
+    `/api/cecchino/today/${todayFixtureId}/balance-explanations`,
+  )
+}
+
 export async function getPicchettiDebugJson(
   todayFixtureId: number,
 ): Promise<CecchinoPicchettiDebugResponse> {
