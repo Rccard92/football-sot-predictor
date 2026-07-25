@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Hotfix — Analisi formule interattiva Pannello KPI (2026-07-25)
+
+Modalità debug umana sul Pannello KPI Cecchino Today: pulsante `ƒx Analisi formule` (lazy), celle analizzabili cliccabili, popup unificato, download `cecchino-kpi-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/kpi-explanations` snapshot-only (`no_model_recalculation`). Escluse SEGNO e QUOTA BOOK. Impatto nullo a riposo. Formule KPI/Balance/GI/Signals invariate.
+
 ## Hotfix — isolamento Readiness post-scan (2026-07-21)
 
 Scan Today completata può fallire solo nel salvataggio accessorio Readiness (timestamp NOT NULL senza default DB). Migrazione `20260721100000` + sessione dedicata fail-soft. Job resta `completed` con warning non bloccante. Nessuna modifica formule; le eleggibili già persistite restano valide. Doc: `docs/HANDOFF_PER_CHATGPT_HOTFIX_READINESS_POST_SCAN.md`.

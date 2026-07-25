@@ -2,6 +2,21 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Analisi formule interattiva Pannello KPI (2026-07-25)
+
+Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
+
+| Elemento | Dettaglio |
+|----------|-----------|
+| Attivazione | Pulsante testata `ƒx Analisi formule` (lazy, max 1 req/fixture) |
+| Download | `Scarica audit KPI` → `cecchino-kpi-audit-{provider_fixture_id}.json` |
+| Endpoint | `GET /api/cecchino/today/{id}/kpi-explanations` |
+| Contratto | `audit_version=cecchino_kpi_explanations_v1`, `no_model_recalculation=true` |
+| Celle incluse | Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acquistabilità |
+| Celle escluse | SEGNO, QUOTA BOOK |
+| Fonte | Snapshot persistiti + Affidabilità canonica; `audit_result` solo diagnostico |
+| Invariato | Formule KPI/engine/goal/purchasability, Balance, GI, Signals, layout KPI a riposo |
+
 ## Monitoraggio Segno 1 — FASE 1 esito reale 1 (2026-07-20)
 
 **Esito reale 1 ≠ Segnale 1.** Coorte = partite `match_display_status=finished` con punteggio FT casa > trasferta (priorità `score_fulltime_*`, fallback `goals_*` tracciato). Non filtra su Segnale 1, attivazioni, eligibility, edge, quota, rating.

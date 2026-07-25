@@ -30,6 +30,7 @@ from app.services.cecchino.cecchino_today_scan_job_service import (
     start_scan_job,
 )
 from app.services.cecchino.cecchino_kpi_debug_json import get_kpi_debug_json
+from app.services.cecchino.cecchino_kpi_explanations import get_kpi_explanations
 from app.services.cecchino.cecchino_picchetti_debug import get_picchetti_debug_json
 from app.services.cecchino.cecchino_today_service import (
     cleanup_cecchino_today_snapshots,
@@ -130,6 +131,19 @@ def cecchino_today_kpi_debug_json(
     if payload is None:
         return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
     status_code = 200 if payload.get("status") == "ok" else 422
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+
+@router.get("/{today_fixture_id}/kpi-explanations")
+def cecchino_today_kpi_explanations(
+    today_fixture_id: int,
+    db: Session = Depends(get_db),
+):
+    payload = get_kpi_explanations(db, today_fixture_id)
+    if payload is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
+    status = payload.get("status")
+    status_code = 200 if status in ("ok", "partial") else 422
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
 
 

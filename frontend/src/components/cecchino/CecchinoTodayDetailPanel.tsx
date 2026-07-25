@@ -153,6 +153,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           historicalReliabilityLoading={hrLoading}
           historicalReliabilityError={hrError}
           purchasabilityByMarketKey={purchasabilityByMarketKey}
+          todayFixtureId={detail.today_fixture_id ?? detail.id}
+          providerFixtureId={detail.provider_fixture_id}
         />
       )}
 

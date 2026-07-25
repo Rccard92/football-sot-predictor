@@ -1313,6 +1313,82 @@ export async function getCecchinoKpiDebugJson(
   )
 }
 
+export type CecchinoKpiExplanationInput = {
+  key: string
+  label: string
+  value: unknown
+  display_value?: string
+  source_path: string
+  source_type?: string
+  timestamp?: string | null
+}
+
+export type CecchinoKpiExplanationConsistency = {
+  status: 'match' | 'rounding_match' | 'mismatch' | 'not_verifiable' | 'unavailable' | string
+  delta?: number | null
+}
+
+export type CecchinoKpiExplanation = {
+  module: string
+  market_key: string
+  market_label: string
+  metric_key: string
+  metric_label: string
+  status: string
+  calculation_type?: string
+  description: string
+  purpose: string
+  formula_symbolic: string
+  formula_applied: string[]
+  inputs: CecchinoKpiExplanationInput[]
+  stored_result: unknown
+  stored_result_display?: string | null
+  audit_result: unknown
+  consistency: CecchinoKpiExplanationConsistency
+  rounding?: {
+    policy?: string
+    precision?: number | null
+    display_precision?: number | null
+  }
+  formula_version?: string
+  warnings?: string[]
+  unavailable_reason?: string
+  [key: string]: unknown
+}
+
+export type CecchinoKpiExplanationsResponse = {
+  status: string
+  code?: string
+  message?: string
+  audit_version?: string
+  no_model_recalculation?: boolean
+  generated_at?: string
+  fixture?: {
+    today_fixture_id: number
+    local_fixture_id?: number | null
+    provider_fixture_id?: number | null
+    home_team?: string | null
+    away_team?: string | null
+    kickoff?: string | null
+    scan_date?: string | null
+    competition_id?: number | null
+  }
+  panel_version?: string
+  excluded_metrics?: string[]
+  analyzable_metrics?: string[]
+  markets: Record<string, Record<string, CecchinoKpiExplanation>>
+  warnings?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export async function getKpiExplanations(
+  todayFixtureId: number,
+): Promise<CecchinoKpiExplanationsResponse> {
+  return requestJson<CecchinoKpiExplanationsResponse>(
+    `/api/cecchino/today/${todayFixtureId}/kpi-explanations`,
+  )
+}
+
 export async function getPicchettiDebugJson(
   todayFixtureId: number,
 ): Promise<CecchinoPicchettiDebugResponse> {

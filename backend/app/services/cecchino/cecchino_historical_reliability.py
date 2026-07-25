@@ -489,6 +489,16 @@ def calculate_historical_reliability(
         "fallback_reason": meta.get("fallback_reason"),
         "raw_market_key": meta.get("raw_market_key"),
         "unsupported_reason": meta.get("unsupported_reason"),
+        # Componenti formula score (retrocompatibili; usati dall'audit KPI).
+        "roi_component": metrics.get("roi_component"),
+        "margin_component": metrics.get("margin_component"),
+        "stability_component": metrics.get("stability_component"),
+        "raw_evidence_score": metrics.get("raw_evidence_score"),
+        "formula_symbolic": (
+            "score = clamp(50 + min(1, n/100) * ((roi_c + margin_c + stab_c)/3 - 50)); "
+            "roi_c = clamp(50 + roi*500); margin_c = clamp(50 + margin*500); "
+            "stab_c = stability*100 (default 50)"
+        ),
     }
     return out
 

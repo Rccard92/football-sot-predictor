@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Analisi formule interattiva Pannello KPI (2026-07-25)
+
+- UI: pulsanti testata `ƒx Analisi formule` / `Scarica audit KPI`; celle analizzabili solo con modalità attiva; SEGNO e QUOTA BOOK esclusi; Affidabilità legacy preservata a riposo.
+- API: `GET /api/cecchino/today/{id}/kpi-explanations` — spiegazioni cella-per-cella da snapshot persistiti + Affidabilità canonica; `audit_result` diagnostico; nessun ricalcolo operativo / scrittura DB / API esterne.
+- Contratto riusabile (`module=kpi`, markets×metrics) per futuri moduli. Formule canoniche invariate.
+
 ## Hotfix — Balance v11 export packaging (2026-07-21)
 
 - Causa: pacchetto forensic Balance includeva readiness con `TypeError` (filtri `date` non JSON-serializzabili via `make_json_safe`) e CSV history/governance assenti dopo fail-soft esterno.

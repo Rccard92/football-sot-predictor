@@ -1,10 +1,14 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { HistoricalReliabilityItem } from '../../lib/cecchinoKpiSignalsApi'
 import type {
+  CecchinoKpiExplanation,
+  CecchinoKpiExplanationsResponse,
   CecchinoKpiV2Panel,
   CecchinoKpiV2Row,
   CecchinoPurchasabilityPreviewItem,
 } from '../../lib/cecchinoTodayApi'
+import { getKpiExplanations } from '../../lib/cecchinoTodayApi'
+import { CecchinoFormulaAuditModal } from './CecchinoFormulaAuditModal'
 import {
   edgeClassName,
   fmtKpiCell,
@@ -19,6 +23,17 @@ import {
   ratingBadgeClass,
   vantaggioClassName,
 } from './cecchinoKpiUiUtils'
+
+type AnalyzableMetricKey =
+  | 'quota_cecchino'
+  | 'prob_book'
+  | 'prob_cecchino'
+  | 'vantaggio_prob'
+  | 'edge_pct'
+  | 'score_acquisto'
+  | 'rating'
+  | 'historical_reliability'
+  | 'purchasability'
 
 function kpiSegnoLabel(row: CecchinoKpiV2Row): string {
   return row.segno || row.label || row.market_key
@@ -52,6 +67,36 @@ type Props = {
   historicalReliabilityLoading?: boolean
   historicalReliabilityError?: string | null
   purchasabilityByMarketKey?: Record<string, CecchinoPurchasabilityPreviewItem>
+  todayFixtureId?: number
+  providerFixtureId?: number | null
+}
+
+function AnalyzableCell({
+  active,
+  onOpen,
+  className,
+  children,
+  label,
+}: {
+  active: boolean
+  onOpen: () => void
+  className?: string
+  children: React.ReactNode
+  label: string
+}) {
+  if (!active) {
+    return <>{children}</>
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Analizza formula: ${label}`}
+      className={`block w-full rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70 cursor-pointer hover:bg-white/5 ${className ?? ''}`}
+    >
+      {children}
+    </button>
+  )
 }
 
 function PurchasabilityCell({
@@ -102,11 +147,13 @@ function HistoricalReliabilityCell({
   loading,
   error,
   onOpen,
+  interactive = true,
 }: {
   item?: HistoricalReliabilityItem
   loading?: boolean
   error?: string | null
   onOpen: () => void
+  interactive?: boolean
 }) {
   if (loading) {
     return <span className="text-[10px] text-slate-400">Calcolo storico…</span>
@@ -142,25 +189,37 @@ function HistoricalReliabilityCell({
   if (item.status === 'insufficient_data') {
     const n =
       item.global_sample_size ?? item.selected_sample_size ?? item.sample_size ?? 0
-    return (
-      <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
+    const body = (
+      <>
         <span className="block text-slate-300">—</span>
         <span className="block text-[9px] text-slate-400">{n} casi globali</span>
+      </>
+    )
+    if (!interactive) return <span className="text-left">{body}</span>
+    return (
+      <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
+        {body}
       </button>
     )
   }
 
   if (item.score == null) {
-    return (
-      <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
+    const body = (
+      <>
         <span className="block text-slate-300">—</span>
         <span className="block text-[9px] text-slate-400">{item.class}</span>
+      </>
+    )
+    if (!interactive) return <span className="text-left">{body}</span>
+    return (
+      <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
+        {body}
       </button>
     )
   }
 
-  return (
-    <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
+  const body = (
+    <>
       <span
         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${historicalReliabilityBadgeClass(item.class)}`}
       >
@@ -171,6 +230,12 @@ function HistoricalReliabilityCell({
         {item.selected_sample_size ?? item.sample_size ?? 0} casi · ROI {fmtRoiPct(item.roi)}
       </span>
       {cohortScopeChip(item.cohort_scope)}
+    </>
+  )
+  if (!interactive) return <span className="text-left">{body}</span>
+  return (
+    <button type="button" onClick={onOpen} className="text-left hover:opacity-90">
+      {body}
     </button>
   )
 }
@@ -182,47 +247,49 @@ function HistoricalReliabilityPopover({
   item: HistoricalReliabilityItem
   onClose: () => void
 }) {
-  const band = item.rating_band
-  const scopeLabel =
-    item.cohort_scope === 'same_competition'
-      ? 'Campionato'
-      : item.cohort_scope === 'all_competitions_fallback'
-        ? 'Globale (fallback)'
-        : '—'
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
+      role="presentation"
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-800 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-2">
-          <h4 className="font-semibold text-slate-900">Affidabilità storica</h4>
-          <button type="button" className="text-slate-500 hover:text-slate-800" onClick={onClose}>
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <h4 className="text-sm font-bold text-slate-900">Affidabilità storica</h4>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
+          >
             Chiudi
           </button>
         </div>
-        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-800">
           <dt className="text-slate-500">Mercato</dt>
           <dd>{item.label || item.selection || item.market_key || '—'}</dd>
-          <dt className="text-slate-500">Rating attuale</dt>
+          <dt className="text-slate-500">Rating</dt>
           <dd>{item.rating ?? '—'}</dd>
-          <dt className="text-slate-500">Fascia Rating</dt>
-          <dd>{band?.label ?? '—'}</dd>
+          <dt className="text-slate-500">Fascia</dt>
+          <dd>{item.rating_band?.label ?? '—'}</dd>
           <dt className="text-slate-500">Ambito coorte</dt>
-          <dd>{scopeLabel}</dd>
+          <dd>
+            {item.cohort_scope === 'all_competitions_fallback'
+              ? 'Globale (fallback)'
+              : item.cohort_scope === 'same_competition'
+                ? 'Campionato'
+                : '—'}
+          </dd>
           <dt className="text-slate-500">Casi campionato</dt>
           <dd>{item.local_sample_size ?? '—'}</dd>
           <dt className="text-slate-500">Casi globali</dt>
           <dd>{item.global_sample_size ?? '—'}</dd>
-          <dt className="text-slate-500">Campione usato</dt>
-          <dd>{item.selected_sample_size ?? item.sample_size ?? 0}</dd>
-          <dt className="text-slate-500">Competizioni in coorte</dt>
-          <dd>{item.competition_count ?? '—'}</dd>
+          <dt className="text-slate-500">Casi usati</dt>
+          <dd>{item.selected_sample_size ?? item.sample_size ?? '—'}</dd>
           <dt className="text-slate-500">W / L / V</dt>
           <dd>
             {item.wins ?? 0} / {item.losses ?? 0} / {item.voids ?? 0}
@@ -231,20 +298,20 @@ function HistoricalReliabilityPopover({
           <dd>{item.average_odds != null ? Number(item.average_odds).toFixed(2) : '—'}</dd>
           <dt className="text-slate-500">Win Rate</dt>
           <dd>{fmtPct(item.win_rate)}</dd>
-          <dt className="text-slate-500">Break-even medio</dt>
+          <dt className="text-slate-500">Break-even</dt>
           <dd>{fmtPct(item.average_break_even_probability)}</dd>
-          <dt className="text-slate-500">Margine realizzato</dt>
+          <dt className="text-slate-500">Margine</dt>
           <dd>{fmtPp(item.realized_margin)}</dd>
           <dt className="text-slate-500">ROI</dt>
           <dd>{fmtRoiPct(item.roi)}</dd>
-          <dt className="text-slate-500">Stabilità (periodi +)</dt>
+          <dt className="text-slate-500">Stabilità</dt>
           <dd>
             {item.positive_periods != null && item.total_periods != null
-              ? `${item.positive_periods} / ${item.total_periods}`
+              ? `${item.positive_periods}/${item.total_periods}`
               : '—'}
           </dd>
           <dt className="text-slate-500">Intervallo storico</dt>
-          <dd className="text-[11px]">
+          <dd>
             {item.historical_date_from ?? '—'} → {item.historical_date_to ?? '—'}
           </dd>
           <dt className="text-slate-500">Score / classe</dt>
@@ -265,6 +332,20 @@ function HistoricalReliabilityPopover({
   )
 }
 
+function downloadAuditJson(
+  payload: CecchinoKpiExplanationsResponse,
+  providerFixtureId: number | null | undefined,
+) {
+  const id = providerFixtureId ?? payload.fixture?.provider_fixture_id ?? 'unknown'
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cecchino-kpi-audit-${id}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function CecchinoTodayKpiPanel({
   panel,
   bookmakerStatus,
@@ -272,10 +353,71 @@ export function CecchinoTodayKpiPanel({
   historicalReliabilityLoading,
   historicalReliabilityError,
   purchasabilityByMarketKey,
+  todayFixtureId,
+  providerFixtureId,
 }: Props) {
   const status = bookmakerStatus || panel.bookmaker_status || 'not_available'
   const oddsMeta = panel.odds_meta
   const [openItem, setOpenItem] = useState<HistoricalReliabilityItem | null>(null)
+  const [analysisMode, setAnalysisMode] = useState(false)
+  const [explanations, setExplanations] = useState<CecchinoKpiExplanationsResponse | null>(null)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [selectedExplanation, setSelectedExplanation] = useState<CecchinoKpiExplanation | null>(
+    null,
+  )
+  const [analysisFixtureId, setAnalysisFixtureId] = useState(todayFixtureId)
+
+  if (analysisFixtureId !== todayFixtureId) {
+    setAnalysisFixtureId(todayFixtureId)
+    setAnalysisMode(false)
+    setExplanations(null)
+    setAnalysisError(null)
+    setAnalysisLoading(false)
+    setSelectedExplanation(null)
+    setOpenItem(null)
+  }
+
+  const loadExplanations = useCallback(async (): Promise<CecchinoKpiExplanationsResponse | null> => {
+    if (explanations) return explanations
+    if (todayFixtureId == null) return null
+    setAnalysisLoading(true)
+    setAnalysisError(null)
+    try {
+      const res = await getKpiExplanations(todayFixtureId)
+      if (res.status === 'error') {
+        setAnalysisError(res.message || res.code || 'Errore caricamento audit KPI')
+        return null
+      }
+      setExplanations(res)
+      return res
+    } catch (e) {
+      setAnalysisError(e instanceof Error ? e.message : 'Errore caricamento audit KPI')
+      return null
+    } finally {
+      setAnalysisLoading(false)
+    }
+  }, [explanations, todayFixtureId])
+
+  const toggleAnalysis = async () => {
+    if (analysisMode) {
+      setAnalysisMode(false)
+      setSelectedExplanation(null)
+      return
+    }
+    const res = await loadExplanations()
+    if (res) setAnalysisMode(true)
+  }
+
+  const handleDownload = async () => {
+    const res = await loadExplanations()
+    if (res) downloadAuditJson(res, providerFixtureId)
+  }
+
+  const openMetric = (marketKey: string, metricKey: AnalyzableMetricKey) => {
+    const expl = explanations?.markets?.[marketKey]?.[metricKey]
+    if (expl) setSelectedExplanation(expl)
+  }
 
   const lookup = (row: CecchinoKpiV2Row) =>
     historicalReliabilityByMarketKey?.[row.market_key] ||
@@ -290,16 +432,54 @@ export function CecchinoTodayKpiPanel({
   return (
     <section className="rounded-xl border border-slate-300 shadow-md">
       <div className="bg-[#1e3a5f] px-4 py-3">
-        <div className="text-center sm:text-left">
-          <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PANNELLO KPI</h3>
-          <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
-            Bookmaker: {panel.bookmaker?.name ?? 'Betfair'}
-          </p>
-          {status === 'not_available' && (
-            <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">
-              Quote Betfair non disponibili
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="text-center sm:text-left">
+            <h3 className="text-sm font-bold tracking-wide text-white sm:text-base">PANNELLO KPI</h3>
+            <p className="mt-1 text-[10px] text-slate-300 sm:text-xs">
+              Bookmaker: {panel.bookmaker?.name ?? 'Betfair'}
             </p>
-          )}
+            {status === 'not_available' && (
+              <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">
+                Quote Betfair non disponibili
+              </p>
+            )}
+            {analysisError ? (
+              <p className="mt-1 text-[10px] text-amber-100 sm:text-xs">{analysisError}</p>
+            ) : null}
+            {analysisMode ? (
+              <p className="mt-1 text-[10px] text-amber-100/90 sm:text-xs">
+                Modalità analisi: clicca una metrica per la formula
+              </p>
+            ) : null}
+          </div>
+          {todayFixtureId != null ? (
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+              <button
+                type="button"
+                onClick={() => void toggleAnalysis()}
+                disabled={analysisLoading}
+                className={`rounded-md border px-2.5 py-1 text-[11px] font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-60 ${
+                  analysisMode
+                    ? 'border-amber-200/50 bg-amber-400/20 text-amber-50'
+                    : 'border-white/40 bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                {analysisLoading
+                  ? 'Caricamento…'
+                  : analysisMode
+                    ? 'Analisi attiva'
+                    : 'ƒx Analisi formule'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDownload()}
+                disabled={analysisLoading}
+                className="rounded-md border border-white/40 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-60"
+              >
+                Scarica audit KPI
+              </button>
+            </div>
+          ) : null}
         </div>
         {oddsMeta && (
           <div className="mt-2 rounded-md border border-slate-500/30 bg-slate-900/30 px-2 py-1.5 text-[10px] text-slate-300 sm:text-xs">
@@ -388,6 +568,7 @@ export function CecchinoTodayKpiPanel({
                 : 'font-medium text-slate-300'
               const emp = lookup(row)
               const purch = lookupPurch(row)
+              const mk = row.market_key
 
               return (
                 <tr
@@ -403,51 +584,108 @@ export function CecchinoTodayKpiPanel({
                     {fmtKpiCell(row.quota_book, true)}
                   </td>
                   <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap font-semibold tabular-nums text-amber-100">
-                    {fmtKpiCell(row.quota_cecchino, true)}
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Quota Cecchino"
+                      onOpen={() => openMetric(mk, 'quota_cecchino')}
+                    >
+                      {fmtKpiCell(row.quota_cecchino, true)}
+                    </AnalyzableCell>
                   </td>
                   <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
-                    {fmtProbPct(row.prob_book)}
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Prob. Book"
+                      onOpen={() => openMetric(mk, 'prob_book')}
+                    >
+                      {fmtProbPct(row.prob_book)}
+                    </AnalyzableCell>
                   </td>
                   <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-100">
-                    {fmtProbPct(row.prob_cecchino)}
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Prob. Cecchino"
+                      onOpen={() => openMetric(mk, 'prob_cecchino')}
+                    >
+                      {fmtProbPct(row.prob_cecchino)}
+                    </AnalyzableCell>
                   </td>
                   <td
                     className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${vantaggioClassName(row.vantaggio_prob)}`}
                   >
-                    {fmtVantaggioProb(row.vantaggio_prob)}
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Vant. Prob."
+                      onOpen={() => openMetric(mk, 'vantaggio_prob')}
+                    >
+                      {fmtVantaggioProb(row.vantaggio_prob)}
+                    </AnalyzableCell>
                   </td>
                   <td
                     className={`border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums ${edgeClassName(row.edge_pct)}`}
                   >
-                    {formatEdgePct(row.edge_pct)}
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Edge"
+                      onOpen={() => openMetric(mk, 'edge_pct')}
+                    >
+                      {formatEdgePct(row.edge_pct)}
+                    </AnalyzableCell>
                   </td>
                   <td className="border-r border-slate-500/40 px-1.5 py-2.5 whitespace-nowrap tabular-nums text-slate-300">
-                    {fmtScoreAcquisto(row.score_acquisto)}
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Score"
+                      onOpen={() => openMetric(mk, 'score_acquisto')}
+                    >
+                      {fmtScoreAcquisto(row.score_acquisto)}
+                    </AnalyzableCell>
                   </td>
                   <td className="border-r border-slate-500/40 px-1.5 py-2.5">
-                    {row.rating != null ? (
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${ratingBadgeClass(row.rating_label)}`}
-                      >
-                        <span className="tabular-nums">{row.rating}</span>
-                        {row.rating_label && (
-                          <span className="hidden 2xl:inline">{row.rating_label}</span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Rating"
+                      onOpen={() => openMetric(mk, 'rating')}
+                    >
+                      {row.rating != null ? (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${ratingBadgeClass(row.rating_label)}`}
+                        >
+                          <span className="tabular-nums">{row.rating}</span>
+                          {row.rating_label && (
+                            <span className="hidden 2xl:inline">{row.rating_label}</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </AnalyzableCell>
                   </td>
                   <td className="border-r border-slate-500/40 px-1.5 py-2.5">
-                    <HistoricalReliabilityCell
-                      item={emp}
-                      loading={historicalReliabilityLoading}
-                      error={historicalReliabilityError}
-                      onOpen={() => emp && setOpenItem(emp)}
-                    />
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Affidabilità"
+                      onOpen={() => openMetric(mk, 'historical_reliability')}
+                    >
+                      <HistoricalReliabilityCell
+                        item={emp}
+                        loading={historicalReliabilityLoading}
+                        error={historicalReliabilityError}
+                        interactive={!analysisMode}
+                        onOpen={() => {
+                          if (emp) setOpenItem(emp)
+                        }}
+                      />
+                    </AnalyzableCell>
                   </td>
                   <td className="px-1.5 py-2.5">
-                    <PurchasabilityCell item={purch} />
+                    <AnalyzableCell
+                      active={analysisMode}
+                      label="Acquistabilità"
+                      onOpen={() => openMetric(mk, 'purchasability')}
+                    >
+                      <PurchasabilityCell item={purch} />
+                    </AnalyzableCell>
                   </td>
                 </tr>
               )
@@ -461,6 +699,7 @@ export function CecchinoTodayKpiPanel({
           const segnoLabel = kpiSegnoLabel(row)
           const emp = lookup(row)
           const purch = lookupPurch(row)
+          const mk = row.market_key
           return (
             <article
               key={row.market_key}
@@ -469,43 +708,111 @@ export function CecchinoTodayKpiPanel({
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="break-words font-semibold">{segnoLabel}</span>
                 {row.rating != null && (
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${ratingBadgeClass(row.rating_label)}`}
+                  <AnalyzableCell
+                    active={analysisMode}
+                    label="Rating"
+                    onOpen={() => openMetric(mk, 'rating')}
+                    className="shrink-0"
                   >
-                    {row.rating} {row.rating_label}
-                  </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ratingBadgeClass(row.rating_label)}`}
+                    >
+                      {row.rating} {row.rating_label}
+                    </span>
+                  </AnalyzableCell>
                 )}
               </div>
               <div className="mb-2">
                 <p className="mb-1 text-[10px] uppercase text-slate-400">Affidabilità</p>
-                <HistoricalReliabilityCell
-                  item={emp}
-                  loading={historicalReliabilityLoading}
-                  error={historicalReliabilityError}
-                  onOpen={() => emp && setOpenItem(emp)}
-                />
+                <AnalyzableCell
+                  active={analysisMode}
+                  label="Affidabilità"
+                  onOpen={() => openMetric(mk, 'historical_reliability')}
+                >
+                  <HistoricalReliabilityCell
+                    item={emp}
+                    loading={historicalReliabilityLoading}
+                    error={historicalReliabilityError}
+                    interactive={!analysisMode}
+                    onOpen={() => {
+                      if (emp) setOpenItem(emp)
+                    }}
+                  />
+                </AnalyzableCell>
               </div>
               <div className="mb-2">
                 <p className="mb-1 text-[10px] uppercase text-slate-400">Acquistabilità</p>
-                <PurchasabilityCell item={purch} />
+                <AnalyzableCell
+                  active={analysisMode}
+                  label="Acquistabilità"
+                  onOpen={() => openMetric(mk, 'purchasability')}
+                >
+                  <PurchasabilityCell item={purch} />
+                </AnalyzableCell>
               </div>
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
                 <dt className="text-slate-400">Quota Book</dt>
                 <dd>{fmtKpiCell(row.quota_book, true)}</dd>
                 <dt className="text-slate-400">Quota Cecchino</dt>
-                <dd className="text-amber-100">{fmtKpiCell(row.quota_cecchino, true)}</dd>
+                <dd className="text-amber-100">
+                  <AnalyzableCell
+                    active={analysisMode}
+                    label="Quota Cecchino"
+                    onOpen={() => openMetric(mk, 'quota_cecchino')}
+                  >
+                    {fmtKpiCell(row.quota_cecchino, true)}
+                  </AnalyzableCell>
+                </dd>
                 <dt className="text-slate-400">Prob. Book</dt>
-                <dd>{fmtProbPct(row.prob_book)}</dd>
+                <dd>
+                  <AnalyzableCell
+                    active={analysisMode}
+                    label="Prob. Book"
+                    onOpen={() => openMetric(mk, 'prob_book')}
+                  >
+                    {fmtProbPct(row.prob_book)}
+                  </AnalyzableCell>
+                </dd>
                 <dt className="text-slate-400">Prob. Cecchino</dt>
-                <dd>{fmtProbPct(row.prob_cecchino)}</dd>
+                <dd>
+                  <AnalyzableCell
+                    active={analysisMode}
+                    label="Prob. Cecchino"
+                    onOpen={() => openMetric(mk, 'prob_cecchino')}
+                  >
+                    {fmtProbPct(row.prob_cecchino)}
+                  </AnalyzableCell>
+                </dd>
                 <dt className="text-slate-400">Vant. Prob.</dt>
                 <dd className={vantaggioClassName(row.vantaggio_prob)}>
-                  {fmtVantaggioProb(row.vantaggio_prob)}
+                  <AnalyzableCell
+                    active={analysisMode}
+                    label="Vant. Prob."
+                    onOpen={() => openMetric(mk, 'vantaggio_prob')}
+                  >
+                    {fmtVantaggioProb(row.vantaggio_prob)}
+                  </AnalyzableCell>
                 </dd>
                 <dt className="text-slate-400">Edge</dt>
-                <dd className={edgeClassName(row.edge_pct)}>{formatEdgePct(row.edge_pct)}</dd>
+                <dd className={edgeClassName(row.edge_pct)}>
+                  <AnalyzableCell
+                    active={analysisMode}
+                    label="Edge"
+                    onOpen={() => openMetric(mk, 'edge_pct')}
+                  >
+                    {formatEdgePct(row.edge_pct)}
+                  </AnalyzableCell>
+                </dd>
                 <dt className="text-slate-400">Score</dt>
-                <dd>{fmtScoreAcquisto(row.score_acquisto)}</dd>
+                <dd>
+                  <AnalyzableCell
+                    active={analysisMode}
+                    label="Score"
+                    onOpen={() => openMetric(mk, 'score_acquisto')}
+                  >
+                    {fmtScoreAcquisto(row.score_acquisto)}
+                  </AnalyzableCell>
+                </dd>
               </dl>
             </article>
           )
@@ -522,8 +829,14 @@ export function CecchinoTodayKpiPanel({
         </div>
       )}
 
-      {openItem ? (
+      {!analysisMode && openItem ? (
         <HistoricalReliabilityPopover item={openItem} onClose={() => setOpenItem(null)} />
+      ) : null}
+      {selectedExplanation ? (
+        <CecchinoFormulaAuditModal
+          explanation={selectedExplanation}
+          onClose={() => setSelectedExplanation(null)}
+        />
       ) : null}
     </section>
   )

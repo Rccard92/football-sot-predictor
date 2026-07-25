@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Analisi formule Pannello KPI (2026-07-25)
+
+1. Apertura partita Today: **nessuna** richiesta `kpi-explanations` (impatto nullo).
+2. Pulsante testata `ƒx Analisi formule` → una sola `GET /api/cecchino/today/{id}/kpi-explanations` (cache in memoria per fixture).
+3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acquistabilità.
+4. Non cliccabili: SEGNO, QUOTA BOOK.
+5. `Scarica audit KPI` → JSON `cecchino-kpi-audit-{provider_fixture_id}.json` (lazy load se non ancora caricato).
+6. Fonte: snapshot persistiti + Affidabilità canonica; niente rebuild Cecchino/Balance/GI/Signals.
+
 ## Hotfix — isolamento Readiness post-scan (2026-07-21)
 
 1. Deploy backend + `alembic upgrade head` (revisione `20260721100000`).
