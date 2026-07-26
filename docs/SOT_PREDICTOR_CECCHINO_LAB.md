@@ -113,6 +113,7 @@ Non tocca altri dataset né tabelle fuori da `cecchino_lab_*`. Nessun endpoint d
 |--------|------|
 | GET | `/api/cecchino-lab/catalog/competitions` |
 | POST | `/api/admin/cecchino-lab/imports/preview` |
+| POST | `/api/admin/cecchino-lab/imports/batch/preview` |
 | POST | `/api/admin/cecchino-lab/imports` |
 | POST | `/api/admin/cecchino-lab/datasets/{id}/replace` |
 | GET | `/api/cecchino-lab/overview` |
