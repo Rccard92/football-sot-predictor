@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Cecchino Lab archivio storico Football-Data (2026-07-26)
+
+Nuova area isolata **Cecchino Lab** (`/cecchino-lab`): import CSV football-data.co.uk, tabelle `cecchino_lab_*`, API `/api/cecchino-lab` + admin import con token `IMPORT_CECCHINO_LAB_CSV`, workspace FE `cecchino-data-lab`. Solo Bet365 normalizzato; nessun replay/formule/predizioni/ML; **Cecchino Today e moduli predittivi invariati**. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
+
 ## Feat — Comando sincrono auto scan Cecchino (2026-07-26)
 
 Comando cron-ready `python -m app.jobs.cecchino_auto_scan` (--scheduled / --force-run / --dry-run). Target = **domani Europe/Rome**. Slot primary 23:30 e recovery 23:50 (±10 min). Lock advisory PostgreSQL globale condiviso con scan manuali; lifecycle sincrono `execute_scan_job_sync` (nessun HTTP FastAPI, nessun thread nel cron). Idempotenza auto job, retry transitori max 2, timeout 120 min, SIGTERM/SIGINT. Badge UI Origine/Slot se `result_summary.auto_scan`. **Railway Cron non ancora attivo**; Procfile invariato. `CECCHINO_AUTO_SCAN_ENABLED=false` di default.

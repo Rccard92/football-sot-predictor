@@ -19,6 +19,10 @@ from app.models.cecchino_signal_activation import CecchinoSignalActivation
 from app.models.cecchino_signal_min_book_odd_setting import CecchinoSignalMinBookOddSetting
 from app.models.cecchino_today_fixture import CecchinoTodayFixture
 from app.models.cecchino_today_scan_job import CecchinoTodayScanJob
+from app.models.cecchino_lab_dataset import CecchinoLabDataset
+from app.models.cecchino_lab_import import CecchinoLabImport
+from app.models.cecchino_lab_match import CecchinoLabMatch
+from app.models.cecchino_lab_data_issue import CecchinoLabDataIssue
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -87,6 +91,10 @@ __all__ = [
     "CecchinoSignalMinBookOddSetting",
     "CecchinoTodayFixture",
     "CecchinoTodayScanJob",
+    "CecchinoLabDataset",
+    "CecchinoLabImport",
+    "CecchinoLabMatch",
+    "CecchinoLabDataIssue",
     "Competition",
     "Fixture",
     "FixtureLineup",

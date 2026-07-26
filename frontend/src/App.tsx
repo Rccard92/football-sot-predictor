@@ -21,6 +21,7 @@ import { CecchinoSignalsMonitoringPage } from './pages/CecchinoSignalsMonitoring
 import { SegnaliKpiPage } from './pages/SegnaliKpiPage'
 import { MonitoraggioModuliPage } from './pages/MonitoraggioModuliPage'
 import { CecchinoTodayPage } from './pages/CecchinoTodayPage'
+import { CecchinoLabPage } from './pages/CecchinoLabPage'
 import { CecchinoHomeWinsPage } from './pages/CecchinoHomeWinsPage'
 import { UpcomingMatches } from './pages/UpcomingMatches'
 
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/" element={<UpcomingMatches />} />
           <Route path="/cecchino" element={<CecchinoPage />} />
           <Route path="/cecchino-today" element={<CecchinoTodayPage />} />
+          <Route path="/cecchino-lab" element={<CecchinoLabPage />} />
           <Route path="/monitoraggio-segno-1" element={<CecchinoHomeWinsPage />} />
           <Route path="/monitoraggio-segnali" element={<CecchinoSignalsMonitoringPage />} />
           <Route path="/monitoraggio-moduli" element={<MonitoraggioModuliPage />} />

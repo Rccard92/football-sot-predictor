@@ -1,5 +1,17 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — import storico Football-Data (2026-07-26)
+
+Area parallela **non operativa** su Today:
+
+1. Upload CSV admin → `POST /api/admin/cecchino-lab/imports/preview` (no write).
+2. Conferma `IMPORT_CECCHINO_LAB_CSV` → `POST /api/admin/cecchino-lab/imports` (transazione: dataset + import + matches + issues).
+3. Dedup file: `file_sha256` + `parser_version` → 409 se già importato.
+4. Lettura UI: `/api/cecchino-lab/overview|datasets|matches|data-quality/issues`.
+5. **Nessun** collegamento a `cecchino_today_fixtures`, scan, formule, Balance/GI/Segnali.
+
+Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
+
 ## Auto scan sincrono Cecchino (2026-07-26)
 
 1. Processo autonomo: `cd backend && python -m app.jobs.cecchino_auto_scan --scheduled` (o `--force-run` / `--dry-run`).

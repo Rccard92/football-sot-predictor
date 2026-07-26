@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Cecchino Lab archivio storico Football-Data (2026-07-26)
+
+- Perché: base dati storica isolata per futuri replay Cecchino, senza contaminare tabelle operative né Today.
+- Cosa: 4 tabelle `cecchino_lab_*`, parser Football-Data + Bet365, preview/import admin, workspace `/cecchino-lab`.
+- Cosa non fa: formule, predizioni, replay, ML, delete, modifiche a Cecchino Today / KPI / Balance / GI / Segnali.
+- Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
+
 ## Feat — Comando sincrono auto scan Cecchino (2026-07-26)
 
 - Perché: preparare scansione serale automatica senza dipendere da reverse proxy / thread daemon FastAPI.
