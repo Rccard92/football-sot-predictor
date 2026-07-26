@@ -161,6 +161,16 @@ from app.services.cecchino.cecchino_today_odds_fetch import (
     write_negative_odds_cache,
 )
 from app.services.cecchino.cecchino_today_odds_meta import attach_scan_odds_meta, read_odds_meta
+from app.services.cecchino.cecchino_today_eligible_guard import (
+    TRANSITION_ELIGIBLE_PRESERVED_REFRESH_FAILED,
+    TRANSITION_STARTED_NEVER_ELIGIBLE,
+    apply_match_state_only,
+    classify_eligible_success_transition,
+    freeze_eligible_after_kickoff,
+    is_protected_eligible,
+    preserve_eligible_snapshot,
+    warning_code_for_incoming_status,
+)
 from app.services.cecchino.cecchino_today_scan_metrics import ScanRunMetrics
 
 logger = logging.getLogger(__name__)
@@ -239,6 +249,9 @@ def _persist_post_calc_snapshot(
     row_warnings: list[str],
     calc: dict[str, Any],
     leakage_status: str,
+    existing_map: dict[int, CecchinoTodayFixture] | None = None,
+    run_metrics: ScanRunMetrics | None = None,
+    previous_status: str | None = None,
 ) -> tuple[CecchinoTodayFixture, str]:
     cec_status = str(calc.get("calculation_status") or calc.get("status") or "")
     all_warnings = row_warnings + list(calc.get("warnings") or [])
@@ -277,6 +290,31 @@ def _persist_post_calc_snapshot(
             blocking_reasons = eligibility.blocking_reasons
             stored_warnings = eligibility.warnings
 
+    brief = _item_brief(api_item)
+    provider_fixture_id = brief["provider_fixture_id"]
+    existing = _lookup_today_row(
+        db,
+        scan_date=scan_date,
+        provider_fixture_id=provider_fixture_id,
+        existing_map=existing_map,
+    )
+    was_eligible = previous_status == ELIGIBILITY_ELIGIBLE or is_protected_eligible(existing)
+    if was_eligible and eligibility_status != ELIGIBILITY_ELIGIBLE and existing is not None:
+        outcome = preserve_eligible_snapshot(
+            existing,
+            reason_code=warning_code_for_incoming_status(eligibility_status),
+            incoming_status=eligibility_status,
+            api_item=api_item,
+            brief=brief,
+        )
+        if run_metrics is not None:
+            run_metrics.protected_snapshot_overwrite_blocked += 1
+            run_metrics.record_transition(TRANSITION_ELIGIBLE_PRESERVED_REFRESH_FAILED)
+        db.flush()
+        if existing_map is not None:
+            existing_map[provider_fixture_id] = outcome.row
+        return outcome.row, ELIGIBILITY_ELIGIBLE
+
     row = _upsert_today_snapshot(
         db,
         scan_date=scan_date,
@@ -294,12 +332,19 @@ def _persist_post_calc_snapshot(
         kpi_panel=kpi_panel,
         warnings=stored_warnings,
         blocking_reasons=blocking_reasons,
+        existing_map=existing_map,
+        run_metrics=run_metrics,
+        previous_status=previous_status,
     )
     if eligibility_status == ELIGIBILITY_ELIGIBLE:
         maybe_ensure_xg_for_eligible_row(db, row)
         _maybe_sync_kpi_signals_for_fixture(db, int(row.id))
         _maybe_sync_purchasability_validation_for_fixture(db, int(row.id))
         _maybe_sync_balance_empirical_for_fixture(db, int(row.id))
+        if run_metrics is not None:
+            run_metrics.record_transition(
+                classify_eligible_success_transition(previous_status)
+            )
     return row, eligibility_status
 
 
@@ -444,6 +489,24 @@ def sync_today_bookmaker_odds(
     return saved
 
 
+def _lookup_today_row(
+    db: Session,
+    *,
+    scan_date: date,
+    provider_fixture_id: int,
+    existing_map: dict[int, CecchinoTodayFixture] | None = None,
+) -> CecchinoTodayFixture | None:
+    if existing_map is not None and provider_fixture_id in existing_map:
+        return existing_map[provider_fixture_id]
+    return db.scalar(
+        select(CecchinoTodayFixture).where(
+            CecchinoTodayFixture.scan_date == scan_date,
+            CecchinoTodayFixture.provider_source == PROVIDER_API_FOOTBALL,
+            CecchinoTodayFixture.provider_fixture_id == provider_fixture_id,
+        ),
+    )
+
+
 def _upsert_today_snapshot(
     db: Session,
     *,
@@ -465,16 +528,45 @@ def _upsert_today_snapshot(
     odds_check_status: str | None = None,
     odds_checked_at: datetime | None = None,
     negative_cache_until: datetime | None = None,
+    existing_map: dict[int, CecchinoTodayFixture] | None = None,
+    run_metrics: ScanRunMetrics | None = None,
+    previous_status: str | None = None,
+    census_mode: bool = False,
 ) -> CecchinoTodayFixture:
     brief = _item_brief(api_item)
     provider_fixture_id = brief["provider_fixture_id"]
-    existing = db.scalar(
-        select(CecchinoTodayFixture).where(
-            CecchinoTodayFixture.scan_date == scan_date,
-            CecchinoTodayFixture.provider_source == PROVIDER_API_FOOTBALL,
-            CecchinoTodayFixture.provider_fixture_id == provider_fixture_id,
-        ),
+    existing = _lookup_today_row(
+        db,
+        scan_date=scan_date,
+        provider_fixture_id=provider_fixture_id,
+        existing_map=existing_map,
     )
+
+    # Census / demotion: fixture già eligible → solo metadati partita
+    was_eligible = is_protected_eligible(existing) or previous_status == ELIGIBILITY_ELIGIBLE
+    if existing is not None and was_eligible and (
+        census_mode or eligibility_status != ELIGIBILITY_ELIGIBLE
+    ):
+        if census_mode:
+            apply_match_state_only(existing, api_item, brief=brief)
+            db.flush()
+            if existing_map is not None:
+                existing_map[provider_fixture_id] = existing
+            return existing
+        outcome = preserve_eligible_snapshot(
+            existing,
+            reason_code=warning_code_for_incoming_status(eligibility_status),
+            incoming_status=eligibility_status,
+            api_item=api_item,
+            brief=brief,
+        )
+        if run_metrics is not None:
+            run_metrics.protected_snapshot_overwrite_blocked += 1
+        db.flush()
+        if existing_map is not None:
+            existing_map[provider_fixture_id] = outcome.row
+        return outcome.row
+
     if existing is None:
         row = CecchinoTodayFixture(
             scan_date=scan_date,
@@ -485,8 +577,10 @@ def _upsert_today_snapshot(
     else:
         row = existing
 
-    row.local_fixture_id = local_fixture_id
-    row.competition_id = competition_id
+    if local_fixture_id is not None or existing is None:
+        row.local_fixture_id = local_fixture_id
+    if competition_id is not None or existing is None:
+        row.competition_id = competition_id
     row.provider_league_id = brief["provider_league_id"]
     row.provider_season = brief["provider_season"]
     row.country_name = brief["country_name"] or None
@@ -523,7 +617,50 @@ def _upsert_today_snapshot(
     db.flush()
     if eligibility_status == ELIGIBILITY_ELIGIBLE and isinstance(cecchino_output, dict):
         sync_cecchino_signal_activations(db, int(row.id))
+    if existing_map is not None:
+        existing_map[provider_fixture_id] = row
     return row
+
+
+def _record_effective_status(
+    by_status: dict[str, int],
+    run_metrics: ScanRunMetrics,
+    *,
+    effective_status: str,
+    transition: str | None = None,
+) -> None:
+    by_status[effective_status] = by_status.get(effective_status, 0) + 1
+    if transition:
+        run_metrics.record_transition(transition)
+
+
+def _preserve_protected_failure(
+    row: CecchinoTodayFixture,
+    *,
+    api_item: dict[str, Any],
+    incoming_status: str,
+    by_status: dict[str, int],
+    run_metrics: ScanRunMetrics,
+    existing_map: dict[int, CecchinoTodayFixture] | None = None,
+) -> CecchinoTodayFixture:
+    brief = _item_brief(api_item)
+    outcome = preserve_eligible_snapshot(
+        row,
+        reason_code=warning_code_for_incoming_status(incoming_status),
+        incoming_status=incoming_status,
+        api_item=api_item,
+        brief=brief,
+    )
+    run_metrics.protected_snapshot_overwrite_blocked += 1
+    _record_effective_status(
+        by_status,
+        run_metrics,
+        effective_status=ELIGIBILITY_ELIGIBLE,
+        transition=TRANSITION_ELIGIBLE_PRESERVED_REFRESH_FAILED,
+    )
+    if existing_map is not None:
+        existing_map[int(row.provider_fixture_id)] = outcome.row
+    return outcome.row
 
 
 def build_cecchino_today_report(
@@ -721,13 +858,50 @@ def run_scan(
     fixtures_checked = 0
     odds_checked = 0
 
+    # Prefetch righe esistenti (una query) — nessuna N+1 nei gate
+    provider_ids: list[int] = []
     for item in raw_items:
+        pid = _item_brief(item)["provider_fixture_id"]
+        if pid:
+            provider_ids.append(int(pid))
+    existing_rows_by_provider_id: dict[int, CecchinoTodayFixture] = {}
+    previous_status_by_provider_id: dict[int, str | None] = {}
+    if provider_ids:
+        fetched = db.scalars(
+            select(CecchinoTodayFixture).where(
+                CecchinoTodayFixture.scan_date == resolved_date,
+                CecchinoTodayFixture.provider_source == PROVIDER_API_FOOTBALL,
+                CecchinoTodayFixture.provider_fixture_id.in_(provider_ids),
+            ),
+        ).all()
+        # Evita iterazione infinita su MagicMock nei test unitari
+        if isinstance(fetched, (list, tuple)):
+            prefetched_rows = list(fetched)
+        else:
+            prefetched_rows = []
+        for row in prefetched_rows:
+            existing_rows_by_provider_id[int(row.provider_fixture_id)] = row
+            previous_status_by_provider_id[int(row.provider_fixture_id)] = row.eligibility_status
+    run_metrics.protected_eligible_total = sum(
+        1
+        for st in previous_status_by_provider_id.values()
+        if st == ELIGIBILITY_ELIGIBLE
+    )
+
+    for item in raw_items:
+        brief = _item_brief(item)
+        pid = int(brief["provider_fixture_id"])
+        prev = previous_status_by_provider_id.get(pid)
         _upsert_today_snapshot(
             db,
             scan_date=resolved_date,
             api_item=item,
             eligibility_status=ELIGIBILITY_DISCOVERED,
             eligibility_reason="discovered",
+            existing_map=existing_rows_by_provider_id,
+            run_metrics=run_metrics,
+            previous_status=prev,
+            census_mode=True,
         )
     run_metrics.fixtures_censused = total
     db.commit()
@@ -799,6 +973,11 @@ def run_scan(
                 api_fid = brief["provider_fixture_id"]
                 row_warnings: list[str] = []
                 af_client.set_usage_context(usage_ctx.with_fixture(api_fid))
+                prev_status = previous_status_by_provider_id.get(int(api_fid))
+                protected_row = existing_rows_by_provider_id.get(int(api_fid))
+                was_eligible = prev_status == ELIGIBILITY_ELIGIBLE or is_protected_eligible(
+                    protected_row
+                )
 
                 _emit_progress(
                     progress,
@@ -810,25 +989,63 @@ def run_scan(
 
                 allowed, excl_status = is_cecchino_allowed_competition(item)
                 if not allowed:
-                    _upsert_today_snapshot(
-                        db,
-                        scan_date=resolved_date,
-                        api_item=item,
-                        eligibility_status=excl_status or ELIGIBILITY_EXCLUDED_CUP,
-                        eligibility_reason=excl_status,
-                    )
-                    by_status[excl_status or ELIGIBILITY_EXCLUDED_CUP] += 1
+                    incoming = excl_status or ELIGIBILITY_EXCLUDED_CUP
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=incoming,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=incoming,
+                            eligibility_reason=excl_status,
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        by_status[incoming] += 1
                     continue
 
                 if not is_fixture_not_started(item, now_rome):
-                    _upsert_today_snapshot(
-                        db,
-                        scan_date=resolved_date,
-                        api_item=item,
-                        eligibility_status=ELIGIBILITY_EXCLUDED_STARTED,
-                        eligibility_reason="fixture_already_started_or_finished",
-                    )
-                    by_status[ELIGIBILITY_EXCLUDED_STARTED] += 1
+                    if was_eligible and protected_row is not None:
+                        outcome = freeze_eligible_after_kickoff(
+                            protected_row,
+                            item,
+                            brief=brief,
+                        )
+                        run_metrics.protected_snapshot_overwrite_blocked += 1
+                        _record_effective_status(
+                            by_status,
+                            run_metrics,
+                            effective_status=ELIGIBILITY_ELIGIBLE,
+                            transition=outcome.transition,
+                        )
+                        existing_rows_by_provider_id[int(api_fid)] = outcome.row
+                        db.flush()
+                    else:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=ELIGIBILITY_EXCLUDED_STARTED,
+                            eligibility_reason="fixture_already_started_or_finished",
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        _record_effective_status(
+                            by_status,
+                            run_metrics,
+                            effective_status=ELIGIBILITY_EXCLUDED_STARTED,
+                            transition=TRANSITION_STARTED_NEVER_ELIGIBLE,
+                        )
                     continue
 
                 after_filter_count += 1
@@ -854,16 +1071,29 @@ def run_scan(
                         reason = odds_warnings[0].split(":", 1)[-1]
                         if "1x2" in reason:
                             neg_status = ELIGIBILITY_EXCLUDED_MISSING_1X2
-                    _upsert_today_snapshot(
-                        db,
-                        scan_date=resolved_date,
-                        api_item=item,
-                        eligibility_status=neg_status,
-                        eligibility_reason=odds_warnings[0] if odds_warnings else "negative_cache",
-                        bookmaker_status="missing",
-                        blocking_reasons=[odds_warnings[0]] if odds_warnings else ["negative_cache"],
-                    )
-                    by_status[neg_status] += 1
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=neg_status,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=neg_status,
+                            eligibility_reason=odds_warnings[0] if odds_warnings else "negative_cache",
+                            bookmaker_status="missing",
+                            blocking_reasons=[odds_warnings[0]] if odds_warnings else ["negative_cache"],
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        by_status[neg_status] += 1
                     continue
 
                 bm_ok, odds_snapshot, bm_reason, bm_blocking = verify_complete_1x2_odds(odds_by_book)
@@ -874,27 +1104,40 @@ def run_scan(
                     )
                 if not bm_ok:
                     status = _BOOK_REASON_TO_STATUS.get(bm_reason or "", ELIGIBILITY_EXCLUDED_MISSING_1X2)
-                    write_negative_odds_cache(
-                        db,
-                        None,
-                        scan_date=resolved_date,
-                        provider_fixture_id=api_fid,
-                        odds_check_status=bm_reason or "missing_bookmaker",
-                    )
-                    _upsert_today_snapshot(
-                        db,
-                        scan_date=resolved_date,
-                        api_item=item,
-                        eligibility_status=status,
-                        eligibility_reason=bm_reason,
-                        bookmaker_status="missing",
-                        odds_snapshot=odds_snapshot,
-                        warnings=row_warnings,
-                        blocking_reasons=bm_blocking,
-                        odds_check_status=bm_reason or "missing_bookmaker",
-                        odds_checked_at=utc_now(),
-                    )
-                    by_status[status] += 1
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=status,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
+                        write_negative_odds_cache(
+                            db,
+                            None,
+                            scan_date=resolved_date,
+                            provider_fixture_id=api_fid,
+                            odds_check_status=bm_reason or "missing_bookmaker",
+                        )
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=status,
+                            eligibility_reason=bm_reason,
+                            bookmaker_status="missing",
+                            odds_snapshot=odds_snapshot,
+                            warnings=row_warnings,
+                            blocking_reasons=bm_blocking,
+                            odds_check_status=bm_reason or "missing_bookmaker",
+                            odds_checked_at=utc_now(),
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        by_status[status] += 1
                     continue
 
                 run_metrics.fixtures_after_bookmaker_gate += 1
@@ -926,32 +1169,58 @@ def run_scan(
                         logger.exception("Bootstrap Cecchino Today failed fixture=%s", api_fid)
                         recover_session_if_inactive(db)
                         detail = str(exc)[:200]
+                        if was_eligible and protected_row is not None:
+                            _preserve_protected_failure(
+                                protected_row,
+                                api_item=item,
+                                incoming_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                                by_status=by_status,
+                                run_metrics=run_metrics,
+                                existing_map=existing_rows_by_provider_id,
+                            )
+                        else:
+                            _upsert_today_snapshot(
+                                db,
+                                scan_date=resolved_date,
+                                api_item=item,
+                                eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                                eligibility_reason=f"Errore import lega/team/fixture: {detail}",
+                                bookmaker_status="ok",
+                                odds_snapshot=odds_snapshot,
+                                warnings=row_warnings,
+                                blocking_reasons=_mapping_blocking_reasons(exc),
+                                existing_map=existing_rows_by_provider_id,
+                                run_metrics=run_metrics,
+                                previous_status=prev_status,
+                            )
+                            by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
+                        continue
+
+                if comp is None or local_fx is None:
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=ELIGIBILITY_EXCLUDED_MAPPING,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
                         _upsert_today_snapshot(
                             db,
                             scan_date=resolved_date,
                             api_item=item,
                             eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
-                            eligibility_reason=f"Errore import lega/team/fixture: {detail}",
+                            eligibility_reason="local_fixture_or_competition_missing",
                             bookmaker_status="ok",
                             odds_snapshot=odds_snapshot,
                             warnings=row_warnings,
-                            blocking_reasons=_mapping_blocking_reasons(exc),
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
                         )
                         by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
-                        continue
-
-                if comp is None or local_fx is None:
-                    _upsert_today_snapshot(
-                        db,
-                        scan_date=resolved_date,
-                        api_item=item,
-                        eligibility_status=ELIGIBILITY_EXCLUDED_MAPPING,
-                        eligibility_reason="local_fixture_or_competition_missing",
-                        bookmaker_status="ok",
-                        odds_snapshot=odds_snapshot,
-                        warnings=row_warnings,
-                    )
-                    by_status[ELIGIBILITY_EXCLUDED_MAPPING] += 1
                     continue
 
                 _emit_progress(progress, current_step="importing_stats")
@@ -969,21 +1238,35 @@ def run_scan(
                     leakage_status=leakage_status,
                 )
                 if not stats_ok:
-                    _upsert_today_snapshot(
-                        db,
-                        scan_date=resolved_date,
-                        api_item=item,
-                        eligibility_status=stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS,
-                        eligibility_reason=(stats_snapshot.get("failures") or [""])[0],
-                        local_fixture_id=int(local_fx.id),
-                        competition_id=int(comp.id),
-                        bookmaker_status="ok",
-                        stats_status="insufficient",
-                        odds_snapshot=odds_snapshot,
-                        stats_snapshot=stats_snapshot,
-                        warnings=row_warnings,
-                    )
-                    by_status[stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS] += 1
+                    incoming_stats = stats_reason or ELIGIBILITY_EXCLUDED_INSUFFICIENT_STATS
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=incoming_stats,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=incoming_stats,
+                            eligibility_reason=(stats_snapshot.get("failures") or [""])[0],
+                            local_fixture_id=int(local_fx.id),
+                            competition_id=int(comp.id),
+                            bookmaker_status="ok",
+                            stats_status="insufficient",
+                            odds_snapshot=odds_snapshot,
+                            stats_snapshot=stats_snapshot,
+                            warnings=row_warnings,
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        by_status[incoming_stats] += 1
                     continue
 
                 run_metrics.fixtures_after_stats_gate += 1
@@ -1002,22 +1285,35 @@ def run_scan(
                 except Exception as exc:
                     logger.exception("Cecchino Today calc failed fixture=%s", api_fid)
                     recover_session_if_inactive(db)
-                    _upsert_today_snapshot(
-                        db,
-                        scan_date=resolved_date,
-                        api_item=item,
-                        eligibility_status=ELIGIBILITY_ERROR,
-                        eligibility_reason=str(exc)[:500],
-                        local_fixture_id=int(local_fx.id),
-                        competition_id=int(comp.id),
-                        bookmaker_status="ok",
-                        stats_status="ok",
-                        cecchino_status="error",
-                        odds_snapshot=odds_snapshot,
-                        stats_snapshot=stats_snapshot,
-                        warnings=row_warnings + [f"calc_error:{exc!s}"[:200]],
-                    )
-                    by_status[ELIGIBILITY_ERROR] += 1
+                    if was_eligible and protected_row is not None:
+                        _preserve_protected_failure(
+                            protected_row,
+                            api_item=item,
+                            incoming_status=ELIGIBILITY_ERROR,
+                            by_status=by_status,
+                            run_metrics=run_metrics,
+                            existing_map=existing_rows_by_provider_id,
+                        )
+                    else:
+                        _upsert_today_snapshot(
+                            db,
+                            scan_date=resolved_date,
+                            api_item=item,
+                            eligibility_status=ELIGIBILITY_ERROR,
+                            eligibility_reason=str(exc)[:500],
+                            local_fixture_id=int(local_fx.id),
+                            competition_id=int(comp.id),
+                            bookmaker_status="ok",
+                            stats_status="ok",
+                            cecchino_status="error",
+                            odds_snapshot=odds_snapshot,
+                            stats_snapshot=stats_snapshot,
+                            warnings=row_warnings + [f"calc_error:{exc!s}"[:200]],
+                            existing_map=existing_rows_by_provider_id,
+                            run_metrics=run_metrics,
+                            previous_status=prev_status,
+                        )
+                        by_status[ELIGIBILITY_ERROR] += 1
                     errors.append(f"fixture {api_fid}: {exc!s}"[:200])
                     continue
 
@@ -1069,13 +1365,15 @@ def run_scan(
                     kpi_panel["odds_meta"] = meta
                 # Compact Acquistabilità preview → cecchino_output (pre-match only)
                 existing_prev = None
-                existing_row = db.scalar(
-                    select(CecchinoTodayFixture).where(
-                        CecchinoTodayFixture.scan_date == resolved_date,
-                        CecchinoTodayFixture.provider_source == PROVIDER_API_FOOTBALL,
-                        CecchinoTodayFixture.provider_fixture_id == api_fid,
+                existing_row = existing_rows_by_provider_id.get(int(api_fid))
+                if existing_row is None:
+                    existing_row = db.scalar(
+                        select(CecchinoTodayFixture).where(
+                            CecchinoTodayFixture.scan_date == resolved_date,
+                            CecchinoTodayFixture.provider_source == PROVIDER_API_FOOTBALL,
+                            CecchinoTodayFixture.provider_fixture_id == api_fid,
+                        )
                     )
-                )
                 if existing_row is not None and isinstance(
                     existing_row.cecchino_output_json, dict
                 ):
@@ -1165,6 +1463,9 @@ def run_scan(
                     row_warnings=row_warnings,
                     calc=calc,
                     leakage_status=leakage_status,
+                    existing_map=existing_rows_by_provider_id,
+                    run_metrics=run_metrics,
+                    previous_status=prev_status,
                 )
                 by_status[eligibility_status] += 1
             except Exception as exc:
@@ -1177,28 +1478,49 @@ def run_scan(
                 recover_session_if_inactive(db)
                 err_msg = str(exc)[:200]
                 errors.append(err_msg)
-                by_status[ELIGIBILITY_ERROR] += 1
                 if is_datetime_error_message(err_msg):
                     blocking = [classify_datetime_blocking_reason(err_msg)]
                 else:
                     blocking = ["calculation_error"]
                 if api_fid is not None:
                     try:
-                        _upsert_today_snapshot(
-                            db,
-                            scan_date=resolved_date,
-                            api_item=item,
-                            eligibility_status=ELIGIBILITY_ERROR,
-                            eligibility_reason=err_msg,
-                            warnings=[err_msg],
-                            blocking_reasons=blocking,
-                        )
+                        prev_ex = previous_status_by_provider_id.get(int(api_fid))
+                        prot = existing_rows_by_provider_id.get(int(api_fid))
+                        if prev_ex == ELIGIBILITY_ELIGIBLE or is_protected_eligible(prot):
+                            if prot is not None:
+                                _preserve_protected_failure(
+                                    prot,
+                                    api_item=item,
+                                    incoming_status=ELIGIBILITY_ERROR,
+                                    by_status=by_status,
+                                    run_metrics=run_metrics,
+                                    existing_map=existing_rows_by_provider_id,
+                                )
+                            else:
+                                by_status[ELIGIBILITY_ELIGIBLE] += 1
+                        else:
+                            _upsert_today_snapshot(
+                                db,
+                                scan_date=resolved_date,
+                                api_item=item,
+                                eligibility_status=ELIGIBILITY_ERROR,
+                                eligibility_reason=err_msg,
+                                warnings=[err_msg],
+                                blocking_reasons=blocking,
+                                existing_map=existing_rows_by_provider_id,
+                                run_metrics=run_metrics,
+                                previous_status=prev_ex,
+                            )
+                            by_status[ELIGIBILITY_ERROR] += 1
                     except Exception:
                         logger.exception(
                             "CecchinoTodayJob fixture_error_persist failed provider_fixture_id=%s",
                             api_fid,
                         )
                         recover_session_if_inactive(db)
+                        by_status[ELIGIBILITY_ERROR] += 1
+                else:
+                    by_status[ELIGIBILITY_ERROR] += 1
             finally:
                 _emit_progress(
                     progress,
@@ -1372,6 +1694,7 @@ def revalidate_cecchino_today_day(
     )
     kept_eligible = 0
     moved_to_excluded = 0
+    preserved_eligible = 0
     reasons: dict[str, int] = defaultdict(int)
     checked = 0
 
@@ -1398,6 +1721,16 @@ def revalidate_cecchino_today_day(
             calc_status=str(row.cecchino_status or ""),
         )
 
+        if was_eligible and not result.is_eligible:
+            preserve_eligible_snapshot(
+                row,
+                reason_code=warning_code_for_incoming_status(result.eligibility_status),
+                incoming_status=result.eligibility_status,
+            )
+            kept_eligible += 1
+            preserved_eligible += 1
+            continue
+
         row.eligibility_status = result.eligibility_status
         row.eligibility_reason = result.eligibility_reason
         row.blocking_reasons_json = result.blocking_reasons
@@ -1421,6 +1754,7 @@ def revalidate_cecchino_today_day(
         "checked": checked,
         "kept_eligible": kept_eligible,
         "moved_to_excluded": moved_to_excluded,
+        "preserved_eligible": preserved_eligible,
         "reasons": dict(reasons),
     }
 

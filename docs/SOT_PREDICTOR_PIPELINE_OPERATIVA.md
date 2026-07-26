@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Protezione eligible sulle riscansioni (2026-07-26)
+
+1. Prefetch unica delle righe esistenti per `scan_date` + `provider_fixture_id` in scope.
+2. Census: nuove → `discovered`; non-eligible → aggiornabili a `discovered`; **eligible → solo metadati match**, mai demotion.
+3. Gate started: se già eligible → `eligible_frozen_after_kickoff` (live/finished) o `eligible_preserved_terminal_status` (PST/CANC); nessun fetch quote/stats/calc.
+4. Upcoming già eligible: tentativo refresh; successo → `eligible_refreshed`; fallimento → preserve + warning `rescan_preserved_previous_eligible:*` (no negative cache).
+5. `by_status.eligible` e `eligible_count` = stato effettivo post-policy; UI mostra solo contatori > 0 + «Protezione snapshot eligible: attiva».
+6. Nessun cron in questa fase; stessa policy per scan manuale e futura automatica.
+
 ## Analisi intensità Goal Intensity v5 (2026-07-26)
 
 1. Apertura partita: **nessuna** richiesta `goal-intensity-v5-explanations`.

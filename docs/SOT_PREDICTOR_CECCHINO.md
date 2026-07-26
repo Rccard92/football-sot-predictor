@@ -1033,6 +1033,26 @@ Route `/cecchino` — voce menu principale. Modulo separato da SOT v2.0/v2.1 (ne
 
 ## Cecchino Today — discovery giornaliera v0.3 (timeline, filtri, risultati)
 
+### Protezione monotonicità eligible (2026-07-26)
+
+Invariante: una fixture che raggiunge `eligible` resta `eligible` per quella `scan_date` e `provider_fixture_id`.
+
+| Caso | Comportamento | Transition |
+|------|---------------|------------|
+| Nuova / mai eligible | Pipeline completa | `new_eligible` / esclusioni normali |
+| Esclusa → eligible | Promozione | `promoted_to_eligible` |
+| Eligible upcoming + refresh ok | Replace snapshot atomico | `eligible_refreshed` |
+| Eligible upcoming + refresh fail | Preserve snapshot + warning | `eligible_preserved_refresh_failed` |
+| Eligible live/finished | Solo stato/risultato | `eligible_frozen_after_kickoff` |
+| Eligible PST/CANC | Snapshot storico + stato | `eligible_preserved_terminal_status` |
+| Mai eligible già iniziata | `excluded_started` | `started_never_eligible` |
+
+Campi protetti (non sovrascritti su preserve): eligibility, bookmaker/stats/cecchino status, snapshot JSON (odds/stats/output/KPI/xG), blocking, odds_check*, negative_cache, local_fixture_id, competition_id.
+
+Campi aggiornabili post-kickoff: metadati provider, kickoff, display status, score, elapsed, raw_fixture_json.
+
+Policy: `backend/app/services/cecchino/cecchino_today_eligible_guard.py`. **Nessun cron** ancora — prerequisito per automazione 23:30.
+
 Versione `cecchino_today_v0_3_timeline_results`: dashboard giornaliera con timeline ±30 giorni, scan per giornata selezionata, aggiornamento risultati post-kickoff, filtri client-side, card arricchite (stato, score, loghi).
 
 | Metodo | Path | Scopo |

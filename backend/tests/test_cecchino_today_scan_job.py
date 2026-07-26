@@ -201,15 +201,13 @@ def test_load_cached_odds_skips_api_when_snapshot_complete():
     row = MagicMock()
     row.odds_snapshot_json = {
         "raw_by_bookmaker_id": {
-            "8": _mock_1x2_bets(8),
             "3": _mock_1x2_bets(3),
-            "4": _mock_1x2_bets(4),
         },
     }
     db.scalar.return_value = row
     cached = load_cached_odds_for_fixture(db, scan_date=date(2026, 6, 4), provider_fixture_id=123)
     assert cached is not None
-    assert 8 in cached and 3 in cached and 4 in cached
+    assert 3 in cached
 
 
 def test_fetch_fixture_odds_uses_cache_without_api():
@@ -217,9 +215,7 @@ def test_fetch_fixture_odds_uses_cache_without_api():
     row = MagicMock()
     row.odds_snapshot_json = {
         "raw_by_bookmaker_id": {
-            "8": _mock_1x2_bets(8),
             "3": _mock_1x2_bets(3),
-            "4": _mock_1x2_bets(4),
         },
     }
     db.scalar.return_value = row
@@ -263,7 +259,7 @@ def test_fetch_fixture_odds_force_rescan_calls_api():
     client.get_fixture_odds_by_fixture.assert_called_once()
 
 
-def test_extract_odds_filters_bookmakers_8_3_4():
+def test_extract_odds_filters_bookmakers_betfair_only():
     raw = [
         {
             "bookmakers": [
@@ -274,7 +270,8 @@ def test_extract_odds_filters_bookmakers_8_3_4():
         },
     ]
     out = _extract_odds_by_book_from_response(raw)
-    assert set(out.keys()) == {8, 3}
+    assert set(out.keys()) == {3}
+    assert 8 not in out
     assert 99 not in out
 
 
@@ -294,7 +291,8 @@ def test_fetch_fixture_odds_fallback_per_bookmaker():
         metrics=metrics,
     )
     assert strategy == "bookmaker_per_fixture"
-    assert len(odds) == 3
+    assert len(odds) == 1
+    assert 3 in odds
 
 
 def test_scan_day_start_endpoint():

@@ -147,6 +147,9 @@ def test_pending_rollback_avoided_after_handled_mapping_error():
 def test_upsert_today_snapshot_same_scan_date_updates_not_duplicates():
     db = MagicMock()
     existing = MagicMock(spec=CecchinoTodayFixture)
+    existing.eligibility_status = "discovered"
+    existing.warnings_json = []
+    existing.provider_fixture_id = 12345
     db.scalar.return_value = existing
 
     api_item = {
@@ -159,7 +162,7 @@ def test_upsert_today_snapshot_same_scan_date_updates_not_duplicates():
         db,
         scan_date=date(2026, 6, 4),
         api_item=api_item,
-        eligibility_status="eligible",
+        eligibility_status="excluded_mapping_error",
     )
     row2 = _upsert_today_snapshot(
         db,
@@ -171,6 +174,44 @@ def test_upsert_today_snapshot_same_scan_date_updates_not_duplicates():
     assert row1 is existing
     assert row2 is existing
     db.add.assert_not_called()
+
+
+def test_upsert_eligible_not_demoted_on_rescan():
+    """Fixture già eligible non viene retrocessa da un upsert non-eligible."""
+    db = MagicMock()
+    existing = MagicMock(spec=CecchinoTodayFixture)
+    existing.eligibility_status = "eligible"
+    existing.eligibility_reason = "Eleggibile"
+    existing.warnings_json = []
+    existing.odds_snapshot_json = {"odds": 1.9}
+    existing.kpi_panel_json = {"ok": True}
+    existing.provider_fixture_id = 12345
+    existing.local_fixture_id = 7
+    existing.competition_id = 3
+    db.scalar.return_value = existing
+
+    api_item = {
+        "fixture": {"id": 12345, "status": {"short": "NS"}, "date": "2026-06-04T20:00:00+00:00"},
+        "league": {"id": 268, "season": 2025, "name": "Liga", "country": "UY"},
+        "teams": {"home": {"name": "A"}, "away": {"name": "B"}},
+    }
+
+    row = _upsert_today_snapshot(
+        db,
+        scan_date=date(2026, 6, 4),
+        api_item=api_item,
+        eligibility_status="excluded_missing_bookmaker",
+        previous_status="eligible",
+    )
+    assert row is existing
+    assert existing.eligibility_status == "eligible"
+    assert existing.odds_snapshot_json == {"odds": 1.9}
+    assert existing.kpi_panel_json == {"ok": True}
+    assert existing.local_fixture_id == 7
+    assert any(
+        str(w).startswith("rescan_preserved_previous_eligible:")
+        for w in (existing.warnings_json or [])
+    )
 
 
 def test_scan_continues_after_mapping_error_on_one_fixture():

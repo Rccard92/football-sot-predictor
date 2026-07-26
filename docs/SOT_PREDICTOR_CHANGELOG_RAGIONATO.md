@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Protezione eligible sulle riscansioni (2026-07-26)
+
+- Invariante: una fixture `eligible` per `(scan_date, provider_fixture_id)` non può essere retrocessa da scan/rescan.
+- Policy centralizzata in `cecchino_today_eligible_guard.py`; prefetch map in `run_scan`; census non demota; freeze post-kickoff; preserve su refresh fallito; no negative cache su protetti.
+- Report: `eligibility_transitions`, `protected_eligible_total`, `protected_snapshot_overwrite_blocked`; UI riepilogo scan con contatori + «Protezione snapshot eligible: attiva».
+- Nessun cron ancora; prerequisito per futura automazione 23:30. Formule/moduli predittivi invariati.
+
 ## Feat — Analisi interattiva Goal Intensity v5 (2026-07-26)
 
 - UI Intensità Goal Avanzata v5: `ƒx Analisi intensità` / download audit; 4 card dimensione + 4 righe candidato cliccabili solo in modalità attiva; layout a riposo invariato.

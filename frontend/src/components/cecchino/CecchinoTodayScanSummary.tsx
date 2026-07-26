@@ -1,4 +1,7 @@
-import type { CecchinoTodayScanReport } from '../../lib/cecchinoTodayApi'
+import type {
+  CecchinoTodayEligibilityTransitions,
+  CecchinoTodayScanReport,
+} from '../../lib/cecchinoTodayApi'
 import { todayBadgeActive, todayBadgeMuted, todayBadgeOk, todayCard, todayCardPadding } from './cecchinoTodayStyles'
 
 type Props = {
@@ -11,10 +14,25 @@ function countExcluded(report: CecchinoTodayScanReport, keys: string[]): number 
   return keys.reduce((sum, k) => sum + (ex[k] ?? 0), 0)
 }
 
+const TRANSITION_BADGES: { key: keyof CecchinoTodayEligibilityTransitions; label: string }[] = [
+  { key: 'new_eligible', label: 'Nuove eleggibili' },
+  { key: 'promoted_to_eligible', label: 'Promosse a eleggibili' },
+  { key: 'eligible_refreshed', label: 'Eleggibili aggiornate' },
+  { key: 'eligible_preserved_refresh_failed', label: 'Eleggibili preservate' },
+  { key: 'eligible_frozen_after_kickoff', label: 'Congelate dopo il kickoff' },
+  { key: 'eligible_preserved_terminal_status', label: 'Stati terminali preservati' },
+  { key: 'started_never_eligible', label: 'Iniziate mai eleggibili' },
+]
+
 export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
   const rs = (report as CecchinoTodayScanReport & { result_summary?: Record<string, unknown> })
     .result_summary
   const funnel = (rs?.excluded_funnel ?? {}) as Record<string, number>
+  const transitions = (rs?.eligibility_transitions ?? {}) as CecchinoTodayEligibilityTransitions
+  const protectionActive =
+    rs?.snapshot_eligible_protection_active === true ||
+    typeof rs?.protected_eligible_total === 'number' ||
+    Object.keys(transitions).length > 0
   const excludedQuote = countExcluded(report, [
     'excluded_missing_bookmaker',
     'excluded_missing_1x2_market',
@@ -73,6 +91,15 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
       <div className="flex flex-wrap gap-2">
         <span className={todayBadgeMuted}>Trovate: {found}</span>
         <span className={todayBadgeOk}>Eleggibili: {report.eligible}</span>
+        {TRANSITION_BADGES.map(({ key, label }) => {
+          const count = Number(transitions[key] ?? 0)
+          if (count <= 0) return null
+          return (
+            <span key={key} className={todayBadgeOk}>
+              {label}: {count}
+            </span>
+          )
+        })}
         {(funnel.competition ?? excludedCompetition) > 0 && (
           <span className={todayBadgeMuted}>
             Escluse competizione: {funnel.competition ?? excludedCompetition}
@@ -99,6 +126,9 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
         )}
         {excludedErrors > 0 && (
           <span className={todayBadgeMuted}>Errori: {excludedErrors}</span>
+        )}
+        {protectionActive && (
+          <span className={todayBadgeActive}>Protezione snapshot eligible: attiva</span>
         )}
         <span className={todayBadgeActive}>Data: {report.scan_date}</span>
       </div>

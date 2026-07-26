@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Protezione eligible sulle riscansioni (2026-07-26)
+
+Monotonicità `eligible` per `(scan_date, provider_fixture_id)`: modulo `cecchino_today_eligible_guard.py`. Census non demota; refresh upcoming solo se di nuovo eligible, altrimenti preserve snapshot; live/finished → freeze solo match state; postponed/cancelled → preserve terminale. Contatori `eligibility_transitions` nel report + badge UI. **Nessun cron** (prerequisito automazione 23:30). Formule/moduli predittivi invariati.
+
 ## Feat — Analisi interattiva Goal Intensity v5 (2026-07-26)
 
 Modalità debug su Intensità Goal Avanzata v5: pulsante `ƒx Analisi intensità` (lazy), 4 card dimensione + 4 righe candidato cliccabili solo con analisi attiva, popup `type=dimension|candidate`, download `cecchino-goal-intensity-v5-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/goal-intensity-v5-explanations` (diagnostic_re_evaluation_only, source_mode `persisted_goal_intensity_v5_preview_snapshot`, bundle = `snap.bundle_id`). Distinzione DV1 vulnerabilità vs solidità display `100−DV1`; OV1 volatilità vs stabilità `100−OV1`. Formule/bundle/snapshot/Segnali invariati; layout a riposo identico.

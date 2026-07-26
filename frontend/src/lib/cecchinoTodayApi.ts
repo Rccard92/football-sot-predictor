@@ -82,6 +82,16 @@ export type CecchinoTodayScanJobStartResponse = {
   scan_meta?: CecchinoTodayScanMeta
 }
 
+export type CecchinoTodayEligibilityTransitions = {
+  new_eligible?: number
+  promoted_to_eligible?: number
+  eligible_refreshed?: number
+  eligible_preserved_refresh_failed?: number
+  eligible_frozen_after_kickoff?: number
+  eligible_preserved_terminal_status?: number
+  started_never_eligible?: number
+}
+
 export type CecchinoTodayScanJobResultSummary = {
   fixtures_found?: number
   fixtures_censused?: number
@@ -115,6 +125,10 @@ export type CecchinoTodayScanJobResultSummary = {
     estimated_remaining_daily_budget?: number
     by_endpoint?: Record<string, number>
   }
+  eligibility_transitions?: CecchinoTodayEligibilityTransitions
+  protected_eligible_total?: number
+  protected_snapshot_overwrite_blocked?: number
+  snapshot_eligible_protection_active?: boolean
 }
 
 export type CecchinoTodayScanJob = {

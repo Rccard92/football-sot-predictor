@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.cecchino.cecchino_today_eligible_guard import empty_eligibility_transitions
+
 
 @dataclass
 class ScanRunMetrics:
@@ -36,7 +38,15 @@ class ScanRunMetrics:
         },
     )
     excluded_summary: dict[str, int] = field(default_factory=dict)
+    eligibility_transitions: dict[str, int] = field(default_factory=empty_eligibility_transitions)
+    protected_eligible_total: int = 0
+    protected_snapshot_overwrite_blocked: int = 0
     budget_remaining_estimated: int | None = None
+
+    def record_transition(self, transition: str) -> None:
+        self.eligibility_transitions[transition] = int(
+            self.eligibility_transitions.get(transition, 0)
+        ) + 1
 
     def record_odds_strategy(self, strategy: str) -> None:
         if strategy == "cached":
@@ -124,6 +134,12 @@ class ScanRunMetrics:
             "duration_seconds": round(duration_seconds, 2),
             "api_usage": api_usage or {},
             "bookmaker_mode": "betfair_only",
+            "eligibility_transitions": dict(self.eligibility_transitions),
+            "protected_eligible_total": int(self.protected_eligible_total),
+            "protected_snapshot_overwrite_blocked": int(
+                self.protected_snapshot_overwrite_blocked
+            ),
+            "snapshot_eligible_protection_active": True,
         }
         if provider_items_received is not None:
             summary["provider_items_received"] = provider_items_received
