@@ -17,6 +17,7 @@ from app.services.cecchino_data_lab.constants import (
     ISSUE_MISSING_HOME_TEAM,
     ISSUE_ODDS_LTE_ONE,
     ISSUE_PARTIAL_BET365,
+    ISSUE_PARTIAL_BET365_AH,
     ISSUE_PARTIAL_STATISTICS,
     ISSUE_SAME_TEAM,
 )
@@ -247,12 +248,28 @@ def validate_match_row(
             )
         )
 
-    # Partial Bet365 groups
-    groups = [
+    # Partial Bet365 groups (1X2 / O/U) — warning; AH gestito a parte
+    odds_groups = [
         ("1x2_pre", [match.bet365_home, match.bet365_draw, match.bet365_away]),
         ("1x2_closing", [match.bet365_closing_home, match.bet365_closing_draw, match.bet365_closing_away]),
         ("ou25_pre", [match.bet365_over_25, match.bet365_under_25]),
         ("ou25_closing", [match.bet365_closing_over_25, match.bet365_closing_under_25]),
+    ]
+    for group_name, vals in odds_groups:
+        present_g = sum(1 for v in vals if v is not None)
+        if 0 < present_g < len(vals):
+            issues.append(
+                ParsedIssue(
+                    severity="warning",
+                    issue_code=ISSUE_PARTIAL_BET365,
+                    message=f"Riga {rn}: quote Bet365 parziali ({group_name}: {present_g}/{len(vals)}).",
+                    source_row_number=rn,
+                    details={"group": group_name, "present": present_g, "total": len(vals)},
+                )
+            )
+
+    # Asian Handicap parziale: warning dedicato, riga resta importabile, non tocca 1X2/OU ready
+    ah_groups = [
         ("ah_pre", [match.asian_handicap_home_line, match.bet365_ah_home, match.bet365_ah_away]),
         (
             "ah_closing",
@@ -263,14 +280,17 @@ def validate_match_row(
             ],
         ),
     ]
-    for group_name, vals in groups:
+    for group_name, vals in ah_groups:
         present_g = sum(1 for v in vals if v is not None)
         if 0 < present_g < len(vals):
             issues.append(
                 ParsedIssue(
                     severity="warning",
-                    issue_code=ISSUE_PARTIAL_BET365,
-                    message=f"Riga {rn}: quote Bet365 parziali ({group_name}: {present_g}/{len(vals)}).",
+                    issue_code=ISSUE_PARTIAL_BET365_AH,
+                    message=(
+                        f"Riga {rn}: Asian Handicap Bet365 parziale "
+                        f"({group_name}: {present_g}/{len(vals)}); valori mancanti restano NULL."
+                    ),
                     source_row_number=rn,
                     details={"group": group_name, "present": present_g, "total": len(vals)},
                 )

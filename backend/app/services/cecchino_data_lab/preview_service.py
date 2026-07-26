@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.cecchino_data_lab.csv_parser import ParseResult, parse_football_data_csv
+from app.services.cecchino_data_lab.import_helpers import catalog_meta, parse_with_catalog
 
 
 def _issue_to_dict(issue: Any) -> dict[str, Any]:
@@ -22,24 +22,24 @@ def _issue_to_dict(issue: Any) -> dict[str, Any]:
 def preview_csv_bytes(
     raw: bytes,
     *,
-    competition_name: str,
-    country: str,
+    competition_key: str,
     season_label: str,
-    timezone_name: str = "Europe/Rome",
-    division_code: str | None = None,
     source_filename: str | None = None,
 ) -> dict[str, Any]:
-    result: ParseResult = parse_football_data_csv(raw, timezone_name=timezone_name)
+    entry, result = parse_with_catalog(
+        raw,
+        competition_key=competition_key,
+        season_label=season_label,
+    )
+    meta = catalog_meta(entry, season_label)
     issues = [_issue_to_dict(i) for i in result.issues]
+    for m in result.matches:
+        issues.extend(_issue_to_dict(i) for i in m.issues)
     # Cap issues in response for large files
     issues_preview = issues[:200]
     return {
         "source_filename": source_filename,
-        "competition_name": competition_name,
-        "country": country,
-        "season_label": season_label,
-        "division_code": division_code,
-        "timezone": timezone_name,
+        **meta,
         "parser_version": result.parser_version,
         "file_sha256": result.file_sha256,
         "file_size_bytes": result.file_size_bytes,

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.services.cecchino_data_lab.constants import IMPORT_CONFIRM_TOKEN, PARSER_VERSION
-from app.services.cecchino_data_lab.import_service import CecchinoLabImportError, import_csv_bytes
+from app.services.cecchino_data_lab.errors import CecchinoLabImportError
+from app.services.cecchino_data_lab.import_service import import_csv_bytes
 from app.services.cecchino_data_lab.preview_service import preview_csv_bytes
 
 SAMPLE = (
@@ -20,14 +20,14 @@ SAMPLE = (
 def test_preview_does_not_touch_db():
     out = preview_csv_bytes(
         SAMPLE.encode("utf-8"),
-        competition_name="Premier League",
-        country="England",
-        season_label="2024/25",
+        competition_key="premier_league",
+        season_label="2024/2025",
         source_filename="E0.csv",
     )
     assert out["rows_total"] == 1
     assert out["summary"]["importable"] is True
     assert out["file_sha256"]
+    assert out["division_code"] == "E0"
     assert "B365H" in out["recognized_columns"]
 
 
@@ -37,9 +37,8 @@ def test_import_requires_confirm_token():
         import_csv_bytes(
             db,
             SAMPLE.encode("utf-8"),
-            competition_name="Premier League",
-            country="England",
-            season_label="2024/25",
+            competition_key="premier_league",
+            season_label="2024/2025",
             confirm="WRONG",
         )
     assert exc.value.code == "invalid_confirm_token"
@@ -51,16 +50,14 @@ def test_import_duplicate_file_noop():
     existing = MagicMock()
     existing.id = 9
     existing.dataset_id = 3
-    # First query = existing import by sha
     db.query.return_value.filter.return_value.one_or_none.return_value = existing
 
     with pytest.raises(CecchinoLabImportError) as exc:
         import_csv_bytes(
             db,
             SAMPLE.encode("utf-8"),
-            competition_name="Premier League",
-            country="England",
-            season_label="2024/25",
+            competition_key="premier_league",
+            season_label="2024/2025",
             confirm=IMPORT_CONFIRM_TOKEN,
         )
     assert exc.value.code == "duplicate_file"
@@ -72,7 +69,6 @@ def test_import_real_commits_and_creates_rows():
     """Import con session mock che simula flush/query count."""
     db = MagicMock()
 
-    # Sequence of one_or_none: no duplicate import, then no existing dataset
     no_dup = None
     no_dataset = None
     call_count = {"n": 0}
@@ -91,13 +87,9 @@ def test_import_real_commits_and_creates_rows():
     query_mock.filter.return_value = filter_mock
     db.query.return_value = query_mock
 
-    # Simulate autoincrement ids on flush
     created = {"dataset_id": 1, "import_id": 10, "match_id": 100}
 
     def flush_side_effect():
-        for obj in list(db.add.call_args_list):
-            pass
-        # Assign ids to objects that were added
         for call in db.add.call_args_list:
             obj = call.args[0]
             name = type(obj).__name__
@@ -114,10 +106,8 @@ def test_import_real_commits_and_creates_rows():
     result = import_csv_bytes(
         db,
         SAMPLE.encode("utf-8"),
-        competition_name="Premier League",
-        country="England",
-        season_label="2024/25",
-        division_code="E0",
+        competition_key="premier_league",
+        season_label="2024/2025",
         source_filename="E0.csv",
         confirm=IMPORT_CONFIRM_TOKEN,
     )
@@ -140,9 +130,8 @@ def test_import_rollback_on_unexpected_error():
         import_csv_bytes(
             db,
             SAMPLE.encode("utf-8"),
-            competition_name="Premier League",
-            country="England",
-            season_label="2024/25",
+            competition_key="premier_league",
+            season_label="2024/2025",
             confirm=IMPORT_CONFIRM_TOKEN,
         )
     db.rollback.assert_called()
@@ -156,9 +145,27 @@ def test_preview_flags_partial_bet365():
     )
     out = preview_csv_bytes(
         csv.encode("utf-8"),
-        competition_name="PL",
-        country="England",
-        season_label="2024/25",
+        competition_key="premier_league",
+        season_label="2024/2025",
     )
     assert out["warnings_count"] >= 1
     assert any(i["issue_code"] == "partial_bet365" for i in out["issues"])
+
+
+def test_import_division_mismatch_raises():
+    db = MagicMock()
+    db.query.return_value.filter.return_value.one_or_none.return_value = None
+    csv = (
+        "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+        "E3,10/08/2024,A,B,1,0,H\n"
+    )
+    with pytest.raises(CecchinoLabImportError) as exc:
+        import_csv_bytes(
+            db,
+            csv.encode("utf-8"),
+            competition_key="championship",
+            season_label="2024/2025",
+            confirm=IMPORT_CONFIRM_TOKEN,
+        )
+    assert exc.value.code == "division_mismatch"
+    db.commit.assert_not_called()

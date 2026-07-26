@@ -269,34 +269,46 @@ export function getCecchinoLabIssues(params: Record<string, string | number | un
   return requestJson(`/api/cecchino-lab/data-quality/issues?${q.toString()}`)
 }
 
-export type ImportMeta = {
-  competition_name: string
+export type LabCompetitionCatalogItem = {
+  key: string
+  display_name: string
   country: string
-  season_label: string
+  division_code: string
   timezone: string
-  division_code?: string
+}
+
+export type ImportMeta = {
+  competition_key: string
+  season_label: string
+}
+
+export const LAB_SEASON_OPTIONS = [
+  '2025/2026',
+  '2024/2025',
+  '2023/2024',
+  '2022/2023',
+  '2021/2022',
+  '2020/2021',
+] as const
+
+export function getCecchinoLabCompetitions(): Promise<{ items: LabCompetitionCatalogItem[] }> {
+  return requestJson('/api/cecchino-lab/catalog/competitions')
 }
 
 export function previewCecchinoLabCsv(file: File, meta: ImportMeta): Promise<CecchinoLabPreview> {
   const form = new FormData()
   form.append('file', file)
-  form.append('competition_name', meta.competition_name)
-  form.append('country', meta.country)
+  form.append('competition_key', meta.competition_key)
   form.append('season_label', meta.season_label)
-  form.append('timezone', meta.timezone)
-  if (meta.division_code) form.append('division_code', meta.division_code)
   return postFormData('/api/admin/cecchino-lab/imports/preview', form)
 }
 
 export function importCecchinoLabCsv(file: File, meta: ImportMeta): Promise<CecchinoLabImportResult> {
   const form = new FormData()
   form.append('file', file)
-  form.append('competition_name', meta.competition_name)
-  form.append('country', meta.country)
+  form.append('competition_key', meta.competition_key)
   form.append('season_label', meta.season_label)
-  form.append('timezone', meta.timezone)
   form.append('confirm', IMPORT_CONFIRM_TOKEN)
-  if (meta.division_code) form.append('division_code', meta.division_code)
   return postFormData('/api/admin/cecchino-lab/imports', form)
 }
 
@@ -308,6 +320,12 @@ export function formatOdd(v: number | null | undefined): string {
   return v.toFixed(2)
 }
 
+export function matchOddsColumnLabel(field: 'home' | 'draw' | 'away'): string {
+  if (field === 'home') return '1'
+  if (field === 'draw') return 'X'
+  return '2'
+}
+
 export function qualityBadgeClass(status: string): string {
   if (status === 'complete') return 'lab-badge-ok'
   if (status === 'error' || status === 'poor') return 'lab-badge-err'
@@ -317,4 +335,8 @@ export function qualityBadgeClass(status: string): string {
 
 export function isOverviewEmpty(overview: CecchinoLabOverview | null): boolean {
   return !overview || overview.is_empty === true
+}
+
+export function formatAnomaliesHint(errors: number, warnings: number): string {
+  return `${errors} errori · ${warnings} warning`
 }

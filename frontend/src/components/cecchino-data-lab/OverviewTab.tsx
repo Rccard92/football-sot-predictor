@@ -131,7 +131,7 @@ export function OverviewTab({ overview, loading, error, onGoImport }: Props) {
         <KpiCard
           label="Anomalie"
           value={overview.anomalies_total}
-          hint={`${overview.anomalies_errors} err · ${overview.anomalies_warnings} warn`}
+          hint={`${overview.anomalies_errors} errori · ${overview.anomalies_warnings} warning`}
         />
       </div>
 

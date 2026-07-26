@@ -153,7 +153,6 @@ def get_overview(db: Session) -> dict[str, Any]:
         or 0
     )
     incomplete = total_matches - complete
-    anomalies = db.query(func.count(CecchinoLabDataIssue.id)).scalar() or 0
     errors = (
         db.query(func.count(CecchinoLabDataIssue.id))
         .filter(CecchinoLabDataIssue.severity == "error")
@@ -166,6 +165,8 @@ def get_overview(db: Session) -> dict[str, Any]:
         .scalar()
         or 0
     )
+    # Solo errori + warning; le info restano in Qualità dati ma non contano come anomalie
+    anomalies = errors + warnings
 
     with_1x2 = (
         db.query(func.count(CecchinoLabMatch.id))

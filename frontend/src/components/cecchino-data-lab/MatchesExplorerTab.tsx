@@ -106,17 +106,17 @@ export function MatchesExplorerTab({ datasetId, refreshKey }: Props) {
       },
       {
         accessorKey: 'bet365_home',
-        header: 'B365 1',
+        header: '1',
         cell: (info) => formatOdd(info.getValue() as number | null),
       },
       {
         accessorKey: 'bet365_draw',
-        header: 'B365 X',
+        header: 'X',
         cell: (info) => formatOdd(info.getValue() as number | null),
       },
       {
         accessorKey: 'bet365_away',
-        header: 'B365 2',
+        header: '2',
         cell: (info) => formatOdd(info.getValue() as number | null),
       },
       {

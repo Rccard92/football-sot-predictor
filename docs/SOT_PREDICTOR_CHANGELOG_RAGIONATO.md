@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Selector campionati guidato Cecchino Lab (2026-07-26)
+
+- Perché: ridurre errori manuali su paese/Div/timezone in import CSV.
+- Catalogo statico 16 campionati; API `GET /api/cecchino-lab/catalog/competitions`; preview/import con `competition_key`.
+- Controllo bloccante Div vs catalogo; anomalie Overview senza `info`; AH parziale = warning non bloccante.
+- Formule/Cecchino Today/dataset esistenti invariati.
+
 ## Feat — Cecchino Lab archivio storico Football-Data (2026-07-26)
 
 - Perché: base dati storica isolata per futuri replay Cecchino, senza contaminare tabelle operative né Today.

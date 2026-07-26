@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatOdd,
   isOverviewEmpty,
+  matchOddsColumnLabel,
   qualityBadgeClass,
   type CecchinoLabOverview,
 } from './cecchinoLabApi'
@@ -10,6 +11,12 @@ describe('cecchinoLabApi helpers', () => {
   it('formatOdd hides null as dash', () => {
     expect(formatOdd(null)).toBe('—')
     expect(formatOdd(1.45)).toBe('1.45')
+  })
+
+  it('matchOddsColumnLabel uses 1/X/2', () => {
+    expect(matchOddsColumnLabel('home')).toBe('1')
+    expect(matchOddsColumnLabel('draw')).toBe('X')
+    expect(matchOddsColumnLabel('away')).toBe('2')
   })
 
   it('qualityBadgeClass maps statuses', () => {

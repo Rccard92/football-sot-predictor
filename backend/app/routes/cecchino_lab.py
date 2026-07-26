@@ -11,10 +11,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.services.cecchino_data_lab.import_service import (
-    CecchinoLabImportError,
-    import_csv_bytes,
-)
+from app.services.cecchino_data_lab.competition_catalog import list_competitions_dicts
+from app.services.cecchino_data_lab.errors import CecchinoLabImportError
+from app.services.cecchino_data_lab.import_service import import_csv_bytes
 from app.services.cecchino_data_lab.preview_service import preview_csv_bytes
 from app.services.cecchino_data_lab.query_service import (
     get_dataset,
@@ -32,34 +31,38 @@ admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab
 @admin_router.post("/imports/preview")
 async def preview_import(
     file: UploadFile = File(...),
-    competition_name: str = Form(...),
-    country: str = Form(...),
+    competition_key: str = Form(...),
     season_label: str = Form(...),
-    timezone: str = Form("Europe/Rome"),
-    division_code: str | None = Form(None),
 ) -> JSONResponse:
     raw = await file.read()
-    result = preview_csv_bytes(
-        raw,
-        competition_name=competition_name,
-        country=country,
-        season_label=season_label,
-        timezone_name=timezone,
-        division_code=division_code,
-        source_filename=file.filename,
-    )
+    try:
+        result = preview_csv_bytes(
+            raw,
+            competition_key=competition_key,
+            season_label=season_label,
+            source_filename=file.filename,
+        )
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "error": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                }
+            ),
+        )
     return JSONResponse(content=jsonable_encoder(result))
 
 
 @admin_router.post("/imports")
 async def run_import(
     file: UploadFile = File(...),
-    competition_name: str = Form(...),
-    country: str = Form(...),
+    competition_key: str = Form(...),
     season_label: str = Form(...),
     confirm: str = Form(...),
-    timezone: str = Form("Europe/Rome"),
-    division_code: str | None = Form(None),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     raw = await file.read()
@@ -67,11 +70,8 @@ async def run_import(
         result = import_csv_bytes(
             db,
             raw,
-            competition_name=competition_name,
-            country=country,
+            competition_key=competition_key,
             season_label=season_label,
-            timezone_name=timezone,
-            division_code=division_code,
             source_filename=file.filename or "upload.csv",
             confirm=confirm,
         )
@@ -88,6 +88,11 @@ async def run_import(
             ),
         )
     return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/catalog/competitions")
+def catalog_competitions() -> dict[str, Any]:
+    return {"items": list_competitions_dicts()}
 
 
 @router.get("/overview")

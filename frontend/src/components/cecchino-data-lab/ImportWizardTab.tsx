@@ -1,11 +1,13 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  getCecchinoLabCompetitions,
   importCecchinoLabCsv,
+  LAB_SEASON_OPTIONS,
   previewCecchinoLabCsv,
   type CecchinoLabImportResult,
   type CecchinoLabPreview,
-  type ImportMeta,
+  type LabCompetitionCatalogItem,
 } from '../../lib/cecchinoLabApi'
 import { AdminHttpError } from '../../lib/api'
 
@@ -20,17 +22,34 @@ export function ImportWizardTab({ onImported }: Props) {
   const [phase, setPhase] = useState<Phase>('select')
   const [dragOver, setDragOver] = useState(false)
   const [files, setFiles] = useState<File[]>([])
-  const [meta, setMeta] = useState<ImportMeta>({
-    competition_name: '',
-    country: '',
-    season_label: '',
-    timezone: 'Europe/Rome',
-    division_code: '',
-  })
+  const [catalog, setCatalog] = useState<LabCompetitionCatalogItem[]>([])
+  const [competitionKey, setCompetitionKey] = useState('')
+  const [seasonLabel, setSeasonLabel] = useState('')
   const [preview, setPreview] = useState<CecchinoLabPreview | null>(null)
   const [activeFile, setActiveFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<CecchinoLabImportResult | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getCecchinoLabCompetitions()
+      .then((res) => {
+        if (!cancelled) setCatalog(res.items)
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Impossibile caricare il catalogo campionati')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const selected = useMemo(
+    () => catalog.find((c) => c.key === competitionKey) ?? null,
+    [catalog, competitionKey],
+  )
+
+  const canPreview = Boolean(competitionKey && seasonLabel && files.length > 0 && !busy)
 
   const onFiles = useCallback((list: FileList | File[]) => {
     const arr = Array.from(list).filter((f) => f.name.toLowerCase().endsWith('.csv'))
@@ -38,23 +57,24 @@ export function ImportWizardTab({ onImported }: Props) {
   }, [])
 
   const runPreview = async () => {
-    if (!files.length) {
-      toast.error('Seleziona almeno un CSV')
-      return
-    }
-    if (!meta.competition_name.trim() || !meta.country.trim() || !meta.season_label.trim()) {
-      toast.error('Compila campionato, paese e stagione')
+    if (!canPreview || !files.length) {
+      toast.error('Seleziona campionato, stagione e file CSV')
       return
     }
     setBusy(true)
     try {
       const file = files[0]
       setActiveFile(file)
-      const p = await previewCecchinoLabCsv(file, meta)
+      const p = await previewCecchinoLabCsv(file, {
+        competition_key: competitionKey,
+        season_label: seasonLabel,
+      })
       setPreview(p)
       setPhase('preview')
       if (files.length > 1) {
-        toast.message(`Anteprima del primo file (${files.length} selezionati). Gli altri verranno importati in sequenza.`)
+        toast.message(
+          `Anteprima del primo file (${files.length} selezionati). Gli altri verranno importati in sequenza.`,
+        )
       }
     } catch (e) {
       toast.error(e instanceof AdminHttpError ? e.message : 'Errore anteprima')
@@ -67,8 +87,9 @@ export function ImportWizardTab({ onImported }: Props) {
     if (!activeFile || !preview?.summary.importable) return
     const ok = window.confirm(
       `Confermi l'import di "${activeFile.name}" nel database?\n` +
-        `Righe importabili: ${preview.summary.rows_importable ?? preview.rows_total}\n` +
-        `Token richiesto: IMPORT_CECCHINO_LAB_CSV`,
+        `Campionato: ${selected?.display_name ?? competitionKey}\n` +
+        `Stagione: ${seasonLabel}\n` +
+        `Righe importabili: ${preview.summary.rows_importable ?? preview.rows_total}`,
     )
     if (!ok) return
     setBusy(true)
@@ -76,7 +97,10 @@ export function ImportWizardTab({ onImported }: Props) {
       let last: CecchinoLabImportResult | null = null
       for (const file of files) {
         toast.message(`Import in corso: ${file.name}`)
-        last = await importCecchinoLabCsv(file, meta)
+        last = await importCecchinoLabCsv(file, {
+          competition_key: competitionKey,
+          season_label: seasonLabel,
+        })
       }
       setResult(last)
       setPhase('done')
@@ -124,7 +148,11 @@ export function ImportWizardTab({ onImported }: Props) {
             {files.length > 0 && (
               <ul className="mt-2 w-full max-w-lg space-y-1 text-left text-sm">
                 {files.map((f) => (
-                  <li key={f.name} className="flex justify-between rounded-lg px-3 py-2" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                  <li
+                    key={f.name}
+                    className="flex justify-between rounded-lg px-3 py-2"
+                    style={{ background: 'rgba(0,0,0,0.2)' }}
+                  >
                     <span>{f.name}</span>
                     <span style={{ color: 'var(--lab-muted)' }}>{(f.size / 1024).toFixed(1)} KB</span>
                   </li>
@@ -133,33 +161,62 @@ export function ImportWizardTab({ onImported }: Props) {
             )}
           </div>
 
-          <div className="lab-card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
-            {(
-              [
-                ['competition_name', 'Campionato', 'Premier League'],
-                ['country', 'Paese', 'England'],
-                ['division_code', 'Codice divisione', 'E0'],
-                ['season_label', 'Stagione', '2024/25'],
-                ['timezone', 'Timezone', 'Europe/Rome'],
-              ] as const
-            ).map(([key, label, placeholder]) => (
-              <label key={key} className="block text-sm">
-                <span className="mb-1 block" style={{ color: 'var(--lab-muted)' }}>
-                  {label}
-                </span>
-                <input
-                  className="lab-input"
-                  placeholder={placeholder}
-                  value={meta[key] ?? ''}
-                  onChange={(e) => setMeta((m) => ({ ...m, [key]: e.target.value }))}
-                  disabled={busy}
-                />
-              </label>
-            ))}
+          <div className="lab-card grid gap-4 p-4 sm:grid-cols-2">
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1 block" style={{ color: 'var(--lab-muted)' }}>
+                Campionato
+              </span>
+              <select
+                className="lab-input"
+                value={competitionKey}
+                onChange={(e) => setCompetitionKey(e.target.value)}
+                disabled={busy}
+              >
+                <option value="">Seleziona campionato…</option>
+                {catalog.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.display_name} — {c.country}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block" style={{ color: 'var(--lab-muted)' }}>
+                Stagione
+              </span>
+              <select
+                className="lab-input"
+                value={seasonLabel}
+                onChange={(e) => setSeasonLabel(e.target.value)}
+                disabled={busy}
+              >
+                <option value="">Seleziona stagione…</option>
+                {LAB_SEASON_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selected && (
+              <div
+                className="rounded-xl px-4 py-3 text-sm sm:col-span-2"
+                style={{ background: 'rgba(46,230,255,0.06)', border: '1px solid var(--lab-border)' }}
+              >
+                <div className="font-semibold" style={{ color: 'var(--lab-cyan)' }}>
+                  {selected.display_name}
+                </div>
+                <div className="mt-0.5" style={{ color: 'var(--lab-muted)' }}>
+                  {selected.country} · {selected.division_code} · {selected.timezone}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end">
-            <button type="button" className="lab-btn" onClick={runPreview} disabled={busy || !files.length}>
+            <button type="button" className="lab-btn" onClick={runPreview} disabled={!canPreview}>
               {busy ? 'Analisi…' : 'Anteprima'}
             </button>
           </div>
@@ -170,23 +227,31 @@ export function ImportWizardTab({ onImported }: Props) {
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="lab-card p-4">
-              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Righe</div>
+              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
+                Righe
+              </div>
               <div className="text-2xl font-semibold">{preview.rows_total}</div>
             </div>
             <div className="lab-card p-4">
-              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Importabili</div>
+              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
+                Importabili
+              </div>
               <div className="text-2xl font-semibold" style={{ color: 'var(--lab-ok)' }}>
                 {preview.summary.rows_importable ?? '—'}
               </div>
             </div>
             <div className="lab-card p-4">
-              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Warning</div>
+              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
+                Warning
+              </div>
               <div className="text-2xl font-semibold" style={{ color: 'var(--lab-warn)' }}>
                 {preview.warnings_count}
               </div>
             </div>
             <div className="lab-card p-4">
-              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Errori</div>
+              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
+                Errori
+              </div>
               <div className="text-2xl font-semibold" style={{ color: 'var(--lab-err)' }}>
                 {preview.errors_count}
               </div>
@@ -206,8 +271,9 @@ export function ImportWizardTab({ onImported }: Props) {
           <div className="lab-card p-4">
             <h3 className="mb-2 text-sm font-semibold">Colonne</h3>
             <p className="text-xs" style={{ color: 'var(--lab-muted)' }}>
-              Riconosciute: {preview.recognized_columns.length} · Inattese: {preview.unexpected_columns.length} ·
-              Mancanti: {preview.missing_required_columns.join(', ') || 'nessuna'}
+              Riconosciute: {preview.recognized_columns.length} · Preservate nel raw:{' '}
+              {preview.unexpected_columns.length} · Mancanti:{' '}
+              {preview.missing_required_columns.join(', ') || 'nessuna'}
             </p>
             <div className="lab-table-wrap mt-3 max-h-56">
               <table className="lab-table">
@@ -236,7 +302,17 @@ export function ImportWizardTab({ onImported }: Props) {
               <h3 className="mb-2 text-sm font-semibold">Issue rilevate</h3>
               <ul className="space-y-1 text-sm">
                 {preview.issues.slice(0, 40).map((iss, i) => (
-                  <li key={i} style={{ color: iss.severity === 'error' ? 'var(--lab-err)' : iss.severity === 'warning' ? 'var(--lab-warn)' : 'var(--lab-muted)' }}>
+                  <li
+                    key={i}
+                    style={{
+                      color:
+                        iss.severity === 'error'
+                          ? 'var(--lab-err)'
+                          : iss.severity === 'warning'
+                            ? 'var(--lab-warn)'
+                            : 'var(--lab-muted)',
+                    }}
+                  >
                     [{iss.severity}] {iss.message}
                   </li>
                 ))}

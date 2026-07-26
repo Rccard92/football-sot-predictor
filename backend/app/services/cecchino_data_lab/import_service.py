@@ -18,6 +18,7 @@ from app.models.cecchino_lab_import import (
     CecchinoLabImport,
 )
 from app.models.cecchino_lab_match import CecchinoLabMatch
+from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.constants import (
     IMPORT_CONFIRM_TOKEN,
     PARSER_VERSION,
@@ -26,19 +27,10 @@ from app.services.cecchino_data_lab.constants import (
 from app.services.cecchino_data_lab.csv_parser import (
     ParsedMatchRow,
     build_dataset_key,
-    parse_football_data_csv,
     parse_season_years,
 )
+from app.services.cecchino_data_lab.import_helpers import parse_with_catalog
 from app.services.cecchino_data_lab.quality import dataset_quality_from_matches
-
-
-class CecchinoLabImportError(Exception):
-    def __init__(self, code: str, message: str, *, status_code: int = 400, details: dict | None = None):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        self.details = details or {}
 
 
 def _match_to_orm(
@@ -153,22 +145,27 @@ def import_csv_bytes(
     db: Session,
     raw: bytes,
     *,
-    competition_name: str,
-    country: str,
+    competition_key: str,
     season_label: str,
-    timezone_name: str = "Europe/Rome",
-    division_code: str | None = None,
     source_filename: str = "upload.csv",
     confirm: str | None = None,
 ) -> dict[str, Any]:
     if confirm != IMPORT_CONFIRM_TOKEN:
         raise CecchinoLabImportError(
             "invalid_confirm_token",
-            f"Conferma richiesta: inviáre confirm={IMPORT_CONFIRM_TOKEN}",
+            f"Conferma richiesta: inviare confirm={IMPORT_CONFIRM_TOKEN}",
             status_code=400,
         )
 
-    parsed = parse_football_data_csv(raw, timezone_name=timezone_name)
+    entry, parsed = parse_with_catalog(
+        raw,
+        competition_key=competition_key,
+        season_label=season_label,
+    )
+    competition_name = entry.display_name
+    country = entry.country
+    timezone_name = entry.timezone
+    division_code = entry.division_code
 
     existing_import = (
         db.query(CecchinoLabImport)
@@ -197,6 +194,18 @@ def import_csv_bytes(
             "Intestazione CSV non valida.",
             status_code=400,
             details={"missing": parsed.missing_required_columns},
+        )
+
+    if parsed.summary.get("division_mismatch"):
+        raise CecchinoLabImportError(
+            "division_mismatch",
+            f"La colonna Div del CSV non coincide con {division_code} ({competition_name}).",
+            status_code=400,
+            details={
+                "expected": division_code,
+                "competition_key": competition_key,
+                "errors_count": parsed.errors_count,
+            },
         )
 
     if parsed.rows_importable == 0:

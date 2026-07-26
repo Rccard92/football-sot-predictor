@@ -38,17 +38,15 @@ def test_preview_endpoint_no_write():
     client, db = _app()
     files = {"file": ("E0.csv", BytesIO(SAMPLE.encode("utf-8")), "text/csv")}
     data = {
-        "competition_name": "Premier League",
-        "country": "England",
-        "season_label": "2024/25",
-        "timezone": "Europe/London",
-        "division_code": "E0",
+        "competition_key": "premier_league",
+        "season_label": "2024/2025",
     }
     res = client.post("/api/admin/cecchino-lab/imports/preview", files=files, data=data)
     assert res.status_code == 200
     body = res.json()
     assert body["rows_total"] == 1
     assert body["summary"]["importable"] is True
+    assert body["division_code"] == "E0"
     db.commit.assert_not_called()
     db.add.assert_not_called()
 
@@ -69,14 +67,13 @@ def test_import_endpoint_with_confirm():
             "bet365_coverage": {},
             "file_sha256": "abc",
             "parser_version": "football_data_uk_bet365_v1",
-            "dataset_key": "england-premier-league-2024-25",
+            "dataset_key": "england-premier-league-2024-2025",
         },
     ) as mocked:
         files = {"file": ("E0.csv", BytesIO(SAMPLE.encode("utf-8")), "text/csv")}
         data = {
-            "competition_name": "Premier League",
-            "country": "England",
-            "season_label": "2024/25",
+            "competition_key": "premier_league",
+            "season_label": "2024/2025",
             "confirm": IMPORT_CONFIRM_TOKEN,
         }
         res = client.post("/api/admin/cecchino-lab/imports", files=files, data=data)
@@ -84,6 +81,7 @@ def test_import_endpoint_with_confirm():
         assert res.json()["status"] == "completed"
         mocked.assert_called_once()
         assert mocked.call_args.kwargs["confirm"] == IMPORT_CONFIRM_TOKEN
+        assert mocked.call_args.kwargs["competition_key"] == "premier_league"
 
 
 def test_overview_endpoint():

@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Selector campionati guidato Cecchino Lab (2026-07-26)
+
+Import Lab: catalogo 16 campionati, metadata automatici (paese/Div/timezone), controllo `Div` bloccante, anomalie Overview = errori+warning (info escluse). Wizard FE: solo campionato + stagione + CSV. Formule/Today invariati. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
+
 ## Feat — Cecchino Lab archivio storico Football-Data (2026-07-26)
 
 Nuova area isolata **Cecchino Lab** (`/cecchino-lab`): import CSV football-data.co.uk, tabelle `cecchino_lab_*`, API `/api/cecchino-lab` + admin import con token `IMPORT_CECCHINO_LAB_CSV`, workspace FE `cecchino-data-lab`. Solo Bet365 normalizzato; nessun replay/formule/predizioni/ML; **Cecchino Today e moduli predittivi invariati**. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
