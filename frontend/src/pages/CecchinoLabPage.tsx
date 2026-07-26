@@ -88,6 +88,10 @@ export function CecchinoLabPage() {
             loading={loadingOverview}
             error={overviewError}
             onGoImport={() => setTab('import')}
+            onOpenDataset={(id) => {
+              setFocusDatasetId(id)
+              setTab('datasets')
+            }}
           />
         )}
         {tab === 'import' && (
@@ -105,6 +109,9 @@ export function CecchinoLabPage() {
             onOpenMatches={(id) => {
               setFocusDatasetId(id)
               setTab('matches')
+            }}
+            onReplaced={() => {
+              bump()
             }}
           />
         )}

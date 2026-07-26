@@ -15,6 +15,7 @@ from app.services.cecchino_data_lab.competition_catalog import list_competitions
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.import_service import import_csv_bytes
 from app.services.cecchino_data_lab.preview_service import preview_csv_bytes
+from app.services.cecchino_data_lab.replace_service import replace_dataset_csv
 from app.services.cecchino_data_lab.query_service import (
     get_dataset,
     get_match,
@@ -72,6 +73,37 @@ async def run_import(
             raw,
             competition_key=competition_key,
             season_label=season_label,
+            source_filename=file.filename or "upload.csv",
+            confirm=confirm,
+        )
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=jsonable_encoder(
+                {
+                    "status": "error",
+                    "error": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                }
+            ),
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/datasets/{dataset_id}/replace")
+async def replace_dataset(
+    dataset_id: int,
+    file: UploadFile = File(...),
+    confirm: str = Form(...),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    raw = await file.read()
+    try:
+        result = replace_dataset_csv(
+            db,
+            dataset_id,
+            raw,
             source_filename=file.filename or "upload.csv",
             confirm=confirm,
         )

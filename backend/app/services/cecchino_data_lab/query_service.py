@@ -211,15 +211,84 @@ def get_overview(db: Session) -> dict[str, Any]:
             }
         )
 
-    ranked = sorted(datasets, key=lambda d: d.data_quality_status)
     best = [_dataset_dict(d) for d in sorted(datasets, key=lambda d: d.matches_count, reverse=True)[:3]]
     worst = [
         _dataset_dict(d)
         for d in sorted(
             datasets,
-            key=lambda d: (0 if d.data_quality_status == "poor" else 1 if d.data_quality_status == "partial" else 2, -d.matches_count),
+            key=lambda d: (
+                0 if d.data_quality_status in ("error", "poor") else 1 if d.data_quality_status == "partial" else 2,
+                -d.matches_count,
+            ),
         )[:3]
     ]
+
+    # Per-dataset issue counts (via imports of that dataset)
+    def _season_sort_key(label: str) -> tuple[int, str]:
+        try:
+            start = int(str(label).split("/")[0].split("-")[0])
+            return (-start, label)
+        except (ValueError, IndexError):
+            return (0, label)
+
+    sorted_datasets = sorted(
+        datasets,
+        key=lambda d: (_season_sort_key(d.season_label or ""), (d.competition_name or "").lower()),
+    )
+
+    datasets_status: list[dict[str, Any]] = []
+    for ds in sorted_datasets:
+        meta = ds.metadata_json or {}
+        coverage = meta.get("bet365_coverage") or {}
+        import_ids = [
+            r[0]
+            for r in db.query(CecchinoLabImport.id)
+            .filter(CecchinoLabImport.dataset_id == ds.id)
+            .all()
+        ]
+        err_c = warn_c = info_c = 0
+        if import_ids:
+            err_c = (
+                db.query(func.count(CecchinoLabDataIssue.id))
+                .filter(
+                    CecchinoLabDataIssue.import_id.in_(import_ids),
+                    CecchinoLabDataIssue.severity == "error",
+                )
+                .scalar()
+                or 0
+            )
+            warn_c = (
+                db.query(func.count(CecchinoLabDataIssue.id))
+                .filter(
+                    CecchinoLabDataIssue.import_id.in_(import_ids),
+                    CecchinoLabDataIssue.severity == "warning",
+                )
+                .scalar()
+                or 0
+            )
+            info_c = (
+                db.query(func.count(CecchinoLabDataIssue.id))
+                .filter(
+                    CecchinoLabDataIssue.import_id.in_(import_ids),
+                    CecchinoLabDataIssue.severity == "info",
+                )
+                .scalar()
+                or 0
+            )
+        datasets_status.append(
+            {
+                "id": ds.id,
+                "competition_name": ds.competition_name,
+                "season_label": ds.season_label,
+                "matches_count": ds.matches_count,
+                "bet365_1x2_coverage_pct": coverage.get("1x2_pre_pct"),
+                "bet365_ou25_coverage_pct": coverage.get("ou25_pre_pct"),
+                "errors_count": err_c,
+                "warnings_count": warn_c,
+                "info_count": info_c,
+                "data_quality_status": ds.data_quality_status,
+            }
+        )
 
     return {
         "competitions_count": len(competitions),
@@ -239,6 +308,7 @@ def get_overview(db: Session) -> dict[str, Any]:
         "recent_imports": recent,
         "best_quality_datasets": best,
         "worst_quality_datasets": worst,
+        "datasets_status": datasets_status,
         "completeness": {
             "complete": complete,
             "incomplete": incomplete,

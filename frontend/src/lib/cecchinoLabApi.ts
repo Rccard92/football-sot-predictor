@@ -3,6 +3,7 @@
 import { AdminHttpError, requestJson } from './api'
 
 const IMPORT_CONFIRM_TOKEN = 'IMPORT_CECCHINO_LAB_CSV'
+const REPLACE_CONFIRM_TOKEN = 'REPLACE_CECCHINO_LAB_DATASET'
 
 function getApiBase(): string {
   const raw = import.meta.env.VITE_API_BASE_URL
@@ -44,8 +45,22 @@ export type CecchinoLabOverview = {
   }>
   best_quality_datasets: CecchinoLabDataset[]
   worst_quality_datasets: CecchinoLabDataset[]
+  datasets_status: CecchinoLabDatasetStatus[]
   completeness: { complete: number; incomplete: number; complete_pct: number }
   is_empty: boolean
+}
+
+export type CecchinoLabDatasetStatus = {
+  id: number
+  competition_name: string
+  season_label: string
+  matches_count: number
+  bet365_1x2_coverage_pct?: number | null
+  bet365_ou25_coverage_pct?: number | null
+  errors_count: number
+  warnings_count: number
+  info_count: number
+  data_quality_status: string
 }
 
 export type CecchinoLabDataset = {
@@ -141,6 +156,7 @@ export type CecchinoLabPreview = {
   bet365_coverage: Record<string, number>
   warnings_count: number
   errors_count: number
+  info_count?: number
   issues: Array<{
     severity: string
     issue_code: string
@@ -312,7 +328,31 @@ export function importCecchinoLabCsv(file: File, meta: ImportMeta): Promise<Cecc
   return postFormData('/api/admin/cecchino-lab/imports', form)
 }
 
-export { IMPORT_CONFIRM_TOKEN }
+export type CecchinoLabReplaceResult = {
+  status: string
+  dataset_id: number
+  dataset_key: string
+  competition_name: string
+  season_label: string
+  previous_matches_count: number
+  import_id: number
+  rows_total: number
+  rows_imported: number
+  rows_skipped: number
+  warnings_count: number
+  errors_count: number
+  info_count: number
+  data_quality_status: string
+}
+
+export function replaceCecchinoLabDataset(datasetId: number, file: File): Promise<CecchinoLabReplaceResult> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('confirm', REPLACE_CONFIRM_TOKEN)
+  return postFormData(`/api/admin/cecchino-lab/datasets/${datasetId}/replace`, form)
+}
+
+export { IMPORT_CONFIRM_TOKEN, REPLACE_CONFIRM_TOKEN }
 
 /** Pure helpers for unit tests */
 export function formatOdd(v: number | null | undefined): string {
@@ -328,6 +368,7 @@ export function matchOddsColumnLabel(field: 'home' | 'draw' | 'away'): string {
 
 export function qualityBadgeClass(status: string): string {
   if (status === 'complete') return 'lab-badge-ok'
+  if (status === 'complete_with_warnings') return 'lab-badge-warn'
   if (status === 'error' || status === 'poor') return 'lab-badge-err'
   if (status === 'warning' || status === 'partial') return 'lab-badge-warn'
   return 'lab-badge-muted'
@@ -339,4 +380,14 @@ export function isOverviewEmpty(overview: CecchinoLabOverview | null): boolean {
 
 export function formatAnomaliesHint(errors: number, warnings: number): string {
   return `${errors} errori · ${warnings} warning`
+}
+
+export function replaceDatasetConfirmMessage(
+  competitionName: string,
+  seasonLabel: string,
+): string {
+  return (
+    `Stai per sostituire esclusivamente il CSV di ${competitionName} ${seasonLabel}. ` +
+    `Serie A, Championship e gli altri dataset non saranno modificati.`
+  )
 }

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import ReactECharts from 'echarts-for-react'
 import type { CecchinoLabOverview } from '../../lib/cecchinoLabApi'
+import { qualityBadgeClass } from '../../lib/cecchinoLabApi'
 import { qualityLabel } from './labTheme'
 
 type Props = {
@@ -8,6 +9,7 @@ type Props = {
   loading: boolean
   error: string | null
   onGoImport: () => void
+  onOpenDataset?: (datasetId: number) => void
 }
 
 function KpiCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
@@ -33,7 +35,7 @@ function KpiCard({ label, value, hint }: { label: string; value: string | number
   )
 }
 
-export function OverviewTab({ overview, loading, error, onGoImport }: Props) {
+export function OverviewTab({ overview, loading, error, onGoImport, onOpenDataset }: Props) {
   if (loading) {
     return <div className="p-8 text-sm" style={{ color: 'var(--lab-muted)' }}>Caricamento overview…</div>
   }
@@ -116,6 +118,8 @@ export function OverviewTab({ overview, loading, error, onGoImport }: Props) {
     ],
   }
 
+  const datasetsStatus = overview.datasets_status ?? []
+
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -177,37 +181,51 @@ export function OverviewTab({ overview, loading, error, onGoImport }: Props) {
             </ul>
           )}
         </div>
-        <div className="lab-card p-4 space-y-4">
-          <div>
-            <h3 className="mb-2 text-sm font-semibold">Migliore qualità</h3>
-            <div className="space-y-1">
-              {overview.best_quality_datasets.map((d) => (
-                <div key={d.id} className="flex justify-between text-sm">
-                  <span>
-                    {d.competition_name} {d.season_label}
-                  </span>
-                  <span className={`rounded px-2 text-xs ${d.data_quality_status === 'complete' ? 'lab-badge-ok' : 'lab-badge-warn'}`}>
-                    {qualityLabel(d.data_quality_status)}
-                  </span>
-                </div>
-              ))}
+
+        <div className="lab-card p-4">
+          <h3 className="mb-3 text-sm font-semibold">Stato dataset</h3>
+          {datasetsStatus.length === 0 ? (
+            <p className="text-sm" style={{ color: 'var(--lab-muted)' }}>Nessun dataset.</p>
+          ) : (
+            <div className="lab-table-wrap max-h-72 overflow-auto">
+              <table className="lab-table text-sm">
+                <thead>
+                  <tr>
+                    <th>Campionato</th>
+                    <th>Stagione</th>
+                    <th>Partite</th>
+                    <th>1X2</th>
+                    <th>O/U 2.5</th>
+                    <th>Err</th>
+                    <th>Warn</th>
+                    <th>Stato</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datasetsStatus.map((d) => (
+                    <tr
+                      key={d.id}
+                      className={onOpenDataset ? 'cursor-pointer hover:bg-[rgba(46,230,255,0.06)]' : undefined}
+                      onClick={() => onOpenDataset?.(d.id)}
+                    >
+                      <td>{d.competition_name}</td>
+                      <td>{d.season_label}</td>
+                      <td className="tabular-nums">{d.matches_count}</td>
+                      <td className="tabular-nums">{d.bet365_1x2_coverage_pct ?? '—'}%</td>
+                      <td className="tabular-nums">{d.bet365_ou25_coverage_pct ?? '—'}%</td>
+                      <td className="tabular-nums">{d.errors_count}</td>
+                      <td className="tabular-nums">{d.warnings_count}</td>
+                      <td>
+                        <span className={`rounded px-2 text-xs ${qualityBadgeClass(d.data_quality_status)}`}>
+                          {qualityLabel(d.data_quality_status)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
-          <div>
-            <h3 className="mb-2 text-sm font-semibold">Peggiore qualità</h3>
-            <div className="space-y-1">
-              {overview.worst_quality_datasets.map((d) => (
-                <div key={d.id} className="flex justify-between text-sm">
-                  <span>
-                    {d.competition_name} {d.season_label}
-                  </span>
-                  <span className={`rounded px-2 text-xs lab-badge-warn`}>
-                    {qualityLabel(d.data_quality_status)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

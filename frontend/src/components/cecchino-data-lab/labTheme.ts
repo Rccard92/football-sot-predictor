@@ -19,6 +19,8 @@ export function qualityLabel(status: string): string {
   switch (status) {
     case 'complete':
       return 'Completo'
+    case 'complete_with_warnings':
+      return 'Completo con warning'
     case 'partial':
       return 'Parziale'
     case 'error':

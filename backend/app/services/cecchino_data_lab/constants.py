@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-PARSER_VERSION = "football_data_uk_bet365_v1"
+PARSER_VERSION = "football_data_uk_bet365_v2"
 SOURCE_PROVIDER = "football-data.co.uk"
 IMPORT_CONFIRM_TOKEN = "IMPORT_CECCHINO_LAB_CSV"
+REPLACE_CONFIRM_TOKEN = "REPLACE_CECCHINO_LAB_DATASET"
+RAW_EXTRA_COLUMNS_KEY = "__extra_columns__"
 
 # Colonne canoniche Football-Data (obbligatorie per un CSV valido)
 REQUIRED_HEADERS = frozenset({"Div", "Date", "HomeTeam", "AwayTeam"})
@@ -77,6 +79,8 @@ ISSUE_HT_RESULT_INCONSISTENT = "ht_result_inconsistent"
 ISSUE_ODDS_LTE_ONE = "odds_lte_one"
 ISSUE_AH_LINE_NOT_QUARTER = "ah_line_not_quarter"
 ISSUE_COLUMN_COUNT_MISMATCH = "column_count_mismatch"
+ISSUE_UNIFORM_EXTRA_TRAILING_COLUMNS = "uniform_extra_trailing_columns"
+ISSUE_IRREGULAR_COLUMN_COUNT = "irregular_column_count"
 ISSUE_DUPLICATE_MATCH = "duplicate_match"
 ISSUE_PARTIAL_STATISTICS = "partial_statistics"
 ISSUE_PARTIAL_BET365 = "partial_bet365"

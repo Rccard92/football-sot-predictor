@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatAnomaliesHint,
   formatOdd,
   isOverviewEmpty,
   matchOddsColumnLabel,
   qualityBadgeClass,
+  replaceDatasetConfirmMessage,
   type CecchinoLabOverview,
 } from './cecchinoLabApi'
+import { qualityLabel } from '../components/cecchino-data-lab/labTheme'
 
 describe('cecchinoLabApi helpers', () => {
   it('formatOdd hides null as dash', () => {
@@ -21,8 +24,27 @@ describe('cecchinoLabApi helpers', () => {
 
   it('qualityBadgeClass maps statuses', () => {
     expect(qualityBadgeClass('complete')).toBe('lab-badge-ok')
+    expect(qualityBadgeClass('complete_with_warnings')).toBe('lab-badge-warn')
     expect(qualityBadgeClass('partial')).toBe('lab-badge-warn')
     expect(qualityBadgeClass('error')).toBe('lab-badge-err')
+  })
+
+  it('qualityLabel covers complete_with_warnings', () => {
+    expect(qualityLabel('complete')).toBe('Completo')
+    expect(qualityLabel('complete_with_warnings')).toBe('Completo con warning')
+    expect(qualityLabel('error')).toBe('Errore')
+  })
+
+  it('formatAnomaliesHint excludes info', () => {
+    expect(formatAnomaliesHint(0, 0)).toBe('0 errori · 0 warning')
+    expect(formatAnomaliesHint(2, 1)).toBe('2 errori · 1 warning')
+  })
+
+  it('replaceDatasetConfirmMessage is dynamic', () => {
+    const msg = replaceDatasetConfirmMessage('League Two', '2025/2026')
+    expect(msg).toContain('League Two 2025/2026')
+    expect(msg).toContain('Serie A')
+    expect(msg).toContain('Championship')
   })
 
   it('isOverviewEmpty true for empty overview', () => {
@@ -47,6 +69,7 @@ describe('cecchinoLabApi helpers', () => {
         recent_imports: [],
         best_quality_datasets: [],
         worst_quality_datasets: [],
+        datasets_status: [],
         completeness: { complete: 0, incomplete: 0, complete_pct: 0 },
       } as CecchinoLabOverview),
     ).toBe(true)

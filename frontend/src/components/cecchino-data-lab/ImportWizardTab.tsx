@@ -225,7 +225,7 @@ export function ImportWizardTab({ onImported }: Props) {
 
       {phase === 'preview' && preview && (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="lab-card p-4">
               <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
                 Righe
@@ -242,6 +242,14 @@ export function ImportWizardTab({ onImported }: Props) {
             </div>
             <div className="lab-card p-4">
               <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
+                Errori
+              </div>
+              <div className="text-2xl font-semibold" style={{ color: 'var(--lab-err)' }}>
+                {preview.errors_count}
+              </div>
+            </div>
+            <div className="lab-card p-4">
+              <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
                 Warning
               </div>
               <div className="text-2xl font-semibold" style={{ color: 'var(--lab-warn)' }}>
@@ -250,10 +258,10 @@ export function ImportWizardTab({ onImported }: Props) {
             </div>
             <div className="lab-card p-4">
               <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
-                Errori
+                Info
               </div>
-              <div className="text-2xl font-semibold" style={{ color: 'var(--lab-err)' }}>
-                {preview.errors_count}
+              <div className="text-2xl font-semibold" style={{ color: 'var(--lab-muted)' }}>
+                {preview.info_count ?? 0}
               </div>
             </div>
           </div>

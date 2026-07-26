@@ -32,10 +32,8 @@ def preview_csv_bytes(
         season_label=season_label,
     )
     meta = catalog_meta(entry, season_label)
+    # result.issues already includes file-level + match issues (no double-append)
     issues = [_issue_to_dict(i) for i in result.issues]
-    for m in result.matches:
-        issues.extend(_issue_to_dict(i) for i in m.issues)
-    # Cap issues in response for large files
     issues_preview = issues[:200]
     return {
         "source_filename": source_filename,
@@ -55,6 +53,7 @@ def preview_csv_bytes(
         "bet365_coverage": result.bet365_coverage,
         "warnings_count": result.warnings_count,
         "errors_count": result.errors_count,
+        "info_count": result.info_count,
         "issues": issues_preview,
         "issues_truncated": len(issues) > len(issues_preview),
         "summary": result.summary,

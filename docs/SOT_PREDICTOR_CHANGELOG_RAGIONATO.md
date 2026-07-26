@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Colonne extra CSV e Overview Cecchino Lab (2026-07-26)
+
+- Perché: League Two (132 header / 133 valori uniformi) generava 552 warning inutili, perdeva il valore trailing in `raw_json` e non persisteva correttamente le issue; Overview mostrava Migliore/Peggiore qualità ridondante.
+- Parser `football_data_uk_bet365_v2`: `__extra_columns__` in raw; issue aggregate `uniform_extra_trailing_columns` (info) / `irregular_column_count` (warning); preview con `info_count`.
+- Persistenza issue unica con dedup; Overview `datasets_status`; replace controllato `POST .../datasets/{id}/replace` con token `REPLACE_CECCHINO_LAB_DATASET`.
+- Formule/Cecchino Today/Serie A/Championship invariati (replace isolato al dataset scelto; sostituzione reale League Two manuale post-deploy).
+
 ## Feat — Selector campionati guidato Cecchino Lab (2026-07-26)
 
 - Perché: ridurre errori manuali su paese/Div/timezone in import CSV.

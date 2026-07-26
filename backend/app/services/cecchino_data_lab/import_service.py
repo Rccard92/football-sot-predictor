@@ -25,7 +25,9 @@ from app.services.cecchino_data_lab.constants import (
     SOURCE_PROVIDER,
 )
 from app.services.cecchino_data_lab.csv_parser import (
+    ParsedIssue,
     ParsedMatchRow,
+    ParseResult,
     build_dataset_key,
     parse_season_years,
 )
@@ -96,6 +98,132 @@ def _match_to_orm(
     )
 
 
+def _issue_dedupe_key(issue: ParsedIssue) -> tuple[Any, ...]:
+    return (
+        issue.severity,
+        issue.issue_code,
+        issue.source_row_number,
+        issue.field_name,
+        issue.message,
+    )
+
+
+def persist_parsed_issues(
+    db: Session,
+    *,
+    import_id: int,
+    parsed: ParseResult,
+    row_to_match_id: dict[int, int],
+) -> None:
+    """Persist every ParseResult issue once, linking match_id when possible."""
+    seen: set[tuple[Any, ...]] = set()
+    for issue in parsed.issues:
+        key = _issue_dedupe_key(issue)
+        if key in seen:
+            continue
+        seen.add(key)
+        match_id = None
+        if issue.source_row_number is not None:
+            match_id = row_to_match_id.get(issue.source_row_number)
+        db.add(
+            CecchinoLabDataIssue(
+                import_id=import_id,
+                match_id=match_id,
+                source_row_number=issue.source_row_number,
+                severity=issue.severity,
+                issue_code=issue.issue_code,
+                field_name=issue.field_name,
+                raw_value=issue.raw_value,
+                message=issue.message,
+                details_json=issue.details,
+            )
+        )
+
+
+def refresh_dataset_aggregates(
+    db: Session,
+    dataset: CecchinoLabDataset,
+    *,
+    bet365_coverage: dict[str, Any] | None = None,
+    last_import_id: int | None = None,
+    last_import_at: str | None = None,
+) -> None:
+    complete = (
+        db.query(CecchinoLabMatch)
+        .filter(
+            CecchinoLabMatch.dataset_id == dataset.id,
+            CecchinoLabMatch.row_quality_status == "complete",
+        )
+        .count()
+    )
+    partial = (
+        db.query(CecchinoLabMatch)
+        .filter(
+            CecchinoLabMatch.dataset_id == dataset.id,
+            CecchinoLabMatch.row_quality_status == "partial",
+        )
+        .count()
+    )
+    row_errors = (
+        db.query(CecchinoLabMatch)
+        .filter(
+            CecchinoLabMatch.dataset_id == dataset.id,
+            CecchinoLabMatch.row_quality_status == "error",
+        )
+        .count()
+    )
+    total = (
+        db.query(CecchinoLabMatch)
+        .filter(CecchinoLabMatch.dataset_id == dataset.id)
+        .count()
+    )
+
+    import_ids = [
+        r[0]
+        for r in db.query(CecchinoLabImport.id)
+        .filter(CecchinoLabImport.dataset_id == dataset.id)
+        .all()
+    ]
+    issue_errors = 0
+    issue_warnings = 0
+    if import_ids:
+        issue_errors = (
+            db.query(CecchinoLabDataIssue)
+            .filter(
+                CecchinoLabDataIssue.import_id.in_(import_ids),
+                CecchinoLabDataIssue.severity == "error",
+            )
+            .count()
+        )
+        issue_warnings = (
+            db.query(CecchinoLabDataIssue)
+            .filter(
+                CecchinoLabDataIssue.import_id.in_(import_ids),
+                CecchinoLabDataIssue.severity == "warning",
+            )
+            .count()
+        )
+
+    dataset.matches_count = total
+    dataset.status = DATASET_STATUS_ACTIVE if total > 0 else dataset.status
+    dataset.data_quality_status = dataset_quality_from_matches(
+        complete,
+        partial,
+        row_errors,
+        total,
+        issue_errors=issue_errors,
+        issue_warnings=issue_warnings,
+    )
+    meta = dict(dataset.metadata_json or {})
+    if last_import_id is not None:
+        meta["last_import_id"] = last_import_id
+    if last_import_at is not None:
+        meta["last_import_at"] = last_import_at
+    if bet365_coverage is not None:
+        meta["bet365_coverage"] = bet365_coverage
+    dataset.metadata_json = meta
+
+
 def get_or_create_dataset(
     db: Session,
     *,
@@ -139,6 +267,73 @@ def get_or_create_dataset(
     db.add(ds)
     db.flush()
     return ds
+
+
+def write_import_rows(
+    db: Session,
+    *,
+    dataset: CecchinoLabDataset,
+    parsed: ParseResult,
+    source_filename: str,
+) -> tuple[CecchinoLabImport, int]:
+    """Create import + matches + issues for an existing dataset (no commit)."""
+    now = datetime.now(timezone.utc)
+    imp = CecchinoLabImport(
+        dataset_id=dataset.id,
+        source_filename=source_filename,
+        file_sha256=parsed.file_sha256,
+        file_size_bytes=parsed.file_size_bytes,
+        parser_version=PARSER_VERSION,
+        status="pending",
+        rows_total=parsed.rows_total,
+        rows_imported=0,
+        rows_skipped=parsed.rows_skipped,
+        warnings_count=parsed.warnings_count,
+        errors_count=parsed.errors_count,
+        columns_json={
+            "headers": parsed.headers,
+            "recognized": parsed.recognized_columns,
+            "unexpected": parsed.unexpected_columns,
+        },
+        summary_json=parsed.summary,
+        started_at=now,
+    )
+    db.add(imp)
+    db.flush()
+
+    match_orms: list[tuple[ParsedMatchRow, CecchinoLabMatch]] = []
+    imported = 0
+    for m in parsed.matches:
+        if not m.importable:
+            continue
+        orm = _match_to_orm(m, dataset_id=dataset.id, import_id=imp.id)
+        db.add(orm)
+        match_orms.append((m, orm))
+        imported += 1
+
+    db.flush()
+
+    row_to_match_id = {m.source_row_number: orm.id for m, orm in match_orms}
+    persist_parsed_issues(
+        db,
+        import_id=imp.id,
+        parsed=parsed,
+        row_to_match_id=row_to_match_id,
+    )
+
+    imp.rows_imported = imported
+    imp.rows_skipped = parsed.rows_total - imported
+    imp.status = IMPORT_STATUS_COMPLETED
+    imp.completed_at = datetime.now(timezone.utc)
+
+    refresh_dataset_aggregates(
+        db,
+        dataset,
+        bet365_coverage=parsed.bet365_coverage,
+        last_import_id=imp.id,
+        last_import_at=now.isoformat(),
+    )
+    return imp, imported
 
 
 def import_csv_bytes(
@@ -216,7 +411,6 @@ def import_csv_bytes(
             details={"errors_count": parsed.errors_count},
         )
 
-    now = datetime.now(timezone.utc)
     try:
         dataset = get_or_create_dataset(
             db,
@@ -227,127 +421,12 @@ def import_csv_bytes(
             division_code=(division_code.strip() if division_code else None),
         )
 
-        imp = CecchinoLabImport(
-            dataset_id=dataset.id,
+        imp, imported = write_import_rows(
+            db,
+            dataset=dataset,
+            parsed=parsed,
             source_filename=source_filename,
-            file_sha256=parsed.file_sha256,
-            file_size_bytes=parsed.file_size_bytes,
-            parser_version=PARSER_VERSION,
-            status="pending",
-            rows_total=parsed.rows_total,
-            rows_imported=0,
-            rows_skipped=parsed.rows_skipped,
-            warnings_count=parsed.warnings_count,
-            errors_count=parsed.errors_count,
-            columns_json={
-                "headers": parsed.headers,
-                "recognized": parsed.recognized_columns,
-                "unexpected": parsed.unexpected_columns,
-            },
-            summary_json=parsed.summary,
-            started_at=now,
         )
-        db.add(imp)
-        db.flush()
-
-        imported = 0
-        row_issues_buffer: list[tuple[ParsedMatchRow | None, Any]] = []
-
-        # File-level issues (no match)
-        for issue in parsed.issues:
-            if issue.source_row_number is None:
-                row_issues_buffer.append((None, issue))
-
-        match_orms: list[tuple[ParsedMatchRow, CecchinoLabMatch]] = []
-        for m in parsed.matches:
-            if not m.importable:
-                for issue in m.issues:
-                    row_issues_buffer.append((None, issue))
-                continue
-            orm = _match_to_orm(m, dataset_id=dataset.id, import_id=imp.id)
-            db.add(orm)
-            match_orms.append((m, orm))
-            imported += 1
-
-        db.flush()
-
-        for m, orm in match_orms:
-            for issue in m.issues:
-                db.add(
-                    CecchinoLabDataIssue(
-                        import_id=imp.id,
-                        match_id=orm.id,
-                        source_row_number=issue.source_row_number,
-                        severity=issue.severity,
-                        issue_code=issue.issue_code,
-                        field_name=issue.field_name,
-                        raw_value=issue.raw_value,
-                        message=issue.message,
-                        details_json=issue.details,
-                    )
-                )
-
-        for _m, issue in row_issues_buffer:
-            db.add(
-                CecchinoLabDataIssue(
-                    import_id=imp.id,
-                    match_id=None,
-                    source_row_number=issue.source_row_number,
-                    severity=issue.severity,
-                    issue_code=issue.issue_code,
-                    field_name=issue.field_name,
-                    raw_value=issue.raw_value,
-                    message=issue.message,
-                    details_json=issue.details,
-                )
-            )
-
-        # Refresh dataset aggregates
-        complete = (
-            db.query(CecchinoLabMatch)
-            .filter(
-                CecchinoLabMatch.dataset_id == dataset.id,
-                CecchinoLabMatch.row_quality_status == "complete",
-            )
-            .count()
-        )
-        partial = (
-            db.query(CecchinoLabMatch)
-            .filter(
-                CecchinoLabMatch.dataset_id == dataset.id,
-                CecchinoLabMatch.row_quality_status == "partial",
-            )
-            .count()
-        )
-        errors = (
-            db.query(CecchinoLabMatch)
-            .filter(
-                CecchinoLabMatch.dataset_id == dataset.id,
-                CecchinoLabMatch.row_quality_status == "error",
-            )
-            .count()
-        )
-        total = (
-            db.query(CecchinoLabMatch)
-            .filter(CecchinoLabMatch.dataset_id == dataset.id)
-            .count()
-        )
-
-        dataset.matches_count = total
-        dataset.status = DATASET_STATUS_ACTIVE if total > 0 else dataset.status
-        dataset.data_quality_status = dataset_quality_from_matches(
-            complete, partial, errors, total
-        )
-        meta = dict(dataset.metadata_json or {})
-        meta["last_import_id"] = imp.id
-        meta["last_import_at"] = now.isoformat()
-        meta["bet365_coverage"] = parsed.bet365_coverage
-        dataset.metadata_json = meta
-
-        imp.rows_imported = imported
-        imp.rows_skipped = parsed.rows_total - imported
-        imp.status = IMPORT_STATUS_COMPLETED
-        imp.completed_at = datetime.now(timezone.utc)
 
         db.commit()
         db.refresh(imp)
@@ -363,6 +442,7 @@ def import_csv_bytes(
             "rows_skipped": parsed.rows_total - imported,
             "warnings_count": parsed.warnings_count,
             "errors_count": parsed.errors_count,
+            "info_count": parsed.info_count,
             "bet365_coverage": parsed.bet365_coverage,
             "file_sha256": parsed.file_sha256,
             "parser_version": PARSER_VERSION,

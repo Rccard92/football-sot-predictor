@@ -48,16 +48,55 @@ Controllo bloccante: colonna CSV `Div` deve coincidere con `division_code` del c
 
 ## Anomalie Overview
 
-Il totale **Anomalie** = errori + warning. Le issue `severity=info` (es. colonne preservate nel raw) restano in Qualità dati ma **non** contano come anomalie e **non** degradano la qualità del dataset.
+Il totale **Anomalie** = errori + warning. Le issue `severity=info` (es. colonne extra uniformi, colonne preservate nel raw) restano in Qualità dati / preview ma **non** contano come anomalie e **non** degradano la qualità del dataset da Completo a Parziale.
+
+La Overview espone `datasets_status` (tabella «Stato dataset»): campionato, stagione, partite, coverage Bet365, errori, warning, stato. I campi legacy `best_quality_datasets` / `worst_quality_datasets` restano nella response API per compatibilità ma non sono più usati dalla UI.
+
+Stati qualità dataset (stringa, senza migration):
+
+| Stato | Condizione |
+|-------|------------|
+| `complete` | 0 errori issue, 0 warning, tutte le partite complete |
+| `complete_with_warnings` | 0 errori, ≥1 warning, tutte le partite complete |
+| `partial` | almeno una partita partial |
+| `error` | errori bloccanti / partite error |
+| `unknown` | nessuna partita |
+
+## Colonne extra senza intestazione
+
+Se tutte le righe hanno lo stesso numero di valori trailing oltre l’header (caso League Two: 132 header, 133 valori):
+
+- i valori sono preservati in `raw_json` sotto `__extra_columns__: [{position, value}, …]` (position 1-based);
+- una sola issue file-level `severity=info`, `issue_code=uniform_extra_trailing_columns`;
+- **non** si generano centinaia di warning per riga;
+- le righe restano importabili e non diventano `partial` per questo solo motivo.
+
+Se il numero di colonne non è uniforme → una sola issue aggregata `severity=warning`, `issue_code=irregular_column_count` con distribuzione e sample_rows.
 
 ## Import
 
-- Token conferma: `IMPORT_CECCHINO_LAB_CSV`
-- Parser: `football_data_uk_bet365_v1`
+- Token conferma import: `IMPORT_CECCHINO_LAB_CSV`
+- Token conferma replace: `REPLACE_CECCHINO_LAB_DATASET`
+- Parser: `football_data_uk_bet365_v2`
 - Encoding: UTF-8 → UTF-8 BOM → fallback CP1252 tracciato
 - Valori mancanti = `NULL` (mai zero fittizi)
 - Nessuna correzione silenziosa: le anomalie diventano issue
 - Asian Handicap parziale → warning `partial_bet365_ah`, riga importabile, 1X2/O/U invariati
+- Tutte le issue di `ParseResult` sono persistite una sola volta (dedup in memoria); issue file-level con `source_row_number` non vengono più scartate
+
+## Sostituzione controllata dataset
+
+`POST /api/admin/cecchino-lab/datasets/{dataset_id}/replace` (multipart: `file`, `confirm=REPLACE_CECCHINO_LAB_DATASET`).
+
+Comportamento:
+
+1. ricava campionato/stagione/timezone dal dataset esistente (`division_code` → catalogo);
+2. analizza completamente il nuovo CSV **prima** di eliminare dati;
+3. in una sola transazione rimuove solo issue/match/import del dataset scelto, mantiene la riga `cecchino_lab_datasets` e il suo ID, reimporta;
+4. `flush` dopo la delete libera il vincolo univoco `file_sha256` + `parser_version` (stesso SHA consentito);
+5. rollback completo se qualcosa fallisce.
+
+Non tocca altri dataset né tabelle fuori da `cecchino_lab_*`. Nessun endpoint di delete generico.
 
 ## API
 
@@ -66,6 +105,7 @@ Il totale **Anomalie** = errori + warning. Le issue `severity=info` (es. colonne
 | GET | `/api/cecchino-lab/catalog/competitions` |
 | POST | `/api/admin/cecchino-lab/imports/preview` |
 | POST | `/api/admin/cecchino-lab/imports` |
+| POST | `/api/admin/cecchino-lab/datasets/{id}/replace` |
 | GET | `/api/cecchino-lab/overview` |
 | GET | `/api/cecchino-lab/datasets` |
 | GET | `/api/cecchino-lab/datasets/{id}` |
@@ -73,15 +113,13 @@ Il totale **Anomalie** = errori + warning. Le issue `severity=info` (es. colonne
 | GET | `/api/cecchino-lab/matches/{id}` |
 | GET | `/api/cecchino-lab/data-quality/issues` |
 
-Nessun endpoint di cancellazione in questa fase.
-
 ## UI
 
 Pagina full-width `/cecchino-lab` con tab:
 
-1. Overview
-2. Importa CSV (wizard: select campionato + stagione + file)
-3. Dataset
+1. Overview (KPI + Ultimi import + **Stato dataset**)
+2. Importa CSV (wizard: select campionato + stagione + file; card Errori / Warning / Info)
+3. Dataset (azione discreta **Sostituisci CSV**)
 4. Partite (colonne quote `1` / `X` / `2`)
 5. Qualità dati
 
@@ -89,4 +127,4 @@ Tema navy/petrolio + ciano isolato nello shell del Lab; tema globale app invaria
 
 ## Migration
 
-`20260726220000_cecchino_lab_historical_tables` (revises `20260721100000`).
+`20260726220000_cecchino_lab_historical_tables` (revises `20260721100000`). Nessuna migration aggiuntiva per colonne extra / replace / stato qualità.

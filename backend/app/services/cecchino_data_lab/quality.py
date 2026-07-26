@@ -98,14 +98,35 @@ def compute_bet365_coverage(matches: list[ParsedMatchRow]) -> dict[str, Any]:
 
 
 def dataset_quality_from_matches(
-    complete: int, partial: int, errors: int, total: int
+    complete: int,
+    partial: int,
+    errors: int,
+    total: int,
+    *,
+    issue_errors: int = 0,
+    issue_warnings: int = 0,
 ) -> str:
+    """Derive dataset quality status (string column; no schema change).
+
+    Rules:
+    - complete: zero issue errors/warnings, all matches complete
+    - complete_with_warnings: zero issue errors, ≥1 warning, all matches complete
+    - partial: at least one partial match
+    - error: blocking/error matches or issue errors
+    - unknown: no matches
+    Info severity never downgrades complete → partial.
+    """
     if total == 0:
         return "unknown"
-    if errors > total * 0.2:
-        return "poor"
-    if complete >= total * 0.8:
-        return "complete"
-    if complete + partial > 0:
+    if errors > 0 or issue_errors > 0:
+        return "error"
+    if partial > 0:
         return "partial"
-    return "poor"
+    if complete == total:
+        if issue_warnings > 0:
+            return "complete_with_warnings"
+        return "complete"
+    # Mixed residual (e.g. some non-complete without partial/error flags)
+    if complete >= total * 0.8 and issue_warnings == 0 and issue_errors == 0:
+        return "complete"
+    return "partial"

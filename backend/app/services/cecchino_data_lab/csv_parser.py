@@ -16,8 +16,11 @@ from app.services.cecchino_data_lab.constants import (
     ALL_KNOWN_HEADERS,
     BET365_COLUMN_MAP,
     BET365_HEADERS,
+    ISSUE_IRREGULAR_COLUMN_COUNT,
+    ISSUE_UNIFORM_EXTRA_TRAILING_COLUMNS,
     KNOWN_RESULT_HEADERS,
     PARSER_VERSION,
+    RAW_EXTRA_COLUMNS_KEY,
     REQUIRED_HEADERS,
 )
 from app.services.cecchino_data_lab.csv_encoding import DecodedCsv, decode_csv_bytes
@@ -170,8 +173,9 @@ class ParseResult:
     rows_skipped: int
     warnings_count: int
     errors_count: int
-    bet365_coverage: dict[str, Any]
-    summary: dict[str, Any]
+    info_count: int = 0
+    bet365_coverage: dict[str, Any] = field(default_factory=dict)
+    summary: dict[str, Any] = field(default_factory=dict)
 
 
 _SEASON_RE = re.compile(r"^(\d{4})[/\-](\d{2}|\d{4})$")
@@ -206,11 +210,30 @@ def build_dataset_key(competition_name: str, country: str, season_label: str) ->
     return f"{slug(country)}-{slug(competition_name)}-{slug(season_label)}"
 
 
+def _extra_columns_from_values(
+    extra_values: list[Any],
+    *,
+    header_columns: int,
+) -> list[dict[str, Any]]:
+    """Build explicit __extra_columns__ entries (1-based CSV positions)."""
+    extras: list[dict[str, Any]] = []
+    for i, val in enumerate(extra_values):
+        extras.append(
+            {
+                "position": header_columns + i + 1,
+                "value": None if val is None else str(val),
+            }
+        )
+    return extras
+
+
 def _row_to_match(
     row: dict[str, str | None],
     row_number: int,
     timezone_name: str,
     expected_col_count: int,
+    *,
+    extra_columns: list[dict[str, Any]] | None = None,
 ) -> ParsedMatchRow:
     from app.services.cecchino_data_lab.quality import compute_row_quality_flags
     from app.services.cecchino_data_lab.validators import validate_match_row
@@ -220,6 +243,8 @@ def _row_to_match(
     for k, v in row.items():
         if k not in raw_dict:
             raw_dict[k] = v
+    if extra_columns:
+        raw_dict[RAW_EXTRA_COLUMNS_KEY] = extra_columns
 
     match = ParsedMatchRow(source_row_number=row_number, raw=raw_dict)
     match.division_code = _blank_to_none(row.get("Div"))
@@ -321,6 +346,7 @@ def parse_football_data_csv(
             rows_skipped=0,
             warnings_count=0,
             errors_count=1,
+            info_count=0,
             bet365_coverage={},
             summary={"importable": False, "reason": "empty_file"},
         )
@@ -363,6 +389,7 @@ def parse_football_data_csv(
             rows_skipped=0,
             warnings_count=0,
             errors_count=1,
+            info_count=0,
             bet365_coverage={},
             summary={"importable": False, "reason": "invalid_header"},
         )
@@ -407,41 +434,131 @@ def parse_football_data_csv(
     # Also detect ragged rows via csv.reader
     raw_lines = list(csv.reader(io.StringIO(decoded.text)))
     data_lines = raw_lines[1:] if raw_lines else []
+    row_col_counts: list[tuple[int, int]] = []  # (source_row_number, col_count)
 
     for idx, row in enumerate(reader, start=2):  # 1-based with header = line 1
-        # Fix fieldnames BOM on keys
+        # Fix fieldnames BOM on keys; capture DictReader restkey (None) extras
         cleaned: dict[str, str | None] = {}
+        dict_extra_values: list[Any] = []
         for k, v in row.items():
             if k is None:
+                if isinstance(v, (list, tuple)):
+                    dict_extra_values.extend(v)
+                elif v is not None:
+                    dict_extra_values.append(v)
                 continue
             key = k.lstrip("\ufeff") if isinstance(k, str) else k
             cleaned[key] = v
 
         line_idx = idx - 2
-        if line_idx < len(data_lines) and len(data_lines[line_idx]) != expected_col_count:
-            issues.append(
-                ParsedIssue(
-                    severity="warning",
-                    issue_code="column_count_mismatch",
-                    message=(
-                        f"Riga {idx}: numero colonne {len(data_lines[line_idx])} "
-                        f"diverso dall'intestazione ({expected_col_count})."
-                    ),
-                    source_row_number=idx,
-                    details={
-                        "expected": expected_col_count,
-                        "actual": len(data_lines[line_idx]),
-                    },
-                )
-            )
+        actual_cols = expected_col_count
+        line_extras: list[Any] = []
+        if line_idx < len(data_lines):
+            actual_cols = len(data_lines[line_idx])
+            if actual_cols > expected_col_count:
+                line_extras = list(data_lines[line_idx][expected_col_count:])
+        row_col_counts.append((idx, actual_cols))
+
+        # Prefer csv.reader trailing values; fall back to DictReader restkey
+        extra_source = line_extras if line_extras else dict_extra_values
+        extra_columns = (
+            _extra_columns_from_values(extra_source, header_columns=expected_col_count)
+            if extra_source
+            else None
+        )
 
         if missing_required:
             continue
 
-        match = _row_to_match(cleaned, idx, timezone_name, expected_col_count)
+        match = _row_to_match(
+            cleaned,
+            idx,
+            timezone_name,
+            expected_col_count,
+            extra_columns=extra_columns,
+        )
         matches.append(match)
         if len(preview_rows) < preview_limit:
-            preview_rows.append(dict(cleaned))
+            preview_row = dict(cleaned)
+            if extra_columns:
+                preview_row[RAW_EXTRA_COLUMNS_KEY] = extra_columns  # type: ignore[assignment]
+            preview_rows.append(preview_row)
+
+    # Aggregate column-count issues (uniform extras vs irregular)
+    if data_lines and expected_col_count > 0 and row_col_counts:
+        counts = [c for _, c in row_col_counts]
+        unique_counts = set(counts)
+        if len(unique_counts) == 1:
+            only = next(iter(unique_counts))
+            extra_n = only - expected_col_count
+            if extra_n > 0:
+                affected = len(row_col_counts)
+                col_word = "colonna extra finale" if extra_n == 1 else f"{extra_n} colonne extra finali"
+                if extra_n == 1:
+                    col_word = "1 colonna extra finale"
+                issues.append(
+                    ParsedIssue(
+                        severity="info",
+                        issue_code=ISSUE_UNIFORM_EXTRA_TRAILING_COLUMNS,
+                        message=(
+                            f"Il file contiene {col_word} senza intestazione "
+                            f"in tutte le {affected} righe. I valori sono stati "
+                            f"preservati nel raw_json e non sono stati normalizzati."
+                        ),
+                        details={
+                            "header_columns": expected_col_count,
+                            "row_columns": only,
+                            "extra_columns_count": extra_n,
+                            "affected_rows": affected,
+                            "raw_storage_key": RAW_EXTRA_COLUMNS_KEY,
+                        },
+                    )
+                )
+            elif only < expected_col_count:
+                # Uniform shortfall — treat as irregular aggregate warning
+                mismatched = [rn for rn, c in row_col_counts if c != expected_col_count]
+                distribution: dict[str, int] = {}
+                for c in counts:
+                    key = str(c)
+                    distribution[key] = distribution.get(key, 0) + 1
+                issues.append(
+                    ParsedIssue(
+                        severity="warning",
+                        issue_code=ISSUE_IRREGULAR_COLUMN_COUNT,
+                        message=(
+                            f"Numero colonne irregolare rispetto all'intestazione "
+                            f"({expected_col_count}): distribuzione {distribution}."
+                        ),
+                        details={
+                            "header_columns": expected_col_count,
+                            "distribution": distribution,
+                            "affected_rows_count": len(mismatched),
+                            "sample_rows": mismatched[:20],
+                        },
+                    )
+                )
+        else:
+            mismatched = [rn for rn, c in row_col_counts if c != expected_col_count]
+            distribution = {}
+            for c in counts:
+                key = str(c)
+                distribution[key] = distribution.get(key, 0) + 1
+            issues.append(
+                ParsedIssue(
+                    severity="warning",
+                    issue_code=ISSUE_IRREGULAR_COLUMN_COUNT,
+                    message=(
+                        f"Numero colonne irregolare rispetto all'intestazione "
+                        f"({expected_col_count}): distribuzione {distribution}."
+                    ),
+                    details={
+                        "header_columns": expected_col_count,
+                        "distribution": distribution,
+                        "affected_rows_count": len(mismatched),
+                        "sample_rows": mismatched[:20],
+                    },
+                )
+            )
 
     # Duplicate match detection within file
     from app.services.cecchino_data_lab.validators import flag_duplicate_matches
@@ -457,6 +574,7 @@ def parse_football_data_csv(
 
     warnings_count = sum(1 for i in all_issues if i.severity == "warning")
     errors_count = sum(1 for i in all_issues if i.severity == "error")
+    info_count = sum(1 for i in all_issues if i.severity == "info")
 
     from app.services.cecchino_data_lab.quality import compute_bet365_coverage
 
@@ -470,6 +588,7 @@ def parse_football_data_csv(
         "rows_skipped": rows_skipped,
         "warnings_count": warnings_count,
         "errors_count": errors_count,
+        "info_count": info_count,
         "bet365_coverage": coverage,
     }
 
@@ -492,6 +611,7 @@ def parse_football_data_csv(
         rows_skipped=rows_skipped,
         warnings_count=warnings_count,
         errors_count=errors_count,
+        info_count=info_count,
         bet365_coverage=coverage,
         summary=summary,
     )

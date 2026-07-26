@@ -134,12 +134,19 @@ _COMPETITIONS: tuple[LabCompetition, ...] = (
 )
 
 _BY_KEY: dict[str, LabCompetition] = {c.key: c for c in _COMPETITIONS}
+_BY_DIVISION: dict[str, LabCompetition] = {c.division_code: c for c in _COMPETITIONS}
 
 
 def get_competition(key: str) -> LabCompetition | None:
     if not key:
         return None
     return _BY_KEY.get(key.strip())
+
+
+def get_competition_by_division(division_code: str | None) -> LabCompetition | None:
+    if not division_code:
+        return None
+    return _BY_DIVISION.get(division_code.strip())
 
 
 def list_competitions() -> list[LabCompetition]:

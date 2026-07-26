@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Colonne extra CSV e Overview Cecchino Lab (2026-07-26)
+
+Parser v2: preserva `__extra_columns__` nel raw; issue aggregate info/warning (niente 552 warning); Overview «Stato dataset»; replace controllato singolo dataset (`REPLACE_CECCHINO_LAB_DATASET`). Info non contano nelle anomalie. Formule/Today invariati. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
+
 ## Feat — Selector campionati guidato Cecchino Lab (2026-07-26)
 
 Import Lab: catalogo 16 campionati, metadata automatici (paese/Div/timezone), controllo `Div` bloccante, anomalie Overview = errori+warning (info escluse). Wizard FE: solo campionato + stagione + CSV. Formule/Today invariati. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.

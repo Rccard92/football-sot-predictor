@@ -31,6 +31,7 @@ def _rebuild_issue_counts(parsed: ParseResult) -> None:
     parsed.issues = all_issues
     parsed.warnings_count = sum(1 for i in all_issues if i.severity == "warning")
     parsed.errors_count = sum(1 for i in all_issues if i.severity == "error")
+    parsed.info_count = sum(1 for i in all_issues if i.severity == "info")
     parsed.rows_importable = sum(1 for m in parsed.matches if m.importable)
     parsed.rows_skipped = len(parsed.matches) - parsed.rows_importable
     parsed.summary = {
@@ -40,6 +41,7 @@ def _rebuild_issue_counts(parsed: ParseResult) -> None:
         "rows_skipped": parsed.rows_skipped,
         "warnings_count": parsed.warnings_count,
         "errors_count": parsed.errors_count,
+        "info_count": parsed.info_count,
     }
 
 
