@@ -33,8 +33,17 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
   const isRunning = job.status === 'queued' || job.status === 'running'
   const isBudgetStop =
     job.status === 'partial_stopped_budget' || job.status === 'failed_budget_guard'
-  const isFailed = job.status === 'failed' || job.status === 'cancelled' || isBudgetStop
-  const isCompleted = job.status === 'completed'
+  const isSkippedConcurrent = job.status === 'skipped_concurrent_scan'
+  const isTimeout = job.status === 'failed_timeout'
+  const isInterrupted = job.status === 'interrupted'
+  const isFailed =
+    job.status === 'failed' ||
+    job.status === 'cancelled' ||
+    isBudgetStop ||
+    isTimeout ||
+    isInterrupted
+  const isCompleted = job.status === 'completed' || isSkippedConcurrent
+  const autoScan = job.result_summary?.auto_scan
   const showBar = isRunning || isCompleted || (isFailed && pct > 0)
   const elapsed = useMemo(() => formatElapsed(job.started_at, nowMs), [job.started_at, nowMs])
 
@@ -59,17 +68,34 @@ export function CecchinoTodayScanProgressCard({ job }: Props) {
           <h3 className="text-sm font-semibold text-slate-900">
             {isRunning
               ? 'Scansione in corso'
-              : isCompleted
-                ? 'Scansione completata'
-                : isFailed
-                  ? isBudgetStop
-                    ? 'Scansione interrotta per budget API'
-                    : 'Scansione interrotta'
-                  : 'Scansione giornata'}
+              : isSkippedConcurrent
+                ? 'Scansione saltata (concorrenza)'
+                : isCompleted
+                  ? 'Scansione completata'
+                  : isFailed
+                    ? isBudgetStop
+                      ? 'Scansione interrotta per budget API'
+                      : isTimeout
+                        ? 'Scansione interrotta per timeout'
+                        : isInterrupted
+                          ? 'Scansione interrotta dal processo'
+                          : 'Scansione interrotta'
+                    : 'Scansione giornata'}
           </h3>
           <p className="mt-1 text-xs text-slate-600">
             {job.scan_date} — {stepLabel(job.current_step)}
           </p>
+          {autoScan?.execution_source === 'auto_scan' ? (
+            <p className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
+              <span>Origine: Automatica</span>
+              {autoScan.execution_mode === 'synchronous' ? <span>· Modalità: Sincrona</span> : null}
+              {autoScan.execution_slot === 'recovery' ? (
+                <span>· Slot: Recupero</span>
+              ) : autoScan.execution_slot === 'primary' ? (
+                <span>· Slot: Principale</span>
+              ) : null}
+            </p>
+          ) : null}
         </div>
         {isRunning ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white">

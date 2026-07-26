@@ -1,5 +1,14 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Comando sincrono auto scan Cecchino (2026-07-26)
+
+- Perché: preparare scansione serale automatica senza dipendere da reverse proxy / thread daemon FastAPI.
+- Comando: `python -m app.jobs.cecchino_auto_scan` con `--scheduled`, `--force-run`, `--dry-run`; target sempre domani Europe/Rome.
+- Lock globale PostgreSQL (`pg_try_advisory_lock`) + fallback process-local per test; condiviso con scan manuali.
+- Core lifecycle `execute_scan_job_sync` riusato da thread UI e cron; post-scan GI/Balance invariati.
+- Idempotenza primary/recovery, retry solo errori pre-fixture, exit code 0/1/2/3/4, timeout HTTP già presenti (60s).
+- UI: badge auto_scan nel riepilogo. **Cron Railway non attivato** (prossimo step: servizio + schedule UTC).
+
 ## Fix — Protezione eligible sulle riscansioni (2026-07-26)
 
 - Invariante: una fixture `eligible` per `(scan_date, provider_fixture_id)` non può essere retrocessa da scan/rescan.

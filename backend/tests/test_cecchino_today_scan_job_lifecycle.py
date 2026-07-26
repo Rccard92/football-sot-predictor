@@ -121,16 +121,24 @@ def test_run_scan_job_thread_marks_failed_on_exception():
     def get_job_side_effect(_db, job_id):
         return job
 
+    from contextlib import nullcontext
+
     with patch("app.services.cecchino.cecchino_today_scan_job_service.SessionLocal", return_value=db):
         with patch(
             "app.services.cecchino.cecchino_today_scan_job_service.get_scan_job",
             side_effect=get_job_side_effect,
         ):
             with patch(
-                "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
-                side_effect=RuntimeError("boom"),
+                "app.services.cecchino.cecchino_today_scan_job_service.acquire_cecchino_scan_lock",
+                return_value=nullcontext(
+                    {"acquired": True, "backend": "test", "lock_key": 1, "waited_seconds": 0}
+                ),
             ):
-                _run_scan_job_thread("fail-job")
+                with patch(
+                    "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
+                    side_effect=RuntimeError("boom"),
+                ):
+                    _run_scan_job_thread("fail-job")
 
     assert job.status == JOB_STATUS_FAILED
     assert job.finished_at is not None
@@ -147,26 +155,37 @@ def test_run_scan_job_thread_marks_completed_on_success():
         status=JOB_STATUS_QUEUED,
     )
 
+    from contextlib import nullcontext
+
     with patch("app.services.cecchino.cecchino_today_scan_job_service.SessionLocal", return_value=db):
         with patch(
             "app.services.cecchino.cecchino_today_scan_job_service.get_scan_job",
             return_value=job,
         ):
             with patch(
-                "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
-                return_value={
-                    "status": "ok",
-                    "eligible": 2,
-                    "excluded_total": 1,
-                    "fixtures_found": 10,
-                    "fixtures_processed": 10,
-                    "excluded_summary": {},
-                    "result_summary": {"duration_seconds": 1.0},
-                    "warnings": [],
-                    "errors": [],
-                },
+                "app.services.cecchino.cecchino_today_scan_job_service.acquire_cecchino_scan_lock",
+                return_value=nullcontext(
+                    {"acquired": True, "backend": "test", "lock_key": 1, "waited_seconds": 0}
+                ),
             ):
-                _run_scan_job_thread("ok-job")
+                with patch(
+                    "app.services.cecchino.cecchino_today_scan_job_service.run_scan_day",
+                    return_value={
+                        "status": "ok",
+                        "eligible": 2,
+                        "excluded_total": 1,
+                        "fixtures_found": 10,
+                        "fixtures_processed": 10,
+                        "excluded_summary": {},
+                        "result_summary": {"duration_seconds": 1.0},
+                        "warnings": [],
+                        "errors": [],
+                    },
+                ):
+                    with patch(
+                        "app.services.cecchino.cecchino_today_scan_job_service._run_goal_intensity_preview"
+                    ):
+                        _run_scan_job_thread("ok-job")
 
     assert job.status == JOB_STATUS_COMPLETED
     assert job.finished_at is not None

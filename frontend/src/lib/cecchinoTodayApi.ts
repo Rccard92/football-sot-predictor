@@ -92,6 +92,18 @@ export type CecchinoTodayEligibilityTransitions = {
   started_never_eligible?: number
 }
 
+export type CecchinoTodayAutoScanMeta = {
+  execution_source?: string
+  execution_mode?: string
+  execution_slot?: 'primary' | 'recovery' | string
+  target_date?: string
+  timezone?: string
+  local_execution_date?: string
+  attempt?: number
+  lock_acquired?: boolean
+  max_runtime_minutes?: number
+}
+
 export type CecchinoTodayScanJobResultSummary = {
   fixtures_found?: number
   fixtures_censused?: number
@@ -129,6 +141,8 @@ export type CecchinoTodayScanJobResultSummary = {
   protected_eligible_total?: number
   protected_snapshot_overwrite_blocked?: number
   snapshot_eligible_protection_active?: boolean
+  auto_scan?: CecchinoTodayAutoScanMeta
+  diagnostic_code?: string
 }
 
 export type CecchinoTodayScanJob = {

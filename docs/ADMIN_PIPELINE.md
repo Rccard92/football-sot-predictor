@@ -427,6 +427,17 @@ POST /api/admin/cecchino/today/cleanup
 
 Lettura: `GET /api/cecchino/today/days` (timeline ±30), `GET /api/cecchino/today?date=` (summary, filters, score). Debug: `GET .../excluded`, `GET .../debug-search`. UI: `/cecchino-today`.
 
+#### Auto scan sincrono (cron-ready)
+
+```bash
+cd backend
+python -m app.jobs.cecchino_auto_scan --scheduled
+python -m app.jobs.cecchino_auto_scan --force-run
+python -m app.jobs.cecchino_auto_scan --scheduled --dry-run
+```
+
+Target: domani Europe/Rome. Lock globale condiviso con scan UI. Env `CECCHINO_AUTO_SCAN_*` (default ENABLED=false). **Railway Cron non ancora attivo**; Procfile invariato. Dettaglio: [SOT_PREDICTOR_CECCHINO.md](./SOT_PREDICTOR_CECCHINO.md).
+
 **Fase 2 (dati reali):** i record W/D/L derivano solo da fixture **finite** prima del kickoff target, filtrate per `competition_id`. La risposta API include `data_quality` (sample count, `leakage_check`). Dopo deploy, eseguire `recalculate` per aggiornare righe già in cache con il nuovo schema.
 
 ---

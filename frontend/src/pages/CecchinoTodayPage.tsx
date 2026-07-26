@@ -222,7 +222,7 @@ export function CecchinoTodayPage() {
         setActiveJob(job)
         logCecchinoTodayDebug('poll tick', { jobId, status: job.status, date })
 
-        if (job.status === 'completed') {
+        if (job.status === 'completed' || job.status === 'skipped_concurrent_scan') {
           stopPolling()
           setScanDayLoading(false)
           setScanReport(jobToScanReport(job))
@@ -231,7 +231,14 @@ export function CecchinoTodayPage() {
           return
         }
 
-        if (job.status === 'failed' || job.status === 'cancelled') {
+        if (
+          job.status === 'failed' ||
+          job.status === 'cancelled' ||
+          job.status === 'partial_stopped_budget' ||
+          job.status === 'failed_budget_guard' ||
+          job.status === 'failed_timeout' ||
+          job.status === 'interrupted'
+        ) {
           stopPolling()
           setScanDayLoading(false)
           setActionError(job.errors?.[0] ?? 'Scansione interrotta')
@@ -302,7 +309,16 @@ export function CecchinoTodayPage() {
             if (prev?.scan_date === date && (prev.status === 'queued' || prev.status === 'running')) {
               return prev
             }
-            if (latest.status === 'failed' || latest.status === 'completed') {
+            if (
+              latest.status === 'failed' ||
+              latest.status === 'completed' ||
+              latest.status === 'cancelled' ||
+              latest.status === 'partial_stopped_budget' ||
+              latest.status === 'failed_budget_guard' ||
+              latest.status === 'skipped_concurrent_scan' ||
+              latest.status === 'failed_timeout' ||
+              latest.status === 'interrupted'
+            ) {
               return latest
             }
             return prev?.scan_date === date ? null : prev
@@ -639,7 +655,13 @@ export function CecchinoTodayPage() {
     (activeJob.status === 'queued' ||
       activeJob.status === 'running' ||
       activeJob.status === 'failed' ||
-      activeJob.status === 'completed')
+      activeJob.status === 'completed' ||
+      activeJob.status === 'cancelled' ||
+      activeJob.status === 'partial_stopped_budget' ||
+      activeJob.status === 'failed_budget_guard' ||
+      activeJob.status === 'skipped_concurrent_scan' ||
+      activeJob.status === 'failed_timeout' ||
+      activeJob.status === 'interrupted')
 
   return (
     <div className="w-full space-y-6">

@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Comando sincrono auto scan Cecchino (2026-07-26)
+
+Comando cron-ready `python -m app.jobs.cecchino_auto_scan` (--scheduled / --force-run / --dry-run). Target = **domani Europe/Rome**. Slot primary 23:30 e recovery 23:50 (±10 min). Lock advisory PostgreSQL globale condiviso con scan manuali; lifecycle sincrono `execute_scan_job_sync` (nessun HTTP FastAPI, nessun thread nel cron). Idempotenza auto job, retry transitori max 2, timeout 120 min, SIGTERM/SIGINT. Badge UI Origine/Slot se `result_summary.auto_scan`. **Railway Cron non ancora attivo**; Procfile invariato. `CECCHINO_AUTO_SCAN_ENABLED=false` di default.
+
 ## Fix — Protezione eligible sulle riscansioni (2026-07-26)
 
 Monotonicità `eligible` per `(scan_date, provider_fixture_id)`: modulo `cecchino_today_eligible_guard.py`. Census non demota; refresh upcoming solo se di nuovo eligible, altrimenti preserve snapshot; live/finished → freeze solo match state; postponed/cancelled → preserve terminale. Contatori `eligibility_transitions` nel report + badge UI. **Nessun cron** (prerequisito automazione 23:30). Formule/moduli predittivi invariati.

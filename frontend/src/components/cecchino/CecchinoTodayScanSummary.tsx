@@ -14,6 +14,13 @@ function countExcluded(report: CecchinoTodayScanReport, keys: string[]): number 
   return keys.reduce((sum, k) => sum + (ex[k] ?? 0), 0)
 }
 
+function formatTargetDate(iso: string | undefined): string | null {
+  if (!iso) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  return `${m[3]}/${m[2]}/${m[1]}`
+}
+
 const TRANSITION_BADGES: { key: keyof CecchinoTodayEligibilityTransitions; label: string }[] = [
   { key: 'new_eligible', label: 'Nuove eleggibili' },
   { key: 'promoted_to_eligible', label: 'Promosse a eleggibili' },
@@ -29,6 +36,15 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
     .result_summary
   const funnel = (rs?.excluded_funnel ?? {}) as Record<string, number>
   const transitions = (rs?.eligibility_transitions ?? {}) as CecchinoTodayEligibilityTransitions
+  const autoScan = (rs?.auto_scan ?? null) as
+    | {
+        execution_source?: string
+        execution_mode?: string
+        execution_slot?: string
+        target_date?: string
+        attempt?: number
+      }
+    | null
   const protectionActive =
     rs?.snapshot_eligible_protection_active === true ||
     typeof rs?.protected_eligible_total === 'number' ||
@@ -56,6 +72,7 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
   ])
   const excludedErrors = countExcluded(report, ['excluded_mapping_error', 'error'])
   const found = report.fixtures_found ?? report.total_discovered
+  const targetLabel = formatTargetDate(autoScan?.target_date)
 
   return (
     <section className={`${todayCard} ${todayCardPadding} space-y-3`}>
@@ -89,6 +106,23 @@ export function CecchinoTodayScanSummary({ report, onShowExcluded }: Props) {
       </div>
 
       <div className="flex flex-wrap gap-2">
+        {autoScan && autoScan.execution_source === 'auto_scan' ? (
+          <>
+            <span className={todayBadgeActive}>Origine: Automatica</span>
+            {autoScan.execution_mode === 'synchronous' ? (
+              <span className={todayBadgeMuted}>Modalità: Sincrona</span>
+            ) : null}
+            {autoScan.execution_slot === 'recovery' ? (
+              <span className={todayBadgeMuted}>Slot: Recupero</span>
+            ) : autoScan.execution_slot === 'primary' ? (
+              <span className={todayBadgeMuted}>Slot: Principale</span>
+            ) : null}
+            {targetLabel ? <span className={todayBadgeMuted}>Target: {targetLabel}</span> : null}
+            {typeof autoScan.attempt === 'number' ? (
+              <span className={todayBadgeMuted}>Tentativo: {autoScan.attempt}</span>
+            ) : null}
+          </>
+        ) : null}
         <span className={todayBadgeMuted}>Trovate: {found}</span>
         <span className={todayBadgeOk}>Eleggibili: {report.eligible}</span>
         {TRANSITION_BADGES.map(({ key, label }) => {

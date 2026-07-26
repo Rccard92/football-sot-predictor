@@ -1,5 +1,24 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Auto scan sincrono Cecchino (2026-07-26)
+
+1. Processo autonomo: `cd backend && python -m app.jobs.cecchino_auto_scan --scheduled` (o `--force-run` / `--dry-run`).
+2. Guardie: `CECCHINO_AUTO_SCAN_ENABLED`, slot primary/recovery Europe/Rome, idempotenza auto job.
+3. Acquisisce advisory lock globale → crea `CecchinoTodayScanJob` → `execute_scan_job_sync` nello stesso processo.
+4. Pipeline canonica `run_scan_day` (eligible guard inclusa) + post-scan segnali/Balance/GI non bloccanti.
+5. Rilascia lock, chiude DB, termina con exit code (0 ok/noop/concurrent; 1 errore; 2 timeout; 3 config; 4 budget).
+6. **Railway Cron non ancora configurato**; start command futuro identico al CLI. Nessuna modifica Procfile.
+
+```mermaid
+flowchart TD
+  cron["CLI auto_scan"] --> slot["slot / enabled / dry-run"]
+  slot --> lock["advisory lock"]
+  lock --> job["create_scan_job"]
+  job --> sync["execute_scan_job_sync"]
+  sync --> scan["run_scan_day"]
+  scan --> done["terminal + unlock"]
+```
+
 ## Protezione eligible sulle riscansioni (2026-07-26)
 
 1. Prefetch unica delle righe esistenti per `scan_date` + `provider_fixture_id` in scope.

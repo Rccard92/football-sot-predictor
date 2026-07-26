@@ -2,6 +2,25 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Auto scan sincrono (Fase 2A — 2026-07-26)
+
+| Elemento | Dettaglio |
+|----------|-----------|
+| Comando | `python -m app.jobs.cecchino_auto_scan` |
+| Modalità | `--scheduled` / `--force-run` / `--dry-run` |
+| Target | domani `Europe/Rome` (una sola data per job) |
+| Slot | primary ≈23:30, recovery ≈23:50 (±`WINDOW_MINUTES`) |
+| Lock | `cecchino_today_scan_lock.py` — advisory PG globale |
+| Lifecycle | `execute_scan_job_sync` (condiviso con scan manuale) |
+| force_rescan | sempre `true` sul cron (refresh serale) |
+| Idempotenza | auto job primary completed → no-op; recovery solo se primary fallito |
+| Retry | max 2, solo errori transitori pre-fixture |
+| Timeout | max runtime 120 min; HTTP client già 60s |
+| Exit | 0 / 1 / 2 / 3 / 4 |
+| UI | badge Origine Automatica / Slot / Target / Tentativo |
+| Railway | **non ancora attivo** — prossimo step servizio + cron UTC |
+| Invariato | formule, eligible guard, Procfile, package.json |
+
 ## Analisi interattiva Goal Intensity v5 (2026-07-26)
 
 | Elemento | Dettaglio |

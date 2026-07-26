@@ -60,6 +60,18 @@ class Settings(BaseSettings):
 
     cecchino_allow_destructive_cleanup: bool = False
 
+    # Cecchino Today — scansione automatica sincrono (cron-ready; default disabilitato)
+    cecchino_auto_scan_enabled: bool = False
+    cecchino_auto_scan_timezone: str = "Europe/Rome"
+    cecchino_auto_scan_primary_hour: int = 23
+    cecchino_auto_scan_primary_minute: int = 30
+    cecchino_auto_scan_recovery_hour: int = 23
+    cecchino_auto_scan_recovery_minute: int = 50
+    cecchino_auto_scan_window_minutes: int = 10
+    cecchino_auto_scan_max_runtime_minutes: int = 120
+    cecchino_auto_scan_transient_attempts: int = 2
+    cecchino_auto_scan_transient_retry_delay_seconds: int = 60
+
     @property
     def admin_cron_secret(self) -> str:
         """Retrocompatibilità: stesso valore di cron_secret."""
