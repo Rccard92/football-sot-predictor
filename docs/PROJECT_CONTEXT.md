@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Analisi interattiva Goal Intensity v5 (2026-07-26)
+
+Modalità debug su Intensità Goal Avanzata v5: pulsante `ƒx Analisi intensità` (lazy), 4 card dimensione + 4 righe candidato cliccabili solo con analisi attiva, popup `type=dimension|candidate`, download `cecchino-goal-intensity-v5-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/goal-intensity-v5-explanations` (diagnostic_re_evaluation_only, source_mode `persisted_goal_intensity_v5_preview_snapshot`, bundle = `snap.bundle_id`). Distinzione DV1 vulnerabilità vs solidità display `100−DV1`; OV1 volatilità vs stabilità `100−OV1`. Formule/bundle/snapshot/Segnali invariati; layout a riposo identico.
+
 ## Feat — Analisi interattiva pilastri Balance v5 (2026-07-25)
 
 Modalità debug su Equilibrio vs Squilibrio v5: pulsante `ƒx Analisi pilastri` (lazy), quattro card cliccabili solo con analisi attiva, popup audit per pilastro, download `cecchino-balance-v5-audit-{provider_fixture_id}.json`. Endpoint `GET /api/cecchino/today/{id}/balance-explanations` (diagnostic_re_evaluation_only, source_mode persisted/derived). Pilastro 3 DESCITTIVO. `Mostra componenti` invariato. Formule Balance invariate; risultato visualizzato = fonte di verità.

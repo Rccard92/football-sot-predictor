@@ -1595,6 +1595,182 @@ export async function getBalanceExplanations(
   )
 }
 
+export type CecchinoGiV5EcdfNormalization = {
+  feature_key?: string
+  train_n?: number | null
+  train_min?: number | null
+  train_max?: number | null
+  train_median?: number | null
+  quantiles?: Record<string, number | null>
+  distribution_hash?: string | null
+  normalization_method?: string
+  tie_handling?: string
+  clipping_rules?: string
+  raw_value?: number | null
+  clipped_value?: number | null
+  clipping_applied?: boolean
+  lower_count?: number | null
+  equal_count?: number | null
+  midrank?: number | null
+  percentile_result?: number | null
+  status?: string
+}
+
+export type CecchinoGiV5RawFeature = {
+  key: string
+  label: string
+  value?: number | null
+  source_path?: string
+}
+
+export type CecchinoGiV5DimensionMetric = {
+  metric_key: string
+  label: string
+  description?: string | null
+  formula_symbolic?: string
+  formula_applied?: string[]
+  raw_features?: CecchinoGiV5RawFeature[]
+  normalization?: CecchinoGiV5EcdfNormalization | Record<string, CecchinoGiV5EcdfNormalization> | Record<string, unknown>
+  stored_result?: number | null
+  audit_result?: number | null
+  consistency?: { status: string; delta?: number | null }
+  used_by_candidates?: string[]
+  warnings?: string[]
+}
+
+export type CecchinoGiV5DisplayTransformation = {
+  key: string
+  formula_symbolic?: string
+  mathematical_value_key?: string
+  mathematical_value?: number | null
+  display_value?: number | null
+  message?: string
+  used_by_candidates?: boolean
+}
+
+export type CecchinoGiV5DimensionExplanation = {
+  dimension_key: string
+  dimension_number: number
+  title: string
+  status: string
+  description?: string
+  purpose?: string
+  direction?: string
+  metrics: CecchinoGiV5DimensionMetric[]
+  display_transformations?: CecchinoGiV5DisplayTransformation[]
+  mandatory_message?: string
+  reason_summary?: string
+  data_origin?: Record<string, unknown>
+  warnings?: string[]
+}
+
+export type CecchinoGiV5CandidateComponent = {
+  key: string
+  label?: string
+  role?: string
+  value?: number | null
+  contribution?: number | null
+  weight?: number | null
+}
+
+export type CecchinoGiV5CalibrationBlock = {
+  target?: string
+  calibration_method?: string
+  formula_symbolic?: string
+  formula_applied?: string[]
+  score?: number | null
+  intercept?: number | null
+  coefficient?: number | null
+  product?: number | null
+  z?: number | null
+  raw_result?: number | null
+  raw_probability?: number | null
+  probability_percent?: number | null
+  stored_result?: number | null
+  audit_result?: number | null
+  consistency?: { status: string; delta?: number | null }
+  train_n?: number | null
+  train_positive_rate?: number | null
+  rounding?: string
+}
+
+export type CecchinoGiV5CandidateExplanation = {
+  candidate_id: string
+  role: string
+  status: string
+  description?: string
+  purpose?: string
+  research_status?: {
+    preview_monitored?: boolean
+    not_linked_to_signals?: boolean
+    no_productive_formula?: boolean
+    labels?: string[]
+  }
+  formula_symbolic?: string
+  formula_applied?: string[]
+  components?: CecchinoGiV5CandidateComponent[]
+  excluded_components?: string[]
+  weight_status?: string
+  stored_score?: number | null
+  audit_score?: number | null
+  consistency?: { status: string; delta?: number | null }
+  difference_vs_primary?: number | null
+  calibrated_predictions?: {
+    expected_total_goals?: CecchinoGiV5CalibrationBlock
+    probability_goals_ge_2?: CecchinoGiV5CalibrationBlock
+    probability_goals_ge_3?: CecchinoGiV5CalibrationBlock
+    probability_btts?: CecchinoGiV5CalibrationBlock
+  }
+  reason_summary?: string
+  quality?: Record<string, unknown>
+  warnings?: string[]
+}
+
+export type CecchinoGiV5ExplanationsResponse = {
+  status: string
+  code?: string
+  message?: string
+  audit_version?: string
+  module?: string
+  generated_at?: string
+  no_operational_recalculation?: boolean
+  diagnostic_re_evaluation_only?: boolean
+  source_mode?: string
+  fixture?: {
+    today_fixture_id: number
+    local_fixture_id?: number | null
+    provider_fixture_id?: number | null
+    home_team?: string | null
+    away_team?: string | null
+    kickoff?: string | null
+    scan_date?: string | null
+  }
+  snapshot?: {
+    snapshot_id?: number
+    bundle_id?: number
+    bundle_version?: string
+    candidate_version?: string
+    source_snapshot_at?: string | null
+    bundle_frozen_at?: string | null
+    snapshot_status?: string
+    freeze_check?: Record<string, boolean | null>
+    reason_codes?: unknown
+  }
+  dimensions: Record<string, CecchinoGiV5DimensionExplanation>
+  candidates: Record<string, CecchinoGiV5CandidateExplanation>
+  additional_candidates?: Record<string, unknown>
+  warnings?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export async function getGoalIntensityV5Explanations(
+  todayFixtureId: number,
+): Promise<CecchinoGiV5ExplanationsResponse> {
+  return requestJson<CecchinoGiV5ExplanationsResponse>(
+    `/api/cecchino/today/${todayFixtureId}/goal-intensity-v5-explanations`,
+  )
+}
+
 export async function getPicchettiDebugJson(
   todayFixtureId: number,
 ): Promise<CecchinoPicchettiDebugResponse> {

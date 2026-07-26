@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Analisi intensità Goal Intensity v5 (2026-07-26)
+
+1. Apertura partita: **nessuna** richiesta `goal-intensity-v5-explanations`.
+2. `ƒx Analisi intensità` → una sola `GET /api/cecchino/today/{id}/goal-intensity-v5-explanations` (cache per fixture).
+3. Con analisi attiva: 4 card dimensione + 4 righe candidato cliccabili; a riposo layout invariato.
+4. Qualità snapshot resta `<details>` indipendente (non apre il popup).
+5. Download `cecchino-goal-intensity-v5-audit-{provider_fixture_id}.json` (lazy anche senza mode on).
+6. Audit diagnostico read-only su snapshot+bundle collegato; nessun rebuild ECDF/dataset, nessuna scrittura DB/Segnali.
+
 ## Analisi pilastri Balance v5 (2026-07-25)
 
 1. Apertura partita: **nessuna** richiesta `balance-explanations`.

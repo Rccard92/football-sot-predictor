@@ -7,6 +7,26 @@
 
 Modulo di ricerca per rifondare **Intensità Goal** su quattro dimensioni distinte. Fase 1A = audit storico e disponibilità variabili. **Nessuna formula produttiva.**
 
+## Analisi interattiva Today (2026-07-26)
+
+Audit diagnostico lazy sul pannello Today (non operativo):
+
+| Elemento | Dettaglio |
+|----------|-----------|
+| UI | `ƒx Analisi intensità` + download JSON; 4 dimensioni + 4 candidati cliccabili solo se attiva |
+| Endpoint | `GET /api/cecchino/today/{id}/goal-intensity-v5-explanations` |
+| Fonte | snapshot preview persistito + bundle `snap.bundle_id` |
+| ECDF | train-only midrank compatto (`train_n`, counts, hash; senza `train_values`) |
+| Display | Solidità = 100−DV1; Stabilità = 100−OV1 (non entrano nei candidati) |
+| Primary | mean(OP1, DV1, MT1, OV1) |
+| Challenger | mean(OP2, DV1, MT2, OV1) |
+| Benchmark | MT1_LONG_TERM |
+| Diagnostico | mean(OP1, DV1, MT1) senza OV1 |
+| Calibrazione | lineare xG + logistica P(≥2)/P(≥3)/BTTS dal bundle collegato |
+| Flag | `no_operational_recalculation`, `diagnostic_re_evaluation_only` |
+
+Nessun rebuild dataset/ECDF/calibrazioni; nessun aggiornamento snapshot/bundle/Segnali.
+
 ## Fase 2A.1 — Preview freeze reale (2026-07-18)
 
 Versione `cecchino_goal_intensity_v5_preview_v1_1`. `bundle.frozen_at = now UTC` al freeze (non la data protocollo 1D). Ammissione: `source_snapshot_at > frozen_at` e `< kickoff`; esclusione retrospettiva via identity sets congelati (today/local/provider). Same-day post-freeze ammesso. Formule/ECDF/hash invariati; nessuna migration.

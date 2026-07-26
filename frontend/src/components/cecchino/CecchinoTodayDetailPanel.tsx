@@ -173,7 +173,11 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
         providerFixtureId={detail.provider_fixture_id}
       />
 
-      <CecchinoGoalIntensityV5Panel goalIntensity={detail.goal_intensity_v5 ?? detail.goal_intensity_v5_preview} />
+      <CecchinoGoalIntensityV5Panel
+        goalIntensity={detail.goal_intensity_v5 ?? detail.goal_intensity_v5_preview}
+        todayFixtureId={detail.today_fixture_id ?? detail.id}
+        providerFixtureId={detail.provider_fixture_id}
+      />
 
       <CecchinoExpectedGoalEngineDiagnosticsPanel
         diagnostics={detail.expected_goal_engine_diagnostics}

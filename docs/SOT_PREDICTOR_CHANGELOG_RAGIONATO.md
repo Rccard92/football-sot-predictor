@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Analisi interattiva Goal Intensity v5 (2026-07-26)
+
+- UI Intensità Goal Avanzata v5: `ƒx Analisi intensità` / download audit; 4 card dimensione + 4 righe candidato cliccabili solo in modalità attiva; layout a riposo invariato.
+- API `GET .../goal-intensity-v5-explanations`: audit diagnostico da snapshot+bundle collegato; ECDF compatto; solidità/stabilità come display invertiti; calibrazioni lineari/logistiche; nessun rebuild storico.
+- Preview research: non collegato ai Segnali; nessuna formula produttiva; nessun effetto operativo.
+
 ## Feat — Analisi interattiva pilastri Balance v5 (2026-07-25)
 
 - UI Equilibrio vs Squilibrio v5: `ƒx Analisi pilastri` / download audit; card interattive solo in modalità attiva; `Mostra componenti` invariato.
