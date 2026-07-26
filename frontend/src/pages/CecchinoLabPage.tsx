@@ -98,8 +98,18 @@ export function CecchinoLabPage() {
           <ImportWizardTab
             onImported={(datasetId) => {
               bump()
-              setFocusDatasetId(datasetId)
+              if (datasetId > 0) {
+                setFocusDatasetId(datasetId)
+                setTab('datasets')
+              }
+            }}
+            onGoDatasets={() => {
+              bump()
               setTab('datasets')
+            }}
+            onGoOverview={() => {
+              bump()
+              setTab('overview')
             }}
           />
         )}

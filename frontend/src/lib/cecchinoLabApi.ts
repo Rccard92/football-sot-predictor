@@ -319,6 +319,117 @@ export function previewCecchinoLabCsv(file: File, meta: ImportMeta): Promise<Cec
   return postFormData('/api/admin/cecchino-lab/imports/preview', form)
 }
 
+export type BatchImportStatus =
+  | 'ready'
+  | 'ready_with_warnings'
+  | 'blocked'
+  | 'already_imported'
+  | 'duplicate_in_batch'
+  | 'duplicate_competition_in_batch'
+  | 'dataset_already_exists'
+
+export type CecchinoLabBatchPreviewItem = {
+  client_file_id: string
+  filename: string
+  file_sha256: string
+  file_size_bytes: number
+  division_code: string | null
+  competition_key: string | null
+  competition_name: string | null
+  country: string | null
+  timezone: string | null
+  season_label: string
+  rows_total: number | null
+  rows_importable: number | null
+  rows_skipped: number | null
+  errors_count: number
+  warnings_count: number
+  info_count: number
+  bet365_coverage: Record<string, number>
+  mapping_status: string
+  import_status: BatchImportStatus
+  dataset_id: number | null
+  blocking_reason: string | null
+  issues: Array<{
+    severity: string
+    issue_code: string
+    message: string
+    source_row_number: number | null
+  }>
+  preview_rows: Record<string, string | null>[]
+  recognized_columns: string[]
+  unexpected_columns: string[]
+  missing_required_columns: string[]
+}
+
+export type CecchinoLabBatchPreview = {
+  status: string
+  season_label: string
+  files_total: number
+  ready_count: number
+  warning_count: number
+  blocked_count: number
+  already_imported_count: number
+  rows_total: number
+  rows_importable: number
+  items: CecchinoLabBatchPreviewItem[]
+}
+
+export function previewCecchinoLabBatch(
+  files: File[],
+  seasonLabel: string,
+): Promise<CecchinoLabBatchPreview> {
+  const form = new FormData()
+  form.append('season_label', seasonLabel)
+  for (const file of files) {
+    form.append('files', file)
+  }
+  return postFormData('/api/admin/cecchino-lab/imports/batch/preview', form)
+}
+
+export function batchImportStatusLabel(status: BatchImportStatus | string): string {
+  switch (status) {
+    case 'ready':
+      return 'Pronto'
+    case 'ready_with_warnings':
+      return 'Pronto con warning'
+    case 'already_imported':
+      return 'Già importato'
+    case 'duplicate_in_batch':
+    case 'duplicate_competition_in_batch':
+      return 'Duplicato'
+    case 'dataset_already_exists':
+      return 'Già presente'
+    case 'blocked':
+      return 'Bloccato'
+    default:
+      if (status === 'unknown_division' || status === 'missing_division') return 'Divisione sconosciuta'
+      return status || '—'
+  }
+}
+
+export function batchImportStatusBadgeClass(status: BatchImportStatus | string): string {
+  if (status === 'ready') return 'lab-badge-ok'
+  if (status === 'ready_with_warnings') return 'lab-badge-warn'
+  if (status === 'already_imported' || status === 'dataset_already_exists') return 'lab-badge-muted'
+  if (
+    status === 'duplicate_in_batch' ||
+    status === 'duplicate_competition_in_batch' ||
+    status === 'blocked'
+  ) {
+    return 'lab-badge-err'
+  }
+  return 'lab-badge-muted'
+}
+
+export function isBatchItemReady(status: BatchImportStatus | string): boolean {
+  return status === 'ready' || status === 'ready_with_warnings'
+}
+
+export function countBatchReadyItems(items: Array<{ import_status: string }>): number {
+  return items.filter((i) => isBatchItemReady(i.import_status)).length
+}
+
 export function importCecchinoLabCsv(file: File, meta: ImportMeta): Promise<CecchinoLabImportResult> {
   const form = new FormData()
   form.append('file', file)

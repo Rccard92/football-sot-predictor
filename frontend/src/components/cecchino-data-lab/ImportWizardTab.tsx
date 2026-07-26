@@ -10,14 +10,18 @@ import {
   type LabCompetitionCatalogItem,
 } from '../../lib/cecchinoLabApi'
 import { AdminHttpError } from '../../lib/api'
+import { BatchImportPanel } from './BatchImportPanel'
 
 type Props = {
   onImported: (datasetId: number) => void
+  onGoDatasets?: () => void
+  onGoOverview?: () => void
 }
 
 type Phase = 'select' | 'preview' | 'done'
+type ImportMode = 'single' | 'batch'
 
-export function ImportWizardTab({ onImported }: Props) {
+function SingleImportWizard({ onImported }: { onImported: (datasetId: number) => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<Phase>('select')
   const [dragOver, setDragOver] = useState(false)
@@ -114,7 +118,7 @@ export function ImportWizardTab({ onImported }: Props) {
   }
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div className="space-y-6">
       {phase === 'select' && (
         <>
           <div
@@ -216,7 +220,7 @@ export function ImportWizardTab({ onImported }: Props) {
           </div>
 
           <div className="flex justify-end">
-            <button type="button" className="lab-btn" onClick={runPreview} disabled={!canPreview}>
+            <button type="button" className="lab-btn" onClick={() => void runPreview()} disabled={!canPreview}>
               {busy ? 'Analisi…' : 'Anteprima'}
             </button>
           </div>
@@ -336,7 +340,7 @@ export function ImportWizardTab({ onImported }: Props) {
               type="button"
               className="lab-btn"
               disabled={busy || !preview.summary.importable}
-              onClick={runImport}
+              onClick={() => void runImport()}
             >
               {busy ? 'Import in corso…' : 'Importa nel database'}
             </button>
@@ -369,6 +373,73 @@ export function ImportWizardTab({ onImported }: Props) {
             Nuovo import
           </button>
         </div>
+      )}
+    </div>
+  )
+}
+
+export function ImportWizardTab({ onImported, onGoDatasets, onGoOverview }: Props) {
+  const [mode, setMode] = useState<ImportMode>('single')
+  const [batchImporting, setBatchImporting] = useState(false)
+
+  const switchMode = (next: ImportMode) => {
+    if (next === mode) return
+    if (batchImporting) {
+      toast.error("Attendi il termine dell'import multiplo prima di cambiare modalità")
+      return
+    }
+    setMode(next)
+  }
+
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      <div
+        className="inline-flex rounded-xl p-1 text-sm"
+        style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--lab-border)' }}
+      >
+        <button
+          type="button"
+          className="rounded-lg px-4 py-2 font-medium transition"
+          style={
+            mode === 'single'
+              ? { background: 'var(--lab-cyan-dim)', color: 'var(--lab-cyan)' }
+              : { color: 'var(--lab-muted)' }
+          }
+          onClick={() => switchMode('single')}
+        >
+          Import singolo
+        </button>
+        <button
+          type="button"
+          className="rounded-lg px-4 py-2 font-medium transition"
+          style={
+            mode === 'batch'
+              ? { background: 'var(--lab-cyan-dim)', color: 'var(--lab-cyan)' }
+              : { color: 'var(--lab-muted)' }
+          }
+          onClick={() => switchMode('batch')}
+        >
+          Import multiplo
+        </button>
+      </div>
+
+      {mode === 'single' ? (
+        <SingleImportWizard onImported={onImported} />
+      ) : (
+        <BatchImportPanel
+          onBatchDone={() => {
+            onImported(0)
+          }}
+          onGoDatasets={() => {
+            setBatchImporting(false)
+            onGoDatasets?.()
+          }}
+          onGoOverview={() => {
+            setBatchImporting(false)
+            onGoOverview?.()
+          }}
+          onImportingChange={setBatchImporting}
+        />
       )}
     </div>
   )

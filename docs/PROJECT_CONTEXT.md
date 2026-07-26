@@ -6,6 +6,10 @@ File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro as
 
 Parser v2: preserva `__extra_columns__` nel raw; issue aggregate info/warning (niente 552 warning); Overview «Stato dataset»; replace controllato singolo dataset (`REPLACE_CECCHINO_LAB_DATASET`). Info non contano nelle anomalie. Formule/Today invariati. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
 
+## Feat — Import multiplo Cecchino Lab (2026-07-26)
+
+Batch preview con mapping automatico Div + import sequenziale sull’endpoint singolo. Stagione unica per batch; nessun auto-replace; dataset 2025/2026 esistenti protetti da `dataset_already_exists`. UI: toggle Import singolo/multiplo. Formule/Today invariati.
+
 ## Feat — Selector campionati guidato Cecchino Lab (2026-07-26)
 
 Import Lab: catalogo 16 campionati, metadata automatici (paese/Div/timezone), controllo `Div` bloccante, anomalie Overview = errori+warning (info escluse). Wizard FE: solo campionato + stagione + CSV. Formule/Today invariati. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.

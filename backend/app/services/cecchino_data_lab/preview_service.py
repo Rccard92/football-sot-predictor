@@ -25,16 +25,19 @@ def preview_csv_bytes(
     competition_key: str,
     season_label: str,
     source_filename: str | None = None,
+    preview_limit: int = 8,
+    issues_cap: int = 200,
 ) -> dict[str, Any]:
     entry, result = parse_with_catalog(
         raw,
         competition_key=competition_key,
         season_label=season_label,
+        preview_limit=preview_limit,
     )
     meta = catalog_meta(entry, season_label)
     # result.issues already includes file-level + match issues (no double-append)
     issues = [_issue_to_dict(i) for i in result.issues]
-    issues_preview = issues[:200]
+    issues_preview = issues[:issues_cap]
     return {
         "source_filename": source_filename,
         **meta,

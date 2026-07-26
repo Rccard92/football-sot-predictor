@@ -100,6 +100,7 @@ def parse_with_catalog(
     *,
     competition_key: str,
     season_label: str,
+    preview_limit: int = 8,
 ) -> tuple[LabCompetition, ParseResult]:
     entry = resolve_competition(competition_key)
     if not season_label or not season_label.strip():
@@ -108,7 +109,11 @@ def parse_with_catalog(
             "Stagione obbligatoria.",
             status_code=400,
         )
-    parsed = parse_football_data_csv(raw, timezone_name=entry.timezone)
+    parsed = parse_football_data_csv(
+        raw,
+        timezone_name=entry.timezone,
+        preview_limit=preview_limit,
+    )
     apply_division_mismatch(parsed, entry.division_code)
     return entry, parsed
 

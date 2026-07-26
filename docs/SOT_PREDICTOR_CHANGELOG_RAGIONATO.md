@@ -7,6 +7,13 @@
 - Persistenza issue unica con dedup; Overview `datasets_status`; replace controllato `POST .../datasets/{id}/replace` con token `REPLACE_CECCHINO_LAB_DATASET`.
 - Formule/Cecchino Today/Serie A/Championship invariati (replace isolato al dataset scelto; sostituzione reale League Two manuale post-deploy).
 
+## Feat — Import multiplo Cecchino Lab (2026-07-26)
+
+- Perché: caricare rapidamente le stagioni storiche (2020/2021–2024/2025) senza selezionare il campionato per ogni file.
+- Batch preview `POST /api/admin/cecchino-lab/imports/batch/preview` con auto-mapping Div; import sequenziale sull’endpoint singolo esistente; UI toggle singolo/multiplo.
+- Duplicati batch/SHA/dataset gestiti senza sovrascritture automatiche; 13 dataset 2025/2026 intatti.
+- Formule/Cecchino Today invariati.
+
 ## Feat — Selector campionati guidato Cecchino Lab (2026-07-26)
 
 - Perché: ridurre errori manuali su paese/Div/timezone in import CSV.

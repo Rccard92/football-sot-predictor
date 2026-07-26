@@ -493,9 +493,10 @@ def parse_football_data_csv(
             extra_n = only - expected_col_count
             if extra_n > 0:
                 affected = len(row_col_counts)
-                col_word = "colonna extra finale" if extra_n == 1 else f"{extra_n} colonne extra finali"
                 if extra_n == 1:
                     col_word = "1 colonna extra finale"
+                else:
+                    col_word = f"{extra_n} colonne extra finali"
                 issues.append(
                     ParsedIssue(
                         severity="info",

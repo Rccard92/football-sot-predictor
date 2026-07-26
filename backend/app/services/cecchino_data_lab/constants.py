@@ -8,6 +8,12 @@ IMPORT_CONFIRM_TOKEN = "IMPORT_CECCHINO_LAB_CSV"
 REPLACE_CONFIRM_TOKEN = "REPLACE_CECCHINO_LAB_DATASET"
 RAW_EXTRA_COLUMNS_KEY = "__extra_columns__"
 
+# Limiti import multiplo (batch preview)
+BATCH_MAX_FILES = 20
+BATCH_MAX_FILE_BYTES = 15 * 1024 * 1024  # 15 MB
+BATCH_PREVIEW_ROWS = 5
+BATCH_ISSUES_CAP = 30
+
 # Colonne canoniche Football-Data (obbligatorie per un CSV valido)
 REQUIRED_HEADERS = frozenset({"Div", "Date", "HomeTeam", "AwayTeam"})
 

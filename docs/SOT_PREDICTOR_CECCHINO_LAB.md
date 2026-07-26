@@ -84,6 +84,15 @@ Se il numero di colonne non è uniforme → una sola issue aggregata `severity=w
 - Asian Handicap parziale → warning `partial_bet365_ah`, riga importabile, 1X2/O/U invariati
 - Tutte le issue di `ParseResult` sono persistite una sola volta (dedup in memoria); issue file-level con `source_row_number` non vengono più scartate
 
+## Import multiplo
+
+- Endpoint: `POST /api/admin/cecchino-lab/imports/batch/preview` (`files` + `season_label`, senza `competition_key`)
+- Helper `detect_division`: legge solo la colonna `Div`, associa via `get_competition_by_division`
+- Limiti: max 20 file, 15 MB/file, solo `.csv`
+- Stati: `ready`, `ready_with_warnings`, `blocked`, `already_imported`, `duplicate_in_batch`, `duplicate_competition_in_batch`, `dataset_already_exists`
+- Nessuna scrittura DB in preview; nessun auto-replace
+- Esecuzione: il frontend importa i file pronti in sequenza su `POST /imports` (token `IMPORT_CECCHINO_LAB_CSV`); un fallimento non annulla i completati
+
 ## Sostituzione controllata dataset
 
 `POST /api/admin/cecchino-lab/datasets/{dataset_id}/replace` (multipart: `file`, `confirm=REPLACE_CECCHINO_LAB_DATASET`).

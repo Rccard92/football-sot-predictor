@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  batchImportStatusLabel,
+  countBatchReadyItems,
   formatAnomaliesHint,
   formatOdd,
+  isBatchItemReady,
   isOverviewEmpty,
   matchOddsColumnLabel,
   qualityBadgeClass,
@@ -45,6 +48,24 @@ describe('cecchinoLabApi helpers', () => {
     expect(msg).toContain('League Two 2025/2026')
     expect(msg).toContain('Serie A')
     expect(msg).toContain('Championship')
+  })
+
+  it('batch status helpers', () => {
+    expect(batchImportStatusLabel('ready')).toBe('Pronto')
+    expect(batchImportStatusLabel('ready_with_warnings')).toBe('Pronto con warning')
+    expect(batchImportStatusLabel('duplicate_in_batch')).toBe('Duplicato')
+    expect(batchImportStatusLabel('dataset_already_exists')).toBe('Già presente')
+    expect(isBatchItemReady('ready')).toBe(true)
+    expect(isBatchItemReady('ready_with_warnings')).toBe(true)
+    expect(isBatchItemReady('blocked')).toBe(false)
+    expect(
+      countBatchReadyItems([
+        { import_status: 'ready' },
+        { import_status: 'ready_with_warnings' },
+        { import_status: 'blocked' },
+        { import_status: 'already_imported' },
+      ]),
+    ).toBe(2)
   })
 
   it('isOverviewEmpty true for empty overview', () => {
