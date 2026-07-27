@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.cecchino_lab_data_issue import CecchinoLabDataIssue
@@ -503,7 +503,7 @@ def get_match(db: Session, match_id: int) -> dict[str, Any] | None:
     return _match_detail(m, ds, issues)
 
 
-def list_data_quality_issues(
+def _issues_base_query(
     db: Session,
     *,
     dataset_id: int | None = None,
@@ -511,11 +511,14 @@ def list_data_quality_issues(
     severity: str | None = None,
     issue_code: str | None = None,
     match_id: int | None = None,
-    page: int = 1,
-    page_size: int = 50,
-) -> dict[str, Any]:
-    q = db.query(CecchinoLabDataIssue, CecchinoLabImport).join(
-        CecchinoLabImport, CecchinoLabImport.id == CecchinoLabDataIssue.import_id
+    competition: str | None = None,
+    season_label: str | None = None,
+):
+    """Query issues con join import + dataset (per filtri campionato/stagione)."""
+    q = (
+        db.query(CecchinoLabDataIssue, CecchinoLabImport, CecchinoLabDataset)
+        .join(CecchinoLabImport, CecchinoLabImport.id == CecchinoLabDataIssue.import_id)
+        .join(CecchinoLabDataset, CecchinoLabDataset.id == CecchinoLabImport.dataset_id)
     )
     if dataset_id is not None:
         q = q.filter(CecchinoLabImport.dataset_id == dataset_id)
@@ -527,30 +530,66 @@ def list_data_quality_issues(
         q = q.filter(CecchinoLabDataIssue.issue_code == issue_code)
     if match_id is not None:
         q = q.filter(CecchinoLabDataIssue.match_id == match_id)
+    if competition:
+        q = q.filter(CecchinoLabDataset.competition_name == competition)
+    if season_label:
+        q = q.filter(CecchinoLabDataset.season_label == season_label)
+    return q
+
+
+def list_data_quality_issues(
+    db: Session,
+    *,
+    dataset_id: int | None = None,
+    import_id: int | None = None,
+    severity: str | None = None,
+    issue_code: str | None = None,
+    match_id: int | None = None,
+    competition: str | None = None,
+    season_label: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    q = _issues_base_query(
+        db,
+        dataset_id=dataset_id,
+        import_id=import_id,
+        severity=severity,
+        issue_code=issue_code,
+        match_id=match_id,
+        competition=competition,
+        season_label=season_label,
+    )
 
     total = q.count()
     page = max(1, page)
     page_size = min(max(1, page_size), 200)
     rows = q.order_by(CecchinoLabDataIssue.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
-    # Top issue codes (global filtered set, capped)
-    code_counts = (
+    code_q = (
         db.query(CecchinoLabDataIssue.issue_code, func.count(CecchinoLabDataIssue.id))
         .join(CecchinoLabImport, CecchinoLabImport.id == CecchinoLabDataIssue.import_id)
-        .filter(
-            and_(
-                True if dataset_id is None else CecchinoLabImport.dataset_id == dataset_id,
-                True if severity is None else CecchinoLabDataIssue.severity == severity,
-            )
-        )
-        .group_by(CecchinoLabDataIssue.issue_code)
+        .join(CecchinoLabDataset, CecchinoLabDataset.id == CecchinoLabImport.dataset_id)
+    )
+    if dataset_id is not None:
+        code_q = code_q.filter(CecchinoLabImport.dataset_id == dataset_id)
+    if severity:
+        code_q = code_q.filter(CecchinoLabDataIssue.severity == severity)
+    if issue_code:
+        code_q = code_q.filter(CecchinoLabDataIssue.issue_code == issue_code)
+    if competition:
+        code_q = code_q.filter(CecchinoLabDataset.competition_name == competition)
+    if season_label:
+        code_q = code_q.filter(CecchinoLabDataset.season_label == season_label)
+    code_counts = (
+        code_q.group_by(CecchinoLabDataIssue.issue_code)
         .order_by(func.count(CecchinoLabDataIssue.id).desc())
         .limit(15)
         .all()
     )
 
     items = []
-    for issue, imp in rows:
+    for issue, imp, ds in rows:
         items.append(
             {
                 "id": issue.id,
@@ -564,6 +603,9 @@ def list_data_quality_issues(
                 "raw_value": issue.raw_value,
                 "message": issue.message,
                 "created_at": issue.created_at.isoformat() if issue.created_at else None,
+                "competition_name": ds.competition_name,
+                "season_label": ds.season_label,
+                "country": ds.country,
             }
         )
 
@@ -588,3 +630,151 @@ def list_data_quality_issues(
             or 0,
         },
     }
+
+
+EXPORT_ISSUE_COLUMNS = [
+    "issue_id",
+    "severity",
+    "issue_code",
+    "message",
+    "field_name",
+    "raw_value",
+    "source_row_number",
+    "match_id",
+    "match_date",
+    "home_team",
+    "away_team",
+    "dataset_id",
+    "competition_name",
+    "country",
+    "season_label",
+    "division_code",
+    "import_id",
+    "source_filename",
+    "details_json",
+    "created_at",
+]
+
+
+def _issue_export_row(
+    issue: CecchinoLabDataIssue,
+    imp: CecchinoLabImport,
+    ds: CecchinoLabDataset,
+    match: CecchinoLabMatch | None,
+) -> dict[str, Any]:
+    import json
+
+    details = issue.details_json
+    details_str = json.dumps(details, ensure_ascii=False) if details is not None else None
+    return {
+        "issue_id": issue.id,
+        "severity": issue.severity,
+        "issue_code": issue.issue_code,
+        "message": issue.message,
+        "field_name": issue.field_name,
+        "raw_value": issue.raw_value,
+        "source_row_number": issue.source_row_number,
+        "match_id": issue.match_id,
+        "match_date": match.match_date.isoformat() if match and match.match_date else None,
+        "home_team": match.home_team if match else None,
+        "away_team": match.away_team if match else None,
+        "dataset_id": imp.dataset_id,
+        "competition_name": ds.competition_name,
+        "country": ds.country,
+        "season_label": ds.season_label,
+        "division_code": ds.division_code,
+        "import_id": issue.import_id,
+        "source_filename": imp.source_filename,
+        "details_json": details_str,
+        "created_at": issue.created_at.isoformat() if issue.created_at else None,
+    }
+
+
+def export_data_quality_issues(
+    db: Session,
+    *,
+    format: str = "json",
+    scope: str = "filtered",
+    severity: str | None = None,
+    issue_code: str | None = None,
+    dataset_id: int | None = None,
+    competition: str | None = None,
+    season_label: str | None = None,
+) -> tuple[str, str, str]:
+    """Esporta tutte le segnalazioni (senza paginazione).
+
+    Restituisce (content, media_type, filename).
+    Non include raw_json delle partite.
+    """
+    import csv
+    import io
+    import json
+    from datetime import datetime, timezone
+
+    fmt = (format or "json").lower().strip()
+    if fmt not in ("csv", "json"):
+        fmt = "json"
+    use_filters = (scope or "filtered").lower().strip() != "all"
+
+    filt_severity = severity if use_filters else None
+    filt_code = issue_code if use_filters else None
+    filt_dataset = dataset_id if use_filters else None
+    filt_comp = competition if use_filters else None
+    filt_season = season_label if use_filters else None
+
+    q = (
+        db.query(CecchinoLabDataIssue, CecchinoLabImport, CecchinoLabDataset, CecchinoLabMatch)
+        .join(CecchinoLabImport, CecchinoLabImport.id == CecchinoLabDataIssue.import_id)
+        .join(CecchinoLabDataset, CecchinoLabDataset.id == CecchinoLabImport.dataset_id)
+        .outerjoin(CecchinoLabMatch, CecchinoLabMatch.id == CecchinoLabDataIssue.match_id)
+    )
+    if filt_dataset is not None:
+        q = q.filter(CecchinoLabImport.dataset_id == filt_dataset)
+    if filt_severity:
+        q = q.filter(CecchinoLabDataIssue.severity == filt_severity)
+    if filt_code:
+        q = q.filter(CecchinoLabDataIssue.issue_code == filt_code)
+    if filt_comp:
+        q = q.filter(CecchinoLabDataset.competition_name == filt_comp)
+    if filt_season:
+        q = q.filter(CecchinoLabDataset.season_label == filt_season)
+
+    rows = q.order_by(CecchinoLabDataIssue.id.asc()).all()
+    items = [_issue_export_row(issue, imp, ds, match) for issue, imp, ds, match in rows]
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filters_meta = {
+        "scope": "filtered" if use_filters else "all",
+        "severity": filt_severity,
+        "issue_code": filt_code,
+        "dataset_id": filt_dataset,
+        "competition": filt_comp,
+        "season_label": filt_season,
+    }
+
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.DictWriter(
+            buf,
+            fieldnames=EXPORT_ISSUE_COLUMNS,
+            delimiter=";",
+            quoting=csv.QUOTE_MINIMAL,
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for item in items:
+            writer.writerow(item)
+        # UTF-8 con BOM
+        content = "\ufeff" + buf.getvalue()
+        filename = f"cecchino_lab_quality_{stamp}.csv"
+        return content, "text/csv; charset=utf-8", filename
+
+    payload = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "filters": filters_meta,
+        "count": len(items),
+        "items": items,
+    }
+    content = json.dumps(payload, ensure_ascii=False, indent=2)
+    filename = f"cecchino_lab_quality_{stamp}.json"
+    return content, "application/json; charset=utf-8", filename

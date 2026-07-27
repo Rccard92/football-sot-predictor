@@ -9,7 +9,8 @@ Questa area è **solo dati**:
 - import CSV Football-Data;
 - anteprima / audit;
 - persistenza PostgreSQL dedicata;
-- explorer partite e qualità dati.
+- explorer partite e qualità dati;
+- Overview betting analytics storiche (read-only).
 
 **Non include e non deve includere in questa fase:**
 
@@ -38,6 +39,31 @@ Tabelle dedicate (nessuna FK verso fixtures / cecchino_today / odds operative):
 
 Non si riutilizzano: `cecchino_today_fixtures`, `cecchino_predictions`, `fixture_bookmaker_odds`, `fixtures`, `competitions`, `teams`, `seasons` operative.
 
+## Overview betting analytics (storica)
+
+Endpoint read-only: `GET /api/cecchino-lab/analytics/overview`
+
+Filtri opzionali cumulabili: `season_label`, `country`, `competition`, `dataset_id`.
+
+Servizio dedicato: `analytics_service.py`. Calcoli in lettura; nessuna migration; nessuna scrittura; nessuna predizione.
+
+Blocchi payload: summary, outcomes 1X2, goals, first_half, favorite (+ bucket calibrazione), margins, odds_movement, longest_odds_hit, leagues (League DNA), insights (max 6–8, sample ≥100 per insight di campionato).
+
+Definizioni:
+
+- **ROI flat 1u**: profitto storico con 1 unità per evento eleggibile (vinto = quota−1, perso = −1). Non è una strategia futura.
+- **Favorita**: quota pre-closing minima univoca tra 1/X/2; parità esclusa.
+- **Probabilità implicita normalizzata**: `(1/q) / Σ(1/qi)`.
+- **Margine**: `(Σ 1/qi − 1) × 100`.
+- **Movimento %**: `((closing/pre) − 1) × 100` (termini: pre-closing / closing, mai “opening”).
+- **NULL ≠ 0** nei denominatori.
+
+UI: bento dashboard in `components/cecchino-data-lab/overview/*`. L’endpoint legacy `GET /overview` resta per compatibilità.
+
+## Export qualità dati
+
+`GET /api/cecchino-lab/data-quality/issues/export` — `format=csv|json`, `scope=filtered|all`, filtri severity/issue_code/dataset/competition/season. Nessuna paginazione. CSV UTF-8 BOM con `;`. Nessun `raw_json` partita.
+
 ## Catalogo campionati e import guidato
 
 Catalogo statico in `competition_catalog.py` (16 campionati Football-Data). Endpoint `GET /api/cecchino-lab/catalog/competitions`.
@@ -50,7 +76,7 @@ Controllo bloccante: colonna CSV `Div` deve coincidere con `division_code` del c
 
 Il totale **Anomalie** = errori + warning. Le issue `severity=info` (es. colonne extra uniformi, colonne preservate nel raw) restano in Qualità dati / preview ma **non** contano come anomalie e **non** degradano la qualità del dataset da Completo a Parziale.
 
-La Overview espone `datasets_status` (tabella «Stato dataset»): campionato, stagione, partite, coverage Bet365, errori, warning, stato. I campi legacy `best_quality_datasets` / `worst_quality_datasets` restano nella response API per compatibilità ma non sono più usati dalla UI.
+La Overview **legacy** API espone ancora `datasets_status` / best-worst per compatibilità. La UI Overview attuale usa `GET /analytics/overview` (KPI betting) e non mostra più ultimi import / stato dataset / best-worst come blocchi principali.
 
 Stati qualità dataset (stringa, senza migration):
 

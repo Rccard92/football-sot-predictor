@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Overview betting analytics + export qualità Cecchino Lab (2026-07-27)
+
+- Perché: trasformare l’Overview Lab da KPI amministrativi a dashboard storica betting (risultati, goal, Bet365) con confronto campionati/stagioni e export segnalazioni.
+- Cosa: `analytics_service.py` + `GET /api/cecchino-lab/analytics/overview`; export `GET /api/cecchino-lab/data-quality/issues/export` (CSV BOM `;` / JSON); UI bento Overview + filtri sticky; export menu in Qualità dati.
+- Cosa non fa: formule Cecchino, predizioni, replay, ML, migration, scrittura su match/import; moduli protetti invariati.
+- Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
+
 ## Fix — Colonne extra CSV e Overview Cecchino Lab (2026-07-26)
 
 - Perché: League Two (132 header / 133 valori uniformi) generava 552 warning inutili, perdeva il valore trailing in `raw_json` e non persisteva correttamente le issue; Overview mostrava Migliore/Peggiore qualità ridondante.

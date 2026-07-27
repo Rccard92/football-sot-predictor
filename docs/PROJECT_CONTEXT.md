@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Overview betting analytics + export qualità Cecchino Lab (2026-07-27)
+
+Overview Lab = dashboard storica betting (`GET /analytics/overview`): 1X2, goal, HT, favorita/calibrazione, margine, movimento pre→closing, League DNA, insight deterministici. Export qualità CSV/JSON non paginato. Solo lettura; nessuna predizione/formula; Cecchino Today invariato. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
+
 ## Fix — Colonne extra CSV e Overview Cecchino Lab (2026-07-26)
 
 Parser v2: preserva `__extra_columns__` nel raw; issue aggregate info/warning (niente 552 warning); Overview «Stato dataset»; replace controllato singolo dataset (`REPLACE_CECCHINO_LAB_DATASET`). Info non contano nelle anomalie. Formule/Today invariati. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.

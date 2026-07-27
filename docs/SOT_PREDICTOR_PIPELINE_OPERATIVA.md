@@ -7,10 +7,11 @@ Area parallela **non operativa** su Today:
 1. Upload CSV admin → `POST /api/admin/cecchino-lab/imports/preview` (no write).
 2. Conferma `IMPORT_CECCHINO_LAB_CSV` → `POST /api/admin/cecchino-lab/imports` (transazione: dataset + import + matches + issues).
 3. Dedup file: `file_sha256` + `parser_version` → 409 se già importato.
-4. Lettura UI: `/api/cecchino-lab/overview|datasets|matches|data-quality/issues`.
-5. Replace controllato: `POST /api/admin/cecchino-lab/datasets/{id}/replace` + `REPLACE_CECCHINO_LAB_DATASET`.
-6. Import multiplo: `POST /api/admin/cecchino-lab/imports/batch/preview` (stagione unica, mapping Div automatico, no write) → import sequenziale sull’endpoint singolo; nessun auto-replace; fallimento di un file non annulla i completati.
-7. **Nessun** collegamento a `cecchino_today_fixtures`, scan, formule, Balance/GI/Segnali.
+4. Lettura UI: `/api/cecchino-lab/overview|analytics/overview|datasets|matches|data-quality/issues`.
+5. Export qualità: `GET /api/cecchino-lab/data-quality/issues/export` (CSV/JSON, scope filtered|all, no pagination).
+6. Replace controllato: `POST /api/admin/cecchino-lab/datasets/{id}/replace` + `REPLACE_CECCHINO_LAB_DATASET`.
+7. Import multiplo: `POST /api/admin/cecchino-lab/imports/batch/preview` (stagione unica, mapping Div automatico, no write) → import sequenziale sull’endpoint singolo; nessun auto-replace; fallimento di un file non annulla i completati.
+8. **Nessun** collegamento a `cecchino_today_fixtures`, scan, formule, Balance/GI/Segnali.
 
 Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.
 

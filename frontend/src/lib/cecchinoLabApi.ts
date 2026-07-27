@@ -196,7 +196,213 @@ export type CecchinoLabIssue = {
   message: string
   raw_value: string | null
   created_at: string | null
+  competition_name?: string | null
+  season_label?: string | null
+  country?: string | null
 }
+
+/** Metriche analytics Overview betting */
+export type CecchinoLabMetricCount = {
+  count: number
+  percentage: number | null
+  denominator: number
+  numerator?: number
+  sample_size?: number
+}
+
+export type CecchinoLabOutcomeMetric = CecchinoLabMetricCount & {
+  average_bet365_pre_odds: number | null
+  flat_profit_units: number | null
+  flat_roi_pct: number | null
+}
+
+export type CecchinoLabGoalMetric = CecchinoLabMetricCount & {
+  average_bet365_pre_odds?: number | null
+  flat_profit_units?: number | null
+  flat_roi_pct?: number | null
+}
+
+export type CecchinoLabFavoriteBucket = {
+  bucket: string
+  matches: number
+  average_odds: number | null
+  normalized_implied_probability: number | null
+  actual_win_rate: number | null
+  calibration_gap_pp: number | null
+}
+
+export type CecchinoLabLeagueRow = {
+  competition_name: string
+  country: string
+  matches: number
+  home_win_pct: number | null
+  draw_pct: number | null
+  away_win_pct: number | null
+  over_25_pct: number | null
+  under_25_pct: number | null
+  btts_pct: number | null
+  average_goals: number | null
+  first_half_draw_pct: number | null
+  favorite_hit_pct: number | null
+  average_pre_margin_pct: number | null
+  roi_home_pct: number | null
+  roi_draw_pct: number | null
+  roi_away_pct: number | null
+  roi_over_25_pct: number | null
+  roi_under_25_pct: number | null
+  warnings_count: number
+  errors_count: number
+}
+
+export type CecchinoLabInsight = {
+  key: string
+  title: string
+  value: string
+  description: string
+  competition_name: string | null
+  sample_size: number
+  tone: 'positive' | 'neutral' | 'warning' | 'accent'
+}
+
+export type CecchinoLabAnalyticsFilters = {
+  season_label?: string
+  country?: string
+  competition?: string
+  dataset_id?: number
+}
+
+export type CecchinoLabQualityExportFilters = {
+  format: 'csv' | 'json'
+  scope: 'filtered' | 'all'
+  severity?: string
+  issue_code?: string
+  dataset_id?: number
+  competition?: string
+  season_label?: string
+}
+
+export type CecchinoLabAnalyticsOverview = {
+  available_filters: {
+    seasons: string[]
+    countries: string[]
+    competitions: Array<{ name: string; country: string }>
+  }
+  applied_filters: {
+    season_label: string | null
+    country: string | null
+    competition: string | null
+    dataset_id: number | null
+  }
+  sample: {
+    matches_total: number
+    competitions_count: number
+    seasons_count: number
+  }
+  summary: {
+    matches_total: number
+    competitions_count: number
+    seasons_count: number
+    total_goals: number
+    average_goals_per_match: number | null
+    average_home_goals: number | null
+    average_away_goals: number | null
+    favorite_hit_rate: number | null
+    bet365_1x2_coverage_pct: number | null
+    anomalies_errors: number
+    anomalies_warnings: number
+    completeness_pct: number | null
+    best_flat_roi: { label: string; roi: number; sample_size: number } | null
+    average_pre_closing_margin_pct: number | null
+  }
+  outcomes_1x2: {
+    home: CecchinoLabOutcomeMetric
+    draw: CecchinoLabOutcomeMetric
+    away: CecchinoLabOutcomeMetric
+  }
+  goals: {
+    over_15: CecchinoLabGoalMetric
+    over_25: CecchinoLabGoalMetric
+    under_25: CecchinoLabGoalMetric
+    under_35: CecchinoLabGoalMetric
+    btts_yes: CecchinoLabGoalMetric
+    btts_no: CecchinoLabGoalMetric
+    score_0_0: CecchinoLabGoalMetric
+    team_blank: CecchinoLabGoalMetric
+    goals_ge_4: CecchinoLabGoalMetric
+    goals_ge_5: CecchinoLabGoalMetric
+  }
+  first_half: {
+    draw: CecchinoLabMetricCount
+    over_05: CecchinoLabMetricCount
+    over_15: CecchinoLabMetricCount
+    under_15: CecchinoLabMetricCount
+    score_0_0: CecchinoLabMetricCount
+    average_goals: number | null
+    pct_of_ft_goals: number | null
+    sample_size: number
+  }
+  favorite: {
+    unique_count: number
+    wins: number
+    losses: number
+    hit_rate: number | null
+    average_odds: number | null
+    home_favorite_pct: number | null
+    away_favorite_pct: number | null
+    draw_favorite_pct: number | null
+    buckets: CecchinoLabFavoriteBucket[]
+  }
+  margins: {
+    average_pre_closing_margin_pct: number | null
+    median_pre_closing_margin_pct: number | null
+    average_closing_margin_pct: number | null
+    median_closing_margin_pct: number | null
+    average_pre_to_closing_delta_pp: number | null
+    by_competition: Array<{
+      competition_name: string
+      average_pre_closing_margin_pct: number | null
+      sample_size: number
+    }>
+    sample_size_pre: number
+    sample_size_closing: number
+  }
+  odds_movement: {
+    average_home_movement_pct: number | null
+    average_draw_movement_pct: number | null
+    average_away_movement_pct: number | null
+    favorite_shortened_pct: number | null
+    winning_selection_shortened_pct: number | null
+    average_winner_movement_pct: number | null
+    sample_size: number
+    distribution: Array<{ bucket: string; count: number; percentage: number | null }>
+  }
+  longest_odds_hit: {
+    count: number
+    percentage: number | null
+    average_winning_odds: number | null
+    top_competition: {
+      competition_name: string
+      percentage: number | null
+      sample_size: number
+    } | null
+    record_match: {
+      match_id: number
+      match_date: string | null
+      competition_name: string
+      season_label: string
+      home_team: string | null
+      away_team: string | null
+      result: string
+      selection: string
+      odds: number | null
+    } | null
+    sample_size: number
+  }
+  leagues: CecchinoLabLeagueRow[]
+  insights: CecchinoLabInsight[]
+  is_empty: boolean
+}
+
 
 async function postFormData<T>(path: string, form: FormData): Promise<T> {
   const base = getApiBase()
@@ -231,6 +437,59 @@ async function postFormData<T>(path: string, form: FormData): Promise<T> {
 export function getCecchinoLabOverview(): Promise<CecchinoLabOverview> {
   return requestJson('/api/cecchino-lab/overview')
 }
+
+export function getCecchinoLabAnalyticsOverview(
+  filters?: CecchinoLabAnalyticsFilters,
+): Promise<CecchinoLabAnalyticsOverview> {
+  const q = new URLSearchParams()
+  if (filters?.season_label) q.set('season_label', filters.season_label)
+  if (filters?.country) q.set('country', filters.country)
+  if (filters?.competition) q.set('competition', filters.competition)
+  if (filters?.dataset_id != null) q.set('dataset_id', String(filters.dataset_id))
+  const qs = q.toString()
+  return requestJson(`/api/cecchino-lab/analytics/overview${qs ? `?${qs}` : ''}`)
+}
+
+export async function downloadCecchinoLabQualityExport(
+  filters: CecchinoLabQualityExportFilters,
+): Promise<void> {
+  const q = new URLSearchParams()
+  q.set('format', filters.format)
+  q.set('scope', filters.scope)
+  if (filters.scope === 'filtered') {
+    if (filters.severity) q.set('severity', filters.severity)
+    if (filters.issue_code) q.set('issue_code', filters.issue_code)
+    if (filters.dataset_id != null) q.set('dataset_id', String(filters.dataset_id))
+    if (filters.competition) q.set('competition', filters.competition)
+    if (filters.season_label) q.set('season_label', filters.season_label)
+  }
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/cecchino-lab/data-quality/issues/export?${q.toString()}`)
+  if (!res.ok) {
+    let message = res.statusText
+    try {
+      const body = await res.json()
+      message = body?.detail || body?.message || message
+    } catch {
+      /* ignore */
+    }
+    throw new AdminHttpError(res.status, message, null)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = /filename="?([^"]+)"?/i.exec(cd)
+  const fallback = `cecchino_lab_quality.${filters.format === 'csv' ? 'csv' : 'json'}`
+  const filename = match?.[1] || fallback
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 
 export function getCecchinoLabDatasets(params?: {
   country?: string

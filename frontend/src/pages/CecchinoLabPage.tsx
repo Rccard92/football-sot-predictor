@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { CecchinoLabShell } from '../components/cecchino-data-lab/CecchinoLabShell'
 import { OverviewTab } from '../components/cecchino-data-lab/OverviewTab'
@@ -7,7 +7,6 @@ import { DatasetsTab } from '../components/cecchino-data-lab/DatasetsTab'
 import { MatchesExplorerTab } from '../components/cecchino-data-lab/MatchesExplorerTab'
 import { DataQualityTab } from '../components/cecchino-data-lab/DataQualityTab'
 import { MatchDetailDrawer } from '../components/cecchino-data-lab/MatchDetailDrawer'
-import { getCecchinoLabOverview, type CecchinoLabOverview } from '../lib/cecchinoLabApi'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -21,33 +20,9 @@ type TabId = (typeof TABS)[number]['id']
 
 export function CecchinoLabPage() {
   const [tab, setTab] = useState<TabId>('overview')
-  const [overview, setOverview] = useState<CecchinoLabOverview | null>(null)
-  const [loadingOverview, setLoadingOverview] = useState(true)
-  const [overviewError, setOverviewError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [focusDatasetId, setFocusDatasetId] = useState<number | null>(null)
   const [drawerMatchId, setDrawerMatchId] = useState<number | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    getCecchinoLabOverview()
-      .then((data) => {
-        if (!cancelled) {
-          setOverview(data)
-          setOverviewError(null)
-          setLoadingOverview(false)
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setOverviewError(e instanceof Error ? e.message : 'Errore overview')
-          setLoadingOverview(false)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [refreshKey])
 
   const bump = () => setRefreshKey((k) => k + 1)
 
@@ -62,8 +37,8 @@ export function CecchinoLabPage() {
             Archivio storico Football-Data
           </h1>
           <p className="mt-1 max-w-2xl text-sm" style={{ color: 'var(--lab-muted)' }}>
-            Workspace dati isolato: import CSV, audit qualità e quote Bet365. Nessuna formula, nessuna predizione,
-            nessun impatto su Cecchino Today.
+            Workspace dati isolato: analytics betting storiche, import CSV e audit qualità Bet365. Nessuna formula,
+            nessuna predizione, nessun impatto su Cecchino Today.
           </p>
         </motion.div>
 
@@ -83,16 +58,7 @@ export function CecchinoLabPage() {
 
       <div>
         {tab === 'overview' && (
-          <OverviewTab
-            overview={overview}
-            loading={loadingOverview}
-            error={overviewError}
-            onGoImport={() => setTab('import')}
-            onOpenDataset={(id) => {
-              setFocusDatasetId(id)
-              setTab('datasets')
-            }}
-          />
+          <OverviewTab refreshKey={refreshKey} onGoImport={() => setTab('import')} />
         )}
         {tab === 'import' && (
           <ImportWizardTab

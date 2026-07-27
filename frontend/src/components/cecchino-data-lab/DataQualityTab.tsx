@@ -1,5 +1,12 @@
-import { useEffect, useState } from 'react'
-import { getCecchinoLabIssues, type CecchinoLabIssue } from '../../lib/cecchinoLabApi'
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import {
+  downloadCecchinoLabQualityExport,
+  getCecchinoLabDatasets,
+  getCecchinoLabIssues,
+  type CecchinoLabDataset,
+  type CecchinoLabIssue,
+} from '../../lib/cecchinoLabApi'
 
 type Props = {
   refreshKey: number
@@ -12,15 +19,35 @@ export function DataQualityTab({ refreshKey, onOpenMatch }: Props) {
   const [page, setPage] = useState(1)
   const [severity, setSeverity] = useState('')
   const [issueCode, setIssueCode] = useState('')
+  const [datasetId, setDatasetId] = useState('')
+  const [season, setSeason] = useState('')
+  const [competition, setCompetition] = useState('')
+  const [datasets, setDatasets] = useState<CecchinoLabDataset[]>([])
   const [topCodes, setTopCodes] = useState<Array<{ issue_code: string; count: number }>>([])
   const [severityCounts, setSeverityCounts] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    getCecchinoLabDatasets()
+      .then((res) => setDatasets(res.items || []))
+      .catch(() => setDatasets([]))
+  }, [refreshKey])
+
+  const seasons = Array.from(new Set(datasets.map((d) => d.season_label))).sort().reverse()
+  const competitions = Array.from(new Set(datasets.map((d) => d.competition_name))).sort()
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     getCecchinoLabIssues({
       severity: severity || undefined,
       issue_code: issueCode || undefined,
+      dataset_id: datasetId ? Number(datasetId) : undefined,
+      season_label: season || undefined,
+      competition: competition || undefined,
       page,
       page_size: 50,
     })
@@ -44,27 +71,102 @@ export function DataQualityTab({ refreshKey, onOpenMatch }: Props) {
     return () => {
       cancelled = true
     }
-  }, [refreshKey, severity, issueCode, page])
+  }, [refreshKey, severity, issueCode, datasetId, season, competition, page])
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setExportOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  const runExport = async (format: 'csv' | 'json', scope: 'filtered' | 'all') => {
+    setExportOpen(false)
+    setExporting(true)
+    try {
+      await downloadCecchinoLabQualityExport({
+        format,
+        scope,
+        severity: severity || undefined,
+        issue_code: issueCode || undefined,
+        dataset_id: datasetId ? Number(datasetId) : undefined,
+        competition: competition || undefined,
+        season_label: season || undefined,
+      })
+      toast.success(`Export ${format.toUpperCase()} completato`)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Export fallito')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="lab-card p-4">
-          <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Errori</div>
-          <div className="text-2xl font-semibold" style={{ color: 'var(--lab-err)' }}>
-            {severityCounts.error ?? 0}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid flex-1 gap-3 sm:grid-cols-3">
+          <div className="lab-card p-4">
+            <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Errori</div>
+            <div className="text-2xl font-semibold" style={{ color: 'var(--lab-err)' }}>
+              {severityCounts.error ?? 0}
+            </div>
+          </div>
+          <div className="lab-card p-4">
+            <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Warning</div>
+            <div className="text-2xl font-semibold" style={{ color: 'var(--lab-warn)' }}>
+              {severityCounts.warning ?? 0}
+            </div>
+          </div>
+          <div className="lab-card p-4">
+            <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Info</div>
+            <div className="text-2xl font-semibold" style={{ color: 'var(--lab-cyan)' }}>
+              {severityCounts.info ?? 0}
+            </div>
           </div>
         </div>
-        <div className="lab-card p-4">
-          <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Warning</div>
-          <div className="text-2xl font-semibold" style={{ color: 'var(--lab-warn)' }}>
-            {severityCounts.warning ?? 0}
+
+        <div className="flex flex-col items-end gap-1" ref={menuRef}>
+          <div className="relative">
+            <button
+              type="button"
+              className="lab-btn"
+              disabled={exporting}
+              onClick={() => setExportOpen((v) => !v)}
+              style={{
+                background: 'linear-gradient(135deg, rgba(46,230,255,0.2), rgba(61,214,140,0.12))',
+                border: '1px solid var(--lab-cyan)',
+              }}
+            >
+              {exporting ? 'Esportazione…' : 'Esporta segnalazioni'}
+            </button>
+            {exportOpen ? (
+              <div
+                className="absolute right-0 z-40 mt-2 min-w-[220px] overflow-hidden rounded-xl shadow-xl"
+                style={{ background: '#0f1c2c', border: '1px solid var(--lab-border)' }}
+              >
+                {(
+                  [
+                    ['csv', 'filtered', 'CSV — filtri attivi'],
+                    ['json', 'filtered', 'JSON — filtri attivi'],
+                    ['csv', 'all', 'CSV — tutte'],
+                    ['json', 'all', 'JSON — tutte'],
+                  ] as const
+                ).map(([fmt, scope, label]) => (
+                  <button
+                    key={`${fmt}-${scope}`}
+                    type="button"
+                    className="block w-full px-4 py-2.5 text-left text-sm hover:bg-white/5"
+                    onClick={() => void runExport(fmt, scope)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
-        </div>
-        <div className="lab-card p-4">
-          <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>Info</div>
-          <div className="text-2xl font-semibold" style={{ color: 'var(--lab-cyan)' }}>
-            {severityCounts.info ?? 0}
+          <div className="text-xs tabular-nums" style={{ color: 'var(--lab-muted)' }}>
+            {total.toLocaleString('it-IT')} segnalazioni nel filtro corrente
           </div>
         </div>
       </div>
@@ -115,6 +217,51 @@ export function DataQualityTab({ refreshKey, onOpenMatch }: Props) {
             setPage(1)
           }}
         />
+        <select
+          className="lab-input max-w-xs"
+          value={datasetId}
+          onChange={(e) => {
+            setDatasetId(e.target.value)
+            setPage(1)
+          }}
+        >
+          <option value="">Dataset: tutti</option>
+          {datasets.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.competition_name} · {d.season_label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="lab-input max-w-xs"
+          value={season}
+          onChange={(e) => {
+            setSeason(e.target.value)
+            setPage(1)
+          }}
+        >
+          <option value="">Stagione: tutte</option>
+          {seasons.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <select
+          className="lab-input max-w-xs"
+          value={competition}
+          onChange={(e) => {
+            setCompetition(e.target.value)
+            setPage(1)
+          }}
+        >
+          <option value="">Campionato: tutti</option>
+          {competitions.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="lab-table-wrap">
@@ -165,6 +312,13 @@ export function DataQualityTab({ refreshKey, onOpenMatch }: Props) {
                 </td>
               </tr>
             )}
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="py-8 text-center" style={{ color: 'var(--lab-muted)' }}>
+                  Caricamento…
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

@@ -7,10 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.services.cecchino_data_lab.analytics_service import get_analytics_overview
 from app.services.cecchino_data_lab.competition_catalog import list_competitions_dicts
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.import_service import import_csv_bytes
@@ -18,6 +19,7 @@ from app.services.cecchino_data_lab.preview_service import preview_csv_bytes
 from app.services.cecchino_data_lab.batch_preview_service import batch_preview_csv_files
 from app.services.cecchino_data_lab.replace_service import replace_dataset_csv
 from app.services.cecchino_data_lab.query_service import (
+    export_data_quality_issues,
     get_dataset,
     get_match,
     get_overview,
@@ -164,6 +166,24 @@ def overview(db: Session = Depends(get_db)) -> dict[str, Any]:
     return get_overview(db)
 
 
+@router.get("/analytics/overview")
+def analytics_overview(
+    season_label: str | None = None,
+    country: str | None = None,
+    competition: str | None = None,
+    dataset_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Dashboard storica betting (read-only). Nessuna predizione / formula Cecchino."""
+    return get_analytics_overview(
+        db,
+        season_label=season_label,
+        country=country,
+        competition=competition,
+        dataset_id=dataset_id,
+    )
+
+
 @router.get("/datasets")
 def datasets(
     country: str | None = None,
@@ -243,6 +263,8 @@ def data_quality_issues(
     severity: str | None = None,
     issue_code: str | None = None,
     match_id: int | None = None,
+    competition: str | None = None,
+    season_label: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -254,6 +276,38 @@ def data_quality_issues(
         severity=severity,
         issue_code=issue_code,
         match_id=match_id,
+        competition=competition,
+        season_label=season_label,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get("/data-quality/issues/export")
+def data_quality_issues_export(
+    format: str = Query("json", pattern="^(csv|json)$"),
+    scope: str = Query("filtered", pattern="^(filtered|all)$"),
+    severity: str | None = None,
+    issue_code: str | None = None,
+    dataset_id: int | None = None,
+    competition: str | None = None,
+    season_label: str | None = None,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Export completo segnalazioni qualità (CSV UTF-8 BOM `;` oppure JSON). Nessuna paginazione."""
+    content, media_type, filename = export_data_quality_issues(
+        db,
+        format=format,
+        scope=scope,
+        severity=severity,
+        issue_code=issue_code,
+        dataset_id=dataset_id,
+        competition=competition,
+        season_label=season_label,
+    )
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        iter([content.encode("utf-8")]),
+        media_type=media_type,
+        headers=headers,
     )

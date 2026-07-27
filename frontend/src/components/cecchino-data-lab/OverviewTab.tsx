@@ -1,48 +1,63 @@
-import { motion } from 'framer-motion'
-import ReactECharts from 'echarts-for-react'
-import type { CecchinoLabOverview } from '../../lib/cecchinoLabApi'
-import { qualityBadgeClass } from '../../lib/cecchinoLabApi'
-import { qualityLabel } from './labTheme'
+import { useMemo, useState } from 'react'
+import { OverviewFilters } from './overview/OverviewFilters'
+import { MarketPulse } from './overview/MarketPulse'
+import { Outcomes1x2 } from './overview/Outcomes1x2'
+import { GoalLandscape } from './overview/GoalLandscape'
+import { MarketCalibration } from './overview/MarketCalibration'
+import { FlatRoiExplorer } from './overview/FlatRoiExplorer'
+import { OddsMovementPanel } from './overview/OddsMovementPanel'
+import { LeagueDnaTable } from './overview/LeagueDnaTable'
+import { BettingInsights } from './overview/BettingInsights'
+import { useAnalyticsOverview } from './overview/useAnalyticsOverview'
+import type { CecchinoLabAnalyticsFilters } from '../../lib/cecchinoLabApi'
 
 type Props = {
-  overview: CecchinoLabOverview | null
-  loading: boolean
-  error: string | null
+  refreshKey: number
   onGoImport: () => void
-  onOpenDataset?: (datasetId: number) => void
 }
 
-function KpiCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+const EMPTY_FILTERS = { season_label: '', country: '', competition: '' }
+
+function Skeleton() {
   return (
-    <motion.div
-      className="lab-card p-4"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-    >
-      <div className="text-xs uppercase tracking-wider" style={{ color: 'var(--lab-muted)' }}>
-        {label}
+    <div className="space-y-4 animate-pulse">
+      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-24 rounded-2xl" style={{ background: 'var(--lab-surface)' }} />
+        ))}
       </div>
-      <div className="mt-2 text-3xl font-semibold tabular-nums" style={{ color: 'var(--lab-cyan)' }}>
-        {value}
+      <div className="h-48 rounded-2xl" style={{ background: 'var(--lab-surface)' }} />
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="h-64 rounded-2xl" style={{ background: 'var(--lab-surface)' }} />
+        <div className="h-64 rounded-2xl" style={{ background: 'var(--lab-surface)' }} />
       </div>
-      {hint ? (
-        <div className="mt-1 text-xs" style={{ color: 'var(--lab-muted)' }}>
-          {hint}
-        </div>
-      ) : null}
-    </motion.div>
+    </div>
   )
 }
 
-export function OverviewTab({ overview, loading, error, onGoImport, onOpenDataset }: Props) {
-  if (loading) {
-    return <div className="p-8 text-sm" style={{ color: 'var(--lab-muted)' }}>Caricamento overview…</div>
-  }
+export function OverviewTab({ refreshKey, onGoImport }: Props) {
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+
+  const apiFilters: CecchinoLabAnalyticsFilters = useMemo(
+    () => ({
+      season_label: filters.season_label || undefined,
+      country: filters.country || undefined,
+      competition: filters.competition || undefined,
+    }),
+    [filters],
+  )
+
+  const { data, loading, error } = useAnalyticsOverview(apiFilters, refreshKey)
+
   if (error) {
-    return <div className="p-8 text-sm" style={{ color: 'var(--lab-err)' }}>{error}</div>
+    return (
+      <div className="p-8 text-sm" style={{ color: 'var(--lab-err)' }}>
+        {error}
+      </div>
+    )
   }
-  if (!overview || overview.is_empty) {
+
+  if (!loading && data?.is_empty) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 px-6 py-20 text-center">
         <div
@@ -63,171 +78,69 @@ export function OverviewTab({ overview, loading, error, onGoImport, onOpenDatase
     )
   }
 
-  const coverageOption = {
-    backgroundColor: 'transparent',
-    textStyle: { color: '#8aa0b5' },
-    tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 20, top: 30, bottom: 30 },
-    xAxis: {
-      type: 'category',
-      data: ['1X2 pre', 'O/U 2.5 pre'],
-      axisLine: { lineStyle: { color: 'rgba(120,190,220,0.2)' } },
-    },
-    yAxis: {
-      type: 'value',
-      max: 100,
-      axisLabel: { formatter: '{value}%' },
-      splitLine: { lineStyle: { color: 'rgba(120,190,220,0.08)' } },
-    },
-    series: [
-      {
-        type: 'bar',
-        data: [overview.bet365_1x2_coverage_pct, overview.bet365_ou25_coverage_pct],
-        itemStyle: {
-          color: {
-            type: 'linear',
-            x: 0,
-            y: 0,
-            x2: 0,
-            y2: 1,
-            colorStops: [
-              { offset: 0, color: '#2ee6ff' },
-              { offset: 1, color: '#1a8fa8' },
-            ],
-          },
-          borderRadius: [6, 6, 0, 0],
-        },
-        barWidth: 42,
-      },
-    ],
-  }
-
-  const completenessOption = {
-    backgroundColor: 'transparent',
-    tooltip: { trigger: 'item' },
-    series: [
-      {
-        type: 'pie',
-        radius: ['48%', '72%'],
-        label: { color: '#e8f1f8' },
-        data: [
-          { name: 'Complete', value: overview.matches_complete, itemStyle: { color: '#3dd68c' } },
-          { name: 'Incomplete', value: overview.matches_incomplete, itemStyle: { color: '#f0b429' } },
-        ],
-      },
-    ],
-  }
-
-  const datasetsStatus = overview.datasets_status ?? []
-
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard label="Campionati" value={overview.competitions_count} />
-        <KpiCard label="Stagioni" value={overview.seasons_count} />
-        <KpiCard label="Dataset" value={overview.datasets_count} />
-        <KpiCard label="Partite" value={overview.matches_total} />
-        <KpiCard
-          label="Completezza"
-          value={`${overview.completeness.complete_pct}%`}
-          hint={`${overview.matches_complete} complete`}
-        />
-        <KpiCard
-          label="Anomalie"
-          value={overview.anomalies_total}
-          hint={`${overview.anomalies_errors} errori · ${overview.anomalies_warnings} warning`}
-        />
-      </div>
+      <OverviewFilters
+        available={data?.available_filters}
+        filters={filters}
+        sample={data?.sample}
+        onChange={setFilters}
+        onReset={() => setFilters(EMPTY_FILTERS)}
+      />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="lab-card p-4">
-          <h3 className="mb-2 text-sm font-semibold" style={{ color: 'var(--lab-cyan)' }}>
-            Coverage Bet365
-          </h3>
-          <ReactECharts option={coverageOption} style={{ height: 240 }} />
-        </div>
-        <div className="lab-card p-4">
-          <h3 className="mb-2 text-sm font-semibold" style={{ color: 'var(--lab-cyan)' }}>
-            Distribuzione completezza
-          </h3>
-          <ReactECharts option={completenessOption} style={{ height: 240 }} />
-        </div>
-      </div>
+      {loading || !data ? (
+        <Skeleton />
+      ) : (
+        <>
+          <MarketPulse summary={data.summary} />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="lab-card p-4">
-          <h3 className="mb-3 text-sm font-semibold">Ultimi import</h3>
-          {overview.recent_imports.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--lab-muted)' }}>Nessun import recente.</p>
-          ) : (
-            <ul className="space-y-2">
-              {overview.recent_imports.map((imp) => (
-                <li
-                  key={imp.id}
-                  className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm"
-                  style={{ background: 'rgba(0,0,0,0.18)' }}
-                >
-                  <div>
-                    <div className="font-medium">{imp.source_filename}</div>
-                    <div className="text-xs" style={{ color: 'var(--lab-muted)' }}>
-                      {imp.competition_name} · {imp.season_label} · +{imp.rows_imported} righe
-                    </div>
-                  </div>
-                  <span className={`rounded-md px-2 py-0.5 text-xs ${imp.status === 'completed' ? 'lab-badge-ok' : 'lab-badge-muted'}`}>
-                    {imp.status}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Outcomes1x2 outcomes={data.outcomes_1x2} />
+            <GoalLandscape goals={data.goals} firstHalf={data.first_half} />
+          </div>
 
-        <div className="lab-card p-4">
-          <h3 className="mb-3 text-sm font-semibold">Stato dataset</h3>
-          {datasetsStatus.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--lab-muted)' }}>Nessun dataset.</p>
-          ) : (
-            <div className="lab-table-wrap max-h-72 overflow-auto">
-              <table className="lab-table text-sm">
-                <thead>
-                  <tr>
-                    <th>Campionato</th>
-                    <th>Stagione</th>
-                    <th>Partite</th>
-                    <th>1X2</th>
-                    <th>O/U 2.5</th>
-                    <th>Err</th>
-                    <th>Warn</th>
-                    <th>Stato</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {datasetsStatus.map((d) => (
-                    <tr
-                      key={d.id}
-                      className={onOpenDataset ? 'cursor-pointer hover:bg-[rgba(46,230,255,0.06)]' : undefined}
-                      onClick={() => onOpenDataset?.(d.id)}
-                    >
-                      <td>{d.competition_name}</td>
-                      <td>{d.season_label}</td>
-                      <td className="tabular-nums">{d.matches_count}</td>
-                      <td className="tabular-nums">{d.bet365_1x2_coverage_pct ?? '—'}%</td>
-                      <td className="tabular-nums">{d.bet365_ou25_coverage_pct ?? '—'}%</td>
-                      <td className="tabular-nums">{d.errors_count}</td>
-                      <td className="tabular-nums">{d.warnings_count}</td>
-                      <td>
-                        <span className={`rounded px-2 text-xs ${qualityBadgeClass(d.data_quality_status)}`}>
-                          {qualityLabel(d.data_quality_status)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <MarketCalibration favorite={data.favorite} />
+            <FlatRoiExplorer outcomes={data.outcomes_1x2} goals={data.goals} />
+          </div>
+
+          <OddsMovementPanel movement={data.odds_movement} margins={data.margins} />
+
+          <LeagueDnaTable
+            leagues={data.leagues}
+            onSelectCompetition={(name) => {
+              const comp = data.available_filters.competitions.find((c) => c.name === name)
+              setFilters((f) => ({
+                ...f,
+                competition: name,
+                country: comp?.country || f.country,
+              }))
+            }}
+          />
+
+          <BettingInsights insights={data.insights} />
+
+          {data.longest_odds_hit.record_match ? (
+            <div
+              className="rounded-2xl p-4 text-sm"
+              style={{ border: '1px solid var(--lab-border)', background: 'rgba(192,132,252,0.06)' }}
+            >
+              <div className="text-xs uppercase tracking-wider" style={{ color: '#c084fc' }}>
+                Record esito più quotato centrato
+              </div>
+              <div className="mt-1">
+                {data.longest_odds_hit.record_match.home_team} – {data.longest_odds_hit.record_match.away_team}
+                {' · '}
+                {data.longest_odds_hit.record_match.result}
+                {' · '}
+                sel. {data.longest_odds_hit.record_match.selection} @ {data.longest_odds_hit.record_match.odds}
+                {' · '}
+                {data.longest_odds_hit.record_match.competition_name} {data.longest_odds_hit.record_match.season_label}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }
