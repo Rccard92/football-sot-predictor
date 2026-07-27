@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Completamento moduli storici Cecchino Lab (2026-07-27)
+
+Intensità Goal storica (parity partial), Acquistabilità Bet365 progressiva, modelli segnali A–F, pilota bilanciato 20 eleggibili/campionato, report AI v3, risoluzione revisione git via env. Adapter solo in `cecchino_data_lab`. **Today/Betfair/formule/pesi invariati.** Run #1 non rielaborato. Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`, `docs/CECCHINO_LAB_AI_REPORT_SCHEMA.md`.
+
 ## Fix — Replay storico Cecchino Lab analysis-safe (2026-07-27)
 
 Correzioni pre-scansione 2021/2022: settlement solo `eligible_core`; estrazione segnali da `row["signals"]`; hash pre-match completo; report v2 con sezioni separate + pattern combinati; Intensità/Acquistabilità feature-only; modalità pilota `max_matches`. **Today/Betfair invariati.** Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`, `docs/CECCHINO_LAB_AI_REPORT_SCHEMA.md`.

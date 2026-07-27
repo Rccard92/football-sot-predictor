@@ -2,96 +2,108 @@
 
 ## Isolamento
 
-- Solo Cecchino Lab (`cecchino_lab_*`).
+- Solo Cecchino Lab (`cecchino_lab_*` + `cecchino_data_lab`).
 - **Non** modifica Cecchino Today, formule, gate Betfair, snapshot operativi.
 - Bookmaker operativo Today: **Betfair** (invariato).
 - Bookmaker replay storico: **Bet365** (CSV Football-Data).
+- Run #1 (test tecnico 200 partite) resta consultabile e non viene rielaborato.
+
+## Audit moduli (FASE 1)
+
+| Modulo | Funzione canonica | Parità live | Lab |
+|--------|-------------------|-------------|-----|
+| Intensità Goal | 7 feature + `TrainEcdf` + `_pillar_scores_from_pct` | **Parziale** (no bundle Today, no xG) | `historical_goal_intensity.py` |
+| Acquistabilità | `calculate_purchasability_v2_item` + profilo progressivo | **Non equivalente Betfair** | `historical_purchasability.py` |
+| Segnali A–F | pesi ufficiali + `compute_final_odds` + `build_signals_matrix` | **F = modello corrente** | `historical_signal_models.py` |
 
 ## Avvio
 
 1. UI: tab **Scansioni storiche** in `/cecchino-lab`
-2. Oppure API:
-   - `POST /api/admin/cecchino-lab/historical-scans/preflight` `{ "season_label": "2021/2022" }`
-   - `POST /api/admin/cecchino-lab/historical-scans` con:
-     - `confirm: "RUN_CECCHINO_LAB_HISTORICAL_SCAN"`
-     - `max_matches` opzionale (`null`/assente = stagione completa; es. `200` = pilota)
+2. API `POST /api/admin/cecchino-lab/historical-scans`
 
-### Modalità pilota vs completa
+### Modalità
 
 | Modalità | Body | UI |
 |----------|------|-----|
-| Pilota | `max_matches: 200` | “Scansione pilota — prime 200 partite” |
+| **Pilota bilanciato** (consigliato) | `pilot_strategy: "eligible_per_competition"`, `eligible_per_competition: 20` | “Pilota bilanciato — 20 eleggibili per campionato” |
+| Test tecnico | `max_matches: 200` | “Test tecnico — prime 200 partite” |
 | Completa | `max_matches: null` | “Scansione completa” |
 
-Il pilota rispetta l’ordine cronologico della pipeline, produce ZIP/statistiche, è marcato `is_partial_run` / `run_scope=pilot` e **non** va confuso con il report stagione completa. Non modifica dataset o partite storiche.
+Pilota bilanciato: per ogni campionato, ordine cronologico, registra escluse, si ferma a N `eligible_core`, poi passa al successivo. Target tipico fino a 320 eleggibili; processate totali possono superare il target. `run_scope=balanced_pilot`, `is_partial_run=true`, `not_full_season_report=true`.
 
-Nessun avvio automatico su deploy/startup/migrazione.
+Progresso bilanciato: campionati completati / totali, eleggibili raccolte / target, processate, escluse, errori, campionato corrente — **non** un rapporto ambiguo tipo `450/320 processate`.
+
+Scansione completa con revisione git sconosciuta: **bloccata**. Pilota: permesso + warning in policy/manifest.
+
+## Revisione Git
+
+Ordine: `RAILWAY_GIT_COMMIT_SHA` → `SOURCE_VERSION` → `GIT_COMMIT_SHA` → `VERCEL_GIT_COMMIT_SHA` → `git rev-parse HEAD`.
+
+Salvati: `source_git_commit`, `source_git_commit_source`, `source_revision_status`.
 
 ## Pipeline per partita
 
 1. Contesti pre-match (anti-leakage)
-2. Cecchino + goal markets + KPI Bet365 + segnali + Balance + feature Intensità/Acquistabilità
-3. Eleggibilità storica
-4. Freeze snapshot + hash SHA-256 pre-match
-5. Collegamento risultato FT/HT
-6. Settlement mercati **solo se** `core_eligible=true`
+2. Cecchino + goal markets + KPI Bet365
+3. Intensità Goal storica (pilastri) + Acquistabilità storica Bet365 + segnali modelli A–F
+4. Eleggibilità storica
+5. Freeze snapshot + hash SHA-256 pre-match (include GI/purch/A–F/profilo/versioni; **no** risultato/settlement)
+6. Collegamento risultato FT/HT
+7. Settlement mercati **solo se** `core_eligible=true` (default settlement su modello F)
 
 ### Partite escluse
 
-- Snapshot + risultato + motivo di esclusione salvati
-- `settlement_status = "excluded"`
-- `settlement_summary.markets_analyzed = 0`
-- **Nessuna** riga mercato nelle metriche di performance
-- Diagnostica separata nel report (`excluded_diagnostics`)
+- Snapshot + risultato + motivo salvati; `settlement_status=excluded`
+- Zero righe mercato nelle metriche di performance
+- Diagnostica in `excluded_diagnostics`
 
-## Policy quote Bet365
+## Intensità Goal storica
 
-1X2 / O/U 2.5: trio/coppia **closing** completa, altrimenti **pre** completa; mai mix.
-DC 1X/X2/12: derivate fair normalizzate da 1X2 (`normalized_fair_probability_from_bet365_1x2`).
-Non derivabili: O1.5, U3.5, mercati HT da FT.
+- Versione: `cecchino_lab_goal_intensity_historical_v1`
+- `parity_status=partial`: stesse feature/pilastri, ECDF progressivo solo su eligible_core precedenti dello stesso run; **nessun** bundle produzione Today
+- xG: `missing`, mai imputato a 0
+- Campione insufficiente → status esplicito, score null
+- Persistenza: `goal_intensity_compatibility_json` (payload arricchito, retrocompatibile)
 
-## Anti-leakage e hash pre-match
+## Acquistabilità storica Bet365
 
-Per competizione, solo partite con kickoff strettamente precedente. Stesso kickoff escluso.
+- Versione: `cecchino_lab_purchasability_historical_v1`
+- Profilo progressivo: solo KPI eligible_core precedenti; target/futuro esclusi; no risultati reali nel profilo; no profilo Betfair
+- Prima di `MIN_SIDE_SAMPLES` (15): `insufficient_historical_normalization_sample`, score null
+- `quote_quality`: `real` | `derived` | `unavailable`
+- Osservazionale: non blocca eleggibilità, non sceglie giocate, non entra in Today
+- Resume: stesso profilo hash dagli snapshot precedenti
 
-L’hash copre l’analisi congelata: identity, input snapshot, picchetti, final Cecchino, goal markets, KPI Bet365, matrice segnali, Balance v5, feature/compat Intensità e Acquistabilità, quote Bet365 + provenienza, versioni moduli, stato eleggibilità.
+## Modelli segnali A–F
 
-**Non** include: FT, HT, esito, profitto, settlement.
+`signals_json`:
 
-## Segnali
+```json
+{
+  "default_model_key": "F",
+  "default_matrix": {},
+  "models": { "A": { "meta", "weights", "final", "matrix", "active_signals", "settlements" }, "...": "F" }
+}
+```
 
-Estrazione dalla matrice canonica: `row["key"]` + `row["signals"][modello] = "SI"|"NO"`.
-Mapping famiglia → modello/cella → mercato riusato da `cecchino_signal_target_mapping` (nessuna nuova mappa).
-Su ogni mercato settled: `signal_active`, `signal_sources_json` (family, count, sources).
+Pesi ufficiali invariati; F ≡ modello corrente. Snapshot legacy (Run #1, matrice flat) restano leggibili.
 
-## Eleggibilità storica
+## Report AI v3
 
-Gate separato (no Betfair). Stati: `eligible_core`, `excluded_insufficient_history`, …
-Disponibilità quote registrata separatamente dalla core eleggibilità.
-Hit rate / profitto / ROI / fasce rating / pattern / confronti campionato / analisi segnali: **solo** `eligible_core`.
+Vedi `docs/CECCHINO_LAB_AI_REPORT_SCHEMA.md`. File aggiuntivi: `signal_models.jsonl`, `goal_intensity.jsonl`, `purchasability.jsonl`.
 
-## Intensità Goal / Acquistabilità
+Profitto principale per mercato / segnale / modello / fascia / pattern.  
+`technical_sum_across_all_independent_market_rows` + `not_a_betting_strategy=true` — non è profitto del Cecchino.
 
-- Intensità: export feature raw pre-match (`raw_features_available`); `v5_score_not_executed=true`; no xG inventato; no bundle prospettico produttivo.
-- Acquistabilità: export input per mercato (`inputs_available`); `final_score_not_executed=true`; no profilo Betfair; no falso score finale Bet365.
-- La prima scansione può **studiare le feature**, non ancora validare i punteggi finali.
+## Anti-leakage e hash
 
-## ROI
+Priori con kickoff strettamente precedente. Hash include moduli calcolati; non include FT/HT/esito/profitto.
 
-- `profit_1u_real` / real ROI: solo quote Bet365 reali
-- `profit_1u_synthetic` / synthetic ROI: solo derivate
-- Non sommare i due
+## Test
 
-## Resume / cancel
-
-`POST .../historical-scans/{id}/resume` e `.../cancel`. Lock: un solo run attivo per stagione.
-
-## Report AI
-
-`GET /api/cecchino-lab/historical-scans/{id}/report` → ZIP (vedi `CECCHINO_LAB_AI_REPORT_SCHEMA.md`).
-
-## Limiti prima stagione (2021/2022)
-
-- Nessuno storico da stagioni precedenti nella pipeline.
-- Prime giornate escluse per campione insufficiente.
-- Intensità Goal / Acquistabilità: feature/input only, non punteggi finali.
+```bash
+cd backend
+pytest -q tests/test_cecchino_lab_historical_scan.py
+pytest -q tests/test_cecchino_lab_historical_modules_v3.py
+pytest -q tests/test_cecchino_lab_*.py
+```

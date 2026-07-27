@@ -591,10 +591,10 @@ def test_goal_intensity_and_purchasability_flags():
         },
     )
     assert purch["inputs_available"] is True
-    assert purch["final_score_not_executed"] is True
-    assert purch["final_score"] is None
     assert purch["betfair_operational_profile_applied"] is False
     assert purch["market_inputs"][0]["market_key"] == "HOME"
+    # Compat layer ancora esportato; lo score storico è in build_historical_purchasability
+    assert purch["final_score"] is None
 
 
 def test_normalize_max_matches_and_invalid():

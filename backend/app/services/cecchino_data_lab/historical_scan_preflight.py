@@ -221,12 +221,16 @@ def run_historical_scan_preflight(db: Session, *, season_label: str) -> dict[str
         "signals": {"status": "available"},
         "balance_v5": {"status": "available"},
         "goal_intensity_v5": {
-            "status": "compatibility_only",
-            "note": "not_executed_production_bundle",
+            "status": "historical_partial",
+            "note": "cecchino_lab_goal_intensity_historical_v1 parity_partial",
         },
         "purchasability": {
-            "status": "compatibility_only",
-            "note": "not_executed_operational_profile",
+            "status": "historical_bet365_progressive",
+            "note": "cecchino_lab_purchasability_historical_v1 observational",
+        },
+        "signal_models": {
+            "status": "available",
+            "note": "models_A_F default_F",
         },
         "settlement_14_markets": {
             "status": "available" if with_ft > 0 else "partial",

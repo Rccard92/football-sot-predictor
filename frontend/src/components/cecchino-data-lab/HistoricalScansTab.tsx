@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   DEFAULT_HISTORICAL_SEASON,
+  HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
   HISTORICAL_SCAN_PILOT_MAX_MATCHES,
   LAB_SEASON_OPTIONS,
   cancelHistoricalScan,
@@ -19,7 +20,7 @@ import {
 } from '../../lib/cecchinoLabApi'
 
 type Props = { refreshKey: number }
-type ConfirmMode = 'pilot' | 'full' | null
+type ConfirmMode = 'balanced' | 'pilot' | 'full' | null
 
 export function HistoricalScansTab({ refreshKey }: Props) {
   const [season, setSeason] = useState(DEFAULT_HISTORICAL_SEASON)
@@ -83,21 +84,28 @@ export function HistoricalScansTab({ refreshKey }: Props) {
     }
   }
 
-  const onStart = async (mode: 'pilot' | 'full') => {
+  const onStart = async (mode: 'balanced' | 'pilot' | 'full') => {
     setBusy(true)
     try {
       const run = await startHistoricalScan(
         season,
-        mode === 'pilot'
-          ? { maxMatches: HISTORICAL_SCAN_PILOT_MAX_MATCHES }
-          : { maxMatches: null },
+        mode === 'balanced'
+          ? {
+              pilotStrategy: 'eligible_per_competition',
+              eligiblePerCompetition: HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
+            }
+          : mode === 'pilot'
+            ? { maxMatches: HISTORICAL_SCAN_PILOT_MAX_MATCHES, pilotStrategy: 'max_matches' }
+            : { maxMatches: null },
       )
       setActiveRun(run)
       setConfirmMode(null)
       toast.success(
-        mode === 'pilot'
-          ? `Scansione pilota avviata (#${run.id})`
-          : `Scansione completa avviata (#${run.id})`,
+        mode === 'balanced'
+          ? `Pilota bilanciato avviato (#${run.id})`
+          : mode === 'pilot'
+            ? `Test tecnico avviato (#${run.id})`
+            : `Scansione completa avviata (#${run.id})`,
       )
       void loadRuns()
     } catch (e) {
@@ -114,6 +122,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
     !busy
 
   const pct = activeRun?.progress_pct ?? 0
+  const pd = activeRun?.progress_detail
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -163,11 +172,21 @@ export function HistoricalScansTab({ refreshKey }: Props) {
           </button>
           <button
             type="button"
-            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
+            className="lab-btn rounded-md px-4 py-2 text-sm font-semibold"
+            disabled={!canStart}
+            onClick={() => setConfirmMode('balanced')}
+            style={{ outline: '1px solid var(--lab-cyan)' }}
+          >
+            Pilota bilanciato — {HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP} eleggibili per
+            campionato
+          </button>
+          <button
+            type="button"
+            className="lab-btn rounded-md px-4 py-2 text-sm font-medium opacity-80"
             disabled={!canStart}
             onClick={() => setConfirmMode('pilot')}
           >
-            Scansione pilota — prime {HISTORICAL_SCAN_PILOT_MAX_MATCHES} partite
+            Test tecnico — prime {HISTORICAL_SCAN_PILOT_MAX_MATCHES} partite
           </button>
           <button
             type="button"
@@ -268,18 +287,49 @@ export function HistoricalScansTab({ refreshKey }: Props) {
               }}
             />
           </div>
-          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <Stat
-              label="Processate"
-              value={`${activeRun.matches_processed}/${activeRun.matches_total}`}
-            />
-            <Stat label="Eleggibili" value={String(activeRun.matches_eligible_core)} />
-            <Stat label="Escluse" value={String(activeRun.matches_excluded)} />
-            <Stat label="Errori" value={String(activeRun.matches_error)} />
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            {pd ? (
+              <>
+                <Stat
+                  label="Campionati"
+                  value={`${pd.competitions_completed ?? 0}/${pd.competitions_total ?? '—'}`}
+                />
+                <Stat
+                  label="Eleggibili / target"
+                  value={`${pd.eligible_collected ?? activeRun.matches_eligible_core}/${pd.eligible_target ?? '—'}`}
+                />
+                <Stat label="Processate totali" value={String(pd.matches_processed ?? activeRun.matches_processed)} />
+                <Stat label="Escluse" value={String(pd.matches_excluded ?? activeRun.matches_excluded)} />
+                <Stat label="Errori" value={String(pd.matches_error ?? activeRun.matches_error)} />
+                <Stat
+                  label="Eleggibili campionato corrente"
+                  value={`${pd.eligible_in_current_competition ?? '—'}/${pd.eligible_per_competition_target ?? '—'}`}
+                />
+              </>
+            ) : (
+              <>
+                <Stat
+                  label="Processate"
+                  value={`${activeRun.matches_processed}/${activeRun.matches_total}`}
+                />
+                <Stat label="Eleggibili" value={String(activeRun.matches_eligible_core)} />
+                <Stat label="Escluse" value={String(activeRun.matches_excluded)} />
+                <Stat label="Errori" value={String(activeRun.matches_error)} />
+              </>
+            )}
           </div>
           {activeRun.current_competition && (
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
-              Campionato in elaborazione: {activeRun.current_competition}
+              Campionato corrente: {activeRun.current_competition}
+            </p>
+          )}
+          {(activeRun.source_git_commit || activeRun.source_revision_status) && (
+            <p className="mt-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
+              Revisione: {activeRun.source_git_commit ?? 'sconosciuta'}
+              {activeRun.source_git_commit_source
+                ? ` (${activeRun.source_git_commit_source})`
+                : ''}{' '}
+              — {activeRun.source_revision_status ?? 'n/d'}
             </p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
@@ -407,17 +457,24 @@ export function HistoricalScansTab({ refreshKey }: Props) {
         >
           <div className="lab-card max-w-md rounded-xl p-5">
             <h3 className="text-lg font-semibold">
-              {confirmMode === 'pilot'
-                ? 'Conferma scansione pilota'
-                : 'Conferma scansione completa'}
+              {confirmMode === 'balanced'
+                ? 'Conferma pilota bilanciato'
+                : confirmMode === 'pilot'
+                  ? 'Conferma test tecnico'
+                  : 'Conferma scansione completa'}
             </h3>
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
-              {confirmMode === 'pilot' ? (
+              {confirmMode === 'balanced' ? (
                 <>
-                  Avviare il replay pilota sulle prime{' '}
+                  Avviare il pilota bilanciato ({HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP}{' '}
+                  eleggibili per campionato) sulla stagione <strong>{season}</strong>? Il report sarà
+                  marcato come run parziale.
+                </>
+              ) : confirmMode === 'pilot' ? (
+                <>
+                  Avviare il test tecnico sulle prime{' '}
                   <strong>{HISTORICAL_SCAN_PILOT_MAX_MATCHES}</strong> partite della stagione{' '}
-                  <strong>{season}</strong>? Il report sarà marcato come run parziale e non va
-                  confuso con la scansione completa.
+                  <strong>{season}</strong>? Utile solo come prova tecnica (es. Run #1).
                 </>
               ) : (
                 <>

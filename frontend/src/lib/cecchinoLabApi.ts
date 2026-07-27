@@ -803,14 +803,31 @@ export type HistoricalScanRun = {
   matches_excluded: number
   matches_error: number
   progress_pct: number | null
+  progress_detail?: {
+    competitions_completed?: number
+    competitions_total?: number
+    eligible_collected?: number
+    eligible_target?: number
+    matches_processed?: number
+    matches_excluded?: number
+    matches_error?: number
+    current_competition?: string | null
+    eligible_in_current_competition?: number
+    eligible_per_competition_target?: number | null
+  } | null
   preflight?: HistoricalScanPreflight | null
   summary?: Record<string, unknown> | null
   error?: Record<string, unknown> | null
   source_git_commit?: string | null
+  source_git_commit_source?: string | null
+  source_revision_status?: string | null
   cancel_requested?: boolean
-  run_scope?: 'pilot' | 'full' | string
+  run_scope?: 'pilot' | 'balanced_pilot' | 'full' | string
   is_partial_run?: boolean
+  not_full_season_report?: boolean
   max_matches?: number | null
+  pilot_strategy?: string | null
+  eligible_per_competition?: number | null
   module_policy?: Record<string, unknown> | null
 }
 
@@ -821,14 +838,25 @@ export function preflightHistoricalScan(seasonLabel: string): Promise<Historical
 }
 
 export const HISTORICAL_SCAN_PILOT_MAX_MATCHES = 200
+export const HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP = 20
 
 export function startHistoricalScan(
   seasonLabel: string,
-  options?: { maxMatches?: number | null },
+  options?: {
+    maxMatches?: number | null
+    pilotStrategy?: 'max_matches' | 'eligible_per_competition' | null
+    eligiblePerCompetition?: number | null
+  },
 ): Promise<HistoricalScanRun> {
   const body: Record<string, unknown> = {
     season_label: seasonLabel,
     confirm: HISTORICAL_SCAN_CONFIRM_TOKEN,
+  }
+  if (options?.pilotStrategy) {
+    body.pilot_strategy = options.pilotStrategy
+  }
+  if (options && 'eligiblePerCompetition' in (options || {})) {
+    body.eligible_per_competition = options.eligiblePerCompetition ?? null
   }
   if (options && 'maxMatches' in options) {
     body.max_matches = options.maxMatches ?? null
@@ -837,9 +865,13 @@ export function startHistoricalScan(
 }
 
 export function historicalScanScopeLabel(run: HistoricalScanRun): string {
+  if (run.run_scope === 'balanced_pilot' || run.pilot_strategy === 'eligible_per_competition') {
+    const n = run.eligible_per_competition ?? HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP
+    return `Pilota bilanciato (${n} eleggibili/campionato)`
+  }
   if (run.is_partial_run || run.run_scope === 'pilot') {
     const n = run.max_matches ?? HISTORICAL_SCAN_PILOT_MAX_MATCHES
-    return `Pilota (max ${n})`
+    return `Test tecnico (max ${n})`
   }
   return 'Completa'
 }

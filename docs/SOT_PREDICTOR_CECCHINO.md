@@ -2,6 +2,10 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — completamento moduli storici (2026-07-27)
+
+Intensità Goal storica (parity partial), Acquistabilità Bet365 progressiva, modelli A–F, pilota bilanciato, report AI v3. Solo Lab. Today/Betfair invariati. Dettaglio: [`CECCHINO_LAB_HISTORICAL_SCAN.md`](CECCHINO_LAB_HISTORICAL_SCAN.md).
+
 ## Cecchino Lab — scansione storica / replay pre-match (2026-07-27)
 
 Replay offline Bet365 nel solo Lab (tab Scansioni storiche). Policy closing/pre, DC derivate, anti-leakage, eleggibilità senza Betfair, report AI ZIP. Today resta Betfair. Dettaglio: [`CECCHINO_LAB_HISTORICAL_SCAN.md`](CECCHINO_LAB_HISTORICAL_SCAN.md).

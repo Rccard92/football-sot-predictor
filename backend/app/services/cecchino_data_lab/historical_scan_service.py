@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import threading
 import traceback
@@ -29,6 +30,9 @@ from app.models.cecchino_lab_historical_scan_run import (
 )
 from app.models.cecchino_lab_match import CecchinoLabMatch
 from app.services.cecchino_data_lab.constants import (
+    HISTORICAL_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION,
+    HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP,
+    HISTORICAL_PILOT_STRATEGY_MAX_MATCHES,
     HISTORICAL_QUOTE_POLICY_VERSION,
     HISTORICAL_SCAN_CONFIRM_TOKEN,
     HISTORICAL_SCAN_VERSION,
@@ -51,15 +55,20 @@ from app.services.cecchino_data_lab.historical_eligibility import (
     ELIGIBLE_CORE,
     evaluate_historical_eligibility,
 )
+from app.services.cecchino_data_lab.historical_goal_intensity import (
+    MODULE_VERSION as GI_MODULE_VERSION,
+    build_historical_goal_intensity,
+)
 from app.services.cecchino_data_lab.historical_kpi_bet365_wrapper import (
     build_historical_kpi_panel_bet365,
 )
 from app.services.cecchino_data_lab.historical_modules_compat import (
-    build_goal_intensity_compatibility,
     build_historical_balance_v5,
-    build_purchasability_compatibility,
-    enrich_signals_with_quote_classes,
     rebuild_signals_with_under,
+)
+from app.services.cecchino_data_lab.historical_purchasability import (
+    FORMULA_VERSION as PURCH_FORMULA_VERSION,
+    build_historical_purchasability,
 )
 from app.services.cecchino_data_lab.historical_scan_preflight import (
     STATUS_BLOCKED,
@@ -69,6 +78,9 @@ from app.services.cecchino_data_lab.historical_settlement import (
     empty_settlement_summary,
     settle_historical_markets,
     settlement_summary,
+)
+from app.services.cecchino_data_lab.historical_signal_models import (
+    build_historical_signal_models,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +93,22 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _git_commit() -> str | None:
+def _resolve_source_revision() -> dict[str, str | None]:
+    """Risolve revisione codice: env Railway/CI prima, poi git locale."""
+    env_chain = (
+        ("RAILWAY_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA"),
+        ("SOURCE_VERSION", "SOURCE_VERSION"),
+        ("GIT_COMMIT_SHA", "GIT_COMMIT_SHA"),
+        ("VERCEL_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA"),
+    )
+    for env_key, source in env_chain:
+        raw = (os.environ.get(env_key) or "").strip()
+        if raw:
+            return {
+                "source_git_commit": raw[:64],
+                "source_git_commit_source": source,
+                "source_revision_status": "resolved",
+            }
     try:
         out = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
@@ -89,9 +116,24 @@ def _git_commit() -> str | None:
             text=True,
             timeout=5,
         )
-        return out.strip() or None
+        sha = (out or "").strip()
+        if sha:
+            return {
+                "source_git_commit": sha[:64],
+                "source_git_commit_source": "git_rev_parse",
+                "source_revision_status": "resolved",
+            }
     except Exception:
-        return None
+        pass
+    return {
+        "source_git_commit": None,
+        "source_git_commit_source": None,
+        "source_revision_status": "unknown",
+    }
+
+
+def _git_commit() -> str | None:
+    return _resolve_source_revision().get("source_git_commit")
 
 
 def _run_scope_meta(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
@@ -99,13 +141,21 @@ def _run_scope_meta(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
     return {
         "run_scope": policy.get("run_scope") or "full",
         "is_partial_run": bool(policy.get("is_partial_run")),
+        "not_full_season_report": bool(policy.get("not_full_season_report")),
         "max_matches": policy.get("max_matches"),
+        "pilot_strategy": policy.get("pilot_strategy"),
+        "eligible_per_competition": policy.get("eligible_per_competition"),
         "module_policy": policy,
     }
 
 
 def run_to_dict(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
     meta = _run_scope_meta(run)
+    progress_detail = None
+    if isinstance(run.summary_json, dict):
+        progress_detail = run.summary_json.get("progress_detail")
+    if progress_detail is None and isinstance(run.module_policy_json, dict):
+        progress_detail = (run.module_policy_json or {}).get("progress_detail")
     return {
         "id": int(run.id),
         "season_label": run.season_label,
@@ -123,14 +173,20 @@ def run_to_dict(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
         "matches_excluded": int(run.matches_excluded or 0),
         "matches_error": int(run.matches_error or 0),
         "progress_pct": float(run.progress_pct) if run.progress_pct is not None else None,
+        "progress_detail": progress_detail,
         "preflight": run.preflight_json,
         "summary": run.summary_json,
         "error": run.error_json,
         "source_git_commit": run.source_git_commit,
+        "source_git_commit_source": getattr(run, "source_git_commit_source", None),
+        "source_revision_status": getattr(run, "source_revision_status", None),
         "cancel_requested": bool(run.cancel_requested),
         "run_scope": meta["run_scope"],
         "is_partial_run": meta["is_partial_run"],
+        "not_full_season_report": meta["not_full_season_report"],
         "max_matches": meta["max_matches"],
+        "pilot_strategy": meta["pilot_strategy"],
+        "eligible_per_competition": meta["eligible_per_competition"],
         "module_policy": meta["module_policy"],
     }
 
@@ -169,12 +225,32 @@ def _normalize_max_matches(max_matches: Any) -> int | None:
     return value
 
 
+def _normalize_eligible_per_competition(value: Any) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as exc:
+        raise CecchinoLabImportError(
+            "invalid_eligible_per_competition",
+            "eligible_per_competition deve essere un intero positivo",
+            status_code=400,
+        ) from exc
+    if n <= 0:
+        raise CecchinoLabImportError(
+            "invalid_eligible_per_competition",
+            "eligible_per_competition deve essere un intero positivo",
+            status_code=400,
+        )
+    return n
+
+
 def start_historical_scan(
     db: Session,
     *,
     season_label: str,
     confirm: str | None,
     max_matches: int | None = None,
+    pilot_strategy: str | None = None,
+    eligible_per_competition: int | None = None,
     background: bool = True,
 ) -> dict[str, Any]:
     if confirm != HISTORICAL_SCAN_CONFIRM_TOKEN:
@@ -184,7 +260,41 @@ def start_historical_scan(
             status_code=400,
         )
 
+    strategy = (pilot_strategy or "").strip() or None
+    if strategy and strategy not in (
+        HISTORICAL_PILOT_STRATEGY_MAX_MATCHES,
+        HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP,
+    ):
+        raise CecchinoLabImportError(
+            "invalid_pilot_strategy",
+            "pilot_strategy non supportata",
+            status_code=400,
+        )
+
     normalized_max = _normalize_max_matches(max_matches)
+    per_comp = None
+    if strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
+        per_comp = _normalize_eligible_per_competition(
+            eligible_per_competition
+            if eligible_per_competition is not None
+            else HISTORICAL_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION
+        )
+        normalized_max = None
+    elif normalized_max is not None and not strategy:
+        strategy = HISTORICAL_PILOT_STRATEGY_MAX_MATCHES
+
+    revision = _resolve_source_revision()
+    is_partial = bool(strategy) or normalized_max is not None
+    is_full = not is_partial
+    if is_full and revision.get("source_revision_status") != "resolved":
+        raise CecchinoLabImportError(
+            "source_revision_unknown",
+            "Revisione codice sconosciuta: impossibile avviare la scansione completa. "
+            "Impostare RAILWAY_GIT_COMMIT_SHA / SOURCE_VERSION / GIT_COMMIT_SHA "
+            "oppure eseguire in ambiente con repository git.",
+            status_code=400,
+            details=revision,
+        )
 
     preflight = run_historical_scan_preflight(db, season_label=season_label)
     if preflight.get("status") == STATUS_BLOCKED:
@@ -224,10 +334,28 @@ def start_historical_scan(
         if dataset_ids
         else 0
     )
-    is_partial = normalized_max is not None
-    matches_total = (
-        min(season_match_count, normalized_max) if is_partial else season_match_count
-    )
+    competitions = sorted({d.competition_name for d in datasets})
+    n_comp = len(competitions)
+
+    if strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
+        run_scope = "balanced_pilot"
+        matches_total = int(per_comp or 0) * max(n_comp, 1)
+        is_partial = True
+    elif normalized_max is not None:
+        run_scope = "pilot"
+        matches_total = min(season_match_count, normalized_max)
+        is_partial = True
+    else:
+        run_scope = "full"
+        matches_total = season_match_count
+        is_partial = False
+
+    policy_warnings: list[str] = []
+    if is_partial and revision.get("source_revision_status") != "resolved":
+        policy_warnings.append(
+            "source_revision_unknown_on_pilot: revisione codice sconosciuta; "
+            "il run pilota è consentito ma la riproducibilità è limitata"
+        )
 
     run = CecchinoLabHistoricalScanRun(
         season_label=season_label,
@@ -241,13 +369,24 @@ def start_historical_scan(
             "operational_today_bookmaker": "Betfair",
         },
         module_policy_json={
-            "goal_intensity": "compatibility_only_features_export",
-            "purchasability": "compatibility_only_inputs_export",
+            "goal_intensity": "historical_partial_v1",
+            "purchasability": "historical_bet365_progressive_v1",
+            "signal_models": "A-F",
             "parser_version": PARSER_VERSION,
             "max_matches": normalized_max,
+            "pilot_strategy": strategy,
+            "eligible_per_competition": per_comp,
             "is_partial_run": is_partial,
-            "run_scope": "pilot" if is_partial else "full",
+            "not_full_season_report": is_partial,
+            "run_scope": run_scope,
             "season_matches_available": season_match_count,
+            "competitions_total": n_comp,
+            "eligible_target_total": (
+                int(per_comp) * n_comp
+                if strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+                else None
+            ),
+            "revision_warnings": policy_warnings,
             "note": (
                 "Run parziale: non confondere con report stagione completa"
                 if is_partial
@@ -255,7 +394,9 @@ def start_historical_scan(
             ),
         },
         preflight_json=preflight,
-        source_git_commit=_git_commit(),
+        source_git_commit=revision.get("source_git_commit"),
+        source_git_commit_source=revision.get("source_git_commit_source"),
+        source_revision_status=revision.get("source_revision_status"),
     )
     db.add(run)
     db.commit()
@@ -334,6 +475,63 @@ def _spawn_worker(run_id: int) -> None:
         t.start()
 
 
+def _load_prior_module_rows(
+    db: Session,
+    *,
+    run_id: int,
+    before_kickoff: datetime | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Carica feature GI e KPI delle eligible_core precedenti (deterministico su resume)."""
+    q = (
+        select(CecchinoLabHistoricalMatchSnapshot)
+        .where(
+            CecchinoLabHistoricalMatchSnapshot.run_id == run_id,
+            CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status == ELIGIBLE_CORE,
+        )
+        .order_by(
+            CecchinoLabHistoricalMatchSnapshot.kickoff_at.asc(),
+            CecchinoLabHistoricalMatchSnapshot.lab_match_id.asc(),
+        )
+    )
+    snaps = list(db.scalars(q).all())
+    gi_rows: list[dict[str, Any]] = []
+    kpi_panels: list[dict[str, Any]] = []
+    for s in snaps:
+        if before_kickoff is not None and s.kickoff_at is not None:
+            if not (s.kickoff_at < before_kickoff):
+                continue
+        gi = s.goal_intensity_compatibility_json if isinstance(s.goal_intensity_compatibility_json, dict) else {}
+        feat_row = gi.get("feature_row_for_profile")
+        if isinstance(feat_row, dict) and feat_row.get("features"):
+            gi_rows.append(feat_row)
+        kpi = s.historical_kpi_json if isinstance(s.historical_kpi_json, dict) else None
+        if kpi:
+            kpi_panels.append(kpi)
+    return gi_rows, kpi_panels
+
+
+def _signals_prematch_for_hash(signals: dict[str, Any]) -> dict[str, Any]:
+    """Esclude settlement/won/profit dall'hash pre-match."""
+    if not isinstance(signals, dict):
+        return {}
+    models_out: dict[str, Any] = {}
+    for key, block in (signals.get("models") or {}).items():
+        if not isinstance(block, dict):
+            continue
+        models_out[key] = {
+            "meta": block.get("meta"),
+            "weights": block.get("weights"),
+            "final": block.get("final"),
+            "matrix": block.get("matrix"),
+            "active_signals": block.get("active_signals"),
+        }
+    return {
+        "default_model_key": signals.get("default_model_key"),
+        "default_matrix": signals.get("default_matrix"),
+        "models": models_out,
+    }
+
+
 def execute_historical_scan_run(run_id: int) -> None:
     db = SessionLocal()
     try:
@@ -373,7 +571,14 @@ def execute_historical_scan_run(run_id: int) -> None:
             max_matches_cap = int(max_matches_cap) if max_matches_cap is not None else None
         except (TypeError, ValueError):
             max_matches_cap = None
+        pilot_strategy = policy.get("pilot_strategy")
+        eligible_per_comp = policy.get("eligible_per_competition")
+        try:
+            eligible_per_comp = int(eligible_per_comp) if eligible_per_comp is not None else None
+        except (TypeError, ValueError):
+            eligible_per_comp = None
 
+        competitions_completed = 0
         batch_count = 0
         stop_for_pilot = False
         for comp in competitions:
@@ -393,10 +598,35 @@ def execute_historical_scan_run(run_id: int) -> None:
             )
             proxy_by_id = {int(p.id): p for p in proxies}
 
+            eligible_in_comp = 0
+            # Conta eligible già presenti per resume
+            for sid in done_ids:
+                # lazy: ricalcolo da snapshot per questo campionato
+                pass
+            existing_eligible_comp = db.scalars(
+                select(CecchinoLabHistoricalMatchSnapshot.id).where(
+                    CecchinoLabHistoricalMatchSnapshot.run_id == run_id,
+                    CecchinoLabHistoricalMatchSnapshot.competition_name == comp,
+                    CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status
+                    == ELIGIBLE_CORE,
+                )
+            ).all()
+            eligible_in_comp = len(list(existing_eligible_comp))
+
             for order_idx, m in enumerate(matches):
                 if int(m.id) in done_ids:
                     continue
-                if max_matches_cap is not None and int(run.matches_processed or 0) >= max_matches_cap:
+                if (
+                    pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+                    and eligible_per_comp is not None
+                    and eligible_in_comp >= eligible_per_comp
+                ):
+                    break
+                if (
+                    max_matches_cap is not None
+                    and pilot_strategy != HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+                    and int(run.matches_processed or 0) >= max_matches_cap
+                ):
                     stop_for_pilot = True
                     break
                 if _is_cancelled(db, run_id):
@@ -413,6 +643,17 @@ def execute_historical_scan_run(run_id: int) -> None:
                         chronological_order=order_idx,
                     )
                     done_ids.add(int(m.id))
+                    # aggiorna eligible_in_comp se l'ultimo snapshot è eligible
+                    last = db.scalars(
+                        select(CecchinoLabHistoricalMatchSnapshot)
+                        .where(
+                            CecchinoLabHistoricalMatchSnapshot.run_id == run_id,
+                            CecchinoLabHistoricalMatchSnapshot.lab_match_id == int(m.id),
+                        )
+                        .limit(1)
+                    ).first()
+                    if last and last.historical_eligibility_status == ELIGIBLE_CORE:
+                        eligible_in_comp += 1
                 except Exception as exc:
                     logger.exception("historical scan match error run=%s match=%s", run_id, m.id)
                     _persist_error_snapshot(
@@ -430,10 +671,45 @@ def execute_historical_scan_run(run_id: int) -> None:
                 run.current_match_id = int(m.id)
                 run.current_dataset_id = int(m.dataset_id)
                 run.current_competition = comp
-                total = max(int(run.matches_total or 0), 1)
-                run.progress_pct = Decimal(
-                    str(round(100.0 * int(run.matches_processed) / total, 1))
-                )
+
+                progress_detail = {
+                    "competitions_completed": competitions_completed,
+                    "competitions_total": len(competitions),
+                    "eligible_collected": int(run.matches_eligible_core or 0),
+                    "eligible_target": (
+                        int(eligible_per_comp) * len(competitions)
+                        if pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+                        and eligible_per_comp
+                        else int(run.matches_total or 0)
+                    ),
+                    "matches_processed": int(run.matches_processed or 0),
+                    "matches_excluded": int(run.matches_excluded or 0),
+                    "matches_error": int(run.matches_error or 0),
+                    "current_competition": comp,
+                    "eligible_in_current_competition": eligible_in_comp,
+                    "eligible_per_competition_target": eligible_per_comp,
+                }
+                pol = dict(run.module_policy_json or {})
+                pol["progress_detail"] = progress_detail
+                run.module_policy_json = pol
+
+                if pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
+                    target_elig = max(int(run.matches_total or 0), 1)
+                    run.progress_pct = Decimal(
+                        str(
+                            round(
+                                100.0
+                                * min(int(run.matches_eligible_core or 0), target_elig)
+                                / target_elig,
+                                1,
+                            )
+                        )
+                    )
+                else:
+                    total = max(int(run.matches_total or 0), 1)
+                    run.progress_pct = Decimal(
+                        str(round(100.0 * int(run.matches_processed) / total, 1))
+                    )
                 batch_count += 1
                 if batch_count >= SCAN_BATCH_SIZE:
                     db.commit()
@@ -448,6 +724,15 @@ def execute_historical_scan_run(run_id: int) -> None:
                     except (TypeError, ValueError):
                         max_matches_cap = None
 
+            if (
+                pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+                and eligible_per_comp is not None
+                and eligible_in_comp >= eligible_per_comp
+            ):
+                competitions_completed += 1
+            elif pilot_strategy != HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
+                competitions_completed += 1
+
             db.commit()
 
         db.refresh(run)
@@ -458,7 +743,14 @@ def execute_historical_scan_run(run_id: int) -> None:
             policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
             summary["run_scope"] = policy.get("run_scope") or "full"
             summary["is_partial_run"] = bool(policy.get("is_partial_run"))
+            summary["not_full_season_report"] = bool(policy.get("not_full_season_report"))
             summary["max_matches"] = policy.get("max_matches")
+            summary["pilot_strategy"] = policy.get("pilot_strategy")
+            summary["eligible_per_competition"] = policy.get("eligible_per_competition")
+            summary["progress_detail"] = policy.get("progress_detail")
+            summary["source_git_commit"] = run.source_git_commit
+            summary["source_git_commit_source"] = getattr(run, "source_git_commit_source", None)
+            summary["source_revision_status"] = getattr(run, "source_revision_status", None)
             run.summary_json = summary
             run.status = (
                 STATUS_COMPLETED_WITH_WARNINGS
@@ -502,12 +794,10 @@ def _process_one_match(
     chronological_order: int,
 ) -> None:
     warnings: list[str] = []
-    # 1) Contesti pre-match
     contexts = build_lab_prematch_contexts(
         competition_ordered=competition_ordered,
         target=target_proxy,
     )
-    # 2) Cecchino + moduli (senza FT/HT target nei payload congelati)
     cecchino_output = compute_cecchino_from_contexts(contexts)
     goal_markets = compute_goal_markets_from_contexts(contexts)
     under_odd = None
@@ -534,10 +824,6 @@ def _process_one_match(
         goal_markets=goal_markets,
         quote_bundle=quote_bundle,
     )
-    signals = enrich_signals_with_quote_classes(
-        cecchino_output.get("signals_matrix") or {},
-        quote_bundle,
-    )
     balance = build_historical_balance_v5(
         cecchino_final=final,
         goal_markets=goal_markets,
@@ -550,15 +836,33 @@ def _process_one_match(
         },
     )
     input_snapshot = build_input_snapshot(contexts)
-    gi_compat = build_goal_intensity_compatibility(
+
+    prior_gi_rows, prior_kpi_panels = _load_prior_module_rows(
+        db, run_id=int(run.id), before_kickoff=match.kickoff_at
+    )
+    gi_payload = build_historical_goal_intensity(
         input_snapshot=input_snapshot,
         contexts=contexts,
+        competition_ordered=competition_ordered,
+        target=target_proxy,
+        prior_feature_rows=prior_gi_rows,
     )
-    purch_compat = build_purchasability_compatibility(
-        kpi_panel=kpi, quote_bundle=quote_bundle
+    purch_payload = build_historical_purchasability(
+        kpi_panel=kpi,
+        quote_bundle=quote_bundle,
+        prior_kpi_panels=prior_kpi_panels,
+        cutoff=match.kickoff_at.isoformat() if match.kickoff_at else None,
     )
 
-    # 3) Eleggibilità
+    signals = build_historical_signal_models(
+        cecchino_output=cecchino_output,
+        quote_bundle=quote_bundle,
+        under_2_5_cecchino_odd=under_odd,
+        contexts=contexts,
+        match=None,
+        settle=False,
+    )
+
     elig = evaluate_historical_eligibility(
         home_team=match.home_team,
         away_team=match.away_team,
@@ -568,7 +872,6 @@ def _process_one_match(
     )
     core_eligible = bool(elig.get("core_eligible"))
 
-    # 4) Freeze snapshot pre-match (hash dopo tutti i moduli)
     pre_match_payload = {
         "identity": {
             "lab_match_id": int(match.id),
@@ -595,10 +898,10 @@ def _process_one_match(
             for k, v in (goal_markets or {}).items()
         },
         "historical_kpi": kpi,
-        "signals_matrix": signals,
+        "signals_matrix": _signals_prematch_for_hash(signals),
         "balance_v5": balance,
-        "goal_intensity": gi_compat,
-        "purchasability": purch_compat,
+        "goal_intensity": gi_payload,
+        "purchasability": purch_payload,
         "quote_sources": {
             "counts": quote_bundle.get("counts"),
             "family_1x2": quote_bundle.get("family_1x2"),
@@ -618,8 +921,18 @@ def _process_one_match(
             "scan_version": HISTORICAL_SCAN_VERSION,
             "parser_version": PARSER_VERSION,
             "kpi_version": (kpi or {}).get("version") if isinstance(kpi, dict) else None,
-            "goal_intensity_execution": gi_compat.get("execution_status"),
-            "purchasability_execution": purch_compat.get("execution_status"),
+            "goal_intensity_module": GI_MODULE_VERSION,
+            "goal_intensity_execution": gi_payload.get("execution_status"),
+            "goal_intensity_parity": gi_payload.get("parity_status"),
+            "purchasability_module": PURCH_FORMULA_VERSION,
+            "purchasability_execution": purch_payload.get("execution_status"),
+            "purchasability_parity": purch_payload.get("parity_status"),
+            "purchasability_profile_hash": (purch_payload.get("normalization_profile") or {}).get(
+                "hash"
+            ),
+            "signal_models": "A-F",
+            "source_git_commit": run.source_git_commit,
+            "source_revision_status": getattr(run, "source_revision_status", None),
         },
         "eligibility": {
             "status": elig.get("status"),
@@ -635,7 +948,6 @@ def _process_one_match(
     payload_hash = sha256_prematch_payload(pre_match_payload)
     locked_at = _utcnow()
 
-    # 5) Dopo il lock: collega risultato
     result_json = {
         "fulltime": {"home": match.ft_home_goals, "away": match.ft_away_goals},
         "halftime": {"home": match.ht_home_goals, "away": match.ht_away_goals},
@@ -643,8 +955,15 @@ def _process_one_match(
         "ht_result": match.ht_result,
     }
 
-    # 6) Settlement solo se core_eligible
     if core_eligible:
+        signals = build_historical_signal_models(
+            cecchino_output=cecchino_output,
+            quote_bundle=quote_bundle,
+            under_2_5_cecchino_odd=under_odd,
+            contexts=contexts,
+            match=match,
+            settle=True,
+        )
         market_rows = settle_historical_markets(
             match=match,
             kpi_panel=kpi,
@@ -659,6 +978,9 @@ def _process_one_match(
         sett_sum = empty_settlement_summary()
         settlement_status = "excluded"
         run.matches_excluded = int(run.matches_excluded or 0) + 1
+
+    rev_warn = list((run.module_policy_json or {}).get("revision_warnings") or [])
+    warnings = warnings + list(cecchino_output.get("warnings") or []) + rev_warn
 
     snap = CecchinoLabHistoricalMatchSnapshot(
         run_id=int(run.id),
@@ -677,6 +999,8 @@ def _process_one_match(
             "core_eligible": core_eligible,
             "kpi_1x2_real_available": quote_bundle.get("kpi_1x2_real_available"),
             "kpi_ou25_real_available": quote_bundle.get("kpi_ou25_real_available"),
+            "goal_intensity_execution": gi_payload.get("execution_status"),
+            "purchasability_execution": purch_payload.get("execution_status"),
             **(quote_bundle.get("counts") or {}),
         },
         input_snapshot_json=input_snapshot,
@@ -684,8 +1008,8 @@ def _process_one_match(
         historical_kpi_json=kpi,
         signals_json=signals,
         balance_v5_json=balance,
-        goal_intensity_compatibility_json=gi_compat,
-        purchasability_compatibility_json=purch_compat,
+        goal_intensity_compatibility_json=gi_payload,
+        purchasability_compatibility_json=purch_payload,
         quote_sources_json=quote_bundle,
         pre_match_payload_sha256=payload_hash,
         pre_match_locked_at=locked_at,
@@ -693,7 +1017,7 @@ def _process_one_match(
         result_attached_at=_utcnow(),
         settlement_status=settlement_status,
         settlement_summary_json=sett_sum,
-        warnings_json=warnings + list(cecchino_output.get("warnings") or []),
+        warnings_json=warnings,
     )
     db.add(snap)
     db.flush()

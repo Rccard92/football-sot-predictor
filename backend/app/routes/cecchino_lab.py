@@ -351,12 +351,16 @@ def historical_scan_start(
     season_label = str((body or {}).get("season_label") or "").strip()
     confirm = (body or {}).get("confirm")
     max_matches = (body or {}).get("max_matches")
+    pilot_strategy = (body or {}).get("pilot_strategy")
+    eligible_per_competition = (body or {}).get("eligible_per_competition")
     try:
         result = start_historical_scan(
             db,
             season_label=season_label,
             confirm=confirm,
             max_matches=max_matches,
+            pilot_strategy=pilot_strategy,
+            eligible_per_competition=eligible_per_competition,
             background=True,
         )
     except CecchinoLabImportError as exc:

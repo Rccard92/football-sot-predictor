@@ -1,5 +1,17 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — moduli storici v3 + pilota bilanciato (2026-07-27)
+
+1. Preflight `POST /api/admin/cecchino-lab/historical-scans/preflight`
+2. Avvio manuale con confirm `RUN_CECCHINO_LAB_HISTORICAL_SCAN`:
+   - pilota bilanciato: `pilot_strategy: "eligible_per_competition"`, `eligible_per_competition: 20`
+   - test tecnico: `max_matches: 200`
+   - completa: `max_matches: null` (richiede revisione git risolta)
+3. Per partita: contesti → Cecchino → GI storica → Acquistabilità storica → segnali A–F → eleggibilità → hash freeze → risultato → settlement solo eligible_core
+4. Report ZIP v3 (+ `signal_models.jsonl`, `goal_intensity.jsonl`, `purchasability.jsonl`)
+
+Non fa parte della pipeline Today / auto-scan / deploy. Betfair operativo invariato.
+
 ## Cecchino Lab — historical scan analysis-safe (2026-07-27)
 
 1. Preflight `POST /api/admin/cecchino-lab/historical-scans/preflight`

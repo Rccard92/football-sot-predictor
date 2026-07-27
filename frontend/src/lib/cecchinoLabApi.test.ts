@@ -112,7 +112,32 @@ describe('cecchinoLabApi helpers', () => {
         run_scope: 'pilot',
         max_matches: 200,
       }),
-    ).toBe('Pilota (max 200)')
+    ).toBe('Test tecnico (max 200)')
+    expect(
+      historicalScanScopeLabel({
+        id: 3,
+        season_label: '2021/2022',
+        status: 'completed',
+        scan_version: 'v3',
+        requested_at: null,
+        started_at: null,
+        completed_at: null,
+        current_dataset_id: null,
+        current_match_id: null,
+        current_competition: null,
+        matches_total: 320,
+        matches_processed: 450,
+        matches_eligible_core: 320,
+        matches_excluded: 130,
+        matches_error: 0,
+        progress_pct: 100,
+        is_partial_run: true,
+        run_scope: 'balanced_pilot',
+        pilot_strategy: 'eligible_per_competition',
+        eligible_per_competition: 20,
+        max_matches: null,
+      }),
+    ).toBe('Pilota bilanciato (20 eleggibili/campionato)')
     expect(
       historicalScanScopeLabel({
         id: 2,

@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Completamento moduli storici Cecchino Lab (2026-07-27)
+
+- Perché: prima della scansione completa 2021/2022 servono Intensità/Acquistabilità/A–F calcolati scientificamente e un pilota bilanciato multi-campionato.
+- Cosa: adapter Lab (`historical_goal_intensity`, `historical_purchasability`, `historical_signal_models`); report v3; `pilot_strategy=eligible_per_competition`; git revision env; migration colonne revision.
+- Cosa non fa: Today, Betfair, formule/pesi A–F ufficiali, rielaborazione Run #1.
+- Limiti: Intensità `parity_status=partial` (no bundle Today, no xG); Acquistabilità non equivalente al profilo Betfair.
+
 ## Fix — Replay storico Cecchino Lab analysis-safe (2026-07-27)
 
 - Perché: la prima implementazione del replay settle-ava anche le escluse, non leggeva i segnali dalla matrice nested, hash incompleto, report senza universo eligible-only, Intensità/Acq dichiarate solo-compat senza feature export, assenza pilota.

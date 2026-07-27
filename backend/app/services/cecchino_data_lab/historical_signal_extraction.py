@@ -17,8 +17,23 @@ from app.services.cecchino.cecchino_signal_target_mapping import (
 )
 
 
+def _unwrap_matrix(signals_matrix: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Supporta wrapper A–F (`default_matrix`) e matrice flat legacy."""
+    if not isinstance(signals_matrix, dict):
+        return signals_matrix
+    if isinstance(signals_matrix.get("default_matrix"), dict):
+        return signals_matrix["default_matrix"]
+    models = signals_matrix.get("models")
+    if isinstance(models, dict):
+        f = models.get("F")
+        if isinstance(f, dict) and isinstance(f.get("matrix"), dict):
+            return f["matrix"]
+    return signals_matrix
+
+
 def iter_active_signal_cells(signals_matrix: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Celle SI dalla matrice canonica (`row["key"]` + `row["signals"][modello]`)."""
+    signals_matrix = _unwrap_matrix(signals_matrix)
     if not isinstance(signals_matrix, dict):
         return []
     rows = signals_matrix.get("rows") or []

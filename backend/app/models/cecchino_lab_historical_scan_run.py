@@ -59,4 +59,6 @@ class CecchinoLabHistoricalScanRun(Base, TimestampMixin):
     summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     source_git_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_git_commit_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_revision_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

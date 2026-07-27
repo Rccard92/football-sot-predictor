@@ -25,9 +25,9 @@ from app.services.cecchino_data_lab.constants import (
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 
-REPORT_SCHEMA_VERSION = "cecchino_lab_ai_report_v2"
+REPORT_SCHEMA_VERSION = "cecchino_lab_ai_report_v3"
 
-AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab
+AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab (v3)
 
 1. Leggi prima `manifest.json` e `SCHEMA.md`.
 2. Usa **solo** `eligible_analysis` per hit rate, profitto, ROI, fasce rating, pattern e analisi segnali.
@@ -38,39 +38,40 @@ AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab
 7. Non confondere `quota_cecchino` (modello) e `quota_book` (bookmaker).
 8. La frequenza naturale di un mercato (`outcome_base_rate`) **non** è “performance del Cecchino”.
 9. Distingui: outcome base rate; mercato con quota Cecchino; con rating; con segnale attivo; con quota Bet365 reale; con quota derivata.
-10. Intensità Goal e Acquistabilità: puoi studiare le **feature/input**, non validare i punteggi finali (`v5_score_not_executed` / `final_score_not_executed`).
-11. Non utilizzare risultati futuri come input: il blocco pre-match è congelato prima del risultato.
-12. Riporta sempre `sample_size`. Separa risultati globali e per campionato.
-13. Segnala instabilità cross-competition.
-14. Non proporre modifiche automatiche a formule, pesi o soglie produttive.
-15. Distingui correlazione, ipotesi e prova.
-16. Se `is_partial_run=true`, non trattare il report come scansione stagione completa.
-17. Produci una “prima linea” con:
-    1. dati sufficienti;
-    2. dati mancanti;
-    3. moduli pienamente analizzabili;
-    4. moduli parziali (feature only);
-    5. segnali promettenti;
-    6. segnali negativi;
-    7. aspetti da verificare sulle stagioni successive.
+10. Intensità Goal storica: usa `goal_intensity.jsonl` (pilastri). `parity_status=partial` — non è V5 live completo (no bundle Today, no xG).
+11. Acquistabilità storica Bet365: usa `purchasability.jsonl`. Profilo progressivo Lab; **non** equivalente al modulo Betfair operativo.
+12. Modelli segnali A–F: usa `signal_models.jsonl`. Il modello F coincide con il modello corrente del Cecchino.
+13. Non utilizzare risultati futuri come input: il blocco pre-match è congelato prima del risultato.
+14. Riporta sempre `sample_size`. Separa risultati globali e per campionato.
+15. Segnala instabilità cross-competition.
+16. Non proporre modifiche automatiche a formule, pesi o soglie produttive.
+17. Distingui correlazione, ipotesi e prova.
+18. Se `is_partial_run=true` / `not_full_season_report=true`, non trattare il report come scansione stagione completa.
+19. **Non** interpretare `technical_sum_across_all_independent_market_rows` come profitto del Cecchino o come strategia di scommessa (`not_a_betting_strategy=true`).
+20. Mostra profitto/ROI separati per: mercato, segnale, modello A–F, fascia rating, fascia Acquistabilità, pattern.
+21. Produci una “prima linea” con: dati sufficienti; dati mancanti; moduli analizzabili; moduli parziali; segnali promettenti/negativi; aspetti da verificare.
 
 Cecchino Today operativo resta su **Betfair** e non è modificato da questo report.
 """
 
-SCHEMA_MD = """# Schema report AI Cecchino Lab (v2)
+SCHEMA_MD = """# Schema report AI Cecchino Lab (v3)
 
-- `manifest.json`: metadati run, policy, scope (full/pilot), versioni moduli
-- `summary.json`: sezioni `eligible_analysis`, `excluded_diagnostics`, `errors`, `data_coverage`
+- `manifest.json`: metadati run, policy, scope (full/pilot/balanced_pilot), revision git, versioni moduli
+- `summary.json`: `eligible_analysis`, `excluded_diagnostics`, `errors`, `data_coverage`, aggregazioni GI/purch/A–F
 - `data_quality.json`: qualità dati stagione (preflight)
 - `eligibility.json`: conteggi eleggibilità
-- `module_coverage.json`: copertura moduli + limiti Intensità/Acquistabilità
+- `module_coverage.json`: copertura moduli + parità Intensità/Acquistabilità
 - `matches.jsonl`: una riga JSON per partita (pre-match separato dal risultato)
-- `markets.jsonl`: una riga per partita×mercato **solo eligible_core** (con eligibility_status e competition_name)
-- `patterns.json`: pattern combinati con soglie sample (`small_sample` / `descriptive_only` / `candidate_for_review`)
+- `markets.jsonl`: una riga per partita×mercato **solo eligible_core**
+- `signal_models.jsonl`: partita × modello × segnale attivo
+- `goal_intensity.jsonl`: una riga per partita eligible_core (pilastri + parity)
+- `purchasability.jsonl`: partita × mercato (score storico Bet365)
+- `patterns.json`: pattern combinati (rating×acquistabilità×segnale×intensità×modello…)
 - `AI_INSTRUCTIONS.md`: istruzioni analisi
 - `SCHEMA.md`: questo file
 
 Metriche di performance (hit/ROI/profit) usano esclusivamente partite `eligible_core`.
+`technical_sum_across_all_independent_market_rows` è diagnostica tecnica, non una strategia.
 """
 
 
@@ -339,7 +340,12 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
     run_scope = policy.get("run_scope") or ("pilot" if is_partial else "full")
 
     season_slug = run.season_label.replace("/", "_")
-    scope_tag = "pilot" if is_partial else "full"
+    if run_scope == "balanced_pilot":
+        scope_tag = "balanced_pilot"
+    elif is_partial:
+        scope_tag = "pilot"
+    else:
+        scope_tag = "full"
     filename = f"cecchino_lab_{season_slug}_{scope_tag}_ai_report_run_{run_id}.zip"
 
     competitions = sorted({s.competition_name for s in snaps})
@@ -356,6 +362,17 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
     eligible_ids = {int(s.id) for s in eligible_snaps}
     eligible_markets = [m for m in markets if int(m.match_snapshot_id) in eligible_ids]
 
+    gi_computed = sum(
+        1
+        for s in eligible_snaps
+        if _as_dict(s.goal_intensity_compatibility_json).get("execution_status") == "computed"
+    )
+    purch_computed = sum(
+        1
+        for s in eligible_snaps
+        if _as_dict(s.purchasability_compatibility_json).get("execution_status") == "computed"
+    )
+
     manifest = {
         "report_schema_version": REPORT_SCHEMA_VERSION,
         "run_id": int(run.id),
@@ -363,20 +380,24 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": "Rccard92/football-sot-predictor",
         "source_git_commit": run.source_git_commit,
+        "source_git_commit_source": getattr(run, "source_git_commit_source", None),
+        "source_revision_status": getattr(run, "source_revision_status", None),
         "scan_version": run.scan_version or HISTORICAL_SCAN_VERSION,
         "parser_version": PARSER_VERSION,
         "run_scope": run_scope,
         "is_partial_run": is_partial,
         "max_matches": policy.get("max_matches"),
-        "not_full_season_report": is_partial,
+        "pilot_strategy": policy.get("pilot_strategy"),
+        "eligible_per_competition": policy.get("eligible_per_competition"),
+        "not_full_season_report": bool(policy.get("not_full_season_report") or is_partial),
         "modules": {
             "cecchino_engine": "imported_pure",
             "kpi": HISTORICAL_KPI_VERSION,
             "source_builder_version": "cecchino_kpi_v2_betfair",
             "balance_v5": "imported_pure",
-            "signals_matrix": "imported_pure",
-            "goal_intensity": "raw_features_export_only",
-            "purchasability": "inputs_export_only",
+            "signals_matrix": "imported_pure_models_A_F",
+            "goal_intensity": "historical_partial_v1",
+            "purchasability": "historical_bet365_progressive_v1",
         },
         "competitions_included": competitions,
         "datasets_included": datasets,
@@ -387,7 +408,14 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
         "profit_policy": {
             "real": "profit_1u_real from real Bet365 quotes only",
             "synthetic": "profit_1u_synthetic from derived quotes only",
-            "do_not_sum": True,
+            "do_not_sum_real_and_synthetic": True,
+            "technical_sum_across_all_independent_market_rows": {
+                "not_a_betting_strategy": True,
+                "note": (
+                    "Somma tecnica di righe mercato indipendenti (HOME+DRAW+AWAY+OU…); "
+                    "non è profitto del Cecchino né una strategia giocabile"
+                ),
+            },
         },
         "actual_vs_derived_definitions": {
             "actual_bet365": "complete closing or complete pre family",
@@ -397,18 +425,24 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
         "limitations": [
             "Prima stagione nella nuova pipeline: nessun prior da stagioni precedenti",
             "Prime giornate con campione insufficiente escluse dalle metriche di performance",
-            "Intensità Goal: feature raw esportate; v5 score non eseguito",
-            "Acquistabilità: input esportati; final score operativo non eseguito",
+            "Intensità Goal: parity_status=partial (ECDF progressivo Lab; no bundle Today; no xG)",
+            "Acquistabilità: storica Bet365 progressiva; non equivalente al profilo Betfair operativo",
             *(
-                ["Run parziale (pilot): non confrontare come report stagione completa"]
+                ["Run parziale: non confrontare come report stagione completa"]
                 if is_partial
                 else []
             ),
+            *(
+                list(policy.get("revision_warnings") or [])
+                if policy.get("revision_warnings")
+                else []
+            ),
         ],
-        "modules_not_executed": [
-            "goal_intensity_v5_score",
-            "purchasability_v2_operational_final_score",
-        ],
+        "modules_parity": {
+            "goal_intensity": "partial",
+            "purchasability": "historical_bet365_v2",
+            "signal_models": "F_equals_current",
+        },
         "operational_today_bookmaker": "Betfair",
         "historical_replay_bookmaker": "Bet365",
         "operational_today_modified": False,
@@ -435,8 +469,10 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
                 for s in eligible_snaps
                 if _compat_flag(s.goal_intensity_compatibility_json, "raw_features_available")
             ),
-            "v5_score_not_executed": True,
-            "note": "Prima scansione: studiare feature, non validare punteggio finale",
+            "pillars_computed": gi_computed,
+            "parity_status": "partial",
+            "v5_live_bundle_not_used": True,
+            "note": "Pilastri storici con ECDF progressivo Lab; non dichiarare V5 completo",
         },
         "purchasability": {
             "inputs_available": sum(
@@ -444,8 +480,15 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
                 for s in eligible_snaps
                 if _compat_flag(s.purchasability_compatibility_json, "inputs_available")
             ),
-            "final_score_not_executed": True,
-            "note": "Prima scansione: studiare input, non validare score operativo",
+            "scores_computed": purch_computed,
+            "parity_status": "historical_bet365_v2",
+            "betfair_operational_profile_applied": False,
+            "note": "Indice storico Bet365 progressivo; osservazionale",
+        },
+        "signal_models": {
+            "models": ["A", "B", "C", "D", "E", "F"],
+            "default_model_key": "F",
+            "f_equals_current": True,
         },
     }
 
@@ -567,18 +610,174 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
         if m.is_derived_quote:
             _cov("with_derived_quote")
 
+    # Aggregazioni Acquistabilità / Intensità / modelli A–F
+    purch_band_buckets: dict[str, dict[str, Any]] = defaultdict(_agg_bucket)
+    purch_decile_buckets: dict[str, dict[str, Any]] = defaultdict(_agg_bucket)
+    gi_class_buckets: dict[str, dict[str, dict[str, Any]]] = defaultdict(
+        lambda: defaultdict(_agg_bucket)
+    )
+    model_buckets: dict[str, dict[str, Any]] = defaultdict(_agg_bucket)
+
+    def _purch_band(score: Any) -> str | None:
+        if score is None:
+            return None
+        try:
+            s = float(score)
+        except (TypeError, ValueError):
+            return None
+        if s < 20:
+            return "0-19"
+        if s < 40:
+            return "20-39"
+        if s < 60:
+            return "40-59"
+        if s < 80:
+            return "60-79"
+        return "80-100"
+
+    def _purch_decile(score: Any) -> str | None:
+        if score is None:
+            return None
+        try:
+            s = float(score)
+        except (TypeError, ValueError):
+            return None
+        if s >= 100:
+            return "100"
+        bucket = int(s // 10) * 10
+        return f"{bucket}-{bucket + 9}"
+
+    for m in eligible_markets:
+        s = snap_by_id.get(int(m.match_snapshot_id))
+        if not s:
+            continue
+        purch = _as_dict(s.purchasability_compatibility_json)
+        for mk_row in purch.get("markets") or []:
+            if not isinstance(mk_row, dict):
+                continue
+            if mk_row.get("market_key") != m.market_key:
+                continue
+            band = _purch_band(mk_row.get("score"))
+            dec = _purch_decile(mk_row.get("score"))
+            if dec:
+                b = purch_decile_buckets[dec]
+                b["sample_size"] += 1
+                if s.competition_name:
+                    b["competitions"].add(s.competition_name)
+                if m.won is True:
+                    b["won"] += 1
+                elif m.won is False:
+                    b["lost"] += 1
+                if m.is_real_book_quote and m.profit_1u_real is not None:
+                    b["real_quote_count"] += 1
+                    b["real_profit_1u"] += float(m.profit_1u_real)
+                elif m.is_derived_quote and m.profit_1u_synthetic is not None:
+                    b["derived_quote_count"] += 1
+                    b["synthetic_profit_1u"] += float(m.profit_1u_synthetic)
+            if band:
+                b = purch_band_buckets[band]
+                b["sample_size"] += 1
+                if s.competition_name:
+                    b["competitions"].add(s.competition_name)
+                if m.won is True:
+                    b["won"] += 1
+                elif m.won is False:
+                    b["lost"] += 1
+                if m.is_real_book_quote and m.profit_1u_real is not None:
+                    b["real_quote_count"] += 1
+                    b["real_profit_1u"] += float(m.profit_1u_real)
+                elif m.is_derived_quote and m.profit_1u_synthetic is not None:
+                    b["derived_quote_count"] += 1
+                    b["synthetic_profit_1u"] += float(m.profit_1u_synthetic)
+
+        gi = _as_dict(s.goal_intensity_compatibility_json)
+        for pkey, pblock in (_as_dict(gi.get("pillars"))).items():
+            ck = _as_dict(pblock).get("class_key") or "unknown"
+            b = gi_class_buckets[pkey][str(ck)]
+            b["sample_size"] += 1
+            if s.competition_name:
+                b["competitions"].add(s.competition_name)
+            if m.won is True:
+                b["won"] += 1
+            elif m.won is False:
+                b["lost"] += 1
+            if m.is_real_book_quote and m.profit_1u_real is not None:
+                b["real_quote_count"] += 1
+                b["real_profit_1u"] += float(m.profit_1u_real)
+            elif m.is_derived_quote and m.profit_1u_synthetic is not None:
+                b["derived_quote_count"] += 1
+                b["synthetic_profit_1u"] += float(m.profit_1u_synthetic)
+
+        sigs = _as_dict(s.signals_json)
+        for model_key, mblock in (_as_dict(sigs.get("models"))).items():
+            for sett in _as_list(_as_dict(mblock).get("settlements")):
+                if not isinstance(sett, dict):
+                    continue
+                if sett.get("target_market") != m.market_key:
+                    continue
+                b = model_buckets[str(model_key)]
+                b["sample_size"] += 1
+                if s.competition_name:
+                    b["competitions"].add(s.competition_name)
+                if sett.get("won") is True:
+                    b["won"] += 1
+                elif sett.get("won") is False:
+                    b["lost"] += 1
+                if sett.get("real_profit_1u") is not None:
+                    b["real_quote_count"] += 1
+                    b["real_profit_1u"] += float(sett["real_profit_1u"])
+                if sett.get("synthetic_profit_1u") is not None:
+                    b["derived_quote_count"] += 1
+                    b["synthetic_profit_1u"] += float(sett["synthetic_profit_1u"])
+
+    technical_sum = {
+        "technical_sum_across_all_independent_market_rows": {
+            "not_a_betting_strategy": True,
+            "real_profit_1u": round(
+                sum(float(m.profit_1u_real or 0) for m in eligible_markets if m.profit_1u_real is not None),
+                4,
+            ),
+            "synthetic_profit_1u": round(
+                sum(
+                    float(m.profit_1u_synthetic or 0)
+                    for m in eligible_markets
+                    if m.profit_1u_synthetic is not None
+                ),
+                4,
+            ),
+            "market_rows": len(eligible_markets),
+            "note": "Somma tecnica di tutte le righe mercato indipendenti; non è una strategia",
+        }
+    }
+
     eligible_analysis = {
         "note": (
             "Aggregazioni di performance solo su eligible_core. "
-            "outcome_base_rate non è performance del Cecchino."
+            "outcome_base_rate non è performance del Cecchino. "
+            "Profitto principale per mercato/segnale/modello/fascia/pattern — "
+            "non usare technical_sum come profitto Cecchino."
         ),
         "aggregations": {
             dim: {k: _finalize_bucket(v) for k, v in sorted(inner.items())}
             for dim, inner in buckets.items()
         },
+        "purchasability_bands": {
+            k: _finalize_bucket(v) for k, v in sorted(purch_band_buckets.items())
+        },
+        "purchasability_deciles": {
+            k: _finalize_bucket(v) for k, v in sorted(purch_decile_buckets.items())
+        },
+        "goal_intensity_pillar_classes": {
+            pillar: {k: _finalize_bucket(v) for k, v in sorted(inner.items())}
+            for pillar, inner in gi_class_buckets.items()
+        },
+        "signal_models_A_F": {
+            k: _finalize_bucket(v) for k, v in sorted(model_buckets.items())
+        },
         "coverage_distinctions": {
             k: _finalize_bucket(v) for k, v in coverage_counters.items()
         },
+        **technical_sum,
     }
 
     excluded_by_reason: dict[str, int] = defaultdict(int)
@@ -748,6 +947,145 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
             markets_io.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
         zf.writestr("markets.jsonl", markets_io.getvalue().encode("utf-8"))
 
+        # signal_models.jsonl
+        sm_io = io.StringIO()
+        for s in eligible_snaps:
+            sigs = _as_dict(s.signals_json)
+            for model_key, mblock in (_as_dict(sigs.get("models"))).items():
+                mb = _as_dict(mblock)
+                meta = _as_dict(mb.get("meta"))
+                for sett in _as_list(mb.get("settlements")):
+                    if not isinstance(sett, dict):
+                        continue
+                    sm_io.write(
+                        json.dumps(
+                            {
+                                "run_id": int(run.id),
+                                "lab_match_id": int(s.lab_match_id),
+                                "competition_name": s.competition_name,
+                                "kickoff_at": s.kickoff_at.isoformat() if s.kickoff_at else None,
+                                "model_key": model_key,
+                                "model_label": meta.get("label") or meta.get("name"),
+                                "weights": mb.get("weights"),
+                                "signal_family": sett.get("signal_family"),
+                                "source_column": sett.get("source_column"),
+                                "target_market": sett.get("target_market"),
+                                "quota_cecchino": sett.get("quota_cecchino"),
+                                "probabilita_cecchino": sett.get("probabilita_cecchino"),
+                                "quota_bet365": sett.get("quota_bet365"),
+                                "quote_quality": sett.get("quote_quality"),
+                                "won": sett.get("won"),
+                                "real_profit_1u": sett.get("real_profit_1u"),
+                                "synthetic_profit_1u": sett.get("synthetic_profit_1u"),
+                            },
+                            ensure_ascii=False,
+                            default=str,
+                        )
+                        + "\n"
+                    )
+        zf.writestr("signal_models.jsonl", sm_io.getvalue().encode("utf-8"))
+
+        # goal_intensity.jsonl
+        gi_io = io.StringIO()
+        for s in eligible_snaps:
+            gi = _as_dict(s.goal_intensity_compatibility_json)
+            result = _as_dict(s.result_json)
+            market_outcomes = {}
+            for m in markets_by_snap.get(int(s.id), []):
+                if m.market_key in ("OVER_2_5", "UNDER_2_5", "OVER_1_5", "UNDER_3_5"):
+                    market_outcomes[m.market_key] = {
+                        "won": m.won,
+                        "evaluation_status": m.evaluation_status,
+                    }
+            gi_io.write(
+                json.dumps(
+                    {
+                        "run_id": int(run.id),
+                        "lab_match_id": int(s.lab_match_id),
+                        "competition_name": s.competition_name,
+                        "kickoff_at": s.kickoff_at.isoformat() if s.kickoff_at else None,
+                        "pillars": gi.get("pillars"),
+                        "final_class": gi.get("final_class"),
+                        "sample_size": (_as_dict(gi.get("inputs"))).get("sample_size"),
+                        "inputs": gi.get("inputs"),
+                        "missing_inputs": gi.get("missing_inputs"),
+                        "parity_status": gi.get("parity_status"),
+                        "execution_status": gi.get("execution_status"),
+                        "module_version": gi.get("module_version"),
+                        "result_after_lock": result,
+                        "goal_market_outcomes": market_outcomes,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                )
+                + "\n"
+            )
+        zf.writestr("goal_intensity.jsonl", gi_io.getvalue().encode("utf-8"))
+
+        # purchasability.jsonl
+        purch_io = io.StringIO()
+        for s in eligible_snaps:
+            purch = _as_dict(s.purchasability_compatibility_json)
+            bal = _as_dict(s.balance_v5_json)
+            bal_class, _ = _structural_class(bal.get("structural_summary") if bal else None)
+            m_by_key = {
+                m.market_key: m for m in markets_by_snap.get(int(s.id), [])
+            }
+            for mk_row in purch.get("markets") or []:
+                if not isinstance(mk_row, dict):
+                    continue
+                mk = mk_row.get("market_key")
+                m = m_by_key.get(mk)
+                purch_io.write(
+                    json.dumps(
+                        {
+                            "run_id": int(run.id),
+                            "lab_match_id": int(s.lab_match_id),
+                            "competition_name": s.competition_name,
+                            "kickoff_at": s.kickoff_at.isoformat() if s.kickoff_at else None,
+                            "market_key": mk,
+                            "score": mk_row.get("score"),
+                            "class": mk_row.get("class"),
+                            "status": mk_row.get("status"),
+                            "phase_1": mk_row.get("phase_1"),
+                            "phase_2": mk_row.get("phase_2"),
+                            "components": mk_row.get("components"),
+                            "quote_quality": mk_row.get("quote_quality"),
+                            "normalization_profile_version": mk_row.get(
+                                "normalization_profile_version"
+                            ),
+                            "normalization_profile_hash": mk_row.get(
+                                "normalization_profile_hash"
+                            ),
+                            "normalization_sample_size": mk_row.get(
+                                "normalization_sample_size"
+                            ),
+                            "rating": mk_row.get("rating"),
+                            "edge_pct": mk_row.get("edge_pct"),
+                            "vantaggio_prob": mk_row.get("vantaggio_prob"),
+                            "signal_active": bool(m.signal_active) if m else None,
+                            "balance_class": bal_class,
+                            "won": m.won if m else None,
+                            "real_profit_1u": (
+                                float(m.profit_1u_real)
+                                if m and m.profit_1u_real is not None
+                                else None
+                            ),
+                            "synthetic_profit_1u": (
+                                float(m.profit_1u_synthetic)
+                                if m and m.profit_1u_synthetic is not None
+                                else None
+                            ),
+                            "parity_status": mk_row.get("parity_status"),
+                            "formula_version": mk_row.get("formula_version"),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    + "\n"
+                )
+        zf.writestr("purchasability.jsonl", purch_io.getvalue().encode("utf-8"))
+
     return filename, buf.getvalue()
 
 
@@ -899,11 +1237,124 @@ def _build_combined_patterns(
                     "competition_name": comp,
                     "market_key": m.market_key,
                     "signal": signal_flag,
-                    "signal_family": fam,
                 },
-                [comp or "unknown", m.market_key, signal_flag, fam],
+                [comp or "unknown", m.market_key, signal_flag],
             ),
         ]
+
+        purch = _as_dict(s.purchasability_compatibility_json) if s else {}
+        purch_score = None
+        for mk_row in purch.get("markets") or []:
+            if isinstance(mk_row, dict) and mk_row.get("market_key") == m.market_key:
+                purch_score = mk_row.get("score")
+                break
+        purch_band = "no_purch"
+        if purch_score is not None:
+            try:
+                ps = float(purch_score)
+                purch_band = (
+                    "0-19"
+                    if ps < 20
+                    else (
+                        "20-39"
+                        if ps < 40
+                        else ("40-59" if ps < 60 else ("60-79" if ps < 80 else "80-100"))
+                    )
+                )
+            except (TypeError, ValueError):
+                purch_band = "no_purch"
+
+        gi = _as_dict(s.goal_intensity_compatibility_json) if s else {}
+        gi_pillars = _as_dict(gi.get("pillars"))
+        op_class = _as_dict(gi_pillars.get("offensive_production")).get("class_key") or "no_gi"
+
+        combos.extend(
+            [
+                (
+                    "rating_purchasability",
+                    {"rating_band": rb, "purchasability_band": purch_band},
+                    [rb, purch_band],
+                ),
+                (
+                    "rating_intensity_op",
+                    {"rating_band": rb, "offensive_production_class": str(op_class)},
+                    [rb, str(op_class)],
+                ),
+                (
+                    "purchasability_balance",
+                    {"purchasability_band": purch_band, "balance_class": bal_class},
+                    [purch_band, bal_class],
+                ),
+                (
+                    "purchasability_signal",
+                    {"purchasability_band": purch_band, "signal": signal_flag},
+                    [purch_band, signal_flag],
+                ),
+                (
+                    "intensity_signal",
+                    {"offensive_production_class": str(op_class), "signal": signal_flag},
+                    [str(op_class), signal_flag],
+                ),
+                (
+                    "intensity_purchasability",
+                    {
+                        "offensive_production_class": str(op_class),
+                        "purchasability_band": purch_band,
+                    },
+                    [str(op_class), purch_band],
+                ),
+                (
+                    "rating_purchasability_signal",
+                    {
+                        "rating_band": rb,
+                        "purchasability_band": purch_band,
+                        "signal": signal_flag,
+                    },
+                    [rb, purch_band, signal_flag],
+                ),
+                (
+                    "rating_purchasability_balance",
+                    {
+                        "rating_band": rb,
+                        "purchasability_band": purch_band,
+                        "balance_class": bal_class,
+                    },
+                    [rb, purch_band, bal_class],
+                ),
+                (
+                    "rating_intensity_signal",
+                    {
+                        "rating_band": rb,
+                        "offensive_production_class": str(op_class),
+                        "signal": signal_flag,
+                    },
+                    [rb, str(op_class), signal_flag],
+                ),
+            ]
+        )
+
+        for model_key in ("A", "B", "C", "D", "E", "F"):
+            combos.append(
+                (
+                    "model_market",
+                    {"model_key": model_key, "market_key": m.market_key},
+                    [model_key, m.market_key],
+                )
+            )
+            combos.append(
+                (
+                    "model_rating",
+                    {"model_key": model_key, "rating_band": rb},
+                    [model_key, rb],
+                )
+            )
+            combos.append(
+                (
+                    "model_balance",
+                    {"model_key": model_key, "balance_class": bal_class},
+                    [model_key, bal_class],
+                )
+            )
         for prefix, conditions, parts in combos:
             pid = key_id(prefix, [str(p) for p in parts])
             if pid not in groups:
