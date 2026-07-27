@@ -78,6 +78,60 @@ def _json_bytes(obj: Any) -> bytes:
     return json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode("utf-8")
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """Normalizza JSON opzionale a dict; altrimenti {}."""
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Normalizza JSON opzionale a list; altrimenti []."""
+    return value if isinstance(value, list) else []
+
+
+def _structural_class(structural: Any) -> tuple[str, str | None]:
+    """
+    Estrae la classe Balance da structural_summary.
+
+    - dict → class, poi class_key, poi unknown
+    - stringa non vuota → la stringa
+    - null / list / number / altro → unknown (+ warning diagnostico)
+    """
+    if isinstance(structural, dict):
+        raw = structural.get("class")
+        if raw is None or raw == "":
+            raw = structural.get("class_key")
+        if raw is None or raw == "":
+            return "unknown", None
+        return str(raw), None
+    if isinstance(structural, str):
+        text = structural.strip()
+        if text:
+            return text, None
+        return "unknown", "empty_structural_summary_string"
+    if structural is None:
+        return "unknown", None
+    return "unknown", f"unexpected_structural_summary_type:{type(structural).__name__}"
+
+
+def _note_shape_warning(
+    warnings: list[str],
+    code: str | None,
+    *,
+    seen: set[str] | None = None,
+) -> None:
+    if not code:
+        return
+    if seen is not None:
+        if code in seen:
+            return
+        seen.add(code)
+    warnings.append(code)
+
+
+def _compat_flag(compat_json: Any, key: str) -> bool:
+    return bool(_as_dict(compat_json).get(key))
+
+
 def _agg_bucket() -> dict[str, Any]:
     return {
         "sample_size": 0,
@@ -141,11 +195,13 @@ def _edge_band(edge_pct: Any) -> str | None:
 
 def _signal_meta(sources_json: Any) -> dict[str, Any]:
     if isinstance(sources_json, dict):
+        families = sources_json.get("signal_families")
+        sources = sources_json.get("sources")
         return {
             "signal_family": sources_json.get("signal_family"),
-            "signal_families": sources_json.get("signal_families") or [],
+            "signal_families": _as_list(families),
             "active_signal_count": int(sources_json.get("active_signal_count") or 0),
-            "sources": sources_json.get("sources") or [],
+            "sources": _as_list(sources),
         }
     if isinstance(sources_json, list):
         return {
@@ -162,8 +218,9 @@ def _signal_meta(sources_json: Any) -> dict[str, Any]:
     }
 
 
-def _balance_pillars(balance: dict[str, Any] | None) -> dict[str, Any]:
-    if not isinstance(balance, dict):
+def _balance_pillars(balance: Any) -> dict[str, Any]:
+    bal = _as_dict(balance)
+    if not bal:
         return {}
     pillars: dict[str, Any] = {}
     for key in (
@@ -174,15 +231,20 @@ def _balance_pillars(balance: dict[str, Any] | None) -> dict[str, Any]:
         "structural_summary",
         "pillars",
     ):
-        block = balance.get(key)
+        block = bal.get(key)
         if isinstance(block, dict):
             pillars[key] = {
                 "class_key": block.get("class_key") or block.get("class"),
                 "label": block.get("label"),
                 "value": block.get("value") or block.get("score") or block.get("f36_abs"),
             }
-    # Heuristic: top-level class keys sometimes nested under analysis blocks
-    for key, block in balance.items():
+        elif isinstance(block, str) and block.strip() and key == "structural_summary":
+            pillars[key] = {
+                "class_key": block.strip(),
+                "label": None,
+                "value": None,
+            }
+    for key, block in bal.items():
         if key in pillars or not isinstance(block, dict):
             continue
         if "class_key" in block or "class" in block:
@@ -272,7 +334,7 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
     for m in markets:
         markets_by_snap[int(m.match_snapshot_id)].append(m)
 
-    policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+    policy = _as_dict(run.module_policy_json)
     is_partial = bool(policy.get("is_partial_run"))
     run_scope = policy.get("run_scope") or ("pilot" if is_partial else "full")
 
@@ -357,7 +419,9 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
     for s in snaps:
         eligibility[s.historical_eligibility_status] += 1
 
-    data_quality = run.preflight_json or {}
+    data_quality = _as_dict(run.preflight_json)
+    shape_warnings: list[str] = []
+    shape_warning_seen: set[str] = set()
     module_coverage = {
         "eligible_core": eligibility.get(ELIGIBLE_CORE, 0),
         "excluded": len(excluded_snaps),
@@ -369,7 +433,7 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
             "raw_features_available": sum(
                 1
                 for s in eligible_snaps
-                if (s.goal_intensity_compatibility_json or {}).get("raw_features_available")
+                if _compat_flag(s.goal_intensity_compatibility_json, "raw_features_available")
             ),
             "v5_score_not_executed": True,
             "note": "Prima scansione: studiare feature, non validare punteggio finale",
@@ -378,7 +442,7 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
             "inputs_available": sum(
                 1
                 for s in eligible_snaps
-                if (s.purchasability_compatibility_json or {}).get("inputs_available")
+                if _compat_flag(s.purchasability_compatibility_json, "inputs_available")
             ),
             "final_score_not_executed": True,
             "note": "Prima scansione: studiare input, non validare score operativo",
@@ -425,25 +489,34 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
                     m,
                     comp,
                 )
-            qs = (s.quote_sources_json or {}).get("family_1x2") or {}
+            quote_sources = _as_dict(s.quote_sources_json)
+            qs = _as_dict(quote_sources.get("family_1x2"))
             snap_type = qs.get("family_snapshot_type") or "none"
             _add_market_row(buckets, "closing_or_pre", str(snap_type), m, comp)
-            bal = s.balance_v5_json or {}
-            if isinstance(bal, dict):
-                structural = bal.get("structural_summary") or {}
-                cls = structural.get("class") or structural.get("class_key") or "unknown"
-                _add_market_row(buckets, "balance_class", str(cls), m, comp)
-                pillars = _balance_pillars(bal)
-                for pname, pblock in pillars.items():
-                    ck = pblock.get("class_key")
-                    if ck:
-                        _add_market_row(buckets, f"balance_pillar_{pname}", str(ck), m, comp)
+            bal = _as_dict(s.balance_v5_json)
+            cls, warn = _structural_class(bal.get("structural_summary") if bal else None)
+            _note_shape_warning(shape_warnings, warn, seen=shape_warning_seen)
+            _add_market_row(buckets, "balance_class", str(cls), m, comp)
+            pillars = _balance_pillars(bal)
+            for pname, pblock in pillars.items():
+                ck = _as_dict(pblock).get("class_key")
+                if ck:
+                    _add_market_row(buckets, f"balance_pillar_{pname}", str(ck), m, comp)
             # historical sample size band from input snapshot
-            prior = (s.input_snapshot_json or {}).get("prior_count")
+            input_snap = _as_dict(s.input_snapshot_json)
+            prior = input_snap.get("prior_count")
             if prior is not None:
-                p = int(prior)
-                band = "0-9" if p < 10 else ("10-29" if p < 30 else ("30-99" if p < 100 else "100+"))
-                _add_market_row(buckets, "historical_sample_band", band, m, comp)
+                try:
+                    p = int(prior)
+                except (TypeError, ValueError):
+                    p = None
+                if p is not None:
+                    band = (
+                        "0-9"
+                        if p < 10
+                        else ("10-29" if p < 30 else ("30-99" if p < 100 else "100+"))
+                    )
+                    _add_market_row(buckets, "historical_sample_band", band, m, comp)
 
         sig = _signal_meta(m.signal_sources_json)
         if m.signal_active:
@@ -456,7 +529,7 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
                 m,
                 comp,
             )
-            for src in sig.get("sources") or []:
+            for src in _as_list(sig.get("sources")):
                 if isinstance(src, dict):
                     model = src.get("column_key") or src.get("source_column") or "unknown"
                     _add_market_row(buckets, "signal_model", str(model), m, comp)
@@ -563,6 +636,7 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
         "run_scope": run_scope,
         "is_partial_run": is_partial,
         "preflight": data_quality,
+        "warnings": shape_warnings,
     }
 
     summary = {
@@ -572,7 +646,9 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
         "data_coverage": data_coverage,
     }
 
-    patterns = _build_combined_patterns(eligible_markets, snap_by_id)
+    patterns = _build_combined_patterns(
+        eligible_markets, snap_by_id, shape_warnings=shape_warnings, shape_warning_seen=shape_warning_seen
+    )
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -587,6 +663,8 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
 
         matches_io = io.StringIO()
         for s in snaps:
+            input_snap = _as_dict(s.input_snapshot_json)
+            cecchino_out = _as_dict(s.cecchino_output_json)
             row = {
                 "snapshot_id": int(s.id),
                 "lab_match_id": int(s.lab_match_id),
@@ -600,21 +678,21 @@ def build_ai_report_zip_bytes(db: Session, run_id: int) -> tuple[str, bytes]:
                 "eligibility_reason": s.historical_eligibility_reason,
                 "blockers": s.blocking_reasons_json,
                 "context_samples": {
-                    k: (v or {}).get("sample")
-                    for k, v in (s.input_snapshot_json or {}).items()
+                    k: v.get("sample")
+                    for k, v in input_snap.items()
                     if isinstance(v, dict) and "sample" in v
                 },
                 "input_snapshot": s.input_snapshot_json,
                 "cecchino": {
-                    "picchetti": (s.cecchino_output_json or {}).get("picchetti"),
-                    "final": (s.cecchino_output_json or {}).get("final"),
-                    "status": (s.cecchino_output_json or {}).get("status"),
+                    "picchetti": cecchino_out.get("picchetti"),
+                    "final": cecchino_out.get("final"),
+                    "status": cecchino_out.get("status"),
                 },
                 "signals": s.signals_json,
                 "balance_v5": s.balance_v5_json,
                 "goal_intensity_compatibility": s.goal_intensity_compatibility_json,
                 "purchasability_compatibility": s.purchasability_compatibility_json,
-                "quote_availability": (s.module_availability_json or {}),
+                "quote_availability": _as_dict(s.module_availability_json),
                 "pre_match_payload_sha256": s.pre_match_payload_sha256,
                 "pre_match_locked_at": (
                     s.pre_match_locked_at.isoformat() if s.pre_match_locked_at else None
@@ -757,8 +835,13 @@ def _bump_pattern(acc: dict[str, Any], m: CecchinoLabHistoricalMarketResult, com
 def _build_combined_patterns(
     eligible_markets: list[CecchinoLabHistoricalMarketResult],
     snap_by_id: dict[int, CecchinoLabHistoricalMatchSnapshot],
+    *,
+    shape_warnings: list[str] | None = None,
+    shape_warning_seen: set[str] | None = None,
 ) -> dict[str, Any]:
     groups: dict[str, dict[str, Any]] = {}
+    warnings = shape_warnings if shape_warnings is not None else []
+    seen = shape_warning_seen if shape_warning_seen is not None else set()
 
     def key_id(prefix: str, parts: list[str]) -> str:
         return prefix + "__" + "__".join(parts)
@@ -770,11 +853,9 @@ def _build_combined_patterns(
         sig = _signal_meta(m.signal_sources_json)
         fam = str(sig.get("signal_family") or ("active" if m.signal_active else "no_signal"))
         signal_flag = "signal_on" if m.signal_active else "signal_off"
-        bal = (s.balance_v5_json or {}) if s else {}
-        structural = bal.get("structural_summary") if isinstance(bal, dict) else {}
-        bal_class = "unknown"
-        if isinstance(structural, dict):
-            bal_class = str(structural.get("class") or structural.get("class_key") or "unknown")
+        bal = _as_dict(s.balance_v5_json) if s else {}
+        bal_class, warn = _structural_class(bal.get("structural_summary") if bal else None)
+        _note_shape_warning(warnings, warn, seen=seen)
 
         combos = [
             ("market_rating", {"market_key": m.market_key, "rating_band": rb}, [m.market_key, rb]),
