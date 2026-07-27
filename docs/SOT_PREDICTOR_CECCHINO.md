@@ -228,12 +228,13 @@ Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
 | Registry v2 | `active_parallel_preview` (non entra nei gate promozione) |
 | Fase 1 v2 | Rating 30% + Edge_norm 40% + Vantaggio_norm 30% |
 | Fase 2 v2 | Dominanza Rating/Edge/Prob + Shift + Contrasto opposto |
-| Norm profile | `cecchino_purchasability_v2_norm_profile_2026_07_26_v1` (percentile P95 nearest-rank, zero-anchored) |
+| Norm profile | `cecchino_purchasability_v2_norm_profile_2026_07_26_v2` (percentile P95 nearest-rank, zero-anchored; solo eligible + snapshot verificato pre-kickoff) |
 | Gate | Edge/Vantaggio ≤0 → score ufficiale 0, raw pre-gate preservato |
 | UI | Acq. v1.1 · Acq. v2 · Δ V2−V1.1 (+ audit formule) |
-| Backfill | `python -m app.jobs.backfill_purchasability_v2` (dry-run default) |
+| Backfill | `python -m app.jobs.backfill_purchasability_v2` (dry-run default non scrivente; `--apply` + token; salta non verificabili) |
 | Lab | non toccato |
 
+History guard: `evaluate_purchasability_v2_historical_source` — rifiuta non eligible, KPI mancanti, `updated_at` fallback, kickoff mancante, `snapshot_at >= kickoff`. Formula v2 invariata.
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 | Campo | Valore |

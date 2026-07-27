@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Affidabilità storica Acquistabilità v2 (norm profile v2) (2026-07-27)
+
+- Perché: il profilo storico e il backfill accettavano fixture non eligible, promuovevano `updated_at` a timestamp verificato e impostavano `source_snapshot_before_kickoff=True` senza confronto reale; `dry_run=True` poteva scrivere.
+- Cosa: history guard condivisa; profilo `cecchino_purchasability_v2_norm_profile_2026_07_26_v2` (cutoff invariato); backfill solo eligible + verificato + `snapshot_at < kickoff`; dry-run assolutamente non scrivente; CLI `--dry-run`/`--apply` mutuamente esclusivi.
+- Cosa non fa: formula/pesi/cap/percentile v2, v1.1, KPI, frontend, Cecchino Lab.
+- Doc: `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`, `SOT_PREDICTOR_CECCHINO.md`.
+
 ## Feat — Acquistabilità v2 parallela (decision_quality_v2) (2026-07-27)
 
 Indice parallelo alla v1.1: Fase 1 valore assoluto + Fase 2 qualità decisionale, normalizzazione storica congelata, snapshot `purchasability_preview_v2`, UI a tre colonne (v1.1 / v2 / delta), audit formule, backfill manuale dry-run. Validation v1.1 e Cecchino Lab invariati.

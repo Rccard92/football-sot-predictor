@@ -11,8 +11,14 @@ from app.schemas.cecchino_purchasability_v2 import (
 from app.services.cecchino.cecchino_purchasability_candidate import (
     ACTIVE_PURCHASABILITY_CANDIDATE_NAME,
     ACTIVE_PURCHASABILITY_CANDIDATE_VERSION,
+    CLASS_THRESHOLDS,
 )
 from app.services.cecchino.cecchino_purchasability_v2_candidate import (
+    FINAL_FORMULA_VERSION,
+    PHASE_1_CONFIGURED_WEIGHTS,
+    PHASE_1_FORMULA_VERSION,
+    PHASE_2_CONFIGURED_WEIGHTS,
+    PHASE_2_FORMULA_VERSION,
     calculate_purchasability_v2_batch,
     calculate_purchasability_v2_item,
 )
@@ -219,3 +225,42 @@ def test_v1_1_parity_same_input():
     )
     assert v2["candidate_version"] == PURCHASABILITY_DECISION_V2_CANDIDATE_VERSION
     assert v2["candidate_version"] != ACTIVE_PURCHASABILITY_CANDIDATE_VERSION
+
+
+def test_formula_weights_gate_rounding_unchanged():
+    """Regressione: formula v2 invariata dopo fix storico."""
+    assert dict(PHASE_1_CONFIGURED_WEIGHTS) == {
+        "rating": 0.30,
+        "edge_pct": 0.40,
+        "vantaggio_prob": 0.30,
+    }
+    assert dict(PHASE_2_CONFIGURED_WEIGHTS) == {
+        "dominance_rating": 0.25,
+        "dominance_edge_pct": 0.25,
+        "dominance_probability_pp": 0.20,
+        "shift_book_cecchino_pp": 0.15,
+        "opposite_contrast_pp": 0.15,
+    }
+    assert PHASE_1_FORMULA_VERSION == "purchasability_v2_phase_1_absolute_value_v1"
+    assert PHASE_2_FORMULA_VERSION == "purchasability_v2_phase_2_decision_quality_v1"
+    assert FINAL_FORMULA_VERSION == "purchasability_v2_final_geometric_v1"
+    assert CLASS_THRESHOLDS == (20, 40, 60, 80)
+
+    profile = build_empty_provisional_profile()
+    panel = _panel_1x2_ou()
+    batch_a = calculate_purchasability_v2_batch(kpi_panel=panel, profile=profile)
+    batch_b = calculate_purchasability_v2_batch(kpi_panel=panel, profile=profile)
+    assert batch_a["candidate_version"] == batch_b["candidate_version"]
+    scores_a = {
+        it["market_key"]: (it.get("score"), it.get("class"), it.get("raw_pre_gate_score"))
+        for it in batch_a["items"]
+    }
+    scores_b = {
+        it["market_key"]: (it.get("score"), it.get("class"), it.get("raw_pre_gate_score"))
+        for it in batch_b["items"]
+    }
+    assert scores_a == scores_b
+    # Gate positivo ancora presente
+    under = next(it for it in batch_a["items"] if it["market_key"] == SEL_UNDER_2_5)
+    assert "positive_value_gate" in under
+    assert under["positive_value_gate"]["status"] in ("passed", "failed", "unavailable")

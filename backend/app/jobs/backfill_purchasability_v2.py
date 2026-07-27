@@ -22,6 +22,16 @@ from app.schemas.cecchino_purchasability_v2 import (
     PURCHASABILITY_DECISION_V2_CANDIDATE_VERSION,
     PURCHASABILITY_V2_SNAPSHOT_VERSION,
 )
+from app.services.cecchino.cecchino_purchasability_v2_history_guard import (
+    REASON_FIXTURE_NOT_ELIGIBLE,
+    REASON_KICKOFF_MISSING,
+    REASON_KPI_PANEL_MISSING,
+    REASON_KPI_ROWS_MISSING,
+    REASON_SNAPSHOT_NOT_BEFORE_KICKOFF,
+    REASON_SNAPSHOT_TIMESTAMP_MISSING,
+    REASON_SNAPSHOT_TIMESTAMP_UNVERIFIED,
+    evaluate_purchasability_v2_historical_source,
+)
 from app.services.cecchino.cecchino_purchasability_v2_snapshot import (
     build_candidate_and_compact_snapshot_v2,
     validate_purchasability_preview_v2_snapshot,
@@ -31,6 +41,16 @@ logger = logging.getLogger(__name__)
 
 CONFIRM_TOKEN = "WRITE_PURCHASABILITY_V2"
 BATCH_COMMIT_SIZE = 50
+
+_REASON_TO_COUNTER = {
+    REASON_FIXTURE_NOT_ELIGIBLE: "not_eligible_skipped",
+    REASON_KPI_PANEL_MISSING: "kpi_missing_skipped",
+    REASON_KPI_ROWS_MISSING: "kpi_missing_skipped",
+    REASON_SNAPSHOT_TIMESTAMP_UNVERIFIED: "snapshot_unverified_skipped",
+    REASON_SNAPSHOT_TIMESTAMP_MISSING: "snapshot_missing_skipped",
+    REASON_KICKOFF_MISSING: "kickoff_missing_skipped",
+    REASON_SNAPSHOT_NOT_BEFORE_KICKOFF: "snapshot_not_before_kickoff_skipped",
+}
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -60,25 +80,33 @@ def run_backfill(
     apply: bool = False,
     confirm: str | None = None,
 ) -> dict[str, Any]:
-    write = bool(apply) and confirm == CONFIRM_TOKEN and not dry_run
+    write = bool(apply and confirm == CONFIRM_TOKEN and dry_run is False)
     if apply and confirm != CONFIRM_TOKEN:
         raise SystemExit(
             f"--apply richiede --confirm {CONFIRM_TOKEN}. Modalità scrittura annullata."
         )
-    if apply and dry_run:
-        write = confirm == CONFIRM_TOKEN
 
     from app.core.database import SessionLocal
-    from app.models.cecchino_today_fixture import CecchinoTodayFixture
+    from app.models.cecchino_today_fixture import (
+        ELIGIBILITY_ELIGIBLE,
+        CecchinoTodayFixture,
+    )
     from app.services.cecchino.cecchino_purchasability_v2_normalization import (
         build_normalization_profile_from_db,
     )
     from sqlalchemy import select
     from sqlalchemy.orm.attributes import flag_modified
 
-    counters = {
+    counters: dict[str, Any] = {
         "rows_seen": 0,
         "eligible_rows": 0,
+        "accepted_pre_match_rows": 0,
+        "not_eligible_skipped": 0,
+        "snapshot_unverified_skipped": 0,
+        "snapshot_missing_skipped": 0,
+        "kickoff_missing_skipped": 0,
+        "snapshot_not_before_kickoff_skipped": 0,
+        "kpi_missing_skipped": 0,
         "persisted": 0,
         "already_current": 0,
         "partial": 0,
@@ -88,6 +116,7 @@ def run_backfill(
         "errors": 0,
         "dry_run": not write,
         "would_persist": 0,
+        "wrote": write,
     }
 
     db = SessionLocal()
@@ -101,7 +130,9 @@ def run_backfill(
             profile.get("fixtures_seen"),
         )
 
-        stmt = select(CecchinoTodayFixture)
+        stmt = select(CecchinoTodayFixture).where(
+            CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+        )
         if date_from is not None:
             stmt = stmt.where(CecchinoTodayFixture.scan_date >= date_from)
         if date_to is not None:
@@ -111,12 +142,29 @@ def run_backfill(
         pending = 0
         for row in db.scalars(stmt).yield_per(100):
             counters["rows_seen"] += 1
+            counters["eligible_rows"] += 1
             try:
+                guard = evaluate_purchasability_v2_historical_source(row)
+                if not guard.get("accepted"):
+                    reason = guard.get("reason_code")
+                    counter_key = _REASON_TO_COUNTER.get(reason or "")
+                    if counter_key:
+                        counters[counter_key] += 1
+                    if reason in (
+                        REASON_KPI_PANEL_MISSING,
+                        REASON_KPI_ROWS_MISSING,
+                    ):
+                        counters["missing_kpi"] += 1
+                    if reason == REASON_SNAPSHOT_TIMESTAMP_UNVERIFIED:
+                        counters["snapshot_unverified"] += 1
+                    continue
+
+                counters["accepted_pre_match_rows"] += 1
                 panel = row.kpi_panel_json
-                if not isinstance(panel, dict) or not isinstance(panel.get("rows"), list):
+                if not isinstance(panel, dict):
+                    counters["kpi_missing_skipped"] += 1
                     counters["missing_kpi"] += 1
                     continue
-                counters["eligible_rows"] += 1
 
                 output = (
                     dict(row.cecchino_output_json)
@@ -128,35 +176,6 @@ def run_backfill(
                     counters["already_current"] += 1
                     continue
 
-                # Snapshot timestamp check (odds meta)
-                odds = row.odds_snapshot_json if isinstance(row.odds_snapshot_json, dict) else {}
-                meta = odds.get("odds_meta") if isinstance(odds.get("odds_meta"), dict) else {}
-                snap_at = None
-                verified = False
-                if isinstance(meta, dict):
-                    for fld in ("odds_fetched_at", "fetched_at", "snapshot_at"):
-                        if meta.get(fld):
-                            snap_at = meta.get(fld)
-                            verified = True
-                            break
-                if not verified and isinstance(panel.get("odds_meta"), dict):
-                    panel_meta = panel["odds_meta"]
-                    for fld in ("odds_fetched_at", "fetched_at", "snapshot_at"):
-                        if panel_meta.get(fld):
-                            snap_at = panel_meta.get(fld)
-                            verified = True
-                            break
-
-                if not verified:
-                    counters["snapshot_unverified"] += 1
-                    # Derive anyway for historical if panel exists — still mark
-                    verified = True  # allow derive from stored panel for backfill
-                    snap_at = snap_at or (
-                        row.updated_at.isoformat()
-                        if getattr(row, "updated_at", None)
-                        else None
-                    )
-
                 fixture_meta = {
                     "today_fixture_id": int(row.id),
                     "local_fixture_id": row.local_fixture_id,
@@ -164,11 +183,13 @@ def run_backfill(
                     "competition_id": row.competition_id,
                     "scan_date": row.scan_date,
                     "kickoff": row.kickoff,
-                    "snapshot_at": snap_at,
+                    "snapshot_at": guard["snapshot_at"],
                 }
                 snapshot_info = {
-                    "snapshot_at": snap_at,
-                    "snapshot_timestamp_verified": verified,
+                    "snapshot_at": guard["snapshot_at"],
+                    "snapshot_source": guard["snapshot_source"],
+                    "snapshot_fidelity": guard["snapshot_fidelity"],
+                    "snapshot_timestamp_verified": True,
                     "source_snapshot_before_kickoff": True,
                 }
 
@@ -188,7 +209,6 @@ def run_backfill(
 
                 # Non toccare purchasability_preview (v1.1)
                 new_output = dict(output)
-                # Preserve v1.1 byte-for-byte
                 if "purchasability_preview" in output:
                     new_output["purchasability_preview"] = output["purchasability_preview"]
                 new_output["purchasability_preview_v2"] = snapshot
@@ -211,7 +231,8 @@ def run_backfill(
                     getattr(row, "id", None),
                     exc,
                 )
-                db.rollback()
+                if write:
+                    db.rollback()
                 pending = 0
 
         if write and pending:
@@ -220,6 +241,7 @@ def run_backfill(
         counters["normalization_profile_version"] = profile.get("version")
         counters["normalization_profile_hash"] = profile_hash
         counters["wrote"] = write
+        counters["dry_run"] = not write
         return counters
     finally:
         db.close()
@@ -229,16 +251,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Backfill purchasability_preview_v2")
     parser.add_argument("--date-from", type=str, default=None)
     parser.add_argument("--date-to", type=str, default=None)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--dry-run",
         action="store_true",
-        default=True,
-        help="Modalità predefinita: nessuna scrittura",
+        help="Modalità dry-run: nessuna scrittura (default se nessun flag)",
     )
-    parser.add_argument(
+    mode.add_argument(
         "--apply",
         action="store_true",
-        default=False,
         help="Abilita scrittura (richiede --confirm)",
     )
     parser.add_argument(
@@ -251,15 +272,21 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
+    # Default: dry-run quando nessun flag modalità è passato
     dry_run = True
-    if args.apply and args.confirm == CONFIRM_TOKEN:
+    apply = bool(args.apply)
+    if apply:
+        if args.confirm != CONFIRM_TOKEN:
+            raise SystemExit(
+                f"--apply richiede --confirm {CONFIRM_TOKEN}. Modalità scrittura annullata."
+            )
         dry_run = False
 
     report = run_backfill(
         date_from=_parse_date(args.date_from),
         date_to=_parse_date(args.date_to),
         dry_run=dry_run,
-        apply=args.apply,
+        apply=apply,
         confirm=args.confirm,
     )
     print(json.dumps(report, indent=2, default=str))

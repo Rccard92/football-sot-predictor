@@ -19,15 +19,18 @@ Versione parallela; **non** sostituisce la validation baseline v1.1.
 | Candidate | `cecchino_purchasability_v2_candidate_1` / `decision_quality_v2` |
 | Contract / features / snapshot | `cecchino_purchasability_v2_contract` / `…_features_v1` / `…_snapshot_v2` |
 | Persistenza | `cecchino_output_json.purchasability_preview_v2` |
-| Norm profile | `cecchino_purchasability_v2_norm_profile_2026_07_26_v1`, cutoff `2026-07-26` |
+| Norm profile | `cecchino_purchasability_v2_norm_profile_2026_07_26_v2`, cutoff `2026-07-26` |
+| Selezione storica | solo `eligibility_status=eligible` + KPI rows + timestamp verificato + `snapshot_at < kickoff` |
+| Non ammessi | `updated_at` come prova pre-match; post-kickoff; non eligible; KPI mancanti |
 | Metodo | P95 nearest-rank su positivi/negativi; normalizzazione zero-anchored 0–100 |
 | Scope | OUTCOMES, GOALS_FT_2_5, GOALS_HT_1_5 (+ sottogruppi probabilità) |
 | Fallback | scope ≥15 → global → provisional versioned |
 | Gruppi | Esiti (6) / Goal FT / Goal HT; probabilità 1X2 e DC separate |
 | Opposti | HOME↔AWAY, DRAW→max fair HOME/AWAY, DC e OU mappati |
-| Finale | √(F1×F2), ROUND_HALF_UP; gate valore positivo → score 0 |
-| Backfill | `python -m app.jobs.backfill_purchasability_v2` (manuale, dry-run default) |
-| Cecchino Lab | escluso dalla costruzione del profilo |
+| Finale | √(F1×F2), ROUND_HALF_UP; gate valore positivo → score 0 (formula invariata) |
+| Backfill | `python -m app.jobs.backfill_purchasability_v2` (manuale; dry-run default non scrivente; salta non verificabili) |
+| History guard | `evaluate_purchasability_v2_historical_source` (condivisa profilo + backfill) |
+| Cecchino Lab | escluso dalla costruzione del profilo; file Lab intatti |
 
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 

@@ -80,10 +80,11 @@ flowchart TD
 
 ## Acquistabilità v2 — backfill manuale (2026-07-27)
 
-1. Default dry-run: `python -m app.jobs.backfill_purchasability_v2 --date-from … --date-to …`
-2. Scrittura: `--apply --confirm WRITE_PURCHASABILITY_V2` (solo `purchasability_preview_v2`).
-3. Non ricostruire KPI/Cecchino/Segnali; non modificare v1.1; profilo normalizzazione costruito una sola volta.
-4. Non schedulare: comando manuale.
+1. Default dry-run: `python -m app.jobs.backfill_purchasability_v2 --date-from … --date-to …` (nessuna scrittura; `--dry-run` e `--apply` mutuamente esclusivi).
+2. Scrittura: `--apply --confirm WRITE_PURCHASABILITY_V2` (solo `purchasability_preview_v2`). `run_backfill(dry_run=True, …)` non scrive mai.
+3. Solo fixture `eligible` con timestamp snapshot verificato e `snapshot_at < kickoff`; salta non verificabili (`updated_at` non promosso).
+4. Non ricostruire KPI/Cecchino/Segnali; non modificare v1.1; profilo normalizzazione `…_v2` costruito una sola volta.
+5. Non schedulare: comando manuale. Non eseguire `--apply` in produzione senza decisione esplicita.
 
 ## Hotfix — isolamento Readiness post-scan (2026-07-21)
 

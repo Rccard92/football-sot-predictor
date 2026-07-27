@@ -18,7 +18,7 @@ PURCHASABILITY_DECISION_V2_CANDIDATE_VERSION = (
 PURCHASABILITY_DECISION_V2_CANDIDATE_NAME = "decision_quality_v2"
 PURCHASABILITY_V2_SNAPSHOT_VERSION = "cecchino_purchasability_snapshot_v2"
 PURCHASABILITY_V2_NORM_PROFILE_VERSION = (
-    "cecchino_purchasability_v2_norm_profile_2026_07_26_v1"
+    "cecchino_purchasability_v2_norm_profile_2026_07_26_v2"
 )
 PURCHASABILITY_V2_NORM_PROFILE_CUTOFF = "2026-07-26"
 PURCHASABILITY_V2_REGISTRY_STATUS = "active_parallel_preview"

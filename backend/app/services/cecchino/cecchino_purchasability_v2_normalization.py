@@ -344,12 +344,26 @@ def _caps_from_bucket(bucket: dict[str, list[float]]) -> dict[str, Any]:
     }
 
 
+def _empty_history_diagnostics() -> dict[str, int]:
+    return {
+        "rows_seen": 0,
+        "eligible_rows_seen": 0,
+        "accepted_pre_match_rows": 0,
+        "rejected_snapshot_unverified": 0,
+        "rejected_snapshot_missing": 0,
+        "rejected_kickoff_missing": 0,
+        "rejected_not_before_kickoff": 0,
+        "rejected_kpi_missing": 0,
+    }
+
+
 def finalize_profile_from_accumulator(
     acc: dict[str, Any],
     *,
     version: str = PURCHASABILITY_V2_NORM_PROFILE_VERSION,
     cutoff: str = PURCHASABILITY_V2_NORM_PROFILE_CUTOFF,
     fixtures_seen: int = 0,
+    diagnostics: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     components: dict[str, Any] = {}
     for comp in NORM_COMPONENTS:
@@ -366,6 +380,12 @@ def finalize_profile_from_accumulator(
             "provisional_cap": PROVISIONAL_CAPS[comp],
         }
 
+    diag = dict(_empty_history_diagnostics())
+    if isinstance(diagnostics, dict):
+        for key in diag:
+            if key in diagnostics:
+                diag[key] = int(diagnostics[key] or 0)
+
     profile = {
         "version": version,
         "cutoff": cutoff,
@@ -376,6 +396,7 @@ def finalize_profile_from_accumulator(
         "source": "cecchino_today_pre_match_kpi_panel",
         "excludes_post_match": True,
         "excludes_cecchino_lab": True,
+        **diag,
     }
     profile["hash"] = compute_profile_hash(profile)
     profile["summary"] = {
@@ -384,6 +405,7 @@ def finalize_profile_from_accumulator(
         "fixtures_seen": fixtures_seen,
         "components": list(NORM_COMPONENTS),
         "hash": profile["hash"],
+        **diag,
     }
     return make_json_safe(profile)
 
@@ -541,46 +563,62 @@ def _parse_cutoff(cutoff: str) -> date:
     return date.fromisoformat(cutoff)
 
 
-def build_normalization_profile_from_db(
-    db: Any,
+def build_normalization_profile_from_rows(
+    rows: list[Any],
     *,
     version: str = PURCHASABILITY_V2_NORM_PROFILE_VERSION,
     cutoff: str = PURCHASABILITY_V2_NORM_PROFILE_CUTOFF,
-    use_cache: bool = True,
 ) -> dict[str, Any]:
-    """Costruisce profilo da Cecchino Today pre-match fino al cutoff incluso."""
-    cache_key = f"{version}::{cutoff}"
-    if use_cache:
-        with _cache_lock:
-            cached = _profile_cache.get(cache_key)
-            if cached is not None:
-                return cached
-
-    from app.models.cecchino_today_fixture import CecchinoTodayFixture
+    """Core profilo da righe già caricate — applica la history guard su ogni riga."""
+    from app.models.cecchino_today_fixture import ELIGIBILITY_ELIGIBLE
     from app.services.cecchino.cecchino_purchasability_fair_book import (
         resolve_fair_book_for_panel_rows,
     )
     from app.services.cecchino.cecchino_purchasability_features import (
         build_model_context_probability_map,
     )
-    from sqlalchemy import select
+    from app.services.cecchino.cecchino_purchasability_v2_history_guard import (
+        REASON_KICKOFF_MISSING,
+        REASON_KPI_PANEL_MISSING,
+        REASON_KPI_ROWS_MISSING,
+        REASON_SNAPSHOT_NOT_BEFORE_KICKOFF,
+        REASON_SNAPSHOT_TIMESTAMP_MISSING,
+        REASON_SNAPSHOT_TIMESTAMP_UNVERIFIED,
+        evaluate_purchasability_v2_historical_source,
+    )
 
-    cutoff_date = _parse_cutoff(cutoff)
     acc = _new_accumulator()
+    diag = _empty_history_diagnostics()
     fixtures_seen = 0
 
-    stmt = select(CecchinoTodayFixture).where(
-        CecchinoTodayFixture.scan_date <= cutoff_date,
-        CecchinoTodayFixture.kpi_panel_json.is_not(None),
-    )
-    rows = db.scalars(stmt).all()
     for row in rows:
+        diag["rows_seen"] += 1
+        if getattr(row, "eligibility_status", None) == ELIGIBILITY_ELIGIBLE:
+            diag["eligible_rows_seen"] += 1
+
+        guard = evaluate_purchasability_v2_historical_source(row)
+        if not guard.get("accepted"):
+            reason = guard.get("reason_code")
+            if reason in (REASON_KPI_PANEL_MISSING, REASON_KPI_ROWS_MISSING):
+                diag["rejected_kpi_missing"] += 1
+            elif reason == REASON_SNAPSHOT_TIMESTAMP_UNVERIFIED:
+                diag["rejected_snapshot_unverified"] += 1
+            elif reason == REASON_SNAPSHOT_TIMESTAMP_MISSING:
+                diag["rejected_snapshot_missing"] += 1
+            elif reason == REASON_KICKOFF_MISSING:
+                diag["rejected_kickoff_missing"] += 1
+            elif reason == REASON_SNAPSHOT_NOT_BEFORE_KICKOFF:
+                diag["rejected_not_before_kickoff"] += 1
+            continue
+
+        diag["accepted_pre_match_rows"] += 1
         panel = row.kpi_panel_json
         if not isinstance(panel, dict):
+            diag["rejected_kpi_missing"] += 1
             continue
-        # Solo eligible / con panel rows
         panel_rows = _panel_rows(panel)
         if not panel_rows:
+            diag["rejected_kpi_missing"] += 1
             continue
         try:
             fair_by = resolve_fair_book_for_panel_rows(panel_rows)
@@ -588,7 +626,6 @@ def build_normalization_profile_from_db(
         except Exception:
             fair_by = {}
             model_by = {}
-        # model_by può essere dict market -> meta
         model_probs: dict[str, float | None] = {}
         if isinstance(model_by, dict):
             for mk, meta in model_by.items():
@@ -605,11 +642,45 @@ def build_normalization_profile_from_db(
             _ingest_observations(acc, obs)
             fixtures_seen += 1
 
-    profile = finalize_profile_from_accumulator(
+    return finalize_profile_from_accumulator(
         acc,
         version=version,
         cutoff=cutoff,
         fixtures_seen=fixtures_seen,
+        diagnostics=diag,
+    )
+
+
+def build_normalization_profile_from_db(
+    db: Any,
+    *,
+    version: str = PURCHASABILITY_V2_NORM_PROFILE_VERSION,
+    cutoff: str = PURCHASABILITY_V2_NORM_PROFILE_CUTOFF,
+    use_cache: bool = True,
+) -> dict[str, Any]:
+    """Costruisce profilo da Cecchino Today pre-match fino al cutoff incluso."""
+    cache_key = f"{version}::{cutoff}"
+    if use_cache:
+        with _cache_lock:
+            cached = _profile_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+    from app.models.cecchino_today_fixture import (
+        ELIGIBILITY_ELIGIBLE,
+        CecchinoTodayFixture,
+    )
+    from sqlalchemy import select
+
+    cutoff_date = _parse_cutoff(cutoff)
+    stmt = select(CecchinoTodayFixture).where(
+        CecchinoTodayFixture.scan_date <= cutoff_date,
+        CecchinoTodayFixture.eligibility_status == ELIGIBILITY_ELIGIBLE,
+        CecchinoTodayFixture.kpi_panel_json.is_not(None),
+    )
+    rows = list(db.scalars(stmt).all())
+    profile = build_normalization_profile_from_rows(
+        rows, version=version, cutoff=cutoff
     )
     if use_cache:
         with _cache_lock:
