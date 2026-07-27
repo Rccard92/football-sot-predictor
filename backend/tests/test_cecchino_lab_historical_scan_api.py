@@ -270,7 +270,7 @@ def test_ai_report_zip_structure():
     db = MagicMock()
     db.get.return_value = run
     db.scalars.return_value.all.side_effect = [[eligible, excluded], [market]]
-    filename, data = build_ai_report_zip_bytes(db, 7)
+    filename, data = build_ai_report_zip_bytes(db, 7, mode="full_archive")
     assert "pilot" in filename
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
@@ -414,7 +414,7 @@ def test_ai_report_structural_summary_shapes(balance_v5_json, expected_class, ex
     db = MagicMock()
     db.get.return_value = run
     db.scalars.return_value.all.side_effect = [[snap], [market]]
-    filename, data = build_ai_report_zip_bytes(db, 1)
+    filename, data = build_ai_report_zip_bytes(db, 1, mode="full_archive")
     assert filename.endswith(".zip")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
@@ -511,7 +511,7 @@ def test_ai_report_1582_markets_excludes_non_eligible():
         eligible_snaps + excluded_snaps,
         markets,  # only eligible market rows persisted in real run
     ]
-    _filename, data = build_ai_report_zip_bytes(db, 1)
+    _filename, data = build_ai_report_zip_bytes(db, 1, mode="full_archive")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         import json
 

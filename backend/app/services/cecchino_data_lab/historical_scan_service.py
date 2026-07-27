@@ -29,14 +29,19 @@ from app.models.cecchino_lab_historical_scan_run import (
     CecchinoLabHistoricalScanRun,
 )
 from app.models.cecchino_lab_match import CecchinoLabMatch
+from app.services.cecchino.cecchino_constants import CECCHINO_WEIGHT_MODEL_KEYS
 from app.services.cecchino_data_lab.constants import (
     HISTORICAL_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION,
+    HISTORICAL_MODULE_READY_PER_COMPETITION,
     HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP,
     HISTORICAL_PILOT_STRATEGY_MAX_MATCHES,
+    HISTORICAL_PILOT_STRATEGY_MODULE_READY,
     HISTORICAL_QUOTE_POLICY_VERSION,
     HISTORICAL_SCAN_CONFIRM_TOKEN,
     HISTORICAL_SCAN_VERSION,
     PARSER_VERSION,
+    PILOT_SAMPLE_ROLE_ANALYSIS,
+    PILOT_SAMPLE_ROLE_WARMUP,
     SCAN_BATCH_SIZE,
 )
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
@@ -145,6 +150,7 @@ def _run_scope_meta(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
         "max_matches": policy.get("max_matches"),
         "pilot_strategy": policy.get("pilot_strategy"),
         "eligible_per_competition": policy.get("eligible_per_competition"),
+        "module_ready_per_competition": policy.get("module_ready_per_competition"),
         "module_policy": policy,
     }
 
@@ -187,6 +193,7 @@ def run_to_dict(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
         "max_matches": meta["max_matches"],
         "pilot_strategy": meta["pilot_strategy"],
         "eligible_per_competition": meta["eligible_per_competition"],
+        "module_ready_per_competition": meta["module_ready_per_competition"],
         "module_policy": meta["module_policy"],
     }
 
@@ -243,6 +250,133 @@ def _normalize_eligible_per_competition(value: Any) -> int:
     return n
 
 
+def _normalize_module_ready_per_competition(value: Any) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as exc:
+        raise CecchinoLabImportError(
+            "invalid_module_ready_per_competition",
+            "module_ready_per_competition deve essere un intero positivo",
+            status_code=400,
+        ) from exc
+    if n <= 0:
+        raise CecchinoLabImportError(
+            "invalid_module_ready_per_competition",
+            "module_ready_per_competition deve essere un intero positivo",
+            status_code=400,
+        )
+    return n
+
+
+def _snapshot_is_module_ready(snap: CecchinoLabHistoricalMatchSnapshot) -> bool:
+    if snap.historical_eligibility_status != ELIGIBLE_CORE:
+        return False
+    gi = (
+        snap.goal_intensity_compatibility_json
+        if isinstance(snap.goal_intensity_compatibility_json, dict)
+        else {}
+    )
+    purch = (
+        snap.purchasability_compatibility_json
+        if isinstance(snap.purchasability_compatibility_json, dict)
+        else {}
+    )
+    if gi.get("execution_status") != "computed":
+        return False
+    if purch.get("execution_status") != "computed":
+        return False
+    signals = snap.signals_json if isinstance(snap.signals_json, dict) else {}
+    models = signals.get("models") if isinstance(signals.get("models"), dict) else {}
+    for key in CECCHINO_WEIGHT_MODEL_KEYS:
+        if key not in models:
+            return False
+    return True
+
+
+def _pilot_sample_role_of(snap: CecchinoLabHistoricalMatchSnapshot) -> str | None:
+    ma = snap.module_availability_json if isinstance(snap.module_availability_json, dict) else {}
+    role = ma.get("pilot_sample_role")
+    return str(role) if role else None
+
+
+def _set_pilot_sample_role(snap: CecchinoLabHistoricalMatchSnapshot, role: str) -> None:
+    ma = dict(snap.module_availability_json or {})
+    ma["pilot_sample_role"] = role
+    snap.module_availability_json = ma
+
+
+def _rating_band_for_summary(rating: Any) -> str | None:
+    if rating is None:
+        return None
+    try:
+        r = float(rating)
+    except (TypeError, ValueError):
+        return None
+    if r < 50:
+        return "lt_50"
+    if r < 60:
+        return "50-59"
+    if r < 70:
+        return "60-69"
+    if r < 80:
+        return "70-79"
+    return "80+"
+
+
+def _purch_band_for_summary(score: Any) -> str | None:
+    if score is None:
+        return None
+    try:
+        s = float(score)
+    except (TypeError, ValueError):
+        return None
+    if s < 20:
+        return "0-19"
+    if s < 40:
+        return "20-39"
+    if s < 60:
+        return "40-59"
+    if s < 80:
+        return "60-79"
+    return "80-100"
+
+
+def _empty_profit_bucket() -> dict[str, Any]:
+    return {
+        "sample_size": 0,
+        "real_quote_count": 0,
+        "derived_quote_count": 0,
+        "real_profit_1u": 0.0,
+        "synthetic_profit_1u": 0.0,
+    }
+
+
+def _finalize_profit_bucket(b: dict[str, Any]) -> dict[str, Any]:
+    real_n = int(b["real_quote_count"])
+    der_n = int(b["derived_quote_count"])
+    real_p = round(float(b["real_profit_1u"]), 4)
+    synth_p = round(float(b["synthetic_profit_1u"]), 4)
+    return {
+        "sample_size": int(b["sample_size"]),
+        "real_quote_count": real_n,
+        "derived_quote_count": der_n,
+        "real_profit_1u": real_p,
+        "synthetic_profit_1u": synth_p,
+        "real_roi_pct": round(100.0 * real_p / real_n, 2) if real_n else None,
+        "synthetic_roi_pct": round(100.0 * synth_p / der_n, 2) if der_n else None,
+    }
+
+
+def _bump_profit_bucket(b: dict[str, Any], *, real: float | None, synthetic: float | None) -> None:
+    b["sample_size"] += 1
+    if real is not None:
+        b["real_quote_count"] += 1
+        b["real_profit_1u"] += float(real)
+    if synthetic is not None:
+        b["derived_quote_count"] += 1
+        b["synthetic_profit_1u"] += float(synthetic)
+
+
 def start_historical_scan(
     db: Session,
     *,
@@ -251,6 +385,7 @@ def start_historical_scan(
     max_matches: int | None = None,
     pilot_strategy: str | None = None,
     eligible_per_competition: int | None = None,
+    module_ready_per_competition: int | None = None,
     background: bool = True,
 ) -> dict[str, Any]:
     if confirm != HISTORICAL_SCAN_CONFIRM_TOKEN:
@@ -264,6 +399,7 @@ def start_historical_scan(
     if strategy and strategy not in (
         HISTORICAL_PILOT_STRATEGY_MAX_MATCHES,
         HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP,
+        HISTORICAL_PILOT_STRATEGY_MODULE_READY,
     ):
         raise CecchinoLabImportError(
             "invalid_pilot_strategy",
@@ -273,11 +409,19 @@ def start_historical_scan(
 
     normalized_max = _normalize_max_matches(max_matches)
     per_comp = None
+    module_ready_per = None
     if strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
         per_comp = _normalize_eligible_per_competition(
             eligible_per_competition
             if eligible_per_competition is not None
             else HISTORICAL_BALANCED_PILOT_ELIGIBLE_PER_COMPETITION
+        )
+        normalized_max = None
+    elif strategy == HISTORICAL_PILOT_STRATEGY_MODULE_READY:
+        module_ready_per = _normalize_module_ready_per_competition(
+            module_ready_per_competition
+            if module_ready_per_competition is not None
+            else HISTORICAL_MODULE_READY_PER_COMPETITION
         )
         normalized_max = None
     elif normalized_max is not None and not strategy:
@@ -341,6 +485,10 @@ def start_historical_scan(
         run_scope = "balanced_pilot"
         matches_total = int(per_comp or 0) * max(n_comp, 1)
         is_partial = True
+    elif strategy == HISTORICAL_PILOT_STRATEGY_MODULE_READY:
+        run_scope = "module_ready_pilot"
+        matches_total = int(module_ready_per or 0) * max(n_comp, 1)
+        is_partial = True
     elif normalized_max is not None:
         run_scope = "pilot"
         matches_total = min(season_match_count, normalized_max)
@@ -356,6 +504,12 @@ def start_historical_scan(
             "source_revision_unknown_on_pilot: revisione codice sconosciuta; "
             "il run pilota è consentito ma la riproducibilità è limitata"
         )
+
+    eligible_target_total = None
+    if strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
+        eligible_target_total = int(per_comp) * n_comp
+    elif strategy == HISTORICAL_PILOT_STRATEGY_MODULE_READY:
+        eligible_target_total = int(module_ready_per) * n_comp
 
     run = CecchinoLabHistoricalScanRun(
         season_label=season_label,
@@ -376,16 +530,13 @@ def start_historical_scan(
             "max_matches": normalized_max,
             "pilot_strategy": strategy,
             "eligible_per_competition": per_comp,
+            "module_ready_per_competition": module_ready_per,
             "is_partial_run": is_partial,
             "not_full_season_report": is_partial,
             "run_scope": run_scope,
             "season_matches_available": season_match_count,
             "competitions_total": n_comp,
-            "eligible_target_total": (
-                int(per_comp) * n_comp
-                if strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
-                else None
-            ),
+            "eligible_target_total": eligible_target_total,
             "revision_warnings": policy_warnings,
             "note": (
                 "Run parziale: non confondere con report stagione completa"
@@ -577,10 +728,85 @@ def execute_historical_scan_run(run_id: int) -> None:
             eligible_per_comp = int(eligible_per_comp) if eligible_per_comp is not None else None
         except (TypeError, ValueError):
             eligible_per_comp = None
+        module_ready_per = policy.get("module_ready_per_competition")
+        try:
+            module_ready_per = int(module_ready_per) if module_ready_per is not None else None
+        except (TypeError, ValueError):
+            module_ready_per = None
 
+        is_balanced = pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+        is_module_ready = pilot_strategy == HISTORICAL_PILOT_STRATEGY_MODULE_READY
+        competitions_total = len(competitions)
         competitions_completed = 0
+        module_ready_collected = 0
+        warmup_processed = 0
+        warmup_eligible_core = 0
         batch_count = 0
         stop_for_pilot = False
+
+        def _write_progress(
+            *,
+            current_comp: str | None,
+            eligible_in_comp: int,
+            module_ready_in_comp: int,
+            comps_done: int,
+        ) -> dict[str, Any]:
+            if is_module_ready and module_ready_per:
+                eligible_target = int(module_ready_per) * competitions_total
+                eligible_collected = module_ready_collected
+            elif is_balanced and eligible_per_comp:
+                eligible_target = int(eligible_per_comp) * competitions_total
+                eligible_collected = int(run.matches_eligible_core or 0)
+            else:
+                eligible_target = int(run.matches_total or 0)
+                eligible_collected = int(run.matches_eligible_core or 0)
+            detail = {
+                "competitions_completed": comps_done,
+                "competitions_total": competitions_total,
+                "eligible_collected": eligible_collected,
+                "eligible_target": eligible_target,
+                "matches_processed": int(run.matches_processed or 0),
+                "matches_excluded": int(run.matches_excluded or 0),
+                "matches_error": int(run.matches_error or 0),
+                "current_competition": current_comp,
+                "eligible_in_current_competition": (
+                    None if current_comp is None else eligible_in_comp
+                ),
+                "eligible_per_competition_target": eligible_per_comp,
+                "module_ready_per_competition_target": module_ready_per,
+                "module_ready_collected": module_ready_collected,
+                "module_ready_target": (
+                    int(module_ready_per) * competitions_total if module_ready_per else None
+                ),
+                "module_ready_in_current_competition": (
+                    None if current_comp is None else module_ready_in_comp
+                ),
+                "warmup_processed": warmup_processed,
+                "warmup_eligible_core": warmup_eligible_core,
+            }
+            pol = dict(run.module_policy_json or {})
+            pol["progress_detail"] = detail
+            run.module_policy_json = pol
+            return detail
+
+        # Resume counters for module-ready
+        if is_module_ready:
+            existing_snaps = list(
+                db.scalars(
+                    select(CecchinoLabHistoricalMatchSnapshot).where(
+                        CecchinoLabHistoricalMatchSnapshot.run_id == run_id
+                    )
+                ).all()
+            )
+            for s in existing_snaps:
+                role = _pilot_sample_role_of(s)
+                if role == PILOT_SAMPLE_ROLE_ANALYSIS:
+                    module_ready_collected += 1
+                elif role == PILOT_SAMPLE_ROLE_WARMUP:
+                    warmup_processed += 1
+                    if s.historical_eligibility_status == ELIGIBLE_CORE:
+                        warmup_eligible_core += 1
+
         for comp in competitions:
             if stop_for_pilot or _is_cancelled(db, run_id):
                 break
@@ -598,33 +824,44 @@ def execute_historical_scan_run(run_id: int) -> None:
             )
             proxy_by_id = {int(p.id): p for p in proxies}
 
-            eligible_in_comp = 0
-            # Conta eligible già presenti per resume
-            for sid in done_ids:
-                # lazy: ricalcolo da snapshot per questo campionato
-                pass
-            existing_eligible_comp = db.scalars(
-                select(CecchinoLabHistoricalMatchSnapshot.id).where(
-                    CecchinoLabHistoricalMatchSnapshot.run_id == run_id,
-                    CecchinoLabHistoricalMatchSnapshot.competition_name == comp,
-                    CecchinoLabHistoricalMatchSnapshot.historical_eligibility_status
-                    == ELIGIBLE_CORE,
-                )
-            ).all()
-            eligible_in_comp = len(list(existing_eligible_comp))
+            existing_comp_snaps = list(
+                db.scalars(
+                    select(CecchinoLabHistoricalMatchSnapshot).where(
+                        CecchinoLabHistoricalMatchSnapshot.run_id == run_id,
+                        CecchinoLabHistoricalMatchSnapshot.competition_name == comp,
+                    )
+                ).all()
+            )
+            eligible_in_comp = sum(
+                1
+                for s in existing_comp_snaps
+                if s.historical_eligibility_status == ELIGIBLE_CORE
+            )
+            module_ready_in_comp = sum(
+                1
+                for s in existing_comp_snaps
+                if _pilot_sample_role_of(s) == PILOT_SAMPLE_ROLE_ANALYSIS
+            )
 
             for order_idx, m in enumerate(matches):
                 if int(m.id) in done_ids:
                     continue
                 if (
-                    pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+                    is_balanced
                     and eligible_per_comp is not None
                     and eligible_in_comp >= eligible_per_comp
                 ):
                     break
                 if (
+                    is_module_ready
+                    and module_ready_per is not None
+                    and module_ready_in_comp >= module_ready_per
+                ):
+                    break
+                if (
                     max_matches_cap is not None
-                    and pilot_strategy != HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
+                    and not is_balanced
+                    and not is_module_ready
                     and int(run.matches_processed or 0) >= max_matches_cap
                 ):
                     stop_for_pilot = True
@@ -643,7 +880,6 @@ def execute_historical_scan_run(run_id: int) -> None:
                         chronological_order=order_idx,
                     )
                     done_ids.add(int(m.id))
-                    # aggiorna eligible_in_comp se l'ultimo snapshot è eligible
                     last = db.scalars(
                         select(CecchinoLabHistoricalMatchSnapshot)
                         .where(
@@ -654,6 +890,20 @@ def execute_historical_scan_run(run_id: int) -> None:
                     ).first()
                     if last and last.historical_eligibility_status == ELIGIBLE_CORE:
                         eligible_in_comp += 1
+                    if last and is_module_ready:
+                        if (
+                            _snapshot_is_module_ready(last)
+                            and module_ready_per is not None
+                            and module_ready_in_comp < module_ready_per
+                        ):
+                            _set_pilot_sample_role(last, PILOT_SAMPLE_ROLE_ANALYSIS)
+                            module_ready_in_comp += 1
+                            module_ready_collected += 1
+                        else:
+                            _set_pilot_sample_role(last, PILOT_SAMPLE_ROLE_WARMUP)
+                            warmup_processed += 1
+                            if last.historical_eligibility_status == ELIGIBLE_CORE:
+                                warmup_eligible_core += 1
                 except Exception as exc:
                     logger.exception("historical scan match error run=%s match=%s", run_id, m.id)
                     _persist_error_snapshot(
@@ -666,44 +916,31 @@ def execute_historical_scan_run(run_id: int) -> None:
                         error=exc,
                     )
                     run.matches_error = int(run.matches_error or 0) + 1
+                    if is_module_ready:
+                        # error snapshot may not have role; count as warmup diagnostic
+                        warmup_processed += 1
 
                 run.matches_processed = int(run.matches_processed or 0) + 1
                 run.current_match_id = int(m.id)
                 run.current_dataset_id = int(m.dataset_id)
                 run.current_competition = comp
 
-                progress_detail = {
-                    "competitions_completed": competitions_completed,
-                    "competitions_total": len(competitions),
-                    "eligible_collected": int(run.matches_eligible_core or 0),
-                    "eligible_target": (
-                        int(eligible_per_comp) * len(competitions)
-                        if pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
-                        and eligible_per_comp
-                        else int(run.matches_total or 0)
-                    ),
-                    "matches_processed": int(run.matches_processed or 0),
-                    "matches_excluded": int(run.matches_excluded or 0),
-                    "matches_error": int(run.matches_error or 0),
-                    "current_competition": comp,
-                    "eligible_in_current_competition": eligible_in_comp,
-                    "eligible_per_competition_target": eligible_per_comp,
-                }
-                pol = dict(run.module_policy_json or {})
-                pol["progress_detail"] = progress_detail
-                run.module_policy_json = pol
+                _write_progress(
+                    current_comp=comp,
+                    eligible_in_comp=eligible_in_comp,
+                    module_ready_in_comp=module_ready_in_comp,
+                    comps_done=competitions_completed,
+                )
 
-                if pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
+                if is_balanced or is_module_ready:
                     target_elig = max(int(run.matches_total or 0), 1)
+                    collected = (
+                        module_ready_collected
+                        if is_module_ready
+                        else int(run.matches_eligible_core or 0)
+                    )
                     run.progress_pct = Decimal(
-                        str(
-                            round(
-                                100.0
-                                * min(int(run.matches_eligible_core or 0), target_elig)
-                                / target_elig,
-                                1,
-                            )
-                        )
+                        str(round(100.0 * min(collected, target_elig) / target_elig, 1))
                     )
                 else:
                     total = max(int(run.matches_total or 0), 1)
@@ -724,14 +961,27 @@ def execute_historical_scan_run(run_id: int) -> None:
                     except (TypeError, ValueError):
                         max_matches_cap = None
 
-            if (
-                pilot_strategy == HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP
-                and eligible_per_comp is not None
-                and eligible_in_comp >= eligible_per_comp
+            competition_done = False
+            if is_balanced and eligible_per_comp is not None and eligible_in_comp >= eligible_per_comp:
+                competition_done = True
+            elif (
+                is_module_ready
+                and module_ready_per is not None
+                and module_ready_in_comp >= module_ready_per
             ):
+                competition_done = True
+            elif not is_balanced and not is_module_ready:
+                competition_done = True
+
+            if competition_done:
                 competitions_completed += 1
-            elif pilot_strategy != HISTORICAL_PILOT_STRATEGY_ELIGIBLE_PER_COMP:
-                competitions_completed += 1
+                _write_progress(
+                    current_comp=None,
+                    eligible_in_comp=0,
+                    module_ready_in_comp=0,
+                    comps_done=competitions_completed,
+                )
+                run.current_competition = None
 
             db.commit()
 
@@ -739,6 +989,25 @@ def execute_historical_scan_run(run_id: int) -> None:
         if run.cancel_requested or run.status == STATUS_CANCELLED:
             run.status = STATUS_CANCELLED
         else:
+            # Finalizzazione progresso (evita off-by-one sull'ultimo campionato)
+            final_detail = _write_progress(
+                current_comp=None,
+                eligible_in_comp=0,
+                module_ready_in_comp=0,
+                comps_done=competitions_total,
+            )
+            if is_balanced or is_module_ready:
+                final_detail["competitions_completed"] = competitions_total
+                if is_module_ready and module_ready_per:
+                    final_detail["module_ready_collected"] = module_ready_collected
+                    final_detail["eligible_collected"] = module_ready_collected
+                elif is_balanced:
+                    final_detail["eligible_collected"] = int(run.matches_eligible_core or 0)
+                pol = dict(run.module_policy_json or {})
+                pol["progress_detail"] = final_detail
+                run.module_policy_json = pol
+            run.current_competition = None
+
             summary = _build_run_summary(db, run_id)
             policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
             summary["run_scope"] = policy.get("run_scope") or "full"
@@ -747,6 +1016,7 @@ def execute_historical_scan_run(run_id: int) -> None:
             summary["max_matches"] = policy.get("max_matches")
             summary["pilot_strategy"] = policy.get("pilot_strategy")
             summary["eligible_per_competition"] = policy.get("eligible_per_competition")
+            summary["module_ready_per_competition"] = policy.get("module_ready_per_competition")
             summary["progress_detail"] = policy.get("progress_detail")
             summary["source_git_commit"] = run.source_git_commit
             summary["source_git_commit_source"] = getattr(run, "source_git_commit_source", None)
@@ -1098,10 +1368,30 @@ def _build_run_summary(db: Session, run_id: int) -> dict[str, Any]:
         ).all()
     )
     by_elig: dict[str, int] = {}
+    by_role: dict[str, int] = {}
     for s in snaps:
         by_elig[s.historical_eligibility_status] = (
             by_elig.get(s.historical_eligibility_status, 0) + 1
         )
+        role = _pilot_sample_role_of(s) or "unset"
+        by_role[role] = by_role.get(role, 0) + 1
+
+    run = db.get(CecchinoLabHistoricalScanRun, run_id)
+    policy = (
+        run.module_policy_json
+        if run and isinstance(run.module_policy_json, dict)
+        else {}
+    )
+    is_module_ready = policy.get("pilot_strategy") == HISTORICAL_PILOT_STRATEGY_MODULE_READY
+
+    analysis_snap_ids: set[int] = set()
+    for s in snaps:
+        if is_module_ready:
+            if _pilot_sample_role_of(s) == PILOT_SAMPLE_ROLE_ANALYSIS:
+                analysis_snap_ids.add(int(s.id))
+        elif s.historical_eligibility_status == ELIGIBLE_CORE:
+            analysis_snap_ids.add(int(s.id))
+
     markets = list(
         db.scalars(
             select(CecchinoLabHistoricalMarketResult).where(
@@ -1109,18 +1399,123 @@ def _build_run_summary(db: Session, run_id: int) -> dict[str, Any]:
             )
         ).all()
     )
-    real_p = sum(float(m.profit_1u_real or 0) for m in markets if m.profit_1u_real is not None)
-    synth_p = sum(
-        float(m.profit_1u_synthetic or 0) for m in markets if m.profit_1u_synthetic is not None
+    analysis_markets = [m for m in markets if int(m.match_snapshot_id) in analysis_snap_ids]
+
+    real_p = sum(
+        float(m.profit_1u_real or 0) for m in analysis_markets if m.profit_1u_real is not None
     )
+    synth_p = sum(
+        float(m.profit_1u_synthetic or 0)
+        for m in analysis_markets
+        if m.profit_1u_synthetic is not None
+    )
+
+    by_market: dict[str, dict[str, Any]] = {}
+    by_rating: dict[str, dict[str, Any]] = {}
+    by_purch: dict[str, dict[str, Any]] = {}
+    by_model: dict[str, dict[str, Any]] = {}
+
+    snap_by_id = {int(s.id): s for s in snaps}
+    for m in analysis_markets:
+        mk = str(m.market_key)
+        if mk not in by_market:
+            by_market[mk] = _empty_profit_bucket()
+        _bump_profit_bucket(
+            by_market[mk],
+            real=float(m.profit_1u_real) if m.profit_1u_real is not None else None,
+            synthetic=(
+                float(m.profit_1u_synthetic) if m.profit_1u_synthetic is not None else None
+            ),
+        )
+        rb = _rating_band_for_summary(m.rating)
+        if rb:
+            if rb not in by_rating:
+                by_rating[rb] = _empty_profit_bucket()
+            _bump_profit_bucket(
+                by_rating[rb],
+                real=float(m.profit_1u_real) if m.profit_1u_real is not None else None,
+                synthetic=(
+                    float(m.profit_1u_synthetic) if m.profit_1u_synthetic is not None else None
+                ),
+            )
+        s = snap_by_id.get(int(m.match_snapshot_id))
+        if s:
+            purch = (
+                s.purchasability_compatibility_json
+                if isinstance(s.purchasability_compatibility_json, dict)
+                else {}
+            )
+            for mk_row in purch.get("markets") or []:
+                if not isinstance(mk_row, dict):
+                    continue
+                if mk_row.get("market_key") != m.market_key:
+                    continue
+                pb = _purch_band_for_summary(mk_row.get("score"))
+                if pb:
+                    if pb not in by_purch:
+                        by_purch[pb] = _empty_profit_bucket()
+                    _bump_profit_bucket(
+                        by_purch[pb],
+                        real=float(m.profit_1u_real) if m.profit_1u_real is not None else None,
+                        synthetic=(
+                            float(m.profit_1u_synthetic)
+                            if m.profit_1u_synthetic is not None
+                            else None
+                        ),
+                    )
+            sigs = s.signals_json if isinstance(s.signals_json, dict) else {}
+            for model_key, mblock in (sigs.get("models") or {}).items():
+                if not isinstance(mblock, dict):
+                    continue
+                for sett in mblock.get("settlements") or []:
+                    if not isinstance(sett, dict):
+                        continue
+                    if sett.get("target_market") != m.market_key:
+                        continue
+                    key = str(model_key)
+                    if key not in by_model:
+                        by_model[key] = _empty_profit_bucket()
+                    _bump_profit_bucket(
+                        by_model[key],
+                        real=(
+                            float(sett["real_profit_1u"])
+                            if sett.get("real_profit_1u") is not None
+                            else None
+                        ),
+                        synthetic=(
+                            float(sett["synthetic_profit_1u"])
+                            if sett.get("synthetic_profit_1u") is not None
+                            else None
+                        ),
+                    )
+
     return {
         "matches": len(snaps),
         "eligibility_counts": by_elig,
         "eligible_core": by_elig.get(ELIGIBLE_CORE, 0),
-        "markets_rows": len(markets),
-        "real_profit_1u": round(real_p, 4),
-        "synthetic_profit_1u": round(synth_p, 4),
-        "note": "ROI reale e sintetico non vanno sommati",
+        "pilot_sample_roles": by_role,
+        "markets_rows": len(analysis_markets),
+        "profit_by_market": {k: _finalize_profit_bucket(v) for k, v in sorted(by_market.items())},
+        "profit_by_model_A_F": {k: _finalize_profit_bucket(v) for k, v in sorted(by_model.items())},
+        "profit_by_rating_band": {
+            k: _finalize_profit_bucket(v) for k, v in sorted(by_rating.items())
+        },
+        "profit_by_purchasability_band": {
+            k: _finalize_profit_bucket(v) for k, v in sorted(by_purch.items())
+        },
+        "technical_sum_across_all_independent_market_rows": {
+            "real_profit_1u": round(real_p, 4),
+            "synthetic_profit_1u": round(synth_p, 4),
+            "not_a_betting_strategy": True,
+            "note": (
+                "Somma tecnica di righe mercato indipendenti (HOME+DRAW+AWAY+OU…); "
+                "non è profitto del Cecchino né una strategia giocabile"
+            ),
+        },
+        "note": (
+            "Nessun totale globale presentato come rendimento del Cecchino. "
+            "Usare profit_by_market / profit_by_model_A_F / fasce."
+        ),
     }
 
 

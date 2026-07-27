@@ -812,8 +812,14 @@ export type HistoricalScanRun = {
     matches_excluded?: number
     matches_error?: number
     current_competition?: string | null
-    eligible_in_current_competition?: number
+    eligible_in_current_competition?: number | null
     eligible_per_competition_target?: number | null
+    module_ready_per_competition_target?: number | null
+    module_ready_collected?: number
+    module_ready_target?: number | null
+    module_ready_in_current_competition?: number | null
+    warmup_processed?: number
+    warmup_eligible_core?: number
   } | null
   preflight?: HistoricalScanPreflight | null
   summary?: Record<string, unknown> | null
@@ -822,12 +828,13 @@ export type HistoricalScanRun = {
   source_git_commit_source?: string | null
   source_revision_status?: string | null
   cancel_requested?: boolean
-  run_scope?: 'pilot' | 'balanced_pilot' | 'full' | string
+  run_scope?: 'pilot' | 'balanced_pilot' | 'module_ready_pilot' | 'full' | string
   is_partial_run?: boolean
   not_full_season_report?: boolean
   max_matches?: number | null
   pilot_strategy?: string | null
   eligible_per_competition?: number | null
+  module_ready_per_competition?: number | null
   module_policy?: Record<string, unknown> | null
 }
 
@@ -839,13 +846,32 @@ export function preflightHistoricalScan(seasonLabel: string): Promise<Historical
 
 export const HISTORICAL_SCAN_PILOT_MAX_MATCHES = 200
 export const HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP = 20
+export const HISTORICAL_SCAN_MODULE_READY_PER_COMP = 10
+
+export type HistoricalReportMode =
+  | 'ai_summary'
+  | 'competition'
+  | 'module'
+  | 'full_archive'
+
+export type HistoricalReportModule =
+  | 'markets'
+  | 'signals'
+  | 'goal_intensity'
+  | 'purchasability'
+  | 'balance'
 
 export function startHistoricalScan(
   seasonLabel: string,
   options?: {
     maxMatches?: number | null
-    pilotStrategy?: 'max_matches' | 'eligible_per_competition' | null
+    pilotStrategy?:
+      | 'max_matches'
+      | 'eligible_per_competition'
+      | 'module_ready_per_competition'
+      | null
     eligiblePerCompetition?: number | null
+    moduleReadyPerCompetition?: number | null
   },
 ): Promise<HistoricalScanRun> {
   const body: Record<string, unknown> = {
@@ -858,6 +884,9 @@ export function startHistoricalScan(
   if (options && 'eligiblePerCompetition' in (options || {})) {
     body.eligible_per_competition = options.eligiblePerCompetition ?? null
   }
+  if (options && 'moduleReadyPerCompetition' in (options || {})) {
+    body.module_ready_per_competition = options.moduleReadyPerCompetition ?? null
+  }
   if (options && 'maxMatches' in options) {
     body.max_matches = options.maxMatches ?? null
   }
@@ -865,6 +894,13 @@ export function startHistoricalScan(
 }
 
 export function historicalScanScopeLabel(run: HistoricalScanRun): string {
+  if (
+    run.run_scope === 'module_ready_pilot' ||
+    run.pilot_strategy === 'module_ready_per_competition'
+  ) {
+    const n = run.module_ready_per_competition ?? HISTORICAL_SCAN_MODULE_READY_PER_COMP
+    return `Pilota moduli maturi (${n}/campionato)`
+  }
   if (run.run_scope === 'balanced_pilot' || run.pilot_strategy === 'eligible_per_competition') {
     const n = run.eligible_per_competition ?? HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP
     return `Pilota bilanciato (${n} eleggibili/campionato)`
@@ -897,9 +933,22 @@ export function getHistoricalScanSummary(runId: number): Promise<Record<string, 
   return requestJson(`/api/cecchino-lab/historical-scans/${runId}/summary`)
 }
 
-export async function downloadHistoricalScanReport(runId: number): Promise<void> {
+export async function downloadHistoricalScanReport(
+  runId: number,
+  options?: {
+    mode?: HistoricalReportMode
+    competition?: string
+    module?: HistoricalReportModule
+  },
+): Promise<void> {
   const base = getApiBase()
-  const res = await fetch(`${base}/api/cecchino-lab/historical-scans/${runId}/report`)
+  const params = new URLSearchParams()
+  params.set('mode', options?.mode ?? 'ai_summary')
+  if (options?.competition) params.set('competition', options.competition)
+  if (options?.module) params.set('module', options.module)
+  const res = await fetch(
+    `${base}/api/cecchino-lab/historical-scans/${runId}/report?${params.toString()}`,
+  )
   if (!res.ok) {
     throw new AdminHttpError(res.status, `Download report fallito (${res.status})`, null)
   }
@@ -911,7 +960,9 @@ export async function downloadHistoricalScanReport(runId: number): Promise<void>
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
+  a.remove()
   URL.revokeObjectURL(url)
 }
 

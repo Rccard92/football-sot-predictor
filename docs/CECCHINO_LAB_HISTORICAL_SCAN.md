@@ -25,13 +25,16 @@
 
 | Modalità | Body | UI |
 |----------|------|-----|
-| **Pilota bilanciato** (consigliato) | `pilot_strategy: "eligible_per_competition"`, `eligible_per_competition: 20` | “Pilota bilanciato — 20 eleggibili per campionato” |
+| **Pilota moduli maturi** (consigliato per validazione) | `pilot_strategy: "module_ready_per_competition"`, `module_ready_per_competition: 10` | “Pilota moduli maturi — 10 per campionato” |
+| Pilota bilanciato (controllo iniziale) | `pilot_strategy: "eligible_per_competition"`, `eligible_per_competition: 20` | “Pilota bilanciato — 20 eleggibili per campionato” |
 | Test tecnico | `max_matches: 200` | “Test tecnico — prime 200 partite” |
 | Completa | `max_matches: null` | “Scansione completa” |
 
+**Pilota moduli maturi:** per ogni campionato, ordine cronologico; le partite precedenti sono warm-up (`pilot_sample_role=warmup`) per costruire storico/ECDF/profilo/A–F. Entra nel campione principale (`analysis`) solo se `eligible_core` + Intensità/Acquistabilità `computed` + modelli A–F + anti-leakage. Target 10 analysis × 16 campionati (max 160). `run_scope=module_ready_pilot`. Il numero di warm-up è data-dependent.
+
 Pilota bilanciato: per ogni campionato, ordine cronologico, registra escluse, si ferma a N `eligible_core`, poi passa al successivo. Target tipico fino a 320 eleggibili; processate totali possono superare il target. `run_scope=balanced_pilot`, `is_partial_run=true`, `not_full_season_report=true`.
 
-Progresso bilanciato: campionati completati / totali, eleggibili raccolte / target, processate, escluse, errori, campionato corrente — **non** un rapporto ambiguo tipo `450/320 processate`.
+Progresso: a completamento `competitions_completed == competitions_total`, `current_competition=null`, `progress_pct=100` (fix off-by-one sull’ultimo campionato). Run #1/#2 già persistiti non vengono riscritti.
 
 Scansione completa con revisione git sconosciuta: **bloccata**. Pilota: permesso + warning in policy/manifest.
 
@@ -88,11 +91,20 @@ Salvati: `source_git_commit`, `source_git_commit_source`, `source_revision_statu
 
 Pesi ufficiali invariati; F ≡ modello corrente. Snapshot legacy (Run #1, matrice flat) restano leggibili.
 
-## Report AI v3
+## Report AI v4 (frammentati)
 
-Vedi `docs/CECCHINO_LAB_AI_REPORT_SCHEMA.md`. File aggiuntivi: `signal_models.jsonl`, `goal_intensity.jsonl`, `purchasability.jsonl`.
+`GET /api/cecchino-lab/historical-scans/{id}/report?mode=...`
 
-Profitto principale per mercato / segnale / modello / fascia / pattern.  
+| Mode | Contenuto |
+|------|-----------|
+| `ai_summary` | Sintesi ChatGPT (consigliata): manifest, report_index, summary, patterns_top, schema — senza JSONL enormi |
+| `competition` | Singolo campionato + matches/purchasability compact |
+| `module` | `markets` \| `signals` \| `goal_intensity` \| `purchasability` \| `balance` |
+| `full_archive` | Archivio tecnico completo — non necessario per la prima analisi ChatGPT |
+
+Generazione progressiva (`SpooledTemporaryFile` + JSONL riga-per-riga). Etichette A–F da `model_meta_for_key` / `get_cecchino_weight_model` (nessun `model_label` null in export).
+
+Profitto in `summary_json` del run: per mercato / modello A–F / fascia rating / fascia Acquistabilità.
 `technical_sum_across_all_independent_market_rows` + `not_a_betting_strategy=true` — non è profitto del Cecchino.
 
 ## Anti-leakage e hash

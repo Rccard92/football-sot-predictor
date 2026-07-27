@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   DEFAULT_HISTORICAL_SEASON,
   HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
+  HISTORICAL_SCAN_MODULE_READY_PER_COMP,
   HISTORICAL_SCAN_PILOT_MAX_MATCHES,
   LAB_SEASON_OPTIONS,
   cancelHistoricalScan,
@@ -15,12 +16,34 @@ import {
   preflightHistoricalScan,
   resumeHistoricalScan,
   startHistoricalScan,
+  type HistoricalReportMode,
+  type HistoricalReportModule,
   type HistoricalScanPreflight,
   type HistoricalScanRun,
 } from '../../lib/cecchinoLabApi'
 
 type Props = { refreshKey: number }
-type ConfirmMode = 'balanced' | 'pilot' | 'full' | null
+type ConfirmMode = 'module_ready' | 'balanced' | 'pilot' | 'full' | null
+
+const REPORT_MENU: Array<{
+  mode: HistoricalReportMode
+  module?: HistoricalReportModule
+  label: string
+  recommended?: boolean
+  needsCompetition?: boolean
+  sizeWarning?: boolean
+}> = [
+  { mode: 'ai_summary', label: 'Sintesi per ChatGPT', recommended: true },
+  { mode: 'competition', label: 'Dettaglio per campionato', needsCompetition: true },
+  { mode: 'module', module: 'signals', label: 'Dettaglio Segnali A–F' },
+  { mode: 'module', module: 'goal_intensity', label: 'Dettaglio Intensità Goal' },
+  { mode: 'module', module: 'purchasability', label: 'Dettaglio Acquistabilità' },
+  {
+    mode: 'full_archive',
+    label: 'Archivio tecnico completo',
+    sizeWarning: true,
+  },
+]
 
 export function HistoricalScansTab({ refreshKey }: Props) {
   const [season, setSeason] = useState(DEFAULT_HISTORICAL_SEASON)
@@ -30,6 +53,26 @@ export function HistoricalScansTab({ refreshKey }: Props) {
   const [activeRun, setActiveRun] = useState<HistoricalScanRun | null>(null)
   const [confirmMode, setConfirmMode] = useState<ConfirmMode>(null)
   const [busy, setBusy] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportCompetition, setReportCompetition] = useState('')
+  const [downloadBusy, setDownloadBusy] = useState(false)
+
+  const competitions = useMemo(() => {
+    const fromPreflight = preflight?.competitions_found ?? []
+    const fromSummary = Array.isArray(activeRun?.summary?.progress_detail)
+      ? []
+      : []
+    const fromPolicy =
+      (activeRun?.module_policy?.competitions_total as number | undefined) != null
+        ? fromPreflight
+        : fromPreflight
+    return Array.from(new Set([...fromPolicy, ...fromSummary])).filter(Boolean)
+  }, [preflight, activeRun])
+
+  const competitionOptions = useMemo(() => {
+    if (preflight?.competitions_found?.length) return preflight.competitions_found
+    return competitions
+  }, [preflight, competitions])
 
   const loadRuns = useCallback(async () => {
     try {
@@ -71,6 +114,12 @@ export function HistoricalScansTab({ refreshKey }: Props) {
     return () => window.clearInterval(id)
   }, [activeRun, loadRuns])
 
+  useEffect(() => {
+    if (competitionOptions.length && !reportCompetition) {
+      setReportCompetition(competitionOptions[0] ?? '')
+    }
+  }, [competitionOptions, reportCompetition])
+
   const onPreflight = async () => {
     setPreflightLoading(true)
     try {
@@ -84,34 +133,67 @@ export function HistoricalScansTab({ refreshKey }: Props) {
     }
   }
 
-  const onStart = async (mode: 'balanced' | 'pilot' | 'full') => {
+  const onStart = async (mode: Exclude<ConfirmMode, null>) => {
     setBusy(true)
     try {
       const run = await startHistoricalScan(
         season,
-        mode === 'balanced'
+        mode === 'module_ready'
           ? {
-              pilotStrategy: 'eligible_per_competition',
-              eligiblePerCompetition: HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
+              pilotStrategy: 'module_ready_per_competition',
+              moduleReadyPerCompetition: HISTORICAL_SCAN_MODULE_READY_PER_COMP,
             }
-          : mode === 'pilot'
-            ? { maxMatches: HISTORICAL_SCAN_PILOT_MAX_MATCHES, pilotStrategy: 'max_matches' }
-            : { maxMatches: null },
+          : mode === 'balanced'
+            ? {
+                pilotStrategy: 'eligible_per_competition',
+                eligiblePerCompetition: HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
+              }
+            : mode === 'pilot'
+              ? { maxMatches: HISTORICAL_SCAN_PILOT_MAX_MATCHES, pilotStrategy: 'max_matches' }
+              : { maxMatches: null },
       )
       setActiveRun(run)
       setConfirmMode(null)
       toast.success(
-        mode === 'balanced'
-          ? `Pilota bilanciato avviato (#${run.id})`
-          : mode === 'pilot'
-            ? `Test tecnico avviato (#${run.id})`
-            : `Scansione completa avviata (#${run.id})`,
+        mode === 'module_ready'
+          ? `Pilota moduli maturi avviato (#${run.id})`
+          : mode === 'balanced'
+            ? `Pilota bilanciato avviato (#${run.id})`
+            : mode === 'pilot'
+              ? `Test tecnico avviato (#${run.id})`
+              : `Scansione completa avviata (#${run.id})`,
       )
       void loadRuns()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Avvio fallito')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const onDownloadReport = async (
+    mode: HistoricalReportMode,
+    module?: HistoricalReportModule,
+    needsCompetition?: boolean,
+  ) => {
+    if (!activeRun) return
+    if (needsCompetition && !reportCompetition) {
+      toast.error('Seleziona un campionato')
+      return
+    }
+    setDownloadBusy(true)
+    try {
+      await downloadHistoricalScanReport(activeRun.id, {
+        mode,
+        module,
+        competition: needsCompetition ? reportCompetition : undefined,
+      })
+      toast.success(`Download avviato: ${mode}`)
+      setReportOpen(false)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Download fallito')
+    } finally {
+      setDownloadBusy(false)
     }
   }
 
@@ -123,6 +205,17 @@ export function HistoricalScansTab({ refreshKey }: Props) {
 
   const pct = activeRun?.progress_pct ?? 0
   const pd = activeRun?.progress_detail
+  const isModuleReady =
+    activeRun?.run_scope === 'module_ready_pilot' ||
+    activeRun?.pilot_strategy === 'module_ready_per_competition'
+
+  const summaryForUi = useMemo(() => {
+    if (!activeRun?.summary) return null
+    const s = { ...activeRun.summary }
+    delete s.real_profit_1u
+    delete s.synthetic_profit_1u
+    return s
+  }, [activeRun?.summary])
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -174,8 +267,16 @@ export function HistoricalScansTab({ refreshKey }: Props) {
             type="button"
             className="lab-btn rounded-md px-4 py-2 text-sm font-semibold"
             disabled={!canStart}
-            onClick={() => setConfirmMode('balanced')}
+            onClick={() => setConfirmMode('module_ready')}
             style={{ outline: '1px solid var(--lab-cyan)' }}
+          >
+            Pilota moduli maturi — {HISTORICAL_SCAN_MODULE_READY_PER_COMP} per campionato
+          </button>
+          <button
+            type="button"
+            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
+            disabled={!canStart}
+            onClick={() => setConfirmMode('balanced')}
           >
             Pilota bilanciato — {HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP} eleggibili per
             campionato
@@ -294,17 +395,40 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                   label="Campionati"
                   value={`${pd.competitions_completed ?? 0}/${pd.competitions_total ?? '—'}`}
                 />
+                {isModuleReady ? (
+                  <>
+                    <Stat
+                      label="Module-ready / target"
+                      value={`${pd.module_ready_collected ?? pd.eligible_collected ?? 0}/${pd.module_ready_target ?? pd.eligible_target ?? '—'}`}
+                    />
+                    <Stat label="Warm-up processate" value={String(pd.warmup_processed ?? 0)} />
+                    <Stat
+                      label="Eligible warm-up"
+                      value={String(pd.warmup_eligible_core ?? 0)}
+                    />
+                    <Stat
+                      label="Module-ready campionato corrente"
+                      value={`${pd.module_ready_in_current_competition ?? '—'}/${pd.module_ready_per_competition_target ?? '—'}`}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Stat
+                      label="Eleggibili / target"
+                      value={`${pd.eligible_collected ?? activeRun.matches_eligible_core}/${pd.eligible_target ?? '—'}`}
+                    />
+                    <Stat
+                      label="Eleggibili campionato corrente"
+                      value={`${pd.eligible_in_current_competition ?? '—'}/${pd.eligible_per_competition_target ?? '—'}`}
+                    />
+                  </>
+                )}
                 <Stat
-                  label="Eleggibili / target"
-                  value={`${pd.eligible_collected ?? activeRun.matches_eligible_core}/${pd.eligible_target ?? '—'}`}
+                  label="Processate totali"
+                  value={String(pd.matches_processed ?? activeRun.matches_processed)}
                 />
-                <Stat label="Processate totali" value={String(pd.matches_processed ?? activeRun.matches_processed)} />
                 <Stat label="Escluse" value={String(pd.matches_excluded ?? activeRun.matches_excluded)} />
                 <Stat label="Errori" value={String(pd.matches_error ?? activeRun.matches_error)} />
-                <Stat
-                  label="Eleggibili campionato corrente"
-                  value={`${pd.eligible_in_current_competition ?? '—'}/${pd.eligible_per_competition_target ?? '—'}`}
-                />
               </>
             ) : (
               <>
@@ -318,9 +442,9 @@ export function HistoricalScansTab({ refreshKey }: Props) {
               </>
             )}
           </div>
-          {activeRun.current_competition && (
+          {(activeRun.current_competition || pd?.current_competition) && (
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
-              Campionato corrente: {activeRun.current_competition}
+              Campionato corrente: {activeRun.current_competition ?? pd?.current_competition}
             </p>
           )}
           {(activeRun.source_git_commit || activeRun.source_revision_status) && (
@@ -360,25 +484,80 @@ export function HistoricalScansTab({ refreshKey }: Props) {
               </button>
             )}
             {activeRun.status.startsWith('completed') && (
-              <button
-                type="button"
-                className="lab-btn rounded-md px-3 py-1.5 text-sm"
-                onClick={() =>
-                  void downloadHistoricalScanReport(activeRun.id).catch((e) =>
-                    toast.error(e instanceof Error ? e.message : 'Download fallito'),
-                  )
-                }
-              >
-                Scarica report per ChatGPT
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  className="lab-btn rounded-md px-3 py-1.5 text-sm font-semibold"
+                  onClick={() => setReportOpen((v) => !v)}
+                  disabled={downloadBusy}
+                >
+                  {downloadBusy ? 'Download…' : 'Scarica report'}
+                </button>
+                {reportOpen && (
+                  <div
+                    className="absolute left-0 z-20 mt-1 min-w-[18rem] rounded-md border p-2 shadow-lg"
+                    style={{
+                      background: 'var(--lab-card, #0f172a)',
+                      borderColor: 'var(--lab-border)',
+                    }}
+                  >
+                    <p className="mb-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
+                      Tipo report — consigliato: Sintesi per ChatGPT
+                    </p>
+                    {competitionOptions.length > 0 && (
+                      <label className="mb-2 block text-xs">
+                        Campionato
+                        <select
+                          className="lab-input mt-1 block w-full rounded px-2 py-1 text-sm"
+                          value={reportCompetition}
+                          onChange={(e) => setReportCompetition(e.target.value)}
+                        >
+                          {competitionOptions.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <ul className="space-y-1 text-sm">
+                      {REPORT_MENU.map((item) => (
+                        <li key={`${item.mode}-${item.module ?? 'x'}`}>
+                          <button
+                            type="button"
+                            className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10"
+                            disabled={downloadBusy}
+                            onClick={() =>
+                              void onDownloadReport(
+                                item.mode,
+                                item.module,
+                                item.needsCompetition,
+                              )
+                            }
+                          >
+                            {item.label}
+                            {item.recommended ? ' ★' : ''}
+                            {item.sizeWarning ? (
+                              <span className="mt-0.5 block text-[11px] text-amber-200">
+                                Archivio tecnico completo — non necessario per la prima analisi
+                                ChatGPT. Può essere molto grande.
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          {activeRun.summary && (
+          {summaryForUi && (
             <pre
               className="mt-3 max-h-48 overflow-auto rounded-md p-3 text-xs"
               style={{ background: 'rgba(0,0,0,0.25)' }}
             >
-              {JSON.stringify(activeRun.summary, null, 2)}
+              {JSON.stringify(summaryForUi, null, 2)}
             </pre>
           )}
         </section>
@@ -424,11 +603,10 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                         <button
                           type="button"
                           className="underline"
-                          onClick={() =>
-                            void downloadHistoricalScanReport(r.id).catch((e) =>
-                              toast.error(e instanceof Error ? e.message : 'Download fallito'),
-                            )
-                          }
+                          onClick={() => {
+                            setActiveRun(r)
+                            setReportOpen(true)
+                          }}
                         >
                           Report
                         </button>
@@ -457,14 +635,22 @@ export function HistoricalScansTab({ refreshKey }: Props) {
         >
           <div className="lab-card max-w-md rounded-xl p-5">
             <h3 className="text-lg font-semibold">
-              {confirmMode === 'balanced'
-                ? 'Conferma pilota bilanciato'
-                : confirmMode === 'pilot'
-                  ? 'Conferma test tecnico'
-                  : 'Conferma scansione completa'}
+              {confirmMode === 'module_ready'
+                ? 'Conferma pilota moduli maturi'
+                : confirmMode === 'balanced'
+                  ? 'Conferma pilota bilanciato'
+                  : confirmMode === 'pilot'
+                    ? 'Conferma test tecnico'
+                    : 'Conferma scansione completa'}
             </h3>
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
-              {confirmMode === 'balanced' ? (
+              {confirmMode === 'module_ready' ? (
+                <>
+                  Avviare il pilota moduli maturi ({HISTORICAL_SCAN_MODULE_READY_PER_COMP}{' '}
+                  module-ready per campionato) sulla stagione <strong>{season}</strong>? Warm-up
+                  cronologico incluso; report marcato come run parziale.
+                </>
+              ) : confirmMode === 'balanced' ? (
                 <>
                   Avviare il pilota bilanciato ({HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP}{' '}
                   eleggibili per campionato) sulla stagione <strong>{season}</strong>? Il report sarà

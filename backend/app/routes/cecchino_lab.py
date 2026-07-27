@@ -37,7 +37,7 @@ from app.services.cecchino_data_lab.historical_scan_service import (
     start_historical_scan,
 )
 from app.services.cecchino_data_lab.historical_ai_report import (
-    build_ai_report_zip_bytes,
+    build_historical_report_response,
     iter_report_chunks,
 )
 
@@ -353,6 +353,7 @@ def historical_scan_start(
     max_matches = (body or {}).get("max_matches")
     pilot_strategy = (body or {}).get("pilot_strategy")
     eligible_per_competition = (body or {}).get("eligible_per_competition")
+    module_ready_per_competition = (body or {}).get("module_ready_per_competition")
     try:
         result = start_historical_scan(
             db,
@@ -361,6 +362,7 @@ def historical_scan_start(
             max_matches=max_matches,
             pilot_strategy=pilot_strategy,
             eligible_per_competition=eligible_per_competition,
+            module_ready_per_competition=module_ready_per_competition,
             background=True,
         )
     except CecchinoLabImportError as exc:
@@ -509,15 +511,18 @@ def historical_scan_summary(
 @router.get("/historical-scans/{run_id}/report")
 def historical_scan_report(
     run_id: int,
+    mode: str = Query("ai_summary"),
+    competition: str | None = Query(None),
+    module: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     try:
-        filename, data = build_ai_report_zip_bytes(db, run_id)
+        return build_historical_report_response(
+            db,
+            run_id,
+            mode=mode,
+            competition=competition,
+            module=module,
+        )
     except CecchinoLabImportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
-    return StreamingResponse(
-        iter_report_chunks(data),
-        media_type="application/zip",
-        headers=headers,
-    )

@@ -354,7 +354,7 @@ def test_resolve_source_revision_env_chain():
         assert r["source_revision_status"] == "resolved"
 
 
-def test_report_schema_v3():
+def test_report_schema_v4():
     from app.services.cecchino_data_lab.historical_ai_report import REPORT_SCHEMA_VERSION
 
-    assert REPORT_SCHEMA_VERSION == "cecchino_lab_ai_report_v3"
+    assert REPORT_SCHEMA_VERSION == "cecchino_lab_ai_report_v4"
