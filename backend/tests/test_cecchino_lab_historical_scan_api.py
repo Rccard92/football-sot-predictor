@@ -289,7 +289,7 @@ def test_ai_report_zip_structure():
     assert "data_coverage" in summary
     assert summary["excluded_diagnostics"]["count"] == 1
     assert manifest["is_partial_run"] is True
-    assert manifest["performance_universe"] == "eligible_core_only"
+    assert manifest["performance_universe"] == "eligible_core"
     assert len(markets_lines) == 1
     mrow = json.loads(markets_lines[0])
     assert mrow["eligibility_status"] == "eligible_core"

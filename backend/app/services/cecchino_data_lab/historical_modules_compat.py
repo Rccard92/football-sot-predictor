@@ -45,6 +45,9 @@ def rebuild_signals_with_under(
     )
 
 
+BALANCE_LAB_MODULE_VERSION = "cecchino_lab_balance_observational_v1"
+
+
 def build_historical_balance_v5(
     *,
     cecchino_final: dict[str, Any],
@@ -52,12 +55,68 @@ def build_historical_balance_v5(
     kpi_panel: dict[str, Any],
     identity: dict[str, Any],
 ) -> dict[str, Any]:
-    return build_cecchino_balance_v5(
+    raw = build_cecchino_balance_v5(
         cecchino_final=cecchino_final,
         goal_markets=goal_markets,
         kpi_panel=kpi_panel,
         identity_consistency=identity,
     )
+    if not isinstance(raw, dict):
+        return {
+            "observation_status": "unavailable",
+            "module_version": BALANCE_LAB_MODULE_VERSION,
+            "warnings": ["balance_payload_not_dict"],
+            "missing_fields": ["balance_v5"],
+            "sample_size": None,
+            "inputs": {},
+            "values": None,
+        }
+
+    pillars = raw.get("pillars") if isinstance(raw.get("pillars"), dict) else {}
+    missing: list[str] = []
+    pillar_classes: dict[str, Any] = {}
+    for key, block in pillars.items():
+        if not isinstance(block, dict):
+            missing.append(f"pillars.{key}")
+            continue
+        ck = block.get("class_key") if block.get("class_key") is not None else block.get("class")
+        pillar_classes[key] = ck
+        if ck is None or ck == "":
+            missing.append(f"pillars.{key}.class")
+
+    structural = raw.get("structural_summary")
+    has_structural = structural not in (None, "", {})
+    if not has_structural:
+        missing.append("structural_summary")
+
+    warnings: list[str] = list(raw.get("warnings") or []) if isinstance(raw.get("warnings"), list) else []
+    if isinstance(raw.get("structural_summary"), str) and "non disponibile" in raw["structural_summary"].lower():
+        warnings.append("structural_summary_unavailable_text")
+
+    if not pillars and not has_structural:
+        observation_status = "unavailable"
+    elif missing:
+        observation_status = "partial"
+    else:
+        observation_status = "complete"
+
+    # Conserva il payload Balance completo + metadati osservazionali Lab (no zero-fill).
+    out = dict(raw)
+    out["observation_status"] = observation_status
+    out["module_version"] = BALANCE_LAB_MODULE_VERSION
+    out["formula_version"] = raw.get("version")
+    out["warnings"] = warnings
+    out["missing_fields"] = missing
+    out["sample_size"] = None
+    out["inputs"] = {
+        "cecchino_final_present": bool(cecchino_final),
+        "goal_markets_present": bool(goal_markets),
+        "kpi_panel_present": bool(kpi_panel),
+        "identity_present": bool(identity),
+    }
+    out["pillar_classes"] = pillar_classes
+    out["does_not_affect_eligibility"] = True
+    return out
 
 
 def _wdl_rates(wdl: dict[str, int] | None, sample: int) -> dict[str, float | None]:

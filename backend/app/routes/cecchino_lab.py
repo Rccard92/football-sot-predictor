@@ -353,7 +353,6 @@ def historical_scan_start(
     max_matches = (body or {}).get("max_matches")
     pilot_strategy = (body or {}).get("pilot_strategy")
     eligible_per_competition = (body or {}).get("eligible_per_competition")
-    module_ready_per_competition = (body or {}).get("module_ready_per_competition")
     try:
         result = start_historical_scan(
             db,
@@ -362,7 +361,6 @@ def historical_scan_start(
             max_matches=max_matches,
             pilot_strategy=pilot_strategy,
             eligible_per_competition=eligible_per_competition,
-            module_ready_per_competition=module_ready_per_competition,
             background=True,
         )
     except CecchinoLabImportError as exc:

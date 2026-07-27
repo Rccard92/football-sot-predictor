@@ -264,6 +264,11 @@ def build_historical_purchasability(
         "observational_only": True,
         "does_not_affect_eligibility": True,
         "does_not_affect_settlement": True,
+        "observation_status": (
+            "complete"
+            if execution_status == "computed"
+            else ("partial" if markets else "unavailable")
+        ),
         "blockers_for_full_calculation": [
             b
             for b in (compat.get("blockers_for_full_calculation") or [])

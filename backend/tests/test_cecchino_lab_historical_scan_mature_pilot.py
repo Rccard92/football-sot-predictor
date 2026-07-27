@@ -1,4 +1,4 @@
-"""Test pilota maturo, progresso 16/16, report frammentati, etichette A–F."""
+"""Test progresso 16/16, report frammentati, etichette A–F (senza pilota moduli maturi)."""
 
 from __future__ import annotations
 
@@ -7,9 +7,7 @@ import json
 import os
 import zipfile
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/test")
 
@@ -18,25 +16,13 @@ from app.services.cecchino.cecchino_constants import (
     CECCHINO_WEIGHT_MODEL_KEYS,
     model_meta_for_key,
 )
-from app.services.cecchino_data_lab.constants import (
-    HISTORICAL_PILOT_STRATEGY_MODULE_READY,
-    HISTORICAL_SCAN_CONFIRM_TOKEN,
-    PILOT_SAMPLE_ROLE_ANALYSIS,
-    PILOT_SAMPLE_ROLE_WARMUP,
-)
-from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_ai_report import (
     REPORT_SCHEMA_VERSION,
     _build_patterns_top,
     _canonical_signal_model_fields,
     build_ai_report_zip_bytes,
 )
-from app.services.cecchino_data_lab.historical_scan_service import (
-    _build_run_summary,
-    _normalize_module_ready_per_competition,
-    _snapshot_is_module_ready,
-    start_historical_scan,
-)
+from app.services.cecchino_data_lab.historical_scan_service import _build_run_summary
 
 
 def test_canonical_af_labels_non_null_and_f_current():
@@ -51,77 +37,6 @@ def test_canonical_af_labels_non_null_and_f_current():
         assert fields["model_label"] == meta["model_label"]
     assert CECCHINO_DEFAULT_WEIGHT_MODEL_KEY == "F"
     assert _canonical_signal_model_fields("F")["model_key"] == "F"
-
-
-def test_module_ready_normalize():
-    assert _normalize_module_ready_per_competition(10) == 10
-    with pytest.raises(CecchinoLabImportError):
-        _normalize_module_ready_per_competition(0)
-
-
-def test_snapshot_is_module_ready_criteria():
-    ready = SimpleNamespace(
-        historical_eligibility_status="eligible_core",
-        goal_intensity_compatibility_json={"execution_status": "computed"},
-        purchasability_compatibility_json={"execution_status": "computed"},
-        signals_json={"models": {k: {} for k in CECCHINO_WEIGHT_MODEL_KEYS}},
-    )
-    assert _snapshot_is_module_ready(ready) is True
-    not_ready = SimpleNamespace(
-        historical_eligibility_status="eligible_core",
-        goal_intensity_compatibility_json={"execution_status": "insufficient_sample"},
-        purchasability_compatibility_json={"execution_status": "computed"},
-        signals_json={"models": {k: {} for k in CECCHINO_WEIGHT_MODEL_KEYS}},
-    )
-    assert _snapshot_is_module_ready(not_ready) is False
-
-
-def test_start_module_ready_pilot_policy():
-    db = MagicMock()
-    with patch(
-        "app.services.cecchino_data_lab.historical_scan_service.run_historical_scan_preflight",
-        return_value={"status": "ready"},
-    ), patch(
-        "app.services.cecchino_data_lab.historical_scan_service._resolve_source_revision",
-        return_value={
-            "source_git_commit": "abc",
-            "source_git_commit_source": "test",
-            "source_revision_status": "resolved",
-        },
-    ), patch(
-        "app.services.cecchino_data_lab.historical_scan_service._spawn_worker"
-    ):
-        db.scalars.return_value.first.return_value = None
-        ds = SimpleNamespace(id=1, competition_name="Serie A")
-        ds2 = SimpleNamespace(id=2, competition_name="Bundesliga")
-        # datasets list, then match ids
-        db.scalars.return_value.all.side_effect = [
-            [ds, ds2],
-            [1, 2, 3],
-        ]
-        added = {}
-
-        def _add(obj):
-            added["run"] = obj
-            obj.id = 99
-
-        db.add.side_effect = _add
-        result = start_historical_scan(
-            db,
-            season_label="2021/2022",
-            confirm=HISTORICAL_SCAN_CONFIRM_TOKEN,
-            pilot_strategy=HISTORICAL_PILOT_STRATEGY_MODULE_READY,
-            module_ready_per_competition=10,
-            background=True,
-        )
-    run = added["run"]
-    assert run.module_policy_json["run_scope"] == "module_ready_pilot"
-    assert run.module_policy_json["pilot_strategy"] == HISTORICAL_PILOT_STRATEGY_MODULE_READY
-    assert run.module_policy_json["module_ready_per_competition"] == 10
-    assert run.module_policy_json["is_partial_run"] is True
-    assert run.module_policy_json["not_full_season_report"] is True
-    assert run.matches_total == 20  # 10 * 2 competitions
-    assert result["id"] == 99
 
 
 def test_build_run_summary_no_global_profit_misleading():
@@ -140,9 +55,7 @@ def test_build_run_summary_no_global_profit_misleading():
         profit_1u_synthetic=None,
         rating=70,
     )
-    run = SimpleNamespace(module_policy_json={"pilot_strategy": None})
     db.scalars.return_value.all.side_effect = [[snap], [market]]
-    db.get.return_value = run
     summary = _build_run_summary(db, 1)
     assert "real_profit_1u" not in summary
     assert "synthetic_profit_1u" not in summary
@@ -150,6 +63,7 @@ def test_build_run_summary_no_global_profit_misleading():
     assert tech["not_a_betting_strategy"] is True
     assert "profit_by_market" in summary
     assert "HOME" in summary["profit_by_market"]
+    assert "pilot_sample_roles" not in summary
 
 
 def test_progress_finalization_helper_shape():
@@ -252,7 +166,7 @@ def _report_fixtures():
                 }
             ],
         },
-        module_availability_json={"pilot_sample_role": PILOT_SAMPLE_ROLE_ANALYSIS},
+        module_availability_json={},
         quote_sources_json={"family_1x2": {"family_snapshot_type": "closing"}},
         pre_match_payload_sha256="abc",
         pre_match_locked_at=None,
@@ -262,7 +176,7 @@ def _report_fixtures():
         historical_kpi_json={"rows": []},
         error_json=None,
     )
-    warmup = SimpleNamespace(
+    partial = SimpleNamespace(
         id=2,
         dataset_id=10,
         lab_match_id=101,
@@ -280,8 +194,10 @@ def _report_fixtures():
         signals_json={"models": models},
         balance_v5_json={"structural_summary": {"class": "balance"}},
         goal_intensity_compatibility_json={"execution_status": "insufficient_sample"},
-        purchasability_compatibility_json={"execution_status": "insufficient_historical_normalization_sample"},
-        module_availability_json={"pilot_sample_role": PILOT_SAMPLE_ROLE_WARMUP},
+        purchasability_compatibility_json={
+            "execution_status": "insufficient_historical_normalization_sample"
+        },
+        module_availability_json={},
         quote_sources_json={},
         pre_match_payload_sha256="def",
         pre_match_locked_at=None,
@@ -332,14 +248,14 @@ def _report_fixtures():
         profit_category="actual_bet365",
         result_reason="ok",
     )
-    return run, eligible, warmup, market
+    return run, eligible, partial, market
 
 
 def test_ai_summary_excludes_huge_raw_files():
-    run, eligible, warmup, market = _report_fixtures()
+    run, eligible, partial, market = _report_fixtures()
     db = MagicMock()
     db.get.return_value = run
-    db.scalars.return_value.all.side_effect = [[eligible, warmup], [market]]
+    db.scalars.return_value.all.side_effect = [[eligible, partial], [market]]
     filename, data = build_ai_report_zip_bytes(db, 7, mode="ai_summary")
     assert "ai_summary" in filename
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -353,18 +269,20 @@ def test_ai_summary_excludes_huge_raw_files():
         idx = json.loads(zf.read("report_index.json"))
         assert idx["schema_version"] == REPORT_SCHEMA_VERSION
         assert idx["recommended_analysis_order"][0] == "ai_summary"
+        cov = json.loads(zf.read("module_coverage.json"))
+        assert "pilot_sample_roles" not in cov
     assert len(data) < 500_000
 
 
 def test_competition_report_filtered():
-    run, eligible, warmup, market = _report_fixtures()
-    other = SimpleNamespace(**{**eligible.__dict__, "id": 3, "competition_name": "Bundesliga", "lab_match_id": 200})
+    run, eligible, partial, market = _report_fixtures()
+    other = SimpleNamespace(
+        **{**eligible.__dict__, "id": 3, "competition_name": "Bundesliga", "lab_match_id": 200}
+    )
     db = MagicMock()
     db.get.return_value = run
-    db.scalars.return_value.all.side_effect = [[eligible, warmup, other], [market]]
-    _fn, data = build_ai_report_zip_bytes(
-        db, 7, mode="competition", competition="Serie A"
-    )
+    db.scalars.return_value.all.side_effect = [[eligible, partial, other], [market]]
+    _fn, data = build_ai_report_zip_bytes(db, 7, mode="competition", competition="Serie A")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
         assert "matches_compact.jsonl" in names
@@ -382,7 +300,7 @@ def test_competition_report_filtered():
 
 
 def test_module_report_signals_filtered():
-    run, eligible, warmup, market = _report_fixtures()
+    run, eligible, _partial, market = _report_fixtures()
     db = MagicMock()
     db.get.return_value = run
     db.scalars.return_value.all.side_effect = [[eligible], [market]]
@@ -402,10 +320,10 @@ def test_module_report_signals_filtered():
 
 
 def test_full_archive_available_and_legacy_exportable():
-    run, eligible, warmup, market = _report_fixtures()
+    run, eligible, partial, market = _report_fixtures()
     db = MagicMock()
     db.get.return_value = run
-    db.scalars.return_value.all.side_effect = [[eligible, warmup], [market]]
+    db.scalars.return_value.all.side_effect = [[eligible, partial], [market]]
     filename, data = build_ai_report_zip_bytes(db, 7, mode="full_archive")
     assert "full_archive" in filename
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -414,8 +332,6 @@ def test_full_archive_available_and_legacy_exportable():
         assert "purchasability.jsonl" in names
         assert "patterns.json" in names
         assert "report_index.json" in names
-        manifest = json.loads(zf.read("manifest.json"))
-        assert "non necessario" in (manifest.get("full_archive_warning") or "").lower() or True
 
 
 def test_patterns_top_deterministic():
@@ -453,25 +369,22 @@ def test_patterns_top_deterministic():
     assert "a" in best_ids
 
 
-def test_module_ready_report_uses_analysis_only():
-    run, eligible, warmup, market = _report_fixtures()
-    run.module_policy_json = {
-        "run_scope": "module_ready_pilot",
-        "is_partial_run": True,
-        "pilot_strategy": HISTORICAL_PILOT_STRATEGY_MODULE_READY,
-        "module_ready_per_competition": 10,
-        "not_full_season_report": True,
-    }
-    # warmup market should not appear if snap id 2
-    warmup_market = SimpleNamespace(**{**market.__dict__, "match_snapshot_id": 2, "lab_match_id": 101})
+def test_partial_modules_still_in_eligible_core_universe():
+    """Moduli parziali non escludono la partita dalle metriche se eligible_core."""
+    run, eligible, partial, market = _report_fixtures()
+    partial_market = SimpleNamespace(
+        **{**market.__dict__, "match_snapshot_id": 2, "lab_match_id": 101}
+    )
     db = MagicMock()
     db.get.return_value = run
-    db.scalars.return_value.all.side_effect = [[eligible, warmup], [market, warmup_market]]
+    db.scalars.return_value.all.side_effect = [
+        [eligible, partial],
+        [market, partial_market],
+    ]
     _fn, data = build_ai_report_zip_bytes(db, 7, mode="full_archive")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         markets_lines = zf.read("markets.jsonl").decode().strip().splitlines()
-        assert len(markets_lines) == 1
-        assert json.loads(markets_lines[0])["lab_match_id"] == 100
+        assert len(markets_lines) == 2
         cov = json.loads(zf.read("module_coverage.json"))
-        assert cov["analysis_sample"] == 1
-        assert cov["pilot_sample_roles"]["warmup"] == 1
+        assert cov["analysis_sample"] == 2
+        assert "pilot_sample_roles" not in cov

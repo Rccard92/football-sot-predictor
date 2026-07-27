@@ -3,7 +3,6 @@ import { toast } from 'sonner'
 import {
   DEFAULT_HISTORICAL_SEASON,
   HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
-  HISTORICAL_SCAN_MODULE_READY_PER_COMP,
   HISTORICAL_SCAN_PILOT_MAX_MATCHES,
   LAB_SEASON_OPTIONS,
   cancelHistoricalScan,
@@ -23,7 +22,7 @@ import {
 } from '../../lib/cecchinoLabApi'
 
 type Props = { refreshKey: number }
-type ConfirmMode = 'module_ready' | 'balanced' | 'pilot' | 'full' | null
+type ConfirmMode = 'balanced' | 'pilot' | 'full' | null
 
 const REPORT_MENU: Array<{
   mode: HistoricalReportMode
@@ -36,8 +35,10 @@ const REPORT_MENU: Array<{
   { mode: 'ai_summary', label: 'Sintesi per ChatGPT', recommended: true },
   { mode: 'competition', label: 'Dettaglio per campionato', needsCompetition: true },
   { mode: 'module', module: 'signals', label: 'Dettaglio Segnali A–F' },
+  { mode: 'module', module: 'balance', label: 'Dettaglio Balance / Equilibrio' },
   { mode: 'module', module: 'goal_intensity', label: 'Dettaglio Intensità Goal' },
   { mode: 'module', module: 'purchasability', label: 'Dettaglio Acquistabilità' },
+  { mode: 'module', module: 'markets', label: 'Dettaglio mercati' },
   {
     mode: 'full_archive',
     label: 'Archivio tecnico completo',
@@ -54,6 +55,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
   const [confirmMode, setConfirmMode] = useState<ConfirmMode>(null)
   const [busy, setBusy] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  const [techOpen, setTechOpen] = useState(false)
   const [reportCompetition, setReportCompetition] = useState('')
   const [downloadBusy, setDownloadBusy] = useState(false)
 
@@ -138,30 +140,24 @@ export function HistoricalScansTab({ refreshKey }: Props) {
     try {
       const run = await startHistoricalScan(
         season,
-        mode === 'module_ready'
+        mode === 'balanced'
           ? {
-              pilotStrategy: 'module_ready_per_competition',
-              moduleReadyPerCompetition: HISTORICAL_SCAN_MODULE_READY_PER_COMP,
+              pilotStrategy: 'eligible_per_competition',
+              eligiblePerCompetition: HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
             }
-          : mode === 'balanced'
-            ? {
-                pilotStrategy: 'eligible_per_competition',
-                eligiblePerCompetition: HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP,
-              }
-            : mode === 'pilot'
-              ? { maxMatches: HISTORICAL_SCAN_PILOT_MAX_MATCHES, pilotStrategy: 'max_matches' }
-              : { maxMatches: null },
+          : mode === 'pilot'
+            ? { maxMatches: HISTORICAL_SCAN_PILOT_MAX_MATCHES, pilotStrategy: 'max_matches' }
+            : { maxMatches: null },
       )
       setActiveRun(run)
       setConfirmMode(null)
+      setTechOpen(false)
       toast.success(
-        mode === 'module_ready'
-          ? `Pilota moduli maturi avviato (#${run.id})`
-          : mode === 'balanced'
-            ? `Pilota bilanciato avviato (#${run.id})`
-            : mode === 'pilot'
-              ? `Test tecnico avviato (#${run.id})`
-              : `Scansione completa avviata (#${run.id})`,
+        mode === 'balanced'
+          ? `Pilota bilanciato avviato (#${run.id})`
+          : mode === 'pilot'
+            ? `Test tecnico avviato (#${run.id})`
+            : `Scansione completa avviata (#${run.id})`,
       )
       void loadRuns()
     } catch (e) {
@@ -205,9 +201,6 @@ export function HistoricalScansTab({ refreshKey }: Props) {
 
   const pct = activeRun?.progress_pct ?? 0
   const pd = activeRun?.progress_detail
-  const isModuleReady =
-    activeRun?.run_scope === 'module_ready_pilot' ||
-    activeRun?.pilot_strategy === 'module_ready_per_competition'
 
   const summaryForUi = useMemo(() => {
     if (!activeRun?.summary) return null
@@ -267,36 +260,63 @@ export function HistoricalScansTab({ refreshKey }: Props) {
             type="button"
             className="lab-btn rounded-md px-4 py-2 text-sm font-semibold"
             disabled={!canStart}
-            onClick={() => setConfirmMode('module_ready')}
-            style={{ outline: '1px solid var(--lab-cyan)' }}
-          >
-            Pilota moduli maturi — {HISTORICAL_SCAN_MODULE_READY_PER_COMP} per campionato
-          </button>
-          <button
-            type="button"
-            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
-            disabled={!canStart}
-            onClick={() => setConfirmMode('balanced')}
-          >
-            Pilota bilanciato — {HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP} eleggibili per
-            campionato
-          </button>
-          <button
-            type="button"
-            className="lab-btn rounded-md px-4 py-2 text-sm font-medium opacity-80"
-            disabled={!canStart}
-            onClick={() => setConfirmMode('pilot')}
-          >
-            Test tecnico — prime {HISTORICAL_SCAN_PILOT_MAX_MATCHES} partite
-          </button>
-          <button
-            type="button"
-            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
-            disabled={!canStart}
             onClick={() => setConfirmMode('full')}
+            style={{ outline: '1px solid var(--lab-cyan)' }}
           >
             Scansione completa
           </button>
+          <div className="relative">
+            <button
+              type="button"
+              className="lab-btn rounded-md px-4 py-2 text-sm font-medium opacity-80"
+              disabled={!canStart}
+              onClick={() => setTechOpen((v) => !v)}
+            >
+              Opzioni tecniche
+            </button>
+            {techOpen && (
+              <div
+                className="absolute left-0 z-20 mt-1 min-w-[16rem] rounded-md border p-2 shadow-lg"
+                style={{
+                  background: 'var(--lab-card, #0f172a)',
+                  borderColor: 'var(--lab-border)',
+                }}
+              >
+                <p className="mb-2 text-xs" style={{ color: 'var(--lab-muted)' }}>
+                  Diagnostica — non necessarie per la scansione ordinaria
+                </p>
+                <ul className="space-y-1 text-sm">
+                  <li>
+                    <button
+                      type="button"
+                      className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10"
+                      disabled={!canStart}
+                      onClick={() => {
+                        setTechOpen(false)
+                        setConfirmMode('pilot')
+                      }}
+                    >
+                      Test tecnico — prime {HISTORICAL_SCAN_PILOT_MAX_MATCHES} partite
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      className="w-full rounded px-2 py-1.5 text-left hover:bg-white/10"
+                      disabled={!canStart}
+                      onClick={() => {
+                        setTechOpen(false)
+                        setConfirmMode('balanced')
+                      }}
+                    >
+                      Pilota bilanciato — {HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP}{' '}
+                      eleggibili/campionato
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 text-xs">
@@ -395,34 +415,14 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                   label="Campionati"
                   value={`${pd.competitions_completed ?? 0}/${pd.competitions_total ?? '—'}`}
                 />
-                {isModuleReady ? (
-                  <>
-                    <Stat
-                      label="Module-ready / target"
-                      value={`${pd.module_ready_collected ?? pd.eligible_collected ?? 0}/${pd.module_ready_target ?? pd.eligible_target ?? '—'}`}
-                    />
-                    <Stat label="Warm-up processate" value={String(pd.warmup_processed ?? 0)} />
-                    <Stat
-                      label="Eligible warm-up"
-                      value={String(pd.warmup_eligible_core ?? 0)}
-                    />
-                    <Stat
-                      label="Module-ready campionato corrente"
-                      value={`${pd.module_ready_in_current_competition ?? '—'}/${pd.module_ready_per_competition_target ?? '—'}`}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Stat
-                      label="Eleggibili / target"
-                      value={`${pd.eligible_collected ?? activeRun.matches_eligible_core}/${pd.eligible_target ?? '—'}`}
-                    />
-                    <Stat
-                      label="Eleggibili campionato corrente"
-                      value={`${pd.eligible_in_current_competition ?? '—'}/${pd.eligible_per_competition_target ?? '—'}`}
-                    />
-                  </>
-                )}
+                <Stat
+                  label="Eleggibili / target"
+                  value={`${pd.eligible_collected ?? activeRun.matches_eligible_core}/${pd.eligible_target ?? '—'}`}
+                />
+                <Stat
+                  label="Eleggibili campionato corrente"
+                  value={`${pd.eligible_in_current_competition ?? '—'}/${pd.eligible_per_competition_target ?? '—'}`}
+                />
                 <Stat
                   label="Processate totali"
                   value={String(pd.matches_processed ?? activeRun.matches_processed)}
@@ -635,22 +635,14 @@ export function HistoricalScansTab({ refreshKey }: Props) {
         >
           <div className="lab-card max-w-md rounded-xl p-5">
             <h3 className="text-lg font-semibold">
-              {confirmMode === 'module_ready'
-                ? 'Conferma pilota moduli maturi'
-                : confirmMode === 'balanced'
-                  ? 'Conferma pilota bilanciato'
-                  : confirmMode === 'pilot'
-                    ? 'Conferma test tecnico'
-                    : 'Conferma scansione completa'}
+              {confirmMode === 'balanced'
+                ? 'Conferma pilota bilanciato'
+                : confirmMode === 'pilot'
+                  ? 'Conferma test tecnico'
+                  : 'Conferma scansione completa'}
             </h3>
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
-              {confirmMode === 'module_ready' ? (
-                <>
-                  Avviare il pilota moduli maturi ({HISTORICAL_SCAN_MODULE_READY_PER_COMP}{' '}
-                  module-ready per campionato) sulla stagione <strong>{season}</strong>? Warm-up
-                  cronologico incluso; report marcato come run parziale.
-                </>
-              ) : confirmMode === 'balanced' ? (
+              {confirmMode === 'balanced' ? (
                 <>
                   Avviare il pilota bilanciato ({HISTORICAL_SCAN_BALANCED_ELIGIBLE_PER_COMP}{' '}
                   eleggibili per campionato) sulla stagione <strong>{season}</strong>? Il report sarà

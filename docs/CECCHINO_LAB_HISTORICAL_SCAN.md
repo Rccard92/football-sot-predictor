@@ -25,12 +25,13 @@
 
 | Modalità | Body | UI |
 |----------|------|-----|
-| **Pilota moduli maturi** (consigliato per validazione) | `pilot_strategy: "module_ready_per_competition"`, `module_ready_per_competition: 10` | “Pilota moduli maturi — 10 per campionato” |
-| Pilota bilanciato (controllo iniziale) | `pilot_strategy: "eligible_per_competition"`, `eligible_per_competition: 20` | “Pilota bilanciato — 20 eleggibili per campionato” |
-| Test tecnico | `max_matches: 200` | “Test tecnico — prime 200 partite” |
-| Completa | `max_matches: null` | “Scansione completa” |
+| **Scansione completa** (percorso primario) | `max_matches: null` | “Scansione completa” |
+| Test tecnico (diagnostica) | `max_matches: 200` | menu **Opzioni tecniche** |
+| Pilota bilanciato (diagnostica) | `pilot_strategy: "eligible_per_competition"`, `eligible_per_competition: 20` | menu **Opzioni tecniche** |
 
-**Pilota moduli maturi:** per ogni campionato, ordine cronologico; le partite precedenti sono warm-up (`pilot_sample_role=warmup`) per costruire storico/ECDF/profilo/A–F. Entra nel campione principale (`analysis`) solo se `eligible_core` + Intensità/Acquistabilità `computed` + modelli A–F + anti-leakage. Target 10 analysis × 16 campionati (max 160). `run_scope=module_ready_pilot`. Il numero di warm-up è data-dependent.
+La UI principale mostra solo **Verifica dati** e **Scansione completa**. Test tecnico e pilota bilanciato restano disponibili nel backend e nel menu secondario «Opzioni tecniche».
+
+Intensità Goal e Equilibrio vs Squilibrio sono **moduli osservazionali**: valori completi/parziali/non disponibili vengono salvati su ogni partita eleggibile e **non** bloccano l’eleggibilità `eligible_core`.
 
 Pilota bilanciato: per ogni campionato, ordine cronologico, registra escluse, si ferma a N `eligible_core`, poi passa al successivo. Target tipico fino a 320 eleggibili; processate totali possono superare il target. `run_scope=balanced_pilot`, `is_partial_run=true`, `not_full_season_report=true`.
 

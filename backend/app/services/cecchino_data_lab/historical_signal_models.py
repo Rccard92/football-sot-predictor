@@ -209,11 +209,53 @@ def build_historical_signal_models(
     default_key = CECCHINO_DEFAULT_WEIGHT_MODEL_KEY
     default_matrix = (models.get(default_key) or {}).get("matrix") or {}
 
+    missing_models = [k for k in CECCHINO_WEIGHT_MODEL_KEYS if k not in models]
+    unavailable = [
+        k
+        for k, block in models.items()
+        if isinstance(block, dict)
+        and (
+            (_as_status((block.get("final") or {}).get("status")) != STATUS_AVAILABLE)
+            or (_as_status((block.get("matrix") or {}).get("status")) == "unavailable")
+        )
+    ]
+    if missing_models:
+        observation_status = "unavailable"
+    elif unavailable:
+        observation_status = "partial"
+    else:
+        observation_status = "complete"
+
     return {
         "default_model_key": default_key,
         "default_matrix": default_matrix,
         "models": models,
+        "observation_status": observation_status,
+        "module_version": "cecchino_lab_signals_af_v1",
+        "f_equals_current": default_key == CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
+        "missing_fields": [f"models.{k}" for k in missing_models],
+        "warnings": (
+            [f"model_unavailable:{k}" for k in unavailable]
+            + (["partial_models"] if unavailable else [])
+        ),
+        "sample_size": {
+            k: len((block.get("active_signals") or []))
+            for k, block in models.items()
+            if isinstance(block, dict)
+        },
+        "inputs": {
+            "picchetti_present": bool(picchetti),
+            "quote_bundle_present": bool(quote_bundle),
+            "under_2_5_cecchino_odd": under_2_5_cecchino_odd,
+        },
+        "does_not_affect_eligibility": True,
     }
+
+
+def _as_status(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def resolve_signals_matrix(signals_json: dict[str, Any] | None) -> dict[str, Any] | None:

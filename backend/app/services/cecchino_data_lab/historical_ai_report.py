@@ -29,11 +29,9 @@ from app.services.cecchino.cecchino_constants import (
 from app.services.cecchino_data_lab.constants import (
     HISTORICAL_DERIVATION_METHOD,
     HISTORICAL_KPI_VERSION,
-    HISTORICAL_PILOT_STRATEGY_MODULE_READY,
     HISTORICAL_QUOTE_POLICY_VERSION,
     HISTORICAL_SCAN_VERSION,
     PARSER_VERSION,
-    PILOT_SAMPLE_ROLE_ANALYSIS,
 )
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
@@ -52,8 +50,8 @@ AI_SUMMARY_WARN_BYTES = 5 * 1024 * 1024
 AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab (v4)
 
 1. Leggi prima `report_index.json`, `manifest.json` e `SCHEMA.md`.
-2. Usa **solo** `eligible_analysis` (o il campione `analysis` del pilota moduli maturi) per hit rate, profitto, ROI, fasce rating, pattern e analisi segnali.
-3. `excluded_diagnostics` / warm-up sono diagnostica: non mescolarli con la performance.
+2. Usa **solo** `eligible_analysis` (`eligible_core`) per hit rate, profitto, ROI, fasce rating, pattern e analisi segnali.
+3. `excluded_diagnostics` è diagnostica: non mescolarla con la performance.
 4. Non confondere quote **reali Bet365** e quote **derivate**.
 5. Non sommare ROI reale e ROI sintetico.
 6. Non trattare quote derivate come offerte Bet365.
@@ -96,7 +94,7 @@ SCHEMA_MD = """# Schema report AI Cecchino Lab (v4)
 
 Modalità export: `ai_summary` | `competition` | `module` | `full_archive`.
 `full_archive` = archivio tecnico completo — non necessario per la prima analisi ChatGPT.
-Metriche di performance usano `eligible_core` (o `pilot_sample_role=analysis` nei piloti moduli maturi).
+Metriche di performance usano solo `eligible_core`.
 `technical_sum_across_all_independent_market_rows` è diagnostica tecnica, non una strategia.
 """
 
@@ -113,22 +111,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
 def _as_list(value: Any) -> list[Any]:
     """Normalizza JSON opzionale a list; altrimenti []."""
     return value if isinstance(value, list) else []
-
-
-def _pilot_sample_role(snap: CecchinoLabHistoricalMatchSnapshot) -> str | None:
-    ma = _as_dict(snap.module_availability_json)
-    role = ma.get("pilot_sample_role")
-    return str(role) if role else None
-
-
-def _is_analysis_snap(
-    snap: CecchinoLabHistoricalMatchSnapshot,
-    *,
-    is_module_ready_pilot: bool,
-) -> bool:
-    if is_module_ready_pilot:
-        return _pilot_sample_role(snap) == PILOT_SAMPLE_ROLE_ANALYSIS
-    return snap.historical_eligibility_status == ELIGIBLE_CORE
 
 
 def _canonical_signal_model_fields(model_key: str) -> dict[str, Any]:
@@ -173,7 +155,6 @@ def _match_compact_row(s: CecchinoLabHistoricalMatchSnapshot) -> dict[str, Any]:
         "home_team": s.home_team,
         "away_team": s.away_team,
         "eligibility_status": s.historical_eligibility_status,
-        "pilot_sample_role": _pilot_sample_role(s),
         "context_samples": samples,
         "quota_cecchino_final": {
             "quota_1": final.get("quota_1"),
@@ -297,8 +278,6 @@ def _build_patterns_top(patterns: dict[str, Any]) -> dict[str, Any]:
 def _scope_tag(run_scope: str, is_partial: bool) -> str:
     if run_scope == "balanced_pilot":
         return "balanced_pilot"
-    if run_scope == "module_ready_pilot":
-        return "module_ready_pilot"
     if is_partial:
         return "pilot"
     return "full"
@@ -685,7 +664,6 @@ def write_historical_report_zip(
     policy = _as_dict(run.module_policy_json)
     is_partial = bool(policy.get("is_partial_run"))
     run_scope = policy.get("run_scope") or ("pilot" if is_partial else "full")
-    is_module_ready_pilot = policy.get("pilot_strategy") == HISTORICAL_PILOT_STRATEGY_MODULE_READY
 
     season_slug = run.season_label.replace("/", "_")
     scope_tag = _scope_tag(str(run_scope), is_partial)
@@ -706,10 +684,8 @@ def write_historical_report_zip(
     competitions = sorted({s.competition_name for s in snaps})
     datasets = sorted({int(s.dataset_id) for s in snaps})
 
-    # Universo performance: analysis per module_ready, altrimenti eligible_core
-    analysis_snaps = [
-        s for s in snaps if _is_analysis_snap(s, is_module_ready_pilot=is_module_ready_pilot)
-    ]
+    # Universo performance: solo eligible_core
+    analysis_snaps = [s for s in snaps if s.historical_eligibility_status == ELIGIBLE_CORE]
     eligible_snaps = analysis_snaps
     excluded_snaps = [
         s
@@ -752,7 +728,6 @@ def write_historical_report_zip(
         "max_matches": policy.get("max_matches"),
         "pilot_strategy": policy.get("pilot_strategy"),
         "eligible_per_competition": policy.get("eligible_per_competition"),
-        "module_ready_per_competition": policy.get("module_ready_per_competition"),
         "not_full_season_report": bool(policy.get("not_full_season_report") or is_partial),
         "default_weight_model_key": CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
         "full_archive_warning": (
@@ -774,11 +749,7 @@ def write_historical_report_zip(
         "quote_policy": HISTORICAL_QUOTE_POLICY_VERSION,
         "derivation_policy": HISTORICAL_DERIVATION_METHOD,
         "anti_leakage_policy": "strict_prior_kickoff_same_competition_only",
-        "performance_universe": (
-            "pilot_sample_role_analysis"
-            if is_module_ready_pilot
-            else "eligible_core_only"
-        ),
+        "performance_universe": "eligible_core",
         "profit_policy": {
             "real": "profit_1u_real from real Bet365 quotes only",
             "synthetic": "profit_1u_synthetic from derived quotes only",
@@ -845,7 +816,6 @@ def write_historical_report_zip(
         gi_computed=gi_computed,
         purch_computed=purch_computed,
         manifest=manifest,
-        is_module_ready_pilot=is_module_ready_pilot,
     )
 
 
@@ -871,7 +841,6 @@ def _finalize_report_zip(
     gi_computed: int,
     purch_computed: int,
     manifest: dict[str, Any],
-    is_module_ready_pilot: bool,
 ) -> tuple[str, int]:
     eligibility: dict[str, int] = defaultdict(int)
     for s in snaps:
@@ -914,14 +883,6 @@ def _finalize_report_zip(
             "models": list(CECCHINO_WEIGHT_MODEL_KEYS),
             "default_model_key": CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
             "f_equals_current": True,
-        },
-        "pilot_sample_roles": {
-            "analysis": sum(1 for s in snaps if _pilot_sample_role(s) == PILOT_SAMPLE_ROLE_ANALYSIS),
-            "warmup": sum(
-                1
-                for s in snaps
-                if _pilot_sample_role(s) == "warmup"
-            ),
         },
     }
 
@@ -1272,7 +1233,6 @@ def _finalize_report_zip(
         "competitions": competitions,
         "run_scope": run_scope,
         "is_partial_run": is_partial,
-        "is_module_ready_pilot": is_module_ready_pilot,
         "preflight": data_quality,
         "warnings": shape_warnings,
     }
@@ -1331,7 +1291,6 @@ def _finalize_report_zip(
                     "away_team": s.away_team,
                     "eligibility_status": s.historical_eligibility_status,
                     "eligibility_reason": s.historical_eligibility_reason,
-                    "pilot_sample_role": _pilot_sample_role(s),
                     "blockers": s.blocking_reasons_json,
                     "context_samples": {
                         k: v.get("sample")
@@ -1539,7 +1498,6 @@ def _finalize_report_zip(
                         "competition_name": s.competition_name,
                         "kickoff_at": s.kickoff_at.isoformat() if s.kickoff_at else None,
                         "balance_v5": s.balance_v5_json,
-                        "pilot_sample_role": _pilot_sample_role(s),
                     },
                     ensure_ascii=False,
                     default=str,

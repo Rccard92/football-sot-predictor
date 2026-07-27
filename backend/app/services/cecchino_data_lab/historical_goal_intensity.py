@@ -331,6 +331,12 @@ def build_historical_goal_intensity(
             "prior_eligible_feature_rows_only": True,
         },
         "warnings": warnings,
+        "observation_status": (
+            "complete"
+            if execution_status == "computed"
+            else ("partial" if features else "unavailable")
+        ),
+        "does_not_affect_eligibility": True,
         "feature_row_for_profile": {
             "features": {k: features.get(k) for k in BUNDLE_FEATURE_KEYS},
             "sample_size": sample_size,
