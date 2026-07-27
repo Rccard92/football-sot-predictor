@@ -7,6 +7,10 @@ from typing import Any
 from app.models.cecchino_signal_activation import EVAL_LOST, EVAL_WON
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_ROW_DEFS
 from app.services.cecchino.cecchino_signal_evaluation import evaluate_market_selection
+from app.services.cecchino_data_lab.historical_signal_extraction import (
+    build_market_signal_index,
+    signal_payload_for_market,
+)
 
 PROFIT_ACTUAL = "actual_bet365"
 PROFIT_SYNTHETIC = "synthetic_derived"
@@ -44,6 +48,19 @@ def _period_line(market_key: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def empty_settlement_summary() -> dict[str, Any]:
+    return {
+        "won": 0,
+        "lost": 0,
+        "evaluable": 0,
+        "markets_analyzed": 0,
+        "real_profit_1u": 0.0,
+        "synthetic_profit_1u": 0.0,
+        "real_quote_settled": 0,
+        "derived_quote_settled": 0,
+    }
+
+
 def settle_historical_markets(
     *,
     match: Any,
@@ -57,18 +74,7 @@ def settle_historical_markets(
         r.get("market_key"): r for r in (kpi_panel.get("rows") or []) if isinstance(r, dict)
     }
     label_by_key = {k: lab for k, lab in KPI_V2_ROW_DEFS}
-
-    active_signals: set[str] = set()
-    if signals_json:
-        for row in signals_json.get("rows") or []:
-            if not isinstance(row, dict):
-                continue
-            for col, cell in row.items():
-                if col in ("group", "label", "model", "affidabilita"):
-                    continue
-                if cell in ("SI", "YES", True):
-                    # best-effort: market keys may appear in column names
-                    active_signals.add(str(col))
+    signal_index = build_market_signal_index(signals_json)
 
     out: list[dict[str, Any]] = []
     for market_key, label in KPI_V2_ROW_DEFS:
@@ -103,6 +109,7 @@ def settle_historical_markets(
                 profit_synth = round(delta, 4)
                 category = PROFIT_SYNTHETIC
 
+        sig = signal_payload_for_market(signal_index, market_key)
         out.append(
             {
                 "market_key": market_key,
@@ -121,8 +128,10 @@ def settle_historical_markets(
                 "edge_pct": kpi_row.get("edge_pct"),
                 "vantaggio_prob": kpi_row.get("vantaggio_prob"),
                 "rating": kpi_row.get("rating"),
-                "signal_active": market_key in active_signals,
-                "signal_sources_json": [],
+                "signal_active": bool(sig["signal_active"]),
+                "signal_sources_json": sig["signal_sources_json"],
+                "signal_family": sig.get("signal_family"),
+                "active_signal_count": int(sig.get("active_signal_count") or 0),
                 "evaluation_status": status,
                 "won": won,
                 "profit_1u_real": profit_real,
@@ -135,6 +144,8 @@ def settle_historical_markets(
 
 
 def settlement_summary(market_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not market_rows:
+        return empty_settlement_summary()
     won = sum(1 for r in market_rows if r.get("won") is True)
     lost = sum(1 for r in market_rows if r.get("won") is False)
     real_profit = sum(
@@ -149,6 +160,7 @@ def settlement_summary(market_rows: list[dict[str, Any]]) -> dict[str, Any]:
         "won": won,
         "lost": lost,
         "evaluable": won + lost,
+        "markets_analyzed": len(market_rows),
         "real_profit_1u": round(real_profit, 4),
         "synthetic_profit_1u": round(synth_profit, 4),
         "real_quote_settled": sum(

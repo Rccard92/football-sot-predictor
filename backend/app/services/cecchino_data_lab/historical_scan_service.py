@@ -66,6 +66,7 @@ from app.services.cecchino_data_lab.historical_scan_preflight import (
     run_historical_scan_preflight,
 )
 from app.services.cecchino_data_lab.historical_settlement import (
+    empty_settlement_summary,
     settle_historical_markets,
     settlement_summary,
 )
@@ -93,7 +94,18 @@ def _git_commit() -> str | None:
         return None
 
 
+def _run_scope_meta(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
+    policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+    return {
+        "run_scope": policy.get("run_scope") or "full",
+        "is_partial_run": bool(policy.get("is_partial_run")),
+        "max_matches": policy.get("max_matches"),
+        "module_policy": policy,
+    }
+
+
 def run_to_dict(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
+    meta = _run_scope_meta(run)
     return {
         "id": int(run.id),
         "season_label": run.season_label,
@@ -116,6 +128,10 @@ def run_to_dict(run: CecchinoLabHistoricalScanRun) -> dict[str, Any]:
         "error": run.error_json,
         "source_git_commit": run.source_git_commit,
         "cancel_requested": bool(run.cancel_requested),
+        "run_scope": meta["run_scope"],
+        "is_partial_run": meta["is_partial_run"],
+        "max_matches": meta["max_matches"],
+        "module_policy": meta["module_policy"],
     }
 
 
@@ -133,11 +149,32 @@ def get_historical_scan(db: Session, run_id: int) -> dict[str, Any]:
     return run_to_dict(run)
 
 
+def _normalize_max_matches(max_matches: Any) -> int | None:
+    if max_matches is None or max_matches == "":
+        return None
+    try:
+        value = int(max_matches)
+    except (TypeError, ValueError) as exc:
+        raise CecchinoLabImportError(
+            "invalid_max_matches",
+            "max_matches deve essere un intero positivo o null",
+            status_code=400,
+        ) from exc
+    if value <= 0:
+        raise CecchinoLabImportError(
+            "invalid_max_matches",
+            "max_matches deve essere un intero positivo o null",
+            status_code=400,
+        )
+    return value
+
+
 def start_historical_scan(
     db: Session,
     *,
     season_label: str,
     confirm: str | None,
+    max_matches: int | None = None,
     background: bool = True,
 ) -> dict[str, Any]:
     if confirm != HISTORICAL_SCAN_CONFIRM_TOKEN:
@@ -146,6 +183,8 @@ def start_historical_scan(
             f"Conferma richiesta: {HISTORICAL_SCAN_CONFIRM_TOKEN}",
             status_code=400,
         )
+
+    normalized_max = _normalize_max_matches(max_matches)
 
     preflight = run_historical_scan_preflight(db, season_label=season_label)
     if preflight.get("status") == STATUS_BLOCKED:
@@ -176,7 +215,7 @@ def start_historical_scan(
         ).all()
     )
     dataset_ids = [int(d.id) for d in datasets]
-    matches_total = (
+    season_match_count = (
         len(
             db.scalars(
                 select(CecchinoLabMatch.id).where(CecchinoLabMatch.dataset_id.in_(dataset_ids))
@@ -184,6 +223,10 @@ def start_historical_scan(
         )
         if dataset_ids
         else 0
+    )
+    is_partial = normalized_max is not None
+    matches_total = (
+        min(season_match_count, normalized_max) if is_partial else season_match_count
     )
 
     run = CecchinoLabHistoricalScanRun(
@@ -198,9 +241,18 @@ def start_historical_scan(
             "operational_today_bookmaker": "Betfair",
         },
         module_policy_json={
-            "goal_intensity": "compatibility_only",
-            "purchasability": "compatibility_only",
+            "goal_intensity": "compatibility_only_features_export",
+            "purchasability": "compatibility_only_inputs_export",
             "parser_version": PARSER_VERSION,
+            "max_matches": normalized_max,
+            "is_partial_run": is_partial,
+            "run_scope": "pilot" if is_partial else "full",
+            "season_matches_available": season_match_count,
+            "note": (
+                "Run parziale: non confondere con report stagione completa"
+                if is_partial
+                else "Run stagione completa"
+            ),
         },
         preflight_json=preflight,
         source_git_commit=_git_commit(),
@@ -315,9 +367,17 @@ def execute_historical_scan_run(run_id: int) -> None:
             ).all()
         )
 
+        policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+        max_matches_cap = policy.get("max_matches")
+        try:
+            max_matches_cap = int(max_matches_cap) if max_matches_cap is not None else None
+        except (TypeError, ValueError):
+            max_matches_cap = None
+
         batch_count = 0
+        stop_for_pilot = False
         for comp in competitions:
-            if _is_cancelled(db, run_id):
+            if stop_for_pilot or _is_cancelled(db, run_id):
                 break
             comp_datasets = [d for d in datasets if d.competition_name == comp]
             comp_ds_ids = [int(d.id) for d in comp_datasets]
@@ -336,6 +396,9 @@ def execute_historical_scan_run(run_id: int) -> None:
             for order_idx, m in enumerate(matches):
                 if int(m.id) in done_ids:
                     continue
+                if max_matches_cap is not None and int(run.matches_processed or 0) >= max_matches_cap:
+                    stop_for_pilot = True
+                    break
                 if _is_cancelled(db, run_id):
                     break
                 try:
@@ -376,6 +439,14 @@ def execute_historical_scan_run(run_id: int) -> None:
                     db.commit()
                     batch_count = 0
                     db.refresh(run)
+                    policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+                    max_matches_cap = policy.get("max_matches")
+                    try:
+                        max_matches_cap = (
+                            int(max_matches_cap) if max_matches_cap is not None else None
+                        )
+                    except (TypeError, ValueError):
+                        max_matches_cap = None
 
             db.commit()
 
@@ -384,6 +455,10 @@ def execute_historical_scan_run(run_id: int) -> None:
             run.status = STATUS_CANCELLED
         else:
             summary = _build_run_summary(db, run_id)
+            policy = run.module_policy_json if isinstance(run.module_policy_json, dict) else {}
+            summary["run_scope"] = policy.get("run_scope") or "full"
+            summary["is_partial_run"] = bool(policy.get("is_partial_run"))
+            summary["max_matches"] = policy.get("max_matches")
             run.summary_json = summary
             run.status = (
                 STATUS_COMPLETED_WITH_WARNINGS
@@ -427,22 +502,18 @@ def _process_one_match(
     chronological_order: int,
 ) -> None:
     warnings: list[str] = []
+    # 1) Contesti pre-match
     contexts = build_lab_prematch_contexts(
         competition_ordered=competition_ordered,
         target=target_proxy,
     )
-    # Calcolo pre-match SENZA leggere FT/HT del target nei payload congelati
+    # 2) Cecchino + moduli (senza FT/HT target nei payload congelati)
     cecchino_output = compute_cecchino_from_contexts(contexts)
     goal_markets = compute_goal_markets_from_contexts(contexts)
     under_odd = None
     under_block = (goal_markets or {}).get("UNDER_2_5") or {}
     if under_block.get("final_odd") is not None:
         under_odd = float(under_block["final_odd"])
-        sample_split = (
-            int((contexts.sample_meta.get("home_away") or {}).get("home_sample_count") or 0)
-            + int((contexts.sample_meta.get("home_away") or {}).get("away_sample_count") or 0)
-        )
-        # chiave picchetto home_away
         from app.services.cecchino.cecchino_constants import PICCHETTO_KEY_HOME_AWAY
 
         meta = contexts.sample_meta.get(PICCHETTO_KEY_HOME_AWAY) or {}
@@ -479,11 +550,15 @@ def _process_one_match(
         },
     )
     input_snapshot = build_input_snapshot(contexts)
-    gi_compat = build_goal_intensity_compatibility(input_snapshot=input_snapshot)
+    gi_compat = build_goal_intensity_compatibility(
+        input_snapshot=input_snapshot,
+        contexts=contexts,
+    )
     purch_compat = build_purchasability_compatibility(
         kpi_panel=kpi, quote_bundle=quote_bundle
     )
 
+    # 3) Eleggibilità
     elig = evaluate_historical_eligibility(
         home_team=match.home_team,
         away_team=match.away_team,
@@ -491,7 +566,9 @@ def _process_one_match(
         contexts=contexts,
         cecchino_output=cecchino_output,
     )
+    core_eligible = bool(elig.get("core_eligible"))
 
+    # 4) Freeze snapshot pre-match (hash dopo tutti i moduli)
     pre_match_payload = {
         "identity": {
             "lab_match_id": int(match.id),
@@ -517,37 +594,70 @@ def _process_one_match(
             }
             for k, v in (goal_markets or {}).items()
         },
+        "historical_kpi": kpi,
+        "signals_matrix": signals,
+        "balance_v5": balance,
+        "goal_intensity": gi_compat,
+        "purchasability": purch_compat,
         "quote_sources": {
             "counts": quote_bundle.get("counts"),
             "family_1x2": quote_bundle.get("family_1x2"),
             "family_ou25": quote_bundle.get("family_ou25"),
+            "quotes": {
+                mk: {
+                    "value": (qv or {}).get("value"),
+                    "source_type": (qv or {}).get("source_type"),
+                    "is_real_book_quote": (qv or {}).get("is_real_book_quote"),
+                    "is_derived": (qv or {}).get("is_derived"),
+                    "derivation_method": (qv or {}).get("derivation_method"),
+                }
+                for mk, qv in (quote_bundle.get("quotes") or {}).items()
+            },
+        },
+        "module_versions": {
+            "scan_version": HISTORICAL_SCAN_VERSION,
+            "parser_version": PARSER_VERSION,
+            "kpi_version": (kpi or {}).get("version") if isinstance(kpi, dict) else None,
+            "goal_intensity_execution": gi_compat.get("execution_status"),
+            "purchasability_execution": purch_compat.get("execution_status"),
+        },
+        "eligibility": {
+            "status": elig.get("status"),
+            "core_eligible": core_eligible,
+            "reason": elig.get("reason"),
+            "blocking_reasons": elig.get("blocking_reasons") or [],
         },
         "scan_version": HISTORICAL_SCAN_VERSION,
     }
-    # Esplicitamente nessun risultato nel blocco pre-match
     assert "result" not in pre_match_payload
     assert "fulltime" not in pre_match_payload
+    assert "settlement" not in pre_match_payload
     payload_hash = sha256_prematch_payload(pre_match_payload)
     locked_at = _utcnow()
 
-    # Solo DOPO il lock: collega risultato e settlement
+    # 5) Dopo il lock: collega risultato
     result_json = {
         "fulltime": {"home": match.ft_home_goals, "away": match.ft_away_goals},
         "halftime": {"home": match.ht_home_goals, "away": match.ht_away_goals},
         "ft_result": match.ft_result,
         "ht_result": match.ht_result,
     }
-    market_rows = settle_historical_markets(
-        match=match,
-        kpi_panel=kpi,
-        quote_bundle=quote_bundle,
-        signals_json=signals,
-    )
-    sett_sum = settlement_summary(market_rows)
 
-    if elig.get("core_eligible"):
+    # 6) Settlement solo se core_eligible
+    if core_eligible:
+        market_rows = settle_historical_markets(
+            match=match,
+            kpi_panel=kpi,
+            quote_bundle=quote_bundle,
+            signals_json=signals,
+        )
+        sett_sum = settlement_summary(market_rows)
+        settlement_status = "settled"
         run.matches_eligible_core = int(run.matches_eligible_core or 0) + 1
     else:
+        market_rows = []
+        sett_sum = empty_settlement_summary()
+        settlement_status = "excluded"
         run.matches_excluded = int(run.matches_excluded or 0) + 1
 
     snap = CecchinoLabHistoricalMatchSnapshot(
@@ -564,7 +674,7 @@ def _process_one_match(
         historical_eligibility_reason=elig.get("reason"),
         blocking_reasons_json=elig.get("blocking_reasons") or [],
         module_availability_json={
-            "core_eligible": elig.get("core_eligible"),
+            "core_eligible": core_eligible,
             "kpi_1x2_real_available": quote_bundle.get("kpi_1x2_real_available"),
             "kpi_ou25_real_available": quote_bundle.get("kpi_ou25_real_available"),
             **(quote_bundle.get("counts") or {}),
@@ -581,7 +691,7 @@ def _process_one_match(
         pre_match_locked_at=locked_at,
         result_json=result_json,
         result_attached_at=_utcnow(),
-        settlement_status="settled",
+        settlement_status=settlement_status,
         settlement_summary_json=sett_sum,
         warnings_json=warnings + list(cecchino_output.get("warnings") or []),
     )

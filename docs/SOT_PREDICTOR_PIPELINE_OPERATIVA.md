@@ -1,5 +1,16 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — historical scan analysis-safe (2026-07-27)
+
+1. Preflight `POST /api/admin/cecchino-lab/historical-scans/preflight`
+2. Avvio manuale con confirm `RUN_CECCHINO_LAB_HISTORICAL_SCAN`:
+   - pilota: `max_matches: 200` (run parziale marcato)
+   - completa: `max_matches: null`
+3. Per partita: contesti → moduli → eleggibilità → hash freeze → risultato → settlement **solo se eligible_core**
+4. Report ZIP v2 (`eligible_analysis` / `excluded_diagnostics` / pattern combinati)
+
+Non fa parte della pipeline Today / auto-scan / deploy. Betfair operativo invariato.
+
 ## Cecchino Lab — historical scan (manuale, offline) (2026-07-27)
 
 1. Preflight `POST /api/admin/cecchino-lab/historical-scans/preflight`

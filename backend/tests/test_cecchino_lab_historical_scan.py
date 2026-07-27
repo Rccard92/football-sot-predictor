@@ -375,6 +375,243 @@ def test_today_still_betfair_constant():
     assert CECCHINO_BOOKMAKER["name"] == "Betfair"
 
 
+def test_signal_extraction_none_one_many_and_multi_market():
+    from app.services.cecchino_data_lab.historical_signal_extraction import (
+        build_market_signal_index,
+        iter_active_signal_cells,
+    )
+
+    empty = {"rows": [{"key": "one", "label": "1", "signals": {"excel_d": "NO", "excel_e": "NO"}}]}
+    assert iter_active_signal_cells(empty) == []
+    assert build_market_signal_index(empty) == {}
+
+    one = {
+        "rows": [
+            {
+                "key": "one",
+                "label": "1",
+                "signals": {"excel_d": "SI", "excel_e": "NO", "excel_f": "NO"},
+            }
+        ]
+    }
+    cells = iter_active_signal_cells(one)
+    assert len(cells) == 1
+    assert cells[0]["source_column"] == "EXCEL_D"
+    idx = build_market_signal_index(one)
+    assert "HOME" in idx
+    assert idx["HOME"]["signal_active"] is True
+    assert idx["HOME"]["active_signal_count"] == 1
+    assert idx["HOME"]["signal_family"] == "HOME"
+    assert idx["HOME"]["signal_sources_json"]["active_signal_count"] == 1
+
+    multi_models = {
+        "rows": [
+            {
+                "key": "one_x",
+                "label": "1X",
+                "signals": {"excel_d": "SI", "excel_e": "SI", "scala_1x": "SI"},
+            }
+        ]
+    }
+    idx2 = build_market_signal_index(multi_models)
+    assert idx2["ONE_X"]["active_signal_count"] == 3
+    assert len(idx2["ONE_X"]["signal_sources_json"]["sources"]) == 3
+
+    multi_markets = {
+        "rows": [
+            {"key": "one", "label": "1", "signals": {"excel_d": "SI"}},
+            {"key": "under_under_pt", "label": "Under", "signals": {"excel_d": "SI", "excel_e": "SI"}},
+            {"key": "over_over_pt", "label": "Over", "signals": {"excel_f": "SI"}},
+        ]
+    }
+    idx3 = build_market_signal_index(multi_markets)
+    assert set(idx3.keys()) >= {"HOME", "UNDER_2_5", "OVER_2_5"}
+    assert idx3["UNDER_2_5"]["active_signal_count"] == 2
+    assert idx3["UNDER_2_5"]["signal_family"] == "UNDER_UNDER_PT"
+
+
+def test_settlement_reads_nested_signals_not_flat_columns():
+    m = _match(
+        bet365_closing_home=2.0,
+        bet365_closing_draw=3.5,
+        bet365_closing_away=3.5,
+        ft_home_goals=1,
+        ft_away_goals=0,
+    )
+    bundle = build_match_quote_bundle(m)
+    panel = build_historical_kpi_panel_bet365(
+        final_odds={
+            "status": "available",
+            "quota_1": 2.0,
+            "quota_x": 3.4,
+            "quota_2": 3.6,
+            "prob_1": 0.42,
+            "prob_x": 0.29,
+            "prob_2": 0.29,
+        },
+        match=m,
+        goal_markets={},
+        quote_bundle=bundle,
+    )
+    signals = {
+        "rows": [
+            {
+                "key": "one",
+                "label": "1",
+                "signals": {"excel_d": "SI", "excel_e": "NO"},
+                # flat SI would be wrong path — must be ignored
+                "excel_d": "SI",
+            }
+        ]
+    }
+    rows = settle_historical_markets(
+        match=m, kpi_panel=panel, quote_bundle=bundle, signals_json=signals
+    )
+    home = next(r for r in rows if r["market_key"] == "HOME")
+    draw = next(r for r in rows if r["market_key"] == "DRAW")
+    assert home["signal_active"] is True
+    assert home["signal_sources_json"]["active_signal_count"] == 1
+    assert home["signal_family"] == "HOME"
+    assert draw["signal_active"] is False
+    assert draw["signal_sources_json"]["active_signal_count"] == 0
+
+
+def test_excluded_settlement_summary_zero_markets():
+    from app.services.cecchino_data_lab.historical_settlement import empty_settlement_summary
+
+    s = empty_settlement_summary()
+    assert s["markets_analyzed"] == 0
+    assert s["evaluable"] == 0
+    assert s["won"] == 0
+
+
+def test_hash_changes_when_kpi_signals_or_balance_change():
+    base = {
+        "identity": {"lab_match_id": 1},
+        "input_snapshot": {"prior_count": 10},
+        "historical_kpi": {"rows": [{"market_key": "HOME", "rating": 55}]},
+        "signals_matrix": {"rows": []},
+        "balance_v5": {"structural_summary": {"class": "balance"}},
+        "eligibility": {"status": "eligible_core", "core_eligible": True},
+    }
+    h1 = sha256_prematch_payload(base)
+    changed_kpi = dict(base)
+    changed_kpi["historical_kpi"] = {"rows": [{"market_key": "HOME", "rating": 80}]}
+    assert sha256_prematch_payload(changed_kpi) != h1
+
+    changed_sig = dict(base)
+    changed_sig["signals_matrix"] = {
+        "rows": [{"key": "one", "signals": {"excel_d": "SI"}}]
+    }
+    assert sha256_prematch_payload(changed_sig) != h1
+
+    changed_bal = dict(base)
+    changed_bal["balance_v5"] = {"structural_summary": {"class": "imbalance"}}
+    assert sha256_prematch_payload(changed_bal) != h1
+
+
+def test_hash_invariant_to_result_and_settlement_fields():
+    payload = {
+        "identity": {"lab_match_id": 1},
+        "historical_kpi": {"x": 1},
+        "signals_matrix": {},
+        "balance_v5": {},
+        "eligibility": {"core_eligible": True},
+    }
+    h1 = sha256_prematch_payload(payload)
+    # risultato/settlement non devono essere nel payload — se aggiunti fuori, hash diverso;
+    # qui verifichiamo che lo stesso payload pre-match resta stabile
+    assert "result" not in payload
+    assert sha256_prematch_payload(dict(payload)) == h1
+
+
+def test_goal_intensity_and_purchasability_flags():
+    from app.services.cecchino_data_lab.historical_modules_compat import (
+        build_goal_intensity_compatibility,
+        build_purchasability_compatibility,
+    )
+
+    snap = {
+        "home_context": {"wdl": {"wins": 2, "draws": 1, "losses": 1}, "sample": 4, "min_required": 5},
+        "away_context": {"wdl": {"wins": 1, "draws": 1, "losses": 2}, "sample": 4, "min_required": 5},
+        "home_total": {"wdl": {"wins": 3, "draws": 2, "losses": 3}, "sample": 8, "min_required": 8},
+        "away_total": {"wdl": {"wins": 2, "draws": 3, "losses": 3}, "sample": 8, "min_required": 8},
+        "home_recent_context_5": {
+            "wdl": {"wins": 2, "draws": 1, "losses": 2},
+            "sample": 5,
+            "min_required": 5,
+        },
+        "away_recent_context_5": {
+            "wdl": {"wins": 1, "draws": 2, "losses": 2},
+            "sample": 5,
+            "min_required": 5,
+        },
+        "home_recent_total_6": {
+            "wdl": {"wins": 2, "draws": 2, "losses": 2},
+            "sample": 6,
+            "min_required": 6,
+        },
+        "away_recent_total_6": {
+            "wdl": {"wins": 3, "draws": 1, "losses": 2},
+            "sample": 6,
+            "min_required": 6,
+        },
+        "prior_count": 20,
+        "leakage_ok": True,
+    }
+    gi = build_goal_intensity_compatibility(input_snapshot=snap)
+    assert gi["raw_features_available"] is True
+    assert gi["v5_score_not_executed"] is True
+    assert gi["v5_score"] is None
+    assert "wdl_contexts" in gi["raw_features"]
+
+    purch = build_purchasability_compatibility(
+        kpi_panel={
+            "rows": [
+                {
+                    "market_key": "HOME",
+                    "rating": 60,
+                    "edge_pct": 4.0,
+                    "vantaggio_prob": 0.05,
+                    "quota_cecchino": 2.1,
+                    "book_quote_class": "real_bet365",
+                }
+            ]
+        },
+        quote_bundle={
+            "quotes": {
+                "HOME": {
+                    "value": 2.0,
+                    "is_real_book_quote": True,
+                    "is_derived": False,
+                    "source_type": "closing",
+                }
+            },
+            "counts": {"real": 1, "derived": 0, "not_available": 0},
+        },
+    )
+    assert purch["inputs_available"] is True
+    assert purch["final_score_not_executed"] is True
+    assert purch["final_score"] is None
+    assert purch["betfair_operational_profile_applied"] is False
+    assert purch["market_inputs"][0]["market_key"] == "HOME"
+
+
+def test_normalize_max_matches_and_invalid():
+    import os
+
+    os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/test")
+    from app.services.cecchino_data_lab.errors import CecchinoLabImportError
+    from app.services.cecchino_data_lab.historical_scan_service import _normalize_max_matches
+
+    assert _normalize_max_matches(None) is None
+    assert _normalize_max_matches(200) == 200
+    with pytest.raises(CecchinoLabImportError):
+        _normalize_max_matches(0)
+    with pytest.raises(CecchinoLabImportError):
+        _normalize_max_matches("abc")
+
+
 def test_bet365_adapter_not_imported_by_today_modules():
     from pathlib import Path
 
@@ -384,8 +621,6 @@ def test_bet365_adapter_not_imported_by_today_modules():
         text = path.read_text(encoding="utf-8")
         if "historical_bet365_adapter" in text:
             forbidden.append(path.name)
-    auto = root.parent / ".." / "jobs"
-    # also check jobs folder if present
     jobs = Path(__file__).resolve().parents[1] / "app" / "jobs"
     if jobs.exists():
         for path in jobs.glob("*cecchino*"):

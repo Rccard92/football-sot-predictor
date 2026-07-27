@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Replay storico Cecchino Lab analysis-safe (2026-07-27)
+
+Correzioni pre-scansione 2021/2022: settlement solo `eligible_core`; estrazione segnali da `row["signals"]`; hash pre-match completo; report v2 con sezioni separate + pattern combinati; Intensità/Acquistabilità feature-only; modalità pilota `max_matches`. **Today/Betfair invariati.** Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`, `docs/CECCHINO_LAB_AI_REPORT_SCHEMA.md`.
+
 ## Feat — Replay storico Cecchino Lab 2021/2022 (2026-07-27)
 
 Scansione storica isolata nel Lab: preflight, adapter Bet365, job resumibile offline, snapshot anti-leakage, KPI Bet365 wrapper, settlement 14 mercati, report ZIP ChatGPT, tab UI Scansioni storiche. **Today/Betfair invariati.** Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`.

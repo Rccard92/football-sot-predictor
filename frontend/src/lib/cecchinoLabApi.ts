@@ -808,6 +808,10 @@ export type HistoricalScanRun = {
   error?: Record<string, unknown> | null
   source_git_commit?: string | null
   cancel_requested?: boolean
+  run_scope?: 'pilot' | 'full' | string
+  is_partial_run?: boolean
+  max_matches?: number | null
+  module_policy?: Record<string, unknown> | null
 }
 
 export function preflightHistoricalScan(seasonLabel: string): Promise<HistoricalScanPreflight> {
@@ -816,11 +820,28 @@ export function preflightHistoricalScan(seasonLabel: string): Promise<Historical
   })
 }
 
-export function startHistoricalScan(seasonLabel: string): Promise<HistoricalScanRun> {
-  return postJson('/api/admin/cecchino-lab/historical-scans', {
+export const HISTORICAL_SCAN_PILOT_MAX_MATCHES = 200
+
+export function startHistoricalScan(
+  seasonLabel: string,
+  options?: { maxMatches?: number | null },
+): Promise<HistoricalScanRun> {
+  const body: Record<string, unknown> = {
     season_label: seasonLabel,
     confirm: HISTORICAL_SCAN_CONFIRM_TOKEN,
-  })
+  }
+  if (options && 'maxMatches' in options) {
+    body.max_matches = options.maxMatches ?? null
+  }
+  return postJson('/api/admin/cecchino-lab/historical-scans', body)
+}
+
+export function historicalScanScopeLabel(run: HistoricalScanRun): string {
+  if (run.is_partial_run || run.run_scope === 'pilot') {
+    const n = run.max_matches ?? HISTORICAL_SCAN_PILOT_MAX_MATCHES
+    return `Pilota (max ${n})`
+  }
+  return 'Completa'
 }
 
 export function listHistoricalScans(seasonLabel?: string): Promise<HistoricalScanRun[]> {

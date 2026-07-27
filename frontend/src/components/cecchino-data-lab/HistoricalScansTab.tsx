@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   DEFAULT_HISTORICAL_SEASON,
+  HISTORICAL_SCAN_PILOT_MAX_MATCHES,
   LAB_SEASON_OPTIONS,
   cancelHistoricalScan,
   downloadHistoricalScanReport,
   getHistoricalScan,
+  historicalScanScopeLabel,
   historicalScanStatusLabel,
   isHistoricalScanActive,
   listHistoricalScans,
@@ -17,6 +19,7 @@ import {
 } from '../../lib/cecchinoLabApi'
 
 type Props = { refreshKey: number }
+type ConfirmMode = 'pilot' | 'full' | null
 
 export function HistoricalScansTab({ refreshKey }: Props) {
   const [season, setSeason] = useState(DEFAULT_HISTORICAL_SEASON)
@@ -24,7 +27,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
   const [preflightLoading, setPreflightLoading] = useState(false)
   const [runs, setRuns] = useState<HistoricalScanRun[]>([])
   const [activeRun, setActiveRun] = useState<HistoricalScanRun | null>(null)
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmMode, setConfirmMode] = useState<ConfirmMode>(null)
   const [busy, setBusy] = useState(false)
 
   const loadRuns = useCallback(async () => {
@@ -51,7 +54,11 @@ export function HistoricalScansTab({ refreshKey }: Props) {
         if (!isHistoricalScanActive(fresh.status)) {
           void loadRuns()
           if (fresh.status.startsWith('completed')) {
-            toast.success('Scansione storica completata')
+            toast.success(
+              fresh.is_partial_run
+                ? 'Scansione pilota completata'
+                : 'Scansione storica completata',
+            )
           } else if (fresh.status === 'failed') {
             toast.error('Scansione fallita')
           }
@@ -76,13 +83,22 @@ export function HistoricalScansTab({ refreshKey }: Props) {
     }
   }
 
-  const onStart = async () => {
+  const onStart = async (mode: 'pilot' | 'full') => {
     setBusy(true)
     try {
-      const run = await startHistoricalScan(season)
+      const run = await startHistoricalScan(
+        season,
+        mode === 'pilot'
+          ? { maxMatches: HISTORICAL_SCAN_PILOT_MAX_MATCHES }
+          : { maxMatches: null },
+      )
       setActiveRun(run)
-      setConfirmOpen(false)
-      toast.success(`Scansione avviata (#${run.id})`)
+      setConfirmMode(null)
+      toast.success(
+        mode === 'pilot'
+          ? `Scansione pilota avviata (#${run.id})`
+          : `Scansione completa avviata (#${run.id})`,
+      )
       void loadRuns()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Avvio fallito')
@@ -149,9 +165,17 @@ export function HistoricalScansTab({ refreshKey }: Props) {
             type="button"
             className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
             disabled={!canStart}
-            onClick={() => setConfirmOpen(true)}
+            onClick={() => setConfirmMode('pilot')}
           >
-            Avvia scansione
+            Scansione pilota — prime {HISTORICAL_SCAN_PILOT_MAX_MATCHES} partite
+          </button>
+          <button
+            type="button"
+            className="lab-btn rounded-md px-4 py-2 text-sm font-medium"
+            disabled={!canStart}
+            onClick={() => setConfirmMode('full')}
+          >
+            Scansione completa
           </button>
         </div>
 
@@ -225,8 +249,16 @@ export function HistoricalScansTab({ refreshKey }: Props) {
       {activeRun && (
         <section className="lab-card rounded-xl p-4">
           <h3 className="font-semibold">
-            Run #{activeRun.id} — {historicalScanStatusLabel(activeRun.status)}
+            Run #{activeRun.id} — {historicalScanStatusLabel(activeRun.status)}{' '}
+            <span className="text-sm font-normal" style={{ color: 'var(--lab-muted)' }}>
+              ({historicalScanScopeLabel(activeRun)})
+            </span>
           </h3>
+          {activeRun.is_partial_run && (
+            <p className="mt-1 text-xs text-amber-200">
+              Run parziale / pilota: non confondere con il report stagione completa.
+            </p>
+          )}
           <div className="mt-3 h-2 w-full overflow-hidden rounded bg-black/30">
             <div
               className="h-full transition-all"
@@ -310,6 +342,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
               <tr>
                 <th>ID</th>
                 <th>Stagione</th>
+                <th>Scope</th>
                 <th>Stato</th>
                 <th>Progresso</th>
                 <th>Eleggibili</th>
@@ -321,6 +354,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                 <tr key={r.id}>
                   <td>{r.id}</td>
                   <td>{r.season_label}</td>
+                  <td>{historicalScanScopeLabel(r)}</td>
                   <td>{historicalScanStatusLabel(r.status)}</td>
                   <td>
                     {r.matches_processed}/{r.matches_total} ({r.progress_pct ?? 0}%)
@@ -355,7 +389,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
               ))}
               {!runs.length && (
                 <tr>
-                  <td colSpan={6} style={{ color: 'var(--lab-muted)' }}>
+                  <td colSpan={7} style={{ color: 'var(--lab-muted)' }}>
                     Nessun run per questa stagione.
                   </td>
                 </tr>
@@ -365,23 +399,38 @@ export function HistoricalScansTab({ refreshKey }: Props) {
         </div>
       </section>
 
-      {confirmOpen && (
+      {confirmMode && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           role="dialog"
           aria-modal="true"
         >
           <div className="lab-card max-w-md rounded-xl p-5">
-            <h3 className="text-lg font-semibold">Conferma scansione storica</h3>
+            <h3 className="text-lg font-semibold">
+              {confirmMode === 'pilot'
+                ? 'Conferma scansione pilota'
+                : 'Conferma scansione completa'}
+            </h3>
             <p className="mt-2 text-sm" style={{ color: 'var(--lab-muted)' }}>
-              Avviare il replay Cecchino sulla stagione <strong>{season}</strong>? Il processo è
-              offline, può richiedere diversi minuti e non modifica Cecchino Today (Betfair).
+              {confirmMode === 'pilot' ? (
+                <>
+                  Avviare il replay pilota sulle prime{' '}
+                  <strong>{HISTORICAL_SCAN_PILOT_MAX_MATCHES}</strong> partite della stagione{' '}
+                  <strong>{season}</strong>? Il report sarà marcato come run parziale e non va
+                  confuso con la scansione completa.
+                </>
+              ) : (
+                <>
+                  Avviare il replay completo sulla stagione <strong>{season}</strong>? Il processo è
+                  offline, può richiedere diversi minuti e non modifica Cecchino Today (Betfair).
+                </>
+              )}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
                 className="lab-btn rounded-md px-3 py-2 text-sm"
-                onClick={() => setConfirmOpen(false)}
+                onClick={() => setConfirmMode(null)}
               >
                 Annulla
               </button>
@@ -389,7 +438,7 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                 type="button"
                 className="lab-btn rounded-md px-3 py-2 text-sm font-semibold"
                 disabled={busy}
-                onClick={() => void onStart()}
+                onClick={() => void onStart(confirmMode)}
               >
                 Conferma avvio
               </button>

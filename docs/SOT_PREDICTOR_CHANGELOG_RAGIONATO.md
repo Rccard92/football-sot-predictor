@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Replay storico Cecchino Lab analysis-safe (2026-07-27)
+
+- Perché: la prima implementazione del replay settle-ava anche le escluse, non leggeva i segnali dalla matrice nested, hash incompleto, report senza universo eligible-only, Intensità/Acq dichiarate solo-compat senza feature export, assenza pilota.
+- Cosa: gate settlement `eligible_core`; estrazione `row["signals"]` + mapping canonico; hash moduli pre-match; report AI v2; feature raw GI/Acq; `max_matches` pilota UI+API.
+- Cosa non fa: formule/pesi/soglie, moduli Today/Betfair, migration, scansione reale DB.
+
 ## Feat — Replay storico Cecchino Lab 2021/2022 (2026-07-27)
 
 - Perché: analisi offline riproducibile stagione per stagione senza leakage e con ROI reale/sintetico separati.
