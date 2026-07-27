@@ -5,7 +5,7 @@ import type {
   CecchinoKpiExplanationsResponse,
   CecchinoKpiV2Panel,
   CecchinoKpiV2Row,
-  CecchinoPurchasabilityComparisonMarketItem,
+  CecchinoPurchasabilityObservationalItem,
   CecchinoPurchasabilityPreviewItem,
 } from '../../lib/cecchinoTodayApi'
 import { getKpiExplanations } from '../../lib/cecchinoTodayApi'
@@ -18,11 +18,9 @@ import {
   fmtScoreAcquisto,
   fmtVantaggioProb,
   formatEdgePct,
-  formatPurchasabilityDelta,
   historicalReliabilityBadgeClass,
   isKpiPrimaryRow,
   purchasabilityBadgeClass,
-  purchasabilityDeltaClass,
   purchasabilityV11BadgeClass,
   ratingBadgeClass,
   vantaggioClassName,
@@ -40,7 +38,6 @@ type AnalyzableMetricKey =
   | 'purchasability'
   | 'purchasability_v1_1'
   | 'purchasability_v2'
-  | 'purchasability_delta'
 
 function kpiSegnoLabel(row: CecchinoKpiV2Row): string {
   return row.segno || row.label || row.market_key
@@ -75,7 +72,14 @@ type Props = {
   historicalReliabilityError?: string | null
   purchasabilityByMarketKey?: Record<string, CecchinoPurchasabilityPreviewItem>
   purchasabilityV2ByMarketKey?: Record<string, CecchinoPurchasabilityPreviewItem>
-  purchasabilityComparisonByMarketKey?: Record<string, CecchinoPurchasabilityComparisonMarketItem>
+  purchasabilityObservationalV11ByMarketKey?: Record<
+    string,
+    CecchinoPurchasabilityObservationalItem
+  >
+  purchasabilityObservationalV2ByMarketKey?: Record<
+    string,
+    CecchinoPurchasabilityObservationalItem
+  >
   todayFixtureId?: number
   providerFixtureId?: number | null
 }
@@ -110,10 +114,12 @@ function AnalyzableCell({
 
 function PurchasabilityCell({
   item,
+  observational,
   variant = 'v2',
   ariaPrefix = 'Acquistabilità',
 }: {
   item: CecchinoPurchasabilityPreviewItem | undefined
+  observational?: CecchinoPurchasabilityObservationalItem
   variant?: 'v1_1' | 'v2'
   ariaPrefix?: string
 }) {
@@ -125,35 +131,35 @@ function PurchasabilityCell({
       ? `${ariaPrefix} ${item.score}, classe ${item.class}`
       : `${ariaPrefix} ${item.score}`
   const badgeFn = variant === 'v1_1' ? purchasabilityV11BadgeClass : purchasabilityBadgeClass
-  return (
-    <span
-      aria-label={label}
-      className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${badgeFn(
-        item.class,
-        item.calculation_quality,
-      )}`}
-    >
-      {item.score}
-    </span>
-  )
-}
 
-function PurchasabilityDeltaCell({
-  item,
-}: {
-  item: CecchinoPurchasabilityComparisonMarketItem | undefined
-}) {
-  const delta = item?.delta_v2_minus_v1_1
-  const display = formatPurchasabilityDelta(delta)
+  let subline: string
+  if (observational?.status === 'available') {
+    const n = observational.sample_size ?? 0
+    const roi = observational.roi_pct
+    let roiLabel = '—'
+    if (roi != null && !Number.isNaN(Number(roi))) {
+      const pct = Number(roi)
+      const sign = pct > 0 ? '+' : ''
+      roiLabel = `${sign}${pct.toFixed(1)}%`
+    }
+    subline = `${n} casi · ROI ${roiLabel}`
+  } else if (observational?.status === 'insufficient_data') {
+    subline = 'Campione insufficiente'
+  } else {
+    subline = 'Non valutato'
+  }
+
   return (
-    <span
-      title="Differenza numerica V2 meno V1.1. Non rappresenta un miglioramento validato."
-      aria-label="Differenza numerica V2 meno V1.1. Non rappresenta un miglioramento validato."
-      className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${purchasabilityDeltaClass(
-        delta,
-      )}`}
-    >
-      {display}
+    <span className="text-left" aria-label={`${label}. ${subline}`}>
+      <span
+        className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${badgeFn(
+          item.class,
+          item.calculation_quality,
+        )}`}
+      >
+        {item.score}
+      </span>
+      <span className="mt-0.5 block text-[9px] text-slate-400">{subline}</span>
     </span>
   )
 }
@@ -166,13 +172,7 @@ function cohortScopeChip(scope?: HistoricalReliabilityItem['cohort_scope']) {
       </span>
     )
   }
-  if (scope === 'all_competitions_fallback') {
-    return (
-      <span className="mt-0.5 inline-block rounded border border-amber-500/40 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber-200">
-        Globale
-      </span>
-    )
-  }
+  // Chip "Globale" rimosso dalla UI KPI (fallback resta solo nel popover).
   return null
 }
 
@@ -388,7 +388,8 @@ export function CecchinoTodayKpiPanel({
   historicalReliabilityError,
   purchasabilityByMarketKey,
   purchasabilityV2ByMarketKey,
-  purchasabilityComparisonByMarketKey,
+  purchasabilityObservationalV11ByMarketKey,
+  purchasabilityObservationalV2ByMarketKey,
   todayFixtureId,
   providerFixtureId,
 }: Props) {
@@ -470,9 +471,14 @@ export function CecchinoTodayKpiPanel({
     purchasabilityV2ByMarketKey?.[row.segno] ||
     undefined
 
-  const lookupPurchDelta = (row: CecchinoKpiV2Row) =>
-    purchasabilityComparisonByMarketKey?.[row.market_key] ||
-    purchasabilityComparisonByMarketKey?.[row.segno] ||
+  const lookupObsV11 = (row: CecchinoKpiV2Row) =>
+    purchasabilityObservationalV11ByMarketKey?.[row.market_key] ||
+    purchasabilityObservationalV11ByMarketKey?.[row.segno] ||
+    undefined
+
+  const lookupObsV2 = (row: CecchinoKpiV2Row) =>
+    purchasabilityObservationalV2ByMarketKey?.[row.market_key] ||
+    purchasabilityObservationalV2ByMarketKey?.[row.segno] ||
     undefined
 
   return (
@@ -602,16 +608,10 @@ export function CecchinoTodayKpiPanel({
                 Affidabilità
               </th>
               <th className="border-r border-slate-500/40 px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-300">
-                Acq. v1.1
+                Acq. V1.1
               </th>
-              <th className="border-r border-slate-500/40 px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-100">
-                Acq. v2
-              </th>
-              <th
-                className="px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-200"
-                title="Differenza numerica V2 meno V1.1. Non rappresenta un miglioramento validato."
-              >
-                Δ V2−V1.1
+              <th className="px-1 py-2 text-[9px] font-semibold uppercase leading-tight text-slate-100">
+                Acq. V2
               </th>
             </tr>
           </thead>
@@ -626,7 +626,8 @@ export function CecchinoTodayKpiPanel({
               const emp = lookup(row)
               const purch = lookupPurch(row)
               const purchV2 = lookupPurchV2(row)
-              const purchDelta = lookupPurchDelta(row)
+              const obsV11 = lookupObsV11(row)
+              const obsV2 = lookupObsV2(row)
               const mk = row.market_key
 
               return (
@@ -745,12 +746,13 @@ export function CecchinoTodayKpiPanel({
                     >
                       <PurchasabilityCell
                         item={purch}
+                        observational={obsV11}
                         variant="v1_1"
                         ariaPrefix="Acquistabilità v1.1"
                       />
                     </AnalyzableCell>
                   </td>
-                  <td className="border-r border-slate-500/40 px-1 py-2.5">
+                  <td className="px-1 py-2.5">
                     <AnalyzableCell
                       active={analysisMode}
                       label="Acquistabilità v2"
@@ -758,18 +760,10 @@ export function CecchinoTodayKpiPanel({
                     >
                       <PurchasabilityCell
                         item={purchV2}
+                        observational={obsV2}
                         variant="v2"
                         ariaPrefix="Acquistabilità v2"
                       />
-                    </AnalyzableCell>
-                  </td>
-                  <td className="px-1 py-2.5">
-                    <AnalyzableCell
-                      active={analysisMode}
-                      label="Differenza V2−V1.1"
-                      onOpen={() => openMetric(mk, 'purchasability_delta')}
-                    >
-                      <PurchasabilityDeltaCell item={purchDelta} />
                     </AnalyzableCell>
                   </td>
                 </tr>
@@ -785,7 +779,8 @@ export function CecchinoTodayKpiPanel({
           const emp = lookup(row)
           const purch = lookupPurch(row)
           const purchV2 = lookupPurchV2(row)
-          const purchDelta = lookupPurchDelta(row)
+          const obsV11 = lookupObsV11(row)
+          const obsV2 = lookupObsV2(row)
           const mk = row.market_key
           return (
             <article
@@ -829,7 +824,7 @@ export function CecchinoTodayKpiPanel({
               </div>
               <div className="mb-2 space-y-2">
                 <div>
-                  <p className="mb-1 text-[10px] uppercase text-slate-400">Acquistabilità v1.1</p>
+                  <p className="mb-1 text-[10px] uppercase text-slate-400">Acquistabilità V1.1</p>
                   <AnalyzableCell
                     active={analysisMode}
                     label="Acquistabilità v1.1"
@@ -837,13 +832,14 @@ export function CecchinoTodayKpiPanel({
                   >
                     <PurchasabilityCell
                       item={purch}
+                      observational={obsV11}
                       variant="v1_1"
                       ariaPrefix="Acquistabilità v1.1"
                     />
                   </AnalyzableCell>
                 </div>
                 <div>
-                  <p className="mb-1 text-[10px] uppercase text-slate-300">Acquistabilità v2</p>
+                  <p className="mb-1 text-[10px] uppercase text-slate-300">Acquistabilità V2</p>
                   <AnalyzableCell
                     active={analysisMode}
                     label="Acquistabilità v2"
@@ -851,19 +847,10 @@ export function CecchinoTodayKpiPanel({
                   >
                     <PurchasabilityCell
                       item={purchV2}
+                      observational={obsV2}
                       variant="v2"
                       ariaPrefix="Acquistabilità v2"
                     />
-                  </AnalyzableCell>
-                </div>
-                <div>
-                  <p className="mb-1 text-[10px] uppercase text-slate-400">Differenza V2−V1.1</p>
-                  <AnalyzableCell
-                    active={analysisMode}
-                    label="Differenza V2−V1.1"
-                    onOpen={() => openMetric(mk, 'purchasability_delta')}
-                  >
-                    <PurchasabilityDeltaCell item={purchDelta} />
                   </AnalyzableCell>
                 </div>
               </div>

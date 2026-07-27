@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Refactor — KPI Acquistabilità: colonne semplificate + sample/ROI (2026-07-27)
+
+- Perché: ridurre rumore UI (Δ V2−V1.1, chip Globale) e allineare Acq. V1.1/V2 allo stile Affidabilità (casi · ROI) senza toccare le formule.
+- Cosa: rimozione colonna delta desktop/mobile; rimozione chip Globale sotto Affidabilità; overlay osservazionale read-only da `cecchino_purchasability_evaluations` (market + score_band) sul detail.
+- Cosa non fa: score Acq/Affidabilità, audit formule backend, Cecchino Lab, migration.
+
 ## Fix — Affidabilità storica Acquistabilità v2 (norm profile v2) (2026-07-27)
 
 - Perché: il profilo storico e il backfill accettavano fixture non eligible, promuovevano `updated_at` a timestamp verificato e impostavano `source_snapshot_before_kickoff=True` senza confronto reale; `dry_run=True` poteva scrivere.

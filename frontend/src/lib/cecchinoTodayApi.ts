@@ -364,6 +364,15 @@ export type CecchinoKpiV2Panel = {
   warnings?: string[]
 }
 
+export type CecchinoPurchasabilityObservationalItem = {
+  status: 'available' | 'insufficient_data' | 'not_evaluated'
+  sample_size: number
+  roi_pct: number | null
+  score_band?: string | null
+  candidate_version?: string | null
+  market_key?: string | null
+}
+
 export type CecchinoPurchasabilityPreviewItem = {
   market_key: string
   selection?: string | null
@@ -1170,6 +1179,14 @@ export type CecchinoTodayDetailResponse = {
   expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics
   purchasability_preview?: CecchinoPurchasabilityPreviewSnapshot | null
   purchasability_preview_v2?: CecchinoPurchasabilityPreviewSnapshot | null
+  purchasability_observational_v1_1?: Record<
+    string,
+    CecchinoPurchasabilityObservationalItem
+  > | null
+  purchasability_observational_v2?: Record<
+    string,
+    CecchinoPurchasabilityObservationalItem
+  > | null
   purchasability_comparison?: CecchinoPurchasabilityComparison | null
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null

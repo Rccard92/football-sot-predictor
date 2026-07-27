@@ -2316,6 +2316,18 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
         db=db,
     )
+    try:
+        from app.services.cecchino.cecchino_purchasability_observational import (
+            build_observational_maps_for_previews,
+        )
+
+        obs_v1, obs_v2 = build_observational_maps_for_previews(
+            db,
+            purch_v1=purch_v1 if isinstance(purch_v1, dict) else None,
+            purch_v2=purch_v2 if isinstance(purch_v2, dict) else None,
+        )
+    except Exception:
+        obs_v1, obs_v2 = {}, {}
     return {
         "status": "ok",
         "version": CECCHINO_TODAY_VERSION,
@@ -2355,6 +2367,8 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
         "purchasability_preview": purch_v1,
         "purchasability_preview_v2": purch_v2,
+        "purchasability_observational_v1_1": obs_v1,
+        "purchasability_observational_v2": obs_v2,
         "purchasability_comparison": build_purchasability_comparison(
             purch_v1 if isinstance(purch_v1, dict) else None,
             purch_v2 if isinstance(purch_v2, dict) else None,

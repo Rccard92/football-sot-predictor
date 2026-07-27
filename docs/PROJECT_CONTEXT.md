@@ -134,7 +134,7 @@ Workspace `/monitoraggio-moduli`: Acquistabilità, Balance v5, Goal Intensity v5
 
 ## Acquistabilità v2 — Indice decisionale parallelo (2026-07-27)
 
-`decision_quality_v2` (`cecchino_purchasability_v2_candidate_1`) è un indice **parallelo** alla v1.1. Non sostituisce `balanced_geometric_v1_1` né la validation pipeline. Snapshot separato: `cecchino_output_json.purchasability_preview_v2`. Normalizzazione storica congelata (`cecchino_purchasability_v2_norm_profile_2026_07_26_v2`, cutoff `scan_date <= 2026-07-26`): solo fixture `eligible` con timestamp snapshot verificato e `snapshot_at < kickoff` (`updated_at` non è prova pre-match). UI KPI: colonne Acq. v1.1 / Acq. v2 / Δ V2−V1.1. Backfill manuale: default dry-run non scrivente; `--apply` + token solo dopo guardie. Formula v2 invariata. Cecchino Lab non modificato. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+`decision_quality_v2` (`cecchino_purchasability_v2_candidate_1`) è un indice **parallelo** alla v1.1. Non sostituisce `balanced_geometric_v1_1` né la validation pipeline. Snapshot separato: `cecchino_output_json.purchasability_preview_v2`. Normalizzazione storica congelata (`cecchino_purchasability_v2_norm_profile_2026_07_26_v2`, cutoff `scan_date <= 2026-07-26`): solo fixture `eligible` con timestamp snapshot verificato e `snapshot_at < kickoff` (`updated_at` non è prova pre-match). UI KPI: colonne Acq. V1.1 / Acq. V2 con sottoriga osservazionale sample/ROI (validation settled); senza Δ né chip Globale sotto Affidabilità. Backfill manuale: default dry-run non scrivente; `--apply` + token solo dopo guardie. Formula v2 invariata. Cecchino Lab non modificato. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
 
 ## Fix — Affidabilità storica Acquistabilità v2 (2026-07-27)
 
