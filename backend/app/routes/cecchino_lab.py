@@ -27,6 +27,19 @@ from app.services.cecchino_data_lab.query_service import (
     list_datasets,
     list_matches,
 )
+from app.services.cecchino_data_lab.historical_scan_preflight import run_historical_scan_preflight
+from app.services.cecchino_data_lab.historical_scan_service import (
+    cancel_historical_scan,
+    get_historical_scan,
+    list_historical_scans,
+    list_run_matches,
+    resume_historical_scan,
+    start_historical_scan,
+)
+from app.services.cecchino_data_lab.historical_ai_report import (
+    build_ai_report_zip_bytes,
+    iter_report_chunks,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -309,5 +322,196 @@ def data_quality_issues_export(
     return StreamingResponse(
         iter([content.encode("utf-8")]),
         media_type=media_type,
+        headers=headers,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Historical scans (Cecchino Lab only — offline replay Bet365)
+# ---------------------------------------------------------------------------
+
+
+@admin_router.post("/historical-scans/preflight")
+def historical_scan_preflight(
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    season_label = str((body or {}).get("season_label") or "").strip()
+    if not season_label:
+        raise HTTPException(status_code=400, detail="season_label richiesto")
+    result = run_historical_scan_preflight(db, season_label=season_label)
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@admin_router.post("/historical-scans")
+def historical_scan_start(
+    body: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    season_label = str((body or {}).get("season_label") or "").strip()
+    confirm = (body or {}).get("confirm")
+    try:
+        result = start_historical_scan(
+            db,
+            season_label=season_label,
+            confirm=confirm,
+            background=True,
+        )
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@admin_router.post("/historical-scans/{run_id}/resume")
+def historical_scan_resume(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = resume_historical_scan(db, run_id, background=True)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result), status_code=202)
+
+
+@admin_router.post("/historical-scans/{run_id}/cancel")
+def historical_scan_cancel(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = cancel_historical_scan(db, run_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/historical-scans")
+def historical_scans_list(
+    season_label: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    return JSONResponse(
+        content=jsonable_encoder(list_historical_scans(db, season_label=season_label))
+    )
+
+
+@router.get("/historical-scans/{run_id}")
+def historical_scan_detail(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = get_historical_scan(db, run_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/historical-scans/{run_id}/matches")
+def historical_scan_matches(
+    run_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    eligibility: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = list_run_matches(
+            db, run_id, limit=limit, offset=offset, eligibility=eligibility
+        )
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/historical-scans/{run_id}/summary")
+def historical_scan_summary(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = get_historical_scan(db, run_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(
+        content=jsonable_encoder(
+            {
+                "run_id": run_id,
+                "status": result.get("status"),
+                "summary": result.get("summary"),
+                "preflight": result.get("preflight"),
+                "progress_pct": result.get("progress_pct"),
+                "matches_processed": result.get("matches_processed"),
+                "matches_total": result.get("matches_total"),
+                "matches_eligible_core": result.get("matches_eligible_core"),
+                "matches_excluded": result.get("matches_excluded"),
+                "matches_error": result.get("matches_error"),
+            }
+        )
+    )
+
+
+@router.get("/historical-scans/{run_id}/report")
+def historical_scan_report(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    try:
+        filename, data = build_ai_report_zip_bytes(db, run_id)
+    except CecchinoLabImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        iter_report_chunks(data),
+        media_type="application/zip",
         headers=headers,
     )

@@ -4,11 +4,16 @@ import {
   countBatchReadyItems,
   formatAnomaliesHint,
   formatOdd,
+  historicalScanStatusLabel,
   isBatchItemReady,
+  isHistoricalScanActive,
   isOverviewEmpty,
   matchOddsColumnLabel,
   qualityBadgeClass,
+  quoteLegendClass,
   replaceDatasetConfirmMessage,
+  DEFAULT_HISTORICAL_SEASON,
+  HISTORICAL_SCAN_CONFIRM_TOKEN,
   type CecchinoLabOverview,
 } from './cecchinoLabApi'
 import { qualityLabel } from '../components/cecchino-data-lab/labTheme'
@@ -66,6 +71,22 @@ describe('cecchinoLabApi helpers', () => {
         { import_status: 'already_imported' },
       ]),
     ).toBe(2)
+  })
+
+  it('historical scan helpers', () => {
+    expect(DEFAULT_HISTORICAL_SEASON).toBe('2021/2022')
+    expect(HISTORICAL_SCAN_CONFIRM_TOKEN).toBe('RUN_CECCHINO_LAB_HISTORICAL_SCAN')
+    expect(historicalScanStatusLabel('ready_with_warnings')).toBe('Pronta con warning')
+    expect(historicalScanStatusLabel('blocked')).toBe('Bloccata')
+    expect(historicalScanStatusLabel('running')).toBe('In esecuzione')
+    expect(historicalScanStatusLabel('completed')).toBe('Completata')
+    expect(historicalScanStatusLabel('failed')).toBe('Fallita')
+    expect(isHistoricalScanActive('running')).toBe(true)
+    expect(isHistoricalScanActive('pending')).toBe(true)
+    expect(isHistoricalScanActive('completed')).toBe(false)
+    expect(quoteLegendClass('real')).toBe('lab-quote-real')
+    expect(quoteLegendClass('derived')).toBe('lab-quote-derived')
+    expect(quoteLegendClass('unavailable')).toBe('lab-quote-na')
   })
 
   it('isOverviewEmpty true for empty overview', () => {

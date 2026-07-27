@@ -23,6 +23,13 @@ from app.models.cecchino_lab_dataset import CecchinoLabDataset
 from app.models.cecchino_lab_import import CecchinoLabImport
 from app.models.cecchino_lab_match import CecchinoLabMatch
 from app.models.cecchino_lab_data_issue import CecchinoLabDataIssue
+from app.models.cecchino_lab_historical_scan_run import CecchinoLabHistoricalScanRun
+from app.models.cecchino_lab_historical_match_snapshot import (
+    CecchinoLabHistoricalMatchSnapshot,
+)
+from app.models.cecchino_lab_historical_market_result import (
+    CecchinoLabHistoricalMarketResult,
+)
 from app.models.competition import Competition
 from app.models.fixture import Fixture
 from app.models.fixture_lineup import FixtureLineup
@@ -95,6 +102,9 @@ __all__ = [
     "CecchinoLabImport",
     "CecchinoLabMatch",
     "CecchinoLabDataIssue",
+    "CecchinoLabHistoricalScanRun",
+    "CecchinoLabHistoricalMatchSnapshot",
+    "CecchinoLabHistoricalMarketResult",
     "Competition",
     "Fixture",
     "FixtureLineup",

@@ -434,6 +434,40 @@ async function postFormData<T>(path: string, form: FormData): Promise<T> {
   return body as T
 }
 
+async function postJson<T>(path: string, payload?: unknown): Promise<T> {
+  const base = getApiBase()
+  const p = path.startsWith('/') ? path : `/${path}`
+  const res = await fetch(`${base}${p}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  })
+  const ct = res.headers.get('content-type') ?? ''
+  let body: unknown = null
+  if (ct.includes('application/json')) {
+    try {
+      body = await res.json()
+    } catch {
+      body = null
+    }
+  }
+  if (!res.ok) {
+    throw new AdminHttpError(
+      res.status,
+      (body as { message?: string })?.message || res.statusText,
+      body,
+    )
+  }
+  if (body && typeof body === 'object' && 'status' in body && (body as { status: string }).status === 'error') {
+    throw new AdminHttpError(
+      res.status,
+      (body as { message?: string }).message || 'Errore richiesta',
+      body,
+    )
+  }
+  return body as T
+}
+
 export function getCecchinoLabOverview(): Promise<CecchinoLabOverview> {
   return requestJson('/api/cecchino-lab/overview')
 }
@@ -720,6 +754,137 @@ export function replaceCecchinoLabDataset(datasetId: number, file: File): Promis
   form.append('file', file)
   form.append('confirm', REPLACE_CONFIRM_TOKEN)
   return postFormData(`/api/admin/cecchino-lab/datasets/${datasetId}/replace`, form)
+}
+
+export const HISTORICAL_SCAN_CONFIRM_TOKEN = 'RUN_CECCHINO_LAB_HISTORICAL_SCAN'
+export const DEFAULT_HISTORICAL_SEASON = '2021/2022'
+
+export type HistoricalScanPreflight = {
+  season_label: string
+  status: 'ready' | 'ready_with_warnings' | 'blocked' | string
+  datasets_found: Array<{
+    id: number
+    dataset_key: string
+    competition_name: string
+    country: string
+    matches_count: number
+    data_quality_status: string
+  }>
+  competitions_found: string[]
+  matches_total: number
+  matches_with_valid_kickoff?: number
+  matches_with_ft?: number
+  matches_with_ht?: number
+  bet365_1x2_pre_coverage?: number
+  bet365_1x2_closing_coverage?: number
+  bet365_ou25_pre_coverage?: number
+  bet365_ou25_closing_coverage?: number
+  quote_counts?: { real: number; derived: number; not_available: number }
+  blocking_anomalies?: Array<{ code: string; message: string }>
+  warnings?: Array<{ code: string; message: string }>
+  module_availability?: Record<string, { status: string; note?: string }>
+  market_availability?: Record<string, { status: string; expected_coverage_pct?: number }>
+}
+
+export type HistoricalScanRun = {
+  id: number
+  season_label: string
+  status: string
+  scan_version: string
+  requested_at: string | null
+  started_at: string | null
+  completed_at: string | null
+  current_dataset_id: number | null
+  current_match_id: number | null
+  current_competition: string | null
+  matches_total: number
+  matches_processed: number
+  matches_eligible_core: number
+  matches_excluded: number
+  matches_error: number
+  progress_pct: number | null
+  preflight?: HistoricalScanPreflight | null
+  summary?: Record<string, unknown> | null
+  error?: Record<string, unknown> | null
+  source_git_commit?: string | null
+  cancel_requested?: boolean
+}
+
+export function preflightHistoricalScan(seasonLabel: string): Promise<HistoricalScanPreflight> {
+  return postJson('/api/admin/cecchino-lab/historical-scans/preflight', {
+    season_label: seasonLabel,
+  })
+}
+
+export function startHistoricalScan(seasonLabel: string): Promise<HistoricalScanRun> {
+  return postJson('/api/admin/cecchino-lab/historical-scans', {
+    season_label: seasonLabel,
+    confirm: HISTORICAL_SCAN_CONFIRM_TOKEN,
+  })
+}
+
+export function listHistoricalScans(seasonLabel?: string): Promise<HistoricalScanRun[]> {
+  const q = seasonLabel ? `?season_label=${encodeURIComponent(seasonLabel)}` : ''
+  return requestJson(`/api/cecchino-lab/historical-scans${q}`)
+}
+
+export function getHistoricalScan(runId: number): Promise<HistoricalScanRun> {
+  return requestJson(`/api/cecchino-lab/historical-scans/${runId}`)
+}
+
+export function resumeHistoricalScan(runId: number): Promise<HistoricalScanRun> {
+  return postJson(`/api/admin/cecchino-lab/historical-scans/${runId}/resume`)
+}
+
+export function cancelHistoricalScan(runId: number): Promise<HistoricalScanRun> {
+  return postJson(`/api/admin/cecchino-lab/historical-scans/${runId}/cancel`)
+}
+
+export function getHistoricalScanSummary(runId: number): Promise<Record<string, unknown>> {
+  return requestJson(`/api/cecchino-lab/historical-scans/${runId}/summary`)
+}
+
+export async function downloadHistoricalScanReport(runId: number): Promise<void> {
+  const base = getApiBase()
+  const res = await fetch(`${base}/api/cecchino-lab/historical-scans/${runId}/report`)
+  if (!res.ok) {
+    throw new AdminHttpError(res.status, `Download report fallito (${res.status})`, null)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = /filename="([^"]+)"/.exec(cd)
+  const filename = match?.[1] || `cecchino_lab_ai_report_run_${runId}.zip`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function historicalScanStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    pending: 'In coda',
+    running: 'In esecuzione',
+    completed: 'Completata',
+    completed_with_warnings: 'Completata con warning',
+    failed: 'Fallita',
+    cancelled: 'Annullata',
+    ready: 'Pronta',
+    ready_with_warnings: 'Pronta con warning',
+    blocked: 'Bloccata',
+  }
+  return map[status] || status
+}
+
+export function isHistoricalScanActive(status: string): boolean {
+  return status === 'pending' || status === 'running'
+}
+
+export function quoteLegendClass(kind: 'real' | 'derived' | 'unavailable'): string {
+  if (kind === 'real') return 'lab-quote-real'
+  if (kind === 'derived') return 'lab-quote-derived'
+  return 'lab-quote-na'
 }
 
 export { IMPORT_CONFIRM_TOKEN, REPLACE_CONFIRM_TOKEN }

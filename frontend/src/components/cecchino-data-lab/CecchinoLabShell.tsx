@@ -46,6 +46,9 @@ export function CecchinoLabShell({ children, className = '' }: Props) {
         .lab-badge-warn { background: rgba(240,180,41,.14); color: var(--lab-warn); border: 1px solid rgba(240,180,41,.35); }
         .lab-badge-err { background: rgba(240,113,120,.14); color: var(--lab-err); border: 1px solid rgba(240,113,120,.35); }
         .lab-badge-muted { background: rgba(138,160,181,.12); color: var(--lab-muted); border: 1px solid rgba(138,160,181,.25); }
+        .lab-quote-real { color: var(--lab-ok); background: rgba(61,214,140,.12); }
+        .lab-quote-derived { color: #7ec8e3; background: rgba(126,200,227,.12); }
+        .lab-quote-na { color: var(--lab-muted); background: rgba(138,160,181,.1); }
         .lab-input {
           background: var(--lab-bg-elevated);
           border: 1px solid var(--lab-border);

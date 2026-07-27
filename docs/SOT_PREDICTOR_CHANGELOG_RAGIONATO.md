@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Replay storico Cecchino Lab 2021/2022 (2026-07-27)
+
+- Perché: analisi offline riproducibile stagione per stagione senza leakage e con ROI reale/sintetico separati.
+- Cosa: tabelle `cecchino_lab_historical_*`, preflight/Bet365/replay/report, UI Scansioni storiche, confirm `RUN_CECCHINO_LAB_HISTORICAL_SCAN`.
+- Cosa non fa: formule/gate/UI Today, Betfair nello storico, auto-start su deploy, Intensità/Acquistabilità operative.
+
 ## Refactor — KPI Acquistabilità: colonne semplificate + sample/ROI (2026-07-27)
 
 - Perché: ridurre rumore UI (Δ V2−V1.1, chip Globale) e allineare Acq. V1.1/V2 allo stile Affidabilità (casi · ROI) senza toccare le formule.

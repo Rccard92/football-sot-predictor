@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Replay storico Cecchino Lab 2021/2022 (2026-07-27)
+
+Scansione storica isolata nel Lab: preflight, adapter Bet365, job resumibile offline, snapshot anti-leakage, KPI Bet365 wrapper, settlement 14 mercati, report ZIP ChatGPT, tab UI Scansioni storiche. **Today/Betfair invariati.** Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`.
+
 ## Feat — Overview betting analytics + export qualità Cecchino Lab (2026-07-27)
 
 Overview Lab = dashboard storica betting (`GET /analytics/overview`): 1X2, goal, HT, favorita/calibrazione, margine, movimento pre→closing, League DNA, insight deterministici. Export qualità CSV/JSON non paginato. Solo lettura; nessuna predizione/formula; Cecchino Today invariato. Doc: `docs/SOT_PREDICTOR_CECCHINO_LAB.md`.

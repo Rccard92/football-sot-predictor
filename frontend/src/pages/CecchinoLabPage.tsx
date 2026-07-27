@@ -6,6 +6,7 @@ import { ImportWizardTab } from '../components/cecchino-data-lab/ImportWizardTab
 import { DatasetsTab } from '../components/cecchino-data-lab/DatasetsTab'
 import { MatchesExplorerTab } from '../components/cecchino-data-lab/MatchesExplorerTab'
 import { DataQualityTab } from '../components/cecchino-data-lab/DataQualityTab'
+import { HistoricalScansTab } from '../components/cecchino-data-lab/HistoricalScansTab'
 import { MatchDetailDrawer } from '../components/cecchino-data-lab/MatchDetailDrawer'
 
 const TABS = [
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'datasets', label: 'Dataset' },
   { id: 'matches', label: 'Partite' },
   { id: 'quality', label: 'Qualità dati' },
+  { id: 'historical', label: 'Scansioni storiche' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -37,8 +39,8 @@ export function CecchinoLabPage() {
             Archivio storico Football-Data
           </h1>
           <p className="mt-1 max-w-2xl text-sm" style={{ color: 'var(--lab-muted)' }}>
-            Workspace dati isolato: analytics betting storiche, import CSV e audit qualità Bet365. Nessuna formula,
-            nessuna predizione, nessun impatto su Cecchino Today.
+            Workspace dati isolato: analytics betting, import CSV, audit qualità Bet365 e scansioni
+            storiche offline. Cecchino Today (Betfair) resta invariato.
           </p>
         </motion.div>
 
@@ -101,6 +103,7 @@ export function CecchinoLabPage() {
             }}
           />
         )}
+        {tab === 'historical' && <HistoricalScansTab refreshKey={refreshKey} />}
       </div>
 
       <MatchDetailDrawer matchId={drawerMatchId} onClose={() => setDrawerMatchId(null)} />

@@ -1,5 +1,14 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — historical scan (manuale, offline) (2026-07-27)
+
+1. Preflight `POST /api/admin/cecchino-lab/historical-scans/preflight`
+2. Avvio manuale con confirm `RUN_CECCHINO_LAB_HISTORICAL_SCAN` (UI o admin API)
+3. Job batch resumibile → snapshot + market results `cecchino_lab_historical_*`
+4. Download report ZIP `GET .../historical-scans/{id}/report`
+
+Non fa parte della pipeline Today / auto-scan / deploy. Betfair operativo invariato.
+
 ## Cecchino Lab — import storico Football-Data (2026-07-26)
 
 Area parallela **non operativa** su Today:
