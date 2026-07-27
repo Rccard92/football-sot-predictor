@@ -1,5 +1,9 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Acquistabilità v2 parallela (decision_quality_v2) (2026-07-27)
+
+Indice parallelo alla v1.1: Fase 1 valore assoluto + Fase 2 qualità decisionale, normalizzazione storica congelata, snapshot `purchasability_preview_v2`, UI a tre colonne (v1.1 / v2 / delta), audit formule, backfill manuale dry-run. Validation v1.1 e Cecchino Lab invariati.
+
 ## Feat — Overview betting analytics + export qualità Cecchino Lab (2026-07-27)
 
 - Perché: trasformare l’Overview Lab da KPI amministrativi a dashboard storica betting (risultati, goal, Bet365) con confronto campionati/stagioni e export segnalazioni.

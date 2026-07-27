@@ -219,6 +219,21 @@ Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
 | Librerie | Tailwind, ECharts, Framer Motion, Sonner |
 | Formule | invariate |
 
+## Acquistabilità v2 — parallela a v1.1 (2026-07-27)
+
+| Campo | Valore |
+|-------|--------|
+| v1.1 (invariata) | `candidate_2` / `balanced_geometric_v1_1` → `purchasability_preview` |
+| v2 parallela | `cecchino_purchasability_v2_candidate_1` / `decision_quality_v2` → `purchasability_preview_v2` |
+| Registry v2 | `active_parallel_preview` (non entra nei gate promozione) |
+| Fase 1 v2 | Rating 30% + Edge_norm 40% + Vantaggio_norm 30% |
+| Fase 2 v2 | Dominanza Rating/Edge/Prob + Shift + Contrasto opposto |
+| Norm profile | `cecchino_purchasability_v2_norm_profile_2026_07_26_v1` (percentile P95 nearest-rank, zero-anchored) |
+| Gate | Edge/Vantaggio ≤0 → score ufficiale 0, raw pre-gate preservato |
+| UI | Acq. v1.1 · Acq. v2 · Δ V2−V1.1 (+ audit formule) |
+| Backfill | `python -m app.jobs.backfill_purchasability_v2` (dry-run default) |
+| Lab | non toccato |
+
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 | Campo | Valore |

@@ -73,9 +73,17 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
                     {explanation.formula_version}
                   </span>
                 ) : null}
-                <span className="rounded border border-sky-300/40 bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-100">
-                  Snapshot persistito
-                </span>
+                {(
+                  (explanation as CecchinoKpiExplanation & { audit_badges?: string[] })
+                    .audit_badges ?? ['Snapshot persistito']
+                ).map((badge) => (
+                  <span
+                    key={badge}
+                    className="rounded border border-sky-300/40 bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-100"
+                  >
+                    {badge}
+                  </span>
+                ))}
               </div>
             </div>
             <button
@@ -102,6 +110,79 @@ export function CecchinoFormulaAuditModal({ explanation, onClose }: Props) {
               </p>
             ) : null}
           </section>
+
+          {explanation.metric_key === 'purchasability_v2' &&
+          explanation.normalization_profile &&
+          typeof explanation.normalization_profile === 'object' ? (
+            <section className="rounded-lg border border-slate-200 px-3 py-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Profilo di normalizzazione
+              </h4>
+              <dl className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-700 sm:grid-cols-2">
+                <div>
+                  Version:{' '}
+                  <span className="font-mono">
+                    {String(
+                      (explanation.normalization_profile as Record<string, unknown>).version ??
+                        '—',
+                    )}
+                  </span>
+                </div>
+                <div>
+                  Cutoff:{' '}
+                  <span className="font-mono">
+                    {String(
+                      (explanation.normalization_profile as Record<string, unknown>).cutoff ?? '—',
+                    )}
+                  </span>
+                </div>
+                <div className="sm:col-span-2">
+                  Hash:{' '}
+                  <span className="break-all font-mono text-[10px]">
+                    {String(
+                      (explanation.normalization_profile as Record<string, unknown>).hash ?? '—',
+                    )}
+                  </span>
+                </div>
+              </dl>
+            </section>
+          ) : null}
+
+          {explanation.metric_key === 'purchasability_v2' &&
+          explanation.positive_value_gate &&
+          typeof explanation.positive_value_gate === 'object' ? (
+            <section className="rounded-lg border border-slate-200 px-3 py-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Gate valore positivo
+              </h4>
+              <p className="mt-1.5 text-sm text-slate-800">
+                Status:{' '}
+                <strong>
+                  {String(
+                    (explanation.positive_value_gate as Record<string, unknown>).status ?? '—',
+                  )}
+                </strong>
+              </p>
+              {explanation.raw_pre_gate_score != null ? (
+                <p className="mt-1 text-xs text-slate-600">
+                  Raw pre-gate: {String(explanation.raw_pre_gate_score)} — se il gate fallisce lo
+                  score ufficiale è 0.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {explanation.metric_key === 'purchasability_delta' ? (
+            <section className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                Nota diagnostica
+              </h4>
+              <p className="mt-1.5 text-sm text-amber-900">
+                Il delta è un confronto numerico tra due architetture. Non stabilisce quale modello
+                sia empiricamente migliore.
+              </p>
+            </section>
+          ) : null}
 
           <section>
             <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">

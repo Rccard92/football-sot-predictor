@@ -113,6 +113,11 @@ from app.services.cecchino.cecchino_purchasability_snapshot import (
     attach_purchasability_preview_to_output,
     resolve_purchasability_preview_for_detail,
 )
+from app.services.cecchino.cecchino_purchasability_v2_snapshot import (
+    attach_purchasability_preview_v2_to_output,
+    build_purchasability_comparison,
+    resolve_purchasability_preview_v2_for_detail,
+)
 from app.services.cecchino.cecchino_balance_v5_monitoring import (
     attach_balance_v5_monitoring_to_output,
 )
@@ -1416,6 +1421,48 @@ def run_scan(
                     if isinstance(existing_prev, dict)
                     else None,
                 )
+                existing_prev_v2 = None
+                if existing_row is not None and isinstance(
+                    existing_row.cecchino_output_json, dict
+                ):
+                    existing_prev_v2 = existing_row.cecchino_output_json.get(
+                        "purchasability_preview_v2"
+                    )
+                try:
+                    attach_purchasability_preview_v2_to_output(
+                        cecchino_output=cecchino_output,
+                        kpi_panel=kpi_panel,
+                        fixture_meta={
+                            "today_fixture_id": (
+                                int(existing_row.id)
+                                if existing_row is not None
+                                else None
+                            ),
+                            "local_fixture_id": int(local_fx.id),
+                            "provider_fixture_id": api_fid,
+                            "competition_id": int(comp.id),
+                            "scan_date": resolved_date,
+                            "kickoff": getattr(local_fx, "kickoff", None)
+                            or (item.get("fixture") or {}).get("date"),
+                        },
+                        snapshot_info={
+                            "snapshot_at": snap_at,
+                            "snapshot_source": snap_src,
+                            "snapshot_fidelity": (
+                                "verified_panel_odds_meta"
+                                if snap_verified
+                                else "missing"
+                            ),
+                            "snapshot_timestamp_verified": snap_verified,
+                        },
+                        existing_preview_v2=existing_prev_v2
+                        if isinstance(existing_prev_v2, dict)
+                        else None,
+                        db=db,
+                    )
+                except Exception:
+                    # v2 non bloccante: non invalida eleggibilità né v1.1
+                    pass
                 existing_bal = None
                 if existing_row is not None and isinstance(
                     existing_row.cecchino_output_json, dict
@@ -2260,6 +2307,15 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
     today_id = int(row.id)
     provider_fid = int(row.provider_fixture_id)
     local_fid = int(row.local_fixture_id) if row.local_fixture_id else None
+    purch_v1 = resolve_purchasability_preview_for_detail(
+        row=row,
+        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+    )
+    purch_v2 = resolve_purchasability_preview_v2_for_detail(
+        row=row,
+        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+        db=db,
+    )
     return {
         "status": "ok",
         "version": CECCHINO_TODAY_VERSION,
@@ -2297,9 +2353,11 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "goal_intensity_v5": goal_intensity_v5,
         "goal_intensity_v5_preview": goal_intensity_v5_preview,
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
-        "purchasability_preview": resolve_purchasability_preview_for_detail(
-            row=row,
-            kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+        "purchasability_preview": purch_v1,
+        "purchasability_preview_v2": purch_v2,
+        "purchasability_comparison": build_purchasability_comparison(
+            purch_v1 if isinstance(purch_v1, dict) else None,
+            purch_v2 if isinstance(purch_v2, dict) else None,
         ),
         "bookmaker_odds_detail": build_bookmaker_odds_detail(kpi_panel),
         "cecchino_link": (

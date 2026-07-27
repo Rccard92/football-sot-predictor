@@ -31,6 +31,11 @@ from app.services.cecchino.cecchino_purchasability_snapshot import (
     build_candidate_and_compact_snapshot,
     index_purchasability_snapshot_by_market,
 )
+from app.services.cecchino.cecchino_purchasability_v2_snapshot import (
+    build_candidate_and_compact_snapshot_v2,
+    build_purchasability_comparison,
+    index_purchasability_v2_snapshot_by_market,
+)
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -62,6 +67,9 @@ ANALYZABLE_METRICS = (
     "rating",
     "historical_reliability",
     "purchasability",
+    "purchasability_v1_1",
+    "purchasability_v2",
+    "purchasability_delta",
 )
 
 _METRIC_LABELS: dict[str, str] = {
@@ -73,7 +81,10 @@ _METRIC_LABELS: dict[str, str] = {
     "score_acquisto": "Score",
     "rating": "Rating",
     "historical_reliability": "Affidabilità",
-    "purchasability": "Acquistabilità",
+    "purchasability": "Acquistabilità v1.1",
+    "purchasability_v1_1": "Acquistabilità v1.1",
+    "purchasability_v2": "Acquistabilità v2",
+    "purchasability_delta": "Differenza V2−V1.1",
 }
 
 _1X2_KEYS = {SEL_HOME, SEL_DRAW, SEL_AWAY}
@@ -1167,6 +1178,8 @@ def _explain_purchasability(
     preview_item: dict[str, Any] | None,
     candidate_item: dict[str, Any] | None,
     preview_meta: dict[str, Any],
+    *,
+    metric_key: str = "purchasability",
 ) -> dict[str, Any]:
     mk = str(row.get("market_key") or "")
     formula = "Acquistabilità raw = √(Fase 1 × Fase 2)"
@@ -1177,13 +1190,13 @@ def _explain_purchasability(
         return _unavailable(
             market_key=mk,
             market_label=market_label,
-            metric_key="purchasability",
+            metric_key=metric_key,
             formula_symbolic=formula,
             inputs=[],
-            reason="Snapshot Acquistabilità assente",
+            reason="Snapshot Acquistabilità v1.1 assente",
             formula_version=str(preview_meta.get("candidate_version") or "purchasability"),
-            description="Score di Acquistabilità a due fasi (valore × qualità).",
-            purpose="Sintetizzare valore e contesto qualitativo del mercato.",
+            description="Score di Acquistabilità v1.1 a due fasi (valore × qualità).",
+            purpose="Sintetizzare valore e contesto qualitativo del mercato (baseline v1.1).",
         )
 
     phase1 = _num(snap.get("phase_1_score"))
@@ -1247,11 +1260,11 @@ def _explain_purchasability(
         return _base_explanation(
             market_key=mk,
             market_label=market_label,
-            metric_key="purchasability",
+            metric_key=metric_key,
             status="unavailable",
             calculation_type="purchasability_candidate",
-            description="Acquistabilità non disponibile per questo mercato.",
-            purpose="Sintetizzare valore e contesto qualitativo del mercato.",
+            description="Acquistabilità v1.1 non disponibile per questo mercato.",
+            purpose="Sintetizzare valore e contesto qualitativo del mercato (baseline v1.1).",
             formula_symbolic=formula,
             formula_applied=applied + [f"status = {status}"],
             inputs=inputs,
@@ -1268,6 +1281,7 @@ def _explain_purchasability(
                 "reading": snap.get("reading") or cand.get("reading"),
                 "class": snap.get("class") or cand.get("class"),
                 "reason_codes": snap.get("reason_codes") or cand.get("reason_codes"),
+                "audit_badges": ["V1.1 baseline", "Pre-match"],
             },
         )
 
@@ -1280,11 +1294,11 @@ def _explain_purchasability(
     return _base_explanation(
         market_key=mk,
         market_label=market_label,
-        metric_key="purchasability",
+        metric_key=metric_key,
         status="available" if stored_score is not None else "partial",
         calculation_type="purchasability_candidate",
-        description="Score di Acquistabilità a due fasi (valore × qualità) con media geometrica.",
-        purpose="Sintetizzare valore e contesto qualitativo del mercato.",
+        description="Score di Acquistabilità v1.1 a due fasi (valore × qualità) con media geometrica.",
+        purpose="Sintetizzare valore e contesto qualitativo del mercato (baseline v1.1).",
         formula_symbolic=formula,
         formula_applied=applied,
         inputs=inputs,
@@ -1313,6 +1327,362 @@ def _explain_purchasability(
             "diagnostic_only_inputs": (phase1_detail or {}).get("diagnostic_only_inputs") if phase1_detail else None,
             "rating_used_as_weight": False,
             "historical_reliability_used": False,
+            "audit_badges": ["V1.1 baseline", "Pre-match"],
+        },
+    )
+
+
+def _explain_purchasability_v2(
+    row: dict[str, Any],
+    market_label: str,
+    preview_item: dict[str, Any] | None,
+    candidate_item: dict[str, Any] | None,
+    preview_meta: dict[str, Any],
+    comparison_item: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    mk = str(row.get("market_key") or "")
+    formula = (
+        "raw_pre_gate = √(Fase 1 × Fase 2); "
+        "score ufficiale = gate ? raw_pre_gate : 0 (ROUND_HALF_UP)"
+    )
+    snap = preview_item or {}
+    cand = candidate_item or {}
+
+    if not snap and not cand:
+        return _unavailable(
+            market_key=mk,
+            market_label=market_label,
+            metric_key="purchasability_v2",
+            formula_symbolic=formula,
+            inputs=[],
+            reason="Snapshot Acquistabilità v2 assente",
+            formula_version=str(
+                preview_meta.get("candidate_version") or "purchasability_v2"
+            ),
+            description=(
+                "Misura se questo mercato rappresenta la migliore opportunità "
+                "decisionale della partita, combinando valore rispetto al Book, "
+                "superiorità rispetto ai concorrenti e contrasto con il mercato opposto."
+            ),
+            purpose="Indice decisionale parallelo (v2) — non sostituisce la v1.1.",
+        )
+
+    phase1 = _num(snap.get("phase_1_score"))
+    phase2 = _num(snap.get("phase_2_score"))
+    p1_detail = cand.get("phase_1_value") if isinstance(cand.get("phase_1_value"), dict) else (
+        None
+    )
+    p2_detail = cand.get("phase_2_quality") if isinstance(cand.get("phase_2_quality"), dict) else (
+        None
+    )
+    if phase1 is None and isinstance(p1_detail, dict):
+        phase1 = _num(p1_detail.get("score"))
+    if phase2 is None and isinstance(p2_detail, dict):
+        phase2 = _num(p2_detail.get("score"))
+
+    stored_score = _num(snap.get("score") if snap else cand.get("score"))
+    stored_raw = _num(snap.get("raw_score") if snap else cand.get("raw_score"))
+    raw_pre_gate = _num(
+        snap.get("raw_pre_gate_score") if snap else cand.get("raw_pre_gate_score")
+    )
+    gate = cand.get("positive_value_gate") if isinstance(cand.get("positive_value_gate"), dict) else (
+        snap.get("positive_value_gate") if isinstance(snap.get("positive_value_gate"), dict) else {}
+    )
+    norm_meta = cand.get("normalization_profile") if isinstance(cand.get("normalization_profile"), dict) else {
+        "version": preview_meta.get("normalization_profile_version") or snap.get("normalization_profile_version"),
+        "hash": preview_meta.get("normalization_profile_hash") or snap.get("normalization_profile_hash"),
+        "cutoff": preview_meta.get("normalization_profile_cutoff") or snap.get("normalization_profile_cutoff"),
+    }
+
+    inputs = [
+        _input(
+            key="phase_1_score",
+            label="Fase 1 (valore assoluto)",
+            value=phase1,
+            display_value=_fmt_it(phase1),
+            source_path="purchasability_preview_v2.items[].phase_1_score",
+        ),
+        _input(
+            key="phase_2_score",
+            label="Fase 2 (qualità decisione)",
+            value=phase2,
+            display_value=_fmt_it(phase2),
+            source_path="purchasability_preview_v2.items[].phase_2_score",
+        ),
+        _input(
+            key="raw_pre_gate_score",
+            label="Raw pre-gate",
+            value=raw_pre_gate,
+            display_value=_fmt_it(raw_pre_gate, 4),
+            source_path="purchasability_preview_v2.items[].raw_pre_gate_score",
+        ),
+        _input(
+            key="positive_value_gate",
+            label="Positive value gate",
+            value=gate.get("status"),
+            display_value=str(gate.get("status") or "—"),
+            source_path="purchasability_preview_v2.items[].positive_value_gate",
+        ),
+        _input(
+            key="normalization_profile_version",
+            label="Profilo normalizzazione",
+            value=norm_meta.get("version"),
+            display_value=str(norm_meta.get("version") or "—"),
+            source_path="purchasability_preview_v2.normalization_profile_version",
+        ),
+        _input(
+            key="candidate_version",
+            label="Candidate version",
+            value=preview_meta.get("candidate_version") or cand.get("candidate_version"),
+            display_value=str(
+                preview_meta.get("candidate_version")
+                or cand.get("candidate_version")
+                or "—"
+            ),
+            source_path="purchasability_preview_v2.candidate_version",
+        ),
+    ]
+
+    applied: list[str] = []
+    audit_raw = None
+    if phase1 is not None and phase2 is not None:
+        audit_raw = math.sqrt(phase1 * phase2)
+        applied = [
+            f"raw_pre_gate = √({_fmt_it(phase1)} × {_fmt_it(phase2)}) = {_fmt_it(audit_raw, 4)}",
+            f"gate = {gate.get('status') or '—'}",
+            (
+                f"score ufficiale = 0 (gate failed); pre-gate = {_fmt_it(raw_pre_gate, 4)}"
+                if gate.get("status") == "failed"
+                else f"score ufficiale = ROUND_HALF_UP({_fmt_it(stored_raw, 4)}) = {int(stored_score) if stored_score is not None else '—'}"
+            ),
+        ]
+    else:
+        applied = ["Fase 1 o Fase 2 assente: formula geometrica non completa"]
+
+    cmp_block = comparison_item or {}
+    extra = {
+        "what_it_measures": (
+            "Misura se questo mercato rappresenta la migliore opportunità "
+            "decisionale della partita, combinando valore rispetto al Book, "
+            "superiorità rispetto ai concorrenti e contrasto con il mercato opposto."
+        ),
+        "audit_badges": [
+            "V2 parallela",
+            "Profilo storico congelato",
+            "Pre-match",
+        ],
+        "phase_1_score": phase1,
+        "phase_2_score": phase2,
+        "raw_score": stored_raw,
+        "raw_pre_gate_score": raw_pre_gate,
+        "phase_1": p1_detail,
+        "phase_2": p2_detail,
+        "positive_value_gate": gate,
+        "normalization_profile": norm_meta,
+        "competitor_trace": (p2_detail or {}).get("competitor_trace") if p2_detail else (
+            {
+                "best_competitor_keys": snap.get("best_competitor_keys"),
+                "opposite_selection": snap.get("opposite_selection"),
+                "decision_group": snap.get("decision_group"),
+                "probability_subgroup": snap.get("probability_subgroup"),
+            }
+        ),
+        "raw_components": snap.get("raw_components"),
+        "normalized_components": snap.get("normalized_components"),
+        "reading": snap.get("reading") or cand.get("reading"),
+        "class": snap.get("class") or cand.get("class"),
+        "calculation_quality": snap.get("calculation_quality") or cand.get("calculation_quality"),
+        "reason_codes": snap.get("reason_codes") or cand.get("reason_codes"),
+        "comparison_v1_1": {
+            "v1_1_score": cmp_block.get("v1_1_score"),
+            "v2_score": cmp_block.get("v2_score"),
+            "delta_v2_minus_v1_1": cmp_block.get("delta_v2_minus_v1_1"),
+            "note": (
+                "Il delta è descrittivo e non costituisce validazione empirica "
+                "di superiorità della v2."
+            ),
+        },
+        "score_acquisto_used": False,
+        "historical_reliability_used": False,
+        "balance_used": "available_not_used",
+        "goal_intensity_used": "available_not_used",
+    }
+
+    status = str(snap.get("status") or cand.get("status") or "unavailable")
+    if stored_score is None and status == "unavailable":
+        return _base_explanation(
+            market_key=mk,
+            market_label=market_label,
+            metric_key="purchasability_v2",
+            status="unavailable",
+            calculation_type="purchasability_v2_candidate",
+            description="Acquistabilità v2 non disponibile per questo mercato.",
+            purpose="Indice decisionale parallelo (v2).",
+            formula_symbolic=formula,
+            formula_applied=applied + [f"status = {status}"],
+            inputs=inputs,
+            stored_result=None,
+            stored_result_display="—",
+            audit_result=audit_raw,
+            consistency={"status": "unavailable", "delta": None},
+            rounding={"policy": "ROUND_HALF_UP", "precision": 0, "display_precision": 0},
+            formula_version=str(
+                preview_meta.get("candidate_version") or "purchasability_v2"
+            ),
+            warnings=list(snap.get("reason_codes") or cand.get("reason_codes") or []),
+            extra=extra,
+        )
+
+    cons = (
+        _consistency(raw_pre_gate or stored_raw, audit_raw, abs_tol=0.01, rounding_tol=0.05)
+        if audit_raw is not None and (raw_pre_gate is not None or stored_raw is not None)
+        else {"status": "not_verifiable", "delta": None}
+    )
+
+    return _base_explanation(
+        market_key=mk,
+        market_label=market_label,
+        metric_key="purchasability_v2",
+        status="available" if stored_score is not None else "partial",
+        calculation_type="purchasability_v2_candidate",
+        description=(
+            "Misura se questo mercato rappresenta la migliore opportunità "
+            "decisionale della partita, combinando valore rispetto al Book, "
+            "superiorità rispetto ai concorrenti e contrasto con il mercato opposto."
+        ),
+        purpose="Indice decisionale parallelo (v2) — non sostituisce la v1.1.",
+        formula_symbolic=formula,
+        formula_applied=applied,
+        inputs=inputs,
+        stored_result=int(stored_score) if stored_score is not None else None,
+        stored_result_display=(
+            f"{int(stored_score)} ({snap.get('class') or cand.get('class') or '—'})"
+            if stored_score is not None
+            else "—"
+        ),
+        audit_result=round(audit_raw, 4) if audit_raw is not None else None,
+        consistency=cons,
+        rounding={"policy": "ROUND_HALF_UP", "precision": 0, "display_precision": 0},
+        formula_version=str(
+            preview_meta.get("candidate_version") or "purchasability_v2"
+        ),
+        warnings=list(snap.get("reason_codes") or cand.get("reason_codes") or []),
+        extra=extra,
+    )
+
+
+def _explain_purchasability_delta(
+    row: dict[str, Any],
+    market_label: str,
+    comparison_item: dict[str, Any] | None,
+    *,
+    v1_meta: dict[str, Any] | None = None,
+    v2_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    mk = str(row.get("market_key") or "")
+    formula = "Delta = Acquistabilità v2 − Acquistabilità v1.1"
+    cmp = comparison_item or {}
+    s1 = cmp.get("v1_1_score")
+    s2 = cmp.get("v2_score")
+    delta = cmp.get("delta_v2_minus_v1_1")
+    status = str(cmp.get("comparison_status") or "unavailable")
+
+    inputs = [
+        _input(
+            key="v1_1_score",
+            label="Acquistabilità v1.1",
+            value=s1,
+            display_value=str(s1) if s1 is not None else "—",
+            source_path="purchasability_preview.items[].score",
+        ),
+        _input(
+            key="v2_score",
+            label="Acquistabilità v2",
+            value=s2,
+            display_value=str(s2) if s2 is not None else "—",
+            source_path="purchasability_preview_v2.items[].score",
+        ),
+        _input(
+            key="candidate_v1_1",
+            label="Candidate v1.1",
+            value=(v1_meta or {}).get("candidate_version"),
+            display_value=str((v1_meta or {}).get("candidate_version") or "—"),
+            source_path="purchasability_preview.candidate_version",
+        ),
+        _input(
+            key="candidate_v2",
+            label="Candidate v2",
+            value=(v2_meta or {}).get("candidate_version"),
+            display_value=str((v2_meta or {}).get("candidate_version") or "—"),
+            source_path="purchasability_preview_v2.candidate_version",
+        ),
+    ]
+
+    if delta is None:
+        reason = "Uno o entrambi gli score non sono disponibili"
+        return _base_explanation(
+            market_key=mk,
+            market_label=market_label,
+            metric_key="purchasability_delta",
+            status="unavailable" if status == "unavailable" else "partial",
+            calculation_type="purchasability_comparison",
+            description="Confronto diagnostico tra due architetture di Acquistabilità.",
+            purpose=(
+                "Confronto diagnostico tra due architetture. "
+                "Non stabilisce quale modello sia empiricamente migliore."
+            ),
+            formula_symbolic=formula,
+            formula_applied=[
+                f"v1.1 = {s1 if s1 is not None else '—'}",
+                f"v2 = {s2 if s2 is not None else '—'}",
+                "delta unavailable",
+                reason,
+            ],
+            inputs=inputs,
+            stored_result=None,
+            stored_result_display="—",
+            audit_result=None,
+            consistency={"status": status, "delta": None},
+            rounding={"policy": "n/a", "precision": 0, "display_precision": 0},
+            formula_version="purchasability_delta_v1",
+            warnings=[reason],
+            extra={
+                "unavailable_reason": reason,
+                "comparison_status": status,
+                "audit_badges": ["Confronto diagnostico"],
+            },
+        )
+
+    sign = "+" if int(delta) > 0 else ""
+    return _base_explanation(
+        market_key=mk,
+        market_label=market_label,
+        metric_key="purchasability_delta",
+        status="available",
+        calculation_type="purchasability_comparison",
+        description="Differenza numerica V2 meno V1.1.",
+        purpose=(
+            "Confronto diagnostico tra due architetture. "
+            "Non stabilisce quale modello sia empiricamente migliore."
+        ),
+        formula_symbolic=formula,
+        formula_applied=[
+            f"{s2} − {s1} = {sign}{int(delta)}",
+        ],
+        inputs=inputs,
+        stored_result=int(delta),
+        stored_result_display=f"{sign}{int(delta)}",
+        audit_result=int(delta),
+        consistency={"status": "match", "delta": 0},
+        rounding={"policy": "integer_scores", "precision": 0, "display_precision": 0},
+        formula_version="purchasability_delta_v1",
+        warnings=[],
+        extra={
+            "v1_1_score": s1,
+            "v2_score": s2,
+            "delta_v2_minus_v1_1": int(delta),
+            "comparison_status": status,
+            "audit_badges": ["Confronto diagnostico", "Non validazione empirica"],
         },
     )
 
@@ -1425,6 +1795,52 @@ def _rebuild_purchasability_candidate(
         return None, preview
 
 
+def _rebuild_purchasability_v2_candidate(
+    row: CecchinoTodayFixture,
+    kpi_panel: dict[str, Any],
+    db: Session | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Rebuild in-memory v2 (nessuna scrittura DB). Preferisce snapshot persistito."""
+    preview: dict[str, Any] = {}
+    output = row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else {}
+    if isinstance(output.get("purchasability_preview_v2"), dict):
+        preview = output["purchasability_preview_v2"]
+
+    fixture_meta = {
+        "today_fixture_id": int(row.id),
+        "local_fixture_id": int(row.local_fixture_id) if row.local_fixture_id else None,
+        "provider_fixture_id": int(row.provider_fixture_id) if row.provider_fixture_id else None,
+        "home_team": row.home_team_name,
+        "away_team": row.away_team_name,
+        "kickoff": row.kickoff.isoformat() if row.kickoff else None,
+        "competition_id": row.competition_id,
+        "scan_date": row.scan_date.isoformat() if row.scan_date else None,
+    }
+    snapshot_info = None
+    odds = row.odds_snapshot_json if isinstance(row.odds_snapshot_json, dict) else {}
+    meta = odds.get("odds_meta") if isinstance(odds.get("odds_meta"), dict) else {}
+    if meta:
+        snapshot_info = {
+            "snapshot_at": meta.get("odds_fetched_at") or meta.get("snapshot_at"),
+            "snapshot_timestamp_verified": True,
+            "snapshot_before_kickoff": True,
+        }
+
+    try:
+        candidate, derived_snap = build_candidate_and_compact_snapshot_v2(
+            kpi_panel=kpi_panel,
+            fixture_meta=fixture_meta,
+            snapshot_info=snapshot_info,
+            db=db,
+            source_mode="kpi_explanations_audit",
+        )
+        if not preview:
+            preview = derived_snap
+        return candidate, preview
+    except Exception:  # noqa: BLE001
+        return None, preview
+
+
 def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, Any]:
     """Assembla il payload audit per una fixture eleggibile."""
     raw_panel = row.kpi_panel_json
@@ -1468,6 +1884,51 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
         preview_meta["candidate_version"] = candidate.get("candidate_version")
         preview_meta["candidate_name"] = candidate.get("candidate_name")
 
+    candidate_v2, preview_v2 = _rebuild_purchasability_v2_candidate(row, kpi_panel, db)
+    preview_v2_index = (
+        index_purchasability_v2_snapshot_by_market(preview_v2) if preview_v2 else {}
+    )
+    candidate_v2_index: dict[str, dict[str, Any]] = {}
+    if isinstance(candidate_v2, dict):
+        for it in candidate_v2.get("items") or []:
+            if isinstance(it, dict) and it.get("market_key"):
+                candidate_v2_index[str(it["market_key"])] = it
+
+    preview_v2_meta = {
+        "candidate_version": preview_v2.get("candidate_version") if preview_v2 else None,
+        "candidate_name": preview_v2.get("candidate_name") if preview_v2 else None,
+        "snapshot_version": preview_v2.get("snapshot_version") if preview_v2 else None,
+        "normalization_profile_version": (
+            preview_v2.get("normalization_profile_version") if preview_v2 else None
+        ),
+        "normalization_profile_hash": (
+            preview_v2.get("normalization_profile_hash") if preview_v2 else None
+        ),
+        "normalization_profile_cutoff": (
+            preview_v2.get("normalization_profile_cutoff") if preview_v2 else None
+        ),
+    }
+    if candidate_v2 and not preview_v2_meta.get("candidate_version"):
+        preview_v2_meta["candidate_version"] = candidate_v2.get("candidate_version")
+        preview_v2_meta["candidate_name"] = candidate_v2.get("candidate_name")
+        preview_v2_meta["normalization_profile_version"] = candidate_v2.get(
+            "normalization_profile_version"
+        )
+        preview_v2_meta["normalization_profile_hash"] = candidate_v2.get(
+            "normalization_profile_hash"
+        )
+        preview_v2_meta["normalization_profile_cutoff"] = candidate_v2.get(
+            "normalization_profile_cutoff"
+        )
+
+    comparison = build_purchasability_comparison(
+        preview if isinstance(preview, dict) else None,
+        preview_v2 if isinstance(preview_v2, dict) else None,
+    )
+    comparison_items = (
+        comparison.get("items") if isinstance(comparison.get("items"), dict) else {}
+    )
+
     markets: dict[str, dict[str, Any]] = {}
     for r in kpi_panel.get("rows") or []:
         if not isinstance(r, dict):
@@ -1490,28 +1951,50 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
             market_explanations["historical_reliability"] = _explain_historical_reliability(
                 r, label, hr_by_market
             )
-            market_explanations["purchasability"] = _explain_purchasability(
+            purch_v11 = _explain_purchasability(
                 r,
                 label,
                 preview_index.get(mk),
                 candidate_index.get(mk),
                 preview_meta,
+                metric_key="purchasability",
+            )
+            market_explanations["purchasability"] = purch_v11
+            market_explanations["purchasability_v1_1"] = _explain_purchasability(
+                r,
+                label,
+                preview_index.get(mk),
+                candidate_index.get(mk),
+                preview_meta,
+                metric_key="purchasability_v1_1",
+            )
+            market_explanations["purchasability_v2"] = _explain_purchasability_v2(
+                r,
+                label,
+                preview_v2_index.get(mk),
+                candidate_v2_index.get(mk),
+                preview_v2_meta,
+                comparison_item=comparison_items.get(mk),
+            )
+            market_explanations["purchasability_delta"] = _explain_purchasability_delta(
+                r,
+                label,
+                comparison_items.get(mk),
+                v1_meta=preview_meta,
+                v2_meta=preview_v2_meta,
             )
         except Exception as exc:  # noqa: BLE001
-            warnings.append(f"market_explanation_error:{mk}:{exc}")
+            warnings.append(f"market_{mk}_explain_error:{type(exc).__name__}")
             partial = True
             continue
+        markets[mk] = market_explanations
 
         for metric_key, expl in market_explanations.items():
-            if expl.get("status") in ("unavailable", "partial"):
-                # partial fixture se almeno una metrica non completa
-                if expl.get("status") == "partial":
-                    partial = True
+            if expl.get("status") == "partial":
+                partial = True
             if expl.get("consistency", {}).get("status") == "mismatch":
                 warnings.append(f"consistency_mismatch:{mk}:{metric_key}")
                 partial = True
-
-        markets[mk] = market_explanations
 
     status = "partial" if partial else "ok"
     return {
@@ -1539,7 +2022,11 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
             "kpi_panel_source": "kpi_panel_json",
             "cecchino_output_source": "cecchino_output_json",
             "purchasability_preview_present": bool(preview),
+            "purchasability_preview_v2_present": bool(preview_v2),
             "historical_reliability_markets": len(hr_by_market),
+            "read_only": True,
+            "db_writes": False,
+            "external_api_calls": False,
         },
     }
 

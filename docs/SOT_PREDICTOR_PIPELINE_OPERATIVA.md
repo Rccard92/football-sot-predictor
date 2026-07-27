@@ -73,10 +73,17 @@ flowchart TD
 
 1. Apertura partita Today: **nessuna** richiesta `kpi-explanations` (impatto nullo).
 2. Pulsante testata `ƒx Analisi formule` → una sola `GET /api/cecchino/today/{id}/kpi-explanations` (cache in memoria per fixture).
-3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acquistabilità.
+3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acq. v1.1, Acq. v2, Δ V2−V1.1 (alias `purchasability` = v1.1).
 4. Non cliccabili: SEGNO, QUOTA BOOK.
-5. `Scarica audit KPI` → JSON `cecchino-kpi-audit-{provider_fixture_id}.json` (lazy load se non ancora caricato).
-6. Fonte: snapshot persistiti + Affidabilità canonica; niente rebuild Cecchino/Balance/GI/Signals.
+5. `Scarica audit KPI` → JSON `cecchino-kpi-audit-{provider_fixture_id}.json` (lazy load se non ancora caricato; include v1.1 + v2 + delta).
+6. Fonte: snapshot persistiti + Affidabilità canonica; niente rebuild Cecchino/Balance/GI/Signals. v2 derivabile read-only se snapshot assente.
+
+## Acquistabilità v2 — backfill manuale (2026-07-27)
+
+1. Default dry-run: `python -m app.jobs.backfill_purchasability_v2 --date-from … --date-to …`
+2. Scrittura: `--apply --confirm WRITE_PURCHASABILITY_V2` (solo `purchasability_preview_v2`).
+3. Non ricostruire KPI/Cecchino/Segnali; non modificare v1.1; profilo normalizzazione costruito una sola volta.
+4. Non schedulare: comando manuale.
 
 ## Hotfix — isolamento Readiness post-scan (2026-07-21)
 

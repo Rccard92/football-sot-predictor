@@ -7,7 +7,27 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 | Concetto | Definizione |
 |----------|-------------|
 | **AFFIDABILITÀ STORICA** | Misura il comportamento storico dello stesso mercato e della stessa fascia Rating (Win Rate, ROI, margine vs break-even, stabilità, numerosità). |
-| **ACQUISTABILITÀ** | Misura quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti. |
+| **ACQUISTABILITÀ v1.1** | Misura quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti (`balanced_geometric_v1_1`). |
+| **ACQUISTABILITÀ v2** | Indice decisionale parallelo (`decision_quality_v2`): valore assoluto (Rating/Edge/Vantaggio) × qualità della decisione (dominanze, shift Book→Cecchino, contrasto opposto), con normalizzazione storica congelata. |
+
+## Acquistabilità v2 — decision_quality_v2 (2026-07-27)
+
+Versione parallela; **non** sostituisce la validation baseline v1.1.
+
+| Campo | Valore |
+|-------|--------|
+| Candidate | `cecchino_purchasability_v2_candidate_1` / `decision_quality_v2` |
+| Contract / features / snapshot | `cecchino_purchasability_v2_contract` / `…_features_v1` / `…_snapshot_v2` |
+| Persistenza | `cecchino_output_json.purchasability_preview_v2` |
+| Norm profile | `cecchino_purchasability_v2_norm_profile_2026_07_26_v1`, cutoff `2026-07-26` |
+| Metodo | P95 nearest-rank su positivi/negativi; normalizzazione zero-anchored 0–100 |
+| Scope | OUTCOMES, GOALS_FT_2_5, GOALS_HT_1_5 (+ sottogruppi probabilità) |
+| Fallback | scope ≥15 → global → provisional versioned |
+| Gruppi | Esiti (6) / Goal FT / Goal HT; probabilità 1X2 e DC separate |
+| Opposti | HOME↔AWAY, DRAW→max fair HOME/AWAY, DC e OU mappati |
+| Finale | √(F1×F2), ROUND_HALF_UP; gate valore positivo → score 0 |
+| Backfill | `python -m app.jobs.backfill_purchasability_v2` (manuale, dry-run default) |
+| Cecchino Lab | escluso dalla costruzione del profilo |
 
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 

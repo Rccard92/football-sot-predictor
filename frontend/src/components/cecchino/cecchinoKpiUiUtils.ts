@@ -139,6 +139,54 @@ export function purchasabilityBadgeClass(
   return base
 }
 
+/** Stile più neutro per Acquistabilità v1.1 (baseline). */
+export function purchasabilityV11BadgeClass(
+  klass: string | null | undefined,
+  calculationQuality?: 'full' | 'partial' | null,
+): string {
+  let base: string
+  switch (klass) {
+    case 'Molto Bassa':
+      base = 'bg-slate-700/80 text-slate-200'
+      break
+    case 'Bassa':
+      base = 'bg-slate-600/90 text-orange-100'
+      break
+    case 'Media':
+      base = 'bg-slate-500/90 text-amber-100'
+      break
+    case 'Alta':
+      base = 'bg-slate-500 text-sky-100'
+      break
+    case 'Molto Alta':
+      base = 'bg-slate-500 text-emerald-100'
+      break
+    default:
+      base = 'bg-slate-700 text-slate-300'
+  }
+  if (calculationQuality === 'partial') {
+    return `${base} ring-1 ring-dashed ring-white/40`
+  }
+  return base
+}
+
+export function purchasabilityDeltaClass(delta: number | null | undefined): string {
+  if (delta == null || Number.isNaN(Number(delta))) {
+    return 'bg-slate-700/60 text-slate-400'
+  }
+  const d = Number(delta)
+  if (d > 0) return 'bg-emerald-900/50 text-emerald-200'
+  if (d < 0) return 'bg-rose-900/40 text-rose-200'
+  return 'bg-slate-600/70 text-slate-300'
+}
+
+export function formatPurchasabilityDelta(delta: number | null | undefined): string {
+  if (delta == null || Number.isNaN(Number(delta))) return '—'
+  const d = Number(delta)
+  if (d > 0) return `+${d}`
+  return String(d)
+}
+
 export function historicalReliabilityBadgeClass(klass: string | null | undefined): string {
   switch (klass) {
     case 'Alta':

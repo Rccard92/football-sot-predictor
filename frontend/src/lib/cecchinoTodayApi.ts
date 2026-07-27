@@ -371,11 +371,18 @@ export type CecchinoPurchasabilityPreviewItem = {
   calculation_quality?: 'full' | 'partial' | null
   score: number | null
   raw_score?: number | null
+  raw_pre_gate_score?: number | null
   class?: 'Molto Bassa' | 'Bassa' | 'Media' | 'Alta' | 'Molto Alta' | null
   reading?: string | null
   phase_1_score?: number | null
   phase_2_score?: number | null
   reason_codes?: string[]
+  positive_value_gate?: {
+    status?: string | null
+    reason_codes?: string[]
+  } | null
+  normalization_profile_version?: string | null
+  normalization_profile_hash?: string | null
 }
 
 export type CecchinoPurchasabilityPreviewSnapshot = {
@@ -389,6 +396,22 @@ export type CecchinoPurchasabilityPreviewSnapshot = {
   items: CecchinoPurchasabilityPreviewItem[]
   summary?: Record<string, unknown>
   pre_match_only: boolean
+  normalization_profile_version?: string | null
+  normalization_profile_hash?: string | null
+  normalization_profile_cutoff?: string | null
+  registry_status?: string | null
+  warnings?: string[]
+}
+
+export type CecchinoPurchasabilityComparisonMarketItem = {
+  v1_1_score: number | null
+  v2_score: number | null
+  delta_v2_minus_v1_1: number | null
+  comparison_status: 'available' | 'partial' | 'unavailable' | string
+}
+
+export type CecchinoPurchasabilityComparison = {
+  items: Record<string, CecchinoPurchasabilityComparisonMarketItem>
 }
 
 export type CecchinoBetfairRefreshResponse = {
@@ -1146,6 +1169,8 @@ export type CecchinoTodayDetailResponse = {
   }
   expected_goal_engine_diagnostics?: CecchinoExpectedGoalEngineDiagnostics
   purchasability_preview?: CecchinoPurchasabilityPreviewSnapshot | null
+  purchasability_preview_v2?: CecchinoPurchasabilityPreviewSnapshot | null
+  purchasability_comparison?: CecchinoPurchasabilityComparison | null
   bookmaker_odds_detail?: CecchinoBookmakerOddsDetail
   cecchino_link?: string | null
   warnings?: string[]

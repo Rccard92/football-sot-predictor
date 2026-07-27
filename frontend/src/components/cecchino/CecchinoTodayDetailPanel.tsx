@@ -123,6 +123,21 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
     return map
   }, [detail.purchasability_preview])
 
+  const purchasabilityV2ByMarketKey = useMemo(() => {
+    const items = detail.purchasability_preview_v2?.items
+    if (!items?.length) return {} as Record<string, CecchinoPurchasabilityPreviewItem>
+    const map: Record<string, CecchinoPurchasabilityPreviewItem> = {}
+    for (const it of items) {
+      const key = it.market_key || it.selection
+      if (key) map[key] = it
+    }
+    return map
+  }, [detail.purchasability_preview_v2])
+
+  const purchasabilityComparisonByMarketKey = useMemo(() => {
+    return detail.purchasability_comparison?.items ?? {}
+  }, [detail.purchasability_comparison])
+
   if (loading) {
     return <CecchinoTodayDetailSkeleton />
   }
@@ -153,6 +168,8 @@ export function CecchinoTodayDetailPanel({ detail, loading }: Props) {
           historicalReliabilityLoading={hrLoading}
           historicalReliabilityError={hrError}
           purchasabilityByMarketKey={purchasabilityByMarketKey}
+          purchasabilityV2ByMarketKey={purchasabilityV2ByMarketKey}
+          purchasabilityComparisonByMarketKey={purchasabilityComparisonByMarketKey}
           todayFixtureId={detail.today_fixture_id ?? detail.id}
           providerFixtureId={detail.provider_fixture_id}
         />

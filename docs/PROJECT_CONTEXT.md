@@ -132,6 +132,10 @@ Portal export (no clipping); export globale hero; `rows.csv`; Balance settled⊆
 
 Workspace `/monitoraggio-moduli`: Acquistabilità, Balance v5, Goal Intensity v5, Segnali. Overview + analysis-pack ZIP. Redirect laboratori legacy. Segnali KPI senza tab Acquistabilità. Formule invariate. Next: Fase 2/3 validazione empirica Balance v5.
 
+## Acquistabilità v2 — Indice decisionale parallelo (2026-07-27)
+
+`decision_quality_v2` (`cecchino_purchasability_v2_candidate_1`) è un indice **parallelo** alla v1.1. Non sostituisce `balanced_geometric_v1_1` né la validation pipeline. Snapshot separato: `cecchino_output_json.purchasability_preview_v2`. Normalizzazione storica congelata (`cecchino_purchasability_v2_norm_profile_2026_07_26_v1`, cutoff `scan_date <= 2026-07-26`). UI KPI: colonne Acq. v1.1 / Acq. v2 / Δ V2−V1.1. Backfill manuale dry-run: `python -m app.jobs.backfill_purchasability_v2`. Cecchino Lab non modificato. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 Validazione da snapshot persistito; tabella evaluations; policy promozione solo readiness (`eligible_for_manual_promotion`). Feature `v1_1`. Lab FE Validazione. candidate_2 resta Preview. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
