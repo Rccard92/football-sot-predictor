@@ -563,17 +563,16 @@ export function CecchinoTodayKpiPanel({
           <colgroup>
             <col className="w-[8%]" />
             <col className="w-[5%]" />
-            <col className="w-[5%]" />
-            <col className="w-[5%]" />
-            <col className="w-[5%]" />
             <col className="w-[6%]" />
             <col className="w-[5%]" />
+            <col className="w-[6%]" />
+            <col className="w-[7%]" />
+            <col className="w-[6%]" />
             <col className="w-[5%]" />
             <col className="w-[9%]" />
-            <col className="w-[18%]" />
-            <col className="w-[8%]" />
-            <col className="w-[8%]" />
-            <col className="w-[7%]" />
+            <col className="w-[19%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-slate-400/50 bg-[#0f2847]">
