@@ -976,6 +976,52 @@ export function formatOdd(v: number | null | undefined): string {
   return v.toFixed(2)
 }
 
+/** Null / non calcolato → em dash (mai 0,00 fittizio). */
+export function formatNullableNumber(
+  v: number | null | undefined,
+  digits = 2,
+): string {
+  if (v == null || Number.isNaN(Number(v))) return '—'
+  return Number(v).toFixed(digits)
+}
+
+export function patternSampleBadgeLabel(status: string | null | undefined): string {
+  switch (status) {
+    case 'small_sample':
+      return 'Campione insufficiente'
+    case 'exploratory_only':
+      return 'Esplorativo'
+    case 'descriptive_only':
+      return 'Descrittivo'
+    case 'candidate_for_validation':
+    case 'candidate_for_review':
+      return 'Candidato da validare'
+    case 'coverage_diagnostic':
+      return 'Diagnostica copertura'
+    default:
+      return status || '—'
+  }
+}
+
+export function patternStabilityBadgeLabel(
+  category: string | null | undefined,
+): string {
+  switch (category) {
+    case 'insufficient_evidence':
+      return 'Insufficiente'
+    case 'concentrated':
+      return 'Concentrata'
+    case 'inconsistent':
+      return 'Incoerente'
+    case 'directionally_consistent':
+      return 'Coerente'
+    case 'stable_candidate':
+      return 'Candidata stabile'
+    default:
+      return category || '—'
+  }
+}
+
 export function matchOddsColumnLabel(field: 'home' | 'draw' | 'away'): string {
   if (field === 'home') return '1'
   if (field === 'draw') return 'X'
@@ -1046,6 +1092,7 @@ export type HistoricalRunDashboardOverview = {
   }
   is_provisional: boolean
   data_as_of: string
+  analytics_aggregation_version?: string
   filters: HistoricalRunFilters
   kpis: Record<string, unknown>
   progress: Record<string, unknown>
@@ -1076,15 +1123,20 @@ export type HistoricalRunDashboardMarket = {
   outcome_base_rate: number | null
   average_cecchino_probability: number | null
   median_cecchino_probability: number | null
+  with_cecchino_probability?: number
+  with_cecchino_fair_quote?: number
+  with_cecchino_quote?: number
   calibration_gap: number | null
   brier_score: number | null
   average_rating: number | null
   rating_available_count: number
+  with_rating?: number
   signal_active_count: number
   matches_with_signal: number
   real_quote_count: number
   derived_quote_count: number
   unavailable_quote_count: number
+  quote_count_reconciliation_ok?: boolean
   average_real_odds: number | null
   average_derived_odds: number | null
   real_profit_1u: number
@@ -1214,21 +1266,25 @@ export type HistoricalRunPattern = {
   pattern_id: string
   title?: string
   conditions: Record<string, unknown>
+  market_key?: string | null
   sample_size: number
   wins: number
   losses: number
   hit_rate: number | null
   real_quote_count: number
+  derived_quote_count?: number
+  unavailable_quote_count?: number
   real_profit: number
   real_roi: number | null
-  derived_quote_count: number
   synthetic_profit: number
   synthetic_roi: number | null
   competitions_count: number
   main_competition?: string | null
   main_competition_share?: number | null
   stability?: Record<string, unknown> | null
+  cross_competition_stability?: string | null
   status: string
+  is_diagnostic?: boolean
   limitations: string[]
 }
 
@@ -1407,6 +1463,8 @@ export function getHistoricalRunDashboardPatterns(
   negative: HistoricalRunPattern[]
   watchlist: HistoricalRunPattern[]
   unstable: HistoricalRunPattern[]
+  diagnostics?: HistoricalRunPattern[]
+  analytics_aggregation_version?: string
   note?: string
 }> {
   return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/patterns`, filters)

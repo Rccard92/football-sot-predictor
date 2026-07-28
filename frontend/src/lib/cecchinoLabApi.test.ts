@@ -3,6 +3,7 @@ import {
   batchImportStatusLabel,
   countBatchReadyItems,
   formatAnomaliesHint,
+  formatNullableNumber,
   formatOdd,
   historicalScanScopeLabel,
   historicalScanStatusLabel,
@@ -10,6 +11,8 @@ import {
   isHistoricalScanActive,
   isOverviewEmpty,
   matchOddsColumnLabel,
+  patternSampleBadgeLabel,
+  patternStabilityBadgeLabel,
   qualityBadgeClass,
   quoteLegendClass,
   replaceDatasetConfirmMessage,
@@ -27,6 +30,28 @@ describe('cecchinoLabApi helpers', () => {
   it('formatOdd hides null as dash', () => {
     expect(formatOdd(null)).toBe('—')
     expect(formatOdd(1.45)).toBe('1.45')
+  })
+
+  it('formatNullableNumber never shows fake zero for null', () => {
+    expect(formatNullableNumber(null)).toBe('—')
+    expect(formatNullableNumber(undefined)).toBe('—')
+    expect(formatNullableNumber(2.5)).toBe('2.50')
+  })
+
+  it('pattern badges map sample and stability', () => {
+    expect(patternSampleBadgeLabel('exploratory_only')).toBe('Esplorativo')
+    expect(patternSampleBadgeLabel('descriptive_only')).toBe('Descrittivo')
+    expect(patternSampleBadgeLabel('candidate_for_validation')).toBe('Candidato da validare')
+    expect(patternSampleBadgeLabel('small_sample')).toBe('Campione insufficiente')
+    expect(patternStabilityBadgeLabel('stable_candidate')).toBe('Candidata stabile')
+    expect(patternStabilityBadgeLabel('concentrated')).toBe('Concentrata')
+    expect(patternStabilityBadgeLabel('inconsistent')).toBe('Incoerente')
+    expect(patternStabilityBadgeLabel('insufficient_evidence')).toBe('Insufficiente')
+    expect(patternStabilityBadgeLabel('directionally_consistent')).toBe('Coerente')
+  })
+
+  it('quoteLegendClass marks unavailable', () => {
+    expect(quoteLegendClass('unavailable')).toBe('lab-quote-na')
   })
 
   it('matchOddsColumnLabel uses 1/X/2', () => {

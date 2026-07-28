@@ -33,6 +33,7 @@ from app.services.cecchino.cecchino_constants import (
 from app.services.cecchino.cecchino_kpi_panel_v2_betfair import KPI_V2_ROW_DEFS
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
 from app.services.cecchino_data_lab.historical_analytics_agg import (
+    ANALYTICS_AGGREGATION_VERSION,
     BALANCE_CANONICAL_PILLARS,
     BALANCE_COMBINATIONS,
     BALANCE_PILLAR_LABELS,
@@ -53,6 +54,7 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     group_patterns_for_dashboard,
     max_losing_streak,
     purchasability_band_dashboard,
+    quote_count_reconciliation,
     quote_quality_of_market,
     rating_band_dashboard,
     signal_meta,
@@ -536,6 +538,7 @@ def dashboard_overview(db: Session, run_id: int, filters: dict[str, Any]) -> dic
             "run": _run_meta(run),
             "is_provisional": _is_provisional(run),
             "data_as_of": _utcnow().isoformat(),
+            "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
             "filters": filters,
             "kpis": {
                 "matches_processed": int(run.matches_processed or 0),
@@ -545,6 +548,22 @@ def dashboard_overview(db: Session, run_id: int, filters: dict[str, Any]) -> dic
                 "markets_with_real_quote": real_n,
                 "markets_with_derived_quote": der_n,
                 "markets_without_quote": unavail_n,
+                "unavailable_quote_count": unavail_n,
+                "quote_reconciliation": quote_count_reconciliation(
+                    {
+                        "sample_size": len(perf_markets),
+                        "real_quote_count": real_n,
+                        "derived_quote_count": der_n,
+                        "unavailable_quote_count": unavail_n,
+                    }
+                ),
+                "with_cecchino_probability": sum(
+                    1 for m in perf_markets if m.prob_cecchino is not None
+                ),
+                "with_cecchino_fair_quote": sum(
+                    1 for m in perf_markets if m.quota_cecchino is not None
+                ),
+                "with_rating": sum(1 for m in perf_markets if m.rating is not None),
                 "signals_activated": signals_activated,
                 "competitions_represented": len(comps),
                 "best_calibrated_market": best_cal,
@@ -553,7 +572,8 @@ def dashboard_overview(db: Session, run_id: int, filters: dict[str, Any]) -> dic
                 "worst_market_by_real_roi": worst_roi,
                 "note": (
                     "Prestazioni osservate su mercati indipendenti. "
-                    "Nessun profitto complessivo aggregato."
+                    "Nessun profitto complessivo aggregato. "
+                    "Medie quote null se assenti."
                 ),
             },
             "progress": {
@@ -714,15 +734,20 @@ def dashboard_markets(db: Session, run_id: int, filters: dict[str, Any]) -> dict
                     "outcome_base_rate": finalized["hit_rate"],
                     "average_cecchino_probability": finalized["average_cecchino_probability"],
                     "median_cecchino_probability": finalized["median_cecchino_probability"],
+                    "with_cecchino_probability": finalized["with_cecchino_probability"],
+                    "with_cecchino_fair_quote": finalized["with_cecchino_fair_quote"],
+                    "with_cecchino_quote": finalized["with_cecchino_fair_quote"],
                     "calibration_gap": finalized["calibration_gap"],
                     "brier_score": brier_score(probs, outcomes),
                     "average_rating": finalized["average_rating"],
                     "rating_available_count": finalized["with_rating"],
+                    "with_rating": finalized["with_rating"],
                     "signal_active_count": finalized["with_signal_active"],
                     "matches_with_signal": finalized["with_signal_active"],
                     "real_quote_count": finalized["real_quote_count"],
                     "derived_quote_count": finalized["derived_quote_count"],
                     "unavailable_quote_count": finalized["unavailable_quote_count"],
+                    "quote_count_reconciliation_ok": finalized["quote_count_reconciliation_ok"],
                     "average_real_odds": finalized["average_real_odds"],
                     "average_derived_odds": finalized["average_derived_odds"],
                     "real_profit_1u": finalized["real_profit_1u"],
@@ -740,11 +765,13 @@ def dashboard_markets(db: Session, run_id: int, filters: dict[str, Any]) -> dict
         return {
             "run_id": int(run.id),
             "is_provisional": _is_provisional(run),
+            "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
             "filters": filters,
             "markets": rows,
             "note": (
                 "Mercati indipendenti — prestazioni osservate. "
-                "Non sommare i mercati tra loro."
+                "Non sommare i mercati tra loro. "
+                "Medie quote null se assenti; unavailable conteggiato esplicitamente."
             ),
         }
 
@@ -1553,14 +1580,19 @@ def dashboard_patterns(db: Session, run_id: int, filters: dict[str, Any]) -> dic
         return {
             "run_id": int(run.id),
             "is_provisional": _is_provisional(run),
+            "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
             "filters": filters,
             "positive": grouped["positive"],
             "negative": grouped["negative"],
             "watchlist": grouped["watchlist"],
             "unstable": grouped["unstable"],
+            "diagnostics": grouped.get("diagnostics") or [],
+            "status_thresholds": raw.get("status_thresholds"),
             "note": (
-                "Pattern candidato da verificare. "
-                "Nessuna modifica automatica alle formule."
+                "Pattern market-specific, candidato da verificare. "
+                "Diagnostiche assenze dati separate. "
+                "Nessuna modifica automatica alle formule. "
+                "Nessuna giocata automatica suggerita."
             ),
         }
 

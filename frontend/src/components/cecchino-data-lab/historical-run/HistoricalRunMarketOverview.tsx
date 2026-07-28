@@ -1,5 +1,9 @@
 import ReactECharts from 'echarts-for-react'
-import type { HistoricalRunDashboardMarket } from '../../../lib/cecchinoLabApi'
+import {
+  formatNullableNumber,
+  formatOdd,
+  type HistoricalRunDashboardMarket,
+} from '../../../lib/cecchinoLabApi'
 
 type Props = { markets: HistoricalRunDashboardMarket[] }
 
@@ -15,8 +19,9 @@ export function HistoricalRunMarketOverview({ markets }: Props) {
         return [
           `<b>${m.label}</b>`,
           `sample ${m.sample_size} · W ${m.wins} L ${m.losses}`,
-          `hit ${(m.hit_rate ?? 0) * 100}%`,
-          `quote reali ${m.real_quote_count} · derivate ${m.derived_quote_count}`,
+          `hit ${m.hit_rate != null ? `${(m.hit_rate * 100).toFixed(1)}%` : '—'}`,
+          `quote reali ${m.real_quote_count} · derivate ${m.derived_quote_count} · N/D ${m.unavailable_quote_count}`,
+          `odds reali ${formatOdd(m.average_real_odds)} · derivate ${formatOdd(m.average_derived_odds)}`,
           `ROI reale ${m.real_roi_pct ?? '—'}% · synth ${m.synthetic_roi_pct ?? '—'}%`,
           m.warnings?.includes('small_sample') ? '⚠ campione piccolo' : '',
         ]
@@ -39,7 +44,7 @@ export function HistoricalRunMarketOverview({ markets }: Props) {
       {
         name: 'Hit rate',
         type: 'bar',
-        data: markets.map((m) => m.hit_rate ?? 0),
+        data: markets.map((m) => (m.hit_rate != null ? m.hit_rate : null)),
         itemStyle: { color: '#2ee6ff' },
       },
     ],
@@ -49,7 +54,8 @@ export function HistoricalRunMarketOverview({ markets }: Props) {
     <section>
       <h3 className="mb-2 text-lg font-semibold">14 mercati</h3>
       <p className="mb-3 text-xs text-[var(--lab-muted)]">
-        Mercati indipendenti — ROI reale e sintetico separati. Non sommare i mercati.
+        Mercati indipendenti — ROI reale e sintetico separati. Non sommare i mercati. Quote N/D
+        conteggiate; medie assenti mostrate come —.
       </p>
       <div
         className="mb-4 rounded-xl border p-2"
@@ -65,10 +71,13 @@ export function HistoricalRunMarketOverview({ markets }: Props) {
               <th>N</th>
               <th>Hit</th>
               <th>P(Cecchino)</th>
-              <th>Gap cal.</th>
+              <th>Fair q.</th>
               <th>Rating</th>
               <th>Reali</th>
               <th>Derivate</th>
+              <th>N/D</th>
+              <th>Odds reali</th>
+              <th>Odds der.</th>
               <th>ROI reale</th>
               <th>ROI synth</th>
             </tr>
@@ -78,19 +87,29 @@ export function HistoricalRunMarketOverview({ markets }: Props) {
               <tr key={m.market_key}>
                 <td>{m.label}</td>
                 <td>{m.sample_size}</td>
-                <td>{m.hit_rate != null ? `${(m.hit_rate * 100).toFixed(1)}%` : '—'}</td>
                 <td>
+                  {m.hit_rate != null ? `${(m.hit_rate * 100).toFixed(1)}%` : '—'}
+                </td>
+                <td>
+                  {m.with_cecchino_probability != null
+                    ? m.with_cecchino_probability
+                    : '—'}
                   {m.average_cecchino_probability != null
-                    ? `${(m.average_cecchino_probability * 100).toFixed(1)}%`
+                    ? ` · ${formatNullableNumber(m.average_cecchino_probability, 3)}`
+                    : ''}
+                </td>
+                <td>{m.with_cecchino_fair_quote ?? m.with_cecchino_quote ?? '—'}</td>
+                <td>
+                  {m.average_rating != null
+                    ? formatNullableNumber(m.average_rating, 1)
                     : '—'}
                 </td>
-                <td>{m.calibration_gap ?? '—'}</td>
-                <td>{m.average_rating ?? '—'}</td>
                 <td>{m.real_quote_count}</td>
                 <td>{m.derived_quote_count}</td>
-                <td style={{ color: (m.real_roi_pct ?? 0) >= 0 ? 'var(--lab-ok)' : 'var(--lab-err)' }}>
-                  {m.real_roi_pct != null ? `${m.real_roi_pct}%` : '—'}
-                </td>
+                <td>{m.unavailable_quote_count}</td>
+                <td>{formatOdd(m.average_real_odds)}</td>
+                <td>{formatOdd(m.average_derived_odds)}</td>
+                <td>{m.real_roi_pct != null ? `${m.real_roi_pct}%` : '—'}</td>
                 <td>{m.synthetic_roi_pct != null ? `${m.synthetic_roi_pct}%` : '—'}</td>
               </tr>
             ))}

@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Harden aggregazioni storiche Cecchino Lab (2026-07-28)
+
+Aggregazioni read-only `cecchino_lab_analytics_agg_v2`: riconciliazione real/derived/unavailable; medie odds null; pattern market-specific; soglie campione; stabilità cross/temporale; diagnostiche missing separate. Report AI e dashboard condividono le stesse funzioni pure. **Snapshot/settlement/Today/Betfair invariati.** Doc: `CECCHINO_LAB_AI_REPORT_SCHEMA.md`, `CECCHINO_LAB_RUN_DASHBOARD.md`.
+
 ## Feat — Dashboard analisi run storico Cecchino Lab (2026-07-28)
 
 Dashboard read-only `/cecchino-lab/historical-scans/:runId` + endpoint `/dashboard/*`. Aggregazioni da snapshot/market_results già persistiti; cache in-memory; filtri URL; 14 mercati indipendenti; Rating/Acquistabilità/A–F/Balance/GI; pattern/esclusioni/match explorer. **Today/Betfair/formule/run esistenti invariati.** Doc: `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.

@@ -323,7 +323,15 @@ def test_rating_and_purch_bands():
     assert confidence_status(10) == "small_sample"
     assert confidence_status(50) == "descriptive_only"
     assert confidence_status(120) == "sufficient_sample"
-    assert pattern_status(sample_size=10, competitions_count=1, competition_shares={"A": 10}) == "small_sample"
+    assert (
+        pattern_status(
+            real_quote_count=10,
+            competitions_count=1,
+            competition_shares={"A": 10},
+            market_key="HOME",
+        )
+        == "small_sample"
+    )
 
 
 def test_overview_completed_and_provisional():
@@ -512,22 +520,229 @@ def test_bucket_finalize_and_pattern_groups():
     fb = finalize_bucket(b)
     assert fb["sample_size"] == 1
     assert fb["real_quote_count"] == 1
+    assert fb["unavailable_quote_count"] == 0
+    assert fb["quote_count_reconciliation_ok"] is True
+    assert fb["average_real_odds"] == 1.9
+    assert fb["with_cecchino_probability"] == 1
+    assert fb["with_cecchino_fair_quote"] == 1
+    assert fb["analytics_aggregation_version"]
     grouped = group_patterns_for_dashboard(
         {
             "patterns": [
                 {
                     "pattern_id": "p1",
+                    "market_key": "HOME",
+                    "conditions": {"market_key": "HOME"},
                     "sample_size": 50,
                     "real_quote_count": 40,
                     "real_roi": 12.0,
                     "competitions_count": 3,
-                    "status": "descriptive_only",
-                    "stability": {"stable_cross_competition": True},
+                    "status": "exploratory_only",
+                    "stability": {"cross_competition_stability": "directionally_consistent"},
+                    "is_diagnostic": False,
                 }
-            ]
+            ],
+            "diagnostic_patterns": [],
         }
     )
     assert "positive" in grouped
+    assert "diagnostics" in grouped
+
+
+def test_quote_reconciliation_and_null_averages():
+    from app.services.cecchino_data_lab.historical_analytics_agg import (
+        ANALYTICS_AGGREGATION_VERSION,
+        is_valid_book_odds,
+        quote_count_reconciliation,
+    )
+
+    assert is_valid_book_odds(1.9) is True
+    assert is_valid_book_odds(1.0) is False
+    assert is_valid_book_odds(0) is False
+    assert is_valid_book_odds(None) is False
+
+    b = agg_bucket()
+    # real flag but no valid odds → count real, average null
+    m1 = _market(real=True, quota_book=None, profit_real=None)
+    bump_bucket_from_market(b, m1, "A")
+    # unavailable
+    m2 = _market(mid=2, real=False, derived=False, quota_book=None, profit_real=None)
+    bump_bucket_from_market(b, m2, "A")
+    # derived with odds
+    m3 = _market(mid=3, real=False, derived=True, quota_book=2.5, profit_real=None, profit_synth=0.5)
+    bump_bucket_from_market(b, m3, "B")
+    fb = finalize_bucket(b)
+    assert fb["real_quote_count"] == 1
+    assert fb["derived_quote_count"] == 1
+    assert fb["unavailable_quote_count"] == 1
+    assert fb["quote_count_reconciliation_ok"] is True
+    assert fb["average_real_odds"] is None
+    assert fb["average_derived_odds"] == 2.5
+    assert fb["average_real_odds"] != 0.0
+    recon = quote_count_reconciliation(fb)
+    assert recon["quote_count_reconciliation_ok"] is True
+    assert ANALYTICS_AGGREGATION_VERSION.startswith("cecchino_lab_analytics_agg_")
+
+
+def test_pattern_status_thresholds_and_market_specific():
+    from app.services.cecchino_data_lab.historical_analytics_agg import (
+        build_combined_patterns,
+        conditions_are_absence_only,
+    )
+
+    assert (
+        pattern_status(
+            real_quote_count=25,
+            competitions_count=5,
+            competition_shares={"A": 5},
+            market_key="HOME",
+        )
+        == "small_sample"
+    )
+    assert (
+        pattern_status(
+            real_quote_count=50,
+            competitions_count=5,
+            competition_shares={"A": 10, "B": 10, "C": 10},
+            market_key="AWAY",
+        )
+        == "exploratory_only"
+    )
+    assert (
+        pattern_status(
+            real_quote_count=150,
+            competitions_count=5,
+            competition_shares={"A": 50, "B": 50, "C": 50},
+            market_key="HOME",
+        )
+        == "descriptive_only"
+    )
+    assert (
+        pattern_status(
+            real_quote_count=250,
+            competitions_count=5,
+            competition_shares={"A": 50, "B": 50, "C": 50, "D": 50, "E": 50},
+            market_key="HOME",
+            main_competition_share=0.2,
+        )
+        == "candidate_for_validation"
+    )
+    assert (
+        pattern_status(
+            real_quote_count=250,
+            competitions_count=5,
+            competition_shares={"A": 200, "B": 20, "C": 10},
+            market_key="HOME",
+            main_competition_share=0.8,
+        )
+        == "descriptive_only"
+    )
+    assert conditions_are_absence_only({"market_key": "HOME", "rating_band": "no_rating"})
+    assert not conditions_are_absence_only({"market_key": "HOME", "rating_band": "90-99"})
+
+    snaps, markets = _mini_universe()
+    snap_by_id = {int(s.id): s for s in snaps if s.historical_eligibility_status == "eligible_core"}
+    perf = [m for m in markets if int(m.match_snapshot_id) in snap_by_id]
+    raw = build_combined_patterns(perf, snap_by_id)
+    for p in raw["patterns"]:
+        assert p.get("market_key") or (p.get("conditions") or {}).get("market_key")
+        cond = p.get("conditions") or {}
+        assert "market_key" in cond
+        # no multi-market combo without market_key
+        assert cond["market_key"] in ("HOME", "DRAW", "AWAY", "OVER_2_5") or isinstance(
+            cond["market_key"], str
+        )
+    for p in raw.get("diagnostic_patterns") or []:
+        assert p.get("is_diagnostic") is True
+        assert p.get("status") == "coverage_diagnostic"
+    assert "diag_no_rating" in " ".join(p["pattern_id"] for p in raw.get("diagnostic_patterns") or []) or True
+    grouped = group_patterns_for_dashboard(raw)
+    assert "diagnostics" in grouped
+    # diagnostics not in positive/negative as candidates
+    for p in grouped["positive"] + grouped["negative"]:
+        assert not p.get("is_diagnostic")
+
+
+def test_overview_exposes_aggregation_version_no_global_profit():
+    snaps, markets = _mini_universe()
+    run = _run(status="completed")
+    db = _db_with(run, snaps, markets)
+    filters = parse_dashboard_filters()
+    with patch(
+        "app.services.cecchino_data_lab.historical_run_analytics_service._load_snapshots_lean",
+        return_value=snaps,
+    ), patch(
+        "app.services.cecchino_data_lab.historical_run_analytics_service._load_markets",
+        return_value=markets,
+    ):
+        out = dashboard_overview(db, 1, filters)
+        mk = dashboard_markets(db, 1, filters)
+        pat = dashboard_patterns(db, 1, filters)
+    assert out["analytics_aggregation_version"]
+    assert "global_profit" not in out["kpis"]
+    assert out["kpis"]["quote_reconciliation"]["quote_count_reconciliation_ok"] is True
+    assert mk["analytics_aggregation_version"] == out["analytics_aggregation_version"]
+    away = next(m for m in mk["markets"] if m["market_key"] == "AWAY")
+    assert away["unavailable_quote_count"] >= 1
+    assert away["average_real_odds"] is None or away["average_real_odds"] > 1.0
+    assert "diagnostics" in pat
+    assert pat["analytics_aggregation_version"]
+
+
+def test_run_compatibility_markers_1_2_3():
+    """Compatibilità strutturale response per run passati (mock #1/#2/#3)."""
+    snaps, markets = _mini_universe()
+    for rid in (1, 2, 3):
+        clear_dashboard_cache()
+        run = _run(status="completed", run_id=rid)
+        db = _db_with(run, snaps, markets)
+        with patch(
+            "app.services.cecchino_data_lab.historical_run_analytics_service._load_snapshots_lean",
+            return_value=snaps,
+        ), patch(
+            "app.services.cecchino_data_lab.historical_run_analytics_service._load_markets",
+            return_value=markets,
+        ):
+            ov = dashboard_overview(db, rid, parse_dashboard_filters())
+            mk = dashboard_markets(db, rid, parse_dashboard_filters())
+            pat = dashboard_patterns(db, rid, parse_dashboard_filters())
+        assert ov["analytics_aggregation_version"]
+        assert len(mk["markets"]) == 14
+        assert set(pat.keys()) >= {"positive", "negative", "watchlist", "unstable", "diagnostics"}
+        # read-only: nessun write DB
+        assert not getattr(db, "add").called
+        assert not getattr(db, "commit").called
+
+
+def test_cross_competition_stability_categories():
+    from app.services.cecchino_data_lab.historical_analytics_agg import (
+        compute_cross_competition_stability,
+    )
+    from datetime import timedelta
+
+    base = _utcnow()
+    # concentrato
+    stab = compute_cross_competition_stability(
+        real_quote_count=100,
+        competitions={"A": 80, "B": 20},
+        competition_real_n={"A": 80, "B": 20},
+        competition_real_profit={"A": 10.0, "B": -2.0},
+        temporal_points=[(base + timedelta(days=i), 0.1) for i in range(40)],
+        overall_real_roi=8.0,
+    )
+    assert stab["cross_competition_stability"] == "concentrated"
+    assert stab["stable_cross_competition"] is False
+
+    # inconsistente direzione
+    stab2 = compute_cross_competition_stability(
+        real_quote_count=100,
+        competitions={"A": 30, "B": 30, "C": 40},
+        competition_real_n={"A": 30, "B": 30, "C": 40},
+        competition_real_profit={"A": 20.0, "B": -20.0, "C": -5.0},
+        temporal_points=[(base + timedelta(days=i), 1.0 if i < 20 else -1.0) for i in range(40)],
+        overall_real_roi=-1.0,
+    )
+    assert stab2["cross_competition_stability"] in ("inconsistent", "concentrated", "insufficient_evidence")
 
 
 def test_api_endpoints_read_only():

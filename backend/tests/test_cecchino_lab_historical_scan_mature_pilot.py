@@ -343,7 +343,11 @@ def test_patterns_top_deterministic():
                 "real_quote_count": 100,
                 "real_roi": 5.0,
                 "competitions_count": 3,
-                "stability_by_competition": {"stable_cross_competition": False},
+                "is_diagnostic": False,
+                "stability_by_competition": {
+                    "stable_cross_competition": False,
+                    "cross_competition_stability": "inconsistent",
+                },
             },
             {
                 "pattern_id": "b",
@@ -351,7 +355,11 @@ def test_patterns_top_deterministic():
                 "real_quote_count": 2,
                 "real_roi": 80.0,
                 "competitions_count": 1,
-                "stability_by_competition": {"stable_cross_competition": True},
+                "is_diagnostic": False,
+                "stability_by_competition": {
+                    "stable_cross_competition": False,
+                    "cross_competition_stability": "insufficient_evidence",
+                },
             },
             {
                 "pattern_id": "c",
@@ -359,7 +367,11 @@ def test_patterns_top_deterministic():
                 "real_quote_count": 50,
                 "real_roi": -10.0,
                 "competitions_count": 4,
-                "stability_by_competition": {"stable_cross_competition": False},
+                "is_diagnostic": False,
+                "stability_by_competition": {
+                    "stable_cross_competition": False,
+                    "cross_competition_stability": "concentrated",
+                },
             },
         ]
     }

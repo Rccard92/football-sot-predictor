@@ -88,6 +88,7 @@ export function CecchinoLabHistoricalRunPage() {
       negative: HistoricalRunPattern[]
       watchlist: HistoricalRunPattern[]
       unstable: HistoricalRunPattern[]
+      diagnostics?: HistoricalRunPattern[]
     }>
   >(emptySection())
   const [exclusions, setExclusions] = useState<
@@ -192,6 +193,7 @@ export function CecchinoLabHistoricalRunPage() {
           negative: p.negative,
           watchlist: p.watchlist,
           unstable: p.unstable,
+          diagnostics: p.diagnostics ?? [],
         },
         error: null,
         loading: false,

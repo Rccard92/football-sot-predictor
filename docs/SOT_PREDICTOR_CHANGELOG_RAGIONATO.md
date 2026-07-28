@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Harden aggregazioni storiche Cecchino Lab (2026-07-28)
+
+- Perché: report/dashboard mostravano `unavailable_quote_count=0`, conteggi Cecchino ambigui, medie odds a `0.0`, pattern multi-mercato e soglie/stabilità troppo deboli.
+- Cosa: `historical_analytics_agg` v2 (riconciliazione quote, null-safe odds, contatori probabilità/fair/rating, pattern market-specific, soglie 30/100/200, `cross_competition_stability`, diagnostiche separate); report+dashboard allineati; UI badge/N/D; test; doc.
+- Cosa non fa: snapshot, settlement, formule, Today, Betfair, migration, riesecuzione scan.
+- Limiti: report ZIP va rigenerato in lettura dagli snapshot esistenti; Run #3 invariato su DB.
+
 ## Feat — Dashboard analisi run storico Cecchino Lab (2026-07-28)
 
 - Perché: la scansione 2021/2022 è terminata; serve un control center per leggere i dati congelati senza rieseguire lo scan.
