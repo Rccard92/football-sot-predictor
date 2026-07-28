@@ -61,6 +61,14 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     signal_meta as _signal_meta,
     structural_class as _structural_class,
 )
+from app.services.cecchino_data_lab.historical_signal_export import (
+    SIGNAL_EXPORT_SCHEMA_VERSION,
+    CURRENT_MODEL_KEY as SIGNAL_CURRENT_MODEL_KEY,
+    build_cell_rows_from_opportunity,
+    build_signal_models_summary,
+    collect_all_opportunities,
+    public_opportunity_row,
+)
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
@@ -92,14 +100,24 @@ AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab
 14. **Non** interpretare `technical_sum_across_all_independent_market_rows` come strategia.
 15. Report e dashboard condividono `analytics_aggregation_version`.
 16. `ai_summary` resta compatto: niente markets.jsonl completo / dettaglio partita-per-partita.
+17. Segnali A–F: usa `signal_opportunities.jsonl` per performance e ROI (una riga = run+snapshot+modello+mercato).
+18. `signal_models.jsonl` è **legacy cell-level** (`row_granularity=signal_cell`): celle sovrapposte sulla stessa opportunità; **non** sommare profitto/stake delle righe cella.
+19. `with_signal_active` nei riepiloghi modello è alias **deprecato** di `model_active_opportunity_count` (conteggio opportunità attive del modello), non overlap con F.
+20. Per sovrapposizione con F usa `overlap_with_current_model_F_*` e `model_overlap_matrix`.
+21. Più celle attive sulla stessa opportunità **non** sono più scommesse.
+22. Confronta i modelli sullo **stesso mercato**; non mescolare HOME/DRAW/AWAY/Over/Under in un unico ROI.
+23. F è il modello **corrente**, non automaticamente il migliore.
+24. Non modificare pesi o formule basandosi su una sola stagione.
 
 Cecchino Today operativo resta su **Betfair** e non è modificato da questo report.
 """
 
 SCHEMA_MD = """# Schema report AI Cecchino Lab (v4)
 
-- `manifest.json`: `scan_source_git_commit*` vs `report_generator_git_commit*`; alias legacy `source_git_commit*` = scan; `analytics_aggregation_version`
+- `manifest.json`: `scan_source_git_commit*` vs `report_generator_git_commit*`; alias legacy `source_git_commit*` = scan; `analytics_aggregation_version`; `signal_export_schema_version`; `performance_granularity=signal_opportunity`; `legacy_cell_file=signal_models.jsonl`
 - `summary.json` / `eligible_analysis`: `rating_by_market`, `purchasability_by_market` (primarie); `rating_global_distribution_diagnostic`, `purchasability_global_distribution_diagnostic` (diagnostiche); `quote_reconciliation`
+- Segnali: `signal_opportunities.jsonl` (canonico, 1 riga/opportunità); `signal_models.jsonl` (legacy, 1 riga/cella, `do_not_sum_as_independent_opportunities=true`)
+- `signal_export_reconciliation`, `market_join_diagnostics`, `model_overlap_matrix`, `consensus_distribution`, `current_model_F_diagnostics`
 - Profit/ROI/medie odds = `null` se quote_count della tipologia = 0
 - Fascia Rating `100` esclusiva
 - `markets.jsonl` (competition/module/full_archive): riga compatta con identity + kickoff + scores; non in `ai_summary`
@@ -469,6 +487,10 @@ def write_historical_report_zip(
         "report_generator_git_commit_source": generator_rev.get("git_commit_source"),
         "report_generator_revision_status": generator_rev.get("revision_status"),
         "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
+        "signal_export_schema_version": SIGNAL_EXPORT_SCHEMA_VERSION,
+        "current_model_key": SIGNAL_CURRENT_MODEL_KEY,
+        "performance_granularity": "signal_opportunity",
+        "legacy_cell_file": "signal_models.jsonl",
         "scan_version": run.scan_version or HISTORICAL_SCAN_VERSION,
         "parser_version": PARSER_VERSION,
         "run_scope": run_scope,
@@ -593,6 +615,14 @@ def _finalize_report_zip(
     purch_computed: int,
     manifest: dict[str, Any],
 ) -> tuple[str, int]:
+    # Opportunità segnali A–F (deduplicate) — read-only join a MarketResult
+    signal_opportunities = collect_all_opportunities(
+        run_id=int(run.id),
+        snapshots=eligible_snaps,
+        markets=eligible_markets,
+    )
+    signal_models_summary = build_signal_models_summary(signal_opportunities)
+
     eligibility: dict[str, int] = defaultdict(int)
     for s in snaps:
         eligibility[s.historical_eligibility_status] += 1
@@ -751,7 +781,6 @@ def _finalize_report_zip(
     gi_class_buckets: dict[str, dict[str, dict[str, Any]]] = defaultdict(
         lambda: defaultdict(_agg_bucket)
     )
-    model_buckets: dict[str, dict[str, Any]] = defaultdict(_agg_bucket)
 
     def _purch_decile(score: Any) -> str | None:
         if score is None:
@@ -789,19 +818,6 @@ def _finalize_report_zip(
             if not ck:
                 continue
             _bump_bucket_from_market(gi_class_buckets[str(pillar_name)][str(ck)], m, comp)
-
-        sigs = _as_dict(s.signals_json)
-        for model_key, mblock in (_as_dict(sigs.get("models"))).items():
-            for sett in _as_list(_as_dict(mblock).get("settlements")):
-                if not isinstance(sett, dict):
-                    continue
-                if sett.get("target_market") != m.market_key:
-                    continue
-                # Usa i flag quote della market row (non profit come proxy qualità)
-                _bump_bucket_from_market(model_buckets[str(model_key)], m, comp)
-                # Se settlement ha won esplicito diverso, non sovrascriviamo:
-                # hit/profit restano dalla market row (universo performance coerente).
-                break
 
     technical_sum = {
         "technical_sum_across_all_independent_market_rows": {
@@ -876,8 +892,24 @@ def _finalize_report_zip(
             for pillar, inner in gi_class_buckets.items()
         },
         "signal_models_A_F": {
-            k: _finalize_bucket(v) for k, v in sorted(model_buckets.items())
+            m["model_key"]: {
+                **{k: v for k, v in m.items() if k != "weights"},
+                "weights": m.get("weights"),
+                "with_signal_active": m.get("model_active_opportunity_count"),
+            }
+            for m in signal_models_summary.get("models") or []
         },
+        "signal_export_reconciliation": signal_models_summary.get(
+            "signal_export_reconciliation"
+        ),
+        "market_join_diagnostics": signal_models_summary.get("market_join_diagnostics"),
+        "model_overlap_matrix": signal_models_summary.get("model_overlap_matrix"),
+        "consensus_distribution": signal_models_summary.get("consensus_distribution"),
+        "current_model_F_diagnostics": signal_models_summary.get(
+            "current_model_F_diagnostics"
+        ),
+        "signal_cell_attribution": signal_models_summary.get("cell_attribution"),
+        "signal_export_schema_version": SIGNAL_EXPORT_SCHEMA_VERSION,
         "coverage_distinctions": {
             k: _finalize_bucket(v) for k, v in coverage_counters.items()
         },
@@ -1094,36 +1126,40 @@ def _finalize_report_zip(
                 }
                 yield json.dumps(row, ensure_ascii=False, default=str)
 
+        def _iter_signal_opportunities() -> Iterator[str]:
+            for opp in signal_opportunities:
+                yield json.dumps(
+                    public_opportunity_row(opp), ensure_ascii=False, default=str
+                )
+
         def _iter_signal_models() -> Iterator[str]:
-            for s in eligible_snaps:
-                sigs = _as_dict(s.signals_json)
-                for model_key, mblock in (_as_dict(sigs.get("models"))).items():
-                    mb = _as_dict(mblock)
-                    canon = _canonical_signal_model_fields(str(model_key))
-                    for sett in _as_list(mb.get("settlements")):
-                        if not isinstance(sett, dict):
-                            continue
-                        yield json.dumps(
-                            {
-                                "run_id": int(run.id),
-                                "lab_match_id": int(s.lab_match_id),
-                                "competition_name": s.competition_name,
-                                "kickoff_at": s.kickoff_at.isoformat() if s.kickoff_at else None,
-                                **canon,
-                                "signal_family": sett.get("signal_family"),
-                                "source_column": sett.get("source_column"),
-                                "target_market": sett.get("target_market"),
-                                "quota_cecchino": sett.get("quota_cecchino"),
-                                "probabilita_cecchino": sett.get("probabilita_cecchino"),
-                                "quota_bet365": sett.get("quota_bet365"),
-                                "quote_quality": sett.get("quote_quality"),
-                                "won": sett.get("won"),
-                                "real_profit_1u": sett.get("real_profit_1u"),
-                                "synthetic_profit_1u": sett.get("synthetic_profit_1u"),
-                            },
-                            ensure_ascii=False,
-                            default=str,
-                        )
+            for opp in signal_opportunities:
+                for cell_row in build_cell_rows_from_opportunity(opp):
+                    yield json.dumps(cell_row, ensure_ascii=False, default=str)
+
+        def _write_signal_export_files() -> None:
+            line_counts["signal_opportunities.jsonl"] = _write_jsonl_to_zip(
+                zf, "signal_opportunities.jsonl", _iter_signal_opportunities()
+            )
+            line_counts["signal_models.jsonl"] = _write_jsonl_to_zip(
+                zf, "signal_models.jsonl", _iter_signal_models()
+            )
+            _put_json("model_overlap.json", {
+                "model_overlap_matrix": signal_models_summary.get("model_overlap_matrix"),
+                "consensus_distribution": signal_models_summary.get(
+                    "consensus_distribution"
+                ),
+                "signal_export_reconciliation": signal_models_summary.get(
+                    "signal_export_reconciliation"
+                ),
+                "market_join_diagnostics": signal_models_summary.get(
+                    "market_join_diagnostics"
+                ),
+                "current_model_F_diagnostics": signal_models_summary.get(
+                    "current_model_F_diagnostics"
+                ),
+                "signal_export_schema_version": SIGNAL_EXPORT_SCHEMA_VERSION,
+            })
 
         def _iter_goal_intensity() -> Iterator[str]:
             for s in eligible_snaps:
@@ -1235,9 +1271,7 @@ def _finalize_report_zip(
         if mode_norm == "full_archive":
             line_counts["matches.jsonl"] = _write_jsonl_to_zip(zf, "matches.jsonl", _iter_matches_full())
             line_counts["markets.jsonl"] = _write_jsonl_to_zip(zf, "markets.jsonl", _iter_markets())
-            line_counts["signal_models.jsonl"] = _write_jsonl_to_zip(
-                zf, "signal_models.jsonl", _iter_signal_models()
-            )
+            _write_signal_export_files()
             line_counts["goal_intensity.jsonl"] = _write_jsonl_to_zip(
                 zf, "goal_intensity.jsonl", _iter_goal_intensity()
             )
@@ -1249,9 +1283,7 @@ def _finalize_report_zip(
                 zf, "matches_compact.jsonl", _iter_matches_compact()
             )
             line_counts["markets.jsonl"] = _write_jsonl_to_zip(zf, "markets.jsonl", _iter_markets())
-            line_counts["signal_models.jsonl"] = _write_jsonl_to_zip(
-                zf, "signal_models.jsonl", _iter_signal_models()
-            )
+            _write_signal_export_files()
             line_counts["goal_intensity.jsonl"] = _write_jsonl_to_zip(
                 zf, "goal_intensity.jsonl", _iter_goal_intensity()
             )
@@ -1264,9 +1296,7 @@ def _finalize_report_zip(
                     zf, "markets.jsonl", _iter_markets()
                 )
             elif module_norm == "signals":
-                line_counts["signal_models.jsonl"] = _write_jsonl_to_zip(
-                    zf, "signal_models.jsonl", _iter_signal_models()
-                )
+                _write_signal_export_files()
             elif module_norm == "goal_intensity":
                 line_counts["goal_intensity.jsonl"] = _write_jsonl_to_zip(
                     zf, "goal_intensity.jsonl", _iter_goal_intensity()

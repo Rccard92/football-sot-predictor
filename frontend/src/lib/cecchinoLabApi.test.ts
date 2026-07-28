@@ -265,4 +265,25 @@ describe('cecchinoLabApi helpers', () => {
     expect(q).toContain('rating_band=100')
     expect(parseHistoricalRunFiltersFromSearch(q).rating_band).toBe('100')
   })
+
+  it('signal opportunity summary fields stay nullable-safe', () => {
+    const legacy = {
+      model_key: 'A',
+      signals_activated: 3,
+      matches_with_signal: 1,
+      opportunity_count: 1,
+      model_active_opportunity_count: 1,
+      with_signal_active: 1,
+      active_cell_row_count: 3,
+      overlap_with_current_model_F_count: 1,
+      overlap_with_current_model_F_pct: 100,
+      real_roi: null as number | null,
+      synthetic_roi: null as number | null,
+      hit_rate: null as number | null,
+    }
+    expect(legacy.with_signal_active).toBe(legacy.model_active_opportunity_count)
+    expect(legacy.opportunity_count).not.toBe(legacy.signals_activated)
+    expect(legacy.overlap_with_current_model_F_count).toBeDefined()
+    expect(formatNullableNumber(legacy.real_roi)).toBe('—')
+  })
 })

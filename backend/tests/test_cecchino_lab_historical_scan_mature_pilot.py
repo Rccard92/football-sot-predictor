@@ -312,15 +312,26 @@ def test_module_report_signals_filtered():
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = set(zf.namelist())
         assert "signal_models.jsonl" in names
+        assert "signal_opportunities.jsonl" in names
+        assert "model_overlap.json" in names
         assert "markets.jsonl" not in names
         assert "goal_intensity.jsonl" not in names
         rows = [json.loads(x) for x in zf.read("signal_models.jsonl").decode().splitlines() if x]
         keys = {r["model_key"] for r in rows}
         assert keys == set(CECCHINO_WEIGHT_MODEL_KEYS)
         assert all(r["model_label"] for r in rows)
+        assert all(r.get("row_granularity") == "signal_cell" for r in rows)
+        assert all(r.get("do_not_sum_as_independent_opportunities") is True for r in rows)
         f_rows = [r for r in rows if r["model_key"] == "F"]
         assert f_rows
         assert f_rows[0]["model_key"] == CECCHINO_DEFAULT_WEIGHT_MODEL_KEY
+        opps = [json.loads(x) for x in zf.read("signal_opportunities.jsonl").decode().splitlines() if x]
+        assert opps
+        assert all(o.get("row_granularity") == "signal_opportunity" for o in opps)
+        manifest = json.loads(zf.read("manifest.json"))
+        assert manifest.get("signal_export_schema_version") == "cecchino_lab_signal_export_v1"
+        assert manifest.get("performance_granularity") == "signal_opportunity"
+        assert manifest.get("legacy_cell_file") == "signal_models.jsonl"
 
 
 def test_full_archive_available_and_legacy_exportable():
@@ -432,7 +443,7 @@ def test_v2_1_manifest_dual_revision_and_markets_identity():
     assert manifest["report_generator_git_commit"] == "generatordeadbeef"
     assert manifest["source_git_commit"] == "abc"
     assert manifest["analytics_aggregation_version"] == ANALYTICS_AGGREGATION_VERSION
-    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_1"
+    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_2"
     ea = summary["eligible_analysis"]
     assert "rating_by_market" in ea
     assert "purchasability_by_market" in ea

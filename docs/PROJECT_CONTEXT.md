@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Fix — Export opportunità segnali A–F (2026-07-29)
+
+Export/dashboard read-only: `signal_opportunities.jsonl` (1 riga/opportunità), `signal_models.jsonl` legacy cell-level; join MarketResult per prob/quota/Rating/Acquistabilità; overlap F distinto da `with_signal_active` (alias deprecato); `cecchino_lab_analytics_agg_v2_2` + `cecchino_lab_signal_export_v1`. **Nessuna modifica a formule/pesi/soglie/snapshot/settlement/Run #3/Today/Betfair.**
+
 ## Fix — Finalize semantics report/dashboard storico (2026-07-28)
 
 Micro-hardening read-only `cecchino_lab_analytics_agg_v2_1`: dual revision (scan vs generator/runtime); profit/ROI/odds null se quote_count=0; fascia Rating `100` esclusiva; `rating_by_market`/`purchasability_by_market` primarie; identity in `markets.jsonl`. **Snapshot/settlement/Today/Betfair/Run #3 invariati.** Doc: schema + dashboard + scan.

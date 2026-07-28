@@ -1193,6 +1193,153 @@ export type HistoricalRunPurchasabilityAnalytics = {
   profile_sample_size?: number
 }
 
+export type HistoricalSignalCell = {
+  signal_group: string | null
+  source_column: string | null
+  cell_key: string | null
+  cell_label: string | null
+  signal_family: string | null
+  target_market: string | null
+  raw_value: string | null
+  threshold: number | null
+  comparison_operator: string | null
+  weight: number | null
+  weighted_contribution: number | null
+  source_version: string | null
+}
+
+export type HistoricalSignalOpportunity = {
+  row_granularity: 'signal_opportunity'
+  opportunity_id: string
+  run_id: number
+  snapshot_id: number
+  match_snapshot_id?: number
+  lab_match_id: number
+  dataset_id: number | null
+  competition_name: string | null
+  kickoff_at: string | null
+  chronological_order: number | null
+  home_team: string | null
+  away_team: string | null
+  home_score_ft: number | null
+  away_score_ft: number | null
+  home_score_ht: number | null
+  away_score_ht: number | null
+  model_key: string
+  model_label: string
+  model_short_label: string
+  weights: Record<string, number>
+  weights_version: string
+  is_current_model: boolean
+  current_model_key: string
+  market_key: string | null
+  target_market: string | null
+  market_label: string | null
+  signal_family: string | null
+  period: string | null
+  line: string | null
+  model_active: boolean
+  active_cell_count: number
+  active_cells: HistoricalSignalCell[]
+  active_signal_groups: string[]
+  active_source_columns: string[]
+  active_cell_labels: Array<string | null>
+  consensus_model_count: number
+  consensus_models: string[]
+  active_in_current_model_F: boolean
+  overlap_with_current_model_F: boolean
+  prob_cecchino: number | null
+  quota_cecchino: number | null
+  rating: number | null
+  edge: number | null
+  vantaggio_probabilistico: number | null
+  purchasability_score: number | null
+  purchasability_band: string | null
+  purchasability_status: string | null
+  quote_quality: string | null
+  is_real_book_quote: boolean | null
+  is_derived_quote: boolean | null
+  real_book_odds: number | null
+  derived_odds: number | null
+  won: boolean | null
+  evaluation_status: string | null
+  settlement_status: string | null
+  result_reason: string | null
+  profit_1u_real: number | null
+  profit_1u_synthetic: number | null
+  result_missing?: boolean
+  market_join_status: string
+  performance_eligible?: boolean
+}
+
+export type HistoricalSignalOverlapCell = {
+  model_a: string
+  model_b: string
+  intersection_count: number
+  union_count: number
+  jaccard_pct: number | null
+  overlap_a_pct: number | null
+  overlap_b_pct: number | null
+}
+
+export type HistoricalSignalConsensusBucket = {
+  market_key: string
+  consensus_model_count: number
+  opportunity_count: number
+  wins: number
+  losses: number
+  hit_rate: number | null
+  real_quote_count: number
+  real_profit_1u: number | null
+  real_roi_pct: number | null
+  derived_quote_count: number
+  synthetic_profit_1u: number | null
+  synthetic_roi_pct: number | null
+  unavailable_quote_count: number
+}
+
+export type HistoricalSignalExportReconciliation = {
+  cell_rows: number
+  opportunity_rows: number
+  unique_opportunity_ids: number
+  duplicate_opportunity_ids: number
+  sum_active_cell_count: number
+  cell_rows_equal_sum_active_cell_count: boolean
+  opportunity_id_unique: boolean
+  models_present: string[]
+  current_model_key: string
+  performance_uses_opportunities_only: boolean
+  cell_rows_not_independent: boolean
+}
+
+export type HistoricalSignalMarketJoinDiagnostics = {
+  opportunities_total: number
+  matched_count: number
+  missing_count: number
+  ambiguous_count: number
+  invalid_mapping_count: number
+  matched_pct: number | null
+  by_model_key?: Record<string, Record<string, number>>
+  by_market_key?: Record<string, Record<string, number>>
+}
+
+export type HistoricalCurrentModelFDiagnostics = {
+  current_model_key: string
+  note?: string
+  opportunities_total: number
+  opportunities_shared_with_all_models: number
+  opportunities_not_shared_with_all_models: number
+  opportunities_unique_to_F: number
+  opportunities_excluded_by_F_but_selected_by_other_models: number
+  performance_by_market_key?: Record<string, Record<string, unknown>>
+  overlap_per_model?: Array<Record<string, unknown>>
+  consensus_distribution?: HistoricalSignalConsensusBucket[]
+  active_cell_combinations_by_market?: Array<Record<string, unknown>>
+  competition_distribution?: Array<{ competition_name: string; opportunity_count: number }>
+  chronological_halves?: Record<string, unknown>
+  f_selected_vs_excluded_same_market?: Array<Record<string, unknown>>
+}
+
 export type HistoricalRunSignalModelAnalytics = {
   model_key: string
   model_label: string
@@ -1200,23 +1347,74 @@ export type HistoricalRunSignalModelAnalytics = {
   weights: Record<string, number>
   weights_version: string
   is_current_model: boolean
+  /** Legacy: conteggio celle attive (non opportunità). */
   signals_activated: number
   matches_with_signal: number
   wins: number
   losses: number
   hit_rate: number | null
   real_quote_count: number
-  real_profit: number
+  real_profit: number | null
   real_roi: number | null
   derived_quote_count: number
-  synthetic_profit: number
+  synthetic_profit: number | null
   synthetic_roi: number | null
-  average_odds: number | null
+  average_odds?: number | null
   max_losing_streak: number
   market_best: string | null
   market_worst: string | null
   competition_best: string | null
   competition_worst: string | null
+  /** Opportunità uniche del modello. */
+  opportunity_count?: number
+  model_active_opportunity_count?: number
+  /** Alias deprecato di model_active_opportunity_count (non overlap con F). */
+  with_signal_active?: number
+  model_active_match_count?: number
+  matches_with_opportunity?: number
+  model_active_market_count?: number
+  markets_count?: number
+  active_cell_row_count?: number
+  average_active_cells_per_opportunity?: number | null
+  average_active_cells?: number | null
+  median_active_cells_per_opportunity?: number | null
+  max_active_cells_per_opportunity?: number
+  result_missing?: number
+  overlap_with_current_model_F_count?: number
+  overlap_with_current_model_F_pct?: number | null
+  unique_vs_current_model_F_count?: number
+  current_model_F_only_count?: number
+  competitions_count?: number
+  real_profit_1u?: number | null
+  real_roi_pct?: number | null
+  synthetic_profit_1u?: number | null
+  synthetic_roi_pct?: number | null
+  unavailable_quote_count?: number
+}
+
+/** Alias storico; campi estesi restano opzionali per compatibilità payload precedenti. */
+export type HistoricalSignalModelSummary = HistoricalRunSignalModelAnalytics
+
+export type HistoricalRunSignalsDashboard = {
+  run_id: number
+  models: HistoricalRunSignalModelAnalytics[]
+  current_model_key: string
+  note?: string
+  analytics_aggregation_version?: string
+  signal_export_schema_version?: string
+  performance_granularity?: string
+  opportunity_rows?: number
+  cell_rows?: number
+  concurrent_active_signals?: Record<string, number>
+  model_overlap_matrix?: HistoricalSignalOverlapCell[]
+  consensus_distribution?: HistoricalSignalConsensusBucket[]
+  market_join_diagnostics?: HistoricalSignalMarketJoinDiagnostics | null
+  signal_export_reconciliation?: HistoricalSignalExportReconciliation | null
+  current_model_F_diagnostics?: HistoricalCurrentModelFDiagnostics | null
+  cell_attribution?: Array<Record<string, unknown>>
+  model_x_market?: Array<Record<string, unknown>>
+  model_x_competition?: Array<Record<string, unknown>>
+  model_x_consensus?: Array<Record<string, unknown>>
 }
 
 export type HistoricalRunBalanceAnalytics = {
@@ -1417,11 +1615,7 @@ export function getHistoricalRunDashboardPurchasability(
 export function getHistoricalRunDashboardSignals(
   runId: number,
   filters: HistoricalRunFilters = {},
-): Promise<{
-  models: HistoricalRunSignalModelAnalytics[]
-  current_model_key: string
-  note?: string
-}> {
+): Promise<HistoricalRunSignalsDashboard> {
   return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/signals`, filters)
 }
 

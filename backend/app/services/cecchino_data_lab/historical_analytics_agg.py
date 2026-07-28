@@ -12,7 +12,7 @@ from typing import Any
 
 from app.models.cecchino_lab_historical_market_result import CecchinoLabHistoricalMarketResult
 
-ANALYTICS_AGGREGATION_VERSION = "cecchino_lab_analytics_agg_v2_1"
+ANALYTICS_AGGREGATION_VERSION = "cecchino_lab_analytics_agg_v2_2"
 
 # Pilastri Balance canonici (ordine UI dashboard)
 BALANCE_CANONICAL_PILLARS: tuple[str, ...] = (

@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Export opportunità segnali A–F (2026-07-29)
+
+- Cosa: `historical_signal_export` + `signal_opportunities.jsonl`; legacy cells marcate; `with_signal_active` = alias opportunità; overlap/matrice/consenso/F diagnostics; join market; bump agg `v2_2` + schema export `v1`; dashboard FE a due livelli; test/doc.
+- Cosa non fa: scan, migration, overwrite Run #3, pesi A–F, soglie, formule, Today/Betfair.
+
 ## Fix — Finalize semantics report/dashboard storico (2026-07-28)
 
 - Cosa: bump `cecchino_lab_analytics_agg_v2_1`; dual revision scan vs generator/runtime; profit/ROI/odds null se quote_count=0; fascia Rating `100`; by_market primarie; identity in `markets.jsonl`; FE badge/warning/`—`.

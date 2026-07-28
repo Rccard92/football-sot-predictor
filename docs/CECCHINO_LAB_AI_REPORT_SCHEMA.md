@@ -1,9 +1,29 @@
 ﻿# Schema report AI â€” Cecchino Lab Historical Scan
 
 Versione schema: `cecchino_lab_ai_report_v4`
-Versione aggregazione: `cecchino_lab_analytics_agg_v2_1` (`analytics_aggregation_version`)
+Versione aggregazione: `cecchino_lab_analytics_agg_v2_2` (`analytics_aggregation_version`)
+Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_version`)
 
 Le funzioni pure di aggregazione/pattern (`agg_bucket`, `finalize_bucket`, `build_combined_patterns`, â€¦) vivono in `historical_analytics_agg.py` e sono riusate dalla **dashboard run** senza rigenerare lo ZIP. Vedi `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
+
+## Segnali A–F: opportunità vs celle
+
+Due livelli distinti (nessuna modifica a pesi/soglie/formule):
+
+| Livello | File | Granularità | Uso |
+|---|---|---|---|
+| **Opportunità** (canonico) | `signal_opportunities.jsonl` | `run + snapshot + model_key + market_key` | Performance, ROI, overlap, consenso |
+| **Cella** (legacy) | `signal_models.jsonl` | una riga per cella SI attiva | Diagnostica; `do_not_sum_as_independent_opportunities=true` |
+
+- `opportunity_id` deterministico: `run:{id}:snapshot:{id}:model:{k}:market:{mk}`
+- `with_signal_active` nei riepiloghi modello = **alias deprecato** di `model_active_opportunity_count` (non overlap con F)
+- Sovrapposizione con F: `overlap_with_current_model_F_*` / `model_overlap_matrix`
+- Join a `CecchinoLabHistoricalMarketResult` per `prob_cecchino` / `quota_cecchino` / Rating / Acquistabilità per mercato (`market_join_status`)
+- Acquistabilità da `purchasability_compatibility_json.markets[]` per `market_key` (mai score partita generico)
+- F = modello corrente, non automaticamente il migliore
+- Nessuna probabilità/quota Cecchino inventata da Bet365
+
+Vedi anche `model_overlap.json`, `signal_export_reconciliation`, `market_join_diagnostics`, `current_model_F_diagnostics`.
 
 ## Riconciliazione quote
 
@@ -95,7 +115,8 @@ Generazione: `SpooledTemporaryFile` + JSONL riga-per-riga + streaming HTTP (lâ�
 ## Manifest (campi chiave)
 
 - `report_schema_version = cecchino_lab_ai_report_v4`
-- `analytics_aggregation_version = cecchino_lab_analytics_agg_v2_1`
+- `analytics_aggregation_version = cecchino_lab_analytics_agg_v2_2`
+- `signal_export_schema_version = cecchino_lab_signal_export_v1`
 - `scan_source_git_commit*` (snapshot congelati) vs `report_generator_git_commit*` (codice a generazione)
 - alias legacy: `source_git_commit*` = scan
 - `run_scope` (`full` | `pilot` | `balanced_pilot`) / `is_partial_run` / `not_full_season_report`

@@ -60,6 +60,12 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     signal_meta,
     structural_class,
 )
+from app.services.cecchino_data_lab.historical_signal_export import (
+    SIGNAL_EXPORT_SCHEMA_VERSION,
+    CURRENT_MODEL_KEY as SIGNAL_CURRENT_MODEL_KEY,
+    build_signal_models_summary,
+    collect_all_opportunities,
+)
 from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 from app.services.cecchino_data_lab.historical_scan_service import run_to_dict
@@ -259,6 +265,7 @@ def _load_snapshots_lean(db: Session, run_id: int) -> list[CecchinoLabHistorical
                 load_only(
                     CecchinoLabHistoricalMatchSnapshot.id,
                     CecchinoLabHistoricalMatchSnapshot.run_id,
+                    CecchinoLabHistoricalMatchSnapshot.dataset_id,
                     CecchinoLabHistoricalMatchSnapshot.lab_match_id,
                     CecchinoLabHistoricalMatchSnapshot.competition_name,
                     CecchinoLabHistoricalMatchSnapshot.season_label,
@@ -940,127 +947,68 @@ def dashboard_signals(db: Session, run_id: int, filters: dict[str, Any]) -> dict
         perf_snaps, perf_markets, snap_by_id = _partition_universe(
             snaps, markets, filters, for_performance=True
         )
-        markets_by_snap: dict[int, list[CecchinoLabHistoricalMarketResult]] = defaultdict(list)
-        for m in perf_markets:
-            markets_by_snap[int(m.match_snapshot_id)].append(m)
+
+        opportunities = collect_all_opportunities(
+            run_id=int(run.id),
+            snapshots=perf_snaps,
+            markets=perf_markets,
+        )
+        summary = build_signal_models_summary(opportunities)
+
+        # Distribuzione active_cell_count (diagnostica celle)
+        concurrent_counts: dict[int, int] = defaultdict(int)
+        for o in opportunities:
+            concurrent_counts[int(o.get("active_cell_count") or 0)] += 1
 
         models_out: list[dict[str, Any]] = []
-        model_x_market: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
-        model_x_comp: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
-        concurrent_counts: dict[int, int] = defaultdict(int)
-
-        for key in CECCHINO_WEIGHT_MODEL_KEYS:
-            meta = model_meta_for_key(key)
-            model_def = get_cecchino_weight_model(key)
-            b = agg_bucket()
-            won_flags: list[bool | None] = []
-            matches_with = 0
-            signals_activated = 0
-            for s in perf_snaps:
-                sigs = as_dict(s.signals_json)
-                models = as_dict(sigs.get("models"))
-                block = as_dict(models.get(key))
-                active = as_list(block.get("active_signals"))
-                settlements = as_list(block.get("settlements"))
-                if active:
-                    matches_with += 1
-                    signals_activated += len(active)
-                concurrent_counts[len(active)] += 1 if active else 0
-                # Prefer settlement del modello; fallback market rows con signal
-                if settlements:
-                    for st in settlements:
-                        if not isinstance(st, dict):
-                            continue
-                        mk = st.get("market_key")
-                        # synthetic market-like bump
-                        fake = next(
-                            (m for m in markets_by_snap.get(int(s.id), []) if m.market_key == mk),
-                            None,
-                        )
-                        if fake:
-                            bump_bucket_from_market(b, fake, s.competition_name)
-                            bump_bucket_from_market(
-                                model_x_market[(key, mk)], fake, s.competition_name
-                            )
-                            bump_bucket_from_market(
-                                model_x_comp[(key, s.competition_name or "unknown")],
-                                fake,
-                                s.competition_name,
-                            )
-                            won_flags.append(fake.won)
-                else:
-                    for m in markets_by_snap.get(int(s.id), []):
-                        if not m.signal_active and key != CECCHINO_DEFAULT_WEIGHT_MODEL_KEY:
-                            continue
-                        if key == CECCHINO_DEFAULT_WEIGHT_MODEL_KEY and not m.signal_active:
-                            continue
-                        bump_bucket_from_market(b, m, s.competition_name)
-                        bump_bucket_from_market(
-                            model_x_market[(key, m.market_key)], m, s.competition_name
-                        )
-                        bump_bucket_from_market(
-                            model_x_comp[(key, s.competition_name or "unknown")],
-                            m,
-                            s.competition_name,
-                        )
-                        won_flags.append(m.won)
-
-            fb = finalize_bucket(b)
-            # best/worst market
+        for m in summary.get("models") or []:
+            # Best/worst market da model_x_market
             mk_stats = [
-                (mk, finalize_bucket(model_x_market[(key, mk)]))
-                for mk in MARKET_ORDER
-                if (key, mk) in model_x_market
+                (row["market_key"], row)
+                for row in summary.get("model_x_market") or []
+                if row.get("model_key") == m["model_key"]
             ]
             mk_roi = [
                 (mk, v)
                 for mk, v in mk_stats
-                if v.get("real_roi_pct") is not None and int(v.get("real_quote_count") or 0) >= 10
+                if v.get("real_roi_pct") is not None
+                and int(v.get("real_quote_count") or 0) >= 10
             ]
-            market_best = max(mk_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0] if mk_roi else None
-            market_worst = min(mk_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0] if mk_roi else None
+            market_best = (
+                max(mk_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0] if mk_roi else None
+            )
+            market_worst = (
+                min(mk_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0] if mk_roi else None
+            )
             comp_stats = [
-                (c, finalize_bucket(v))
-                for (k, c), v in model_x_comp.items()
-                if k == key
+                (row["competition"], row)
+                for row in summary.get("model_x_competition") or []
+                if row.get("model_key") == m["model_key"]
             ]
             comp_roi = [
                 (c, v)
                 for c, v in comp_stats
-                if v.get("real_roi_pct") is not None and int(v.get("real_quote_count") or 0) >= 10
+                if v.get("real_roi_pct") is not None
+                and int(v.get("real_quote_count") or 0) >= 10
             ]
             competition_best = (
-                max(comp_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0] if comp_roi else None
+                max(comp_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0]
+                if comp_roi
+                else None
             )
             competition_worst = (
-                min(comp_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0] if comp_roi else None
+                min(comp_roi, key=lambda x: float(x[1]["real_roi_pct"]))[0]
+                if comp_roi
+                else None
             )
-
             models_out.append(
                 {
-                    "model_key": key,
-                    "model_label": str(meta.get("model_label") or model_def.get("label") or key),
-                    "model_short_label": str(model_def.get("short_label") or f"Modello {key}"),
-                    "weights": model_weights_json(key),
-                    "weights_version": str(meta.get("weights_version") or ""),
-                    "is_current_model": key == CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
-                    "signals_activated": signals_activated,
-                    "matches_with_signal": matches_with,
-                    "wins": fb["won"],
-                    "losses": fb["lost"],
-                    "hit_rate": fb["hit_rate"],
-                    "real_quote_count": fb["real_quote_count"],
-                    "real_profit": fb["real_profit_1u"],
-                    "real_roi": fb["real_roi_pct"],
-                    "derived_quote_count": fb["derived_quote_count"],
-                    "synthetic_profit": fb["synthetic_profit_1u"],
-                    "synthetic_roi": fb["synthetic_roi_pct"],
-                    "average_odds": fb["average_real_odds"],
-                    "max_losing_streak": max_losing_streak(won_flags),
+                    **m,
                     "market_best": market_best,
                     "market_worst": market_worst,
                     "competition_best": competition_best,
                     "competition_worst": competition_worst,
+                    "average_odds": m.get("average_odds"),
                 }
             )
 
@@ -1068,18 +1016,32 @@ def dashboard_signals(db: Session, run_id: int, filters: dict[str, Any]) -> dict
             "run_id": int(run.id),
             "is_provisional": _is_provisional(run),
             "filters": filters,
+            "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
+            "signal_export_schema_version": SIGNAL_EXPORT_SCHEMA_VERSION,
+            "current_model_key": SIGNAL_CURRENT_MODEL_KEY,
+            "performance_granularity": "signal_opportunity",
             "models": models_out,
-            "model_x_market": [
-                {"model_key": k, "market_key": mk, **finalize_bucket(b)}
-                for (k, mk), b in sorted(model_x_market.items())
-            ],
-            "model_x_competition": [
-                {"model_key": k, "competition": c, **finalize_bucket(b)}
-                for (k, c), b in sorted(model_x_comp.items())
-            ],
+            "model_x_market": summary.get("model_x_market") or [],
+            "model_x_competition": summary.get("model_x_competition") or [],
+            "model_x_signal_family": summary.get("model_x_signal_family") or [],
+            "model_x_active_cell_count": summary.get("model_x_active_cell_count") or [],
+            "model_x_consensus": summary.get("model_x_consensus") or [],
+            "model_x_rating": summary.get("model_x_rating") or [],
+            "model_x_purchasability": summary.get("model_x_purchasability") or [],
+            "model_overlap_matrix": summary.get("model_overlap_matrix") or [],
+            "consensus_distribution": summary.get("consensus_distribution") or [],
+            "market_join_diagnostics": summary.get("market_join_diagnostics"),
+            "signal_export_reconciliation": summary.get("signal_export_reconciliation"),
+            "current_model_F_diagnostics": summary.get("current_model_F_diagnostics"),
+            "cell_attribution": summary.get("cell_attribution") or [],
             "concurrent_active_signals": dict(sorted(concurrent_counts.items())),
-            "current_model_key": CECCHINO_DEFAULT_WEIGHT_MODEL_KEY,
-            "note": "Prestazioni osservate dei modelli A–F. Nessun modello dichiarato vincitore.",
+            "opportunity_rows": summary.get("opportunity_rows"),
+            "cell_rows": summary.get("cell_rows"),
+            "note": summary.get("note")
+            or (
+                "Prestazioni su opportunità uniche. Celle = diagnostica overlapping. "
+                "F = modello corrente, non vincitore automatico."
+            ),
         }
 
     return _cached_or_compute(db, run_id, "signals", filters, compute)

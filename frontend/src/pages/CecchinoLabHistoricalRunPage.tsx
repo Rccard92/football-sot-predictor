@@ -16,7 +16,7 @@ import { HistoricalRunPatterns } from '../components/cecchino-data-lab/historica
 import { HistoricalRunPurchasability } from '../components/cecchino-data-lab/historical-run/HistoricalRunPurchasability'
 import { HistoricalRunRatingHeatmap } from '../components/cecchino-data-lab/historical-run/HistoricalRunRatingHeatmap'
 import { HistoricalRunSectionError } from '../components/cecchino-data-lab/historical-run/HistoricalRunSectionError'
-import { HistoricalRunSignalModels } from '../components/cecchino-data-lab/historical-run/HistoricalRunSignalModels'
+import { HistoricalRunSignalModelsFromDashboard } from '../components/cecchino-data-lab/historical-run/HistoricalRunSignalModels'
 import { HistoricalRunSkeleton } from '../components/cecchino-data-lab/historical-run/HistoricalRunSkeleton'
 import { HistoricalRunTimeline } from '../components/cecchino-data-lab/historical-run/HistoricalRunTimeline'
 import { HistoricalRunV1Pulse } from '../components/cecchino-data-lab/historical-run/HistoricalRunV1Pulse'
@@ -48,7 +48,7 @@ import {
   type HistoricalRunPattern,
   type HistoricalRunPurchasabilityAnalytics,
   type HistoricalRunRatingCell,
-  type HistoricalRunSignalModelAnalytics,
+  type HistoricalRunSignalsDashboard,
   type HistoricalRunTimelinePoint,
 } from '../lib/cecchinoLabApi'
 
@@ -73,9 +73,7 @@ export function CecchinoLabHistoricalRunPage() {
     SectionState<{ bands: string[]; matrix: HistoricalRunRatingCell[]; warning?: string }>
   >(emptySection())
   const [purch, setPurch] = useState<SectionState<HistoricalRunPurchasabilityAnalytics>>(emptySection())
-  const [signals, setSignals] = useState<
-    SectionState<{ models: HistoricalRunSignalModelAnalytics[]; note?: string }>
-  >(emptySection())
+  const [signals, setSignals] = useState<SectionState<HistoricalRunSignalsDashboard>>(emptySection())
   const [balance, setBalance] = useState<SectionState<HistoricalRunBalanceAnalytics>>(emptySection())
   const [gi, setGi] = useState<SectionState<HistoricalRunGoalIntensityAnalytics>>(emptySection())
   const [comps, setComps] = useState<SectionState<HistoricalRunCompetitionAnalytics[]>>(emptySection())
@@ -149,10 +147,7 @@ export function CecchinoLabHistoricalRunPage() {
         return { bands: r.bands, matrix: r.matrix, warning: r.warning }
       }, setRatings),
       load(() => getHistoricalRunDashboardPurchasability(runId, filters), setPurch),
-      load(async () => {
-        const s = await getHistoricalRunDashboardSignals(runId, filters)
-        return { models: s.models, note: s.note }
-      }, setSignals),
+      load(() => getHistoricalRunDashboardSignals(runId, filters), setSignals),
       load(() => getHistoricalRunDashboardBalance(runId, filters), setBalance),
       load(() => getHistoricalRunDashboardGoalIntensity(runId, filters), setGi),
       load(
@@ -324,9 +319,7 @@ export function CecchinoLabHistoricalRunPage() {
         </Section>
 
         <Section loading={signals.loading} error={signals.error} title="Segnali" onRetry={() => void loadCore()}>
-          {signals.data ? (
-            <HistoricalRunSignalModels models={signals.data.models} note={signals.data.note} />
-          ) : null}
+          {signals.data ? <HistoricalRunSignalModelsFromDashboard data={signals.data} /> : null}
         </Section>
 
         <Section loading={balance.loading} error={balance.error} title="Balance" onRetry={() => void loadCore()}>

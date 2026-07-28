@@ -6,7 +6,7 @@ Dopo il completamento della scansione, aprire l’analisi da **Storico run → A
 
 Documentazione dedicata: [`CECCHINO_LAB_RUN_DASHBOARD.md`](./CECCHINO_LAB_RUN_DASHBOARD.md).
 
-Endpoint JSON read-only sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`. Aggregazioni pure in `historical_analytics_agg.py` (condivise col report ZIP, `analytics_aggregation_version=cecchino_lab_analytics_agg_v2_1`). **Nessuna riscrittura** di run/snapshot/settlement.
+Endpoint JSON read-only sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`. Aggregazioni pure in `historical_analytics_agg.py` (condivise col report ZIP, `analytics_aggregation_version=cecchino_lab_analytics_agg_v2_2`). Export segnali opportunità/celle in `historical_signal_export.py` (`signal_export_schema_version=cecchino_lab_signal_export_v1`). **Nessuna riscrittura** di run/snapshot/settlement.
 
 Aggregazioni hardened: riconciliazione real+derived+unavailable; medie odds `null` se assenti; pattern sempre `market_key`; soglie su quote reali; `cross_competition_stability`; diagnostiche assenze dati separate. Report AI e dashboard condividono le stesse formule pure — vedi `CECCHINO_LAB_AI_REPORT_SCHEMA.md` e `CECCHINO_LAB_RUN_DASHBOARD.md`.
 

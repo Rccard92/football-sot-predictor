@@ -10,9 +10,19 @@ Legge esclusivamente tabelle `cecchino_lab_*` giÃ  persistite. **Non** riesegu
 
 - Nessuna modifica a Cecchino Today / Betfair / formule operative
 - Servizio dedicato: `backend/app/services/cecchino_data_lab/historical_run_analytics_service.py`
-- Aggregazioni pure condivise: `historical_analytics_agg.py` (riusate anche dal report AI ZIP) â€” stessa `analytics_aggregation_version`
+- Aggregazioni pure condivise: `historical_analytics_agg.py` (riusate anche dal report AI ZIP) â€” stessa `analytics_aggregation_version` (`cecchino_lab_analytics_agg_v2_2`)
+- Export segnali: `historical_signal_export.py` (`signal_export_schema_version=cecchino_lab_signal_export_v1`) — opportunità deduplicate vs celle legacy
 - Route: `backend/app/routes/cecchino_lab.py` sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`
 - Frontend: `/cecchino-lab/historical-scans/:runId`
+
+## Segnali A–F (dashboard)
+
+Sezione a due livelli:
+
+- **Opportunità uniche** — ROI/hit/overlap con F; mai sommare celle come scommesse
+- **Celle attive** — diagnostica overlapping (`attribution_mode=overlapping`)
+- `with_signal_active` non mostrato come sovrapposizione; etichette: «Opportunità uniche», «Celle attive», «Sovrapposizione con F», «F — modello corrente»
+- Consenso **per mercato** (non ROI multi-mercato aggregato)
 
 ## Formulazioni obbligatorie
 

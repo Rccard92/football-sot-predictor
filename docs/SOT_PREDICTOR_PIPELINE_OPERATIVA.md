@@ -2,7 +2,8 @@
 
 ## Cecchino Lab — finalize semantics report/dashboard (2026-07-28)
 
-1. Aggregatore `cecchino_lab_analytics_agg_v2_1` (read-only, nessuna nuova scan).
+1. Aggregatore `cecchino_lab_analytics_agg_v2_2` + export segnali `cecchino_lab_signal_export_v1` (read-only, nessuna nuova scan).
+2. Opportunità canoniche in `signal_opportunities.jsonl`; `signal_models.jsonl` resta legacy cell-level.
 2. Header analisi: badge Scansione ≠ Analytics ≠ Aggregatore.
 3. Report ZIP: `scan_source_git_commit` vs `report_generator_git_commit`; `markets.jsonl` con identity/kickoff/scores.
 4. Rating/Acquistabilità: confronto fasce solo nello stesso mercato.
@@ -24,7 +25,7 @@
    - test tecnico: `max_matches: 200`
    - completa: `max_matches: null` (richiede revisione git risolta)
 3. Per partita: contesti → Cecchino → GI storica → Acquistabilità storica → segnali A–F → eleggibilità → hash freeze → risultato → settlement solo eligible_core
-4. Report ZIP v3 (+ `signal_models.jsonl`, `goal_intensity.jsonl`, `purchasability.jsonl`)
+4. Report ZIP v4 (+ `signal_opportunities.jsonl`, `signal_models.jsonl` legacy, `goal_intensity.jsonl`, `purchasability.jsonl`)
 
 Non fa parte della pipeline Today / auto-scan / deploy. Betfair operativo invariato.
 

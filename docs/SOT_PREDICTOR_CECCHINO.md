@@ -2,6 +2,16 @@
 
 Modulo **parallelo** al modello SOT per stimare quote 1X2 da picchetti tecnici (record Vittorie/Pareggi/Sconfitte). Non modifica né legge `team_sot_predictions`, v2.0 o v2.1.
 
+## Cecchino Lab — export opportunità segnali A–F (2026-07-29)
+
+| Voce | Dettaglio |
+|------|-----------|
+| Canonico | `signal_opportunities.jsonl` (opportunità unica = run+snapshot+modello+mercato) |
+| Legacy | `signal_models.jsonl` (cella; non sommare profitto) |
+| Modulo | `historical_signal_export.py` |
+| Versioni | agg `v2_2`, export `cecchino_lab_signal_export_v1` |
+| Scope | Solo Lab read-only; pesi/formule/Today invariati |
+
 ## Cecchino Lab — dashboard analisi run storico (2026-07-28)
 
 | Voce | Dettaglio |

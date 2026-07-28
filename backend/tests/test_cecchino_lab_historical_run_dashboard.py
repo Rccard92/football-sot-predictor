@@ -824,7 +824,7 @@ def test_v2_1_rating_band_100_and_null_profit():
         rating_band_dashboard,
     )
 
-    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_1"
+    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_2"
     assert rating_band(99.99) == "90-99"
     assert rating_band(100) == "100"
     assert rating_band(110) == "100"
@@ -897,7 +897,7 @@ def test_v2_1_by_market_helpers_and_overview_revisions():
     assert out["analytics_runtime_git_commit"] is not None or out[
         "analytics_runtime_revision_status"
     ]
-    assert out["analytics_aggregation_version"] == "cecchino_lab_analytics_agg_v2_1"
+    assert out["analytics_aggregation_version"] == "cecchino_lab_analytics_agg_v2_2"
     assert "global_profit" not in out["kpis"]
     assert rat["primary_view"] == "market_x_rating_band"
     assert "indipendenti" in (rat.get("warning") or "")
