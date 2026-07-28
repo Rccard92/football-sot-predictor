@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Dashboard analisi run storico Cecchino Lab (2026-07-28)
+
+Dashboard read-only `/cecchino-lab/historical-scans/:runId` + endpoint `/dashboard/*`. Aggregazioni da snapshot/market_results già persistiti; cache in-memory; filtri URL; 14 mercati indipendenti; Rating/Acquistabilità/A–F/Balance/GI; pattern/esclusioni/match explorer. **Today/Betfair/formule/run esistenti invariati.** Doc: `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
+
 ## Feat — Completamento moduli storici Cecchino Lab (2026-07-27)
 
 Intensità Goal storica (parity partial), Acquistabilità Bet365 progressiva, modelli segnali A–F, pilota bilanciato 20 eleggibili/campionato, report AI v3, risoluzione revisione git via env. Adapter solo in `cecchino_data_lab`. **Today/Betfair/formule/pesi invariati.** Run #1 non rielaborato. Doc: `docs/CECCHINO_LAB_HISTORICAL_SCAN.md`, `docs/CECCHINO_LAB_AI_REPORT_SCHEMA.md`.

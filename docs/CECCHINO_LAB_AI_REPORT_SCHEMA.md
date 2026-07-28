@@ -2,6 +2,8 @@
 
 Versione schema: `cecchino_lab_ai_report_v4`
 
+Le funzioni pure di aggregazione/pattern (`agg_bucket`, `finalize_bucket`, `build_combined_patterns`, …) vivono in `historical_analytics_agg.py` e sono riusate dalla **dashboard run** senza rigenerare lo ZIP. Vedi `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
+
 ## Modalità export
 
 | Mode | Contenuto |

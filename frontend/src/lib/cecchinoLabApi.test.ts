@@ -16,6 +16,9 @@ import {
   DEFAULT_HISTORICAL_SEASON,
   HISTORICAL_SCAN_CONFIRM_TOKEN,
   HISTORICAL_SCAN_PILOT_MAX_MATCHES,
+  HISTORICAL_RUN_REPORT_MENU,
+  historicalRunFiltersToQuery,
+  parseHistoricalRunFiltersFromSearch,
   type CecchinoLabOverview,
 } from './cecchinoLabApi'
 import { qualityLabel } from '../components/cecchino-data-lab/labTheme'
@@ -189,5 +192,38 @@ describe('cecchinoLabApi helpers', () => {
         completeness: { complete: 0, incomplete: 0, complete_pct: 0 },
       } as CecchinoLabOverview),
     ).toBe(true)
+  })
+
+  it('historical run filters round-trip via query string', () => {
+    const q = historicalRunFiltersToQuery({
+      competition: 'Serie A',
+      market_key: 'HOME',
+      rating_band: '70-79',
+      signal_model: 'F',
+    })
+    expect(q).toContain('competition=Serie')
+    expect(q).toContain('market_key=HOME')
+    const parsed = parseHistoricalRunFiltersFromSearch(q)
+    expect(parsed.competition).toBe('Serie A')
+    expect(parsed.market_key).toBe('HOME')
+    expect(parsed.rating_band).toBe('70-79')
+    expect(parsed.signal_model).toBe('F')
+  })
+
+  it('reset filters yields empty query', () => {
+    expect(historicalRunFiltersToQuery({})).toBe('')
+    expect(parseHistoricalRunFiltersFromSearch('')).toEqual({})
+  })
+
+  it('report menu keeps Sintesi ChatGPT as recommended first', () => {
+    expect(HISTORICAL_RUN_REPORT_MENU[0]?.recommended).toBe(true)
+    expect(HISTORICAL_RUN_REPORT_MENU[0]?.mode).toBe('ai_summary')
+    expect(HISTORICAL_RUN_REPORT_MENU.some((i) => i.mode === 'full_archive')).toBe(true)
+  })
+
+  it('historical run analysis route pattern', () => {
+    const runId = 42
+    const path = `/cecchino-lab/historical-scans/${runId}`
+    expect(path).toBe('/cecchino-lab/historical-scans/42')
   })
 })

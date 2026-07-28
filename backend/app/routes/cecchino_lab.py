@@ -40,6 +40,22 @@ from app.services.cecchino_data_lab.historical_ai_report import (
     build_historical_report_response,
     iter_report_chunks,
 )
+from app.services.cecchino_data_lab.historical_run_analytics_service import (
+    dashboard_balance,
+    dashboard_competitions,
+    dashboard_exclusions,
+    dashboard_goal_intensity,
+    dashboard_markets,
+    dashboard_overview,
+    dashboard_patterns,
+    dashboard_purchasability,
+    dashboard_ratings,
+    dashboard_signals,
+    dashboard_timeline,
+    get_dashboard_match_detail,
+    list_dashboard_matches,
+    parse_dashboard_filters,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -452,12 +468,78 @@ def historical_scan_matches(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     eligibility: str | None = None,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    sort_by: str = Query("kickoff_at"),
+    sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
+    # Compatibilità: se solo eligibility legacy senza altri filtri dashboard → list_run_matches
+    dashboard_filter_used = any(
+        [
+            competition,
+            date_from,
+            date_to,
+            market_key,
+            rating_band,
+            purchasability_band,
+            quote_quality,
+            signal_model,
+            signal_active,
+            balance_class,
+            goal_intensity_status,
+            purchasability_status,
+            eligibility_status,
+            sort_by != "kickoff_at",
+            sort_order != "asc",
+        ]
+    )
     try:
-        result = list_run_matches(
-            db, run_id, limit=limit, offset=offset, eligibility=eligibility
-        )
+        if not dashboard_filter_used and eligibility is not None:
+            result = list_run_matches(
+                db, run_id, limit=limit, offset=offset, eligibility=eligibility
+            )
+        elif not dashboard_filter_used and eligibility is None and sort_by == "kickoff_at":
+            # Default legacy list when no dashboard params
+            result = list_run_matches(
+                db, run_id, limit=limit, offset=offset, eligibility=eligibility
+            )
+        else:
+            filters = parse_dashboard_filters(
+                competition=competition,
+                date_from=date_from,
+                date_to=date_to,
+                market_key=market_key,
+                rating_band=rating_band,
+                purchasability_band=purchasability_band,
+                quote_quality=quote_quality,
+                signal_model=signal_model,
+                signal_active=signal_active,
+                balance_class=balance_class,
+                goal_intensity_status=goal_intensity_status,
+                purchasability_status=purchasability_status,
+                eligibility_status=eligibility_status or eligibility or "all",
+            )
+            result = list_dashboard_matches(
+                db,
+                run_id,
+                filters,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
     except CecchinoLabImportError as exc:
         return JSONResponse(
             status_code=exc.status_code,
@@ -469,6 +551,532 @@ def historical_scan_matches(
             },
         )
     return JSONResponse(content=jsonable_encoder(result))
+
+
+@router.get("/historical-scans/{run_id}/matches/{snapshot_id}")
+def historical_scan_match_detail(
+    run_id: int,
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    try:
+        result = get_dashboard_match_detail(db, run_id, snapshot_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
+
+
+def _dashboard_filters_from_query(
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+) -> dict[str, Any]:
+    return parse_dashboard_filters(
+        competition=competition,
+        date_from=date_from,
+        date_to=date_to,
+        market_key=market_key,
+        rating_band=rating_band,
+        purchasability_band=purchasability_band,
+        quote_quality=quote_quality,
+        signal_model=signal_model,
+        signal_active=signal_active,
+        balance_class=balance_class,
+        goal_intensity_status=goal_intensity_status,
+        purchasability_status=purchasability_status,
+        eligibility_status=eligibility_status,
+    )
+
+
+def _dashboard_error(exc: CecchinoLabImportError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+        },
+    )
+
+
+@router.get("/historical-scans/{run_id}/dashboard/overview")
+def historical_run_dashboard_overview(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_overview(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/markets")
+def historical_run_dashboard_markets(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_markets(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/ratings")
+def historical_run_dashboard_ratings(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_ratings(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/purchasability")
+def historical_run_dashboard_purchasability(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_purchasability(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/signals")
+def historical_run_dashboard_signals(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_signals(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/balance")
+def historical_run_dashboard_balance(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_balance(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/goal-intensity")
+def historical_run_dashboard_goal_intensity(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_goal_intensity(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/competitions")
+def historical_run_dashboard_competitions(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_competitions(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/timeline")
+def historical_run_dashboard_timeline(
+    run_id: int,
+    granularity: str = Query("week"),
+    block_size: int = Query(50, ge=1, le=500),
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(
+                dashboard_timeline(
+                    db,
+                    run_id,
+                    filters,
+                    granularity=granularity,
+                    block_size=block_size,
+                )
+            )
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/patterns")
+def historical_run_dashboard_patterns(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_patterns(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/dashboard/exclusions")
+def historical_run_dashboard_exclusions(
+    run_id: int,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    market_key: str | None = None,
+    rating_band: str | None = None,
+    purchasability_band: str | None = None,
+    quote_quality: str | None = None,
+    signal_model: str | None = None,
+    signal_active: str | None = None,
+    balance_class: str | None = None,
+    goal_intensity_status: str | None = None,
+    purchasability_status: str | None = None,
+    eligibility_status: str | None = None,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    filters = _dashboard_filters_from_query(
+        competition,
+        date_from,
+        date_to,
+        market_key,
+        rating_band,
+        purchasability_band,
+        quote_quality,
+        signal_model,
+        signal_active,
+        balance_class,
+        goal_intensity_status,
+        purchasability_status,
+        eligibility_status,
+    )
+    try:
+        return JSONResponse(
+            content=jsonable_encoder(dashboard_exclusions(db, run_id, filters))
+        )
+    except CecchinoLabImportError as exc:
+        return _dashboard_error(exc)
 
 
 @router.get("/historical-scans/{run_id}/summary")

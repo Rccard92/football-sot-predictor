@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   DEFAULT_HISTORICAL_SEASON,
@@ -589,7 +590,13 @@ export function HistoricalScansTab({ refreshKey }: Props) {
                     {r.matches_processed}/{r.matches_total} ({r.progress_pct ?? 0}%)
                   </td>
                   <td>{r.matches_eligible_core}</td>
-                  <td>
+                  <td className="space-x-3 whitespace-nowrap">
+                    <Link
+                      to={`/cecchino-lab/historical-scans/${r.id}`}
+                      className="font-medium text-[var(--lab-cyan)] underline-offset-2 hover:underline"
+                    >
+                      Apri analisi
+                    </Link>
                     <button
                       type="button"
                       className="underline"

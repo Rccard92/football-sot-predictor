@@ -1,5 +1,12 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Dashboard analisi run storico Cecchino Lab (2026-07-28)
+
+- Perché: la scansione 2021/2022 è terminata; serve un control center per leggere i dati congelati senza rieseguire lo scan.
+- Cosa: `historical_run_analytics_service` + `historical_analytics_agg`; endpoint dashboard; pagina FE con filtri sticky/URL; test backend/frontend; doc dedicata.
+- Cosa non fa: Today, Betfair, formule/pesi, settlement, riscrittura run, profitto globale aggregato, scelta giocata finale.
+- Limiti: Vitest in FE ora configurato; due test non-Lab preesistenti falliscono in env node/timezone (documentati).
+
 ## Feat — Completamento moduli storici Cecchino Lab (2026-07-27)
 
 - Perché: prima della scansione completa 2021/2022 servono Intensità/Acquistabilità/A–F calcolati scientificamente e un pilota bilanciato multi-campionato.

@@ -34,6 +34,26 @@ from app.services.cecchino_data_lab.constants import (
     PARSER_VERSION,
 )
 from app.services.cecchino_data_lab.errors import CecchinoLabImportError
+from app.services.cecchino_data_lab.historical_analytics_agg import (
+    MIN_PATTERN_SAMPLE_FOR_REAL_ROI,
+    PATTERNS_TOP_CAP,
+    add_market_row as _add_market_row,
+    agg_bucket as _agg_bucket,
+    as_dict as _as_dict,
+    as_list as _as_list,
+    balance_pillars as _balance_pillars,
+    build_combined_patterns as _build_combined_patterns,
+    build_patterns_top as _build_patterns_top,
+    bump_pattern as _bump_pattern,
+    edge_band as _edge_band,
+    finalize_bucket as _finalize_bucket,
+    finalize_pattern as _finalize_pattern,
+    pattern_accumulator as _pattern_accumulator,
+    pattern_status as _pattern_status,
+    rating_band as _rating_band,
+    signal_meta as _signal_meta,
+    structural_class as _structural_class,
+)
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 
 logger = logging.getLogger(__name__)
@@ -41,8 +61,6 @@ logger = logging.getLogger(__name__)
 REPORT_SCHEMA_VERSION = "cecchino_lab_ai_report_v4"
 REPORT_MODES = frozenset({"ai_summary", "competition", "module", "full_archive"})
 REPORT_MODULES = frozenset({"markets", "signals", "goal_intensity", "purchasability", "balance"})
-PATTERNS_TOP_CAP = 25
-MIN_PATTERN_SAMPLE_FOR_REAL_ROI = 20
 SPOOL_MAX_SIZE = 8 * 1024 * 1024
 REPORT_CHUNK_SIZE = 64 * 1024
 AI_SUMMARY_WARN_BYTES = 5 * 1024 * 1024
@@ -101,16 +119,6 @@ Metriche di performance usano solo `eligible_core`.
 
 def _json_bytes(obj: Any) -> bytes:
     return json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode("utf-8")
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    """Normalizza JSON opzionale a dict; altrimenti {}."""
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    """Normalizza JSON opzionale a list; altrimenti []."""
-    return value if isinstance(value, list) else []
 
 
 def _canonical_signal_model_fields(model_key: str) -> dict[str, Any]:
@@ -218,63 +226,6 @@ def _purchasability_compact_rows(
     return rows
 
 
-def _build_patterns_top(patterns: dict[str, Any]) -> dict[str, Any]:
-    items = list(patterns.get("patterns") or [])
-    by_id: dict[str, dict[str, Any]] = {}
-    for p in items:
-        if isinstance(p, dict) and p.get("pattern_id"):
-            by_id[str(p["pattern_id"])] = p
-
-    def _dedupe(seq: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for p in seq:
-            pid = str(p.get("pattern_id"))
-            if pid in seen:
-                continue
-            seen.add(pid)
-            out.append(p)
-            if len(out) >= PATTERNS_TOP_CAP:
-                break
-        return out
-
-    largest = _dedupe(sorted(items, key=lambda p: int(p.get("sample_size") or 0), reverse=True))
-
-    real_eligible = [
-        p
-        for p in items
-        if int(p.get("sample_size") or 0) >= MIN_PATTERN_SAMPLE_FOR_REAL_ROI
-        and int(p.get("real_quote_count") or 0) >= MIN_PATTERN_SAMPLE_FOR_REAL_ROI
-        and p.get("real_roi") is not None
-    ]
-    best_positive = _dedupe(
-        sorted(real_eligible, key=lambda p: float(p.get("real_roi") or -1e9), reverse=True)
-    )
-    worst_negative = _dedupe(
-        sorted(real_eligible, key=lambda p: float(p.get("real_roi") or 1e9))
-    )
-    unstable = _dedupe(
-        [
-            p
-            for p in sorted(items, key=lambda x: int(x.get("sample_size") or 0), reverse=True)
-            if _as_dict(p.get("stability_by_competition")).get("stable_cross_competition") is False
-            and int(p.get("competitions_count") or 0) >= 2
-        ]
-    )
-    return {
-        "cap_per_category": PATTERNS_TOP_CAP,
-        "min_sample_for_real_roi": MIN_PATTERN_SAMPLE_FOR_REAL_ROI,
-        "largest_sample": largest,
-        "best_positive_real_roi": best_positive,
-        "worst_negative_real_roi": worst_negative,
-        "unstable_cross_competition": unstable,
-        "note": (
-            "Selezione deterministica non duplicata. "
-            "ROI reale solo con campione e quote reali sufficienti."
-        ),
-    }
-
-
 def _scope_tag(run_scope: str, is_partial: bool) -> str:
     if run_scope == "balanced_pilot":
         return "balanced_pilot"
@@ -295,31 +246,6 @@ def _write_jsonl_to_zip(zf: zipfile.ZipFile, arcname: str, lines: Iterator[str])
     return count
 
 
-def _structural_class(structural: Any) -> tuple[str, str | None]:
-    """
-    Estrae la classe Balance da structural_summary.
-
-    - dict → class, poi class_key, poi unknown
-    - stringa non vuota → la stringa
-    - null / list / number / altro → unknown (+ warning diagnostico)
-    """
-    if isinstance(structural, dict):
-        raw = structural.get("class")
-        if raw is None or raw == "":
-            raw = structural.get("class_key")
-        if raw is None or raw == "":
-            return "unknown", None
-        return str(raw), None
-    if isinstance(structural, str):
-        text = structural.strip()
-        if text:
-            return text, None
-        return "unknown", "empty_structural_summary_string"
-    if structural is None:
-        return "unknown", None
-    return "unknown", f"unexpected_structural_summary_type:{type(structural).__name__}"
-
-
 def _note_shape_warning(
     warnings: list[str],
     code: str | None,
@@ -337,185 +263,6 @@ def _note_shape_warning(
 
 def _compat_flag(compat_json: Any, key: str) -> bool:
     return bool(_as_dict(compat_json).get(key))
-
-
-def _agg_bucket() -> dict[str, Any]:
-    return {
-        "sample_size": 0,
-        "won": 0,
-        "lost": 0,
-        "hit_rate": None,
-        "real_quote_count": 0,
-        "derived_quote_count": 0,
-        "unavailable_quote_count": 0,
-        "with_cecchino_quote": 0,
-        "with_rating": 0,
-        "with_signal_active": 0,
-        "real_profit_1u": 0.0,
-        "real_roi_pct": None,
-        "synthetic_profit_1u": 0.0,
-        "synthetic_roi_pct": None,
-        "competitions": set(),
-        "warnings": [],
-    }
-
-
-def _finalize_bucket(b: dict[str, Any]) -> dict[str, Any]:
-    comps = b.pop("competitions", set()) or set()
-    n = b["won"] + b["lost"]
-    b["hit_rate"] = round(b["won"] / n, 4) if n else None
-    if b["real_quote_count"]:
-        b["real_roi_pct"] = round(100.0 * b["real_profit_1u"] / b["real_quote_count"], 2)
-    if b["derived_quote_count"]:
-        b["synthetic_roi_pct"] = round(
-            100.0 * b["synthetic_profit_1u"] / b["derived_quote_count"], 2
-        )
-    b["competitions_count"] = len(comps)
-    b["competitions"] = sorted(comps)
-    if n < 30:
-        b["warnings"].append("small_sample")
-    b["real_profit_1u"] = round(b["real_profit_1u"], 4)
-    b["synthetic_profit_1u"] = round(b["synthetic_profit_1u"], 4)
-    return b
-
-
-def _rating_band(rating: Any) -> str | None:
-    if rating is None:
-        return None
-    r = int(rating)
-    base = (r // 10) * 10
-    return f"{base}-{base + 9}"
-
-
-def _edge_band(edge_pct: Any) -> str | None:
-    if edge_pct is None:
-        return None
-    e = float(edge_pct)
-    if e < 0:
-        return "neg"
-    if e < 5:
-        return "0-5"
-    if e < 10:
-        return "5-10"
-    return "10+"
-
-
-def _signal_meta(sources_json: Any) -> dict[str, Any]:
-    if isinstance(sources_json, dict):
-        families = sources_json.get("signal_families")
-        sources = sources_json.get("sources")
-        return {
-            "signal_family": sources_json.get("signal_family"),
-            "signal_families": _as_list(families),
-            "active_signal_count": int(sources_json.get("active_signal_count") or 0),
-            "sources": _as_list(sources),
-        }
-    if isinstance(sources_json, list):
-        return {
-            "signal_family": None,
-            "signal_families": [],
-            "active_signal_count": len(sources_json),
-            "sources": sources_json,
-        }
-    return {
-        "signal_family": None,
-        "signal_families": [],
-        "active_signal_count": 0,
-        "sources": [],
-    }
-
-
-def _balance_pillars(balance: Any) -> dict[str, Any]:
-    bal = _as_dict(balance)
-    if not bal:
-        return {}
-    pillars: dict[str, Any] = {}
-    for key in (
-        "f36",
-        "side_probability_gap",
-        "draw",
-        "operational",
-        "structural_summary",
-        "pillars",
-    ):
-        block = bal.get(key)
-        if isinstance(block, dict):
-            pillars[key] = {
-                "class_key": block.get("class_key") or block.get("class"),
-                "label": block.get("label"),
-                "value": block.get("value") or block.get("score") or block.get("f36_abs"),
-            }
-        elif isinstance(block, str) and block.strip() and key == "structural_summary":
-            pillars[key] = {
-                "class_key": block.strip(),
-                "label": None,
-                "value": None,
-            }
-    for key, block in bal.items():
-        if key in pillars or not isinstance(block, dict):
-            continue
-        if "class_key" in block or "class" in block:
-            pillars[key] = {
-                "class_key": block.get("class_key") or block.get("class"),
-                "label": block.get("label"),
-                "value": block.get("value") or block.get("score"),
-            }
-    return pillars
-
-
-def _pattern_status(
-    *,
-    sample_size: int,
-    competitions_count: int,
-    competition_shares: dict[str, int],
-) -> str:
-    if sample_size < 30:
-        return "small_sample"
-    if sample_size < 100:
-        return "descriptive_only"
-    # >= 100: candidate solo se non monopolio di un campionato / poche partite
-    if competitions_count <= 1:
-        return "descriptive_only"
-    if competition_shares:
-        top = max(competition_shares.values())
-        if top / max(sample_size, 1) >= 0.85:
-            return "descriptive_only"
-        if top < 15:
-            return "descriptive_only"
-    return "candidate_for_review"
-
-
-def _add_market_row(
-    buckets: dict[str, dict[str, dict[str, Any]]],
-    dim: str,
-    key: str,
-    m: CecchinoLabHistoricalMarketResult,
-    competition_name: str | None,
-) -> None:
-    b = buckets[dim][key]
-    b["sample_size"] += 1
-    if competition_name:
-        b["competitions"].add(competition_name)
-    if m.won is True:
-        b["won"] += 1
-    elif m.won is False:
-        b["lost"] += 1
-    if m.is_real_book_quote:
-        b["real_quote_count"] += 1
-        if m.profit_1u_real is not None:
-            b["real_profit_1u"] += float(m.profit_1u_real)
-    elif m.is_derived_quote:
-        b["derived_quote_count"] += 1
-        if m.profit_1u_synthetic is not None:
-            b["synthetic_profit_1u"] += float(m.profit_1u_synthetic)
-    else:
-        b["unavailable_quote_count"] += 1
-    if m.quota_cecchino is not None:
-        b["with_cecchino_quote"] += 1
-    if m.rating is not None:
-        b["with_rating"] += 1
-    if m.signal_active:
-        b["with_signal_active"] += 1
 
 
 def build_ai_report_zip_bytes(
@@ -1611,296 +1358,6 @@ def _finalize_report_zip(
             size,
         )
     return filename, size
-
-
-def _pattern_accumulator() -> dict[str, Any]:
-    return {
-        "sample_size": 0,
-        "wins": 0,
-        "losses": 0,
-        "real_quote_count": 0,
-        "derived_quote_count": 0,
-        "real_profit": 0.0,
-        "synthetic_profit": 0.0,
-        "competitions": defaultdict(int),
-    }
-
-
-def _finalize_pattern(
-    pattern_id: str,
-    conditions: dict[str, Any],
-    acc: dict[str, Any],
-) -> dict[str, Any]:
-    comps = dict(acc["competitions"])
-    n = int(acc["wins"]) + int(acc["losses"])
-    sample = int(acc["sample_size"])
-    real_n = int(acc["real_quote_count"])
-    derived_n = int(acc["derived_quote_count"])
-    real_profit = round(float(acc["real_profit"]), 4)
-    synth_profit = round(float(acc["synthetic_profit"]), 4)
-    competitions_count = len(comps)
-    status = _pattern_status(
-        sample_size=sample,
-        competitions_count=competitions_count,
-        competition_shares=comps,
-    )
-    stability = None
-    if comps and sample:
-        shares = {k: round(v / sample, 4) for k, v in sorted(comps.items())}
-        top_share = max(shares.values()) if shares else 0
-        stability = {
-            "competition_shares": shares,
-            "top_competition_share": top_share,
-            "stable_cross_competition": competitions_count >= 2 and top_share < 0.7,
-        }
-    return {
-        "pattern_id": pattern_id,
-        "conditions": conditions,
-        "sample_size": sample,
-        "wins": int(acc["wins"]),
-        "losses": int(acc["losses"]),
-        "hit_rate": round(acc["wins"] / n, 4) if n else None,
-        "real_quote_count": real_n,
-        "derived_quote_count": derived_n,
-        "real_profit": real_profit,
-        "real_roi": round(100.0 * real_profit / real_n, 2) if real_n else None,
-        "synthetic_profit": synth_profit,
-        "synthetic_roi": round(100.0 * synth_profit / derived_n, 2) if derived_n else None,
-        "competitions_count": competitions_count,
-        "stability_by_competition": stability,
-        "status": status,
-        "limitations": [
-            "Una sola stagione; pattern descrittivo non prescrittivo",
-            "Non proporre modifiche automatiche a formule",
-        ],
-    }
-
-
-def _bump_pattern(acc: dict[str, Any], m: CecchinoLabHistoricalMarketResult, comp: str | None) -> None:
-    acc["sample_size"] += 1
-    if comp:
-        acc["competitions"][comp] += 1
-    if m.won is True:
-        acc["wins"] += 1
-    elif m.won is False:
-        acc["losses"] += 1
-    if m.is_real_book_quote:
-        acc["real_quote_count"] += 1
-        if m.profit_1u_real is not None:
-            acc["real_profit"] += float(m.profit_1u_real)
-    elif m.is_derived_quote:
-        acc["derived_quote_count"] += 1
-        if m.profit_1u_synthetic is not None:
-            acc["synthetic_profit"] += float(m.profit_1u_synthetic)
-
-
-def _build_combined_patterns(
-    eligible_markets: list[CecchinoLabHistoricalMarketResult],
-    snap_by_id: dict[int, CecchinoLabHistoricalMatchSnapshot],
-    *,
-    shape_warnings: list[str] | None = None,
-    shape_warning_seen: set[str] | None = None,
-) -> dict[str, Any]:
-    groups: dict[str, dict[str, Any]] = {}
-    warnings = shape_warnings if shape_warnings is not None else []
-    seen = shape_warning_seen if shape_warning_seen is not None else set()
-
-    def key_id(prefix: str, parts: list[str]) -> str:
-        return prefix + "__" + "__".join(parts)
-
-    for m in eligible_markets:
-        s = snap_by_id.get(int(m.match_snapshot_id))
-        comp = s.competition_name if s else "unknown"
-        rb = _rating_band(m.rating) or "no_rating"
-        sig = _signal_meta(m.signal_sources_json)
-        fam = str(sig.get("signal_family") or ("active" if m.signal_active else "no_signal"))
-        signal_flag = "signal_on" if m.signal_active else "signal_off"
-        bal = _as_dict(s.balance_v5_json) if s else {}
-        bal_class, warn = _structural_class(bal.get("structural_summary") if bal else None)
-        _note_shape_warning(warnings, warn, seen=seen)
-
-        combos = [
-            ("market_rating", {"market_key": m.market_key, "rating_band": rb}, [m.market_key, rb]),
-            (
-                "market_signal",
-                {"market_key": m.market_key, "signal": signal_flag, "signal_family": fam},
-                [m.market_key, signal_flag, fam],
-            ),
-            (
-                "market_rating_signal",
-                {
-                    "market_key": m.market_key,
-                    "rating_band": rb,
-                    "signal": signal_flag,
-                    "signal_family": fam,
-                },
-                [m.market_key, rb, signal_flag, fam],
-            ),
-            (
-                "market_balance",
-                {"market_key": m.market_key, "balance_class": bal_class},
-                [m.market_key, bal_class],
-            ),
-            (
-                "market_rating_balance",
-                {"market_key": m.market_key, "rating_band": rb, "balance_class": bal_class},
-                [m.market_key, rb, bal_class],
-            ),
-            (
-                "competition_market_rating",
-                {
-                    "competition_name": comp,
-                    "market_key": m.market_key,
-                    "rating_band": rb,
-                },
-                [comp or "unknown", m.market_key, rb],
-            ),
-            (
-                "competition_market_signal",
-                {
-                    "competition_name": comp,
-                    "market_key": m.market_key,
-                    "signal": signal_flag,
-                },
-                [comp or "unknown", m.market_key, signal_flag],
-            ),
-        ]
-
-        purch = _as_dict(s.purchasability_compatibility_json) if s else {}
-        purch_score = None
-        for mk_row in purch.get("markets") or []:
-            if isinstance(mk_row, dict) and mk_row.get("market_key") == m.market_key:
-                purch_score = mk_row.get("score")
-                break
-        purch_band = "no_purch"
-        if purch_score is not None:
-            try:
-                ps = float(purch_score)
-                purch_band = (
-                    "0-19"
-                    if ps < 20
-                    else (
-                        "20-39"
-                        if ps < 40
-                        else ("40-59" if ps < 60 else ("60-79" if ps < 80 else "80-100"))
-                    )
-                )
-            except (TypeError, ValueError):
-                purch_band = "no_purch"
-
-        gi = _as_dict(s.goal_intensity_compatibility_json) if s else {}
-        gi_pillars = _as_dict(gi.get("pillars"))
-        op_class = _as_dict(gi_pillars.get("offensive_production")).get("class_key") or "no_gi"
-
-        combos.extend(
-            [
-                (
-                    "rating_purchasability",
-                    {"rating_band": rb, "purchasability_band": purch_band},
-                    [rb, purch_band],
-                ),
-                (
-                    "rating_intensity_op",
-                    {"rating_band": rb, "offensive_production_class": str(op_class)},
-                    [rb, str(op_class)],
-                ),
-                (
-                    "purchasability_balance",
-                    {"purchasability_band": purch_band, "balance_class": bal_class},
-                    [purch_band, bal_class],
-                ),
-                (
-                    "purchasability_signal",
-                    {"purchasability_band": purch_band, "signal": signal_flag},
-                    [purch_band, signal_flag],
-                ),
-                (
-                    "intensity_signal",
-                    {"offensive_production_class": str(op_class), "signal": signal_flag},
-                    [str(op_class), signal_flag],
-                ),
-                (
-                    "intensity_purchasability",
-                    {
-                        "offensive_production_class": str(op_class),
-                        "purchasability_band": purch_band,
-                    },
-                    [str(op_class), purch_band],
-                ),
-                (
-                    "rating_purchasability_signal",
-                    {
-                        "rating_band": rb,
-                        "purchasability_band": purch_band,
-                        "signal": signal_flag,
-                    },
-                    [rb, purch_band, signal_flag],
-                ),
-                (
-                    "rating_purchasability_balance",
-                    {
-                        "rating_band": rb,
-                        "purchasability_band": purch_band,
-                        "balance_class": bal_class,
-                    },
-                    [rb, purch_band, bal_class],
-                ),
-                (
-                    "rating_intensity_signal",
-                    {
-                        "rating_band": rb,
-                        "offensive_production_class": str(op_class),
-                        "signal": signal_flag,
-                    },
-                    [rb, str(op_class), signal_flag],
-                ),
-            ]
-        )
-
-        for model_key in ("A", "B", "C", "D", "E", "F"):
-            combos.append(
-                (
-                    "model_market",
-                    {"model_key": model_key, "market_key": m.market_key},
-                    [model_key, m.market_key],
-                )
-            )
-            combos.append(
-                (
-                    "model_rating",
-                    {"model_key": model_key, "rating_band": rb},
-                    [model_key, rb],
-                )
-            )
-            combos.append(
-                (
-                    "model_balance",
-                    {"model_key": model_key, "balance_class": bal_class},
-                    [model_key, bal_class],
-                )
-            )
-        for prefix, conditions, parts in combos:
-            pid = key_id(prefix, [str(p) for p in parts])
-            if pid not in groups:
-                groups[pid] = {"conditions": conditions, "acc": _pattern_accumulator()}
-            _bump_pattern(groups[pid]["acc"], m, comp)
-
-    patterns = [
-        _finalize_pattern(pid, g["conditions"], g["acc"])
-        for pid, g in sorted(groups.items())
-    ]
-    return {
-        "patterns": patterns,
-        "note": (
-            "Descriptive only — no operational threshold or formula changes. "
-            "Performance universe = eligible_core only."
-        ),
-        "status_thresholds": {
-            "small_sample": "<30",
-            "descriptive_only": "30-99 or unstable cross-competition",
-            "candidate_for_review": ">=100 and not dominated by one competition",
-        },
-    }
 
 
 def iter_report_chunks(data: bytes, chunk_size: int = 64 * 1024) -> Iterator[bytes]:

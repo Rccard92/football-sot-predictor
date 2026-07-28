@@ -1007,3 +1007,467 @@ export function replaceDatasetConfirmMessage(
     `Serie A, Championship e gli altri dataset non saranno modificati.`
   )
 }
+
+/* ─── Historical run dashboard (read-only analytics) ─── */
+
+export type HistoricalRunFilters = {
+  competition?: string
+  date_from?: string
+  date_to?: string
+  market_key?: string
+  rating_band?: string
+  purchasability_band?: string
+  quote_quality?: string
+  signal_model?: string
+  signal_active?: string
+  balance_class?: string
+  goal_intensity_status?: string
+  purchasability_status?: string
+  eligibility_status?: string
+}
+
+export type HistoricalRunDashboardOverview = {
+  run: {
+    run_id: number
+    season_label: string
+    scope?: string | null
+    status: string
+    scan_version: string
+    source_git_commit?: string | null
+    source_git_commit_source?: string | null
+    source_revision_status?: string | null
+    started_at?: string | null
+    completed_at?: string | null
+    bookmaker_storico: string
+    bookmaker_today_operativo: string
+    is_partial_run?: boolean
+    not_full_season_report?: boolean
+    run_scope?: string | null
+  }
+  is_provisional: boolean
+  data_as_of: string
+  filters: HistoricalRunFilters
+  kpis: Record<string, unknown>
+  progress: Record<string, unknown>
+  module_coverage: Record<string, HistoricalRunModuleCoverage>
+  market_summary: Record<string, unknown>
+  warnings: string[]
+  active_eligible_sample?: number
+}
+
+export type HistoricalRunModuleCoverage = {
+  complete: number
+  partial: number
+  unavailable: number
+  coverage_pct: number
+  warnings: string[]
+  observation_status: string
+}
+
+export type HistoricalRunDashboardMarket = {
+  market_key: string
+  label: string
+  period?: string | null
+  line?: string | null
+  sample_size: number
+  wins: number
+  losses: number
+  hit_rate: number | null
+  outcome_base_rate: number | null
+  average_cecchino_probability: number | null
+  median_cecchino_probability: number | null
+  calibration_gap: number | null
+  brier_score: number | null
+  average_rating: number | null
+  rating_available_count: number
+  signal_active_count: number
+  matches_with_signal: number
+  real_quote_count: number
+  derived_quote_count: number
+  unavailable_quote_count: number
+  average_real_odds: number | null
+  average_derived_odds: number | null
+  real_profit_1u: number
+  real_roi_pct: number | null
+  synthetic_profit_1u: number
+  synthetic_roi_pct: number | null
+  max_losing_streak: number
+  competitions_count: number
+  chronological_stability: unknown
+  warnings: string[]
+  confidence_status?: string
+}
+
+export type HistoricalRunRatingCell = {
+  market_key: string
+  rating_band: string
+  sample_size: number
+  wins: number
+  losses: number
+  hit_rate: number | null
+  average_odds: number | null
+  real_quote_count: number
+  real_profit_1u: number
+  real_roi_pct: number | null
+  derived_quote_count: number
+  synthetic_profit_1u: number
+  synthetic_roi_pct: number | null
+  competitions_count: number
+  confidence_status: string
+}
+
+export type HistoricalRunPurchasabilityAnalytics = {
+  run_id: number
+  is_provisional: boolean
+  bands: string[]
+  distribution: Record<string, Record<string, unknown>>
+  by_market: Array<Record<string, unknown>>
+  by_competition: Array<Record<string, unknown>>
+  rating_x_purchasability: Array<Record<string, unknown>>
+  complete_count: number
+  partial_count: number
+  unavailable_count: number
+  profile_sample_size: number
+  execution_status: string
+  observation_status: string
+  note?: string
+}
+
+export type HistoricalRunSignalModelAnalytics = {
+  model_key: string
+  model_label: string
+  model_short_label: string
+  weights: Record<string, number>
+  weights_version: string
+  is_current_model: boolean
+  signals_activated: number
+  matches_with_signal: number
+  wins: number
+  losses: number
+  hit_rate: number | null
+  real_quote_count: number
+  real_profit: number
+  real_roi: number | null
+  derived_quote_count: number
+  synthetic_profit: number
+  synthetic_roi: number | null
+  average_odds: number | null
+  max_losing_streak: number
+  market_best: string | null
+  market_worst: string | null
+  competition_best: string | null
+  competition_worst: string | null
+}
+
+export type HistoricalRunBalanceAnalytics = {
+  run_id: number
+  pillars: Array<Record<string, unknown>>
+  combinations: Array<Record<string, unknown>>
+  note?: string
+}
+
+export type HistoricalRunGoalIntensityAnalytics = {
+  run_id: number
+  components: Array<Record<string, unknown>>
+  combinations: Array<Record<string, unknown>>
+  note?: string
+}
+
+export type HistoricalRunCompetitionAnalytics = {
+  competition_name: string
+  country?: string | null
+  processed: number
+  eligible: number
+  excluded: number
+  errors: number
+  coverage_pct: number
+  markets_generated: number
+  real_quote_coverage: number
+  derived_quote_coverage: number
+  best_market_by_real_roi: string | null
+  worst_market_by_real_roi: string | null
+  real_profit_by_market: Record<string, number>
+  real_roi_by_market: Record<string, number | null>
+  exclusions_by_reason: Record<string, number>
+  module_coverage: Record<string, HistoricalRunModuleCoverage>
+}
+
+export type HistoricalRunTimelinePoint = {
+  period_key: string
+  period_label: string
+  historical_date_from: string | null
+  historical_date_to: string | null
+  processed: number
+  eligible: number
+  excluded: number
+  hit_rate: number | null
+  average_rating: number | null
+  average_purchasability: number | null
+  signals_count: number
+  balance_coverage: number
+  goal_intensity_coverage: number
+  real_profit_by_market: Record<string, number>
+  real_roi_by_market: Record<string, number | null>
+}
+
+export type HistoricalRunPattern = {
+  pattern_id: string
+  title?: string
+  conditions: Record<string, unknown>
+  sample_size: number
+  wins: number
+  losses: number
+  hit_rate: number | null
+  real_quote_count: number
+  real_profit: number
+  real_roi: number | null
+  derived_quote_count: number
+  synthetic_profit: number
+  synthetic_roi: number | null
+  competitions_count: number
+  main_competition?: string | null
+  main_competition_share?: number | null
+  stability?: Record<string, unknown> | null
+  status: string
+  limitations: string[]
+}
+
+export type HistoricalRunExclusion = {
+  reason_code: string
+  label: string
+  total: number
+  percentage: number
+  competitions: string[]
+  chronological_distribution: Record<string, number>
+  first_occurrence: string | null
+  last_occurrence: string | null
+  related_module: string
+  is_expected: boolean
+  is_data_quality_problem: boolean
+}
+
+export type HistoricalRunMatchRow = {
+  snapshot_id: number
+  lab_match_id: number
+  date: string | null
+  competition: string
+  home_team: string | null
+  away_team: string | null
+  result: Record<string, unknown>
+  eligibility: string
+  exclusion_reason: string | null
+  highest_rating_market: string | null
+  highest_rating: number | null
+  purchasability_summary: Record<string, unknown>
+  active_signal_models: string[]
+  balance_class: string
+  goal_intensity_status: string
+  quote_coverage: { real: number; derived: number; total: number }
+  won_markets: string[]
+  lost_markets: string[]
+}
+
+export type HistoricalRunMatchDetail = {
+  run_id: number
+  snapshot_id: number
+  identity: Record<string, unknown>
+  prematch: Record<string, unknown>
+  result_after_lock: Record<string, unknown>
+}
+
+export function historicalRunFiltersToQuery(filters: HistoricalRunFilters): string {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v != null && String(v).trim() !== '') params.set(k, String(v))
+  }
+  const q = params.toString()
+  return q ? `?${q}` : ''
+}
+
+export function parseHistoricalRunFiltersFromSearch(search: string): HistoricalRunFilters {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  const out: HistoricalRunFilters = {}
+  const keys: Array<keyof HistoricalRunFilters> = [
+    'competition',
+    'date_from',
+    'date_to',
+    'market_key',
+    'rating_band',
+    'purchasability_band',
+    'quote_quality',
+    'signal_model',
+    'signal_active',
+    'balance_class',
+    'goal_intensity_status',
+    'purchasability_status',
+    'eligibility_status',
+  ]
+  for (const k of keys) {
+    const v = params.get(k)
+    if (v) out[k] = v
+  }
+  return out
+}
+
+function dashboardGet<T>(path: string, filters: HistoricalRunFilters): Promise<T> {
+  return requestJson(`${path}${historicalRunFiltersToQuery(filters)}`)
+}
+
+export function getHistoricalRunDashboardOverview(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<HistoricalRunDashboardOverview> {
+  return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/overview`, filters)
+}
+
+export function getHistoricalRunDashboardMarkets(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<{ markets: HistoricalRunDashboardMarket[]; note?: string }> {
+  return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/markets`, filters)
+}
+
+export function getHistoricalRunDashboardRatings(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<{ bands: string[]; matrix: HistoricalRunRatingCell[]; note?: string }> {
+  return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/ratings`, filters)
+}
+
+export function getHistoricalRunDashboardPurchasability(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<HistoricalRunPurchasabilityAnalytics> {
+  return dashboardGet(
+    `/api/cecchino-lab/historical-scans/${runId}/dashboard/purchasability`,
+    filters,
+  )
+}
+
+export function getHistoricalRunDashboardSignals(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<{
+  models: HistoricalRunSignalModelAnalytics[]
+  current_model_key: string
+  note?: string
+}> {
+  return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/signals`, filters)
+}
+
+export function getHistoricalRunDashboardBalance(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<HistoricalRunBalanceAnalytics> {
+  return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/balance`, filters)
+}
+
+export function getHistoricalRunDashboardGoalIntensity(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<HistoricalRunGoalIntensityAnalytics> {
+  return dashboardGet(
+    `/api/cecchino-lab/historical-scans/${runId}/dashboard/goal-intensity`,
+    filters,
+  )
+}
+
+export function getHistoricalRunDashboardCompetitions(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<{ competitions: HistoricalRunCompetitionAnalytics[]; note?: string }> {
+  return dashboardGet(
+    `/api/cecchino-lab/historical-scans/${runId}/dashboard/competitions`,
+    filters,
+  )
+}
+
+export function getHistoricalRunDashboardTimeline(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+  opts?: { granularity?: string; block_size?: number },
+): Promise<{ points: HistoricalRunTimelinePoint[]; granularity: string; note?: string }> {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v != null && String(v).trim() !== '') params.set(k, String(v))
+  }
+  if (opts?.granularity) params.set('granularity', opts.granularity)
+  if (opts?.block_size != null) params.set('block_size', String(opts.block_size))
+  const q = params.toString()
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/dashboard/timeline${q ? `?${q}` : ''}`,
+  )
+}
+
+export function getHistoricalRunDashboardPatterns(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<{
+  positive: HistoricalRunPattern[]
+  negative: HistoricalRunPattern[]
+  watchlist: HistoricalRunPattern[]
+  unstable: HistoricalRunPattern[]
+  note?: string
+}> {
+  return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/patterns`, filters)
+}
+
+export function getHistoricalRunDashboardExclusions(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+): Promise<{ items: HistoricalRunExclusion[]; total_excluded: number; note?: string }> {
+  return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/exclusions`, filters)
+}
+
+export function listHistoricalRunMatches(
+  runId: number,
+  filters: HistoricalRunFilters = {},
+  opts?: { limit?: number; offset?: number; sort_by?: string; sort_order?: string },
+): Promise<{
+  items: HistoricalRunMatchRow[]
+  total: number
+  limit: number
+  offset: number
+}> {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v != null && String(v).trim() !== '') params.set(k, String(v))
+  }
+  if (!params.has('eligibility_status')) params.set('eligibility_status', 'all')
+  params.set('limit', String(opts?.limit ?? 50))
+  params.set('offset', String(opts?.offset ?? 0))
+  if (opts?.sort_by) params.set('sort_by', opts.sort_by)
+  if (opts?.sort_order) params.set('sort_order', opts.sort_order)
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/matches?${params.toString()}`,
+  )
+}
+
+export function getHistoricalRunMatchDetail(
+  runId: number,
+  snapshotId: number,
+): Promise<HistoricalRunMatchDetail> {
+  return requestJson(`/api/cecchino-lab/historical-scans/${runId}/matches/${snapshotId}`)
+}
+
+export const HISTORICAL_RUN_REPORT_MENU: Array<{
+  mode: HistoricalReportMode
+  module?: HistoricalReportModule
+  label: string
+  recommended?: boolean
+  needsCompetition?: boolean
+  sizeWarning?: boolean
+}> = [
+  { mode: 'ai_summary', label: 'Sintesi per ChatGPT', recommended: true },
+  { mode: 'competition', label: 'Dettaglio per campionato', needsCompetition: true },
+  { mode: 'module', module: 'signals', label: 'Dettaglio Segnali A–F' },
+  { mode: 'module', module: 'balance', label: 'Dettaglio Balance / Equilibrio' },
+  { mode: 'module', module: 'goal_intensity', label: 'Dettaglio Intensità Goal' },
+  { mode: 'module', module: 'purchasability', label: 'Dettaglio Acquistabilità' },
+  { mode: 'module', module: 'markets', label: 'Dettaglio mercati' },
+  {
+    mode: 'full_archive',
+    label: 'Archivio tecnico completo',
+    sizeWarning: true,
+  },
+]

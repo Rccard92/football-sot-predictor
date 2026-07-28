@@ -1,5 +1,13 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## Dashboard analisi run
+
+Dopo il completamento della scansione, aprire l’analisi da **Storico run → Apri analisi** oppure `/cecchino-lab/historical-scans/:runId`.
+
+Documentazione dedicata: [`CECCHINO_LAB_RUN_DASHBOARD.md`](./CECCHINO_LAB_RUN_DASHBOARD.md).
+
+Endpoint JSON read-only sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`. Aggregazioni pure in `historical_analytics_agg.py` (condivise col report ZIP). **Nessuna riscrittura** di run/snapshot/settlement.
+
 ## Isolamento
 
 - Solo Cecchino Lab (`cecchino_lab_*` + `cecchino_data_lab`).

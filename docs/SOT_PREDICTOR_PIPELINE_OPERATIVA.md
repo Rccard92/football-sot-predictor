@@ -1,5 +1,13 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — dashboard analisi run (2026-07-28)
+
+1. Completata la scansione storica → da **Storico run** cliccare **Apri analisi**.
+2. Route FE: `/cecchino-lab/historical-scans/:runId` (filtri in query string).
+3. API read-only: `GET /api/cecchino-lab/historical-scans/{id}/dashboard/*`.
+4. Report ZIP invariato dal menu «Scarica report».
+5. Doc: `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
+
 ## Cecchino Lab — moduli storici v3 + pilota bilanciato (2026-07-27)
 
 1. Preflight `POST /api/admin/cecchino-lab/historical-scans/preflight`
