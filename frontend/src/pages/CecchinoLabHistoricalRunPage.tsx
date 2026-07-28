@@ -70,7 +70,7 @@ export function CecchinoLabHistoricalRunPage() {
   const [overview, setOverview] = useState<SectionState<HistoricalRunDashboardOverview>>(emptySection())
   const [markets, setMarkets] = useState<SectionState<HistoricalRunDashboardMarket[]>>(emptySection())
   const [ratings, setRatings] = useState<
-    SectionState<{ bands: string[]; matrix: HistoricalRunRatingCell[] }>
+    SectionState<{ bands: string[]; matrix: HistoricalRunRatingCell[]; warning?: string }>
   >(emptySection())
   const [purch, setPurch] = useState<SectionState<HistoricalRunPurchasabilityAnalytics>>(emptySection())
   const [signals, setSignals] = useState<
@@ -146,7 +146,7 @@ export function CecchinoLabHistoricalRunPage() {
       load(async () => (await getHistoricalRunDashboardMarkets(runId, filters)).markets, setMarkets),
       load(async () => {
         const r = await getHistoricalRunDashboardRatings(runId, filters)
-        return { bands: r.bands, matrix: r.matrix }
+        return { bands: r.bands, matrix: r.matrix, warning: r.warning }
       }, setRatings),
       load(() => getHistoricalRunDashboardPurchasability(runId, filters), setPurch),
       load(async () => {
@@ -311,7 +311,11 @@ export function CecchinoLabHistoricalRunPage() {
           onRetry={() => void loadCore()}
         >
           {ratings.data ? (
-            <HistoricalRunRatingHeatmap bands={ratings.data.bands} matrix={ratings.data.matrix} />
+            <HistoricalRunRatingHeatmap
+              bands={ratings.data.bands}
+              matrix={ratings.data.matrix}
+              warning={ratings.data.warning}
+            />
           ) : null}
         </Section>
 

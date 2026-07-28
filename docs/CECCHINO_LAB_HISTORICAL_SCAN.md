@@ -6,7 +6,7 @@ Dopo il completamento della scansione, aprire l’analisi da **Storico run → A
 
 Documentazione dedicata: [`CECCHINO_LAB_RUN_DASHBOARD.md`](./CECCHINO_LAB_RUN_DASHBOARD.md).
 
-Endpoint JSON read-only sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`. Aggregazioni pure in `historical_analytics_agg.py` (condivise col report ZIP, `analytics_aggregation_version=cecchino_lab_analytics_agg_v2`). **Nessuna riscrittura** di run/snapshot/settlement.
+Endpoint JSON read-only sotto `/api/cecchino-lab/historical-scans/{run_id}/dashboard/*`. Aggregazioni pure in `historical_analytics_agg.py` (condivise col report ZIP, `analytics_aggregation_version=cecchino_lab_analytics_agg_v2_1`). **Nessuna riscrittura** di run/snapshot/settlement.
 
 Aggregazioni hardened: riconciliazione real+derived+unavailable; medie odds `null` se assenti; pattern sempre `market_key`; soglie su quote reali; `cross_competition_stability`; diagnostiche assenze dati separate. Report AI e dashboard condividono le stesse formule pure — vedi `CECCHINO_LAB_AI_REPORT_SCHEMA.md` e `CECCHINO_LAB_RUN_DASHBOARD.md`.
 
@@ -53,7 +53,8 @@ Scansione completa con revisione git sconosciuta: **bloccata**. Pilota: permesso
 
 Ordine: `RAILWAY_GIT_COMMIT_SHA` → `SOURCE_VERSION` → `GIT_COMMIT_SHA` → `VERCEL_GIT_COMMIT_SHA` → `git rev-parse HEAD`.
 
-Salvati: `source_git_commit`, `source_git_commit_source`, `source_revision_status`.
+Salvati sul run: `source_git_commit`, `source_git_commit_source`, `source_revision_status` (revisione **scan**).
+Report/dashboard espongono anche la revisione **runtime** (`report_generator_git_commit` / `analytics_runtime_git_commit`) risolva a generazione/lettura — non riscrivono il run.
 
 ## Pipeline per partita
 

@@ -45,6 +45,8 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     balance_pillars as _balance_pillars,
     build_combined_patterns as _build_combined_patterns,
     build_patterns_top as _build_patterns_top,
+    build_purchasability_by_market as _build_purchasability_by_market,
+    build_rating_by_market as _build_rating_by_market,
     bump_bucket_from_market as _bump_bucket_from_market,
     bump_pattern as _bump_pattern,
     edge_band as _edge_band,
@@ -53,11 +55,14 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     pattern_accumulator as _pattern_accumulator,
     pattern_status as _pattern_status,
     quote_count_reconciliation as _quote_count_reconciliation,
+    quote_quality_of_market as _quote_quality_of_market,
     purchasability_band_report as _purchasability_band_report,
     rating_band as _rating_band,
     signal_meta as _signal_meta,
     structural_class as _structural_class,
 )
+from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
+
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 
 logger = logging.getLogger(__name__)
@@ -72,52 +77,33 @@ AI_SUMMARY_WARN_BYTES = 5 * 1024 * 1024
 AI_INSTRUCTIONS_MD = """# Istruzioni per ChatGPT — Report storico Cecchino Lab (v4)
 
 1. Leggi prima `report_index.json`, `manifest.json` e `SCHEMA.md`.
-2. Usa **solo** `eligible_analysis` (`eligible_core`) per hit rate, profitto, ROI, fasce rating, pattern e analisi segnali.
-3. `excluded_diagnostics` e `diagnostic_patterns` / `coverage_diagnostics` sono diagnostica: non mescolarle con la performance.
-4. Non confondere quote **reali Bet365**, quote **derivate** e quote **non disponibili** (`unavailable`).
-5. Deve sempre valere: `real_quote_count + derived_quote_count + unavailable_quote_count = market_rows` (`quote_count_reconciliation_ok`).
-6. Non sommare ROI reale e ROI sintetico. Medie quote mancanti sono `null`, non `0`.
-7. Non trattare quote derivate come offerte Bet365. Zero non è una quota valida.
-8. Distingui: `with_cecchino_probability` (`prob_cecchino`), `with_cecchino_fair_quote` (`quota_cecchino`), `with_rating`. Non inventare una fair quote da sola probabilità.
-9. La frequenza naturale di un mercato (`outcome_base_rate`) **non** è “performance del Cecchino”.
-10. Intensità Goal storica: usa `goal_intensity.jsonl` (pilastri). `parity_status=partial` — non è V5 live completo.
-11. Acquistabilità storica Bet365: usa `purchasability.jsonl`. **Non** equivalente al modulo Betfair operativo.
-12. Modelli segnali A–F: usa `signal_models.jsonl`. Il modello F coincide con il corrente. `model_label` non deve essere null.
-13. Non utilizzare risultati futuri come input: il blocco pre-match è congelato prima del risultato.
-14. I pattern di performance sono **sempre market-specific** (`market_key` obbligatorio). Non mescolare HOME/DRAW/AWAY/OU.
-15. Soglie campione (quote reali): `<30` small_sample; `30–99` exploratory_only; `100–199` descriptive_only; `≥200` + gate → candidate_for_validation.
-16. Stabilità `cross_competition_stability`: insufficient_evidence | concentrated | inconsistent | directionally_consistent | stable_candidate. Non usare “stabile” fuori da `stable_candidate`.
-17. Condizioni `no_rating` / `no_purch` / `signal_off` / assenze dati → solo diagnostica, non candidati positivi/negativi.
-18. Non proporre modifiche automatiche a formule, pesi o soglie produttive.
-19. Se `is_partial_run=true`, non trattare il report come scansione stagione completa.
-20. **Non** interpretare `technical_sum_across_all_independent_market_rows` come strategia (`not_a_betting_strategy=true`).
-21. Report e dashboard condividono `analytics_aggregation_version` — stesse formule pure.
-22. Ordine: `ai_summary` → campionato → modulo → `full_archive` solo per audit. Nessun dettaglio partita-per-partita in sintesi.
+2. Distingui `scan_source_git_commit` (snapshot congelati) da `report_generator_git_commit` (codice che genera il report). Alias legacy `source_git_commit*` = scan.
+3. Usa **solo** `eligible_analysis` (`eligible_core`) per hit rate, profitto, ROI, fasce rating, pattern e analisi segnali.
+4. `excluded_diagnostics` e `diagnostic_patterns` / `coverage_diagnostics` sono diagnostica: non mescolarle con la performance.
+5. Non confondere quote **reali Bet365**, quote **derivate** e quote **non disponibili** (`unavailable`).
+6. Deve sempre valere: `real_quote_count + derived_quote_count + unavailable_quote_count = market_rows` (`quote_count_reconciliation_ok`).
+7. Se `real_quote_count=0` allora `real_profit_1u`/`real_roi_pct`/`average_real_odds` sono **null** (non zero). Stesso per derived/synthetic.
+8. Distingui zero economico reale (quote presenti, profitto = 0) da dato assente (null).
+9. Rating e Acquistabilità: usa `rating_by_market` e `purchasability_by_market`. Le strutture `*_global_distribution_diagnostic` non sono performance.
+10. Confronta fasce Rating/Acquistabilità **entro lo stesso mercato**. Non confrontare HOME 90 con OVER_2_5 90 senza indicare il mercato.
+11. Fascia Rating `100` è esclusiva (mai `100-109`).
+12. Pattern sempre market-specific. Stabilità: insufficient_evidence|concentrated|inconsistent|directionally_consistent|stable_candidate.
+13. Condizioni `no_rating`/`no_purch`/`signal_off` → solo diagnostica.
+14. **Non** interpretare `technical_sum_across_all_independent_market_rows` come strategia.
+15. Report e dashboard condividono `analytics_aggregation_version`.
+16. `ai_summary` resta compatto: niente markets.jsonl completo / dettaglio partita-per-partita.
 
 Cecchino Today operativo resta su **Betfair** e non è modificato da questo report.
 """
 
 SCHEMA_MD = """# Schema report AI Cecchino Lab (v4)
 
-- `report_index.json`: indice pacchetti, conteggi, ordine analisi consigliato
-- `manifest.json`: metadati run + `analytics_aggregation_version`
-- `summary.json`: `eligible_analysis` (con `quote_reconciliation`), `excluded_diagnostics`, `errors`, `data_coverage`
-- `data_quality.json`: qualità dati stagione (preflight)
-- `eligibility.json`: conteggi eleggibilità
-- `module_coverage.json`: copertura moduli + parità Intensità/Acquistabilità
-- `patterns_top.json`: sottoinsieme deterministico di pattern (ai_summary); include `coverage_diagnostics`
-- `patterns.json`: pattern completi market-specific + `diagnostic_patterns`
-- `matches.jsonl` / `matches_compact.jsonl`: partite (completo vs compatto AI)
-- `markets.jsonl`: partita×mercato eligible/analysis
-- `signal_models.jsonl`: partita × modello × segnale attivo (etichette canoniche A–F)
-- `goal_intensity.jsonl`: pilastri Intensità
-- `purchasability.jsonl` / `purchasability_compact.jsonl`: Acquistabilità
-- `AI_INSTRUCTIONS.md` / `SCHEMA.md`
-
-Quote: real + derived + unavailable = market_rows. Medie odds `null` se assenti.
-Pattern: sempre con `market_key`. Assenze dati → `diagnostic_patterns`.
-Modalità export: `ai_summary` | `competition` | `module` | `full_archive`.
-`technical_sum_across_all_independent_market_rows` è diagnostica tecnica, non una strategia.
+- `manifest.json`: `scan_source_git_commit*` vs `report_generator_git_commit*`; alias legacy `source_git_commit*` = scan; `analytics_aggregation_version`
+- `summary.json` / `eligible_analysis`: `rating_by_market`, `purchasability_by_market` (primarie); `rating_global_distribution_diagnostic`, `purchasability_global_distribution_diagnostic` (diagnostiche); `quote_reconciliation`
+- Profit/ROI/medie odds = `null` se quote_count della tipologia = 0
+- Fascia Rating `100` esclusiva
+- `markets.jsonl` (competition/module/full_archive): riga compatta con identity + kickoff + scores; non in `ai_summary`
+- Pattern market-specific + `diagnostic_patterns`
 """
 
 
@@ -460,6 +446,7 @@ def write_historical_report_zip(
         if _as_dict(s.purchasability_compatibility_json).get("execution_status") == "computed"
     )
 
+    generator_rev = resolve_code_revision()
     manifest = {
         "report_schema_version": REPORT_SCHEMA_VERSION,
         "report_mode": mode_norm,
@@ -469,9 +456,19 @@ def write_historical_report_zip(
         "season_label": run.season_label,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": "Rccard92/football-sot-predictor",
+        # Commit scansione (congelato sul run) — non sovrascrivere in DB
+        "scan_source_git_commit": run.source_git_commit,
+        "scan_source_git_commit_source": getattr(run, "source_git_commit_source", None),
+        "scan_source_revision_status": getattr(run, "source_revision_status", None),
+        # Alias legacy = scan commit
         "source_git_commit": run.source_git_commit,
         "source_git_commit_source": getattr(run, "source_git_commit_source", None),
         "source_revision_status": getattr(run, "source_revision_status", None),
+        # Commit generatore report (runtime download)
+        "report_generator_git_commit": generator_rev.get("git_commit"),
+        "report_generator_git_commit_source": generator_rev.get("git_commit_source"),
+        "report_generator_revision_status": generator_rev.get("revision_status"),
+        "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
         "scan_version": run.scan_version or HISTORICAL_SCAN_VERSION,
         "parser_version": PARSER_VERSION,
         "run_scope": run_scope,
@@ -505,6 +502,7 @@ def write_historical_report_zip(
             "real": "profit_1u_real from real Bet365 quotes only",
             "synthetic": "profit_1u_synthetic from derived quotes only",
             "do_not_sum_real_and_synthetic": True,
+            "null_when_no_quotes": True,
             "technical_sum_across_all_independent_market_rows": {
                 "not_a_betting_strategy": True,
                 "note": (
@@ -523,6 +521,8 @@ def write_historical_report_zip(
             "Prime giornate con campione insufficiente escluse dalle metriche di performance",
             "Intensità Goal: parity_status=partial (ECDF progressivo Lab; no bundle Today; no xG)",
             "Acquistabilità: storica Bet365 progressiva; non equivalente al profilo Betfair operativo",
+            "source_git_commit* è alias legacy di scan_source_git_commit*",
+            "report_generator_git_commit ≠ ricalcolo del run; solo codice che legge gli snapshot",
             *(
                 ["Run parziale: non confrontare come report stagione completa"]
                 if is_partial
@@ -543,7 +543,6 @@ def write_historical_report_zip(
         "historical_replay_bookmaker": "Bet365",
         "operational_today_modified": False,
         "do_not_propose_formula_changes": True,
-        "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
     }
 
     # --- reuse aggregation body via internal call ---
@@ -838,19 +837,33 @@ def _finalize_report_zip(
         }
     )
 
+    rating_by_market = _build_rating_by_market(eligible_markets, snap_by_id)
+    purch_by_market = _build_purchasability_by_market(eligible_markets, snap_by_id)
+
     eligible_analysis = {
         "note": (
             "Aggregazioni di performance solo su eligible_core / analysis. "
             "outcome_base_rate non è performance del Cecchino. "
-            "Pattern market-specific; medie quote null se assenti; "
+            "Rating/Acquistabilità primarie sono per mercato; "
+            "le aggregazioni globali sono diagnostiche. "
+            "Pattern market-specific; profit/medie quote null se quote_count=0; "
             "technical_sum non è una strategia. "
             f"analytics_aggregation_version={ANALYTICS_AGGREGATION_VERSION}."
         ),
         "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
         "quote_reconciliation": universe_recon,
+        "rating_by_market": rating_by_market,
+        "purchasability_by_market": purch_by_market,
         "aggregations": {
             dim: {k: _finalize_bucket(v) for k, v in sorted(inner.items())}
             for dim, inner in buckets.items()
+        },
+        "rating_global_distribution_diagnostic": {
+            k: _finalize_bucket(v)
+            for k, v in sorted((buckets.get("rating_band") or {}).items())
+        },
+        "purchasability_global_distribution_diagnostic": {
+            k: _finalize_bucket(v) for k, v in sorted(purch_band_buckets.items())
         },
         "purchasability_bands": {
             k: _finalize_bucket(v) for k, v in sorted(purch_band_buckets.items())
@@ -1020,37 +1033,58 @@ def _finalize_report_zip(
         def _iter_markets() -> Iterator[str]:
             for m in eligible_markets:
                 s = snap_by_id.get(int(m.match_snapshot_id))
+                result = _as_dict(s.result_json) if s else {}
+                ft = _as_dict(result.get("fulltime") or result.get("ft"))
+                ht = _as_dict(result.get("halftime") or result.get("ht"))
+                q_quality = _quote_quality_of_market(m)
                 sig = _signal_meta(m.signal_sources_json)
+                real_odds = (
+                    float(m.quota_book)
+                    if m.is_real_book_quote and m.quota_book is not None
+                    else None
+                )
+                derived_odds = (
+                    float(m.quota_book)
+                    if m.is_derived_quote and m.quota_book is not None
+                    else None
+                )
                 row = {
                     "run_id": int(m.run_id),
+                    "snapshot_id": int(m.match_snapshot_id),
                     "match_snapshot_id": int(m.match_snapshot_id),
                     "lab_match_id": int(m.lab_match_id),
+                    "dataset_id": int(s.dataset_id) if s and s.dataset_id is not None else None,
                     "eligibility_status": (
                         s.historical_eligibility_status if s else ELIGIBLE_CORE
                     ),
                     "competition_name": s.competition_name if s else None,
+                    "kickoff_at": s.kickoff_at.isoformat() if s and s.kickoff_at else None,
+                    "chronological_order": s.chronological_order if s else None,
+                    "home_team": s.home_team if s else None,
+                    "away_team": s.away_team if s else None,
+                    "home_score_ft": ft.get("home", result.get("ft_home")),
+                    "away_score_ft": ft.get("away", result.get("ft_away")),
+                    "home_score_ht": ht.get("home", result.get("ht_home")),
+                    "away_score_ht": ht.get("away", result.get("ht_away")),
                     "market_key": m.market_key,
                     "market_label": m.market_label,
                     "period": m.period,
                     "line": m.line,
-                    "quota_cecchino": float(m.quota_cecchino) if m.quota_cecchino is not None else None,
+                    "quote_quality": q_quality,
                     "prob_cecchino": float(m.prob_cecchino) if m.prob_cecchino is not None else None,
+                    "quota_cecchino": float(m.quota_cecchino) if m.quota_cecchino is not None else None,
                     "quota_book": float(m.quota_book) if m.quota_book is not None else None,
-                    "prob_book_raw": float(m.prob_book_raw) if m.prob_book_raw is not None else None,
-                    "prob_book_fair": float(m.prob_book_fair) if m.prob_book_fair is not None else None,
-                    "quote_source_type": m.quote_source_type,
-                    "is_real_book_quote": m.is_real_book_quote,
-                    "is_derived_quote": m.is_derived_quote,
-                    "derivation_method": m.derivation_method,
-                    "edge_pct": float(m.edge_pct) if m.edge_pct is not None else None,
-                    "vantaggio_prob": float(m.vantaggio_prob) if m.vantaggio_prob is not None else None,
                     "rating": m.rating,
                     "signal_active": m.signal_active,
                     "signal_family": sig.get("signal_family"),
                     "active_signal_count": sig.get("active_signal_count"),
-                    "signal_sources_json": m.signal_sources_json,
-                    "evaluation_status": m.evaluation_status,
+                    "is_real_book_quote": m.is_real_book_quote,
+                    "is_derived_quote": m.is_derived_quote,
+                    "real_book_odds": real_odds,
+                    "derived_odds": derived_odds,
                     "won": m.won,
+                    "evaluation_status": m.evaluation_status,
+                    "settlement_status": s.settlement_status if s else None,
                     "profit_1u_real": float(m.profit_1u_real) if m.profit_1u_real is not None else None,
                     "profit_1u_synthetic": (
                         float(m.profit_1u_synthetic) if m.profit_1u_synthetic is not None else None

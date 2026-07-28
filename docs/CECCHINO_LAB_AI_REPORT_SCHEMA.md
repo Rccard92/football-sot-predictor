@@ -1,7 +1,7 @@
 ﻿# Schema report AI â€” Cecchino Lab Historical Scan
 
 Versione schema: `cecchino_lab_ai_report_v4`
-Versione aggregazione: `cecchino_lab_analytics_agg_v2` (`analytics_aggregation_version`)
+Versione aggregazione: `cecchino_lab_analytics_agg_v2_1` (`analytics_aggregation_version`)
 
 Le funzioni pure di aggregazione/pattern (`agg_bucket`, `finalize_bucket`, `build_combined_patterns`, â€¦) vivono in `historical_analytics_agg.py` e sono riusate dalla **dashboard run** senza rigenerare lo ZIP. Vedi `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
 
@@ -20,11 +20,11 @@ Deve sempre valere:
 con `quote_count_reconciliation_ok: true` in `eligible_analysis.quote_reconciliation` e nei bucket finalizzati.
 **Non** usare `profit = null` come proxy della qualitÃ  quota.
 
-## Null vs zero (medie odds)
+## Null vs zero (medie odds e profit)
 
-- Nessuna quota valida nel gruppo â†’ `average_real_odds` / `average_derived_odds` = **`null`**
-- Quote valide (`finite` e `> 1.0`) â†’ media reale
-- Zero non Ã¨ una quota valida; non mostrare `0.0` per dati non calcolati
+- Nessuna quota nel gruppo (`*_quote_count == 0`) → `*_profit_1u` / `*_roi_pct` / `average_*_odds` = **`null`**
+- Quote presenti → numerici (incluso profitto economico **0**)
+- Zero non è una quota valida; non mostrare `0.0` per dati non calcolati
 
 ## Contatori Cecchino distinti
 
@@ -95,8 +95,9 @@ Generazione: `SpooledTemporaryFile` + JSONL riga-per-riga + streaming HTTP (lâ�
 ## Manifest (campi chiave)
 
 - `report_schema_version = cecchino_lab_ai_report_v4`
-- `analytics_aggregation_version = cecchino_lab_analytics_agg_v2`
-- `source_git_commit` / `source_git_commit_source` / `source_revision_status`
+- `analytics_aggregation_version = cecchino_lab_analytics_agg_v2_1`
+- `scan_source_git_commit*` (snapshot congelati) vs `report_generator_git_commit*` (codice a generazione)
+- alias legacy: `source_git_commit*` = scan
 - `run_scope` (`full` | `pilot` | `balanced_pilot`) / `is_partial_run` / `not_full_season_report`
 - `pilot_strategy` / `eligible_per_competition`
 - `performance_universe = eligible_core`
@@ -106,14 +107,20 @@ Generazione: `SpooledTemporaryFile` + JSONL riga-per-riga + streaming HTTP (lâ�
 - `profit_policy.technical_sum_across_all_independent_market_rows.not_a_betting_strategy = true`
 - Bookmaker operativo Today: **Betfair**; replay storico: **Bet365**
 
-## Summary â€” eligible_analysis
+## Summary — eligible_analysis
 
 - `quote_reconciliation` + `analytics_aggregation_version`
-- Aggregazioni per mercato, segnale, modello Aâ€“F, fascia rating, fascia AcquistabilitÃ
-- Pilastri IntensitÃ  (complete e parziali in copertura moduli)
-- Balance / Equilibrio
-- `coverage_distinctions` (outcome_base_rate â‰  performance Cecchino; conteggi probabilitÃ /fair quote/rating distinti)
+- Primarie: `rating_by_market`, `purchasability_by_market` (confrontare fasce solo nello stesso mercato)
+- Diagnostiche: `rating_global_distribution_diagnostic`, `purchasability_global_distribution_diagnostic`
+- Fascia Rating: `0-9`…`90-99`, poi **`100`** esclusivo (mai `100-109`)
+- Aggregazioni per mercato, segnale, modello A–F; pilastri Intensità; Balance
+- `coverage_distinctions` (outcome_base_rate ≠ performance Cecchino)
 - `technical_sum_across_all_independent_market_rows`: diagnostica tecnica, **non** strategia
+
+## markets.jsonl (competition / module / full_archive)
+
+Identity + kickoff storico + scores HT/FT + metriche mercato. Compatto: senza raw moduli/picchetti/contexts.
+`ai_summary` **non** include `markets.jsonl` completo.
 
 ## Pattern
 

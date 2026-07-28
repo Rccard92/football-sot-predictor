@@ -20,8 +20,18 @@ function scopeLabel(run: HistoricalRunDashboardOverview['run']): string {
   return 'Completa'
 }
 
+function shortSha(sha: string | null | undefined): string {
+  if (!sha) return '—'
+  return sha.slice(0, 10)
+}
+
 export function HistoricalRunHeader({ overview, competitions }: Props) {
   const run = overview.run
+  const scanCommit =
+    overview.scan_source_git_commit || run.source_git_commit || null
+  const analyticsCommit = overview.analytics_runtime_git_commit || null
+  const aggVersion = overview.analytics_aggregation_version || null
+
   return (
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div>
@@ -45,14 +55,34 @@ export function HistoricalRunHeader({ overview, competitions }: Props) {
             {scopeLabel(run)}
           </span>
           <span>scan {run.scan_version}</span>
-          {run.source_git_commit ? (
-            <span>commit {run.source_git_commit.slice(0, 10)}</span>
+          <span
+            className="rounded px-2 py-0.5"
+            style={{ background: 'var(--lab-surface-2)' }}
+            title="Codice che ha prodotto e congelato gli snapshot del run"
+          >
+            Scansione: {shortSha(scanCommit)}
+          </span>
+          <span
+            className="rounded px-2 py-0.5"
+            style={{ background: 'var(--lab-surface-2)' }}
+            title="Codice che sta visualizzando e aggregando i dati (non ricalcola il run)"
+          >
+            Analytics: {shortSha(analyticsCommit)}
+          </span>
+          {aggVersion ? (
+            <span
+              className="rounded px-2 py-0.5"
+              style={{ background: 'var(--lab-surface-2)' }}
+              title="Versione delle funzioni pure di aggregazione"
+            >
+              Aggregatore: {aggVersion.replace('cecchino_lab_analytics_agg_', '')}
+            </span>
           ) : null}
           <span>Bet365 storico · Betfair Today invariato</span>
         </div>
         <p className="mt-2 max-w-2xl text-sm text-[var(--lab-muted)]">
           Prestazioni osservate su mercati indipendenti. Nessun profitto complessivo aggregato.
-          Dati congelati a fine run.
+          Dati congelati a fine run. Analytics ≠ ricalcolo del run.
         </p>
       </div>
       <HistoricalRunReportMenu runId={run.run_id} competitions={competitions} />

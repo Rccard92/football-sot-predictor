@@ -815,3 +815,95 @@ def test_empty_payload_compatibility_run1_run2():
             out = dashboard_markets(db, run_id, parse_dashboard_filters())
         assert len(out["markets"]) == 14
         assert all(m["sample_size"] == 0 for m in out["markets"])
+
+
+def test_v2_1_rating_band_100_and_null_profit():
+    from app.services.cecchino_data_lab.historical_analytics_agg import (
+        ANALYTICS_AGGREGATION_VERSION,
+        rating_band,
+        rating_band_dashboard,
+    )
+
+    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_1"
+    assert rating_band(99.99) == "90-99"
+    assert rating_band(100) == "100"
+    assert rating_band(110) == "100"
+    assert rating_band(None) is None
+    assert rating_band(100) != "100-109"
+    assert "100-109" not in (rating_band(100) or "")
+    assert rating_band_dashboard(100) == "100"
+    assert rating_band_dashboard(110) == "100"
+    assert rating_band_dashboard(None) == "unavailable"
+    assert rating_band_dashboard(99.99) == "90-99"
+
+    empty = finalize_bucket(agg_bucket())
+    assert empty["real_quote_count"] == 0
+    assert empty["real_profit_1u"] is None
+    assert empty["real_roi_pct"] is None
+    assert empty["average_real_odds"] is None
+    assert empty["synthetic_profit_1u"] is None
+    assert empty["synthetic_roi_pct"] is None
+    assert empty["average_derived_odds"] is None
+
+    b = agg_bucket()
+    bump_bucket_from_market(
+        b,
+        _market(real=True, quota_book=2.0, profit_real=0.0, won=False),
+        "Serie A",
+    )
+    fb = finalize_bucket(b)
+    assert fb["real_quote_count"] == 1
+    assert fb["real_profit_1u"] == 0.0
+    assert fb["real_roi_pct"] == 0.0
+    assert fb["average_real_odds"] == 2.0
+
+
+def test_v2_1_by_market_helpers_and_overview_revisions():
+    from app.services.cecchino_data_lab.historical_analytics_agg import (
+        build_purchasability_by_market,
+        build_rating_by_market,
+    )
+    from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
+
+    snaps, markets = _mini_universe()
+    snap_by_id = {int(s.id): s for s in snaps if s.historical_eligibility_status == "eligible_core"}
+    perf = [m for m in markets if int(m.match_snapshot_id) in snap_by_id]
+    rating_bm = build_rating_by_market(perf, snap_by_id)
+    purch_bm = build_purchasability_by_market(perf, snap_by_id)
+    assert "HOME" in rating_bm
+    assert "100" in rating_bm["HOME"] or "70-79" in rating_bm["HOME"]
+    cell = next(iter(next(iter(rating_bm.values())).values()))
+    assert "real_profit_1u" in cell
+    assert "confidence_status" in cell
+    assert "HOME" in purch_bm
+
+    rev = resolve_code_revision()
+    assert "git_commit" in rev
+    assert "revision_status" in rev
+
+    run = _run(status="completed")
+    db = _db_with(run, snaps, markets)
+    with patch(
+        "app.services.cecchino_data_lab.historical_run_analytics_service._load_snapshots_lean",
+        return_value=snaps,
+    ), patch(
+        "app.services.cecchino_data_lab.historical_run_analytics_service._load_markets",
+        return_value=markets,
+    ):
+        out = dashboard_overview(db, 1, parse_dashboard_filters())
+        rat = dashboard_ratings(db, 1, parse_dashboard_filters())
+        purch = dashboard_purchasability(db, 1, parse_dashboard_filters())
+    assert out["scan_source_git_commit"] == "d251e670"
+    assert out["analytics_runtime_git_commit"] is not None or out[
+        "analytics_runtime_revision_status"
+    ]
+    assert out["analytics_aggregation_version"] == "cecchino_lab_analytics_agg_v2_1"
+    assert "global_profit" not in out["kpis"]
+    assert rat["primary_view"] == "market_x_rating_band"
+    assert "indipendenti" in (rat.get("warning") or "")
+    assert any(c["rating_band"] == "100" for c in rat["matrix"])
+    assert purch["primary_view"] == "market_x_purchasability_band"
+    assert purch["distribution_role"] == "diagnostic_coverage_counts"
+    assert "by_market" in purch
+    assert not getattr(db, "add").called
+    assert not getattr(db, "commit").called

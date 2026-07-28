@@ -12,7 +12,7 @@ from typing import Any
 
 from app.models.cecchino_lab_historical_market_result import CecchinoLabHistoricalMarketResult
 
-ANALYTICS_AGGREGATION_VERSION = "cecchino_lab_analytics_agg_v2"
+ANALYTICS_AGGREGATION_VERSION = "cecchino_lab_analytics_agg_v2_1"
 
 # Pilastri Balance canonici (ordine UI dashboard)
 BALANCE_CANONICAL_PILLARS: tuple[str, ...] = (
@@ -256,8 +256,14 @@ def finalize_bucket(b: dict[str, Any]) -> dict[str, Any]:
     if n < 30 and "small_sample" not in warnings:
         warnings.append("small_sample")
     b["warnings"] = warnings
-    b["real_profit_1u"] = round(float(b.get("real_profit_1u") or 0), 4)
-    b["synthetic_profit_1u"] = round(float(b.get("synthetic_profit_1u") or 0), 4)
+    if real_n:
+        b["real_profit_1u"] = round(float(b.get("real_profit_1u") or 0), 4)
+    else:
+        b["real_profit_1u"] = None
+    if der_n:
+        b["synthetic_profit_1u"] = round(float(b.get("synthetic_profit_1u") or 0), 4)
+    else:
+        b["synthetic_profit_1u"] = None
     b["confidence_status"] = confidence_status(int(b.get("sample_size") or 0))
     if b.get("prob_count"):
         b["average_cecchino_probability"] = round(
@@ -312,14 +318,20 @@ def finalize_bucket(b: dict[str, Any]) -> dict[str, Any]:
 
 
 def rating_band(rating: Any) -> str | None:
-    """Fascia a decade stile report (0-9, 10-19, …)."""
+    """Fascia a decade stile report: 0-9 … 90-99, poi 100 esclusivo (mai 100-109)."""
     if rating is None:
         return None
     try:
-        r = int(rating)
+        r = float(rating)
     except (TypeError, ValueError):
         return None
-    base = (r // 10) * 10
+    if not math.isfinite(r):
+        return None
+    if r >= 100:
+        return "100"
+    if r < 0:
+        return None
+    base = int(r // 10) * 10
     return f"{base}-{base + 9}"
 
 
@@ -330,6 +342,8 @@ def rating_band_dashboard(rating: Any) -> str:
     try:
         r = float(rating)
     except (TypeError, ValueError):
+        return "unavailable"
+    if not math.isfinite(r):
         return "unavailable"
     if r < 50:
         return "lt_50"
@@ -824,10 +838,10 @@ def finalize_pattern(
     real_n = int(acc["real_quote_count"])
     derived_n = int(acc["derived_quote_count"])
     unavail_n = int(acc.get("unavailable_quote_count") or 0)
-    real_profit = round(float(acc["real_profit"]), 4)
-    synth_profit = round(float(acc["synthetic_profit"]), 4)
+    real_profit = round(float(acc["real_profit"]), 4) if real_n else None
+    synth_profit = round(float(acc["synthetic_profit"]), 4) if derived_n else None
     competitions_count = len(comps)
-    real_roi = round(100.0 * real_profit / real_n, 2) if real_n else None
+    real_roi = round(100.0 * float(real_profit) / real_n, 2) if real_n and real_profit is not None else None
 
     main_competition = None
     main_share = None
@@ -906,7 +920,11 @@ def finalize_pattern(
         "real_profit": real_profit,
         "real_roi": real_roi,
         "synthetic_profit": synth_profit,
-        "synthetic_roi": round(100.0 * synth_profit / derived_n, 2) if derived_n else None,
+        "synthetic_roi": (
+            round(100.0 * float(synth_profit) / derived_n, 2)
+            if derived_n and synth_profit is not None
+            else None
+        ),
         "competitions_count": competitions_count,
         "main_competition": main_competition,
         "main_competition_share": main_share,
@@ -1418,6 +1436,130 @@ def group_patterns_for_dashboard(patterns: dict[str, Any]) -> dict[str, list[dic
             diagnostics, key=lambda x: int(x.get("sample_size") or 0), reverse=True
         )[:PATTERNS_TOP_CAP],
     }
+
+
+def _cell_from_finalized(
+    *,
+    market_key: str,
+    band: str,
+    fb: dict[str, Any],
+    result_missing: int = 0,
+    average_purchasability: float | None = None,
+) -> dict[str, Any]:
+    return {
+        "market_key": market_key,
+        "band": band,
+        "sample_size": fb["sample_size"],
+        "wins": fb["won"],
+        "losses": fb["lost"],
+        "result_missing": result_missing,
+        "hit_rate": fb["hit_rate"],
+        "average_cecchino_probability": fb["average_cecchino_probability"],
+        "average_rating": fb.get("average_rating"),
+        "average_purchasability": average_purchasability,
+        "real_quote_count": fb["real_quote_count"],
+        "average_real_odds": fb["average_real_odds"],
+        "real_profit_1u": fb["real_profit_1u"],
+        "real_roi_pct": fb["real_roi_pct"],
+        "derived_quote_count": fb["derived_quote_count"],
+        "average_derived_odds": fb["average_derived_odds"],
+        "synthetic_profit_1u": fb["synthetic_profit_1u"],
+        "synthetic_roi_pct": fb["synthetic_roi_pct"],
+        "unavailable_quote_count": fb["unavailable_quote_count"],
+        "competitions_count": fb["competitions_count"],
+        "confidence_status": fb["confidence_status"],
+        "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
+    }
+
+
+def build_rating_by_market(
+    eligible_markets: list[CecchinoLabHistoricalMarketResult],
+    snap_by_id: dict[int, Any],
+    *,
+    market_order: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Aggregazione primaria Rating: market_key → fascia → metriche."""
+    cells: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
+    missing: dict[tuple[str, str], int] = defaultdict(int)
+    markets_seen: set[str] = set()
+    for m in eligible_markets:
+        band = rating_band_dashboard(m.rating)
+        mk = str(m.market_key)
+        markets_seen.add(mk)
+        s = snap_by_id.get(int(m.match_snapshot_id))
+        bump_bucket_from_market(cells[(mk, band)], m, s.competition_name if s else None)
+        if m.won is None:
+            missing[(mk, band)] += 1
+    order = list(market_order) if market_order else sorted(markets_seen)
+    for mk in markets_seen:
+        if mk not in order:
+            order.append(mk)
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for mk in order:
+        out[mk] = {}
+        for band in RATING_BANDS_DASHBOARD:
+            fb = finalize_bucket(cells.get((mk, band), agg_bucket()))
+            out[mk][band] = _cell_from_finalized(
+                market_key=mk,
+                band=band,
+                fb=fb,
+                result_missing=int(missing.get((mk, band), 0)),
+            )
+    return out
+
+
+def build_purchasability_by_market(
+    eligible_markets: list[CecchinoLabHistoricalMarketResult],
+    snap_by_id: dict[int, Any],
+    *,
+    market_order: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Aggregazione primaria Acquistabilità: market_key → fascia → metriche."""
+    cells: dict[tuple[str, str], dict[str, Any]] = defaultdict(agg_bucket)
+    missing: dict[tuple[str, str], int] = defaultdict(int)
+    purch_sum: dict[tuple[str, str], float] = defaultdict(float)
+    purch_n: dict[tuple[str, str], int] = defaultdict(int)
+    markets_seen: set[str] = set()
+    for m in eligible_markets:
+        s = snap_by_id.get(int(m.match_snapshot_id))
+        purch = as_dict(getattr(s, "purchasability_compatibility_json", None) if s else None)
+        score = None
+        for mk_row in purch.get("markets") or []:
+            if isinstance(mk_row, dict) and mk_row.get("market_key") == m.market_key:
+                score = mk_row.get("score")
+                break
+        band = purchasability_band_dashboard(score)
+        mk = str(m.market_key)
+        markets_seen.add(mk)
+        bump_bucket_from_market(cells[(mk, band)], m, s.competition_name if s else None)
+        if m.won is None:
+            missing[(mk, band)] += 1
+        if score is not None:
+            try:
+                purch_sum[(mk, band)] += float(score)
+                purch_n[(mk, band)] += 1
+            except (TypeError, ValueError):
+                pass
+    order = list(market_order) if market_order else sorted(markets_seen)
+    for mk in markets_seen:
+        if mk not in order:
+            order.append(mk)
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for mk in order:
+        out[mk] = {}
+        for band in PURCH_BANDS_DASHBOARD:
+            fb = finalize_bucket(cells.get((mk, band), agg_bucket()))
+            avg_p = None
+            if purch_n.get((mk, band)):
+                avg_p = round(purch_sum[(mk, band)] / purch_n[(mk, band)], 2)
+            out[mk][band] = _cell_from_finalized(
+                market_key=mk,
+                band=band,
+                fb=fb,
+                result_missing=int(missing.get((mk, band), 0)),
+                average_purchasability=avg_p,
+            )
+    return out
 
 
 def max_losing_streak(won_flags: list[bool | None]) -> int:

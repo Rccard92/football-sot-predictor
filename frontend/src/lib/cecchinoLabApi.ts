@@ -1092,6 +1092,10 @@ export type HistoricalRunDashboardOverview = {
   }
   is_provisional: boolean
   data_as_of: string
+  scan_source_git_commit?: string | null
+  analytics_runtime_git_commit?: string | null
+  analytics_runtime_git_commit_source?: string | null
+  analytics_runtime_revision_status?: string | null
   analytics_aggregation_version?: string
   filters: HistoricalRunFilters
   kpis: Record<string, unknown>
@@ -1139,9 +1143,9 @@ export type HistoricalRunDashboardMarket = {
   quote_count_reconciliation_ok?: boolean
   average_real_odds: number | null
   average_derived_odds: number | null
-  real_profit_1u: number
+  real_profit_1u: number | null
   real_roi_pct: number | null
-  synthetic_profit_1u: number
+  synthetic_profit_1u: number | null
   synthetic_roi_pct: number | null
   max_losing_streak: number
   competitions_count: number
@@ -1159,10 +1163,11 @@ export type HistoricalRunRatingCell = {
   hit_rate: number | null
   average_odds: number | null
   real_quote_count: number
-  real_profit_1u: number
+  unavailable_quote_count?: number
+  real_profit_1u: number | null
   real_roi_pct: number | null
   derived_quote_count: number
-  synthetic_profit_1u: number
+  synthetic_profit_1u: number | null
   synthetic_roi_pct: number | null
   competitions_count: number
   confidence_status: string
@@ -1173,16 +1178,19 @@ export type HistoricalRunPurchasabilityAnalytics = {
   is_provisional: boolean
   bands: string[]
   distribution: Record<string, Record<string, unknown>>
+  distribution_role?: string
   by_market: Array<Record<string, unknown>>
+  primary_view?: string
   by_competition: Array<Record<string, unknown>>
   rating_x_purchasability: Array<Record<string, unknown>>
   complete_count: number
   partial_count: number
   unavailable_count: number
-  profile_sample_size: number
-  execution_status: string
-  observation_status: string
+  warning?: string
   note?: string
+  observation_status?: string
+  execution_status?: string
+  profile_sample_size?: number
 }
 
 export type HistoricalRunSignalModelAnalytics = {
@@ -1386,7 +1394,13 @@ export function getHistoricalRunDashboardMarkets(
 export function getHistoricalRunDashboardRatings(
   runId: number,
   filters: HistoricalRunFilters = {},
-): Promise<{ bands: string[]; matrix: HistoricalRunRatingCell[]; note?: string }> {
+): Promise<{
+  bands: string[]
+  matrix: HistoricalRunRatingCell[]
+  note?: string
+  warning?: string
+  analytics_aggregation_version?: string
+}> {
   return dashboardGet(`/api/cecchino-lab/historical-scans/${runId}/dashboard/ratings`, filters)
 }
 

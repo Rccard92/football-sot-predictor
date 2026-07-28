@@ -60,6 +60,7 @@ from app.services.cecchino_data_lab.historical_analytics_agg import (
     signal_meta,
     structural_class,
 )
+from app.services.cecchino_data_lab.revision_resolve import resolve_code_revision
 from app.services.cecchino_data_lab.historical_eligibility import ELIGIBLE_CORE
 from app.services.cecchino_data_lab.historical_scan_service import run_to_dict
 
@@ -534,10 +535,15 @@ def dashboard_overview(db: Session, run_id: int, filters: dict[str, Any]) -> dic
             for mk in MARKET_ORDER
         }
 
+        runtime_rev = resolve_code_revision()
         return {
             "run": _run_meta(run),
             "is_provisional": _is_provisional(run),
             "data_as_of": _utcnow().isoformat(),
+            "scan_source_git_commit": run.source_git_commit,
+            "analytics_runtime_git_commit": runtime_rev.get("git_commit"),
+            "analytics_runtime_git_commit_source": runtime_rev.get("git_commit_source"),
+            "analytics_runtime_revision_status": runtime_rev.get("revision_status"),
             "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
             "filters": filters,
             "kpis": {
@@ -573,7 +579,7 @@ def dashboard_overview(db: Session, run_id: int, filters: dict[str, Any]) -> dic
                 "note": (
                     "Prestazioni osservate su mercati indipendenti. "
                     "Nessun profitto complessivo aggregato. "
-                    "Medie quote null se assenti."
+                    "Medie/profit quote null se assenti."
                 ),
             },
             "progress": {
@@ -803,7 +809,12 @@ def dashboard_ratings(db: Session, run_id: int, filters: dict[str, Any]) -> dict
                         "wins": b["won"],
                         "losses": b["lost"],
                         "hit_rate": b["hit_rate"],
-                        "average_odds": b["average_real_odds"] or b["average_derived_odds"],
+                        "average_odds": (
+                            b["average_real_odds"]
+                            if b["average_real_odds"] is not None
+                            else b["average_derived_odds"]
+                        ),
+                        "unavailable_quote_count": b["unavailable_quote_count"],
                         "real_quote_count": b["real_quote_count"],
                         "real_profit_1u": b["real_profit_1u"],
                         "real_roi_pct": b["real_roi_pct"],
@@ -817,10 +828,21 @@ def dashboard_ratings(db: Session, run_id: int, filters: dict[str, Any]) -> dict
         return {
             "run_id": int(run.id),
             "is_provisional": _is_provisional(run),
+            "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
             "filters": filters,
             "bands": list(RATING_BANDS_DASHBOARD),
             "matrix": matrix,
-            "note": "Fascia alta non implica automaticamente performance migliore.",
+            "primary_view": "market_x_rating_band",
+            "warning": (
+                "I mercati sono valutazioni indipendenti. "
+                "Le performance delle fasce sono confrontabili principalmente "
+                "all'interno dello stesso mercato."
+            ),
+            "note": (
+                "Heatmap primaria mercato × fascia Rating. "
+                "Nessun ROI universale «tutti i mercati». "
+                "Fascia 100 esclusiva. Profit null se quote_count=0."
+            ),
         }
 
     return _cached_or_compute(db, run_id, "ratings", filters, compute)
@@ -876,13 +898,16 @@ def dashboard_purchasability(db: Session, run_id: int, filters: dict[str, Any]) 
         return {
             "run_id": int(run.id),
             "is_provisional": _is_provisional(run),
+            "analytics_aggregation_version": ANALYTICS_AGGREGATION_VERSION,
             "filters": filters,
             "bands": list(PURCH_BANDS_DASHBOARD),
             "distribution": {
                 band: finalize_bucket(by_band.get(band, agg_bucket()))
                 for band in PURCH_BANDS_DASHBOARD
             },
+            "distribution_role": "diagnostic_coverage_counts",
             "by_market": fin_map(by_market_band),
+            "primary_view": "market_x_purchasability_band",
             "by_competition": fin_map(by_comp_band),
             "rating_x_purchasability": fin_map(rating_x_purch),
             "complete_count": complete,
@@ -893,9 +918,15 @@ def dashboard_purchasability(db: Session, run_id: int, filters: dict[str, Any]) 
                 "complete" if complete and not unavailable and not partial else "partial"
             ),
             "observation_status": "observational_only",
+            "warning": (
+                "I mercati sono valutazioni indipendenti. "
+                "Le performance delle fasce sono confrontabili principalmente "
+                "all'interno dello stesso mercato."
+            ),
             "note": (
-                "Acquistabilità osservazionale — non decisione finale di acquisto. "
-                "Profitto reale e sintetico restano separati."
+                "Vista primaria: mercato × fascia Acquistabilità. "
+                "La distribuzione globale è diagnostica (coverage/conteggi), "
+                "non un ROI universale. Profit null se quote_count=0."
             ),
         }
 

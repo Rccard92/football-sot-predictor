@@ -6,8 +6,9 @@ import io
 import json
 import os
 import zipfile
+from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("DATABASE_URL", "postgresql://user:pass@localhost:5432/test")
 
@@ -125,7 +126,7 @@ def _report_fixtures():
         lab_match_id=100,
         competition_name="Serie A",
         season_label="2021/2022",
-        kickoff_at=None,
+        kickoff_at=datetime(2021, 9, 15, 15, 0, tzinfo=timezone.utc),
         chronological_order=0,
         home_team="A",
         away_team="B",
@@ -170,7 +171,10 @@ def _report_fixtures():
         quote_sources_json={"family_1x2": {"family_snapshot_type": "closing"}},
         pre_match_payload_sha256="abc",
         pre_match_locked_at=None,
-        result_json={"fulltime": {"home": 1, "away": 0}},
+        result_json={
+            "fulltime": {"home": 1, "away": 0},
+            "halftime": {"home": 0, "away": 0},
+        },
         settlement_status="settled",
         settlement_summary_json={"markets_analyzed": 14},
         historical_kpi_json={"rows": []},
@@ -400,3 +404,67 @@ def test_partial_modules_still_in_eligible_core_universe():
         cov = json.loads(zf.read("module_coverage.json"))
         assert cov["analysis_sample"] == 2
         assert "pilot_sample_roles" not in cov
+
+
+def test_v2_1_manifest_dual_revision_and_markets_identity():
+    from app.services.cecchino_data_lab.historical_analytics_agg import (
+        ANALYTICS_AGGREGATION_VERSION,
+    )
+
+    run, eligible, partial, market = _report_fixtures()
+    db = MagicMock()
+    db.get.return_value = run
+    db.scalars.return_value.all.side_effect = [[eligible, partial], [market]]
+    with patch(
+        "app.services.cecchino_data_lab.historical_ai_report.resolve_code_revision",
+        return_value={
+            "git_commit": "generatordeadbeef",
+            "git_commit_source": "test",
+            "revision_status": "resolved",
+        },
+    ):
+        _fn, data = build_ai_report_zip_bytes(db, 7, mode="full_archive")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        summary = json.loads(zf.read("summary.json"))
+        row = json.loads(zf.read("markets.jsonl").decode().strip().splitlines()[0])
+    assert manifest["scan_source_git_commit"] == "abc"
+    assert manifest["report_generator_git_commit"] == "generatordeadbeef"
+    assert manifest["source_git_commit"] == "abc"
+    assert manifest["analytics_aggregation_version"] == ANALYTICS_AGGREGATION_VERSION
+    assert ANALYTICS_AGGREGATION_VERSION == "cecchino_lab_analytics_agg_v2_1"
+    ea = summary["eligible_analysis"]
+    assert "rating_by_market" in ea
+    assert "purchasability_by_market" in ea
+    assert "rating_global_distribution_diagnostic" in ea
+    assert "purchasability_global_distribution_diagnostic" in ea
+    assert row["run_id"] == 7
+    assert row["snapshot_id"] == 1
+    assert row["lab_match_id"] == 100
+    assert row["dataset_id"] == 10
+    assert row["competition_name"] == "Serie A"
+    assert row["kickoff_at"] is not None
+    assert "2021-09-15" in row["kickoff_at"]
+    assert row["home_team"] == "A"
+    assert row["away_team"] == "B"
+    assert row["home_score_ft"] == 1
+    assert row["away_score_ft"] == 0
+    assert row["home_score_ht"] == 0
+    assert row["away_score_ht"] == 0
+    assert "cecchino_output_json" not in row
+    assert "picchetti" not in row
+    assert not db.add.called
+    assert not db.commit.called
+
+
+def test_ai_summary_still_excludes_markets_jsonl():
+    run, eligible, partial, market = _report_fixtures()
+    db = MagicMock()
+    db.get.return_value = run
+    db.scalars.return_value.all.side_effect = [[eligible, partial], [market]]
+    _fn, data = build_ai_report_zip_bytes(db, 7, mode="ai_summary")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = set(zf.namelist())
+        assert "markets.jsonl" not in names
+        summary = json.loads(zf.read("summary.json"))
+    assert "rating_by_market" in summary["eligible_analysis"]

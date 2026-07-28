@@ -94,42 +94,10 @@ def _utcnow() -> datetime:
 
 
 def _resolve_source_revision() -> dict[str, str | None]:
-    """Risolve revisione codice: env Railway/CI prima, poi git locale."""
-    env_chain = (
-        ("RAILWAY_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA"),
-        ("SOURCE_VERSION", "SOURCE_VERSION"),
-        ("GIT_COMMIT_SHA", "GIT_COMMIT_SHA"),
-        ("VERCEL_GIT_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA"),
-    )
-    for env_key, source in env_chain:
-        raw = (os.environ.get(env_key) or "").strip()
-        if raw:
-            return {
-                "source_git_commit": raw[:64],
-                "source_git_commit_source": source,
-                "source_revision_status": "resolved",
-            }
-    try:
-        out = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=5,
-        )
-        sha = (out or "").strip()
-        if sha:
-            return {
-                "source_git_commit": sha[:64],
-                "source_git_commit_source": "git_rev_parse",
-                "source_revision_status": "resolved",
-            }
-    except Exception:
-        pass
-    return {
-        "source_git_commit": None,
-        "source_git_commit_source": None,
-        "source_revision_status": "unknown",
-    }
+    """Compat: alias legacy source_* per persistenza run (comportamento invariato)."""
+    from app.services.cecchino_data_lab.revision_resolve import revision_as_source_fields
+
+    return revision_as_source_fields()
 
 
 def _git_commit() -> str | None:
@@ -244,21 +212,13 @@ def _normalize_eligible_per_competition(value: Any) -> int:
 
 
 def _rating_band_for_summary(rating: Any) -> str | None:
+    """Fasce summary run: allineate a rating_band_dashboard (100 esclusivo)."""
+    from app.services.cecchino_data_lab.historical_analytics_agg import rating_band_dashboard
+
     if rating is None:
         return None
-    try:
-        r = float(rating)
-    except (TypeError, ValueError):
-        return None
-    if r < 50:
-        return "lt_50"
-    if r < 60:
-        return "50-59"
-    if r < 70:
-        return "60-69"
-    if r < 80:
-        return "70-79"
-    return "80+"
+    band = rating_band_dashboard(rating)
+    return None if band == "unavailable" else band
 
 
 def _purch_band_for_summary(score: Any) -> str | None:

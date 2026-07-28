@@ -1,26 +1,31 @@
 import ReactECharts from 'echarts-for-react'
-import type { HistoricalRunRatingCell } from '../../../lib/cecchinoLabApi'
+import { formatOdd, type HistoricalRunRatingCell } from '../../../lib/cecchinoLabApi'
 
-type Props = { bands: string[]; matrix: HistoricalRunRatingCell[] }
+type Props = {
+  bands: string[]
+  matrix: HistoricalRunRatingCell[]
+  warning?: string
+}
 
-export function HistoricalRunRatingHeatmap({ bands, matrix }: Props) {
+export function HistoricalRunRatingHeatmap({ bands, matrix, warning }: Props) {
   const markets = [...new Set(matrix.map((c) => c.market_key))]
   const data = matrix.map((c) => {
     const x = bands.indexOf(c.rating_band)
     const y = markets.indexOf(c.market_key)
-    return [x, y, c.hit_rate ?? 0, c]
+    return [x, y, c.hit_rate != null ? c.hit_rate : null, c]
   })
 
   const option = {
     backgroundColor: 'transparent',
     tooltip: {
-      formatter: (p: { data: [number, number, number, HistoricalRunRatingCell] }) => {
+      formatter: (p: { data: [number, number, number | null, HistoricalRunRatingCell] }) => {
         const c = p.data[3]
         return [
           `<b>${c.market_key} · ${c.rating_band}</b>`,
           `N ${c.sample_size} · W ${c.wins} L ${c.losses}`,
           `hit ${c.hit_rate != null ? (c.hit_rate * 100).toFixed(1) : '—'}%`,
-          `ROI reale ${c.real_roi_pct ?? '—'}%`,
+          `odds ${formatOdd(c.average_odds)}`,
+          `ROI reale ${c.real_roi_pct != null ? `${c.real_roi_pct}%` : '—'}`,
           `status ${c.confidence_status}`,
         ].join('<br/>')
       },
@@ -58,8 +63,19 @@ export function HistoricalRunRatingHeatmap({ bands, matrix }: Props) {
     <section>
       <h3 className="mb-2 text-lg font-semibold">Rating Lab</h3>
       <p className="mb-3 text-xs text-[var(--lab-muted)]">
-        Heatmap mercato × fascia Rating. Fascia alta ≠ automaticamente migliore.
+        Heatmap primaria mercato × fascia Rating (fascia <code>100</code> esclusiva). Nessun ROI
+        universale «tutti i mercati».
       </p>
+      {warning ? (
+        <p className="mb-3 text-xs" style={{ color: 'var(--lab-warn)' }}>
+          {warning}
+        </p>
+      ) : (
+        <p className="mb-3 text-xs" style={{ color: 'var(--lab-warn)' }}>
+          I mercati sono valutazioni indipendenti. Le performance delle fasce sono confrontabili
+          principalmente all&apos;interno dello stesso mercato.
+        </p>
+      )}
       <div
         className="rounded-xl border p-2"
         style={{ borderColor: 'var(--lab-border)', background: 'var(--lab-surface)' }}

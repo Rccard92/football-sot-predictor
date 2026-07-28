@@ -34,8 +34,10 @@ Ogni response rilevante espone `analytics_aggregation_version`.
 ## Quote e UI
 
 - KPI / mercati: quote reali, derivate, **non disponibili**
-- Medie odds: `formatOdd` / `â€”` se `null` (mai `0,00` fittizio)
+- Medie odds e profit/ROI: `formatNullableNumber` / `—` se `null` (zero solo se `quote_count > 0`)
 - Contatori: `with_cecchino_probability`, `with_cecchino_fair_quote`, `with_rating`
+- Header: badge Scansione / Analytics / Aggregatore (`scan_source_git_commit` ≠ `analytics_runtime_git_commit`)
+- Rating/Acquistabilità: vista primaria per mercato; warning mercati indipendenti; fascia `100` esclusiva
 
 ## Pattern Radar
 
@@ -59,10 +61,10 @@ I filtri frontend restano in query string (URL condivisibile).
 
 | Path | Contenuto |
 |------|-----------|
-| `GET .../dashboard/overview` | run meta, progress, KPI (reali/derivate/N/D), module coverage, `analytics_aggregation_version`, `is_provisional` |
-| `GET .../dashboard/markets` | 14 mercati indipendenti + unavailable + medie null-safe |
-| `GET .../dashboard/ratings` | matrice mercato Ã— fascia Rating |
-| `GET .../dashboard/purchasability` | fasce granulari + cross |
+| `GET .../dashboard/overview` | run meta, progress, KPI, `scan_source_git_commit`, `analytics_runtime_git_commit*`, `analytics_aggregation_version`, `is_provisional` |
+| `GET .../dashboard/markets` | 14 mercati indipendenti + unavailable + medie/profit null-safe |
+| `GET .../dashboard/ratings` | matrice mercato × fascia Rating + warning indipendenza |
+| `GET .../dashboard/purchasability` | primaria `by_market`; distribuzione globale diagnostica |
 | `GET .../dashboard/signals` | modelli Aâ€“F (F = corrente) |
 | `GET .../dashboard/balance` | 4 pilastri + combinazioni |
 | `GET .../dashboard/goal-intensity` | 4 componenti GI |

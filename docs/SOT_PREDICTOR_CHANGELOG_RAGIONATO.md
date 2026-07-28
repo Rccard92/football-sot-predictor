@@ -1,5 +1,10 @@
 # SOT Predictor — Changelog ragionato
 
+## Fix — Finalize semantics report/dashboard storico (2026-07-28)
+
+- Cosa: bump `cecchino_lab_analytics_agg_v2_1`; dual revision scan vs generator/runtime; profit/ROI/odds null se quote_count=0; fascia Rating `100`; by_market primarie; identity in `markets.jsonl`; FE badge/warning/`—`.
+- Cosa non fa: scan, migration, overwrite Run #3, Today/Betfair/formule.
+
 ## Fix — Harden aggregazioni storiche Cecchino Lab (2026-07-28)
 
 - Perché: report/dashboard mostravano `unavailable_quote_count=0`, conteggi Cecchino ambigui, medie odds a `0.0`, pattern multi-mercato e soglie/stabilità troppo deboli.

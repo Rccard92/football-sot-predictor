@@ -251,4 +251,18 @@ describe('cecchinoLabApi helpers', () => {
     const path = `/cecchino-lab/historical-scans/${runId}`
     expect(path).toBe('/cecchino-lab/historical-scans/42')
   })
+
+  it('null profit/odds format as em dash; zero stays numeric', () => {
+    expect(formatNullableNumber(null)).toBe('—')
+    expect(formatNullableNumber(undefined)).toBe('—')
+    expect(formatNullableNumber(0)).toBe('0.00')
+    expect(formatOdd(null)).toBe('—')
+    expect(formatOdd(1.9)).toBe('1.90')
+  })
+
+  it('rating band 100 is exclusive label in filters', () => {
+    const q = historicalRunFiltersToQuery({ rating_band: '100' })
+    expect(q).toContain('rating_band=100')
+    expect(parseHistoricalRunFiltersFromSearch(q).rating_band).toBe('100')
+  })
 })

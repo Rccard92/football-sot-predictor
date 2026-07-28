@@ -1,5 +1,13 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — finalize semantics report/dashboard (2026-07-28)
+
+1. Aggregatore `cecchino_lab_analytics_agg_v2_1` (read-only, nessuna nuova scan).
+2. Header analisi: badge Scansione ≠ Analytics ≠ Aggregatore.
+3. Report ZIP: `scan_source_git_commit` vs `report_generator_git_commit`; `markets.jsonl` con identity/kickoff/scores.
+4. Rating/Acquistabilità: confronto fasce solo nello stesso mercato.
+5. Doc: `CECCHINO_LAB_AI_REPORT_SCHEMA.md`, `CECCHINO_LAB_RUN_DASHBOARD.md`.
+
 ## Cecchino Lab — dashboard analisi run (2026-07-28)
 
 1. Completata la scansione storica → da **Storico run** cliccare **Apri analisi**.
