@@ -36,6 +36,10 @@ from app.services.cecchino.cecchino_purchasability_v2_snapshot import (
     build_purchasability_comparison,
     index_purchasability_v2_snapshot_by_market,
 )
+from app.services.cecchino.cecchino_purchasability_v3_snapshot import (
+    build_candidate_and_compact_snapshot_v3,
+    index_purchasability_v3_snapshot_by_market,
+)
 from app.services.cecchino.cecchino_selection_keys import (
     SEL_AWAY,
     SEL_DRAW,
@@ -69,6 +73,7 @@ ANALYZABLE_METRICS = (
     "purchasability",
     "purchasability_v1_1",
     "purchasability_v2",
+    "purchasability_v3",
     "purchasability_delta",
 )
 
@@ -84,6 +89,7 @@ _METRIC_LABELS: dict[str, str] = {
     "purchasability": "Acquistabilità v1.1",
     "purchasability_v1_1": "Acquistabilità v1.1",
     "purchasability_v2": "Acquistabilità v2",
+    "purchasability_v3": "Acquistabilità v3",
     "purchasability_delta": "Differenza V2−V1.1",
 }
 
@@ -1571,6 +1577,269 @@ def _explain_purchasability_v2(
     )
 
 
+def _explain_purchasability_v3(
+    row: dict[str, Any],
+    market_label: str,
+    preview_item: dict[str, Any] | None,
+    candidate_item: dict[str, Any] | None,
+    preview_meta: dict[str, Any],
+) -> dict[str, Any]:
+    mk = str(row.get("market_key") or "")
+    formula = (
+        "raw_score = value_score × quality_score / 100; "
+        "score = ROUND_HALF_UP(raw_score) solo se gate = passed"
+    )
+    snap = preview_item or {}
+    cand = candidate_item or {}
+    source = cand if cand else snap
+
+    if not snap and not cand:
+        return _unavailable(
+            market_key=mk,
+            market_label=market_label,
+            metric_key="purchasability_v3",
+            formula_symbolic=formula,
+            inputs=[],
+            reason="Snapshot Acquistabilità v3 assente",
+            formula_version=str(
+                preview_meta.get("formula_version")
+                or preview_meta.get("candidate_version")
+                or "purchasability_v3"
+            ),
+            description=(
+                "Misura quanto del valore Cecchino rimane dopo aver considerato "
+                "rischio e qualità della decisione (scale fisse, senza profilo storico)."
+            ),
+            purpose=(
+                "Indice parallelo osservazionale (v3) — non sostituisce v1.1 né v2."
+            ),
+        )
+
+    gate = source.get("gate") if isinstance(source.get("gate"), dict) else {}
+    gate_status = source.get("gate_status") or gate.get("gate_status")
+    value_score = _num(source.get("value_score"))
+    quality_score = _num(source.get("quality_score"))
+    stored_raw = _num(source.get("raw_score"))
+    stored_score = _num(source.get("score"))
+    penalties = (
+        source.get("penalties") if isinstance(source.get("penalties"), dict) else {}
+    )
+    family = source.get("family") if isinstance(source.get("family"), dict) else {}
+    linked = (
+        source.get("linked_market_context")
+        if isinstance(source.get("linked_market_context"), dict)
+        else None
+    )
+    inp = source.get("input") if isinstance(source.get("input"), dict) else {}
+
+    inputs = [
+        _input(
+            key="gate_status",
+            label="Gate valore",
+            value=gate_status,
+            display_value=str(gate_status or "—"),
+            source_path="purchasability_preview_v3.items[].gate_status",
+        ),
+        _input(
+            key="edge_pct",
+            label="Edge %",
+            value=inp.get("edge_pct") if inp else row.get("edge_pct"),
+            display_value=_fmt_it(inp.get("edge_pct") if inp else row.get("edge_pct")),
+            source_path="kpi_panel.rows[].edge_pct",
+        ),
+        _input(
+            key="value_score",
+            label="Value score",
+            value=value_score,
+            display_value=_fmt_it(value_score),
+            source_path="purchasability_preview_v3.items[].value_score",
+        ),
+        _input(
+            key="quality_score",
+            label="Quality score",
+            value=quality_score,
+            display_value=_fmt_it(quality_score),
+            source_path="purchasability_preview_v3.items[].quality_score",
+        ),
+        _input(
+            key="total_penalty",
+            label="Penalità totali",
+            value=source.get("total_penalty"),
+            display_value=_fmt_it(source.get("total_penalty")),
+            source_path="purchasability_preview_v3.items[].total_penalty",
+        ),
+        _input(
+            key="candidate_version",
+            label="Candidate version",
+            value=preview_meta.get("candidate_version") or source.get("candidate_version"),
+            display_value=str(
+                preview_meta.get("candidate_version")
+                or source.get("candidate_version")
+                or "—"
+            ),
+            source_path="purchasability_preview_v3.candidate_version",
+        ),
+    ]
+
+    applied: list[str] = []
+    audit_raw = None
+    if gate_status == "passed" and value_score is not None and quality_score is not None:
+        audit_raw = value_score * quality_score / 100.0
+        applied = [
+            f"value_score = {_fmt_it(value_score)}",
+            f"quality_score = {_fmt_it(quality_score)}",
+            f"raw_score = {_fmt_it(value_score)} × {_fmt_it(quality_score)} / 100 = {_fmt_it(audit_raw, 4)}",
+            f"score = ROUND_HALF_UP({_fmt_it(audit_raw, 4)}) = {int(stored_score) if stored_score is not None else '—'}",
+        ]
+    elif gate_status and gate_status != "passed":
+        applied = [
+            f"gate = {gate_status}",
+            "score = null (indice non attivato)",
+        ]
+    else:
+        applied = ["Dati V3 incompleti per verifica formula"]
+
+    extra = {
+        "what_it_measures": (
+            "Tra le quote con valore Cecchino, quanto di quel valore rimane "
+            "dopo rischio e qualità della decisione."
+        ),
+        "audit_badges": [
+            "V3 parallela",
+            "Scale fisse",
+            "Nessun profilo storico",
+            "Pre-match",
+        ],
+        "gate": gate or {
+            "gate_status": gate_status,
+            "gate_reason_codes": source.get("gate_reason_codes"),
+        },
+        "value": {
+            "value_score": value_score,
+            "value_formula": source.get("value_formula"),
+            "value_full_score_edge_pct": source.get("value_full_score_edge_pct"),
+            "value_explanation": source.get("value_explanation"),
+        },
+        "quality": {
+            "quality_start": source.get("quality_start"),
+            "quality_score": quality_score,
+            "total_penalty": source.get("total_penalty"),
+        },
+        "penalties_table": penalties,
+        "family_comparison": family,
+        "opposite_market": {
+            "opposite_market_key": source.get("opposite_market_key"),
+            "opposite_fair_probability": source.get("opposite_fair_probability"),
+            "opposite_raw_probability": source.get("opposite_raw_probability"),
+            "opposite_pressure_status": source.get("opposite_pressure_status"),
+            "opposite_pressure_penalty": source.get("opposite_pressure_penalty"),
+        },
+        "linked_market_context": linked,
+        "final_calculation": {
+            "raw_score": stored_raw,
+            "score": stored_score,
+            "class": source.get("class"),
+            "formula_steps": source.get("formula_steps"),
+        },
+        "persisted_result": {
+            "score": snap.get("score"),
+            "class": snap.get("class"),
+            "gate_status": snap.get("gate_status"),
+        },
+        "data_origin": {
+            "source_paths": source.get("source_paths"),
+            "pre_match_only": True,
+            "historical_profile_used": False,
+            "fixed_scales_used": True,
+            "parallel_candidate": True,
+            "current_operational_version": False,
+        },
+        "simple_explanation": source.get("reading_detailed") or source.get("reading_short"),
+        "reading_short": source.get("reading_short"),
+        "reading_detailed": source.get("reading_detailed"),
+        "strengths": source.get("strengths"),
+        "risks": source.get("risks"),
+        "dependency_meta": source.get("dependency_meta"),
+        "input": inp,
+        "score_acquisto_used": False,
+        "rating_used_in_score": False,
+        "probability_advantage_used_as_weight": False,
+        "historical_profile_used": False,
+        "linked_markets_used_in_score": False,
+    }
+
+    status = str(source.get("status") or "unavailable")
+    if stored_score is None and status in ("not_applicable", "unavailable"):
+        return _base_explanation(
+            market_key=mk,
+            market_label=market_label,
+            metric_key="purchasability_v3",
+            status="unavailable" if status == "unavailable" else "partial",
+            calculation_type="purchasability_v3_candidate",
+            description=(
+                "Acquistabilità v3 non attivata o non disponibile per questo mercato."
+            ),
+            purpose="Indice parallelo osservazionale (v3).",
+            formula_symbolic=formula,
+            formula_applied=applied + [f"status = {status}"],
+            inputs=inputs,
+            stored_result=None,
+            stored_result_display=(
+                "Indice non attivato"
+                if status == "not_applicable"
+                else "—"
+            ),
+            audit_result=audit_raw,
+            consistency={"status": "unavailable", "delta": None},
+            rounding={"policy": "ROUND_HALF_UP", "precision": 0, "display_precision": 0},
+            formula_version=str(
+                preview_meta.get("formula_version")
+                or source.get("formula_version")
+                or "purchasability_v3"
+            ),
+            warnings=list(source.get("warnings") or source.get("reason_codes") or []),
+            extra=extra,
+        )
+
+    cons = (
+        _consistency(stored_raw, audit_raw, abs_tol=0.01, rounding_tol=0.05)
+        if audit_raw is not None and stored_raw is not None
+        else {"status": "not_verifiable", "delta": None}
+    )
+
+    return _base_explanation(
+        market_key=mk,
+        market_label=market_label,
+        metric_key="purchasability_v3",
+        status="available" if stored_score is not None else "partial",
+        calculation_type="purchasability_v3_candidate",
+        description=(
+            "Misura quanto del valore Cecchino rimane dopo rischio e qualità "
+            "(value × quality / 100, scale fisse)."
+        ),
+        purpose="Indice parallelo osservazionale (v3) — non sostituisce v1.1 né v2.",
+        formula_symbolic=formula,
+        formula_applied=applied,
+        inputs=inputs,
+        stored_result=int(stored_score) if stored_score is not None else None,
+        stored_result_display=(
+            f"{int(stored_score)} ({source.get('class') or '—'})"
+            if stored_score is not None
+            else "—"
+        ),
+        audit_result=round(audit_raw, 4) if audit_raw is not None else None,
+        consistency=cons,
+        rounding={"policy": "ROUND_HALF_UP", "precision": 0, "display_precision": 0},
+        formula_version=str(
+            preview_meta.get("formula_version")
+            or source.get("formula_version")
+            or "purchasability_v3"
+        ),
+        warnings=list(source.get("warnings") or source.get("reason_codes") or []),
+        extra=extra,
+    )
+
+
 def _explain_purchasability_delta(
     row: dict[str, Any],
     market_label: str,
@@ -1841,6 +2110,50 @@ def _rebuild_purchasability_v2_candidate(
         return None, preview
 
 
+def _rebuild_purchasability_v3_candidate(
+    row: CecchinoTodayFixture,
+    kpi_panel: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Rebuild in-memory v3 (nessuna scrittura DB). Preferisce snapshot persistito."""
+    preview: dict[str, Any] = {}
+    output = row.cecchino_output_json if isinstance(row.cecchino_output_json, dict) else {}
+    if isinstance(output.get("purchasability_preview_v3"), dict):
+        preview = output["purchasability_preview_v3"]
+
+    fixture_meta = {
+        "today_fixture_id": int(row.id),
+        "local_fixture_id": int(row.local_fixture_id) if row.local_fixture_id else None,
+        "provider_fixture_id": int(row.provider_fixture_id) if row.provider_fixture_id else None,
+        "home_team": row.home_team_name,
+        "away_team": row.away_team_name,
+        "kickoff": row.kickoff.isoformat() if row.kickoff else None,
+        "competition_id": row.competition_id,
+        "scan_date": row.scan_date.isoformat() if row.scan_date else None,
+    }
+    snapshot_info = None
+    odds = row.odds_snapshot_json if isinstance(row.odds_snapshot_json, dict) else {}
+    meta = odds.get("odds_meta") if isinstance(odds.get("odds_meta"), dict) else {}
+    if meta:
+        snapshot_info = {
+            "snapshot_at": meta.get("odds_fetched_at") or meta.get("snapshot_at"),
+            "snapshot_timestamp_verified": True,
+            "snapshot_before_kickoff": True,
+        }
+
+    try:
+        candidate, derived_snap = build_candidate_and_compact_snapshot_v3(
+            kpi_panel=kpi_panel,
+            fixture_meta=fixture_meta,
+            snapshot_info=snapshot_info,
+            source_mode="kpi_explanations_audit",
+        )
+        if not preview:
+            preview = derived_snap
+        return candidate, preview
+    except Exception:  # noqa: BLE001
+        return None, preview
+
+
 def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, Any]:
     """Assembla il payload audit per una fixture eleggibile."""
     raw_panel = row.kpi_panel_json
@@ -1921,6 +2234,29 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
             "normalization_profile_cutoff"
         )
 
+    candidate_v3, preview_v3 = _rebuild_purchasability_v3_candidate(row, kpi_panel)
+    preview_v3_index = (
+        index_purchasability_v3_snapshot_by_market(preview_v3) if preview_v3 else {}
+    )
+    candidate_v3_index: dict[str, dict[str, Any]] = {}
+    if isinstance(candidate_v3, dict):
+        for it in candidate_v3.get("items") or []:
+            if isinstance(it, dict) and it.get("market_key"):
+                candidate_v3_index[str(it["market_key"])] = it
+
+    preview_v3_meta = {
+        "candidate_version": preview_v3.get("candidate_version") if preview_v3 else None,
+        "candidate_name": preview_v3.get("candidate_name") if preview_v3 else None,
+        "snapshot_version": preview_v3.get("snapshot_version") if preview_v3 else None,
+        "formula_version": preview_v3.get("formula_version") if preview_v3 else None,
+        "audit_version": preview_v3.get("audit_version") if preview_v3 else None,
+    }
+    if candidate_v3 and not preview_v3_meta.get("candidate_version"):
+        preview_v3_meta["candidate_version"] = candidate_v3.get("candidate_version")
+        preview_v3_meta["candidate_name"] = candidate_v3.get("candidate_name")
+        preview_v3_meta["formula_version"] = candidate_v3.get("formula_version")
+        preview_v3_meta["audit_version"] = candidate_v3.get("audit_version")
+
     comparison = build_purchasability_comparison(
         preview if isinstance(preview, dict) else None,
         preview_v2 if isinstance(preview_v2, dict) else None,
@@ -1976,6 +2312,13 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
                 preview_v2_meta,
                 comparison_item=comparison_items.get(mk),
             )
+            market_explanations["purchasability_v3"] = _explain_purchasability_v3(
+                r,
+                label,
+                preview_v3_index.get(mk),
+                candidate_v3_index.get(mk),
+                preview_v3_meta,
+            )
             market_explanations["purchasability_delta"] = _explain_purchasability_delta(
                 r,
                 label,
@@ -2023,6 +2366,7 @@ def build_kpi_explanations(row: CecchinoTodayFixture, db: Session) -> dict[str, 
             "cecchino_output_source": "cecchino_output_json",
             "purchasability_preview_present": bool(preview),
             "purchasability_preview_v2_present": bool(preview_v2),
+            "purchasability_preview_v3_present": bool(preview_v3),
             "historical_reliability_markets": len(hr_by_market),
             "read_only": True,
             "db_writes": False,

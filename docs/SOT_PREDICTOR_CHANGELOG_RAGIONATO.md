@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Acquistabilità v3 candidate engine (2026-07-29)
+
+- Perché: serve un indice parallelo che distingua esistenza del valore, forza (Edge), penalità di rischio/qualità e score finale, senza doppio conteggio né profilo storico V2.
+- Cosa: motore `fixed_discount_v3` (schema/candidate/opposition/snapshot); gate → score null; `value×quality/100`; famiglie separate; snapshot `purchasability_preview_v3`; audit `purchasability_v3`; test + doc.
+- Cosa non fa: non modifica V1.1/V2/frontend; nessuna migration, backfill, scansione, replay Run #3; non promuove V3 a operativa.
+
 ## Fix — Export Acquistabilità storica compatto (2026-07-29)
 
 - Cosa: `historical_purchasability_export` + compact/decisions/drift/profiles; semantica gate vs score zero; diagnostic ungated read-only; bump agg `v2_3` + schema export `v1`; dashboard 4 viste; test/doc.

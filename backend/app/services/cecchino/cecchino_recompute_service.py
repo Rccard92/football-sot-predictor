@@ -25,6 +25,9 @@ from app.services.cecchino.cecchino_purchasability_snapshot import (
 from app.services.cecchino.cecchino_purchasability_v2_snapshot import (
     attach_purchasability_preview_v2_to_output,
 )
+from app.services.cecchino.cecchino_purchasability_v3_snapshot import (
+    attach_purchasability_preview_v3_to_output,
+)
 from app.services.cecchino.cecchino_balance_v5_monitoring import (
     attach_balance_v5_monitoring_to_output,
 )
@@ -226,6 +229,35 @@ def recompute_today_fixture_offline(
                 existing_prev_v2 if isinstance(existing_prev_v2, dict) else None
             ),
             db=db,
+        )
+    except Exception:
+        pass
+    existing_prev_v3 = None
+    if isinstance(row.cecchino_output_json, dict):
+        existing_prev_v3 = row.cecchino_output_json.get("purchasability_preview_v3")
+    try:
+        attach_purchasability_preview_v3_to_output(
+            cecchino_output=cecchino_output,
+            kpi_panel=kpi_panel,
+            fixture_meta={
+                "today_fixture_id": int(row.id),
+                "local_fixture_id": row.local_fixture_id,
+                "provider_fixture_id": row.provider_fixture_id,
+                "competition_id": row.competition_id,
+                "scan_date": row.scan_date,
+                "kickoff": row.kickoff,
+            },
+            snapshot_info={
+                "snapshot_at": snap_at,
+                "snapshot_source": snap_src,
+                "snapshot_fidelity": (
+                    "verified_panel_odds_meta" if snap_verified else "missing"
+                ),
+                "snapshot_timestamp_verified": snap_verified,
+            },
+            existing_preview_v3=(
+                existing_prev_v3 if isinstance(existing_prev_v3, dict) else None
+            ),
         )
     except Exception:
         pass

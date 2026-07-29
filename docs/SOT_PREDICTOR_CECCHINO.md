@@ -271,6 +271,19 @@ Modalità umana sul Pannello KPI Today (impatto nullo a riposo):
 | Lab | non toccato |
 
 History guard: `evaluate_purchasability_v2_historical_source` — rifiuta non eligible, KPI mancanti, `updated_at` fallback, kickoff mancante, `snapshot_at >= kickoff`. Formula v2 invariata.
+
+## Acquistabilità v3 — parallela osservazionale (2026-07-29)
+
+| Campo | Valore |
+|-------|--------|
+| v1.1 / v2 | invariate (`purchasability_preview` / `purchasability_preview_v2`) |
+| v3 parallela | `cecchino_purchasability_v3_candidate_1` / `fixed_discount_v3` → `purchasability_preview_v3` |
+| Formula | `value × quality / 100` (ROUND_HALF_UP); scale fisse; nessun profilo storico |
+| Gate | Edge e vantaggio entrambi > 0; altrimenti `score=null`, `not_applicable` |
+| Famiglie | MATCH_WINNER_FT / GOALS_FT_2_5 / DOUBLE_CHANCE separate |
+| UI STEP 1 | nessun frontend; audit backend `metric_key=purchasability_v3` |
+| Promozione | non operativa; serve replay storico (STEP 3) |
+
 ## Acquistabilità — FASE 5/5 validazione prospettica (2026-07-19)
 
 | Campo | Valore |

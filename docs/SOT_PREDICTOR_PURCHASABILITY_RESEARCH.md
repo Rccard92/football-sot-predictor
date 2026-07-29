@@ -9,6 +9,30 @@ Modulo **indipendente** dal Rating. Risponde a: *quanto il valore individuato da
 | **AFFIDABILITÀ STORICA** | Misura il comportamento storico dello stesso mercato e della stessa fascia Rating (Win Rate, ROI, margine vs break-even, stabilità, numerosità). |
 | **ACQUISTABILITÀ v1.1** | Misura quanto il valore individuato dal Cecchino è sostenuto dal contesto statistico e probabilistico della partita e dei mercati opposti (`balanced_geometric_v1_1`). |
 | **ACQUISTABILITÀ v2** | Indice decisionale parallelo (`decision_quality_v2`): valore assoluto (Rating/Edge/Vantaggio) × qualità della decisione (dominanze, shift Book→Cecchino, contrasto opposto), con normalizzazione storica congelata. |
+| **ACQUISTABILITÀ v3** | Candidato parallelo osservazionale (`fixed_discount_v3`): gate valore positivo → value score da Edge (scala fissa) scontato da penalità di qualità reali; nessuna media geometrica, nessun profilo storico. |
+
+## Acquistabilità v3 — fixed_discount_v3 (2026-07-29)
+
+Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è ancora operativa/promossa.
+
+| Campo | Valore |
+|-------|--------|
+| Candidate | `cecchino_purchasability_v3_candidate_1` / `fixed_discount_v3` |
+| Formula | `cecchino_purchasability_v3_fixed_discount_v1` |
+| Audit | `cecchino_purchasability_v3_audit_v1` |
+| Snapshot | `cecchino_purchasability_snapshot_v3` |
+| Persistenza | `cecchino_output_json.purchasability_preview_v3` |
+| Gate | Edge e vantaggio entrambi disponibili e > 0; fallimento → `score=null`, `class=null`, `status=not_applicable` |
+| Value | `clamp(edge_pct / 50 × 100, 0, 100)` — sola base del valore |
+| Quality | `100 − Σ penalità` (probabilità, opposto fair, divergenza fragile, ambiguità famiglia, quota derivata) |
+| Finale | `score = ROUND_HALF_UP(value × quality / 100)` — **non** √(v×q) |
+| Scale | fisse versionate; `historical_profile_used=false`, `fixed_scales_used=true` |
+| Famiglie | `MATCH_WINNER_FT`, `GOALS_FT_2_5`, `DOUBLE_CHANCE` separate (AWAY ≠ X_TWO) |
+| DC collegata | solo `linked_market_context` diagnostico (`used_in_score=false`) |
+| Non usa | Rating/vantaggio come pesi, Score Acquisto, percentili, caps storici, profilo V2 |
+| Promozione | richiede replay storico dedicato (STEP 3) prima di qualsiasi promozione |
+
+Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 
 ## Acquistabilità v2 — decision_quality_v2 (2026-07-27)
 

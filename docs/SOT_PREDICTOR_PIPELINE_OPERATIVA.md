@@ -124,8 +124,15 @@ flowchart TD
 2. Pulsante testata `ƒx Analisi formule` → una sola `GET /api/cecchino/today/{id}/kpi-explanations` (cache in memoria per fixture).
 3. Celle cliccabili: Quota Cecchino, Prob. Book/Cecchino, Vant. Prob., Edge, Score, Rating, Affidabilità, Acq. v1.1, Acq. v2, Δ V2−V1.1 (alias `purchasability` = v1.1).
 4. Non cliccabili: SEGNO, QUOTA BOOK.
-5. `Scarica audit KPI` → JSON `cecchino-kpi-audit-{provider_fixture_id}.json` (lazy load se non ancora caricato; include v1.1 + v2 + delta).
-6. Fonte: snapshot persistiti + Affidabilità canonica; niente rebuild Cecchino/Balance/GI/Signals. v2 derivabile read-only se snapshot assente.
+5. `Scarica audit KPI` → JSON `cecchino-kpi-audit-{provider_fixture_id}.json` (lazy load se non ancora caricato; include v1.1 + v2 + v3 + delta).
+6. Fonte: snapshot persistiti + Affidabilità canonica; niente rebuild Cecchino/Balance/GI/Signals. v2/v3 derivabili read-only se snapshot assente.
+
+## Acquistabilità v3 — freeze parallelo (2026-07-29)
+
+1. Scan/recompute: dopo attach v1.1 e v2 → `attach_purchasability_preview_v3_to_output` (fail-soft; solo `purchasability_preview_v3`).
+2. Nessun backfill automatico in questo step; nessuna migration; nessun frontend.
+3. Audit: `metric_key=purchasability_v3` in `kpi-explanations`.
+4. Non promuovere a colonna operativa finché non esiste replay storico dedicato.
 
 ## Acquistabilità v2 — backfill manuale (2026-07-27)
 

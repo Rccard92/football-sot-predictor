@@ -19,9 +19,11 @@ def test_analyzable_metrics_include_v2_keys():
     assert "purchasability" in ANALYZABLE_METRICS
     assert "purchasability_v1_1" in ANALYZABLE_METRICS
     assert "purchasability_v2" in ANALYZABLE_METRICS
+    assert "purchasability_v3" in ANALYZABLE_METRICS
     assert "purchasability_delta" in ANALYZABLE_METRICS
     assert _METRIC_LABELS["purchasability"] == "Acquistabilità v1.1"
     assert _METRIC_LABELS["purchasability_v2"] == "Acquistabilità v2"
+    assert _METRIC_LABELS["purchasability_v3"] == "Acquistabilità v3"
 
 
 def test_explain_v1_1_alias_label():

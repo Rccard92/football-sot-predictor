@@ -164,6 +164,10 @@ Portal export (no clipping); export globale hero; `rows.csv`; Balance settled⊆
 
 Workspace `/monitoraggio-moduli`: Acquistabilità, Balance v5, Goal Intensity v5, Segnali. Overview + analysis-pack ZIP. Redirect laboratori legacy. Segnali KPI senza tab Acquistabilità. Formule invariate. Next: Fase 2/3 validazione empirica Balance v5.
 
+## Acquistabilità v3 — fixed discount parallelo (2026-07-29)
+
+`fixed_discount_v3` (`cecchino_purchasability_v3_candidate_1`) è un candidato **parallelo osservazionale**. Non sostituisce v1.1 né v2. Snapshot: `purchasability_preview_v3`. Gate valore positivo → score null se fallisce. Value solo da Edge (scala fissa /50); qualità come sconto da penalità reali; formula `value×quality/100`. Nessun profilo storico, nessun percentile. Frontend non ancora aggiornato (STEP 2). Replay storico richiesto prima della promozione (STEP 3). Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.
+
 ## Acquistabilità v2 — Indice decisionale parallelo (2026-07-27)
 
 `decision_quality_v2` (`cecchino_purchasability_v2_candidate_1`) è un indice **parallelo** alla v1.1. Non sostituisce `balanced_geometric_v1_1` né la validation pipeline. Snapshot separato: `cecchino_output_json.purchasability_preview_v2`. Normalizzazione storica congelata (`cecchino_purchasability_v2_norm_profile_2026_07_26_v2`, cutoff `scan_date <= 2026-07-26`): solo fixture `eligible` con timestamp snapshot verificato e `snapshot_at < kickoff` (`updated_at` non è prova pre-match). UI KPI: colonne Acq. V1.1 / Acq. V2 con sottoriga osservazionale sample/ROI (validation settled); senza Δ né chip Globale sotto Affidabilità. Backfill manuale: default dry-run non scrivente; `--apply` + token solo dopo guardie. Formula v2 invariata. Cecchino Lab non modificato. Vedi `SOT_PREDICTOR_PURCHASABILITY_RESEARCH.md`.

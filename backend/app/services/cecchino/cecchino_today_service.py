@@ -118,6 +118,10 @@ from app.services.cecchino.cecchino_purchasability_v2_snapshot import (
     build_purchasability_comparison,
     resolve_purchasability_preview_v2_for_detail,
 )
+from app.services.cecchino.cecchino_purchasability_v3_snapshot import (
+    attach_purchasability_preview_v3_to_output,
+    resolve_purchasability_preview_v3_for_detail,
+)
 from app.services.cecchino.cecchino_balance_v5_monitoring import (
     attach_balance_v5_monitoring_to_output,
 )
@@ -1463,6 +1467,47 @@ def run_scan(
                 except Exception:
                     # v2 non bloccante: non invalida eleggibilità né v1.1
                     pass
+                existing_prev_v3 = None
+                if existing_row is not None and isinstance(
+                    existing_row.cecchino_output_json, dict
+                ):
+                    existing_prev_v3 = existing_row.cecchino_output_json.get(
+                        "purchasability_preview_v3"
+                    )
+                try:
+                    attach_purchasability_preview_v3_to_output(
+                        cecchino_output=cecchino_output,
+                        kpi_panel=kpi_panel,
+                        fixture_meta={
+                            "today_fixture_id": (
+                                int(existing_row.id)
+                                if existing_row is not None
+                                else None
+                            ),
+                            "local_fixture_id": int(local_fx.id),
+                            "provider_fixture_id": api_fid,
+                            "competition_id": int(comp.id),
+                            "scan_date": resolved_date,
+                            "kickoff": getattr(local_fx, "kickoff", None)
+                            or (item.get("fixture") or {}).get("date"),
+                        },
+                        snapshot_info={
+                            "snapshot_at": snap_at,
+                            "snapshot_source": snap_src,
+                            "snapshot_fidelity": (
+                                "verified_panel_odds_meta"
+                                if snap_verified
+                                else "missing"
+                            ),
+                            "snapshot_timestamp_verified": snap_verified,
+                        },
+                        existing_preview_v3=existing_prev_v3
+                        if isinstance(existing_prev_v3, dict)
+                        else None,
+                    )
+                except Exception:
+                    # v3 non bloccante: non invalida eleggibilità né v1.1/v2
+                    pass
                 existing_bal = None
                 if existing_row is not None and isinstance(
                     existing_row.cecchino_output_json, dict
@@ -2316,6 +2361,10 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
         db=db,
     )
+    purch_v3 = resolve_purchasability_preview_v3_for_detail(
+        row=row,
+        kpi_panel=kpi_panel if isinstance(kpi_panel, dict) else None,
+    )
     try:
         from app.services.cecchino.cecchino_purchasability_observational import (
             build_observational_maps_for_previews,
@@ -2367,6 +2416,7 @@ def get_today_fixture_detail(db: Session, today_fixture_id: int) -> dict[str, An
         "expected_goal_engine_diagnostics": expected_goal_engine_diagnostics,
         "purchasability_preview": purch_v1,
         "purchasability_preview_v2": purch_v2,
+        "purchasability_preview_v3": purch_v3,
         "purchasability_observational_v1_1": obs_v1,
         "purchasability_observational_v2": obs_v2,
         "purchasability_comparison": build_purchasability_comparison(
