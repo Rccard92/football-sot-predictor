@@ -265,6 +265,15 @@ describe('cecchinoLabApi helpers', () => {
     expect(path).toBe('/cecchino-lab/historical-scans/42')
   })
 
+  it('purchasability v3 replay preflight endpoint is read-only lab path', () => {
+    const runId = 3
+    const path = `/api/cecchino-lab/historical-scans/${runId}/purchasability-v3-replay/preflight`
+    expect(path).toBe(
+      '/api/cecchino-lab/historical-scans/3/purchasability-v3-replay/preflight',
+    )
+    expect(path).not.toContain('/admin/')
+  })
+
   it('null profit/odds format as em dash; zero stays numeric', () => {
     expect(formatNullableNumber(null)).toBe('—')
     expect(formatNullableNumber(undefined)).toBe('—')

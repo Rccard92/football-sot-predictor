@@ -1,5 +1,13 @@
 ﻿# SOT Predictor — Pipeline operativa Cecchino Today
 
+## Cecchino Lab — preflight replay Acquistabilità V3 STEP 3A (2026-07-29)
+
+1. Aprire run storico `/cecchino-lab/historical-scans/:runId` (es. Run #3).
+2. Nella sezione **Replay Acquistabilità** cliccare **Verifica replay Acquistabilità** (nessuna auto-fetch).
+3. API read-only: `GET /api/cecchino-lab/historical-scans/{id}/purchasability-v3-replay/preflight`.
+4. Interpretare `ready` / `ready_with_warnings` / `blocked` + workload/quote/integrità/performance.
+5. **Non** avviare ancora il replay completo (STEP 3B). Nessuna nuova scansione.
+
 ## Cecchino Lab — finalize semantics report/dashboard (2026-07-28)
 
 1. Aggregatore `cecchino_lab_analytics_agg_v2_3` + export segnali `cecchino_lab_signal_export_v1` + export Acquistabilità `cecchino_lab_purchasability_export_v1` (read-only, nessuna nuova scan).

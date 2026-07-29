@@ -1,5 +1,11 @@
 # SOT Predictor — Changelog ragionato
 
+## Feat — Preflight replay Acquistabilità V3 (STEP 3A) (2026-07-29)
+
+- Perché: capire se Run storici (es. #3) hanno già tutti gli input pre-match per ricalcolare V3 senza nuova scansione.
+- Cosa: servizio/endpoint/UI read-only; classificazione exact/warning/gate-only; quote real/derived; fair checks; adapter contract; probe max 30; cache 300s.
+- Cosa non fa: nessun replay completo, migration, job, export V3, overwrite Run #3; motore V3/V2/export V2 invariati.
+
 ## Feat — Promote purchasability v3 UI (2026-07-29)
 
 - Perché: rendere V3 l’unica Acquistabilità visibile nel Pannello KPI e semplificare il popup senza toccare le formule.

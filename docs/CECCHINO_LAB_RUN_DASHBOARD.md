@@ -1,10 +1,20 @@
-﻿# Cecchino Lab â€” Dashboard analisi run storico
+﻿# Cecchino Lab — Dashboard analisi run storico
+
+## STEP 3A — Replay Acquistabilità V3 preflight (2026-07-29)
+
+Sulla pagina run, **dopo** la sezione Acquistabilità (export V2 osservazionale), compare «Replay Acquistabilità»:
+
+- Nessuna fetch all’apertura
+- Pulsante **Verifica replay Acquistabilità** → `GET .../purchasability-v3-replay/preflight`
+- Stati: Pronto / Pronto con avvisi / Bloccato
+- Nessun pulsante Avvia replay, polling, download o stima tempi
+- Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`; motore V3 e export V2 invariati
 
 ## Obiettivo
 
 Dashboard **read-only** per visualizzare e analizzare ogni run storico del Cecchino Lab (pilota, bilanciato, completo, attivo, fallito, cancellato).
 
-Legge esclusivamente tabelle `cecchino_lab_*` giÃ  persistite. **Non** riesegue scan, settlement, formule, nÃ© scrive snapshot/`summary_json`.
+Legge esclusivamente tabelle `cecchino_lab_*` già persistite. **Non** riesegue scan, settlement, formule, né scrive snapshot/`summary_json`.
 
 ## Isolamento
 

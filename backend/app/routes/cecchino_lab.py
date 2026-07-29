@@ -56,6 +56,9 @@ from app.services.cecchino_data_lab.historical_run_analytics_service import (
     list_dashboard_matches,
     parse_dashboard_filters,
 )
+from app.services.cecchino_data_lab.historical_purchasability_v3_replay_preflight import (
+    run_purchasability_v3_replay_preflight,
+)
 
 router = APIRouter(prefix="/cecchino-lab", tags=["cecchino-lab"])
 admin_router = APIRouter(prefix="/admin/cecchino-lab", tags=["admin-cecchino-lab"])
@@ -780,6 +783,27 @@ def historical_run_dashboard_purchasability(
         )
     except CecchinoLabImportError as exc:
         return _dashboard_error(exc)
+
+
+@router.get("/historical-scans/{run_id}/purchasability-v3-replay/preflight")
+def historical_purchasability_v3_replay_preflight(
+    run_id: int,
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Preflight read-only replay Acquistabilità V3 (STEP 3A). Nessuna scrittura DB."""
+    try:
+        result = run_purchasability_v3_replay_preflight(db, run_id)
+    except CecchinoLabImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "error": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+            },
+        )
+    return JSONResponse(content=jsonable_encoder(result))
 
 
 @router.get("/historical-scans/{run_id}/dashboard/signals")

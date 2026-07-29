@@ -1846,6 +1846,147 @@ export function getHistoricalRunDashboardPurchasability(
   )
 }
 
+export type HistoricalPurchasabilityV3ReplayIssueExample = {
+  code?: string
+  message?: string
+  snapshot_id?: number
+  market_key?: string
+  competition_name?: string
+  score_replay_status?: string
+  performance_evaluation_status?: string
+  [key: string]: string | number | boolean | null | undefined
+}
+
+export type HistoricalPurchasabilityV3ReplayMarketCoverage = {
+  eligible_rows: number
+  exact_replay_ready: number
+  ready_with_warning: number
+  gate_only_ready: number
+  not_replayable: number
+  invalid_pre_match_integrity?: number
+  ambiguous_market_join?: number
+  quote_real: number
+  quote_derived: number
+  quote_unavailable: number
+  quote_inconsistent?: number
+  performance_real_ready: number
+  performance_synthetic_ready: number
+  performance_result_without_profit?: number
+  performance_not_applicable?: number
+}
+
+export type HistoricalPurchasabilityV3ReplayFamilyCoverage = {
+  snapshots_with_full_family: number
+  snapshots_with_partial_family: number
+  snapshots_with_missing_family: number
+  exact_replay_ready: number
+  ready_with_warning: number
+  not_replayable: number
+  family_decisions_theoretical: number
+}
+
+export type HistoricalPurchasabilityV3ReplayPreflight = {
+  schema_version: string
+  status: 'ready' | 'ready_with_warnings' | 'blocked' | string
+  generated_at: string
+  cache_hit?: boolean
+  run: {
+    run_id: number
+    season_label: string
+    status: string
+    run_scope?: string | null
+    is_partial_run?: boolean
+    not_full_season_report?: boolean
+    completed_at?: string | null
+    source_git_commit?: string | null
+    source_revision_status?: string | null
+    scan_version?: string
+  }
+  formula: {
+    candidate_version: string
+    formula_version: string
+    audit_version: string
+    runtime_git_commit?: string | null
+    runtime_git_commit_source?: string | null
+    historical_profile_used: boolean
+    fixed_scales_used: boolean
+  }
+  bookmakers: {
+    historical: string
+    today_operational: string
+    providers_are_different: boolean
+    bookmaker_parity_status?: string
+    formula_provider_dependency?: string
+  }
+  source_integrity: {
+    snapshots_total?: number
+    snapshots_eligible_core?: number
+    snapshots_excluded?: number
+    exclusions_by_reason?: Record<string, number>
+    with_pre_match_hash?: number
+    with_pre_match_lock?: number
+    lock_before_kickoff?: number
+    invalid_lock_timestamp?: number
+    duplicate_market_keys?: number
+  }
+  workload: {
+    supported_markets_per_snapshot: number
+    theoretical_evaluations: number
+    market_rows_found?: number
+    exact_replay_ready: number
+    ready_with_warning: number
+    gate_only_ready: number
+    not_replayable: number
+    family_decisions_theoretical?: number
+  }
+  quote_quality: {
+    real: number
+    derived: number
+    unavailable: number
+    inconsistent_flags: number
+  }
+  fair_probability_checks?: Record<string, number>
+  performance_coverage: {
+    real_profit_ready: number
+    synthetic_profit_ready: number
+    result_available_but_profit_missing: number
+    not_applicable: number
+  }
+  by_market: Record<string, HistoricalPurchasabilityV3ReplayMarketCoverage>
+  by_family?: Record<string, HistoricalPurchasabilityV3ReplayFamilyCoverage>
+  by_competition?: Record<string, Record<string, number>>
+  adapter_contract?: Record<string, unknown>
+  anti_leakage?: {
+    pre_match_input_fields?: string[]
+    post_match_performance_fields?: string[]
+    forbidden_formula_fields?: string[]
+    anti_leakage_status?: string
+    result_fields_passed_to_formula?: boolean
+    settlement_fields_passed_to_formula?: boolean
+  }
+  probe?: Record<string, unknown>
+  blockers: Array<{ code: string; message: string }>
+  warnings: Array<{ code: string; message: string }>
+  issue_examples?: Record<string, HistoricalPurchasabilityV3ReplayIssueExample[]>
+  problematic_snapshots?: Array<Record<string, unknown>>
+  replay_recommendation: {
+    can_replay_without_full_scan: boolean
+    requires_new_external_data: boolean
+    requires_model_recalculation: boolean
+    requires_database_migration: boolean
+    recommended_next_action: string
+  }
+  status_rules?: Record<string, unknown>
+}
+
+export function getHistoricalPurchasabilityV3ReplayPreflight(
+  runId: number,
+): Promise<HistoricalPurchasabilityV3ReplayPreflight> {
+  return requestJson(
+    `/api/cecchino-lab/historical-scans/${runId}/purchasability-v3-replay/preflight`,
+  )
+}
+
 export function getHistoricalRunDashboardSignals(
   runId: number,
   filters: HistoricalRunFilters = {},

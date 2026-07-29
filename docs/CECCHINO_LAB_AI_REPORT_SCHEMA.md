@@ -1,9 +1,13 @@
-﻿# Schema report AI â€” Cecchino Lab Historical Scan
+﻿# Schema report AI — Cecchino Lab Historical Scan
 
 Versione schema: `cecchino_lab_ai_report_v4`
 Versione aggregazione: `cecchino_lab_analytics_agg_v2_3` (`analytics_aggregation_version`)
 Versione export segnali: `cecchino_lab_signal_export_v1` (`signal_export_schema_version`)
 Versione export Acquistabilità: `cecchino_lab_purchasability_export_v1` (`purchasability_export_schema_version`)
+
+## STEP 3A — Preflight replay V3 (non è un export report)
+
+Il preflight `cecchino_lab_purchasability_v3_replay_preflight_v1` **non** entra nello ZIP report AI e **non** modifica `purchasability_compact.jsonl` / export V2. Serve solo a certificare la riusabilità degli input congelati prima di STEP 3B (replay isolato). Anti-leakage: risultati/settlement fuori dalla formula.
 
 Le funzioni pure di aggregazione/pattern (`agg_bucket`, `finalize_bucket`, `build_combined_patterns`, …) vivono in `historical_analytics_agg.py` e sono riusate dalla **dashboard run** senza rigenerare lo ZIP. Vedi `docs/CECCHINO_LAB_RUN_DASHBOARD.md`.
 

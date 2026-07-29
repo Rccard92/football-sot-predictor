@@ -1,5 +1,23 @@
 # Cecchino Lab — Scansione storica (replay pre-match)
 
+## STEP 3A — Preflight replay Acquistabilità V3 (2026-07-29)
+
+Preflight **read-only** per verificare se Acquistabilità V3 può essere ricalcolata sugli snapshot pre-match già congelati, **senza** nuova scansione, ricalcolo modello/KPI/segnali/Balance/GI, API esterne o scritture DB.
+
+| Voce | Valore |
+|------|--------|
+| Schema | `cecchino_lab_purchasability_v3_replay_preflight_v1` |
+| Servizio | `historical_purchasability_v3_replay_preflight.py` |
+| Endpoint | `GET /api/cecchino-lab/historical-scans/{run_id}/purchasability-v3-replay/preflight` |
+| UI | sezione «Replay Acquistabilità» su `/cecchino-lab/historical-scans/:runId` (solo click manuale «Verifica replay Acquistabilità») |
+| Universo | snapshot `eligible_core`; 8 mercati V3; escluse conteggiate a parte |
+| Probe | max 30 snapshot (primi/centrali/ultimi 10); invoca V3 in memoria; nessuna persistenza |
+| Cache | in-memory TTL 300s; chiave `run_id|schema|formula|runtime_git` |
+
+**Non implementato in 3A:** replay completo, job, export V3, pulsante Avvia, migration, overwrite Run #3. STEP 3B solo dopo Go sul preflight reale.
+
+Anti-leakage: formula usa solo campi pre-match; `won`/`profit_*`/`result_*`/`settlement_*` solo per copertura performance futura.
+
 ## Dashboard analisi run
 
 Dopo il completamento della scansione, aprire l’analisi da **Storico run → Apri analisi** oppure `/cecchino-lab/historical-scans/:runId`.

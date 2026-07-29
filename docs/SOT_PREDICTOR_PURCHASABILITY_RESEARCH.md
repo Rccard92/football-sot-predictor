@@ -55,6 +55,14 @@ Versione parallela osservazionale; **non** sostituisce v1.1 né v2; **non** è a
 - Popup: flusso principale (risultato, esiste valore?, valore quota, penalità applicate con opposto integrato, famiglia compatta, risultato finale); **Dettagli tecnici e audit** richiudibili (metadata, raw, scala Edge, linked, penalità non applicate, formula steps).
 - Formula/soglie/score/snapshot invariati; replay storico ancora da eseguire (STEP 3).
 
+### STEP 3A — Preflight replay storico V3 (2026-07-29)
+
+- Solo Cecchino Lab: verifica read-only se gli snapshot pre-match del run (es. Run #3) bastano per ricalcolare V3 **senza** nuova scansione.
+- Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`; endpoint GET preflight; UI lazy «Verifica replay Acquistabilità».
+- Universo `eligible_core` × 8 mercati; anti-leakage pre/post-match; quote real/derived separate; fair Bet365 congelate (tolleranza `1e-4`); adapter contract verso panel V3 con `quote_source` storico (mai fallback `betfair_panel` ingannevole).
+- Probe diagnostico max 30 snapshot (invoca formula in memoria, zero persistenza).
+- **Non** STEP 3B: nessun job replay, export V3, ROI fasce, overwrite Run #3. Motore V3 invariato.
+
 Motivazione: rispondere «quanto del valore Cecchino rimane dopo rischio e qualità», evitando il doppio conteggio di Rating/Edge/vantaggio e la normalizzazione storica V2.
 
 ## Acquistabilità v2 — decision_quality_v2 (2026-07-27)

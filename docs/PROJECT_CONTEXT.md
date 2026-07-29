@@ -2,6 +2,10 @@
 
 File indice da leggere all'inizio di ogni nuova chat (ChatGPT, Cursor o altro assistente).
 
+## Feat — Preflight replay Acquistabilità V3 STEP 3A (2026-07-29)
+
+Preflight read-only Lab: `GET .../purchasability-v3-replay/preflight` + UI «Verifica replay Acquistabilità» (lazy). Schema `cecchino_lab_purchasability_v3_replay_preflight_v1`. Probe max 30; nessun replay completo/migration/export V3. Motore V3 e export V2 invariati. **Run #3 invariato.** Doc: `CECCHINO_LAB_HISTORICAL_SCAN.md`, `CECCHINO_LAB_RUN_DASHBOARD.md`.
+
 ## Fix — Export Acquistabilità storica compatto (2026-07-29)
 
 Export/dashboard read-only: `purchasability_compact.jsonl` canonico, decisioni per famiglia, drift, profili deduplicati; gate zero ≠ «Molto Bassa»; `diagnostic_ungated_score` read-only; agg `cecchino_lab_analytics_agg_v2_3` + schema `cecchino_lab_purchasability_export_v1`. **Nessuna modifica a formula/pesi/gate/normalizzazione/snapshot/Run #3/Today/Betfair.**
